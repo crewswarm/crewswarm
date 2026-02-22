@@ -217,12 +217,21 @@ function buildSystemPrompt(cfg) {
     "- outputDir: /Users/jeffhobbs/Desktop/<kebab-case-slug>",
     "- description: list specific features so the roadmap AI produces real technical tasks, not vague ones",
     "",
-    "PIPELINE — use when the user wants sequential multi-agent work (e.g. 'build then test', 'write then audit'):",
-    "- Emit @@PIPELINE on its own line at the end of your reply, immediately before any @@DISPATCH",
-    '  @@PIPELINE [{"agent":"crew-coder","task":"Write server.js with Express"},{"agent":"crew-qa","task":"Audit the server.js file crew-coder just wrote"}]',
-    "- Rules: minimum 2 steps, each must have agent + task, must be a valid JSON array on ONE line",
-    "- Each step's task will automatically receive the prior step's output as context",
+    "PIPELINE — use when the user wants multi-agent work (sequential or parallel):",
+    "- Emit @@PIPELINE on its own line at the end of your reply",
+    "- Each step needs: agent, task, wave (integer). Same wave number = run in PARALLEL. Higher wave = waits for lower wave.",
+    '  @@PIPELINE [{"wave":1,"agent":"crew-coder","task":"Write auth.ts"},{"wave":1,"agent":"crew-coder-front","task":"Write Login.tsx"},{"wave":2,"agent":"crew-qa","task":"Audit both files"},{"wave":3,"agent":"crew-github","task":"Commit all changes"}]',
+    "- wave:1 tasks run simultaneously. wave:2 starts only after ALL wave:1 tasks finish. wave:3 after wave:2. etc.",
+    "- Use same wave for independent tasks (different files/concerns). Use higher wave for tasks that depend on prior results.",
+    "- Each step receives the combined output of ALL steps from the previous wave as context.",
+    "- Minimum 2 steps. Each must have agent + task + wave. Must be valid JSON on ONE line.",
     "- Do NOT use both @@PIPELINE and @@DISPATCH in the same reply",
+    "",
+    "DISPATCH with verify/done criteria — for precise tasks where you know exactly what success looks like:",
+    '  @@DISPATCH {"agent":"crew-coder","task":"Write JWT auth middleware","verify":"@@READ_FILE src/auth.ts — confirm JWT decode logic is present","done":"File exists, exports verifyToken function, returns 401 on invalid token"}',
+    "- verify: what the agent should check after completing (a specific @@READ_FILE or @@RUN_CMD)",
+    "- done: exact definition of success — use for precise acceptance criteria",
+    "- Both fields are optional — omit for simple open-ended tasks",
     "",
     "When the user message includes [Web context from Brave Search], use that context to answer current events, docs, or factual lookups when relevant. When it includes [Codebase context from workspace], use it to answer questions about this codebase (where things are, how they work, what a file does).",
     "",
@@ -282,6 +291,7 @@ function parseDispatch(text, userMessage = "") {
   if (match) {
     try {
       const d = JSON.parse(match[1]);
+      // d.verify and d.done are optional acceptance criteria fields
       if (d.agent && d.task) return d;
     } catch {}
   }
@@ -312,7 +322,8 @@ function stripDispatch(text) {
 }
 
 // ── Pipeline DSL ──────────────────────────────────────────────────────────────
-// Format: @@PIPELINE [{"agent":"crew-coder","task":"..."},{"agent":"crew-qa","task":"..."}]
+// Format: @@PIPELINE [{"wave":1,"agent":"crew-coder","task":"..."},{"wave":1,"agent":"crew-coder-front","task":"..."},{"wave":2,"agent":"crew-qa","task":"..."}]
+// Backward-compat: steps without "wave" are assigned sequential waves 1,2,3,...
 
 function parsePipeline(text) {
   const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
@@ -322,7 +333,19 @@ function parsePipeline(text) {
     const steps = JSON.parse(match[1]);
     if (!Array.isArray(steps) || steps.length < 2) return null;
     if (!steps.every(s => s.agent && s.task)) return null;
-    return steps;
+
+    // Assign sequential wave numbers to steps that don't have one (backward compat)
+    steps.forEach((s, i) => { if (s.wave == null) s.wave = i + 1; });
+
+    // Group into ordered waves: Map<waveNum, step[]>
+    const waveMap = new Map();
+    for (const s of steps) {
+      const w = Number(s.wave);
+      if (!waveMap.has(w)) waveMap.set(w, []);
+      waveMap.get(w).push(s);
+    }
+    const sortedWaveNums = [...waveMap.keys()].sort((a, b) => a - b);
+    return { steps, waves: sortedWaveNums.map(n => waveMap.get(n)) };
   } catch { return null; }
 }
 
@@ -550,9 +573,63 @@ let rtPublish = null;
 const pendingDispatches = new Map();
 
 // Track active pipelines: pipelineId → { steps, stepIndex, sessionId }
+// pendingPipelines: Map<pipelineId, { waves, currentWave, pendingTaskIds, waveResults, sessionId, steps }>
 const pendingPipelines = new Map();
 
+function dispatchPipelineWave(pipelineId) {
+  const pipeline = pendingPipelines.get(pipelineId);
+  if (!pipeline) return;
+
+  const { waves, currentWave, sessionId, steps } = pipeline;
+  if (currentWave >= waves.length) {
+    // All waves done
+    broadcastSSE({ type: "pipeline_done", pipelineId, ts: Date.now() });
+    appendHistory(sessionId, "system", `Pipeline complete — all ${steps.length} steps finished.`);
+    console.log(`[crew-lead] Pipeline ${pipelineId} complete`);
+    pendingPipelines.delete(pipelineId);
+    return;
+  }
+
+  const waveSteps = waves[currentWave];
+  const prevResults = pipeline.waveResults || [];
+  const contextBlock = prevResults.length
+    ? `\n\n[Results from previous pipeline wave]:\n${prevResults.map((r, i) => `[${i+1}] ${r.slice(0, 600)}`).join("\n\n")}`
+    : "";
+
+  pipeline.pendingTaskIds = new Set();
+  pipeline.waveResults = [];
+
+  broadcastSSE({ type: "pipeline_progress", pipelineId, waveIndex: currentWave, totalWaves: waves.length, waveSize: waveSteps.length, agents: waveSteps.map(s => s.agent), ts: Date.now() });
+  console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1}/${waves.length} — dispatching ${waveSteps.length} agent(s) in parallel: ${waveSteps.map(s => s.agent).join(", ")}`);
+
+  for (const step of waveSteps) {
+    // Build full task spec including context from prior wave and optional verify/done criteria
+    const stepSpec = {
+      task: step.task + contextBlock,
+      ...(step.verify ? { verify: step.verify } : {}),
+      ...(step.done   ? { done:   step.done   } : {}),
+    };
+    const taskId = dispatchTask(step.agent, stepSpec, sessionId, { pipelineId, waveIndex: currentWave });
+    if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
+  }
+}
+
+function buildTaskText(taskSpec) {
+  // taskSpec can be a plain string or a {task, verify, done} object
+  if (typeof taskSpec === "string") return taskSpec;
+  let text = taskSpec.task || "";
+  if (taskSpec.verify || taskSpec.done) {
+    text += "\n\n## Acceptance criteria";
+    if (taskSpec.verify) text += `\n- Verify: ${taskSpec.verify}`;
+    if (taskSpec.done)   text += `\n- Done when: ${taskSpec.done}`;
+  }
+  return text;
+}
+
 function dispatchTask(agent, task, sessionId = "owner", pipelineMeta = null) {
+  // task may be a plain string or a {task, verify, done} spec object
+  const taskText = buildTaskText(task);
+  task = taskText; // normalise to string for the rest of this function
   if (rtPublish) {
     try {
       const taskId = rtPublish({ channel: "command", type: "command.run_task", to: agent, payload: { content: task, prompt: task } });
@@ -653,13 +730,17 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     }
   } else if (pipelineSteps) {
     const pipelineId = crypto.randomUUID();
-    pendingPipelines.set(pipelineId, { steps: pipelineSteps, stepIndex: 0, sessionId });
-    dispatchPipelineStep(pipelineSteps, 0, sessionId, pipelineId, "");
-    appendHistory(sessionId, "system", `Pipeline started (${pipelineSteps.length} steps): ${pipelineSteps.map(s => s.agent).join(" → ")}`);
-    cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Pipeline started (${pipelineSteps.length} steps): ${pipelineSteps.map(s => s.agent).join(" → ")}`;
-    pipeline = { pipelineId, steps: pipelineSteps };
+    const { steps, waves } = pipelineSteps;
+    pendingPipelines.set(pipelineId, { steps, waves, currentWave: 0, pendingTaskIds: new Set(), waveResults: [], sessionId });
+    dispatchPipelineWave(pipelineId);
+    const waveDesc = waves.length > 1 ? ` in ${waves.length} waves` : "";
+    appendHistory(sessionId, "system", `Pipeline started (${steps.length} steps${waveDesc}): ${waves.map(w => w.map(s => s.agent).join("+")).join(" → ")}`);
+    const agentFlow = waves.map(w => w.length > 1 ? `[${w.map(s => s.agent).join(" ∥ ")}]` : w[0].agent).join(" → ");
+    cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Pipeline started (${steps.length} steps${waveDesc}): ${agentFlow}`;
+    pipeline = { pipelineId, steps, waves };
   } else if (dispatch && cfg.knownAgents.includes(dispatch.agent)) {
-    const ok = dispatchTask(dispatch.agent, dispatch.task, sessionId);
+    // Pass full dispatch spec so verify/done criteria are injected into task text
+    const ok = dispatchTask(dispatch.agent, dispatch, sessionId);
     if (ok) {
       dispatched = dispatch;
       appendHistory(sessionId, "system", `You dispatched to ${dispatch.agent}: "${(dispatch.task || "").slice(0, 200)}".`);
@@ -930,20 +1011,20 @@ function connectRT() {
         appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 2000)}`);
         broadcastSSE({ type: "agent_reply", from, content: content.slice(0, 2000), sessionId: targetSession, taskId, ts: Date.now() });
 
-        // Advance pipeline if this task was part of one
+        // Advance pipeline if this task was part of one (wave-aware)
         if (dispatch?.pipelineId) {
           const pipeline = pendingPipelines.get(dispatch.pipelineId);
           if (pipeline) {
-            const nextIndex = dispatch.stepIndex + 1;
-            if (nextIndex < pipeline.steps.length) {
-              pipeline.stepIndex = nextIndex;
-              dispatchPipelineStep(pipeline.steps, nextIndex, pipeline.sessionId, dispatch.pipelineId, content);
-              console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} → step ${nextIndex + 1}/${pipeline.steps.length}`);
-            } else {
-              pendingPipelines.delete(dispatch.pipelineId);
-              broadcastSSE({ type: "pipeline_done", pipelineId: dispatch.pipelineId, ts: Date.now() });
-              appendHistory(targetSession, "system", `Pipeline complete — all ${pipeline.steps.length} steps finished.`);
-              console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} complete`);
+            // Record this task's result and mark it done in the current wave
+            pipeline.waveResults.push(content);
+            pipeline.pendingTaskIds.delete(taskId);
+
+            console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} wave ${pipeline.currentWave + 1}: ${pipeline.pendingTaskIds.size} task(s) still pending`);
+
+            if (pipeline.pendingTaskIds.size === 0) {
+              // All tasks in this wave are done — advance to next wave
+              pipeline.currentWave++;
+              dispatchPipelineWave(dispatch.pipelineId);
             }
           }
         }
