@@ -4,7 +4,8 @@
   "description": "Dispatch tasks to a local CrewSwarm multi-agent crew from any OpenClaw agent. Adds the crewswarm_dispatch tool, /crewswarm slash command, and Gateway RPC methods.",
   "version": "0.1.0",
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./index.ts"],
+    "skills": ["./skills/crewswarm"]
   },
   "configSchema": {
     "type": "object",
