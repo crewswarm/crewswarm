@@ -69,6 +69,14 @@ const SHARED_MEMORY_FILES = [
   // "decisions.md"            // Architectural decisions — only load when needed
   // "telegram-context.md"     // Telegram chat history — too noisy for code tasks
 ];
+
+// Extra memory files injected only for specific agents
+const AGENT_EXTRA_MEMORY = {
+  "crew-fixer":    ["lessons.md"],  // mistake patterns captured by crew-scribe
+  "crew-coder":    ["lessons.md"],
+  "crew-coder-front": ["lessons.md"],
+  "crew-coder-back":  ["lessons.md"],
+};
 const MEMORY_BOOTSTRAP_AGENT = "gateway-bridge";
 const SHARED_MEMORY_PROTOCOL = [
   "Memory loaded. Current UTC: `$(date -u +%Y-%m-%d\\ %H:%M\\ UTC)`; last handoff: `${getLastHandoffTimestamp()}`.",
@@ -1732,10 +1740,24 @@ function buildTaskPrompt(taskText, sourceLabel, agentId) {
   const agentAllowed = loadAgentToolPermissions(agentId || "crew-main");
   const toolInstructions = buildToolInstructions(agentAllowed);
 
+  // Load agent-specific extra memory (e.g. lessons.md for coders + fixer)
+  const extraMemoryFiles = AGENT_EXTRA_MEMORY[agentId] || (bareId && AGENT_EXTRA_MEMORY[`crew-${bareId}`]) || [];
+  const extraMemorySections = [];
+  for (const fileName of extraMemoryFiles) {
+    const fullPath = path.join(SHARED_MEMORY_DIR, fileName);
+    if (!fs.existsSync(fullPath)) continue;
+    try {
+      let content = fs.readFileSync(fullPath, "utf8").trim();
+      if (content.length > 6000) content = content.slice(-6000); // tail-trim
+      if (content) extraMemorySections.push(`### ${fileName}\n${content}`);
+    } catch {}
+  }
+
   const parts = [];
   if (agentSystemPrompt) parts.push(agentSystemPrompt);
   if (toolInstructions) parts.push(toolInstructions);
   if (sharedMemory.text) parts.push(sharedMemory.text);
+  if (extraMemorySections.length > 0) parts.push(extraMemorySections.join("\n\n"));
   parts.push(contextNote);
   parts.push(taskText);
 

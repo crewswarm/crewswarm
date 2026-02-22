@@ -4,10 +4,12 @@
  *
  * Watches done.jsonl for completed tasks, then:
  *   1. Appends an LLM-generated one-sentence summary to memory/session-log.md
- *   2. If the reply contains @@BRAIN tags, deduplicates and appends to memory/brain.md
+ *   2. @@BRAIN: tags → deduplicated facts to memory/brain.md
+ *   3. @@LESSON: tags → deduplicated mistake patterns to memory/lessons.md
  *
- * Agents can write durable learnings by including in their reply:
- *   @@BRAIN: <one-line fact to remember>
+ * Agent tag syntax:
+ *   @@BRAIN: <one-line durable project fact>
+ *   @@LESSON: <what broke, why, and how to avoid it>
  *
  * Usage:
  *   node scripts/crew-scribe.mjs
@@ -20,6 +22,7 @@ import os from "node:os";
 
 const MEMORY_DIR    = path.resolve(process.cwd(), "memory");
 const BRAIN_MD      = path.join(MEMORY_DIR, "brain.md");
+const LESSONS_MD    = path.join(MEMORY_DIR, "lessons.md");
 const SESSION_LOG   = path.join(MEMORY_DIR, "session-log.md");
 const RT_BASE       = path.join(os.homedir(), ".openclaw", "workspace", "shared-memory", "claw-swarm", "opencrew-rt");
 const DONE_LOG      = path.join(RT_BASE, "channels", "done.jsonl");
@@ -82,6 +85,7 @@ async function summarizeWithLLM(agentId, reply) {
     const trimmed = reply
       .replace(/<think>[\s\S]*?<\/think>/gi, "")
       .replace(/@@BRAIN:.*$/gim, "")
+      .replace(/@@LESSON:.*$/gim, "")
       .trim()
       .slice(0, 3000);
 
@@ -176,6 +180,41 @@ function extractBrainEntries(agentId, reply) {
   return results;
 }
 
+// ── Lessons extraction ────────────────────────────────────────────────────────
+
+function isLessonDuplicate(lesson) {
+  try {
+    const existing = fs.readFileSync(LESSONS_MD, "utf8");
+    const normLesson = normalize(lesson);
+    const lessonWords = normLesson.split(" ").filter(w => w.length > 3);
+    if (lessonWords.length < 3) return false;
+    const threshold = Math.ceil(lessonWords.length * 0.75);
+    return existing.split("\n").some(line => {
+      const normLine = normalize(line);
+      const hits = lessonWords.filter(w => normLine.includes(w)).length;
+      return hits >= threshold;
+    });
+  } catch {
+    return false;
+  }
+}
+
+// Extract @@LESSON: tags from a reply, deduplicate, return formatted entries
+function extractLessonEntries(agentId, reply) {
+  if (!reply) return [];
+  const matches = [...reply.matchAll(/@@LESSON:\s*(.+)/gi)];
+  const results = [];
+  for (const m of matches) {
+    const lesson = m[1].trim();
+    if (isLessonDuplicate(lesson)) {
+      console.log(`[crew-scribe] Skipping duplicate lesson: ${lesson.slice(0, 60)}`);
+      continue;
+    }
+    results.push(`\n- [${now().slice(0, 10)}] **${agentId}**: ${lesson}`);
+  }
+  return results;
+}
+
 // ── Main processing loop ──────────────────────────────────────────────────────
 
 const SKIP_AGENTS = new Set(["crew-lead", "orchestrator"]);
@@ -195,7 +234,8 @@ async function processNewEntries(state) {
   const lines = buf.toString("utf8").split("\n").filter(Boolean);
 
   const sessionEntries = [];
-  const brainEntries = [];
+  const brainEntries   = [];
+  const lessonEntries  = [];
 
   for (const line of lines) {
     let obj;
@@ -214,6 +254,9 @@ async function processNewEntries(state) {
 
     // Deduplicated @@BRAIN entries
     brainEntries.push(...extractBrainEntries(from, reply));
+
+    // Deduplicated @@LESSON entries
+    lessonEntries.push(...extractLessonEntries(from, reply));
   }
 
   if (sessionEntries.length > 0) {
@@ -224,6 +267,15 @@ async function processNewEntries(state) {
   if (brainEntries.length > 0) {
     appendToFile(BRAIN_MD, brainEntries.join("\n") + "\n");
     console.log(`[crew-scribe] Wrote ${brainEntries.length} brain.md entries (deduped)`);
+  }
+
+  if (lessonEntries.length > 0) {
+    // Bootstrap lessons.md header on first write
+    if (!fs.existsSync(LESSONS_MD)) {
+      appendToFile(LESSONS_MD, "# Crew Lessons\n\nMistake patterns captured automatically. crew-fixer reads this before every fix.\n");
+    }
+    appendToFile(LESSONS_MD, lessonEntries.join("\n") + "\n");
+    console.log(`[crew-scribe] Wrote ${lessonEntries.length} lessons.md entries (deduped)`);
   }
 
   return newState;
