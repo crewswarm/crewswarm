@@ -90,13 +90,35 @@ console.log(`  Already running : ${already.size} (${[...already].join(", ") || "
 console.log(`  Launching new   : ${toStart.length} (${toStart.join(", ")})`);
 console.log();
 
-for (const rtId of toStart) {
+// crew-lead runs its own script, not gateway-bridge
+const CREW_LEAD_SCRIPT = path.join(OPENCLAW_DIR, "crew-lead.mjs");
+const crewLeadRunning = (() => {
+  try {
+    const out = execSync("ps aux", { encoding: "utf8" });
+    return out.includes("crew-lead.mjs");
+  } catch { return false; }
+})();
+
+if (toStart.includes("crew-lead") && !crewLeadRunning && fs.existsSync(CREW_LEAD_SCRIPT)) {
+  const logFile = path.join(os.tmpdir(), "bridge-crew-lead.log");
+  const logFd = fs.openSync(logFile, "a");
+  const proc = spawn("node", [CREW_LEAD_SCRIPT], {
+    cwd: OPENCLAW_DIR,
+    stdio: ["ignore", logFd, logFd],
+    detached: true,
+    env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: rtToken },
+  });
+  proc.unref();
+  console.log(`  ✓ Spawned crew-lead (pid ${proc.pid})`);
+}
+
+for (const rtId of toStart.filter(id => id !== "crew-lead")) {
   const env = {
     ...process.env,
     OPENCREW_RT_AGENT: rtId,
     OPENCREW_RT_AUTH_TOKEN: rtToken,
     OPENCREW_RT_CHANNELS: "command,assign,handoff,reassign,events",
-    OPENCREW_OPENCODE_ENABLED: "0", // use OpenClaw gateway, not free OpenCode
+    OPENCREW_OPENCODE_ENABLED: "0",
     OPENCLAW_DIR,
   };
 

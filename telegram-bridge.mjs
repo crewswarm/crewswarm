@@ -42,7 +42,8 @@ const RT_URL      = process.env.OPENCREW_RT_URL    || env.OPENCREW_RT_URL    || 
 const RT_TOKEN    = process.env.OPENCREW_RT_AUTH_TOKEN || env.OPENCREW_RT_AUTH_TOKEN || "";
 const AGENT_NAME  = "crew-telegram";
 const TELEGRAM_CONTEXT_PATH = join(homedir(), "Desktop", "OpenClaw", "memory", "telegram-context.md");
-const TARGET      = process.env.TELEGRAM_TARGET_AGENT || env.TELEGRAM_TARGET_AGENT || "crew-main";
+const TARGET      = process.env.TELEGRAM_TARGET_AGENT || env.TELEGRAM_TARGET_AGENT || "crew-lead";
+const CREW_LEAD_URL = process.env.CREW_LEAD_URL || "http://127.0.0.1:5010";
 const POLL_TIMEOUT = 30; // seconds
 
 // Allowlist — comma-separated chat IDs. Empty = allow all (open bot).
@@ -202,19 +203,23 @@ function connectRT() {
         const from    = env.from || env.sender_agent_id || "";
         const content = env.payload?.content ? String(env.payload.content).trim() : "";
 
-        // Forward any substantive reply from crew-main to all active Telegram sessions
-        if (from === TARGET && content && content.length > 2) {
+        // Forward any substantive reply from crew-lead (or TARGET) to active Telegram sessions
+        const isChatReply = env.messageType === "chat.reply" || env.type === "chat.reply";
+        const sessionId = env.payload?.sessionId;
+        if ((from === TARGET || isChatReply) && content && content.length > 2) {
           // Skip pure status/heartbeat messages
           const isHeartbeat = env.type === "agent.heartbeat" || env.channel === "status";
           const isTaskNoise = content.startsWith("@@DISPATCH") || content.startsWith("[bridge]");
           if (!isHeartbeat && !isTaskNoise) {
-            for (const [chatId, session] of activeSessions) {
-              // Debounce — don't send same reply twice within 2s
+            // If reply has a specific sessionId, route only to that chat
+            const targetSessions = sessionId && activeSessions.has(Number(sessionId))
+              ? [[Number(sessionId), activeSessions.get(Number(sessionId))]]
+              : [...activeSessions];
+            for (const [chatId, session] of targetSessions) {
               const lastReply = lastReplyTime.get(chatId) || 0;
               if (Date.now() - lastReply < 2000) continue;
               lastReplyTime.set(chatId, Date.now());
-
-              log("info", "Forwarding crew-main reply to Telegram", { chatId, preview: content.slice(0, 80) });
+              log("info", "Forwarding crew-lead reply to Telegram", { chatId, preview: content.slice(0, 80) });
               addToHistory(chatId, "assistant", content);
               persistTurn("assistant", content, "CrewSwarm");
               logMessage({ direction: "outbound", chatId, text: content });
@@ -232,6 +237,7 @@ function connectRT() {
 
     ws.on("close", () => {
       log("warn", "RT socket closed — reconnecting in 3s");
+      if (!ready) reject(new Error("RT closed before ready"));
       ready = false;
       rtClient = null;
       setTimeout(() => connectRT().then(c => { rtClient = c; }).catch(() => {}), 3000);
@@ -309,6 +315,42 @@ function writeTelegramContext(chatId, username, firstName) {
 
 let offset = 0;
 
+async function listenForAgentReplies() {
+  const CREW_LEAD_EVENTS = `${CREW_LEAD_URL}/events`;
+  while (true) {
+    try {
+      const res = await fetch(CREW_LEAD_EVENTS, { signal: AbortSignal.timeout(120000) });
+      if (!res.body) { await new Promise(r => setTimeout(r, 5000)); continue; }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            if (!d.from || !d.content) continue;
+            const preview = d.content.length > 300 ? d.content.slice(0, 300) + "…" : d.content;
+            const msg = `✅ *${d.from}* finished:\n${preview}\n\nReply to follow up or dispatch more work.`;
+            log("info", "Agent reply forwarded to Telegram", { from: d.from });
+            for (const [chatId] of activeSessions) {
+              await tgSend(chatId, msg);
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      log("warn", "Agent reply SSE disconnected, retrying in 5s", { error: e.message });
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+}
+
 async function pollLoop() {
   log("info", "Starting Telegram poll loop");
   while (true) {
@@ -347,35 +389,32 @@ async function pollLoop() {
         addToHistory(chatId, "user", text);
         persistTurn("user", text, firstName || username);
 
-        if (!rtClient?.isReady()) {
-          await tgSend(chatId, "⚠️ CrewSwarm RT bus not connected. Try again in a moment.");
-          continue;
-        }
-
         const taskId        = randomUUID();
         const correlationId = randomUUID();
         const history       = formatHistory(chatId);
 
-        // Dispatch to crew-main via RT bus with conversation context
-        rtClient.publish({
-          channel: "command",
-          type: "task.assign",
-          to: TARGET,
-          taskId,
-          correlationId,
-          payload: {
-            content: text + history,
-            source: "telegram",
-            chatId,
-            username,
-            firstName,
-            replyTo: AGENT_NAME,
-            instruction: `You are chatting with ${firstName || username || "a user"} via Telegram (@CrewSwarm_bot). Respond conversationally and helpfully. If they ask you to build something, kick it off and confirm. Keep replies under 3000 chars. The conversation history above shows prior context — use it to maintain thread continuity.`,
-          },
+        // Send to crew-lead HTTP server
+        fetch(`${CREW_LEAD_URL}/chat`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: text, sessionId: "owner", firstName: firstName || username }),
+          signal: AbortSignal.timeout(65000),
+        }).then(async r => {
+          const d = await r.json();
+          if (d.reply) {
+            addToHistory(chatId, "assistant", d.reply);
+            persistTurn("assistant", d.reply, "CrewSwarm");
+            logMessage({ direction: "outbound", chatId, text: d.reply });
+            lastReplyTime.set(chatId, Date.now());
+            await tgSend(chatId, d.reply);
+            if (d.dispatched) {
+              await tgSend(chatId, `⚡ Dispatching to ${d.dispatched.agent}...`);
+            }
+          }
+        }).catch(async e => {
+          log("error", "crew-lead HTTP error", { error: e.message });
+          await tgSend(chatId, `⚠️ crew-lead error: ${e.message.slice(0,100)}`);
         });
-
-        // Send acknowledgement
-        await tgSend(chatId, `⚡ Got it. Routing to the crew...`);
       }
     } catch (e) {
       log("error", "Poll error", { error: e.message });
@@ -404,14 +443,15 @@ async function main() {
     process.exit(1);
   }
 
-  // Connect RT bus
-  try {
-    rtClient = await connectRT();
-  } catch (e) {
+  // Connect RT bus in background — don't block polling
+  connectRT().then(c => { rtClient = c; }).catch(e => {
     log("warn", "RT bus unavailable at startup — will retry", { error: e.message });
-  }
+  });
 
-  // Start polling
+  // Listen for agent replies from crew-lead SSE and forward to Telegram
+  listenForAgentReplies();
+
+  // Start polling immediately regardless of RT status
   await pollLoop();
 }
 

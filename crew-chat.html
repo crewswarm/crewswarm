@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>crew-lead</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0d0d0d;
+    color: #f0f0f0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Title bar */
+  #titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px 8px;
+    background: #161616;
+    border-bottom: 1px solid #222;
+    -webkit-app-region: drag;
+    flex-shrink: 0;
+  }
+  #titlebar .title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  #statusDot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #555;
+    flex-shrink: 0;
+  }
+  #statusDot.online { background: #22c55e; }
+  #clearBtn {
+    -webkit-app-region: no-drag;
+    background: none;
+    border: 1px solid #333;
+    color: #888;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  #clearBtn:hover { border-color: #555; color: #ccc; }
+
+  /* Messages */
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    scroll-behavior: smooth;
+  }
+  #messages::-webkit-scrollbar { width: 4px; }
+  #messages::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+  .bubble-wrap { display: flex; flex-direction: column; gap: 2px; }
+  .bubble-wrap.user { align-items: flex-end; }
+  .bubble-wrap.agent { align-items: flex-start; }
+
+  .label {
+    font-size: 10px;
+    color: #555;
+    padding: 0 4px;
+  }
+
+  .bubble {
+    max-width: 82%;
+    padding: 9px 13px;
+    border-radius: 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .bubble.user {
+    background: #22c55e;
+    color: #000;
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.agent {
+    background: #1e1e1e;
+    color: #f0f0f0;
+    border: 1px solid #2a2a2a;
+    border-bottom-left-radius: 4px;
+  }
+  .bubble.agent-done {
+    background: #0f2a1e;
+    border-color: #1a4a30;
+    color: #86efac;
+    font-size: 12px;
+  }
+  .bubble.typing {
+    background: #1e1e1e;
+    color: #555;
+    border: 1px solid #222;
+    font-style: italic;
+  }
+  .bubble.project {
+    background: #0d1f3c;
+    border-color: #1e4080;
+    color: #93c5fd;
+    font-size: 12px;
+  }
+  .bubble.project strong { color: #60a5fa; display: block; margin-bottom: 3px; }
+
+  /* ── Roadmap review card ── */
+  .roadmap-card {
+    background: #0a0a12;
+    border: 1px solid #1e3a6e;
+    border-radius: 14px;
+    overflow: hidden;
+    width: 100%;
+    margin: 4px 0;
+  }
+  .roadmap-card-header {
+    background: #0d1f3c;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #1e3a6e;
+  }
+  .roadmap-card-header .title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #60a5fa;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .roadmap-card-header .subtitle {
+    font-size: 11px;
+    color: #4a7ab5;
+    margin-top: 1px;
+  }
+  .roadmap-card-header .edit-hint {
+    font-size: 10px;
+    color: #4a5568;
+    cursor: pointer;
+  }
+  .roadmap-card-header .edit-hint:hover { color: #60a5fa; }
+  .roadmap-textarea {
+    width: 100%;
+    background: #0a0a12;
+    border: none;
+    outline: none;
+    color: #c7d4e8;
+    font-size: 11.5px;
+    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    line-height: 1.6;
+    padding: 12px 14px;
+    resize: none;
+    min-height: 160px;
+    max-height: 340px;
+  }
+  .roadmap-actions {
+    display: flex;
+    gap: 8px;
+    padding: 10px 14px 12px;
+    border-top: 1px solid #1a1a2e;
+    background: #0d0d1a;
+  }
+  .btn-start {
+    background: #22c55e;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: opacity 0.15s;
+  }
+  .btn-start:hover { opacity: 0.85; }
+  .btn-start:disabled { opacity: 0.4; cursor: default; }
+  .btn-discard {
+    background: none;
+    border: 1px solid #2d2d40;
+    color: #666;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-discard:hover { border-color: #555; color: #999; }
+  .roadmap-status {
+    font-size: 11px;
+    color: #4a7ab5;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .task-count {
+    font-size: 10px;
+    color: #4a5568;
+    padding: 2px 7px;
+    background: #111827;
+    border-radius: 10px;
+  }
+
+  /* Input area */
+  #inputarea {
+    padding: 10px 14px 14px;
+    background: #161616;
+    border-top: 1px solid #222;
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+  #input {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    color: #f0f0f0;
+    font-size: 13px;
+    font-family: inherit;
+    padding: 9px 13px;
+    resize: none;
+    max-height: 120px;
+    outline: none;
+    line-height: 1.4;
+  }
+  #input:focus { border-color: #444; }
+  #input::placeholder { color: #444; }
+  #sendBtn {
+    background: #22c55e;
+    border: none;
+    border-radius: 50%;
+    width: 34px; height: 34px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+  #sendBtn:disabled { opacity: 0.4; cursor: default; }
+  #sendBtn svg { width: 16px; height: 16px; fill: #000; }
+</style>
+</head>
+<body>
+
+<div id="titlebar">
+  <div class="title">
+    🧠 crew-lead
+    <span id="statusDot"></span>
+  </div>
+  <button id="clearBtn">Clear</button>
+</div>
+
+<div id="messages"></div>
+
+<div id="inputarea">
+  <textarea id="input" rows="1" placeholder="Talk to crew-lead…"></textarea>
+  <button id="sendBtn" disabled>
+    <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+  </button>
+</div>
+
+<script>
+const API = 'http://127.0.0.1:4319';
+const SESSION = 'owner';
+
+const messagesEl = document.getElementById('messages');
+const input      = document.getElementById('input');
+const sendBtn    = document.getElementById('sendBtn');
+const dot        = document.getElementById('statusDot');
+
+// ── Status check ──────────────────────────────────────────────────────
+async function checkStatus() {
+  try {
+    const r = await fetch(API + '/api/crew-lead/status');
+    const d = await r.json();
+    if (d.online) { dot.className = 'online'; sendBtn.disabled = false; }
+    else { dot.className = ''; sendBtn.disabled = true; }
+  } catch { dot.className = ''; sendBtn.disabled = true; }
+}
+
+// ── Load history ──────────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const r = await fetch(API + '/api/crew-lead/history?sessionId=' + SESSION);
+    const d = await r.json();
+    if (!d.history?.length) return;
+    messagesEl.innerHTML = '';
+    d.history.forEach(h => {
+      if (h.role === 'system') return;
+      addBubble(h.role === 'user' ? 'You' : '🧠 crew-lead', h.content, h.role === 'user' ? 'user' : 'agent');
+    });
+    scrollBottom();
+  } catch {}
+}
+
+// ── Add bubble ────────────────────────────────────────────────────────
+function addBubble(label, text, type) {
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble-wrap ' + (type === 'user' ? 'user' : 'agent');
+  const lbl = document.createElement('div');
+  lbl.className = 'label';
+  lbl.textContent = label;
+  const bub = document.createElement('div');
+  bub.className = 'bubble ' + type;
+  bub.textContent = text;
+  wrap.appendChild(lbl);
+  wrap.appendChild(bub);
+  messagesEl.appendChild(wrap);
+  return bub;
+}
+
+function scrollBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+
+// ── Roadmap review card ───────────────────────────────────────────────
+function countTasks(md) {
+  return (md.match(/^- \[ \]/gm) || []).length;
+}
+
+function addRoadmapCard({ draftId, name, outputDir, roadmapMd }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble-wrap agent';
+  wrap.style.width = '100%';
+
+  const lbl = document.createElement('div');
+  lbl.className = 'label';
+  lbl.textContent = '🗺️ Roadmap draft — review before building';
+
+  const card = document.createElement('div');
+  card.className = 'roadmap-card';
+  card.style.width = '100%';
+
+  const taskCount = countTasks(roadmapMd);
+
+  card.innerHTML =
+    '<div class="roadmap-card-header">' +
+      '<div>' +
+        '<div class="title">🚀 ' + name + '</div>' +
+        '<div class="subtitle">' + outputDir + '</div>' +
+      '</div>' +
+      '<span class="task-count">' + taskCount + ' tasks</span>' +
+    '</div>' +
+    '<textarea class="roadmap-textarea" spellcheck="false">' + roadmapMd.replace(/</g, '&lt;') + '</textarea>' +
+    '<div class="roadmap-actions">' +
+      '<button class="btn-start" data-draft="' + draftId + '">▶ Start Building</button>' +
+      '<button class="btn-discard" data-draft="' + draftId + '">Discard</button>' +
+      '<span class="roadmap-status">Edit the roadmap above, then confirm</span>' +
+    '</div>';
+
+  // Fix textarea: innerHTML escaping doesn't apply to textarea value
+  const ta = card.querySelector('textarea');
+  ta.value = roadmapMd;
+
+  // Update task count on edits
+  ta.addEventListener('input', () => {
+    const n = countTasks(ta.value);
+    card.querySelector('.task-count').textContent = n + ' tasks';
+    ta.style.height = '';
+    ta.style.height = Math.min(ta.scrollHeight, 340) + 'px';
+  });
+
+  // Auto-height
+  setTimeout(() => {
+    ta.style.height = '';
+    ta.style.height = Math.min(ta.scrollHeight, 340) + 'px';
+  }, 50);
+
+  // Start building button
+  card.querySelector('.btn-start').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = '⏳ Launching…';
+    const finalMd = ta.value;
+    try {
+      const r = await fetch(API + '/api/crew-lead/confirm-project', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ draftId, roadmapMd: finalMd }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        card.innerHTML =
+          '<div style="padding:14px;color:#22c55e;font-size:13px;font-weight:600;">' +
+          '✅ ' + name + ' — project created, PM loop running!<br>' +
+          '<span style="color:#4a7ab5;font-size:11px;font-weight:400">' + (d.outputDir || outputDir) + '</span>' +
+          '</div>';
+        addBubble('🚀', name + ' is now building. Open the dashboard Projects tab to watch progress.', 'agent-done');
+        scrollBottom();
+      } else {
+        btn.disabled = false;
+        btn.textContent = '▶ Start Building';
+        card.querySelector('.roadmap-status').textContent = '⚠️ ' + (d.error || 'Launch failed');
+      }
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '▶ Start Building';
+      card.querySelector('.roadmap-status').textContent = '⚠️ ' + err.message;
+    }
+  });
+
+  // Discard button
+  card.querySelector('.btn-discard').addEventListener('click', async (e) => {
+    await fetch(API + '/api/crew-lead/discard-project', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftId }),
+    }).catch(() => {});
+    wrap.remove();
+  });
+
+  wrap.appendChild(lbl);
+  wrap.appendChild(card);
+  messagesEl.appendChild(wrap);
+  scrollBottom();
+}
+
+// ── Send ──────────────────────────────────────────────────────────────
+async function send() {
+  const text = input.value.trim();
+  if (!text || sendBtn.disabled) return;
+  input.value = '';
+  input.style.height = '';
+  addBubble('You', text, 'user');
+  const typingBub = addBubble('🧠 crew-lead', '…', 'agent typing');
+  scrollBottom();
+  sendBtn.disabled = true;
+  try {
+    const r = await fetch(API + '/api/crew-lead/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: text, sessionId: SESSION, firstName: 'Jeff' }),
+    });
+    const d = await r.json();
+    typingBub.className = 'bubble agent';
+    typingBub.textContent = d.reply || '(no reply)';
+    if (d.dispatched) {
+      addBubble('⚡', 'Dispatched to ' + d.dispatched.agent, 'agent-done');
+    }
+    if (d.pendingProject) {
+      addRoadmapCard(d.pendingProject);
+    }
+  } catch (e) {
+    typingBub.textContent = '⚠️ ' + e.message;
+  } finally {
+    sendBtn.disabled = false;
+    scrollBottom();
+    input.focus();
+  }
+}
+
+// ── Agent reply SSE ───────────────────────────────────────────────────
+function listenForAgentReplies() {
+  const es = new EventSource(API + '/api/crew-lead/events');
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.type === 'project_launched' && d.project) {
+        addBubble('🚀', d.project.name + ' launched — crew is building!', 'agent-done');
+        scrollBottom();
+        return;
+      }
+      if (!d.from || !d.content) return;
+      const preview = d.content.length > 400 ? d.content.slice(0, 400) + '…' : d.content;
+      addBubble('✅ ' + d.from, preview, 'agent-done');
+      scrollBottom();
+    } catch {}
+  };
+}
+
+// ── Input auto-resize ────────────────────────────────────────────────
+input.addEventListener('input', () => {
+  input.style.height = '';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+});
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+sendBtn.addEventListener('click', send);
+
+document.getElementById('clearBtn').addEventListener('click', async () => {
+  await fetch(API + '/api/crew-lead/clear', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: SESSION }),
+  }).catch(() => {});
+  messagesEl.innerHTML = '';
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────
+checkStatus();
+setInterval(checkStatus, 10000);
+loadHistory();
+listenForAgentReplies();
+input.focus();
+</script>
+</body>
+</html>

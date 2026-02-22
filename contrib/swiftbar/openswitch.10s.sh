@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENCLAW_DIR="${OPENCLAW_DIR:-$HOME/Desktop/OpenClaw}"
+OPENCLAW_DIR="${OPENCLAW_DIR:-$HOME/Desktop/CrewSwarm}"
 SWARM_PLUGIN_DIR="${SWARM_PLUGIN_DIR:-$HOME/swarm/.opencode/plugin}"
 CTL="$HOME/bin/openswitchctl"
 OPENCLAW_APP_HREF="file:///Applications/OpenClaw.app"
@@ -94,24 +94,36 @@ for AGENT in "${AGENTS[@]}"; do
   fi
 done
 
-# Runtime status — emoji color works in both dark and light mode without color= hacks
+# ── Services ─────────────────────────────────────────────────────────
+# Helper: check if a port is listening
+_port_up() { lsof -i ":$1" -sTCP:LISTEN -t &>/dev/null && echo "up" || echo "down"; }
+# Helper: check if a process pattern is running
+_proc_up() { pgrep -f "$1" &>/dev/null && echo "up" || echo "down"; }
+
+SVC_RT="$RT_STATE"
+SVC_GW="$(_port_up 18789)"
+SVC_TG="$(_proc_up 'telegram-bridge.mjs')"
+SVC_CL="$(_proc_up 'crew-lead.mjs')"
+SVC_OC="$(_port_up 4096)"
+SVC_DB="$(_port_up 4319)"
+
+_svc_icon() { [[ "$1" == "up" ]] && echo "🟢" || echo "🔴"; }
+
 echo "---"
-if [[ "$RT_STATE" == "up" ]]; then
-  echo "🟢 RT Bus"
-else
-  echo "🔴 RT Bus"
-fi
-if [[ "$CLAW_STATE" == "up" ]]; then
-  echo "🟢 OpenClaw Gateway"
-else
-  echo "🔴 OpenClaw Gateway"
-fi
+echo "🔧 Services"
+
+echo "--$(_svc_icon $SVC_RT) RT Message Bus | bash='/bin/bash' param1='$CTL' param2=restart-rt terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_GW) OpenClaw Gateway | bash='/bin/bash' param1='$CTL' param2=restart-openclaw terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_TG) Telegram Bridge | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=telegram terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_CL) crew-lead | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_OC) OpenCode Server | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_DB) Dashboard | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
 
 # ── Quick links ──────────────────────────────────────────────────────
 echo "---"
-echo "🖥️  Open Dashboard    | href='$DASHBOARD_URL'"
-echo "📢 Broadcast to Crew | href='$DASHBOARD_URL?to=broadcast&focus=1'"
-echo "🦞 Open OpenClaw App  | href='$OPENCLAW_APP_HREF'"
+echo "🧠 Chat with crew-lead | bash='open' param1='-a' param2='$HOME/Applications/CrewChat.app' terminal=false refresh=false"
+echo "🖥️  Open Dashboard      | href='$DASHBOARD_URL/#chat'"
+echo "🦞 Open OpenClaw App   | href='$OPENCLAW_APP_HREF'"
 
 # ── Logs ─────────────────────────────────────────────────────────────
 echo "---"

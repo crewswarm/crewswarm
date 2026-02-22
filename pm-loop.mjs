@@ -57,6 +57,29 @@ const PID_FILE       = join(LOG_DIR, `pm-loop${_pidSuffix}.pid`);
 const TASK_TIMEOUT   = Number(process.env.PHASED_TASK_TIMEOUT_MS  || "300000");
 const GROQ_API_KEY   = process.env.GROQ_API_KEY || ""; // kept for backwards compat
 
+// ── Search Tools ──────────────────────────────────────────────────────────
+function getSearchToolsConfig() {
+  try {
+    return JSON.parse(readFileSync(homedir() + "/.openclaw/search-tools.json", "utf8"));
+  } catch { return {}; }
+}
+
+async function searchWithBrave(query) {
+  const key = getSearchToolsConfig()?.brave?.apiKey || process.env.BRAVE_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5&text_decorations=false`,
+      { headers: { "Accept": "application/json", "X-Subscription-Token": key }, signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const results = (data.web?.results || []).slice(0, 5);
+    if (!results.length) return null;
+    return results.map((r, i) => `${i+1}. ${r.title}\n   ${r.description || ""}\n   ${r.url}`).join("\n\n");
+  } catch { return null; }
+}
+
 // Perplexity Sonar Pro — PM orchestrator model with real-time web search
 let _ocCfg = null;
 function getOCConfig() {
@@ -84,17 +107,58 @@ const USE_QA          = process.env.PM_USE_QA !== "0";
 // Security audit on security-related tasks — set PM_USE_SECURITY=0 to disable
 const USE_SECURITY    = process.env.PM_USE_SECURITY !== "0";
 
-// Route task to the right specialist agent based on keywords
-function routeAgent(itemText) {
+// Route task to the right specialist agent
+// First tries LLM routing (if PM LLM is available), falls back to keyword regex
+const _routeCache = new Map();
+
+async function routeAgent(itemText) {
   if (!USE_SPECIALISTS) return CODER_AGENT;
+
+  // Cache: same item text → same agent
+  if (_routeCache.has(itemText)) return _routeCache.get(itemText);
+
+  // Try LLM routing first
+  const provider = getPMProviderConfig();
+  if (provider) {
+    try {
+      const result = await callPMLLM([
+        {
+          role: "system",
+          content: `You are a task router. Given a software task description, output EXACTLY ONE agent name from this list — nothing else:
+crew-coder-front   (HTML, CSS, JS UI, visual design, layout, animations, landing pages, copy)
+crew-coder-back    (APIs, Node.js, scripts, databases, backend logic, JSON, server endpoints)
+crew-github        (git commits, branches, pull requests, version control, deployment)
+crew-qa            (testing, quality review, validation, accessibility audits)
+crew-security      (security audits, auth flows, secrets, API keys, permissions)
+crew-copywriter    (marketing copy, headlines, taglines, CTAs, docs, README)
+crew-coder         (general or unclear tasks that don't clearly fit above)
+
+Output only the agent name. No explanation.`,
+        },
+        { role: "user", content: `Task: "${itemText}"` },
+      ], { maxTokens: 20, temperature: 0 });
+
+      const agent = (result || "").trim().toLowerCase().replace(/[^a-z-]/g, "");
+      const valid = ["crew-coder-front","crew-coder-back","crew-github","crew-qa","crew-security","crew-copywriter","crew-coder"];
+      if (valid.includes(agent)) {
+        _routeCache.set(itemText, agent);
+        return agent;
+      }
+    } catch {
+      // fall through to keyword routing
+    }
+  }
+
+  // Fallback: keyword regex
   const t = itemText.toLowerCase();
-  // GitHub / git ops → crew-github
-  if (/\bgit\b|github|commit|push|pull.request|branch|deploy/.test(t)) return "crew-github";
-  // Backend / server / API / scripts → crew-coder-back
-  if (/\bapi\b|server|node|express|script|endpoint|json|database|backend|mjs|\.js\b/.test(t)) return "crew-coder-back";
-  // Frontend / HTML / CSS / visual → crew-coder-front
-  if (/html|css|style|section|design|layout|animation|nav|hero|frontend|ui\b|ux\b|responsive/.test(t)) return "crew-coder-front";
-  return CODER_AGENT;
+  let agent;
+  if (/\bgit\b|github|commit|push|pull.request|branch|deploy/.test(t)) agent = "crew-github";
+  else if (/\bapi\b|server|node|express|script|endpoint|json|database|backend|mjs|\.js\b/.test(t)) agent = "crew-coder-back";
+  else if (/html|css|style|section|design|layout|animation|nav|hero|frontend|ui\b|ux\b|responsive/.test(t)) agent = "crew-coder-front";
+  else agent = CODER_AGENT;
+
+  _routeCache.set(itemText, agent);
+  return agent;
 }
 
 // Determine if task needs a security review
@@ -121,6 +185,14 @@ async function runCopywriterPass(itemText, task) {
   })();
   const copywriterPrompt = agentPrompts["copywriter"] || "You are a conversion copywriter for developer tools. Write punchy, specific copy.";
 
+  // Brave search gives copywriter real-world context — competitor copy, trending phrases, tone refs
+  let webContext = "";
+  const braveResults = await searchWithBrave(`${itemText} copywriting examples landing page`);
+  if (braveResults) {
+    webContext = `\n\nWeb research for copy inspiration (Brave Search):\n${braveResults}`;
+    console.log(`  🦁 Brave search injected for copywriter`);
+  }
+
   console.log(`  ✍️  Copywriter pass for: ${itemText.slice(0, 60)}...`);
   try {
     const resp = await fetch(`${mistral.baseUrl}/chat/completions`, {
@@ -130,7 +202,7 @@ async function runCopywriterPass(itemText, task) {
         model: "mistral-large-latest",
         messages: [
           { role: "system", content: copywriterPrompt },
-          { role: "user", content: `Write the copy for this task:\n\n"${itemText}"\n\nThe coder will implement your copy. Output labeled copy only (Headline:, Body:, CTA: etc). Be clear and specific.` }
+          { role: "user", content: `Write the copy for this task:\n\n"${itemText}"\n\nThe coder will implement your copy. Output labeled copy only (Headline:, Body:, CTA: etc). Be clear and specific.${webContext}` }
         ],
         max_tokens: 400,
         temperature: 0.6,
@@ -253,19 +325,31 @@ async function expandWithGroq(item, context) {
   const isPerplexity = provider?.baseUrl?.includes("perplexity");
 
   if (!provider) {
-    // No PM LLM configured — use raw item with safe wrapper
     return `Task: ${item}
 
-Rules:
-- Output directory: ${OUTPUT_DIR}
-- Read existing files first before modifying — NEVER overwrite a whole file
-- If the task is already complete, skip and report done
-- Only create a new file if the task explicitly requires it`;
+Output directory: ${OUTPUT_DIR}
+
+WORKFLOW — follow this every time:
+1. READ the relevant existing files in ${OUTPUT_DIR} to understand current structure
+2. Make targeted edits only — do NOT rewrite entire files
+3. READ the file again after each edit to verify the change was applied correctly
+4. If a follow-up fix is needed, apply it and read again to confirm
+5. If this task is already complete, reply "ALREADY DONE: <reason>" and stop`;
   }
 
   const featuresSnippet = FEATURES_DOC ? (() => { try { return readFileSync(FEATURES_DOC, "utf8").slice(0, 800); } catch { return ""; } })() : "";
 
-  const systemPrompt = `You are the PM (Product Manager) for a software project.${isPerplexity ? " You have real-time web search — use it to research best practices and modern approaches relevant to the task." : ""}
+  // Brave search for non-Perplexity providers — gives Groq/Cerebras fresh web context
+  let webSnippet = "";
+  if (!isPerplexity) {
+    const searchResults = await searchWithBrave(`best practices: ${item}`);
+    if (searchResults) {
+      webSnippet = `\n\nWeb research (Brave Search):\n${searchResults}`;
+      console.log(`  🦁 Brave search injected for PM context`);
+    }
+  }
+
+  const systemPrompt = `You are the PM (Product Manager) for a software project.${isPerplexity ? " You have real-time web search — use it to research best practices and modern approaches relevant to the task." : " Web search results will be provided for context."}
 
 Your job: receive a roadmap item and write a precise, scoped coding task for a coder agent.
 
@@ -282,19 +366,29 @@ Rules:
   const userPrompt = `Roadmap item: "${item}"
 
 Current project state:
-${context}
+${context}${webSnippet}
 
 ${isPerplexity ? `Search for best practices relevant to this task if helpful, then write` : "Write"} the precise coder task (task text only, no preamble):`;
+
+  const contextRules = `
+
+---
+WORKFLOW — follow this every time:
+1. READ the relevant existing files in ${OUTPUT_DIR} to understand current structure
+2. Make targeted edits only — do NOT rewrite entire files
+3. READ the file again after each edit to verify the change was applied correctly
+4. If a follow-up fix is needed, apply it and read again to confirm
+5. If this task is already complete, reply "ALREADY DONE: <reason>" and stop`;
 
   try {
     const result = await callPMLLM(
       [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
       { maxTokens: 300, temperature: 0.3 }
     );
-    return result || item;
+    return (result || item) + contextRules;
   } catch (e) {
     console.warn(`  ⚠ PM LLM failed (${e.message}), using raw item`);
-    return item;
+    return item + contextRules;
   }
 }
 
@@ -528,7 +622,7 @@ async function main() {
     task = await expandWithGroq(item.text, context);
     console.log(`  📝 Task:\n    ${task.substring(0, 120)}${task.length > 120 ? "..." : ""}`);
 
-    const targetAgent = routeAgent(item.text);
+    const targetAgent = await routeAgent(item.text);
 
     // Copywriter pass — runs before coder-front on copy-heavy tasks
     if (needsCopywriter(item.text) && targetAgent === "crew-coder-front") {
@@ -546,7 +640,7 @@ async function main() {
       if (USE_QA) {
         try {
           console.log(`  🔍 QA review via crew-qa...`);
-          const qaPrompt = `[QA-Review] ${targetAgent} just completed this task:\n\n"${task.substring(0, 300)}"\n\nReview the changes in ${OUTPUT_DIR}. Check for: broken HTML/CSS, JS errors, missing files, visual regressions, Tailwind or unknown CSS classes on a non-Tailwind site.\n\nReply with exactly one of:\n- "PASS" if everything looks correct\n- "FAIL: <specific issues>" if there are problems that need fixing`;
+          const qaPrompt = `[QA-Review] ${targetAgent} just completed this task:\n\n"${task.substring(0, 300)}"\n\nRead the relevant files in ${OUTPUT_DIR} to review the changes. Check for: broken HTML/CSS, JS errors, missing files, visual regressions, Tailwind or unknown CSS classes on a non-Tailwind site.\n\nReply with exactly one of:\n- "PASS" if everything looks correct\n- "FAIL: <specific issues>" if there are problems that need fixing`;
           const qaResult = await callAgent("crew-qa", qaPrompt);
           const qaText = String(qaResult).trim();
           const qaPass = /^PASS/i.test(qaText);
@@ -557,7 +651,7 @@ async function main() {
           if (!qaPass) {
             try {
               console.log(`  🔧 QA failed — routing issues to crew-fixer...`);
-              const fixPrompt = `[QA-Fixer] QA found issues after this task was completed:\n\nOriginal task: "${task.substring(0, 300)}"\n\nQA issues:\n${qaText}\n\nFix the issues in ${OUTPUT_DIR}. Do not rewrite the whole file — only fix what QA flagged. Confirm what you fixed.`;
+              const fixPrompt = `[QA-Fixer] QA found issues after this task was completed:\n\nOriginal task: "${task.substring(0, 300)}"\n\nQA issues:\n${qaText}\n\nRead the affected files in ${OUTPUT_DIR} first, then fix only what QA flagged — do not rewrite whole files. Confirm what you fixed.`;
               const fixResult = await callAgent("crew-fixer", fixPrompt);
               console.log(`  ✅ Fixer resolved QA issues: ${String(fixResult).substring(0, 80)}`);
               await log({ op_id: opId, item: item.text, agent: "crew-fixer", status: "qa_fixed", fix_result: String(fixResult).substring(0, 200) });
@@ -595,7 +689,7 @@ async function main() {
       // Ask crew-fixer to attempt a repair
       try {
         console.log(`  🔧 Asking crew-fixer to repair...`);
-        const fixPrompt = `[Fixer] The following task failed: "${task.substring(0, 300)}"\n\nError: ${e.message.slice(0, 200)}\n\nPlease review the output in ${OUTPUT_DIR}, identify what went wrong, and fix it.`;
+        const fixPrompt = `[Fixer] The following task failed: "${task.substring(0, 300)}"\n\nError: ${e.message.slice(0, 200)}\n\nRead the relevant files in ${OUTPUT_DIR} first to understand the current state, then make targeted fixes — do not rewrite whole files.`;
         await callAgent("crew-fixer", fixPrompt);
         console.log(`  🔧 Fixer done — marking as done`);
         await markItem(item.lineIdx, "done");
