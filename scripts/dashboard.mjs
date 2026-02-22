@@ -398,8 +398,12 @@ const html = `<!doctype html>
       <button class="nav-item" id="navFiles" onclick="showFiles()">
         <span class="nav-icon">📂</span> Files
       </button>
+      <button class="nav-item" id="navChat" onclick="showChat()">
+        <span class="nav-icon">🧠</span> Chat
+        <span class="nav-badge hidden" id="chatBadge">●</span>
+      </button>
       <button class="nav-item" id="navMessaging" onclick="showMessaging()">
-        <span class="nav-icon">💬</span> Messaging
+        <span class="nav-icon">📡</span> Telegram
         <span class="nav-badge hidden" id="msgBadge">0</span>
       </button>
       <button class="nav-item" id="navServices" onclick="showServices()">
@@ -456,7 +460,8 @@ const html = `<!doctype html>
       <div class="page-header">
         <div><div class="page-title">Files</div><div class="page-sub">Files written by the crew — click to open in Cursor or OpenCode</div></div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <input id="filesDir" placeholder="/path/to/project" style="width:280px;" value="${process.env.HOME}/Desktop/OpenClaw" />
+          <input id="filesDir" placeholder="/path/to/project" style="width:240px;" value="${process.env.HOME}/Desktop/CrewSwarm" />
+          <button type="button" class="btn-ghost" style="font-size:13px;padding:6px 10px;" onclick="pickFolder('filesDir')">📂</button>
           <button onclick="loadFiles()" class="btn-green">Scan</button>
           <button onclick="loadFiles(true)" class="btn-ghost" style="font-size:12px;">↻</button>
         </div>
@@ -464,10 +469,36 @@ const html = `<!doctype html>
       <div id="filesContent"></div>
     </div>
 
-    <!-- Messaging -->
+    <!-- Chat with crew-lead -->
+    <div class="view" id="chatView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">🧠 Crew Lead</div>
+          <div class="page-sub">Conversational commander — chat naturally, dispatch tasks to the crew</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="crewLeadBadge" class="status-badge status-stopped">● offline</span>
+          <button onclick="clearChatHistory()" class="btn-ghost" style="font-size:12px;">🗑 Clear</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
+        <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <textarea id="chatInput" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send)"
+            style="flex:1;resize:none;height:56px;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text-1);font-size:14px;line-height:1.4;font-family:inherit;"
+            onkeydown="chatKeydown(event)"></textarea>
+          <button onclick="sendChat()" class="btn-green" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Messaging / Telegram config -->
     <div class="view" id="messagingView">
       <div class="page-header">
-        <div><div class="page-title">Messaging</div><div class="page-sub">Telegram → crew-main → reply. Native bridge, no OpenClaw needed.</div></div>
+        <div>
+          <div class="page-title">Telegram</div>
+          <div class="page-sub">Chat with crew-lead via Telegram — same conversation as the 🧠 Chat tab</div>
+        </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="tgStatusBadge" class="status-badge status-stopped">● stopped</span>
           <button onclick="startTgBridge()" class="btn-green" id="tgStartBtn">▶ Start</button>
@@ -480,25 +511,22 @@ const html = `<!doctype html>
           <div class="card-title" style="margin-bottom:12px;">⚙️ Configuration</div>
           <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Telegram Bot Token</label>
           <input id="tgTokenInput" type="password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
-          <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Route to agent</label>
-          <select id="tgTargetAgent" style="width:100%;margin-bottom:12px;">
-            <option value="crew-main">crew-main (Quill — recommended)</option>
-            <option value="crew-pm">crew-pm (Planning only)</option>
-            <option value="crew-coder">crew-coder (Code only)</option>
-          </select>
           <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed chat IDs <span style="color:var(--text-3);font-weight:400;">(comma-separated — leave empty to allow all)</span></label>
           <input id="tgAllowedIds" placeholder="1693963111, 987654321" style="width:100%;margin-bottom:12px;" />
           <button onclick="saveTgConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
-          <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
-            Get a token from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent);">@BotFather</a> on Telegram.<br/>
-            The bridge connects as <code>crew-telegram</code> on the RT bus.<br/>
-            Find your chat ID by messaging <a href="https://t.me/userinfobot" target="_blank" style="color:var(--accent);">@userinfobot</a>.
+          <div style="font-size:11px;color:var(--text-3);line-height:1.5;margin-top:8px;">
+            All Telegram messages route to <strong>crew-lead</strong> and share the same conversation history as the Chat tab.<br/><br/>
+            Get a token from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent);">@BotFather</a>.<br/>
+            Find your chat ID via <a href="https://t.me/userinfobot" target="_blank" style="color:var(--accent);">@userinfobot</a>.
           </div>
         </div>
-        <!-- Message feed -->
+        <!-- RT activity log -->
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <div style="font-size:13px;font-weight:600;">Message feed</div>
+            <div>
+              <div style="font-size:13px;font-weight:600;">RT Bus Activity</div>
+              <div style="font-size:11px;color:var(--text-3);">Read-only — watch agents work in real time</div>
+            </div>
             <button onclick="loadTgMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
           </div>
           <div id="tgMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 220px);overflow-y:auto;"></div>
@@ -526,7 +554,10 @@ const html = `<!doctype html>
         <div style="display:grid; gap:10px; margin-top:12px;">
           <input id="npName"        placeholder="Project name (e.g. CrewSwarm Docs)" />
           <input id="npDesc"        placeholder="Description (optional)" />
-          <input id="npOutputDir"   placeholder="Output directory (e.g. /path/to/project)" />
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input id="npOutputDir" placeholder="Output directory (e.g. /path/to/project)" style="flex:1;" />
+            <button type="button" class="btn-ghost" style="white-space:nowrap;font-size:13px;padding:6px 10px;" onclick="pickFolder('npOutputDir')">📂 Browse</button>
+          </div>
           <input id="npFeaturesDoc" placeholder="Features doc path (optional)" />
           <div style="display:flex; gap:8px;">
             <button id="npCreateBtn" class="send-btn">Create Project</button>
@@ -579,6 +610,10 @@ const html = `<!doctype html>
       <!-- Built-in provider keys -->
       <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; padding:0 2px;">LLM Provider Keys</div>
       <div id="builtinProvidersList"></div>
+
+      <!-- Search & Research Tools -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Search &amp; Research Tools</div>
+      <div id="searchToolsList"></div>
 
       <!-- Custom provider add -->
       <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Custom Providers</div>
@@ -762,13 +797,10 @@ const html = `<!doctype html>
       </div>
     </div>
 
-    <!-- ── Message bar ── -->
-    <div class="msg-bar">
-      <select id="agentSelect">
-        <option value="broadcast">📢 Broadcast</option>
-      </select>
-      <input id="messageInput" type="text" placeholder="Send a message to an agent…" />
-      <button id="sendBtn" class="send-btn">Send</button>
+    <!-- ── Message bar — redirects to crew-lead chat ── -->
+    <div class="msg-bar" style="justify-content:center;gap:12px;">
+      <span style="font-size:13px;color:var(--text-2);">Talk to the crew via</span>
+      <button onclick="showChat()" class="btn-green" style="font-size:13px;padding:8px 18px;">🧠 Chat with crew-lead</button>
     </div>
   </div>
 <script>
@@ -777,15 +809,10 @@ let agents = [];
 async function loadAgents() {
   try {
     agents = await getJSON('/api/agents');
-    const select = document.getElementById('agentSelect');
-    const currentValue = select.value;
-    select.innerHTML = '<option value="broadcast">📢 Broadcast (all agents)</option>';
-    agents.forEach(a => { const o = document.createElement('option'); o.value = a; o.textContent = a; select.appendChild(o); });
-    if (currentValue && agents.includes(currentValue)) select.value = currentValue;
   } catch (e) { console.error('Failed to load agents:', e); }
 }
 async function getJSON(p){ const r = await fetch(p); if(!r.ok) throw new Error(await r.text()); return r.json(); }
-async function postJSON(p, body){ const r = await fetch(p, { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body) }); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+async function postJSON(p, body){ const r = await fetch(p, { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body) }); const txt = await r.text(); if(!r.ok) throw new Error(txt.slice(0,120)); try { return JSON.parse(txt); } catch { throw new Error('Bad response: ' + txt.slice(0,80)); } }
 function showNotification(msg, isError){ const d = document.createElement('div'); d.className = 'notification' + (isError ? ' error' : ''); d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 3000); }
 function fmt(ts){ try { return new Date(ts).toLocaleTimeString(); } catch { return String(ts); } }
 function createdAt(info){ return (info && info.time && info.time.created) || ''; }
@@ -847,17 +874,10 @@ async function loadDLQ(){
   const box = document.getElementById('dlqMessages');
   box.innerHTML = data.length ? data.map(entry => {
     const key = entry.key || (entry.filename || '').replace('.json', '') || '?';
-    return '<div class="msg dlq-item"><div class="meta"><strong>⚠️ Failed</strong> | ' + (entry.agent || '?') + ' | ' + (entry.failedAt ? new Date(entry.failedAt).toLocaleString() : '') + ' <button class="replay-btn" onclick="replayDLQ(\\'' + key + '\\')">Replay</button></div><div class="t">' + (entry.error || '') + '</div></div>';
+    return '<div class="msg dlq-item"><div class="meta"><strong>⚠️ Failed</strong> | ' + (entry.agent || '?') + ' | ' + (entry.failedAt ? new Date(entry.failedAt).toLocaleString() : '') + ' <button class="replay-btn" onclick="replayDLQ(&quot;' + key + '&quot;)">Replay</button></div><div class="t">' + (entry.error || '') + '</div></div>';
   }).join('') : '<div class="meta" style="padding:20px; text-align:center;">✓ DLQ empty</div>';
 }
 window.replayDLQ = async function(key){ if(!confirm('Replay?')) return; await postJSON('/api/dlq/replay', { key }); showNotification('Replayed'); loadDLQ(); };
-async function sendMessage(){
-  const input = document.getElementById('messageInput');
-  const msg = input.value.trim();
-  const to = document.getElementById('agentSelect').value;
-  if (!msg) return;
-  try { input.disabled = true; await postJSON('/api/send', { to, message: msg }); showNotification('Sent to ' + to); input.value = ''; } catch (e) { showNotification('Failed: ' + e.message, true); } finally { input.disabled = false; input.focus(); }
-}
 async function refreshAll(){
   try {
     const dot = document.getElementById('statusDot');
@@ -884,6 +904,36 @@ function setNavActive(navId){
 function hideAllViews(){
   document.querySelectorAll('.view, .view-sessions').forEach(el => el.classList.remove('active'));
 }
+async function pickFolder(inputId) {
+  const input = document.getElementById(inputId);
+  const def = encodeURIComponent(input?.value || '${process.env.HOME}');
+  const d = await getJSON('/api/pick-folder?default=' + def).catch(() => null);
+  if (d?.path) { if (input) input.value = d.path; }
+}
+async function showChat(){
+  hideAllViews();
+  document.getElementById('chatView').classList.add('active');
+  setNavActive('navChat');
+  checkCrewLeadStatus();
+  startAgentReplyListener();
+  await loadChatHistory();
+}
+async function loadChatHistory() {
+  try {
+    const d = await getJSON('/api/crew-lead/history?sessionId=' + encodeURIComponent(chatSessionId));
+    const box = document.getElementById('chatMessages');
+    if (!d.history || !d.history.length) return;
+    box.innerHTML = '';
+    lastAppendedAssistantContent = '';
+    lastAppendedUserContent = '';
+    d.history.forEach(h => {
+      appendChatBubble(h.role === 'user' ? 'user' : 'assistant', h.content);
+      if (h.role === 'assistant') lastAppendedAssistantContent = h.content;
+      if (h.role === 'user') lastAppendedUserContent = h.content;
+    });
+    box.scrollTop = box.scrollHeight;
+  } catch {}
+}
 function showSwarm(){
   hideAllViews();
   document.getElementById('sessionsView').classList.add('active');
@@ -907,6 +957,209 @@ function showFiles(){
   document.getElementById('filesView').classList.add('active');
   setNavActive('navFiles');
   loadFiles();
+}
+
+// ── Chat / crew-lead ──────────────────────────────────────────────────────────
+const chatSessionId = 'owner'; // shared with Telegram — one conversation, one memory
+let chatPollInterval = null;
+let agentReplySSE = null;
+
+function startAgentReplyListener() {
+  if (agentReplySSE) return; // already listening
+  agentReplySSE = new EventSource('/api/crew-lead/events');
+  agentReplySSE.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      const box = document.getElementById('chatMessages');
+      if (d.type === 'draft_discarded' && d.draftId) {
+        const el = document.querySelector('[data-draft-id="' + d.draftId + '"]');
+        if (el) el.remove();
+        return;
+      }
+      if (d.type === 'chat_message' && d.sessionId === chatSessionId) {
+        if (d.role === 'user') {
+          if (d.content !== lastAppendedUserContent) {
+            appendChatBubble('user', d.content);
+            lastAppendedUserContent = d.content;
+          }
+          if (d.content === lastSentContent) lastSentContent = null;
+        } else if (d.role === 'assistant') {
+          document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
+          if (d.content !== lastAppendedAssistantContent) {
+            appendChatBubble('assistant', d.content);
+            lastAppendedAssistantContent = d.content;
+          }
+        }
+        if (box) box.scrollTop = box.scrollHeight;
+        return;
+      }
+      if (d.type === 'pending_project' && d.sessionId === chatSessionId && d.pendingProject && box) {
+        appendRoadmapCard(box, d.pendingProject);
+        box.scrollTop = box.scrollHeight;
+        return;
+      }
+      if (!d.from || !d.content) return;
+      const preview = d.content.length > 120 ? d.content.slice(0, 120) + '…' : d.content;
+      appendChatBubble('🤖 ' + d.from, '✅ Task done: ' + preview + '\\n\\n_Ask me about it or dispatch follow-up work._', false);
+      if (box) box.scrollTop = box.scrollHeight;
+      showNotification(d.from + ' finished a task');
+    } catch {}
+  };
+  agentReplySSE.onerror = () => { agentReplySSE = null; };
+}
+
+async function checkCrewLeadStatus() {
+  try {
+    const d = await getJSON('/api/crew-lead/status');
+    const badge = document.getElementById('crewLeadBadge');
+    if (d.online) {
+      badge.textContent = '● online'; badge.className = 'status-badge status-running';
+    } else {
+      badge.textContent = '● offline'; badge.className = 'status-badge status-stopped';
+    }
+  } catch {}
+}
+
+function chatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+
+function appendChatBubble(role, text) {
+  const box = document.getElementById('chatMessages');
+  const isUser = role === 'user';
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isUser ? 'flex-end' : 'flex-start') + ';gap:4px;';
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;';
+  label.textContent = isUser ? 'You' : '🧠 crew-lead';
+  const bubble = document.createElement('div');
+  bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:' + (isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px') + ';background:' + (isUser ? 'var(--purple)' : 'var(--bg-2)') + ';color:' + (isUser ? '#fff' : 'var(--text-1)') + ';font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;border:1px solid var(--border);';
+  bubble.textContent = text;
+  div.appendChild(label); div.appendChild(bubble);
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
+  function countTasks(md) { return (md.match(/^- \[ \]/gm) || []).length; }
+
+  const wrap = document.createElement('div');
+  wrap.setAttribute('data-draft-id', draftId);
+  wrap.style.cssText = 'width:100%;display:flex;flex-direction:column;gap:4px;';
+
+  const lbl = document.createElement('div');
+  lbl.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;';
+  lbl.textContent = '🗺️ Roadmap draft — review before building';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'width:100%;border:1px solid #1e3a6e;border-radius:12px;overflow:hidden;background:#0a0a12;';
+
+  const header = document.createElement('div');
+  header.style.cssText = 'background:#0d1f3c;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1e3a6e;';
+  header.innerHTML = '<div><div style="font-size:13px;font-weight:600;color:#60a5fa;">🚀 ' + name + '</div><div style="font-size:11px;color:#4a7ab5;margin-top:2px;">' + outputDir + '</div></div>' +
+    '<span style="font-size:10px;color:#4a5568;padding:2px 7px;background:#111827;border-radius:10px;" class="task-count">' + countTasks(roadmapMd) + ' tasks</span>';
+
+  const ta = document.createElement('textarea');
+  ta.value = roadmapMd;
+  ta.spellcheck = false;
+  ta.style.cssText = 'width:100%;background:#0a0a12;border:none;outline:none;color:#c7d4e8;font-size:11.5px;font-family:SF Mono,Monaco,Menlo,monospace;line-height:1.6;padding:12px 14px;resize:none;min-height:160px;max-height:320px;display:block;';
+  setTimeout(() => { ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 320) + 'px'; }, 50);
+  ta.addEventListener('input', () => {
+    ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 320) + 'px';
+    header.querySelector('.task-count').textContent = countTasks(ta.value) + ' tasks';
+  });
+
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;align-items:center;padding:10px 14px 12px;border-top:1px solid #1a1a2e;background:#0d0d1a;';
+
+  const startBtn = document.createElement('button');
+  startBtn.textContent = '▶ Start Building';
+  startBtn.style.cssText = 'background:#22c55e;color:#000;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;';
+  startBtn.onclick = async () => {
+    startBtn.disabled = true; startBtn.textContent = '⏳ Launching…';
+    try {
+      const r = await postJSON('/api/crew-lead/confirm-project', { draftId, roadmapMd: ta.value });
+      if (r.ok) {
+        card.innerHTML = '<div style="padding:14px;color:#22c55e;font-size:13px;font-weight:600;">✅ ' + name + ' — project created, PM loop running!<br><span style="color:#4a7ab5;font-size:11px;font-weight:400">' + (r.outputDir || outputDir) + '</span></div>';
+        appendChatBubble('assistant', '🚀 ' + name + ' is building. Check the Projects tab to watch progress.');
+      } else {
+        startBtn.disabled = false; startBtn.textContent = '▶ Start Building';
+        status.textContent = '⚠️ ' + (r.error || 'Launch failed');
+      }
+    } catch(e) { startBtn.disabled = false; startBtn.textContent = '▶ Start Building'; status.textContent = '⚠️ ' + e.message; }
+  };
+
+  const discardBtn = document.createElement('button');
+  discardBtn.textContent = 'Discard';
+  discardBtn.style.cssText = 'background:none;border:1px solid #2d2d40;color:#666;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;';
+  discardBtn.onclick = async () => {
+    await postJSON('/api/crew-lead/discard-project', { draftId }).catch(() => {});
+    wrap.remove();
+  };
+
+  const status = document.createElement('span');
+  status.style.cssText = 'font-size:11px;color:#4a7ab5;margin-left:auto;';
+  status.textContent = 'Edit above, then confirm';
+
+  actions.appendChild(startBtn); actions.appendChild(discardBtn); actions.appendChild(status);
+  card.appendChild(header); card.appendChild(ta); card.appendChild(actions);
+  wrap.appendChild(lbl); wrap.appendChild(card);
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
+let lastAppendedAssistantContent = '';
+let lastAppendedUserContent = '';
+let lastSentContent = null;
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  appendChatBubble('user', text);
+  lastAppendedUserContent = text;
+  lastSentContent = text;
+  const typingId = 'typing-' + Date.now();
+  const typingDiv = document.createElement('div');
+  typingDiv.id = typingId;
+  typingDiv.style.cssText = 'font-size:12px;color:var(--text-3);padding:4px 6px;';
+  typingDiv.textContent = '🧠 crew-lead is thinking...';
+  const box = document.getElementById('chatMessages');
+  box.appendChild(typingDiv);
+  box.scrollTop = box.scrollHeight;
+  try {
+    const d = await postJSON('/api/crew-lead/chat', { message: text, sessionId: chatSessionId });
+    document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
+    if (d.reply) {
+      const reply = d.reply;
+      setTimeout(() => {
+        if (reply !== lastAppendedAssistantContent) {
+          appendChatBubble('assistant', reply);
+          lastAppendedAssistantContent = reply;
+          if (box) box.scrollTop = box.scrollHeight;
+        }
+      }, 400);
+    }
+    if (d.dispatched) {
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:11px;color:var(--text-3);text-align:center;padding:4px;';
+      note.textContent = '⚡ Dispatched to ' + d.dispatched.agent;
+      box.appendChild(note);
+    }
+    if (d.pendingProject) appendRoadmapCard(box, d.pendingProject);
+    box.scrollTop = box.scrollHeight;
+  } catch(e) {
+    document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
+    appendChatBubble('assistant', '⚠️ Error: ' + e.message);
+    lastAppendedAssistantContent = '';
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+async function clearChatHistory() {
+  if (!confirm('Clear chat history for this session?')) return;
+  document.getElementById('chatMessages').innerHTML = '';
+  await postJSON('/api/crew-lead/clear', { sessionId: chatSessionId }).catch(()=>{});
 }
 
 function showMessaging(){
@@ -936,7 +1189,6 @@ async function loadTgConfig(){
   try {
     const d = await getJSON('/api/telegram/config');
     if (d.token) document.getElementById('tgTokenInput').value = d.token;
-    if (d.targetAgent) document.getElementById('tgTargetAgent').value = d.targetAgent;
     if (d.allowedChatIds && d.allowedChatIds.length) {
       document.getElementById('tgAllowedIds').value = d.allowedChatIds.join(', ');
     }
@@ -945,21 +1197,18 @@ async function loadTgConfig(){
 
 async function saveTgConfig(){
   const token = document.getElementById('tgTokenInput').value.trim();
-  const targetAgent = document.getElementById('tgTargetAgent').value;
   const idsRaw = document.getElementById('tgAllowedIds').value.trim();
   const allowedChatIds = idsRaw
     ? idsRaw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
     : [];
   if (!token) { showNotification('Enter a bot token first', true); return; }
-  await postJSON('/api/telegram/config', { token, targetAgent, allowedChatIds });
+  await postJSON('/api/telegram/config', { token, targetAgent: 'crew-lead', allowedChatIds });
   showNotification('Config saved');
 }
 
 async function startTgBridge(){
   const token = document.getElementById('tgTokenInput').value.trim();
-  const targetAgent = document.getElementById('tgTargetAgent').value;
-  // Pass token only if entered — API will fall back to saved config if omitted
-  const body = targetAgent ? { targetAgent } : {};
+  const body = { targetAgent: 'crew-lead' };
   if (token) body.token = token;
   const r = await postJSON('/api/telegram/start', body);
   if (r && r.error) { showNotification(r.error, true); return; }
@@ -1017,9 +1266,9 @@ async function loadServices(){
         (uptime ? '<div style="font-size:11px;color:var(--text-3);">Up ' + uptime + '</div>' : '') +
         (svc.port ? '<div style="font-size:11px;color:var(--text-3);">Port ' + svc.port + '</div>' : '') +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-          (canRestart && up   ? '<button class="btn-ghost" style="font-size:12px;" onclick="restartService(\\'' + svc.id + '\\')">↻ Restart</button>' : '') +
-          (canRestart && !up  ? '<button class="btn-green" style="font-size:12px;" onclick="restartService(\\'' + svc.id + '\\')">▶ Start</button>' : '') +
-          (canRestart && up   ? '<button class="btn-red" style="font-size:12px;" onclick="stopService(\\'' + svc.id + '\\')">⏹ Stop</button>' : '') +
+          (canRestart && up   ? '<button class="btn-ghost" style="font-size:12px;" onclick="restartService(&quot;' + svc.id + '&quot;)">↻ Restart</button>' : '') +
+          (canRestart && !up  ? '<button class="btn-green" style="font-size:12px;" onclick="restartService(&quot;' + svc.id + '&quot;)">▶ Start</button>' : '') +
+          (canRestart && up   ? '<button class="btn-red" style="font-size:12px;" onclick="stopService(&quot;' + svc.id + '&quot;)">⏹ Stop</button>' : '') +
           (!canRestart        ? '<span style="font-size:11px;color:var(--text-3);align-self:center;">managed externally</span>' : '') +
         '</div>' +
       '</div>';
@@ -1074,7 +1323,7 @@ async function loadTgMessages(){
 }
 async function loadFiles(forceRefresh) {
   const el = document.getElementById('filesContent');
-  const dir = document.getElementById('filesDir').value.trim() || '${process.env.HOME}/Desktop/OpenClaw';
+  const dir = document.getElementById('filesDir').value.trim() || '${process.env.HOME}/Desktop/CrewSwarm';
   el.innerHTML = '<div class="meta" style="padding:20px;">Scanning ' + dir + '...</div>';
   try {
     const data = await getJSON('/api/files?dir=' + encodeURIComponent(dir));
@@ -1158,6 +1407,7 @@ function showProviders(){
   loadRTToken();
   loadOpenClawStatus();
   loadBuiltinProviders();
+  loadSearchTools();
   loadProviders();
 }
 
@@ -1171,6 +1421,65 @@ const BUILTIN_PROVIDERS = [
   { id:'xai',        label:'xAI (Grok)', icon:'𝕏',  url:'https://console.x.ai/',                 hint:'Grok models from xAI' },
   { id:'ollama',     label:'Ollama',     icon:'🏠', url:'https://ollama.com/download',            hint:'Local models — no API key needed, runs offline' },
 ];
+
+const SEARCH_TOOLS = [
+  { id:'parallel', label:'Parallel',    icon:'🔬', url:'https://platform.parallel.ai/signup', hint:'Deep research & web synthesis — used by crew-pm for project planning', envKey:'PARALLEL_API_KEY' },
+  { id:'brave',    label:'Brave Search', icon:'🦁', url:'https://api.search.brave.com/',       hint:'Fast web search (~700ms) — best for quick agent lookups',            envKey:'BRAVE_API_KEY'    },
+];
+
+async function loadSearchTools(){
+  const list = document.getElementById('searchToolsList');
+  let saved = {};
+  try { saved = (await getJSON('/api/search-tools')).keys || {}; } catch {}
+  list.innerHTML = SEARCH_TOOLS.map(p => {
+    const hasKey = !!saved[p.id];
+    const badge = hasKey
+      ? \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">set ✓</span>\`
+      : \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>\`;
+    return \`<div class="card" style="margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="this.parentElement.querySelector('.st-body').style.display=this.parentElement.querySelector('.st-body').style.display==='none'?'block':'none'">
+        <span style="font-size:18px;width:24px;text-align:center;">\${p.icon}</span>
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:13px;">\${p.label}</div>
+          <div style="font-size:11px;color:var(--text-2);">\${p.hint}</div>
+        </div>
+        \${badge}
+        <span style="color:var(--text-2);font-size:12px;">▾</span>
+      </div>
+      <div class="st-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div style="display:flex;gap:8px;">
+          <input id="st_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />
+          <button onclick="saveSearchTool('\${p.id}')" class="btn-purple">Save</button>
+          <button onclick="testSearchTool('\${p.id}')" class="btn-ghost">Test</button>
+          <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Get key ↗</a>
+        </div>
+        <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Saved as <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:4px;">\${p.envKey}</code> in environment</div>
+        <div id="st_status_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+      </div>
+    </div>\`;
+  }).join('');
+}
+
+async function saveSearchTool(toolId){
+  const inp = document.getElementById('st_' + toolId);
+  const key = inp?.value?.trim();
+  if (!key) { showNotification('Paste an API key first', 'error'); return; }
+  try {
+    await postJSON('/api/search-tools/save', { toolId, key });
+    showNotification('Key saved', 'success');
+    loadSearchTools();
+  } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
+}
+
+async function testSearchTool(toolId){
+  const statusEl = document.getElementById('st_status_' + toolId);
+  statusEl.textContent = 'Testing…';
+  try {
+    const r = await postJSON('/api/search-tools/test', { toolId });
+    statusEl.style.color = r.ok ? '#34d399' : '#f87171';
+    statusEl.textContent = r.ok ? '✓ ' + (r.message || 'Connected') : '✗ ' + (r.error || 'Failed');
+  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
+}
 
 async function loadBuiltinProviders(){
   const list = document.getElementById('builtinProvidersList');
@@ -1445,7 +1754,7 @@ function syncModelSelect(agentId){
   sel.value = match ? typed : '';
 }
 async function resetAgentSession(agentId){
-  if (!confirm('Reset context window for ' + agentId + '?\n\nThis clears the accumulated conversation history in OpenClaw. Shared memory files will be re-injected on the next task.')) return;
+  if (!confirm('Reset context window for ' + agentId + '?\\n\\nThis clears the accumulated conversation history in OpenClaw. Shared memory files will be re-injected on the next task.')) return;
   showNotification('Resetting ' + agentId + ' session...');
   try {
     await postJSON('/api/agents-config/reset-session', { agentId });
@@ -1797,6 +2106,7 @@ async function loadProjects(){
         +   '<button data-action="pm-toggle" data-id="' + id + '" class="' + (p.running ? 'btn-red' : 'btn-green') + '" style="font-size:13px;">' + (p.running ? '⏹ Stop PM Loop' : '▶ Start PM Loop') + '</button>'
         +   '<button data-action="open-build" data-id="' + id + '" class="btn-ghost" style="font-size:13px;">🔧 Build tab</button>'
         +   '<button data-action="edit-roadmap" data-id="' + id + '" class="btn-ghost" style="font-size:13px;" id="roadmap-btn-' + id + '">📋 Roadmap</button>'
+        +   '<button data-action="chat-project" data-id="' + id + '" data-name="' + escHtml(p.name) + '" class="btn-ghost" style="font-size:13px;">🧠 Chat</button>'
         +   retryBtn
         +   '<button data-action="delete" data-id="' + id + '" style="margin-left:auto;background:transparent;color:var(--text-3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;" title="Remove from dashboard (files stay on disk)">🗑 Delete</button>'
         + '</div>'
@@ -1842,6 +2152,15 @@ document.getElementById('projectsList').addEventListener('click', e => {
     case 'edit-roadmap': proj && openRoadmapEditor(id, proj.roadmapFile); break;
     case 'retry-failed': proj && retryFailed(proj.roadmapFile); break;
     case 'delete':       deleteProject(id); break;
+    case 'chat-project': {
+      const name = btn.dataset.name || id;
+      showChat();
+      // Pre-fill a project context message
+      const inp = document.getElementById('chatInput');
+      if (inp && !inp.value) inp.value = "Let's work on the " + name + " project.";
+      inp?.focus();
+      break;
+    }
     case 'add-item':     addRoadmapItem(id); break;
     case 'skip-next':    skipNextItem(id); break;
     case 'reset-failed': resetAllFailed(id); break;
@@ -2203,8 +2522,7 @@ document.getElementById('npCreateBtn').onclick = async () => {
     loadProjects();
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 };
-document.getElementById('sendBtn').onclick = sendMessage;
-document.getElementById('messageInput').onkeypress = e => { if (e.key === 'Enter') sendMessage(); };
+// sendBtn / messageInput removed (replaced by crew-lead chat)
 
 // ── PM Loop controls ──────────────────────────────────────────────────────
 let pmPoller = null;
@@ -2357,8 +2675,7 @@ document.getElementById('buildProjectPicker').addEventListener('change', () => {
   checkPmStatus();
 });
 const params = new URLSearchParams(window.location.search);
-if (params.get('to')) document.getElementById('agentSelect').value = params.get('to');
-if (params.get('focus') === '1') setTimeout(() => document.getElementById('messageInput').focus(), 500);
+if (params.get('focus') === '1') setTimeout(() => { const ci = document.getElementById('chatInput'); if (ci) { showChat(); ci.focus(); } }, 500);
 loadAgents();
 refreshAll();
 </script>
@@ -2369,8 +2686,21 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://localhost:${listenPort}`);
   try {
     if (url.pathname === "/") {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store, no-cache, must-revalidate",
+        pragma: "no-cache",
+      });
       res.end(html);
+      return;
+    }
+    if (url.pathname === "/crew-chat.html") {
+      const chatFile = path.join(OPENCLAW_DIR, "crew-chat.html");
+      try {
+        const chatHtml = fs.readFileSync(chatFile, "utf8");
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        res.end(chatHtml);
+      } catch { res.writeHead(404); res.end("Not found"); }
       return;
     }
     if (url.pathname === "/api/sessions") {
@@ -2814,15 +3144,24 @@ const server = http.createServer(async (req, res) => {
     };
     const csDir = path.join(os.homedir(), ".crewswarm");
     const csConfig = path.join(csDir, "config.json");
+    const ocConfig = path.join(os.homedir(), ".openclaw", "openclaw.json");
     function readCSConfig(){ try { return JSON.parse(fs.readFileSync(csConfig,"utf8")); } catch { return {}; } }
     function writeCSConfig(c){ fs.mkdirSync(csDir,{recursive:true}); fs.writeFileSync(csConfig,JSON.stringify(c,null,2)); }
+    function readOCConfig(){ try { return JSON.parse(fs.readFileSync(ocConfig,"utf8")); } catch { return null; } }
+    function writeOCConfig(c){ fs.writeFileSync(ocConfig,JSON.stringify(c,null,4)); }
+    function getBuiltinKey(id) {
+      const cs = readCSConfig();
+      const oc = readOCConfig();
+      return oc?.models?.providers?.[id]?.apiKey
+          || cs?.providers?.[id]?.apiKey
+          || cs?.env?.[id.toUpperCase()+"_API_KEY"]
+          || "";
+    }
 
     if (url.pathname === "/api/providers/builtin" && req.method === "GET") {
-      const cfg = readCSConfig();
       const keys = {};
       for (const id of Object.keys(BUILTIN_URLS)) {
-        const k = cfg?.providers?.[id]?.apiKey || cfg?.env?.[id.toUpperCase()+"_API_KEY"] || "";
-        keys[id] = k ? "SET" : "";
+        keys[id] = getBuiltinKey(id) ? "SET" : "";
       }
       res.writeHead(200,{"content-type":"application/json"});
       res.end(JSON.stringify({ ok:true, keys }));
@@ -2831,10 +3170,22 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/providers/builtin/save" && req.method === "POST") {
       let body=""; for await (const chunk of req) body+=chunk;
       const { providerId, apiKey } = JSON.parse(body);
+      // Write to ~/.crewswarm/config.json
       const cfg = readCSConfig();
       if (!cfg.providers) cfg.providers = {};
       cfg.providers[providerId] = { ...(cfg.providers[providerId]||{}), apiKey, baseUrl: BUILTIN_URLS[providerId] };
       writeCSConfig(cfg);
+      // Sync to ~/.openclaw/openclaw.json if it exists
+      const oc = readOCConfig();
+      if (oc) {
+        if (!oc.models) oc.models = {};
+        if (!oc.models.providers) oc.models.providers = {};
+        if (!oc.models.providers[providerId]) {
+          oc.models.providers[providerId] = { baseUrl: BUILTIN_URLS[providerId], api: "openai-completions", models: [] };
+        }
+        oc.models.providers[providerId].apiKey = apiKey;
+        writeOCConfig(oc);
+      }
       res.writeHead(200,{"content-type":"application/json"});
       res.end(JSON.stringify({ ok:true }));
       return;
@@ -2842,8 +3193,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/providers/builtin/test" && req.method === "POST") {
       let body=""; for await (const chunk of req) body+=chunk;
       const { providerId } = JSON.parse(body);
-      const cfg = readCSConfig();
-      const apiKey = cfg?.providers?.[providerId]?.apiKey || "";
+      const apiKey = getBuiltinKey(providerId);
       const baseUrl = BUILTIN_URLS[providerId] || "";
       if (providerId === "ollama") {
         try {
@@ -2856,19 +3206,132 @@ const server = http.createServer(async (req, res) => {
       }
       if (!apiKey) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ ok:false, error:"No API key saved" })); return; }
       try {
-        const r = await fetch(baseUrl + "/models", { headers:{ authorization:"Bearer "+apiKey }, signal: AbortSignal.timeout(8000) });
-        const d = await r.json();
-        const model = d?.data?.[0]?.id || (r.ok ? "connected" : null);
+        let r, d, model;
+        if (providerId === "anthropic") {
+          // Anthropic uses x-api-key + anthropic-version, and /v1/models
+          r = await fetch("https://api.anthropic.com/v1/models", {
+            headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+            signal: AbortSignal.timeout(8000)
+          });
+          d = await r.json();
+          model = d?.data?.[0]?.id || (r.ok ? "connected" : null);
+        } else {
+          r = await fetch(baseUrl + "/models", { headers:{ authorization:"Bearer "+apiKey }, signal: AbortSignal.timeout(8000) });
+          d = await r.json();
+          model = d?.data?.[0]?.id || (r.ok ? "connected" : null);
+        }
         res.writeHead(200,{"content-type":"application/json"});
         res.end(JSON.stringify({ ok: r.ok, model, error: r.ok ? undefined : (d?.error?.message||r.statusText) }));
       } catch(e) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ ok:false, error:e.message })); }
       return;
     }
     if (url.pathname === "/api/settings/openclaw-status" && req.method === "GET") {
-      const deviceJson = path.join(os.homedir(), ".openclaw", "device.json");
-      const installed = fs.existsSync(deviceJson);
+      const deviceJson = path.join(os.homedir(), ".openclaw", "devices", "paired.json");
+      const deviceJsonAlt = path.join(os.homedir(), ".openclaw", "device.json");
+      const installed = fs.existsSync(deviceJson) || fs.existsSync(deviceJsonAlt);
       res.writeHead(200,{"content-type":"application/json"});
       res.end(JSON.stringify({ ok:true, installed }));
+      return;
+    }
+    // ── crew-lead chat API ────────────────────────────────────────────────────
+    if (url.pathname === "/api/crew-lead/status" && req.method === "GET") {
+      try {
+        const { execSync: es } = await import("node:child_process");
+        const out = es("ps aux", { encoding: "utf8" });
+        const online = out.includes("crew-lead.mjs");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, online }));
+      } catch {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, online: false }));
+      }
+      return;
+    }
+    if (url.pathname === "/api/crew-lead/chat" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+      const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+        signal: AbortSignal.timeout(65000),
+      });
+      const clData = await clRes.json();
+      res.writeHead(clRes.status, { "content-type": "application/json" });
+      res.end(JSON.stringify(clData));
+      return;
+    }
+    if (url.pathname === "/api/crew-lead/clear" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+      const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/clear`, {
+        method: "POST", headers: { "content-type": "application/json" }, body,
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => null);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (url.pathname === "/api/crew-lead/events" && req.method === "GET") {
+      const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive", "access-control-allow-origin": "*" });
+      res.write("retry: 3000\n\n");
+      // Proxy SSE from crew-lead
+      const upstream = await fetch(`http://127.0.0.1:${crewLeadPort}/events`, { signal: req.socket.destroyed ? AbortSignal.abort() : undefined }).catch(() => null);
+      if (!upstream?.body) { res.end(); return; }
+      const reader = upstream.body.getReader();
+      req.on("close", () => reader.cancel());
+      (async () => { try { while (true) { const { done, value } = await reader.read(); if (done) break; res.write(value); } } catch {} finally { res.end(); } })();
+      return;
+    }
+    if (url.pathname === "/api/crew-lead/history" && req.method === "GET") {
+      const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+      const sessionId = url.searchParams.get("sessionId") || "owner";
+      const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/history?sessionId=${encodeURIComponent(sessionId)}`, {
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => null);
+      if (!clRes || !clRes.ok) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, history: [] })); return; }
+      const clData = await clRes.json();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(clData));
+      return;
+    }
+    if (url.pathname === "/api/crew-lead/confirm-project" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+      const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/confirm-project`, {
+        method: "POST", headers: { "content-type": "application/json" }, body,
+        signal: AbortSignal.timeout(15000),
+      });
+      const clData = await clRes.json();
+      res.writeHead(clRes.status, { "content-type": "application/json" });
+      res.end(JSON.stringify(clData));
+      return;
+    }
+    if (url.pathname === "/api/crew-lead/discard-project" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+      await fetch(`http://127.0.0.1:${crewLeadPort}/discard-project`, {
+        method: "POST", headers: { "content-type": "application/json" }, body,
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => null);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    // ── Folder picker (native macOS) ──────────────────────────────────────
+    if (url.pathname === "/api/pick-folder" && req.method === "GET") {
+      const { execSync: es } = await import("node:child_process");
+      const defaultPath = url.searchParams.get("default") || os.homedir();
+      try {
+        const script = `tell application "Finder" to set f to (choose folder with prompt "Select project folder:" default location POSIX file "${defaultPath}") \nreturn POSIX path of f`;
+        const chosen = es(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { encoding: "utf8", timeout: 30000 }).trim();
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, path: chosen }));
+      } catch {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, path: "" }));
+      }
       return;
     }
     // ── Providers API ─────────────────────────────────────────────────────
@@ -2898,6 +3361,14 @@ const server = http.createServer(async (req, res) => {
       if (!cfg.models?.providers?.[providerId]) throw new Error("Provider not found: " + providerId);
       cfg.models.providers[providerId].apiKey = apiKey;
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+      // Sync to ~/.crewswarm/config.json
+      try {
+        const cs = readCSConfig();
+        if (!cs.providers) cs.providers = {};
+        const baseUrl = cfg.models.providers[providerId].baseUrl || BUILTIN_URLS[providerId] || "";
+        cs.providers[providerId] = { ...(cs.providers[providerId]||{}), apiKey, baseUrl };
+        writeCSConfig(cs);
+      } catch {}
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -2928,11 +3399,30 @@ const server = http.createServer(async (req, res) => {
       const key = provider.apiKey;
       if (!key) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "No API key set" })); return; }
       const baseUrl = (provider.baseUrl || "").replace(/\/$/, "");
+      const isSlowProvider = providerId === "nvidia" || (provider.baseUrl || "").includes("nvidia.com");
+      const isFetchAnthropic = providerId === "anthropic" || baseUrl.includes("anthropic.com");
+      const fetchHeaders = isFetchAnthropic
+        ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
+        : { authorization: `Bearer ${key}`, "content-type": "application/json" };
       try {
         const modelsRes = await fetch(`${baseUrl}/models`, {
-          headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-          signal: AbortSignal.timeout(12000),
+          headers: fetchHeaders,
+          signal: AbortSignal.timeout(isSlowProvider ? 30000 : 12000),
         });
+        if (modelsRes.status === 404) {
+          // Provider has no /models endpoint — keep existing model list
+          const existing = provider.models || [];
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, models: existing.map(m => m.id || m), count: existing.length, note: "Provider has no /models endpoint; existing list kept." }));
+          return;
+        }
+        if (modelsRes.status === 429) {
+          // Rate limited — keep existing model list, don't overwrite
+          const existing = provider.models || [];
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, models: existing.map(m => m.id || m), count: existing.length, note: "Rate limited (429); existing model list kept." }));
+          return;
+        }
         if (!modelsRes.ok) {
           const txt = await modelsRes.text().catch(() => modelsRes.statusText);
           res.writeHead(200, { "content-type": "application/json" });
@@ -2966,22 +3456,126 @@ const server = http.createServer(async (req, res) => {
       const key = provider.apiKey;
       if (!key) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "No API key set" })); return; }
       const baseUrl = provider.baseUrl.replace(/\/$/, "");
-      const firstModel = provider.models?.[0]?.id || "gpt-4o-mini";
+      const isAnthropic = providerId === "anthropic" || baseUrl.includes("anthropic.com");
+      const isNvidia   = providerId === "nvidia"    || baseUrl.includes("nvidia.com");
+      const isGoogle   = providerId === "google"    || baseUrl.includes("googleapis.com");
+      const defaultModel = isAnthropic ? "claude-3-haiku-20240307"
+                         : isGoogle    ? "gemini-1.5-flash"
+                         : "gpt-4o-mini";
+      const firstModel = provider.models?.[0]?.id || defaultModel;
       try {
-        const testRes = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-          body: JSON.stringify({ model: firstModel, messages: [{ role: "user", content: "hi" }], max_tokens: 1 }),
-          signal: AbortSignal.timeout(10000),
-        });
-        if (testRes.ok || testRes.status === 400) {
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ ok: true, model: firstModel, status: testRes.status }));
+        let testRes, ok, model, errText;
+        if (isAnthropic) {
+          // Anthropic: validate key via /models list (no inference needed)
+          testRes = await fetch(`${baseUrl}/models`, {
+            headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+            signal: AbortSignal.timeout(10000),
+          });
+          const d = await testRes.json().catch(() => ({}));
+          ok = testRes.ok;
+          model = d?.data?.[0]?.id || (ok ? "connected" : null);
+          errText = d?.error?.message || testRes.statusText;
+        } else if (isNvidia) {
+          // NVIDIA: validate key via /models list — inference cold-start is too slow
+          testRes = await fetch(`${baseUrl}/models`, {
+            headers: { authorization: `Bearer ${key}` },
+            signal: AbortSignal.timeout(30000),
+          });
+          const d = await testRes.json().catch(() => ({}));
+          ok = testRes.ok;
+          model = d?.data?.[0]?.id || (ok ? "connected" : null);
+          errText = d?.error?.message || testRes.statusText;
+        } else if (isGoogle) {
+          // Google: validate key via native /models list (avoids model name guessing)
+          const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+          testRes = await fetch(listUrl, { signal: AbortSignal.timeout(10000) });
+          const gd = await testRes.json().catch(() => ({}));
+          ok = testRes.ok && !!gd.models;
+          const chatModels = (gd.models || []).filter(m => m.name && m.supportedGenerationMethods?.includes("generateContent"));
+          model = chatModels[0]?.name?.replace("models/","") || (ok ? "connected" : null);
+          errText = gd.error?.message || testRes.statusText;
         } else {
-          const errText = await testRes.text().catch(() => testRes.statusText);
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: `${testRes.status}: ${errText.slice(0, 120)}` }));
+          testRes = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+            body: JSON.stringify({ model: firstModel, messages: [{ role: "user", content: "hi" }], max_tokens: 1 }),
+            signal: AbortSignal.timeout(15000),
+          });
+          ok = testRes.ok || testRes.status === 400;
+          model = firstModel;
+          errText = ok ? undefined : await testRes.text().catch(() => testRes.statusText);
         }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok, model, error: ok ? undefined : errText?.slice(0, 120) }));
+      } catch(e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+    // ── Search Tools API ────────────────────────────────────────────────────
+    if (url.pathname === "/api/search-tools" && req.method === "GET") {
+      const toolsCfg = path.join(CFG_DIR, "search-tools.json");
+      const saved = JSON.parse(await fs.promises.readFile(toolsCfg, "utf8").catch(() => "{}"));
+      const keys = {};
+      if (saved.parallel?.apiKey) keys.parallel = true;
+      if (saved.brave?.apiKey)    keys.brave    = true;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ keys }));
+      return;
+    }
+    if (url.pathname === "/api/search-tools/save" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { toolId, key } = JSON.parse(body);
+      const toolsCfg = path.join(CFG_DIR, "search-tools.json");
+      const saved = JSON.parse(await fs.promises.readFile(toolsCfg, "utf8").catch(() => "{}"));
+      saved[toolId] = { apiKey: key };
+      await fs.promises.writeFile(toolsCfg, JSON.stringify(saved, null, 2));
+      // Also persist to ~/.zshrc so agents and shells pick it up
+      const envKey = toolId === "parallel" ? "PARALLEL_API_KEY" : toolId === "brave" ? "BRAVE_API_KEY" : null;
+      if (envKey) {
+        const zshrc = path.join(os.homedir(), ".zshrc");
+        let content = await fs.promises.readFile(zshrc, "utf8").catch(() => "");
+        const line = `export ${envKey}="${key}"`;
+        const regex = new RegExp(`^export ${envKey}=.*$`, "m");
+        content = regex.test(content) ? content.replace(regex, line) : content + `\n${line}\n`;
+        await fs.promises.writeFile(zshrc, content);
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (url.pathname === "/api/search-tools/test" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { toolId } = JSON.parse(body);
+      const toolsCfg = path.join(CFG_DIR, "search-tools.json");
+      const saved = JSON.parse(await fs.promises.readFile(toolsCfg, "utf8").catch(() => "{}"));
+      const key = saved[toolId]?.apiKey || process.env[toolId === "parallel" ? "PARALLEL_API_KEY" : "BRAVE_API_KEY"];
+      if (!key) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ok:false,error:"No key saved"})); return; }
+      try {
+        let ok, message, error;
+        if (toolId === "parallel") {
+          // Validate via chat completions — lightest endpoint
+          const r = await fetch("https://api.parallel.ai/chat/completions", {
+            method: "POST",
+            headers: { "content-type": "application/json", "authorization": `Bearer ${key}` },
+            body: JSON.stringify({ model: "speed", messages: [{ role: "user", content: "hi" }], stream: false }),
+            signal: AbortSignal.timeout(15000),
+          });
+          ok = r.ok || r.status === 400;
+          message = ok ? "Connected — parallel.ai ready" : null;
+          error = ok ? undefined : `${r.status} ${r.statusText}`;
+        } else if (toolId === "brave") {
+          const r = await fetch("https://api.search.brave.com/res/v1/web/search?q=test&count=1", {
+            headers: { "Accept": "application/json", "X-Subscription-Token": key },
+            signal: AbortSignal.timeout(10000),
+          });
+          ok = r.ok;
+          message = ok ? "Connected — Brave Search ready" : null;
+          error = ok ? undefined : `${r.status} ${r.statusText}`;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok, message, error }));
       } catch(e) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -3394,12 +3988,22 @@ const server = http.createServer(async (req, res) => {
         try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || ""; } catch { return ""; }
       })();
 
+      const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
       const tgPid     = pidRunning(path.join(os.homedir(), ".openclaw", "logs", "telegram-bridge.pid"));
-      const agentCount = countProcs("gateway-bridge.mjs --rt-daemon");
       const rtUp      = await portListening(18889);
+      const crewLeadUp = await portListening(crewLeadPort);
       const gwUp      = await portListening(18789);
       const ocUp      = await portListening(4096);
       const dashUp    = await portListening(listenPort);
+
+      // Use openswitchctl list to get real agent count from RT bus
+      let agentsOnline = 0, agentsTotal = 0;
+      try {
+        const ctlPath = path.join(os.homedir(), "bin", "openswitchctl");
+        const listOut = execSync(`"${ctlPath}" list`, { encoding: "utf8", timeout: 5000 });
+        const m = listOut.match(/agents:(\d+)\/(\d+)/);
+        if (m) { agentsOnline = parseInt(m[1]); agentsTotal = parseInt(m[2]); }
+      } catch {}
 
       const services = [
         {
@@ -3414,9 +4018,18 @@ const server = http.createServer(async (req, res) => {
         {
           id: "agents",
           label: "Agent Crew",
-          description: `${agentCount} gateway-bridge daemons running`,
+          description: agentsTotal > 0 ? `${agentsOnline}/${agentsTotal} agents online` : "0 agents connected",
           port: null,
-          running: agentCount > 0,
+          running: agentsOnline > 0,
+          canRestart: true,
+          pid: null,
+        },
+        {
+          id: "crew-lead",
+          label: "crew-lead",
+          description: "Chat commander — dashboard chat, CrewChat, Telegram",
+          port: crewLeadPort,
+          running: crewLeadUp,
           canRestart: true,
           pid: null,
         },
@@ -3471,7 +4084,7 @@ const server = http.createServer(async (req, res) => {
       const RT_TOKEN = (() => {
         try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || ""; } catch { return ""; }
       })();
-      const CREW_AGENTS = "main,admin,build,coder,researcher,architect,reviewer,qa,fixer,pm,orchestrator,openclaw,openclaw-main,opencode-pm,opencode-qa,opencode-fixer,opencode-coder,opencode-coder-2,security,crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter,crew-telegram";
+      const CREW_AGENTS = "main,admin,build,coder,researcher,architect,reviewer,qa,fixer,pm,orchestrator,openclaw,openclaw-main,opencode-pm,opencode-qa,opencode-fixer,opencode-coder,opencode-coder-2,security,crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter,crew-telegram,crew-lead";
 
       if (id === "rt-bus") {
         try { execSync(`pkill -f "opencrew-rt-daemon"`, { stdio: "ignore" }); } catch {}
@@ -3501,6 +4114,12 @@ const server = http.createServer(async (req, res) => {
             detached: true, stdio: "ignore",
           }).unref();
         }
+      } else if (id === "crew-lead") {
+        try { execSync(`pkill -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
+        await new Promise(r => setTimeout(r, 800));
+        spawnProc("node", [path.join(OPENCLAW_DIR, "crew-lead.mjs")], {
+          cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
+        }).unref();
       }
 
       res.writeHead(200, { "content-type": "application/json" });
@@ -3520,6 +4139,8 @@ const server = http.createServer(async (req, res) => {
           const pid = parseInt(fs.readFileSync(path.join(os.homedir(), ".openclaw", "logs", "telegram-bridge.pid"), "utf8").trim(), 10);
           if (pid) process.kill(pid, "SIGTERM");
         } catch {}
+      } else if (id === "crew-lead") {
+        try { execSync(`pkill -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
       } else if (id === "rt-bus") {
         try { execSync(`pkill -f "opencrew-rt-daemon"`, { stdio: "ignore" }); } catch {}
       } else if (id === "openclaw-gateway") {
@@ -3554,11 +4175,16 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404, { "content-type": "text/plain" });
     res.end("not found");
   } catch (err) {
-    res.writeHead(500, { "content-type": "text/plain" });
-    res.end(String(err?.message || err));
+    if (!res.headersSent) {
+      res.writeHead(500, { "content-type": "text/plain" });
+      res.end(String(err?.message || err));
+    }
   }
 });
 
 server.listen(listenPort, "127.0.0.1", () => {
   console.log(`CrewSwarm Dashboard (with Build) at http://127.0.0.1:${listenPort}`);
 });
+
+process.on("uncaughtException",      (e) => console.error("[dashboard] uncaughtException:", e.message));
+process.on("unhandledRejection",     (e) => console.error("[dashboard] unhandledRejection:", e?.message || e));
