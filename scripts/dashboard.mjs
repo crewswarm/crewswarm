@@ -540,12 +540,30 @@ const html = `<!doctype html>
     <!-- Providers -->
     <div class="view" id="providersView">
       <div class="page-header">
-        <div><div class="page-title">Providers &amp; API Keys</div><div class="page-sub">Manages <code style="font-size:11px; color:var(--text-2);">${CFG_DIR}/openclaw.json</code> — click any provider to edit its key</div></div>
+        <div><div class="page-title">Providers &amp; API Keys</div><div class="page-sub">Keys saved to <code style="font-size:11px; color:var(--text-2);">~/.crewswarm/config.json</code></div></div>
         <div style="display:flex; gap:8px;">
           <button id="addProviderBtn" class="btn-purple">+ Add Provider</button>
           <button id="refreshProvidersBtn" class="btn-ghost">↻ Refresh</button>
         </div>
       </div>
+
+      <!-- RT Bus auth token -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-size:18px;">⚡</span>
+          <div>
+            <div style="font-weight:600; font-size:14px;">RT Bus Auth Token</div>
+            <div style="font-size:12px; color:var(--text-2);">Required — matches the token used to start <code>opencrew-rt-daemon.mjs</code> (env: <code>OPENCREW_RT_AUTH_TOKEN</code>)</div>
+          </div>
+          <span id="rtTokenBadge" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">not set</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <input id="rtTokenInput" type="password" placeholder="Paste your OPENCREW_RT_AUTH_TOKEN here" style="flex:1;" />
+          <button onclick="saveRTToken()" class="btn-purple">Save</button>
+          <button onclick="document.getElementById('rtTokenInput').type = document.getElementById('rtTokenInput').type === 'password' ? 'text' : 'password'" class="btn-ghost" title="Show/hide">👁</button>
+        </div>
+      </div>
+
       <div id="addProviderForm" style="display:none;" class="card">
         <h3>Add Custom Provider</h3>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
@@ -1120,6 +1138,36 @@ function showProviders(){
   document.getElementById('providersView').classList.add('active');
   setNavActive('navProviders');
   loadProviders();
+  loadRTToken();
+}
+async function loadRTToken(){
+  try {
+    const d = await getJSON('/api/settings/rt-token');
+    const badge = document.getElementById('rtTokenBadge');
+    const inp   = document.getElementById('rtTokenInput');
+    if (d.token) {
+      badge.textContent = 'set ✓';
+      badge.style.background = 'rgba(52,211,153,0.15)';
+      badge.style.color = '#34d399';
+      badge.style.borderColor = 'rgba(52,211,153,0.3)';
+      inp.placeholder = '••••••••••••••••••••••• (saved)';
+    } else {
+      badge.textContent = 'not set';
+      badge.style.background = 'rgba(251,191,36,0.15)';
+      badge.style.color = '#fbbf24';
+      badge.style.borderColor = 'rgba(251,191,36,0.3)';
+    }
+  } catch {}
+}
+async function saveRTToken(){
+  const token = document.getElementById('rtTokenInput').value.trim();
+  if (!token) { showNotification('Paste a token first', 'error'); return; }
+  try {
+    await postJSON('/api/settings/rt-token', { token });
+    showNotification('RT Bus token saved');
+    document.getElementById('rtTokenInput').value = '';
+    loadRTToken();
+  } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
 }
 function showAgents(){
   hideAllViews();
@@ -2620,6 +2668,31 @@ const server = http.createServer(async (req, res) => {
       if (!key) throw new Error("missing key");
       const { execSync } = await import("node:child_process");
       execSync(`"${ctlPath}" dlq-replay "${key}"`, { encoding: "utf8", timeout: 10000 });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    // ── Settings: RT Bus token ─────────────────────────────────────────────
+    if (url.pathname === "/api/settings/rt-token" && req.method === "GET") {
+      const csConfigPath = path.join(os.homedir(), ".crewswarm", "config.json");
+      let token = "";
+      try { token = JSON.parse(fs.readFileSync(csConfigPath, "utf8"))?.rt?.authToken || ""; } catch {}
+      if (!token) token = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ token: token ? "SET" : "" }));
+      return;
+    }
+    if (url.pathname === "/api/settings/rt-token" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const { token } = JSON.parse(body);
+      const csDir = path.join(os.homedir(), ".crewswarm");
+      const csConfigPath = path.join(csDir, "config.json");
+      fs.mkdirSync(csDir, { recursive: true });
+      let cfg = {};
+      try { cfg = JSON.parse(fs.readFileSync(csConfigPath, "utf8")); } catch {}
+      cfg.rt = { ...(cfg.rt || {}), authToken: token };
+      fs.writeFileSync(csConfigPath, JSON.stringify(cfg, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
