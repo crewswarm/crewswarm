@@ -89,7 +89,7 @@ async function runOrchestrator(task, options = {}) {
   
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [ORCHESTRATOR, task], {
-      cwd: OPENCLAW_DIR,
+      cwd: CREWSWARM_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: process.env,
     });
