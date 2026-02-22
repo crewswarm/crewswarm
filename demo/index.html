@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw Swarm + GPT 5 Codex</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --surface-dark: #040507;
+            --glass-base: rgba(18, 22, 28, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --highlight: rgba(135, 92, 255, 0.75);
+            --accent: #8cecfd;
+            --text-primary: #f5f7ff;
+            --text-secondary: rgba(231, 237, 255, 0.7);
+            --shadow: 0 18px 45px rgba(0, 0, 0, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--surface-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 1.5rem;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -20% -20% 0 -20%;
+            background:
+                radial-gradient(35% 45% at 18% 22%, rgba(120, 82, 255, 0.6), transparent 70%),
+                radial-gradient(40% 52% at 82% 18%, rgba(76, 238, 255, 0.45), transparent 68%),
+                radial-gradient(50% 60% at 60% 70%, rgba(255, 96, 187, 0.4), transparent 70%),
+                linear-gradient(135deg, rgba(10, 12, 27, 0.7), rgba(5, 7, 19, 0.9));
+            filter: blur(28px);
+            z-index: -2;
+        }
+
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(4, 5, 8, 0.75), transparent 60%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        main {
+            width: 100%;
+            max-width: 1080px;
+            padding: 6.5rem 0 5rem;
+        }
+
+        header.hero {
+            text-align: center;
+            margin-bottom: 4rem;
+            position: relative;
+        }
+
+        header.hero::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 420px;
+            height: 420px;
+            background: radial-gradient(circle at center, rgba(140, 236, 253, 0.25), transparent 70%);
+            transform: translate(-50%, -50%);
+            filter: blur(40px);
+            z-index: -1;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 1rem;
+            border-radius: 999px;
+            background: rgba(143, 90, 255, 0.2);
+            color: var(--accent);
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-size: 0.78rem;
+        }
+
+        h1 {
+            font-size: clamp(2.6rem, 5vw, 4.5rem);
+            margin: 1.2rem 0 1.3rem;
+            line-height: 1.05;
+            background: linear-gradient(120deg, #f5f7ff 0%, #9ae8ff 50%, #d4b0ff 100%);
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+
+        .hero-copy {
+            max-width: 620px;
+            margin: 0 auto;
+            font-size: clamp(1rem, 2.2vw, 1.25rem);
+            color: var(--text-secondary);
+        }
+
+        .cta-group {
+            margin-top: 2.5rem;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem;
+        }
+
+        .cta-group a {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.85rem 1.7rem;
+            border-radius: 999px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.98rem;
+            transition: transform 250ms ease, box-shadow 250ms ease, background 250ms ease;
+        }
+
+        .cta-primary {
+            background: linear-gradient(135deg, rgba(142, 236, 253, 0.8), rgba(141, 90, 255, 0.85));
+            color: #040507;
+            box-shadow: 0 15px 35px rgba(138, 226, 255, 0.28);
+        }
+
+        .cta-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 45px rgba(138, 226, 255, 0.35);
+        }
+
+        .cta-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .cta-secondary:hover {
+            transform: translateY(-3px);
+            background: rgba(255, 255, 255, 0.14);
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.8rem;
+        }
+
+        .feature-card {
+            position: relative;
+            padding: 2.2rem 2rem;
+            border-radius: 22px;
+            background: var(--glass-base);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(18px);
+            box-shadow: var(--shadow);
+            transition: transform 250ms ease, border-color 250ms ease, box-shadow 250ms ease;
+            overflow: hidden;
+        }
+
+        .feature-card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(145deg, rgba(142, 236, 253, 0.08), transparent 70%);
+            opacity: 0;
+            transition: opacity 250ms ease;
+            pointer-events: none;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(142, 236, 253, 0.4);
+            box-shadow: 0 20px 55px rgba(15, 22, 35, 0.55);
+        }
+
+        .feature-card:hover::after {
+            opacity: 1;
+        }
+
+        .icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            display: grid;
+            place-items: center;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, rgba(142, 236, 253, 0.2), rgba(141, 90, 255, 0.32));
+            border: 1px solid rgba(255, 255, 255, 0.14);
+        }
+
+        .icon svg {
+            width: 28px;
+            height: 28px;
+            fill: none;
+            stroke: var(--accent);
+            stroke-width: 1.6;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .feature-card h3 {
+            margin: 0 0 0.8rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .feature-card p {
+            margin: 0;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            font-size: 0.98rem;
+        }
+
+        .orbital {
+            position: absolute;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(140, 236, 253, 0.45), rgba(141, 90, 255, 0.05));
+            filter: blur(2px);
+            animation: drift 14s ease-in-out infinite;
+            opacity: 0.8;
+        }
+
+        .orbital.one {
+            width: 160px;
+            height: 160px;
+            top: -40px;
+            left: -50px;
+            animation-delay: -2s;
+        }
+
+        .orbital.two {
+            width: 130px;
+            height: 130px;
+            bottom: -35px;
+            right: -35px;
+            animation-delay: -6s;
+        }
+
+        @keyframes drift {
+            0%, 100% {
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+            50% {
+                transform: translate3d(12px, 16px, 0) scale(1.05);
+            }
+        }
+
+        @media (max-width: 768px) {
+            main {
+                padding: 5rem 0 4rem;
+            }
+
+            header.hero {
+                margin-bottom: 3.5rem;
+            }
+
+            .feature-card {
+                padding: 1.9rem 1.7rem;
+            }
+        }
+
+        @media (max-width: 520px) {
+            body {
+                padding: 0 1rem;
+            }
+
+            .cta-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .cta-group a {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <header class="hero">
+            <span class="eyebrow">Swarm Intelligence</span>
+            <h1>OpenClaw Swarm + GPT 5 Codex</h1>
+            <p class="hero-copy">Orchestrate autonomous code agents with the precision of a swarm and the intuition of GPT 5 Codex. Build faster, adapt instantly, and deploy with confidence.</p>
+            <div class="cta-group">
+                <a class="cta-primary" href="#">Launch the Swarm</a>
+                <a class="cta-secondary" href="#">View Live Demo</a>
+            </div>
+        </header>
+
+        <section class="features">
+            <article class="feature-card">
+                <div class="orbital one"></div>
+                <div class="icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 3v18" />
+                        <path d="M5 7h14" />
+                        <path d="M7 12h10" />
+                        <path d="M9 17h6" />
+                    </svg>
+                </div>
+                <h3>Composable Intelligence</h3>
+                <p>Chain autonomous specialists into a single swarm that adapts to every repo, framework, and constraint in real time.</p>
+            </article>
+
+            <article class="feature-card">
+                <div class="orbital two"></div>
+                <div class="icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 3l8.5 4.75v8.5L12 21l-8.5-4.75v-8.5L12 3z" />
+                        <path d="M12 7.5l4.5 2.5-4.5 2.5-4.5-2.5 4.5-2.5z" />
+                    </svg>
+                </div>
+                <h3>Zero-Drag Collaboration</h3>
+                <p>Collaborate with a transparent control plane, rich diffs, and human-in-the-loop reviews that respect your workflow.</p>
+            </article>
+
+            <article class="feature-card">
+                <div class="icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 7.5A4.5 4.5 0 0 1 8.5 3h7A4.5 4.5 0 0 1 20 7.5v9A4.5 4.5 0 0 1 15.5 21h-7A4.5 4.5 0 0 1 4 16.5v-9z" />
+                        <path d="M8.5 9.5h7" />
+                        <path d="M8.5 14.5h3.5" />
+                    </svg>
+                </div>
+                <h3>Actionable Insights</h3>
+                <p>Surface telemetry, benchmarks, and guided refactors without the noise. Every insight ties back to code you can ship today.</p>
+            </article>
+        </section>
+    </main>
+</body>
+</html>

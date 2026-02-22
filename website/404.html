@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404 — Page Not Found | OpenCrewHQ</title>
+  <meta name="description" content="Page not found. Head back to OpenCrewHQ." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav>
+    <a class="nav-logo" href="index.html">OpenCrewHQ</a>
+    <ul class="nav-links">
+      <li><a href="index.html#how-it-works">How it works</a></li>
+      <li><a href="index.html#features">Features</a></li>
+      <li><a href="index.html#agents">Agents</a></li>
+      <li><a href="index.html#use-cases">Use cases</a></li>
+      <li><a href="index.html#orchestration">Modes</a></li>
+      <li><a href="index.html#dashboard">Dashboard</a></li>
+    </ul>
+    <a href="index.html#get-started" class="btn btn-sm">Get started →</a>
+    <button class="theme-toggle" onclick="document.documentElement.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');">Toggle Theme</button>
+  </nav>
+
+  <section class="section" style="min-height: 70vh; display: flex; align-items: center; justify-content: center;">
+    <div class="container">
+      <div class="error-content" style="text-align: center; max-width: 600px; margin: 0 auto;">
+        <div class="error-code" style="font-size: 8rem; font-weight: 700; color: var(--accent, #6366f1); line-height: 1; margin-bottom: 1rem;">404</div>
+        <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Task not found.</h1>
+        <p style="font-size: 1.125rem; color: var(--text-muted, #8b949e); margin-bottom: 2rem;">
+          Looks like this page wandered off the roadmap. Even the best crews miss a dispatch sometimes.
+          Let's get you back on track.
+        </p>
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+          <a href="index.html" class="btn btn-primary">Return to base →</a>
+          <a href="index.html#get-started" class="btn btn-ghost">Get started</a>
+        </div>
+        <div style="margin-top: 3rem; padding: 1.5rem; background: var(--code-bg, #161b22); border-radius: 8px; text-align: left; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.875rem;">
+          <div style="color: var(--text-muted, #8b949e); margin-bottom: 0.5rem;">// Maybe you were looking for:</div>
+          <div><span style="color: var(--accent, #6366f1);">→</span> <a href="index.html#features" style="color: var(--link, #58a6ff);">Features</a></div>
+          <div><span style="color: var(--accent, #6366f1);">→</span> <a href="index.html#agents" style="color: var(--link, #58a6ff);">The crew</a></div>
+          <div><span style="color: var(--accent, #6366f1);">→</span> <a href="http://localhost:4319" style="color: var(--link, #58a6ff);">Dashboard</a></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">OpenCrewHQ</div>
+        <p>Multi-agent orchestration for OpenClaw.<br/>Built on OpenCrew RT + OpenClaw Gateway.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html#how-it-works">How it works</a>
+          <a href="index.html#features">Features</a>
+          <a href="index.html#agents">Agents</a>
+          <a href="index.html#use-cases">Use cases</a>
+          <a href="index.html#orchestration">Modes</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Dashboard</div>
+          <a href="http://localhost:4319">Open Dashboard</a>
+          <a href="http://localhost:4319#build">Build tab</a>
+          <a href="http://localhost:4319#dlq">DLQ</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025 OpenCrewHQ</span>
+      <span>MIT License</span>
+    </div>
+  </footer>
+</body>
+</html>

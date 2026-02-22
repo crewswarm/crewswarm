@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Runtime logs & state
+orchestrator-logs/
+*.log
+logs/
+*.pid
+*.stop
+
+# Memory runtime state (keep schema/docs, exclude live state)
+memory/session-log.md
+memory/session-log.md.backup-*
+memory/current-state.md
+memory/agent-handoff.md
+memory/telegram-context.md
+
+# Local backups & temp build output
+backups/
+website-backup-*/
+newfeature/
+~/
+test-output/
+
+# Secrets
+.env
+.env.local
+*.pem
+openclaw.json
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

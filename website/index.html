@@ -1,0 +1,1857 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CrewSwarm — Multi-Agent Dev Orchestration</title>
+  <meta name="description" content="One requirement, one build, one crew. PM-led multi-agent orchestration. Bring your own LLM — API key or fully local via Ollama." />
+  <meta property="og:title" content="CrewSwarm — Multi-Agent Dev Orchestration" />
+  <meta property="og:description" content="One requirement. One build. One crew. PM-led multi-agent orchestration. Bring your own LLM — API key or fully local." />
+  <meta property="og:url" content="https://crewswarm.ai" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="CrewSwarm — Multi-Agent Dev Orchestration" />
+  <meta name="twitter:description" content="One requirement. One build. One crew. Bring your own LLM — API key or fully local via Ollama." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="favicon.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <style id="hero-styles">
+    #hero.hero > * { position: relative; z-index: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <a class="nav-logo" href="#" aria-label="CrewSwarm home">Crew<span class="nav-logo-hq">Swarm</span></a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="#how-it-works" role="menuitem" class="nav-link-item">How it works</a></li>
+      <li role="none"><a href="#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="#agents" role="menuitem" class="nav-link-item">Agents</a></li>
+      <li role="none"><a href="#get-started" role="menuitem" class="nav-link-item">Docs</a></li>
+      <li role="none" class="nav-mobile-cta"><a href="#get-started" class="btn btn-sm">Get started →</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="#get-started" class="btn btn-sm nav-desktop-cta">Get started →</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+
+  <!-- HERO -->
+  <section id="hero" class="hero">
+    <div class="hero-glow"></div>
+    <img src="mascot.png" alt="CrewSwarm mascot" class="hero-mascot" />
+    <div class="hero-badge">Now with PM-led phased builds</div>
+    <h1>One requirement.<br/>One build.<br/><span class="gradient-text">One crew.</span></h1>
+    <p class="hero-sub">Describe what you need — a PM agent plans it, specialized agents build it, with real tools, shared memory, and automatic fault recovery. Bring your own API key or run fully local with Ollama. No middleware required.</p>
+    <div class="hero-cta">
+      <a href="#get-started" class="btn btn-primary">Get started free</a>
+      <a href="#how-it-works" class="btn btn-ghost">See how it works</a>
+    </div>
+    <div class="hero-terminal">
+      <div class="terminal-bar">
+        <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+        <span class="terminal-title">pm-loop — CrewSwarm</span>
+        <div class="terminal-bar-actions">
+          <button class="lt-restart-btn" onclick="restartHeroTerminal()" aria-label="Replay build animation" title="Replay">↻</button>
+          <button class="lt-skip-btn" onclick="skipHeroTerminal()" aria-label="Skip to end" title="Skip to end">⏭</button>
+        </div>
+      </div>
+      <div class="hero-terminal-input-row">
+        <span class="lt-prompt">$</span>
+        <input id="hero-input" class="hero-terminal-input" placeholder='node pm-loop.mjs "your requirement here"' spellcheck="false" autocomplete="off" />
+        <button class="hero-run-btn" onclick="runCustomHeroTerminal()" aria-label="Run">▶ Run</button>
+      </div>
+      <div class="live-terminal-body" id="hero-terminal-content"></div>
+    </div>
+    <script>
+      const AGENTS = ['crew-pm','crew-coder-back','crew-coder-front','crew-qa','crew-fixer','crew-github'];
+      const PHASES = ['MVP','Phase 1','Phase 2'];
+
+      function makeLines(requirement) {
+        const req = requirement || 'Build a todo API with tests';
+        return [
+          { text: '<span class="lt-dim">▸ Sonar Pro researching best practices...</span>', delay: 900 },
+          { text: '<span class="lt-dim">▸ ROADMAP.md — 6 tasks queued</span>', delay: 700 },
+          { text: '', delay: 300 },
+          { text: '<span class="lt-phase-tag">MVP</span><span class="lt-agent">crew-pm</span> → planning tasks...', delay: 800 },
+          { text: '<span class="lt-phase-tag">MVP</span><span class="lt-agent">crew-coder-back</span> <span class="lt-task">server.js — Express, /health, CRUD routes</span> <span class="lt-time">11.4s</span>', delay: 1600 },
+          { text: '<span class="lt-phase-tag">MVP</span><span class="lt-agent">crew-qa</span> <span class="lt-task">PASS — endpoints valid, no lint errors</span> <span class="lt-time">6.2s</span>', delay: 1000 },
+          { text: '', delay: 300 },
+          { text: '<span class="lt-phase-tag">Phase 1</span><span class="lt-agent">crew-coder-back</span> <span class="lt-task">server.test.js — 14 tests, all CRUD paths</span> <span class="lt-time">18.7s</span>', delay: 1800 },
+          { text: '<span class="lt-phase-tag">Phase 1</span><span class="lt-agent">crew-qa</span> <span class="lt-task">PASS — 14/14 tests green</span> <span class="lt-time">8.1s</span>', delay: 1100 },
+          { text: '', delay: 400 },
+          { text: '<span class="lt-phase-tag">Phase 2</span><span class="lt-agent">crew-coder-front</span> <span class="lt-task">index.html — UI scaffold</span> <span class="lt-time">22.3s</span>', delay: 2000 },
+          { text: '<span class="lt-phase-tag">Phase 2</span><span class="lt-agent">crew-fixer</span> <span class="lt-task">Fixed: missing CORS headers on POST route</span> <span class="lt-time">7.4s</span>', delay: 1200 },
+          { text: '', delay: 400 },
+          { text: '<span class="lt-success">✓ Build complete — 3 phases, 6 tasks, 75.1s, 0 failures</span>', delay: 800 },
+          { text: '<span class="lt-dim">▸ Generating next roadmap items...</span><span class="lt-cursor-blink">█</span>', delay: 900 },
+        ];
+      }
+
+      let heroTimeout = null, heroLine = 0, heroLines = [];
+
+      function runHeroLines(lines) {
+        const container = document.getElementById('hero-terminal-content');
+        if (!container) return;
+        container.innerHTML = ''; heroLine = 0; heroLines = lines;
+        function showNext() {
+          if (heroLine >= heroLines.length) return;
+          const data = heroLines[heroLine];
+          const el = document.createElement('div');
+          el.className = 'lt-line';
+          el.innerHTML = data.text;
+          container.appendChild(el);
+          requestAnimationFrame(() => { el.classList.add('visible'); container.scrollTop = container.scrollHeight; });
+          heroLine++;
+          if (heroLine < heroLines.length) heroTimeout = setTimeout(showNext, heroLines[heroLine].delay || 800);
+        }
+        heroTimeout = setTimeout(showNext, 400);
+      }
+
+      function runHeroTerminal() {
+        if (heroTimeout) clearTimeout(heroTimeout);
+        const input = document.getElementById('hero-input');
+        runHeroLines(makeLines(input ? input.value.trim() : ''));
+      }
+
+      function restartHeroTerminal() {
+        if (heroTimeout) clearTimeout(heroTimeout);
+        runHeroTerminal();
+      }
+
+      function skipHeroTerminal() {
+        if (heroTimeout) clearTimeout(heroTimeout);
+        const container = document.getElementById('hero-terminal-content');
+        if (!container) return;
+        container.innerHTML = '';
+        const lines = heroLines.length ? heroLines : makeLines('');
+        lines.forEach(data => {
+          const el = document.createElement('div');
+          el.className = 'lt-line visible';
+          el.innerHTML = data.text;
+          container.appendChild(el);
+        });
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function runCustomHeroTerminal() {
+        const input = document.getElementById('hero-input');
+        const val = input ? input.value.trim() : '';
+        if (heroTimeout) clearTimeout(heroTimeout);
+        runHeroLines(makeLines(val || 'Build a todo API with tests'));
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        const input = document.getElementById('hero-input');
+        if (input) {
+          input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); runCustomHeroTerminal(); }
+          });
+        }
+        runHeroTerminal();
+      });
+
+      function switchPreview(btn) {
+        document.querySelectorAll('.preview-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.preview-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const target = document.getElementById(btn.dataset.target);
+        if (target) target.classList.add('active');
+      }
+    </script>
+    </div>
+  </section>
+
+
+  <!-- HOW IT WORKS -->
+  <section id="how-it-works" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">How it works</div>
+        <h2>From requirement to reality<br/>in one command</h2>
+        <p class="section-desc">No orchestration expertise required. Write what you need in plain English.</p>
+      </div>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-num">01</div>
+          <div class="flow-content">
+            <h3>You write a requirement</h3>
+            <p>One sentence, one paragraph, or a full spec. Drop it in the dashboard or pass it on the CLI.</p>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-num">02</div>
+          <div class="flow-content">
+            <h3>PM breaks it into tasks</h3>
+            <p>crew-pm plans MVP → Phase 1 → Phase 2. Each phase gets 3–5 small, targeted tasks.</p>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-num">03</div>
+          <div class="flow-content">
+            <h3>Agents execute with real tools</h3>
+            <p>crew-coder writes code, crew-qa adds tests, crew-fixer handles bugs — each gets exactly their task.</p>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-num">04</div>
+          <div class="flow-content">
+            <h3>Done. Files on disk.</h3>
+            <p>Real files, real output. No hallucinated success messages. Failed tasks hit the DLQ for replay.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SYSTEM DIAGRAM -->
+  <section id="system-diagram" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Architecture</div>
+        <h2>Three layers, one stack</h2>
+        <p class="section-desc">CrewSwarm sits atop a modular architecture designed for reliability and flexibility.</p>
+      </div>
+      <div class="layers-grid">
+        <div class="layer-card">
+          <div class="layer-num">01</div>
+          <div class="layer-content">
+            <h3>CrewSwarm RT</h3>
+            <span class="layer-tag">WebSocket Message Bus</span>
+            <p>Agents subscribe to topics. Tasks are dispatched targeted to one agent at a time. No broadcast races, no duplicate work.</p>
+          </div>
+        </div>
+        <div class="layer-arrow">↓</div>
+        <div class="layer-card">
+          <div class="layer-num">02</div>
+          <div class="layer-content">
+            <h3>Direct LLM calls</h3>
+            <span class="layer-tag">Your API keys</span>
+            <p>Each agent calls its configured LLM directly — Mistral, Cerebras, OpenAI, DeepSeek, Perplexity, Google, or local via Ollama. No proxy, no middleware, no extra cost.</p>
+          </div>
+        </div>
+        <div class="layer-arrow">↓</div>
+        <div class="layer-card">
+          <div class="layer-num">03</div>
+          <div class="layer-content">
+            <h3>Orchestration Layer</h3>
+            <span class="layer-tag">CrewSwarm</span>
+            <p>PM planning, phased builds, PM Loop, shared memory, fault recovery, dashboard, and SwiftBar control plane. The brain of the operation.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Features</div>
+        <h2>Everything a dev crew needs,<br/>minus the meetings</h2>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card feature-card-wide">
+          <div class="feature-icon">⚡</div>
+          <h3>PM-led orchestration</h3>
+          <p>Natural-language requirement → PM breaks it into tasks → targeted dispatch to the right agent. No broadcast races. No duplicate work.</p>
+          <div class="feature-code">crew-pm → crew-coder → crew-qa → crew-fixer</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🎯</div>
+          <h3>Targeted dispatch</h3>
+          <p>Send to one agent by name. <code>--send crew-coder "Build auth"</code>. Only that agent receives it.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📐</div>
+          <h3>Phased builds (PDD)</h3>
+          <p>MVP → Phase 1 → Phase 2. Failed tasks auto-break into subtasks and retry. No work is lost.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🧠</div>
+          <h3>Shared memory</h3>
+          <p>Persistent markdown files — current state, decisions, handoff — injected into every agent call. The crew stays aligned across sessions.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>Fault tolerance</h3>
+          <p>Retry with backoff, task leases, heartbeat checks. After max retries, tasks go to the Dead Letter Queue for replay from the dashboard.</p>
+        </div>
+        <div class="feature-card feature-card-wide">
+          <div class="feature-icon">🖥️</div>
+          <h3>Six control surfaces</h3>
+          <p>Pick how you want to drive the crew. Every surface targets the same RT bus and the same crew — from your terminal to your phone.</p>
+          <div class="control-surfaces">
+            <div class="cs-item">
+              <strong>CLI</strong>
+              <span>openswitchctl · gateway-bridge</span>
+            </div>
+            <div class="cs-item">
+              <strong>Dashboard</strong>
+              <span>Build · RT Messages · DLQ · Send</span>
+            </div>
+            <div class="cs-item">
+              <strong>SwiftBar</strong>
+              <span>Status · Control · Agents · Logs</span>
+            </div>
+            <div class="cs-item cs-native">
+              <strong>Chat (Quill)</strong>
+              <span>crew-main → @@DISPATCH → crew</span>
+            </div>
+            <div class="cs-item cs-messenger">
+              <div class="cs-messenger-icons">
+                <svg viewBox="0 0 24 24" fill="#25D366" width="14" height="14"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#2AABEE" width="14" height="14"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+              </div>
+              <strong>Telegram · WhatsApp</strong>
+              <span>Message Quill from your phone</span>
+            </div>
+            <div class="cs-item cs-openclaw">
+              <div class="cs-openclaw-logo">
+                <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+                  <defs><linearGradient id="claw-g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ff4d4d"/><stop offset="100%" stop-color="#991b1b"/></linearGradient></defs>
+                  <path d="M60 10 C30 10 15 35 15 55 C15 75 30 95 45 100 L45 110 L55 110 L55 100 C55 100 60 102 65 100 L65 110 L75 110 L75 100 C90 95 105 75 105 55 C105 35 90 10 60 10Z" fill="url(#claw-g)"/>
+                  <path d="M20 45 C5 40 0 50 5 60 C10 70 20 65 25 55 C28 48 25 45 20 45Z" fill="url(#claw-g)"/>
+                  <path d="M100 45 C115 40 120 50 115 60 C110 70 100 65 95 55 C92 48 95 45 100 45Z" fill="url(#claw-g)"/>
+                  <circle cx="45" cy="35" r="6" fill="#050810"/><circle cx="75" cy="35" r="6" fill="#050810"/>
+                </svg>
+              </div>
+              <strong>OpenClaw app</strong>
+              <span>Native desktop · Quill built-in</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AI PROVIDERS -->
+  <section id="models" class="section section-alt" aria-labelledby="models-heading">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Models</div>
+        <h2 id="models-heading">Bring your own model</h2>
+        <p class="section-desc">Every agent calls its LLM directly — no proxy, no middleware. Mix and match freely: PM on Perplexity for web search, coders on Mistral or DeepSeek, coordinator on Cerebras for instant replies. Or run everything local with Ollama.</p>
+      </div>
+      <div class="providers-grid">
+        <div class="provider-card" style="--p-color:#10a37f;">
+          <div class="provider-icon">
+            <svg viewBox="0 0 24 24" fill="#10a37f" xmlns="http://www.w3.org/2000/svg"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654 2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>
+          </div>
+          <div class="provider-info">
+            <h3>OpenAI</h3>
+            <div class="provider-models">GPT-4o · GPT-4o-mini · o1 · o3</div>
+            <p>Industry standard. Best for general reasoning and instruction following.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#d4a853;">
+          <div class="provider-icon">
+            <svg viewBox="0 0 24 24" fill="#d4a853" xmlns="http://www.w3.org/2000/svg"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>
+          </div>
+          <div class="provider-info">
+            <h3>Anthropic</h3>
+            <div class="provider-models">Claude 3.5 Sonnet · Claude 3 Haiku · Claude 3 Opus</div>
+            <p>Top-tier code quality and instruction following. Strong on long context.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#f55036;">
+          <div class="provider-icon provider-icon-text" style="color:#f55036; font-size:1rem; font-weight:900; letter-spacing:-0.04em;">GQ</div>
+          <div class="provider-info">
+            <h3>Groq</h3>
+            <div class="provider-models">Llama 3.3 70B · Mixtral 8x7B · Gemma 2 9B</div>
+            <p>Blazing-fast inference. Best for QA and fixer agents where speed matters.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#ff7000;">
+          <div class="provider-icon">
+            <svg viewBox="0 0 24 24" fill="#ff7000" xmlns="http://www.w3.org/2000/svg"><path d="M17.143 3.429v3.428h-3.429v3.429h-3.428V6.857H6.857V3.43H3.43v13.714H0v3.428h10.286v-3.428H6.857v-3.429h3.429v3.429h3.429v-3.429h3.428v3.429h-3.428v3.428H24v-3.428h-3.43V3.429z"/></svg>
+          </div>
+          <div class="provider-info">
+            <h3>Mistral</h3>
+            <div class="provider-models">Mistral Large · Codestral · Mistral Small</div>
+            <p>Excellent for code generation. Codestral is purpose-built for dev tasks.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#4d9fff;">
+          <div class="provider-icon provider-icon-text" style="color:#4d9fff; font-size:0.85rem; font-weight:900; letter-spacing:-0.04em;">DS</div>
+          <div class="provider-info">
+            <h3>DeepSeek</h3>
+            <div class="provider-models">DeepSeek Coder V2 · DeepSeek Chat</div>
+            <p>Open-source coding model with exceptional code completion quality.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#20b2aa;">
+          <div class="provider-icon">
+            <svg viewBox="0 0 24 24" fill="#20b2aa" xmlns="http://www.w3.org/2000/svg"><path d="M22.3977 7.0896h-2.3106V.0676l-7.5094 6.3542V.1577h-1.1554v6.1966L4.4904 0v7.0896H1.6023v10.3976h2.8882V24l6.932-6.3591v6.2005h1.1554v-6.0469l6.9318 6.1807v-6.4879h2.8882V7.0896zm-3.4657-4.531v4.531h-5.355l5.355-4.531zm-13.2862.0676 4.8691 4.4634H5.6458V2.6262zM2.7576 16.332V8.245h7.8476l-6.1149 6.1147v1.9723H2.7576zm2.8882 5.0404v-3.8852h.0001v-2.6488l5.7763-5.7764v7.0111l-5.7764 5.2993zm12.7086.0248-5.7766-5.1509V9.0618l5.7766 5.7766v6.5588zm2.8882-5.0652h-1.733v-1.9723L13.3948 8.245h7.8478v8.087z"/></svg>
+          </div>
+          <div class="provider-info">
+            <h3>Perplexity</h3>
+            <div class="provider-models">Sonar Pro · Sonar</div>
+            <p>Real-time web search. Ideal for the PM agent to research before planning.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#4285f4;">
+          <div class="provider-icon">
+            <svg viewBox="0 0 24 24" fill="#4285f4" xmlns="http://www.w3.org/2000/svg"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>
+          </div>
+          <div class="provider-info">
+            <h3>Google Gemini</h3>
+            <div class="provider-models">Gemini 2.0 Flash · Gemini 1.5 Pro · Gemini 1.5 Flash</div>
+            <p>Multimodal and fast. Flash is cost-effective for high-volume tasks.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#a3e635;">
+          <div class="provider-icon provider-icon-text" style="color:#a3e635; font-size:0.85rem; font-weight:900; letter-spacing:-0.04em;">CB</div>
+          <div class="provider-info">
+            <h3>Cerebras</h3>
+            <div class="provider-models">Llama 3.1 70B · Llama 3.3 70B</div>
+            <p>Ultra-fast hardware inference. Near-instant responses for latency-critical agents.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#c8c8c8;">
+          <div class="provider-icon provider-icon-text" style="color:#c8c8c8; font-size:1rem; font-weight:900; letter-spacing:-0.04em;">xAI</div>
+          <div class="provider-info">
+            <h3>xAI / Grok</h3>
+            <div class="provider-models">Grok 2 · Grok 2 Vision · Grok Beta</div>
+            <p>xAI's model with real-time X/Twitter data access and strong reasoning.</p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#94a3b8;">
+          <div class="provider-icon">
+            <img src="https://cdn.simpleicons.org/ollama/94a3b8" alt="Ollama" width="22" height="22" loading="lazy">
+          </div>
+          <div class="provider-info">
+            <h3>Ollama (Local)</h3>
+            <div class="provider-models">Qwen 2.5 · DeepSeek Coder · Phi-3 · Dolphin</div>
+            <p>Run fully local. No API keys, no rate limits, no data leaving your machine.</p>
+          </div>
+        </div>
+      </div>
+      <div class="providers-note">
+        <span class="providers-note-icon">💡</span>
+        <p>Each agent can use a different provider. Add API keys and assign models from the <strong>Providers tab</strong> in the dashboard — or edit the config JSON directly. Switch models at any time, no restarts needed.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- OPEN SOURCE -->
+
+  <section id="open-source" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Open Source</div>
+        <h2>Free forever.<br/><span class="gradient-text">MIT licensed.</span></h2>
+        <p class="section-desc">CrewSwarm is open-source software. Use it, modify it, contribute to it.</p>
+      </div>
+      <div class="oss-grid">
+        <div class="oss-card">
+          <div class="oss-badge">
+            <svg width="32" height="32" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+            </svg>
+          </div>
+          <h3>MIT License</h3>
+          <p>Use it for personal projects, commercial products, or anything in between. No restrictions.</p>
+        </div>
+        <div class="oss-card">
+          <div class="oss-badge">🆓</div>
+          <h3>Free to use</h3>
+          <p>No subscription. No usage limits. Bring your own API keys for the LLM providers you choose.</p>
+        </div>
+        <div class="oss-card">
+          <div class="oss-badge">🤝</div>
+          <h3>Community-driven</h3>
+          <p>Contributions welcome. Report issues, submit PRs, or just star the repo to show support.</p>
+        </div>
+      </div>
+      <div class="oss-cta">
+        <a href="https://github.com/crewswarm/crewswarm" class="btn btn-primary" aria-label="View CrewSwarm on GitHub">
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; margin-right: 8px;" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+          </svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEMO -->
+  <!-- AGENTS -->
+  <section id="agents" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">The crew</div>
+        <h2>Specialized agents,<br/>targeted tasks</h2>
+        <p class="section-desc">Nine specialized agents, each with a role, a model, and a set of tools. The PM decides who gets what — no broadcast racing.</p>
+      </div>
+      <div class="agents-grid">
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(56,189,248,0.15); color:#38bdf8;">Q</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-main <span class="agent-handle">Quill</span></div>
+            <div class="agent-role">Coordinator</div>
+            <p>Chat, triage, and kick off orchestrators. Your first point of contact.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(56,189,248,0.1); color:#7dd3fc;">P</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-pm <span class="agent-handle">Planner</span></div>
+            <div class="agent-role">Planning</div>
+            <p>Breaks requirements into phased tasks. Assigns agents. Keeps scope tight.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(129,140,248,0.15); color:#818cf8;">C</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-coder <span class="agent-handle">Coder</span></div>
+            <div class="agent-role">Implementation</div>
+            <p>Writes code, creates files, runs shell commands. The workhorse of every build.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(129,140,248,0.1); color:#a5b4fc;">F</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-coder-front <span class="agent-handle">Mistral Front</span></div>
+            <div class="agent-role">Frontend specialist</div>
+            <p>UI, styling, and client-side code. Knows the design system and keeps markup clean.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(56,189,248,0.08); color:#7dd3fc;">B</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-coder-back <span class="agent-handle">DeepSeek Back</span></div>
+            <div class="agent-role">Backend specialist</div>
+            <p>APIs, databases, and server-side logic. Optimized for structured, deep code tasks.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(129,140,248,0.12); color:#c4b5fd;">C</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-copywriter <span class="agent-handle">Copy</span></div>
+            <div class="agent-role">Copywriting</div>
+            <p>Headlines, CTAs, and product copy. Keeps brand voice sharp and on-message.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(56,189,248,0.12); color:#38bdf8;">T</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-qa <span class="agent-handle">Tester</span></div>
+            <div class="agent-role">Quality assurance</div>
+            <p>Adds tests, validates behavior, and audits output before anything ships.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(129,140,248,0.08); color:#818cf8;">D</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-fixer <span class="agent-handle">Debugger</span></div>
+            <div class="agent-role">Bug fixing</div>
+            <p>Diagnoses failures, fixes edge cases, patches what QA flags.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(56,189,248,0.08); color:#7dd3fc;">S</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-security <span class="agent-handle">Guardian</span></div>
+            <div class="agent-role">Security review</div>
+            <p>Audits for vulnerabilities, hardens configs, and enforces best practices.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- USE CASES -->
+  <section id="use-cases" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Use cases</div>
+        <h2>What the crew ships</h2>
+      </div>
+      <div class="cases-grid">
+        <div class="case-card">
+          <div class="case-num">01</div>
+          <h3>Build a feature from one sentence</h3>
+          <p>Type a requirement in the Build tab, click Run. PM plans it, coder builds it, QA tests it. Watch it happen in RT Messages.</p>
+          <div class="case-tag">Phased builds</div>
+        </div>
+        <div class="case-card">
+          <div class="case-num">02</div>
+          <h3>Fix a bug and add tests</h3>
+          <p>crew-fixer diagnoses and patches, crew-qa writes the test suite. Targeted dispatch means each agent does exactly one thing.</p>
+          <div class="case-tag">Targeted dispatch</div>
+        </div>
+        <div class="case-card">
+          <div class="case-num">03</div>
+          <h3>Ship a small API with CRUD + tests</h3>
+          <p>"Build a todo API with Express, CRUD endpoints, and a test file." One sentence. Real files on disk in minutes.</p>
+          <div class="case-tag">Single-shot build</div>
+        </div>
+        <div class="case-card">
+          <div class="case-num">04</div>
+          <h3>Control from the menu bar</h3>
+          <p>SwiftBar shows you CrewSwarm status at a glance. Start, stop, restart agents. Send a message to any agent. Open logs.</p>
+          <div class="case-tag">SwiftBar</div>
+        </div>
+        <div class="case-card">
+          <div class="case-num">05</div>
+          <h3>Recover from failures</h3>
+          <p>Max retries hit? Task goes to the DLQ. Open the dashboard, see the error, replay with one click — or fix and rerun.</p>
+          <div class="case-tag">DLQ + replay</div>
+        </div>
+        <div class="case-card">
+          <div class="case-num">06</div>
+          <h3>Keep agents aligned across sessions</h3>
+          <p>Shared memory files — current state, decisions, handoff — are injected into every agent. Resume tomorrow exactly where you left off.</p>
+          <div class="case-tag">Shared memory</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD PREVIEW -->
+  <section id="dashboard-preview" class="section" aria-label="Dashboard preview">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Dashboard</div>
+        <h2>Everything in one place</h2>
+        <p class="section-desc">Build, dispatch, replay, monitor — and open any file the crew wrote directly in Cursor or OpenCode.</p>
+      </div>
+      <div class="preview-tabs">
+        <button class="preview-tab active" data-target="tab-dashboard" onclick="switchPreview(this)">Dashboard</button>
+        <button class="preview-tab" data-target="tab-agents" onclick="switchPreview(this)">Agents</button>
+      </div>
+      <div class="preview-frame">
+        <div class="preview-chrome">
+          <div class="preview-chrome-dots"><span></span><span></span><span></span></div>
+          <span class="preview-chrome-url">localhost:4319</span>
+          <div class="preview-chrome-actions">
+            <a href="http://localhost:4319" target="_blank" class="preview-open-btn">Open dashboard →</a>
+          </div>
+        </div>
+        <div id="tab-dashboard" class="preview-panel active">
+          <img src="preview-hero-web.png" alt="CrewSwarm dashboard showing the Build tab with live PM Loop output" loading="lazy" class="preview-img" />
+        </div>
+        <div id="tab-agents" class="preview-panel">
+          <img src="preview-agents-web.png" alt="CrewSwarm agents tab showing configured crew with model assignments" loading="lazy" class="preview-img" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section id="comparison" class="section what-we-do-section" aria-labelledby="wwd-heading">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Built different</div>
+        <h2 id="wwd-heading">What CrewSwarm does</h2>
+        <p class="section-desc">The only fully open-source platform where a PM agent runs the build — not just a single autocomplete suggestion.</p>
+      </div>
+      <div class="wwd-grid">
+        <div class="wwd-card wwd-card-wide">
+          <div class="wwd-icon">🧠</div>
+          <h3>PM-led phased builds</h3>
+          <p>A dedicated Project Manager agent reads your ROADMAP, breaks work into phases, dispatches tasks to the right specialists, and writes handoff notes between sessions — automatically.</p>
+        </div>
+        <div class="wwd-card">
+          <div class="wwd-icon">🤝</div>
+          <h3>Shared memory across agents</h3>
+          <p>Every agent reads and writes to a shared memory layer — decisions, context, and progress persist across sessions so nothing gets lost between runs.</p>
+        </div>
+        <div class="wwd-card">
+          <div class="wwd-icon">⚡</div>
+          <h3>Real-time agent mesh</h3>
+          <p>Agents communicate over an RT message bus. Any agent can broadcast, any agent can listen — parallel work happens naturally without a central bottleneck.</p>
+        </div>
+        <div class="wwd-card">
+          <div class="wwd-icon">🔁</div>
+          <h3>Automatic fault recovery</h3>
+          <p>Failed tasks land in a Dead Letter Queue and are automatically retried. Builds keep moving even when individual agents hit errors or timeouts.</p>
+        </div>
+        <div class="wwd-card">
+          <div class="wwd-icon">🔑</div>
+          <h3>Bring your own model</h3>
+          <p>Configure any model per agent — Groq, Anthropic, OpenAI, NVIDIA, or fully local via Ollama. No vendor lock-in, no forced subscriptions.</p>
+        </div>
+        <div class="wwd-card">
+          <div class="wwd-icon">📡</div>
+          <h3>Control from anywhere</h3>
+          <p>Manage your crew from the web dashboard, the CLI, the macOS menu bar, or Telegram. One build, every surface covered.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SUCCESS STORIES -->
+  <!-- TESTIMONIALS -->
+  <section id="testimonials" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Early access</div>
+        <h2>What beta builders are saying</h2>
+      </div>
+      <div class="testimonials-grid">
+        <div class="testimonial-card">
+          <div class="testimonial-body">
+            <div class="testimonial-tag">✦ Beta builder</div>
+            <div class="testimonial-quote">"One sentence in. Working API out. No standups, no tickets, no back-and-forth."</div>
+          </div>
+          <div class="testimonial-author">
+            <div class="testimonial-avatar">
+              <svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+                <rect width="44" height="44" fill="#0d1e30"/>
+                <ellipse cx="22" cy="36" rx="13" ry="7" fill="#0f3460"/>
+                <rect x="16" y="28" width="12" height="9" rx="3" fill="#0f3460"/>
+                <rect x="19" y="24" width="6" height="5" fill="#c9a87c"/>
+                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#c9a87c"/>
+                <ellipse cx="22" cy="12" rx="8" ry="4.5" fill="#1a0c06"/>
+                <rect x="14" y="12" width="2.5" height="7" rx="1.5" fill="#1a0c06"/>
+                <rect x="27.5" y="12" width="2.5" height="7" rx="1.5" fill="#1a0c06"/>
+                <circle cx="19" cy="19" r="1.4" fill="#0d1e30"/>
+                <circle cx="25" cy="19" r="1.4" fill="#0d1e30"/>
+                <circle cx="19.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6"/>
+                <circle cx="25.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6"/>
+                <path d="M19.5 23 Q22 24.5 24.5 23" stroke="#8a6040" stroke-width="1" fill="none" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div>
+              <div class="testimonial-name">Vlad</div>
+              <div class="testimonial-role">Fullstack Engineer · Early access</div>
+            </div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <div class="testimonial-body">
+            <div class="testimonial-tag">✦ Beta builder</div>
+            <div class="testimonial-quote">"I start the PM Loop, go eat dinner, come back to a finished feature. It's genuinely autonomous."</div>
+          </div>
+          <div class="testimonial-author">
+            <div class="testimonial-avatar">
+              <svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+                <rect width="44" height="44" fill="#0d200d"/>
+                <ellipse cx="22" cy="36" rx="13" ry="7" fill="#1a3d1a"/>
+                <rect x="16" y="28" width="12" height="9" rx="3" fill="#1a3d1a"/>
+                <rect x="19" y="24" width="6" height="5" fill="#b88c60"/>
+                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#b88c60"/>
+                <ellipse cx="22" cy="12" rx="8" ry="3.5" fill="#0f0903"/>
+                <rect x="14" y="12" width="2" height="5" rx="1" fill="#0f0903"/>
+                <rect x="28" y="12" width="2" height="5" rx="1" fill="#0f0903"/>
+                <!-- glasses frames -->
+                <rect x="15.5" y="17.5" width="5.5" height="3.5" rx="1.8" fill="none" stroke="#38bdf8" stroke-width="1.1"/>
+                <rect x="23" y="17.5" width="5.5" height="3.5" rx="1.8" fill="none" stroke="#38bdf8" stroke-width="1.1"/>
+                <line x1="21" y1="19.2" x2="23" y2="19.2" stroke="#38bdf8" stroke-width="1.1"/>
+                <circle cx="18.5" cy="19.2" r="1" fill="#0d200d"/>
+                <circle cx="26" cy="19.2" r="1" fill="#0d200d"/>
+                <circle cx="18.9" cy="18.8" r="0.35" fill="#fff" opacity="0.6"/>
+                <circle cx="26.4" cy="18.8" r="0.35" fill="#fff" opacity="0.6"/>
+                <path d="M19.5 23.5 Q22 25 24.5 23.5" stroke="#7a5830" stroke-width="1" fill="none" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div>
+              <div class="testimonial-name">Dev</div>
+              <div class="testimonial-role">Startup Founder · Early access</div>
+            </div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <div class="testimonial-body">
+            <div class="testimonial-tag">✦ Beta builder</div>
+            <div class="testimonial-quote">"Shared memory is the killer feature. I can stop mid-project and pick it up days later — agents just know where we left off."</div>
+          </div>
+          <div class="testimonial-author">
+            <div class="testimonial-avatar">
+              <svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+                <rect width="44" height="44" fill="#130f20"/>
+                <ellipse cx="22" cy="36" rx="14" ry="7" fill="#2d1f55"/>
+                <rect x="15" y="28" width="14" height="9" rx="3" fill="#2d1f55"/>
+                <path d="M15 30 Q22 25.5 29 30" fill="#3a2870" stroke="none"/>
+                <rect x="19" y="24" width="6" height="5" fill="#d4a068"/>
+                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#d4a068"/>
+                <ellipse cx="22" cy="12" rx="8" ry="4.5" fill="#2e1c08"/>
+                <path d="M14 14 Q16 9.5 19 11.5 Q21 8.5 22 10 Q23 8.5 25 11.5 Q28 9.5 30 14" fill="#2e1c08"/>
+                <circle cx="19" cy="19" r="1.4" fill="#130f20"/>
+                <circle cx="25" cy="19" r="1.4" fill="#130f20"/>
+                <circle cx="19.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6"/>
+                <circle cx="25.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6"/>
+                <ellipse cx="22" cy="24" rx="3.5" ry="1.2" fill="#b07838" opacity="0.35"/>
+                <path d="M19.5 23 Q22 24.5 24.5 23" stroke="#956030" stroke-width="1" fill="none" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div>
+              <div class="testimonial-name">Attila</div>
+              <div class="testimonial-role">Indie Developer · Early access</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ORCHESTRATION MODES -->
+  <section id="orchestration" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Orchestration</div>
+        <h2>Three modes, one crew</h2>
+        <p class="section-desc">Pick the right tool for the job. From single tasks to full autonomous builds.</p>
+      </div>
+      <div class="orch-grid">
+        <div class="orch-card">
+          <div class="orch-header">
+            <span class="orch-icon">📐</span>
+            <h3>PM Loop</h3>
+            <div class="orch-tag">Recommended for most builds</div>
+          </div>
+          <p class="orch-desc">Break large work into MVP → Phase 1 → Phase 2. Auto-phases ambiguous requirements, auto-retries failed tasks, and breaks them into subtasks if needed.</p>
+          <div class="orch-features">
+            <span class="orch-feature">Auto-phasing</span>
+            <span class="orch-feature">Auto-retry</span>
+            <span class="orch-feature">Task breakdown</span>
+            <span class="orch-feature">DLQ recovery</span>
+          </div>
+          <div class="orch-code">
+            <div class="orch-code-label">Example</div>
+            <code>node phased-orchestrator.mjs --all "Build a todo API with CRUD and tests"</code>
+          </div>
+        </div>
+        <div class="orch-card">
+          <div class="orch-header">
+            <span class="orch-icon">⚡</span>
+            <h3>Unified</h3>
+            <div class="orch-tag">Single-shot structured runs</div>
+          </div>
+          <p class="orch-desc">One command, structured execution. PM plans it once, crew executes in sequence. No phasing overhead — good for well-defined tasks.</p>
+          <div class="orch-features">
+            <span class="orch-feature">Single pass</span>
+            <span class="orch-feature">Targeted dispatch</span>
+            <span class="orch-feature">Sequential exec</span>
+          </div>
+          <div class="orch-code">
+            <div class="orch-code-label">Example</div>
+            <code>node unified-orchestrator.mjs "Fix auth.js bug and add tests"</code>
+          </div>
+        </div>
+        <div class="orch-card">
+          <div class="orch-header">
+            <span class="orch-icon">🎯</span>
+            <h3>Single-task</h3>
+            <div class="orch-tag">One agent, right now</div>
+          </div>
+          <p class="orch-desc">Send one task directly to one agent. No PM, no planning. Fastest path from intent to execution for simple, well-scoped work.</p>
+          <div class="orch-features">
+            <span class="orch-feature">Direct send</span>
+            <span class="orch-feature">No orchestration</span>
+            <span class="orch-feature">Instant dispatch</span>
+          </div>
+          <div class="orch-code">
+            <div class="orch-code-label">Example</div>
+            <code>node gateway-bridge.mjs --send crew-coder "Add GET /health to server.js"</code>
+          </div>
+        </div>
+      </div>
+      <div class="orch-comparison">
+        <h4>Quick comparison</h4>
+        <table class="orch-table">
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Best for</th>
+              <th>Auto-retry</th>
+              <th>Phasing</th>
+              <th>Overhead</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>PM Loop</strong></td>
+              <td>Large or ambiguous builds</td>
+              <td class="check">✓</td>
+              <td class="check">✓</td>
+              <td>Medium</td>
+            </tr>
+            <tr>
+              <td><strong>Unified</strong></td>
+              <td>Well-defined tasks</td>
+              <td class="check">✓</td>
+              <td class="x">—</td>
+              <td>Low</td>
+            </tr>
+            <tr>
+              <td><strong>Single-task</strong></td>
+              <td>Quick fixes, small edits</td>
+              <td class="x">—</td>
+              <td class="x">—</td>
+              <td>None</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TECH STACK -->
+  <section class="section section-alt" aria-label="Tech stack">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Stack</div>
+        <h2>Built on boring, solid tech</h2>
+        <p class="section-desc">No proprietary runtime. No cloud lock-in. Everything runs on tools you already know.</p>
+      </div>
+      <div class="tech-grid">
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/nodedotjs/5FA04E" alt="Node.js" width="28" height="28" loading="lazy">
+          <div>
+            <strong>Node.js</strong>
+            <span>Runtime — all scripts, daemons, and the dashboard</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/typescript/3178C6" alt="TypeScript" width="28" height="28" loading="lazy">
+          <div>
+            <strong>TypeScript</strong>
+            <span>RT daemon and plugin suite compiled to JS</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="WebSocket">
+            <rect width="24" height="24" rx="5" fill="rgba(99,102,241,0.15)"/>
+            <text x="4" y="16" font-family="monospace" font-size="9" font-weight="700" fill="#818cf8">WS</text>
+          </svg>
+          <div>
+            <strong>WebSocket</strong>
+            <span>CrewSwarm RT — real-time agent mesh on port 18889</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/json/f59e0b" alt="JSON" width="28" height="28" loading="lazy">
+          <div>
+            <strong>JSON / JSONL</strong>
+            <span>Config, task dispatch, DLQ, and telemetry event log</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/markdown/94a3b8" alt="Markdown" width="28" height="28" loading="lazy">
+          <div>
+            <strong>Markdown</strong>
+            <span>Shared memory — current-state, decisions, handoff, roadmap</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/gnubash/4EAA25" alt="Bash" width="28" height="28" loading="lazy">
+          <div>
+            <strong>Bash</strong>
+            <span>openswitchctl — start, stop, restart, health checks</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/apple/94a3b8" alt="macOS" width="28" height="28" loading="lazy">
+          <div>
+            <strong>macOS</strong>
+            <span>SwiftBar menu bar plugin — status, control, logs at a glance</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/sqlite/003B57" alt="SQLite" width="28" height="28" loading="lazy">
+          <div>
+            <strong>SQLite</strong>
+            <span>Advanced task tracking, agent health, and queue metrics (optional)</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/ollama/94a3b8" alt="Ollama" width="28" height="28" loading="lazy">
+          <div>
+            <strong>Ollama</strong>
+            <span>Run any agent fully local — no API key, no internet required</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/github/94a3b8" alt="GitHub" width="28" height="28" loading="lazy">
+          <div>
+            <strong>GitHub CLI</strong>
+            <span>crew-github — commits, branches, pull requests via <code>gh</code></span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/telegram/26A5E4" alt="Telegram" width="28" height="28" loading="lazy">
+          <div>
+            <strong>Telegram</strong>
+            <span>Message Quill from your phone — dispatches to the full crew</span>
+          </div>
+        </div>
+        <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/whatsapp/25D366" alt="WhatsApp" width="28" height="28" loading="lazy">
+          <div>
+            <strong>WhatsApp</strong>
+            <span>Same as Telegram — start a build, check status, get replies</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GET STARTED -->
+  <section id="get-started" class="section">
+    <section id="faq" class="faq-accordion py-20 bg-gray-50">
+      <div class="container">
+        <h2>Frequently Asked Questions</h2>
+        <p class="faq-intro">Answers pulled straight from <code>docs/WEBSITE-FEATURES-AND-USE-CASES.md</code> so the crew stays aligned on how CrewSwarm ships work.</p>
+        <div class="faq-search">
+          <input type="text" id="faqSearch" placeholder="Ask a question..." aria-label="Search FAQ" />
+        </div>
+        <div id="faqList" class="faq-list">
+          <p class="faq-empty" hidden>No matching answers yet. Try another keyword.</p>
+          <div class="faq-item" data-question="one requirement one crew meaning tagline">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-1" id="faq-heading-1">
+              <span>What does “One requirement. One crew.” actually mean?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-1" role="region" aria-labelledby="faq-heading-1">
+              <div class="faq-answer-inner"><p>The tagline is literal: you describe a requirement once and a PM-led crew handles the rest — planning, coding, QA, and fixes — until real files land on disk. Every answer in the features doc reinforces this promise.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="pm loop autonomous roadmap self extending">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-2" id="faq-heading-2">
+              <span>How does the PM Loop keep shipping without new prompts?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-2" role="region" aria-labelledby="faq-heading-2">
+              <div class="faq-answer-inner"><p>The PM Loop reads <code>ROADMAP.md</code>, ships every pending item, then calls Groq as a product strategist to append fresh roadmap items based on the live output. It repeats forever until you stop it.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="shared memory files current-state decisions handoff protocol">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-3" id="faq-heading-3">
+              <span>Which shared memory files load for every task?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-3" role="region" aria-labelledby="faq-heading-3">
+              <div class="faq-answer-inner"><p>Four files are always injected: <code>current-state.md</code>, <code>decisions.md</code>, <code>agent-handoff.md</code>, and <code>orchestration-protocol.md</code>. The wrapper auto-bootstraps them and enforces token budgets so no agent runs blind.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="targeted dispatch send single agent difference broadcast">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-4" id="faq-heading-4">
+              <span>How is targeted dispatch different from broadcast-style bots?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-4" role="region" aria-labelledby="faq-heading-4">
+              <div class="faq-answer-inner"><p>CrewSwarm never shouts into a swarm. Each task goes to one named agent, eliminating race conditions and duplicate work. You send a command, the gateway routes it to exactly the right specialist, and only that agent replies.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="phased build mvp phase1 phase2 structure">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-5" id="faq-heading-5">
+              <span>What phases does a phased build follow?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-5" role="region" aria-labelledby="faq-heading-5">
+              <div class="faq-answer-inner"><p>Everything ships in three passes: MVP for the smallest viable outcome, Phase 1 for depth, and Phase 2 for polish. Each phase carries 3–5 tightly scoped tasks so agents never time out.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="dlq dead letter queue replay retries fault tolerance">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-6" id="faq-heading-6">
+              <span>What happens when a task fails repeatedly?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-6" role="region" aria-labelledby="faq-heading-6">
+              <div class="faq-answer-inner"><p>Failures trigger automatic retries with exponential backoff. If attempts are exhausted, the task lands in the Dead Letter Queue where you can replay it from the dashboard or hand it to <code>crew-fixer</code>.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="dashboard command start gui">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-7" id="faq-heading-7">
+              <span>How do I launch the dashboard?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-7" role="region" aria-labelledby="faq-heading-7">
+              <div class="faq-answer-inner"><p>From your CrewSwarm directory run:</p>
+              <pre><code>$ node scripts/dashboard.mjs</code></pre>
+              <p>That gives you Build, RT Messages, DLQ, Projects, Services, and Send tabs in one place.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="phased orchestrator command run build">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-8" id="faq-heading-8">
+              <span>How do I kick off a phased build from the CLI?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-8" role="region" aria-labelledby="faq-heading-8">
+              <div class="faq-answer-inner"><p>Use the phased orchestrator:</p>
+              <pre><code>$ node phased-orchestrator.mjs --all "Build a todo API"</code></pre>
+              <p>That single command triggers PM planning plus all subsequent coding, QA, and fixing.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="targeted send example crew coder command">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-9" id="faq-heading-9">
+              <span>What does a targeted send look like?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-9" role="region" aria-labelledby="faq-heading-9">
+              <div class="faq-answer-inner"><p>Send straight to one agent:</p>
+              <pre><code>$ node gateway-bridge.mjs --send crew-coder "Create server.js with Express and GET /health"</code></pre>
+              <p>Only <code>crew-coder</code> receives that instruction, so there is zero broadcast noise.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="mix models per agent providers groq openai anthropic">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-10" id="faq-heading-10">
+              <span>Can I mix different LLM providers per agent?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-10" role="region" aria-labelledby="faq-heading-10">
+              <div class="faq-answer-inner"><p>Yes. Every agent has its own model assignment — Anthropic for coding, Perplexity for planning, Cerebras for fast coordination, Groq for QA speed. Configure from the dashboard Providers tab or edit the config JSON directly. No code changes, no restarts.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="resume project roadmap dashboard projects tab">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-11" id="faq-heading-11">
+              <span>How do I resume a project that paused mid-build?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-11" role="region" aria-labelledby="faq-heading-11">
+              <div class="faq-answer-inner"><p>Use the Projects tab in the dashboard. Every project stores its roadmap path; click “Resume PM Loop” and it picks up right where the roadmap last stopped.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="roadmap exhaustion new items strategist">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-12" id="faq-heading-12">
+              <span>What happens after the roadmap is empty?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-12" role="region" aria-labelledby="faq-heading-12">
+              <div class="faq-answer-inner"><p>The PM Loop inspects the live output, asks Groq-as-strategist for 3–5 fresh items, appends them to <code>ROADMAP.md</code>, and keeps shipping. You never need to re-seed work manually.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="memory bootstrap auto missing files decisions">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-13" id="faq-heading-13">
+              <span>How are required memory files bootstrapped?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-13" role="region" aria-labelledby="faq-heading-13">
+              <div class="faq-answer-inner"><p>The gateway wrapper auto-creates any missing memory files from templates, logs the bootstrap event, and refuses to run a task if memory cannot load. That policy came from DEC-004/005.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="telemetry events log what recorded">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-14" id="faq-heading-14">
+              <span>What telemetry is tracked?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-14" role="region" aria-labelledby="faq-heading-14">
+              <div class="faq-answer-inner"><p>A JSONL feed at <code>~/.openclaw/logs/events.jsonl</code> stores bootstrap events, memory load failures, protocol violations, retries, and RT events for later auditing.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="agent roster roles crew main pm coder qa fixer security">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-15" id="faq-heading-15">
+              <span>Which agents ship with the default crew?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-15" role="region" aria-labelledby="faq-heading-15">
+              <div class="faq-answer-inner"><p>You get crew-main (coordination), crew-pm (planning), crew-coder (implementation), crew-qa (testing), crew-fixer (debugging), security (audits), plus optional specialized front/back coders.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="orchestration modes phased pm loop continuous unified single task">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-16" id="faq-heading-16">
+              <span>Which orchestration modes are available?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-16" role="region" aria-labelledby="faq-heading-16">
+              <div class="faq-answer-inner"><p>The repo ships Phased PDD, PM Loop, Continuous Build, Unified orchestrator, and direct targeted sends. Each mode fits a different scope, from whole products to one-off fixes.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="continuous build websites required sections">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-17" id="faq-heading-17">
+              <span>How does Continuous Build mode help with websites?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-17" role="region" aria-labelledby="faq-heading-17">
+              <div class="faq-answer-inner"><p>It inspects the target directory for required sections (hero, features, testimonials, etc.), dispatches tasks for anything missing, and loops until every section exists.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="swiftbar menu bar control start stop agents">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-18" id="faq-heading-18">
+              <span>What does the SwiftBar plugin control?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-18" role="region" aria-labelledby="faq-heading-18">
+              <div class="faq-answer-inner"><p>SwiftBar shows stack health, lets you start/stop/restart agents, open the dashboard, and even send targeted messages from the macOS menu bar.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="project registry multiple projects roadmap tracking">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-19" id="faq-heading-19">
+              <span>How do multiple projects stay organized?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-19" role="region" aria-labelledby="faq-heading-19">
+              <div class="faq-answer-inner"><p>Each project is registered with its output path and roadmap. The dashboard’s Projects tab and <code>orchestrator-logs/projects.json</code> keep everything resume-ready.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="token budget shared memory 2500 chars each">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-20" id="faq-heading-20">
+              <span>How is the shared memory token budget enforced?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-20" role="region" aria-labelledby="faq-heading-20">
+              <div class="faq-answer-inner"><p>The loader trims each file to 2,500 characters and caps the combined memory payload at 12,000 characters, guaranteeing agents never blow their context windows.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="failed tasks auto breakdown subtasks">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-21" id="faq-heading-21">
+              <span>What if a task is too big for one attempt?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-21" role="region" aria-labelledby="faq-heading-21">
+              <div class="faq-answer-inner"><p>When a task fails, the orchestrator automatically breaks it into 2–4 smaller subtasks so follow-up attempts stay within safe execution windows.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="architecture layers crewswarm rt gateway orchestration">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-22" id="faq-heading-22">
+              <span>What are the three layers of the stack?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-22" role="region" aria-labelledby="faq-heading-22">
+              <div class="faq-answer-inner"><p>Layer 1: CrewSwarm RT — your own WebSocket message bus (port 18889). Layer 2: Direct LLM calls — each agent calls its configured provider API with your key, no proxy. Layer 3: CrewSwarm orchestration — planner, phased builds, shared memory, dashboard, and SwiftBar.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="local first offline control run locally">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-23" id="faq-heading-23">
+              <span>Does everything run locally?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-23" role="region" aria-labelledby="faq-heading-23">
+              <div class="faq-answer-inner"><p>Yes. The orchestrator, dashboard, SwiftBar plugin, and memory system all run on your Mac. The only external calls are to the LLM providers you configure.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="monitor rt messages dashboard tab">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-24" id="faq-heading-24">
+              <span>How do I watch live RT traffic?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-24" role="region" aria-labelledby="faq-heading-24">
+              <div class="faq-answer-inner"><p>The RT Messages tab in the dashboard mirrors every command, agent reply, and issue. It’s the best place to verify what each agent just did.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="restart single agent openswitch swiftbar">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-25" id="faq-heading-25">
+              <span>How do I restart a single agent?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-25" role="region" aria-labelledby="faq-heading-25">
+              <div class="faq-answer-inner"><p>From the dashboard’s Services tab, hit Restart next to any agent. You can also use SwiftBar’s per-agent controls from the macOS menu bar. Either path keeps the rest of the crew running.</p></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Get started</div>
+        <h2>Up and running in minutes</h2>
+      </div>
+      <!-- Prerequisites: inline status pills -->
+      <div class="gs-prereqs">
+        <span class="gs-prereq"><span class="gs-prereq-check">✓</span> Node.js 20+</span>
+        <span class="gs-prereq-sep">·</span>
+        <span class="gs-prereq"><span class="gs-prereq-check">✓</span> RT server <span class="gs-prereq-port">:18889</span></span>
+        <span class="gs-prereq-sep">·</span>
+        <span class="gs-prereq"><span class="gs-prereq-check">✓</span> Agent daemons</span>
+        <span class="gs-prereq-sep">·</span>
+        <span class="gs-prereq"><span class="gs-prereq-check">✓</span> API key or Ollama</span>
+        <span class="gs-prereq-sep">·</span>
+        <span class="gs-prereq gs-prereq-opt"><span class="gs-prereq-optbadge">opt</span> SwiftBar</span>
+      </div>
+
+      <!-- Full-width terminal -->
+      <div class="gs-terminal">
+        <div class="gs-terminal-bar">
+          <div class="gs-terminal-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <span class="gs-terminal-title">crewswarm — quick start</span>
+          <span class="gs-terminal-spacer"></span>
+        </div>
+        <div class="gs-terminal-body">
+          <div class="gs-steps">
+            <div class="gs-step">
+              <div class="gs-step-num">01</div>
+              <div class="gs-step-content">
+                <div class="gs-step-label">Check the stack</div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> openswitchctl status</span></div>
+              </div>
+            </div>
+            <div class="gs-step-divider"></div>
+            <div class="gs-step">
+              <div class="gs-step-num">02</div>
+              <div class="gs-step-content">
+                <div class="gs-step-label">Launch the dashboard</div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node scripts/dashboard.mjs</span></div>
+              </div>
+            </div>
+            <div class="gs-step-divider"></div>
+            <div class="gs-step">
+              <div class="gs-step-num">03</div>
+              <div class="gs-step-content">
+                <div class="gs-step-label">Ship a build</div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node phased-orchestrator.mjs <span class="code-str">--all "Build a todo API"</span></span></div>
+              </div>
+            </div>
+            <div class="gs-step-divider"></div>
+            <div class="gs-step">
+              <div class="gs-step-num">04</div>
+              <div class="gs-step-content">
+                <div class="gs-step-label">Or target one agent directly</div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node gateway-bridge.mjs <span class="code-str">--send crew-coder "Add auth middleware"</span></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Doc links: horizontal row -->
+      <div class="gs-docrow">
+        <a href="docs/SYSTEM-ARCHITECTURE.md" class="gs-docitem">
+          <span class="gs-docitem-label">System Architecture</span>
+          <span class="gs-docitem-arrow">→</span>
+        </a>
+        <a href="docs/PHASED-ORCHESTRATOR.md" class="gs-docitem">
+          <span class="gs-docitem-label">Orchestrator Guide</span>
+          <span class="gs-docitem-arrow">→</span>
+        </a>
+        <a href="contrib/swiftbar/README.md" class="gs-docitem">
+          <span class="gs-docitem-label">SwiftBar Setup</span>
+          <span class="gs-docitem-arrow">→</span>
+        </a>
+      </div>
+    </div>
+
+
+  </section>
+
+  <!-- DOCUMENTATION -->
+  <section id="documentation" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Documentation</div>
+        <h2>Everything you need to know</h2>
+        <p class="section-desc">From quick starts to deep dives — comprehensive guides for every part of the CrewSwarm stack.</p>
+      </div>
+      <div class="docs-grid">
+        <div class="docs-card">
+          <div class="docs-icon">📚</div>
+          <h3>API Reference</h3>
+          <p>Complete reference for the gateway-bridge CLI, RT message bus, and orchestrator APIs.</p>
+          <ul class="docs-links">
+            <li><a href="docs/SYSTEM-ARCHITECTURE.md">System Architecture</a></li>
+            <li><a href="docs/PHASED-ORCHESTRATOR.md">Phased Orchestrator</a></li>
+            <li><a href="docs/ORCHESTRATION-PROTOCOL.md">Orchestration Protocol</a></li>
+          </ul>
+        </div>
+        <div class="docs-card">
+          <div class="docs-icon">🔧</div>
+          <h3>Technical Guides</h3>
+          <p>Step-by-step guides for configuration, deployment, and advanced usage patterns.</p>
+          <ul class="docs-links">
+            <li><a href="docs/KEEP-AGENTS-WORKING.md">Keep Agents Working</a></li>
+            <li><a href="contrib/swiftbar/README.md">SwiftBar Setup</a></li>
+            <li><a href="docs/WEBSITE-FEATURES-AND-USE-CASES.md">Features & Use Cases</a></li>
+          </ul>
+        </div>
+        <div class="docs-card">
+          <div class="docs-icon">🎓</div>
+          <h3>Tutorials</h3>
+          <p>Hands-on walkthroughs to get you building with CrewSwarm quickly.</p>
+          <ul class="docs-links">
+            <li><a href="#use-cases">Build a feature from one sentence</a></li>
+            <li><a href="#use-cases">Continuous autonomous development with PM Loop</a></li>
+            <li><a href="#use-cases">Fix bugs and add tests</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="docs-cta">
+        <p>All models and agents configurable via JSON. No code changes required to switch LLMs.</p>
+        <a href="https://github.com/crewswarm/crewswarm" class="btn btn-ghost">View full docs on GitHub →</a>
+      </div>
+    </div>
+  </section>
+
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">CrewSwarm</div>
+        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="#how-it-works">How it works</a>
+          <a href="#features">Features</a>
+          <a href="#agents">Agents</a>
+          <a href="#use-cases">Use cases</a>
+          <a href="#orchestration">Modes</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Docs</div>
+          <a href="docs/SYSTEM-ARCHITECTURE.md">Documentation home</a>
+          <a href="docs/SYSTEM-ARCHITECTURE.md">Architecture</a>
+          <a href="docs/PHASED-ORCHESTRATOR.md">Orchestrator</a>
+          <a href="contrib/swiftbar/README.md">SwiftBar</a>
+          <a href="docs/KEEP-AGENTS-WORKING.md">Troubleshooting</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Dashboard</div>
+          <a href="http://localhost:4319">Open Dashboard</a>
+          <a href="http://localhost:4319#build">Build tab</a>
+          <a href="http://localhost:4319#dlq">DLQ</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://discord.com/invite/clawd" target="_blank" rel="noopener">Discord</a>
+          <a href="https://twitter.com/CrewSwarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 CrewSwarm. All rights reserved.</span>
+      <span>Docs • GitHub • Discord • Twitter</span>
+    </div>
+  </footer>
+
+
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const track = document.getElementById('heroCarouselTrack');
+      const dots = document.getElementById('heroCarouselDots');
+      const prev = document.querySelector('[data-carousel-prev]');
+      const next = document.querySelector('[data-carousel-next]');
+      if (!track || !dots || !prev || !next) return;
+      const heroCarouselData = [
+        { name: 'Anon Dev #1', role: 'Solo builder — SaaS MVP', builds: 47, success: 0.92, recoveries: 15, quote: 'PM Loop took my todo API from idea to deployed tests in under an hour.', demo: '#demo' },
+        { name: 'Anon Marketer #2', role: 'Growth team microsites', builds: 33, success: 0.9, recoveries: 11, quote: 'Continuous Build keeps generating sections until the page hits spec.', demo: '#demo' },
+        { name: 'Anon PM #3', role: 'Roadmap automation', builds: 58, success: 0.94, recoveries: 19, quote: 'Shared memory + DEC logs mean every agent knows why decisions stuck.', demo: '#demo' },
+        { name: 'Anon QA #4', role: 'Regression guardian', builds: 41, success: 0.88, recoveries: 14, quote: 'DLQ + crew-fixer replayed every flaky test without manual babysitting.', demo: '#demo' },
+        { name: 'Anon Founder #5', role: 'Full-stack launchpad', builds: 62, success: 0.95, recoveries: 22, quote: 'Targeted dispatch killed the race conditions I fought with other bots.', demo: '#demo' }
+      ];
+      const slides = [];
+      const dotsBtns = [];
+      const buildCard = (entry, idx) => {
+        const article = document.createElement('article');
+        article.className = 'carousel-card';
+        article.setAttribute('role', 'group');
+        article.setAttribute('aria-roledescription', 'slide');
+        article.setAttribute('aria-label', `${idx + 1} of ${heroCarouselData.length}`);
+        article.innerHTML = `
+          <header>
+            <div class="carousel-avatar">${entry.name.split(' ')[1] || 'A'}</div>
+            <div>
+              <strong>${entry.name}</strong>
+              <div class="carousel-meta">${entry.role}</div>
+            </div>
+          </header>
+          <p class="carousel-quote">“${entry.quote}”</p>
+          <div class="carousel-stats">
+            <span class="stat-pill">${entry.builds} builds shipped</span>
+            <span class="stat-pill">${Math.round(entry.success * 100)}% success</span>
+            <span class="stat-pill">Recovered ${entry.recoveries} fails</span>
+          </div>
+          <div class="stat-bar" aria-label="Success rate"><span style="width:${entry.success * 100}%"></span></div>
+          <a class="carousel-demo" href="${entry.demo}">↺ Replay demo</a>
+        `;
+        track.appendChild(article);
+        slides.push(article);
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.setAttribute('aria-label', `Show testimonial ${idx + 1}`);
+        dot.addEventListener('click', () => setActive(idx));
+        dots.appendChild(dot);
+        dotsBtns.push(dot);
+      };
+      heroCarouselData.forEach(buildCard);
+      let active = 0;
+      let timer = null;
+      const setActive = (index) => {
+        active = (index + slides.length) % slides.length;
+        slides.forEach((slide, idx) => {
+          slide.classList.toggle('active', idx === active);
+          slide.setAttribute('tabindex', idx === active ? '0' : '-1');
+        });
+        dotsBtns.forEach((btn, idx) => btn.classList.toggle('active', idx === active));
+      };
+      const nextSlide = () => setActive(active + 1);
+      const prevSlide = () => setActive(active - 1);
+      const startTimer = () => { stopTimer(); timer = setInterval(nextSlide, 6000); };
+      const stopTimer = () => { if (timer) clearInterval(timer); };
+      next.addEventListener('click', nextSlide);
+      prev.addEventListener('click', prevSlide);
+      const carousel = document.querySelector('.hero-carousel');
+      if (carousel) {
+        carousel.addEventListener('mouseenter', stopTimer);
+        carousel.addEventListener('mouseleave', startTimer);
+        let touchStartX = 0;
+        carousel.addEventListener('touchstart', (event) => { touchStartX = event.touches[0].clientX; stopTimer(); }, { passive: true });
+        carousel.addEventListener('touchend', (event) => {
+          const delta = event.changedTouches[0].clientX - touchStartX;
+          if (Math.abs(delta) > 40) { delta > 0 ? prevSlide() : nextSlide(); }
+          startTimer();
+        });
+      }
+      setActive(0);
+      startTimer();
+    });
+  </script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const faqList = document.getElementById('faqList');
+      if (!faqList) return;
+      const faqItems = Array.from(faqList.querySelectorAll('.faq-item'));
+      const searchInput = document.getElementById('faqSearch');
+      const emptyState = faqList.querySelector('.faq-empty');
+
+      faqItems.forEach((item) => {
+        const button = item.querySelector('.faq-question');
+        const answer = item.querySelector('.faq-answer');
+        if (!button || !answer) return;
+        button.addEventListener('click', () => {
+          const isExpanded = button.getAttribute('aria-expanded') === 'true';
+          faqItems.forEach((it) => {
+            const btn = it.querySelector('.faq-question');
+            const panel = it.querySelector('.faq-answer');
+            if (!btn || !panel) return;
+            const expand = it === item && !isExpanded;
+            btn.setAttribute('aria-expanded', String(expand));
+            panel.classList.toggle('open', expand);
+          });
+        });
+      });
+
+      const filterFaq = (value = '') => {
+        const term = value.trim().toLowerCase();
+        let visibleCount = 0;
+        faqItems.forEach((item) => {
+          const haystack = item.dataset.question || '';
+          const match = !term || haystack.toLowerCase().includes(term);
+          item.classList.toggle('hidden', !match);
+          if (match) visibleCount += 1;
+        });
+        if (emptyState) emptyState.hidden = visibleCount !== 0;
+      };
+
+      if (searchInput) {
+        searchInput.addEventListener('input', (event) => {
+          filterFaq(event.target.value);
+        });
+      }
+
+      // Build FAQPage schema from DOM content for SEO
+      const schema = {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: faqItems.map((item) => {
+          const question = item.querySelector('.faq-question span');
+          const answer = item.querySelector('.faq-answer');
+          return {
+            '@type': 'Question',
+            name: question ? question.textContent.trim() : '',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: answer ? answer.textContent.trim() : ''
+            }
+          };
+        })
+      };
+      const schemaScript = document.createElement('script');
+      schemaScript.type = 'application/ld+json';
+      schemaScript.textContent = JSON.stringify(schema);
+      document.body.appendChild(schemaScript);
+    });
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const techCards = document.querySelectorAll('.tech-card');
+      if (!techCards.length) return;
+
+      const slugify = (value = '') => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'stack';
+
+      const buildCrewYaml = (meta) => `project: ${meta.stack} Quickstart Crew
+description: >
+  Auto-generated from the Tech Stack Integrations Gallery for the ${meta.stack} track.
+  Aligns with docs/WEBSITE-FEATURES-AND-USE-CASES.md so every build uses PM-led
+  planning, phased dispatch, shared memory, and DLQ replay.
+references:
+  - docs/WEBSITE-FEATURES-AND-USE-CASES.md
+  - docs/PHASED-ORCHESTRATOR.md
+stack:
+  target_surface: ${meta.surface}
+  layer: ${meta.layer}
+  runtime: ${meta.runtime}
+  entry_command: ${meta.entry}
+  provider: ${meta.provider}
+  description: ${meta.description}
+  roadmap: ROADMAP.md
+orchestrator:
+  mode: phased
+  launch_command: node unified-orchestrator.mjs "${meta.stack} starter in projects/${meta.slug}"
+  phases:
+    - MVP
+    - Phase 1
+    - Phase 2
+  shared_memory:
+    files:
+      - current-state.md
+      - decisions.md
+      - agent-handoff.md
+      - orchestration-protocol.md
+  dlq:
+    max_retries: 3
+    replay: true
+agents:
+  - id: crew-pm
+    role: planner
+    model: groq/sonar-pro
+    responsibilities:
+      - break ${meta.stack} requirements into 3-5 task phases
+      - enforce orchestration protocol + shared memory hooks
+  - id: crew-coder
+    role: builder
+    model: openai/gpt-5.1-codex
+    toolkit:
+      - file.write
+      - file.read
+      - exec
+  - id: crew-qa
+    role: tester
+    model: anthropic/claude-haiku-4-5
+    responsibilities:
+      - validate deliverables, add regression tests
+  - id: crew-fixer
+    role: debugger
+    model: deepseek/deepseek-coder
+    responsibilities:
+      - resolve DLQ entries + retries
+pipelines:
+  - name: ${meta.stack} Delivery
+    trigger: manual
+    phases:
+      - MVP
+      - Phase 1
+      - Phase 2
+    steps:
+      - send: crew-pm
+      - send: crew-coder
+      - send: crew-qa
+      - send: crew-fixer
+targets:
+  - path: projects/${meta.slug}
+    surface: ${meta.surface}
+    layer: ${meta.layer}
+    entry: ${meta.entry}
+    provider: ${meta.provider}
+dashboard:
+  url: http://localhost:4319
+notes:
+  - Generated ${new Date().toISOString()} from crewswarm.ai gallery
+`;
+
+      const buildReadme = (meta) => `# ${meta.stack} + CrewSwarm Scaffold
+
+This bundle ships with:
+
+- "crew.yaml" — drop into your project registry to align with the PM-led phased workflow
+- "README.md" — the file you're reading, with quick-start steps
+
+## Quick start
+
+1. Copy the files into "projects/${meta.slug}".
+2. Update "ROADMAP.md" with the backlog you want the PM Loop to execute.
+3. Run:
+   node unified-orchestrator.mjs "${meta.stack} starter" --project projects/${meta.slug}
+4. Monitor progress in the RT Messages tab or SwiftBar status menu.
+
+## Stack metadata
+
+- Surface: ${meta.surface}
+- Layer: ${meta.layer}
+- Runtime: ${meta.runtime}
+- Entry command: ${meta.entry}
+- Provider: ${meta.provider}
+- Notes: ${meta.description}
+
+## Why this template
+
+It references docs/WEBSITE-FEATURES-AND-USE-CASES.md so every run inherits:
+
+- Shared memory files (current-state, decisions, handoff, orchestration protocol)
+- Targeted dispatch (crew-pm → crew-coder → crew-qa → crew-fixer)
+- Phased builds (MVP → Phase 1 → Phase 2)
+- DLQ fallback with replay hooks
+
+Need to tweak it? Edit "crew.yaml" and rerun the orchestrator — no rebuild needed.
+`;
+
+      const downloadScaffold = async (meta) => {
+        if (!window.JSZip) {
+          alert('Scaffold export requires JSZip. Refresh to reload the CDN.');
+          return;
+        }
+        const zip = new JSZip();
+        zip.file('crew.yaml', buildCrewYaml(meta));
+        zip.file('README.md', buildReadme(meta));
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `crewswarm-${meta.slug}-scaffold.zip`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+      };
+
+      techCards.forEach((card) => {
+        const button = card.querySelector('.tech-scaffold-btn');
+        if (!button) return;
+        button.dataset.defaultLabel = button.textContent;
+        button.addEventListener('click', async (event) => {
+          event.stopPropagation();
+          const meta = {
+            stack: card.dataset.stack || 'Custom Stack',
+            slug: card.dataset.slug || slugify(card.dataset.stack || 'custom stack'),
+            runtime: card.dataset.runtime || 'Custom runtime',
+            entry: card.dataset.entry || 'npm run dev',
+            surface: card.dataset.surface || 'app',
+            layer: card.dataset.layer || 'app',
+            provider: card.dataset.provider || 'CrewSwarm',
+            description: card.dataset.description || 'Generated from gallery'
+          };
+          const original = button.dataset.defaultLabel;
+          button.disabled = true;
+          button.textContent = 'Preparing…';
+          try {
+            await downloadScaffold(meta);
+          } finally {
+            button.disabled = false;
+            button.textContent = original;
+          }
+        });
+
+        card.addEventListener('keydown', (event) => {
+          if ((event.key === 'Enter' || event.key === ' ') && event.target === card) {
+            event.preventDefault();
+            button.click();
+          }
+        });
+      });
+    });
+  </script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const sections = document.querySelectorAll('section.section, .proof-bar');
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+          }
+        });
+      }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+      sections.forEach(section => observer.observe(section));
+
+      const lazyImages = document.querySelectorAll('img[data-src]');
+      const imageObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const img = entry.target;
+            img.src = img.dataset.src;
+            img.classList.add('loaded');
+            img.removeAttribute('data-src');
+            imageObserver.unobserve(img);
+          }
+        });
+      }, { rootMargin: '50px 0px' });
+      lazyImages.forEach(img => imageObserver.observe(img));
+
+      const phaseSelect = document.getElementById('roadmap-phase');
+      const sortSelect = document.getElementById('roadmap-sort');
+      const roadmapList = document.getElementById('roadmap-list');
+      if (phaseSelect && sortSelect && roadmapList) {
+        const statusOrder = ['ready', 'in-progress', 'done'];
+        const applyRoadmapFilters = () => {
+          const phaseValue = phaseSelect.value;
+          const sortValue = sortSelect.value;
+          const cards = Array.from(roadmapList.querySelectorAll('.roadmap-card'));
+          const visibleCards = cards.filter(card => {
+            const matchesPhase = phaseValue === 'all' || card.dataset.phase === phaseValue;
+            card.hidden = !matchesPhase;
+            return matchesPhase;
+          });
+
+          visibleCards
+            .sort((a, b) => {
+              if (sortValue === 'title') {
+                return a.querySelector('h3').textContent.localeCompare(b.querySelector('h3').textContent);
+              }
+              return statusOrder.indexOf(a.dataset.status) - statusOrder.indexOf(b.dataset.status);
+            })
+            .forEach(card => roadmapList.appendChild(card));
+        };
+
+        phaseSelect.addEventListener('change', applyRoadmapFilters);
+        sortSelect.addEventListener('change', applyRoadmapFilters);
+        applyRoadmapFilters();
+      }
+    });
+
+    (function() {
+      const minifyCSS = function(css) {
+        return css
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/\s+/g, ' ')
+          .replace(/\s*([{}:;,>~+])\s*/g, '$1')
+          .replace(/;}/g, '}')
+          .replace(/\s+!/g, '!')
+          .trim();
+      };
+      window.minifyCSS = minifyCSS;
+    })();
+  </script>
+
+  <script>
+    // Hamburger nav toggle
+    (function() {
+      const btn = document.getElementById('navHamburger');
+      const links = document.getElementById('navLinks');
+      if (!btn || !links) return;
+      btn.addEventListener('click', function() {
+        const open = links.classList.toggle('open');
+        btn.classList.toggle('open', open);
+        btn.setAttribute('aria-expanded', String(open));
+      });
+      // Close on nav link click
+      links.querySelectorAll('.nav-link-item').forEach(function(a) {
+        a.addEventListener('click', function() {
+          links.classList.remove('open');
+          btn.classList.remove('open');
+          btn.setAttribute('aria-expanded', 'false');
+        });
+      });
+      // Close on outside click
+      document.addEventListener('click', function(e) {
+        if (!btn.contains(e.target) && !links.contains(e.target)) {
+          links.classList.remove('open');
+          btn.classList.remove('open');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
