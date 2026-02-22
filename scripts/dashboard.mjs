@@ -507,6 +507,9 @@ const html = `<!doctype html>
       <button class="nav-item" id="navProviders" onclick="showProviders()">
         <span class="nav-icon">⚙️</span> Providers
       </button>
+      <button class="nav-item" id="navSettings" onclick="showSettings()">
+        <span class="nav-icon">🛠</span> Settings
+      </button>
     </div>
 
     <div class="sidebar-bottom">
@@ -519,8 +522,6 @@ const html = `<!doctype html>
 
     <!-- Sessions view -->
     <div class="view-sessions active" id="sessionsView">
-      <!-- Token usage strip — shown at top of Sessions overview -->
-      <div id="tokenUsageStrip" style="display:flex;gap:16px;align-items:center;padding:10px 16px 0;flex-wrap:wrap;"></div>
       <section id="sessions"></section>
       <section id="messages"></section>
     </div>
@@ -816,21 +817,38 @@ const html = `<!doctype html>
         </div>
       </div>
 
-      <!-- Command allowlist — quick-access before agent list -->
-      <div class="card" style="margin:0 16px 16px;max-width:640px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div class="card-title">🔐 Command Allowlist</div>
-          <button onclick="loadCmdAllowlist()" class="btn-ghost" style="font-size:11px;">↻</button>
-        </div>
-        <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Patterns here auto-approve agent <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">@@RUN_CMD</code> calls without prompting. Use <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">npm *</code> style globs.</div>
-        <div id="cmdAllowlistItems" style="min-height:24px;margin-bottom:10px;"></div>
-        <div style="display:flex;gap:6px;">
-          <input id="cmdAllowlistInput" placeholder="e.g. npm * or node *" style="flex:1;font-size:12px;" onkeydown="if(event.key==='Enter')addAllowlistPattern();" />
-          <button onclick="addAllowlistPattern()" class="btn-green" style="font-size:12px;padding:6px 10px;">Add</button>
-        </div>
-      </div>
+      <div id="agentsList" style="display:grid; gap:12px;"></div>
+    </div>
 
-      <div id="agentsList" style="display:grid; gap:12px;padding:0 16px 16px;"></div>
+    <!-- Settings -->
+    <div class="view" id="settingsView">
+      <div class="page-header">
+        <div><div class="page-title">Settings</div><div class="page-sub">Token usage, command allowlist, and system configuration</div></div>
+        <button onclick="showSettings()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:960px;">
+
+        <!-- Token usage -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:16px;">💰 Token Usage</div>
+          <div id="tokenUsageWidget"><div style="color:var(--text-3);font-size:12px;">Loading…</div></div>
+        </div>
+
+        <!-- Command allowlist -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:10px;">🔐 Command Allowlist</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;line-height:1.5;">
+            Commands matching these patterns auto-approve agent <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@RUN_CMD</code> calls — no toast, no wait.<br/>
+            Use <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">npm *</code> glob style. Dangerous commands (<code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">rm -rf</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">sudo</code>, etc.) are always blocked regardless.
+          </div>
+          <div id="cmdAllowlistItems" style="min-height:24px;margin-bottom:12px;"></div>
+          <div style="display:flex;gap:6px;">
+            <input id="cmdAllowlistInput" placeholder="e.g. npm * or node * or python *" style="flex:1;font-size:12px;" onkeydown="if(event.key==='Enter')addAllowlistPattern();" />
+            <button onclick="addAllowlistPattern()" class="btn-green" style="font-size:12px;padding:7px 12px;">Add</button>
+          </div>
+        </div>
+
+      </div>
     </div>
 
     <!-- Build -->
@@ -1071,7 +1089,6 @@ function showSwarm(){
   document.getElementById('sessionsView').classList.add('active');
   setNavActive('navSwarm');
   loadSessions(); loadMessages();
-  loadTokenUsage();
 }
 function showRT(){
   hideAllViews();
@@ -1378,30 +1395,13 @@ function estimateCost(byModel) {
 }
 
 async function loadTokenUsage() {
-  // Works for both the Messaging full widget and the Sessions strip
-  const box = document.getElementById('tokenUsageWidget') || document.getElementById('tokenUsageStrip');
+  const box = document.getElementById('tokenUsageWidget');
   if (!box) return;
   const u = await getJSON('/api/token-usage').catch(() => ({}));
   const totalTokens = (u.prompt || 0) + (u.completion || 0);
   const cost = estimateCost(u.byModel);
-  const isStrip = box.id === 'tokenUsageStrip';
 
-  if (isStrip) {
-    // Compact inline pill strip for the Sessions view header
-    const pill = function(label, value, color) {
-      return '<div style="display:flex;align-items:baseline;gap:5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:5px 10px;">' +
-        '<span style="font-size:14px;font-weight:700;color:' + color + ';">' + value + '</span>' +
-        '<span style="font-size:11px;color:var(--text-3);">' + label + '</span>' +
-      '</div>';
-    };
-    box.innerHTML =
-      pill('LLM calls', (u.calls||0).toLocaleString(), 'var(--accent)') +
-      pill('tokens', (totalTokens/1000).toFixed(1) + 'k', 'var(--green)') +
-      pill('est. cost', '$' + cost.toFixed(4), 'var(--yellow,#fbbf24)');
-    return;
-  }
-
-  // Full widget (Messaging tab)
+  // Full widget
   let html =
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">' +
       '<div style="text-align:center;">' +
@@ -2021,12 +2021,19 @@ async function saveRTToken(){
     loadRTToken();
   } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
 }
+function showSettings(){
+  hideAllViews();
+  document.getElementById('settingsView').classList.add('active');
+  setNavActive('navSettings');
+  loadTokenUsage();
+  loadCmdAllowlist();
+}
+
 function showAgents(){
   hideAllViews();
   document.getElementById('agentsView').classList.add('active');
   setNavActive('navAgents');
   loadAgents_cfg();
-  loadCmdAllowlist();
 }
 
 // ── Agents UI ──────────────────────────────────────────────────────────────
