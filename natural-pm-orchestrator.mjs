@@ -14,8 +14,8 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || __dirname;
-const GATEWAY_BRIDGE_PATH = `${OPENCLAW_DIR}/gateway-bridge.mjs`;
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
+const GATEWAY_BRIDGE_PATH = `${CREWSWARM_DIR}/gateway-bridge.mjs`;
 
 // Parser rules: extract task dispatch from natural language
 function parseNaturalLanguagePlan(text) {
@@ -106,7 +106,7 @@ Explain your plan naturally. For example:
 "I'll have Codex create the file, then Tester will write tests for it."`;
 
     const proc = spawn('node', [GATEWAY_BRIDGE_PATH, naturalPrompt], {
-      cwd: OPENCLAW_DIR,
+      cwd: CREWSWARM_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
@@ -151,7 +151,7 @@ async function dispatchTask(agent, task) {
   
   const runSend = () => new Promise((resolve, reject) => {
     const proc = spawn('node', [GATEWAY_BRIDGE_PATH, '--send', agent, task], {
-      cwd: OPENCLAW_DIR,
+      cwd: CREWSWARM_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
     });
@@ -165,7 +165,7 @@ async function dispatchTask(agent, task) {
 
   const runLegacy = () => new Promise((resolve, reject) => {
     const proc = spawn('node', [GATEWAY_BRIDGE_PATH, task], {
-      cwd: OPENCLAW_DIR,
+      cwd: CREWSWARM_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, OPENCREW_RT_AGENT: agent },
     });
