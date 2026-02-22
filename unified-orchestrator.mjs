@@ -19,9 +19,11 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { readFile, appendFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || '/Users/jeffhobbs/Desktop/OpenClaw';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const OPENCLAW_DIR = process.env.OPENCLAW_DIR || __dirname;
 const GATEWAY_BRIDGE_PATH = `${OPENCLAW_DIR}/gateway-bridge.mjs`;
 const LOG_DIR = join(OPENCLAW_DIR, 'orchestrator-logs');
 const DISPATCH_LOG = join(LOG_DIR, 'unified-dispatch.jsonl');

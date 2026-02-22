@@ -15,10 +15,12 @@
 import { spawn } from 'node:child_process';
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { existsSync, watch } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || '/Users/jeffhobbs/Desktop/OpenClaw';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const OPENCLAW_DIR = process.env.OPENCLAW_DIR || __dirname;
 const ORCHESTRATOR = join(OPENCLAW_DIR, 'natural-pm-orchestrator.mjs');
 const WATCH_DIR = process.cwd();
 

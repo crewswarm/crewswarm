@@ -85,6 +85,7 @@ Swap models per agent, per project. Anthropic for coder, Groq for PM expansion, 
 
 | Agent | Alias | Role | Typical tasks |
 |---|---|---|---|
+| `crew-lead` | — | Chat commander | Conversational UI: roadmaps, dispatch, Q&A; uses Brave + codebase search for lookups |
 | `crew-main` | Quill | Coordinator | Chat, triage, kick off orchestrators |
 | `crew-pm` | Planner | Planning | Break requirements into tasks, assign agents |
 | `crew-coder` | Codex | Implementation | Write code, create files, run commands |
@@ -109,7 +110,7 @@ Swap models per agent, per project. Anthropic for coder, Groq for PM expansion, 
 
 ## Dashboard
 
-Runs at `localhost:4319`. Five sections:
+Runs at `localhost:4319`. Sections:
 
 **Build**
 - Textarea + "Enhance prompt" (Groq turns a rough idea into a clear requirement)
@@ -117,6 +118,15 @@ Runs at `localhost:4319`. Five sections:
 - "Build Until Done" — continuous build; loops until all sections exist
 - "PM Loop" — Start / Stop / Dry run / View roadmap; shows running PID, live log
 - Live build log and phased-dispatch progress readout
+
+**Chat**
+- Talk to **crew-lead** (conversational commander): ask questions, request roadmaps, dispatch tasks
+- Same conversation syncs across dashboard, CrewChat menu bar app, and Telegram
+- crew-lead uses Brave Search and codebase search when your message looks like a question or lookup
+
+**Services**
+- Live status for RT Message Bus, Agent Crew, **crew-lead**, Telegram Bridge, OpenClaw Gateway, OpenCode Server, Dashboard
+- Restart or stop any service from one place
 
 **RT Messages**
 - Live feed of every task, agent, and reply
@@ -134,6 +144,17 @@ Runs at `localhost:4319`. Five sections:
 **Send**
 - Dropdown: pick any agent or broadcast
 - Direct message send
+
+**Messaging**
+- Telegram bridge config and message log; all Telegram messages route to crew-lead and share chat history with the dashboard.
+
+---
+
+## crew-lead & CrewChat
+
+**crew-lead** is the conversational commander: the brain behind the dashboard Chat tab, the CrewChat menu bar app, and Telegram. You talk in natural language; crew-lead can draft project roadmaps (with @@PROJECT), dispatch tasks to agents (e.g. "have crew-coder add a health check"), and answer questions. When your message looks like a lookup or question, crew-lead automatically uses **Brave Search** (web) and **codebase search** (workspace files) to inject context into its reply.
+
+**CrewChat** is a native macOS menu bar app: one click opens a popover with the same crew-lead conversation. Build it with `scripts/build-crew-chat.sh`; runs from `~/Applications/CrewChat.app`. Stays in sync with the dashboard and Telegram.
 
 ---
 
@@ -188,7 +209,7 @@ Use Anthropic Claude for coding quality, Groq for PM task expansion speed, OpenA
 - Phased PDD: MVP → Phase 1 → Phase 2; auto-breakdown of failed tasks into 2–4 subtasks
 - Task leases + heartbeat monitoring: no duplicate work, no stale agents
 - Dead Letter Queue + one-click replay
-- Three control surfaces: CLI, web dashboard, macOS SwiftBar
+- Four control surfaces: CLI, web dashboard, CrewChat (menu bar), SwiftBar
 - Shared memory: markdown files injected per task; persistent across sessions
 - Project registry: multiple projects, per-project roadmap and output directory
 - All models and agents configurable via JSON; no code changes to switch LLMs

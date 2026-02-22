@@ -27,9 +27,12 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile, appendFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Args (parsed early so config can reference them) ──────────────────────
 const args           = process.argv.slice(2);
@@ -41,7 +44,7 @@ const MAX_ITEMS      = maxIdx >= 0 ? Number(args[maxIdx + 1]) : 200;
 const projDirIdx     = args.indexOf("--project-dir");
 
 // ── Config ────────────────────────────────────────────────────────────────
-const OPENCLAW_DIR   = process.env.OPENCLAW_DIR || "/Users/jeffhobbs/Desktop/OpenClaw";
+const OPENCLAW_DIR   = process.env.OPENCLAW_DIR || __dirname;
 const OUTPUT_DIR     = projDirIdx >= 0 ? args[projDirIdx + 1]
                      : (process.env.OPENCREW_OUTPUT_DIR || join(OPENCLAW_DIR, "website"));
 const ROADMAP_FILE   = process.env.PM_ROADMAP_FILE || join(OUTPUT_DIR, "ROADMAP.md");

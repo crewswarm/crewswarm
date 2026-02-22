@@ -1,401 +1,297 @@
-# OpenClaw Multi-Agent System Architecture
+# CrewSwarm — System Architecture
 
-**Last Updated:** 2026-02-20  
-**Goal:** Autonomous dev team that takes high-level orders, breaks them down, executes in parallel, and produces perfect code with zero human intervention.
-
----
-
-## 🎯 The Vision
-
-```
-YOU: "Build user authentication system"
-PM: *analyzes → breaks into 8 tasks → dispatches to 6 agents → monitors → retries failures*
-    ├─ Codex: Writes JWT functions ✅
-    ├─ Tester: Writes 47 tests ✅
-    ├─ Guardian: Security audit ✅
-    └─ Debugger: Fixes edge case ✅
-PM: "Complete. 12 files changed. All tests pass. Production ready."
-```
+**Last Updated:** 2026-02-22
 
 ---
 
-## 📐 Current Architecture
+## Overview
+
+CrewSwarm is a standalone multi-agent orchestration platform. A conversational commander (`crew-lead`) receives natural-language input, dispatches work to specialist agents over a WebSocket message bus, and each agent independently calls its configured LLM, executes real tool calls (file writes, shell commands), and reports results back. No third-party orchestration service required.
+
+---
+
+## Component Map
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         USER (You)                               │
-│                 "Build feature X" or "Fix bug Y"                 │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-                            ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                  CONTROL INTERFACES (3 ways in)                  │
-├─────────────────┬───────────────────┬───────────────────────────┤
-│ 1. CLI Tool     │ 2. SwiftBar Menu  │ 3. Control UI (Quill)     │
-│ openswitchctl   │ macOS menu bar    │ Cursor/OpenClaw UI        │
-│ send <agent>    │ Quick messaging   │ Quill runs orchestrator   │
-└────────┬────────┴────────┬──────────┴──────────┬────────────────┘
-         │                 │                      │
-         └─────────────────┼──────────────────────┘
-                           │
-                           ↓
-┌─────────────────────────────────────────────────────────────────┐
-│              OPENCREW RT MESSAGE BUS (WebSocket)                 │
-│                    ws://127.0.0.1:18889                          │
-│                                                                  │
-│  Channels:                                                       │
-│  - command   (task dispatch)                                     │
-│  - done      (success reports)                                   │
-│  - issues    (failures/errors)                                   │
-│  - status    (health checks)                                     │
-│  - assign    (task routing)                                      │
-│                                                                  │
-│  Features:                                                       │
-│  - Real-time pub/sub                                             │
-│  - Idempotency keys (duplicate prevention)                       │
-│  - Task leases (only 1 agent picks up task)                      │
-│  - Correlation IDs (track task chains)                           │
-│  - Auth tokens (optional)                                        │
-└────────────────┬────────────────────────────────────────────────┘
-                 │
-                 ↓ (7 daemons subscribe)
-┌─────────────────────────────────────────────────────────────────┐
-│            GATEWAY-BRIDGE DAEMONS (7 running)                    │
-│              ~/.openclaw/logs/openclaw-rt-*.log                  │
-│                                                                  │
-│  Each daemon:                                                    │
-│  - Listens on OpenCrew RT channels                               │
-│  - Loads shared memory (4 .md files)                             │
-│  - Routes tasks to OpenClaw Gateway                              │
-│  - Enforces retry policy & DLQ                                   │
-│  - Validates coding artifacts                                    │
-│                                                                  │
-│  Agents:                                                         │
-│  1. crew-main (Quill 🦊)        → OpenClaw agent "main"         │
-│  2. crew-pm (Planner 📋)        → OpenClaw agent "pm"           │
-│  3. crew-coder (Codex ⚡)       → OpenClaw agent "coder"        │
-│  4. crew-coder-2 (Codex2 ⚡)    → OpenClaw agent "coder"        │
-│  5. crew-qa (Tester 🔬)         → OpenClaw agent "qa"           │
-│  6. crew-fixer (Debugger 🐛)    → OpenClaw agent "fixer"        │
-│  7. security (Guardian 🛡️)      → OpenClaw agent "security"     │
-└────────────────┬────────────────────────────────────────────────┘
-                 │
-                 ↓ (bridge.chat calls)
-┌─────────────────────────────────────────────────────────────────┐
-│              OPENCLAW GATEWAY (Agent Runtime)                    │
-│                   ws://127.0.0.1:18789                           │
-│                                                                  │
-│  Config: ~/.openclaw/openclaw.json                               │
-│  - Defines 6 specialized agents                                  │
-│  - Each has model, identity, tools, systemPrompt                 │
-│                                                                  │
-│  Features:                                                       │
-│  - Session management                                            │
-│  - Tool execution (read/write/exec/grep/web_search)              │
-│  - Model switching (Groq/OpenAI/Anthropic/NVIDIA)                │
-│  - Subagent spawning (native OpenClaw feature)                   │
-│  - Rate limit handling                                           │
-│  - Streaming responses                                           │
-└────────────────┬────────────────────────────────────────────────┘
-                 │
-                 ↓ (tool calls)
-┌─────────────────────────────────────────────────────────────────┐
-│                    TOOL EXECUTION LAYER                          │
-│                                                                  │
-│  File Operations:                                                │
-│  - write(file_path, contents)                                    │
-│  - search_replace(file_path, old, new)                           │
-│  - read_file(target_file)                                        │
-│  - list_dir(target_directory)                                    │
-│  - grep(pattern, path)                                           │
-│                                                                  │
-│  Code Execution:                                                 │
-│  - exec(command, yieldMs)                                        │
-│  - Runs bash/zsh commands                                        │
-│  - Can install packages, run tests, git operations               │
-│                                                                  │
-│  Internet:                                                       │
-│  - web_search(query)                                             │
-│  - web_fetch(url)                                                │
-│                                                                  │
-│  Browser Automation:                                             │
-│  - browser (via Chrome extension relay)                          │
-└─────────────────────────────────────────────────────────────────┘
+│                        Control Surfaces                         │
+│                                                                 │
+│  crew-cli.mjs   Dashboard (4319)   SwiftBar (macOS)  Telegram  │
+│       │               │                  │               │      │
+│       └───────────────┴──────────────────┴───────────────┘      │
+│                               │                                 │
+│                        HTTP :5010                               │
+│                    crew-lead.mjs                                │
+│          (chat · dispatch · pipeline DSL · approval relay)      │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │ WebSocket pub/sub
+                   ┌────────────┴────────────┐
+                   │  RT Bus  :18889          │
+                   │  opencrew-rt-daemon.mjs  │
+                   │  channels: command       │
+                   │           done           │
+                   │           issues         │
+                   │           events         │
+                   │           status         │
+                   └────────────┬────────────┘
+                                │ task.assigned / command.run_task
+          ┌──────────┬──────────┼──────────┬──────────┐
+          │          │          │          │          │
+      crew-pm  crew-coder  crew-qa  crew-fixer  crew-github  …
+          │          │
+          └──────────┴─────── gateway-bridge.mjs (one process per agent)
+                                  │
+                          ┌───────┴───────┐
+                          │  Direct LLM   │  ← per-provider API (Groq/Anthropic/OpenAI/…)
+                          │  call         │
+                          └───────┬───────┘
+                                  │ reply text
+                          ┌───────┴────────────┐
+                          │  Tool execution     │
+                          │  @@WRITE_FILE       │ → real file I/O
+                          │  @@READ_FILE        │ → real file I/O
+                          │  @@MKDIR            │ → real dir creation
+                          │  @@RUN_CMD          │ → shell (with approval gate)
+                          └───────┬────────────┘
+                                  │
+                    ┌─────────────┴──────────────┐
+                    │         Memory              │
+                    │  memory/brain.md            │ ← persistent facts
+                    │  memory/session-log.md      │ ← task summaries
+                    │  memory/current-state.md    │
+                    │  memory/orchestration-      │
+                    │    protocol.md              │
+                    └─────────────┬──────────────┘
+                                  │
+                         crew-scribe.mjs
+                    (polls done.jsonl every 4s,
+                     writes LLM summaries to session-log.md,
+                     deduplicates @@BRAIN entries to brain.md)
 ```
 
 ---
 
-## 🧠 Tech Stack Breakdown
+## Components
 
-### 1. **OpenCrew RT Plugin** (Real-time Message Bus)
-- **Language:** TypeScript
-- **Runtime:** Compiled to JavaScript, runs via Node.js
-- **Location:** `~/.openclaw/workspace/shared-memory/claw-swarm/opencrew-rt/`
-- **Protocol:** Custom WebSocket pub/sub
-- **Channels:** `command`, `done`, `issues`, `status`, `assign`, `handoff`, `reassign`, `events`
-- **Features:**
-  - Idempotency (prevents duplicate task execution)
-  - Task leases (distributed locking)
-  - Correlation IDs (track task chains)
-  - Event logging (all messages → `events.jsonl`)
-  - Auth tokens (optional)
-- **Status:** ✅ **WORKING**
+### 1. crew-lead (`crew-lead.mjs`) — Port 5010
 
----
+The conversational entry point. Receives chat messages, calls the LLM, parses structured markers from replies, and acts on them.
 
-### 2. **Gateway Bridge** (Agent Daemon Wrapper)
-- **Language:** JavaScript (ES Modules)
-- **File:** `~/Desktop/OpenClaw/gateway-bridge.mjs`
-- **Purpose:** Bridges OpenCrew RT ↔ OpenClaw Gateway
-- **Key Functions:**
-  - Loads shared memory (6 .md files) on every task
-  - Injects mandatory startup/shutdown protocol into prompts
-  - Routes tasks to appropriate OpenClaw agent
-  - Validates coding artifacts (temporarily disabled)
-  - Implements retry policy with exponential backoff
-  - DLQ routing for failed tasks
-  - Prevents routing to broken OpenCode CLI
-- **Environment Variables:**
-  - `OPENCREW_RT_AGENT` - Which agent this daemon represents
-  - `OPENCREW_OPENCODE_ENABLED=0` - Bypass broken OpenCode plugin system
-  - `OPENCREW_RT_CHANNELS` - Which channels to subscribe to
-- **Status:** ✅ **WORKING** (all 7 daemons running)
+**Markers it handles:**
+
+| Marker | Action |
+|---|---|
+| `@@DISPATCH {"agent":"...","task":"..."}` | Send one task to one agent via RT bus |
+| `@@PIPELINE [{"agent":"...","task":"..."},…]` | Chain sequential tasks; each step starts when the prior completes |
+| `@@PROJECT {"name":"...","outputDir":"..."}` | Draft a ROADMAP.md, await user approval, start PM Loop |
+
+**Persistence:**
+- Per-session conversation history in `~/.crewswarm/chat-history/<sessionId>.jsonl`
+- Telegram sessions are isolated: `telegram-<chatId>` session IDs
+
+**Approval relay:**
+- Listens for `cmd.needs_approval` events on the RT bus
+- Broadcasts `confirm_run_cmd` SSE to the dashboard browser
+- Exposes `POST /approve-cmd` and `POST /reject-cmd` endpoints
+- `POST /allowlist-cmd` (GET/POST/DELETE) for managing the command allowlist
+
+**SSE events pushed to dashboard:**
+- `chat_message` — user/assistant chat bubbles
+- `agent_working` — spinner while agent is running
+- `agent_reply` — agent task completion
+- `pipeline_progress` — pipeline step advancing
+- `pipeline_done` — all pipeline steps complete
+- `confirm_run_cmd` — approval toast for shell commands
 
 ---
 
-### 3. **OpenClaw Gateway** (Agent Execution Engine)
-- **Language:** TypeScript/JavaScript
-- **Binary:** `/usr/local/lib/node_modules/openclaw/`
-- **Config:** `~/.openclaw/openclaw.json`
-- **Protocol:** WebSocket on `ws://127.0.0.1:18789`
-- **Purpose:** Executes LLM-powered agents with real tool access
-- **Agents Configured:**
+### 2. RT Bus (`scripts/opencrew-rt-daemon.mjs`) — Port 18889
 
-| ID       | Name      | Model                         | Role                          | Tools                      |
-|----------|-----------|-------------------------------|-------------------------------|----------------------------|
-| `main`   | Quill 🦊  | `groq/llama-3.3-70b-versatile`| Main coordinator              | coding, web_search, web_fetch |
-| `coder`  | Codex ⚡  | `groq/llama-3.3-70b-versatile`| Code implementation           | coding, web_search, web_fetch |
-| `pm`     | Planner 📋| `groq/llama-3.3-70b-versatile`| **Project orchestrator**      | coding, web_search, web_fetch |
-| `qa`     | Tester 🔬 | `groq/llama-3.3-70b-versatile`| Testing & validation          | coding, web_search, web_fetch |
-| `fixer`  | Debugger 🐛| `groq/llama-3.3-70b-versatile`| Bug fixing                    | coding, web_search, web_fetch |
-| `security`| Guardian 🛡️| `groq/llama-3.3-70b-versatile`| Security audits              | coding, web_search, web_fetch |
+WebSocket pub/sub message bus. All agent communication flows through it.
 
-- **Features:**
-  - Native subagent spawning (OpenClaw's built-in feature)
-  - Multi-model support (Groq, OpenAI, Anthropic, xAI, NVIDIA)
-  - Session persistence
-  - Streaming responses
-  - Rate limit handling
-  - `maxConcurrent: 20` (can run 20 tasks in parallel)
-- **Status:** ✅ **WORKING** (all agents can code)
+**Channels:**
+- `command` — task dispatch (`command.run_task`, `task.assigned`)
+- `done` — task completions written to `done.jsonl`
+- `issues` — task failures, artifact validation errors
+- `events` — lifecycle events (`agent.heartbeat`, `agent.online`, `cmd.needs_approval`, `cmd.approved`)
+- `status` — heartbeats
+
+**Features:**
+- Idempotency keys prevent duplicate task execution
+- Task leases (distributed locking — only one agent picks up each task)
+- Auth token validation
+- Event logging to `events.jsonl`
 
 ---
 
-### 4. **Shared Memory System** (Persistent Context)
-- **Location:** `~/Desktop/OpenClaw/memory/`
-- **Files (full set):**
-  1. `current-state.md` - Current project snapshot
-  2. `decisions.md` - Durable architectural decisions
-  3. `open-questions.md` - Blockers needing resolution
-  4. `agent-handoff.md` - What happened, what's next
-  5. `session-log.md` - Append-only execution log
-  6. `orchestration-protocol.md` - PM's dispatch instructions
-- **Protocol:** `protocol.md` defines mandatory startup/shutdown checklist
-- **Injection:** `gateway-bridge.mjs` loads 4 files (current-state, decisions, agent-handoff, orchestration-protocol) and injects them into every task prompt
-- **Purpose:**
-  - Agents never lose context across sessions
-  - Prevents duplicate work
-  - Ensures consistency
-  - Provides handoff continuity
-- **Status:** ✅ **WORKING** (auto-bootstrap if files missing)
+### 3. gateway-bridge (`gateway-bridge.mjs`) — one process per agent
+
+The per-agent daemon. Bridges the RT bus to direct LLM API calls and executes tool calls from agent replies.
+
+**Startup flow:**
+1. Reads agent config from `~/.openclaw/openclaw.json` or `~/.crewswarm/config.json`
+2. Loads shared memory files into memory
+3. Connects to RT bus, subscribes to channels
+4. Sends `agent.online` + heartbeat every 30s
+
+**Task handling:**
+1. Receives `command.run_task` or `task.assigned`
+2. Claims task lease (idempotency check)
+3. Builds prompt: shared memory + task + tool instructions
+4. Calls LLM directly (per-agent model from config)
+5. Parses `@@TOOL` markers from reply → executes file/shell operations
+6. Publishes result to `done` channel
+7. On failure: retry with backoff → escalate to `crew-fixer` → write to DLQ
+
+**Tool execution (`executeToolCalls`):**
+
+| Tool marker | Permission | Notes |
+|---|---|---|
+| `@@WRITE_FILE path\n…\n@@END_FILE` | `write_file` | Creates directories as needed |
+| `@@READ_FILE path` | `read_file` | Returns file contents appended to reply |
+| `@@MKDIR path` | `mkdir` | Recursive |
+| `@@RUN_CMD command` | `run_cmd` | Approval gate for non-auto-approved agents |
+
+**Command approval gate:**
+- `AUTO_APPROVE_CMD_AGENTS`: `crew-fixer`, `crew-github`, `crew-pm` run without prompting
+- All other agents: publish `cmd.needs_approval` → await `cmd.approved`/`cmd.rejected` (60s timeout)
+- Commands matching `~/.crewswarm/cmd-allowlist.json` patterns skip the gate
+- `BLOCKED_CMD_PATTERNS` hard-blocks `rm -rf`, `sudo`, `curl|bash`, fork bombs, etc.
+
+**Per-agent tool defaults (`AGENT_TOOL_ROLE_DEFAULTS`):**
+
+| Agent | Allowed tools |
+|---|---|
+| `crew-qa` | `read_file` |
+| `crew-coder` / `crew-coder-front` / `crew-coder-back` / `crew-frontend` / `crew-fixer` | `write_file`, `read_file`, `mkdir`, `run_cmd` |
+| `crew-github` | `read_file`, `run_cmd`, `git` |
+| `crew-pm` | `read_file`, `dispatch` |
+| `crew-security` | `read_file`, `run_cmd` |
+| `crew-copywriter` | `write_file`, `read_file` |
+
+**Escalation:**
+Failed tasks from `crew-coder`, `crew-coder-front`, `crew-coder-back`, `crew-frontend`, `crew-copywriter` auto-escalate to `crew-fixer` after retries are exhausted.
+
+**Token tracking:**
+`callLLMDirect` captures `usage.prompt_tokens` + `usage.completion_tokens` from every API response and accumulates in `~/.crewswarm/token-usage.json`.
+
+**Context window safety:**
+`brain.md` and `session-log.md` are tail-trimmed to 8,000 chars on load. Total shared memory capped at 40,000 chars per prompt.
 
 ---
 
-### 5. **Control Scripts**
-#### `openswitchctl`
-- **Language:** Bash
-- **Location:** `~/bin/openswitchctl`
-- **Commands:**
-  - `start` - Start all RT server + agent daemons
-  - `stop` - Stop all services
-  - `restart-all` - Restart everything
-  - `status` - Show health (rt:up, agents:7/7)
-  - `send <agent> <message>` - Dispatch task to specific agent
-  - `broadcast <message>` - Send to all agents
-  - `restart-openclaw-gateway` - Restart OpenClaw Gateway process
-- **Status:** ✅ **WORKING**
+### 4. crew-scribe (`scripts/crew-scribe.mjs`) — background daemon
+
+Memory maintenance daemon. Polls `done.jsonl` every 4 seconds.
+
+**For each new task completion:**
+1. Calls the fastest available LLM provider to write a one-sentence summary of what the agent accomplished
+2. Appends the summary to `memory/session-log.md`
+3. Extracts `@@BRAIN: <fact>` tags from agent replies
+4. Deduplicates against existing `brain.md` content (70% word-overlap check)
+5. Appends new facts to `memory/brain.md`
+
+**Provider priority:** Cerebras → Groq → OpenAI → Mistral → Anthropic (fastest first)
 
 ---
 
-### 6. **Monitoring Dashboard**
-- **Language:** JavaScript (Node.js)
-- **File:** `~/.openclaw/workspace/skills/swarm_mcp/dashboard.mjs`
-- **URL:** `http://127.0.0.1:4318`
-- **Features:**
-  - Real-time agent status
-  - RT message viewer (`done`, `issues`, `status` channels)
-  - DLQ (Dead Letter Queue) viewer & replay
-  - Message sending UI (select agent, type message, send)
-  - Queue metrics
-  - Session viewer
-- **Tech:**
-  - Express.js server
-  - Server-Sent Events (SSE) for real-time updates
-  - Proxies to OpenCode API (`http://127.0.0.1:4096`)
-  - Reads `.jsonl` files for RT messages
-- **Status:** ✅ **WORKING**
+### 5. Shared Memory (`memory/`)
+
+Markdown files injected into every agent's task prompt via `gateway-bridge.mjs`.
+
+| File | Purpose | Loaded into prompts? |
+|---|---|---|
+| `brain.md` | Persistent project facts — agents append `@@BRAIN:` entries | Yes |
+| `current-state.md` | System overview and critical task guidance | Yes (gitignored) |
+| `agent-handoff.md` | Current status and rules | Yes (gitignored) |
+| `orchestration-protocol.md` | Agent roster, dispatch format, tool rules | Yes |
+| `session-log.md` | LLM-written task summaries from crew-scribe | No (too large) |
+| `telegram-context.md` | Recent Telegram history | No (too noisy) |
 
 ---
 
-### 7. **SwiftBar Menu** (macOS Menu Bar UI)
-- **Language:** Bash
-- **File:** `~/Library/Application Support/SwiftBar/plugins/openswitch.10s.sh` (source: `contrib/swiftbar/`)
-- **Refresh:** Every 10 seconds
-- **Features:**
-  - Shows agent count & status
-  - "Message Agent" submenu (links to dashboard with pre-selected agent)
-  - Queue metrics (tasks in flight)
-  - Restart commands
-  - Dynamic agent list
-- **Status:** ✅ **WORKING** (colors now readable in dark mode)
+### 6. Dashboard (`scripts/dashboard.mjs`) — Port 4319
+
+Node.js HTTP server serving a single-page web app. All UI is client-side JavaScript inside one server-side template literal.
+
+**Server-side API routes:**
+
+| Route | Method | Description |
+|---|---|---|
+| `/api/agents` | GET | Agent list with heartbeat liveness |
+| `/api/rt-messages` | GET | Recent RT events (merged done.jsonl + events.jsonl) |
+| `/api/token-usage` | GET | Accumulated token/cost data |
+| `/api/cmd-allowlist` | GET/POST/DELETE | Proxy to crew-lead allowlist endpoints |
+| `/api/telegram-sessions` | GET | List Telegram chatId sessions with recent messages |
+| `/api/projects` | GET/POST | Project CRUD |
+| `/api/pm-loop/*` | GET/POST | PM Loop start/stop/status |
+| `/api/crew-lead/*` | proxy | Forward chat, history, SSE, confirm/discard-project |
+| `/api/dlq` | GET | Dead letter queue entries |
+
+**Client-side SSE subscriptions:**
+Connects to `crew-lead /events` SSE stream. Handles: `chat_message`, `agent_working`, `agent_reply`, `pipeline_progress`, `pipeline_done`, `confirm_run_cmd`, `pending_project`, `project_launched`.
+
+**Heartbeat liveness:**
+`agentHeartbeats` Map (server-side) reads `events.jsonl` tail every 30s for `agent.heartbeat` events. Agent list API returns `ageSec` and `liveness` (fresh <90s / stale / unknown).
 
 ---
 
-### 8. **Retry Policy & DLQ**
-- **Implementation:** `gateway-bridge.mjs` (lines 58-62, 1585-1900)
-- **Features:**
-  - Max retries: 2 (3 for coding tasks)
-  - Exponential backoff: 2000ms base
-  - Task leases: 120 seconds
-  - Heartbeat: 15 seconds
-  - DLQ routing on max retries
-  - DLQ replay from dashboard
-- **DLQ Storage:** `~/.openclaw/workspace/shared-memory/claw-swarm/opencrew-rt/dlq/*.json`
-- **Status:** ✅ **WORKING**
+### 7. Telegram Bridge (`telegram-bridge.mjs`)
+
+Long-polls the Telegram Bot API. Routes every inbound message to `crew-lead /chat` with a per-chatId session (`telegram-<chatId>`).
+
+- Subscribes to crew-lead SSE → forwards `agent_reply` events back to active Telegram sessions
+- Maintains in-memory per-chatId conversation history
+- Persists Telegram context to `memory/telegram-context.md` (not loaded into prompts)
 
 ---
 
-### 9. **Orchestration System** ✅ WORKING (via external orchestrators)
-- **Design:** External orchestrator drives PM (plan) + parser + workers; PM does not dispatch directly.
-- **Inspired by:** AutoGen Group Chat, CrewAI, OpenAI Realtime Agents.
-- **Current Implementation:**
-  - `unified-orchestrator.mjs`: PM natural-language plan → parser → JSON → `gateway-bridge.mjs --send` to workers → verification
-  - PM and workers use targeted `--send` (no broadcast race)
-  - Shared memory protocol ensures context persistence
-- **Status:** ✅ **WORKING** — run `node unified-orchestrator.mjs "Your requirement"` or `node scripts/run.mjs "Your requirement"`
+## Data Flow — end to end
 
----
-
-## 🔗 Key Integration Points
-
-### OpenCrew RT ↔ Gateway Bridge
-```javascript
-// gateway-bridge.mjs subscribes to RT channels
-const client = new OpenCrewRTClient({
-  url: OPENCREW_RT_URL,
-  agentId: OPENCREW_RT_AGENT,
-  channels: ['command', 'assign', 'handoff', 'reassign', 'events'],
-  token: OPENCREW_RT_TOKEN
-});
-
-client.on('envelope', async (envelope) => {
-  await handleRealtimeEnvelope(envelope, client, bridge);
-});
+```
+User types in dashboard Chat tab
+  → POST /api/crew-lead/chat {message, sessionId}
+  → crew-lead calls LLM
+  → LLM reply contains @@DISPATCH {"agent":"crew-coder","task":"..."}
+  → crew-lead publishes command.run_task on RT bus
+  → RT bus delivers to crew-coder's gateway-bridge daemon
+  → gateway-bridge builds prompt (shared memory + task + tool instructions)
+  → gateway-bridge calls Anthropic API directly
+  → LLM reply contains @@WRITE_FILE src/auth.ts \n <code> \n @@END_FILE
+  → gateway-bridge writes file to disk
+  → gateway-bridge publishes task.done on RT bus
+  → done.jsonl records the completion
+  → crew-scribe reads done.jsonl, calls Groq, writes summary to session-log.md
+  → crew-lead receives task.done, broadcasts agent_reply SSE
+  → dashboard browser shows agent reply bubble in chat
 ```
 
-### Gateway Bridge ↔ OpenClaw Gateway
-```javascript
-// gateway-bridge.mjs maps RT agent names → OpenClaw agent IDs
-const openclawAgentId = OPENCREW_TO_OPENCLAW_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
+---
 
-// Then calls OpenClaw Gateway
-const reply = await bridge.chat(finalPrompt, openclawAgentId, { 
-  idempotencyKey: dispatchKey 
-});
-```
+## Ports and processes
 
-### Control UI / Quill → Orchestrator (How Builds Are Dispatched)
-When the user says "build X" or "create Y" in the Control UI (Cursor/OpenClaw), **Quill** (main agent) does **not** have `sessions_spawn` or direct swarm channel access. Instead:
-1. Quill uses the `exec` tool to run: `node unified-orchestrator.mjs "requirement"`
-2. The orchestrator: PM plans → parser converts to JSON → gateway-bridge `--send` to workers → verification
-3. Quill reports back the result. See `~/.openclaw/workspace/SOUL.md` and `AGENTS.md` for Quill's dispatch instructions.
+| Process | Port | Config |
+|---|---|---|
+| `opencrew-rt-daemon.mjs` | 18889 (WebSocket) | `~/.openclaw/openclaw.json` |
+| `crew-lead.mjs` | 5010 (HTTP) | `~/.crewswarm/config.json` |
+| `scripts/dashboard.mjs` | 4319 (HTTP) | reads both config files |
+| `gateway-bridge.mjs` × N | — (outbound only) | `OPENCREW_RT_AGENT` env var per process |
+| `telegram-bridge.mjs` | — (outbound only) | `TELEGRAM_BOT_TOKEN` env var |
+| `scripts/crew-scribe.mjs` | — (no port) | reads `done.jsonl`, writes `memory/` |
 
 ---
 
-## 📊 Current Status Summary
+## Key files on disk
 
-| Component              | Status | Notes                                      |
-|------------------------|--------|--------------------------------------------|
-| OpenCrew RT Bus        | ✅ WORKING | All 7 agents connected                    |
-| Gateway Bridge Daemons | ✅ WORKING | All 7 running, loading shared memory      |
-| OpenClaw Gateway       | ✅ WORKING | All 6 agents can code                     |
-| Shared Memory Protocol | ✅ WORKING | Auto-bootstrap, consistent injection      |
-| Retry Policy & DLQ     | ✅ WORKING | Exponential backoff, DLQ replay           |
-| Web Dashboard          | ✅ WORKING | Real-time monitoring, messaging UI        |
-| SwiftBar Menu          | ✅ WORKING | Dynamic agent list, dark mode colors      |
-| Control Scripts        | ✅ WORKING | openswitchctl start/stop/status/send      |
-| **PM Orchestration**   | ✅ **WORKING** | **External orchestrator (unified-orchestrator.mjs)** |
-
----
-
-## 🐛 Historical Note: PM Autonomous Dispatch
-
-**We no longer rely on PM to dispatch directly.** The external `unified-orchestrator.mjs` handles orchestration:
-1. Orchestrator asks PM for a natural-language plan
-2. Parser converts plan to JSON
-3. Orchestrator dispatches each task via `gateway-bridge.mjs --send <agent>`
-4. Verification runs after each task
-
-The PM agent still plans and advises; execution is handled by the orchestrator. See [ORCHESTRATOR-GUIDE.md](ORCHESTRATOR-GUIDE.md) and [DELEGATION.md](DELEGATION.md).
-
----
-
-## 📚 Design Pattern References
-
-Your system is inspired by these patterns:
-
-1. **AutoGen Group Chat** ([link](https://microsoft.github.io/autogen/stable//user-guide/core-user-guide/design-patterns/group-chat.html))
-   - Sequential turn-taking
-   - Manager selects next speaker
-   - `RequestToSpeak` message pattern
-   - **You have:** Message bus with channels, but no explicit "request to speak"
-
-2. **CrewAI** ([link](https://github.com/crewAIInc/crewAI-examples))
-   - Role-based agents (Manager, Researcher, Writer, etc.)
-   - Task delegation with dependencies
-   - Sequential and parallel execution
-   - **You have:** Specialized agents with roles, RT channels for coordination
-
-3. **OpenAI Realtime Agents** ([link](https://github.com/openai/openai-realtime-agents))
-   - Real-time WebSocket communication
-   - Event-driven architecture
-   - Streaming responses
-   - **You have:** OpenCrew RT WebSocket bus, event logging
-
-4. **OpenCode** ([link](https://github.com/anomalyco/opencode))
-   - Code-focused AI agents
-   - Plugin system
-   - Session management
-   - **You're using:** OpenClaw (fork/alternative) as base agent runtime
-
----
-
-## 🏗️ Architecture Strengths
-
-✅ **Real-time coordination** via WebSocket message bus  
-✅ **Persistent context** via shared memory protocol  
-✅ **Fault tolerance** via retry policy & DLQ  
-✅ **Parallel execution** via 20 max concurrent sessions  
-✅ **Specialized agents** with clear roles  
-✅ **Multiple control interfaces** (CLI, dashboard, menu bar)  
-✅ **Tool access** for real file/code operations  
-✅ **Model flexibility** (can swap Groq/OpenAI/Anthropic easily)  
-
----
-
-## 🚧 Architecture Gaps
-
-🟡 **Task dependency tracking** - Orchestrator runs tasks sequentially; no explicit "Task B waits for Task A" graph  
-🟡 **Parallel task dispatch** - Tasks run one after another; could be parallelized for independent tasks  
-🟡 **Control UI sessions_spawn** - Quill cannot spawn OpenClaw subagent sessions; uses exec + orchestrator instead
-
+| Path | Purpose |
+|---|---|
+| `~/.crewswarm/config.json` | API keys, RT auth token, crew-lead model |
+| `~/.openclaw/openclaw.json` | Per-agent model assignments, tool permissions |
+| `~/.openclaw/agent-prompts.json` | Per-agent system prompts |
+| `~/.crewswarm/chat-history/*.jsonl` | Per-session conversation history |
+| `~/.crewswarm/token-usage.json` | Accumulated token/cost data |
+| `~/.crewswarm/cmd-allowlist.json` | Pre-approved @@RUN_CMD patterns |
+| `~/.crewswarm/scribe-state.json` | crew-scribe read cursor for done.jsonl |
+| `~/.openclaw/workspace/…/done.jsonl` | Task completion log (RT bus output) |
+| `~/.openclaw/workspace/…/events.jsonl` | RT bus event log |
+| `~/.openclaw/workspace/…/dlq/*.json` | Failed tasks pending replay |

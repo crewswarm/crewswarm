@@ -3,9 +3,13 @@ set -euo pipefail
 
 OPENCLAW_DIR="${OPENCLAW_DIR:-$HOME/Desktop/CrewSwarm}"
 SWARM_PLUGIN_DIR="${SWARM_PLUGIN_DIR:-$HOME/swarm/.opencode/plugin}"
-CTL="$HOME/bin/openswitchctl"
-OPENCLAW_APP_HREF="file:///Applications/OpenClaw.app"
-LOG_DIR="$HOME/.opencrew/logs"
+# Prefer repo script so SwiftBar works without installing to ~/bin
+if [[ -x "$OPENCLAW_DIR/scripts/openswitchctl" ]]; then
+  CTL="$OPENCLAW_DIR/scripts/openswitchctl"
+else
+  CTL="$HOME/bin/openswitchctl"
+fi
+LOG_DIR="/tmp"
 DASHBOARD_URL="http://127.0.0.1:4319"
 ICONS_DIR="$OPENCLAW_DIR/website"
 
@@ -79,8 +83,7 @@ echo "▶ Start   | bash='/bin/bash' param1='$CTL' param2=start terminal=false r
 echo "⏹ Stop    | bash='/bin/bash' param1='$CTL' param2=stop terminal=false refresh=true"
 echo "↺ Restart | bash='/bin/bash' param1='$CTL' param2=restart terminal=false refresh=true"
 echo "--↺ Restart RT Server   | bash='/bin/bash' param1='$CTL' param2=restart-rt terminal=false refresh=true"
-echo "--↺ Restart OpenClaw GW | bash='/bin/bash' param1='$CTL' param2=restart-openclaw terminal=false refresh=true"
-echo "--↺ Restart Agent Links | bash='/bin/bash' param1='$CTL' param2=restart-gateway terminal=false refresh=true"
+echo "--↺ Restart Agent Bridges | bash='/bin/bash' param1='$CTL' param2=restart-gateway terminal=false refresh=true"
 
 # ── Crew — each agent listed once with status icon ──────────────────
 echo "---"
@@ -101,7 +104,7 @@ _port_up() { lsof -i ":$1" -sTCP:LISTEN -t &>/dev/null && echo "up" || echo "dow
 _proc_up() { pgrep -f "$1" &>/dev/null && echo "up" || echo "down"; }
 
 SVC_RT="$RT_STATE"
-SVC_GW="$(_port_up 18789)"
+SVC_AG="$(_proc_up 'gateway-bridge.mjs')"
 SVC_TG="$(_proc_up 'telegram-bridge.mjs')"
 SVC_CL="$(_proc_up 'crew-lead.mjs')"
 SVC_OC="$(_port_up 4096)"
@@ -112,23 +115,30 @@ _svc_icon() { [[ "$1" == "up" ]] && echo "🟢" || echo "🔴"; }
 echo "---"
 echo "🔧 Services"
 
-echo "--$(_svc_icon $SVC_RT) RT Message Bus | bash='/bin/bash' param1='$CTL' param2=restart-rt terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_GW) OpenClaw Gateway | bash='/bin/bash' param1='$CTL' param2=restart-openclaw terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_TG) Telegram Bridge | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=telegram terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_CL) crew-lead | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_OC) OpenCode Server | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_DB) Dashboard | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_RT) RT Message Bus          | bash='/bin/bash' param1='$CTL' param2=restart-rt terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_AG) Agent Bridges (${AGENTS_FRAC}) | bash='/bin/bash' param1='$CTL' param2=restart-gateway terminal=false refresh=true"
+for AGENT in "${AGENTS[@]}"; do
+  [[ -z "$AGENT" ]] && continue
+  if [[ "$STATE" =~ $AGENT:up ]]; then
+    echo "----🟢 $AGENT | bash='/bin/bash' param1='$CTL' param2=restart-agent param3='$AGENT' terminal=false refresh=true"
+  else
+    echo "----🔴 $AGENT | bash='/bin/bash' param1='$CTL' param2=start-agent param3='$AGENT' terminal=false refresh=true"
+  fi
+done
+echo "--$(_svc_icon $SVC_TG) Telegram Bridge         | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=telegram terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_CL) crew-lead               | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_OC) OpenCode Server         | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_DB) Dashboard               | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
 
 # ── Quick links ──────────────────────────────────────────────────────
 echo "---"
-echo "🧠 Chat with crew-lead | bash='open' param1='-a' param2='$HOME/Applications/CrewChat.app' terminal=false refresh=false"
 echo "🖥️  Open Dashboard      | href='$DASHBOARD_URL/#chat'"
-echo "🦞 Open OpenClaw App   | href='$OPENCLAW_APP_HREF'"
+echo "📁 Open CrewSwarm Repo | bash='open' param1='$OPENCLAW_DIR' terminal=false refresh=false"
 
 # ── Logs ─────────────────────────────────────────────────────────────
 echo "---"
 echo "🔧 Logs"
-echo "RT Log        | bash='open' param1='$LOG_DIR/opencrew-rt.log' terminal=false"
-echo "Crew Main Log | bash='open' param1='$LOG_DIR/openclaw-rt-crew-main.log' terminal=false"
-echo "Plugin Dir    | bash='open' param1='$SWARM_PLUGIN_DIR' terminal=false"
-echo "OpenClaw Dir  | bash='open' param1='$OPENCLAW_DIR' terminal=false"
+echo "RT Log        | bash='open' param1='$LOG_DIR/opencrew-rt-daemon.log' terminal=false"
+echo "crew-lead Log | bash='open' param1='$LOG_DIR/crew-lead.log' terminal=false"
+echo "Dashboard Log | bash='open' param1='$LOG_DIR/dashboard.log' terminal=false"
+echo "CrewSwarm Dir | bash='open' param1='$OPENCLAW_DIR' terminal=false"

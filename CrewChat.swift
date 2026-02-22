@@ -249,6 +249,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSTextFie
         ])
 
         wrap.addArrangedSubview(bubble)
+        if !isUser, let last = stack.arrangedSubviews.last as? NSStackView,
+           last.arrangedSubviews.count >= 2,
+           let lbl = last.arrangedSubviews.first as? NSTextField, lbl.stringValue.contains("crew-lead"),
+           let bubbleView = last.arrangedSubviews.last?.subviews.first as? NSTextField,
+           bubbleView.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) == text.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return wrap
+        }
         addToStack(wrap)
         return wrap
     }

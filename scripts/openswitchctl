@@ -1,0 +1,280 @@
+#!/usr/bin/env bash
+# openswitchctl — CrewSwarm control script for RT bus, agents, and OpenClaw integration.
+# Install: ln -s "$(pwd)/scripts/openswitchctl" ~/bin/openswitchctl   (or copy)
+# Requires: OPENCLAW_DIR set to CrewSwarm repo root (default: $HOME/Desktop/CrewSwarm)
+
+set -euo pipefail
+
+OPENCLAW_DIR="${OPENCLAW_DIR:-$HOME/Desktop/CrewSwarm}"
+CFG_DIR="${OPENCREWHQ_CONFIG_DIR:-$HOME/.openclaw}"
+CFG="$CFG_DIR/openclaw.json"
+# Prefer CrewSwarm configs (same order as start-crew.mjs / gateway-bridge)
+CREW_SWARM_JSON="$HOME/.crewswarm/crewswarm.json"
+CREW_CONFIG_JSON="$HOME/.crewswarm/config.json"
+if [[ -f "$CREW_SWARM_JSON" ]]; then CFG="$CREW_SWARM_JSON"; elif [[ -f "$CREW_CONFIG_JSON" ]]; then CFG="$CREW_CONFIG_JSON"; fi
+
+# Resolve OPENCLAW_DIR when script is symlinked (e.g. from ~/bin)
+if [[ -z "${OPENCLAW_DIR:-}" ]] || [[ ! -f "$OPENCLAW_DIR/scripts/start-crew.mjs" ]]; then
+  SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+  while [[ -L "$SCRIPT_SOURCE" ]]; do
+    SCRIPT_DIR=$(dirname "$SCRIPT_SOURCE")
+    TARGET=$(readlink "$SCRIPT_SOURCE")
+    [[ "$TARGET" != /* ]] && TARGET="$SCRIPT_DIR/$TARGET"
+    SCRIPT_SOURCE="$TARGET"
+  done
+  RESOLVED_DIR=$(cd "$(dirname "$SCRIPT_SOURCE")/.." && pwd)
+  if [[ -f "$RESOLVED_DIR/scripts/start-crew.mjs" ]]; then
+    OPENCLAW_DIR="$RESOLVED_DIR"
+  fi
+fi
+
+NODE="${NODE:-node}"
+# Prefer RT daemon in repo; fall back to swarm plugin
+if [[ -z "${RT_DAEMON:-}" ]]; then
+  if [[ -f "$OPENCLAW_DIR/scripts/opencrew-rt-daemon.mjs" ]]; then
+    RT_DAEMON="$OPENCLAW_DIR/scripts/opencrew-rt-daemon.mjs"
+  else
+    RT_DAEMON="$HOME/swarm/.opencode/plugin/opencrew-rt-daemon.mjs"
+  fi
+fi
+# Same built-ins as start-crew.mjs; list is built-ins + config agents (CrewSwarm 11–13)
+BUILT_IN_AGENTS="crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2"
+
+# Load RT token from config (crewswarm config.json or openclaw.json)
+rt_token() {
+  local t
+  for f in "$HOME/.crewswarm/config.json" "$HOME/.crewswarm/crewswarm.json" "$CFG"; do
+    [[ -f "$f" ]] || continue
+    t=$("$NODE" -e "try{const c=JSON.parse(require('fs').readFileSync('$f','utf8'));console.log(c.rt?.authToken||c.env?.OPENCREW_RT_AUTH_TOKEN||'')}catch(e){console.log('')}" 2>/dev/null)
+    [[ -n "$t" ]] && echo "$t" && return
+  done
+}
+
+# ── agents: list agent IDs (one per line), same set as start-crew.mjs (built-ins + config) ──
+cmd_agents() {
+  local cfg="$CFG"
+  [[ -f "$HOME/.crewswarm/crewswarm.json" ]] && cfg="$HOME/.crewswarm/crewswarm.json"
+  [[ -f "$HOME/.crewswarm/config.json" ]] && [[ ! -f "$cfg" ]] && cfg="$HOME/.crewswarm/config.json"
+  [[ ! -f "$cfg" ]] && cfg="$CFG_DIR/openclaw.json"
+  if [[ ! -f "$cfg" ]]; then
+    echo $BUILT_IN_AGENTS | tr ',' '\n'
+    return
+  fi
+  "$NODE" -e "
+    const fs=require('fs');
+    const path=process.argv[1];
+    const builtIn=['crew-main','crew-pm','crew-qa','crew-fixer','crew-coder','crew-coder-2'];
+    const seen=new Set(builtIn);
+    builtIn.forEach(id=>console.log(id));
+    try {
+      const c=JSON.parse(fs.readFileSync(path,'utf8'));
+      const list=Array.isArray(c.agents)?c.agents:(c.agents?.list||[]);
+      list.forEach(a=>{
+        let id=(a.id||'').trim();
+        if(!id) return;
+        if(!id.startsWith('crew-')&&id!=='security') id='crew-'+id;
+        if(!seen.has(id)){ seen.add(id); console.log(id); }
+      });
+    } catch {}
+  " "$cfg" 2>/dev/null || echo $BUILT_IN_AGENTS | tr ',' '\n'
+}
+
+# ── rt_agents: list bridge agents connected to RT daemon (excludes crew-lead) ──
+rt_agents() {
+  "$NODE" -e "
+    const http=require('http');
+    const req=http.get('http://127.0.0.1:18889/status',{timeout:1500},(res)=>{
+      let d=''; res.on('data',c=>d+=c); res.on('end',()=>{
+        try{
+          const j=JSON.parse(d);
+          (j.agents||[]).filter(a=>a!=='crew-lead').forEach(a=>console.log(a));
+        }catch{}
+      });
+    });
+    req.on('error',()=>{}); req.on('timeout',()=>req.destroy());
+  " 2>/dev/null
+}
+
+# ── list: agent count (e.g. "13/13") — running from RT daemon, total from config ──
+cmd_list() {
+  local running=0 total=0
+  running=$(rt_agents | wc -l | tr -d ' ')
+  # Fallback to pgrep if RT daemon not reachable
+  if [[ "$running" -eq 0 ]]; then
+    running=$(pgrep -f "gateway-bridge.mjs" 2>/dev/null | wc -l | tr -d ' ')
+  fi
+  total=$(cmd_agents | wc -l | tr -d ' ')
+  [[ -z "$total" || "$total" -lt 1 ]] && total=13
+  echo "${running:-0}/${total}"
+}
+
+# ── status: one-line health (rt:up, agents:N/M, agent:up ...) ──
+cmd_status() {
+  local rt_state="down" agents_frac="0/0"
+  if pgrep -f "opencrew-rt-daemon" >/dev/null 2>&1; then rt_state="up"; fi
+  agents_frac=$(cmd_list)
+  local parts="running (rt:${rt_state}, agents:${agents_frac})"
+  # Per-agent :up markers from RT daemon (agents that have hello'd in)
+  while IFS= read -r agent; do
+    [[ -n "$agent" ]] && parts="$parts ${agent}:up"
+  done < <(rt_agents)
+  echo "$parts"
+}
+
+# ── start: RT daemon + gateway bridges ──
+# ── start: full stack — RT daemon + bridges + crew-lead + dashboard ──
+cmd_start() {
+  export OPENCREW_RT_AUTH_TOKEN=$(rt_token)
+  # RT daemon
+  if [[ -f "$RT_DAEMON" ]]; then
+    pkill -f "opencrew-rt-daemon" 2>/dev/null || true
+    sleep 1
+    nohup "$NODE" "$RT_DAEMON" >> /tmp/opencrew-rt-daemon.log 2>&1 &
+    sleep 2
+  fi
+  # Agent bridges
+  (cd "$OPENCLAW_DIR" && "$NODE" scripts/start-crew.mjs)
+  sleep 1
+  # crew-lead
+  pkill -f "crew-lead.mjs" 2>/dev/null || true
+  sleep 1
+  nohup "$NODE" "$OPENCLAW_DIR/crew-lead.mjs" >> /tmp/crew-lead.log 2>&1 &
+  # Dashboard
+  pkill -f "scripts/dashboard.mjs" 2>/dev/null || true
+  sleep 1
+  nohup "$NODE" "$OPENCLAW_DIR/scripts/dashboard.mjs" >> /tmp/dashboard.log 2>&1 &
+  echo "Stack started."
+}
+
+# ── stop: kill the full stack ──
+cmd_stop() {
+  pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null || true
+  pkill -f "opencrew-rt-daemon" 2>/dev/null || true
+  pkill -f "crew-lead.mjs" 2>/dev/null || true
+  pkill -f "scripts/dashboard.mjs" 2>/dev/null || true
+  pkill -f "opencode serve" 2>/dev/null || true
+  echo "Stopped."
+}
+
+# ── send <agent> <message> ──
+cmd_send() {
+  local to="$1" msg="$2"
+  if [[ -z "$to" || -z "$msg" ]]; then
+    echo "Usage: openswitchctl send <agent> <message>" >&2
+    exit 1
+  fi
+  (cd "$OPENCLAW_DIR" && "$NODE" gateway-bridge.mjs --send "$to" "$msg")
+}
+
+# ── broadcast <message> ──
+cmd_broadcast() {
+  local msg="$*"
+  if [[ -z "$msg" ]]; then
+    echo "Usage: openswitchctl broadcast <message>" >&2
+    exit 1
+  fi
+  (cd "$OPENCLAW_DIR" && echo "/broadcast $msg" | "$NODE" gateway-bridge.mjs "/broadcast $msg")
+}
+
+# ── dlq-replay <key> ──
+cmd_dlq_replay() {
+  local key="$1"
+  if [[ -z "$key" ]]; then
+    echo "Usage: openswitchctl dlq-replay <key>" >&2
+    exit 1
+  fi
+  (cd "$OPENCLAW_DIR" && "$NODE" scripts/dlq-replay.mjs "$key")
+}
+
+# ── restart-openclaw-gateway (macOS: open OpenClaw app) ──
+cmd_restart_openclaw_gateway() {
+  pkill -f "openclaw-gateway" 2>/dev/null || true
+  sleep 1
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    open -a OpenClaw 2>/dev/null || true
+  fi
+  echo "OpenClaw Gateway restarted (or start the OpenClaw app manually)."
+}
+
+# ── restart-all: full stack restart via repo script ──
+cmd_restart_agents() {
+  if [[ -x "$OPENCLAW_DIR/scripts/restart-all-from-repo.sh" ]]; then
+    exec /bin/bash "$OPENCLAW_DIR/scripts/restart-all-from-repo.sh"
+  else
+    cmd_stop
+    sleep 2
+    cmd_start
+  fi
+}
+
+# ── restart-rt: restart only the RT daemon ──
+cmd_restart_rt() {
+  pkill -f "opencrew-rt-daemon" 2>/dev/null || true
+  sleep 1
+  if [[ -f "$RT_DAEMON" ]]; then
+    export OPENCREW_RT_AUTH_TOKEN=$(rt_token)
+    nohup "$NODE" "$RT_DAEMON" >> /tmp/opencrew-rt-daemon.log 2>&1 &
+  fi
+  echo "RT daemon restarted."
+}
+
+# ── restart-gateway: restart only gateway bridges (not RT) ──
+cmd_restart_gateway() {
+  pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null || true
+  sleep 2
+  (cd "$OPENCLAW_DIR" && export OPENCREW_RT_AUTH_TOKEN=$(rt_token) && "$NODE" scripts/start-crew.mjs)
+}
+
+# ── stop/start/restart single agent (for SwiftBar per-agent menu) ──
+cmd_stop_agent() {
+  local agent="$1"
+  [[ -n "$agent" ]] || { echo "Usage: openswitchctl stop-agent <agent>" >&2; exit 1; }
+  [[ "$agent" == crew-* ]] || agent="crew-$agent"
+  pkill -f "OPENCREW_RT_AGENT[=\"']*${agent}[\"' ].*gateway-bridge" 2>/dev/null || true
+  echo "Stopped $agent"
+}
+
+cmd_start_agent() {
+  local agent="$1"
+  [[ -n "$agent" ]] || { echo "Usage: openswitchctl start-agent <agent>" >&2; exit 1; }
+  cmd_stop_agent "$agent"
+  sleep 0.5
+  (cd "$OPENCLAW_DIR" && export OPENCREW_RT_AUTH_TOKEN=$(rt_token) && "$NODE" scripts/start-crew.mjs)
+  echo "Started (all missing agents)."
+}
+
+cmd_restart_agent() {
+  cmd_stop_agent "$1"
+  sleep 1
+  cmd_start_agent "$1"
+}
+
+# ── Main ──
+CMD="${1:-}"
+shift || true
+
+case "$CMD" in
+  status)     cmd_status ;;
+  start)      cmd_start ;;
+  stop)       cmd_stop ;;
+  restart|restart-all|restart-agents) cmd_restart_agents ;;
+  restart-rt) cmd_restart_rt ;;
+  restart-gateway) cmd_restart_gateway ;;
+  restart-openclaw|restart-openclaw-gateway) cmd_restart_openclaw_gateway ;;
+  send)       cmd_send "$1" "${*:2}" ;;
+  broadcast)  cmd_broadcast "$@" ;;
+  agents)     cmd_agents ;;
+  list)       cmd_list ;;
+  dlq-replay) cmd_dlq_replay "$1" ;;
+  start-agent) cmd_start_agent "$1" ;;
+  stop-agent) cmd_stop_agent "$1" ;;
+  restart-agent) cmd_restart_agent "$1" ;;
+  logs)
+    echo "Use dashboard Services or: tail -f /tmp/bridge-*.log" >&2
+    exit 1
+    ;;
+  *)
+    echo "Usage: openswitchctl { status | start | stop | restart | restart-rt | restart-gateway | restart-openclaw | send <agent> <msg> | agents | list | start-agent <agent> | restart-agent <agent> | ... }" >&2
+    exit 1
+    ;;
+esac
