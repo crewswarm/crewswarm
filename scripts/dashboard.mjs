@@ -22,6 +22,9 @@ const CFG_DIR = process.env.OPENCREWHQ_CONFIG_DIR
   || (fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
       ? path.join(os.homedir(), ".crewswarm")
       : path.join(os.homedir(), ".openclaw"));
+// Config filename within CFG_DIR — crewswarm.json for new installs, openclaw.json for legacy
+const CFG_FILE = path.join(CFG_DIR,
+  fs.existsSync(path.join(CFG_DIR, "crewswarm.json")) ? "crewswarm.json" : "openclaw.json");
 // Default 4319 so we don't conflict with CrewSwarm RT Messages dashboard on 4318
 const listenPort = Number(process.env.SWARM_DASH_PORT || 4319);
 const opencodeBase = process.env.OPENCODE_URL || "http://127.0.0.1:4096";
@@ -126,9 +129,9 @@ async function getAgentList() {
     result.trim().split("\n").filter(Boolean).forEach(a => merged.add(a));
   } catch {}
 
-  // 2. All agents defined in openclaw.json (online or not) — shown with [offline] indicator handled client-side
+  // 2. All agents defined in crewswarm.json / openclaw.json (online or not) — shown with [offline] indicator handled client-side
   try {
-    const cfgPath = path.join(CFG_DIR, "openclaw.json");
+    const cfgPath = CFG_FILE;
     const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
     const raw = Array.isArray(cfg.agents) ? cfg.agents
               : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
@@ -2169,7 +2172,7 @@ async function loadAgents_cfg(){
     _allModels = data.allModels || [];
     _modelsByProvider = data.modelsByProvider || {};
     const agents = data.agents || [];
-    if (!agents.length){ list.innerHTML = '<div class="meta" style="padding:20px;">No agents found in config. Check ' + '${CFG_DIR}/openclaw.json' + '</div>'; return; }
+    if (!agents.length){ list.innerHTML = '<div class="meta" style="padding:20px;">No agents found in config. Check ~/.crewswarm/crewswarm.json</div>'; return; }
     list.innerHTML = '';
     agents.forEach(a => {
       const card = document.createElement('div');
@@ -2517,7 +2520,7 @@ async function loadProviders(){
   try {
     const data = await getJSON('/api/providers');
     const providers = data.providers || [];
-    if (!providers.length){ list.innerHTML = '<div class="meta" style="padding:20px;">No providers found. Check ' + '${CFG_DIR}/openclaw.json' + '</div>'; return; }
+    if (!providers.length){ list.innerHTML = '<div class="meta" style="padding:20px;">No providers found. Check ~/.crewswarm/crewswarm.json</div>'; return; }
     list.innerHTML = '';
     providers.forEach(p => {
       const icon = PROVIDER_ICONS[p.id] || '🔌';
@@ -3789,18 +3792,23 @@ const server = http.createServer(async (req, res) => {
       "openai-local": "http://127.0.0.1:8000/v1",
     };
     const csDir = path.join(os.homedir(), ".crewswarm");
-    const csConfig = path.join(csDir, "config.json");
-    const ocConfig = path.join(os.homedir(), ".openclaw", "openclaw.json");
+    const csConfig     = path.join(csDir, "config.json");
+    const csSwarmConfig = path.join(csDir, "crewswarm.json");
+    const ocConfig     = path.join(os.homedir(), ".openclaw", "openclaw.json");
     function readCSConfig(){ try { return JSON.parse(fs.readFileSync(csConfig,"utf8")); } catch { return {}; } }
-    function writeCSConfig(c){ fs.mkdirSync(csDir,{recursive:true}); fs.writeFileSync(csConfig,JSON.stringify(c,null,2)); }
+    function readCSSwarmConfig(){ try { return JSON.parse(fs.readFileSync(csSwarmConfig,"utf8")); } catch { return {}; } }
+    function writeCSSwarmConfig(c){ fs.mkdirSync(csDir,{recursive:true}); fs.writeFileSync(csSwarmConfig,JSON.stringify(c,null,2)); }
     function readOCConfig(){ try { return JSON.parse(fs.readFileSync(ocConfig,"utf8")); } catch { return null; } }
     function writeOCConfig(c){ fs.writeFileSync(ocConfig,JSON.stringify(c,null,4)); }
     function getBuiltinKey(id) {
+      const sw = readCSSwarmConfig();
       const cs = readCSConfig();
       const oc = readOCConfig();
-      return oc?.models?.providers?.[id]?.apiKey
+      return sw?.providers?.[id]?.apiKey
+          || sw?.env?.[id.toUpperCase()+"_API_KEY"]
           || cs?.providers?.[id]?.apiKey
           || cs?.env?.[id.toUpperCase()+"_API_KEY"]
+          || oc?.models?.providers?.[id]?.apiKey
           || "";
     }
 
@@ -3818,12 +3826,12 @@ const server = http.createServer(async (req, res) => {
       let { providerId, apiKey } = JSON.parse(body);
       // OpenAI (local)/ChatMock ignores key; use placeholder so crew-lead has a truthy apiKey
       if (providerId === "openai-local" && !(apiKey && apiKey.trim())) apiKey = "key";
-      // Write to ~/.crewswarm/config.json
-      const cfg = readCSConfig();
+      // Write to ~/.crewswarm/crewswarm.json
+      const cfg = readCSSwarmConfig();
       if (!cfg.providers) cfg.providers = {};
       cfg.providers[providerId] = { ...(cfg.providers[providerId]||{}), apiKey, baseUrl: BUILTIN_URLS[providerId] };
-      writeCSConfig(cfg);
-      // Sync to ~/.openclaw/openclaw.json if it exists
+      writeCSSwarmConfig(cfg);
+      // Sync to ~/.openclaw/openclaw.json if it exists (legacy compat)
       const oc = readOCConfig();
       if (oc) {
         if (!oc.models) oc.models = {};
@@ -3996,7 +4004,7 @@ const server = http.createServer(async (req, res) => {
     // ── Providers API ─────────────────────────────────────────────────────
     if (url.pathname === "/api/providers" && req.method === "GET") {
       const { readFile } = await import("node:fs/promises");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
       const providerMap = cfg?.models?.providers || {};
       const providers = Object.entries(providerMap).map(([id, p]) => {
@@ -4015,7 +4023,7 @@ const server = http.createServer(async (req, res) => {
       let body = ""; for await (const chunk of req) body += chunk;
       const { providerId, apiKey } = JSON.parse(body);
       if (!providerId || !apiKey) throw new Error("providerId and apiKey required");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
       if (!cfg.models?.providers?.[providerId]) throw new Error("Provider not found: " + providerId);
       cfg.models.providers[providerId].apiKey = apiKey;
@@ -4037,7 +4045,7 @@ const server = http.createServer(async (req, res) => {
       let body = ""; for await (const chunk of req) body += chunk;
       const { id, baseUrl, apiKey, api } = JSON.parse(body);
       if (!id || !baseUrl) throw new Error("id and baseUrl required");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
       if (!cfg.models) cfg.models = {};
       if (!cfg.models.providers) cfg.models.providers = {};
@@ -4051,7 +4059,7 @@ const server = http.createServer(async (req, res) => {
       let body = ""; for await (const chunk of req) body += chunk;
       const { providerId } = JSON.parse(body);
       const { readFile, writeFile } = await import("node:fs/promises");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
       const provider = cfg?.models?.providers?.[providerId];
       if (!provider) throw new Error("Provider not found: " + providerId);
@@ -4108,7 +4116,7 @@ const server = http.createServer(async (req, res) => {
       let body = ""; for await (const chunk of req) body += chunk;
       const { providerId } = JSON.parse(body);
       const { readFile } = await import("node:fs/promises");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
       const provider = cfg?.models?.providers?.[providerId];
       if (!provider) throw new Error("Provider not found");
@@ -4244,7 +4252,7 @@ const server = http.createServer(async (req, res) => {
     // ── Agents API ──────────────────────────────────────────────────────────
     if (url.pathname === "/api/agents-config" && req.method === "GET") {
       const { readFile } = await import("node:fs/promises");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
       const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
       const agentPrompts = JSON.parse(await readFile(promptsPath, "utf8").catch(() => "{}"));
@@ -4301,7 +4309,7 @@ const server = http.createServer(async (req, res) => {
       let body = ""; for await (const chunk of req) body += chunk;
       const { agentId, model, systemPrompt, name, emoji, toolProfile, alsoAllow } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
       const list = Array.isArray(cfg.agents) ? cfg.agents
@@ -4318,7 +4326,7 @@ const server = http.createServer(async (req, res) => {
         agent.tools.profile = "crewswarm"; // mark as using new CrewSwarm tool system
       }
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
-      // System prompts live in agent-prompts.json, not openclaw.json
+      // System prompts live in agent-prompts.json, not crewswarm.json
       if (systemPrompt !== undefined) {
         const prompts = JSON.parse(await readFile(promptsPath, "utf8").catch(() => "{}"));
         prompts[agentId] = systemPrompt;
@@ -4333,12 +4341,12 @@ const server = http.createServer(async (req, res) => {
       let body = ""; for await (const chunk of req) body += chunk;
       const { id, model, name, emoji, systemPrompt, alsoAllow: reqAlsoAllow } = JSON.parse(body);
       if (!id || !model) throw new Error("id and model required");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
       const list = Array.isArray(cfg.agents) ? cfg.agents
                  : Array.isArray(cfg.agents?.list) ? cfg.agents.list : null;
-      if (!list) throw new Error("Cannot determine agents list structure in openclaw.json");
+      if (!list) throw new Error("Cannot determine agents list structure in crewswarm.json");
       if (list.find(a => a.id === id)) throw new Error("Agent ID already exists: " + id);
       const defaultWorkspace = list[0]?.workspace || process.cwd();
       // Role-based tool defaults used when no explicit alsoAllow provided
@@ -4375,7 +4383,7 @@ const server = http.createServer(async (req, res) => {
       let body = ""; for await (const chunk of req) body += chunk;
       const { agentId } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
-      const cfgPath = path.join(CFG_DIR, "openclaw.json");
+      const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
       const list = Array.isArray(cfg.agents) ? cfg.agents
@@ -4548,9 +4556,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Telegram Bridge API ────────────────────────────────────────────────────
-    const TG_CONFIG_PATH = path.join(os.homedir(), ".openclaw", "telegram-bridge.json");
-    const TG_PID_PATH    = path.join(os.homedir(), ".openclaw", "logs", "telegram-bridge.pid");
-    const TG_MSG_PATH    = path.join(os.homedir(), ".openclaw", "logs", "telegram-messages.jsonl");
+    const TG_CONFIG_PATH = path.join(os.homedir(), ".crewswarm", "telegram-bridge.json");
+    const TG_PID_PATH    = path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.pid");
+    const TG_MSG_PATH    = path.join(os.homedir(), ".crewswarm", "logs", "telegram-messages.jsonl");
 
     function loadTgConfig() {
       try { return JSON.parse(fs.readFileSync(TG_CONFIG_PATH, "utf8")); } catch { return {}; }
@@ -4684,7 +4692,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
-        const tgPid     = pidRunning(path.join(os.homedir(), ".openclaw", "logs", "telegram-bridge.pid"));
+        const tgPid     = pidRunning(path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.pid"));
         const rtUp      = await portListening(18889);
         const crewLeadUp = await portListening(crewLeadPort);
         const gwUp      = await portListening(18789);
@@ -4795,7 +4803,19 @@ const server = http.createServer(async (req, res) => {
       const { execSync, spawn: spawnProc } = await import("node:child_process");
 
       const RT_TOKEN = (() => {
-        try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || ""; } catch { return ""; }
+        const home = os.homedir();
+        for (const [p, key] of [
+          [path.join(home, ".crewswarm", "config.json"), "rt.authToken"],
+          [path.join(home, ".crewswarm", "crewswarm.json"), "env.OPENCREW_RT_AUTH_TOKEN"],
+          [path.join(home, ".openclaw", "openclaw.json"), "env.OPENCREW_RT_AUTH_TOKEN"],
+        ]) {
+          try {
+            const c = JSON.parse(fs.readFileSync(p, "utf8"));
+            const val = key.split(".").reduce((o, k) => o?.[k], c);
+            if (val) return val;
+          } catch {}
+        }
+        return "";
       })();
       const CREW_AGENTS = "main,admin,build,coder,researcher,architect,reviewer,qa,fixer,pm,orchestrator,openclaw,openclaw-main,opencode-pm,opencode-qa,opencode-fixer,opencode-coder,opencode-coder-2,security,crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter,crew-telegram,crew-lead";
 
@@ -4820,11 +4840,11 @@ const server = http.createServer(async (req, res) => {
         }).unref();
       } else if (id === "telegram") {
         try {
-          const pid = parseInt(fs.readFileSync(path.join(os.homedir(), ".openclaw", "logs", "telegram-bridge.pid"), "utf8").trim(), 10);
+          const pid = parseInt(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.pid"), "utf8").trim(), 10);
           if (pid) process.kill(pid, "SIGTERM");
         } catch {}
         await new Promise(r => setTimeout(r, 800));
-        const tgCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "telegram-bridge.json"), "utf8")); } catch { return {}; } })();
+        const tgCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8")); } catch { return {}; } })();
         if (tgCfg.token) {
           spawnProc("node", [path.join(OPENCLAW_DIR, "telegram-bridge.mjs")], {
             cwd: OPENCLAW_DIR,
@@ -4876,7 +4896,7 @@ const server = http.createServer(async (req, res) => {
         try { execSync(`pkill -f "gateway-bridge.mjs --rt-daemon"`, { stdio: "ignore" }); } catch {}
       } else if (id === "telegram") {
         try {
-          const pid = parseInt(fs.readFileSync(path.join(os.homedir(), ".openclaw", "logs", "telegram-bridge.pid"), "utf8").trim(), 10);
+          const pid = parseInt(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.pid"), "utf8").trim(), 10);
           if (pid) process.kill(pid, "SIGTERM");
         } catch {}
       } else if (id === "crew-lead") {

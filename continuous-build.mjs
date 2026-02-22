@@ -18,10 +18,10 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || __dirname;
-const GATEWAY_BRIDGE_PATH = join(OPENCLAW_DIR, "gateway-bridge.mjs");
-const OUTPUT_DIR = process.env.OPENCREW_OUTPUT_DIR || join(OPENCLAW_DIR, "website");
-const LOG_DIR = join(OPENCLAW_DIR, "orchestrator-logs");
+const REPO_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
+const GATEWAY_BRIDGE_PATH = join(REPO_DIR, "gateway-bridge.mjs");
+const OUTPUT_DIR = process.env.OPENCREW_OUTPUT_DIR || join(REPO_DIR, "website");
+const LOG_DIR = join(REPO_DIR, "orchestrator-logs");
 const BUILD_LOG = join(LOG_DIR, "continuous-build.jsonl");
 const TASK_TIMEOUT_MS = Number(process.env.PHASED_TASK_TIMEOUT_MS || "300000");
 
@@ -93,7 +93,7 @@ function tasksForMissing(missing, requirement) {
   const tasks = [];
   const idx = join(OUTPUT_DIR, "index.html");
   const css = join(OUTPUT_DIR, "styles.css");
-  const ref = join(OPENCLAW_DIR, "docs", "WEBSITE-FEATURES-AND-USE-CASES.md");
+  const ref = join(REPO_DIR, "docs", "WEBSITE-FEATURES-AND-USE-CASES.md");
 
   if (!existsSync(join(OUTPUT_DIR, "index.html"))) {
     tasks.push({

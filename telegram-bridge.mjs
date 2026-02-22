@@ -11,22 +11,25 @@
  * Usage:
  *   TELEGRAM_BOT_TOKEN=123:abc node telegram-bridge.mjs
  *
- * Or set in ~/.openclaw/openclaw.json env block:
+ * Or set in ~/.crewswarm/crewswarm.json env block:
  *   "TELEGRAM_BOT_TOKEN": "123:abc..."
  */
 
 import WebSocket from "ws";
-import { readFileSync, writeFileSync, existsSync, appendFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+
+mkdirSync(join(homedir(), ".crewswarm", "logs"), { recursive: true });
 import { randomUUID } from "node:crypto";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const CREW_CFG_PATH   = join(homedir(), ".crewswarm", "crewswarm.json");
-const OPENCLAW_CFG    = join(homedir(), ".openclaw", "openclaw.json");
-const LOG_PATH        = join(homedir(), ".openclaw", "logs", "telegram-bridge.jsonl");
-const PID_PATH        = join(homedir(), ".openclaw", "logs", "telegram-bridge.pid");
+const CREW_CFG_PATH      = join(homedir(), ".crewswarm", "crewswarm.json");
+const OPENCLAW_CFG       = join(homedir(), ".openclaw", "openclaw.json");   // legacy fallback
+const TG_BRIDGE_CFG_PATH = join(homedir(), ".crewswarm", "telegram-bridge.json");
+const LOG_PATH        = join(homedir(), ".crewswarm", "logs", "telegram-bridge.jsonl");
+const PID_PATH        = join(homedir(), ".crewswarm", "logs", "telegram-bridge.pid");
 
 function loadCfg() {
   // Prefer ~/.crewswarm/crewswarm.json, fall back to ~/.openclaw/openclaw.json
@@ -56,14 +59,14 @@ const ALLOWLIST_ENABLED = ALLOWED_IDS.size > 0;
 // Allowlist — load from config, or allow all if empty
 function getAllowedIds() {
   try {
-    const c = JSON.parse(readFileSync(CFG_PATH.replace("openclaw.json", "telegram-bridge.json"), "utf8"));
+    const c = JSON.parse(readFileSync(TG_BRIDGE_CFG_PATH, "utf8"));
     return Array.isArray(c.allowedChatIds) ? new Set(c.allowedChatIds) : null;
   } catch { return null; }
 }
 
 if (!BOT_TOKEN) {
   console.error("[telegram-bridge] ❌ TELEGRAM_BOT_TOKEN not set.");
-  console.error("  Set it in ~/.openclaw/openclaw.json env block or export TELEGRAM_BOT_TOKEN=...");
+  console.error("  Set TELEGRAM_BOT_TOKEN=... in your environment or in ~/.crewswarm/crewswarm.json env block.");
   process.exit(1);
 }
 
@@ -247,7 +250,7 @@ function connectRT() {
 
 // ── Message log (for dashboard) ───────────────────────────────────────────────
 
-const MSG_LOG = join(homedir(), ".openclaw", "logs", "telegram-messages.jsonl");
+const MSG_LOG = join(homedir(), ".crewswarm", "logs", "telegram-messages.jsonl");
 
 function logMessage({ direction, chatId, username, text, firstName }) {
   const entry = { ts: new Date().toISOString(), direction, chatId, username, firstName, text };

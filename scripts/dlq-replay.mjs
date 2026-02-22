@@ -10,8 +10,10 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CFG_DIR = process.env.OPENCREWHQ_CONFIG_DIR || path.join(os.homedir(), ".openclaw");
-const DLQ_DIR = path.join(CFG_DIR, "workspace", "shared-memory", "claw-swarm", "opencrew-rt", "dlq");
+const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
+  || process.env.OPENCREWHQ_CONFIG_DIR   // legacy env alias
+  || path.join(os.homedir(), ".crewswarm");
+const DLQ_DIR = path.join(CFG_DIR, "logs", "dlq");
 const OPENCLAW_DIR = process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
 
 const key = process.argv[2];

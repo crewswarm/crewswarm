@@ -54,8 +54,12 @@ function now() {
 
 function loadLLMConfig() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"));
-    const providers = cfg?.models?.providers || {};
+    const csPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+    const ocPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
+    const cfgRaw = fs.existsSync(csPath) ? fs.readFileSync(csPath, "utf8") : fs.readFileSync(ocPath, "utf8");
+    const cfg = JSON.parse(cfgRaw);
+    // crewswarm.json uses cfg.providers; openclaw.json uses cfg.models.providers
+    const providers = cfg?.providers || cfg?.models?.providers || {};
     // Priority: fastest small models first
     const FAST_MODELS = {
       cerebras: "llama-3.3-70b",

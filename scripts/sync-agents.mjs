@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * sync-agents.mjs
- * Reads ~/.openclaw/openclaw.json and regenerates the agent table
+ * Reads ~/.crewswarm/crewswarm.json and regenerates the agent table
  * in memory/orchestration-protocol.md + memory/current-state.md
  *
  * Run manually: node scripts/sync-agents.mjs
@@ -12,8 +12,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-const OPENCLAW_CONFIG = path.join(homedir(), ".openclaw", "openclaw.json");
-const AGENT_PROMPTS   = path.join(homedir(), ".openclaw", "agent-prompts.json");
+const CREWSWARM_CONFIG = path.join(homedir(), ".crewswarm", "crewswarm.json");
+const OPENCLAW_CONFIG  = path.join(homedir(), ".openclaw", "openclaw.json");   // legacy fallback
+const AGENT_PROMPTS    = path.join(homedir(), ".crewswarm", "agent-prompts.json");
 const PROTOCOL_FILE   = new URL("../memory/orchestration-protocol.md", import.meta.url).pathname;
 const STATE_FILE      = new URL("../memory/current-state.md", import.meta.url).pathname;
 
@@ -42,19 +43,22 @@ function getAgentName(id) {
 }
 
 async function loadAgents() {
-  try {
-    const raw = await readFile(OPENCLAW_CONFIG, "utf8");
-    const cfg = JSON.parse(raw);
-    return (cfg.agents?.list || []).map(a => ({
-      id:    a.id || "?",
-      model: a.model || "unknown",
-      name:  getAgentName(a.id || ""),
-      meta:  ROLE_META[a.id] || { emoji: "🤖", label: a.id, best: "General tasks" },
-    }));
-  } catch (e) {
-    console.error("Could not load openclaw.json:", e.message);
-    return [];
+  for (const cfgPath of [CREWSWARM_CONFIG, OPENCLAW_CONFIG]) {
+    try {
+      const raw = await readFile(cfgPath, "utf8");
+      const cfg = JSON.parse(raw);
+      const list = cfg.agents?.list || (Array.isArray(cfg.agents) ? cfg.agents : []);
+      if (list.length === 0) continue;
+      return list.map(a => ({
+        id:    a.id || "?",
+        model: a.model || "unknown",
+        name:  getAgentName(a.id || ""),
+        meta:  ROLE_META[a.id] || { emoji: "🤖", label: a.id, best: "General tasks" },
+      }));
+    } catch {}
   }
+  console.error("Could not load agent list from ~/.crewswarm/crewswarm.json or ~/.openclaw/openclaw.json");
+  return [];
 }
 
 function buildAgentTable(agents) {
