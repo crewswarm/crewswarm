@@ -31,13 +31,14 @@ No broadcast races. No duplicate work. Each agent gets exactly one task, from on
 
 ## Features
 
-- **PM-led orchestration** — Natural language requirement → PM breaks into phased tasks → targeted dispatch. No broadcast, no races.
+- **PM-led orchestration** — Natural language requirement → PM breaks into phased tasks → targeted dispatch.
 - **Phased builds (PDD)** — MVP → Phase 1 → Phase 2. Failed tasks auto-decompose into subtasks and retry.
 - **Shared memory** — Persistent markdown files injected into every agent call. The crew stays aligned across sessions and restarts.
 - **Fault tolerance** — Retry with backoff, task leases, heartbeat checks. After max retries, tasks land in the Dead Letter Queue for dashboard replay.
-- **Four control surfaces** — CLI (`crew-cli`), web dashboard, macOS SwiftBar menu, and direct OpenClaw chat via Quill.
-- **Any model, any agent** — Each agent runs its own model. Mix OpenAI, Anthropic, Groq, Mistral, Gemini, DeepSeek, Cerebras, or local Ollama. Switch models without code changes.
+- **Four control surfaces** — CLI (`crew-cli`), web dashboard, macOS SwiftBar menu bar, and Telegram.
+- **Any model, any agent** — Each agent runs its own model. Mix OpenAI, Anthropic, Groq, Mistral, DeepSeek, Perplexity, or local Ollama. Switch without restarting.
 - **PM Loop** — Autonomous mode: reads a `ROADMAP.md`, dispatches one item at a time, self-extends when the roadmap empties.
+- **Standalone** — Runs without any third-party orchestration service. Bring your own API keys; direct LLM calls only.
 
 ---
 
@@ -46,17 +47,39 @@ No broadcast races. No duplicate work. Each agent gets exactly one task, from on
 ### Requirements
 
 - Node.js 20+
-- [OpenClaw](https://github.com/openclaw/openclaw) (for the agent gateway)
-- API key for at least one LLM provider (OpenAI, Anthropic, Groq, etc.)
+- API key for at least one LLM provider (Groq, Anthropic, OpenAI, etc.)
+- [OpenClaw](https://github.com/openclaw/openclaw) *(optional — enables additional gateway routing and macOS integrations)*
 
 ### Install
 
 ```bash
-git clone https://github.com/crewswarm/crewswarm
-cd crewswarm
+git clone https://github.com/CrewSwarm/CrewSwarm
+cd CrewSwarm
 npm install
-cp ~/.openclaw/openclaw.json.example ~/.openclaw/openclaw.json
-# Edit ~/.openclaw/openclaw.json with your API keys and agent configs
+```
+
+### Configure
+
+Open the dashboard and go to the **Providers** tab to paste your API keys — no config file editing required:
+
+```bash
+node scripts/dashboard.mjs
+# Open http://127.0.0.1:4319 → Providers tab
+```
+
+Keys are saved to `~/.crewswarm/config.json`. Or create it manually:
+
+```json
+{
+  "providers": {
+    "groq":      { "apiKey": "gsk_..." },
+    "anthropic": { "apiKey": "sk-ant-..." },
+    "openai":    { "apiKey": "sk-..." }
+  },
+  "rt": {
+    "authToken": "your-rt-bus-token"
+  }
+}
 ```
 
 ### Start the crew
@@ -66,7 +89,7 @@ cp ~/.openclaw/openclaw.json.example ~/.openclaw/openclaw.json
 node scripts/start-crew.mjs
 
 # Check status
-bash ~/bin/openswitchctl status
+node crew-cli.mjs --status
 ```
 
 ### Run a build
@@ -75,7 +98,7 @@ bash ~/bin/openswitchctl status
 # One-shot: send a requirement through the full PM → agents pipeline
 node crew-cli.mjs "Build a REST API for user authentication with JWT and tests"
 
-# Or use the web dashboard
+# Or kick it off from the dashboard Build tab
 node scripts/dashboard.mjs
 # Open http://127.0.0.1:4319
 ```
@@ -83,11 +106,11 @@ node scripts/dashboard.mjs
 ### PM Loop (autonomous mode)
 
 ```bash
-# Create a roadmap
+# Create a roadmap first
 node scripts/run.mjs "Build a SaaS MVP with auth, billing, and a dashboard"
 # ^ PM creates ROADMAP.md automatically
 
-# Start the loop — it runs until every task is done
+# Start the loop — runs until every roadmap item is done
 PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
 ```
 
@@ -97,7 +120,7 @@ PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
 
 | Agent | Role | Default model |
 |---|---|---|
-| `crew-pm` | Plans, breaks requirements into tasks, manages the roadmap | Sonar Pro (research) |
+| `crew-pm` | Plans, breaks requirements into tasks, manages the roadmap | Perplexity Sonar Pro |
 | `crew-coder` | General implementation — files, APIs, scripts | Claude 3.5 Sonnet |
 | `crew-coder-front` | Frontend specialist — HTML, CSS, JS, UI | Claude 3.5 Sonnet |
 | `crew-coder-back` | Backend specialist — APIs, DBs, server logic | Claude 3.5 Sonnet |
@@ -106,31 +129,34 @@ PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
 | `crew-security` | Security audits, hardening | GPT-4o |
 | `crew-github` | Git commits, PRs, branch management | GPT-4o-mini |
 | `crew-copywriter` | Headlines, CTAs, product copy | Claude 3 Haiku |
-| `crew-main` | Quill — coordination, triage, fallback | GPT-4o |
+| `crew-main` | Coordination, triage, Telegram gateway | GPT-4o |
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│              Control Surfaces               │
-│  crew-cli  │  Dashboard  │  SwiftBar │ Chat │
-└────────────────────┬────────────────────────┘
-                     │
-              gateway-bridge.mjs
-                     │
-         ┌───────────┴──────────┐
-         │     OpenCrew RT      │  ← real-time message bus
-         └───────────┬──────────┘
-                     │
-     ┌───────┬───────┼───────┬───────┐
-  crew-pm  crew-coder  crew-qa  crew-fixer  ...
-     │
-  ROADMAP.md ← phased task ledger
-  memory/    ← shared context
-  DLQ        ← failed task replay
+┌─────────────────────────────────────────────────────┐
+│                  Control Surfaces                   │
+│  crew-cli  │  Dashboard (4319)  │  SwiftBar │  TG  │
+└────────────────────────┬────────────────────────────┘
+                         │
+                  gateway-bridge.mjs
+                   (per-agent daemon)
+                         │
+              ┌──────────┴──────────┐
+              │    CrewSwarm RT     │  ← WebSocket message bus (18889)
+              └──────────┬──────────┘
+                         │ direct LLM calls (per provider API)
+         ┌───────┬───────┼───────┬────────┐
+      crew-pm  crew-coder  crew-qa  crew-fixer  …
+         │
+      ROADMAP.md  ← phased task ledger
+      memory/     ← shared context (markdown)
+      DLQ         ← failed task replay queue
 ```
+
+**Optional:** [OpenClaw](https://github.com/openclaw/openclaw) can be installed alongside CrewSwarm for additional LLM gateway routing, WhatsApp/iMessage integration, and macOS-native agent controls.
 
 ---
 
@@ -139,12 +165,12 @@ PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
 ### CLI
 
 ```bash
-node crew-cli.mjs "Build X"              # full orchestration
-node crew-cli.mjs code "Create login"    # send to crew-coder
-node crew-cli.mjs test "Test auth flow"  # send to crew-qa
-node crew-cli.mjs fix "Debug timeout"    # send to crew-fixer
+node crew-cli.mjs "Build X"               # full PM orchestration
+node crew-cli.mjs code "Create login"     # send to crew-coder
+node crew-cli.mjs test "Test auth flow"   # send to crew-qa
+node crew-cli.mjs fix "Debug timeout"     # send to crew-fixer
 node crew-cli.mjs audit "Security review" # send to crew-security
-node crew-cli.mjs --status               # check agent status
+node crew-cli.mjs --status                # check agent status
 ```
 
 ### Dashboard (http://127.0.0.1:4319)
@@ -152,56 +178,65 @@ node crew-cli.mjs --status               # check agent status
 - **Build** — start phased builds, run PM Loop, view output per project
 - **RT Messages** — live feed of every agent message
 - **Projects** — create and manage projects, start/stop PM Loop per project
+- **Providers** — paste API keys for Groq, Anthropic, OpenAI, Perplexity, Mistral, DeepSeek, xAI, Ollama
+- **Agents** — assign models, edit system prompts, spin up new agents
+- **Services** — restart/stop any managed service (RT bus, bridges, Telegram)
 - **Send** — send a task directly to any agent
 - **DLQ** — replay failed tasks
-- **Files** — browse what the crew wrote, open in Cursor
+
+### Telegram
+
+```bash
+# Start the Telegram bridge — chat with your crew from your phone
+TELEGRAM_BOT_TOKEN=xxx node telegram-bridge.mjs
+```
 
 ### SwiftBar (macOS)
 
-Install `contrib/swiftbar/openswitch.10s.sh` as a SwiftBar plugin for a menu bar status indicator, agent start/stop, and one-click log access.
+Install `contrib/swiftbar/openswitch.10s.sh` as a SwiftBar plugin for a menu bar status indicator and one-click agent controls.
 
 ---
 
 ## Configuration
 
-All configuration lives in `~/.openclaw/openclaw.json`:
+Keys and tokens are managed through the dashboard **Providers** tab and saved to `~/.crewswarm/config.json`.
+
+### Agent models
+
+Agent model assignments live in `~/.openclaw/openclaw.json` (if using OpenClaw) or can be set directly in the dashboard **Agents** tab. Example:
 
 ```json
 {
   "agents": [
-    {
-      "id": "crew-pm",
-      "model": "perplexity/sonar-pro",
-      "channels": ["command", "assign"]
-    },
-    {
-      "id": "crew-coder",
-      "model": "anthropic/claude-3-5-sonnet-20241022",
-      "channels": ["command", "assign", "handoff"]
-    }
-  ],
-  "env": {
-    "OPENCREW_OUTPUT_DIR": "/path/to/your/project",
-    "ANTHROPIC_API_KEY": "sk-...",
-    "OPENAI_API_KEY": "sk-..."
-  }
+    { "id": "crew-pm",    "model": "perplexity/sonar-pro" },
+    { "id": "crew-coder", "model": "anthropic/claude-3-5-sonnet-20241022" },
+    { "id": "crew-qa",    "model": "groq/llama-3.3-70b-versatile" }
+  ]
 }
 ```
 
-Switch any agent's model without restarting — just edit the JSON and run `bash ~/bin/openswitchctl restart`.
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OPENCREW_RT_AUTH_TOKEN` | Auth token for the RT message bus |
+| `OPENCREW_OUTPUT_DIR` | Where agents write files |
+| `OPENCREW_RT_URL` | RT bus URL (default: `ws://127.0.0.1:18889`) |
+| `OPENCREW_OPENCODE_ENABLED` | Set to `0` to disable OpenCode routing |
 
 ---
 
 ## Project structure
 
 ```
-crewswarm/
+CrewSwarm/
 ├── crew-cli.mjs              # unified CLI
-├── gateway-bridge.mjs        # RT ↔ OpenClaw bridge + agent runner
+├── gateway-bridge.mjs        # agent runtime — RT bus ↔ direct LLM calls
 ├── pm-loop.mjs               # autonomous PM loop
 ├── unified-orchestrator.mjs  # PM → parser → dispatch pipeline
 ├── phased-orchestrator.mjs   # phased build orchestrator
 ├── continuous-build.mjs      # continuous round-based builder
+├── telegram-bridge.mjs       # Telegram ↔ RT bus bridge
 ├── scripts/
 │   ├── dashboard.mjs         # web dashboard server
 │   ├── start-crew.mjs        # spawn all agent bridges
@@ -234,5 +269,5 @@ MIT — use it, fork it, build on it.
 
 <p align="center">
   <a href="https://crewswarm.ai">crewswarm.ai</a> · 
-  <a href="https://github.com/crewswarm/crewswarm">GitHub</a>
+  <a href="https://github.com/CrewSwarm/CrewSwarm">GitHub</a>
 </p>

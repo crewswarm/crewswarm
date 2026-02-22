@@ -16,7 +16,47 @@ import os from "node:os";
 import { spawn } from "node:child_process";
 
 const STATE_DIR = path.join(os.homedir(), ".openclaw");
+const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
+const CREWSWARM_CONFIG_PATH = path.join(CREWSWARM_DIR, "config.json");
 const TELEMETRY_DIR = path.join(STATE_DIR, "telemetry");
+
+// ── Built-in provider base URLs — users only need to supply apiKey ──────────
+const PROVIDER_REGISTRY = {
+  groq:        { baseUrl: "https://api.groq.com/openai/v1" },
+  anthropic:   { baseUrl: "https://api.anthropic.com/v1" },
+  openai:      { baseUrl: "https://api.openai.com/v1" },
+  perplexity:  { baseUrl: "https://api.perplexity.ai" },
+  mistral:     { baseUrl: "https://api.mistral.ai/v1" },
+  deepseek:    { baseUrl: "https://api.deepseek.com/v1" },
+  nvidia:      { baseUrl: "https://integrate.api.nvidia.com/v1" },
+  google:      { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
+  xai:         { baseUrl: "https://api.x.ai/v1" },
+  ollama:      { baseUrl: "http://localhost:11434/v1" },
+  "openai-compatible": { baseUrl: null }, // user must supply baseUrl
+};
+
+// ── Config resolver: ~/.crewswarm/config.json first, ~/.openclaw/openclaw.json fallback ──
+function resolveConfig() {
+  const paths = [CREWSWARM_CONFIG_PATH, path.join(STATE_DIR, "openclaw.json")];
+  for (const p of paths) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+      cfg.__source = p;
+      return cfg;
+    } catch { /* try next */ }
+  }
+  return {};
+}
+
+function resolveProviderConfig(cfg, providerKey) {
+  const explicit = cfg?.models?.providers?.[providerKey] || cfg?.providers?.[providerKey];
+  const builtin  = PROVIDER_REGISTRY[providerKey];
+  if (!explicit && !builtin) return null;
+  return {
+    baseUrl: explicit?.baseUrl || builtin?.baseUrl,
+    apiKey:  explicit?.apiKey  || cfg?.env?.[`${providerKey.toUpperCase()}_API_KEY`] || null,
+  };
+}
 const TELEMETRY_LOG = path.join(TELEMETRY_DIR, "events.log");
 const SHARED_MEMORY_DIR = path.resolve(process.cwd(), "memory");
 const SHARED_MEMORY_MAX_FILE_CHARS = 8000;
