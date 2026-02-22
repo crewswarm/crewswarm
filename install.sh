@@ -7,7 +7,7 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CREWSWARM_DIR="$HOME/.crewswarm"
-OPENCLAW_DIR_CFG="$HOME/.openclaw"
+OPENCLAW_DIR_CFG="$HOME/.openclaw"   # kept for legacy fallback reads only
 
 # ── colours ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -58,9 +58,8 @@ success "npm packages installed"
 header "3/7  Setting up config directories"
 
 mkdir -p "$CREWSWARM_DIR"
-mkdir -p "$OPENCLAW_DIR_CFG"
 mkdir -p "$CREWSWARM_DIR/chat-history"
-success "Created ~/.crewswarm  and  ~/.openclaw"
+success "Created ~/.crewswarm"
 
 # ── 4. Bootstrap config files ────────────────────────────────────────────────
 header "4/7  Bootstrapping config files"
@@ -70,13 +69,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
   RT_TOKEN="crewswarm-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 16)"
   cat > "$CONFIG_FILE" <<EOF
 {
-  "providers": {
-    "groq":      { "apiKey": "", "baseUrl": "https://api.groq.com/openai/v1" },
-    "anthropic": { "apiKey": "", "baseUrl": "https://api.anthropic.com/v1" },
-    "openai":    { "apiKey": "", "baseUrl": "https://api.openai.com/v1" },
-    "mistral":   { "apiKey": "", "baseUrl": "https://api.mistral.ai/v1" },
-    "ollama":    { "apiKey": "", "baseUrl": "http://localhost:11434/v1" }
-  },
+  "_note": "RT bus auth token — do not share. Providers and agents are in crewswarm.json",
   "rt": {
     "authToken": "$RT_TOKEN"
   }
@@ -87,10 +80,11 @@ else
   success "~/.crewswarm/config.json already exists — keeping it"
 fi
 
-OPENCLAW_CFG="$OPENCLAW_DIR_CFG/openclaw.json"
-if [[ ! -f "$OPENCLAW_CFG" ]]; then
-  cat > "$OPENCLAW_CFG" <<'EOF'
+CREWSWARM_JSON="$CREWSWARM_DIR/crewswarm.json"
+if [[ ! -f "$CREWSWARM_JSON" ]]; then
+  cat > "$CREWSWARM_JSON" <<'EOF'
 {
+  "_note": "CrewSwarm agent config — edit models and providers here",
   "agents": [
     { "id": "crew-main",         "model": "groq/llama-3.3-70b-versatile" },
     { "id": "crew-pm",           "model": "groq/llama-3.3-70b-versatile" },
@@ -102,12 +96,31 @@ if [[ ! -f "$OPENCLAW_CFG" ]]; then
     { "id": "crew-security",     "model": "groq/llama-3.3-70b-versatile" },
     { "id": "crew-github",       "model": "groq/llama-3.3-70b-versatile" },
     { "id": "crew-copywriter",   "model": "groq/llama-3.3-70b-versatile" }
-  ]
+  ],
+  "providers": {
+    "groq":      { "apiKey": "", "baseUrl": "https://api.groq.com/openai/v1" },
+    "anthropic": { "apiKey": "", "baseUrl": "https://api.anthropic.com/v1" },
+    "openai":    { "apiKey": "", "baseUrl": "https://api.openai.com/v1" },
+    "mistral":   { "apiKey": "", "baseUrl": "https://api.mistral.ai/v1" },
+    "deepseek":  { "apiKey": "", "baseUrl": "https://api.deepseek.com/v1" },
+    "cerebras":  { "apiKey": "", "baseUrl": "https://api.cerebras.ai/v1" },
+    "ollama":    { "apiKey": "ollama", "baseUrl": "http://localhost:11434/v1" }
+  }
 }
 EOF
-  success "Created ~/.openclaw/openclaw.json  (all agents using Groq Llama 3.3 70B)"
+  success "Created ~/.crewswarm/crewswarm.json  (all agents on Groq Llama 3.3 70B — add your key to start)"
 else
-  success "~/.openclaw/openclaw.json already exists — keeping it"
+  success "~/.crewswarm/crewswarm.json already exists — keeping it"
+fi
+
+# Bootstrap agent prompts if not present
+PROMPTS_FILE="$CREWSWARM_DIR/agent-prompts.json"
+if [[ ! -f "$PROMPTS_FILE" ]] && [[ -f "$REPO_DIR/.openclaw/agent-prompts.json" ]]; then
+  cp "$REPO_DIR/.openclaw/agent-prompts.json" "$PROMPTS_FILE"
+  success "Copied agent-prompts.json to ~/.crewswarm/"
+elif [[ ! -f "$PROMPTS_FILE" ]]; then
+  echo '{}' > "$PROMPTS_FILE"
+  success "Created empty ~/.crewswarm/agent-prompts.json (defaults built into gateway-bridge)"
 fi
 
 ALLOWLIST="$CREWSWARM_DIR/cmd-allowlist.json"
