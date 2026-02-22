@@ -1,60 +1,199 @@
-# CrewSwarm — AI Agent Memory
+# CrewSwarm — AI Setup Guide
 
-> Persistent facts and preferences for Cursor AI sessions. Updated by the continual-learning skill.
-
----
-
-## Learned User Preferences
-
-- User prefers no follow-up questions when intent is clear — just act
-- User prefers concise replies with no filler phrases or preamble
-- User accesses crew-lead via the dashboard chat, the floating crew-chat.html window, and Telegram — all three must be kept in sync for any chat feature changes
-- SwiftBar plugin is deployed by copying directly to `~/Library/Application Support/SwiftBar/Plugins/` — symlinks do not work with SwiftBar
-- When opening Chrome via SwiftBar, always use the Chrome binary directly (`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --app=URL --new-window`) — never use `open -a "Google Chrome" --args ...` because Chrome ignores `--args` when already running
-- User wants "build me / build a / create a" to immediately trigger `@@PROJECT` and generate a roadmap — no clarifying questions, no feature lists first
+> This file is read automatically by Cursor, Claude Code, Codex, and most AI coding assistants.
+> If a user says "set this up", "install CrewSwarm", or "get me started" — follow the steps below.
 
 ---
 
-## Learned Workspace Facts
+## What is CrewSwarm?
 
-- **Workspace root**: `/Users/jeffhobbs/Desktop/CrewSwarm`
-- **Dashboard**: `scripts/dashboard.mjs`, serves on port 4319
-- **crew-lead**: `crew-lead.mjs`, HTTP server on port 5010, manages chat history and project launches
-- **PM loop**: `pm-loop.mjs` at workspace root, reads `ROADMAP.md`, dispatches tasks to agents
-- **RT bus**: WebSocket on `ws://127.0.0.1:18889` — custom service, not OpenClaw
-- **Telegram bridge**: `telegram-bridge.mjs`
-- **SwiftBar source**: `contrib/swiftbar/openswitch.10s.sh` — always sync changes to both source and deployed copy
-- **Agent prompts**: `~/.openclaw/agent-prompts.json` — configures system prompt per agent
-- **Chat history**: stored as JSONL at `~/.crewswarm/chat-history/<sessionId>.jsonl`
-- **Project registry**: stored at `~/.openclaw/orchestrator-logs/projects.json`
+A local multi-agent AI orchestration system. A crew of specialist AI agents
+(coder, QA, PM, fixer, security, copywriter, etc.) that collaborate on tasks
+via a real-time WebSocket bus. You interact through a web dashboard, Telegram,
+or by chatting directly with crew-lead.
 
-### CRITICAL — Dashboard JS Escape Bug (recurring)
+**Ports when running:**
+| Service | Port |
+|---|---|
+| Dashboard | 4319 |
+| crew-lead (chat + dispatch) | 5010 |
+| RT message bus | 18889 |
 
-**Problem**: `scripts/dashboard.mjs` serves its entire frontend as a string inside a Node.js server-side template literal. Any client-side JavaScript that uses template literals (`${...}`), apostrophes in single-quoted strings, or backticks inside the served HTML will be evaluated or broken by the outer server-side template literal.
+---
 
-**Symptoms**: `Uncaught SyntaxError: Invalid or unexpected token` at a line number in `(index)` — the rendered HTML. The line number in the error refers to the *served page*, not the source file.
+## Setup — do this when the user first opens the repo
 
-**Root causes seen so far**:
-1. Client-side `${variable}` inside a server-side template literal → server evaluates it, breaks JS
-2. Apostrophe in a single-quoted JS string: `'Let's work...'` → breaks string parsing
-3. Any backtick in inline client JS → terminates the server-side template literal early
+### Step 1 — Prerequisites
 
-**Fix pattern**:
-- For client-side template literals: convert to string concatenation (`"Hello " + name` instead of `` `Hello ${name}` ``)
-- For apostrophes: use double-quoted strings (`"Let's work"` not `'Let\'s work'`)
-- For new client-side functions added to dashboard.mjs: always audit for backticks and `${...}` before saving
-- Prefer pulling large client-side JS blocks out into separate `.js` files served as static assets — this eliminates the escaping problem entirely
+```bash
+node --version   # needs 20+
+npm --version
+```
 
-**Prevention**: Before adding any client-side JavaScript inside `dashboard.mjs`, search for backticks and `${` in the new code. If found, rewrite to avoid them.
+If Node.js is missing:
+```bash
+brew install node   # macOS
+```
 
-### Agent Allowlist
+### Step 2 — Install dependencies
 
-- RT daemon requires agents to be in `OPENCLAW_ALLOWED_AGENTS` env var — `crew-lead` and `crew-telegram` must be included
-- Gateway-bridge processes are the actual agent workers — each agent runs as a separate `gateway-bridge.mjs` process
+```bash
+npm install
+```
 
-### Project Launch Flow
+### Step 3 — Run the installer
 
-- `@@PROJECT` in crew-lead's reply → `draftProject()` calls PM LLM (Perplexity Sonar Pro or Groq) to generate a real roadmap
-- Roadmap shown to user as an editable card — user approves before PM loop starts
-- On confirm: `confirmProject()` creates project via dashboard API, writes `ROADMAP.md`, starts PM loop immediately
-- PM loop uses LLM-based agent routing (with keyword-regex fallback) to send each task to the right specialist
+```bash
+bash install.sh
+```
+
+The installer will:
+- Create `~/.crewswarm/` config directory
+- Bootstrap `config.json` (RT auth token), `crewswarm.json` (agent models), `cmd-allowlist.json`
+- Optionally start all services and open the dashboard in the browser
+- Optionally set up SwiftBar menu bar plugin (macOS)
+- Optionally set up Telegram bot
+
+### Step 4 — Add at least one API key
+
+Open the dashboard at `http://127.0.0.1:4319` → **Providers** tab.
+
+**Groq is free and works immediately:** https://console.groq.com/keys
+
+Paste the key next to `groq`. That's enough to run the whole crew.
+
+Other supported providers: Mistral, Cerebras, DeepSeek, Perplexity, OpenAI,
+Anthropic, xAI, Google, NVIDIA.
+
+### Step 5 — Start the crew
+
+```bash
+npm run restart-all
+```
+
+Or from the dashboard → Services tab → Start All.
+
+### Step 6 — Talk to the crew
+
+Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
+
+---
+
+## Key files to know
+
+| File | What it does |
+|---|---|
+| `crew-lead.mjs` | Conversational commander, HTTP server on :5010 |
+| `gateway-bridge.mjs` | Per-agent daemon — calls LLM, executes tools |
+| `scripts/dashboard.mjs` | Web UI on :4319 |
+| `telegram-bridge.mjs` | Telegram integration |
+| `scripts/crew-scribe.mjs` | Memory maintenance (summaries, lessons) |
+| `~/.crewswarm/crewswarm.json` | Agent model assignments + provider API keys |
+| `~/.crewswarm/config.json` | RT auth token |
+| `~/.openclaw/agent-prompts.json` | System prompt per agent |
+
+---
+
+## Agent roster
+
+| Agent ID | Role |
+|---|---|
+| `crew-coder` | Full-stack coding |
+| `crew-coder-front` | Frontend / UI |
+| `crew-coder-back` | Backend / API |
+| `crew-frontend` | CSS / design |
+| `crew-qa` | Testing & audit |
+| `crew-fixer` | Bug fixing |
+| `crew-pm` | Planning & roadmaps |
+| `crew-security` | Security review |
+| `crew-copywriter` | Writing & docs |
+| `crew-github` | Git & PRs |
+| `crew-main` | General purpose |
+
+---
+
+## Agent tools (@@TOOL syntax)
+
+Agents communicate tool calls inline in their replies:
+
+```
+@@WRITE_FILE /path/to/file.js
+...file contents...
+@@END_FILE
+
+@@READ_FILE /path/to/file.js
+
+@@MKDIR /path/to/dir
+
+@@RUN_CMD ls -la
+```
+
+`@@RUN_CMD` is gated by `~/.crewswarm/cmd-allowlist.json` and requires dashboard approval for unlisted commands.
+
+---
+
+## Dispatching tasks
+
+From the dashboard chat or Telegram:
+```
+dispatch crew-coder to write a login endpoint with JWT
+have crew-qa audit the last PR
+```
+
+Or pipeline multiple agents:
+```
+@@PIPELINE [
+  {"wave":1, "agent":"crew-coder", "task":"Write /src/auth.ts — JWT login"},
+  {"wave":2, "agent":"crew-qa",    "task":"Test the auth endpoint"}
+]
+```
+
+Tasks in the same `wave` run in parallel. Higher waves wait for lower waves.
+
+---
+
+## External API (for integrations)
+
+crew-lead exposes a REST API for external tools. Auth: Bearer token from `~/.crewswarm/config.json → rt.authToken`.
+
+```bash
+TOKEN=$(cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])")
+
+# List agents
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/api/agents
+
+# Dispatch a task
+curl -X POST http://127.0.0.1:5010/api/dispatch \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"crew-coder","task":"write hello.js"}'
+
+# Poll for result
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/api/status/<taskId>
+```
+
+---
+
+## Common commands
+
+```bash
+npm run restart-all          # restart everything
+node scripts/start-crew.mjs  # restart just the agent bridges
+node crew-lead.mjs           # restart just crew-lead
+
+# Check logs
+tail -f /tmp/crew-lead.log
+tail -f /tmp/opencrew-rt-daemon.log
+```
+
+---
+
+## Troubleshooting
+
+**Agents not responding** — run `npm run restart-all`, check logs in `/tmp/`.
+
+**No API key error** — open dashboard → Providers tab, add a Groq key (free).
+
+**crew-lead not reachable** — `curl http://127.0.0.1:5010/health` — if 404, restart with `node crew-lead.mjs`.
+
+**File not written by agent** — agent's tool permissions come from `~/.crewswarm/crewswarm.json → agents[].tools.crewswarmAllow` or role defaults in `gateway-bridge.mjs → AGENT_TOOL_ROLE_DEFAULTS`.

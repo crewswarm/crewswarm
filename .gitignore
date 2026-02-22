@@ -33,5 +33,6 @@ openclaw.json
 Thumbs.db
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
