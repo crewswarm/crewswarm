@@ -836,14 +836,23 @@ const html = `<!doctype html>
 
         <!-- Command allowlist -->
         <div class="card">
-          <div class="card-title" style="margin-bottom:10px;">🔐 Command Allowlist</div>
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;line-height:1.5;">
-            Commands matching these patterns auto-approve agent <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@RUN_CMD</code> calls — no toast, no wait.<br/>
-            Use <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">npm *</code> glob style. Dangerous commands (<code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">rm -rf</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">sudo</code>, etc.) are always blocked regardless.
+          <div class="card-title" style="margin-bottom:6px;">🔐 Command Allowlist</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            Patterns here auto-approve agent <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@RUN_CMD</code> calls — no toast, no wait.
+            Dangerous commands (<code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">rm -rf</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">sudo</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">curl|bash</code>) are always blocked.
           </div>
+
+          <!-- Quick-add presets -->
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Quick presets</div>
+          <div id="cmdPresets" style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;"></div>
+
+          <!-- Active allowlist -->
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Active patterns</div>
           <div id="cmdAllowlistItems" style="min-height:24px;margin-bottom:12px;"></div>
+
+          <!-- Custom add -->
           <div style="display:flex;gap:6px;">
-            <input id="cmdAllowlistInput" placeholder="e.g. npm * or node * or python *" style="flex:1;font-size:12px;" onkeydown="if(event.key==='Enter')addAllowlistPattern();" />
+            <input id="cmdAllowlistInput" placeholder="Custom pattern, e.g. make *" style="flex:1;font-size:12px;" onkeydown="if(event.key==='Enter')addAllowlistPattern();" />
             <button onclick="addAllowlistPattern()" class="btn-green" style="font-size:12px;padding:7px 12px;">Add</button>
           </div>
         </div>
@@ -1292,19 +1301,77 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
 
 // ── Cmd allowlist manager ──────────────────────────────────────────────────────
 
+const CMD_PRESETS = [
+  { label: 'npm',    pattern: 'npm *',        desc: 'install, run, build, test…' },
+  { label: 'node',   pattern: 'node *',        desc: 'run any node script' },
+  { label: 'python', pattern: 'python *',      desc: 'python / python3 scripts' },
+  { label: 'pip',    pattern: 'pip *',         desc: 'pip install packages' },
+  { label: 'git',    pattern: 'git *',         desc: 'all git operations' },
+  { label: 'cursor', pattern: 'cursor *',      desc: 'open files in Cursor' },
+  { label: 'make',   pattern: 'make *',        desc: 'Makefile targets' },
+  { label: 'yarn',   pattern: 'yarn *',        desc: 'yarn install / build / run' },
+  { label: 'pnpm',   pattern: 'pnpm *',        desc: 'pnpm package manager' },
+  { label: 'ls / cat / echo', pattern: 'ls *', desc: 'read-only shell utilities' },
+];
+
 async function loadCmdAllowlist() {
   const box = document.getElementById('cmdAllowlistItems');
+  const presetsBox = document.getElementById('cmdPresets');
   if (!box) return;
+
   const d = await getJSON('/api/cmd-allowlist').catch(() => ({ list: [] }));
   const list = d.list || [];
+
+  // Render presets checklist (only when the presets container exists — Settings view)
+  if (presetsBox) {
+    presetsBox.innerHTML = '';
+    CMD_PRESETS.forEach(function(preset) {
+      const checked = list.includes(preset.pattern);
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 6px;border-radius:6px;transition:background 0.1s;';
+      row.onmouseover = function(){ row.style.background = 'var(--bg-hover)'; };
+      row.onmouseout  = function(){ row.style.background = ''; };
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = checked;
+      chk.style.cssText = 'width:14px;height:14px;cursor:pointer;accent-color:var(--green);flex-shrink:0;';
+      chk.onchange = async function() {
+        if (chk.checked) {
+          await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) });
+        } else {
+          await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) });
+        }
+        loadCmdAllowlist();
+      };
+
+      const nameEl = document.createElement('code');
+      nameEl.style.cssText = 'font-size:12px;color:var(--accent);min-width:90px;';
+      nameEl.textContent = preset.pattern;
+
+      const descEl = document.createElement('span');
+      descEl.style.cssText = 'font-size:11px;color:var(--text-3);';
+      descEl.textContent = preset.desc;
+
+      row.appendChild(chk);
+      row.appendChild(nameEl);
+      row.appendChild(descEl);
+      presetsBox.appendChild(row);
+    });
+  }
+
+  // Render active list (non-preset patterns only, or all if no presets box)
+  const presetPatterns = new Set(CMD_PRESETS.map(function(p){ return p.pattern; }));
+  const customPatterns = presetsBox ? list.filter(function(p){ return !presetPatterns.has(p); }) : list;
+
   box.innerHTML = '';
-  if (!list.length) {
-    box.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0;">No patterns yet — approve a command with "Always allow" checked to add one.</div>';
+  if (!customPatterns.length) {
+    box.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:4px 0;">' + (presetsBox ? 'No custom patterns yet.' : 'No patterns yet.') + '</div>';
     return;
   }
-  for (const pattern of list) {
+  for (const pattern of customPatterns) {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);';
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);';
     const code = document.createElement('code');
     code.style.cssText = 'flex:1;font-size:12px;color:var(--accent);';
     code.textContent = pattern;
@@ -1312,7 +1379,7 @@ async function loadCmdAllowlist() {
     del.textContent = '✕';
     del.style.cssText = 'border:none;background:transparent;color:var(--text-3);cursor:pointer;font-size:14px;padding:0 4px;';
     del.title = 'Remove';
-    del.onclick = async () => {
+    del.onclick = async function() {
       await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) });
       loadCmdAllowlist();
     };
@@ -1324,7 +1391,7 @@ async function loadCmdAllowlist() {
 
 async function addAllowlistPattern() {
   const inp = document.getElementById('cmdAllowlistInput');
-  const pattern = inp?.value?.trim();
+  const pattern = inp ? inp.value.trim() : '';
   if (!pattern) return;
   await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) });
   inp.value = '';
