@@ -53,63 +53,58 @@ No broadcast races. No duplicate work. Each agent gets exactly one task, from on
 ### Requirements
 
 - Node.js 20+
-- API key for at least one LLM provider (Groq, Anthropic, OpenAI, etc.)
+- API key for at least one LLM provider (Groq is free → [console.groq.com](https://console.groq.com))
 
-### Install
+### One-command install (macOS)
 
 ```bash
 git clone https://github.com/CrewSwarm/CrewSwarm
 cd CrewSwarm
-npm install
+bash install.sh
 ```
 
-### Configure
+Or on a completely fresh machine (no clone needed):
 
-Open the dashboard and go to the **Providers** tab to paste your API keys — no config file editing required:
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/CrewSwarm/CrewSwarm/main/install.sh)
+```
+
+The installer:
+- Checks Node.js 20+ (tells you how to get it if missing)
+- Runs `npm install`
+- Creates `~/.crewswarm/` and `~/.openclaw/` with correct structure
+- Writes default config with a random RT auth token
+- Bootstraps all 10 agents defaulted to Groq Llama 3.3 70B
+- Pre-approves `npm *`, `node *`, `npx *` in the command allowlist
+- Adds a `crew-cli` alias to your shell
+
+### Configure API keys
+
+After install, open the dashboard **Providers** tab and paste at least one API key:
 
 ```bash
 npm run dashboard
 # Open http://127.0.0.1:4319 → Providers tab
 ```
 
-Keys are saved to `~/.crewswarm/config.json`. Or copy the example:
-
-```bash
-cp config.json.example ~/.crewswarm/config.json   # then fill in your keys
-```
-
-```json
-{
-  "providers": {
-    "groq":      { "apiKey": "gsk_..." },
-    "anthropic": { "apiKey": "sk-ant-..." },
-    "openai":    { "apiKey": "sk-..." }
-  },
-  "rt": {
-    "authToken": "your-rt-bus-token"
-  }
-}
-```
+Keys are saved to `~/.crewswarm/config.json`. Groq is free and the fastest way to get started.
 
 ### Start the crew
 
 ```bash
-# Start everything: RT bus + all agent bridges + crew-lead + crew-scribe + dashboard
-npm run start-crew
-
-# Or restart everything cleanly
 npm run restart-all
 ```
+
+This starts: RT bus (18889) → agent bridges → crew-lead (5010) → dashboard (4319).
 
 Then open **http://127.0.0.1:4319** and go to the **🧠 Chat** tab.
 
 ### Run a build
 
 ```bash
-# From the CLI
-npm run crew-cli -- "Build a REST API for user authentication with JWT and tests"
-
-# Or from the dashboard Chat tab — type naturally, crew-lead dispatches
+# From the dashboard Chat tab — type naturally, crew-lead dispatches
+# Or from the CLI:
+crew-cli "Build a REST API for user authentication with JWT and tests"
 ```
 
 ### PM Loop (autonomous mode)
