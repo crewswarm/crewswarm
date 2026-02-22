@@ -44,7 +44,7 @@ const MAX_ITEMS      = maxIdx >= 0 ? Number(args[maxIdx + 1]) : 200;
 const projDirIdx     = args.indexOf("--project-dir");
 
 // ── Config ────────────────────────────────────────────────────────────────
-const OPENCLAW_DIR   = process.env.OPENCLAW_DIR || __dirname;
+const OPENCLAW_DIR   = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
 const OUTPUT_DIR     = projDirIdx >= 0 ? args[projDirIdx + 1]
                      : (process.env.OPENCREW_OUTPUT_DIR || join(OPENCLAW_DIR, "website"));
 const ROADMAP_FILE   = process.env.PM_ROADMAP_FILE || join(OUTPUT_DIR, "ROADMAP.md");
