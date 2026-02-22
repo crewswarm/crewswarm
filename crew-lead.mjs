@@ -4,7 +4,7 @@
  *
  * Runs a local HTTP server on port 5010.
  * Receives chat messages, responds via LLM, dispatches tasks to agents.
- * Persistent per-session memory. Standalone — no OpenClaw RT bus needed.
+ * Persistent per-session memory. Standalone — no external gateway needed.
  *
  * Usage: node crew-lead.mjs
  */
@@ -31,17 +31,24 @@ const CTL_PATH    = (() => {
 const DASHBOARD   = "http://127.0.0.1:4319";
 
 function loadConfig() {
-  const csCfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
-  const ocCfgPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
-  const cs = tryRead(csCfgPath) || {};
-  const oc = tryRead(ocCfgPath) || {};
+  const csCfgPath  = path.join(os.homedir(), ".crewswarm", "config.json");
+  const csSwarmPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+  const ocCfgPath  = path.join(os.homedir(), ".openclaw",  "openclaw.json");
+  const cs    = tryRead(csCfgPath)   || {};
+  const csSwarm = tryRead(csSwarmPath) || {};
+  const oc    = tryRead(ocCfgPath)   || {};
 
-  const agents = Array.isArray(oc.agents) ? oc.agents : (oc.agents?.list || []);
+  // Agents: crewswarm.json is canonical, fall back to openclaw.json
+  const rawAgents = Array.isArray(csSwarm.agents) ? csSwarm.agents
+                  : (Array.isArray(oc.agents) ? oc.agents : (oc.agents?.list || []));
+  const agents = rawAgents;
   const agentCfg = agents.find(a => a.id === "crew-lead");
   const modelString = agentCfg?.model || process.env.CREW_LEAD_MODEL || "groq/llama-3.3-70b-versatile";
   const [providerKey, ...modelParts] = modelString.split("/");
   const modelId = modelParts.join("/");
-  const provider = oc?.models?.providers?.[providerKey] || cs?.providers?.[providerKey];
+  const provider = csSwarm?.providers?.[providerKey]
+                || oc?.models?.providers?.[providerKey]
+                || cs?.providers?.[providerKey];
 
   const knownAgents = agents
     .filter(a => a.id !== "crew-lead")
@@ -73,7 +80,9 @@ function getSearchToolsConfig() {
 }
 
 function getAgentPrompts() {
-  return tryRead(path.join(os.homedir(), ".openclaw", "agent-prompts.json")) || {};
+  return tryRead(path.join(os.homedir(), ".crewswarm", "agent-prompts.json"))
+      || tryRead(path.join(os.homedir(), ".openclaw",  "agent-prompts.json"))
+      || {};
 }
 
 async function searchWithBrave(query) {
@@ -1000,7 +1009,7 @@ const RT_TOKEN = process.env.OPENCREW_RT_AUTH_TOKEN || (() => {
     if (cs?.rt?.authToken) return cs.rt.authToken;
   } catch {}
   try {
-    return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+    return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || "";  // legacy fallback
   } catch { return ""; }
 })();
 
