@@ -564,9 +564,27 @@ const html = `<!doctype html>
         </div>
       </div>
 
-      <div id="addProviderForm" style="display:none;" class="card">
-        <h3>Add Custom Provider</h3>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
+      <!-- OpenClaw integration toggle -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:18px;">🔌</span>
+          <div style="flex:1;">
+            <div style="font-weight:600; font-size:14px;">OpenClaw Integration <span style="font-size:11px; color:var(--text-2); font-weight:400;">(optional)</span></div>
+            <div style="font-size:12px; color:var(--text-2);">When OpenClaw is installed, agents can route through its LLM gateway (port 18789). Keys below are used for direct calls regardless.</div>
+          </div>
+          <span id="oclawBadge" style="font-size:11px; padding:2px 10px; border-radius:999px; font-weight:600; background:rgba(107,114,128,0.15); color:#6b7280; border:1px solid rgba(107,114,128,0.3);">checking…</span>
+        </div>
+      </div>
+
+      <!-- Built-in provider keys -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; padding:0 2px;">LLM Provider Keys</div>
+      <div id="builtinProvidersList"></div>
+
+      <!-- Custom provider add -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Custom Providers</div>
+      <div id="addProviderForm" style="display:none;" class="card" style="margin-bottom:10px;">
+        <h3 style="margin-bottom:12px;">Add Custom Provider</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <input id="apId"      placeholder="Provider ID (e.g. together)" />
           <input id="apBaseUrl" placeholder="Base URL (e.g. https://api.together.xyz/v1)" />
           <input id="apKey"     placeholder="API Key" type="password" />
@@ -1137,8 +1155,94 @@ function showProviders(){
   hideAllViews();
   document.getElementById('providersView').classList.add('active');
   setNavActive('navProviders');
-  loadProviders();
   loadRTToken();
+  loadOpenClawStatus();
+  loadBuiltinProviders();
+  loadProviders();
+}
+
+const BUILTIN_PROVIDERS = [
+  { id:'groq',       label:'Groq',       icon:'⚡', url:'https://console.groq.com/keys',         hint:'Fast inference — great for crew-coder, crew-fixer' },
+  { id:'anthropic',  label:'Anthropic',  icon:'🟣', url:'https://console.anthropic.com/',         hint:'Claude models — best for complex reasoning tasks' },
+  { id:'openai',     label:'OpenAI',     icon:'🟢', url:'https://platform.openai.com/api-keys',   hint:'GPT-4o and o-series models' },
+  { id:'perplexity', label:'Perplexity', icon:'🔍', url:'https://www.perplexity.ai/settings/api', hint:'Sonar Pro — ideal for crew-pm research tasks' },
+  { id:'mistral',    label:'Mistral',    icon:'🌀', url:'https://console.mistral.ai/',            hint:'Open-weight models, efficient mid-tier tasks' },
+  { id:'deepseek',   label:'DeepSeek',   icon:'🌊', url:'https://platform.deepseek.com/',         hint:'Low cost, strong coding performance' },
+  { id:'xai',        label:'xAI (Grok)', icon:'𝕏',  url:'https://console.x.ai/',                 hint:'Grok models from xAI' },
+  { id:'ollama',     label:'Ollama',     icon:'🏠', url:'https://ollama.com/download',            hint:'Local models — no API key needed, runs offline' },
+];
+
+async function loadBuiltinProviders(){
+  const list = document.getElementById('builtinProvidersList');
+  let saved = {};
+  try { saved = (await getJSON('/api/providers/builtin')).keys || {}; } catch {}
+  list.innerHTML = BUILTIN_PROVIDERS.map(p => {
+    const hasKey = !!saved[p.id];
+    const isOllama = p.id === 'ollama';
+    const badge = hasKey || isOllama
+      ? \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">\${isOllama && !hasKey ? 'local' : 'set ✓'}</span>\`
+      : \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>\`;
+    return \`<div class="card" style="margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="this.parentElement.querySelector('.bp-body').style.display=this.parentElement.querySelector('.bp-body').style.display==='none'?'block':'none'">
+        <span style="font-size:18px;width:24px;text-align:center;">\${p.icon}</span>
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:13px;">\${p.label}</div>
+          <div style="font-size:11px;color:var(--text-2);">\${p.hint}</div>
+        </div>
+        \${badge}
+        <span style="color:var(--text-2);font-size:12px;">▾</span>
+      </div>
+      <div class="bp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        \${isOllama ? \`<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;">Ollama runs locally — no API key required. Make sure Ollama is running on port 11434.</div>\` : ''}
+        <div style="display:flex;gap:8px;">
+          \${isOllama ? '' : \`<input id="bp_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />\`}
+          \${isOllama ? \`<button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost" style="flex:1;">Test Connection</button>\` : \`
+          <button onclick="saveBuiltinKey('\${p.id}')" class="btn-purple">Save</button>
+          <button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost">Test</button>
+          <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Get key ↗</a>\`}
+        </div>
+        <div id="bp_status_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+      </div>
+    </div>\`;
+  }).join('');
+}
+
+async function saveBuiltinKey(providerId){
+  const inp = document.getElementById('bp_' + providerId);
+  const key = inp?.value?.trim();
+  if (!key) { showNotification('Paste an API key first', 'error'); return; }
+  await postJSON('/api/providers/builtin/save', { providerId, apiKey: key });
+  showNotification('Saved key for ' + providerId);
+  inp.value = '';
+  loadBuiltinProviders();
+}
+
+async function testBuiltinProvider(providerId){
+  const statusEl = document.getElementById('bp_status_' + providerId);
+  statusEl.textContent = 'Testing…';
+  try {
+    const r = await postJSON('/api/providers/builtin/test', { providerId });
+    statusEl.style.color = r.ok ? '#34d399' : '#f87171';
+    statusEl.textContent = r.ok ? '✓ Connected — ' + (r.model || 'OK') : '✗ ' + (r.error || 'Failed');
+  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
+}
+
+async function loadOpenClawStatus(){
+  const badge = document.getElementById('oclawBadge');
+  try {
+    const d = await getJSON('/api/settings/openclaw-status');
+    if (d.installed) {
+      badge.textContent = '● installed';
+      badge.style.background = 'rgba(52,211,153,0.15)';
+      badge.style.color = '#34d399';
+      badge.style.borderColor = 'rgba(52,211,153,0.3)';
+    } else {
+      badge.textContent = '○ not detected';
+      badge.style.background = 'rgba(107,114,128,0.12)';
+      badge.style.color = 'var(--text-2)';
+      badge.style.borderColor = 'var(--border)';
+    }
+  } catch { badge.textContent = '? unknown'; }
 }
 async function loadRTToken(){
   try {
@@ -2695,6 +2799,76 @@ const server = http.createServer(async (req, res) => {
       fs.writeFileSync(csConfigPath, JSON.stringify(cfg, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    // ── Built-in providers (crewswarm standalone config) ─────────────────
+    const BUILTIN_URLS = {
+      groq:       "https://api.groq.com/openai/v1",
+      anthropic:  "https://api.anthropic.com/v1",
+      openai:     "https://api.openai.com/v1",
+      perplexity: "https://api.perplexity.ai",
+      mistral:    "https://api.mistral.ai/v1",
+      deepseek:   "https://api.deepseek.com/v1",
+      xai:        "https://api.x.ai/v1",
+      ollama:     "http://localhost:11434/v1",
+    };
+    const csDir = path.join(os.homedir(), ".crewswarm");
+    const csConfig = path.join(csDir, "config.json");
+    function readCSConfig(){ try { return JSON.parse(fs.readFileSync(csConfig,"utf8")); } catch { return {}; } }
+    function writeCSConfig(c){ fs.mkdirSync(csDir,{recursive:true}); fs.writeFileSync(csConfig,JSON.stringify(c,null,2)); }
+
+    if (url.pathname === "/api/providers/builtin" && req.method === "GET") {
+      const cfg = readCSConfig();
+      const keys = {};
+      for (const id of Object.keys(BUILTIN_URLS)) {
+        const k = cfg?.providers?.[id]?.apiKey || cfg?.env?.[id.toUpperCase()+"_API_KEY"] || "";
+        keys[id] = k ? "SET" : "";
+      }
+      res.writeHead(200,{"content-type":"application/json"});
+      res.end(JSON.stringify({ ok:true, keys }));
+      return;
+    }
+    if (url.pathname === "/api/providers/builtin/save" && req.method === "POST") {
+      let body=""; for await (const chunk of req) body+=chunk;
+      const { providerId, apiKey } = JSON.parse(body);
+      const cfg = readCSConfig();
+      if (!cfg.providers) cfg.providers = {};
+      cfg.providers[providerId] = { ...(cfg.providers[providerId]||{}), apiKey, baseUrl: BUILTIN_URLS[providerId] };
+      writeCSConfig(cfg);
+      res.writeHead(200,{"content-type":"application/json"});
+      res.end(JSON.stringify({ ok:true }));
+      return;
+    }
+    if (url.pathname === "/api/providers/builtin/test" && req.method === "POST") {
+      let body=""; for await (const chunk of req) body+=chunk;
+      const { providerId } = JSON.parse(body);
+      const cfg = readCSConfig();
+      const apiKey = cfg?.providers?.[providerId]?.apiKey || "";
+      const baseUrl = BUILTIN_URLS[providerId] || "";
+      if (providerId === "ollama") {
+        try {
+          const r = await fetch("http://localhost:11434/api/tags", { signal: AbortSignal.timeout(4000) });
+          const d = await r.json();
+          res.writeHead(200,{"content-type":"application/json"});
+          res.end(JSON.stringify({ ok:true, model: (d.models?.[0]?.name || "connected") }));
+        } catch(e) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ ok:false, error: e.message })); }
+        return;
+      }
+      if (!apiKey) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ ok:false, error:"No API key saved" })); return; }
+      try {
+        const r = await fetch(baseUrl + "/models", { headers:{ authorization:"Bearer "+apiKey }, signal: AbortSignal.timeout(8000) });
+        const d = await r.json();
+        const model = d?.data?.[0]?.id || (r.ok ? "connected" : null);
+        res.writeHead(200,{"content-type":"application/json"});
+        res.end(JSON.stringify({ ok: r.ok, model, error: r.ok ? undefined : (d?.error?.message||r.statusText) }));
+      } catch(e) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ ok:false, error:e.message })); }
+      return;
+    }
+    if (url.pathname === "/api/settings/openclaw-status" && req.method === "GET") {
+      const deviceJson = path.join(os.homedir(), ".openclaw", "device.json");
+      const installed = fs.existsSync(deviceJson);
+      res.writeHead(200,{"content-type":"application/json"});
+      res.end(JSON.stringify({ ok:true, installed }));
       return;
     }
     // ── Providers API ─────────────────────────────────────────────────────
