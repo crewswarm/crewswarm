@@ -1,0 +1,23 @@
+{
+  "name": "crewswarm",
+  "version": "0.1.0",
+  "description": "PM-led multi-agent orchestration for software development. One requirement in, real files out.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dashboard": "node scripts/dashboard.mjs",
+    "crew-lead": "node crew-lead.mjs",
+    "pm-loop": "node pm-loop.mjs",
+    "gateway": "node gateway-bridge.mjs",
+    "telegram": "node telegram-bridge.mjs",
+    "start-crew": "node scripts/start-crew.mjs",
+    "rt-daemon": "node scripts/opencrew-rt-daemon.mjs",
+    "restart-all": "bash scripts/restart-all-from-repo.sh",
+    "crew-cli": "node crew-cli.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

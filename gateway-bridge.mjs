@@ -62,11 +62,12 @@ const SHARED_MEMORY_DIR = path.resolve(process.cwd(), "memory");
 const SHARED_MEMORY_MAX_FILE_CHARS = 8000;
 const SHARED_MEMORY_MAX_TOTAL_CHARS = 40000;
 const SHARED_MEMORY_FILES = [
-  "current-state.md",
-  "decisions.md",
-  "agent-handoff.md",
-  "orchestration-protocol.md",
-  "telegram-context.md",        // Telegram conversation context (written by telegram-bridge)
+  "current-state.md",          // System overview — what CrewSwarm is, CRITICAL task guidance
+  "agent-handoff.md",          // Current status, last completed work, agent rules
+  "orchestration-protocol.md", // Agent roster, tool permissions, dispatch syntax
+  "brain.md",                  // Accumulated project knowledge — read this to avoid repeating mistakes
+  // "decisions.md"            // Architectural decisions — only load when needed
+  // "telegram-context.md"     // Telegram chat history — too noisy for code tasks
 ];
 const MEMORY_BOOTSTRAP_AGENT = "gateway-bridge";
 const SHARED_MEMORY_PROTOCOL = [
@@ -162,7 +163,12 @@ function loadAgentLLMConfig(ocAgentId) {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"));
     const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
-    const agent = agents.find(a => a.id === ocAgentId);
+    // Try exact id, then crew- prefixed, then bare (without crew-)
+    const crewId = ocAgentId.startsWith("crew-") ? ocAgentId : `crew-${ocAgentId}`;
+    const bareId = ocAgentId.startsWith("crew-") ? ocAgentId.slice(5) : ocAgentId;
+    const agent = agents.find(a => a.id === ocAgentId) ||
+                  agents.find(a => a.id === crewId) ||
+                  agents.find(a => a.id === bareId);
     if (!agent?.model) return null;
 
     const [providerKey, ...modelParts] = agent.model.split("/");
@@ -170,7 +176,7 @@ function loadAgentLLMConfig(ocAgentId) {
     const provider = cfg?.models?.providers?.[providerKey];
     if (!provider?.baseUrl || !provider?.apiKey) return null;
 
-    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, agentId: ocAgentId };
+    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, agentId: agent.id };
   } catch { return null; }
 }
 
@@ -755,6 +761,200 @@ function looksLikeCodingTask(prompt = "") {
   ].some((kw) => p.includes(kw));
 }
 
+// ── Agent Tool Execution ───────────────────────────────────────────────────
+// Agents embed tool calls in their LLM reply using these markers.
+// gateway-bridge parses and executes them, returning a summary of actions.
+//
+// Supported tools:
+//   @@WRITE_FILE /absolute/path/to/file
+//   <file contents>
+//   @@END_FILE
+//
+//   @@READ_FILE /absolute/path/to/file
+//
+//   @@MKDIR /absolute/path/to/dir
+//
+//   @@RUN_CMD <shell command>  (whitelist-controlled)
+//
+
+// Per-role tool defaults — used when agent has no explicit alsoAllow in config
+const AGENT_TOOL_ROLE_DEFAULTS = {
+  'crew-qa':          new Set(['read_file']),
+  'crew-coder':       new Set(['write_file','read_file','mkdir','run_cmd']),
+  'crew-coder-front': new Set(['write_file','read_file','mkdir','run_cmd']),
+  'crew-coder-back':  new Set(['write_file','read_file','mkdir','run_cmd']),
+  'crew-frontend':    new Set(['write_file','read_file','mkdir','run_cmd']),
+  'crew-fixer':       new Set(['write_file','read_file','mkdir','run_cmd']),
+  'crew-github':      new Set(['read_file','run_cmd','git']),
+  'crew-pm':          new Set(['read_file','dispatch']),
+  'crew-main':        new Set(['read_file','write_file','run_cmd','dispatch']),
+  'crew-security':    new Set(['read_file','run_cmd']),
+  'crew-copywriter':  new Set(['write_file','read_file']),
+  'crew-telegram':    new Set(['telegram','read_file']),
+  'crew-lead':        new Set(['dispatch']),
+};
+
+function loadAgentToolPermissions(agentId) {
+  // Check openclaw.json for explicit tools.alsoAllow
+  try {
+    const cfgPaths = [
+      path.join(os.homedir(), ".crewswarm", "config.json"),
+      path.join(os.homedir(), ".openclaw", "openclaw.json"),
+    ];
+    for (const p of cfgPaths) {
+      if (!fs.existsSync(p)) continue;
+      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+      const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
+      const crewId = agentId.startsWith("crew-") ? agentId : `crew-${agentId}`;
+      const bareId = agentId.startsWith("crew-") ? agentId.slice(5) : agentId;
+      const agent = agents.find(a => a.id === agentId || a.id === crewId || a.id === bareId);
+      if (agent?.tools?.alsoAllow?.length) {
+        return new Set(agent.tools.alsoAllow);
+      }
+    }
+  } catch {}
+  // Fall back to role defaults
+  if (AGENT_TOOL_ROLE_DEFAULTS[agentId]) return AGENT_TOOL_ROLE_DEFAULTS[agentId];
+  // Fuzzy match — e.g. crew-coder-3 → coder defaults
+  for (const [key, val] of Object.entries(AGENT_TOOL_ROLE_DEFAULTS)) {
+    if (agentId.startsWith(key)) return val;
+  }
+  // Unknown agent — allow read/write/mkdir/run by default
+  return new Set(['read_file','write_file','mkdir','run_cmd']);
+}
+
+function buildToolInstructions(allowed) {
+  const tools = [];
+  if (allowed.has('write_file')) tools.push(`### Write a file to disk:
+@@WRITE_FILE /absolute/path/to/file.html
+<!DOCTYPE html>
+<html>...full file contents here...</html>
+@@END_FILE`);
+  if (allowed.has('read_file')) tools.push(`### Read a file from disk:
+@@READ_FILE /absolute/path/to/file.txt`);
+  if (allowed.has('mkdir')) tools.push(`### Create a directory:
+@@MKDIR /absolute/path/to/directory`);
+  if (allowed.has('run_cmd') || allowed.has('git')) {
+    const gitNote = allowed.has('git') ? " Git commands (git status, git add, git commit, git push, git log) are also allowed." : "";
+    tools.push(`### Run a shell command (safe subset only — no rm, no sudo):${gitNote}
+@@RUN_CMD ls /some/path`);
+  }
+  if (!tools.length) return ""; // agent has no tools — instructions not needed
+
+  return `
+## Agent Tools — ACTIVE for this session
+
+When your task requires actions on disk or network, output the tool markers below directly in your reply.
+The system detects and executes them automatically. ALWAYS use absolute paths.
+
+${tools.join("\n\n")}
+
+CRITICAL RULES:
+- Output the @@TOOL markers directly — do NOT describe or simulate what you would do.
+- Use @@WRITE_FILE to write files — never just show code in markdown blocks.
+- @@END_FILE MUST appear on its own line immediately after the last line of file content.
+- ALL tool calls go in a SINGLE reply — do NOT stop after @@MKDIR and wait for results. Chain @@MKDIR then @@WRITE_FILE immediately in the same response.
+- Do NOT write "**Tool execution results:**" — the system appends that automatically.
+- Do NOT wrap file contents in markdown fences inside @@WRITE_FILE...@@END_FILE blocks.
+- Disabled tools: ${['write_file','read_file','mkdir','run_cmd','git'].filter(t => !allowed.has(t)).join(', ') || 'none'}
+- To log a durable discovery to the shared knowledge base (brain.md), include this anywhere in your reply:
+  @@BRAIN: <one-line fact worth remembering for future tasks>
+`;
+}
+
+const SAFE_CMD_WHITELIST     = /^(ls|cat|head|tail|wc|echo|pwd|find|node -e|node --version|npm list)\b/;
+const SAFE_GIT_CMD_WHITELIST = /^(git (status|log|diff|add|commit|push|pull|fetch|branch|checkout|show|rev-parse|remote|tag|stash))\b/;
+
+async function executeToolCalls(reply, agentId) {
+  const allowed = loadAgentToolPermissions(agentId);
+  const results = [];
+
+  // ── @@WRITE_FILE ──────────────────────────────────────────────────────────
+  const writeRe = /@@WRITE_FILE[ \t]+([^\n]+)\n([\s\S]*?)@@END_FILE/g;
+  let m;
+  while ((m = writeRe.exec(reply)) !== null) {
+    if (!allowed.has('write_file')) {
+      results.push(`[tool:write_file] ⛔ ${agentId} does not have write_file permission`);
+      continue;
+    }
+    const filePath = m[1].trim().replace(/^~/, os.homedir());
+    const contents = m[2];
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, contents, "utf8");
+      const msg = `[tool:write_file] ✅ Wrote ${contents.length} bytes → ${filePath}`;
+      results.push(msg);
+      console.log(`[${agentId}] ${msg}`);
+    } catch (err) {
+      const msg = `[tool:write_file] ❌ Failed to write ${filePath}: ${err.message}`;
+      results.push(msg);
+      console.error(`[${agentId}] ${msg}`);
+    }
+  }
+
+  // ── @@READ_FILE ───────────────────────────────────────────────────────────
+  const readRe = /@@READ_FILE[ \t]+([^\n]+)/g;
+  while ((m = readRe.exec(reply)) !== null) {
+    if (!allowed.has('read_file')) {
+      results.push(`[tool:read_file] ⛔ ${agentId} does not have read_file permission`);
+      continue;
+    }
+    const filePath = m[1].trim().replace(/^~/, os.homedir());
+    try {
+      const content = fs.readFileSync(filePath, "utf8");
+      const snippet = content.length > 4000 ? content.slice(0, 4000) + "\n...[truncated]" : content;
+      results.push(`[tool:read_file] 📄 ${filePath} (${content.length} bytes):\n${snippet}`);
+    } catch (err) {
+      results.push(`[tool:read_file] ❌ Cannot read ${filePath}: ${err.message}`);
+    }
+  }
+
+  // ── @@MKDIR ───────────────────────────────────────────────────────────────
+  const mkdirRe = /@@MKDIR[ \t]+([^\n]+)/g;
+  while ((m = mkdirRe.exec(reply)) !== null) {
+    if (!allowed.has('mkdir')) {
+      results.push(`[tool:mkdir] ⛔ ${agentId} does not have mkdir permission`);
+      continue;
+    }
+    const dirPath = m[1].trim().replace(/^~/, os.homedir());
+    try {
+      fs.mkdirSync(dirPath, { recursive: true });
+      results.push(`[tool:mkdir] ✅ Created directory: ${dirPath}`);
+    } catch (err) {
+      results.push(`[tool:mkdir] ❌ Failed: ${err.message}`);
+    }
+  }
+
+  // ── @@RUN_CMD ─────────────────────────────────────────────────────────────
+  const cmdRe = /@@RUN_CMD[ \t]+([^\n]+)/g;
+  while ((m = cmdRe.exec(reply)) !== null) {
+    const cmd = m[1].trim();
+    const isGit = SAFE_GIT_CMD_WHITELIST.test(cmd);
+    const isSafe = SAFE_CMD_WHITELIST.test(cmd);
+    if (isGit && !allowed.has('git') && !allowed.has('run_cmd')) {
+      results.push(`[tool:run_cmd] ⛔ ${agentId} does not have git permission`);
+      continue;
+    }
+    if (!isGit && !isSafe) {
+      results.push(`[tool:run_cmd] ⛔ Blocked unsafe command: ${cmd}`);
+      continue;
+    }
+    if (!isGit && !allowed.has('run_cmd')) {
+      results.push(`[tool:run_cmd] ⛔ ${agentId} does not have run_cmd permission`);
+      continue;
+    }
+    try {
+      const { execSync } = await import("node:child_process");
+      const out = execSync(cmd, { timeout: 15000, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      results.push(`[tool:run_cmd] ✅ $ ${cmd}\n${out.slice(0, 2000)}`);
+    } catch (err) {
+      results.push(`[tool:run_cmd] ❌ $ ${cmd}\n${err.message}`);
+    }
+  }
+
+  return results;
+}
+
 function shouldUseOpenCode(payload, prompt, incomingType) {
   if (!OPENCREW_OPENCODE_ENABLED) return false;
   if (OPENCREW_OPENCODE_FORCE) return true;
@@ -773,8 +973,12 @@ function shouldConnectGateway(args) {
   if (process.env.OPENCREW_FORCE_GATEWAY === "1") return true;
   if (args.includes("--broadcast")) return false;
   if (args[0] === "--send") return false;
-  if (!args.includes("--rt-daemon")) return true;
-  // ALL agents should connect to OpenClaw Gateway (not just crew-main)
+  // In RT-daemon mode: skip OpenClaw Gateway unless explicitly forced.
+  // Agents use direct LLM calls; OpenClaw is optional.
+  if (args.includes("--rt-daemon")) {
+    if (process.env.OPENCREW_GATEWAY_ENABLED === "1") return true;
+    return false;
+  }
   return true;
 }
 
@@ -1332,7 +1536,13 @@ function loadSharedMemoryBundle() {
 
       let content = fs.readFileSync(fullPath, "utf8");
       if (content.length > SHARED_MEMORY_MAX_FILE_CHARS) {
-        content = `${content.slice(0, SHARED_MEMORY_MAX_FILE_CHARS)}\n\n[truncated]`;
+        // For append-only files keep the TAIL (newest entries); for others keep the HEAD
+        const TAIL_FIRST_FILES = new Set(["brain.md", "session-log.md", "telegram-context.md"]);
+        if (TAIL_FIRST_FILES.has(fileName)) {
+          content = `[…older entries trimmed]\n\n${content.slice(-SHARED_MEMORY_MAX_FILE_CHARS)}`;
+        } else {
+          content = `${content.slice(0, SHARED_MEMORY_MAX_FILE_CHARS)}\n\n[truncated]`;
+        }
       }
 
       files[fileName] = content;
@@ -1411,8 +1621,12 @@ function buildTaskPrompt(taskText, sourceLabel, agentId) {
   const bareId = agentId ? agentId.replace(/^crew-/, "") : null;
   const agentSystemPrompt = (agentId && agentPrompts[agentId]) || (bareId && agentPrompts[bareId]) || null;
 
+  const agentAllowed = loadAgentToolPermissions(agentId || "crew-main");
+  const toolInstructions = buildToolInstructions(agentAllowed);
+
   const parts = [];
   if (agentSystemPrompt) parts.push(agentSystemPrompt);
+  if (toolInstructions) parts.push(toolInstructions);
   if (sharedMemory.text) parts.push(sharedMemory.text);
   parts.push(contextNote);
   parts.push(taskText);
@@ -1994,7 +2208,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
   });
 
   try {
-    const { finalPrompt, sharedMemory } = buildTaskPrompt(prompt, `Realtime task from ${from} (${incomingType})`, from);
+    const { finalPrompt, sharedMemory } = buildTaskPrompt(prompt, `Realtime task from ${from} (${incomingType})`, OPENCREW_RT_AGENT);
     if (sharedMemory.loadFailed || finalPrompt === "MEMORY_LOAD_FAILED") {
       throw new Error("MEMORY_LOAD_FAILED");
     }
@@ -2039,6 +2253,13 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     }
     if (!reply || reply === "(timeout - no reply)") {
       throw new Error("OpenClaw chat timeout while processing realtime task");
+    }
+
+    // Execute any tool calls embedded in the agent's reply
+    const toolResults = await executeToolCalls(reply, OPENCREW_RT_AGENT);
+    if (toolResults.length > 0) {
+      reply = reply + "\n\n---\n**Tool execution results:**\n" + toolResults.join("\n");
+      telemetry("agent_tools_executed", { taskId, agent: OPENCREW_RT_AGENT, count: toolResults.length });
     }
 
     // Validate coding artifacts for coding tasks
@@ -2251,6 +2472,35 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       } catch (dlqErr) {
         telemetry("dlq_write_error", { key: dispatchKey, error: dlqErr?.message });
       }
+
+      // ── Auto-escalate to crew-fixer when coding agents exhaust retries ─────
+      const ESCALATABLE_AGENTS = new Set([
+        "crew-coder", "crew-coder-front", "crew-coder-back", "crew-frontend", "crew-copywriter",
+      ]);
+      const isSelf = OPENCREW_RT_AGENT === "crew-fixer"; // prevent fixer→fixer loop
+      if (ESCALATABLE_AGENTS.has(OPENCREW_RT_AGENT) && !isSelf) {
+        const fixerTaskId = `fixer-escalation-${Date.now()}`;
+        const fixerPrompt =
+          `⚠️ Auto-escalation from ${OPENCREW_RT_AGENT} (failed after ${dispatchAttempt + 1} attempts).\n\n` +
+          `**Original task:**\n${String(prompt).slice(0, 1500)}\n\n` +
+          `**Error:**\n${message.slice(0, 500)}\n\n` +
+          `Use @@READ_FILE to inspect any relevant files, identify the root cause, and fix it.`;
+        try {
+          client.publish({
+            channel: "command",
+            type: "command.run_task",
+            to: "crew-fixer",
+            taskId: fixerTaskId,
+            priority: "high",
+            payload: { action: "run_task", prompt: fixerPrompt, escalatedFrom: OPENCREW_RT_AGENT, parentTaskId: taskId },
+          });
+          telemetry("task_escalated_to_fixer", { fromAgent: OPENCREW_RT_AGENT, taskId, fixerTaskId });
+          console.log(`[${OPENCREW_RT_AGENT}] ⬆️ Escalated failed task to crew-fixer (${fixerTaskId})`);
+        } catch (escErr) {
+          console.error(`[${OPENCREW_RT_AGENT}] Escalation to crew-fixer failed:`, escErr?.message);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────────
     }
 
     client.publish({

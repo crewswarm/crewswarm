@@ -29,9 +29,30 @@ const pmLogFile = path.join(OPENCLAW_DIR, "orchestrator-logs", "pm-loop.jsonl");
 const roadmapFile = path.join(OPENCLAW_DIR, "website", "ROADMAP.md");
 const user = process.env.OPENCODE_SERVER_USERNAME || "opencode";
 const pass = process.env.OPENCODE_SERVER_PASSWORD || process.env.SWARM_PASSWORD || "opencode";
-const ctlPath = process.env.HOME + "/bin/openswitchctl";
-const rtEventsLog = path.join(CFG_DIR, "workspace/shared-memory/claw-swarm/opencrew-rt/events.jsonl");
-const dlqDir = path.join(CFG_DIR, "workspace/shared-memory/claw-swarm/opencrew-rt/dlq");
+// ── CrewSwarm tool definitions (server-side, also injected into client) ────
+const CREWSWARM_TOOLS = [
+  { id: "write_file", desc: "Write files to disk (@@WRITE_FILE)" },
+  { id: "read_file",  desc: "Read files from disk (@@READ_FILE)" },
+  { id: "mkdir",      desc: "Create directories (@@MKDIR)" },
+  { id: "run_cmd",    desc: "Run whitelisted shell commands (@@RUN_CMD)" },
+  { id: "git",        desc: "Git & GitHub CLI operations" },
+  { id: "web_search", desc: "Web search (coming soon)" },
+  { id: "web_fetch",  desc: "Fetch URLs (coming soon)" },
+  { id: "dispatch",   desc: "Dispatch tasks to other agents" },
+  { id: "telegram",   desc: "Send Telegram messages" },
+];
+
+const ctlPath = (() => {
+  const homeBin = path.join(os.homedir(), "bin", "openswitchctl");
+  if (fs.existsSync(homeBin)) return homeBin;
+  return path.join(OPENCLAW_DIR, "scripts", "openswitchctl");
+})();
+// Match RT daemon paths so RT Messages tab shows same events (daemon uses SHARED_MEMORY_DIR or ~/.openclaw/workspace/...)
+const memoryBase = process.env.SHARED_MEMORY_DIR || path.join(CFG_DIR, "workspace", "shared-memory");
+const rtEventsLog  = path.join(memoryBase, "claw-swarm", "opencrew-rt", "events.jsonl");
+const rtDoneLog    = path.join(memoryBase, "claw-swarm", "opencrew-rt", "channels", "done.jsonl");
+const rtCommandLog = path.join(memoryBase, "claw-swarm", "opencrew-rt", "channels", "command.jsonl");
+const dlqDir = path.join(memoryBase, "claw-swarm", "opencrew-rt", "dlq");
 const phasedDispatchLog = path.join(OPENCLAW_DIR, "orchestrator-logs", "phased-dispatch.jsonl");
 
 const authHeader = "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
@@ -91,22 +112,45 @@ async function getAgentList() {
   return [...merged];
 }
 
-async function getRecentRTMessages(limit = 50) {
-  const { readFile } = await import("node:fs/promises");
-  try {
-    const content = await readFile(rtEventsLog, "utf8");
-    const lines = content.trim().split("\n").filter(Boolean).slice(-limit);
-    return lines.map((line) => {
-      try {
-        const obj = JSON.parse(line);
-        return obj.envelope || obj;
-      } catch {
-        return null;
+async function getRecentRTMessages(limit = 100) {
+  const { readFile, stat } = await import("node:fs/promises");
+  const SKIP_TYPES = new Set(["agent.heartbeat", "agent.online", "agent.offline"]);
+  const MAX_REPLY_CHARS = 3000; // truncate large replies so JSON stays small
+
+  async function readJsonlTail(filePath, n) {
+    try {
+      const content = await readFile(filePath, "utf8");
+      const lines = content.trim().split("\n").filter(Boolean);
+      const out = [];
+      for (let i = lines.length - 1; i >= 0 && out.length < n; i--) {
+        try { out.push(JSON.parse(lines[i])); } catch {}
       }
-    }).filter(Boolean);
-  } catch {
-    return [];
+      return out.reverse();
+    } catch { return []; }
   }
+
+  // Merge: done.jsonl (task completions) + events.jsonl (commands/lifecycle)
+  const [doneRaw, eventsRaw] = await Promise.all([
+    readJsonlTail(rtDoneLog, limit),
+    readJsonlTail(rtEventsLog, limit),
+  ]);
+
+  const msgs = [];
+  for (const obj of [...eventsRaw, ...doneRaw]) {
+    const env = obj.envelope || obj;
+    if (SKIP_TYPES.has(env.type)) continue;
+    // Truncate large reply payloads so the browser doesn't choke
+    if (env.payload?.reply?.length > MAX_REPLY_CHARS) {
+      env.payload = { ...env.payload, reply: env.payload.reply.slice(0, MAX_REPLY_CHARS) + "\n…[truncated]" };
+    }
+    msgs.push(env);
+  }
+
+  // Sort by ts, deduplicate by id, return last N
+  msgs.sort((a, b) => (a.ts || "").localeCompare(b.ts || ""));
+  const seen = new Set();
+  const deduped = msgs.filter(m => { const k = m.id || (m.ts + m.from); if (seen.has(k)) return false; seen.add(k); return true; });
+  return deduped.slice(-limit);
 }
 
 async function getDLQEntries() {
@@ -309,6 +353,7 @@ const html = `<!doctype html>
     .notification { position: fixed; top: 20px; right: 20px; background: var(--green); color: #000; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); z-index: 1000; animation: slideIn 0.25s ease; font-weight: 600; font-size: 13px; }
     .notification.error { background: var(--red); color: #fff; }
     @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes pulse { 0%,100% { opacity:.3; transform:scale(.85); } 50% { opacity:1; transform:scale(1.15); } }
 
     /* ── Terminal / log blocks ── */
     .log-block { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-family: "SF Mono","Fira Code",monospace; font-size: 12px; color: var(--accent); max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; }
@@ -584,7 +629,7 @@ const html = `<!doctype html>
           <span style="font-size:18px;">⚡</span>
           <div>
             <div style="font-weight:600; font-size:14px;">RT Bus Auth Token</div>
-            <div style="font-size:12px; color:var(--text-2);">Required — matches the token used to start <code>opencrew-rt-daemon.mjs</code> (env: <code>OPENCREW_RT_AUTH_TOKEN</code>)</div>
+            <div style="font-size:12px; color:var(--text-2);">Optional for local use — leave empty and the RT daemon allows unauthenticated connections so crew-lead can receive agent replies. Set a shared secret here (and in env when starting the daemon) only if you want to lock down the bus.</div>
           </div>
           <span id="rtTokenBadge" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">not set</span>
         </div>
@@ -639,7 +684,7 @@ const html = `<!doctype html>
     <!-- Agents -->
     <div class="view" id="agentsView">
       <div class="page-header">
-        <div><div class="page-title">Agents</div><div class="page-sub">Assign models, edit system prompts, spin up new crew members</div></div>
+        <div><div class="page-title">Agents</div><div class="page-sub">Assign models, edit system prompts, configure per-agent tool permissions. Tool permissions are enforced by gateway-bridge on every task.</div></div>
         <div style="display:flex; gap:8px;">
           <button id="newAgentBtn" class="btn-green">+ New Agent</button>
           <button id="refreshAgentsBtn" class="btn-ghost">↻ Refresh</button>
@@ -686,36 +731,27 @@ const html = `<!doctype html>
           <textarea id="naPrompt" rows="5" placeholder="Describe what this agent specialises in. It will be shown at the top of every task."></textarea>
         </div>
         <div style="margin-bottom:14px;">
-          <div class="field-label" style="margin-bottom:6px;">Tool Profile <span class="meta" style="text-transform:none; font-weight:400;">— controls what the agent can touch</span></div>
-          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;" id="naToolsGrid">
-            <label class="tool-profile-opt" data-val="coding">
-              <input type="radio" name="naToolProfile" value="coding" checked />
-              <div class="tp-card">
-                <div class="tp-name">coding</div>
-                <div class="tp-desc">Read, write, edit files + exec shell. Default for all coders.</div>
-              </div>
-            </label>
-            <label class="tool-profile-opt" data-val="full">
-              <input type="radio" name="naToolProfile" value="full" />
-              <div class="tp-card">
-                <div class="tp-name">full</div>
-                <div class="tp-desc">All tools enabled — browser, memory, spawn sessions, image gen.</div>
-              </div>
-            </label>
-            <label class="tool-profile-opt" data-val="messaging">
-              <input type="radio" name="naToolProfile" value="messaging" />
-              <div class="tp-card">
-                <div class="tp-name">messaging</div>
-                <div class="tp-desc">Send messages between agents only — no file access. Good for PM/orchestrator agents.</div>
-              </div>
-            </label>
-            <label class="tool-profile-opt" data-val="minimal">
-              <input type="radio" name="naToolProfile" value="minimal" />
-              <div class="tp-card">
-                <div class="tp-name">minimal</div>
-                <div class="tp-desc">Read + web search only. Lightweight, lowest cost.</div>
-              </div>
-            </label>
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+            <div class="field-label" style="margin:0;">Agent Tools <span class="meta" style="text-transform:none; font-weight:400;">— what gateway-bridge lets this agent do</span></div>
+            <select id="naToolPreset" style="font-size:12px; padding:3px 8px;" onchange="applyNewAgentToolPreset()">
+              <option value="">— quick presets —</option>
+              <option value="coder">🔨 Coder (write + run)</option>
+              <option value="reviewer">🔍 Reviewer (read only)</option>
+              <option value="orchestrator">🧠 Orchestrator (read + dispatch)</option>
+              <option value="devops">⚙️ DevOps (run + git)</option>
+              <option value="comms">💬 Comms (telegram)</option>
+            </select>
+          </div>
+          <div id="naToolsGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;">
+            ${CREWSWARM_TOOLS.map(t => `
+              <label style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text-2); cursor:pointer; padding:6px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-card2);">
+                <input type="checkbox" class="naToolCheck" data-tool="${t.id}" style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
+                <div>
+                  <code style="font-size:11px; color:var(--text-1);">${t.id}</code>
+                  <div style="font-size:10px; color:var(--text-3); margin-top:2px; line-height:1.3;">${t.desc}</div>
+                </div>
+              </label>
+            `).join('')}
           </div>
         </div>
         <div style="display:flex; gap:8px;">
@@ -854,17 +890,43 @@ async function loadRTMessages(){
   const box = document.getElementById('rtMessages');
   const data = await getJSON('/api/rt-messages');
   box.innerHTML = '';
+  const SKIP = new Set(['agent.heartbeat','agent.online','agent.offline']);
   data.forEach(m => {
-    if (m.type === 'agent.heartbeat') return;
+    if (SKIP.has(m.type)) return;
     const payload = m.payload || {};
-    let messageText = payload.reply || payload.prompt || payload.message || (payload.action === 'run_task' && payload.prompt ? payload.prompt : '');
+    let messageText = payload.reply || payload.prompt || payload.message || payload.content || '';
     if (!messageText || messageText === 'run_task') return;
+
+    const isUser = m.from && (m.from === 'orchestrator' || m.from === 'crew-lead' || m.from?.includes('main'));
     const div = document.createElement('div');
-    div.className = 'msg ' + (m.from && (m.from.includes('main') || m.from === 'orchestrator') ? 'u' : 'a');
-    div.innerHTML = '<div class="meta"><strong>' + (m.from || '?') + '</strong> → <strong>' + (m.to || '?') + '</strong> | ' + (m.ts ? new Date(m.ts).toLocaleTimeString() : '') + '</div><div class="t">' + messageText + '</div>';
+    div.className = 'msg ' + (isUser ? 'u' : 'a');
+
+    // Safe meta header using DOM (avoids XSS from injected HTML in from/to)
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const fromEl = document.createElement('strong');
+    fromEl.textContent = m.from || '?';
+    const toEl = document.createElement('strong');
+    toEl.textContent = m.to || '?';
+    meta.appendChild(fromEl);
+    meta.appendChild(document.createTextNode(' → '));
+    meta.appendChild(toEl);
+    const badge = document.createElement('span');
+    badge.style.cssText = 'margin-left:8px;font-size:10px;opacity:.6;';
+    badge.textContent = (m.type || '') + (m.ts ? ' · ' + new Date(m.ts).toLocaleTimeString() : '');
+    meta.appendChild(badge);
+
+    // Safe text body — textContent prevents any HTML/script injection
+    const body = document.createElement('div');
+    body.className = 't';
+    body.style.whiteSpace = 'pre-wrap';
+    body.textContent = messageText;
+
+    div.appendChild(meta);
+    div.appendChild(body);
     box.appendChild(div);
   });
-  if (!box.children.length) box.innerHTML = '<div class="meta" style="padding:20px; text-align:center;">No messages yet. Send one below!</div>';
+  if (!box.children.length) box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;">No messages yet.</div>';
   box.scrollTop = box.scrollHeight;
 }
 async function loadDLQ(){
@@ -998,11 +1060,38 @@ function startAgentReplyListener() {
         box.scrollTop = box.scrollHeight;
         return;
       }
-      if (!d.from || !d.content) return;
-      const preview = d.content.length > 120 ? d.content.slice(0, 120) + '…' : d.content;
-      appendChatBubble('🤖 ' + d.from, '✅ Task done: ' + preview + '\\n\\n_Ask me about it or dispatch follow-up work._', false);
-      if (box) box.scrollTop = box.scrollHeight;
-      showNotification(d.from + ' finished a task');
+      // agent_working: crew-lead dispatched a task — show a "waiting" indicator
+      if (d.type === 'agent_working' && d.agent) {
+        const spinnerId = 'agent-spinner-' + (d.taskId || d.agent);
+        if (box && !document.getElementById(spinnerId)) {
+          const el = document.createElement('div');
+          el.id = spinnerId;
+          el.className = 'msg a';
+          el.style.cssText = 'opacity:.7; font-style:italic;';
+          el.innerHTML = '<div class="meta"><strong>' + d.agent + '</strong> · working…</div>' +
+            '<div class="t" style="display:flex;align-items:center;gap:8px;">' +
+            '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1s ease-in-out infinite;"></span>' +
+            'Processing task…</div>';
+          box.appendChild(el);
+          box.scrollTop = box.scrollHeight;
+        }
+        return;
+      }
+      // agent_reply: task completion from any crew member — replace spinner, show reply, notify
+      if (d.type === 'agent_reply' || (d.from && d.content)) {
+        if (!d.from || !d.content) return;
+        // Remove spinner for this agent/task if present
+        const spinnerId = 'agent-spinner-' + (d.taskId || d.from);
+        const spinnerEl = document.getElementById(spinnerId);
+        if (spinnerEl) spinnerEl.remove();
+        // Also try removing by agent name (fallback)
+        const agentSpinner = document.getElementById('agent-spinner-' + d.from);
+        if (agentSpinner) agentSpinner.remove();
+        appendChatBubble('🤖 ' + d.from, d.content, false);
+        if (box) box.scrollTop = box.scrollHeight;
+        showNotification(d.from + ' finished a task');
+        return;
+      }
     } catch {}
   };
   agentReplySSE.onerror = () => { agentReplySSE = null; };
@@ -1026,16 +1115,25 @@ function chatKeydown(e) {
 
 function appendChatBubble(role, text) {
   const box = document.getElementById('chatMessages');
+  if (!box) return;
   const isUser = role === 'user';
+  if (!isUser) {
+    const last = box.lastElementChild;
+    if (last && last.children.length >= 2) {
+      const lastBubbleText = last.children[1].textContent;
+      if (lastBubbleText.trim() === String(text).trim()) return;
+    }
+  }
   const div = document.createElement('div');
   div.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isUser ? 'flex-end' : 'flex-start') + ';gap:4px;';
-  const label = document.createElement('div');
-  label.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;';
-  label.textContent = isUser ? 'You' : '🧠 crew-lead';
+  const labelEl = document.createElement('div');
+  labelEl.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;';
+  const displayName = isUser ? 'You' : (role === 'assistant' ? '🧠 crew-lead' : role);
+  labelEl.textContent = displayName;
   const bubble = document.createElement('div');
   bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:' + (isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px') + ';background:' + (isUser ? 'var(--purple)' : 'var(--bg-2)') + ';color:' + (isUser ? '#fff' : 'var(--text-1)') + ';font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;border:1px solid var(--border);';
   bubble.textContent = text;
-  div.appendChild(label); div.appendChild(bubble);
+  div.appendChild(labelEl); div.appendChild(bubble);
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
 }
@@ -1414,12 +1512,13 @@ function showProviders(){
 const BUILTIN_PROVIDERS = [
   { id:'groq',       label:'Groq',       icon:'⚡', url:'https://console.groq.com/keys',         hint:'Fast inference — great for crew-coder, crew-fixer' },
   { id:'anthropic',  label:'Anthropic',  icon:'🟣', url:'https://console.anthropic.com/',         hint:'Claude models — best for complex reasoning tasks' },
-  { id:'openai',     label:'OpenAI',     icon:'🟢', url:'https://platform.openai.com/api-keys',   hint:'GPT-4o and o-series models' },
+  { id:'openai',     label:'OpenAI (API)',     icon:'🟢', url:'https://platform.openai.com/api-keys',   hint:'GPT-4o and o-series — pay per use with API key' },
   { id:'perplexity', label:'Perplexity', icon:'🔍', url:'https://www.perplexity.ai/settings/api', hint:'Sonar Pro — ideal for crew-pm research tasks' },
   { id:'mistral',    label:'Mistral',    icon:'🌀', url:'https://console.mistral.ai/',            hint:'Open-weight models, efficient mid-tier tasks' },
   { id:'deepseek',   label:'DeepSeek',   icon:'🌊', url:'https://platform.deepseek.com/',         hint:'Low cost, strong coding performance' },
   { id:'xai',        label:'xAI (Grok)', icon:'𝕏',  url:'https://console.x.ai/',                 hint:'Grok models from xAI' },
   { id:'ollama',     label:'Ollama',     icon:'🏠', url:'https://ollama.com/download',            hint:'Local models — no API key needed, runs offline' },
+  { id:'openai-local', label:'OpenAI (local)', icon:'🟢', url:'https://github.com/RayBytes/ChatMock', hint:'ChatMock — use ChatGPT Plus/Pro subscription. Run ChatMock server first (e.g. port 8000). Key ignored.' },
 ];
 
 const SEARCH_TOOLS = [
@@ -1488,8 +1587,9 @@ async function loadBuiltinProviders(){
   list.innerHTML = BUILTIN_PROVIDERS.map(p => {
     const hasKey = !!saved[p.id];
     const isOllama = p.id === 'ollama';
-    const badge = hasKey || isOllama
-      ? \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">\${isOllama && !hasKey ? 'local' : 'set ✓'}</span>\`
+    const isOpenAiLocal = p.id === 'openai-local';
+    const badge = hasKey || isOllama || isOpenAiLocal
+      ? \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">\${(isOllama || isOpenAiLocal) && !hasKey ? 'local' : 'set ✓'}</span>\`
       : \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>\`;
     return \`<div class="card" style="margin-bottom:8px;">
       <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="this.parentElement.querySelector('.bp-body').style.display=this.parentElement.querySelector('.bp-body').style.display==='none'?'block':'none'">
@@ -1519,8 +1619,8 @@ async function loadBuiltinProviders(){
 async function saveBuiltinKey(providerId){
   const inp = document.getElementById('bp_' + providerId);
   const key = inp?.value?.trim();
-  if (!key) { showNotification('Paste an API key first', 'error'); return; }
-  await postJSON('/api/providers/builtin/save', { providerId, apiKey: key });
+  if (!key && providerId !== 'openai-local') { showNotification('Paste an API key first', 'error'); return; }
+  await postJSON('/api/providers/builtin/save', { providerId, apiKey: key || '' });
   showNotification('Saved key for ' + providerId);
   inp.value = '';
   loadBuiltinProviders();
@@ -1593,6 +1693,56 @@ function showAgents(){
 let _allModels = [];
 let _modelsByProvider = {};  // { "cerebras": ["llama3.1-8b", ...], ... }
 
+// CrewSwarm gateway-bridge tool definitions
+const CREWSWARM_TOOLS = [
+  { id: 'write_file', desc: 'Write files to disk (@@WRITE_FILE)' },
+  { id: 'read_file',  desc: 'Read files from disk (@@READ_FILE)' },
+  { id: 'mkdir',      desc: 'Create directories (@@MKDIR)' },
+  { id: 'run_cmd',    desc: 'Run whitelisted shell commands (@@RUN_CMD)' },
+  { id: 'git',        desc: 'Git & GitHub CLI operations' },
+  { id: 'web_search', desc: 'Web search (coming soon)' },
+  { id: 'web_fetch',  desc: 'Fetch URLs (coming soon)' },
+  { id: 'dispatch',   desc: 'Dispatch tasks to other agents' },
+  { id: 'telegram',   desc: 'Send Telegram messages' },
+];
+
+// Role-based tool defaults — applied when "Apply role defaults" is clicked
+const AGENT_TOOL_DEFAULTS = {
+  'crew-qa':          ['read_file'],
+  'crew-coder':       ['write_file','read_file','mkdir','run_cmd'],
+  'crew-coder-front': ['write_file','read_file','mkdir','run_cmd'],
+  'crew-coder-back':  ['write_file','read_file','mkdir','run_cmd'],
+  'crew-frontend':    ['write_file','read_file','mkdir','run_cmd'],
+  'crew-fixer':       ['write_file','read_file','mkdir','run_cmd'],
+  'crew-github':      ['read_file','run_cmd','git'],
+  'crew-pm':          ['read_file','dispatch'],
+  'crew-main':        ['read_file','write_file','run_cmd','dispatch'],
+  'crew-security':    ['read_file','run_cmd'],
+  'crew-copywriter':  ['write_file','read_file'],
+  'crew-telegram':    ['telegram','read_file'],
+  'crew-lead':        ['dispatch'],
+};
+
+function getToolDefaults(agentId) {
+  if (AGENT_TOOL_DEFAULTS[agentId]) return AGENT_TOOL_DEFAULTS[agentId];
+  // Fuzzy match — e.g. crew-coder-3 → coder defaults
+  for (const [key, val] of Object.entries(AGENT_TOOL_DEFAULTS)) {
+    if (agentId.startsWith(key) || agentId.includes(key.replace('crew-',''))) return val;
+  }
+  return ['read_file','write_file','mkdir','run_cmd']; // sensible default for unknown roles
+}
+
+async function applyToolPreset(agentId) {
+  const defaults = getToolDefaults(agentId);
+  const container = document.getElementById('tools-' + agentId);
+  if (!container) return;
+  container.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.checked = defaults.includes(cb.dataset.tool);
+  });
+  await saveAgentTools(agentId);
+  showNotification('Role defaults applied for ' + agentId);
+}
+
 async function loadAgents_cfg(){
   const list = document.getElementById('agentsList');
   list.innerHTML = '<div class="meta" style="padding:20px;">Loading agents…</div>';
@@ -1663,28 +1813,27 @@ async function loadAgents_cfg(){
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding-top:10px;">
-            <div class="field-label">Tool Profile</div>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
-              <select id="profile-\${a.id}" style="flex:1; min-width:180px;">
-                <option value="coding" \${a.toolProfile==='coding'?'selected':''}>coding — file r/w, exec, web, browser</option>
-                <option value="full" \${a.toolProfile==='full'?'selected':''}>full — everything including messaging</option>
-                <option value="minimal" \${a.toolProfile==='minimal'?'selected':''}>minimal — read/write only</option>
-                <option value="messaging" \${a.toolProfile==='messaging'?'selected':''}>messaging — comms channels only</option>
-                <option value="default" \${a.toolProfile==='default'?'selected':''}>default — OpenClaw defaults</option>
-              </select>
-              <button onclick="saveAgentProfile('\${a.id}')" class="btn-ghost">Save profile</button>
+            <div class="field-label" style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <span>CrewSwarm — Agent Tools</span>
+              <span style="font-size:10px; font-weight:600; color:var(--accent); padding:2px 6px; border-radius:4px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25);">gateway-bridge</span>
             </div>
-            <div class="field-label">Also Allow (extra tools)</div>
-            <div id="tools-\${a.id}" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:6px; margin-bottom:10px;">
-              \${['web_search','web_fetch','browser','exec','process','read','write','edit','apply_patch','canvas','message','cron','gateway','nodes','agents_list','computer'].map(t => \`
-                <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); cursor:pointer;">
-                  <input type="checkbox" data-tool="\${t}" \${(a.alsoAllow||[]).includes(t)?'checked':''} style="accent-color:var(--accent);" />
-                  <code style="font-size:11px;">\${t}</code>
+            <div class="meta" style="margin-bottom:10px; font-size:11px;">Controls which tools this agent can execute on disk and network. Enforced by gateway-bridge on every task — only checked tools are active.</div>
+            <div id="tools-\${a.id}" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px; margin-bottom:12px;">
+              \${CREWSWARM_TOOLS.map(t => \`
+                <label style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text-2); cursor:pointer; padding:6px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-card2);">
+                  <input type="checkbox" data-tool="\${t.id}" \${(a.alsoAllow||[]).includes(t.id)?'checked':''} style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
+                  <div>
+                    <code style="font-size:11px; color:var(--text-1);">\${t.id}</code>
+                    <div style="font-size:10px; color:var(--text-3); margin-top:2px; line-height:1.3;">\${t.desc}</div>
+                  </div>
                 </label>
               \`).join('')}
             </div>
-            <button onclick="saveAgentTools('\${a.id}')" class="btn-ghost" style="font-size:12px;">Save tools</button>
-            <div class="meta" style="margin-top:10px;">Workspace: <code style="font-size:11px;">\${a.workspace}</code></div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <button onclick="saveAgentTools('\${a.id}')" class="btn-ghost" style="font-size:12px;">Save tools</button>
+              <button onclick="applyToolPreset('\${a.id}')" class="btn-ghost" style="font-size:12px; color:var(--text-3);">↩ Role defaults</button>
+            </div>
+            <div class="meta">Workspace: <code style="font-size:11px;">\${a.workspace}</code></div>
           </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
             <div style="font-size:11px; color:var(--text-3);">
@@ -1807,12 +1956,21 @@ async function startCrew(){
   } catch(e){ showNotification('Crew start failed: ' + e.message, true); }
 }
 
-async function saveAgentProfile(agentId){
-  const profile = document.getElementById('profile-' + agentId).value;
-  try {
-    await postJSON('/api/agents-config/update', { agentId, toolProfile: profile });
-    showNotification('Tool profile updated for ' + agentId);
-  } catch(e){ showNotification('Failed: ' + e.message, true); }
+const NEW_AGENT_TOOL_PRESETS = {
+  coder:        ['write_file','read_file','mkdir','run_cmd'],
+  reviewer:     ['read_file'],
+  orchestrator: ['read_file','dispatch'],
+  devops:       ['read_file','run_cmd','git'],
+  comms:        ['telegram','read_file'],
+};
+
+function applyNewAgentToolPreset() {
+  const preset = document.getElementById('naToolPreset').value;
+  if (!preset || !NEW_AGENT_TOOL_PRESETS[preset]) return;
+  const allowed = NEW_AGENT_TOOL_PRESETS[preset];
+  document.querySelectorAll('.naToolCheck').forEach(cb => {
+    cb.checked = allowed.includes(cb.dataset.tool);
+  });
 }
 
 async function saveAgentTools(agentId){
@@ -1912,10 +2070,11 @@ document.getElementById('naCreateBtn').onclick = async () => {
   const name        = document.getElementById('naName').value.trim();
   const emoji       = document.getElementById('naEmoji').value.trim();
   const systemPrompt = document.getElementById('naPrompt').value.trim();
-  const toolProfile  = document.querySelector('input[name="naToolProfile"]:checked')?.value || 'coding';
+  const naTools = [...document.querySelectorAll('.naToolCheck:checked')].map(cb => cb.dataset.tool);
+  const alsoAllow = naTools.length ? naTools : getToolDefaults(id);
   if (!id || !model){ showNotification('Agent ID and model are required', true); return; }
   try {
-    await postJSON('/api/agents-config/create', { id, model, name, emoji, systemPrompt, toolProfile });
+    await postJSON('/api/agents-config/create', { id, model, name, emoji, systemPrompt, alsoAllow });
     showNotification(\`Agent "\${id}" created — restart gateway-bridge to activate it on the RT bus.\`);
     document.getElementById('newAgentForm').style.display = 'none';
     ['naId','naName','naEmoji','naPrompt'].forEach(x => { document.getElementById(x).value = ''; });
@@ -1926,7 +2085,7 @@ document.getElementById('naCreateBtn').onclick = async () => {
 };
 document.getElementById('refreshAgentsBtn').onclick = loadAgents_cfg;
 // ── End agents UI ──────────────────────────────────────────────────────────
-const PROVIDER_ICONS = { opencode:'🚀', groq:'⚡', nvidia:'🎮', ollama:'🏠', xai:'𝕏', google:'🔵', deepseek:'🌊', openai:'🟢', perplexity:'🔍', cerebras:'🧠', mistral:'🌀', together:'🤝', cohere:'🔶', anthropic:'🟣' };
+const PROVIDER_ICONS = { opencode:'🚀', groq:'⚡', nvidia:'🎮', ollama:'🏠', 'openai-local':'🟢', xai:'𝕏', google:'🔵', deepseek:'🌊', openai:'🟢', perplexity:'🔍', cerebras:'🧠', mistral:'🌀', together:'🤝', cohere:'🔶', anthropic:'🟣' };
 async function loadProviders(){
   const list = document.getElementById('providersList');
   list.innerHTML = '<div class="meta" style="padding:20px;">Loading providers...</div>';
@@ -3141,6 +3300,7 @@ const server = http.createServer(async (req, res) => {
       deepseek:   "https://api.deepseek.com/v1",
       xai:        "https://api.x.ai/v1",
       ollama:     "http://localhost:11434/v1",
+      "openai-local": "http://127.0.0.1:8000/v1",
     };
     const csDir = path.join(os.homedir(), ".crewswarm");
     const csConfig = path.join(csDir, "config.json");
@@ -3169,7 +3329,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/api/providers/builtin/save" && req.method === "POST") {
       let body=""; for await (const chunk of req) body+=chunk;
-      const { providerId, apiKey } = JSON.parse(body);
+      let { providerId, apiKey } = JSON.parse(body);
+      // OpenAI (local)/ChatMock ignores key; use placeholder so crew-lead has a truthy apiKey
+      if (providerId === "openai-local" && !(apiKey && apiKey.trim())) apiKey = "key";
       // Write to ~/.crewswarm/config.json
       const cfg = readCSConfig();
       if (!cfg.providers) cfg.providers = {};
@@ -3202,6 +3364,17 @@ const server = http.createServer(async (req, res) => {
           res.writeHead(200,{"content-type":"application/json"});
           res.end(JSON.stringify({ ok:true, model: (d.models?.[0]?.name || "connected") }));
         } catch(e) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ ok:false, error: e.message })); }
+        return;
+      }
+      if (providerId === "openai-local") {
+        const key = apiKey || "key";
+        try {
+          const r = await fetch(baseUrl + "/models", { headers: { authorization: "Bearer " + key }, signal: AbortSignal.timeout(6000) });
+          const d = await r.json().catch(() => ({}));
+          const model = d?.data?.[0]?.id || (r.ok ? "ChatMock connected" : null);
+          res.writeHead(200, {"content-type": "application/json"});
+          res.end(JSON.stringify({ ok: r.ok, model, error: r.ok ? undefined : (d?.error?.message || r.statusText)?.slice(0, 80) }));
+        } catch(e) { res.writeHead(200, {"content-type": "application/json"}); res.end(JSON.stringify({ ok: false, error: e.message })); }
         return;
       }
       if (!apiKey) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ ok:false, error:"No API key saved" })); return; }
@@ -3254,7 +3427,7 @@ const server = http.createServer(async (req, res) => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body,
-        signal: AbortSignal.timeout(65000),
+        signal: AbortSignal.timeout(200000), // 3m20s — allow crew-lead + reasoning LLM to finish
       });
       const clData = await clRes.json();
       res.writeHead(clRes.status, { "content-type": "application/json" });
@@ -3605,10 +3778,24 @@ const server = http.createServer(async (req, res) => {
       const providerMap = cfg?.models?.providers || {};
       const allModels = [];
       const modelsByProvider = {};
+      const OPENAI_LOCAL_DEFAULT_MODELS = [
+        { id: "gpt-5", name: "GPT-5" },
+        { id: "gpt-5.1", name: "GPT-5.1" },
+        { id: "gpt-5.2", name: "GPT-5.2" },
+        { id: "gpt-5-codex", name: "GPT-5 Codex" },
+        { id: "gpt-5.1-codex", name: "GPT-5.1 Codex" },
+        { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
+        { id: "codex-mini", name: "Codex Mini" },
+      ];
       for (const [pid, p] of Object.entries(providerMap)) {
-        if (!(p.models || []).length) continue;
-        modelsByProvider[pid] = p.models.map(m => ({ id: m.id, name: m.name || m.id }));
-        for (const m of p.models) allModels.push(pid + "/" + m.id);
+        let models = p.models || [];
+        if (pid === "openai-local" && !models.length) models = OPENAI_LOCAL_DEFAULT_MODELS;
+        if (!models.length) continue;
+        modelsByProvider[pid] = models.map(m => ({ id: typeof m === "string" ? m : m.id, name: typeof m === "string" ? m : (m.name || m.id) }));
+        for (const m of models) {
+          const mid = typeof m === "string" ? m : m.id;
+          allModels.push(pid + "/" + mid);
+        }
       }
       const defaultModels = Object.keys(cfg.agents?.defaults?.models || {});
       for (const m of defaultModels) { if (!allModels.includes(m)) allModels.push(m); }
@@ -3632,7 +3819,11 @@ const server = http.createServer(async (req, res) => {
       if (name) { if (!agent.identity) agent.identity = {}; agent.identity.name = name; }
       if (emoji) { if (!agent.identity) agent.identity = {}; agent.identity.emoji = emoji; }
       if (toolProfile) { if (!agent.tools) agent.tools = {}; agent.tools.profile = toolProfile; }
-      if (alsoAllow !== undefined) { if (!agent.tools) agent.tools = {}; agent.tools.alsoAllow = alsoAllow; }
+      if (alsoAllow !== undefined) {
+        if (!agent.tools) agent.tools = {};
+        agent.tools.alsoAllow = alsoAllow;
+        agent.tools.profile = "crewswarm"; // mark as using new CrewSwarm tool system
+      }
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
       // System prompts live in agent-prompts.json, not openclaw.json
       if (systemPrompt !== undefined) {
@@ -3647,7 +3838,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/agents-config/create" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { id, model, name, emoji, systemPrompt, toolProfile } = JSON.parse(body);
+      const { id, model, name, emoji, systemPrompt, alsoAllow: reqAlsoAllow } = JSON.parse(body);
       if (!id || !model) throw new Error("id and model required");
       const cfgPath = path.join(CFG_DIR, "openclaw.json");
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -3657,10 +3848,19 @@ const server = http.createServer(async (req, res) => {
       if (!list) throw new Error("Cannot determine agents list structure in openclaw.json");
       if (list.find(a => a.id === id)) throw new Error("Agent ID already exists: " + id);
       const defaultWorkspace = list[0]?.workspace || process.cwd();
+      // Role-based tool defaults used when no explicit alsoAllow provided
+      const ROLE_DEFAULTS = {
+        'crew-qa': ['read_file'], 'crew-github': ['read_file','run_cmd','git'],
+        'crew-pm': ['read_file','dispatch'], 'crew-lead': ['dispatch'],
+        'crew-telegram': ['telegram','read_file'], 'crew-security': ['read_file','run_cmd'],
+        'crew-copywriter': ['write_file','read_file'], 'crew-main': ['read_file','write_file','run_cmd','dispatch'],
+      };
+      const defaultTools = reqAlsoAllow?.length ? reqAlsoAllow
+        : (ROLE_DEFAULTS[id] || ['write_file','read_file','mkdir','run_cmd']);
       list.push({
         id, model,
         identity: { name: name || id, emoji: emoji || "🤖", theme: "Default" },
-        tools: { profile: toolProfile || "coding", alsoAllow: ["web_search","web_fetch","message","gateway","nodes","agents_list","read","write","edit","apply_patch","exec"] },
+        tools: { profile: "crewswarm", alsoAllow: defaultTools },
         workspace: defaultWorkspace,
       });
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
@@ -3726,12 +3926,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/crew/start" && req.method === "POST") {
-      const { spawn: spawnProc, execSync: execS } = await import("node:child_process");
+      const { spawn: spawnProc } = await import("node:child_process");
       const { existsSync: eS } = await import("node:fs");
       const crewScript = path.join(OPENCLAW_DIR, "scripts", "start-crew.mjs");
-      if (!eS(crewScript)) throw new Error("start-crew.mjs not found");
+      if (!eS(crewScript)) throw new Error("start-crew.mjs not found — is the dashboard running from the CrewSwarm repo?");
       const result = await new Promise((resolve, reject) => {
-        const proc = spawnProc("node", [crewScript], { cwd: OPENCLAW_DIR, stdio: ["ignore","pipe","pipe"] });
+        const proc = spawnProc("node", [crewScript], {
+          cwd: OPENCLAW_DIR,
+          env: { ...process.env, OPENCLAW_DIR },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
         let out = ""; proc.stdout.on("data", d => out += d); proc.stderr.on("data", d => out += d);
         proc.on("close", code => code === 0 ? resolve(out.trim()) : reject(new Error(out.trim())));
       });
@@ -3947,65 +4151,69 @@ const server = http.createServer(async (req, res) => {
 
     // ── Services API ──────────────────────────────────────────────────────────
     if (url.pathname === "/api/services/status") {
-      const { execSync } = await import("node:child_process");
-      const net = await import("node:net");
-
-      function portListening(port) {
-        return new Promise(resolve => {
-          const sock = new net.default.Socket();
-          sock.setTimeout(300);
-          sock.once("connect", () => { sock.destroy(); resolve(true); });
-          sock.once("error", () => resolve(false));
-          sock.once("timeout", () => resolve(false));
-          sock.connect(port, "127.0.0.1");
-        });
-      }
-
-      function pidRunning(pidFile) {
-        try {
-          const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
-          if (!pid) return null;
-          process.kill(pid, 0);
-          return pid;
-        } catch { return null; }
-      }
-
-      function countProcs(pattern) {
-        try {
-          const out = execSync(`pgrep -f "${pattern}" | wc -l`, { encoding: "utf8" }).trim();
-          return parseInt(out, 10) || 0;
-        } catch { return 0; }
-      }
-
-      function procStartTime(pid) {
-        try {
-          const out = execSync(`ps -p ${pid} -o lstart=`, { encoding: "utf8" }).trim();
-          return out ? new Date(out).getTime() : null;
-        } catch { return null; }
-      }
-
-      const RT_TOKEN = process.env.OPENCREW_RT_AUTH_TOKEN || (() => {
-        try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || ""; } catch { return ""; }
-      })();
-
-      const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
-      const tgPid     = pidRunning(path.join(os.homedir(), ".openclaw", "logs", "telegram-bridge.pid"));
-      const rtUp      = await portListening(18889);
-      const crewLeadUp = await portListening(crewLeadPort);
-      const gwUp      = await portListening(18789);
-      const ocUp      = await portListening(4096);
-      const dashUp    = await portListening(listenPort);
-
-      // Use openswitchctl list to get real agent count from RT bus
-      let agentsOnline = 0, agentsTotal = 0;
+      let services;
       try {
-        const ctlPath = path.join(os.homedir(), "bin", "openswitchctl");
-        const listOut = execSync(`"${ctlPath}" list`, { encoding: "utf8", timeout: 5000 });
-        const m = listOut.match(/agents:(\d+)\/(\d+)/);
-        if (m) { agentsOnline = parseInt(m[1]); agentsTotal = parseInt(m[2]); }
-      } catch {}
+        const { execSync } = await import("node:child_process");
+        const net = await import("node:net");
 
-      const services = [
+        function portListening(port) {
+          return new Promise(resolve => {
+            const sock = new net.default.Socket();
+            sock.setTimeout(500);
+            sock.once("connect", () => { sock.destroy(); resolve(true); });
+            sock.once("error", () => resolve(false));
+            sock.once("timeout", () => resolve(false));
+            sock.connect(port, "127.0.0.1");
+          });
+        }
+
+        function pidRunning(pidFile) {
+          try {
+            const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+            if (!pid) return null;
+            process.kill(pid, 0);
+            return pid;
+          } catch { return null; }
+        }
+
+        function countProcs(pattern) {
+          try {
+            const out = execSync(`pgrep -f "${pattern}" | wc -l`, { encoding: "utf8" }).trim();
+            return parseInt(out, 10) || 0;
+          } catch { return 0; }
+        }
+
+        function procStartTime(pid) {
+          try {
+            const out = execSync(`ps -p ${pid} -o lstart=`, { encoding: "utf8" }).trim();
+            return out ? new Date(out).getTime() : null;
+          } catch { return null; }
+        }
+
+        const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
+        const tgPid     = pidRunning(path.join(os.homedir(), ".openclaw", "logs", "telegram-bridge.pid"));
+        const rtUp      = await portListening(18889);
+        const crewLeadUp = await portListening(crewLeadPort);
+        const gwUp      = await portListening(18789);
+        const ocUp      = await portListening(4096);
+        const dashUp    = await portListening(listenPort);
+
+        // Agent count: running = pgrep for bridge daemons (pattern matches each spawned bridge; --rt-daemon in argv)
+        let agentsOnline = countProcs("gateway-bridge.mjs");
+        let agentsTotal = 0;
+        try {
+          const agentsOut = execSync(`"${ctlPath}" agents`, {
+            encoding: "utf8",
+            timeout: 5000,
+            cwd: OPENCLAW_DIR,
+            env: { ...process.env, OPENCLAW_DIR },
+          });
+          const lines = agentsOut.trim().split(/\n/).filter(Boolean);
+          agentsTotal = lines.length;
+          if (agentsTotal === 0) agentsTotal = 13; // fallback to expected crew size
+        } catch {}
+
+        services = [
         {
           id: "rt-bus",
           label: "RT Message Bus",
@@ -4070,6 +4278,18 @@ const server = http.createServer(async (req, res) => {
           pid: process.pid,
         },
       ];
+      } catch (statusErr) {
+        console.error("[dashboard] /api/services/status error:", statusErr?.message || statusErr);
+        services = [
+          { id: "rt-bus", label: "RT Message Bus", description: "opencrew-rt-daemon", port: 18889, running: false, canRestart: true, pid: null },
+          { id: "agents", label: "Agent Crew", description: "0 agents connected", port: null, running: false, canRestart: true, pid: null },
+          { id: "crew-lead", label: "crew-lead", description: "Chat commander", port: 5010, running: false, canRestart: true, pid: null },
+          { id: "telegram", label: "Telegram Bridge", description: "@CrewSwarm_bot", port: null, running: false, canRestart: true, pid: null },
+          { id: "openclaw-gateway", label: "OpenClaw Gateway", description: "OpenClaw gateway", port: 18789, running: false, canRestart: true, pid: null },
+          { id: "opencode", label: "OpenCode Server", description: "opencode serve — port 4096", port: 4096, running: false, canRestart: true, pid: null },
+          { id: "dashboard", label: "Dashboard", description: "This dashboard", port: listenPort, running: true, canRestart: true, pid: process.pid },
+        ];
+      }
 
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(services));
@@ -4089,7 +4309,9 @@ const server = http.createServer(async (req, res) => {
       if (id === "rt-bus") {
         try { execSync(`pkill -f "opencrew-rt-daemon"`, { stdio: "ignore" }); } catch {}
         await new Promise(r => setTimeout(r, 800));
-        const rtDaemon = path.join(os.homedir(), "swarm", ".opencode", "plugin", "opencrew-rt-daemon.mjs");
+        const rtDaemon = fs.existsSync(path.join(OPENCLAW_DIR, "scripts", "opencrew-rt-daemon.mjs"))
+          ? path.join(OPENCLAW_DIR, "scripts", "opencrew-rt-daemon.mjs")
+          : path.join(os.homedir(), "swarm", ".opencode", "plugin", "opencrew-rt-daemon.mjs");
         spawnProc("node", [rtDaemon], {
           env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: RT_TOKEN, OPENCLAW_ALLOWED_AGENTS: CREW_AGENTS },
           detached: true, stdio: "ignore",
@@ -4098,7 +4320,10 @@ const server = http.createServer(async (req, res) => {
         try { execSync(`pkill -f "gateway-bridge.mjs --rt-daemon"`, { stdio: "ignore" }); } catch {}
         await new Promise(r => setTimeout(r, 800));
         spawnProc("node", [path.join(OPENCLAW_DIR, "scripts", "start-crew.mjs")], {
-          cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
+          cwd: OPENCLAW_DIR,
+          detached: true,
+          stdio: "ignore",
+          env: { ...process.env, OPENCLAW_DIR },
         }).unref();
       } else if (id === "telegram") {
         try {
@@ -4120,6 +4345,28 @@ const server = http.createServer(async (req, res) => {
         spawnProc("node", [path.join(OPENCLAW_DIR, "crew-lead.mjs")], {
           cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
         }).unref();
+      } else if (id === "opencode") {
+        try { execSync(`pkill -f "opencode serve"`, { stdio: "ignore" }); } catch {}
+        await new Promise(r => setTimeout(r, 1200));
+        try {
+          // Prefer explicit binary so we don't rely on PATH in Node's env
+          const pathEnv = (process.env.PATH || "") + path.delimiter + path.join(os.homedir(), "bin");
+          let opencodeBin = "";
+          try { opencodeBin = execSync("which opencode", { encoding: "utf8", env: { ...process.env, PATH: pathEnv } }).trim(); } catch {}
+          if (!opencodeBin) opencodeBin = "/usr/local/bin/opencode";
+          if (opencodeBin && fs.existsSync(opencodeBin)) {
+            spawnProc(opencodeBin, ["serve", "--port", "4096", "--hostname", "127.0.0.1"], {
+              detached: true, stdio: "ignore", env: process.env,
+            }).unref();
+          } else {
+            // Fallback: run via shell so login PATH is used (e.g. npx opencode or ~/bin/opencode)
+            spawnProc("opencode", ["serve", "--port", "4096", "--hostname", "127.0.0.1"], {
+              detached: true, stdio: "ignore", env: process.env, shell: true,
+            }).unref();
+          }
+        } catch (openCodeErr) {
+          console.error("[dashboard] OpenCode start failed:", openCodeErr?.message || openCodeErr);
+        }
       }
 
       res.writeHead(200, { "content-type": "application/json" });
@@ -4149,11 +4396,6 @@ const server = http.createServer(async (req, res) => {
         try { execSync(`open -a OpenClaw`, { stdio: "ignore" }); } catch {}
       } else if (id === "opencode") {
         try { execSync(`pkill -f "opencode serve"`, { stdio: "ignore" }); } catch {}
-        await new Promise(r => setTimeout(r, 1200));
-        const opencodeBin = execSync("which opencode", { encoding: "utf8" }).trim() || "/usr/local/bin/opencode";
-        spawnProc(opencodeBin, ["serve", "--port", "4096", "--hostname", "127.0.0.1"], {
-          detached: true, stdio: "ignore",
-        }).unref();
       } else if (id === "dashboard") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, message: "Restarting dashboard..." }));

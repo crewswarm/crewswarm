@@ -22,8 +22,12 @@ import WebSocket from "ws";
 const PORT        = Number(process.env.CREW_LEAD_PORT || 5010);
 const HISTORY_DIR = path.join(os.homedir(), ".crewswarm", "chat-history");
 const MAX_HISTORY = 40;
-const LLM_TIMEOUT = 60000;
-const CTL_PATH    = path.join(os.homedir(), "bin", "openswitchctl");
+const LLM_TIMEOUT = 180000; // 3 min — reasoning models (e.g. gpt-5.1-codex) can take 1–2+ min for complex prompts
+const CTL_PATH    = (() => {
+  const homeBin = path.join(os.homedir(), "bin", "openswitchctl");
+  if (fs.existsSync(homeBin)) return homeBin;
+  return path.join(process.cwd(), "scripts", "openswitchctl");
+})();
 const DASHBOARD   = "http://127.0.0.1:4319";
 
 function loadConfig() {
@@ -52,7 +56,12 @@ function loadConfig() {
     );
   }
 
-  return { modelId, providerKey, provider, knownAgents };
+  const agentModels = {};
+  for (const a of agents) {
+    if (a.id && a.model) agentModels[a.id] = a.model;
+  }
+
+  return { modelId, providerKey, provider, knownAgents, agentModels };
 }
 
 function tryRead(p) {
@@ -61,6 +70,10 @@ function tryRead(p) {
 
 function getSearchToolsConfig() {
   return tryRead(path.join(os.homedir(), ".openclaw", "search-tools.json")) || {};
+}
+
+function getAgentPrompts() {
+  return tryRead(path.join(os.homedir(), ".openclaw", "agent-prompts.json")) || {};
 }
 
 async function searchWithBrave(query) {
@@ -151,13 +164,22 @@ function clearHistory(sessionId) {
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(knownAgents) {
+function buildSystemPrompt(cfg) {
+  const knownAgents = cfg.knownAgents || [];
+  const agentPrompts = getAgentPrompts();
+  const customPrompt = (agentPrompts["crew-lead"] || "").trim();
   const agentList = knownAgents.map(a => "  - " + a).join("\n");
-  return [
-    "You are crew-lead, the conversational commander of the CrewSwarm AI development crew.",
-    "",
-    "You are primarily a CONVERSATIONAL assistant. Your default is to CHAT.",
-    "",
+  const modelLine = (cfg.providerKey && cfg.modelId)
+    ? `Your name is crew-lead. Your backend model is ${cfg.providerKey}/${cfg.modelId}. When asked "what's your name?" or "what model are you?", answer with this; do not search the web or codebase.`
+    : "";
+  const agentModels = cfg.agentModels || {};
+  const agentModelList = Object.keys(agentModels).length
+    ? "Each agent's assigned model (use when asked which models agents run):\n" +
+      Object.entries(agentModels).map(([id, model]) => `  - ${id}: ${model}`).join("\n")
+    : "";
+  const rules = [
+    ...(modelLine ? [modelLine, ""] : []),
+    ...(agentModelList ? [agentModelList, ""] : []),
     "Available agents (for reference only — do NOT dispatch unless explicitly told to):",
     agentList,
     "",
@@ -171,11 +193,14 @@ function buildSystemPrompt(knownAgents) {
     "  - crew-frontend / crew-copywriter: UI components and content",
     "  - crew-main: general orchestration fallback",
     "",
-    "DISPATCH RULES:",
-    "- ONLY dispatch when user uses: go build, go write, have crew-X do, dispatch, tell crew-X to",
+    "DISPATCH RULES — CRITICAL:",
+    "- ONLY dispatch when user uses: go build, go write, have crew-X do, dispatch, tell crew-X to, ask crew-X",
     "- Questions / chat / what-if = NEVER dispatch. Just answer.",
     "- One dispatch per reply maximum",
-    '- To dispatch: @@DISPATCH {"agent":"crew-coder","task":"Build a REST API with JWT auth"}',
+    "- ⚠️  YOU MUST use EXACTLY this format on its own line — no other wording will work:",
+    '  @@DISPATCH {"agent":"crew-coder","task":"Build a REST API with JWT auth"}',
+    "- NEVER say 'I launched', 'I sent', 'I dispatched' — ONLY the @@DISPATCH line actually sends the task",
+    "- If you describe dispatching without the @@DISPATCH line, NOTHING will be sent — the user will be frustrated",
     "",
     "PROJECT CREATION — CRITICAL RULES:",
     "- These trigger words mean the user wants to build NOW — respond with @@PROJECT immediately, no questions:",
@@ -197,6 +222,14 @@ function buildSystemPrompt(knownAgents) {
     "- Be concise. Under 2000 chars.",
     "- No filler phrases.",
   ].join("\n");
+  const defaultIntro = [
+    "You are crew-lead, the conversational commander of the CrewSwarm AI development crew.",
+    "",
+    "You are primarily a CONVERSATIONAL assistant. Your default is to CHAT.",
+    "",
+  ].join("\n");
+  const intro = customPrompt ? customPrompt + "\n\n" : defaultIntro;
+  return intro + rules;
 }
 
 // ── LLM call ─────────────────────────────────────────────────────────────────
@@ -233,18 +266,42 @@ async function callLLM(messages, cfg) {
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-function parseDispatch(text) {
-  const match = text.match(/@@DISPATCH\s+(\{[\s\S]*?\})/);
-  if (!match) return null;
-  try {
-    const d = JSON.parse(match[1]);
-    if (d.agent && d.task) return d;
-  } catch {}
+function parseDispatch(text, userMessage = "") {
+  // Strip think tags before parsing so <think> content doesn't pollute task text
+  const cleanText = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+
+  // Primary: structured @@DISPATCH marker (check original text too in case tags wrap it)
+  const match = cleanText.match(/@@DISPATCH\s+(\{[\s\S]*?\})/);
+  if (match) {
+    try {
+      const d = JSON.parse(match[1]);
+      if (d.agent && d.task) return d;
+    } catch {}
+  }
+
+  // Fallback: LLM described a dispatch in natural language without using @@DISPATCH
+  // Patterns: "launched to crew-X", "sent to crew-coder", "dispatching to crew-pm", "pinged crew-X" etc.
+  const nlMatch = cleanText.match(
+    /(?:launched|sent|dispatch(?:ed|ing)|message|task(?:ed)?|ask(?:ed|ing)?|told|forward(?:ed)?|pinged|ping(?:ing)?|fired off)\b[^.]*?\b(crew-[a-z0-9-]+)/i
+  );
+  if (nlMatch) {
+    const agent = nlMatch[1].toLowerCase();
+    // Use the user's original message as the task (much better than the LLM's reply text)
+    // Strip the "go write have crew-X" prefix from user message to get just the task
+    const task = userMessage
+      ? userMessage.replace(/^(?:go\s+(?:write\s+)?(?:have\s+)?|have\s+|ask\s+|tell\s+)crew-[a-z0-9-]+\s+(?:to\s+)?/i, "").trim() || userMessage
+      : cleanText.replace(/\n/g, " ").slice(0, 200).trim();
+    if (agent && task) {
+      console.log(`[crew-lead] NL dispatch fallback: agent=${agent} task="${task.slice(0, 60)}"`);
+      return { agent, task };
+    }
+  }
+
   return null;
 }
 
 function stripDispatch(text) {
-  return text.replace(/@@DISPATCH\s+\{[\s\S]*?\}/, "").trim();
+  return text.replace(/@@DISPATCH\s+\{[\s\S]*?\}/g, "").trim();
 }
 
 function parseProject(text) {
@@ -255,6 +312,13 @@ function parseProject(text) {
 
 function stripProject(text) {
   return text.replace(/@@PROJECT\s+\{[\s\S]*?\}/, "").trim();
+}
+
+/** Remove <think>...</think> reasoning blocks so they are not shown to the user. */
+function stripThink(text) {
+  if (!text || typeof text !== "string") return text;
+  let out = text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<\/think>/g, "").replace(/<think>/g, "");
+  return out.trim();
 }
 
 // ── PM LLM config (same sources as pm-loop.mjs) ───────────────────────────────
@@ -455,18 +519,26 @@ async function confirmProject({ draftId, roadmapMd: overrideMd }) {
 // rtPublish is set once the RT connection is established
 let rtPublish = null;
 
-function dispatchTask(agent, task) {
+// Track dispatched tasks so completions route back to the right session
+// Map<taskId, { sessionId, agent, task, ts }>
+const pendingDispatches = new Map();
+
+function dispatchTask(agent, task, sessionId = "owner") {
   if (rtPublish) {
     // Dispatch via own RT connection so agent replies go to: "crew-lead"
     try {
-      rtPublish({ channel: "command", type: "command.run_task", to: agent, payload: { content: task, prompt: task } });
-      console.log(`[crew-lead] dispatched via RT to ${agent}: ${task.slice(0, 60)}`);
+      const taskId = rtPublish({ channel: "command", type: "command.run_task", to: agent, payload: { content: task, prompt: task } });
+      if (taskId) pendingDispatches.set(taskId, { sessionId, agent, task, ts: Date.now() });
+      console.log(`[crew-lead] dispatched via RT to ${agent} (taskId=${taskId}): ${task.slice(0, 60)}`);
+      // Notify UI so it can show a "waiting" spinner for this agent
+      broadcastSSE({ type: "agent_working", agent, taskId, sessionId, ts: Date.now() });
       return true;
     } catch (e) {
       console.error(`[crew-lead] RT dispatch failed: ${e.message}`);
     }
   }
   // Fallback: openswitchctl (no reply routing back to crew-lead)
+  console.log("[crew-lead] RT not connected — using openswitchctl send (replies won't appear in chat; check RT Messages tab)");
   try {
     const safeTask = task.replace(/"/g, '\\"').replace(/\n/g, " ");
     execSync(`"${CTL_PATH}" send "${agent}" "${safeTask}"`, { encoding: "utf8", timeout: 10000 });
@@ -478,17 +550,16 @@ function dispatchTask(agent, task) {
   }
 }
 
-/** True if the message looks like a question or lookup (not small talk / thanks / compliments). */
+/** True only when the user explicitly asks to search, research, or look something up. */
 function messageNeedsSearch(msg) {
   const t = msg.trim().toLowerCase();
-  if (t.length < 8) return false;
-  if (t.includes("?")) return true;
-  const triggers = [
-    "what is", "who is", "when did", "where can", "how do ", "how does", "look up", "search for",
-    "find ", "tell me about", "current ", "latest ", "recent ", "is there ", "can you find",
-    "search ", "explain ", "define ", "documentation for", "docs for",
+  if (t.length < 6) return false;
+  const searchTriggers = [
+    "go search", "search for", "search ", "research ", "look up", "look it up", "look that up",
+    "can you search", "please search", "please look up", "please research",
+    "run a search", "do a search",
   ];
-  return triggers.some(phrase => t.includes(phrase));
+  return searchTriggers.some(phrase => t.includes(phrase));
 }
 
 // ── Core chat handler ─────────────────────────────────────────────────────────
@@ -508,7 +579,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   const userContent = parts.length > 1 ? parts.join("\n\n") : message;
 
   const messages = [
-    { role: "system", content: buildSystemPrompt(cfg.knownAgents) },
+    { role: "system", content: buildSystemPrompt(cfg) },
     ...history.map(h => ({ role: h.role, content: h.content })),
     { role: "user", content: userContent },
   ];
@@ -519,8 +590,8 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   const fullReply = await callLLM(messages, cfg);
 
   const projectSpec = parseProject(fullReply);
-  const dispatch = !projectSpec ? parseDispatch(fullReply) : null;
-  let cleanReply = stripProject(stripDispatch(fullReply));
+  const dispatch = !projectSpec ? parseDispatch(fullReply, message) : null;
+  let cleanReply = stripThink(stripProject(stripDispatch(fullReply)));
 
   appendHistory(sessionId, "assistant", cleanReply);
   broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply });
@@ -538,10 +609,15 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
       appendHistory(sessionId, "system", `Roadmap draft failed: ${e.message}`);
     }
   } else if (dispatch && cfg.knownAgents.includes(dispatch.agent)) {
-    const ok = dispatchTask(dispatch.agent, dispatch.task);
+    const ok = dispatchTask(dispatch.agent, dispatch.task, sessionId);
     if (ok) {
       dispatched = dispatch;
       appendHistory(sessionId, "system", `You dispatched to ${dispatch.agent}: "${(dispatch.task || "").slice(0, 200)}".`);
+      // So user always sees dispatch confirmation regardless of LLM wording
+      const dispatchLine = rtPublish
+        ? `\n\n↳ Dispatched to ${dispatch.agent} — reply will show here when they finish.`
+        : `\n\n↳ Dispatched to ${dispatch.agent} (via ctl — check RT Messages tab for reply).`;
+      cleanReply = (cleanReply || "").trimEnd() + dispatchLine;
     }
   }
 
@@ -574,6 +650,12 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/health" && req.method === "GET") {
       json(res, 200, { ok: true, agent: "crew-lead", port: PORT });
+      return;
+    }
+
+    if (url.pathname === "/status" && req.method === "GET") {
+      const cfg = loadConfig();
+      json(res, 200, { ok: true, model: cfg.model, rtConnected: rtPublish !== null, agents: cfg.knownAgents });
       return;
     }
 
@@ -661,7 +743,13 @@ server.on("error", (err) => {
 
 const RT_URL   = process.env.OPENCREW_RT_URL   || "ws://127.0.0.1:18889";
 const RT_TOKEN = process.env.OPENCREW_RT_AUTH_TOKEN || (() => {
-  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || ""; } catch { return ""; }
+  try {
+    const cs = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+    if (cs?.rt?.authToken) return cs.rt.authToken;
+  } catch {}
+  try {
+    return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+  } catch { return ""; }
 })();
 
 // SSE clients listening for agent replies
@@ -702,6 +790,9 @@ function connectRT() {
     }
     if (p.type === "error") {
       console.error("[crew-lead] RT error:", p.message);
+      if (/token|auth|unauthorized/i.test(String(p.message))) {
+        console.error("[crew-lead] Tip: Set RT token in dashboard Settings (RT Bus) or in ~/.crewswarm/config.json (rt.authToken) so agent replies show in chat.");
+      }
       return;
     }
 
@@ -710,18 +801,26 @@ function connectRT() {
       if (env.id) ws.send(JSON.stringify({ type: "ack", messageId: env.id, status: "received" }));
 
       const from    = env.from || env.sender_agent_id || "";
-      const msgType = env.messageType || "";
-      const reply   = env.payload?.reply ? String(env.payload.reply).trim() : "";
+      const msgType = env.messageType || env.type || "";
+      const reply   = env.payload?.reply != null ? String(env.payload.reply).trim() : "";
       const content = reply || (env.payload?.content ? String(env.payload.content).trim() : "");
 
       const isDone = msgType === "task.done" || env.channel === "done";
 
       if (isDone && content && from && from !== "crew-lead") {
         console.log(`[crew-lead] ✅ Agent reply from ${from}: ${content.slice(0, 120)}`);
-        // Store in history so crew-lead has full context on next chat
-        appendHistory("owner", "system", `[${from} completed task]: ${content.slice(0, 500)}`);
-        // Push to all SSE listeners (dashboard, etc.)
-        broadcastSSE({ from, content: content.slice(0, 1000), ts: Date.now() });
+
+        // Route completion to the session that dispatched this task, falling back to "owner"
+        const taskId = env.taskId || env.correlationId || "";
+        const dispatch = pendingDispatches.get(taskId);
+        const targetSession = dispatch?.sessionId || "owner";
+        if (dispatch) pendingDispatches.delete(taskId);
+
+        // Store up to 2000 chars so crew-lead has full context on next question
+        appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 2000)}`);
+
+        // Resolve the spinner and show the reply bubble in the UI
+        broadcastSSE({ type: "agent_reply", from, content: content.slice(0, 2000), sessionId: targetSession, taskId, ts: Date.now() });
       }
     }
   });

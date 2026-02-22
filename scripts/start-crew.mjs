@@ -13,20 +13,38 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-const OPENCLAW_DIR = path.resolve(process.cwd());
-// Prefer ~/.crewswarm/crewswarm.json, fall back to ~/.openclaw/openclaw.json
-const CREW_CFG     = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
-const OPENCLAW_CFG = fs.existsSync(CREW_CFG) ? CREW_CFG : path.join(os.homedir(), ".openclaw", "openclaw.json");
+const OPENCLAW_DIR = path.resolve(process.env.OPENCLAW_DIR || process.cwd());
+// Config search order (same as gateway-bridge + RT daemon):
+// 1. ~/.crewswarm/config.json  (dashboard saves rt.authToken here)
+// 2. ~/.crewswarm/crewswarm.json
+// 3. ~/.openclaw/openclaw.json
+const CREW_CONFIG  = path.join(os.homedir(), ".crewswarm", "config.json");
+const CREW_SWARM   = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+const OPENCLAW_CFG = path.join(os.homedir(), ".openclaw", "openclaw.json");
 const BRIDGE = path.join(OPENCLAW_DIR, "gateway-bridge.mjs");
 
 function loadConfig() {
-  const raw = JSON.parse(fs.readFileSync(OPENCLAW_CFG, "utf8"));
-  const rtToken = raw.env?.OPENCREW_RT_AUTH_TOKEN || "";
+  // Load agent list from first available config
+  const agentCfgPath = fs.existsSync(CREW_SWARM) ? CREW_SWARM
+    : fs.existsSync(OPENCLAW_CFG) ? OPENCLAW_CFG : null;
+  const raw = agentCfgPath ? JSON.parse(fs.readFileSync(agentCfgPath, "utf8")) : {};
   const agents = Array.isArray(raw.agents)
     ? raw.agents
     : Array.isArray(raw.agents?.list)
     ? raw.agents.list
     : [];
+
+  // RT token: check all config files in priority order
+  let rtToken = "";
+  for (const p of [CREW_CONFIG, CREW_SWARM, OPENCLAW_CFG]) {
+    if (!fs.existsSync(p)) continue;
+    try {
+      const c = JSON.parse(fs.readFileSync(p, "utf8"));
+      rtToken = c?.rt?.authToken || c?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+      if (rtToken) break;
+    } catch {}
+  }
+
   return { raw, rtToken, agents };
 }
 
@@ -132,6 +150,21 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
   });
   proc.unref();
   console.log(`  ✓ Spawned ${rtId} (pid ${proc.pid})`);
+}
+
+// crew-scribe — memory maintenance daemon (watches done.jsonl, writes brain.md + session-log.md)
+const SCRIBE_SCRIPT = path.join(OPENCLAW_DIR, "scripts", "crew-scribe.mjs");
+const scribeRunning = (() => {
+  try { return execSync("ps aux", { encoding: "utf8" }).includes("crew-scribe.mjs"); } catch { return false; }
+})();
+if (!scribeRunning && fs.existsSync(SCRIBE_SCRIPT)) {
+  const logFd = fs.openSync(path.join(os.tmpdir(), "crew-scribe.log"), "a");
+  const proc = spawn("node", [SCRIBE_SCRIPT], {
+    cwd: OPENCLAW_DIR, stdio: ["ignore", logFd, logFd], detached: true,
+    env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: rtToken },
+  });
+  proc.unref();
+  console.log(`  ✓ Spawned crew-scribe (pid ${proc.pid})`);
 }
 
 console.log(`\n✓ Crew started — ${allRtIds.size} agents online`);
