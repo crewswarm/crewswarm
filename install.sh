@@ -144,22 +144,109 @@ else
   success "crew-cli alias already set (or shell not detected)"
 fi
 
-# ── Done ─────────────────────────────────────────────────────────────────────
+# ── Done — offer to start now ─────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}Installation complete!${RESET}"
 echo ""
-echo -e "  ${BOLD}Next step: add your API key${RESET}"
-echo "  Open the dashboard → Providers tab and paste a Groq key (free at console.groq.com)"
-echo "  Or edit ~/.crewswarm/config.json directly."
+echo -e "  ${BOLD}You need at least one API key to run agents.${RESET}"
+echo "  Groq is free → https://console.groq.com  (takes 30 seconds to sign up)"
 echo ""
-echo -e "  ${BOLD}Start the crew:${RESET}"
-echo "    cd $REPO_DIR"
-echo "    npm run restart-all"
-echo ""
-echo -e "  ${BOLD}Then open:${RESET}  http://127.0.0.1:4319  (Chat tab)"
-echo ""
-echo -e "  ${BOLD}Or from terminal:${RESET}"
-echo "    crew-cli \"Build a REST API with tests\""
-echo ""
-echo "  Logs: /tmp/opencrew-rt-daemon.log  /tmp/crew-lead.log  /tmp/dashboard.log"
-echo ""
+
+# Check whether any API key is already set
+HAS_KEY=0
+if [[ -f "$CREWSWARM_DIR/config.json" ]]; then
+  if grep -qE '"apiKey":\s*"[^"]{8,}"' "$CREWSWARM_DIR/config.json" 2>/dev/null; then
+    HAS_KEY=1
+  fi
+fi
+
+if [[ "$HAS_KEY" -eq 0 ]]; then
+  warn "No API key found yet in ~/.crewswarm/config.json"
+  echo ""
+  echo "  You can:"
+  echo "  a) Start anyway and add a key in the dashboard Providers tab"
+  echo "  b) Edit ~/.crewswarm/config.json now, then re-run: bash install.sh"
+  echo ""
+fi
+
+echo -n "  Start CrewSwarm now? [Y/n] "
+read -r START_NOW
+START_NOW="${START_NOW:-Y}"
+
+if [[ "$START_NOW" =~ ^[Yy] ]]; then
+  echo ""
+  info "Starting CrewSwarm..."
+  bash "$REPO_DIR/scripts/restart-all-from-repo.sh" > /dev/null 2>&1 &
+
+  # ── Health check loop ───────────────────────────────────────────────────────
+  echo ""
+  info "Waiting for services to come up..."
+  echo ""
+
+  wait_for() {
+    local label="$1" url="$2" timeout=30 elapsed=0
+    printf "  %-20s" "$label"
+    while ! curl -sf "$url" > /dev/null 2>&1; do
+      sleep 1
+      elapsed=$((elapsed + 1))
+      if [[ $elapsed -ge $timeout ]]; then
+        echo -e "${RED}✗ timed out${RESET}"
+        return 1
+      fi
+    done
+    echo -e "${GREEN}✓ up${RESET}  (${elapsed}s)"
+  }
+
+  wait_for_port() {
+    local label="$1" port="$2" timeout=30 elapsed=0
+    printf "  %-20s" "$label"
+    while ! nc -z 127.0.0.1 "$port" 2>/dev/null; do
+      sleep 1
+      elapsed=$((elapsed + 1))
+      if [[ $elapsed -ge $timeout ]]; then
+        echo -e "${RED}✗ timed out${RESET}"
+        return 1
+      fi
+    done
+    echo -e "${GREEN}✓ up${RESET}  (${elapsed}s)"
+  }
+
+  wait_for_port "RT bus  :18889" 18889
+  wait_for      "crew-lead :5010" "http://127.0.0.1:5010/health"
+  wait_for      "Dashboard :4319" "http://127.0.0.1:4319"
+
+  # Agent bridge count
+  BRIDGE_COUNT=$(pgrep -f "gateway-bridge.mjs" 2>/dev/null | wc -l | tr -d ' ')
+  printf "  %-20s" "Agent bridges"
+  if [[ "$BRIDGE_COUNT" -gt 0 ]]; then
+    echo -e "${GREEN}✓ $BRIDGE_COUNT running${RESET}"
+  else
+    echo -e "${YELLOW}⚠ none detected yet${RESET}"
+  fi
+
+  echo ""
+  echo -e "${GREEN}${BOLD}CrewSwarm is running!${RESET}"
+  echo ""
+
+  if [[ "$HAS_KEY" -eq 0 ]]; then
+    echo -e "  ${YELLOW}${BOLD}Reminder: add an API key in the Providers tab before chatting.${RESET}"
+    echo ""
+  fi
+
+  echo "  Opening dashboard..."
+  sleep 1
+  open "http://127.0.0.1:4319" 2>/dev/null || true
+
+  echo ""
+  echo "  Logs: /tmp/opencrew-rt-daemon.log  /tmp/crew-lead.log  /tmp/dashboard.log"
+  echo "  To restart later:  npm run restart-all  (from $REPO_DIR)"
+  echo ""
+else
+  echo ""
+  echo "  When ready:"
+  echo "    cd $REPO_DIR && npm run restart-all"
+  echo "    open http://127.0.0.1:4319"
+  echo ""
+  echo "  Logs: /tmp/opencrew-rt-daemon.log  /tmp/crew-lead.log  /tmp/dashboard.log"
+  echo ""
+fi

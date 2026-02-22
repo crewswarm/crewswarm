@@ -825,6 +825,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/health" && req.method === "GET") {
+      json(res, 200, { ok: true, service: "crew-lead", uptime: process.uptime() });
+      return;
+    }
+
     json(res, 404, { ok: false, error: "not found" });
   } catch (err) {
     console.error("[crew-lead] error:", err.message);
