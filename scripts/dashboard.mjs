@@ -57,6 +57,37 @@ const phasedDispatchLog = path.join(OPENCLAW_DIR, "orchestrator-logs", "phased-d
 
 const authHeader = "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
 
+// ── Agent heartbeat liveness tracker ─────────────────────────────────────────
+// Updated every 30s from events.jsonl — reflects actual bridge pulse, not just config.
+const agentHeartbeats = new Map(); // agentId → lastSeenMs
+
+function refreshHeartbeats() {
+  try {
+    if (!fs.existsSync(rtEventsLog)) return;
+    const stat = fs.statSync(rtEventsLog);
+    const readBytes = Math.max(0, stat.size - 65536); // read last ~64 KB
+    const fd = fs.openSync(rtEventsLog, "r");
+    const buf = Buffer.alloc(stat.size - readBytes);
+    fs.readSync(fd, buf, 0, buf.length, readBytes);
+    fs.closeSync(fd);
+    for (const line of buf.toString("utf8").split("\n")) {
+      if (!line.includes("agent.heartbeat")) continue;
+      try {
+        const obj = JSON.parse(line);
+        const agentId = obj?.payload?.agent || obj?.from || obj?.sender_agent_id;
+        const ts = obj?.ts ? new Date(obj.ts).getTime() : null;
+        if (agentId && ts && (!agentHeartbeats.has(agentId) || agentHeartbeats.get(agentId) < ts)) {
+          agentHeartbeats.set(agentId, ts);
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
+// Prime the map immediately, then refresh every 30s
+refreshHeartbeats();
+setInterval(refreshHeartbeats, 30000);
+
 async function proxyJSON(pathname) {
   try {
     const res = await fetch(`${opencodeBase}${pathname}`, {
@@ -109,7 +140,15 @@ async function getAgentList() {
       .forEach(a => merged.add(a));
   }
 
-  return [...merged];
+  // Annotate each agent with last heartbeat time for liveness display
+  const now = Date.now();
+  return [...merged].map(id => {
+    const lastSeen = agentHeartbeats.get(id) || null;
+    const ageSec = lastSeen ? Math.floor((now - lastSeen) / 1000) : null;
+    // online < 90s | stale 90-300s | offline > 300s | unknown = never seen
+    const liveness = ageSec === null ? "unknown" : ageSec < 90 ? "online" : ageSec < 300 ? "stale" : "offline";
+    return { id, lastSeen, ageSec, liveness };
+  });
 }
 
 async function getRecentRTMessages(limit = 100) {
@@ -1080,11 +1119,9 @@ function startAgentReplyListener() {
       // agent_reply: task completion from any crew member — replace spinner, show reply, notify
       if (d.type === 'agent_reply' || (d.from && d.content)) {
         if (!d.from || !d.content) return;
-        // Remove spinner for this agent/task if present
         const spinnerId = 'agent-spinner-' + (d.taskId || d.from);
         const spinnerEl = document.getElementById(spinnerId);
         if (spinnerEl) spinnerEl.remove();
-        // Also try removing by agent name (fallback)
         const agentSpinner = document.getElementById('agent-spinner-' + d.from);
         if (agentSpinner) agentSpinner.remove();
         appendChatBubble('🤖 ' + d.from, d.content, false);
@@ -1092,9 +1129,99 @@ function startAgentReplyListener() {
         showNotification(d.from + ' finished a task');
         return;
       }
+      // pipeline_progress: a pipeline step completed, next step starting
+      if (d.type === 'pipeline_progress') {
+        const label = 'Pipeline step ' + (d.stepIndex + 1) + '/' + d.total + ' → ' + d.agent;
+        const el = document.createElement('div');
+        el.style.cssText = 'font-size:11px;color:var(--text-3);padding:2px 8px;margin:2px 0;';
+        el.textContent = '↳ ' + label;
+        if (box) { box.appendChild(el); box.scrollTop = box.scrollHeight; }
+        return;
+      }
+      // pipeline_done: all steps complete
+      if (d.type === 'pipeline_done') {
+        const el = document.createElement('div');
+        el.style.cssText = 'font-size:11px;color:var(--green);padding:2px 8px;margin:2px 0;';
+        el.textContent = '✅ Pipeline complete';
+        if (box) { box.appendChild(el); box.scrollTop = box.scrollHeight; }
+        return;
+      }
+      // confirm_run_cmd: an agent wants to run a shell command — show approval toast
+      if (d.type === 'confirm_run_cmd' && d.approvalId) {
+        showCmdApprovalToast(d.approvalId, d.agent, d.cmd);
+        return;
+      }
     } catch {}
   };
   agentReplySSE.onerror = () => { agentReplySSE = null; };
+}
+
+// ── Command approval toast ────────────────────────────────────────────────────
+
+function showCmdApprovalToast(approvalId, agent, cmd) {
+  const existing = document.getElementById('cmd-approval-' + approvalId);
+  if (existing) return;
+
+  const toast = document.createElement('div');
+  toast.id = 'cmd-approval-' + approvalId;
+  toast.style.cssText = [
+    'position:fixed;bottom:80px;right:24px;z-index:9999;',
+    'background:var(--bg-card);border:1px solid var(--border);border-radius:12px;',
+    'padding:16px 20px;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.4);',
+    'display:flex;flex-direction:column;gap:10px;',
+  ].join('');
+
+  const header = document.createElement('div');
+  header.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-1);';
+  header.textContent = '🔐 ' + agent + ' wants to run a command';
+
+  const cmdEl = document.createElement('code');
+  cmdEl.style.cssText = 'display:block;font-size:12px;color:var(--accent);background:var(--bg-1);padding:6px 10px;border-radius:6px;word-break:break-all;';
+  cmdEl.textContent = cmd;
+
+  const timer = document.createElement('div');
+  timer.style.cssText = 'font-size:11px;color:var(--text-3);';
+  let secs = 60;
+  timer.textContent = 'Auto-reject in ' + secs + 's';
+  const countdown = setInterval(() => {
+    secs--;
+    timer.textContent = 'Auto-reject in ' + secs + 's';
+    if (secs <= 0) {
+      clearInterval(countdown);
+      toast.remove();
+    }
+  }, 1000);
+
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:8px;';
+
+  const approve = document.createElement('button');
+  approve.textContent = '✅ Allow';
+  approve.style.cssText = 'flex:1;padding:8px;border-radius:8px;border:none;background:var(--green);color:#fff;cursor:pointer;font-weight:600;font-size:13px;';
+  approve.onclick = async () => {
+    clearInterval(countdown);
+    toast.remove();
+    await fetch('http://127.0.0.1:5010/approve-cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalId }) });
+    showNotification(agent + ': command approved');
+  };
+
+  const reject = document.createElement('button');
+  reject.textContent = '⛔ Deny';
+  reject.style.cssText = 'flex:1;padding:8px;border-radius:8px;border:none;background:var(--red, #ef4444);color:#fff;cursor:pointer;font-weight:600;font-size:13px;';
+  reject.onclick = async () => {
+    clearInterval(countdown);
+    toast.remove();
+    await fetch('http://127.0.0.1:5010/reject-cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalId }) });
+    showNotification(agent + ': command denied');
+  };
+
+  btns.appendChild(approve);
+  btns.appendChild(reject);
+  toast.appendChild(header);
+  toast.appendChild(cmdEl);
+  toast.appendChild(timer);
+  toast.appendChild(btns);
+  document.body.appendChild(toast);
 }
 
 async function checkCrewLeadStatus() {
@@ -1759,11 +1886,18 @@ async function loadAgents_cfg(){
       card.id = 'agent-card-' + a.id;
       const modelOpts = _allModels.map(m => \`<option value="\${m}" \${m === a.model ? 'selected' : ''}>\${m}</option>\`).join('');
       const customOpt = (!a.model || _allModels.includes(a.model)) ? '' : \`<option value="\${a.model}" selected>\${a.model} (custom)</option>\`;
+      const liveDot = a.liveness === 'online'
+        ? '<span title="● online — heartbeat <90s" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);margin-right:4px;flex-shrink:0;"></span>'
+        : a.liveness === 'stale'
+        ? '<span title="● stale — last seen >' + (a.ageSec||'?') + 's ago" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:4px;flex-shrink:0;"></span>'
+        : a.liveness === 'offline'
+        ? '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red,#ef4444);margin-right:4px;flex-shrink:0;"></span>'
+        : '<span title="● unknown — never seen" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:4px;flex-shrink:0;"></span>';
       card.innerHTML = \`
         <div class="agent-card-header">
           <div class="agent-avatar">\${a.emoji}</div>
           <div class="agent-meta">
-            <div class="agent-id">\${a.id} <span class="meta" style="font-weight:400;">· \${a.name}</span></div>
+            <div class="agent-id" style="display:flex;align-items:center;">\${liveDot}\${a.id} <span class="meta" style="font-weight:400;margin-left:4px;">· \${a.name}</span></div>
             <div class="agent-model" id="cur-model-\${a.id}">\${a.model}</div>
           </div>
           <button class="btn-ghost" style="font-size:11px; padding:4px 10px;" onclick="toggleAgentBody('\${a.id}')">Edit ▾</button>
@@ -3764,17 +3898,24 @@ const server = http.createServer(async (req, res) => {
       const agentPrompts = JSON.parse(await readFile(promptsPath, "utf8").catch(() => "{}"));
       const rawList = Array.isArray(cfg.agents) ? cfg.agents
                     : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
-      const agentList = rawList.map(a => ({
-        id: a.id,
-        model: a.model || "",
-        name: a.identity?.name || a.id,
-        emoji: a.identity?.emoji || "🤖",
-        theme: a.identity?.theme || "",
-        systemPrompt: agentPrompts[a.id] || "",
-        toolProfile: a.tools?.profile || "default",
-        alsoAllow: a.tools?.alsoAllow || [],
-        workspace: a.workspace || "",
-      }));
+      const nowMs = Date.now();
+      const agentList = rawList.map(a => {
+        const lastSeen = agentHeartbeats.get(a.id) || null;
+        const ageSec = lastSeen ? Math.floor((nowMs - lastSeen) / 1000) : null;
+        const liveness = ageSec === null ? "unknown" : ageSec < 90 ? "online" : ageSec < 300 ? "stale" : "offline";
+        return {
+          id: a.id,
+          model: a.model || "",
+          name: a.identity?.name || a.id,
+          emoji: a.identity?.emoji || "🤖",
+          theme: a.identity?.theme || "",
+          systemPrompt: agentPrompts[a.id] || "",
+          toolProfile: a.tools?.profile || "default",
+          alsoAllow: a.tools?.alsoAllow || [],
+          workspace: a.workspace || "",
+          liveness, lastSeen, ageSec,
+        };
+      });
       const providerMap = cfg?.models?.providers || {};
       const allModels = [];
       const modelsByProvider = {};

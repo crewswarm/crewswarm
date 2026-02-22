@@ -250,6 +250,8 @@ const OPENCREW_RT_COMMAND_TYPES = new Set([
   "task.assigned",
   "task.reassigned",
   "system.broadcast",
+  "cmd.approved",
+  "cmd.rejected",
 ]);
 const PROTOCOL_VERSION = 3;
 const CLI_VERSION = "1.2.0";
@@ -777,6 +779,16 @@ function looksLikeCodingTask(prompt = "") {
 //   @@RUN_CMD <shell command>  (whitelist-controlled)
 //
 
+// Agents that auto-approve @@RUN_CMD without requiring user confirmation
+// (system-level agents trusted to run commands as part of their role)
+const AUTO_APPROVE_CMD_AGENTS = new Set(["crew-fixer", "crew-github", "crew-pm"]);
+
+// Pending command approvals: approvalId → { resolve, timer }
+const pendingCmdApprovals = new Map();
+
+// Module-level RT client ref so executeToolCalls can publish approval requests
+let _rtClientForApprovals = null;
+
 // Per-role tool defaults — used when agent has no explicit alsoAllow in config
 const AGENT_TOOL_ROLE_DEFAULTS = {
   'crew-qa':          new Set(['read_file']),
@@ -943,6 +955,39 @@ async function executeToolCalls(reply, agentId) {
       results.push(`[tool:run_cmd] ⛔ ${agentId} does not have run_cmd permission`);
       continue;
     }
+
+    // ── Approval gate (non-auto-approved agents require human confirmation) ─
+    const needsApproval = !AUTO_APPROVE_CMD_AGENTS.has(agentId) && _rtClientForApprovals;
+    if (needsApproval) {
+      const approvalId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        _rtClientForApprovals.publish({
+          channel: "events",
+          type: "cmd.needs_approval",
+          to: "broadcast",
+          payload: { approvalId, agent: agentId, cmd, ts: new Date().toISOString() },
+        });
+      } catch (pubErr) {
+        console.warn(`[${agentId}] Could not publish cmd.needs_approval: ${pubErr?.message}`);
+      }
+
+      console.log(`[${agentId}] ⏳ Awaiting approval to run: ${cmd}`);
+      const approved = await new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          pendingCmdApprovals.delete(approvalId);
+          console.warn(`[${agentId}] cmd approval timed out (60s): ${cmd}`);
+          resolve(false);
+        }, 60000);
+        pendingCmdApprovals.set(approvalId, { resolve, timer });
+      });
+
+      if (!approved) {
+        results.push(`[tool:run_cmd] ⛔ Command rejected or timed out: \`${cmd}\``);
+        continue;
+      }
+      console.log(`[${agentId}] ✅ cmd approved, executing: ${cmd}`);
+    }
+
     try {
       const { execSync } = await import("node:child_process");
       const out = execSync(cmd, { timeout: 15000, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -2032,6 +2077,20 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     return;
   }
 
+  // ── cmd approval resolution (from crew-lead via RT bus) ───────────────────
+  if (incomingType === "cmd.approved" || incomingType === "cmd.rejected") {
+    const approvalId = payload?.approvalId;
+    if (approvalId && pendingCmdApprovals.has(approvalId)) {
+      const pending = pendingCmdApprovals.get(approvalId);
+      clearTimeout(pending.timer);
+      pendingCmdApprovals.delete(approvalId);
+      pending.resolve(incomingType === "cmd.approved");
+      console.log(`[${OPENCREW_RT_AGENT}] cmd ${incomingType === "cmd.approved" ? "✅ approved" : "⛔ rejected"}: ${approvalId}`);
+    }
+    try { client.ack({ messageId: envelope.id, status: "done", note: `cmd ${incomingType}` }); } catch {}
+    return;
+  }
+
   const action = String(payload.action || payload.command || "run_task").trim().toLowerCase();
   if (incomingType === "command.spawn_agent") {
     const targets = resolveSpawnTargets(payload);
@@ -2566,6 +2625,7 @@ async function runRealtimeDaemon(bridge) {
       }), { retries: 2, baseDelayMs: 300, label: "realtime connect" });
 
       currentClient = rt;
+      _rtClientForApprovals = rt; // allow executeToolCalls to publish approval requests
       rt.publish({
         channel: "events",
         type: "agent.online",

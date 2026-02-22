@@ -3,8 +3,8 @@
  * crew-scribe — Memory maintenance daemon
  *
  * Watches done.jsonl for completed tasks, then:
- *   1. Appends a one-line summary to memory/session-log.md
- *   2. If the reply contains a notable discovery (@@BRAIN tag), appends to memory/brain.md
+ *   1. Appends an LLM-generated one-sentence summary to memory/session-log.md
+ *   2. If the reply contains @@BRAIN tags, deduplicates and appends to memory/brain.md
  *
  * Agents can write durable learnings by including in their reply:
  *   @@BRAIN: <one-line fact to remember>
@@ -47,8 +47,85 @@ function now() {
   return new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC";
 }
 
-// Extract a short summary from a reply — first non-empty meaningful line
-function extractSummary(reply, maxChars = 120) {
+// ── LLM config (fastest available provider) ───────────────────────────────────
+
+function loadLLMConfig() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"));
+    const providers = cfg?.models?.providers || {};
+    // Priority: fastest small models first
+    const FAST_MODELS = {
+      cerebras: "llama-3.3-70b",
+      groq:     "llama-3.1-8b-instant",
+      openai:   "gpt-4o-mini",
+      mistral:  "mistral-small-latest",
+      anthropic: "claude-3-haiku-20240307",
+    };
+    for (const [key, model] of Object.entries(FAST_MODELS)) {
+      const p = providers[key];
+      if (p?.apiKey && (p?.baseUrl || key === "openai")) {
+        const baseUrl = p.baseUrl || "https://api.openai.com/v1";
+        return { apiKey: p.apiKey, baseUrl, model, provider: key };
+      }
+    }
+  } catch {}
+  return null;
+}
+
+// ── LLM-powered summary (falls back to heuristic) ────────────────────────────
+
+async function summarizeWithLLM(agentId, reply) {
+  const llm = loadLLMConfig();
+  if (!llm) return extractSummaryHeuristic(reply);
+
+  try {
+    const trimmed = reply
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/@@BRAIN:.*$/gim, "")
+      .trim()
+      .slice(0, 3000);
+
+    const isAnthropic = llm.provider === "anthropic";
+    const headers = { "content-type": "application/json" };
+    if (isAnthropic) {
+      headers["x-api-key"] = llm.apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+    } else {
+      headers["authorization"] = `Bearer ${llm.apiKey}`;
+    }
+
+    const res = await fetch(`${llm.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: llm.model,
+        messages: [
+          {
+            role: "system",
+            content: "You summarize agent task results in one short sentence. Be specific — mention filenames, commands, or key outcomes. No preamble. Max 120 chars.",
+          },
+          {
+            role: "user",
+            content: `Agent: ${agentId}\n\nResult:\n${trimmed}`,
+          },
+        ],
+        max_tokens: 80,
+        temperature: 0.2,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return extractSummaryHeuristic(reply);
+    const data = await res.json();
+    const summary = data?.choices?.[0]?.message?.content?.trim();
+    return summary || extractSummaryHeuristic(reply);
+  } catch {
+    return extractSummaryHeuristic(reply);
+  }
+}
+
+// Fallback: first non-empty meaningful line
+function extractSummaryHeuristic(reply, maxChars = 120) {
   if (!reply) return "(no reply)";
   const lines = reply
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
@@ -59,11 +136,44 @@ function extractSummary(reply, maxChars = 120) {
   return first.length > maxChars ? first.slice(0, maxChars) + "…" : first;
 }
 
-// Extract @@BRAIN entries from a reply
+// ── Brain dedup ───────────────────────────────────────────────────────────────
+
+function normalize(s) {
+  return s.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function isBrainDuplicate(fact) {
+  try {
+    const existing = fs.readFileSync(BRAIN_MD, "utf8");
+    const normFact = normalize(fact);
+    // Extract meaningful words (length > 3) as the fingerprint
+    const factWords = normFact.split(" ").filter(w => w.length > 3);
+    if (factWords.length < 3) return false;
+    const threshold = Math.ceil(factWords.length * 0.70);
+    return existing.split("\n").some(line => {
+      const normLine = normalize(line);
+      const hits = factWords.filter(w => normLine.includes(w)).length;
+      return hits >= threshold;
+    });
+  } catch {
+    return false; // brain.md doesn't exist yet → nothing is a duplicate
+  }
+}
+
+// Extract @@BRAIN entries from a reply, skip duplicates
 function extractBrainEntries(agentId, reply) {
   if (!reply) return [];
   const matches = [...reply.matchAll(/@@BRAIN:\s*(.+)/gi)];
-  return matches.map(m => `\n## [${now().slice(0, 10)}] ${agentId}: ${m[1].trim()}`);
+  const results = [];
+  for (const m of matches) {
+    const fact = m[1].trim();
+    if (isBrainDuplicate(fact)) {
+      console.log(`[crew-scribe] Skipping duplicate brain entry: ${fact.slice(0, 60)}`);
+      continue;
+    }
+    results.push(`\n## [${now().slice(0, 10)}] ${agentId}: ${fact}`);
+  }
+  return results;
 }
 
 // ── Main processing loop ──────────────────────────────────────────────────────
@@ -84,25 +194,25 @@ async function processNewEntries(state) {
   const newState = { ...state, bytesRead: stat.size };
   const lines = buf.toString("utf8").split("\n").filter(Boolean);
 
-  let sessionEntries = [];
-  let brainEntries = [];
+  const sessionEntries = [];
+  const brainEntries = [];
 
   for (const line of lines) {
     let obj;
     try { obj = JSON.parse(line); } catch { continue; }
 
-    const from = obj.from || obj.sender_agent_id || "";
-    const reply = (obj.payload?.reply || "").trim();
-    const ts = obj.ts ? obj.ts.slice(0, 16).replace("T", " ") : now().slice(0, 16);
+    const from   = obj.from || obj.sender_agent_id || "";
+    const reply  = (obj.payload?.reply || "").trim();
+    const ts     = obj.ts ? obj.ts.slice(0, 16).replace("T", " ") : now().slice(0, 16);
     const taskId = obj.taskId || obj.id || "?";
 
     if (!from || SKIP_AGENTS.has(from) || !reply) continue;
 
-    // Session log: one-line entry
-    const summary = extractSummary(reply);
-    sessionEntries.push(`\n## ${ts} UTC | ${from} | ${taskId}\n- Result: ${summary}`);
+    // LLM-generated one-sentence summary
+    const summary = await summarizeWithLLM(from, reply);
+    sessionEntries.push(`\n## ${ts} UTC | ${from} | ${taskId}\n- ${summary}`);
 
-    // Brain: @@BRAIN entries
+    // Deduplicated @@BRAIN entries
     brainEntries.push(...extractBrainEntries(from, reply));
   }
 
@@ -113,7 +223,7 @@ async function processNewEntries(state) {
 
   if (brainEntries.length > 0) {
     appendToFile(BRAIN_MD, brainEntries.join("\n") + "\n");
-    console.log(`[crew-scribe] Wrote ${brainEntries.length} brain.md entries`);
+    console.log(`[crew-scribe] Wrote ${brainEntries.length} brain.md entries (deduped)`);
   }
 
   return newState;
@@ -133,7 +243,6 @@ if (ONCE_MODE) {
   process.exit(0);
 }
 
-// Poll loop
 async function tick() {
   try {
     state = await processNewEntries(state);

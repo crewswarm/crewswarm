@@ -217,6 +217,13 @@ function buildSystemPrompt(cfg) {
     "- outputDir: /Users/jeffhobbs/Desktop/<kebab-case-slug>",
     "- description: list specific features so the roadmap AI produces real technical tasks, not vague ones",
     "",
+    "PIPELINE — use when the user wants sequential multi-agent work (e.g. 'build then test', 'write then audit'):",
+    "- Emit @@PIPELINE on its own line at the end of your reply, immediately before any @@DISPATCH",
+    '  @@PIPELINE [{"agent":"crew-coder","task":"Write server.js with Express"},{"agent":"crew-qa","task":"Audit the server.js file crew-coder just wrote"}]',
+    "- Rules: minimum 2 steps, each must have agent + task, must be a valid JSON array on ONE line",
+    "- Each step's task will automatically receive the prior step's output as context",
+    "- Do NOT use both @@PIPELINE and @@DISPATCH in the same reply",
+    "",
     "When the user message includes [Web context from Brave Search], use that context to answer current events, docs, or factual lookups when relevant. When it includes [Codebase context from workspace], use it to answer questions about this codebase (where things are, how they work, what a file does).",
     "",
     "- Be concise. Under 2000 chars.",
@@ -302,6 +309,25 @@ function parseDispatch(text, userMessage = "") {
 
 function stripDispatch(text) {
   return text.replace(/@@DISPATCH\s+\{[\s\S]*?\}/g, "").trim();
+}
+
+// ── Pipeline DSL ──────────────────────────────────────────────────────────────
+// Format: @@PIPELINE [{"agent":"crew-coder","task":"..."},{"agent":"crew-qa","task":"..."}]
+
+function parsePipeline(text) {
+  const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const match = clean.match(/@@PIPELINE\s+(\[[\s\S]*?\])/);
+  if (!match) return null;
+  try {
+    const steps = JSON.parse(match[1]);
+    if (!Array.isArray(steps) || steps.length < 2) return null;
+    if (!steps.every(s => s.agent && s.task)) return null;
+    return steps;
+  } catch { return null; }
+}
+
+function stripPipeline(text) {
+  return text.replace(/@@PIPELINE\s+\[[\s\S]*?\]/g, "").trim();
 }
 
 function parseProject(text) {
@@ -520,19 +546,25 @@ async function confirmProject({ draftId, roadmapMd: overrideMd }) {
 let rtPublish = null;
 
 // Track dispatched tasks so completions route back to the right session
-// Map<taskId, { sessionId, agent, task, ts }>
+// Map<taskId, { sessionId, agent, task, ts, pipelineId?, stepIndex? }>
 const pendingDispatches = new Map();
 
-function dispatchTask(agent, task, sessionId = "owner") {
+// Track active pipelines: pipelineId → { steps, stepIndex, sessionId }
+const pendingPipelines = new Map();
+
+function dispatchTask(agent, task, sessionId = "owner", pipelineMeta = null) {
   if (rtPublish) {
-    // Dispatch via own RT connection so agent replies go to: "crew-lead"
     try {
       const taskId = rtPublish({ channel: "command", type: "command.run_task", to: agent, payload: { content: task, prompt: task } });
-      if (taskId) pendingDispatches.set(taskId, { sessionId, agent, task, ts: Date.now() });
+      if (taskId) {
+        pendingDispatches.set(taskId, {
+          sessionId, agent, task, ts: Date.now(),
+          ...(pipelineMeta || {}),
+        });
+      }
       console.log(`[crew-lead] dispatched via RT to ${agent} (taskId=${taskId}): ${task.slice(0, 60)}`);
-      // Notify UI so it can show a "waiting" spinner for this agent
       broadcastSSE({ type: "agent_working", agent, taskId, sessionId, ts: Date.now() });
-      return true;
+      return taskId || true;
     } catch (e) {
       console.error(`[crew-lead] RT dispatch failed: ${e.message}`);
     }
@@ -548,6 +580,15 @@ function dispatchTask(agent, task, sessionId = "owner") {
     console.error(`[crew-lead] dispatch failed: ${e.message}`);
     return false;
   }
+}
+
+function dispatchPipelineStep(steps, stepIndex, sessionId, pipelineId, prevResult = "") {
+  const step = steps[stepIndex];
+  const taskText = prevResult
+    ? `${step.task}\n\n[Context from previous step]:\n${prevResult.slice(0, 800)}`
+    : step.task;
+  broadcastSSE({ type: "pipeline_progress", pipelineId, stepIndex, total: steps.length, agent: step.agent, ts: Date.now() });
+  return dispatchTask(step.agent, taskText, sessionId, { pipelineId, stepIndex, pipelineSteps: steps });
 }
 
 /** True only when the user explicitly asks to search, research, or look something up. */
@@ -590,14 +631,16 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   const fullReply = await callLLM(messages, cfg);
 
   const projectSpec = parseProject(fullReply);
-  const dispatch = !projectSpec ? parseDispatch(fullReply, message) : null;
-  let cleanReply = stripThink(stripProject(stripDispatch(fullReply)));
+  const pipelineSteps = !projectSpec ? parsePipeline(fullReply) : null;
+  const dispatch = !projectSpec && !pipelineSteps ? parseDispatch(fullReply, message) : null;
+  let cleanReply = stripThink(stripPipeline(stripProject(stripDispatch(fullReply))));
 
   appendHistory(sessionId, "assistant", cleanReply);
   broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply });
 
   let dispatched = null;
   let pendingProject = null;
+  let pipeline = null;
 
   if (projectSpec?.name && projectSpec?.outputDir) {
     try {
@@ -608,12 +651,18 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
       console.error(`[crew-lead] Roadmap draft failed: ${e.message}`);
       appendHistory(sessionId, "system", `Roadmap draft failed: ${e.message}`);
     }
+  } else if (pipelineSteps) {
+    const pipelineId = crypto.randomUUID();
+    pendingPipelines.set(pipelineId, { steps: pipelineSteps, stepIndex: 0, sessionId });
+    dispatchPipelineStep(pipelineSteps, 0, sessionId, pipelineId, "");
+    appendHistory(sessionId, "system", `Pipeline started (${pipelineSteps.length} steps): ${pipelineSteps.map(s => s.agent).join(" → ")}`);
+    cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Pipeline started (${pipelineSteps.length} steps): ${pipelineSteps.map(s => s.agent).join(" → ")}`;
+    pipeline = { pipelineId, steps: pipelineSteps };
   } else if (dispatch && cfg.knownAgents.includes(dispatch.agent)) {
     const ok = dispatchTask(dispatch.agent, dispatch.task, sessionId);
     if (ok) {
       dispatched = dispatch;
       appendHistory(sessionId, "system", `You dispatched to ${dispatch.agent}: "${(dispatch.task || "").slice(0, 200)}".`);
-      // So user always sees dispatch confirmation regardless of LLM wording
       const dispatchLine = rtPublish
         ? `\n\n↳ Dispatched to ${dispatch.agent} — reply will show here when they finish.`
         : `\n\n↳ Dispatched to ${dispatch.agent} (via ctl — check RT Messages tab for reply).`;
@@ -621,7 +670,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     }
   }
 
-  return { reply: cleanReply, dispatched, pendingProject };
+  return { reply: cleanReply, dispatched, pendingProject, pipeline };
 }
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
@@ -713,6 +762,28 @@ const server = http.createServer(async (req, res) => {
       if (draftId) {
         pendingProjects.delete(draftId);
         broadcastSSE({ type: "draft_discarded", draftId });
+      }
+      json(res, 200, { ok: true });
+      return;
+    }
+
+    if (url.pathname === "/approve-cmd" && req.method === "POST") {
+      const { approvalId } = await readBody(req);
+      if (!approvalId) { json(res, 400, { ok: false, error: "approvalId required" }); return; }
+      if (rtPublish) {
+        rtPublish({ channel: "events", type: "cmd.approved", to: "broadcast", payload: { approvalId } });
+        console.log(`[crew-lead] ✅ cmd approved: ${approvalId}`);
+      }
+      json(res, 200, { ok: true });
+      return;
+    }
+
+    if (url.pathname === "/reject-cmd" && req.method === "POST") {
+      const { approvalId } = await readBody(req);
+      if (!approvalId) { json(res, 400, { ok: false, error: "approvalId required" }); return; }
+      if (rtPublish) {
+        rtPublish({ channel: "events", type: "cmd.rejected", to: "broadcast", payload: { approvalId } });
+        console.log(`[crew-lead] ⛔ cmd rejected: ${approvalId}`);
       }
       json(res, 200, { ok: true });
       return;
@@ -810,17 +881,38 @@ function connectRT() {
       if (isDone && content && from && from !== "crew-lead") {
         console.log(`[crew-lead] ✅ Agent reply from ${from}: ${content.slice(0, 120)}`);
 
-        // Route completion to the session that dispatched this task, falling back to "owner"
         const taskId = env.taskId || env.correlationId || "";
         const dispatch = pendingDispatches.get(taskId);
         const targetSession = dispatch?.sessionId || "owner";
         if (dispatch) pendingDispatches.delete(taskId);
 
-        // Store up to 2000 chars so crew-lead has full context on next question
         appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 2000)}`);
-
-        // Resolve the spinner and show the reply bubble in the UI
         broadcastSSE({ type: "agent_reply", from, content: content.slice(0, 2000), sessionId: targetSession, taskId, ts: Date.now() });
+
+        // Advance pipeline if this task was part of one
+        if (dispatch?.pipelineId) {
+          const pipeline = pendingPipelines.get(dispatch.pipelineId);
+          if (pipeline) {
+            const nextIndex = dispatch.stepIndex + 1;
+            if (nextIndex < pipeline.steps.length) {
+              pipeline.stepIndex = nextIndex;
+              dispatchPipelineStep(pipeline.steps, nextIndex, pipeline.sessionId, dispatch.pipelineId, content);
+              console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} → step ${nextIndex + 1}/${pipeline.steps.length}`);
+            } else {
+              pendingPipelines.delete(dispatch.pipelineId);
+              broadcastSSE({ type: "pipeline_done", pipelineId: dispatch.pipelineId, ts: Date.now() });
+              appendHistory(targetSession, "system", `Pipeline complete — all ${pipeline.steps.length} steps finished.`);
+              console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} complete`);
+            }
+          }
+        }
+      }
+
+      // ── cmd approval relay ─────────────────────────────────────────────────
+      if (msgType === "cmd.needs_approval" && env.payload?.approvalId) {
+        const { approvalId, agent: approvalAgent, cmd } = env.payload;
+        console.log(`[crew-lead] 🔐 cmd approval needed — ${approvalAgent}: ${cmd}`);
+        broadcastSSE({ type: "confirm_run_cmd", approvalId, agent: approvalAgent, cmd, ts: Date.now() });
       }
     }
   });
