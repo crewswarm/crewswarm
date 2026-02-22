@@ -188,6 +188,102 @@ tail -f /tmp/opencrew-rt-daemon.log
 
 ---
 
+## Customizing the crew
+
+### Change an agent's model
+
+Edit `~/.crewswarm/crewswarm.json`:
+
+```json
+{ "id": "crew-coder", "model": "anthropic/claude-sonnet-4-5" }
+```
+
+Format is always `provider/model-id`. Provider must have an API key in the `providers` block of the same file.
+
+### Change an agent's system prompt
+
+Edit `~/.openclaw/agent-prompts.json`. The key is the bare agent name without `crew-` prefix:
+
+```json
+{ "coder": "You are crew-coder. Your rules: ..." }
+```
+
+Restart the agent bridge for the change to take effect:
+```bash
+pkill -f "gateway-bridge.mjs"
+node scripts/start-crew.mjs
+```
+
+### Add a new agent
+
+1. Add an entry to `~/.crewswarm/crewswarm.json`:
+```json
+{ "id": "crew-researcher", "model": "perplexity/sonar-pro" }
+```
+
+2. Add a system prompt to `~/.openclaw/agent-prompts.json`:
+```json
+{ "researcher": "You are crew-researcher. Search the web and summarize findings..." }
+```
+
+3. Restart bridges — the new agent is auto-registered.
+
+### Change tool permissions per agent
+
+In `~/.crewswarm/crewswarm.json`, add a `crewswarmAllow` field:
+
+```json
+{
+  "id": "crew-researcher",
+  "model": "perplexity/sonar-pro",
+  "tools": {
+    "crewswarmAllow": ["read_file", "write_file"]
+  }
+}
+```
+
+Available permissions: `read_file`, `write_file`, `mkdir`, `run_cmd`, `git`, `dispatch`.
+If omitted, role defaults apply (coders get read/write/mkdir/run, others get read-only).
+
+### Add a provider
+
+In `~/.crewswarm/crewswarm.json` under `providers`:
+
+```json
+{
+  "providers": {
+    "my-provider": {
+      "apiKey": "sk-...",
+      "baseUrl": "https://api.my-provider.com/v1"
+    }
+  }
+}
+```
+
+Then use `my-provider/model-name` in any agent's `model` field.
+
+---
+
+## crew-github — what it needs
+
+crew-github runs real `git` and `gh` commands via `@@RUN_CMD`. For it to work:
+
+**Required (commits + push):**
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+# Plus SSH key or HTTPS credentials for your GitHub account
+```
+
+**Required for PRs and issues (`gh` CLI):**
+```bash
+gh auth login   # follow prompts — authenticates gh with GitHub
+```
+
+**No special API key needed** — it uses your local git credentials, same as you would from the terminal. It cannot push to repos you don't have access to.
+
+---
+
 ## Troubleshooting
 
 **Agents not responding** — run `npm run restart-all`, check logs in `/tmp/`.
