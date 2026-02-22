@@ -581,7 +581,7 @@ const html = `<!doctype html>
       <div class="page-header">
         <div>
           <div class="page-title">Telegram</div>
-          <div class="page-sub">Chat with crew-lead via Telegram — same conversation as the 🧠 Chat tab</div>
+          <div class="page-sub">Telegram sessions, command allowlist, and token usage</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="tgStatusBadge" class="status-badge status-stopped">● stopped</span>
@@ -589,31 +589,65 @@ const html = `<!doctype html>
           <button onclick="stopTgBridge()" class="btn-red" id="tgStopBtn">⏹ Stop</button>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px;">
-        <!-- Config card -->
-        <div class="card" style="align-self:start;">
-          <div class="card-title" style="margin-bottom:12px;">⚙️ Configuration</div>
-          <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Telegram Bot Token</label>
-          <input id="tgTokenInput" type="password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
-          <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed chat IDs <span style="color:var(--text-3);font-weight:400;">(comma-separated — leave empty to allow all)</span></label>
-          <input id="tgAllowedIds" placeholder="1693963111, 987654321" style="width:100%;margin-bottom:12px;" />
-          <button onclick="saveTgConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
-          <div style="font-size:11px;color:var(--text-3);line-height:1.5;margin-top:8px;">
-            All Telegram messages route to <strong>crew-lead</strong> and share the same conversation history as the Chat tab.<br/><br/>
-            Get a token from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent);">@BotFather</a>.<br/>
-            Find your chat ID via <a href="https://t.me/userinfobot" target="_blank" style="color:var(--accent);">@userinfobot</a>.
+      <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px;">
+        <!-- Left column: config + allowlist + token usage -->
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <!-- Bot config -->
+          <div class="card" style="align-self:start;">
+            <div class="card-title" style="margin-bottom:12px;">⚙️ Bot Configuration</div>
+            <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Telegram Bot Token</label>
+            <input id="tgTokenInput" type="password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
+            <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed chat IDs <span style="color:var(--text-3);font-weight:400;">(comma-separated)</span></label>
+            <input id="tgAllowedIds" placeholder="1693963111, 987654321" style="width:100%;margin-bottom:12px;" />
+            <button onclick="saveTgConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
+            <div style="font-size:11px;color:var(--text-3);line-height:1.5;margin-top:4px;">
+              Each Telegram chat gets its own isolated session in crew-lead.<br/>
+              Get a token from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent);">@BotFather</a>.
+            </div>
+          </div>
+          <!-- Cmd allowlist -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:10px;">🔐 Command Allowlist</div>
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Patterns here auto-approve without prompting. Use <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">npm *</code> style globs.</div>
+            <div id="cmdAllowlistItems" style="min-height:32px;margin-bottom:10px;"></div>
+            <div style="display:flex;gap:6px;">
+              <input id="cmdAllowlistInput" placeholder="e.g. npm * or node *" style="flex:1;font-size:12px;" onkeydown="if(event.key==='Enter')addAllowlistPattern();" />
+              <button onclick="addAllowlistPattern()" class="btn-green" style="font-size:12px;padding:6px 10px;">Add</button>
+            </div>
+          </div>
+          <!-- Token usage -->
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <div class="card-title">💰 Token Usage</div>
+              <button onclick="loadTokenUsage()" class="btn-ghost" style="font-size:11px;">↻</button>
+            </div>
+            <div id="tokenUsageWidget"><div style="color:var(--text-3);font-size:12px;">Loading…</div></div>
           </div>
         </div>
-        <!-- RT activity log -->
-        <div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <div>
-              <div style="font-size:13px;font-weight:600;">RT Bus Activity</div>
-              <div style="font-size:11px;color:var(--text-3);">Read-only — watch agents work in real time</div>
+        <!-- Right column: Telegram sessions + RT feed -->
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <!-- Telegram sessions -->
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <div>
+                <div style="font-size:13px;font-weight:600;">Telegram Conversations</div>
+                <div style="font-size:11px;color:var(--text-3);">Each chat ID gets an isolated session with crew-lead</div>
+              </div>
+              <button onclick="loadTelegramSessions()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
             </div>
-            <button onclick="loadTgMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+            <div id="tgSessionsList" style="max-height:300px;overflow-y:auto;"></div>
           </div>
-          <div id="tgMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 220px);overflow-y:auto;"></div>
+          <!-- RT feed -->
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <div>
+                <div style="font-size:13px;font-weight:600;">RT Bus Activity</div>
+                <div style="font-size:11px;color:var(--text-3);">Read-only — watch agents work in real time</div>
+              </div>
+              <button onclick="loadTgMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+            </div>
+            <div id="tgMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 400px);overflow-y:auto;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1167,7 +1201,7 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
   toast.style.cssText = [
     'position:fixed;bottom:80px;right:24px;z-index:9999;',
     'background:var(--bg-card);border:1px solid var(--border);border-radius:12px;',
-    'padding:16px 20px;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.4);',
+    'padding:16px 20px;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,.4);',
     'display:flex;flex-direction:column;gap:10px;',
   ].join('');
 
@@ -1179,6 +1213,21 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
   cmdEl.style.cssText = 'display:block;font-size:12px;color:var(--accent);background:var(--bg-1);padding:6px 10px;border-radius:6px;word-break:break-all;';
   cmdEl.textContent = cmd;
 
+  // "Always allow" toggle — infers pattern from first word of command
+  const alwaysRow = document.createElement('label');
+  alwaysRow.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);cursor:pointer;';
+  const alwaysChk = document.createElement('input');
+  alwaysChk.type = 'checkbox';
+  alwaysChk.style.cssText = 'width:14px;height:14px;cursor:pointer;accent-color:var(--green);';
+  const cmdBase = cmd.trim().split(/\s+/)[0];
+  const suggestedPattern = cmdBase + ' *';
+  alwaysRow.appendChild(alwaysChk);
+  alwaysRow.appendChild(document.createTextNode('Always allow  '));
+  const patternSpan = document.createElement('code');
+  patternSpan.style.cssText = 'font-size:11px;background:var(--bg-1);padding:2px 6px;border-radius:4px;color:var(--accent);';
+  patternSpan.textContent = suggestedPattern;
+  alwaysRow.appendChild(patternSpan);
+
   const timer = document.createElement('div');
   timer.style.cssText = 'font-size:11px;color:var(--text-3);';
   let secs = 60;
@@ -1186,10 +1235,7 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
   const countdown = setInterval(() => {
     secs--;
     timer.textContent = 'Auto-reject in ' + secs + 's';
-    if (secs <= 0) {
-      clearInterval(countdown);
-      toast.remove();
-    }
+    if (secs <= 0) { clearInterval(countdown); toast.remove(); }
   }, 1000);
 
   const btns = document.createElement('div');
@@ -1201,13 +1247,17 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
   approve.onclick = async () => {
     clearInterval(countdown);
     toast.remove();
+    if (alwaysChk.checked) {
+      await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: suggestedPattern }) });
+      showNotification('Allowlisted: ' + suggestedPattern);
+    }
     await fetch('http://127.0.0.1:5010/approve-cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalId }) });
-    showNotification(agent + ': command approved');
+    if (!alwaysChk.checked) showNotification(agent + ': command approved');
   };
 
   const reject = document.createElement('button');
   reject.textContent = '⛔ Deny';
-  reject.style.cssText = 'flex:1;padding:8px;border-radius:8px;border:none;background:var(--red, #ef4444);color:#fff;cursor:pointer;font-weight:600;font-size:13px;';
+  reject.style.cssText = 'flex:1;padding:8px;border-radius:8px;border:none;background:var(--red,#ef4444);color:#fff;cursor:pointer;font-weight:600;font-size:13px;';
   reject.onclick = async () => {
     clearInterval(countdown);
     toast.remove();
@@ -1219,9 +1269,153 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
   btns.appendChild(reject);
   toast.appendChild(header);
   toast.appendChild(cmdEl);
+  toast.appendChild(alwaysRow);
   toast.appendChild(timer);
   toast.appendChild(btns);
   document.body.appendChild(toast);
+}
+
+// ── Cmd allowlist manager ──────────────────────────────────────────────────────
+
+async function loadCmdAllowlist() {
+  const box = document.getElementById('cmdAllowlistItems');
+  if (!box) return;
+  const d = await getJSON('/api/cmd-allowlist').catch(() => ({ list: [] }));
+  const list = d.list || [];
+  box.innerHTML = '';
+  if (!list.length) {
+    box.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0;">No patterns yet — approve a command with "Always allow" checked to add one.</div>';
+    return;
+  }
+  for (const pattern of list) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);';
+    const code = document.createElement('code');
+    code.style.cssText = 'flex:1;font-size:12px;color:var(--accent);';
+    code.textContent = pattern;
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.style.cssText = 'border:none;background:transparent;color:var(--text-3);cursor:pointer;font-size:14px;padding:0 4px;';
+    del.title = 'Remove';
+    del.onclick = async () => {
+      await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) });
+      loadCmdAllowlist();
+    };
+    row.appendChild(code);
+    row.appendChild(del);
+    box.appendChild(row);
+  }
+}
+
+async function addAllowlistPattern() {
+  const inp = document.getElementById('cmdAllowlistInput');
+  const pattern = inp?.value?.trim();
+  if (!pattern) return;
+  await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) });
+  inp.value = '';
+  loadCmdAllowlist();
+}
+
+// ── Telegram sessions viewer ──────────────────────────────────────────────────
+
+async function loadTelegramSessions() {
+  const box = document.getElementById('tgSessionsList');
+  if (!box) return;
+  const sessions = await getJSON('/api/telegram-sessions').catch(() => []);
+  box.innerHTML = '';
+  if (!sessions.length) {
+    box.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px;">No Telegram sessions yet — send a message to your bot to start one.</div>';
+    return;
+  }
+  for (const s of sessions) {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;';
+    const ago = s.lastTs ? Math.round((Date.now() - s.lastTs) / 60000) + 'm ago' : 'unknown';
+    const msgLines = s.messages.slice(-6).map(m => {
+      const color = m.role === 'user' ? 'var(--accent)' : 'var(--green)';
+      const icon  = m.role === 'user' ? '👤' : '🤖';
+      const txt   = String(m.content || '').slice(0, 100).replace(/</g, '&lt;');
+      return '<div style="margin-bottom:4px;"><span style="color:' + color + ';">' + icon + '</span> <span>' + txt + '</span></div>';
+    }).join('');
+    card.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+        '<span style="font-size:13px;font-weight:600;">chat ' + s.chatId + '</span>' +
+        '<span style="font-size:11px;color:var(--text-3);">' + s.messageCount + ' msgs · ' + ago + '</span>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text-2);border-top:1px solid var(--border);padding-top:8px;max-height:120px;overflow-y:auto;">' +
+        msgLines +
+      '</div>';
+    box.appendChild(card);
+  }
+}
+
+// ── Token usage widget ────────────────────────────────────────────────────────
+
+// Approximate cost per 1M tokens by model prefix (input / output)
+const MODEL_COST_PER_M = {
+  'llama-3.3-70b':         [0.59,  0.79],
+  'llama-3.1-8b':          [0.05,  0.08],
+  'llama-3.1-70b':         [0.59,  0.79],
+  'gpt-4o-mini':           [0.15,  0.60],
+  'gpt-4o':                [2.50, 10.00],
+  'gpt-4':                 [30.0, 60.00],
+  'claude-3-5-haiku':      [0.80,  4.00],
+  'claude-3-haiku':        [0.25,  1.25],
+  'claude-3-5-sonnet':     [3.00, 15.00],
+  'claude-3-7-sonnet':     [3.00, 15.00],
+  'mistral-small':         [0.10,  0.30],
+  'mistral-large':         [2.00,  6.00],
+  'sonar-pro':             [3.00, 15.00],
+  'default':               [1.00,  3.00],
+};
+
+function estimateCost(byModel) {
+  let total = 0;
+  for (const [model, stats] of Object.entries(byModel || {})) {
+    const rateKey = Object.keys(MODEL_COST_PER_M).find(k => model.toLowerCase().includes(k)) || 'default';
+    const [inputRate, outputRate] = MODEL_COST_PER_M[rateKey];
+    total += (stats.prompt / 1e6) * inputRate + (stats.completion / 1e6) * outputRate;
+  }
+  return total;
+}
+
+async function loadTokenUsage() {
+  const box = document.getElementById('tokenUsageWidget');
+  if (!box) return;
+  const u = await getJSON('/api/token-usage').catch(() => ({}));
+  const totalTokens = (u.prompt || 0) + (u.completion || 0);
+  const cost = estimateCost(u.byModel);
+  let html =
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">' +
+      '<div style="text-align:center;">' +
+        '<div style="font-size:20px;font-weight:700;color:var(--accent);">' + (u.calls||0).toLocaleString() + '</div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">LLM calls</div>' +
+      '</div>' +
+      '<div style="text-align:center;">' +
+        '<div style="font-size:20px;font-weight:700;color:var(--green);">' + (totalTokens/1000).toFixed(1) + 'k</div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">total tokens</div>' +
+      '</div>' +
+      '<div style="text-align:center;">' +
+        '<div style="font-size:20px;font-weight:700;color:var(--yellow,#fbbf24);">$' + cost.toFixed(4) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">est. cost</div>' +
+      '</div>' +
+    '</div>';
+  if (Object.keys(u.byModel||{}).length) {
+    html += '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px;">By model</div>';
+    Object.entries(u.byModel||{})
+      .sort((a,b) => (b[1].prompt+b[1].completion) - (a[1].prompt+a[1].completion))
+      .forEach(function(entry) {
+        const model = entry[0], s = entry[1];
+        const rateKey = Object.keys(MODEL_COST_PER_M).find(function(k){ return model.toLowerCase().includes(k); }) || 'default';
+        const rates = MODEL_COST_PER_M[rateKey];
+        const mc = (s.prompt/1e6)*rates[0] + (s.completion/1e6)*rates[1];
+        html += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">' +
+          '<code style="color:var(--accent);">' + model + '</code>' +
+          '<span style="color:var(--text-2);">' + ((s.prompt+s.completion)/1000).toFixed(1) + 'k tok · $' + mc.toFixed(4) + '</span>' +
+          '</div>';
+      });
+  }
+  box.innerHTML = html;
 }
 
 async function checkCrewLeadStatus() {
@@ -1394,6 +1588,9 @@ function showMessaging(){
   loadTgStatus();
   loadTgMessages();
   loadTgConfig();
+  loadTelegramSessions();
+  loadCmdAllowlist();
+  loadTokenUsage();
 }
 
 async function loadTgStatus(){
@@ -3023,6 +3220,67 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify(await getRecentRTMessages(100)));
       return;
     }
+
+    // ── Token usage ──────────────────────────────────────────────────────────
+    if (url.pathname === "/api/token-usage") {
+      const usageFile = path.join(os.homedir(), ".crewswarm", "token-usage.json");
+      let usage = { calls: 0, prompt: 0, completion: 0, byModel: {} };
+      try { usage = JSON.parse(fs.readFileSync(usageFile, "utf8")); } catch {}
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(usage));
+      return;
+    }
+
+    // ── Cmd allowlist (proxied to crew-lead) ─────────────────────────────────
+    if (url.pathname === "/api/cmd-allowlist") {
+      const CREW_LEAD = "http://127.0.0.1:5010";
+      try {
+        if (req.method === "GET") {
+          const r = await fetch(`${CREW_LEAD}/allowlist-cmd`);
+          const d = await r.json();
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(d));
+        } else if (req.method === "POST") {
+          let body = ""; for await (const c of req) body += c;
+          const r = await fetch(`${CREW_LEAD}/allowlist-cmd`, { method: "POST", headers: { "content-type": "application/json" }, body });
+          const d = await r.json();
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(d));
+        } else if (req.method === "DELETE") {
+          let body = ""; for await (const c of req) body += c;
+          const r = await fetch(`${CREW_LEAD}/allowlist-cmd`, { method: "DELETE", headers: { "content-type": "application/json" }, body });
+          const d = await r.json();
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(d));
+        } else {
+          res.writeHead(405); res.end();
+        }
+      } catch (e) {
+        res.writeHead(502, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+
+    // ── Telegram sessions (reads crew-lead chat-history for telegram-* sessions) ──
+    if (url.pathname === "/api/telegram-sessions") {
+      const histDir = path.join(os.homedir(), ".crewswarm", "chat-history");
+      const sessions = [];
+      try {
+        const files = fs.readdirSync(histDir).filter(f => f.startsWith("telegram-") && f.endsWith(".jsonl"));
+        for (const file of files) {
+          const chatId = file.replace(/^telegram-/, "").replace(/\.jsonl$/, "");
+          const lines = fs.readFileSync(path.join(histDir, file), "utf8").split("\n").filter(Boolean);
+          const msgs = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+          const last = msgs[msgs.length - 1];
+          sessions.push({ chatId, messageCount: msgs.length, lastTs: last?.ts || null, messages: msgs.slice(-20) });
+        }
+      } catch {}
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(sessions));
+      return;
+    }
+
     if (url.pathname === "/api/agents") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(await getAgentList()));

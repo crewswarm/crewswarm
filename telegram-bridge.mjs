@@ -41,7 +41,7 @@ const BOT_TOKEN   = process.env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN || 
 const RT_URL      = process.env.OPENCREW_RT_URL    || env.OPENCREW_RT_URL    || "ws://127.0.0.1:18889";
 const RT_TOKEN    = process.env.OPENCREW_RT_AUTH_TOKEN || env.OPENCREW_RT_AUTH_TOKEN || "";
 const AGENT_NAME  = "crew-telegram";
-const TELEGRAM_CONTEXT_PATH = join(homedir(), "Desktop", "OpenClaw", "memory", "telegram-context.md");
+const TELEGRAM_CONTEXT_PATH = process.env.TELEGRAM_CONTEXT_PATH || join(homedir(), "Desktop", "CrewSwarm", "memory", "telegram-context.md");
 const TARGET      = process.env.TELEGRAM_TARGET_AGENT || env.TELEGRAM_TARGET_AGENT || "crew-lead";
 const CREW_LEAD_URL = process.env.CREW_LEAD_URL || "http://127.0.0.1:5010";
 const POLL_TIMEOUT = 30; // seconds
@@ -393,11 +393,11 @@ async function pollLoop() {
         const correlationId = randomUUID();
         const history       = formatHistory(chatId);
 
-        // Send to crew-lead HTTP server
+        // Send to crew-lead HTTP server — each Telegram chatId gets its own session
         fetch(`${CREW_LEAD_URL}/chat`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: text, sessionId: "owner", firstName: firstName || username }),
+          body: JSON.stringify({ message: text, sessionId: `telegram-${chatId}`, firstName: firstName || username }),
           signal: AbortSignal.timeout(65000),
         }).then(async r => {
           const d = await r.json();

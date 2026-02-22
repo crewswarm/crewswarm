@@ -203,7 +203,8 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || "";
     if (!text) throw new Error("Empty response from LLM");
-    console.log(`[direct-llm] ${ocAgentId} via ${llm.modelId} — ${text.length} chars`);
+    recordTokenUsage(llm.modelId, data.usage);
+    console.log(`[direct-llm] ${ocAgentId} via ${llm.modelId} — ${text.length} chars${data.usage ? ` (${(data.usage.prompt_tokens||0)+(data.usage.completion_tokens||0)} tokens)` : ""}`);
     return text;
   } catch (e) {
     if (e.isRateLimit) {
@@ -874,8 +875,69 @@ CRITICAL RULES:
 `;
 }
 
-const SAFE_CMD_WHITELIST     = /^(ls|cat|head|tail|wc|echo|pwd|find|node -e|node --version|npm list)\b/;
+// Commands that are always blocked regardless of agent permissions or allowlist
+const BLOCKED_CMD_PATTERNS = [
+  /\brm\s+-[rf]{1,2}f?\b/,
+  /\bsudo\b/,
+  /curl[^|\n]*\|\s*(bash|sh|zsh|fish)\b/i,
+  /wget[^|\n]*\|\s*(bash|sh|zsh|fish)\b/i,
+  /:\(\)\s*\{\s*:\|:&\s*\};?\s*:/,   // fork bomb
+  /\bdd\s+if=/,
+  /\bmkfs\b/,
+  /\bfdisk\b/,
+  /\bchmod\s+[0-9]*7[0-9]*\s+\/\b/,  // chmod 777 /...
+  /\bkillall\b/,
+];
+
 const SAFE_GIT_CMD_WHITELIST = /^(git (status|log|diff|add|commit|push|pull|fetch|branch|checkout|show|rev-parse|remote|tag|stash))\b/;
+
+// Allowlist — patterns stored in ~/.crewswarm/cmd-allowlist.json
+const CMD_ALLOWLIST_FILE = path.join(os.homedir(), ".crewswarm", "cmd-allowlist.json");
+
+function loadCmdAllowlist() {
+  try { return JSON.parse(fs.readFileSync(CMD_ALLOWLIST_FILE, "utf8")); } catch { return []; }
+}
+
+function isCommandBlocked(cmd) {
+  return BLOCKED_CMD_PATTERNS.some(re => re.test(cmd));
+}
+
+function isCommandAllowlisted(cmd) {
+  const list = loadCmdAllowlist();
+  return list.some(pattern => {
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+    return new RegExp(`^${escaped}`, "i").test(cmd.trim());
+  });
+}
+
+// ── Token/cost accumulator ────────────────────────────────────────────────────
+const TOKEN_USAGE_FILE = path.join(os.homedir(), ".crewswarm", "token-usage.json");
+
+const tokenUsage = (() => {
+  try { return JSON.parse(fs.readFileSync(TOKEN_USAGE_FILE, "utf8")); } catch {}
+  return { calls: 0, prompt: 0, completion: 0, byModel: {}, sessionStart: new Date().toISOString() };
+})();
+
+function recordTokenUsage(modelId, usage) {
+  if (!usage) return;
+  const p = Number(usage.prompt_tokens || usage.input_tokens || 0);
+  const c = Number(usage.completion_tokens || usage.output_tokens || 0);
+  if (!p && !c) return;
+  tokenUsage.calls++;
+  tokenUsage.prompt     += p;
+  tokenUsage.completion += c;
+  if (!tokenUsage.byModel[modelId]) tokenUsage.byModel[modelId] = { calls: 0, prompt: 0, completion: 0 };
+  tokenUsage.byModel[modelId].calls++;
+  tokenUsage.byModel[modelId].prompt     += p;
+  tokenUsage.byModel[modelId].completion += c;
+  // Flush to disk every 5 calls
+  if (tokenUsage.calls % 5 === 0) {
+    try {
+      fs.mkdirSync(path.dirname(TOKEN_USAGE_FILE), { recursive: true });
+      fs.writeFileSync(TOKEN_USAGE_FILE, JSON.stringify(tokenUsage, null, 2));
+    } catch {}
+  }
+}
 
 async function executeToolCalls(reply, agentId) {
   const allowed = loadAgentToolPermissions(agentId);
@@ -942,13 +1004,14 @@ async function executeToolCalls(reply, agentId) {
   while ((m = cmdRe.exec(reply)) !== null) {
     const cmd = m[1].trim();
     const isGit = SAFE_GIT_CMD_WHITELIST.test(cmd);
-    const isSafe = SAFE_CMD_WHITELIST.test(cmd);
-    if (isGit && !allowed.has('git') && !allowed.has('run_cmd')) {
-      results.push(`[tool:run_cmd] ⛔ ${agentId} does not have git permission`);
+
+    // Hard block — dangerous patterns regardless of permissions
+    if (isCommandBlocked(cmd)) {
+      results.push(`[tool:run_cmd] ⛔ Blocked dangerous command: ${cmd}`);
       continue;
     }
-    if (!isGit && !isSafe) {
-      results.push(`[tool:run_cmd] ⛔ Blocked unsafe command: ${cmd}`);
+    if (isGit && !allowed.has('git') && !allowed.has('run_cmd')) {
+      results.push(`[tool:run_cmd] ⛔ ${agentId} does not have git permission`);
       continue;
     }
     if (!isGit && !allowed.has('run_cmd')) {
@@ -956,8 +1019,8 @@ async function executeToolCalls(reply, agentId) {
       continue;
     }
 
-    // ── Approval gate (non-auto-approved agents require human confirmation) ─
-    const needsApproval = !AUTO_APPROVE_CMD_AGENTS.has(agentId) && _rtClientForApprovals;
+    // ── Approval gate — skip for git, auto-approved agents, or allowlisted commands ─
+    const needsApproval = !isGit && !AUTO_APPROVE_CMD_AGENTS.has(agentId) && !isCommandAllowlisted(cmd) && _rtClientForApprovals;
     if (needsApproval) {
       const approvalId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       try {

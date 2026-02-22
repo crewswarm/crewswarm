@@ -789,6 +789,42 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/allowlist-cmd" && req.method === "POST") {
+      const { pattern } = await readBody(req);
+      if (!pattern) { json(res, 400, { ok: false, error: "pattern required" }); return; }
+      const file = path.join(os.homedir(), ".crewswarm", "cmd-allowlist.json");
+      let list = [];
+      try { list = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+      if (!list.includes(pattern)) {
+        list.push(pattern);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(list, null, 2));
+        console.log(`[crew-lead] ✅ Added to cmd allowlist: ${pattern}`);
+      }
+      json(res, 200, { ok: true, pattern, list });
+      return;
+    }
+
+    if (url.pathname === "/allowlist-cmd" && req.method === "DELETE") {
+      const { pattern } = await readBody(req);
+      const file = path.join(os.homedir(), ".crewswarm", "cmd-allowlist.json");
+      let list = [];
+      try { list = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+      list = list.filter(p => p !== pattern);
+      fs.writeFileSync(file, JSON.stringify(list, null, 2));
+      console.log(`[crew-lead] 🗑 Removed from cmd allowlist: ${pattern}`);
+      json(res, 200, { ok: true, list });
+      return;
+    }
+
+    if (url.pathname === "/allowlist-cmd" && req.method === "GET") {
+      const file = path.join(os.homedir(), ".crewswarm", "cmd-allowlist.json");
+      let list = [];
+      try { list = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+      json(res, 200, { ok: true, list });
+      return;
+    }
+
     json(res, 404, { ok: false, error: "not found" });
   } catch (err) {
     console.error("[crew-lead] error:", err.message);
