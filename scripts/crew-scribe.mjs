@@ -58,7 +58,7 @@ function loadLLMConfig() {
     const ocPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
     const cfgRaw = fs.existsSync(csPath) ? fs.readFileSync(csPath, "utf8") : fs.readFileSync(ocPath, "utf8");
     const cfg = JSON.parse(cfgRaw);
-    // crewswarm.json uses cfg.providers; openclaw.json uses cfg.models.providers
+    // crewswarm.json uses cfg.providers; legacy openclaw.json uses cfg.models.providers
     const providers = cfg?.providers || cfg?.models?.providers || {};
     // Priority: fastest small models first
     const FAST_MODELS = {

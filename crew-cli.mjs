@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CREWSWARM_DIR = process.env.OPENCLAW_DIR || process.env.CREWSWARM_DIR || __dirname;
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
 const ORCHESTRATOR = join(CREWSWARM_DIR, 'natural-pm-orchestrator.mjs');
 const WATCH_DIR = process.cwd();
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Entrypoint for OpenCrewHQ orchestration.
+ * Entrypoint for CrewSwarm orchestration.
  * Delegates to unified-orchestrator.mjs.
  */
 
@@ -9,13 +9,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || join(__dirname, '..');
-const ORCHESTRATOR = join(OPENCLAW_DIR, 'unified-orchestrator.mjs');
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || join(__dirname, '..');
+const ORCHESTRATOR = join(CREWSWARM_DIR, 'unified-orchestrator.mjs');
 
 const requirement = process.argv.slice(2).join(' ');
 if (!requirement) {
   console.log(`
-OpenCrewHQ — Multi-agent orchestration for OpenClaw
+CrewSwarm — Multi-agent orchestration
 
 Usage:
   node scripts/run.mjs "<requirement>"
@@ -29,7 +29,7 @@ Prerequisites: openswitchctl status (rt:up, agents:7/7)
 }
 
 const proc = spawn('node', [ORCHESTRATOR, requirement], {
-  cwd: OPENCLAW_DIR,
+  cwd: CREWSWARM_DIR,
   stdio: 'inherit',
   env: { ...process.env },
 });
