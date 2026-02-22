@@ -90,7 +90,7 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 | `scripts/crew-scribe.mjs` | Memory maintenance (summaries, lessons) |
 | `~/.crewswarm/crewswarm.json` | Agent model assignments + provider API keys |
 | `~/.crewswarm/config.json` | RT auth token |
-| `~/.openclaw/agent-prompts.json` | System prompt per agent |
+| `~/.crewswarm/agent-prompts.json` | System prompt per agent |
 
 ---
 
@@ -202,7 +202,7 @@ Format is always `provider/model-id`. Provider must have an API key in the `prov
 
 ### Change an agent's system prompt
 
-Edit `~/.openclaw/agent-prompts.json`. The key is the bare agent name without `crew-` prefix:
+Edit `~/.crewswarm/agent-prompts.json`. The key is the bare agent name without `crew-` prefix:
 
 ```json
 { "coder": "You are crew-coder. Your rules: ..." }

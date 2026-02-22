@@ -1800,10 +1800,17 @@ function getLastHandoffTimestamp(sharedMemory) {
 }
 
 function loadAgentPrompts() {
-  try {
-    const p = path.join(os.homedir(), ".openclaw", "agent-prompts.json");
-    return JSON.parse(fs.readFileSync(p, "utf8"));
-  } catch { return {}; }
+  const candidates = [
+    path.join(os.homedir(), ".crewswarm", "agent-prompts.json"),
+    path.join(os.homedir(), ".openclaw",  "agent-prompts.json"),
+  ];
+  for (const p of candidates) {
+    try {
+      const prompts = JSON.parse(fs.readFileSync(p, "utf8"));
+      if (Object.keys(prompts).length > 0) return prompts;
+    } catch {}
+  }
+  return {};
 }
 
 function buildTaskPrompt(taskText, sourceLabel, agentId) {
