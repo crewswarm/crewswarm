@@ -109,6 +109,7 @@ SVC_TG="$(_proc_up 'telegram-bridge.mjs')"
 SVC_CL="$(_proc_up 'crew-lead.mjs')"
 SVC_OC="$(_port_up 4096)"
 SVC_DB="$(_port_up 4319)"
+SVC_CM="$(_port_up 8000)"
 
 _svc_icon() { [[ "$1" == "up" ]] && echo "🟢" || echo "🔴"; }
 
@@ -129,6 +130,11 @@ echo "--$(_svc_icon $SVC_TG) Telegram Bridge         | bash='$OPENCLAW_DIR/scrip
 echo "--$(_svc_icon $SVC_CL) crew-lead               | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
 echo "--$(_svc_icon $SVC_OC) OpenCode Server         | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
 echo "--$(_svc_icon $SVC_DB) Dashboard               | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
+if [[ "$SVC_CM" == "up" ]]; then
+  echo "--🟢 ChatMock (port 8000) | bash='/bin/bash' param1='-c' param2='pkill -f chatmock.py' terminal=false refresh=true"
+else
+  echo "--🔴 ChatMock             | bash='osascript' param1='-e' param2='tell app \"Terminal\" to do script \"cd $OPENCLAW_DIR && bash scripts/chatmock-serve.sh\"' terminal=false refresh=true"
+fi
 
 # ── Quick links ──────────────────────────────────────────────────────
 echo "---"

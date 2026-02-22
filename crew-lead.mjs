@@ -911,6 +911,65 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ── External agent API — Bearer token required ────────────────────────────
+    // Any external tool (OpenClaw, another CrewSwarm, scripts) can dispatch tasks
+    // and poll status without sharing LLM credentials.
+    // Auth: Authorization: Bearer <RT_TOKEN from ~/.crewswarm/config.json rt.authToken>
+
+    function checkBearer(request) {
+      const auth = request.headers["authorization"] || "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      return RT_TOKEN && token === RT_TOKEN;
+    }
+
+    // POST /api/dispatch  { agent, task, verify?, done?, sessionId? }
+    // Returns { ok, taskId, agent }
+    if (url.pathname === "/api/dispatch" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized — Bearer token required" }); return; }
+      const body = await readBody(req);
+      const { agent, task, verify, done, sessionId: sid } = body;
+      if (!agent || !task) { json(res, 400, { ok: false, error: "agent and task are required" }); return; }
+      const knownAgents = loadConfig().knownAgents || [];
+      if (knownAgents.length && !knownAgents.includes(agent)) {
+        json(res, 400, { ok: false, error: `Unknown agent "${agent}". Known: ${knownAgents.join(", ")}` });
+        return;
+      }
+      const spec = verify || done ? { task, verify, done } : task;
+      const taskId = dispatchTask(agent, spec, sid || "external");
+      if (!taskId) { json(res, 503, { ok: false, error: "RT bus not connected — agent unreachable" }); return; }
+      console.log(`[crew-lead] /api/dispatch → ${agent} taskId=${taskId}`);
+      json(res, 200, { ok: true, taskId: taskId === true ? null : taskId, agent });
+      return;
+    }
+
+    // GET /api/status/:taskId  — poll task completion
+    // Returns { ok, taskId, status: "pending"|"done"|"unknown", agent, result? }
+    if (url.pathname.startsWith("/api/status/") && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized — Bearer token required" }); return; }
+      const taskId = url.pathname.slice("/api/status/".length);
+      const dispatch = pendingDispatches.get(taskId);
+      if (!dispatch) {
+        json(res, 200, { ok: true, taskId, status: "unknown" });
+        return;
+      }
+      const isDone = dispatch.done === true;
+      json(res, 200, {
+        ok: true, taskId, status: isDone ? "done" : "pending",
+        agent: dispatch.agent, sessionId: dispatch.sessionId,
+        ...(isDone ? { result: dispatch.result || null } : {}),
+        ts: dispatch.ts, elapsedMs: Date.now() - dispatch.ts,
+      });
+      return;
+    }
+
+    // GET /api/agents  — list known agents and their up/down status
+    if (url.pathname === "/api/agents" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized — Bearer token required" }); return; }
+      const agents = loadConfig().knownAgents || [];
+      json(res, 200, { ok: true, agents });
+      return;
+    }
+
     json(res, 404, { ok: false, error: "not found" });
   } catch (err) {
     console.error("[crew-lead] error:", err.message);
@@ -1006,7 +1065,12 @@ function connectRT() {
         const taskId = env.taskId || env.correlationId || "";
         const dispatch = pendingDispatches.get(taskId);
         const targetSession = dispatch?.sessionId || "owner";
-        if (dispatch) pendingDispatches.delete(taskId);
+        // Mark done (keep for /api/status polling) but schedule cleanup after 10 min
+        if (dispatch) {
+          dispatch.done = true;
+          dispatch.result = content.slice(0, 4000);
+          setTimeout(() => pendingDispatches.delete(taskId), 600_000);
+        }
 
         appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 2000)}`);
         broadcastSSE({ type: "agent_reply", from, content: content.slice(0, 2000), sessionId: targetSession, taskId, ts: Date.now() });

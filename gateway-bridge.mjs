@@ -167,11 +167,47 @@ const { list: OPENCREW_RT_SWARM_AGENTS, map: OPENCREW_TO_OPENCLAW_AGENT_MAP } = 
 console.log(`[bridge] Registered ${OPENCREW_RT_SWARM_AGENTS.length} RT agents: ${OPENCREW_RT_SWARM_AGENTS.join(", ")}`);
 
 // ── Direct LLM call — bypasses OpenClaw, uses agent's configured model directly ──
+
+// Load agent list — checks crewswarm.json first (canonical), falls back to openclaw.json
+function loadAgentList() {
+  const sources = [
+    path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
+    path.join(os.homedir(), ".openclaw",  "openclaw.json"),
+  ];
+  for (const p of sources) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+      const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
+      if (agents.length > 0) return agents;
+    } catch {}
+  }
+  return [];
+}
+
+// Load provider map — checks crewswarm.json providers, then config.json providers, then openclaw.json models.providers
+function loadProviderMap() {
+  const sources = [
+    path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
+    path.join(os.homedir(), ".crewswarm", "config.json"),
+    path.join(os.homedir(), ".openclaw",  "openclaw.json"),
+  ];
+  const merged = {};
+  for (const p of sources) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+      // Support both cfg.providers and cfg.models.providers
+      const provs = cfg.providers || cfg.models?.providers || {};
+      for (const [k, v] of Object.entries(provs)) {
+        if (!merged[k] && v?.apiKey && v?.baseUrl) merged[k] = v;
+      }
+    } catch {}
+  }
+  return merged;
+}
+
 function loadAgentLLMConfig(ocAgentId) {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"));
-    const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
-    // Try exact id, then crew- prefixed, then bare (without crew-)
+    const agents = loadAgentList();
     const crewId = ocAgentId.startsWith("crew-") ? ocAgentId : `crew-${ocAgentId}`;
     const bareId = ocAgentId.startsWith("crew-") ? ocAgentId.slice(5) : ocAgentId;
     const agent = agents.find(a => a.id === ocAgentId) ||
@@ -181,11 +217,18 @@ function loadAgentLLMConfig(ocAgentId) {
 
     const [providerKey, ...modelParts] = agent.model.split("/");
     const modelId = modelParts.join("/");
-    const provider = cfg?.models?.providers?.[providerKey];
-    if (!provider?.baseUrl || !provider?.apiKey) return null;
+    const providers = loadProviderMap();
+    const provider = providers[providerKey];
+    if (!provider?.baseUrl || !provider?.apiKey) {
+      console.warn(`[bridge] No provider config for "${providerKey}" (agent ${ocAgentId}) — check ~/.crewswarm/config.json providers`);
+      return null;
+    }
 
-    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, agentId: agent.id };
-  } catch { return null; }
+    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, agentId: agent.id, providerKey };
+  } catch (e) {
+    console.warn(`[bridge] loadAgentLLMConfig error: ${e.message}`);
+    return null;
+  }
 }
 
 async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
@@ -231,9 +274,40 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
           if (text2) { console.log(`[direct-llm] ${ocAgentId} retry succeeded`); return text2; }
         }
       } catch {}
-      console.error(`[direct-llm] ${ocAgentId} retry also failed — falling back to OpenClaw`);
+      console.error(`[direct-llm] ${ocAgentId} retry also failed — trying Groq global fallback`);
     } else {
-      console.error(`[direct-llm] ${ocAgentId} failed: ${e.message} — falling back to OpenClaw`);
+      console.error(`[direct-llm] ${ocAgentId} failed: ${e.message} — trying Groq global fallback`);
+    }
+    // ── Global Groq fallback ─────────────────────────────────────────────────
+    // If the agent's primary provider fails (key missing, rate limit, outage),
+    // retry on Groq llama-3.3-70b-versatile which is fast and free-tier eligible.
+    try {
+      const providers = loadProviderMap();
+      const groq = providers["groq"];
+      if (groq?.apiKey && groq?.baseUrl) {
+        const GROQ_FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL || "llama-3.3-70b-versatile";
+        console.warn(`[direct-llm] ${ocAgentId} → Groq fallback (${GROQ_FALLBACK_MODEL})`);
+        const res = await fetch(`${groq.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${groq.apiKey}` },
+          body: JSON.stringify({ model: GROQ_FALLBACK_MODEL, messages, max_tokens: 8192 }),
+          signal: AbortSignal.timeout(60000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const text = data?.choices?.[0]?.message?.content || "";
+          if (text) {
+            recordTokenUsage(GROQ_FALLBACK_MODEL, data.usage);
+            console.log(`[direct-llm] ${ocAgentId} Groq fallback succeeded (${text.length} chars)`);
+            return text;
+          }
+        }
+        console.error(`[direct-llm] Groq fallback also failed (${res.status}) — giving up`);
+      } else {
+        console.warn(`[direct-llm] No Groq provider configured — cannot fallback`);
+      }
+    } catch (groqErr) {
+      console.error(`[direct-llm] Groq fallback error: ${groqErr.message}`);
     }
     return null;
   }
@@ -815,10 +889,16 @@ const AGENT_TOOL_ROLE_DEFAULTS = {
   'crew-lead':        new Set(['dispatch']),
 };
 
+// CrewSwarm @@TOOL permission names — distinct from OpenClaw tool names
+const CREWSWARM_TOOL_NAMES = new Set(['write_file','read_file','mkdir','run_cmd','git','dispatch']);
+
 function loadAgentToolPermissions(agentId) {
-  // Check openclaw.json for explicit tools.alsoAllow
+  // Check config files for explicit CrewSwarm-style tool permissions.
+  // tools.alsoAllow in crewswarm.json contains OpenClaw tool names (exec, web_search, etc.)
+  // — only use it if it contains at least one CrewSwarm @@TOOL name.
   try {
     const cfgPaths = [
+      path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
       path.join(os.homedir(), ".crewswarm", "config.json"),
       path.join(os.homedir(), ".openclaw", "openclaw.json"),
     ];
@@ -829,12 +909,15 @@ function loadAgentToolPermissions(agentId) {
       const crewId = agentId.startsWith("crew-") ? agentId : `crew-${agentId}`;
       const bareId = agentId.startsWith("crew-") ? agentId.slice(5) : agentId;
       const agent = agents.find(a => a.id === agentId || a.id === crewId || a.id === bareId);
-      if (agent?.tools?.alsoAllow?.length) {
-        return new Set(agent.tools.alsoAllow);
+      // Only accept if the list contains CrewSwarm-style tool names, not just OpenClaw names
+      const allow = agent?.tools?.crewswarmAllow || agent?.tools?.alsoAllow || [];
+      const crewswarmTools = allow.filter(t => CREWSWARM_TOOL_NAMES.has(t));
+      if (crewswarmTools.length > 0) {
+        return new Set(crewswarmTools);
       }
     }
   } catch {}
-  // Fall back to role defaults
+  // Fall back to role defaults (covers crew-coder, crew-qa, crew-fixer, etc.)
   if (AGENT_TOOL_ROLE_DEFAULTS[agentId]) return AGENT_TOOL_ROLE_DEFAULTS[agentId];
   // Fuzzy match — e.g. crew-coder-3 → coder defaults
   for (const [key, val] of Object.entries(AGENT_TOOL_ROLE_DEFAULTS)) {

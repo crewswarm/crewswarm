@@ -1,0 +1,41 @@
+{
+  "id": "crewswarm",
+  "name": "CrewSwarm",
+  "description": "Dispatch tasks to a local CrewSwarm multi-agent crew from any OpenClaw agent. Adds the crewswarm_dispatch tool, /crewswarm slash command, and Gateway RPC methods.",
+  "version": "0.1.0",
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "url": {
+        "type": "string",
+        "default": "http://127.0.0.1:5010",
+        "description": "Base URL of the CrewSwarm crew-lead HTTP server"
+      },
+      "token": {
+        "type": "string",
+        "description": "RT auth token from ~/.crewswarm/config.json → rt.authToken"
+      },
+      "pollIntervalMs": {
+        "type": "number",
+        "default": 4000,
+        "description": "How often (ms) to poll /api/status when waiting for a task result"
+      },
+      "pollTimeoutMs": {
+        "type": "number",
+        "default": 300000,
+        "description": "Max time (ms) to wait for a dispatched task before giving up"
+      }
+    },
+    "required": ["token"]
+  },
+  "uiHints": {
+    "url":            { "label": "crew-lead URL",   "placeholder": "http://127.0.0.1:5010" },
+    "token":          { "label": "RT Auth Token",   "sensitive": true },
+    "pollIntervalMs": { "label": "Poll interval (ms)" },
+    "pollTimeoutMs":  { "label": "Task timeout (ms)" }
+  }
+}
