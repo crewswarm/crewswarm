@@ -44,13 +44,13 @@ const MAX_ITEMS      = maxIdx >= 0 ? Number(args[maxIdx + 1]) : 200;
 const projDirIdx     = args.indexOf("--project-dir");
 
 // ── Config ────────────────────────────────────────────────────────────────
-const OPENCLAW_DIR   = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
+const CREWSWARM_DIR  = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
 const OUTPUT_DIR     = projDirIdx >= 0 ? args[projDirIdx + 1]
-                     : (process.env.OPENCREW_OUTPUT_DIR || join(OPENCLAW_DIR, "website"));
+                     : (process.env.OPENCREW_OUTPUT_DIR || join(CREWSWARM_DIR, "website"));
 const ROADMAP_FILE   = process.env.PM_ROADMAP_FILE || join(OUTPUT_DIR, "ROADMAP.md");
-const BRIDGE_PATH    = join(OPENCLAW_DIR, "gateway-bridge.mjs");
+const BRIDGE_PATH    = join(CREWSWARM_DIR, "gateway-bridge.mjs");
 const FEATURES_DOC   = process.env.PM_FEATURES_DOC || null;
-const LOG_DIR        = join(OPENCLAW_DIR, "orchestrator-logs");
+const LOG_DIR        = join(CREWSWARM_DIR, "orchestrator-logs");
 const PM_LOG         = join(LOG_DIR, "pm-loop.jsonl");
 // Per-project PID and STOP files — allows multiple projects to run simultaneously
 const PROJECT_ID     = process.env.PM_PROJECT_ID || null;
