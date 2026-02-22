@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * OpenClaw Gateway Bridge — lets Cursor talk to the gateway in real-time.
+ * CrewSwarm Gateway Bridge — agent daemon for real-time LLM calls and tool execution.
  *
  * Usage:
  *   node gateway-bridge.mjs "your message here"
@@ -1914,7 +1914,7 @@ function printMetrics() {
   const connectRate = connectAttempts ? ((connectSuccess / connectAttempts) * 100).toFixed(1) : "n/a";
   const chatCompletion = chatStarted ? ((chatDone / chatStarted) * 100).toFixed(1) : "n/a";
 
-  console.log("OpenClaw Metrics");
+  console.log("CrewSwarm Metrics");
   console.log(`- Sessions observed: ${byRun.size}`);
   console.log(`- Connect success rate: ${connectRate}${connectRate === "n/a" ? "" : "%"} (${connectSuccess}/${connectAttempts || 0})`);
   console.log(`- Chat completion rate: ${chatCompletion}${chatCompletion === "n/a" ? "" : "%"} (${chatDone}/${chatStarted || 0})`);
@@ -1935,7 +1935,11 @@ function printMetrics() {
 
 function loadCredentials() {
   const dev = JSON.parse(fs.readFileSync(path.join(STATE_DIR, "identity/device.json"), "utf8"));
-  const cfg = JSON.parse(fs.readFileSync(path.join(STATE_DIR, "openclaw.json"), "utf8"));
+  // Try crewswarm.json first, fall back to openclaw.json
+  const cfgPath = fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
+    ? path.join(os.homedir(), ".crewswarm", "crewswarm.json")
+    : path.join(STATE_DIR, "openclaw.json");
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
   const gatewayToken = cfg.gateway?.auth?.token;
   // Prefer gateway token when gateway is in token mode (avoids device token mismatch)
   if (cfg.gateway?.auth?.mode === "token" && gatewayToken) {
@@ -2129,7 +2133,7 @@ async function runBroadcastTask(message, { timeoutMs = 25000 } = {}) {
       payload: {
         action: "run_task",
         prompt: message,
-        source: "openclaw-broadcast",
+        source: "crewswarm-broadcast",
       },
     });
 
@@ -2424,7 +2428,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     });
   }
 
-  client.ack({ messageId: envelope.id, status: "received", note: `openclaw accepted ${incomingType}` });
+  client.ack({ messageId: envelope.id, status: "received", note: `crewswarm accepted ${incomingType}` });
   client.publish({
     channel: "status",
     type: "task.in_progress",

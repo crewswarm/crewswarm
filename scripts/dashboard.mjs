@@ -16,8 +16,12 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPENCLAW_DIR = process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
-// Config dir: override with OPENCREWHQ_CONFIG_DIR env var to fully decouple from ~/.openclaw
-const CFG_DIR = process.env.OPENCREWHQ_CONFIG_DIR || path.join(os.homedir(), ".openclaw");
+// Config dir: ~/.crewswarm is canonical; falls back to ~/.openclaw for legacy installs
+const CFG_DIR = process.env.OPENCREWHQ_CONFIG_DIR
+  || process.env.CREWSWARM_DIR
+  || (fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
+      ? path.join(os.homedir(), ".crewswarm")
+      : path.join(os.homedir(), ".openclaw"));
 // Default 4319 so we don't conflict with CrewSwarm RT Messages dashboard on 4318
 const listenPort = Number(process.env.SWARM_DASH_PORT || 4319);
 const opencodeBase = process.env.OPENCODE_URL || "http://127.0.0.1:4096";
@@ -702,8 +706,8 @@ const html = `<!doctype html>
         <div style="display:flex; align-items:center; gap:10px;">
           <span style="font-size:18px;">🔌</span>
           <div style="flex:1;">
-            <div style="font-weight:600; font-size:14px;">OpenClaw Integration <span style="font-size:11px; color:var(--text-2); font-weight:400;">(optional)</span></div>
-            <div style="font-size:12px; color:var(--text-2);">When OpenClaw is installed, agents can route through its LLM gateway (port 18789). Keys below are used for direct calls regardless.</div>
+            <div style="font-weight:600; font-size:14px;">OpenClaw Gateway <span style="font-size:11px; color:var(--text-2); font-weight:400;">(optional legacy)</span></div>
+            <div style="font-size:12px; color:var(--text-2);">Agents use direct LLM calls by default. Enable only if you have an OpenClaw gateway running on port 18789.</div>
           </div>
           <span id="oclawBadge" style="font-size:11px; padding:2px 10px; border-radius:999px; font-weight:600; background:rgba(107,114,128,0.15); color:#6b7280; border:1px solid rgba(107,114,128,0.3);">checking…</span>
         </div>
@@ -2324,7 +2328,7 @@ function syncModelSelect(agentId){
   sel.value = match ? typed : '';
 }
 async function resetAgentSession(agentId){
-  if (!confirm('Reset context window for ' + agentId + '?\\n\\nThis clears the accumulated conversation history in OpenClaw. Shared memory files will be re-injected on the next task.')) return;
+  if (!confirm('Reset context window for ' + agentId + '?\\n\\nThis clears the agent\\'s accumulated conversation history. Shared memory files will be re-injected on the next task.')) return;
   showNotification('Resetting ' + agentId + ' session...');
   try {
     await postJSON('/api/agents-config/reset-session', { agentId });
