@@ -62,9 +62,14 @@ const GROQ_API_KEY   = process.env.GROQ_API_KEY || ""; // kept for backwards com
 
 // ── Search Tools ──────────────────────────────────────────────────────────
 function getSearchToolsConfig() {
-  try {
-    return JSON.parse(readFileSync(homedir() + "/.openclaw/search-tools.json", "utf8"));
-  } catch { return {}; }
+  const candidates = [
+    homedir() + "/.crewswarm/search-tools.json",
+    homedir() + "/.openclaw/search-tools.json",
+  ];
+  for (const p of candidates) {
+    try { return JSON.parse(readFileSync(p, "utf8")); } catch {}
+  }
+  return {};
 }
 
 async function searchWithBrave(query) {
@@ -87,8 +92,17 @@ async function searchWithBrave(query) {
 let _ocCfg = null;
 function getOCConfig() {
   if (_ocCfg) return _ocCfg;
-  try { _ocCfg = JSON.parse(readFileSync(homedir() + "/.openclaw/openclaw.json", "utf8")); } catch {}
-  return _ocCfg || {};
+  const candidates = [
+    homedir() + "/.crewswarm/crewswarm.json",
+    homedir() + "/.openclaw/openclaw.json",
+  ];
+  for (const p of candidates) {
+    try {
+      const cfg = JSON.parse(readFileSync(p, "utf8"));
+      if (cfg && typeof cfg === "object") { _ocCfg = cfg; return _ocCfg; }
+    } catch {}
+  }
+  return {};
 }
 function getPMProviderConfig() {
   const cfg = getOCConfig();
@@ -184,7 +198,10 @@ async function runCopywriterPass(itemText, task) {
   if (!mistral?.apiKey) return task; // no key — skip
 
   const agentPrompts = (() => {
-    try { return JSON.parse(readFileSync(homedir() + "/.openclaw/agent-prompts.json", "utf8")); } catch { return {}; }
+    for (const p of [homedir() + "/.crewswarm/agent-prompts.json", homedir() + "/.openclaw/agent-prompts.json"]) {
+      try { return JSON.parse(readFileSync(p, "utf8")); } catch {}
+    }
+    return {};
   })();
   const copywriterPrompt = agentPrompts["copywriter"] || "You are a conversion copywriter for developer tools. Write punchy, specific copy.";
 
