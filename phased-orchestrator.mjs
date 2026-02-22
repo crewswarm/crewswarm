@@ -17,11 +17,11 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || __dirname;
-const GATEWAY_BRIDGE_PATH = `${OPENCLAW_DIR}/gateway-bridge.mjs`;
-const LOG_DIR = join(OPENCLAW_DIR, "orchestrator-logs");
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
+const GATEWAY_BRIDGE_PATH = `${CREWSWARM_DIR}/gateway-bridge.mjs`;
+const LOG_DIR = join(CREWSWARM_DIR, "orchestrator-logs");
 // All build output goes here so you can find it. Override with OPENCREW_OUTPUT_DIR.
-const OUTPUT_DIR = process.env.OPENCREW_OUTPUT_DIR || join(OPENCLAW_DIR, "website");
+const OUTPUT_DIR = process.env.OPENCREW_OUTPUT_DIR || join(CREWSWARM_DIR, "website");
 const DISPATCH_LOG = join(LOG_DIR, "phased-dispatch.jsonl");
 
 if (!existsSync(LOG_DIR)) {

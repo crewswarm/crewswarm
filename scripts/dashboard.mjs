@@ -15,7 +15,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
+const OPENCLAW_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
 // Config dir: ~/.crewswarm is canonical; falls back to ~/.openclaw for legacy installs
 const CFG_DIR = process.env.OPENCREWHQ_CONFIG_DIR
   || process.env.CREWSWARM_DIR
