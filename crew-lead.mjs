@@ -67,7 +67,9 @@ function tryRead(p) {
 }
 
 function getSearchToolsConfig() {
-  return tryRead(path.join(os.homedir(), ".openclaw", "search-tools.json")) || {};
+  return tryRead(path.join(os.homedir(), ".crewswarm", "search-tools.json"))
+      || tryRead(path.join(os.homedir(), ".openclaw",  "search-tools.json"))
+      || {};
 }
 
 function getAgentPrompts() {
@@ -912,7 +914,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── External agent API — Bearer token required ────────────────────────────
-    // Any external tool (OpenClaw, another CrewSwarm, scripts) can dispatch tasks
+    // Any external tool (another CrewSwarm, OpenClaw plugin, scripts) can dispatch tasks
     // and poll status without sharing LLM credentials.
     // Auth: Authorization: Bearer <RT_TOKEN from ~/.crewswarm/config.json rt.authToken>
 

@@ -221,7 +221,7 @@ node scripts/start-crew.mjs
 { "id": "crew-researcher", "model": "perplexity/sonar-pro" }
 ```
 
-2. Add a system prompt to `~/.openclaw/agent-prompts.json`:
+2. Add a system prompt to `~/.crewswarm/agent-prompts.json`:
 ```json
 { "researcher": "You are crew-researcher. Search the web and summarize findings..." }
 ```
