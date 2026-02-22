@@ -6,7 +6,7 @@
  * and dispatches targeted tasks until all sections are present.
  *
  * Usage:
- *   node continuous-build.mjs "Build the OpenCrewHQ marketing website in website/"
+ *   node continuous-build.mjs "Build the CrewSwarm marketing website in website/"
  *   node continuous-build.mjs --max-rounds 6 "..."
  */
 

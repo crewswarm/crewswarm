@@ -11,9 +11,9 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || join(process.env.HOME || '', 'Desktop', 'OpenClaw');
-const ORCHESTRATOR = join(OPENCLAW_DIR, 'natural-pm-orchestrator.mjs');
-const ARTIFACT = join(OPENCLAW_DIR, 'test-output', 'delegation-proper-test.txt');
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || join(process.env.HOME || '', 'Desktop', 'CrewSwarm');
+const ORCHESTRATOR = join(CREWSWARM_DIR, 'natural-pm-orchestrator.mjs');
+const ARTIFACT = join(CREWSWARM_DIR, 'test-output', 'delegation-proper-test.txt');
 const EXPECTED_CONTENT = 'Delegation proper test: artifact verified.\n';
 
 async function main() {
@@ -24,7 +24,7 @@ async function main() {
   console.log('');
 
   const proc = spawn('node', [ORCHESTRATOR, task], {
-    cwd: OPENCLAW_DIR,
+    cwd: CREWSWARM_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env },
   });

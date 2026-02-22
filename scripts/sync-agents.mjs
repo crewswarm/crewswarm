@@ -57,7 +57,7 @@ async function loadAgents() {
       }));
     } catch {}
   }
-  console.error("Could not load agent list from ~/.crewswarm/crewswarm.json or ~/.openclaw/openclaw.json");
+  console.error("Could not load agent list from ~/.crewswarm/crewswarm.json (or ~/.openclaw/openclaw.json legacy fallback)");
   return [];
 }
 
@@ -102,7 +102,7 @@ async function updateFile(filePath, table, list) {
 async function main() {
   const agents = await loadAgents();
   if (!agents.length) {
-    console.error("No agents found — check ~/.openclaw/openclaw.json");
+    console.error("No agents found — check ~/.crewswarm/crewswarm.json");
     process.exit(1);
   }
 
@@ -125,7 +125,7 @@ Last updated: ${new Date().toISOString()}
 
 ## Dispatch command
 \`\`\`bash
-node ~/Desktop/OpenClaw/gateway-bridge.mjs --send <agent-name> "<task>"
+node ~/Desktop/CrewSwarm/gateway-bridge.mjs --send <agent-name> "<task>"
 \`\`\`
 
 ## Available agents

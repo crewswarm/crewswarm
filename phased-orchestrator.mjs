@@ -6,7 +6,7 @@
  * Each phase = 3-5 small tasks → execute incrementally
  * Avoids timeout: shorter PM prompts, smaller task batches
  *
- * Usage: node phased-orchestrator.mjs "Build a marketing website for OpenCrewHQ"
+ * Usage: node phased-orchestrator.mjs "Build a marketing website for CrewSwarm"
  */
 
 import { spawn } from "node:child_process";

@@ -24,7 +24,9 @@ const MEMORY_DIR    = path.resolve(process.cwd(), "memory");
 const BRAIN_MD      = path.join(MEMORY_DIR, "brain.md");
 const LESSONS_MD    = path.join(MEMORY_DIR, "lessons.md");
 const SESSION_LOG   = path.join(MEMORY_DIR, "session-log.md");
-const RT_BASE       = path.join(os.homedir(), ".openclaw", "workspace", "shared-memory", "claw-swarm", "opencrew-rt");
+const RT_BASE       = process.env.SHARED_MEMORY_DIR
+  ? path.join(process.env.SHARED_MEMORY_DIR, "claw-swarm", "opencrew-rt")
+  : path.join(os.homedir(), ".openclaw", "workspace", "shared-memory", "claw-swarm", "opencrew-rt"); // runtime socket path set by RT daemon
 const DONE_LOG      = path.join(RT_BASE, "channels", "done.jsonl");
 const STATE_FILE    = path.join(os.homedir(), ".crewswarm", "scribe-state.json");
 const POLL_MS       = 4000;
@@ -55,10 +57,9 @@ function now() {
 function loadLLMConfig() {
   try {
     const csPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
-    const ocPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
+    const ocPath = path.join(os.homedir(), ".openclaw", "openclaw.json"); // legacy fallback
     const cfgRaw = fs.existsSync(csPath) ? fs.readFileSync(csPath, "utf8") : fs.readFileSync(ocPath, "utf8");
     const cfg = JSON.parse(cfgRaw);
-    // crewswarm.json uses cfg.providers; legacy openclaw.json uses cfg.models.providers
     const providers = cfg?.providers || cfg?.models?.providers || {};
     // Priority: fastest small models first
     const FAST_MODELS = {

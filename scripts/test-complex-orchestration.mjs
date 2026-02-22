@@ -9,16 +9,15 @@
  *
  * Prereqs:
  * - RT daemons running (openswitchctl status)
- * - OpenClaw Gateway running (port 18789)
  * - GROQ_API_KEY set (for groq/llama-3.3-70b-versatile)
- * - All agents configured to groq in openclaw.json
+ * - All agents configured in ~/.crewswarm/crewswarm.json
  */
 
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || join(process.env.HOME || '', 'Desktop', 'OpenClaw');
-const ORCHESTRATOR = join(OPENCLAW_DIR, 'unified-orchestrator.mjs');
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || join(process.env.HOME || '', 'Desktop', 'CrewSwarm');
+const ORCHESTRATOR = join(CREWSWARM_DIR, 'unified-orchestrator.mjs');
 
 // Complex task: multi-step, multi-agent
 const COMPLEX_TASK = `Create a simple module in test-output/complex-api/: 
@@ -31,14 +30,14 @@ const customTask = process.argv.slice(2).join(' ');
 const task = customTask || COMPLEX_TASK;
 
 console.log('🧪 Complex orchestration test');
-console.log('   Models: groq/llama-3.3-70b-versatile (ensure openclaw.json)');
+console.log('   Models: groq/llama-3.3-70b-versatile (ensure ~/.crewswarm/crewswarm.json)');
 console.log('   Orchestrator: unified-orchestrator.mjs');
 console.log('');
 console.log('Task:', task);
 console.log('');
 
 const proc = spawn('node', [ORCHESTRATOR, task], {
-  cwd: OPENCLAW_DIR,
+  cwd: CREWSWARM_DIR,
   stdio: 'inherit',
   env: { ...process.env },
 });

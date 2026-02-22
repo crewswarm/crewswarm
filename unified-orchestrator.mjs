@@ -23,9 +23,9 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || __dirname;
-const GATEWAY_BRIDGE_PATH = `${OPENCLAW_DIR}/gateway-bridge.mjs`;
-const LOG_DIR = join(OPENCLAW_DIR, 'orchestrator-logs');
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
+const GATEWAY_BRIDGE_PATH = `${CREWSWARM_DIR}/gateway-bridge.mjs`;
+const LOG_DIR = join(CREWSWARM_DIR, 'orchestrator-logs');
 const DISPATCH_LOG = join(LOG_DIR, 'unified-dispatch.jsonl');
 
 // Ensure log directory exists
@@ -40,7 +40,7 @@ if (!existsSync(LOG_DIR)) {
 async function askPMForPlan(requirement) {
   console.log('📋 Step 1: Asking PM to create plan...\n');
   
-  const naturalPrompt = `You are the PM agent for OpenClaw swarm. 
+  const naturalPrompt = `You are the PM agent for CrewSwarm. 
 
 Requirement: "${requirement}"
 
@@ -310,7 +310,7 @@ async function callAgent(agentId, prompt, showOutput = false, useSend = true) {
     const argv = [GATEWAY_BRIDGE_PATH, '--send', agentId, prompt];
     const env = { ...process.env };
     const proc = spawn('node', argv, {
-      cwd: OPENCLAW_DIR,
+      cwd: CREWSWARM_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       env,
     });
