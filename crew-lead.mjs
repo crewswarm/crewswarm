@@ -31,24 +31,15 @@ const CTL_PATH    = (() => {
 const DASHBOARD   = "http://127.0.0.1:4319";
 
 function loadConfig() {
-  const csCfgPath  = path.join(os.homedir(), ".crewswarm", "config.json");
-  const csSwarmPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
-  const ocCfgPath  = path.join(os.homedir(), ".openclaw",  "openclaw.json");
-  const cs    = tryRead(csCfgPath)   || {};
-  const csSwarm = tryRead(csSwarmPath) || {};
-  const oc    = tryRead(ocCfgPath)   || {};
+  const cs      = tryRead(path.join(os.homedir(), ".crewswarm", "config.json"))    || {};
+  const csSwarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
 
-  // Agents: crewswarm.json is canonical, fall back to openclaw.json
-  const rawAgents = Array.isArray(csSwarm.agents) ? csSwarm.agents
-                  : (Array.isArray(oc.agents) ? oc.agents : (oc.agents?.list || []));
-  const agents = rawAgents;
+  const agents = Array.isArray(csSwarm.agents) ? csSwarm.agents : [];
   const agentCfg = agents.find(a => a.id === "crew-lead");
   const modelString = agentCfg?.model || process.env.CREW_LEAD_MODEL || "groq/llama-3.3-70b-versatile";
   const [providerKey, ...modelParts] = modelString.split("/");
   const modelId = modelParts.join("/");
-  const provider = csSwarm?.providers?.[providerKey]
-                || oc?.models?.providers?.[providerKey]
-                || cs?.providers?.[providerKey];
+  const provider = csSwarm?.providers?.[providerKey] || cs?.providers?.[providerKey];
 
   const knownAgents = agents
     .filter(a => a.id !== "crew-lead")
@@ -382,8 +373,8 @@ function stripThink(text) {
 // ── PM LLM config (same sources as pm-loop.mjs) ───────────────────────────────
 
 function getPMLLMProviders() {
-  const oc = tryRead(path.join(os.homedir(), ".openclaw", "openclaw.json")) || {};
-  const p  = oc.models?.providers || {};
+  const csSwarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+  const p = csSwarm.providers || {};
   const candidates = [
     p.perplexity?.apiKey && { baseUrl: p.perplexity.baseUrl || "https://api.perplexity.ai",       apiKey: p.perplexity.apiKey, model: "sonar-pro",                name: "Perplexity" },
     p.cerebras?.apiKey   && { baseUrl: p.cerebras.baseUrl   || "https://api.cerebras.ai/v1",       apiKey: p.cerebras.apiKey,   model: "llama-3.3-70b",            name: "Cerebras"   },
