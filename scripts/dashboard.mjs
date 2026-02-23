@@ -399,7 +399,7 @@ const html = `<!doctype html>
     .file-btn-opencode:hover { background: rgba(52,211,153,0.1); }
 
     /* ── Form inputs ── */
-    select, input[type="text"], input[type="password"], input[type="number"], input[type="email"], textarea {
+    select, input[type="text"], input[type="password"], input[type="number"], input[type="email"], input:not([type]), textarea {
       background: rgba(255,255,255,0.04);
       color: var(--text);
       border: 1px solid rgba(255,255,255,0.10);
@@ -411,7 +411,7 @@ const html = `<!doctype html>
       transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
       width: 100%;
     }
-    select:focus, input:focus, textarea:focus {
+    select:focus, input:not([type]):focus, input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, input[type="email"]:focus, textarea:focus {
       border-color: var(--accent);
       background: rgba(56,189,248,0.04);
       box-shadow: 0 0 0 3px rgba(56,189,248,0.08);
