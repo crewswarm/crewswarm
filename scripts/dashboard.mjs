@@ -192,10 +192,24 @@ async function getRecentRTMessages(limit = 100) {
     msgs.push(env);
   }
 
-  // Sort by ts, deduplicate by id, return last N
+  // Sort by ts, deduplicate by id and by content fingerprint (catches same message in both logs)
   msgs.sort((a, b) => (a.ts || "").localeCompare(b.ts || ""));
   const seen = new Set();
-  const deduped = msgs.filter(m => { const k = m.id || (m.ts + m.from); if (seen.has(k)) return false; seen.add(k); return true; });
+  const deduped = msgs.filter(m => {
+    // Primary key: explicit id or ts+from
+    const idKey = m.id || (m.ts + m.from);
+    if (seen.has(idKey)) return false;
+    seen.add(idKey);
+    // Secondary key: content fingerprint — same reply/prompt from same sender within 5s
+    const payload = m.payload || {};
+    const text = (payload.reply || payload.prompt || payload.message || payload.content || "").slice(0, 120);
+    if (text.length > 30) {
+      const contentKey = (m.from || "") + "|" + text;
+      if (seen.has(contentKey)) return false;
+      seen.add(contentKey);
+    }
+    return true;
+  });
   return deduped.slice(-limit);
 }
 
@@ -783,13 +797,7 @@ const html = `<!doctype html>
           <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
             <div class="field-label" style="margin:0;">System Prompt</div>
             <select id="naPromptPreset" style="font-size:12px; padding:3px 8px;" onchange="applyPromptPreset()">
-              <option value="">— quick presets —</option>
-              <option value="frontend">🎨 Frontend specialist (HTML/CSS/JS)</option>
-              <option value="backend">⚙️ Backend specialist (Node/API/scripts)</option>
-              <option value="fullstack">🧱 Full-stack coder</option>
-              <option value="qa">🧪 QA / tester</option>
-              <option value="github">🐙 Git & GitHub ops</option>
-              <option value="writer">✍️ Content / copywriter</option>
+              \${buildPresetOptions('— quick presets —')}
             </select>
           </div>
           <textarea id="naPrompt" rows="5" placeholder="Describe what this agent specialises in. It will be shown at the top of every task."></textarea>
@@ -1001,7 +1009,7 @@ async function loadRTMessages(){
     let messageText = payload.reply || payload.prompt || payload.message || payload.content || '';
     if (!messageText || messageText === 'run_task') return;
 
-    const isUser = m.from && (m.from === 'orchestrator' || m.from === 'crew-lead' || m.from?.includes('main'));
+    const isUser = m.from && (m.from === 'orchestrator' || m.from === 'PM Loop' || m.from === 'crew-lead' || m.from?.includes('main'));
     const div = document.createElement('div');
     div.className = 'msg ' + (isUser ? 'u' : 'a');
 
@@ -2213,19 +2221,17 @@ async function loadAgents_cfg(){
               <input id="aemoji-\${a.id}" type="text" value="\${a.emoji}" placeholder="🤖" style="width:70px;" />
               <button onclick="saveAgentIdentity('\${a.id}')" class="btn-ghost">Save</button>
             </div>
+            <div style="margin-top:8px;">
+              <div class="field-label" style="margin-bottom:4px;">Role / Theme <span style="font-weight:400; color:var(--text-3); font-size:11px;">— used by PM router to assign tasks (e.g. "iOS/Swift developer (SwiftUI, UIKit)")</span></div>
+              <input id="atheme-\${a.id}" type="text" value="\${a.theme||''}" placeholder="Describe what this agent specialises in..." style="width:100%;" />
+            </div>
           </div>
           <div>
             <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
               <div class="field-label" style="margin:0;">System Prompt</div>
               \${!a.systemPrompt ? '<span style="font-size:11px; color:var(--yellow);">⚠ No prompt set — agent has no role context</span>' : ''}
               <select style="font-size:11px; padding:3px 8px; margin-left:auto;" onchange="applyAgentPromptPreset('\${a.id}', this.value); this.value=''">
-                <option value="">Presets…</option>
-                <option value="frontend">🎨 Frontend</option>
-                <option value="backend">⚙️ Backend</option>
-                <option value="fullstack">🧱 Full-stack</option>
-                <option value="qa">🧪 QA</option>
-                <option value="github">🐙 GitHub ops</option>
-                <option value="writer">✍️ Writer</option>
+                \${buildPresetOptions()}
               </select>
             </div>
             <textarea id="prompt-\${a.id}" rows="5" placeholder="Describe this agent's role. It's injected at the top of every task.">\${a.systemPrompt || ''}</textarea>
@@ -2354,10 +2360,11 @@ async function saveAgentModel(agentId){
 }
 
 async function saveAgentIdentity(agentId){
-  const name  = document.getElementById('aname-' + agentId).value.trim();
+  const name  = document.getElementById('aname-'  + agentId).value.trim();
   const emoji = document.getElementById('aemoji-' + agentId).value.trim();
+  const theme = document.getElementById('atheme-' + agentId)?.value.trim();
   try {
-    await postJSON('/api/agents-config/update', { agentId, name, emoji });
+    await postJSON('/api/agents-config/update', { agentId, name, emoji, theme });
     showNotification('Identity saved for ' + agentId);
   } catch(e){ showNotification('Failed: ' + e.message, true); }
 }
@@ -2410,6 +2417,35 @@ async function saveAgentTools(agentId){
   } catch(e){ showNotification('Failed: ' + e.message, true); }
 }
 
+// Single source of truth for all preset options — used by both new-agent form and edit cards
+const PRESET_OPTIONS = [
+  { value: 'frontend',    label: '🎨 Frontend (HTML/CSS/JS)' },
+  { value: 'backend',     label: '⚙️ Backend (Node/API/scripts)' },
+  { value: 'fullstack',   label: '🧱 Full-stack coder' },
+  { value: 'ios',         label: '📱 iOS / Swift developer' },
+  { value: 'android',     label: '🤖 Android / Kotlin developer' },
+  { value: 'devops',      label: '🔧 DevOps / Infrastructure' },
+  { value: 'data',        label: '📊 Data / Analytics / Python' },
+  { value: 'security',    label: '🛡️ Security auditor' },
+  { value: 'qa',          label: '🧪 QA / tester' },
+  { value: 'github',      label: '🐙 Git & GitHub ops' },
+  { value: 'writer',      label: '✍️ Content / copywriter' },
+  { value: 'design',      label: '🖌️ UI/UX designer' },
+  { value: 'pm',          label: '📋 Product manager / planner' },
+  { value: 'aiml',        label: '🤖 AI / ML engineer' },
+  { value: 'api',         label: '🔌 API designer (REST/GraphQL)' },
+  { value: 'database',    label: '🗄️ Database specialist' },
+  { value: 'reactnative', label: '📱 React Native (cross-platform)' },
+  { value: 'web3',        label: '🌐 Web3 / Blockchain (Solidity)' },
+  { value: 'automation',  label: '🕷️ Automation / scraping' },
+  { value: 'docs',        label: '📖 Technical docs writer' },
+];
+function buildPresetOptions(placeholder) {
+  var ph = placeholder || 'Presets\u2026';
+  var opts = PRESET_OPTIONS.map(function(p){ return '<option value="' + p.value + '">' + p.label + '</option>'; }).join('');
+  return '<option value="">' + ph + '</option>' + opts;
+}
+
 const PROMPT_PRESETS = {
   frontend: \`You are a frontend specialist. You write HTML, CSS, and vanilla JavaScript.
 - ALWAYS read the existing file before editing
@@ -2441,12 +2477,124 @@ const PROMPT_PRESETS = {
 - Match the voice and style of existing content
 - Keep copy concise — fewer words, more impact
 - Always read existing content before writing new sections\`,
+  ios: \`You are an iOS/Swift specialist. You write SwiftUI, UIKit, and native Apple platform code.
+- ALWAYS read existing Swift files before editing
+- NEVER replace or recreate files — only append or patch
+- Use SwiftUI for new views unless the project uses UIKit exclusively
+- Follow Swift naming conventions: camelCase for vars, PascalCase for types
+- Prefer async/await over completion handlers for new code\`,
+  android: \`You are an Android/Kotlin specialist. You write Kotlin, Jetpack Compose, and Android SDK code.
+- ALWAYS read existing Kotlin files before editing
+- NEVER replace or recreate files — only append or patch
+- Use Jetpack Compose for new UI unless the project uses XML layouts
+- Follow Kotlin naming conventions and Android architecture patterns (MVVM, ViewModel, LiveData)
+- Use coroutines and Flow for async operations\`,
+  devops: \`You are a DevOps and infrastructure specialist. You write CI/CD pipelines, Dockerfiles, shell scripts, and IaC.
+- ALWAYS read existing configs before editing
+- NEVER delete or overwrite deployment configs without reading them first
+- Prefer idempotent scripts — safe to run multiple times
+- Use exec to run and verify shell commands
+- Write clear comments in all scripts and configs\`,
+  data: \`You are a data and analytics specialist. You write Python, SQL, pandas, and data pipeline code.
+- ALWAYS read existing data files and schemas before writing new code
+- NEVER overwrite raw data files
+- Write clean, documented Python with type hints
+- Prefer pandas/polars for data transformation, matplotlib/plotly for charts
+- Validate inputs and handle missing/null values explicitly\`,
+  security: \`You are a security auditor. You review code for vulnerabilities, exposed secrets, and auth flaws.
+- READ files only — do NOT modify or fix code yourself
+- Report findings with: file path, line number, severity (critical/high/medium/low), and recommended fix
+- Check for: hardcoded secrets, SQL injection, XSS, CSRF, insecure dependencies, broken auth
+- Output a structured report — one issue per bullet with clear remediation steps\`,
+  design: \`You are a UI/UX design specialist. You produce design specs, component descriptions, and CSS/style guides.
+- Write detailed, implementation-ready specs (colours, spacing, typography, interaction states)
+- Reference existing design tokens or CSS variables when present
+- Describe animations with easing, duration, and trigger (e.g. hover, scroll, load)
+- Output specs in plain English or as CSS — no design tool exports\`,
+  pm: \`You are a product manager and project planner. You write roadmaps, break down features, and manage task lists.
+- Decompose features into small, independently deliverable tasks
+- Write tasks in imperative form: "Create X", "Add Y to Z", "Fix W"
+- Assign each task to a specialist role (frontend, backend, QA, etc.)
+- Keep scope tight — one task = one deliverable
+- Update ROADMAP.md with [ ] checkboxes for each task\`,
+  aiml: \`You are an AI/ML engineer. You write Python for model training, inference, embeddings, and data pipelines.
+- ALWAYS read existing code before editing
+- NEVER overwrite datasets or model checkpoints
+- Use PyTorch or TensorFlow based on what's already in the project
+- Write clean, typed Python with docstrings and experiment logging
+- Prefer HuggingFace transformers for LLM/embedding tasks\`,
+  api: \`You are an API design specialist. You design and document REST and GraphQL APIs.
+- Write OpenAPI/Swagger specs for all new endpoints
+- Follow REST conventions: correct HTTP verbs, status codes, and URL structure
+- Match existing endpoint naming and auth patterns before adding new ones
+- Output both the spec (YAML/JSON) and a working implementation stub
+- ALWAYS read existing routes and schemas before adding new ones\`,
+  database: \`You are a database specialist. You write SQL, migrations, indexes, and query optimisations.
+- ALWAYS read the existing schema before writing migrations
+- NEVER drop columns or tables without an explicit instruction
+- Write idempotent migrations (safe to re-run)
+- Add indexes for all foreign keys and frequently queried columns
+- Explain query plans for any optimisation changes\`,
+  reactnative: \`You are a React Native specialist. You write cross-platform mobile apps with Expo or bare React Native.
+- ALWAYS read existing components and navigation structure before editing
+- NEVER replace navigation configs — patch only
+- Use StyleSheet.create for all styles; prefer functional components with hooks
+- Handle iOS and Android platform differences explicitly\`,
+  web3: \`You are a Web3 and blockchain specialist. You write Solidity smart contracts and dApp frontends.
+- ALWAYS read existing contracts before editing — storage layout matters
+- NEVER change storage variable order in upgradeable contracts
+- Write NatSpec comments for all public functions
+- Use OpenZeppelin for standard patterns (ERC20, ERC721, AccessControl)
+- Test all contracts with Hardhat or Foundry before reporting done\`,
+  automation: \`You are an automation and web scraping specialist. You write Playwright, Puppeteer, and Python scrapers.
+- Use Playwright for JS-heavy sites, requests+BeautifulSoup for static HTML
+- Handle pagination, login flows, and dynamic content explicitly
+- Store raw data before transforming — never lose the source
+- Write retry logic for flaky network requests
+- Respect robots.txt and rate-limit requests appropriately\`,
+  docs: \`You are a technical documentation writer. You write API docs, READMEs, and developer guides.
+- ALWAYS read the code you're documenting before writing
+- Write for the reader — assume minimal context, include working examples
+- Use consistent structure: Overview, Installation, Usage, API Reference, Examples
+- Keep docs in sync with the actual implementation — flag any discrepancies
+- Output Markdown unless another format is explicitly requested\`,
+};
+
+const PRESET_META = {
+  frontend:    { id: 'crew-coder-front', name: 'Frontend Coder',    emoji: '🎨' },
+  backend:     { id: 'crew-coder-back',  name: 'Backend Coder',     emoji: '⚙️' },
+  fullstack:   { id: 'crew-coder',       name: 'Full-stack Coder',  emoji: '🧱' },
+  ios:         { id: 'crew-coder-ios',   name: 'iOS Coder',         emoji: '📱' },
+  android:     { id: 'crew-coder-android', name: 'Android Coder',   emoji: '🤖' },
+  devops:      { id: 'crew-devops',      name: 'DevOps Engineer',   emoji: '🔧' },
+  data:        { id: 'crew-data',        name: 'Data Engineer',     emoji: '📊' },
+  security:    { id: 'crew-security',    name: 'Security Auditor',  emoji: '🛡️' },
+  qa:          { id: 'crew-qa',          name: 'QA Tester',         emoji: '🧪' },
+  github:      { id: 'crew-github',      name: 'Git Ops',           emoji: '🐙' },
+  writer:      { id: 'crew-copywriter',  name: 'Copywriter',        emoji: '✍️' },
+  design:      { id: 'crew-design',      name: 'UI/UX Designer',    emoji: '🖌️' },
+  pm:          { id: 'crew-pm-agent',    name: 'Product Manager',   emoji: '📋' },
+  aiml:        { id: 'crew-aiml',        name: 'AI/ML Engineer',    emoji: '🤖' },
+  api:         { id: 'crew-api',         name: 'API Designer',      emoji: '🔌' },
+  database:    { id: 'crew-database',    name: 'Database Specialist', emoji: '🗄️' },
+  reactnative: { id: 'crew-rn',          name: 'React Native Dev',  emoji: '📱' },
+  web3:        { id: 'crew-web3',        name: 'Web3 Engineer',     emoji: '🌐' },
+  automation:  { id: 'crew-automation',  name: 'Automation Bot',    emoji: '🕷️' },
+  docs:        { id: 'crew-docs',        name: 'Docs Writer',       emoji: '📖' },
 };
 
 window.applyPromptPreset = function() {
   const val = document.getElementById('naPromptPreset').value;
-  if (val && PROMPT_PRESETS[val]) {
-    document.getElementById('naPrompt').value = PROMPT_PRESETS[val];
+  if (!val || !PROMPT_PRESETS[val]) return;
+  document.getElementById('naPrompt').value = PROMPT_PRESETS[val];
+  const meta = PRESET_META[val];
+  if (meta) {
+    const idEl    = document.getElementById('naId');
+    const nameEl  = document.getElementById('naName');
+    const emojiEl = document.getElementById('naEmoji');
+    if (idEl    && !idEl.value)    idEl.value    = meta.id;
+    if (nameEl  && !nameEl.value)  nameEl.value  = meta.name;
+    if (emojiEl && !emojiEl.value) emojiEl.value = meta.emoji;
   }
 };
 
@@ -3710,6 +3858,8 @@ const server = http.createServer(async (req, res) => {
         ...(rtToken ? { OPENCREW_RT_AUTH_TOKEN: rtToken } : {}),
         PHASED_TASK_TIMEOUT_MS: process.env.PHASED_TASK_TIMEOUT_MS || "300000",
         OPENCREW_RT_SEND_TIMEOUT_MS: process.env.OPENCREW_RT_SEND_TIMEOUT_MS || "300000",
+        OPENCREW_RT_SEND_SENDER: "PM Loop",
+        OPENCREW_RT_BROADCAST_SENDER: "PM Loop",
         ...(projectId     ? { PM_PROJECT_ID: projectId }              : {}),
         ...(projectDir    ? { OPENCREW_OUTPUT_DIR: projectDir }        : {}),
         ...(projectRoadmap    ? { PM_ROADMAP_FILE: projectRoadmap }    : {}),
@@ -4429,6 +4579,23 @@ const server = http.createServer(async (req, res) => {
           ageSec: null,
         });
       }
+      // Always show orchestrator in Agents — PM loop uses this model for routing/expanding (or falls back to crew-pm)
+      if (!agentList.some(a => a.id === "orchestrator")) {
+        agentList.push({
+          id: "orchestrator",
+          model: "",
+          name: "Orchestrator (PM Loop)",
+          emoji: "🧠",
+          theme: "",
+          systemPrompt: agentPrompts["orchestrator"] || "",
+          toolProfile: "default",
+          alsoAllow: ["read_file", "dispatch"],
+          workspace: "",
+          liveness: "unknown",
+          lastSeen: null,
+          ageSec: null,
+        });
+      }
       // Merge providers from both locations so MODEL dropdown gets custom models from either
       const topProviders = cfg?.providers || {};
       const nestedProviders = cfg?.models?.providers || {};
@@ -4470,7 +4637,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, systemPrompt, name, emoji, toolProfile, alsoAllow } = JSON.parse(body);
+      const { agentId, model, systemPrompt, name, emoji, theme, toolProfile, alsoAllow } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -4486,10 +4653,19 @@ const server = http.createServer(async (req, res) => {
         arr.push(agent);
         list = arr;
       }
+      if (!agent && agentId === "orchestrator") {
+        if (!Array.isArray(cfg.agents)) cfg.agents = cfg.agents?.list != null ? { list: cfg.agents.list } : [];
+        const arr = Array.isArray(cfg.agents) ? cfg.agents : cfg.agents.list;
+        if (!arr) throw new Error("Cannot determine agents list structure in crewswarm.json");
+        agent = { id: "orchestrator", model: "", identity: { name: "Orchestrator (PM Loop)", emoji: "🧠" }, tools: { profile: "default", alsoAllow: ["read_file", "dispatch"] } };
+        arr.push(agent);
+        list = arr;
+      }
       if (!agent) throw new Error("Agent not found: " + agentId);
       if (model) agent.model = model;
-      if (name) { if (!agent.identity) agent.identity = {}; agent.identity.name = name; }
+      if (name)  { if (!agent.identity) agent.identity = {}; agent.identity.name  = name; }
       if (emoji) { if (!agent.identity) agent.identity = {}; agent.identity.emoji = emoji; }
+      if (theme !== undefined && theme !== null) { if (!agent.identity) agent.identity = {}; agent.identity.theme = theme; }
       if (toolProfile) { if (!agent.tools) agent.tools = {}; agent.tools.profile = toolProfile; }
       if (alsoAllow !== undefined) {
         if (!agent.tools) agent.tools = {};
@@ -4989,7 +5165,27 @@ const server = http.createServer(async (req, res) => {
         }
         return "";
       })();
-      const CREW_AGENTS = "main,admin,build,coder,researcher,architect,reviewer,qa,fixer,pm,orchestrator,openclaw,openclaw-main,opencode-pm,opencode-qa,opencode-fixer,opencode-coder,opencode-coder-2,security,crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter,crew-telegram,crew-lead";
+      // Build agent allowlist dynamically from crewswarm.json + permanent baseline
+      const CREW_AGENTS_BASE = "main,admin,build,coder,researcher,architect,reviewer,qa,fixer,pm,orchestrator,openclaw,openclaw-main,opencode-pm,opencode-qa,opencode-fixer,opencode-coder,opencode-coder-2,security,crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter,crew-telegram,crew-lead";
+      const CREW_AGENTS = (() => {
+        try {
+          for (const p of [
+            path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
+            path.join(os.homedir(), ".openclaw", "openclaw.json"),
+          ]) {
+            if (fs.existsSync(p)) {
+              const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+              const agentArr = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
+              const ids = agentArr.map(a => a.id).filter(Boolean);
+              if (ids.length) {
+                const merged = new Set([...CREW_AGENTS_BASE.split(","), ...ids]);
+                return [...merged].join(",");
+              }
+            }
+          }
+        } catch {}
+        return CREW_AGENTS_BASE;
+      })();
 
       if (id === "rt-bus") {
         try { execSync(`pkill -f "opencrew-rt-daemon"`, { stdio: "ignore" }); } catch {}

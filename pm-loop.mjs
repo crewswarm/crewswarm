@@ -25,7 +25,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readFile, writeFile, appendFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -106,13 +106,38 @@ function getOCConfig() {
 }
 function getPMProviderConfig() {
   const cfg = getOCConfig();
-  // Primary: Perplexity Sonar Pro (web search)
-  const pplx = cfg.models?.providers?.perplexity;
+  const providers = { ...(cfg.models?.providers || {}), ...(cfg.providers || {}) };
+  const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
+
+  // Resolve provider config from an agent's model string (e.g. "perplexity/sonar-pro")
+  function fromAgent(agent) {
+    if (!agent?.model) return null;
+    const [providerKey, ...modelParts] = agent.model.split("/");
+    const modelId = modelParts.join("/").trim();
+    const prov = providers[providerKey];
+    if (!prov?.apiKey || (!prov.baseUrl && providerKey !== "openai")) return null;
+    return { baseUrl: prov.baseUrl || "https://api.openai.com/v1", apiKey: prov.apiKey, model: modelId };
+  }
+
+  // 1) Orchestrator agent (dashboard "Orchestrator" role) — use this to set PM loop model separately from crew-pm
+  const orchestratorAgent = agents.find(a => a.id === "orchestrator");
+  const fromOrchestrator = fromAgent(orchestratorAgent);
+  if (fromOrchestrator) return fromOrchestrator;
+
+  // 2) crew-pm agent (dashboard "PM" role) — one place for both loop and PM worker if you don't use orchestrator
+  const fromPm = fromAgent(agents.find(a => a.id === "crew-pm"));
+  if (fromPm) return fromPm;
+
+  // 3) Fallbacks in priority order — free/local first, then paid APIs
+  // openai-local: free local models (gpt-5.2-codex etc.) — best for orchestration when server is running
+  const localOAI = providers["openai-local"] || cfg.models?.providers?.["openai-local"];
+  if (localOAI?.apiKey && localOAI?.baseUrl) return { baseUrl: localOAI.baseUrl, apiKey: localOAI.apiKey, model: "gpt-5.2-codex" };
+  // Perplexity Sonar Pro — web-search aware, good for research-heavy roadmaps
+  const pplx = providers.perplexity || cfg.models?.providers?.perplexity;
   if (pplx?.apiKey) return { baseUrl: pplx.baseUrl || "https://api.perplexity.ai", apiKey: pplx.apiKey, model: "sonar-pro" };
-  // Fallback 1: Cerebras llama-3.3-70b (fast, no search)
-  const cerebras = cfg.models?.providers?.cerebras;
-  if (cerebras?.apiKey) return { baseUrl: cerebras.baseUrl || "https://api.cerebras.ai/v1", apiKey: cerebras.apiKey, model: "llama-3.3-70b" };
-  // Fallback 2: Groq env var
+  // Cerebras — fast inference, strong reasoning
+  const cerebras = providers.cerebras || cfg.models?.providers?.cerebras;
+  if (cerebras?.apiKey) return { baseUrl: cerebras.baseUrl || "https://api.cerebras.ai/v1", apiKey: cerebras.apiKey, model: "qwen-3-235b-a22b-instruct-2507" };
   if (GROQ_API_KEY) return { baseUrl: "https://api.groq.com/openai/v1", apiKey: GROQ_API_KEY, model: "llama-3.3-70b-versatile" };
   return null;
 }
@@ -123,6 +148,104 @@ const USE_SPECIALISTS = process.env.PM_USE_SPECIALISTS !== "0";
 const USE_QA          = process.env.PM_USE_QA !== "0";
 // Security audit on security-related tasks — set PM_USE_SECURITY=0 to disable
 const USE_SECURITY    = process.env.PM_USE_SECURITY !== "0";
+
+// Role descriptions + routing keywords for well-known agent IDs.
+// `role` is used in PM prompts; `keywords` drive the regex fallback when LLM routing fails.
+// `nonDoer: true` agents are never assigned implementation tasks.
+// New agents in crewswarm.json without an entry here fall back to their identity.theme.
+const ROLE_HINTS = {
+  "crew-main":        { role: "main coordinator, general tasks, orchestration, dispatch",                  nonDoer: true,  keywords: [] },
+  "crew-coder":       { role: "general code, structure, directories, files, setup, create, implement",     nonDoer: false, keywords: ["implement", "create", "build", "file", "module", "class", "function", "script", "python", "ruby", "php", "swift", "kotlin", "go", "rust"] },
+  "crew-coder-front": { role: "HTML, CSS, JS UI, visual design, layout, animations, landing pages",        nonDoer: false, keywords: ["html", "css", "style", "section", "design", "layout", "animation", "nav", "hero", "frontend", "ui", "ux", "responsive", "gradient", "transition", "hover", "font", "color", "visual"] },
+  "crew-coder-back":  { role: "APIs, Node.js, scripts, databases, backend logic, JSON, server endpoints",  nonDoer: false, keywords: ["api", "server", "node", "express", "endpoint", "database", "backend", "mjs", "rest", "graphql", "sql", "postgres", "mongo", "redis", "lambda", "microservice"] },
+  "crew-frontend":    { role: "HTML, CSS, JS UI, visual design, layout, animations, landing pages",        nonDoer: false, keywords: ["html", "css", "style", "design", "layout", "animation", "frontend", "ui", "ux", "responsive"] },
+  "crew-github":      { role: "git commits, branches, pull requests, version control, deployment",         nonDoer: false, keywords: ["git", "github", "commit", "push", "pull request", "branch", "merge", "deploy", "release", "tag", "ci", "cd", "workflow"] },
+  "crew-qa":          { role: "REVIEW ONLY — testing, validation, QA (never for creating/building)",       nonDoer: true,  keywords: [] },
+  "crew-security":    { role: "REVIEW ONLY — security audits, auth flows, secrets (never for creating)",   nonDoer: true,  keywords: [] },
+  "crew-copywriter":  { role: "marketing copy, headlines, taglines, CTAs, docs, README",                   nonDoer: false, keywords: ["copy", "headline", "tagline", "cta", "readme", "docs", "documentation", "marketing", "content", "writing", "blog", "landing page text"] },
+  "crew-fixer":       { role: "debugging, fixing broken code — dispatched automatically on failure",        nonDoer: true,  keywords: [] },
+  "crew-pm":          { role: "project planning, task breakdown, roadmap management",                       nonDoer: true,  keywords: [] },
+  "crew-telegram":    { role: "Telegram messaging, notifications — not a task doer",                        nonDoer: true,  keywords: [] },
+  "crew-lead":        { role: "team lead, high-level coordination and delegation",                          nonDoer: true,  keywords: [] },
+  "orchestrator":     { role: "PM loop orchestrator — internal routing only, not a task doer",              nonDoer: true,  keywords: [] },
+  // Extended specialist presets — add these via dashboard and they route correctly automatically
+  "crew-devops":      { role: "DevOps, CI/CD, Docker, shell scripts, infrastructure, deployment pipelines", nonDoer: false, keywords: ["docker", "ci", "cd", "pipeline", "deploy", "infrastructure", "terraform", "k8s", "kubernetes", "shell", "bash", "nginx", "linux", "server", "cloud", "aws", "gcp", "azure"] },
+  "crew-coder-ios":   { role: "iOS/Swift developer (SwiftUI, UIKit, CoreData, Xcode, Apple platforms)",    nonDoer: false, keywords: ["swift", "swiftui", "uikit", "ios", "xcode", "apple", "iphone", "ipad", "macos", "watchos", "tvos", "coredata", "combine"] },
+  "crew-coder-android":{ role: "Android/Kotlin developer (Jetpack Compose, Android SDK, MVVM)",            nonDoer: false, keywords: ["kotlin", "android", "compose", "jetpack", "gradle", "apk", "activity", "fragment", "viewmodel", "coroutine", "flow"] },
+  "crew-data":        { role: "Data/analytics specialist (Python, SQL, pandas, data pipelines, charts)",   nonDoer: false, keywords: ["pandas", "sql", "data", "analytics", "csv", "dataframe", "plot", "chart", "matplotlib", "numpy", "jupyter", "pipeline", "etl", "postgres", "sqlite"] },
+  "crew-design":      { role: "UI/UX design specs, CSS style guides, component design, animations",        nonDoer: false, keywords: ["design", "ux", "ui", "figma", "spec", "wireframe", "prototype", "component", "style guide", "color", "typography", "spacing"] },
+  "crew-pm-agent":    { role: "product planning, feature breakdown, roadmap tasks, project management",    nonDoer: true,  keywords: [] },
+  "crew-aiml":        { role: "AI/ML engineer — Python, PyTorch, HuggingFace, embeddings, model training", nonDoer: false, keywords: ["model", "train", "embedding", "inference", "pytorch", "tensorflow", "huggingface", "llm", "neural", "dataset", "fine-tune", "rag", "vector", "ml", "ai"] },
+  "crew-api":         { role: "API designer — REST/GraphQL, OpenAPI/Swagger specs, endpoint design",        nonDoer: false, keywords: ["openapi", "swagger", "graphql", "rest", "endpoint", "route", "spec", "api design", "schema", "http"] },
+  "crew-database":    { role: "Database specialist — SQL, migrations, indexes, query optimisation",          nonDoer: false, keywords: ["migration", "schema", "index", "postgres", "mysql", "sqlite", "query", "orm", "seed", "table", "column"] },
+  "crew-rn":          { role: "React Native specialist — Expo, cross-platform iOS/Android mobile apps",      nonDoer: false, keywords: ["react native", "expo", "rn", "mobile", "navigation", "stylesheet", "platform"] },
+  "crew-web3":        { role: "Web3/blockchain — Solidity, smart contracts, ERC20/721, Hardhat, Foundry",   nonDoer: false, keywords: ["solidity", "contract", "blockchain", "web3", "nft", "erc20", "erc721", "hardhat", "foundry", "wagmi", "ethers"] },
+  "crew-automation":  { role: "Automation/scraping — Playwright, Puppeteer, Python scrapers, bots",         nonDoer: false, keywords: ["playwright", "puppeteer", "scrape", "scraping", "automation", "bot", "selenium", "crawler", "spider"] },
+  "crew-docs":        { role: "Technical docs writer — API docs, README, developer guides, Markdown",        nonDoer: false, keywords: ["readme", "documentation", "docs", "api docs", "guide", "markdown", "wiki", "changelog"] },
+};
+
+/**
+ * Build a live active agent roster from crewswarm.json.
+ * Only includes agents whose provider has a configured API key.
+ * Returns: { active: [{id, name, emoji, role, model}], nonDoers: Set<string> }
+ */
+function buildActiveAgentRoster() {
+  const cfg = getOCConfig();
+  const providers = { ...(cfg.models?.providers || {}), ...(cfg.providers || {}) };
+  const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
+
+  function hasKey(agentModel) {
+    if (!agentModel) return false;
+    const [provKey] = agentModel.split("/");
+    const prov = providers[provKey];
+    // openai baseUrl can be absent (defaults to api.openai.com), but key must exist
+    return !!(prov?.apiKey);
+  }
+
+  const active = [];
+  const nonDoers = new Set();
+
+  // Always mark known non-doers from ROLE_HINTS
+  for (const [id, hint] of Object.entries(ROLE_HINTS)) {
+    if (hint.nonDoer) nonDoers.add(id);
+  }
+
+  for (const a of agents) {
+    if (!a.id) continue;
+    // Skip agents with no model or whose provider has no API key
+    if (!hasKey(a.model)) continue;
+
+    const hint = ROLE_HINTS[a.id] || {};
+    const name  = a.identity?.name  || a.name  || a.id;
+    const emoji = a.identity?.emoji || a.emoji || "";
+    // Prefer ROLE_HINTS functional description over cosmetic theme names (e.g. "Violet", "Blueprint")
+    const role  = hint.role || a.identity?.theme || "general purpose agent";
+
+    // Mark as non-doer if flagged in ROLE_HINTS or identity/theme says so
+    if (hint.nonDoer || /review only|not a.*doer|non.task|internal.*only/i.test(role)) {
+      nonDoers.add(a.id);
+    }
+
+    active.push({ id: a.id, name, emoji, role, model: a.model });
+  }
+
+  return { active, nonDoers };
+}
+
+/**
+ * Returns a formatted string listing all active agents for injection into the PM system prompt.
+ * Tells the PM exactly who is available so it can write tasks targeted at the right specialist.
+ */
+function buildAgentRoster() {
+  const { active, nonDoers } = buildActiveAgentRoster();
+  if (!active.length) return "";
+  return active
+    .map(a => {
+      const nd = nonDoers.has(a.id) ? " [review-only, do not assign implementation tasks]" : "";
+      return `- ${a.id}${a.emoji ? " " + a.emoji : ""}: ${a.role}${nd}`;
+    })
+    .join("\n");
+}
 
 // Route task to the right specialist agent
 // First tries LLM routing (if PM LLM is available), falls back to keyword regex
@@ -138,25 +261,34 @@ async function routeAgent(itemText) {
   const provider = getPMProviderConfig();
   if (provider) {
     try {
+      const { active, nonDoers } = buildActiveAgentRoster();
+      // Doable agents = active agents that are not non-doers
+      const doable = active.filter(a => !nonDoers.has(a.id));
+      const valid   = active.map(a => a.id);
+
+      const agentLines = active.map(a =>
+        `${a.emoji ? a.emoji + " " : ""}${a.id}${nonDoers.has(a.id) ? " [REVIEW ONLY — do not choose for implementation]" : ""} — ${a.name}: ${a.role}`
+      ).join("\n");
+
+      const doableIds = doable.map(a => a.id).join(", ");
+
       const result = await callPMLLM([
         {
           role: "system",
-          content: `You are a task router. Given a software task description, output EXACTLY ONE agent name from this list — nothing else:
-crew-coder-front   (HTML, CSS, JS UI, visual design, layout, animations, landing pages, copy)
-crew-coder-back    (APIs, Node.js, scripts, databases, backend logic, JSON, server endpoints)
-crew-github        (git commits, branches, pull requests, version control, deployment)
-crew-qa            (testing, quality review, validation, accessibility audits)
-crew-security      (security audits, auth flows, secrets, API keys, permissions)
-crew-copywriter    (marketing copy, headlines, taglines, CTAs, docs, README)
-crew-coder         (general or unclear tasks that don't clearly fit above)
+          content: `You are a task router. Given a software task description, output EXACTLY ONE agent ID — nothing else.
 
-Output only the agent name. No explanation.`,
+Active agents (from live config — only these are available):
+${agentLines}
+
+Rules:
+- For tasks that CREATE or IMPLEMENT: choose from these doable agents only: ${doableIds}
+- Agents marked [REVIEW ONLY] are dispatched automatically by the system — never choose them
+- Output ONLY the agent ID (e.g. crew-coder-front). No explanation.`,
         },
         { role: "user", content: `Task: "${itemText}"` },
       ], { maxTokens: 20, temperature: 0 });
 
       const agent = (result || "").trim().toLowerCase().replace(/[^a-z-]/g, "");
-      const valid = ["crew-coder-front","crew-coder-back","crew-github","crew-qa","crew-security","crew-copywriter","crew-coder"];
       if (valid.includes(agent)) {
         _routeCache.set(itemText, agent);
         return agent;
@@ -173,6 +305,10 @@ Output only the agent name. No explanation.`,
   else if (/\bapi\b|server|node|express|script|endpoint|json|database|backend|mjs|\.js\b/.test(t)) agent = "crew-coder-back";
   else if (/html|css|style|section|design|layout|animation|nav|hero|frontend|ui\b|ux\b|responsive/.test(t)) agent = "crew-coder-front";
   else agent = CODER_AGENT;
+
+  // Safety: never use non-doer agents as doer via keyword fallback — built dynamically from config
+  const { nonDoers: NON_DOERS } = buildActiveAgentRoster();
+  if (NON_DOERS.has(agent)) agent = CODER_AGENT;
 
   _routeCache.set(itemText, agent);
   return agent;
@@ -299,7 +435,7 @@ function nextPending(items) {
   return items.find(it => it.status === "failed" && retryCount(it.raw) < MAX_RETRIES) || null;
 }
 
-async function markItem(lineIdx, status) {
+async function markItem(lineIdx, status, agent = null) {
   const content = await readFile(ROADMAP_FILE, "utf8");
   const lines = content.split("\n");
   const ts = new Date().toLocaleTimeString();
@@ -307,6 +443,7 @@ async function markItem(lineIdx, status) {
     // Mark done — replace any [ ] or [!] marker
     lines[lineIdx] = lines[lineIdx].replace(/\[[ !]\]/, "[x]");
     lines[lineIdx] += `  ✓ ${ts}`;
+    if (agent) lines[lineIdx] += ` (${agent})`;
   } else {
     // Mark failed — keep [!] marker, append another ✗ timestamp for retry tracking
     lines[lineIdx] = lines[lineIdx].replace(/\[ \]/, "[!]");
@@ -369,11 +506,32 @@ WORKFLOW — follow this every time:
     }
   }
 
+  const mainDeliverable = getMainDeliverableHint();
+  const mainDeliverableRule = mainDeliverable
+    ? `\n- MAIN DELIVERABLE: For styling, CSS, animations, gradients, visual effects, and any user-visible changes, require the coder to apply them to this file: ${mainDeliverable}. Do not accept updates only to templates or other files — the main deliverable must include the requested features so users see them when they open it.`
+    : "\n- For styling, CSS, animations, and visual effects: require the coder to apply changes to the main user-facing HTML file (e.g. index.html or the primary page in the output dir), not only to templates or secondary files. The file users actually open must contain the requested features.";
+
+  const agentRoster = buildAgentRoster();
+  // Build routing hints dynamically from the active roster so new agents are included automatically
+  const { active: rosterActive, nonDoers: rosterNonDoers } = buildActiveAgentRoster();
+  const doableAgents = rosterActive.filter(a => !rosterNonDoers.has(a.id));
+  const dynamicHints = doableAgents.length
+    ? doableAgents.map(a => `- ${a.role} → ${a.id}`).join("\n")
+    : "";
+  const rosterBlock = agentRoster
+    ? `\n\nAvailable specialist agents — route your task to the right one:\n${agentRoster}${dynamicHints ? `\n\nRouting hints (match the task to the best agent):\n${dynamicHints}` : ""}\n- [review-only] agents must NOT be given implementation work`
+    : "";
+
+  const isFrontendTask = /animat|css|style|visual|gradient|transition|ui\b|front.?end|html|layout|design|color|font|effect|scroll|fade|hover/i.test(item);
+  const frontendRule = isFrontendTask
+    ? "\n- This is a visual/frontend task: spell out the exact CSS or JS needed (e.g. 'add CSS keyframe animation for X', 'use IntersectionObserver for scroll-triggered fade-in') — do not leave it vague or it will be skipped"
+    : "";
+
   const systemPrompt = `You are the PM (Product Manager) for a software project.${isPerplexity ? " You have real-time web search — use it to research best practices and modern approaches relevant to the task." : " Web search results will be provided for context."}
 
-Your job: receive a roadmap item and write a precise, scoped coding task for a coder agent.
+Your job: receive a roadmap item and write a precise, scoped coding task for the appropriate specialist agent.
 
-Project output directory: ${OUTPUT_DIR}
+Project output directory: ${OUTPUT_DIR}${rosterBlock}
 
 Rules:
 - ONE deliverable only — no multi-step tasks
@@ -381,10 +539,11 @@ Rules:
 - CRITICAL: Always tell the coder to READ existing files first, then MODIFY/APPEND — NEVER overwrite a whole file unless it's brand new
 - If something already exists and satisfies the item, tell coder to SKIP and report done
 - Keep tasks under 200 words
-- Do NOT explain what you're doing — output the task text only${featuresSnippet ? `\n\nProject context:\n${featuresSnippet}` : ""}`;
+- Do NOT explain what you're doing — output the task text only${frontendRule}${mainDeliverableRule}${featuresSnippet ? `\n\nProject context:\n${featuresSnippet}` : ""}`;
 
+  const mainHint = mainDeliverable ? `\nMain deliverable file (apply styling/animations here): ${mainDeliverable}\n` : "";
   const userPrompt = `Roadmap item: "${item}"
-
+${mainHint}
 Current project state:
 ${context}${webSnippet}
 
@@ -438,6 +597,47 @@ async function getProjectContext() {
   return `${files.length} file(s) in ${OUTPUT_DIR}: ${summary}${files.length > 20 ? ` ... and ${files.length-20} more` : ""}`;
 }
 
+/** Infer main user-facing HTML file so PM can require styling/animations there (not only in templates). */
+function getMainDeliverableHint() {
+  if (!existsSync(OUTPUT_DIR)) return null;
+  try {
+    const entries = readdirSync(OUTPUT_DIR, { withFileTypes: true });
+    const indexHtml = entries.find(e => e.isFile() && e.name === "index.html");
+    if (indexHtml) return join(OUTPUT_DIR, "index.html");
+    const htmlFiles = entries.filter(e => e.isFile() && e.name.endsWith(".html"));
+    if (htmlFiles.length) return join(OUTPUT_DIR, htmlFiles[0].name);
+    const testOutput = entries.find(e => e.isDirectory() && e.name === "test-output");
+    if (testOutput) {
+      const sub = readdirSync(join(OUTPUT_DIR, "test-output"), { withFileTypes: true });
+      const first = sub.find(e => e.isFile() && e.name.endsWith(".html"));
+      if (first) return join(OUTPUT_DIR, "test-output", first.name);
+    }
+  } catch {}
+  return null;
+}
+
+/** Return list of absolute paths for files in OUTPUT_DIR (for QA so it only reads paths that exist). */
+async function getOutputDirFilePaths() {
+  if (!existsSync(OUTPUT_DIR)) return [];
+  const { readdir } = await import("node:fs/promises");
+  const TRACKED_EXT = new Set([".html",".css",".js",".mjs",".ts",".json",".md",".py",".sh",".yaml",".yml",".go",".rs"]);
+  const out = [];
+  async function scan(dir, depth = 0) {
+    if (depth > 3) return;
+    try {
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const e of entries) {
+        if (e.name.startsWith(".") || e.name === "node_modules") continue;
+        const full = join(dir, e.name);
+        if (e.isDirectory()) await scan(full, depth + 1);
+        else if (TRACKED_EXT.has(e.name.slice(e.name.lastIndexOf(".")))) out.push(full);
+      }
+    } catch {}
+  }
+  await scan(OUTPUT_DIR);
+  return out;
+}
+
 // ── PM: self-extend — generates new roadmap items from live site ─────────
 async function generateNewRoadmapItems(context, completedItems, round) {
   const label = `PM-Generated (Round ${round})`;
@@ -457,7 +657,18 @@ async function generateNewRoadmapItems(context, completedItems, round) {
 
   const featuresSnippet = FEATURES_DOC ? await readFile(FEATURES_DOC, "utf8").catch(() => "").then(t => t.substring(0, 1500)) : "";
 
-  const systemPrompt = `You are a senior product manager for a software project.${isPerplexity ? " You have real-time web search — use it to research current best practices." : ""}
+  // Brave search for non-Perplexity providers — fresh web context for self-extend
+  let extendWebSnippet = "";
+  if (!isPerplexity) {
+    const q = `best practices modern web project improvements 2026`;
+    const searchResults = await searchWithBrave(q);
+    if (searchResults) {
+      extendWebSnippet = `\n\nWeb research (Brave Search):\n${searchResults}`;
+      console.log(`  🦁 Brave search injected for self-extend`);
+    }
+  }
+
+  const systemPrompt = `You are a senior product manager for a software project.${isPerplexity ? " You have real-time web search — use it to research current best practices." : " Web search results are provided below for context."}
 
 Your job: decide what to build next to make the project more complete, robust, and high quality.
 
@@ -476,6 +687,7 @@ ${context}
 
 Recently completed items:
 ${recentDone}
+${extendWebSnippet}
 
 ${isPerplexity ? "Search for relevant best practices if helpful, then generate" : "Generate"} 4 new roadmap items that would meaningfully improve this project:`;
 
@@ -520,8 +732,9 @@ async function appendGeneratedItems(newItems, round) {
 
 // ── Agent dispatch ────────────────────────────────────────────────────────
 function callAgent(agentId, message, { timeout } = {}) {
-  // QA and fixer get extra time — they read files and do analysis
-  const agentTimeout = timeout || (["crew-qa","crew-fixer","security"].includes(agentId) ? TASK_TIMEOUT * 2 : TASK_TIMEOUT);
+  // Non-doers (QA, fixer, security) get extra time — they read files and do analysis
+  const { nonDoers: timeoutNonDoers } = buildActiveAgentRoster();
+  const agentTimeout = timeout || (timeoutNonDoers.has(agentId) ? TASK_TIMEOUT * 2 : TASK_TIMEOUT);
   const env = {
     ...process.env,
     OPENCREW_RT_SEND_TIMEOUT_MS: String(agentTimeout),
@@ -550,14 +763,22 @@ async function main() {
   banner(`PM LOOP  op=${opId}  max=${MAX_ITEMS}${DRY_RUN ? "  DRY RUN" : ""}${SELF_EXTEND ? `  self-extend every ${EXTEND_EVERY_N}` : "  no-extend"}`);
   console.log(`Roadmap: ${ROADMAP_FILE}`);
   console.log(`Output:  ${OUTPUT_DIR}`);
-  console.log(`Agents:  ${USE_SPECIALISTS ? "crew-coder-front (HTML/CSS) | crew-coder-back (JS/API) | crew-github (git) | crew-coder (default)" : CODER_AGENT}`);
+  const roster = buildAgentRoster();
+  if (roster) {
+    console.log(`Agents (from config):\n${roster.split("\n").map(l => "  " + l).join("\n")}`);
+  } else {
+    console.log(`Agents:  ${USE_SPECIALISTS ? "crew-coder-front (HTML/CSS) | crew-coder-back (JS/API) | crew-github (git) | crew-coder (default)" : CODER_AGENT}`);
+  }
   console.log(`QA:      ${USE_QA ? "crew-qa reviews after each task" : "disabled (PM_USE_QA=0)"}`);
   console.log(`Fixer:   crew-fixer auto-repairs failed tasks`);
   console.log(`Security:${USE_SECURITY ? " security agent reviews auth/key tasks" : " disabled (PM_USE_SECURITY=0)"}`);
   const pmProv = getPMProviderConfig();
-  const pmProvLabel = pmProv?.baseUrl?.includes("perplexity") ? `Perplexity ${pmProv.model} (web search ✓)`
+  const pmProvLabel = pmProv?.baseUrl?.includes("127.0.0.1") || pmProv?.baseUrl?.includes("localhost")
+                    ? `openai-local ${pmProv.model} (free/local)`
+                    : pmProv?.baseUrl?.includes("perplexity") ? `Perplexity ${pmProv.model} (web search ✓)`
                     : pmProv?.baseUrl?.includes("cerebras")   ? `Cerebras ${pmProv.model}`
-                    : pmProv ? `Groq ${pmProv.model}` : "none — raw item text";
+                    : pmProv?.baseUrl?.includes("openai")     ? `OpenAI ${pmProv.model}`
+                    : pmProv ? `${pmProv.model}` : "none — raw item text";
   console.log(`PM LLM:  ${pmProvLabel}`);
   console.log(`Extend:  ${SELF_EXTEND ? `every ${EXTEND_EVERY_N} completions OR when roadmap empties` : "disabled (--no-extend)"}`);
   console.log(`\nTip: touch ${STOP_FILE} to stop gracefully between tasks\n`);
@@ -642,7 +863,14 @@ async function main() {
     task = await expandWithGroq(item.text, context);
     console.log(`  📝 Task:\n    ${task.substring(0, 120)}${task.length > 120 ? "..." : ""}`);
 
-    const targetAgent = await routeAgent(item.text);
+    let targetAgent = await routeAgent(item.text);
+    // QA and security are review-only — never send implementation tasks to them as doer
+    // Never use non-doer agents as the primary task doer — derived live from config
+    const { nonDoers: dynamicNonDoers } = buildActiveAgentRoster();
+    if (dynamicNonDoers.has(targetAgent)) {
+      console.log(`  ↳ Router returned ${targetAgent}; using ${CODER_AGENT} as doer (${targetAgent} is not a task doer).`);
+      targetAgent = CODER_AGENT;
+    }
 
     // Copywriter pass — runs before coder-front on copy-heavy tasks
     if (needsCopywriter(item.text) && targetAgent === "crew-coder-front") {
@@ -660,7 +888,11 @@ async function main() {
       if (USE_QA) {
         try {
           console.log(`  🔍 QA review via crew-qa...`);
-          const qaPrompt = `[QA-Review] ${targetAgent} just completed this task:\n\n"${task.substring(0, 300)}"\n\nRead the relevant files in ${OUTPUT_DIR} to review the changes. Check for: broken HTML/CSS, JS errors, missing files, visual regressions, Tailwind or unknown CSS classes on a non-Tailwind site.\n\nReply with exactly one of:\n- "PASS" if everything looks correct\n- "FAIL: <specific issues>" if there are problems that need fixing`;
+          const qaFilePaths = await getOutputDirFilePaths();
+          const qaFilesHint = qaFilePaths.length > 0
+            ? `\n\nOnly these paths exist in the output dir — use @@READ_FILE on these only:\n${qaFilePaths.join("\n")}\n`
+            : `\n\n(Output dir ${OUTPUT_DIR} has no tracked files yet; skip file reads and reply PASS or FAIL based on the task.)\n`;
+          const qaPrompt = `[QA-Review] ${targetAgent} just completed this task:\n\n"${task.substring(0, 300)}"\n\nRead the relevant files in ${OUTPUT_DIR} to review the changes. Check for: broken HTML/CSS, JS errors, missing files, visual regressions, Tailwind or unknown CSS classes on a non-Tailwind site.${qaFilesHint}\nReply with exactly one of:\n- "PASS" if everything looks correct\n- "FAIL: <specific issues>" if there are problems that need fixing`;
           const qaResult = await callAgent("crew-qa", qaPrompt);
           const qaText = String(qaResult).trim();
           const qaPass = /^PASS/i.test(qaText);
@@ -697,7 +929,7 @@ async function main() {
         }
       }
 
-      await markItem(item.lineIdx, "done");
+      await markItem(item.lineIdx, "done", targetAgent);
       await log({ op_id: opId, item: item.text, task: task.substring(0, 120), agent: targetAgent, status: "done", duration_s: parseFloat(dur) });
       doneCount++;
       completedItems.push(item.text);
@@ -712,7 +944,7 @@ async function main() {
         const fixPrompt = `[Fixer] The following task failed: "${task.substring(0, 300)}"\n\nError: ${e.message.slice(0, 200)}\n\nRead the relevant files in ${OUTPUT_DIR} first to understand the current state, then make targeted fixes — do not rewrite whole files.`;
         await callAgent("crew-fixer", fixPrompt);
         console.log(`  🔧 Fixer done — marking as done`);
-        await markItem(item.lineIdx, "done");
+        await markItem(item.lineIdx, "done", "crew-fixer");
         await log({ op_id: opId, item: item.text, task: task.substring(0, 120), agent: "crew-fixer", status: "fixed", duration_s: parseFloat(dur) });
         doneCount++;
         completedItems.push(item.text);
