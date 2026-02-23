@@ -2570,13 +2570,16 @@ function toggleEmojiPicker(agentId) {
   const panel = document.getElementById('aemoji-panel-' + agentId);
   const grid  = document.getElementById('aemoji-grid-'  + agentId);
   const isOpen = panel.classList.contains('open');
-  // close all other open pickers
   document.querySelectorAll('.emoji-picker-panel.open').forEach(p => p.classList.remove('open'));
   if (isOpen) return;
   if (!grid.hasChildNodes()) {
     grid.innerHTML = AGENT_EMOJIS.map(e =>
-      '<div class="emoji-opt" onclick="selectEmoji(\'' + agentId + '\',\'' + e + '\')" title="' + e + '">' + e + '</div>'
+      '<div class="emoji-opt" data-agent="' + agentId + '" data-emoji="' + e + '" title="' + e + '">' + e + '</div>'
     ).join('');
+    grid.addEventListener('click', function(ev) {
+      const opt = ev.target.closest('.emoji-opt');
+      if (opt) selectEmoji(opt.dataset.agent, opt.dataset.emoji);
+    });
   }
   panel.classList.add('open');
 }
