@@ -63,8 +63,10 @@ jobs:
           CREWSWARM_DIR: ${{ github.workspace }}
           CREW_LEAD_URL: "http://127.0.0.1:5010"
           CREWSWARM_SMOKE_TIMEOUT_MS: "180000"
+          OPENCREW_OPENCODE_ENABLED: "0"
         run: |
           export CREWSWARM_DIR="$GITHUB_WORKSPACE"
+          export OPENCREW_OPENCODE_ENABLED=0
           export OPENCREW_RT_URL="ws://127.0.0.1:18889"
           export OPENCREW_RT_AUTH_TOKEN=$(node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/config.json')); console.log((c.rt&&c.rt.authToken||'').trim())")
           export OPENCREW_RT_REQUIRE_TOKEN=1
