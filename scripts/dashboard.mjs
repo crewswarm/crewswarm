@@ -399,12 +399,25 @@ const html = `<!doctype html>
     .file-btn-opencode:hover { background: rgba(52,211,153,0.1); }
 
     /* ── Form inputs ── */
-    select, input[type="text"], input[type="password"], textarea {
-      background: var(--bg-card2); color: var(--text); border: 1px solid var(--border);
-      border-radius: 7px; padding: 8px 12px; font-size: 13px; font-family: inherit;
-      outline: none; transition: border-color 0.12s;
+    select, input[type="text"], input[type="password"], input[type="number"], input[type="email"], textarea {
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+      width: 100%;
     }
-    select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+    select:focus, input:focus, textarea:focus {
+      border-color: var(--accent);
+      background: rgba(56,189,248,0.04);
+      box-shadow: 0 0 0 3px rgba(56,189,248,0.08);
+    }
+    select { cursor: pointer; }
+    ::placeholder { color: var(--text-3); opacity: 1; }
     input[type="text"] { flex: 1; }
     textarea { resize: vertical; width: 100%; }
     input, textarea, select { user-select: text; -webkit-user-select: text; cursor: text; }
@@ -594,7 +607,7 @@ const html = `<!doctype html>
         <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
         <div style="display:flex;gap:8px;align-items:flex-end;">
           <textarea id="chatInput" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send)"
-            style="flex:1;resize:none;height:56px;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text-1);font-size:14px;line-height:1.4;font-family:inherit;"
+            style="flex:1;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;width:auto;"
             onkeydown="chatKeydown(event)"></textarea>
           <button onclick="sendChat()" class="btn-green" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
         </div>
@@ -939,7 +952,7 @@ const html = `<!doctype html>
             <h3 style="margin:0;">PM Loop</h3>
             <span class="pm-badge" id="pmLoopBadge">idle</span>
           </div>
-          <div id="pmLoopProjectLabel" style="font-size:12px; color:var(--text-2); margin-bottom:8px; padding:6px 10px; background:var(--bg-2); border-radius:6px; border-left:3px solid var(--accent);">
+          <div id="pmLoopProjectLabel" style="font-size:12px; color:var(--text-2); margin-bottom:8px; padding:6px 10px; background:var(--bg-card2); border-radius:6px; border-left:3px solid var(--accent);">
             ← Select a project above
           </div>
           <p class="meta" style="margin-bottom:14px;">Reads the selected project's ROADMAP.md, dispatches one task at a time, self-extends when the roadmap empties.</p>
