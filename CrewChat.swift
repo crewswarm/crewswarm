@@ -142,10 +142,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             header.heightAnchor.constraint(equalToConstant: 56),
 
-            headerAgentLbl.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 82),
-            headerAgentLbl.topAnchor.constraint(equalTo: header.topAnchor, constant: 12),
+            headerAgentLbl.centerXAnchor.constraint(equalTo: header.centerXAnchor),
+            headerAgentLbl.topAnchor.constraint(equalTo: header.topAnchor, constant: 10),
 
-            headerSubLbl.leadingAnchor.constraint(equalTo: headerAgentLbl.leadingAnchor),
+            headerSubLbl.centerXAnchor.constraint(equalTo: header.centerXAnchor),
             headerSubLbl.topAnchor.constraint(equalTo: headerAgentLbl.bottomAnchor, constant: 2),
 
             clearBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -14),
