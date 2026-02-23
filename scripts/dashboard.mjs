@@ -2001,7 +2001,7 @@ async function loadSearchTools(){
           <input id="st_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />
           <button onclick="saveSearchTool('\${p.id}')" class="btn-purple">Save</button>
           <button onclick="testSearchTool('\${p.id}')" class="btn-ghost">Test</button>
-          <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Get key ↗</a>
+          <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>
         </div>
         <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Saved as <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:4px;">\${p.envKey}</code> in environment</div>
         <div id="st_status_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
@@ -2064,7 +2064,7 @@ async function loadBuiltinProviders(){
             : \`<button onclick="saveBuiltinKey('\${p.id}')" class="btn-purple">Save</button>
                <button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost">Test</button>
                <button onclick="fetchBuiltinModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
-               <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Get key ↗</a>\`}
+               <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>\`}
         </div>
         <div id="bp_status_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
         <div id="bp_models_\${p.id}" style="margin-top:8px;display:none;">
