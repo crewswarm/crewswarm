@@ -2133,14 +2133,14 @@ async function loadOpencodeProject(){
     const st  = document.getElementById('opencodeProjStatus');
     if (inp) inp.placeholder = d.dir || 'e.g. /Users/you/Desktop/myproject';
     if (inp && d.dir) inp.value = d.dir;
-    if (st) st.textContent = d.dir ? ('Current: ' + d.dir) : 'Not set — using CrewSwarm repo dir (default).';
+    if (st) st.textContent = d.dir ? ('✅ Current: ' + d.dir) : '⚠️ Not set — OpenCode will write files to the CrewSwarm repo root. Set this to your project folder.';
   } catch {}
 }
 async function saveOpencodeProject(){
   const dir = (document.getElementById('opencodeProjInput').value || '').trim();
   try {
     await postJSON('/api/settings/opencode-project', { dir });
-    showNotification(dir ? 'Project dir saved — re-dispatch your task' : 'Project dir cleared');
+    showNotification(dir ? 'Project dir saved — takes effect on next task (no restart needed)' : 'Project dir cleared');
     loadOpencodeProject();
   } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
 }

@@ -124,12 +124,16 @@ const OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS = Number(process.env.OPENCREW_RT_DIS
 const OPENCREW_OPENCODE_ENABLED = (process.env.OPENCREW_OPENCODE_ENABLED || "1") !== "0";  // ON by default
 const OPENCREW_OPENCODE_FORCE = process.env.OPENCREW_OPENCODE_FORCE === "1";
 const OPENCREW_OPENCODE_BIN = process.env.OPENCREW_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
-const OPENCREW_OPENCODE_PROJECT = process.env.OPENCREW_OPENCODE_PROJECT || (() => {
+// Read project dir fresh on every call so dashboard changes take effect without a bridge restart
+function getOpencodeProjectDir() {
+  if (process.env.OPENCREW_OPENCODE_PROJECT) return process.env.OPENCREW_OPENCODE_PROJECT;
   try {
     const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
-    return cfg.opencodeProject || "";
-  } catch { return ""; }
-})() || process.cwd();
+    if (cfg.opencodeProject) return cfg.opencodeProject;
+  } catch {}
+  // No configured project dir — return empty string (caller should warn/skip rather than default to cwd)
+  return "";
+}
 const OPENCREW_OPENCODE_AGENT = process.env.OPENCREW_OPENCODE_AGENT || "admin";
 const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.1-codex";
 const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "180000");
@@ -1361,7 +1365,11 @@ function runOpenCodeTask(prompt, payload = {}) {
     const bin = fs.existsSync(OPENCREW_OPENCODE_BIN) ? OPENCREW_OPENCODE_BIN : "opencode";
     const model = String(payload?.model || OPENCREW_OPENCODE_MODEL);
     const agent = String(payload?.agent || OPENCREW_OPENCODE_AGENT || "").trim();
-    const projectDir = String(payload?.projectDir || OPENCREW_OPENCODE_PROJECT || process.cwd());
+    const configuredDir = getOpencodeProjectDir();
+    const projectDir = String(payload?.projectDir || configuredDir || process.cwd());
+    if (!payload?.projectDir && !configuredDir) {
+      console.warn(`[OpenCode] No project dir configured — writing to cwd (${process.cwd()}). Set one in Dashboard → Settings → OpenCode Project Directory.`);
+    }
     
     // Fixed: use --model (not -m), and proper command structure
     const args = ["run", String(prompt), "--model", model, "--dir", projectDir];
@@ -3164,7 +3172,7 @@ try {
       process.exit(1);
     }
     process.stderr.write(`📤 Sending to ${agentId} only (no broadcast)...\n`);
-    const projectDir = process.env.OPENCREW_OPENCODE_PROJECT || null;
+    const projectDir = getOpencodeProjectDir() || null;
     const reply = await runSendToAgent(agentId, message, { projectDir });
     process.stderr.write("✅ Reply received\n");
     console.log(reply);
