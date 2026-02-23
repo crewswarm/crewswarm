@@ -14,6 +14,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
+import {
+  BUILT_IN_RT_AGENTS,
+  COORDINATOR_AGENT_IDS,
+  RT_TO_GATEWAY_AGENT_MAP as REGISTRY_RT_TO_GATEWAY_AGENT_MAP,
+} from "./lib/agent-registry.mjs";
 
 const LEGACY_STATE_DIR = path.join(os.homedir(), ".openclaw");
 const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
@@ -114,19 +119,12 @@ const OPENCREW_OPENCODE_FORCE = process.env.OPENCREW_OPENCODE_FORCE === "1";
 const OPENCREW_OPENCODE_BIN = process.env.OPENCREW_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
 const OPENCREW_OPENCODE_PROJECT = process.env.OPENCREW_OPENCODE_PROJECT || process.cwd();
 const OPENCREW_OPENCODE_AGENT = process.env.OPENCREW_OPENCODE_AGENT || "admin";
-const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "opencode/glm-5-free";
+const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.1-codex";
 const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "180000");
 // ── Auto-load agents from crewswarm.json / openclaw.json (legacy) so new agents added via the dashboard
 //    are immediately available without editing this file.
 function buildAgentMapsFromConfig() {
-  const BUILT_IN_RT_AGENTS = "crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter";
-  const BUILT_IN_MAP = {
-    "crew-main": "main", "crew-pm": "pm", "crew-qa": "qa",
-    "crew-fixer": "fixer", "crew-coder": "coder",
-    "crew-coder-front": "coder-front", "crew-coder-back": "coder-back",
-    "crew-github": "github", "crew-security": "security",
-    "crew-frontend": "frontend", "crew-copywriter": "copywriter",
-  };
+  const BUILT_IN_MAP = { ...REGISTRY_RT_TO_GATEWAY_AGENT_MAP };
 
   if (process.env.OPENCREW_RT_SWARM_AGENTS) {
     // Fully overridden by env — build map from env list, fall back to built-in map values
@@ -144,7 +142,7 @@ function buildAgentMapsFromConfig() {
                     : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
 
     const map = { ...BUILT_IN_MAP };
-    const listSet = new Set(BUILT_IN_RT_AGENTS.split(",").map(s => s.trim()).filter(Boolean));
+    const listSet = new Set(BUILT_IN_RT_AGENTS);
 
     for (const agent of cfgAgents) {
       const rawId = agent.id;                                        // may be "coder-front" OR "crew-coder-front"
@@ -158,7 +156,7 @@ function buildAgentMapsFromConfig() {
     return { list: [...listSet], map };
   } catch (e) {
     // Config unreadable — fall back to built-in list
-    const list = BUILT_IN_RT_AGENTS.split(",").map(s => s.trim()).filter(Boolean);
+    const list = [...BUILT_IN_RT_AGENTS];
     return { list, map: BUILT_IN_MAP };
   }
 }
@@ -1173,17 +1171,27 @@ async function executeToolCalls(reply, agentId) {
   return results;
 }
 
+// Agents that should always run through OpenCode for real agentic file access
+const OPENCODE_AGENTS = new Set([
+  "crew-coder", "crew-coder-2", "crew-coder-front", "crew-coder-back",
+  "crew-frontend", "crew-main", "crew-fixer", "crew-devops",
+]);
+
 function shouldUseOpenCode(payload, prompt, incomingType) {
   if (!OPENCREW_OPENCODE_ENABLED) return false;
   if (OPENCREW_OPENCODE_FORCE) return true;
 
   if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
 
-  // Only use OpenCode if explicitly requested via runtime flag or payload hint.
-  // All other tasks route through legacy gateway using the agent's configured model.
+  // Explicit override via runtime flag or payload hint
   const runtime = String(payload?.runtime || payload?.executor || payload?.engine || "").toLowerCase();
   if (runtime === "opencode" || runtime === "codex" || runtime === "gpt5" || runtime === "gpt-5") return true;
   if (payload?.useOpenCode === true) return true;
+
+  // Auto-route coding agents through OpenCode for real agentic file access
+  const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  if (OPENCODE_AGENTS.has(agentId)) return true;
+
   return false;
 }
 
@@ -2584,17 +2592,30 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       });
     }
 
-    // Parse and execute @@DISPATCH commands from coordinator agents (crew-main, crew-pm only).
-    // Format: @@DISPATCH:agent-id|task description
+    // Parse and execute @@DISPATCH commands from coordinator agents only.
+    // Canonical format: @@DISPATCH {"agent":"crew-coder","task":"..."}
+    // Legacy format also supported: @@DISPATCH:agent-id|task description
     // Non-coordinator agents are blocked from dispatching to prevent loops.
-    const COORDINATOR_AGENTS = new Set(["crew-main", "crew-pm"]);
-    const dispatchMatches = COORDINATOR_AGENTS.has(OPENCREW_RT_AGENT)
-      ? [...reply.matchAll(/@@DISPATCH:([a-z0-9_-]+)\|([^\n@@]+)/g)]
+    const COORDINATOR_AGENTS = new Set(COORDINATOR_AGENT_IDS);
+    const rawDispatches = COORDINATOR_AGENTS.has(OPENCREW_RT_AGENT)
+      ? (() => {
+          const results = [];
+          // Canonical JSON format
+          for (const m of reply.matchAll(/@@DISPATCH\s+(\{[^}]+\})/g)) {
+            try {
+              const d = JSON.parse(m[1]);
+              if (d.agent && d.task) results.push({ targetAgent: d.agent.trim(), taskText: d.task.trim() });
+            } catch {}
+          }
+          // Legacy pipe format (still supported, normalized here)
+          for (const m of reply.matchAll(/@@DISPATCH:([a-z0-9_-]+)\|([^\n@@]+)/g)) {
+            results.push({ targetAgent: m[1].trim(), taskText: m[2].trim() });
+          }
+          return results;
+        })()
       : [];
-    if (dispatchMatches.length > 0) {
-      for (const m of dispatchMatches) {
-        const targetAgent = m[1].trim();
-        const taskText = m[2].trim();
+    if (rawDispatches.length > 0) {
+      for (const { targetAgent, taskText } of rawDispatches) {
         // Block self-dispatch and empty targets
         if (!targetAgent || !taskText || targetAgent === OPENCREW_RT_AGENT) continue;
         try {

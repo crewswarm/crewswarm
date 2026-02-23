@@ -12,6 +12,7 @@ import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { BUILT_IN_RT_AGENTS, normalizeRtAgentId } from "../lib/agent-registry.mjs";
 
 const CREWSWARM_DIR = path.resolve(process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || process.cwd());
 // Config search order (same as gateway-bridge + RT daemon):
@@ -48,13 +49,8 @@ function loadConfig() {
   return { raw, rtToken, agents };
 }
 
-// Built-in agents that always run even if not in config
-const BUILT_IN_AGENTS = ["crew-main", "crew-pm", "crew-qa", "crew-fixer", "crew-coder", "crew-coder-2"];
-
 function getAgentRtId(agentId) {
-  // If already prefixed or is a known bare name, use as-is
-  if (agentId.startsWith("crew-") || agentId === "security") return agentId;
-  return "crew-" + agentId;
+  return normalizeRtAgentId(agentId);
 }
 
 function runningBridges() {
@@ -90,9 +86,10 @@ if (args.includes("--status")) {
 // ── Start ────────────────────────────────────────────────────────────────────
 const { raw, rtToken, agents } = loadConfig();
 
-// Build full agent RT-id list: built-ins + all from config
-const allRtIds = new Set(BUILT_IN_AGENTS);
+// Build full agent RT-id list: all from config (canonical), fallback to built-ins if config empty
+const allRtIds = new Set();
 for (const a of agents) allRtIds.add(getAgentRtId(a.id));
+if (allRtIds.size === 0) BUILT_IN_RT_AGENTS.forEach(id => allRtIds.add(id));
 
 const already = runningBridges();
 const toStart = [...allRtIds].filter(id => !already.has(id));
@@ -135,8 +132,10 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
     ...process.env,
     OPENCREW_RT_AGENT: rtId,
     OPENCREW_RT_AUTH_TOKEN: rtToken,
-    OPENCREW_RT_CHANNELS: "command,assign,handoff,reassign,events",
-    OPENCREW_OPENCODE_ENABLED: "0",
+    OPENCREW_RT_CHANNELS: process.env.OPENCREW_RT_CHANNELS || "command,assign,handoff,reassign,events",
+    OPENCREW_OPENCODE_ENABLED: process.env.OPENCREW_OPENCODE_ENABLED ?? "1",
+    OPENCREW_OPENCODE_MODEL: process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.1-codex",
+    OPENCREW_OPENCODE_PROJECT: process.env.OPENCREW_OPENCODE_PROJECT || CREWSWARM_DIR,
     CREWSWARM_DIR,
   };
 

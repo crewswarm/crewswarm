@@ -112,6 +112,26 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 
 ---
 
+## Orchestrators and coordinators
+
+- Canonical RT agent IDs live in `lib/agent-registry.mjs` (for example `crew-coder`, `crew-pm`, `orchestrator`).
+- Bare aliases (for example `coder`, `pm`) are normalized to canonical RT IDs before dispatch.
+- Coordinator IDs that are allowed to emit `@@DISPATCH` are centralized in `lib/agent-registry.mjs` and enforced in `gateway-bridge.mjs`.
+
+### Coordinator responsibilities
+
+- `orchestrator`: PM-loop router and internal orchestration only.
+- `crew-pm`: planning worker (task decomposition, roadmap breakdown).
+- `crew-main`: general coordinator and final synthesis/verification.
+
+### OpenCode orchestrator roles
+
+- OpenCode `build`: delegation-only build orchestrator.
+- OpenCode `orchestrator`: tool-based orchestrator (`code_execute`, `code_validate`, `code_status`).
+- CrewSwarm runtime uses `orchestrator` / `crew-pm` / `crew-main` as the main coordination chain.
+
+---
+
 ## Agent tools (@@TOOL syntax)
 
 Agents communicate tool calls inline in their replies:

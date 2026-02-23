@@ -31,6 +31,7 @@ import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { COORDINATOR_AGENT_IDS } from "./lib/agent-registry.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -57,7 +58,8 @@ const PROJECT_ID     = process.env.PM_PROJECT_ID || null;
 const _pidSuffix     = PROJECT_ID ? `-${PROJECT_ID}` : "";
 const STOP_FILE      = join(LOG_DIR, `pm-loop${_pidSuffix}.stop`);
 const PID_FILE       = join(LOG_DIR, `pm-loop${_pidSuffix}.pid`);
-const TASK_TIMEOUT   = Number(process.env.PHASED_TASK_TIMEOUT_MS  || "300000");
+const TASK_TIMEOUT        = Number(process.env.PHASED_TASK_TIMEOUT_MS  || "300000");
+const MAX_CONCURRENT_TASKS = Number(process.env.PM_MAX_CONCURRENT || "20");
 const GROQ_API_KEY   = process.env.GROQ_API_KEY || ""; // kept for backwards compat
 
 // ── Search Tools ──────────────────────────────────────────────────────────
@@ -154,7 +156,7 @@ const USE_SECURITY    = process.env.PM_USE_SECURITY !== "0";
 // `nonDoer: true` agents are never assigned implementation tasks.
 // New agents in crewswarm.json without an entry here fall back to their identity.theme.
 const ROLE_HINTS = {
-  "crew-main":        { role: "main coordinator, general tasks, orchestration, dispatch",                  nonDoer: true,  keywords: [] },
+  "crew-main":        { role: "final synthesizer and verifier — reads all output files, checks coherence, writes FINAL_REPORT.md, gives build verdict", nonDoer: true,  keywords: [] },
   "crew-coder":       { role: "general code, structure, directories, files, setup, create, implement",     nonDoer: false, keywords: ["implement", "create", "build", "file", "module", "class", "function", "script", "python", "ruby", "php", "swift", "kotlin", "go", "rust"] },
   "crew-coder-front": { role: "HTML, CSS, JS UI, visual design, layout, animations, landing pages",        nonDoer: false, keywords: ["html", "css", "style", "section", "design", "layout", "animation", "nav", "hero", "frontend", "ui", "ux", "responsive", "gradient", "transition", "hover", "font", "color", "visual"] },
   "crew-coder-back":  { role: "APIs, Node.js, scripts, databases, backend logic, JSON, server endpoints",  nonDoer: false, keywords: ["api", "server", "node", "express", "endpoint", "database", "backend", "mjs", "rest", "graphql", "sql", "postgres", "mongo", "redis", "lambda", "microservice"] },
@@ -209,6 +211,7 @@ function buildActiveAgentRoster() {
   for (const [id, hint] of Object.entries(ROLE_HINTS)) {
     if (hint.nonDoer) nonDoers.add(id);
   }
+  for (const id of COORDINATOR_AGENT_IDS) nonDoers.add(id);
 
   for (const a of agents) {
     if (!a.id) continue;
@@ -730,8 +733,149 @@ async function appendGeneratedItems(newItems, round) {
   for (const item of newItems) console.log(`     • ${item.substring(0, 80)}`);
 }
 
+// ── Final synthesis: crew-main audits, then assembles/patches the full build ──
+async function finalSynthesis(opId, completedItems, doneCount, failedCount) {
+  if (doneCount === 0) return;
+  banner("🦊 crew-main (Quill) — Phase 1: Audit");
+
+  let filePaths = [];
+  try { filePaths = await getOutputDirFilePaths(); } catch {}
+  const fileManifest = filePaths.length > 0
+    ? filePaths.map(f => `  - ${f}`).join("\n")
+    : "(no output files found)";
+  const taskSummary = completedItems.map((t, i) => `  ${i + 1}. ${t.substring(0, 120)}`).join("\n");
+
+  // ── Phase 1: Audit — read all files, find disconnects ──────────────────
+  const auditPrompt = `[SYNTHESIS-AUDIT] You are Quill, the final assembler. All workers have finished. Your job is to audit the full build and find every broken seam.
+
+## Build summary
+${doneCount} tasks done, ${failedCount} failed.
+
+## Tasks completed
+${taskSummary}
+
+## Output files
+${fileManifest}
+
+## Phase 1 instructions — do ALL of this now:
+
+1. Use @@READ_FILE on EVERY file listed above (skip images/fonts/binaries). Read them all.
+
+2. For each file, check:
+   - Does it reference other files that exist? (imports, src=, href=, require(), fetch URLs)
+   - Are those referenced files actually present?
+   - Are function/class names consistent across files?
+   - Any duplicate or conflicting logic between files?
+   - Any TODO/FIXME/placeholder left by workers?
+
+3. Build a DISCONNECT LIST — every broken seam you found. Format exactly like:
+   DISCONNECT: <file> references <thing> which <problem>
+   Example: DISCONNECT: index.html references /api/submit but no server file defines that route
+
+4. Write @@WRITE_FILE output/FINAL_REPORT.md with:
+   - Build summary (1 paragraph)
+   - Full disconnect list
+   - Weakest file / biggest risk
+   - Verdict: SHIP IT / NEEDS WORK / DO NOT SHIP
+
+5. End your reply with the word AUDIT_DONE so Phase 2 knows you finished.
+
+Start reading files now. Be exhaustive.`;
+
+  let auditResult = "";
+  try {
+    console.log("  🦊 Quill auditing all output files...");
+    auditResult = await callAgent("crew-main", auditPrompt, { timeout: TASK_TIMEOUT * 3 });
+    console.log(`  ✅ Audit done: ${String(auditResult).substring(0, 150)}...`);
+    await log({ op_id: opId, event: "synthesis_audit_done", agent: "crew-main", result: String(auditResult).substring(0, 500) });
+  } catch (e) {
+    console.log(`  ⚠️  Audit failed: ${e.message.slice(0, 80)}`);
+    await log({ op_id: opId, event: "synthesis_audit_failed", error: e.message });
+    return;
+  }
+
+  // Extract disconnects — if none found, skip assembly phase
+  const hasDisconnects = /DISCONNECT:/i.test(auditResult);
+  const verdict = /SHIP IT/i.test(auditResult) ? "SHIP IT" : /DO NOT SHIP/i.test(auditResult) ? "DO NOT SHIP" : "NEEDS WORK";
+  console.log(`  📋 Verdict: ${verdict} | Disconnects found: ${hasDisconnects ? "YES — running assembly pass" : "none"}`);
+
+  if (!hasDisconnects && verdict === "SHIP IT") {
+    console.log("  ✅ Build is clean — no assembly pass needed.");
+    await log({ op_id: opId, event: "synthesis_clean", verdict });
+    return;
+  }
+
+  // ── Phase 2: Assembly — fix every disconnect found in Phase 1 ───────────
+  banner("🦊 crew-main (Quill) — Phase 2: Assembly & Patching");
+
+  const assemblyPrompt = `[SYNTHESIS-ASSEMBLY] You are Quill. Your Phase 1 audit found issues that need fixing before this build ships.
+
+## Audit findings
+${auditResult.substring(0, 3000)}
+
+## Phase 2 instructions — patch every disconnect now:
+
+For each DISCONNECT you found:
+
+1. Use @@READ_FILE to re-read the affected files if needed for full context.
+
+2. Determine the minimal targeted fix:
+   - Wrong import path → fix the import line only
+   - Missing route → add the route to the server file
+   - Mismatched function name → rename the call site to match the definition
+   - Missing file referenced → create it with @@WRITE_FILE
+   - Placeholder/TODO left → implement it
+
+3. Apply the fix with @@WRITE_FILE — write the COMPLETE corrected file content (not a diff, the full file).
+
+4. After all fixes, update @@WRITE_FILE output/FINAL_REPORT.md — append a section:
+   ## Assembly Pass
+   - List each fix you made (file + what changed)
+   - Updated verdict: SHIP IT / NEEDS WORK / DO NOT SHIP
+
+5. Reply with a sharp summary: what you fixed, what still needs human attention, final verdict.
+
+Fix everything you can. If a disconnect is too complex to safely patch (e.g., full architectural mismatch), document it clearly in the report instead of guessing.`;
+
+  try {
+    console.log("  🦊 Quill patching disconnects...");
+    const assemblyResult = await callAgent("crew-main", assemblyPrompt, { timeout: TASK_TIMEOUT * 4 });
+    console.log(`  ✅ Assembly complete:\n  ${String(assemblyResult).substring(0, 200)}`);
+    await log({ op_id: opId, event: "synthesis_assembly_done", agent: "crew-main", result: String(assemblyResult).substring(0, 500) });
+  } catch (e) {
+    console.log(`  ⚠️  Assembly pass failed: ${e.message.slice(0, 80)}`);
+    await log({ op_id: opId, event: "synthesis_assembly_failed", error: e.message });
+  }
+}
+
+// ── Concurrency semaphore ─────────────────────────────────────────────────
+let _activeTasks = 0;
+const _taskQueue = [];
+function acquireSlot() {
+  if (_activeTasks < MAX_CONCURRENT_TASKS) {
+    _activeTasks++;
+    return Promise.resolve();
+  }
+  return new Promise(resolve => _taskQueue.push(resolve));
+}
+function releaseSlot() {
+  if (_taskQueue.length > 0) {
+    _taskQueue.shift()();
+  } else {
+    _activeTasks--;
+  }
+}
+
 // ── Agent dispatch ────────────────────────────────────────────────────────
-function callAgent(agentId, message, { timeout } = {}) {
+async function callAgent(agentId, message, { timeout } = {}) {
+  await acquireSlot();
+  try {
+    return await _callAgentRaw(agentId, message, { timeout });
+  } finally {
+    releaseSlot();
+  }
+}
+function _callAgentRaw(agentId, message, { timeout } = {}) {
   // Non-doers (QA, fixer, security) get extra time — they read files and do analysis
   const { nonDoers: timeoutNonDoers } = buildActiveAgentRoster();
   const agentTimeout = timeout || (timeoutNonDoers.has(agentId) ? TASK_TIMEOUT * 2 : TASK_TIMEOUT);
@@ -966,6 +1110,11 @@ async function main() {
   const done    = finalItems.filter(i => i.status === "done").length;
   const failed  = finalItems.filter(i => i.status === "failed").length;
   const pending = finalItems.filter(i => i.status === "pending").length;
+
+  // crew-main synthesizes and verifies the full build before we close out
+  if (!DRY_RUN) {
+    await finalSynthesis(opId, completedItems, done, failed);
+  }
 
   banner(`PM Loop finished  ✓${done}  ✗${failed}  ⏳${pending} remaining`);
   console.log(`Roadmap: ${ROADMAP_FILE}`);

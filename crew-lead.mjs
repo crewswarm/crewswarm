@@ -594,6 +594,7 @@ async function confirmProject({ draftId, roadmapMd: overrideMd }) {
 
 // rtPublish is set once the RT connection is established
 let rtPublish = null;
+let crewLeadHeartbeat = null;
 
 // Track dispatched tasks so completions route back to the right session
 // Map<taskId, { sessionId, agent, task, ts, pipelineId?, stepIndex? }>
@@ -1077,6 +1078,18 @@ function connectRT() {
         return taskId;
       };
       console.log("[crew-lead] RT connected — listening for agent replies");
+      // Send heartbeat every 30s so monitoring sees crew-lead as up
+      if (crewLeadHeartbeat) clearInterval(crewLeadHeartbeat);
+      crewLeadHeartbeat = setInterval(() => {
+        try {
+          const taskId = crypto.randomUUID();
+          ws.send(JSON.stringify({
+            type: "publish", channel: "status", messageType: "agent.heartbeat",
+            to: "broadcast", taskId, priority: "low",
+            payload: { agent: "crew-lead", ts: new Date().toISOString() },
+          }));
+        } catch {}
+      }, 30000);
       return;
     }
     if (p.type === "error") {
@@ -1145,6 +1158,7 @@ function connectRT() {
   ws.on("close", () => {
     ready = false;
     rtPublish = null;
+    if (crewLeadHeartbeat) { clearInterval(crewLeadHeartbeat); crewLeadHeartbeat = null; }
     console.log("[crew-lead] RT disconnected — reconnecting in 5s");
     setTimeout(connectRT, 5000);
   });

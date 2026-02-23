@@ -12,10 +12,25 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import WebSocket, { WebSocketServer } from "ws";
+import { BUILT_IN_RT_AGENTS, RT_TO_GATEWAY_AGENT_MAP } from "../lib/agent-registry.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
-const DEFAULT_ALLOWED_AGENTS = "main,admin,build,coder,researcher,architect,reviewer,qa,fixer,pm,orchestrator,openclaw,openclaw-main,opencode-pm,opencode-qa,opencode-fixer,opencode-coder,opencode-coder-2,security,crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter,crew-telegram,crew-lead";
+const MAX_CLIENTS = Number(process.env.OPENCREW_RT_MAX_CLIENTS || "50");
+
+const LEGACY_COMPAT_ALLOWED_AGENTS = [
+  "main", "admin", "build", "coder", "researcher", "architect", "reviewer", "qa", "fixer", "pm",
+  "orchestrator", "openclaw", "openclaw-main", "opencode-pm", "opencode-qa", "opencode-fixer",
+  "opencode-coder", "opencode-coder-2", "security", "crew-coder-2", "crew-lead",
+];
+const DEFAULT_ALLOWED_AGENTS = [
+  ...new Set([
+    ...LEGACY_COMPAT_ALLOWED_AGENTS,
+    ...BUILT_IN_RT_AGENTS,
+    ...Object.keys(RT_TO_GATEWAY_AGENT_MAP),
+    ...Object.values(RT_TO_GATEWAY_AGENT_MAP),
+  ]),
+].join(",");
 const ALLOWED_AGENTS = (process.env.OPENCLAW_ALLOWED_AGENTS || DEFAULT_ALLOWED_AGENTS)
   .split(",")
   .map((s) => s.trim())
@@ -281,6 +296,13 @@ function setupConnectionHandlers() {
     } catch (err) {
       sendJson(socket, { type: "error", message: err.message });
       socket.close();
+      return;
+    }
+
+    if (state.clients.size >= MAX_CLIENTS) {
+      sendJson(socket, { type: "error", message: `Server at capacity (max ${MAX_CLIENTS} clients)` });
+      socket.close();
+      console.warn(`[opencrew-rt-daemon] MAX_CLIENTS (${MAX_CLIENTS}) reached — rejected new connection`);
       return;
     }
 

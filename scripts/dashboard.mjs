@@ -13,6 +13,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import { BUILT_IN_RT_AGENTS, normalizeRtAgentId } from "../lib/agent-registry.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPENCLAW_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
@@ -136,15 +137,14 @@ async function getAgentList() {
     const raw = Array.isArray(cfg.agents) ? cfg.agents
               : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
     raw.forEach(a => {
-      const rtName = a.id.startsWith("crew-") ? a.id : "crew-" + a.id;
-      merged.add(rtName);
+      const rtName = normalizeRtAgentId(a.id);
+      if (rtName) merged.add(rtName);
     });
   } catch {}
 
   // 3. Hard fallback if both fail
   if (!merged.size) {
-    ["crew-main","crew-pm","crew-qa","crew-fixer","crew-coder","crew-coder-2","crew-coder-front","crew-coder-back","crew-github","security"]
-      .forEach(a => merged.add(a));
+    BUILT_IN_RT_AGENTS.forEach((a) => merged.add(a));
   }
 
   // Annotate each agent with last heartbeat time for liveness display
