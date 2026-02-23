@@ -963,6 +963,9 @@ function buildToolInstructions(allowed) {
     tools.push(`### Run a shell command (safe subset only — no rm, no sudo):${gitNote}
 @@RUN_CMD ls /some/path`);
   }
+  if (allowed.has('web_search')) tools.push(`### Search the web (Brave Search):
+@@WEB_SEARCH your search query here
+Returns top 5 results with title, URL, and snippet. Use this to research facts, find examples, or verify information before writing.`);
   if (!tools.length) return ""; // agent has no tools — instructions not needed
 
   return `
@@ -1177,6 +1180,54 @@ async function executeToolCalls(reply, agentId) {
       results.push(`[tool:run_cmd] ✅ $ ${cmd}\n${out.slice(0, 2000)}`);
     } catch (err) {
       results.push(`[tool:run_cmd] ❌ $ ${cmd}\n${err.message}`);
+    }
+  }
+
+  // ── @@WEB_SEARCH ──────────────────────────────────────────────────────────
+  const webSearchRe = /@@WEB_SEARCH[ \t]+([^\n]+)/g;
+  while ((m = webSearchRe.exec(reply)) !== null) {
+    if (!allowed.has('web_search')) {
+      results.push(`[tool:web_search] ⛔ ${agentId} does not have web_search permission`);
+      continue;
+    }
+    const query = m[1].trim();
+    try {
+      const braveKey = (() => {
+        // Check search-tools.json then env
+        const stPaths = [
+          path.join(CREWSWARM_DIR, "search-tools.json"),
+          path.join(LEGACY_STATE_DIR, "search-tools.json"),
+        ];
+        for (const p of stPaths) {
+          try { return JSON.parse(fs.readFileSync(p, "utf8"))?.brave?.apiKey; } catch {}
+        }
+        return process.env.BRAVE_API_KEY || null;
+      })();
+      if (!braveKey) {
+        results.push(`[tool:web_search] ❌ No Brave API key found. Set BRAVE_API_KEY or add to ~/.crewswarm/search-tools.json`);
+        continue;
+      }
+      const res = await fetch(
+        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5&text_decorations=false`,
+        { headers: { Accept: "application/json", "X-Subscription-Token": braveKey }, signal: AbortSignal.timeout(10000) }
+      );
+      if (!res.ok) {
+        results.push(`[tool:web_search] ❌ Brave API error ${res.status} for: ${query}`);
+        continue;
+      }
+      const data = await res.json();
+      const hits = (data.web?.results || []).slice(0, 5);
+      if (!hits.length) {
+        results.push(`[tool:web_search] ℹ️ No results for: ${query}`);
+        continue;
+      }
+      const formatted = hits.map((r, i) =>
+        `${i + 1}. **${r.title}** — ${r.url}\n   ${r.description || ""}`
+      ).join("\n");
+      results.push(`[tool:web_search] 🔍 Results for "${query}":\n${formatted}`);
+      console.log(`[${agentId}] web_search: "${query}" → ${hits.length} results`);
+    } catch (err) {
+      results.push(`[tool:web_search] ❌ Search failed: ${err.message}`);
     }
   }
 
