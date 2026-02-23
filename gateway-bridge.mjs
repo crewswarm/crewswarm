@@ -1870,8 +1870,9 @@ function buildTaskPrompt(taskText, sourceLabel, agentId) {
     if (agentCfg) {
       const displayName = agentCfg.identity?.name || agentCfg.name || agentId;
       const emoji       = agentCfg.identity?.emoji || agentCfg.emoji || "";
+      const role        = agentCfg.identity?.theme || "";
       const model       = agentCfg.model || "unknown model";
-      identityHeader = `You are ${emoji ? emoji + " " : ""}${displayName} (agent ID: ${agentId}, model: ${model}).`;
+      identityHeader = `You are ${emoji ? emoji + " " : ""}${displayName} (agent ID: ${agentId}${role ? ", role: " + role : ""}, model: ${model}).`;
     }
   }
 
