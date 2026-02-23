@@ -89,7 +89,7 @@ fi
 
 # ── Primary action — chat first ─────────────────────────────────────
 echo "---"
-echo "💬 Open CrewChat | href='$DASHBOARD_URL/#chat' color=#38bdf8"
+echo "💬 Open CrewChat | bash='open' param1='-a' param2='CrewChat' terminal=false refresh=false color=#38bdf8"
 echo "🖥️  Open Dashboard | href='$DASHBOARD_URL'"
 echo "---"
 echo "⚙️ Stack Controls"
