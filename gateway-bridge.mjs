@@ -2957,11 +2957,11 @@ try {
     process.exit(1);
   }
 
-  progress("Loading local identity/config...");
-  const creds = loadCredentials();
   if (args.includes("--quickstart")) telemetry("onboarding_started", { source: "--quickstart" });
 
   if (shouldConnectGateway(args)) {
+    progress("Loading local identity/config...");
+    const creds = loadCredentials();
     progress(`Connecting to gateway ${GATEWAY_URL}...`);
     bridge = await withRetry(() => createBridge(creds), { retries: 2, baseDelayMs: 350, label: "gateway connect" });
     bridge.kind = "gateway";
