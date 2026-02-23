@@ -384,6 +384,16 @@ const html = `<!doctype html>
     .reply-btn  { font-size: 11px; padding: 3px 8px; background: var(--accent2); color: #fff; margin-left: 8px; }
     .replay-btn { font-size: 11px; padding: 3px 8px; background: var(--yellow); color: #000; margin-left: 8px; }
     .send-btn   { background: var(--green); color: #000; }
+    /* ── Emoji picker ── */
+    .emoji-btn { width:42px; height:42px; font-size:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); border-radius:var(--radius); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:border-color 0.15s, background 0.15s; color:inherit; }
+    .emoji-btn:hover { border-color:var(--accent); background:rgba(56,189,248,0.08); }
+    .emoji-picker-wrap { position:relative; flex-shrink:0; }
+    .emoji-picker-panel { display:none; position:absolute; top:46px; left:0; z-index:200; background:var(--bg-card); border:1px solid var(--border-hi); border-radius:var(--radius); padding:10px; box-shadow:0 8px 32px rgba(0,0,0,0.5); width:236px; }
+    .emoji-picker-panel.open { display:block; }
+    .emoji-grid { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; }
+    .emoji-opt { font-size:18px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:5px; transition:background 0.1s; }
+    .emoji-opt:hover { background:rgba(56,189,248,0.15); }
+
     /* Files view */
     .file-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; transition: border-color 0.15s; }
     .file-row:hover { border-color: var(--accent); }
@@ -2379,7 +2389,13 @@ async function loadAgents_cfg(){
             <div class="field-label">Display name &amp; emoji</div>
             <div style="display:flex; gap:8px;">
               <input id="aname-\${a.id}" type="text" value="\${a.name}" placeholder="Display name" style="flex:1;" />
-              <input id="aemoji-\${a.id}" type="text" value="\${a.emoji}" placeholder="🤖" style="width:70px;" />
+              <div class="emoji-picker-wrap">
+                <button type="button" class="emoji-btn" id="aemoji-btn-\${a.id}" onclick="toggleEmojiPicker('\${a.id}')" title="Pick emoji">\${a.emoji||'🤖'}</button>
+                <input type="hidden" id="aemoji-\${a.id}" value="\${a.emoji||'🤖'}" />
+                <div class="emoji-picker-panel" id="aemoji-panel-\${a.id}">
+                  <div class="emoji-grid" id="aemoji-grid-\${a.id}"></div>
+                </div>
+              </div>
               <button onclick="saveAgentIdentity('\${a.id}')" class="btn-ghost">Save</button>
             </div>
             <div style="margin-top:8px;">
@@ -2541,6 +2557,36 @@ async function saveAgentFallback(agentId){
     showNotification(fallbackModel ? \`Fallback set: \${fallbackModel}\` : \`Fallback cleared for \${agentId}\`);
   } catch(e){ showNotification('Failed: ' + e.message, true); }
 }
+
+const AGENT_EMOJIS = ['🤖','🧠','⚡','🔥','🎯','🛡️','🔧','🐛','🔬','📋','✍️','🐙','🎨','🖥️','📱','🔒','📊','🚀','💡','🌐','⚙️','🦊','🦾','💻','🏗️','🔍','📝','💬','🧪','🎭'];
+
+function toggleEmojiPicker(agentId) {
+  const panel = document.getElementById('aemoji-panel-' + agentId);
+  const grid  = document.getElementById('aemoji-grid-'  + agentId);
+  const isOpen = panel.classList.contains('open');
+  // close all other open pickers
+  document.querySelectorAll('.emoji-picker-panel.open').forEach(p => p.classList.remove('open'));
+  if (isOpen) return;
+  if (!grid.hasChildNodes()) {
+    grid.innerHTML = AGENT_EMOJIS.map(e =>
+      `<div class="emoji-opt" onclick="selectEmoji('${agentId}','${e}')" title="${e}">${e}</div>`
+    ).join('');
+  }
+  panel.classList.add('open');
+}
+
+function selectEmoji(agentId, emoji) {
+  document.getElementById('aemoji-'     + agentId).value     = emoji;
+  document.getElementById('aemoji-btn-' + agentId).textContent = emoji;
+  document.getElementById('aemoji-panel-' + agentId).classList.remove('open');
+}
+
+// close picker when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.emoji-picker-wrap')) {
+    document.querySelectorAll('.emoji-picker-panel.open').forEach(p => p.classList.remove('open'));
+  }
+});
 
 async function saveAgentIdentity(agentId){
   const name  = document.getElementById('aname-'  + agentId).value.trim();
