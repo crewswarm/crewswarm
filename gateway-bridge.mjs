@@ -1862,7 +1862,21 @@ function buildTaskPrompt(taskText, sourceLabel, agentId) {
     } catch {}
   }
 
+  // Inject agent identity — name, model, and ID so every agent knows who it is
+  let identityHeader = "";
+  if (agentId) {
+    const agentList = loadAgentList();
+    const agentCfg = agentList.find(a => a.id === agentId);
+    if (agentCfg) {
+      const displayName = agentCfg.identity?.name || agentCfg.name || agentId;
+      const emoji       = agentCfg.identity?.emoji || agentCfg.emoji || "";
+      const model       = agentCfg.model || "unknown model";
+      identityHeader = `You are ${emoji ? emoji + " " : ""}${displayName} (agent ID: ${agentId}, model: ${model}).`;
+    }
+  }
+
   const parts = [];
+  if (identityHeader) parts.push(identityHeader);
   if (agentSystemPrompt) parts.push(agentSystemPrompt);
   if (toolInstructions) parts.push(toolInstructions);
   if (sharedMemory.text) parts.push(sharedMemory.text);
