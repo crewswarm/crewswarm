@@ -966,6 +966,12 @@ function buildToolInstructions(allowed) {
   if (allowed.has('web_search')) tools.push(`### Search the web (Brave Search):
 @@WEB_SEARCH your search query here
 Returns top 5 results with title, URL, and snippet. Use this to research facts, find examples, or verify information before writing.`);
+  if (allowed.has('web_fetch')) tools.push(`### Fetch a URL and read its content:
+@@WEB_FETCH https://example.com/page
+Returns the page text (up to 8000 chars). Use to read docs, articles, or any URL before summarising or referencing.`);
+  if (allowed.has('telegram')) tools.push(`### Send a Telegram message:
+@@TELEGRAM your message text here
+Sends a message to the configured Telegram chat. Use to notify humans of task completion, errors, or important findings.`);
   if (!tools.length) return ""; // agent has no tools — instructions not needed
 
   return `
@@ -1228,6 +1234,76 @@ async function executeToolCalls(reply, agentId) {
       console.log(`[${agentId}] web_search: "${query}" → ${hits.length} results`);
     } catch (err) {
       results.push(`[tool:web_search] ❌ Search failed: ${err.message}`);
+    }
+  }
+
+  // ── @@WEB_FETCH ───────────────────────────────────────────────────────────
+  const webFetchRe = /@@WEB_FETCH[ \t]+(https?:\/\/[^\n]+)/g;
+  while ((m = webFetchRe.exec(reply)) !== null) {
+    if (!allowed.has('web_fetch')) {
+      results.push(`[tool:web_fetch] ⛔ ${agentId} does not have web_fetch permission`);
+      continue;
+    }
+    const url = m[1].trim();
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "CrewSwarm/1.0 (agent fetch)" },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!res.ok) {
+        results.push(`[tool:web_fetch] ❌ HTTP ${res.status} fetching: ${url}`);
+        continue;
+      }
+      const ct = res.headers.get("content-type") || "";
+      let text = await res.text();
+      // Strip HTML tags to extract readable text
+      if (ct.includes("html")) {
+        text = text
+          .replace(/<script[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+      }
+      const snippet = text.length > 8000 ? text.slice(0, 8000) + "\n...[truncated]" : text;
+      results.push(`[tool:web_fetch] 🌐 ${url} (${text.length} chars):\n${snippet}`);
+      console.log(`[${agentId}] web_fetch: ${url} → ${text.length} chars`);
+    } catch (err) {
+      results.push(`[tool:web_fetch] ❌ Fetch failed for ${url}: ${err.message}`);
+    }
+  }
+
+  // ── @@TELEGRAM ────────────────────────────────────────────────────────────
+  const telegramRe = /@@TELEGRAM[ \t]+([^\n]+)/g;
+  while ((m = telegramRe.exec(reply)) !== null) {
+    if (!allowed.has('telegram')) {
+      results.push(`[tool:telegram] ⛔ ${agentId} does not have telegram permission`);
+      continue;
+    }
+    const message = m[1].trim();
+    try {
+      const cfg = resolveConfig();
+      const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || "";
+      const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID   || "";
+      if (!botToken || !chatId) {
+        results.push(`[tool:telegram] ❌ TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in env or ~/.crewswarm/config.json`);
+        continue;
+      }
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: `[${agentId}] ${message}`, parse_mode: "Markdown" }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        results.push(`[tool:telegram] ❌ Telegram error: ${data.description}`);
+      } else {
+        results.push(`[tool:telegram] ✅ Sent: ${message.slice(0, 80)}${message.length > 80 ? "…" : ""}`);
+        console.log(`[${agentId}] telegram: sent message`);
+      }
+    } catch (err) {
+      results.push(`[tool:telegram] ❌ Send failed: ${err.message}`);
     }
   }
 

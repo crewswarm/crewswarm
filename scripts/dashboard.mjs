@@ -44,10 +44,10 @@ const CREWSWARM_TOOLS = [
   { id: "mkdir",      desc: "Create directories (@@MKDIR)" },
   { id: "run_cmd",    desc: "Run whitelisted shell commands (@@RUN_CMD)" },
   { id: "git",        desc: "Git & GitHub CLI operations" },
-  { id: "web_search", desc: "Web search (coming soon)" },
-  { id: "web_fetch",  desc: "Fetch URLs (coming soon)" },
+  { id: "web_search", desc: "Web search (Brave Search — @@WEB_SEARCH)" },
+  { id: "web_fetch",  desc: "Fetch URLs (@@WEB_FETCH)" },
   { id: "dispatch",   desc: "Dispatch tasks to other agents" },
-  { id: "telegram",   desc: "Send Telegram messages" },
+  { id: "telegram",   desc: "Send Telegram messages (@@TELEGRAM)" },
 ];
 
 const ctlPath = (() => {
@@ -2162,10 +2162,10 @@ const CREWSWARM_TOOLS = [
   { id: 'mkdir',      desc: 'Create directories (@@MKDIR)' },
   { id: 'run_cmd',    desc: 'Run whitelisted shell commands (@@RUN_CMD)' },
   { id: 'git',        desc: 'Git & GitHub CLI operations' },
-  { id: 'web_search', desc: 'Web search (coming soon)' },
-  { id: 'web_fetch',  desc: 'Fetch URLs (coming soon)' },
+  { id: 'web_search', desc: 'Web search (Brave Search — @@WEB_SEARCH)' },
+  { id: 'web_fetch',  desc: 'Fetch URLs (@@WEB_FETCH)' },
   { id: 'dispatch',   desc: 'Dispatch tasks to other agents' },
-  { id: 'telegram',   desc: 'Send Telegram messages' },
+  { id: 'telegram',   desc: 'Send Telegram messages (@@TELEGRAM)' },
 ];
 
 // Role-based tool defaults — applied when "Apply role defaults" is clicked
@@ -2512,7 +2512,10 @@ const PROMPT_PRESETS = {
 - Write in a clear, confident, and friendly tone
 - Match the voice and style of existing content
 - Keep copy concise — fewer words, more impact
-- Always read existing content before writing new sections\`,
+- Always read existing content before writing new sections
+- Use @@WEB_SEARCH <query> to research facts, competitors, and trends before writing — never invent claims
+- Use @@WEB_FETCH <url> to read a specific page or article for reference
+- Only cite sources you actually retrieved via @@WEB_SEARCH or @@WEB_FETCH\`,
   ios: \`You are an iOS/Swift specialist. You write SwiftUI, UIKit, and native Apple platform code.
 - ALWAYS read existing Swift files before editing
 - NEVER replace or recreate files — only append or patch
@@ -2584,12 +2587,16 @@ const PROMPT_PRESETS = {
 - Test all contracts with Hardhat or Foundry before reporting done\`,
   automation: \`You are an automation and web scraping specialist. You write Playwright, Puppeteer, and Python scrapers.
 - Use Playwright for JS-heavy sites, requests+BeautifulSoup for static HTML
+- Use @@WEB_FETCH <url> to quickly read a page before deciding whether to scrape it
+- Use @@WEB_SEARCH <query> to find target URLs, APIs, or existing tools before building from scratch
 - Handle pagination, login flows, and dynamic content explicitly
 - Store raw data before transforming — never lose the source
 - Write retry logic for flaky network requests
 - Respect robots.txt and rate-limit requests appropriately\`,
   docs: \`You are a technical documentation writer. You write API docs, READMEs, and developer guides.
 - ALWAYS read the code you're documenting before writing
+- Use @@WEB_SEARCH <query> to find prior art, best practices, or similar docs for reference
+- Use @@WEB_FETCH <url> to read a specific doc page before paraphrasing or referencing it
 - Write for the reader — assume minimal context, include working examples
 - Use consistent structure: Overview, Installation, Usage, API Reference, Examples
 - Keep docs in sync with the actual implementation — flag any discrepancies
@@ -2609,7 +2616,8 @@ const PROMPT_PRESETS = {
   main: \`You are the main agent and general-purpose coordinator of the CrewSwarm crew.
 - Handle tasks that don't belong to a specialist
 - Delegate to specialist agents when a task clearly fits their domain
-- Use web search, memory, and browser tools when needed
+- Use @@WEB_SEARCH <query> to look up facts, docs, or current information
+- Use @@WEB_FETCH <url> to read a specific page before summarising or referencing it
 - Write and edit files directly for general tasks
 - Keep responses concise and action-oriented\`,
 };
