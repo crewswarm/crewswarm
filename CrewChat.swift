@@ -6,17 +6,19 @@ let API_BASE  = "http://127.0.0.1:4319"
 let SESSION   = "owner"
 let FIRSTNAME = "Jeff"
 
-// ── Colors ────────────────────────────────────────────────────────────────────
+// ── Colors — matched exactly to dashboard CSS variables ───────────────────────
+// --bg:#060a10  --bg-card:#0d1420  --accent:#38bdf8  --green:#34d399
+// --text:#f0f6ff  --text-2:#8b9db3  --border:rgba(255,255,255,0.07)
 extension NSColor {
-    static let crewBg      = NSColor(red:0.05, green:0.05, blue:0.07, alpha:1)
-    static let crewCard    = NSColor(red:0.10, green:0.10, blue:0.13, alpha:1)
-    static let crewUserBg  = NSColor(red:0.13, green:0.77, blue:0.37, alpha:1)
-    static let crewText    = NSColor(red:0.94, green:0.94, blue:0.96, alpha:1)
-    static let crewMuted   = NSColor(red:0.50, green:0.50, blue:0.56, alpha:1)
-    static let crewBorder  = NSColor(red:0.18, green:0.18, blue:0.22, alpha:1)
-    static let crewBlue    = NSColor(red:0.38, green:0.64, blue:0.98, alpha:1)
-    static let crewGreen   = NSColor(red:0.13, green:0.77, blue:0.37, alpha:1)
-    static let crewRoadmap = NSColor(red:0.05, green:0.12, blue:0.24, alpha:1)
+    static let crewBg      = NSColor(red:0.024, green:0.039, blue:0.063, alpha:1) // #060a10
+    static let crewCard    = NSColor(red:0.051, green:0.078, blue:0.125, alpha:1) // #0d1420
+    static let crewUserBg  = NSColor(red:0.220, green:0.741, blue:0.973, alpha:1) // #38bdf8 accent
+    static let crewText    = NSColor(red:0.941, green:0.965, blue:1.000, alpha:1) // #f0f6ff
+    static let crewMuted   = NSColor(red:0.545, green:0.616, blue:0.702, alpha:1) // #8b9db3
+    static let crewBorder  = NSColor.white.withAlphaComponent(0.07)
+    static let crewBlue    = NSColor(red:0.220, green:0.741, blue:0.973, alpha:1) // #38bdf8
+    static let crewGreen   = NSColor(red:0.204, green:0.827, blue:0.600, alpha:1) // #34d399
+    static let crewRoadmap = NSColor(red:0.051, green:0.118, blue:0.220, alpha:1) // dark navy
 }
 
 // ── HTTP ──────────────────────────────────────────────────────────────────────
