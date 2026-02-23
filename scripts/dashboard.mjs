@@ -2075,9 +2075,30 @@ async function saveBuiltinKey(providerId){
   const key = inp?.value?.trim();
   if (!key && providerId !== 'openai-local') { showNotification('Paste an API key first', 'error'); return; }
   await postJSON('/api/providers/builtin/save', { providerId, apiKey: key || '' });
-  showNotification('Saved key for ' + providerId);
   inp.value = '';
-  loadBuiltinProviders();
+  showNotification('Key saved — fetching models…');
+  // Await so the re-rendered card DOM exists before we write into it
+  await loadBuiltinProviders();
+  // Auto-fetch models so the agent model dropdown populates immediately
+  try {
+    const r = await postJSON('/api/providers/fetch-models', { providerId });
+    if (r.ok) {
+      const tags   = document.getElementById('bp_mtags_'  + providerId);
+      const count  = document.getElementById('bp_mcount_' + providerId);
+      const wrap   = document.getElementById('bp_models_' + providerId);
+      const status = document.getElementById('bp_status_' + providerId);
+      if (tags)   tags.innerHTML = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
+      if (count)  count.textContent = r.models.length;
+      if (wrap)   wrap.style.display = 'block';
+      if (status) { status.style.color = '#34d399'; status.textContent = '✓ ' + r.models.length + ' models'; }
+      showNotification('Key saved for ' + providerId + ' — ' + r.models.length + ' models ready');
+      loadAgents(); // refresh model dropdowns on the Agents tab
+    } else {
+      showNotification('Key saved — could not fetch models: ' + (r.error || 'unknown'), 'warning');
+    }
+  } catch(e) {
+    showNotification('Key saved — model fetch failed: ' + e.message, 'warning');
+  }
 }
 
 async function testBuiltinProvider(providerId){
