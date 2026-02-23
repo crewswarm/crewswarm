@@ -74,6 +74,8 @@ jobs:
           sleep 3
           node crew-lead.mjs &
           sleep 2
+          node scripts/dashboard.mjs &
+          sleep 2
           node scripts/start-crew.mjs
           sleep 30
           for i in $(seq 1 30); do
