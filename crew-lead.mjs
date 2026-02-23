@@ -1014,8 +1014,20 @@ server.listen(PORT, "127.0.0.1", () => {
 });
 
 server.on("error", (err) => {
-  console.error("[crew-lead] server error:", err.message);
+  if (err.code === "EADDRINUSE") {
+    console.error(`[crew-lead] Port ${PORT} already in use — kill the existing process first`);
+  } else {
+    console.error("[crew-lead] server error:", err.message);
+  }
   process.exit(1);
+});
+
+// Keep alive — don't crash on unhandled promise rejections or async errors
+process.on("unhandledRejection", (reason) => {
+  console.error("[crew-lead] unhandled rejection (kept alive):", reason?.message || reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[crew-lead] uncaught exception (kept alive):", err.message);
 });
 
 // ── RT Bus listener — receives replies from agents ────────────────────────────
