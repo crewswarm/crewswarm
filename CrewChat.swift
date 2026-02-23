@@ -87,7 +87,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             contentRect: NSRect(x: 0, y: 0, width: W, height: H),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
             backing: .buffered, defer: false)
-        window.title = "CrewChat"
+        window.title = ""
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.backgroundColor = NSColor.crewBg
