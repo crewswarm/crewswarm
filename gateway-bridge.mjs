@@ -93,13 +93,20 @@ const GATEWAY_URL = "ws://127.0.0.1:18789";
 const OPENCREW_RT_URL = process.env.OPENCREW_RT_URL || "ws://127.0.0.1:18889";
 const OPENCREW_RT_AGENT = process.env.OPENCREW_RT_AGENT || "crew-main";
 function getRTToken() {
-  if (process.env.OPENCREW_RT_AUTH_TOKEN) return process.env.OPENCREW_RT_AUTH_TOKEN;
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "openclaw.json"), "utf8"));
-    return cfg.env?.OPENCREW_RT_AUTH_TOKEN || "";
-  } catch {
-    return "";
+  let token = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+  if (!token) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
+      token = cfg?.rt?.authToken || cfg?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+    } catch {}
   }
+  if (!token) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "openclaw.json"), "utf8"));
+      token = cfg?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+    } catch {}
+  }
+  return typeof token === "string" ? token.trim() : "";
 }
 const OPENCREW_RT_TOKEN = getRTToken();
 const OPENCREW_RT_CHANNELS = (process.env.OPENCREW_RT_CHANNELS || "command,assign,handoff,reassign,events")

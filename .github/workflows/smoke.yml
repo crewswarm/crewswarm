@@ -31,7 +31,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           mkdir -p ~/.crewswarm
-          TOKEN="${CREWSWARM_RT_TOKEN:-ci-test-token}"
+          TOKEN=$(echo -n "${CREWSWARM_RT_TOKEN:-ci-test-token}" | tr -d '\n\r\t ')
           echo "{\"rt\":{\"authToken\":\"$TOKEN\"}}" > ~/.crewswarm/config.json
           node -e "
             const fs = require('fs');
@@ -65,14 +65,15 @@ jobs:
           CREWSWARM_SMOKE_TIMEOUT_MS: "180000"
         run: |
           export CREWSWARM_DIR="$GITHUB_WORKSPACE"
-          export OPENCREW_RT_AUTH_TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/config.json')).rt.authToken)")
+          export OPENCREW_RT_URL="ws://127.0.0.1:18889"
+          export OPENCREW_RT_AUTH_TOKEN=$(node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/config.json')); console.log((c.rt&&c.rt.authToken||'').trim())")
           export OPENCREW_RT_REQUIRE_TOKEN=1
           node scripts/opencrew-rt-daemon.mjs &
           sleep 3
           node crew-lead.mjs &
           sleep 2
           node scripts/start-crew.mjs
-          sleep 15
+          sleep 30
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:5010/health >/dev/null; then break; fi
             if [ "$i" -eq 30 ]; then echo "crew-lead never became healthy"; exit 1; fi
@@ -80,13 +81,18 @@ jobs:
           done
           for i in $(seq 1 60); do
             s=$(curl -s http://127.0.0.1:18889/status || true)
+            [ $((i % 10)) -eq 0 ] && echo "RT status (attempt $i): $s"
             if echo "$s" | grep -q '"crew-coder"' && echo "$s" | grep -q '"crew-main"'; then
               echo "Agents connected: $s"
               break
             fi
             if [ "$i" -eq 60 ]; then
               echo "Timeout: crew-coder and/or crew-main did not connect to RT"
-              curl -s http://127.0.0.1:18889/status || true
+              echo "Final status: $(curl -s http://127.0.0.1:18889/status || true)"
+              echo "--- Bridge logs (agent gate failure) ---"
+              for f in /tmp/bridge-crew-*.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log; do
+                [ -f "$f" ] && echo "=== $f ===" && tail -150 "$f"
+              done
               exit 1
             fi
             sleep 2
