@@ -412,6 +412,7 @@ const html = `<!doctype html>
     /* ── Notification ── */
     .notification { position: fixed; top: 20px; right: 20px; background: var(--green); color: #000; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); z-index: 1000; animation: slideIn 0.25s ease; font-weight: 600; font-size: 13px; }
     .notification.error { background: var(--red); color: #fff; }
+    .notification.warning { background: #f59e0b; color: #000; }
     @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     @keyframes pulse { 0%,100% { opacity:.3; transform:scale(.85); } 50% { opacity:1; transform:scale(1.15); } }
 
@@ -975,7 +976,7 @@ async function loadAgents() {
 }
 async function getJSON(p){ const r = await fetch(p); if(!r.ok) throw new Error(await r.text()); return r.json(); }
 async function postJSON(p, body){ const r = await fetch(p, { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body) }); const txt = await r.text(); if(!r.ok) throw new Error(txt.slice(0,120)); try { return JSON.parse(txt); } catch { throw new Error('Bad response: ' + txt.slice(0,80)); } }
-function showNotification(msg, isError){ const d = document.createElement('div'); d.className = 'notification' + (isError ? ' error' : ''); d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 3000); }
+function showNotification(msg, type){ const d = document.createElement('div'); d.className = 'notification' + (type === 'error' || type === true ? ' error' : type === 'warning' ? ' warning' : ''); d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 4500); }
 function fmt(ts){ try { return new Date(ts).toLocaleTimeString(); } catch { return String(ts); } }
 function createdAt(info){ return (info && info.time && info.time.created) || ''; }
 async function loadSessions(){
@@ -1818,15 +1819,23 @@ function formatUptime(sec){
 }
 
 async function restartService(id){
-  await postJSON('/api/services/restart', { id });
-  showNotification('Restarting ' + id + '...');
-  setTimeout(loadServices, 3000);
+  const r = await postJSON('/api/services/restart', { id });
+  if (r && r.ok === false && r.message) {
+    showNotification('⚠️ ' + r.message, 'warning');
+  } else {
+    showNotification('Restarting ' + id + '...');
+    setTimeout(loadServices, 3000);
+  }
 }
 
 async function stopService(id){
-  await postJSON('/api/services/stop', { id });
-  showNotification('Stopping ' + id + '...');
-  setTimeout(loadServices, 1500);
+  const r = await postJSON('/api/services/stop', { id });
+  if (r && r.ok === false && r.message) {
+    showNotification('⚠️ ' + r.message, 'warning');
+  } else {
+    showNotification('Stopping ' + id + '...');
+    setTimeout(loadServices, 1500);
+  }
 }
 
 async function loadTgMessages(){
@@ -5311,13 +5320,20 @@ const server = http.createServer(async (req, res) => {
           if (pid) process.kill(pid, "SIGTERM");
         } catch {}
         await new Promise(r => setTimeout(r, 800));
-        const tgCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8")); } catch { return {}; } })();
-        if (tgCfg.token) {
+        const tgToken = process.env.TELEGRAM_BOT_TOKEN || (() => {
+          try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8")).token; } catch { return ""; }
+        })();
+        if (tgToken) {
+          const tgCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8")); } catch { return {}; } })();
           spawnProc("node", [path.join(OPENCLAW_DIR, "telegram-bridge.mjs")], {
             cwd: OPENCLAW_DIR,
-            env: { ...process.env, TELEGRAM_BOT_TOKEN: tgCfg.token, TELEGRAM_TARGET_AGENT: tgCfg.targetAgent || "crew-main" },
+            env: { ...process.env, TELEGRAM_BOT_TOKEN: tgToken, TELEGRAM_TARGET_AGENT: tgCfg.targetAgent || "crew-main" },
             detached: true, stdio: "ignore",
           }).unref();
+        } else {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, message: "Telegram not restarted — set TELEGRAM_BOT_TOKEN or configure via Settings → Telegram." }));
+          return;
         }
       } else if (id === "crew-lead") {
         try { execSync(`pkill -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
@@ -5339,7 +5355,6 @@ const server = http.createServer(async (req, res) => {
               detached: true, stdio: "ignore", env: process.env,
             }).unref();
           } else {
-            // Fallback: run via shell so login PATH is used (e.g. npx opencode or ~/bin/opencode)
             spawnProc("opencode", ["serve", "--port", "4096", "--hostname", "127.0.0.1"], {
               detached: true, stdio: "ignore", env: process.env, shell: true,
             }).unref();
@@ -5347,6 +5362,28 @@ const server = http.createServer(async (req, res) => {
         } catch (openCodeErr) {
           console.error("[dashboard] OpenCode start failed:", openCodeErr?.message || openCodeErr);
         }
+      } else if (id === "openclaw-gateway") {
+        // Kill legacy gateway then reopen the OpenClaw app (it auto-respawns the gateway)
+        try { execSync(`pkill -f "openclaw-gateway"`, { stdio: "ignore" }); } catch {}
+        await new Promise(r => setTimeout(r, 1000));
+        if (process.platform === "darwin") {
+          try { execSync(`open -a OpenClaw`, { stdio: "ignore" }); } catch {}
+        }
+      } else if (id === "dashboard") {
+        // Restart dashboard: spawn a new process then exit this one
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, message: "Restarting dashboard..." }));
+        await new Promise(r => setTimeout(r, 300));
+        spawnProc("node", [path.join(OPENCLAW_DIR, "scripts", "dashboard.mjs")], {
+          cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
+        }).unref();
+        process.exit(0);
+        return;
+      } else if (id === "telegram") {
+        // Restart already handled above — if we reach here it means no token was found
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, message: "Telegram not restarted — no token in ~/.crewswarm/telegram-bridge.json. Configure via Settings → Telegram." }));
+        return;
       }
 
       res.writeHead(200, { "content-type": "application/json" });
@@ -5379,13 +5416,12 @@ const server = http.createServer(async (req, res) => {
       } else if (id === "dashboard") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, message: "Restarting dashboard..." }));
-        setTimeout(() => {
-          const { spawn: sp } = require("child_process");
-          sp("node", [path.join(OPENCLAW_DIR, "scripts", "dashboard.mjs")], {
-            cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
-          }).unref();
-          process.exit(0);
-        }, 500);
+        await new Promise(r => setTimeout(r, 300));
+        const { spawn: sp } = await import("node:child_process");
+        sp("node", [path.join(OPENCLAW_DIR, "scripts", "dashboard.mjs")], {
+          cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
+        }).unref();
+        process.exit(0);
         return;
       }
 
