@@ -363,8 +363,8 @@ const html = `<!doctype html>
 
     /* ── Messages ── */
     .msg { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; background: var(--bg-card); }
-    .msg.u { border-left: 3px solid var(--accent); }
-    .msg.a { border-left: 3px solid var(--green); }
+    .msg.u { border-left: 3px solid var(--accent); background: rgba(56,189,248,0.07); margin-left: 40px; }
+    .msg.a { border-left: 3px solid var(--green);  background: rgba(52,211,153,0.04); }
     .dlq-item { border-left: 3px solid var(--red) !important; }
     .t { white-space: pre-wrap; font-size: 13px; line-height: 1.5; font-family: "SF Mono", "Fira Code", monospace; }
     .row { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; cursor: pointer; background: var(--bg-card); transition: border-color 0.12s, background 0.12s; }

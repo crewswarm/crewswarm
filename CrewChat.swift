@@ -44,16 +44,14 @@ func apiGet(_ path: String) async -> [String:Any] {
     } catch { return [:] }
 }
 
-// ── Menu bar app: status item + popover ───────────────────────────────────────
-class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSTextFieldDelegate {
+// ── Floating window app (no menu bar icon — launched via SwiftBar) ────────────
+class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
 
-    var statusItem: NSStatusItem!
-    var popover: NSPopover!
+    var window: NSWindow!
     var scrollView: NSScrollView!
     var stack: NSStackView!
     var inputField: NSTextField!
     var sendBtn: NSButton!
-    var dotView: NSView!
     var sseTask: URLSessionDataTask?
     var pendingDraftId: String?
     var pendingProjectName: String?
@@ -62,85 +60,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSTextFie
     var lastAppendedUserContent: String = ""
 
     func applicationDidFinishLaunching(_ n: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-        setupStatusItem()
-        buildPopoverContent()
+        NSApp.setActivationPolicy(.accessory) // no Dock icon
+        buildWindow()
         checkStatus()
         loadHistory()
         startSSE()
     }
 
+    // Re-opened while already running (e.g. `open -a CrewChat` from SwiftBar)
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        bringToFront(); return true
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
 
-    func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.target = self
-        statusItem.button?.action = #selector(togglePopover)
-        if #available(macOS 11.0, *) {
-            let img = NSImage(systemSymbolName: "bubble.left.and.bubble.right.fill", accessibilityDescription: "CrewChat")
-            img?.isTemplate = true
-            statusItem.button?.image = img
-        }
-        if statusItem.button?.image == nil {
-            statusItem.button?.image = makeStatusIcon()
-        }
-    }
-
-    func makeStatusIcon() -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let img = NSImage(size: size)
-        img.isTemplate = true
-        img.lockFocus()
-        NSColor.gray.setFill()
-        NSBezierPath(ovalIn: NSRect(x: 2, y: 6, width: 6, height: 6)).fill()
-        NSBezierPath(ovalIn: NSRect(x: 10, y: 6, width: 6, height: 6)).fill()
-        img.unlockFocus()
-        return img
-    }
-
-    @objc func togglePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            showPopover()
-        }
-    }
-
-    func showPopover() {
-        guard let button = statusItem.button else { return }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    func bringToFront() {
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         inputField.window?.makeFirstResponder(inputField)
-        loadHistory()
     }
 
-    func popoverDidClose(_ notification: Notification) { }
+    func buildWindow() {
+        let W: CGFloat = 480, H: CGFloat = 640
 
-    func popoverWillClose(_ notification: Notification) {
-        inputField.window?.makeFirstResponder(nil)
-    }
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: W, height: H),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered, defer: false)
+        window.title = "CrewChat"
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = NSColor.crewBg
+        window.center()
 
-    // ── Popover content (same UI as before, fixed size for menu bar) ──────────
-    func buildPopoverContent() {
-        let W = 380, H = 520
-
-        popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentSize = NSSize(width: W, height: H)
-        popover.delegate = self
-
-        let vc = NSViewController()
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: W, height: H))
+        let root = window.contentView!
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor.crewBg.cgColor
-        vc.view = root
 
         stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment   = .leading
-        stack.spacing    = 8
-        stack.edgeInsets = NSEdgeInsets(top:12, left:12, bottom:12, right:12)
+        stack.spacing     = 8
+        stack.edgeInsets  = NSEdgeInsets(top:52, left:12, bottom:12, right:12)
 
         scrollView = NSScrollView()
         scrollView.documentView = stack
@@ -181,26 +142,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSTextFie
         sendBtn.translatesAutoresizingMaskIntoConstraints = false
         inputBar.addSubview(sendBtn)
 
-        dotView = NSView()
-        dotView.wantsLayer = true
-        dotView.layer?.cornerRadius = 4
-        dotView.layer?.backgroundColor = NSColor.gray.cgColor
-        dotView.translatesAutoresizingMaskIntoConstraints = false
-
         NSLayoutConstraint.activate([
             inputBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             inputBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             inputBar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            inputBar.heightAnchor.constraint(equalToConstant: 52),
+            inputBar.heightAnchor.constraint(equalToConstant: 56),
 
-            inputField.leadingAnchor.constraint(equalTo: inputBar.leadingAnchor, constant: 14),
+            inputField.leadingAnchor.constraint(equalTo: inputBar.leadingAnchor, constant: 16),
             inputField.centerYAnchor.constraint(equalTo: inputBar.centerYAnchor),
             inputField.trailingAnchor.constraint(equalTo: sendBtn.leadingAnchor, constant: -10),
 
-            sendBtn.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -12),
+            sendBtn.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -14),
             sendBtn.centerYAnchor.constraint(equalTo: inputBar.centerYAnchor),
-            sendBtn.widthAnchor.constraint(equalToConstant: 58),
-            sendBtn.heightAnchor.constraint(equalToConstant: 32),
+            sendBtn.widthAnchor.constraint(equalToConstant: 64),
+            sendBtn.heightAnchor.constraint(equalToConstant: 34),
 
             scrollView.topAnchor.constraint(equalTo: root.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -210,7 +165,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSTextFie
             stack.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
         ])
 
-        popover.contentViewController = vc
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         addNote("Connected. Type anything to start.", color: .crewMuted)
     }
 
@@ -229,14 +185,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSTextFie
 
         let bubble = NSView()
         bubble.wantsLayer = true
-        bubble.layer?.cornerRadius = 14
-        bubble.layer?.backgroundColor = (isUser ? NSColor.crewUserBg : NSColor.crewCard).cgColor
-        if !isUser {
+        bubble.layer?.cornerRadius = 16
+        if isUser {
+            bubble.layer?.backgroundColor = NSColor.crewUserBg.cgColor
+        } else {
+            bubble.layer?.backgroundColor = NSColor.crewCard.cgColor
             bubble.layer?.borderColor = NSColor.crewBorder.cgColor
             bubble.layer?.borderWidth = 1
         }
 
-        let tf = label(text, size:13, color: isUser ? .black : .crewText)
+        let tf = label(text, size:13, color: isUser ? NSColor(red:0.02, green:0.05, blue:0.10, alpha:1) : .crewText)
         tf.maximumNumberOfLines   = 0
         tf.lineBreakMode          = .byWordWrapping
         tf.preferredMaxLayoutWidth = 280
@@ -437,7 +395,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSTextFie
             let r = await apiGet("/api/crew-lead/status")
             let online = r["online"] as? Bool == true
             await MainActor.run {
-                self.dotView.layer?.backgroundColor = (online ? NSColor.crewGreen : .red).cgColor
                 if !online { self.addNote("⚠️ crew-lead offline — start it first", color: .red) }
                 self.sendBtn.isEnabled = online
             }
