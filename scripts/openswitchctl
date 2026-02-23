@@ -215,6 +215,197 @@ cmd_dlq_replay() {
   (cd "$CREWSWARM_DIR" && "$NODE" scripts/dlq-replay.mjs "$key")
 }
 
+# ── doctor: preflight check — paths, config, token, provider, services ──
+cmd_doctor() {
+  local blockers=0 warnings=0
+  local GRN="\033[32m" RED="\033[31m" YLW="\033[33m" BLD="\033[1m" RST="\033[0m"
+  local DIM="\033[2m"
+
+  pass() { printf "${GRN}✅ ${RST}%s\n" "$1"; }
+  fail() { printf "${RED}❌ ${RST}${BLD}%s${RST}\n   ${DIM}Fix: %s${RST}\n" "$1" "$2"; blockers=$((blockers+1)); }
+  warn() { printf "${YLW}⚠️  ${RST}%s\n   ${DIM}%s${RST}\n" "$1" "$2"; warnings=$((warnings+1)); }
+  info() { printf "   ${DIM}%s${RST}\n" "$1"; }
+
+  printf "\n${BLD}🩺  CrewSwarm Doctor — preflight check${RST}\n\n"
+
+  # ── 1. Node.js version ────────────────────────────────────────────────────
+  local node_ver
+  node_ver=$("$NODE" --version 2>/dev/null | sed 's/v//')
+  local node_major
+  node_major=$(echo "$node_ver" | cut -d. -f1)
+  if [[ -z "$node_ver" ]]; then
+    fail "Node.js not found" "brew install node   (or: https://nodejs.org)"
+  elif [[ "$node_major" -lt 20 ]]; then
+    fail "Node.js v${node_ver} — need v20+" "brew upgrade node   (or: https://nodejs.org)"
+  else
+    pass "Node.js v${node_ver}"
+  fi
+
+  # ── 2. Repo directory + key files ─────────────────────────────────────────
+  if [[ ! -d "$CREWSWARM_DIR" ]]; then
+    fail "Repo dir not found: $CREWSWARM_DIR" "export CREWSWARM_DIR=/path/to/CrewSwarm"
+  else
+    pass "Repo dir: $CREWSWARM_DIR"
+    for f in crew-lead.mjs gateway-bridge.mjs scripts/start-crew.mjs scripts/dashboard.mjs scripts/opencrew-rt-daemon.mjs package.json; do
+      if [[ ! -f "$CREWSWARM_DIR/$f" ]]; then
+        fail "Missing file: $f" "git checkout HEAD -- $f   (or re-clone the repo)"
+      fi
+    done
+    if [[ -f "$CREWSWARM_DIR/crew-lead.mjs" ]]; then
+      pass "Key files present (crew-lead, gateway-bridge, start-crew, dashboard, rt-daemon, package.json)"
+    fi
+  fi
+
+  # ── 3. npm dependencies ───────────────────────────────────────────────────
+  if [[ ! -d "$CREWSWARM_DIR/node_modules" ]]; then
+    fail "node_modules missing" "cd $CREWSWARM_DIR && npm install"
+  else
+    pass "node_modules installed"
+  fi
+
+  # ── 4. Config directory ───────────────────────────────────────────────────
+  local cfg_dir="$HOME/.crewswarm"
+  if [[ ! -d "$cfg_dir" ]]; then
+    fail "Config dir missing: $cfg_dir" "bash $CREWSWARM_DIR/install.sh   (creates ~/.crewswarm/)"
+  else
+    pass "Config dir: $cfg_dir"
+  fi
+
+  # ── 5. config.json + RT auth token ───────────────────────────────────────
+  local cfg_json="$cfg_dir/config.json"
+  if [[ ! -f "$cfg_json" ]]; then
+    fail "config.json missing" "bash $CREWSWARM_DIR/install.sh   (or: echo '{\"rt\":{\"authToken\":\"my-token\"}}' > $cfg_json)"
+  else
+    local token
+    token=$("$NODE" -e "
+      try{const c=JSON.parse(require('fs').readFileSync('$cfg_json','utf8'));
+        console.log(c.rt?.authToken||c.env?.OPENCREW_RT_AUTH_TOKEN||'');}catch(e){console.log('')}
+    " 2>/dev/null)
+    if [[ -z "$token" ]]; then
+      fail "RT auth token not set in config.json" "Add: {\"rt\":{\"authToken\":\"$(openssl rand -hex 16 2>/dev/null || echo 'your-secret-token')\"}} to $cfg_json"
+    else
+      pass "RT auth token: set (${#token} chars)"
+    fi
+  fi
+
+  # ── 6. crewswarm.json + at least one LLM provider ─────────────────────────
+  local swarm_json="$cfg_dir/crewswarm.json"
+  if [[ ! -f "$swarm_json" ]]; then
+    fail "crewswarm.json missing" "bash $CREWSWARM_DIR/install.sh   (bootstraps model + provider config)"
+  else
+    pass "crewswarm.json present"
+    local provider_count
+    provider_count=$("$NODE" -e "
+      try{
+        const c=JSON.parse(require('fs').readFileSync('$swarm_json','utf8'));
+        const providers=c.providers||{};
+        const keyed=Object.entries(providers).filter(([,v])=>v&&v.apiKey&&v.apiKey.length>4);
+        console.log(keyed.length+' '+keyed.map(([k])=>k).join(','));
+      }catch(e){console.log('0');}
+    " 2>/dev/null)
+    local pcount pnames
+    pcount=$(echo "$provider_count" | awk '{print $1}')
+    pnames=$(echo "$provider_count" | awk '{print $2}')
+    if [[ "$pcount" -lt 1 ]]; then
+      fail "No LLM provider API key configured" "Open http://127.0.0.1:4319 → Providers tab → add a Groq key (free: https://console.groq.com/keys)"
+    else
+      pass "LLM providers with keys: $pnames"
+    fi
+  fi
+
+  # ── 7. cmd-allowlist.json ─────────────────────────────────────────────────
+  if [[ ! -f "$cfg_dir/cmd-allowlist.json" ]]; then
+    warn "cmd-allowlist.json missing" "echo '{\"patterns\":[\"npm *\",\"node *\"]}' > $cfg_dir/cmd-allowlist.json"
+  else
+    pass "cmd-allowlist.json present"
+  fi
+
+  # ── 8. Writable workspace ─────────────────────────────────────────────────
+  if [[ ! -w "$CREWSWARM_DIR" ]]; then
+    fail "Repo dir not writable: $CREWSWARM_DIR" "sudo chown -R \$(whoami) $CREWSWARM_DIR"
+  else
+    pass "Repo dir writable"
+  fi
+  if [[ ! -w "$cfg_dir" ]]; then
+    fail "Config dir not writable: $cfg_dir" "sudo chown -R \$(whoami) $cfg_dir"
+  else
+    pass "Config dir writable"
+  fi
+
+  # ── 9. Live service checks (warnings, not blockers) ───────────────────────
+  printf "\n${BLD}Services (start with: openswitchctl start)${RST}\n"
+
+  # RT bus
+  local rt_status
+  rt_status=$("$NODE" -e "
+    const http=require('http');
+    const req=http.get('http://127.0.0.1:18889/status',{timeout:1500},(r)=>{
+      let d='';r.on('data',c=>d+=c);r.on('end',()=>{
+        try{const j=JSON.parse(d);console.log('up clients='+j.clients);}catch{console.log('up');}
+      });
+    });
+    req.on('error',()=>console.log('down'));req.on('timeout',()=>{req.destroy();console.log('down');});
+  " 2>/dev/null)
+  if [[ "$rt_status" == "down" ]]; then
+    warn "RT bus not running (port 18889)" "openswitchctl start   or: node $CREWSWARM_DIR/scripts/opencrew-rt-daemon.mjs &"
+  else
+    pass "RT bus up  ($rt_status)"
+    # Connected agents
+    local connected_agents
+    connected_agents=$(rt_agents | grep -v crew-lead | tr '\n' ' ' | sed 's/ $//')
+    local agent_count
+    agent_count=$(rt_agents | grep -v crew-lead | wc -l | tr -d ' ')
+    if [[ "$agent_count" -gt 0 ]]; then
+      pass "Agents connected: $agent_count  ($connected_agents)"
+    else
+      warn "No agent bridges connected to RT bus" "openswitchctl restart-gateway"
+    fi
+  fi
+
+  # crew-lead
+  local cl_status
+  cl_status=$("$NODE" -e "
+    const http=require('http');
+    const req=http.get('http://127.0.0.1:5010/health',{timeout:1500},(r)=>{
+      let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log('up'));
+    });
+    req.on('error',()=>console.log('down'));req.on('timeout',()=>{req.destroy();console.log('down');});
+  " 2>/dev/null)
+  if [[ "$cl_status" == "down" ]]; then
+    warn "crew-lead not running (port 5010)" "node $CREWSWARM_DIR/crew-lead.mjs &   or: openswitchctl start"
+  else
+    pass "crew-lead up  (http://127.0.0.1:5010)"
+  fi
+
+  # Dashboard
+  local dash_status
+  dash_status=$("$NODE" -e "
+    const http=require('http');
+    const req=http.get('http://127.0.0.1:4319',{timeout:1500},(r)=>{
+      let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log('up'));
+    });
+    req.on('error',()=>console.log('down'));req.on('timeout',()=>{req.destroy();console.log('down');});
+  " 2>/dev/null)
+  if [[ "$dash_status" == "down" ]]; then
+    warn "Dashboard not running (port 4319)" "node $CREWSWARM_DIR/scripts/dashboard.mjs &   or: openswitchctl start"
+  else
+    pass "Dashboard up  (http://127.0.0.1:4319)"
+  fi
+
+  # ── Summary ───────────────────────────────────────────────────────────────
+  printf "\n"
+  if [[ "$blockers" -eq 0 && "$warnings" -eq 0 ]]; then
+    printf "${GRN}${BLD}✅ All checks passed — CrewSwarm is ready.${RST}\n\n"
+  elif [[ "$blockers" -eq 0 ]]; then
+    printf "${YLW}${BLD}⚠️  Ready with $warnings warning(s) — services may not be running yet.${RST}\n\n"
+  else
+    printf "${RED}${BLD}❌ $blockers blocker(s) must be fixed before CrewSwarm will work.${RST}\n"
+    [[ "$warnings" -gt 0 ]] && printf "${YLW}   $warnings warning(s) also noted.${RST}\n"
+    printf "\n"
+    return 1
+  fi
+}
+
 # ── restart-openclaw-gateway (macOS: open OpenClaw app) ──
 cmd_restart_openclaw_gateway() {
   pkill -f "openclaw-gateway" 2>/dev/null || true
@@ -298,12 +489,13 @@ case "$CMD" in
   start-agent) cmd_start_agent "$1" ;;
   stop-agent) cmd_stop_agent "$1" ;;
   restart-agent) cmd_restart_agent "$1" ;;
+  doctor)     cmd_doctor ;;
   logs)
     echo "Use dashboard Services or: tail -f /tmp/bridge-*.log" >&2
     exit 1
     ;;
   *)
-    echo "Usage: openswitchctl { status | start | stop | restart | restart-rt | restart-gateway | restart-openclaw | send <agent> <msg> | agents | list | start-agent <agent> | restart-agent <agent> | ... }" >&2
+    echo "Usage: openswitchctl { doctor | status | start | stop | restart | restart-rt | restart-gateway | send <agent> <msg> | agents | list | start-agent <agent> | restart-agent <agent> | ... }" >&2
     exit 1
     ;;
 esac
