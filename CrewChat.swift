@@ -97,11 +97,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor.crewBg.cgColor
 
+        // ── Header bar ──────────────────────────────────────────────────
+        let header = NSView()
+        header.wantsLayer = true
+        header.layer?.backgroundColor = NSColor.crewCard.cgColor
+        header.layer?.borderColor = NSColor.crewBorder.cgColor
+        header.layer?.borderWidth = 1
+        header.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(header)
+
+        let agentDot = NSView()
+        agentDot.wantsLayer = true
+        agentDot.layer?.cornerRadius = 4
+        agentDot.layer?.backgroundColor = NSColor.crewGreen.cgColor
+        agentDot.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(agentDot)
+
+        let agentLbl = label("🧠  crew-lead", size: 13, color: .crewText, weight: .semibold)
+        agentLbl.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(agentLbl)
+
+        let subLbl = label("Conversational commander", size: 11, color: .crewMuted)
+        subLbl.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(subLbl)
+
+        let clearBtn = NSButton(title: "Clear", target: self, action: #selector(clearChat))
+        clearBtn.isBordered = false
+        clearBtn.wantsLayer = true
+        clearBtn.layer?.cornerRadius = 6
+        clearBtn.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        clearBtn.contentTintColor = .crewMuted
+        clearBtn.font = .systemFont(ofSize: 11)
+        clearBtn.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(clearBtn)
+
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: root.topAnchor),
+            header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: 56),
+
+            agentDot.widthAnchor.constraint(equalToConstant: 8),
+            agentDot.heightAnchor.constraint(equalToConstant: 8),
+            agentDot.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 80),
+            agentDot.centerYAnchor.constraint(equalTo: agentLbl.centerYAnchor),
+
+            agentLbl.leadingAnchor.constraint(equalTo: agentDot.trailingAnchor, constant: 6),
+            agentLbl.topAnchor.constraint(equalTo: header.topAnchor, constant: 12),
+
+            subLbl.leadingAnchor.constraint(equalTo: agentLbl.leadingAnchor),
+            subLbl.topAnchor.constraint(equalTo: agentLbl.bottomAnchor, constant: 2),
+
+            clearBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -14),
+            clearBtn.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            clearBtn.widthAnchor.constraint(equalToConstant: 48),
+            clearBtn.heightAnchor.constraint(equalToConstant: 26),
+        ])
+
         stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment   = .leading
         stack.spacing     = 8
-        stack.edgeInsets  = NSEdgeInsets(top:52, left:12, bottom:12, right:12)
+        stack.edgeInsets  = NSEdgeInsets(top:12, left:12, bottom:12, right:12)
 
         scrollView = NSScrollView()
         scrollView.documentView = stack
@@ -157,7 +214,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             sendBtn.widthAnchor.constraint(equalToConstant: 64),
             sendBtn.heightAnchor.constraint(equalToConstant: 34),
 
-            scrollView.topAnchor.constraint(equalTo: root.topAnchor),
+            scrollView.topAnchor.constraint(equalTo: header.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: inputBar.topAnchor),
@@ -355,6 +412,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
 
     @objc func confirmProject() { Task { await doConfirm() } }
     @objc func discardProject() { Task { await doDiscard() } }
+    @objc func clearChat()      { Task { await doClear()   } }
 
     func doConfirm() async {
         guard let id = pendingDraftId, let name = pendingProjectName else { return }
