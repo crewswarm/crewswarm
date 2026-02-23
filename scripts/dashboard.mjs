@@ -2575,7 +2575,7 @@ function toggleEmojiPicker(agentId) {
   if (isOpen) return;
   if (!grid.hasChildNodes()) {
     grid.innerHTML = AGENT_EMOJIS.map(e =>
-      `<div class="emoji-opt" onclick="selectEmoji('${agentId}','${e}')" title="${e}">${e}</div>`
+      '<div class="emoji-opt" onclick="selectEmoji(\'' + agentId + '\',\'' + e + '\')" title="' + e + '">' + e + '</div>'
     ).join('');
   }
   panel.classList.add('open');
