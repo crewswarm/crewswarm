@@ -5342,9 +5342,11 @@ server.listen(listenPort, "127.0.0.1", () => {
   console.log(`CrewSwarm Dashboard (with Build) at http://127.0.0.1:${listenPort}`);
 });
 
-process.on("uncaughtException",      (e) => console.error("[dashboard] uncaughtException:", e.message));
-process.on("unhandledRejection", (e) => {
-  const msg = e?.message || String(e);
+process.on("uncaughtException", (err) => {
+  console.error("[dashboard] uncaughtException (kept alive):", err?.stack || err?.message || err);
+});
+process.on("unhandledRejection", (reason) => {
+  const msg = reason?.message || String(reason);
   if (msg === "terminated" || msg === "aborted") return; // SSE/fetch aborted when client disconnects
-  console.error("[dashboard] unhandledRejection:", msg);
+  console.error("[dashboard] unhandledRejection (kept alive):", msg);
 });
