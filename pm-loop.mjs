@@ -485,7 +485,7 @@ async function expandWithGroq(item, context) {
   const isPerplexity = provider?.baseUrl?.includes("perplexity");
 
   if (!provider) {
-    return `Task: ${item}
+    const fallbackTask = `Task: ${item}
 
 Output directory: ${OUTPUT_DIR}
 
@@ -495,6 +495,7 @@ WORKFLOW — follow this every time:
 3. READ the file again after each edit to verify the change was applied correctly
 4. If a follow-up fix is needed, apply it and read again to confirm
 5. If this task is already complete, reply "ALREADY DONE: <reason>" and stop`;
+    return { targetAgent: null, task: item, files: null, successCriteria: null, raw: fallbackTask, taskText: fallbackTask };
   }
 
   const featuresSnippet = FEATURES_DOC ? (() => { try { return readFileSync(FEATURES_DOC, "utf8").slice(0, 800); } catch { return ""; } })() : "";
@@ -532,17 +533,22 @@ WORKFLOW — follow this every time:
 
   const systemPrompt = `You are the PM (Product Manager) for a software project.${isPerplexity ? " You have real-time web search — use it to research best practices and modern approaches relevant to the task." : " Web search results will be provided for context."}
 
-Your job: receive a roadmap item and write a precise, scoped coding task for the appropriate specialist agent.
+Your job: receive a roadmap item and output a precise, scoped coding task in the STRICT schema below.
 
 Project output directory: ${OUTPUT_DIR}${rosterBlock}
 
 Rules:
-- ONE deliverable only — no multi-step tasks
+- ONE deliverable only — no multi-step tasks. No new scope: implement only what the roadmap item says; do NOT add features or expand scope unless the item explicitly says to "expand", "also add", or "include additional".
 - Specify exact file paths using the output dir above
 - CRITICAL: Always tell the coder to READ existing files first, then MODIFY/APPEND — NEVER overwrite a whole file unless it's brand new
 - If something already exists and satisfies the item, tell coder to SKIP and report done
-- Keep tasks under 200 words
-- Do NOT explain what you're doing — output the task text only${frontendRule}${mainDeliverableRule}${featuresSnippet ? `\n\nProject context:\n${featuresSnippet}` : ""}`;
+- Every task MUST include acceptance: what file(s) must exist or what behavior must pass for the task to be done
+- Output ONLY the following schema (no preamble, no explanation):
+
+TARGET_AGENT: <agent id from roster, e.g. crew-coder or crew-coder-front>
+TASK: <precise task text, under 200 words>
+FILES: <paths to create or modify relative to output dir, e.g. index.html, style.css>
+SUCCESS_CRITERIA: <what file(s) must exist and/or what must pass — e.g. "File X exists with Y; running Z succeeds">${frontendRule}${mainDeliverableRule}${featuresSnippet ? `\n\nProject context:\n${featuresSnippet}` : ""}`;
 
   const mainHint = mainDeliverable ? `\nMain deliverable file (apply styling/animations here): ${mainDeliverable}\n` : "";
   const userPrompt = `Roadmap item: "${item}"
@@ -550,7 +556,7 @@ ${mainHint}
 Current project state:
 ${context}${webSnippet}
 
-${isPerplexity ? `Search for best practices relevant to this task if helpful, then write` : "Write"} the precise coder task (task text only, no preamble):`;
+${isPerplexity ? "Search for best practices relevant to this task, then output" : "Output"} ONLY the four lines: TARGET_AGENT:, TASK:, FILES:, SUCCESS_CRITERIA:`;
 
   const contextRules = `
 
@@ -565,12 +571,29 @@ WORKFLOW — follow this every time:
   try {
     const result = await callPMLLM(
       [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      { maxTokens: 300, temperature: 0.3 }
+      { maxTokens: 380, temperature: 0.3 }
     );
-    return (result || item) + contextRules;
+    const raw = (result || "").trim() || item;
+    // Parse strict schema so caller can use TARGET_AGENT, FILES, SUCCESS_CRITERIA
+    const targetMatch = raw.match(/TARGET_AGENT:\s*(\S+)/i);
+    const taskMatch = raw.match(/TASK:\s*([\s\S]*?)(?=FILES:|SUCCESS_CRITERIA:|$)/i);
+    const filesMatch = raw.match(/FILES:\s*([\s\S]*?)(?=SUCCESS_CRITERIA:|$)/i);
+    const criteriaMatch = raw.match(/SUCCESS_CRITERIA:\s*([\s\S]*?)(?=\n\n|$)/i);
+    const parsed = {
+      targetAgent: targetMatch ? targetMatch[1].trim() : null,
+      task: (taskMatch ? taskMatch[1].trim() : raw).replace(/\n+$/, ""),
+      files: filesMatch ? filesMatch[1].trim() : null,
+      successCriteria: criteriaMatch ? criteriaMatch[1].trim() : null,
+      raw,
+    };
+    const taskText = parsed.task
+      + (parsed.files ? `\n\nFiles: ${parsed.files}` : "")
+      + (parsed.successCriteria ? `\n\nAcceptance: ${parsed.successCriteria}` : "")
+      + contextRules;
+    return { ...parsed, taskText };
   } catch (e) {
     console.warn(`  ⚠ PM LLM failed (${e.message}), using raw item`);
-    return item + contextRules;
+    return { targetAgent: null, task: item, files: null, successCriteria: null, raw: item, taskText: item + contextRules };
   }
 }
 
@@ -692,7 +715,7 @@ Recently completed items:
 ${recentDone}
 ${extendWebSnippet}
 
-${isPerplexity ? "Search for relevant best practices if helpful, then generate" : "Generate"} 4 new roadmap items that would meaningfully improve this project:`;
+${isPerplexity ? "Search for relevant best practices, then generate" : "Generate"} 4 new roadmap items that would meaningfully improve this project:`;
 
   try {
     const resp = await fetch(`${provider.baseUrl}/chat/completions`, {
@@ -716,7 +739,11 @@ ${isPerplexity ? "Search for relevant best practices if helpful, then generate" 
     const data = await resp.json();
     const raw = data.choices?.[0]?.message?.content?.trim() || "";
     const items = raw.split("\n").map(l => l.trim()).filter(l => l.length > 10 && !l.startsWith("#"));
-    return items.slice(0, 5);
+    const exactly4 = items.slice(0, 4);
+    if (exactly4.length !== 4) {
+      console.warn(`  ⚠ PM self-extend returned ${exactly4.length} items (expected 4); using ${exactly4.length} item(s)`);
+    }
+    return exactly4;
   } catch (e) {
     console.warn(`  ⚠ PM LLM self-extend failed (${e.message})`);
     return [];
@@ -883,6 +910,8 @@ function _callAgentRaw(agentId, message, { timeout } = {}) {
     ...process.env,
     OPENCREW_RT_SEND_TIMEOUT_MS: String(agentTimeout),
   };
+  // So crew-main synthesis runs in OpenCode with the PM output dir (gateway-bridge --send reads this and puts it in payload.projectDir)
+  if (agentId === "crew-main") env.OPENCREW_OPENCODE_PROJECT = OUTPUT_DIR;
   return new Promise((resolve, reject) => {
     const proc = spawn("node", [BRIDGE_PATH, "--send", agentId, message], {
       stdio: ["inherit", "pipe", "pipe"],
@@ -1004,10 +1033,11 @@ async function main() {
     }
 
     console.log("  🤔 PM expanding item into task...");
-    task = await expandWithGroq(item.text, context);
+    const expanded = await expandWithGroq(item.text, context);
+    task = expanded.taskText;
     console.log(`  📝 Task:\n    ${task.substring(0, 120)}${task.length > 120 ? "..." : ""}`);
 
-    let targetAgent = await routeAgent(item.text);
+    let targetAgent = expanded.targetAgent || (await routeAgent(item.text));
     // QA and security are review-only — never send implementation tasks to them as doer
     // Never use non-doer agents as the primary task doer — derived live from config
     const { nonDoers: dynamicNonDoers } = buildActiveAgentRoster();

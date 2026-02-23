@@ -1,0 +1,90 @@
+# Smoke tests on every PR. Fails hard on timeout or non-done.
+# For green CI: add repo secrets CREWSWARM_RT_TOKEN and GROQ_API_KEY.
+# Without GROQ_API_KEY the stack starts but smoke may timeout (no LLM).
+
+name: Smoke
+
+on:
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bootstrap CI config
+        env:
+          CREWSWARM_RT_TOKEN: ${{ secrets.CREWSWARM_RT_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          mkdir -p ~/.crewswarm
+          TOKEN="${CREWSWARM_RT_TOKEN:-$(node -e "console.log(require('crypto').randomBytes(16).toString('hex'))")}"
+          echo "{\"rt\":{\"authToken\":\"$TOKEN\"}}" > ~/.crewswarm/config.json
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const cfg = {
+              _note: 'CI bootstrap',
+              agents: [
+                { id: 'crew-main', model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-coder', model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-qa', model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-fixer', model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-pm', model: 'groq/llama-3.3-70b-versatile' }
+              ],
+              providers: {
+                groq: { apiKey: process.env.GROQ_API_KEY || '', baseUrl: 'https://api.groq.com/openai/v1' }
+              }
+            };
+            fs.writeFileSync(
+              path.join(process.env.HOME, '.crewswarm', 'crewswarm.json'),
+              JSON.stringify(cfg, null, 2)
+            );
+          "
+          echo '{"patterns":["npm *","node *","npx *"]}' > ~/.crewswarm/cmd-allowlist.json
+          echo '{}' > ~/.crewswarm/agent-prompts.json
+
+      - name: Start RT daemon
+        run: |
+          export CREWSWARM_DIR="$GITHUB_WORKSPACE"
+          node scripts/opencrew-rt-daemon.mjs &
+          sleep 3
+
+      - name: Start crew-lead
+        run: |
+          export CREWSWARM_DIR="$GITHUB_WORKSPACE"
+          node crew-lead.mjs &
+          sleep 2
+
+      - name: Start agent bridges
+        run: |
+          export CREWSWARM_DIR="$GITHUB_WORKSPACE"
+          export OPENCREW_RT_AUTH_TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/config.json')).rt.authToken)")
+          node scripts/start-crew.mjs
+          sleep 15
+
+      - name: Wait for crew-lead health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5010/health >/dev/null; then break; fi
+            if [ "$i" -eq 30 ]; then echo "crew-lead never became healthy"; exit 1; fi
+            sleep 1
+          done
+
+      - name: Run smoke
+        env:
+          CREWSWARM_DIR: ${{ github.workspace }}
+          CREW_LEAD_URL: "http://127.0.0.1:5010"
+          CREWSWARM_SMOKE_TIMEOUT_MS: "180000"
+        run: npm run smoke

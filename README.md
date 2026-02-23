@@ -107,6 +107,15 @@ Then open **http://127.0.0.1:4319** and go to the **🧠 Chat** tab.
 crew-cli "Build a REST API for user authentication with JWT and tests"
 ```
 
+### Smoke checks (before demos / PRs)
+
+```bash
+npm run smoke:dispatch   # crew-lead -> crew-coder and crew-main
+npm run smoke:e2e        # end-to-end flow test
+# or both:
+npm run smoke
+```
+
 ### PM Loop (autonomous mode)
 
 ```bash
@@ -289,6 +298,7 @@ CrewSwarm/
 - [Agent Setup](docs/OPENCLAW-AGENTS-SETUP.md)
 - [Model Recommendations](docs/MODEL-RECOMMENDATIONS.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Go Public Roadmap](docs/GO-PUBLIC-ROADMAP.md)
 - [SwiftBar Plugin](contrib/swiftbar/README.md)
 
 ---

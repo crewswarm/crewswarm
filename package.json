@@ -15,7 +15,10 @@
     "start-crew": "node scripts/start-crew.mjs",
     "rt-daemon": "node scripts/opencrew-rt-daemon.mjs",
     "restart-all": "bash scripts/restart-all-from-repo.sh",
-    "crew-cli": "node crew-cli.mjs"
+    "crew-cli": "node crew-cli.mjs",
+    "smoke:dispatch": "node scripts/smoke-dispatch.mjs",
+    "smoke:e2e": "node scripts/crewswarm-flow-test.mjs",
+    "smoke": "npm run smoke:dispatch && npm run smoke:e2e"
   },
   "dependencies": {
     "ws": "^8.18.0"
