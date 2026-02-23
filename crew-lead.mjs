@@ -180,14 +180,31 @@ function buildSystemPrompt(cfg) {
   const knownAgents = cfg.knownAgents || [];
   const agentPrompts = getAgentPrompts();
   const customPrompt = (agentPrompts["crew-lead"] || "").trim();
+  // Use functional ROLE_HINTS descriptions where available, fall back to theme
+  const FUNCTIONAL_ROLES = {
+    "crew-main": "main coordinator, general tasks, orchestration",
+    "crew-coder": "general coding, files, setup, implementation",
+    "crew-coder-front": "HTML, CSS, JS UI, animations, visual design",
+    "crew-coder-back": "APIs, Node.js, backend logic, databases",
+    "crew-frontend": "HTML, CSS, JS UI, visual design, landing pages",
+    "crew-github": "git commits, branches, PRs, version control",
+    "crew-qa": "testing, QA, validation (review only)",
+    "crew-security": "security audits, auth, secrets (review only)",
+    "crew-fixer": "debugging, fixing broken code",
+    "crew-pm": "project planning, roadmaps, task breakdown",
+    "crew-copywriter": "marketing copy, headlines, docs",
+    "crew-telegram": "Telegram messaging, notifications",
+    "crew-devops": "DevOps, CI/CD, Docker, infrastructure",
+    "crew-aiml": "AI/ML engineering, Python, embeddings",
+    "crew-data": "data, analytics, SQL, pandas",
+  };
   const agentList = (cfg.agentRoster || []).length
-    ? cfg.agentRoster.map(a =>
-        `  - ${a.emoji ? a.emoji + " " : ""}${a.name} (${a.id})${a.role ? " — " + a.role : ""}${a.model ? " [" + a.model + "]" : ""}`
-      ).join("\n")
+    ? cfg.agentRoster.map(a => {
+        const role = FUNCTIONAL_ROLES[a.id] || a.role || "general agent";
+        return `  - ${a.emoji ? a.emoji + " " : ""}${a.name} (${a.id}) — ${role}${a.model ? " [" + a.model + "]" : ""}`;
+      }).join("\n")
     : knownAgents.map(a => "  - " + a).join("\n");
-  const modelLine = (cfg.providerKey && cfg.modelId)
-    ? `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}). When asked "what's your name?" or "what model are you?", answer with this; do not search the web or codebase.`
-    : "";
+  const modelLine = "";  // identity now injected once at top of prompt — no duplicate needed
   const agentModels = cfg.agentModels || {};
   const agentModelList = Object.keys(agentModels).length
     ? "Each agent's assigned model (use when asked which models agents run):\n" +
