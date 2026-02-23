@@ -59,7 +59,10 @@ function loadConfig() {
     if (a.id && a.model) agentModels[a.id] = a.model;
   }
 
-  return { modelId, providerKey, provider, knownAgents, agentModels };
+  const displayName = agentCfg?.identity?.name || "crew-lead";
+  const emoji       = agentCfg?.identity?.emoji || "🦊";
+
+  return { modelId, providerKey, provider, knownAgents, agentModels, displayName, emoji };
 }
 
 function tryRead(p) {
@@ -172,7 +175,7 @@ function buildSystemPrompt(cfg) {
   const customPrompt = (agentPrompts["crew-lead"] || "").trim();
   const agentList = knownAgents.map(a => "  - " + a).join("\n");
   const modelLine = (cfg.providerKey && cfg.modelId)
-    ? `Your name is crew-lead. Your backend model is ${cfg.providerKey}/${cfg.modelId}. When asked "what's your name?" or "what model are you?", answer with this; do not search the web or codebase.`
+    ? `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}). When asked "what's your name?" or "what model are you?", answer with this; do not search the web or codebase.`
     : "";
   const agentModels = cfg.agentModels || {};
   const agentModelList = Object.keys(agentModels).length
@@ -241,7 +244,7 @@ function buildSystemPrompt(cfg) {
     "- No filler phrases.",
   ].join("\n");
   const defaultIntro = [
-    "You are crew-lead, the conversational commander of the CrewSwarm AI development crew.",
+    `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}), the conversational commander of the CrewSwarm AI development crew.`,
     "",
     "You are primarily a CONVERSATIONAL assistant. Your default is to CHAT.",
     "",
