@@ -385,13 +385,13 @@ const html = `<!doctype html>
     .replay-btn { font-size: 11px; padding: 3px 8px; background: var(--yellow); color: #000; margin-left: 8px; }
     .send-btn   { background: var(--green); color: #000; }
     /* ── Emoji picker ── */
-    .emoji-btn { width:42px; height:42px; font-size:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); border-radius:var(--radius); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:border-color 0.15s, background 0.15s; color:inherit; }
+    .emoji-btn { width:46px; height:46px; font-size:22px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); border-radius:var(--radius); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:border-color 0.15s, background 0.15s; color:inherit; }
     .emoji-btn:hover { border-color:var(--accent); background:rgba(56,189,248,0.08); }
     .emoji-picker-wrap { position:relative; flex-shrink:0; }
-    .emoji-picker-panel { display:none; position:absolute; top:46px; left:0; z-index:200; background:var(--bg-card); border:1px solid var(--border-hi); border-radius:var(--radius); padding:10px; box-shadow:0 8px 32px rgba(0,0,0,0.5); width:236px; }
+    .emoji-picker-panel { display:none; position:absolute; top:50px; right:0; z-index:200; background:var(--bg-card); border:1px solid var(--border-hi); border-radius:var(--radius); padding:10px; box-shadow:0 8px 32px rgba(0,0,0,0.5); width:260px; }
     .emoji-picker-panel.open { display:block; }
-    .emoji-grid { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; }
-    .emoji-opt { font-size:18px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:5px; transition:background 0.1s; }
+    .emoji-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; }
+    .emoji-opt { font-size:22px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:6px; transition:background 0.1s; }
     .emoji-opt:hover { background:rgba(56,189,248,0.15); }
 
     /* Files view */
