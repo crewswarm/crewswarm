@@ -797,12 +797,15 @@ const html = `<!doctype html>
           <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
             <div class="field-label" style="margin:0;">Agent Tools <span class="meta" style="text-transform:none; font-weight:400;">— what gateway-bridge lets this agent do</span></div>
             <select id="naToolPreset" style="font-size:12px; padding:3px 8px;" onchange="applyNewAgentToolPreset()">
-              <option value="">— quick presets —</option>
-              <option value="coder">🔨 Coder (write + run)</option>
-              <option value="reviewer">🔍 Reviewer (read only)</option>
-              <option value="orchestrator">🧠 Orchestrator (read + dispatch)</option>
-              <option value="devops">⚙️ DevOps (run + git)</option>
-              <option value="comms">💬 Comms (telegram)</option>
+              <option value="">— tool presets —</option>
+              <option value="coder">🔨 Coder (write + run) — frontend, backend, iOS, data, AI/ML…</option>
+              <option value="writer">✍️ Writer (write + read) — copywriter, docs, designer</option>
+              <option value="reviewer">🔍 Reviewer (read only) — QA, audit</option>
+              <option value="security">🛡️ Security (read + run, no write) — scanner, auditor</option>
+              <option value="orchestrator">📋 PM / Planner (read + dispatch) — product manager, planner</option>
+              <option value="coordinator">🦊 Coordinator (full access) — main agent, team lead</option>
+              <option value="devops">⚙️ DevOps (run + git) — infrastructure, GitHub ops</option>
+              <option value="comms">💬 Comms (telegram) — notification agent</option>
             </select>
           </div>
           <div id="naToolsGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;">
@@ -2346,11 +2349,16 @@ async function loadAgents_cfg(){
               <input id="modeltext-\${a.id}" type="text" placeholder="or type any model…" value="\${a.model || ''}" style="flex:1; min-width:160px; font-size:12px;" oninput="syncModelSelect('\${a.id}')" />
               <button onclick="saveAgentModel('\${a.id}')" class="btn-green" style="white-space:nowrap;">Save model</button>
             </div>
-            <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-              <input id="fallback-\${a.id}" type="text"
-                placeholder="Fallback model (e.g. groq/llama-3.3-70b-versatile) — tried if primary is rate-limited"
+            <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              \${(() => {
+                const fbCustomOpt = (a.fallbackModel && !_allModels.includes(a.fallbackModel)) ? \`<option value="\${a.fallbackModel}" selected>\${a.fallbackModel} (custom)</option>\` : '';
+                const fbOpts = _allModels.map(m => \`<option value="\${m}" \${m === a.fallbackModel ? 'selected' : ''}>\${m}</option>\`).join('');
+                return \`<select id="fmodel-\${a.id}" style="flex:1;min-width:180px;font-size:11px;" onchange="syncFallbackText('\${a.id}')"><option value="">— Fallback model (optional) —</option>\${fbCustomOpt}\${fbOpts}</select>\`;
+              })()}
+              <input id="fallback-\${a.id}" type="text" placeholder="or type any model…"
                 value="\${a.fallbackModel || ''}"
-                style="flex:1; font-size:11px; color:var(--text-2);" />
+                style="flex:1; min-width:140px; font-size:11px; color:var(--text-2);"
+                oninput="syncFallbackSelect('\${a.id}')" />
               <button onclick="saveAgentFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:11px;">Save fallback</button>
             </div>
           </div>
@@ -2476,6 +2484,19 @@ function syncModelSelect(agentId){
   const match = [...sel.options].find(o => o.value === typed);
   sel.value = match ? typed : '';
 }
+function syncFallbackText(agentId){
+  const sel = document.getElementById('fmodel-' + agentId);
+  const txt = document.getElementById('fallback-' + agentId);
+  if (txt) txt.value = sel.value;
+}
+function syncFallbackSelect(agentId){
+  const txt = document.getElementById('fallback-' + agentId);
+  const sel = document.getElementById('fmodel-' + agentId);
+  if (!sel) return;
+  const typed = txt.value.trim();
+  const match = [...sel.options].find(o => o.value === typed);
+  sel.value = match ? typed : '';
+}
 async function resetAgentSession(agentId){
   if (!confirm('Reset context window for ' + agentId + '?\\n\\nThis clears the agent\\'s accumulated conversation history. Shared memory files will be re-injected on the next task.')) return;
   showNotification('Resetting ' + agentId + ' session...');
@@ -2547,11 +2568,14 @@ async function startCrew(){
 }
 
 const NEW_AGENT_TOOL_PRESETS = {
-  coder:        ['write_file','read_file','mkdir','run_cmd'],
-  reviewer:     ['read_file'],
-  orchestrator: ['read_file','dispatch'],
-  devops:       ['read_file','run_cmd','git'],
-  comms:        ['telegram','read_file'],
+  coder:        ['write_file','read_file','mkdir','run_cmd'],   // frontend, backend, fullstack, ios, android, data, aiml, api, db, rn, web3, automation, fixer
+  writer:       ['write_file','read_file'],                     // copywriter, docs, design (no shell exec)
+  reviewer:     ['read_file'],                                  // qa, strict read-only audit
+  security:     ['read_file','run_cmd'],                        // security auditor — run scanners but never write
+  orchestrator: ['read_file','dispatch'],                       // pm, planner — routes tasks but doesn't write files
+  coordinator:  ['write_file','read_file','run_cmd','dispatch'],// main/lead — full access + dispatch, no git
+  devops:       ['read_file','run_cmd','git'],                  // devops, github ops
+  comms:        ['telegram','read_file'],                       // telegram notification agent
 };
 
 function applyNewAgentToolPreset() {
