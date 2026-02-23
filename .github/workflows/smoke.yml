@@ -57,36 +57,23 @@ jobs:
           echo '{"patterns":["npm *","node *","npx *"]}' > ~/.crewswarm/cmd-allowlist.json
           echo '{}' > ~/.crewswarm/agent-prompts.json
 
-      - name: Start RT daemon
-        run: |
-          export CREWSWARM_DIR="$GITHUB_WORKSPACE"
-          node scripts/opencrew-rt-daemon.mjs &
-          sleep 3
-
-      - name: Start crew-lead
-        run: |
-          export CREWSWARM_DIR="$GITHUB_WORKSPACE"
-          node crew-lead.mjs &
-          sleep 2
-
-      - name: Start agent bridges
+      - name: Start stack and run smoke
+        env:
+          CREWSWARM_DIR: ${{ github.workspace }}
+          CREW_LEAD_URL: "http://127.0.0.1:5010"
+          CREWSWARM_SMOKE_TIMEOUT_MS: "180000"
         run: |
           export CREWSWARM_DIR="$GITHUB_WORKSPACE"
           export OPENCREW_RT_AUTH_TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/config.json')).rt.authToken)")
+          node scripts/opencrew-rt-daemon.mjs &
+          sleep 3
+          node crew-lead.mjs &
+          sleep 2
           node scripts/start-crew.mjs
-          sleep 15
-
-      - name: Wait for crew-lead health
-        run: |
+          sleep 20
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:5010/health >/dev/null; then break; fi
             if [ "$i" -eq 30 ]; then echo "crew-lead never became healthy"; exit 1; fi
             sleep 1
           done
-
-      - name: Run smoke
-        env:
-          CREWSWARM_DIR: ${{ github.workspace }}
-          CREW_LEAD_URL: "http://127.0.0.1:5010"
-          CREWSWARM_SMOKE_TIMEOUT_MS: "180000"
-        run: npm run smoke
+          npm run smoke
