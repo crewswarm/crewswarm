@@ -872,6 +872,20 @@ const html = `<!doctype html>
           </div>
         </div>
 
+        <!-- OpenCode project dir -->
+        <div class="card" style="grid-column:1/-1;">
+          <div class="card-title" style="margin-bottom:6px;">📂 OpenCode Project Directory</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            Agents that use OpenCode will write files here. Set this to your project folder so agents don't hit external-directory permission errors.
+            Leave blank to use the CrewSwarm repo directory (default).
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input id="opencodeProjInput" placeholder="e.g. /Users/you/Desktop/myproject" style="flex:1;font-size:13px;font-family:monospace;" />
+            <button onclick="saveOpencodeProject()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="opencodeProjStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
       </div>
     </div>
 
@@ -2103,12 +2117,31 @@ async function saveRTToken(){
     loadRTToken();
   } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
 }
+async function loadOpencodeProject(){
+  try {
+    const d = await getJSON('/api/settings/opencode-project');
+    const inp = document.getElementById('opencodeProjInput');
+    const st  = document.getElementById('opencodeProjStatus');
+    if (inp) inp.placeholder = d.dir || 'e.g. /Users/you/Desktop/myproject';
+    if (inp && d.dir) inp.value = d.dir;
+    if (st) st.textContent = d.dir ? ('Current: ' + d.dir) : 'Not set — using CrewSwarm repo dir (default).';
+  } catch {}
+}
+async function saveOpencodeProject(){
+  const dir = (document.getElementById('opencodeProjInput').value || '').trim();
+  try {
+    await postJSON('/api/settings/opencode-project', { dir });
+    showNotification(dir ? 'Project dir saved — re-dispatch your task' : 'Project dir cleared');
+    loadOpencodeProject();
+  } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
+}
 function showSettings(){
   hideAllViews();
   document.getElementById('settingsView').classList.add('active');
   setNavActive('navSettings');
   loadTokenUsage();
   loadCmdAllowlist();
+  loadOpencodeProject();
 }
 
 function showAgents(){
@@ -3982,6 +4015,31 @@ const server = http.createServer(async (req, res) => {
       fs.writeFileSync(csConfigPath, JSON.stringify(cfg, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    // ── Settings: OpenCode project dir ────────────────────────────────────
+    if (url.pathname === "/api/settings/opencode-project" && req.method === "GET") {
+      const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+      let dir = process.env.OPENCREW_OPENCODE_PROJECT || "";
+      try { dir = JSON.parse(fs.readFileSync(cfgPath, "utf8"))?.opencodeProject || dir; } catch {}
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ dir }));
+      return;
+    }
+    if (url.pathname === "/api/settings/opencode-project" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const { dir } = JSON.parse(body);
+      const cfgDir  = path.join(os.homedir(), ".crewswarm");
+      const cfgPath = path.join(cfgDir, "config.json");
+      fs.mkdirSync(cfgDir, { recursive: true });
+      let cfg = {};
+      try { cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8")); } catch {}
+      if (dir) cfg.opencodeProject = dir; else delete cfg.opencodeProject;
+      fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+      process.env.OPENCREW_OPENCODE_PROJECT = dir || "";
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, dir }));
       return;
     }
     // ── Built-in providers (crewswarm standalone config) ─────────────────

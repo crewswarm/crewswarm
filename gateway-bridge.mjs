@@ -124,7 +124,12 @@ const OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS = Number(process.env.OPENCREW_RT_DIS
 const OPENCREW_OPENCODE_ENABLED = (process.env.OPENCREW_OPENCODE_ENABLED || "1") !== "0";  // ON by default
 const OPENCREW_OPENCODE_FORCE = process.env.OPENCREW_OPENCODE_FORCE === "1";
 const OPENCREW_OPENCODE_BIN = process.env.OPENCREW_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
-const OPENCREW_OPENCODE_PROJECT = process.env.OPENCREW_OPENCODE_PROJECT || process.cwd();
+const OPENCREW_OPENCODE_PROJECT = process.env.OPENCREW_OPENCODE_PROJECT || (() => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
+    return cfg.opencodeProject || "";
+  } catch { return ""; }
+})() || process.cwd();
 const OPENCREW_OPENCODE_AGENT = process.env.OPENCREW_OPENCODE_AGENT || "admin";
 const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.1-codex";
 const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "180000");
