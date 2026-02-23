@@ -55,6 +55,17 @@ if [[ "$STATE" =~ crew-main:up ]]; then
   CLAW_STATE="up"
 fi
 
+# Service status (same source as Services section — used for Crew list too)
+_port_up() { lsof -i ":$1" -sTCP:LISTEN -t &>/dev/null && echo "up" || echo "down"; }
+_proc_up() { pgrep -f "$1" &>/dev/null && echo "up" || echo "down"; }
+SVC_RT="$RT_STATE"
+SVC_AG="$(_proc_up 'gateway-bridge.mjs')"
+SVC_TG="$(_proc_up 'telegram-bridge.mjs')"
+SVC_CL="$(_proc_up 'crew-lead.mjs')"
+SVC_OC="$(_port_up 4096)"
+SVC_DB="$(_port_up 4319)"
+SVC_CM="$(_port_up 8000)"
+
 # Get dynamic agent list
 AGENTS=()
 while IFS= read -r line; do
@@ -85,12 +96,23 @@ echo "↺ Restart | bash='/bin/bash' param1='$CTL' param2=restart terminal=false
 echo "--↺ Restart RT Server   | bash='/bin/bash' param1='$CTL' param2=restart-rt terminal=false refresh=true"
 echo "--↺ Restart Agent Bridges | bash='/bin/bash' param1='$CTL' param2=restart-gateway terminal=false refresh=true"
 
+# Per-agent status: use same source as Services — crew-lead from SVC_CL, bridge agents from STATE
+_agent_up() {
+  local a="$1"
+  [[ -z "$a" ]] && return 1
+  if [[ "$a" == "crew-lead" ]]; then
+    [[ "$SVC_CL" == "up" ]] && return 0 || return 1
+  fi
+  # Word-boundary match so "main" doesn't match inside "crew-main:up"
+  [[ "$STATE" =~ (^|[[:space:]])${a}:up($|[[:space:]]) ]] && return 0 || return 1
+}
+
 # ── Crew — each agent listed once with status icon ──────────────────
 echo "---"
 echo "🤖 Crew (${AGENTS_FRAC}) | sfimage=person.3.sequence.fill"
 for AGENT in "${AGENTS[@]}"; do
   [[ -z "$AGENT" ]] && continue
-  if [[ "$STATE" =~ $AGENT:up ]]; then
+  if _agent_up "$AGENT"; then
     echo "🟢 $AGENT | bash='/bin/bash' param1='$CTL' param2=restart-agent param3='$AGENT' terminal=false refresh=true"
   else
     echo "🔴 $AGENT | bash='/bin/bash' param1='$CTL' param2=start-agent param3='$AGENT' terminal=false refresh=true"
@@ -98,19 +120,6 @@ for AGENT in "${AGENTS[@]}"; do
 done
 
 # ── Services ─────────────────────────────────────────────────────────
-# Helper: check if a port is listening
-_port_up() { lsof -i ":$1" -sTCP:LISTEN -t &>/dev/null && echo "up" || echo "down"; }
-# Helper: check if a process pattern is running
-_proc_up() { pgrep -f "$1" &>/dev/null && echo "up" || echo "down"; }
-
-SVC_RT="$RT_STATE"
-SVC_AG="$(_proc_up 'gateway-bridge.mjs')"
-SVC_TG="$(_proc_up 'telegram-bridge.mjs')"
-SVC_CL="$(_proc_up 'crew-lead.mjs')"
-SVC_OC="$(_port_up 4096)"
-SVC_DB="$(_port_up 4319)"
-SVC_CM="$(_port_up 8000)"
-
 _svc_icon() { [[ "$1" == "up" ]] && echo "🟢" || echo "🔴"; }
 
 echo "---"
@@ -120,7 +129,7 @@ echo "--$(_svc_icon $SVC_RT) RT Message Bus          | bash='/bin/bash' param1='
 echo "--$(_svc_icon $SVC_AG) Agent Bridges (${AGENTS_FRAC}) | bash='/bin/bash' param1='$CTL' param2=restart-gateway terminal=false refresh=true"
 for AGENT in "${AGENTS[@]}"; do
   [[ -z "$AGENT" ]] && continue
-  if [[ "$STATE" =~ $AGENT:up ]]; then
+  if _agent_up "$AGENT"; then
     echo "----🟢 $AGENT | bash='/bin/bash' param1='$CTL' param2=restart-agent param3='$AGENT' terminal=false refresh=true"
   else
     echo "----🔴 $AGENT | bash='/bin/bash' param1='$CTL' param2=start-agent param3='$AGENT' terminal=false refresh=true"
