@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * CrewSwarm Dashboard with Build UI (RT Messages, Send, DLQ, Build).
- * Run from OpenClaw so the Build button is included.
+ * Run from CrewSwarm repo so the Build button is included.
  *
  *   node scripts/dashboard.mjs
  *   → http://127.0.0.1:4318
@@ -16,9 +16,9 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPENCLAW_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
-// Config dir: ~/.crewswarm is canonical; falls back to ~/.openclaw for legacy installs
-const CFG_DIR = process.env.OPENCREWHQ_CONFIG_DIR
-  || process.env.CREWSWARM_DIR
+// Config dir: ~/.crewswarm is canonical; falls back to ~/.openclaw for legacy installs (not repo root)
+const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
+  || process.env.OPENCREWHQ_CONFIG_DIR
   || (fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
       ? path.join(os.homedir(), ".crewswarm")
       : path.join(os.homedir(), ".openclaw"));
@@ -704,13 +704,13 @@ const html = `<!doctype html>
         </div>
       </div>
 
-      <!-- OpenClaw integration toggle -->
+      <!-- Legacy gateway (optional) toggle -->
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex; align-items:center; gap:10px;">
           <span style="font-size:18px;">🔌</span>
           <div style="flex:1;">
-            <div style="font-weight:600; font-size:14px;">OpenClaw Gateway <span style="font-size:11px; color:var(--text-2); font-weight:400;">(optional legacy)</span></div>
-            <div style="font-size:12px; color:var(--text-2);">Agents use direct LLM calls by default. Enable only if you have an OpenClaw gateway running on port 18789.</div>
+            <div style="font-weight:600; font-size:14px;">Legacy gateway <span style="font-size:11px; color:var(--text-2); font-weight:400;">(optional, port 18789)</span></div>
+            <div style="font-size:12px; color:var(--text-2);">Agents use direct LLM calls by default. Enable only if you have a legacy message gateway running on port 18789.</div>
           </div>
           <span id="oclawBadge" style="font-size:11px; padding:2px 10px; border-radius:999px; font-weight:600; background:rgba(107,114,128,0.15); color:#6b7280; border:1px solid rgba(107,114,128,0.3);">checking…</span>
         </div>
@@ -807,7 +807,7 @@ const html = `<!doctype html>
             </select>
           </div>
           <div id="naToolsGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;">
-            ${CREWSWARM_TOOLS.map(t => `
+            ${(typeof CREWSWARM_TOOLS !== "undefined" ? CREWSWARM_TOOLS : []).map(t => `
               <label style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text-2); cursor:pointer; padding:6px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-card2);">
                 <input type="checkbox" class="naToolCheck" data-tool="${t.id}" style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
                 <div>
@@ -3682,10 +3682,32 @@ const server = http.createServer(async (req, res) => {
       if (existsSync(stopFilePath)) { try { unlinkSync(stopFilePath); } catch {} }
       const logsDir = path.join(OPENCLAW_DIR, "orchestrator-logs");
       if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
+      // Load RT token so pm-loop and its child gateway-bridge --send can authenticate with the RT daemon
+      let rtToken = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+      if (!rtToken) {
+        const home = os.homedir();
+        for (const p of [
+          path.join(CFG_DIR, "config.json"),
+          path.join(home, ".crewswarm", "config.json"),
+          path.join(CFG_DIR, "crewswarm.json"),
+          path.join(home, ".crewswarm", "crewswarm.json"),
+          path.join(home, ".openclaw", "openclaw.json"),
+        ]) {
+          try {
+            const c = JSON.parse(await rf(p, "utf8"));
+            rtToken = c?.rt?.authToken || c?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+            if (rtToken) break;
+          } catch {}
+        }
+      }
+      if (!rtToken) {
+        console.warn("[pm-loop/start] No OPENCREW_RT_AUTH_TOKEN found in env or ~/.crewswarm/config.json (rt.authToken) — dispatches will fail with 'invalid realtime token'.");
+      }
       const spawnArgs = [pmLoop, ...(dryRun ? ["--dry-run"] : []), ...(projectDir ? ["--project-dir", projectDir] : [])];
       const spawnEnv = {
         ...process.env,
         OPENCLAW_DIR,
+        ...(rtToken ? { OPENCREW_RT_AUTH_TOKEN: rtToken } : {}),
         PHASED_TASK_TIMEOUT_MS: process.env.PHASED_TASK_TIMEOUT_MS || "300000",
         OPENCREW_RT_SEND_TIMEOUT_MS: process.env.OPENCREW_RT_SEND_TIMEOUT_MS || "300000",
         ...(projectId     ? { PM_PROJECT_ID: projectId }              : {}),
@@ -4006,7 +4028,8 @@ const server = http.createServer(async (req, res) => {
       const { readFile } = await import("node:fs/promises");
       const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
-      const providerMap = cfg?.models?.providers || {};
+      // Support both locations: legacy/openclaw used top-level "providers", dashboard also uses "models.providers"
+      const providerMap = cfg?.models?.providers || cfg?.providers || {};
       const providers = Object.entries(providerMap).map(([id, p]) => {
         const key = p.apiKey || "";
         const masked = key.length > 8
@@ -4025,14 +4048,22 @@ const server = http.createServer(async (req, res) => {
       if (!providerId || !apiKey) throw new Error("providerId and apiKey required");
       const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
-      if (!cfg.models?.providers?.[providerId]) throw new Error("Provider not found: " + providerId);
-      cfg.models.providers[providerId].apiKey = apiKey;
+      const fromModels = cfg?.models?.providers?.[providerId];
+      const fromTop = cfg?.providers?.[providerId];
+      if (!fromModels && !fromTop) throw new Error("Provider not found: " + providerId);
+      if (fromTop) { cfg.providers[providerId].apiKey = apiKey; }
+      if (fromModels) { cfg.models.providers[providerId].apiKey = apiKey; }
+      if (!fromModels && fromTop) {
+        if (!cfg.models) cfg.models = {};
+        if (!cfg.models.providers) cfg.models.providers = {};
+        cfg.models.providers[providerId] = { ...cfg.providers[providerId], apiKey };
+      }
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
       // Sync to ~/.crewswarm/config.json
       try {
         const cs = readCSConfig();
         if (!cs.providers) cs.providers = {};
-        const baseUrl = cfg.models.providers[providerId].baseUrl || BUILTIN_URLS[providerId] || "";
+        const baseUrl = (fromModels || fromTop)?.baseUrl || BUILTIN_URLS[providerId] || "";
         cs.providers[providerId] = { ...(cs.providers[providerId]||{}), apiKey, baseUrl };
         writeCSConfig(cs);
       } catch {}
@@ -4061,13 +4092,52 @@ const server = http.createServer(async (req, res) => {
       const { readFile, writeFile } = await import("node:fs/promises");
       const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
-      const provider = cfg?.models?.providers?.[providerId];
+      const provider = cfg?.models?.providers?.[providerId] || cfg?.providers?.[providerId];
       if (!provider) throw new Error("Provider not found: " + providerId);
       const key = provider.apiKey;
       if (!key) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "No API key set" })); return; }
       const baseUrl = (provider.baseUrl || "").replace(/\/$/, "");
       const isSlowProvider = providerId === "nvidia" || (provider.baseUrl || "").includes("nvidia.com");
       const isFetchAnthropic = providerId === "anthropic" || baseUrl.includes("anthropic.com");
+      const isPerplexity = (providerId && providerId.toLowerCase() === "perplexity") || (baseUrl && baseUrl.toLowerCase().includes("perplexity"));
+      const isXai = (providerId && providerId.toLowerCase() === "xai") || (baseUrl && baseUrl.toLowerCase().includes("x.ai"));
+      // Perplexity has no GET /models endpoint — use known model list
+      if (isPerplexity) {
+        const knownModels = [
+          { id: "sonar", name: "Sonar" },
+          { id: "sonar-pro", name: "Sonar Pro" },
+          { id: "sonar-reasoning", name: "Sonar Reasoning" },
+          { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro" },
+        ];
+        provider.models = knownModels;
+        if (cfg.models?.providers?.[providerId]) cfg.models.providers[providerId].models = knownModels;
+        if (cfg.providers?.[providerId]) cfg.providers[providerId].models = knownModels;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, models: knownModels.map(m => m.id), count: knownModels.length, note: "Perplexity has no /models API; built-in list used." }));
+        return;
+      }
+      // xAI /models may return empty or different shape — use known Grok list when empty
+      if (isXai) {
+        const knownModels = [
+          { id: "grok-3-mini", name: "Grok 3 Mini" },
+          { id: "grok-3", name: "Grok 3" },
+          { id: "grok-4-fast-non-reasoning", name: "Grok 4 Fast (non-reasoning)" },
+          { id: "grok-4-fast-reasoning", name: "Grok 4 Fast (reasoning)" },
+          { id: "grok-4-1-fast-non-reasoning", name: "Grok 4.1 Fast (non-reasoning)" },
+          { id: "grok-4-1-fast-reasoning", name: "Grok 4.1 Fast (reasoning)" },
+          { id: "grok-4-0709", name: "Grok 4 0709" },
+          { id: "grok-code-fast-1", name: "Grok Code Fast" },
+          { id: "grok-2-vision-1212", name: "Grok 2 Vision" },
+        ];
+        provider.models = knownModels;
+        if (cfg.models?.providers?.[providerId]) cfg.models.providers[providerId].models = knownModels;
+        if (cfg.providers?.[providerId]) cfg.providers[providerId].models = knownModels;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, models: knownModels.map(m => m.id), count: knownModels.length, note: "xAI built-in Grok model list used." }));
+        return;
+      }
       const fetchHeaders = isFetchAnthropic
         ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
         : { authorization: `Bearer ${key}`, "content-type": "application/json" };
@@ -4097,12 +4167,53 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const json = await modelsRes.json();
-        const rawModels = json.data || json.models || [];
+        let rawModels = json.data || json.models || [];
+        // Perplexity / xAI may return 200 with empty or unexpected list — use built-in
+        if (rawModels.length === 0 && baseUrl) {
+          const u = baseUrl.toLowerCase();
+          if (u.includes("perplexity")) {
+            const knownModels = [
+              { id: "sonar", name: "Sonar" },
+              { id: "sonar-pro", name: "Sonar Pro" },
+              { id: "sonar-reasoning", name: "Sonar Reasoning" },
+              { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro" },
+            ];
+            provider.models = knownModels;
+            if (cfg.models?.providers?.[providerId]) cfg.models.providers[providerId].models = knownModels;
+            if (cfg.providers?.[providerId]) cfg.providers[providerId].models = knownModels;
+            await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: true, models: knownModels.map(m => m.id), count: knownModels.length, note: "Perplexity returned no /models; built-in list used." }));
+            return;
+          }
+          if (u.includes("x.ai")) {
+            const knownModels = [
+              { id: "grok-3-mini", name: "Grok 3 Mini" },
+              { id: "grok-3", name: "Grok 3" },
+              { id: "grok-4-fast-non-reasoning", name: "Grok 4 Fast (non-reasoning)" },
+              { id: "grok-4-fast-reasoning", name: "Grok 4 Fast (reasoning)" },
+              { id: "grok-4-1-fast-non-reasoning", name: "Grok 4.1 Fast (non-reasoning)" },
+              { id: "grok-4-1-fast-reasoning", name: "Grok 4.1 Fast (reasoning)" },
+              { id: "grok-4-0709", name: "Grok 4 0709" },
+              { id: "grok-code-fast-1", name: "Grok Code Fast" },
+              { id: "grok-2-vision-1212", name: "Grok 2 Vision" },
+            ];
+            provider.models = knownModels;
+            if (cfg.models?.providers?.[providerId]) cfg.models.providers[providerId].models = knownModels;
+            if (cfg.providers?.[providerId]) cfg.providers[providerId].models = knownModels;
+            await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: true, models: knownModels.map(m => m.id), count: knownModels.length, note: "xAI returned no /models; built-in list used." }));
+            return;
+          }
+        }
         const models = rawModels
           .filter(m => m.id || m.name)
           .map(m => ({ id: m.id || m.name, name: m.name || m.id }))
           .sort((a, b) => a.id.localeCompare(b.id));
-        cfg.models.providers[providerId].models = models;
+        provider.models = models;
+        if (cfg.models?.providers?.[providerId]) cfg.models.providers[providerId].models = models;
+        if (cfg.providers?.[providerId]) cfg.providers[providerId].models = models;
         await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, models: models.map(m => m.id), count: models.length }));
@@ -4118,16 +4229,20 @@ const server = http.createServer(async (req, res) => {
       const { readFile } = await import("node:fs/promises");
       const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
-      const provider = cfg?.models?.providers?.[providerId];
+      const provider = cfg?.models?.providers?.[providerId] || cfg?.providers?.[providerId];
       if (!provider) throw new Error("Provider not found");
       const key = provider.apiKey;
       if (!key) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "No API key set" })); return; }
-      const baseUrl = provider.baseUrl.replace(/\/$/, "");
+      const baseUrl = (provider.baseUrl || "").replace(/\/$/, "");
       const isAnthropic = providerId === "anthropic" || baseUrl.includes("anthropic.com");
       const isNvidia   = providerId === "nvidia"    || baseUrl.includes("nvidia.com");
       const isGoogle   = providerId === "google"    || baseUrl.includes("googleapis.com");
+      const isPerplexityTest = (providerId && providerId.toLowerCase() === "perplexity") || (baseUrl && baseUrl.toLowerCase().includes("perplexity"));
+      const isXaiTest = (providerId && providerId.toLowerCase() === "xai") || (baseUrl && baseUrl.toLowerCase().includes("x.ai"));
       const defaultModel = isAnthropic ? "claude-3-haiku-20240307"
                          : isGoogle    ? "gemini-1.5-flash"
+                         : isPerplexityTest ? "sonar-pro"
+                         : isXaiTest ? "grok-3-mini"
                          : "gpt-4o-mini";
       const firstModel = provider.models?.[0]?.id || defaultModel;
       try {
@@ -4161,6 +4276,17 @@ const server = http.createServer(async (req, res) => {
           const chatModels = (gd.models || []).filter(m => m.name && m.supportedGenerationMethods?.includes("generateContent"));
           model = chatModels[0]?.name?.replace("models/","") || (ok ? "connected" : null);
           errText = gd.error?.message || testRes.statusText;
+        } else if (isPerplexityTest) {
+          // Perplexity: use chat/completions with sonar-pro (no /models endpoint)
+          testRes = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+            body: JSON.stringify({ model: firstModel, messages: [{ role: "user", content: "hi" }], max_tokens: 1 }),
+            signal: AbortSignal.timeout(15000),
+          });
+          ok = testRes.ok || testRes.status === 400;
+          model = firstModel;
+          errText = ok ? undefined : await testRes.text().catch(() => testRes.statusText);
         } else {
           testRes = await fetch(`${baseUrl}/chat/completions`, {
             method: "POST",
@@ -4182,11 +4308,13 @@ const server = http.createServer(async (req, res) => {
     }
     // ── Search Tools API ────────────────────────────────────────────────────
     if (url.pathname === "/api/search-tools" && req.method === "GET") {
-      const toolsCfg = path.join(CFG_DIR, "search-tools.json");
-      const saved = JSON.parse(await fs.promises.readFile(toolsCfg, "utf8").catch(() => "{}"));
+      const csTools = path.join(os.homedir(), ".crewswarm", "search-tools.json");
+      const ocTools = path.join(os.homedir(), ".openclaw", "search-tools.json");
+      const savedCs = await fs.promises.readFile(csTools, "utf8").catch(() => "{}").then(d => { try { return JSON.parse(d); } catch { return {}; } });
+      const savedOc = await fs.promises.readFile(ocTools, "utf8").catch(() => "{}").then(d => { try { return JSON.parse(d); } catch { return {}; } });
       const keys = {};
-      if (saved.parallel?.apiKey) keys.parallel = true;
-      if (saved.brave?.apiKey)    keys.brave    = true;
+      keys.parallel = !!(savedCs.parallel?.apiKey || savedOc.parallel?.apiKey || process.env.PARALLEL_API_KEY);
+      keys.brave    = !!(savedCs.brave?.apiKey    || savedOc.brave?.apiKey    || process.env.BRAVE_API_KEY);
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ keys }));
       return;
@@ -4194,10 +4322,16 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/search-tools/save" && req.method === "POST") {
       let body = ""; for await (const chunk of req) body += chunk;
       const { toolId, key } = JSON.parse(body);
-      const toolsCfg = path.join(CFG_DIR, "search-tools.json");
-      const saved = JSON.parse(await fs.promises.readFile(toolsCfg, "utf8").catch(() => "{}"));
-      saved[toolId] = { apiKey: key };
-      await fs.promises.writeFile(toolsCfg, JSON.stringify(saved, null, 2));
+      const csTools = path.join(os.homedir(), ".crewswarm", "search-tools.json");
+      const ocTools = path.join(os.homedir(), ".openclaw", "search-tools.json");
+      const savedCs = await fs.promises.readFile(csTools, "utf8").catch(() => "{}").then(d => { try { return JSON.parse(d); } catch { return {}; } });
+      savedCs[toolId] = { apiKey: key };
+      await fs.promises.mkdir(path.dirname(csTools), { recursive: true }).catch(() => {});
+      await fs.promises.writeFile(csTools, JSON.stringify(savedCs, null, 2));
+      const savedOc = await fs.promises.readFile(ocTools, "utf8").catch(() => "{}").then(d => { try { return JSON.parse(d); } catch { return {}; } });
+      savedOc[toolId] = { apiKey: key };
+      await fs.promises.mkdir(path.dirname(ocTools), { recursive: true }).catch(() => {});
+      await fs.promises.writeFile(ocTools, JSON.stringify(savedOc, null, 2));
       // Also persist to ~/.zshrc so agents and shells pick it up
       const envKey = toolId === "parallel" ? "PARALLEL_API_KEY" : toolId === "brave" ? "BRAVE_API_KEY" : null;
       if (envKey) {
@@ -4215,9 +4349,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/search-tools/test" && req.method === "POST") {
       let body = ""; for await (const chunk of req) body += chunk;
       const { toolId } = JSON.parse(body);
-      const toolsCfg = path.join(CFG_DIR, "search-tools.json");
-      const saved = JSON.parse(await fs.promises.readFile(toolsCfg, "utf8").catch(() => "{}"));
-      const key = saved[toolId]?.apiKey || process.env[toolId === "parallel" ? "PARALLEL_API_KEY" : "BRAVE_API_KEY"];
+      const csTools = path.join(os.homedir(), ".crewswarm", "search-tools.json");
+      const ocTools = path.join(os.homedir(), ".openclaw", "search-tools.json");
+      const savedCs = await fs.promises.readFile(csTools, "utf8").catch(() => "{}").then(d => { try { return JSON.parse(d); } catch { return {}; } });
+      const savedOc = await fs.promises.readFile(ocTools, "utf8").catch(() => "{}").then(d => { try { return JSON.parse(d); } catch { return {}; } });
+      const key = savedCs[toolId]?.apiKey || savedOc[toolId]?.apiKey || process.env[toolId === "parallel" ? "PARALLEL_API_KEY" : "BRAVE_API_KEY"];
       if (!key) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ok:false,error:"No key saved"})); return; }
       try {
         let ok, message, error;
@@ -4276,7 +4412,34 @@ const server = http.createServer(async (req, res) => {
           liveness, lastSeen, ageSec,
         };
       });
-      const providerMap = cfg?.models?.providers || {};
+      // Always show crew-lead in Agents so user can set his model (crew-lead.mjs reads from this config)
+      if (!agentList.some(a => a.id === "crew-lead")) {
+        agentList.push({
+          id: "crew-lead",
+          model: "groq/llama-3.3-70b-versatile",
+          name: "Crew Lead",
+          emoji: "🦊",
+          theme: "",
+          systemPrompt: agentPrompts["crew-lead"] || "",
+          toolProfile: "default",
+          alsoAllow: ["dispatch"],
+          workspace: "",
+          liveness: "unknown",
+          lastSeen: null,
+          ageSec: null,
+        });
+      }
+      // Merge providers from both locations so MODEL dropdown gets custom models from either
+      const topProviders = cfg?.providers || {};
+      const nestedProviders = cfg?.models?.providers || {};
+      const providerMap = {};
+      for (const id of new Set([...Object.keys(topProviders), ...Object.keys(nestedProviders)])) {
+        const t = topProviders[id];
+        const n = nestedProviders[id];
+        const merged = { ...(t || {}), ...(n || {}) };
+        merged.models = (n?.models?.length ? n.models : t?.models) || [];
+        providerMap[id] = merged;
+      }
       const allModels = [];
       const modelsByProvider = {};
       const OPENAI_LOCAL_DEFAULT_MODELS = [
@@ -4312,9 +4475,17 @@ const server = http.createServer(async (req, res) => {
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
-      const list = Array.isArray(cfg.agents) ? cfg.agents
+      let list = Array.isArray(cfg.agents) ? cfg.agents
                  : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
-      const agent = list.find(a => a.id === agentId);
+      let agent = list.find(a => a.id === agentId);
+      if (!agent && agentId === "crew-lead") {
+        if (!Array.isArray(cfg.agents)) cfg.agents = cfg.agents?.list != null ? { list: cfg.agents.list } : [];
+        const arr = Array.isArray(cfg.agents) ? cfg.agents : cfg.agents.list;
+        if (!arr) throw new Error("Cannot determine agents list structure in crewswarm.json");
+        agent = { id: "crew-lead", model: "groq/llama-3.3-70b-versatile", identity: { name: "Crew Lead", emoji: "🦊" }, tools: { profile: "default", alsoAllow: ["dispatch"] } };
+        arr.push(agent);
+        list = arr;
+      }
       if (!agent) throw new Error("Agent not found: " + agentId);
       if (model) agent.model = model;
       if (name) { if (!agent.identity) agent.identity = {}; agent.identity.name = name; }
@@ -4412,7 +4583,7 @@ const server = http.createServer(async (req, res) => {
       if (!agentId) { res.writeHead(400); res.end(JSON.stringify({ error: "agentId required" })); return; }
       const { execFile } = await import("node:child_process");
       const bridgePath = path.join(OPENCLAW_DIR, "gateway-bridge.mjs");
-      // 1. Reset the OpenClaw session for this agent via gateway-bridge --reset-session
+      // 1. Reset the agent session via gateway-bridge --reset-session
       execFile("node", [bridgePath, "--reset-session", agentId],
         { cwd: OPENCLAW_DIR, timeout: 15000 }, () => {});
       // 2. After reset, re-inject shared memory as first message so agent has context
@@ -4679,14 +4850,14 @@ const server = http.createServer(async (req, res) => {
 
         function countProcs(pattern) {
           try {
-            const out = execSync(`pgrep -f "${pattern}" | wc -l`, { encoding: "utf8" }).trim();
+            const out = execSync(`pgrep -f "${pattern}" | wc -l`, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
             return parseInt(out, 10) || 0;
           } catch { return 0; }
         }
 
         function procStartTime(pid) {
           try {
-            const out = execSync(`ps -p ${pid} -o lstart=`, { encoding: "utf8" }).trim();
+            const out = execSync(`ps -p ${pid} -o lstart=`, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
             return out ? new Date(out).getTime() : null;
           } catch { return null; }
         }
@@ -4708,6 +4879,7 @@ const server = http.createServer(async (req, res) => {
             timeout: 5000,
             cwd: OPENCLAW_DIR,
             env: { ...process.env, OPENCLAW_DIR },
+            stdio: ["pipe", "pipe", "pipe"],
           });
           const lines = agentsOut.trim().split(/\n/).filter(Boolean);
           agentsTotal = lines.length;
@@ -4753,8 +4925,8 @@ const server = http.createServer(async (req, res) => {
         },
         {
           id: "openclaw-gateway",
-          label: "OpenClaw Gateway",
-          description: "OpenClaw message gateway — kills process, OpenClaw app auto-respawns",
+          label: "Legacy gateway (18789)",
+          description: "Legacy message gateway — kills process; OpenClaw app auto-respawns if installed",
           port: 18789,
           running: gwUp,
           canRestart: true,
@@ -4786,7 +4958,7 @@ const server = http.createServer(async (req, res) => {
           { id: "agents", label: "Agent Crew", description: "0 agents connected", port: null, running: false, canRestart: true, pid: null },
           { id: "crew-lead", label: "crew-lead", description: "Chat commander", port: 5010, running: false, canRestart: true, pid: null },
           { id: "telegram", label: "Telegram Bridge", description: "@CrewSwarm_bot", port: null, running: false, canRestart: true, pid: null },
-          { id: "openclaw-gateway", label: "OpenClaw Gateway", description: "OpenClaw gateway", port: 18789, running: false, canRestart: true, pid: null },
+          { id: "openclaw-gateway", label: "Legacy gateway (18789)", description: "Legacy gateway", port: 18789, running: false, canRestart: true, pid: null },
           { id: "opencode", label: "OpenCode Server", description: "opencode serve — port 4096", port: 4096, running: false, canRestart: true, pid: null },
           { id: "dashboard", label: "Dashboard", description: "This dashboard", port: listenPort, running: true, canRestart: true, pid: process.pid },
         ];
@@ -4942,4 +5114,8 @@ server.listen(listenPort, "127.0.0.1", () => {
 });
 
 process.on("uncaughtException",      (e) => console.error("[dashboard] uncaughtException:", e.message));
-process.on("unhandledRejection",     (e) => console.error("[dashboard] unhandledRejection:", e?.message || e));
+process.on("unhandledRejection", (e) => {
+  const msg = e?.message || String(e);
+  if (msg === "terminated" || msg === "aborted") return; // SSE/fetch aborted when client disconnects
+  console.error("[dashboard] unhandledRejection:", msg);
+});
