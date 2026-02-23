@@ -2287,6 +2287,13 @@ async function loadAgents_cfg(){
               <input id="modeltext-\${a.id}" type="text" placeholder="or type any model…" value="\${a.model || ''}" style="flex:1; min-width:160px; font-size:12px;" oninput="syncModelSelect('\${a.id}')" />
               <button onclick="saveAgentModel('\${a.id}')" class="btn-green" style="white-space:nowrap;">Save model</button>
             </div>
+            <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+              <input id="fallback-\${a.id}" type="text"
+                placeholder="Fallback model (e.g. groq/llama-3.3-70b-versatile) — tried if primary is rate-limited"
+                value="\${a.fallbackModel || ''}"
+                style="flex:1; font-size:11px; color:var(--text-2);" />
+              <button onclick="saveAgentFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:11px;">Save fallback</button>
+            </div>
           </div>
           <div>
             <div class="field-label">Display name &amp; emoji</div>
@@ -2433,6 +2440,15 @@ async function saveAgentModel(agentId){
   } catch(e){ showNotification('Failed: ' + e.message, true); }
 }
 
+async function saveAgentFallback(agentId){
+  const inp = document.getElementById('fallback-' + agentId);
+  const fallbackModel = inp?.value.trim() || '';
+  try {
+    await postJSON('/api/agents-config/update', { agentId, fallbackModel });
+    showNotification(fallbackModel ? \`Fallback set: \${fallbackModel}\` : \`Fallback cleared for \${agentId}\`);
+  } catch(e){ showNotification('Failed: ' + e.message, true); }
+}
+
 async function saveAgentIdentity(agentId){
   const name  = document.getElementById('aname-'  + agentId).value.trim();
   const emoji = document.getElementById('aemoji-' + agentId).value.trim();
@@ -2447,6 +2463,12 @@ window.applyAgentPromptPreset = function(agentId, preset) {
   if (!preset || !PROMPT_PRESETS[preset]) return;
   const ta = document.getElementById('prompt-' + agentId);
   if (ta) ta.value = PROMPT_PRESETS[preset];
+  // Auto-fill the theme/role field with the preset's display name (strip leading emoji + whitespace)
+  const themeEl = document.getElementById('atheme-' + agentId);
+  if (themeEl) {
+    const opt = PRESET_OPTIONS.find(p => p.value === preset);
+    if (opt) themeEl.value = opt.label.replace(/^[\u{1F000}-\u{1FFFF}\u2600-\u27BF\uFE0F\u20D0-\u20FF\s]+/u, '').trim();
+  }
 };
 
 async function saveAgentPrompt(agentId){
@@ -4692,6 +4714,7 @@ const server = http.createServer(async (req, res) => {
         return {
           id: a.id,
           model: a.model || "",
+          fallbackModel: a.fallbackModel || "",
           name: a.identity?.name || a.id,
           emoji: a.identity?.emoji || "🤖",
           theme: a.identity?.theme || "",
@@ -4777,7 +4800,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, systemPrompt, name, emoji, theme, toolProfile, alsoAllow } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -4803,6 +4826,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (!agent) throw new Error("Agent not found: " + agentId);
       if (model) agent.model = model;
+      if (fallbackModel !== undefined) agent.fallbackModel = fallbackModel || undefined;
       if (name)  { if (!agent.identity) agent.identity = {}; agent.identity.name  = name; }
       if (emoji) { if (!agent.identity) agent.identity = {}; agent.identity.emoji = emoji; }
       if (theme !== undefined && theme !== null) { if (!agent.identity) agent.identity = {}; agent.identity.theme = theme; }

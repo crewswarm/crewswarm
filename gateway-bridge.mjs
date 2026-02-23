@@ -238,7 +238,7 @@ function loadAgentLLMConfig(ocAgentId) {
       return null;
     }
 
-    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, agentId: agent.id, providerKey };
+    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, agentId: agent.id, providerKey, fallbackModel: agent.fallbackModel || null };
   } catch (e) {
     console.warn(`[bridge] loadAgentLLMConfig error: ${e.message}`);
     return null;
@@ -288,10 +288,44 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
           if (text2) { console.log(`[direct-llm] ${ocAgentId} retry succeeded`); return text2; }
         }
       } catch {}
-      console.error(`[direct-llm] ${ocAgentId} retry also failed — trying Groq global fallback`);
+      console.error(`[direct-llm] ${ocAgentId} retry also failed — checking per-agent fallback`);
     } else {
-      console.error(`[direct-llm] ${ocAgentId} failed: ${e.message} — trying Groq global fallback`);
+      console.error(`[direct-llm] ${ocAgentId} failed: ${e.message} — checking per-agent fallback`);
     }
+
+    // ── Per-agent fallback model ─────────────────────────────────────────────
+    if (llm.fallbackModel) {
+      try {
+        const [fbProviderKey, ...fbModelParts] = llm.fallbackModel.split("/");
+        const fbModelId = fbModelParts.join("/");
+        const fbProviders = loadProviderMap();
+        const fbProvider = fbProviders[fbProviderKey];
+        if (fbProvider?.baseUrl && fbProvider?.apiKey) {
+          console.warn(`[direct-llm] ${ocAgentId} → per-agent fallback (${llm.fallbackModel})`);
+          const resFb = await fetch(`${fbProvider.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${fbProvider.apiKey}` },
+            body: JSON.stringify({ model: fbModelId, messages, max_tokens: 8192 }),
+            signal: AbortSignal.timeout(60000),
+          });
+          if (resFb.ok) {
+            const dataFb = await resFb.json();
+            const textFb = dataFb?.choices?.[0]?.message?.content || "";
+            if (textFb) {
+              recordTokenUsage(fbModelId, dataFb.usage);
+              console.log(`[direct-llm] ${ocAgentId} per-agent fallback succeeded (${textFb.length} chars)`);
+              return textFb;
+            }
+          }
+          console.error(`[direct-llm] Per-agent fallback also failed (${resFb.status}) — trying Groq global fallback`);
+        } else {
+          console.warn(`[direct-llm] Per-agent fallback provider "${fbProviderKey}" not configured — skipping`);
+        }
+      } catch (fbErr) {
+        console.error(`[direct-llm] Per-agent fallback error: ${fbErr.message}`);
+      }
+    }
+
     // ── Global Groq fallback ─────────────────────────────────────────────────
     // If the agent's primary provider fails (key missing, rate limit, outage),
     // retry on Groq llama-3.3-70b-versatile which is fast and free-tier eligible.
