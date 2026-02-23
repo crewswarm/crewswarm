@@ -330,6 +330,9 @@ const html = `<!doctype html>
     .nav-section { padding: 12px 8px 4px; }
     .nav-label { font-size: 10px; font-weight: 600; color: var(--text-3); letter-spacing: 0.08em; text-transform: uppercase; padding: 0 8px 6px; }
     .nav-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border-radius: 7px; border: none; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 500; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s; font-family: inherit; }
+    .stab { padding: 7px 16px; border: none; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: inherit; transition: color 0.12s, border-color 0.12s; white-space: nowrap; }
+    .stab:hover { color: var(--text-1); }
+    .stab.active { color: var(--accent); border-bottom-color: var(--accent); }
     .nav-item:hover { background: var(--bg-hover); color: var(--text); }
     .nav-item.active { background: rgba(56,189,248,0.1); color: var(--accent); }
     .nav-item .nav-icon { font-size: 15px; width: 18px; text-align: center; }
@@ -511,7 +514,11 @@ const html = `<!doctype html>
 
     <div class="nav-section">
       <div class="nav-label">Control</div>
-      <button class="nav-item active" id="navSwarm" onclick="showSwarm()">
+      <button class="nav-item active" id="navChat" onclick="showChat()">
+        <span class="nav-icon">🧠</span> Chat
+        <span class="nav-badge hidden" id="chatBadge">●</span>
+      </button>
+      <button class="nav-item" id="navSwarm" onclick="showSwarm()">
         <span class="nav-icon">💬</span> Sessions
       </button>
       <button class="nav-item" id="navRT" onclick="showRT()">
@@ -520,24 +527,12 @@ const html = `<!doctype html>
       <button class="nav-item" id="navBuild" onclick="showBuild()">
         <span class="nav-icon">🔨</span> Build
       </button>
-      <button class="nav-item" id="navDLQ" onclick="showDLQ()">
-        <span class="nav-icon">⚠️</span> DLQ
-        <span class="nav-badge hidden" id="dlqBadge">0</span>
-      </button>
       <button class="nav-item" id="navFiles" onclick="showFiles()">
         <span class="nav-icon">📂</span> Files
       </button>
-      <button class="nav-item" id="navChat" onclick="showChat()">
-        <span class="nav-icon">🧠</span> Chat
-        <span class="nav-badge hidden" id="chatBadge">●</span>
-      </button>
-      <button class="nav-item" id="navMessaging" onclick="showMessaging()">
-        <span class="nav-icon">📡</span> Telegram
-        <span class="nav-badge hidden" id="msgBadge">0</span>
-      </button>
-      <button class="nav-item" id="navServices" onclick="showServices()">
-        <span class="nav-icon">🔧</span> Services
-        <span class="nav-badge hidden" id="servicesBadge">!</span>
+      <button class="nav-item" id="navDLQ" onclick="showDLQ()">
+        <span class="nav-icon">⚠️</span> DLQ
+        <span class="nav-badge hidden" id="dlqBadge">0</span>
       </button>
     </div>
 
@@ -549,8 +544,21 @@ const html = `<!doctype html>
       <button class="nav-item" id="navAgents" onclick="showAgents()">
         <span class="nav-icon">🤖</span> Agents
       </button>
-      <button class="nav-item" id="navProviders" onclick="showProviders()">
-        <span class="nav-icon">⚙️</span> Providers
+      <button class="nav-item" id="navModels" onclick="showModels()">
+        <span class="nav-icon">⚙️</span> Models
+      </button>
+      <button class="nav-item" id="navSkills" onclick="showSkills()">
+        <span class="nav-icon">🔌</span> Skills
+      </button>
+      <button class="nav-item" id="navRunSkills" onclick="showRunSkills()">
+        <span class="nav-icon">⚡</span> Run skills
+      </button>
+      <button class="nav-item" id="navToolMatrix" onclick="showToolMatrix()">
+        <span class="nav-icon">📋</span> Tool Matrix
+      </button>
+      <button class="nav-item" id="navServices" onclick="showServices()">
+        <span class="nav-icon">🔧</span> Services
+        <span class="nav-badge hidden" id="servicesBadge">!</span>
       </button>
       <button class="nav-item" id="navSettings" onclick="showSettings()">
         <span class="nav-icon">🛠</span> Settings
@@ -566,7 +574,7 @@ const html = `<!doctype html>
   <div class="main-wrap">
 
     <!-- Sessions view -->
-    <div class="view-sessions active" id="sessionsView">
+    <div class="view-sessions" id="sessionsView">
       <section id="sessions"></section>
       <section id="messages"></section>
     </div>
@@ -602,7 +610,7 @@ const html = `<!doctype html>
     </div>
 
     <!-- Chat with crew-lead -->
-    <div class="view" id="chatView">
+    <div class="view active" id="chatView">
       <div class="page-header">
         <div>
           <div class="page-title" id="chatAgentTitle">🧠 Crew Lead</div>
@@ -624,62 +632,6 @@ const html = `<!doctype html>
       </div>
     </div>
 
-    <!-- Messaging / Telegram config -->
-    <div class="view" id="messagingView">
-      <div class="page-header">
-        <div>
-          <div class="page-title">Telegram</div>
-          <div class="page-sub">Telegram sessions, command allowlist, and token usage</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <span id="tgStatusBadge" class="status-badge status-stopped">● stopped</span>
-          <button onclick="startTgBridge()" class="btn-green" id="tgStartBtn">▶ Start</button>
-          <button onclick="stopTgBridge()" class="btn-red" id="tgStopBtn">⏹ Stop</button>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px;">
-        <!-- Left column: bot config only -->
-        <div style="display:flex;flex-direction:column;gap:14px;">
-          <div class="card" style="align-self:start;">
-            <div class="card-title" style="margin-bottom:12px;">⚙️ Bot Configuration</div>
-            <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Telegram Bot Token</label>
-            <input id="tgTokenInput" type="password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
-            <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed chat IDs <span style="color:var(--text-3);font-weight:400;">(comma-separated)</span></label>
-            <input id="tgAllowedIds" placeholder="1693963111, 987654321" style="width:100%;margin-bottom:12px;" />
-            <button onclick="saveTgConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
-            <div style="font-size:11px;color:var(--text-3);line-height:1.5;margin-top:4px;">
-              Each Telegram chat gets its own isolated session in crew-lead.<br/>
-              Get a token from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent);">@BotFather</a>.
-            </div>
-          </div>
-        </div>
-        <!-- Right column: Telegram sessions + RT feed -->
-        <div style="display:flex;flex-direction:column;gap:14px;">
-          <!-- Telegram sessions -->
-          <div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-              <div>
-                <div style="font-size:13px;font-weight:600;">Telegram Conversations</div>
-                <div style="font-size:11px;color:var(--text-3);">Each chat ID gets an isolated session with crew-lead</div>
-              </div>
-              <button onclick="loadTelegramSessions()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
-            </div>
-            <div id="tgSessionsList" style="max-height:300px;overflow-y:auto;"></div>
-          </div>
-          <!-- RT feed -->
-          <div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-              <div>
-                <div style="font-size:13px;font-weight:600;">RT Bus Activity</div>
-                <div style="font-size:11px;color:var(--text-3);">Read-only — watch agents work in real time</div>
-              </div>
-              <button onclick="loadTgMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
-            </div>
-            <div id="tgMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 400px);overflow-y:auto;"></div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Services -->
     <div class="view" id="servicesView">
@@ -716,9 +668,9 @@ const html = `<!doctype html>
     </div>
 
     <!-- Providers -->
-    <div class="view" id="providersView">
+    <div class="view" id="modelsView">
       <div class="page-header">
-        <div><div class="page-title">Providers &amp; API Keys</div><div class="page-sub">Keys saved to <code style="font-size:11px; color:var(--text-2);">~/.crewswarm/config.json</code></div></div>
+        <div><div class="page-title">Models &amp; API Keys</div><div class="page-sub">Keys saved to <code style="font-size:11px; color:var(--text-2);">~/.crewswarm/config.json</code></div></div>
         <div style="display:flex; gap:8px;">
           <button id="addProviderBtn" class="btn-purple">+ Add Provider</button>
           <button id="refreshProvidersBtn" class="btn-ghost">↻ Refresh</button>
@@ -861,42 +813,155 @@ const html = `<!doctype html>
     <!-- Settings -->
     <div class="view" id="settingsView">
       <div class="page-header">
-        <div><div class="page-title">Settings</div><div class="page-sub">Token usage, command allowlist, and system configuration</div></div>
-        <button onclick="showSettings()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+        <div><div class="page-title">Settings</div><div class="page-sub">Usage, spending, security, and system configuration</div></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:960px;">
 
-        <!-- Token usage -->
+      <!-- Settings sub-tabs -->
+      <div style="display:flex;gap:4px;padding:0 16px 0;border-bottom:1px solid var(--border);margin-bottom:0;">
+        <button class="stab active" id="stab-usage"    onclick="showSettingsTab('usage')">💰 Usage</button>
+        <button class="stab"        id="stab-security" onclick="showSettingsTab('security')">🔐 Security</button>
+        <button class="stab"        id="stab-webhooks" onclick="showSettingsTab('webhooks')">🌐 Webhooks</button>
+        <button class="stab"        id="stab-telegram" onclick="showSettingsTab('telegram')">📡 Telegram</button>
+        <button class="stab"        id="stab-system"   onclick="showSettingsTab('system')">🛠 System</button>
+      </div>
+
+      <!-- Usage: Token stats + Spending caps -->
+      <div id="stab-panel-usage" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1100px;">
         <div class="card">
           <div class="card-title" style="margin-bottom:16px;">💰 Token Usage</div>
           <div id="tokenUsageWidget"><div style="color:var(--text-3);font-size:12px;">Loading…</div></div>
         </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:10px;">💸 Spending (Today)</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            Two-level caps: global daily limits and per-agent limits. Set in
+            <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">~/.crewswarm/crewswarm.json</code>
+            under <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">globalSpendingCaps</code>.
+          </div>
+          <div id="spendingWidget" style="font-size:12px;">Loading…</div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="loadSpending()" class="btn-ghost" style="font-size:11px;">↻ Refresh</button>
+            <button onclick="resetSpending()" class="btn-ghost" style="font-size:11px;color:var(--red);">Reset Today</button>
+          </div>
+          <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;">Global Daily Caps</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:3px;">Token limit</label>
+                <input id="gcapTokens" type="number" placeholder="e.g. 500000" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:3px;">Cost limit (USD)</label>
+                <input id="gcapCost" type="number" step="0.01" placeholder="e.g. 5.00" />
+              </div>
+            </div>
+            <button onclick="saveGlobalCaps()" class="btn-green" style="font-size:12px;">Save Caps</button>
+          </div>
+        </div>
+      </div>
 
-        <!-- Command allowlist -->
+      <!-- Security: Command allowlist -->
+      <div id="stab-panel-security" style="display:none;padding:16px;max-width:800px;">
         <div class="card">
           <div class="card-title" style="margin-bottom:6px;">🔐 Command Allowlist</div>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
             Patterns here auto-approve agent <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@RUN_CMD</code> calls — no toast, no wait.
             Dangerous commands (<code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">rm -rf</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">sudo</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">curl|bash</code>) are always blocked.
           </div>
-
-          <!-- Quick-add presets -->
           <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Quick presets</div>
           <div id="cmdPresets" style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;"></div>
-
-          <!-- Active allowlist -->
           <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Active patterns</div>
           <div id="cmdAllowlistItems" style="min-height:24px;margin-bottom:12px;"></div>
-
-          <!-- Custom add -->
           <div style="display:flex;gap:6px;">
             <input id="cmdAllowlistInput" placeholder="Custom pattern, e.g. make *" style="flex:1;font-size:12px;" onkeydown="if(event.key==='Enter')addAllowlistPattern();" />
             <button onclick="addAllowlistPattern()" class="btn-green" style="font-size:12px;padding:7px 12px;">Add</button>
           </div>
         </div>
+      </div>
 
-        <!-- OpenCode project dir -->
-        <div class="card" style="grid-column:1/-1;">
+      <!-- Webhooks: Inbound webhooks -->
+      <div id="stab-panel-webhooks" style="display:none;padding:16px;max-width:800px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:10px;">🌐 Inbound Webhooks</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            External services can push events to the RT bus via:<br>
+            <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">POST http://127.0.0.1:5010/webhook/{channel}</code><br>
+            Any JSON payload is accepted and published to <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">webhook.{channel}</code> on the RT bus and broadcasts to the dashboard.
+          </div>
+          <div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Test webhook</div>
+            <div style="display:flex;gap:8px;margin-bottom:8px;">
+              <input id="webhookChannel" placeholder="channel name (e.g. n8n)" style="flex:1;" />
+              <input id="webhookPayload" placeholder='{"event":"test"}' style="flex:2;" />
+            </div>
+            <button onclick="sendTestWebhook()" class="btn-ghost" style="font-size:12px;">Send</button>
+            <div id="webhookTestResult" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Recent events</div>
+            <div id="webhookEvents" style="font-size:12px;color:var(--text-3);max-height:200px;overflow:auto;">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Telegram -->
+      <div id="stab-panel-telegram" style="display:none;padding:16px;max-width:900px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div>
+            <div style="font-size:16px;font-weight:700;">📡 Telegram</div>
+            <div style="font-size:12px;color:var(--text-3);">Telegram sessions, bot config, and live RT feed</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="tgStatusBadge" class="status-badge status-stopped">● stopped</span>
+            <button onclick="startTgBridge()" class="btn-green" id="tgStartBtn">▶ Start</button>
+            <button onclick="stopTgBridge()" class="btn-red" id="tgStopBtn">⏹ Stop</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:12px;">⚙️ Bot Configuration</div>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Telegram Bot Token</label>
+              <input id="tgTokenInput" type="password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed chat IDs <span style="color:var(--text-3);font-weight:400;">(comma-separated)</span></label>
+              <input id="tgAllowedIds" placeholder="1693963111, 987654321" style="width:100%;margin-bottom:12px;" />
+              <div id="tgContactNamesList" style="margin-bottom:12px;"></div>
+              <button onclick="saveTgConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;margin-top:4px;">
+                Each Telegram chat gets its own isolated session in crew-lead.<br/>
+                Add contact names below so the crew can message by name (e.g. TELEGRAM at-Jeff hello).<br/>
+                Get a token from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent);">@BotFather</a>.
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">Telegram Conversations</div>
+                  <div style="font-size:11px;color:var(--text-3);">Each chat ID gets an isolated session with crew-lead</div>
+                </div>
+                <button onclick="loadTelegramSessions()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="tgSessionsList" style="max-height:300px;overflow-y:auto;"></div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">RT Bus Activity</div>
+                  <div style="font-size:11px;color:var(--text-3);">Read-only — watch agents work in real time</div>
+                </div>
+                <button onclick="loadTgMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="tgMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 400px);overflow-y:auto;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- System: OpenCode dir -->
+      <div id="stab-panel-system" style="display:none;padding:16px;max-width:800px;">
+        <div class="card">
           <div class="card-title" style="margin-bottom:6px;">📂 OpenCode Project Directory</div>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
             Agents that use OpenCode will write files here. Set this to your project folder so agents don't hit external-directory permission errors.
@@ -908,8 +973,122 @@ const html = `<!doctype html>
           </div>
           <div id="opencodeProjStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
         </div>
+      </div>
+
+    </div>
+
+    <!-- Integrations -->
+    <div class="view" id="skillsView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Skills</div>
+          <div class="page-sub">API skill definitions agents can call with @@SKILL</div>
+        </div>
+        <button onclick="showSkills()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1100px;">
+
+        <!-- Skills -->
+        <div class="card" style="grid-column:1/-1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title">🔌 Skills</div>
+            <button onclick="toggleAddSkill()" class="btn-purple" style="font-size:12px;">+ Add Skill</button>
+          </div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5;">
+            Skills let agents call external APIs with <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@SKILL skillname {params}</code>.
+            Store skill definitions in <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">~/.crewswarm/skills/</code>.
+          </div>
+
+          <!-- Search -->
+          <input id="skillSearch" placeholder="Search skills…" oninput="filterSkills(this.value)" style="width:100%;margin-bottom:14px;font-size:13px;" />
+
+          <!-- Add / Edit skill form -->
+          <div id="addSkillForm" style="display:none;border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;background:var(--bg-2);">
+            <input type="hidden" id="skEditName" value="" />
+            <div class="card-title" style="font-size:13px;margin-bottom:10px;" id="addSkillFormTitle">New Skill</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Skill Name</label>
+                <input id="skName" placeholder="e.g. twitter.post" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Description</label>
+                <input id="skDesc" placeholder="What this skill does" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">URL</label>
+                <input id="skUrl" placeholder="https://api.example.com/endpoint/{param}" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Method</label>
+                <select id="skMethod"><option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Auth Type</label>
+                <select id="skAuthType" onchange="updateSkillAuthFields()"><option value="">None</option><option value="bearer">Bearer token</option><option value="header">Custom header</option></select>
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">API Key (or config path)</label>
+                <input id="skAuthKey" placeholder="sk-... or providers.groq.apiKey" />
+              </div>
+              <div id="skAuthHeaderWrap" style="display:none;">
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Header Name</label>
+                <input id="skAuthHeader" placeholder="X-API-Key" />
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Default Params (JSON)</label>
+              <textarea id="skDefaults" rows="2" placeholder='{"model":"gpt-4o"}'></textarea>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                <input type="checkbox" id="skRequiresApproval" /> Requires human approval before executing
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="saveSkill()" class="btn-green" id="saveSkillBtn">Save Skill</button>
+              <button onclick="cancelSkillForm()" class="btn-ghost">Cancel</button>
+            </div>
+          </div>
+
+          <div id="skillsList" style="display:grid;gap:8px;"></div>
+        </div>
+
+        <!-- Pending approvals -->
+        <div class="card" style="grid-column:1/-1;" id="pendingApprovalsCard">
+          <div class="card-title" style="margin-bottom:10px;">🔔 Pending Skill Approvals</div>
+          <div id="pendingApprovals" style="font-size:12px;color:var(--text-3);">No pending approvals.</div>
+        </div>
 
       </div>
+    </div>
+
+    <!-- Run skills — from health snapshot; fire via /api/skills/:name/run -->
+    <div class="view" id="runSkillsView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Run skills</div>
+          <div class="page-sub">Installed skills from the health snapshot. Enter params and run on demand (same API agents use with @@SKILL).</div>
+        </div>
+        <button onclick="loadRunSkills()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div id="runSkillsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;padding:16px;"></div>
+    </div>
+
+    <!-- Tool Matrix — agents × tools from health + quick restart -->
+    <div class="view" id="toolMatrixView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Tool Matrix</div>
+          <div class="page-sub">Who can read/write/run at a glance. Restart a bridge from here when it misbehaves.</div>
+        </div>
+        <button onclick="loadToolMatrix()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div id="toolMatrixContainer" style="padding:16px;"></div>
     </div>
 
     <!-- Build -->
@@ -1704,7 +1883,10 @@ async function sendChat() {
   try {
     const d = await postJSON('/api/crew-lead/chat', { message: text, sessionId: chatSessionId });
     document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
-    if (d.reply) {
+    if (d.ok === false && d.error) {
+      appendChatBubble('assistant', '⚠️ ' + d.error);
+      lastAppendedAssistantContent = '';
+    } else if (d.reply) {
       const reply = d.reply;
       setTimeout(() => {
         if (reply !== lastAppendedAssistantContent) {
@@ -1724,7 +1906,12 @@ async function sendChat() {
     box.scrollTop = box.scrollHeight;
   } catch(e) {
     document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
-    appendChatBubble('assistant', '⚠️ Error: ' + e.message);
+    let errMsg = e.message || String(e);
+    try {
+      const parsed = JSON.parse(errMsg);
+      if (parsed && typeof parsed.error === 'string') errMsg = parsed.error;
+    } catch {}
+    appendChatBubble('assistant', '⚠️ Error: ' + errMsg);
     lastAppendedAssistantContent = '';
     box.scrollTop = box.scrollHeight;
   }
@@ -1737,13 +1924,9 @@ async function clearChatHistory() {
 }
 
 function showMessaging(){
-  hideAllViews();
-  document.getElementById('messagingView').classList.add('active');
-  setNavActive('navMessaging');
+  showSettings();
+  showSettingsTab('telegram');
   loadTgStatus();
-  loadTgMessages();
-  loadTgConfig();
-  loadTelegramSessions();
 }
 
 async function loadTgStatus(){
@@ -1764,8 +1947,31 @@ async function loadTgConfig(){
   try {
     const d = await getJSON('/api/telegram/config');
     if (d.token) document.getElementById('tgTokenInput').value = d.token;
-    if (d.allowedChatIds && d.allowedChatIds.length) {
-      document.getElementById('tgAllowedIds').value = d.allowedChatIds.join(', ');
+    const ids = d.allowedChatIds && d.allowedChatIds.length ? d.allowedChatIds : [];
+    document.getElementById('tgAllowedIds').value = ids.join(', ');
+    const contactNames = d.contactNames || {};
+    const listEl = document.getElementById('tgContactNamesList');
+    listEl.innerHTML = '';
+    if (ids.length) {
+      const title = document.createElement('label');
+      title.style.cssText = 'display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);';
+      title.textContent = 'Contact names (optional)';
+      listEl.appendChild(title);
+      ids.forEach(id => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
+        const span = document.createElement('span');
+        span.style.cssText = 'font-size:12px;color:var(--text-3);min-width:100px;';
+        span.textContent = id;
+        const input = document.createElement('input');
+        input.id = 'tgContact-' + id;
+        input.placeholder = 'e.g. Jeff';
+        input.value = contactNames[String(id)] || '';
+        input.style.flex = '1';
+        row.appendChild(span);
+        row.appendChild(input);
+        listEl.appendChild(row);
+      });
     }
   } catch {}
 }
@@ -1777,8 +1983,14 @@ async function saveTgConfig(){
     ? idsRaw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
     : [];
   if (!token) { showNotification('Enter a bot token first', true); return; }
-  await postJSON('/api/telegram/config', { token, targetAgent: 'crew-lead', allowedChatIds });
+  const contactNames = {};
+  allowedChatIds.forEach(id => {
+    const el = document.getElementById('tgContact-' + id);
+    if (el && el.value.trim()) contactNames[String(id)] = el.value.trim();
+  });
+  await postJSON('/api/telegram/config', { token, targetAgent: 'crew-lead', allowedChatIds, contactNames });
   showNotification('Config saved');
+  loadTgConfig(); // refresh contact names list
 }
 
 async function startTgBridge(){
@@ -1983,14 +2195,16 @@ function formatSize(bytes) {
   if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + 'KB';
   return (bytes/1024/1024).toFixed(1) + 'MB';
 }
-function showProviders(){
+function showModels(){
   hideAllViews();
-  document.getElementById('providersView').classList.add('active');
-  setNavActive('navProviders');
+  document.getElementById('modelsView').classList.add('active');
+  setNavActive('navModels');
   loadRTToken();
   loadBuiltinProviders(); // renders built-ins + custom providers in one unified list
   loadSearchTools();
 }
+// keep old name working for any legacy calls
+function showProviders(){ showModels(); }
 
 const BUILTIN_PROVIDERS = [
   { id:'groq',       label:'Groq',       icon:'⚡', url:'https://console.groq.com/keys',         hint:'Fast inference — great for crew-coder, crew-fixer' },
@@ -2287,9 +2501,370 @@ function showSettings(){
   hideAllViews();
   document.getElementById('settingsView').classList.add('active');
   setNavActive('navSettings');
-  loadTokenUsage();
-  loadCmdAllowlist();
-  loadOpencodeProject();
+  showSettingsTab('usage');
+}
+function showSettingsTab(tab){
+  ['usage','security','webhooks','telegram','system'].forEach(t => {
+    const panel = document.getElementById('stab-panel-' + t);
+    const btn   = document.getElementById('stab-' + t);
+    if (!panel || !btn) return;
+    panel.style.display = t === tab ? (t === 'usage' ? 'grid' : 'block') : 'none';
+    btn.classList.toggle('active', t === tab);
+  });
+  if (tab === 'usage')    { loadTokenUsage(); loadSpending(); }
+  if (tab === 'security') { loadCmdAllowlist(); }
+  if (tab === 'system')   { loadOpencodeProject(); }
+  if (tab === 'telegram') { loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
+}
+
+function showSkills(){
+  hideAllViews();
+  document.getElementById('skillsView').classList.add('active');
+  setNavActive('navSkills');
+  loadSkills();
+  loadPendingApprovals();
+}
+
+function showRunSkills(){
+  hideAllViews();
+  document.getElementById('runSkillsView').classList.add('active');
+  setNavActive('navRunSkills');
+  loadRunSkills();
+}
+
+function showToolMatrix(){
+  hideAllViews();
+  document.getElementById('toolMatrixView').classList.add('active');
+  setNavActive('navToolMatrix');
+  loadToolMatrix();
+}
+
+// keep old name working for any legacy calls
+function showIntegrations(){ showSkills(); }
+
+// ── Run skills (from health snapshot) ───────────────────────────────────────────
+async function loadRunSkills(){
+  const el = document.getElementById('runSkillsGrid');
+  if (!el) return;
+  try {
+    const d = await (await fetch('/api/health')).json();
+    const skills = (d.skills || []).filter(s => !s.error);
+    if (!skills.length) {
+      el.innerHTML = '<div style="color:var(--text-3);font-size:13px;">No skills in health snapshot. Add skills in the Skills tab or add JSON files to ~/.crewswarm/skills/</div>';
+      return;
+    }
+    el.innerHTML = skills.map(s => {
+      const defaults = s.defaultParams && Object.keys(s.defaultParams).length
+        ? JSON.stringify(s.defaultParams, null, 2)
+        : '{}';
+      const paramHint = (s.paramNotes || s.description || '').slice(0, 120);
+      const safeName = (s.name || '').replace(/"/g, '&quot;');
+      return '<div class="card" style="display:flex;flex-direction:column;">'
+        + '<div class="card-title" style="margin-bottom:6px;">' + (s.name || 'unnamed') + '</div>'
+        + '<div style="font-size:12px;color:var(--text-3);margin-bottom:10px;line-height:1.4;">' + (s.description || '') + '</div>'
+        + (paramHint ? '<div style="font-size:11px;color:var(--text-2);margin-bottom:8px;">' + paramHint + '</div>' : '')
+        + '<label style="font-size:11px;color:var(--text-2);margin-bottom:4px;">Params (JSON)</label>'
+        + '<textarea data-skill="' + safeName + '" rows="4" style="font-family:monospace;font-size:12px;width:100%;margin-bottom:10px;resize:vertical;" class="runskills-params">' + defaults.replace(/</g, '&lt;') + '</textarea>'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-top:auto;">'
+        + '<button class="btn-green" style="font-size:12px;" data-skill="' + safeName + '" onclick="runSkillFromUI(this.dataset.skill)">Run</button>'
+        + '<span class="runskills-result" data-skill="' + safeName + '" style="font-size:11px;color:var(--text-3);"></span>'
+        + '</div></div>';
+    }).join('');
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--red);font-size:12px;">Error loading health/skills: ' + (e.message || '') + '</div>';
+  }
+}
+
+async function runSkillFromUI(skillName){
+  const textarea = document.querySelector('.runskills-params[data-skill="' + (skillName || '').replace(/"/g, '\\"') + '"]');
+  const resultEl = document.querySelector('.runskills-result[data-skill="' + (skillName || '').replace(/"/g, '\\"') + '"]');
+  if (!textarea) return;
+  let params = {};
+  try { params = JSON.parse(textarea.value.trim() || '{}'); } catch (e) {
+    if (resultEl) resultEl.textContent = 'Invalid JSON';
+    return;
+  }
+  if (resultEl) resultEl.textContent = 'Running…';
+  try {
+    const r = await fetch('/api/skills/' + encodeURIComponent(skillName) + '/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params })
+    });
+    const data = await r.json();
+    if (resultEl) {
+      if (data.ok) resultEl.textContent = 'Done';
+      else resultEl.textContent = data.error || 'Error';
+      resultEl.style.color = data.ok ? 'var(--green)' : 'var(--red)';
+    }
+    if (!data.ok) return;
+    if (data.result !== undefined && resultEl) {
+      const preview = typeof data.result === 'string' ? data.result : JSON.stringify(data.result).slice(0, 120);
+      resultEl.textContent = preview + (preview.length >= 120 ? '…' : '');
+    }
+  } catch (e) {
+    if (resultEl) { resultEl.textContent = e.message || 'Request failed'; resultEl.style.color = 'var(--red)'; }
+  }
+}
+
+// ── Tool Matrix (agents × tools from health + restart) ───────────────────────────
+const TOOL_LABELS = { read_file: 'read', write_file: 'write', mkdir: 'mkdir', run_cmd: 'run', dispatch: 'dispatch', skill: 'skill', define_skill: 'define_skill', git: 'git' };
+
+async function loadToolMatrix(){
+  const el = document.getElementById('toolMatrixContainer');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/health');
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) {
+      const msg = d.error || (res.status === 401 ? 'Unauthorized' : res.statusText || 'Request failed');
+      el.innerHTML = '<div class="card" style="padding:16px;"><div style="color:var(--yellow,#fbbf24);font-size:13px;font-weight:600;">Health check failed</div>' +
+        '<div style="color:var(--text-2);font-size:12px;margin-top:8px;">' + (res.status === 401 ? 'RT token missing or invalid. Set it in Settings → System (RT token) or in ~/.crewswarm/config.json (rt.authToken).' : msg) + '</div>' +
+        '<div style="color:var(--text-3);font-size:11px;margin-top:8px;">Ensure crew-lead is running on :5010 (Services tab).</div></div>';
+      return;
+    }
+    const bridgeAgents = (d.agents || []).filter(a => (a.id || '').toLowerCase() !== 'crew-lead');
+    const crewLeadInfo = window._crewLeadInfo || { name: 'Crew Lead', emoji: '🧠' };
+    const crewLeadRow = { id: 'crew-lead', name: crewLeadInfo.name, emoji: crewLeadInfo.emoji, tools: ['dispatch', 'skill', 'define_skill'] };
+    const agents = [crewLeadRow, ...bridgeAgents];
+    const toolKeys = [...new Set(['define_skill', 'skill', ...agents.flatMap(a => Array.isArray(a.tools) ? a.tools : Object.keys(a.tools || {}))])].sort();
+    const labels = toolKeys.map(t => TOOL_LABELS[t] || t);
+    if (!agents.length) {
+      el.innerHTML = '<div class="card" style="padding:16px;"><div style="color:var(--text-2);font-size:13px;">No agents in roster.</div>' +
+        '<div style="color:var(--text-3);font-size:12px;margin-top:6px;">Add agents in Settings → Agents (or ~/.crewswarm/crewswarm.json), then start bridges from Services.</div></div>';
+      return;
+    }
+    let html = '<div class="card" style="overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
+      + '<thead><tr style="border-bottom:1px solid var(--border);">'
+      + '<th style="text-align:left;padding:8px 12px;">Agent</th>';
+    toolKeys.forEach((t, i) => { html += '<th style="text-align:center;padding:8px 8px;" title="' + (t || '') + '">' + (labels[i] || t) + '</th>'; });
+    html += '<th style="text-align:right;padding:8px 12px;">Quick action</th></tr></thead><tbody>';
+    agents.forEach(a => {
+      const tools = Array.isArray(a.tools) ? a.tools : (a.tools ? Object.keys(a.tools).filter(k => a.tools[k]) : []);
+      const name = (a.emoji || '') + ' ' + (a.name || a.id || '');
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += '<td style="padding:8px 12px;"><strong>' + (name || a.id).replace(/</g, '&lt;') + '</strong></td>';
+      toolKeys.forEach(t => {
+        const has = tools.includes(t);
+        html += '<td style="text-align:center;padding:6px 8px;">' + (has ? '<span style="color:var(--green);" title="' + t + '">✓</span>' : '<span style="color:var(--text-3);">—</span>') + '</td>';
+      });
+      html += '<td style="text-align:right;padding:8px 12px;"><button class="btn-ghost" style="font-size:11px;" data-agent-id="' + (a.id || '').replace(/"/g, "&quot;") + '" onclick="restartAgentFromUI(this.getAttribute(&quot;data-agent-id&quot;))">Restart</button></td></tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--red);font-size:12px;">Error loading health: ' + (e.message || '') + '</div>';
+  }
+}
+
+async function restartAgentFromUI(agentId){
+  if (!agentId) return;
+  try {
+    const r = await fetch('/api/agents/' + encodeURIComponent(agentId) + '/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    const data = await r.json();
+    if (data.ok) showNotification('Restarting ' + agentId + '…');
+    else showNotification(data.error || 'Restart failed', 'error');
+  } catch (e) { showNotification(e.message || 'Request failed', 'error'); }
+}
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+let _skillsCache = [];
+
+async function loadSkills(){
+  const el = document.getElementById('skillsList');
+  try {
+    const d = await (await fetch('/api/skills')).json();
+    _skillsCache = d.skills || [];
+    renderSkillsList(_skillsCache);
+  } catch(e) { el.innerHTML = '<div style="color:var(--text-3);font-size:12px;">Error loading skills</div>'; }
+}
+
+function renderSkillsList(skills){
+  const el = document.getElementById('skillsList');
+  if (!skills.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0;">No skills match. Add one above or copy JSONs to ~/.crewswarm/skills/</div>'; return; }
+  el.innerHTML = skills.map(s => {
+    const approvalBadge = s.requiresApproval ? '<span style="margin-left:8px;font-size:10px;background:rgba(251,191,36,0.15);color:#fbbf24;padding:2px 6px;border-radius:4px;">⚠️ approval</span>' : '';
+    const urlNote = s.url ? ' · <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">' + (s.method||'POST') + ' ' + (s.url||'').slice(0,60) + '</code>' : '';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border);">'
+         + '<div><span style="font-weight:600;font-size:13px;">' + s.name + '</span>' + approvalBadge
+         + '<div style="font-size:11px;color:var(--text-3);margin-top:3px;">' + (s.description||'') + urlNote + '</div></div>'
+         + '<div style="display:flex;gap:6px;flex-shrink:0;">'
+         + '<button class="btn-ghost" style="font-size:11px;" data-skill="' + s.name + '" onclick="editSkill(this.dataset.skill)">Edit</button>'
+         + '<button class="btn-ghost" style="font-size:11px;color:var(--red);" data-skill="' + s.name + '" onclick="deleteSkill(this.dataset.skill)">Delete</button>'
+         + '</div></div>';
+  }).join('');
+}
+
+function filterSkills(q){
+  const lower = q.toLowerCase();
+  renderSkillsList(lower ? _skillsCache.filter(s =>
+    (s.name||'').toLowerCase().includes(lower) ||
+    (s.description||'').toLowerCase().includes(lower) ||
+    (s.url||'').toLowerCase().includes(lower)
+  ) : _skillsCache);
+}
+
+function editSkill(name){
+  const s = _skillsCache.find(x => x.name === name);
+  if (!s) return;
+  document.getElementById('skEditName').value = name;
+  document.getElementById('addSkillFormTitle').textContent = 'Edit Skill';
+  document.getElementById('saveSkillBtn').textContent = 'Update Skill';
+  document.getElementById('skName').value = s.name || '';
+  document.getElementById('skDesc').value = s.description || '';
+  document.getElementById('skUrl').value = s.url || '';
+  const meth = document.getElementById('skMethod');
+  for (let i = 0; i < meth.options.length; i++) if (meth.options[i].value === s.method) { meth.selectedIndex = i; break; }
+  const authType = s.auth?.type || '';
+  document.getElementById('skAuthType').value = authType;
+  document.getElementById('skAuthKey').value = s.auth?.keyFrom || s.auth?.token || '';
+  document.getElementById('skAuthHeader').value = s.auth?.header || '';
+  document.getElementById('skRequiresApproval').checked = !!s.requiresApproval;
+  document.getElementById('skDefaults').value = s.defaultParams && Object.keys(s.defaultParams).length ? JSON.stringify(s.defaultParams, null, 2) : '';
+  updateSkillAuthFields();
+  const f = document.getElementById('addSkillForm');
+  f.style.display = 'block';
+  f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function toggleAddSkill(){
+  cancelSkillForm();
+  const f = document.getElementById('addSkillForm');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+function cancelSkillForm(){
+  document.getElementById('skEditName').value = '';
+  document.getElementById('addSkillFormTitle').textContent = 'New Skill';
+  document.getElementById('saveSkillBtn').textContent = 'Save Skill';
+  document.getElementById('addSkillForm').style.display = 'none';
+  ['skName','skDesc','skUrl','skAuthKey','skAuthHeader','skDefaults'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  document.getElementById('skAuthType').value = '';
+  document.getElementById('skRequiresApproval').checked = false;
+  updateSkillAuthFields();
+}
+function updateSkillAuthFields(){
+  const t = document.getElementById('skAuthType').value;
+  document.getElementById('skAuthHeaderWrap').style.display = t === 'header' ? 'block' : 'none';
+}
+async function saveSkill(){
+  const name = document.getElementById('skName').value.trim();
+  const url  = document.getElementById('skUrl').value.trim();
+  if (!name || !url) { alert('Skill name and URL are required'); return; }
+  let defaultParams = {};
+  try { const v = document.getElementById('skDefaults').value.trim(); if(v) defaultParams = JSON.parse(v); } catch { alert('Default Params must be valid JSON'); return; }
+  const authType = document.getElementById('skAuthType').value;
+  const authKeyRaw = document.getElementById('skAuthKey').value.trim();
+  let auth = {};
+  if (authType && authKeyRaw) {
+    auth = { type: authType };
+    if (authKeyRaw.startsWith('providers.') || authKeyRaw.startsWith('env.')) auth.keyFrom = authKeyRaw;
+    else auth.token = authKeyRaw;
+    if (authType === 'header') auth.header = document.getElementById('skAuthHeader').value.trim() || 'X-API-Key';
+  }
+  const editingName = document.getElementById('skEditName').value.trim();
+  const body = { name, url, method: document.getElementById('skMethod').value, description: document.getElementById('skDesc').value.trim(), auth: Object.keys(auth).length ? auth : undefined, defaultParams, requiresApproval: document.getElementById('skRequiresApproval').checked };
+  try {
+    // If renaming, delete old file first
+    if (editingName && editingName !== name) {
+      await fetch('/api/skills/' + editingName, { method: 'DELETE' });
+    }
+    const r = await fetch('/api/skills', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    cancelSkillForm();
+    loadSkills();
+    showNotification(editingName ? 'Skill updated' : 'Skill saved');
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
+async function deleteSkill(name){
+  if (!confirm('Delete skill "' + name + '"?')) return;
+  try { const r = await fetch('/api/skills/' + name, { method: 'DELETE' }); if(!r.ok) throw new Error(await r.text()); loadSkills(); showNotification('Deleted'); }
+  catch(e) { showNotification('Delete failed: ' + e.message, 'error'); }
+}
+
+// ── Spending ──────────────────────────────────────────────────────────────────
+async function loadSpending(){
+  const el = document.getElementById('spendingWidget');
+  try {
+    const d = await (await fetch('/api/spending')).json();
+    const { spending, caps } = d;
+    const gTokens = spending.global?.tokens || 0;
+    const gCost   = (spending.global?.costUSD || 0).toFixed(4);
+    const gCapTok = caps.global?.dailyTokenLimit;
+    const gCapCost = caps.global?.dailyCostLimitUSD;
+    let out = '<div style="margin-bottom:10px;">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em;">Global &middot; ' + (spending.date||'today') + '</div>'
+            + '<div style="display:flex;gap:20px;"><span>' + gTokens.toLocaleString() + ' tokens' + (gCapTok ? ' / ' + Number(gCapTok).toLocaleString() : '') + '</span>'
+            + '<span>$' + gCost + (gCapCost ? ' / $' + gCapCost : '') + '</span></div>';
+    if (gCapTok) {
+      const pct = Math.min(100, (gTokens/gCapTok)*100);
+      const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? '#fbbf24' : 'var(--green)';
+      out += '<div style="margin-top:4px;height:4px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;transition:width .3s;"></div></div>';
+    }
+    out += '</div>';
+    const agents = Object.entries(spending.agents || {});
+    if (agents.length) {
+      out += '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Per Agent</div>';
+      out += agents.map(function([id, v]) {
+        const agentCap = caps.agents && caps.agents[id];
+        const toks  = v.tokens || 0;
+        const cost  = (v.costUSD||0).toFixed(4);
+        const capTok = agentCap && agentCap.dailyTokenLimit;
+        const pct    = capTok ? Math.min(100, (toks/capTok)*100) : null;
+        let row = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
+                + '<span style="min-width:140px;font-size:12px;">' + id + '</span>'
+                + '<span style="font-size:12px;">' + toks.toLocaleString() + ' tok' + (capTok ? ' / ' + Number(capTok).toLocaleString() : '') + ' &middot; $' + cost + '</span>';
+        if (pct !== null) {
+          const barColor = pct > 80 ? 'var(--red)' : 'var(--accent)';
+          row += '<div style="flex:1;height:3px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;"></div></div>';
+        }
+        return row + '</div>';
+      }).join('');
+    } else { out += '<div style="color:var(--text-3);">No per-agent data yet for today.</div>'; }
+    if (gCapTok) document.getElementById('gcapTokens').value = gCapTok;
+    if (gCapCost) document.getElementById('gcapCost').value = gCapCost;
+    el.innerHTML = out;
+  } catch(e) { el.innerHTML = '<div style="color:var(--text-3);">Error loading spending data</div>'; }
+}
+async function resetSpending(){
+  if (!confirm("Reset today's spending counters?")) return;
+  try { await fetch('/api/spending/reset', { method: 'POST', headers:{'content-type':'application/json'}, body: '{}' }); loadSpending(); showNotification('Spending reset'); }
+  catch(e) { showNotification('Reset failed', 'error'); }
+}
+async function saveGlobalCaps(){
+  const tokens = parseInt(document.getElementById('gcapTokens').value) || null;
+  const cost   = parseFloat(document.getElementById('gcapCost').value) || null;
+  showNotification('Add to ~/.crewswarm/crewswarm.json: "globalSpendingCaps": {"dailyTokenLimit":' + (tokens||'null') + ',"dailyCostLimitUSD":' + (cost||'null') + '}', 'warning');
+}
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+async function sendTestWebhook(){
+  const channel = document.getElementById('webhookChannel').value.trim() || 'test';
+  let payload = {};
+  try { const v = document.getElementById('webhookPayload').value.trim(); if(v) payload = JSON.parse(v); } catch { payload = { raw: document.getElementById('webhookPayload').value }; }
+  const el = document.getElementById('webhookTestResult');
+  try {
+    const res = await fetch('/proxy-webhook/' + channel, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    const d = await res.json();
+    el.textContent = d.ok ? '✅ Sent to RT bus' : '❌ ' + (d.error||'failed');
+    el.style.color = d.ok ? 'var(--green)' : 'var(--red)';
+  } catch(e) { el.textContent = '❌ ' + e.message; el.style.color='var(--red)'; }
+}
+
+// ── Pending Approvals ─────────────────────────────────────────────────────────
+async function loadPendingApprovals(){
+  const el = document.getElementById('pendingApprovals');
+  // pending-skills.json is at ~/.crewswarm/pending-skills.json — no direct API yet; 
+  // crew-lead should expose this but for now show instructions.
+  el.innerHTML = '<div style="color:var(--text-3);font-size:12px;">Pending skill approvals appear here when an agent triggers a skill marked requiresApproval. You will also receive a Telegram notification with inline Approve/Reject buttons if Telegram is configured.</div>';
+}
+async function approveSkill(approvalId){
+  try { await fetch('/api/skills/approve', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({approvalId}) }); showNotification('Approved'); loadPendingApprovals(); }
+  catch(e) { showNotification('Failed: '+e.message,'error'); }
+}
+async function rejectSkill(approvalId){
+  try { await fetch('/api/skills/reject', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({approvalId}) }); showNotification('Rejected'); loadPendingApprovals(); }
+  catch(e) { showNotification('Failed: '+e.message,'error'); }
 }
 
 function showAgents(){
@@ -3741,7 +4316,11 @@ document.getElementById('buildProjectPicker').addEventListener('change', () => {
   checkPmStatus();
 });
 const params = new URLSearchParams(window.location.search);
-if (params.get('focus') === '1') setTimeout(() => { const ci = document.getElementById('chatInput'); if (ci) { showChat(); ci.focus(); } }, 500);
+if (params.get('focus') === '1') {
+  setTimeout(() => { const ci = document.getElementById('chatInput'); if (ci) { showChat(); ci.focus(); } }, 500);
+} else {
+  showChat();
+}
 loadAgents();
 refreshAll();
 </script>
@@ -4299,7 +4878,14 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/settings/opencode-project" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { dir } = JSON.parse(body);
+      let { dir } = JSON.parse(body);
+      // Normalize: expand ~, ensure absolute path
+      if (dir) {
+        dir = dir.trim();
+        if (dir.startsWith("~")) dir = os.homedir() + dir.slice(1);
+        if (!path.isAbsolute(dir)) dir = "/" + dir;
+        dir = path.normalize(dir);
+      }
       const cfgDir  = path.join(os.homedir(), ".crewswarm");
       const cfgPath = path.join(cfgDir, "config.json");
       fs.mkdirSync(cfgDir, { recursive: true });
@@ -4450,15 +5036,23 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/crew-lead/chat" && req.method === "POST") {
       let body = ""; for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
-      const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/chat`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body,
-        signal: AbortSignal.timeout(200000), // 3m20s — allow crew-lead + reasoning LLM to finish
-      });
-      const clData = await clRes.json();
-      res.writeHead(clRes.status, { "content-type": "application/json" });
-      res.end(JSON.stringify(clData));
+      try {
+        const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/chat`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+          signal: AbortSignal.timeout(200000), // 3m20s — allow crew-lead + reasoning LLM to finish
+        });
+        const text = await clRes.text();
+        let clData;
+        try { clData = JSON.parse(text); } catch { clData = { ok: false, error: text.slice(0, 200) || clRes.statusText }; }
+        if (!clRes.ok && clData && typeof clData.error !== "string") clData.error = clData.error || text?.slice(0, 200) || "crew-lead error";
+        res.writeHead(clRes.ok ? 200 : clRes.status, { "content-type": "application/json" });
+        res.end(JSON.stringify(clData));
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "crew-lead unreachable: " + (e?.message || String(e)), reply: null }));
+      }
       return;
     }
     if (url.pathname === "/api/crew-lead/clear" && req.method === "POST") {
@@ -5294,7 +5888,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/telegram/config" && req.method === "GET") {
       const cfg = loadTgConfig();
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ token: cfg.token || "", targetAgent: cfg.targetAgent || "crew-main", allowedChatIds: cfg.allowedChatIds || [] }));
+      res.end(JSON.stringify({
+        token: cfg.token || "",
+        targetAgent: cfg.targetAgent || "crew-main",
+        allowedChatIds: cfg.allowedChatIds || [],
+        contactNames: cfg.contactNames || {},
+      }));
       return;
     }
 
@@ -5411,21 +6010,27 @@ const server = http.createServer(async (req, res) => {
         const ocUp      = await portListening(4096);
         const dashUp    = await portListening(listenPort);
 
-        // Agent count: running = pgrep for bridge daemons (pattern matches each spawned bridge; --rt-daemon in argv)
-        let agentsOnline = countProcs("gateway-bridge.mjs");
+        // Agent count: ask RT bus which agents are actually connected (most reliable source)
+        let agentsOnline = 0;
+        let rtAgentList = [];
+        try {
+          const rtStatusRes = await fetch("http://127.0.0.1:18889/status", { signal: AbortSignal.timeout(1500) });
+          const rtStatus = await rtStatusRes.json();
+          const raw = (rtStatus.agents || []).filter(Boolean);
+          rtAgentList = raw.filter(a => String(a).toLowerCase() !== "crew-lead");
+          agentsOnline = rtAgentList.length;
+        } catch {
+          // RT not reachable — fall back to pgrep
+          agentsOnline = countProcs("gateway-bridge.mjs --rt-daemon");
+        }
+        // Total: count configured agents (minus crew-lead); never show X/Y with X > Y
         let agentsTotal = 0;
         try {
-          const agentsOut = execSync(`"${ctlPath}" agents`, {
-            encoding: "utf8",
-            timeout: 5000,
-            cwd: OPENCLAW_DIR,
-            env: { ...process.env, OPENCLAW_DIR },
-            stdio: ["pipe", "pipe", "pipe"],
-          });
-          const lines = agentsOut.trim().split(/\n/).filter(Boolean);
-          agentsTotal = lines.length;
-          if (agentsTotal === 0) agentsTotal = 13; // fallback to expected crew size
+          const swarmCfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+          agentsTotal = (swarmCfg.agents || []).filter(a => a.id && String(a.id).toLowerCase() !== "crew-lead").length;
         } catch {}
+        if (agentsTotal === 0) agentsTotal = 14;
+        agentsTotal = Math.max(agentsTotal, agentsOnline);
 
         services = [
         {
@@ -5440,7 +6045,9 @@ const server = http.createServer(async (req, res) => {
         {
           id: "agents",
           label: "Agent Crew",
-          description: agentsTotal > 0 ? `${agentsOnline}/${agentsTotal} agents online` : "0 agents connected",
+          description: agentsOnline > 0
+            ? `${agentsOnline}/${agentsTotal} agents online — ${rtAgentList.slice(0,5).join(", ")}${rtAgentList.length > 5 ? "…" : ""}`
+            : `0/${agentsTotal} agents online — bridges not connected to RT bus`,
           port: null,
           running: agentsOnline > 0,
           canRestart: true,
@@ -5485,7 +6092,9 @@ const server = http.createServer(async (req, res) => {
         {
           id: "openclaw-gateway",
           label: "OpenClaw Gateway",
-          description: oclawPaired ? "App paired ✓ — plugin can communicate via port 18789" : "No paired app detected — start if you need plugin connectivity on port 18789",
+          description: gwUp
+            ? (oclawPaired ? "App paired ✓ — plugin can communicate via port 18789" : "Listening on port 18789")
+            : "Port 18789. Start opens the OpenClaw app; if the gateway stays stopped, start it from within the app (status bar or Settings).",
           port: 18789,
           running: gwUp,
           canRestart: true,
@@ -5687,6 +6296,68 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ── Skills + Spending proxy → crew-lead:5010 ──────────────────────────────
+    // These routes read the auth token and proxy to the crew-lead HTTP API so
+    // the browser doesn't need to know the token.
+    const CREW_LEAD_URL = "http://127.0.0.1:5010";
+    function getCLToken() {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+        return cfg?.rt?.authToken || "";
+      } catch { return ""; }
+    }
+    async function proxyToCL(method, path_, body) {
+      const token = getCLToken();
+      const opts = { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, signal: AbortSignal.timeout(15000) };
+      if (body) opts.body = body;
+      const r = await fetch(CREW_LEAD_URL + path_, opts);
+      const text = await r.text();
+      return { status: r.status, body: text };
+    }
+
+    // Proxy test webhook through dashboard (avoids browser needing token)
+    const webhookProxyMatch = url.pathname.match(/^\/proxy-webhook\/([a-zA-Z0-9_\-]+)$/);
+    if (webhookProxyMatch && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { status, body: rb } = await proxyToCL("POST", `/webhook/${webhookProxyMatch[1]}`, body || "{}");
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(rb);
+      return;
+    }
+
+    // Proxy health (single source for skills + agent tools) and agent restart
+    if (url.pathname === "/api/health" && req.method === "GET") {
+      const { status, body: rb } = await proxyToCL("GET", "/api/health", undefined);
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(rb);
+      return;
+    }
+    const agentRestartMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/restart$/);
+    if (agentRestartMatch && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { status, body: rb } = await proxyToCL("POST", url.pathname, body || undefined);
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(rb);
+      return;
+    }
+
+    const skillsMatch = url.pathname.match(/^\/api\/skills(\/.*)?$/);
+    if (skillsMatch) {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { status, body: rb } = await proxyToCL(req.method, url.pathname + (url.search || ""), body || undefined);
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(rb);
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/spending")) {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { status, body: rb } = await proxyToCL(req.method, url.pathname + (url.search || ""), body || undefined);
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(rb);
+      return;
+    }
+
     res.writeHead(404, { "content-type": "text/plain" });
     res.end("not found");
   } catch (err) {
@@ -5697,9 +6368,13 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+if (process.argv.includes("--print-html")) {
+  process.stdout.write(html, (err) => process.exit(err ? 1 : 0));
+} else {
 server.listen(listenPort, "127.0.0.1", () => {
   console.log(`CrewSwarm Dashboard (with Build) at http://127.0.0.1:${listenPort}`);
 });
+}
 
 process.on("uncaughtException", (err) => {
   console.error("[dashboard] uncaughtException (kept alive):", err?.stack || err?.message || err);

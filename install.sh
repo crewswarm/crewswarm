@@ -112,6 +112,20 @@ else
   success "~/.crewswarm/crewswarm.json already exists — keeping it"
 fi
 
+# Bootstrap skills directory with starter skill definitions
+SKILLS_DIR="$CREWSWARM_DIR/skills"
+mkdir -p "$SKILLS_DIR"
+if [[ -d "$REPO_DIR/skills" ]]; then
+  for f in "$REPO_DIR/skills"/*.json; do
+    [[ -f "$f" ]] || continue
+    dest="$SKILLS_DIR/$(basename "$f")"
+    if [[ ! -f "$dest" ]]; then
+      cp "$f" "$dest"
+    fi
+  done
+  success "Skills available in ~/.crewswarm/skills/"
+fi
+
 # Bootstrap agent prompts if not present (try repo config, then legacy .openclaw, then sync from prompts/ or empty)
 PROMPTS_FILE="$CREWSWARM_DIR/agent-prompts.json"
 if [[ ! -f "$PROMPTS_FILE" ]]; then

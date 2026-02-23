@@ -79,7 +79,7 @@ function tryRead(p) {
 // ── Agent tool permission helpers ─────────────────────────────────────────────
 
 const CREWSWARM_TOOL_NAMES = new Set([
-  "write_file","read_file","mkdir","run_cmd","git","dispatch","telegram","web_search","web_fetch",
+  "write_file","read_file","mkdir","run_cmd","git","dispatch","telegram","web_search","web_fetch","skill",
 ]);
 
 const AGENT_TOOL_ROLE_DEFAULTS = {
@@ -190,7 +190,10 @@ async function searchWithBrave(query) {
     const data = await res.json();
     const results = (data.web?.results || []).slice(0, 5);
     if (!results.length) return null;
-    return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.description || ""}\n   ${r.url}`).join("\n\n");
+    const text = results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.description || ""}\n   ${r.url}`).join("\n\n");
+    // Debug: so you can verify what Stinki was given (e.g. "did he get Crunchbase?")
+    console.log(`[crew-lead] Brave search query="${query.slice(0, 80)}" → ${results.length} results`);
+    return text;
   } catch { return null; }
 }
 
@@ -367,16 +370,76 @@ function buildSystemPrompt(cfg) {
     "",
     "4. BRAIN / SHARED MEMORY — @@BRAIN (append a durable fact to brain.md, shared by all agents):",
     "   @@BRAIN crew-lead: project uses port 4319 for dashboard, 5010 for crew-lead, 18889 for RT bus",
+    "   If you say you are 'logging' or 'adding to brain' or 'remembering' something, you MUST emit @@BRAIN on that line — otherwise nothing is persisted. Plain text claims are not logged.",
+    "",
+    "5. SKILLS — call external APIs or define new ones:",
+    "   Skills live in ~/.crewswarm/skills/. Each is a JSON file with a URL, method, auth, and params.",
+    "   Any agent with 'skill' permission can call: @@SKILL skillname {\"param\":\"value\"}",
+    "   You can list skills by calling GET /api/skills on crew-lead (port 5010).",
+    "   To create or update a skill (use crew-main to research the API first):",
+    '   @@DISPATCH {"agent":"crew-main","task":"Research the Notion API append-to-database endpoint and create a skill using @@DEFINE_SKILL notion.append\\n{...JSON skill def...}\\n@@END_SKILL"}',
+    "   You can create skills yourself with @@DEFINE_SKILL (you have it). When the user asks you to create a skill, emit @@DEFINE_SKILL name\\n{...JSON...}\\n@@END_SKILL. If you need API research first, dispatch to crew-main; otherwise define directly. Example:",
+    '   @@DEFINE_SKILL twitter.post',
+    '   {"description":"Post a tweet","url":"https://api.twitter.com/2/tweets","method":"POST","auth":{"type":"bearer","keyFrom":"TWITTER_BEARER_TOKEN"},"paramNotes":"text: string (max 280 chars)"}',
+    '   @@END_SKILL',
+    "   The Tool Matrix / health snapshot lists bridge agents' tools only. You are crew-lead (this server): you implement @@DEFINE_SKILL here — do not say only crew-main or crew-coder can create skills. Say yes and emit @@DEFINE_SKILL when the user asks.",
+    "   crew-main and crew-coder can also create skills (define_skill in gateway-bridge); you do not need to delegate unless API research is required.",
+    "",
+    "5b. WORKFLOWS (scheduled pipelines) — create or update workflows so cron can run them:",
+    "   Workflows live in ~/.crewswarm/pipelines/<name>.json. Each has stages: agent + task (+ optional tool label) per stage.",
+    "   To create or replace a workflow, emit @@DEFINE_WORKFLOW followed by the name and a JSON array of stages:",
+    "   @@DEFINE_WORKFLOW social",
+    "   [",
+    '     {"agent":"crew-copywriter","task":"Draft a 280-char tweet about … Write to /tmp/cron-tweet.txt and reply with the text.","tool":"write_file"},',
+    '     {"agent":"crew-main","task":"Read /tmp/cron-tweet.txt and post with @@SKILL twitter.post. Reply when done.","tool":"skill"}',
+    "   ]",
+    "   @@END_WORKFLOW",
+    "   Each stage: agent (required), task (required), tool (optional label). To modify a workflow, output @@DEFINE_WORKFLOW with the same name and the full updated stages array (replaces the file).",
+    "   When the user asks about workflows or pipelines, use the [System health snapshot] — it lists installed pipeline names.",
+    "",
+    "6. SYSTEM HEALTH — IMPORTANT: You are a Node.js process running locally. You do NOT need to make HTTP calls.",
+    "   When the user asks about health, status, agents, services, skills, or settings, a live system snapshot",
+    "   is automatically injected into your context as [System health snapshot]. USE THAT DATA — do not say",
+    "   'I cannot reach localhost' or 'I am sandboxed'. You already have the information.",
+    "   The snapshot includes: RT bus status, Telegram status, OpenCode dir, all agent tools+models, installed skills.",
+    "   If the snapshot shows a service is ❌ DOWN or ⚠️ stopped, proactively offer to restart it with @@SERVICE.",
+    "",
+    "   DASHBOARD (port 4319): Users can run skills without CLI — Workspace → Run skills (params + Run, same as POST /api/skills/:name/run).",
+    "   Tool Matrix (Workspace) shows each agent's tools (read/write/run) and a Restart button per agent. Direct users there when they ask who can do what or to restart a single bridge.",
+    "",
+    "7. SERVICE CONTROL — restart or start any crashed service via @@SERVICE:",
+    "   @@SERVICE restart telegram     — restart the Telegram bridge",
+    "   @@SERVICE restart agents       — restart ALL agent bridges (all crew-X)",
+    "   @@SERVICE restart crew-coder   — restart a SINGLE agent bridge",
+    "   @@SERVICE restart rt-bus       — restart the RT message bus",
+    "   @@SERVICE restart crew-lead    — restart crew-lead itself (use as last resort)",
+    "   @@SERVICE restart opencode     — restart OpenCode server",
+    "   @@SERVICE stop telegram        — stop a service without restarting",
+    "   Service IDs: telegram, agents, crew-lead, rt-bus, opencode, or any crew-X agent ID.",
+    "   Use this when user reports an agent is down, Telegram stopped, or asks to restart something.",
+    "   You cannot restart your own process from inside — if the user says 'restart yourself', emit @@SERVICE restart crew-lead; your process will then exit and the runner will respawn you.",
+    "",
+    "8. PROMPT SELF-TWEAK — Users can change your behavior without code: @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…new rule…\"}.",
+    "   Tell users: to tweak your marching orders, paste that line with their rule in the chat; you will append it to your system prompt. (Crew-lead prompt changes apply on next message; no restart needed.)",
     "",
     "After any change: tell the user to restart the affected bridge(s) for changes to take effect.",
     "",
+    "QUICK REFERENCE — You can: (1) Update any agent's prompt with @@PROMPT {\"agent\":\"crew-XXX\",\"append\":\"…\"} or set= to replace. (2) Restart any service or agent with @@SERVICE restart <id> (e.g. crew-pm, crew-coder, telegram, agents, rt-bus, crew-lead). (3) Define skills with @@DEFINE_SKILL name + JSON + @@END_SKILL; define workflows with @@DEFINE_WORKFLOW name + JSON stages + @@END_WORKFLOW. (4) Point users to the dashboard: Run skills (fire skills), Tool Matrix (see who has read/write/run + Restart per agent), Skills tab (CRUD skill JSONs). (5) Users can tweak your own prompt with @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…\"}. You know about health snapshot, workflows list, and all of the above.",
+    "",
     "When the user message includes [Web context from Brave Search], use that context to answer current events, docs, or factual lookups when relevant. When it includes [Codebase context from workspace], use it to answer questions about this codebase (where things are, how they work, what a file does).",
+    "",
+    "CITING SEARCH: You have NO persistent 'buffer' or 'crawled history' — only (1) the conversation history in this chat and (2) whatever is injected into the current message ([Web context from Brave Search], health snapshot, etc.). When you refer to past search results, only cite details that appear in the conversation (e.g. in a [Brave search] system line). Do NOT invent result numbers, URLs, gists, or 'prior Brave sweep in my buffer'. If the user questions a citation and the exact reference isn't in the history, say you don't have it in front of you; do not double down or get defensive.",
     "",
     "- Be concise. Under 2000 chars.",
     "- No filler phrases.",
   ].join("\n");
   const defaultIntro = [
     `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}), the conversational commander of the CrewSwarm AI development crew.`,
+    "",
+    "IMPORTANT: You are running as a local Node.js process on the user's own machine — NOT in a cloud sandbox.",
+    "You have direct access to the live system via context injection. When you see [System health snapshot] in",
+    "a message, that is real-time data from your own machine. Never say 'I cannot reach localhost' or",
+    "'I am sandboxed' — that is wrong. Use the injected data to answer questions about the system.",
     "",
     "You are primarily a CONVERSATIONAL assistant. Your default is to CHAT.",
     "",
@@ -810,6 +873,41 @@ function dispatchPipelineStep(steps, stepIndex, sessionId, pipelineId, prevResul
   return dispatchTask(step.agent, taskText, sessionId, { pipelineId, stepIndex, pipelineSteps: steps });
 }
 
+/**
+ * Detect explicit service restart/stop requests from the user message.
+ * Returns { action, id } or null.
+ * This fires programmatically so crew-lead never has to "decide" whether it can restart.
+ */
+function parseServiceIntent(msg) {
+  const t = msg.trim().toLowerCase();
+
+  // "restart all agents" / "restart the agents" / "restart agents" / "bring agents back"
+  if (/restart\s+(all\s+)?agents?|bring\s+agents?\s+(back|online|up)|start\s+all\s+agents?|agents?\s+back\s+up/.test(t))
+    return { action: "restart", id: "agents" };
+
+  // "restart telegram" / "start tg" / "bring telegram back"
+  if (/restart\s+(the\s+)?tele?gram|start\s+(the\s+)?tele?gram|tele?gram\s+(back|up)|tg\s+(back|up|restart)/.test(t))
+    return { action: "restart", id: "telegram" };
+
+  // "restart the RT bus" / "restart rt"
+  if (/restart\s+(the\s+)?rt(\s+bus)?|rt\s+bus\s+(down|crash|restart)/.test(t))
+    return { action: "restart", id: "rt-bus" };
+
+  // "restart crew-coder" or "restart crew-qa" etc.
+  const agentMatch = t.match(/restart\s+(crew-[a-z0-9-]+)/);
+  if (agentMatch) return { action: "restart", id: agentMatch[1] };
+
+  // "can you restart them" / "restart them" / "restart everything" / "restart the crew"
+  if (/restart\s+(them|it|everything|the\s+crew|all|bridges?)|bring\s+(them|the\s+crew|everyone)\s+back/.test(t))
+    return { action: "restart", id: "agents" };
+
+  // "stop telegram"
+  if (/stop\s+(the\s+)?tele?gram|stop\s+tg\b/.test(t))
+    return { action: "stop", id: "telegram" };
+
+  return null;
+}
+
 /** True only when the user explicitly asks to search, research, or look something up. */
 function messageNeedsSearch(msg) {
   const t = msg.trim().toLowerCase();
@@ -828,14 +926,141 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   const cfg = loadConfig();
   const history = loadHistory(sessionId);
 
+  // ── Programmatic service control — fire immediately, don't wait for LLM ──────
+  // This prevents the LLM from ever claiming it "can't" restart services.
+  const serviceIntent = parseServiceIntent(message);
+  if (serviceIntent) {
+    const { action, id } = serviceIntent;
+    const actionLabel = action === "stop" ? "stopped" : "restarted";
+    try {
+      const isSpecificAgent = id.startsWith("crew-") && id !== "crew-lead";
+      let ok = false;
+      if (isSpecificAgent) {
+        const r = await fetch(`http://127.0.0.1:${PORT}/api/agents/${id}/restart`, {
+          method: "POST",
+          headers: RT_TOKEN ? { authorization: `Bearer ${RT_TOKEN}` } : {},
+          signal: AbortSignal.timeout(8000),
+        });
+        ok = (await r.json())?.ok !== false;
+      } else {
+        const endpoint = action === "stop" ? "/api/services/stop" : "/api/services/restart";
+        const r = await fetch(`${DASHBOARD}${endpoint}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const data = await r.json();
+        if (data?.ok === false && data?.message) {
+          const reply = `${data.message}`;
+          appendHistory(sessionId, "user", message);
+          appendHistory(sessionId, "assistant", reply);
+          broadcastSSE({ type: "chat_message", sessionId, role: "user", content: message });
+          broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: reply });
+          return { reply, dispatched: null, pendingProject: null, pipeline: null };
+        }
+        ok = true;
+      }
+      if (ok) {
+        const reply = `On it — **${id}** ${actionLabel}. Give it 3–5 seconds to reconnect to the RT bus, then ask me "agents online?" for a fresh count.`;
+        appendHistory(sessionId, "user", message);
+        appendHistory(sessionId, "assistant", reply);
+        appendHistory(sessionId, "system", `Service ${id} ${actionLabel} via direct intent detection.`);
+        broadcastSSE({ type: "chat_message", sessionId, role: "user", content: message });
+        broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: reply });
+        console.log(`[crew-lead] service intent: ${action} ${id} → ok`);
+        return { reply, dispatched: null, pendingProject: null, pipeline: null };
+      }
+    } catch (e) {
+      console.error(`[crew-lead] service intent failed: ${e.message}`);
+      // fall through to normal LLM response on error
+    }
+  }
+
   const needsSearch = messageNeedsSearch(message);
-  const [braveResults, codebaseResults] = await Promise.all([
-    needsSearch ? searchWithBrave(message) : null,
-    needsSearch ? Promise.resolve(searchCodebase(message)) : null,
+  // Inject health snapshot broadly — lightweight pgrep + file reads, not HTTP
+  const needsHealth = message.length < 6
+    ? false
+    : /health|status|running|crashed|down\b|restart|skill|agent|workflow|pipeline|who.s.up|who.s.online|anyone.up|each.*up|up\?|is.*up|are.*up|online|services?|telegram|tg\b|opencode|project.*dir|settings/i.test(message);
+  let braveResults = null;
+  let codebaseResults = null;
+  let healthData = null;
+  try {
+    const [b, c, h] = await Promise.all([
+    needsSearch ? searchWithBrave(message).catch(() => null) : null,
+    needsSearch ? Promise.resolve(searchCodebase(message)).catch(() => null) : null,
+    needsHealth ? (async () => {
+      try {
+        const cfgRaw    = tryRead(path.join(os.homedir(), ".crewswarm", "config.json")) || {};
+        const skillsDir = path.join(os.homedir(), ".crewswarm", "skills");
+        let skills = [];
+        try { skills = fs.readdirSync(skillsDir).filter(f => f.endsWith(".json")).map(f => f.replace(".json","")); } catch {}
+        // Quick service status via pgrep (processes, not agent connections)
+        const { execSync: esc } = await import("node:child_process");
+        const isRunning = (pat) => { try { esc(`pgrep -f "${pat}"`, { stdio: "ignore" }); return true; } catch { return false; } };
+
+        // Per-agent bridge status from RT bus — who is actually connected right now
+        let rtAgentsOnline = new Set();
+        try {
+          const rtResp = await fetch("http://127.0.0.1:18889/status", { signal: AbortSignal.timeout(1500) });
+          const rtData = await rtResp.json();
+          if (Array.isArray(rtData.agents)) rtAgentsOnline = new Set(rtData.agents);
+        } catch {}
+
+        const allAgents = cfg.agentRoster.length
+          ? cfg.agentRoster
+          : cfg.knownAgents.map(id => ({ id, emoji: "🤖", model: "" }));
+
+        const agentRows = allAgents.map(a => {
+          const online = rtAgentsOnline.has(a.id);
+          const status = online ? "✅" : "❌";
+          return `  ${status} ${a.emoji||"🤖"} ${a.id}: tools=${readAgentTools(a.id).tools.join(",")||"(default)"} model=${a.model||"??"}`;
+        });
+
+        const rtBusUp = isRunning("opencrew-rt-daemon");
+        const services = [
+          `RT bus (18889): ${rtBusUp ? `✅ running — ${rtAgentsOnline.size} agents connected: ${[...rtAgentsOnline].join(", ")||"none"}` : "❌ DOWN — use @@SERVICE restart rt-bus"}`,
+          `Telegram bridge: ${isRunning("telegram-bridge") ? "✅ running" : "⚠️ stopped — use @@SERVICE restart telegram"}`,
+          `OpenCode (4096): ${isRunning("opencode serve") ? "✅ running" : "⚠️ stopped"}`,
+        ];
+
+        return [
+          `[System health snapshot — live data from your local machine, fetched right now]`,
+          `crew-lead: ${cfg.providerKey}/${cfg.modelId} | RT connected: ${!!rtPublish} | uptime: ${Math.floor(process.uptime())}s`,
+          `crew-lead (this process) can create skills: use @@DEFINE_SKILL name + JSON + @@END_SKILL when the user asks. The agent list below is bridge agents only.`,
+          `OpenCode project dir: ${cfgRaw.opencodeProject || "(not set — agents write to repo root)"}`,
+          `Skills installed (${skills.length}): ${skills.length ? skills.join(", ") : "(none)"}`,
+          ``,
+          (() => {
+            let pipelineNames = [];
+            try {
+              const pipelinesDir = path.join(os.homedir(), ".crewswarm", "pipelines");
+              if (fs.existsSync(pipelinesDir)) pipelineNames = fs.readdirSync(pipelinesDir).filter(f => f.endsWith(".json")).map(f => f.replace(".json", ""));
+            } catch {}
+            return `Workflows (pipelines for cron) (${pipelineNames.length}): ${pipelineNames.length ? pipelineNames.join(", ") : "(none)"}`;
+          })(),
+          ``,
+          `Services:`,
+          ...services,
+          ``,
+          `Agents (${agentRows.length}):`,
+          ...agentRows,
+          ``,
+          `[Use this data to answer the user's question. Do NOT say you cannot reach localhost.]`,
+        ].join("\n");
+      } catch { return null; }
+    })() : null,
   ]);
+    braveResults = b;
+    codebaseResults = c;
+    healthData = h;
+  } catch (e) {
+    console.error("[crew-lead] context fetch failed:", e?.message || e);
+  }
   const parts = [message];
   if (braveResults) parts.push(`[Web context from Brave Search]\n${braveResults}`);
   if (codebaseResults) parts.push(`[Codebase context from workspace]\n${codebaseResults}`);
+  if (healthData) parts.push(healthData);
   const userContent = parts.length > 1 ? parts.join("\n\n") : message;
 
   const messages = [
@@ -845,6 +1070,13 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   ];
 
   appendHistory(sessionId, "user", message);
+  // Audit trail: record what Brave actually injected so later turns (and you) can verify — no "context #5" confabulation
+  if (braveResults) {
+    const count = (braveResults.match(/\n\n/g) || []).length + 1;
+    // Keep full numbered list (1. ... 2. ... 5. ...) in history so later turns can cite accurately — ~1200 chars usually includes result #5
+    const preview = braveResults.replace(/\n/g, " ").slice(0, 1200);
+    appendHistory(sessionId, "system", `[Brave search] query="${message.slice(0, 60)}${message.length > 60 ? "…" : ""}" → ${count} results. Preview: ${preview}${braveResults.length > 1200 ? "…" : ""}`);
+  }
   broadcastSSE({ type: "chat_message", sessionId, role: "user", content: message });
 
   const fullReply = await callLLM(messages, cfg);
@@ -879,6 +1111,57 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     return m ? m[1].trim() : null;
   })();
 
+  // ── @@SERVICE — restart/stop a service or agent bridge ──────────────────────
+  // @@SERVICE restart telegram   @@SERVICE stop agents   @@SERVICE restart crew-coder
+  const serviceCmd = (() => {
+    const m = fullReply.match(/@@SERVICE\s+(restart|stop|start)\s+([a-zA-Z0-9_\-]+)/);
+    return m ? { action: m[1], id: m[2] } : null;
+  })();
+
+  // ── @@DEFINE_SKILL — crew-lead writes a skill JSON to ~/.crewswarm/skills/
+  // @@DEFINE_SKILL skillname\n{...json...}\n@@END_SKILL
+  const defineSkillCmds = [];
+  const defineSkillRe = /@@DEFINE_SKILL[ \t]+([a-zA-Z0-9_\-.]+)\n([\s\S]*?)@@END_SKILL/g;
+  let dsMatch;
+  while ((dsMatch = defineSkillRe.exec(fullReply)) !== null) {
+    const skillName = dsMatch[1].trim();
+    const rawJson   = dsMatch[2].trim();
+    try {
+      const def = JSON.parse(rawJson);
+      const skillsDir = path.join(os.homedir(), ".crewswarm", "skills");
+      fs.mkdirSync(skillsDir, { recursive: true });
+      fs.writeFileSync(path.join(skillsDir, skillName + ".json"), JSON.stringify(def, null, 2));
+      defineSkillCmds.push({ name: skillName, ok: true });
+      console.log(`[crew-lead] @@DEFINE_SKILL saved: ${skillName}`);
+    } catch (e) {
+      defineSkillCmds.push({ name: skillName, ok: false, error: e.message });
+    }
+  }
+
+  // ── @@DEFINE_WORKFLOW — create or replace a scheduled pipeline (stages: agent + task per stage)
+  // @@DEFINE_WORKFLOW name\n[...]\n@@END_WORKFLOW
+  const defineWorkflowCmds = [];
+  const defineWorkflowRe = /@@DEFINE_WORKFLOW[ \t]+([a-zA-Z0-9_\-]+)\n([\s\S]*?)@@END_WORKFLOW/g;
+  let dwMatch;
+  while ((dwMatch = defineWorkflowRe.exec(fullReply)) !== null) {
+    const wfName = dwMatch[1].trim();
+    const rawJson = dwMatch[2].trim();
+    try {
+      const stages = JSON.parse(rawJson);
+      if (!Array.isArray(stages)) throw new Error("stages must be a JSON array");
+      const valid = stages
+        .filter(s => s && s.agent && (s.task || s.taskText))
+        .map(s => ({ agent: s.agent, task: s.task || s.taskText || "", tool: s.tool || undefined }));
+      const pipelinesDir = path.join(os.homedir(), ".crewswarm", "pipelines");
+      fs.mkdirSync(pipelinesDir, { recursive: true });
+      fs.writeFileSync(path.join(pipelinesDir, wfName + ".json"), JSON.stringify({ stages: valid }, null, 2));
+      defineWorkflowCmds.push({ name: wfName, ok: true, stageCount: valid.length });
+      console.log(`[crew-lead] @@DEFINE_WORKFLOW saved: ${wfName} (${valid.length} stages)`);
+    } catch (e) {
+      defineWorkflowCmds.push({ name: wfName, ok: false, error: e.message });
+    }
+  }
+
   const projectSpec = parseProject(fullReply);
   const pipelineSteps = !projectSpec ? parsePipeline(fullReply) : null;
   const dispatch = !projectSpec && !pipelineSteps ? parseDispatch(fullReply, message) : null;
@@ -887,10 +1170,10 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     .replace(/@@PROMPT\s+\{[\s\S]*?\}\s*(?:\n|$)/g, "")
     .replace(/@@BRAIN\s+[^\n]+/g, "")
     .replace(/@@GLOBALRULE\s+[^\n]+/g, "")
+    .replace(/@@DEFINE_SKILL[ \t]+[a-zA-Z0-9_\-.]+\n[\s\S]*?@@END_SKILL/g, "")
+    .replace(/@@DEFINE_WORKFLOW[ \t]+[a-zA-Z0-9_\-]+\n[\s\S]*?@@END_WORKFLOW/g, "")
+    .replace(/@@SERVICE\s+(restart|stop|start)\s+[a-zA-Z0-9_\-]+/g, "")
     .trim();
-
-  appendHistory(sessionId, "assistant", cleanReply);
-  broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply });
 
   let dispatched = null;
   let pendingProject = null;
@@ -996,6 +1279,77 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     }
   }
 
+  // ── Execute @@SERVICE control ───────────────────────────────────────────────
+  if (serviceCmd) {
+    const { action, id } = serviceCmd;
+    try {
+      // Per-agent restart: if ID looks like a specific agent, use the agents/:id/restart endpoint
+      const isSpecificAgent = id.startsWith("crew-") && id !== "crew-lead";
+      let result;
+
+      const authHeader = RT_TOKEN ? { authorization: `Bearer ${RT_TOKEN}` } : {};
+      if (action === "stop" && !isSpecificAgent) {
+        const r = await fetch(`${DASHBOARD}/api/services/stop`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id }),
+          signal: AbortSignal.timeout(8000),
+        });
+        result = await r.json();
+      } else if (isSpecificAgent && action !== "stop") {
+        // Single agent bridge restart via dedicated endpoint
+        const r = await fetch(`http://127.0.0.1:${PORT}/api/agents/${id}/restart`, {
+          method: "POST",
+          headers: authHeader,
+          signal: AbortSignal.timeout(8000),
+        });
+        result = await r.json();
+      } else {
+        const r = await fetch(`${DASHBOARD}/api/services/restart`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id }),
+          signal: AbortSignal.timeout(8000),
+        });
+        result = await r.json();
+      }
+
+      if (result?.ok === false && result?.message) {
+        cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Service **${id}** — ${result.message}`;
+      } else {
+        const actionLabel = action === "stop" ? "stopped" : "restarted";
+        cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ **${id}** ${actionLabel}. Give it 2–3 seconds to come back online.`;
+        appendHistory(sessionId, "system", `Service ${id} ${actionLabel} via @@SERVICE.`);
+        console.log(`[crew-lead] @@SERVICE ${action} ${id}: ok`);
+      }
+    } catch (e) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to ${action} **${id}**: ${e.message}`;
+    }
+  }
+
+  // ── Surface @@DEFINE_SKILL results ─────────────────────────────────────────
+  for (const ds of defineSkillCmds) {
+    if (ds.ok) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Skill **${ds.name}** saved to ~/.crewswarm/skills/${ds.name}.json — agents with 'skill' permission can now call it.`;
+      appendHistory(sessionId, "system", `Skill "${ds.name}" defined and saved.`);
+    } else {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to save skill **${ds.name}**: ${ds.error}`;
+    }
+  }
+
+  // ── Surface @@DEFINE_WORKFLOW results ─────────────────────────────────────
+  for (const dw of defineWorkflowCmds) {
+    if (dw.ok) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Workflow **${dw.name}** saved to ~/.crewswarm/pipelines/${dw.name}.json (${dw.stageCount} stages). Run with: \`node scripts/run-scheduled-pipeline.mjs ${dw.name}\` or add to crontab.`;
+      appendHistory(sessionId, "system", `Workflow "${dw.name}" defined (${dw.stageCount} stages).`);
+    } else {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to save workflow **${dw.name}**: ${dw.error}`;
+    }
+  }
+
+  appendHistory(sessionId, "assistant", cleanReply);
+  broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply });
+
   return { reply: cleanReply, dispatched, pendingProject, pipeline };
 }
 
@@ -1035,11 +1389,25 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/chat" && req.method === "POST") {
-      const { message, sessionId, firstName } = await readBody(req);
+      let message, sessionId, firstName;
+      try {
+        const body = await readBody(req);
+        message = body.message;
+        sessionId = body.sessionId;
+        firstName = body.firstName;
+      } catch (e) {
+        json(res, 400, { ok: false, error: "invalid JSON body or missing message" });
+        return;
+      }
       if (!message) { json(res, 400, { ok: false, error: "message required" }); return; }
       console.log(`[crew-lead] /chat session=${sessionId} msg=${message.slice(0, 60)}`);
-      const result = await handleChat({ message, sessionId, firstName });
-      json(res, 200, { ok: true, ...result });
+      try {
+        const result = await handleChat({ message, sessionId, firstName });
+        json(res, 200, { ok: true, ...result });
+      } catch (e) {
+        console.error("[crew-lead] handleChat failed:", e?.message || e);
+        json(res, 500, { ok: false, error: e?.message || String(e), reply: null });
+      }
       return;
     }
 
@@ -1162,9 +1530,10 @@ const server = http.createServer(async (req, res) => {
     // Auth: Authorization: Bearer <RT_TOKEN from ~/.crewswarm/config.json rt.authToken>
 
     function checkBearer(request) {
+      if (!RT_TOKEN) return true; // no token configured → open (local-first default)
       const auth = request.headers["authorization"] || "";
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      return RT_TOKEN && token === RT_TOKEN;
+      return token === RT_TOKEN;
     }
 
     // POST /api/dispatch  { agent, task, verify?, done?, sessionId? }
@@ -1207,10 +1576,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // GET /api/agents  — list known agents and their up/down status
+    // GET /api/agents  — list known agents with tools, model, identity
     if (url.pathname === "/api/agents" && req.method === "GET") {
       if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized — Bearer token required" }); return; }
-      const agents = loadConfig().knownAgents || [];
+      const cfg = loadConfig();
+      const agents = cfg.agentRoster.length
+        ? cfg.agentRoster.map(a => ({ ...a, tools: readAgentTools(a.id).tools }))
+        : (cfg.knownAgents || []).map(id => ({ id, tools: readAgentTools(id).tools }));
       json(res, 200, { ok: true, agents });
       return;
     }
@@ -1249,6 +1621,260 @@ const server = http.createServer(async (req, res) => {
       const saved = writeAgentTools(agentId, updated);
       console.log(`[crew-lead] tools updated for ${agentId}: ${saved.join(", ")}`);
       json(res, 200, { ok: true, agentId, tools: saved });
+      return;
+    }
+
+    // ── Inbound webhook receiver ───────────────────────────────────────────────
+    // POST /webhook/:channel   — accepts any JSON payload, forwards to RT bus
+    // No auth on this endpoint so external services can push without managing tokens.
+    // Use a unique channel name per integration (e.g. /webhook/n8n, /webhook/stripe).
+    const webhookMatch = url.pathname.match(/^\/webhook\/([a-zA-Z0-9_\-]+)$/);
+    if (webhookMatch && req.method === "POST") {
+      const channel = webhookMatch[1];
+      let body = {};
+      try {
+        const raw = await readBody(req);
+        body = raw ? JSON.parse(raw) : {};
+      } catch { /* non-JSON body is fine */ }
+      const event = { type: "webhook", channel, payload: body, ts: Date.now() };
+      if (rtPublish) {
+        rtPublish({ channel: `webhook.${channel}`, type: "webhook.event", payload: event });
+        console.log(`[crew-lead] webhook → ${channel}: ${JSON.stringify(body).slice(0, 80)}`);
+      }
+      broadcastSSE({ type: "webhook_event", channel, payload: body, ts: Date.now() });
+      json(res, 200, { ok: true, channel, ts: Date.now() });
+      return;
+    }
+
+    // ── Skills API ─────────────────────────────────────────────────────────────
+    const SKILLS_DIR         = path.join(os.homedir(), ".crewswarm", "skills");
+    const PENDING_SKILLS_FILE = path.join(os.homedir(), ".crewswarm", "pending-skills.json");
+
+    // GET /api/skills — list installed skills
+    if (url.pathname === "/api/skills" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      try {
+        fs.mkdirSync(SKILLS_DIR, { recursive: true });
+        const files = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".json"));
+        const skills = files.map(f => {
+          try { return { name: f.replace(".json",""), ...JSON.parse(fs.readFileSync(path.join(SKILLS_DIR, f), "utf8")) }; }
+          catch { return { name: f.replace(".json",""), error: "parse failed" }; }
+        });
+        json(res, 200, { ok: true, skills });
+      } catch (e) { json(res, 500, { ok: false, error: e.message }); }
+      return;
+    }
+
+    // POST /api/skills  { name, url, method, description, headers, auth, defaultParams, requiresApproval }
+    if (url.pathname === "/api/skills" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const body = JSON.parse(await readBody(req));
+      if (!body.name || !body.url) { json(res, 400, { ok: false, error: "name and url required" }); return; }
+      fs.mkdirSync(SKILLS_DIR, { recursive: true });
+      const { name, ...def } = body;
+      fs.writeFileSync(path.join(SKILLS_DIR, `${name}.json`), JSON.stringify(def, null, 2));
+      json(res, 200, { ok: true, name });
+      return;
+    }
+
+    // POST /api/skills/:name/run  — execute a skill from the dashboard (params in body)
+    const skillRunMatch = url.pathname.match(/^\/api\/skills\/([a-zA-Z0-9_\-\.]+)\/run$/);
+    if (skillRunMatch && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const skillName = skillRunMatch[1];
+      const skillFile = path.join(SKILLS_DIR, `${skillName}.json`);
+      if (!fs.existsSync(skillFile)) { json(res, 404, { ok: false, error: "Skill not found" }); return; }
+      let skillDef;
+      try { skillDef = JSON.parse(fs.readFileSync(skillFile, "utf8")); } catch (e) { json(res, 500, { ok: false, error: "Invalid skill JSON" }); return; }
+      let body = {};
+      try { body = await readBody(req); } catch {}
+      const params = { ...(skillDef.defaultParams || {}), ...(body.params || body) };
+      const swarmCfg = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+      let urlStr = skillDef.url || "";
+      for (const [k, v] of Object.entries(params)) urlStr = urlStr.replace(`{${k}}`, encodeURIComponent(String(v)));
+      const headers = { "Content-Type": "application/json", ...(skillDef.headers || {}) };
+      if (skillDef.auth) {
+        const auth = skillDef.auth;
+        let token = auth.token || "";
+        if (auth.keyFrom) {
+          if (auth.keyFrom.startsWith("env.")) token = process.env[auth.keyFrom.slice(4)] || "";
+          else {
+            let val = swarmCfg;
+            for (const p of auth.keyFrom.split(".")) val = val?.[p];
+            if (val) token = String(val);
+          }
+        }
+        if (token) {
+          if (auth.type === "bearer" || !auth.type) headers["Authorization"] = `Bearer ${token}`;
+          else if (auth.type === "header") headers[auth.header || "X-API-Key"] = token;
+        }
+      }
+      const method = (skillDef.method || "POST").toUpperCase();
+      const reqOpts = { method, headers, signal: AbortSignal.timeout(skillDef.timeout || 30000) };
+      if (method !== "GET" && method !== "HEAD") reqOpts.body = JSON.stringify(params);
+      try {
+        const r = await fetch(urlStr, reqOpts);
+        const text = await r.text();
+        if (!r.ok) { json(res, 502, { ok: false, error: `Upstream ${r.status}: ${text.slice(0, 200)}` }); return; }
+        try { json(res, 200, { ok: true, result: JSON.parse(text) }); }
+        catch { json(res, 200, { ok: true, result: { response: text } }); }
+      } catch (e) { json(res, 502, { ok: false, error: e.message }); }
+      return;
+    }
+
+    // DELETE /api/skills/:name
+    const skillDeleteMatch = url.pathname.match(/^\/api\/skills\/([a-zA-Z0-9_\-\.]+)$/);
+    if (skillDeleteMatch && req.method === "DELETE") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const skillFile = path.join(SKILLS_DIR, `${skillDeleteMatch[1]}.json`);
+      if (fs.existsSync(skillFile)) { fs.unlinkSync(skillFile); json(res, 200, { ok: true }); }
+      else { json(res, 404, { ok: false, error: "Skill not found" }); }
+      return;
+    }
+
+    // POST /api/skills/approve  { approvalId }  — approve a pending skill call
+    if (url.pathname === "/api/skills/approve" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const body = JSON.parse(await readBody(req));
+      const { approvalId } = body;
+      let pending = {};
+      try { pending = JSON.parse(fs.readFileSync(PENDING_SKILLS_FILE, "utf8")); } catch {}
+      const entry = pending[approvalId];
+      if (!entry) { json(res, 404, { ok: false, error: "Approval ID not found or expired" }); return; }
+      delete pending[approvalId];
+      fs.writeFileSync(PENDING_SKILLS_FILE, JSON.stringify(pending, null, 2));
+      // Execute the skill via the gateway bridge process is impractical from here;
+      // instead, push approved result to RT bus so agent can see it
+      broadcastSSE({ type: "skill_approved", approvalId, skillName: entry.skillName, agentId: entry.agentId, ts: Date.now() });
+      console.log(`[crew-lead] skill approved: ${entry.skillName} (${approvalId}) — notifying bridge agents`);
+      if (rtPublish) {
+        rtPublish({ channel: "skill.approved", type: "skill.approved", payload: { approvalId, skillName: entry.skillName, agentId: entry.agentId, params: entry.params } });
+      }
+      json(res, 200, { ok: true, approvalId, skillName: entry.skillName });
+      return;
+    }
+
+    // POST /api/skills/reject  { approvalId }
+    if (url.pathname === "/api/skills/reject" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const body = JSON.parse(await readBody(req));
+      const { approvalId } = body;
+      let pending = {};
+      try { pending = JSON.parse(fs.readFileSync(PENDING_SKILLS_FILE, "utf8")); } catch {}
+      delete pending[approvalId];
+      try { fs.writeFileSync(PENDING_SKILLS_FILE, JSON.stringify(pending, null, 2)); } catch {}
+      broadcastSSE({ type: "skill_rejected", approvalId, ts: Date.now() });
+      json(res, 200, { ok: true, approvalId });
+      return;
+    }
+
+    // ── Spending caps API ──────────────────────────────────────────────────────
+    const SPENDING_FILE = path.join(os.homedir(), ".crewswarm", "spending.json");
+
+    // GET /api/spending — today's usage across global + per-agent
+    if (url.pathname === "/api/spending" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      let spending = { date: new Date().toISOString().slice(0, 10), global: { tokens: 0, costUSD: 0 }, agents: {} };
+      try { spending = JSON.parse(fs.readFileSync(SPENDING_FILE, "utf8")); } catch {}
+      // Attach caps config
+      let caps = {};
+      try {
+        const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+        caps.global = cfg.globalSpendingCaps || {};
+        caps.agents = (cfg.agents || []).reduce((acc, a) => { if (a.spending) acc[a.id] = a.spending; return acc; }, {});
+      } catch {}
+      json(res, 200, { ok: true, spending, caps });
+      return;
+    }
+
+    // POST /api/spending/reset — reset today's spending counters
+    if (url.pathname === "/api/spending/reset" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const fresh = { date: new Date().toISOString().slice(0, 10), global: { tokens: 0, costUSD: 0 }, agents: {} };
+      try { fs.writeFileSync(SPENDING_FILE, JSON.stringify(fresh, null, 2)); } catch {}
+      json(res, 200, { ok: true, reset: true });
+      return;
+    }
+
+    // GET /api/health — master health check: all settings, agents, skills, spending, services
+    if (url.pathname === "/api/health" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const cfg       = loadConfig();
+      const cfgRaw    = tryRead(path.join(os.homedir(), ".crewswarm", "config.json"))    || {};
+      const swarmRaw  = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+
+      // OpenCode project dir
+      const opencodeProject = cfgRaw.opencodeProject || process.env.OPENCREW_OPENCODE_PROJECT || "";
+
+      // Agents with tools + model
+      const agentRows = cfg.agentRoster.map(a => {
+        const tools = readAgentTools(a.id).tools;
+        return { id: a.id, name: a.name, emoji: a.emoji, role: a.role, model: a.model, tools };
+      });
+
+      // Skills
+      const SKILLS_DIR = path.join(os.homedir(), ".crewswarm", "skills");
+      let skills = [];
+      try {
+        fs.mkdirSync(SKILLS_DIR, { recursive: true });
+        skills = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".json")).map(f => {
+          try { return { name: f.replace(".json",""), ...JSON.parse(fs.readFileSync(path.join(SKILLS_DIR, f), "utf8")) }; }
+          catch { return { name: f.replace(".json",""), error: "parse failed" }; }
+        });
+      } catch {}
+
+      // Spending
+      let spending = { global: { tokens: 0, costUSD: 0 }, agents: {} };
+      try { spending = JSON.parse(fs.readFileSync(SPENDING_FILE, "utf8")); } catch {}
+
+      // RT bus connectivity
+      const rtConnected = !!rtPublish;
+
+      // Providers (keys masked)
+      const providers = Object.entries(swarmRaw?.providers || {}).map(([id, p]) => ({
+        id, baseUrl: p.baseUrl, hasKey: !!(p.apiKey || "").trim(),
+      }));
+
+      json(res, 200, {
+        ok: true,
+        ts: new Date().toISOString(),
+        crewLead: {
+          model:   `${cfg.providerKey}/${cfg.modelId}`,
+          port:    PORT,
+          rtConnected,
+        },
+        settings: {
+          opencodeProject,
+          rtAuthToken: !!(cfgRaw?.rt?.authToken || "").trim(),
+        },
+        agents: agentRows,
+        skills,
+        spending,
+        providers,
+      });
+      return;
+    }
+
+    // POST /api/agents/:id/restart — kill and respawn a single bridge process
+    const restartMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/restart$/);
+    if (restartMatch && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const agentId = restartMatch[1];
+      const { execSync: exec2 } = await import("node:child_process");
+      try {
+        // Kill existing bridge for this agent
+        exec2(`pkill -f "gateway-bridge.mjs.*${agentId}" 2>/dev/null || true`, { shell: true });
+        // Brief pause then respawn via start-crew (it will detect which are missing)
+        setTimeout(() => {
+          try {
+            exec2(`node ${path.join(process.cwd(), "scripts", "start-crew.mjs")} --agent ${agentId} &`, { shell: true });
+          } catch {}
+        }, 500);
+        console.log(`[crew-lead] restart requested for ${agentId}`);
+        json(res, 200, { ok: true, agentId, action: "restart" });
+      } catch (e) {
+        json(res, 500, { ok: false, error: e.message });
+      }
       return;
     }
 

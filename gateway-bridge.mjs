@@ -249,6 +249,21 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
   const llm = loadAgentLLMConfig(ocAgentId);
   if (!llm) return null; // fall through to legacy gateway
 
+  // ── Spending cap pre-check ─────────────────────────────────────────────────
+  const capResult = checkSpendingCap(ocAgentId, llm.providerKey || llm.modelId.split("/")[0]);
+  if (capResult.exceeded) {
+    if (capResult.action === "stop")
+      throw new Error(`SPENDING_CAP_STOP: ${capResult.message}`);
+    if (capResult.action === "pause") {
+      notifyTelegramSpending(`⚠️ ${capResult.message} — ${ocAgentId} paused`).catch(() => {});
+      throw new Error(`SPENDING_CAP_PAUSE: ${capResult.message}`);
+    }
+    if (capResult.action === "notify") {
+      notifyTelegramSpending(`⚠️ ${capResult.message} — continuing`).catch(() => {});
+      console.warn(`[spending] ${capResult.message} (notify-only, continuing)`);
+    }
+  }
+
   const messages = [];
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
   messages.push({ role: "user", content: prompt });
@@ -268,7 +283,7 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || "";
     if (!text) throw new Error("Empty response from LLM");
-    recordTokenUsage(llm.modelId, data.usage);
+    recordTokenUsage(llm.modelId, data.usage, ocAgentId);
     console.log(`[direct-llm] ${ocAgentId} via ${llm.modelId} — ${text.length} chars${data.usage ? ` (${(data.usage.prompt_tokens||0)+(data.usage.completion_tokens||0)} tokens)` : ""}`);
     return text;
   } catch (e) {
@@ -932,23 +947,23 @@ let _rtClientForApprovals = null;
 
 // Per-role tool defaults — used when agent has no explicit alsoAllow in config
 const AGENT_TOOL_ROLE_DEFAULTS = {
-  'crew-qa':          new Set(['read_file']),
-  'crew-coder':       new Set(['write_file','read_file','mkdir','run_cmd']),
-  'crew-coder-front': new Set(['write_file','read_file','mkdir','run_cmd']),
-  'crew-coder-back':  new Set(['write_file','read_file','mkdir','run_cmd']),
-  'crew-frontend':    new Set(['write_file','read_file','mkdir','run_cmd']),
-  'crew-fixer':       new Set(['write_file','read_file','mkdir','run_cmd']),
-  'crew-github':      new Set(['read_file','run_cmd','git']),
-  'crew-pm':          new Set(['read_file','dispatch']),
-  'crew-main':        new Set(['read_file','write_file','run_cmd','dispatch']),
+  'crew-qa':          new Set(['read_file','skill']),
+  'crew-coder':       new Set(['write_file','read_file','mkdir','run_cmd','skill']),
+  'crew-coder-front': new Set(['write_file','read_file','mkdir','run_cmd','skill']),
+  'crew-coder-back':  new Set(['write_file','read_file','mkdir','run_cmd','skill']),
+  'crew-frontend':    new Set(['write_file','read_file','mkdir','run_cmd','skill']),
+  'crew-fixer':       new Set(['write_file','read_file','mkdir','run_cmd','skill']),
+  'crew-github':      new Set(['read_file','run_cmd','git','skill']),
+  'crew-pm':          new Set(['read_file','dispatch','skill']),
+  'crew-main':        new Set(['read_file','write_file','run_cmd','dispatch','skill']),
   'crew-security':    new Set(['read_file','run_cmd']),
-  'crew-copywriter':  new Set(['write_file','read_file']),
+  'crew-copywriter':  new Set(['write_file','read_file','skill']),
   'crew-telegram':    new Set(['telegram','read_file']),
-  'crew-lead':        new Set(['dispatch']),
+  'crew-lead':        new Set(['dispatch','skill']),
 };
 
 // CrewSwarm @@TOOL permission names — distinct from legacy gateway tool names
-const CREWSWARM_TOOL_NAMES = new Set(['write_file','read_file','mkdir','run_cmd','git','dispatch']);
+const CREWSWARM_TOOL_NAMES = new Set(['write_file','read_file','mkdir','run_cmd','git','dispatch','skill','telegram','web_search','web_fetch']);
 
 function loadAgentToolPermissions(agentId) {
   // Check config files for explicit CrewSwarm-style tool permissions.
@@ -1010,6 +1025,27 @@ Returns the page text (up to 8000 chars). Use to read docs, articles, or any URL
   if (allowed.has('telegram')) tools.push(`### Send a Telegram message:
 @@TELEGRAM your message text here
 Sends a message to the configured Telegram chat. Use to notify humans of task completion, errors, or important findings.`);
+  if (allowed.has('skill')) {
+    const skillList = (() => {
+      try {
+        if (!fs.existsSync(SKILLS_DIR)) return "(none installed yet)";
+        const files = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".json"));
+        if (!files.length) return "(none installed yet)";
+        return files.map(f => {
+          try {
+            const d = JSON.parse(fs.readFileSync(path.join(SKILLS_DIR, f), "utf8"));
+            return `  - ${f.replace(".json","")} — ${d.description || ""}${d.requiresApproval ? " (⚠️ needs approval)" : ""}`;
+          } catch { return `  - ${f.replace(".json","")}`; }
+        }).join("\n");
+      } catch { return ""; }
+    })();
+    tools.push(`### Call an external skill (API integration):
+@@SKILL skillname {"param":"value"}
+Available skills:\n${skillList}
+Replace skillname with the skill name. Include any required params as inline JSON on the same line.
+Example: @@SKILL fly.deploy {"app":"myapp"}
+Example: @@SKILL elevenlabs.tts {"text":"Hello world","voice_id":"21m00Tcm4TlvDq8ikWAM"}`);
+  }
   if (!tools.length) return ""; // agent has no tools — instructions not needed
 
   return `
@@ -1068,6 +1104,139 @@ function isCommandAllowlisted(cmd) {
   });
 }
 
+// ── Skills system ─────────────────────────────────────────────────────────────
+const SKILLS_DIR         = path.join(os.homedir(), ".crewswarm", "skills");
+const PENDING_SKILLS_FILE = path.join(os.homedir(), ".crewswarm", "pending-skills.json");
+
+function loadSkillDef(skillName) {
+  const file = path.join(SKILLS_DIR, skillName + ".json");
+  if (!fs.existsSync(file)) return null;
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+}
+
+function loadPendingSkills() {
+  try { return JSON.parse(fs.readFileSync(PENDING_SKILLS_FILE, "utf8")); } catch { return {}; }
+}
+function savePendingSkills(map) {
+  try {
+    fs.mkdirSync(path.dirname(PENDING_SKILLS_FILE), { recursive: true });
+    fs.writeFileSync(PENDING_SKILLS_FILE, JSON.stringify(map, null, 2));
+  } catch {}
+}
+
+async function executeSkill(skillDef, params) {
+  const cfg = resolveConfig();
+  // Resolve URL path params e.g. {voice_id}
+  let url = skillDef.url;
+  for (const [k, v] of Object.entries(params)) {
+    url = url.replace(`{${k}}`, encodeURIComponent(String(v)));
+  }
+  const headers = { "Content-Type": "application/json", ...(skillDef.headers || {}) };
+  // Auth resolution
+  if (skillDef.auth) {
+    const auth = skillDef.auth;
+    let token = auth.token || "";
+    if (auth.keyFrom) {
+      // e.g. "providers.elevenlabs.apiKey" → walk config
+      let val = cfg;
+      for (const part of auth.keyFrom.split(".")) { val = val?.[part]; }
+      if (val) token = String(val);
+    }
+    if (token) {
+      if (auth.type === "bearer" || !auth.type) headers["Authorization"] = `Bearer ${token}`;
+      else if (auth.type === "header") headers[auth.header || "X-API-Key"] = token;
+      else if (auth.type === "basic") headers["Authorization"] = `Basic ${Buffer.from(token).toString("base64")}`;
+    }
+  }
+  const method  = (skillDef.method || "POST").toUpperCase();
+  const timeout = skillDef.timeout || 30000;
+  const reqOpts = { method, headers, signal: AbortSignal.timeout(timeout) };
+  if (method !== "GET" && method !== "HEAD") reqOpts.body = JSON.stringify(params);
+  const res  = await fetch(url, reqOpts);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return { response: text }; }
+}
+
+async function notifyTelegramSkillApproval(agentId, skillName, params, approvalId) {
+  const cfg = resolveConfig();
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || "";
+  const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID   || "";
+  if (!botToken || !chatId) return;
+  const msg = `🔔 *Skill approval needed*\n*${agentId}* → *${skillName}*\nParams: \`${JSON.stringify(params).slice(0, 200)}\`\n\nApprove: POST /api/skills/approve {"approvalId":"${approvalId}"}\nOr reply approve/${approvalId} here`;
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[
+        { text: "✅ Approve", callback_data: `skill_approve:${approvalId}` },
+        { text: "❌ Reject",  callback_data: `skill_reject:${approvalId}`  },
+      ]]}
+    }),
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => {});
+}
+
+// ── 2-level spending caps ─────────────────────────────────────────────────────
+const SPENDING_FILE = path.join(os.homedir(), ".crewswarm", "spending.json");
+// Approximate cost per 1M tokens per provider (USD)
+const COST_PER_1M = { groq:0.05, anthropic:3.00, openai:5.00, perplexity:1.00, mistral:0.70, google:0.15, xai:2.00, deepseek:0.27, nvidia:1.00, cerebras:0.10 };
+
+function loadSpending() {
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const d = JSON.parse(fs.readFileSync(SPENDING_FILE, "utf8"));
+    if (d.date === today) return d;
+  } catch {}
+  return { date: today, global: { tokens: 0, costUSD: 0 }, agents: {} };
+}
+function saveSpending(s) {
+  try { fs.mkdirSync(path.dirname(SPENDING_FILE), { recursive: true }); fs.writeFileSync(SPENDING_FILE, JSON.stringify(s, null, 2)); } catch {}
+}
+function addAgentSpend(agentId, tokens, costUSD) {
+  const s = loadSpending();
+  s.global.tokens  += tokens;
+  s.global.costUSD += costUSD;
+  if (!s.agents[agentId]) s.agents[agentId] = { tokens: 0, costUSD: 0 };
+  s.agents[agentId].tokens  += tokens;
+  s.agents[agentId].costUSD += costUSD;
+  saveSpending(s);
+}
+function checkSpendingCap(agentId, providerKey) {
+  try {
+    const csw = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+    const s   = loadSpending();
+    const gl  = csw.globalSpendingCaps || {};
+    // Global cap check
+    if (gl.dailyTokenLimit && s.global.tokens >= gl.dailyTokenLimit)
+      return { exceeded: true, action: "stop", message: `Global daily token limit ${gl.dailyTokenLimit.toLocaleString()} reached` };
+    if (gl.dailyCostLimitUSD && s.global.costUSD >= gl.dailyCostLimitUSD)
+      return { exceeded: true, action: "stop", message: `Global daily cost limit $${gl.dailyCostLimitUSD} reached` };
+    // Per-agent cap check
+    const agent    = (csw.agents || []).find(a => a.id === agentId);
+    const agentCap = agent?.spending;
+    if (agentCap) {
+      const used = s.agents[agentId] || { tokens: 0, costUSD: 0 };
+      if (agentCap.dailyTokenLimit && used.tokens >= agentCap.dailyTokenLimit)
+        return { exceeded: true, action: agentCap.onExceed || "notify", message: `${agentId} daily token limit ${agentCap.dailyTokenLimit.toLocaleString()} reached` };
+      if (agentCap.dailyCostLimitUSD && used.costUSD >= agentCap.dailyCostLimitUSD)
+        return { exceeded: true, action: agentCap.onExceed || "notify", message: `${agentId} daily cost limit $${agentCap.dailyCostLimitUSD} reached` };
+    }
+  } catch {}
+  return { exceeded: false };
+}
+async function notifyTelegramSpending(message) {
+  const cfg = resolveConfig();
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || "";
+  const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID   || "";
+  if (!botToken || !chatId) return;
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text: `💸 Spending alert: ${message}`, parse_mode: "Markdown" }),
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => {});
+}
+
 // ── Token/cost accumulator ────────────────────────────────────────────────────
 const TOKEN_USAGE_FILE = path.join(os.homedir(), ".crewswarm", "token-usage.json");
 
@@ -1076,7 +1245,7 @@ const tokenUsage = (() => {
   return { calls: 0, prompt: 0, completion: 0, byModel: {}, sessionStart: new Date().toISOString() };
 })();
 
-function recordTokenUsage(modelId, usage) {
+function recordTokenUsage(modelId, usage, agentId) {
   if (!usage) return;
   const p = Number(usage.prompt_tokens || usage.input_tokens || 0);
   const c = Number(usage.completion_tokens || usage.output_tokens || 0);
@@ -1094,6 +1263,14 @@ function recordTokenUsage(modelId, usage) {
       fs.mkdirSync(path.dirname(TOKEN_USAGE_FILE), { recursive: true });
       fs.writeFileSync(TOKEN_USAGE_FILE, JSON.stringify(tokenUsage, null, 2));
     } catch {}
+  }
+  // Track per-agent spending for caps
+  if (agentId) {
+    const total = p + c;
+    const providerKey = modelId.split("/")[0] || "unknown";
+    const costPer1M   = COST_PER_1M[providerKey] || 1.0;
+    const costUSD     = (total / 1_000_000) * costPer1M;
+    addAgentSpend(agentId, total, costUSD);
   }
 }
 
@@ -1342,6 +1519,49 @@ async function executeToolCalls(reply, agentId) {
       }
     } catch (err) {
       results.push(`[tool:telegram] ❌ Send failed: ${err.message}`);
+    }
+  }
+
+  // ── @@SKILL ───────────────────────────────────────────────────────────────
+  // Format: @@SKILL skillname {"param":"value"}
+  const skillRe = /@@SKILL[ \t]+([a-zA-Z0-9_\-\.]+)[ \t]*(\{[^\n]*\})?/g;
+  while ((m = skillRe.exec(reply)) !== null) {
+    if (!allowed.has('skill')) {
+      results.push(`[tool:skill] ⛔ ${agentId} does not have skill permission`);
+      continue;
+    }
+    const skillName = m[1].trim();
+    let params = {};
+    if (m[2]) {
+      try { params = JSON.parse(m[2]); } catch { results.push(`[tool:skill] ❌ ${skillName}: bad JSON params — ${m[2].slice(0, 100)}`); continue; }
+    }
+    const skillDef = loadSkillDef(skillName);
+    if (!skillDef) {
+      results.push(`[tool:skill] ❌ Skill "${skillName}" not found in ${SKILLS_DIR}`);
+      continue;
+    }
+    // Merge defaults
+    const merged = { ...(skillDef.defaultParams || {}), ...params };
+    // Check requiresApproval
+    if (skillDef.requiresApproval) {
+      const crypto = await import("crypto");
+      const approvalId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36);
+      const pending = loadPendingSkills();
+      pending[approvalId] = { agentId, skillName, params: merged, skillDef, createdAt: Date.now() };
+      savePendingSkills(pending);
+      await notifyTelegramSkillApproval(agentId, skillName, merged, approvalId);
+      results.push(`[tool:skill] 🔔 "${skillName}" requires approval. Approval ID: ${approvalId}. Approve via POST /api/skills/approve {"approvalId":"${approvalId}"} or Telegram.`);
+      console.log(`[${agentId}] skill:${skillName} awaiting approval (${approvalId})`);
+      continue;
+    }
+    try {
+      console.log(`[${agentId}] skill:${skillName} → ${skillDef.url?.slice(0, 60)}`);
+      const result = await executeSkill(skillDef, merged);
+      const preview = typeof result === "string" ? result : JSON.stringify(result);
+      results.push(`[tool:skill] ✅ ${skillName}: ${preview.slice(0, 400)}`);
+    } catch (err) {
+      results.push(`[tool:skill] ❌ ${skillName} failed: ${err.message.slice(0, 200)}`);
+      console.error(`[${agentId}] skill:${skillName} error: ${err.message}`);
     }
   }
 
