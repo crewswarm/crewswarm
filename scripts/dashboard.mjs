@@ -679,7 +679,7 @@ const html = `<!doctype html>
           <input id="npName"        placeholder="Project name (e.g. CrewSwarm Docs)" />
           <input id="npDesc"        placeholder="Description (optional)" />
           <div style="display:flex;gap:6px;align-items:center;">
-            <input id="npOutputDir" placeholder="Output directory (e.g. /path/to/project)" style="flex:1;" />
+            <input id="npOutputDir" placeholder="Project folder — anywhere on disk (e.g. ~/Desktop/MyApp). Agents write files here." style="flex:1;" />
             <button type="button" class="btn-ghost" style="white-space:nowrap;font-size:13px;padding:6px 10px;" onclick="pickFolder('npOutputDir')">📂 Browse</button>
           </div>
           <input id="npFeaturesDoc" placeholder="Features doc path (optional)" />
@@ -5296,15 +5296,6 @@ const server = http.createServer(async (req, res) => {
           pid: tgPid,
         },
         {
-          id: "openclaw-gateway",
-          label: "Legacy gateway (18789)",
-          description: "Legacy message gateway — kills process; OpenClaw app auto-respawns if installed",
-          port: 18789,
-          running: gwUp,
-          canRestart: true,
-          pid: null,
-        },
-        {
           id: "opencode",
           label: "OpenCode Server",
           description: "opencode serve — sessions and MCP on port 4096",
@@ -5322,6 +5313,15 @@ const server = http.createServer(async (req, res) => {
           canRestart: true,
           pid: process.pid,
         },
+        {
+          id: "openclaw-gateway",
+          label: "OpenClaw Gateway",
+          description: "Legacy gateway (port 18789) — only needed if pairing the OpenClaw desktop app",
+          port: 18789,
+          running: gwUp,
+          canRestart: true,
+          pid: null,
+        },
       ];
       } catch (statusErr) {
         console.error("[dashboard] /api/services/status error:", statusErr?.message || statusErr);
@@ -5330,9 +5330,9 @@ const server = http.createServer(async (req, res) => {
           { id: "agents", label: "Agent Crew", description: "0 agents connected", port: null, running: false, canRestart: true, pid: null },
           { id: "crew-lead", label: "crew-lead", description: "Chat commander", port: 5010, running: false, canRestart: true, pid: null },
           { id: "telegram", label: "Telegram Bridge", description: "@CrewSwarm_bot", port: null, running: false, canRestart: true, pid: null },
-          { id: "openclaw-gateway", label: "Legacy gateway (18789)", description: "Legacy gateway", port: 18789, running: false, canRestart: true, pid: null },
           { id: "opencode", label: "OpenCode Server", description: "opencode serve — port 4096", port: 4096, running: false, canRestart: true, pid: null },
           { id: "dashboard", label: "Dashboard", description: "This dashboard", port: listenPort, running: true, canRestart: true, pid: process.pid },
+          { id: "openclaw-gateway", label: "OpenClaw Gateway", description: "Legacy gateway (port 18789) — only needed if pairing the OpenClaw desktop app", port: 18789, running: false, canRestart: true, pid: null },
         ];
       }
 
