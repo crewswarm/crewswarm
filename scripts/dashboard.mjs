@@ -2999,7 +2999,11 @@ async function fetchModels(providerId, btn){
   finally { btn.textContent = origText; btn.disabled = false; }
 }
 document.getElementById('addProviderBtn').onclick = () => {
-  document.getElementById('addProviderForm').style.display = 'block';
+  const form = document.getElementById('addProviderForm');
+  form.style.display = 'block';
+  setTimeout(() => form.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  const firstInput = form.querySelector('input');
+  if (firstInput) setTimeout(() => firstInput.focus(), 150);
 };
 document.getElementById('apCancelBtn').onclick = () => {
   document.getElementById('addProviderForm').style.display = 'none';
