@@ -793,6 +793,10 @@ const html = `<!doctype html>
               <input id="naEmoji" placeholder="🔥" />
             </div>
           </div>
+          <div style="grid-column:1/-1;">
+            <div class="field-label">Role / Theme <span class="meta" style="text-transform:none; font-weight:400;">— used by PM router to assign tasks (auto-filled by preset)</span></div>
+            <input id="naTheme" placeholder="e.g. iOS / Swift developer (SwiftUI, UIKit)" style="width:100%;" />
+          </div>
         </div>
         <div style="margin-bottom:10px;">
           <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
@@ -2724,6 +2728,12 @@ window.applyPromptPreset = function() {
     if (nameEl  && !nameEl.value)  nameEl.value  = meta.name;
     if (emojiEl && !emojiEl.value) emojiEl.value = meta.emoji;
   }
+  // Auto-fill role/theme from the preset's display label (strip leading emoji)
+  const themeEl = document.getElementById('naTheme');
+  if (themeEl) {
+    const opt = PRESET_OPTIONS.find(p => p.value === val);
+    if (opt) themeEl.value = opt.label.replace(/^[\u{1F000}-\u{1FFFF}\u2600-\u27BF\uFE0F\u20D0-\u20FF\s]+/u, '').trim();
+  }
 };
 
 function populateModelDropdown(selectId, currentVal) {
@@ -2782,15 +2792,16 @@ document.getElementById('naCreateBtn').onclick = async () => {
   const model       = document.getElementById('naModel').value.trim();
   const name        = document.getElementById('naName').value.trim();
   const emoji       = document.getElementById('naEmoji').value.trim();
+  const theme       = document.getElementById('naTheme').value.trim();
   const systemPrompt = document.getElementById('naPrompt').value.trim();
   const naTools = [...document.querySelectorAll('.naToolCheck:checked')].map(cb => cb.dataset.tool);
   const alsoAllow = naTools.length ? naTools : getToolDefaults(id);
   if (!id || !model){ showNotification('Agent ID and model are required', true); return; }
   try {
-    await postJSON('/api/agents-config/create', { id, model, name, emoji, systemPrompt, alsoAllow });
+    await postJSON('/api/agents-config/create', { id, model, name, emoji, theme, systemPrompt, alsoAllow });
     showNotification(\`Agent "\${id}" created — restart gateway-bridge to activate it on the RT bus.\`);
     document.getElementById('newAgentForm').style.display = 'none';
-    ['naId','naName','naEmoji','naPrompt'].forEach(x => { document.getElementById(x).value = ''; });
+    ['naId','naName','naEmoji','naTheme','naPrompt'].forEach(x => { document.getElementById(x).value = ''; });
     document.getElementById('naModel').innerHTML = '<option value="">— select a model —</option>';
     document.getElementById('naPromptPreset').value = '';
     loadAgents_cfg();
@@ -4850,7 +4861,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/agents-config/create" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { id, model, name, emoji, systemPrompt, alsoAllow: reqAlsoAllow } = JSON.parse(body);
+      const { id, model, name, emoji, theme, systemPrompt, alsoAllow: reqAlsoAllow } = JSON.parse(body);
       if (!id || !model) throw new Error("id and model required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -4871,7 +4882,7 @@ const server = http.createServer(async (req, res) => {
         : (ROLE_DEFAULTS[id] || ['write_file','read_file','mkdir','run_cmd']);
       list.push({
         id, model,
-        identity: { name: name || id, emoji: emoji || "🤖", theme: "Default" },
+        identity: { name: name || id, emoji: emoji || "🤖", theme: theme || "" },
         tools: { profile: "crewswarm", alsoAllow: defaultTools },
         workspace: defaultWorkspace,
       });
