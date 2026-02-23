@@ -731,16 +731,16 @@ const html = `<!doctype html>
         </div>
       </div>
 
-      <!-- Built-in provider keys -->
-      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; padding:0 2px;">LLM Provider Keys</div>
+      <!-- LLM Providers -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; padding:0 2px;">LLM Providers</div>
       <div id="builtinProvidersList"></div>
 
       <!-- Search & Research Tools -->
       <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Search &amp; Research Tools</div>
       <div id="searchToolsList"></div>
 
-      <!-- Custom provider add -->
-      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Custom Providers</div>
+      <!-- Additional providers (any OpenAI-compatible API not listed above) -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Additional Providers <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-2); font-size:10px;">(any OpenAI-compatible API)</span></div>
       <div id="addProviderForm" style="display:none;" class="card" style="margin-bottom:10px;">
         <h3 style="margin-bottom:12px;">Add Custom Provider</h3>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -2047,14 +2047,20 @@ async function loadBuiltinProviders(){
       </div>
       <div class="bp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
         \${isOllama ? \`<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;">Ollama runs locally — no API key required. Make sure Ollama is running on port 11434.</div>\` : ''}
-        <div style="display:flex;gap:8px;">
-          \${isOllama ? '' : \`<input id="bp_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />\`}
-          \${isOllama ? \`<button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost" style="flex:1;">Test Connection</button>\` : \`
-          <button onclick="saveBuiltinKey('\${p.id}')" class="btn-purple">Save</button>
-          <button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost">Test</button>
-          <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Get key ↗</a>\`}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          \${isOllama ? '' : \`<input id="bp_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />\`}
+          \${isOllama
+            ? \`<button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost" style="flex:1;">Test Connection</button>\`
+            : \`<button onclick="saveBuiltinKey('\${p.id}')" class="btn-purple">Save</button>
+               <button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost">Test</button>
+               <button onclick="fetchBuiltinModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
+               <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Get key ↗</a>\`}
         </div>
         <div id="bp_status_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+        <div id="bp_models_\${p.id}" style="margin-top:8px;display:none;">
+          <span style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Models (<span id="bp_mcount_\${p.id}">0</span>):</span>
+          <span id="bp_mtags_\${p.id}"></span>
+        </div>
       </div>
     </div>\`;
   }).join('');
@@ -2078,6 +2084,32 @@ async function testBuiltinProvider(providerId){
     statusEl.style.color = r.ok ? '#34d399' : '#f87171';
     statusEl.textContent = r.ok ? '✓ Connected — ' + (r.model || 'OK') : '✗ ' + (r.error || 'Failed');
   } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
+}
+
+async function fetchBuiltinModels(providerId, btn){
+  const statusEl = document.getElementById('bp_status_' + providerId);
+  const orig = btn.textContent;
+  btn.textContent = 'Fetching…';
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const r = await postJSON('/api/providers/fetch-models', { providerId });
+    if (r.ok) {
+      const tags  = document.getElementById('bp_mtags_' + providerId);
+      const count = document.getElementById('bp_mcount_' + providerId);
+      const wrap  = document.getElementById('bp_models_' + providerId);
+      if (tags)  tags.innerHTML  = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
+      if (count) count.textContent = r.models.length;
+      if (wrap)  wrap.style.display = 'block';
+      statusEl.style.color = '#34d399';
+      statusEl.textContent = '✓ ' + r.models.length + ' models fetched' + (r.note ? ' — ' + r.note : '');
+      loadAgents();
+    } else {
+      statusEl.style.color = '#f87171';
+      statusEl.textContent = '✗ ' + (r.error || 'Failed');
+    }
+  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
+  finally { btn.textContent = orig; btn.disabled = false; }
 }
 
 async function loadOpenClawStatus(){
