@@ -116,6 +116,22 @@ npm run smoke:e2e        # end-to-end flow test
 npm run smoke
 ```
 
+### Preflight check
+
+```bash
+openswitchctl doctor     # verify paths, config, token, provider, and running services
+```
+
+### Fresh-machine verification
+
+Proves the full clone → install → first-build flow works on a clean system:
+
+```bash
+GROQ_API_KEY=gsk_... bash scripts/fresh-machine-smoke.sh
+```
+
+See [docs/FRESH-MACHINE-VERIFY.md](docs/FRESH-MACHINE-VERIFY.md) for the expected transcript and failure guide.
+
 ### PM Loop (autonomous mode)
 
 ```bash
