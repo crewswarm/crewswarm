@@ -605,8 +605,8 @@ const html = `<!doctype html>
     <div class="view" id="chatView">
       <div class="page-header">
         <div>
-          <div class="page-title">🧠 Crew Lead</div>
-          <div class="page-sub">Conversational commander — chat naturally, dispatch tasks to the crew</div>
+          <div class="page-title" id="chatAgentTitle">🧠 Crew Lead</div>
+          <div class="page-sub" id="chatAgentSub">Conversational commander — chat naturally, dispatch tasks to the crew</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="crewLeadBadge" class="status-badge status-stopped">● offline</span>
@@ -1124,12 +1124,26 @@ async function pickFolder(inputId) {
   const d = await getJSON('/api/pick-folder?default=' + def).catch(() => null);
   if (d?.path) { if (input) input.value = d.path; }
 }
+async function loadCrewLeadInfo() {
+  try {
+    const d = await getJSON('/api/agents-config');
+    const cl = (d.agents || []).find(a => a.id === 'crew-lead');
+    if (!cl) return;
+    window._crewLeadInfo = { emoji: cl.emoji || '🧠', name: cl.name || 'crew-lead', theme: cl.theme || '' };
+    const titleEl = document.getElementById('chatAgentTitle');
+    const subEl   = document.getElementById('chatAgentSub');
+    if (titleEl) titleEl.textContent = (cl.emoji || '🧠') + ' ' + (cl.name || 'Crew Lead');
+    if (subEl && cl.theme) subEl.textContent = cl.theme + ' — chat naturally, dispatch tasks to the crew';
+  } catch(e) { /* keep defaults */ }
+}
+
 async function showChat(){
   hideAllViews();
   document.getElementById('chatView').classList.add('active');
   setNavActive('navChat');
   checkCrewLeadStatus();
   startAgentReplyListener();
+  loadCrewLeadInfo();
   await loadChatHistory();
 }
 async function loadChatHistory() {
@@ -1588,7 +1602,8 @@ function appendChatBubble(role, text) {
   div.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isUser ? 'flex-end' : 'flex-start') + ';gap:4px;';
   const labelEl = document.createElement('div');
   labelEl.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;';
-  const displayName = isUser ? 'You' : (role === 'assistant' ? '🧠 crew-lead' : role);
+  const cl = window._crewLeadInfo || { emoji: '🧠', name: 'crew-lead' };
+  const displayName = isUser ? 'You' : (role === 'assistant' ? (cl.emoji + ' ' + cl.name) : role);
   labelEl.textContent = displayName;
   const bubble = document.createElement('div');
   bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:' + (isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px') + ';background:' + (isUser ? 'var(--purple)' : 'var(--bg-2)') + ';color:' + (isUser ? '#fff' : 'var(--text-1)') + ';font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;border:1px solid var(--border);';
@@ -1681,7 +1696,8 @@ async function sendChat() {
   const typingDiv = document.createElement('div');
   typingDiv.id = typingId;
   typingDiv.style.cssText = 'font-size:12px;color:var(--text-3);padding:4px 6px;';
-  typingDiv.textContent = '🧠 crew-lead is thinking...';
+  const _cl = window._crewLeadInfo || { emoji: '🧠', name: 'crew-lead' };
+  typingDiv.textContent = _cl.emoji + ' ' + _cl.name + ' is thinking...';
   const box = document.getElementById('chatMessages');
   box.appendChild(typingDiv);
   box.scrollTop = box.scrollHeight;

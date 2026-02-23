@@ -53,6 +53,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     var inputField: NSTextField!
     var sendBtn: NSButton!
     var sseTask: URLSessionDataTask?
+    var headerAgentLbl: NSTextField!
+    var headerSubLbl: NSTextField!
+    var headerDot: NSView!
     var pendingDraftId: String?
     var pendingProjectName: String?
     var pendingCardView: NSView?
@@ -62,6 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.accessory) // no Dock icon
         buildWindow()
+        loadAgentInfo()
         checkStatus()
         loadHistory()
         startSSE()
@@ -106,20 +110,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
         header.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(header)
 
-        let agentDot = NSView()
-        agentDot.wantsLayer = true
-        agentDot.layer?.cornerRadius = 4
-        agentDot.layer?.backgroundColor = NSColor.crewGreen.cgColor
-        agentDot.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(agentDot)
+        headerAgentLbl = label("🧠  crew-lead", size: 13, color: .crewText, weight: .semibold)
+        headerAgentLbl.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(headerAgentLbl)
 
-        let agentLbl = label("🧠  crew-lead", size: 13, color: .crewText, weight: .semibold)
-        agentLbl.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(agentLbl)
+        headerSubLbl = label("Conversational commander", size: 11, color: .crewMuted)
+        headerSubLbl.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(headerSubLbl)
 
-        let subLbl = label("Conversational commander", size: 11, color: .crewMuted)
-        subLbl.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(subLbl)
+        // Status dot — right side, next to Clear
+        headerDot = NSView()
+        headerDot.wantsLayer = true
+        headerDot.layer?.cornerRadius = 4
+        headerDot.layer?.backgroundColor = NSColor.gray.cgColor
+        headerDot.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(headerDot)
 
         let clearBtn = NSButton(title: "Clear", target: self, action: #selector(clearChat))
         clearBtn.isBordered = false
@@ -137,21 +142,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             header.heightAnchor.constraint(equalToConstant: 56),
 
-            agentDot.widthAnchor.constraint(equalToConstant: 8),
-            agentDot.heightAnchor.constraint(equalToConstant: 8),
-            agentDot.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 80),
-            agentDot.centerYAnchor.constraint(equalTo: agentLbl.centerYAnchor),
+            headerAgentLbl.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 82),
+            headerAgentLbl.topAnchor.constraint(equalTo: header.topAnchor, constant: 12),
 
-            agentLbl.leadingAnchor.constraint(equalTo: agentDot.trailingAnchor, constant: 6),
-            agentLbl.topAnchor.constraint(equalTo: header.topAnchor, constant: 12),
-
-            subLbl.leadingAnchor.constraint(equalTo: agentLbl.leadingAnchor),
-            subLbl.topAnchor.constraint(equalTo: agentLbl.bottomAnchor, constant: 2),
+            headerSubLbl.leadingAnchor.constraint(equalTo: headerAgentLbl.leadingAnchor),
+            headerSubLbl.topAnchor.constraint(equalTo: headerAgentLbl.bottomAnchor, constant: 2),
 
             clearBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -14),
             clearBtn.centerYAnchor.constraint(equalTo: header.centerYAnchor),
             clearBtn.widthAnchor.constraint(equalToConstant: 48),
             clearBtn.heightAnchor.constraint(equalToConstant: 26),
+
+            // Dot sits left of Clear button
+            headerDot.widthAnchor.constraint(equalToConstant: 8),
+            headerDot.heightAnchor.constraint(equalToConstant: 8),
+            headerDot.trailingAnchor.constraint(equalTo: clearBtn.leadingAnchor, constant: -10),
+            headerDot.centerYAnchor.constraint(equalTo: header.centerYAnchor),
         ])
 
         stack = NSStackView()
@@ -453,8 +459,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             let r = await apiGet("/api/crew-lead/status")
             let online = r["online"] as? Bool == true
             await MainActor.run {
+                self.headerDot.layer?.backgroundColor = (online ? NSColor.crewGreen : NSColor.red).cgColor
                 if !online { self.addNote("⚠️ crew-lead offline — start it first", color: .red) }
                 self.sendBtn.isEnabled = online
+            }
+        }
+    }
+
+    func loadAgentInfo() {
+        Task {
+            let r = await apiGet("/api/agents-config")
+            guard let agents = r["agents"] as? [[String:Any]],
+                  let cl = agents.first(where: { $0["id"] as? String == "crew-lead" }) else { return }
+            let name  = cl["name"]  as? String ?? "crew-lead"
+            let emoji = cl["emoji"] as? String ?? "🧠"
+            let theme = cl["theme"] as? String ?? "Conversational commander"
+            await MainActor.run {
+                self.headerAgentLbl.stringValue = emoji + "  " + name
+                self.headerSubLbl.stringValue   = theme
             }
         }
     }
