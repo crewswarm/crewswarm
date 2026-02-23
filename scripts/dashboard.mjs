@@ -731,17 +731,12 @@ const html = `<!doctype html>
         </div>
       </div>
 
-      <!-- LLM Providers -->
+      <!-- LLM Providers (built-ins + any custom providers appended below) -->
       <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; padding:0 2px;">LLM Providers</div>
       <div id="builtinProvidersList"></div>
 
-      <!-- Search & Research Tools -->
-      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Search &amp; Research Tools</div>
-      <div id="searchToolsList"></div>
-
-      <!-- Additional providers (any OpenAI-compatible API not listed above) -->
-      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Additional Providers <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-2); font-size:10px;">(any OpenAI-compatible API)</span></div>
-      <div id="addProviderForm" style="display:none;" class="card" style="margin-bottom:10px;">
+      <!-- Add custom provider form (shown by "+ Add Provider" button in page header) -->
+      <div id="addProviderForm" style="display:none; margin-bottom:10px;" class="card">
         <h3 style="margin-bottom:12px;">Add Custom Provider</h3>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <input id="apId"      placeholder="Provider ID (e.g. together)" />
@@ -757,7 +752,10 @@ const html = `<!doctype html>
           <button id="apCancelBtn" class="btn-ghost">Cancel</button>
         </div>
       </div>
-      <div id="providersList"></div>
+
+      <!-- Search & Research Tools -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Search &amp; Research Tools</div>
+      <div id="searchToolsList"></div>
     </div>
 
     <!-- Agents -->
@@ -1952,9 +1950,8 @@ function showProviders(){
   setNavActive('navProviders');
   loadRTToken();
   loadOpenClawStatus();
-  loadBuiltinProviders();
+  loadBuiltinProviders(); // renders built-ins + custom providers in one unified list
   loadSearchTools();
-  loadProviders();
 }
 
 const BUILTIN_PROVIDERS = [
@@ -2032,7 +2029,10 @@ async function loadBuiltinProviders(){
   const list = document.getElementById('builtinProvidersList');
   let saved = {};
   try { saved = (await getJSON('/api/providers/builtin')).keys || {}; } catch {}
-  list.innerHTML = BUILTIN_PROVIDERS.map(p => {
+  const builtinIds = new Set(BUILTIN_PROVIDERS.map(p => p.id));
+
+  // ── Render built-in provider cards ─────────────────────────────────────────
+  let html = BUILTIN_PROVIDERS.map(p => {
     const hasKey = !!saved[p.id];
     const isOllama = p.id === 'ollama';
     const isOpenAiLocal = p.id === 'openai-local';
@@ -2068,6 +2068,50 @@ async function loadBuiltinProviders(){
       </div>
     </div>\`;
   }).join('');
+
+  // ── Append any custom (non-built-in) providers from crewswarm.json ─────────
+  try {
+    const data = await getJSON('/api/providers');
+    const customs = (data.providers || []).filter(p => !builtinIds.has(p.id));
+    if (customs.length) {
+      html += \`<div style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px;padding:0 2px;">Custom Providers</div>\`;
+      html += customs.map(p => {
+        const icon = PROVIDER_ICONS[p.id] || '🔌';
+        const hasKey = p.hasKey;
+        const badge = hasKey
+          ? \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">key set ✓</span>\`
+          : \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>\`;
+        const modelCount = p.models?.length || 0;
+        return \`<div class="card" style="margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="this.parentElement.querySelector('.cp-body').style.display=this.parentElement.querySelector('.cp-body').style.display==='none'?'block':'none'">
+            <span style="font-size:18px;width:24px;text-align:center;">\${icon}</span>
+            <div style="flex:1;">
+              <div style="font-weight:600;font-size:13px;">\${p.id}</div>
+              <div style="font-size:11px;color:var(--text-2);">\${p.baseUrl}\${modelCount ? ' · ' + modelCount + ' models' : ''}</div>
+            </div>
+            \${badge}
+            <span style="color:var(--text-2);font-size:12px;">▾</span>
+          </div>
+          <div class="cp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input id="key_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />
+              <button onclick="saveKey('\${p.id}')" class="btn-purple">Save</button>
+              <button onclick="testKey('\${p.id}')" class="btn-ghost">Test</button>
+              <button onclick="fetchModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
+            </div>
+            <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Base URL: <code style="font-size:10px;">\${p.baseUrl}</code></div>
+            <div id="test_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+            <div id="mwrap_\${p.id}" style="margin-top:8px;\${modelCount ? '' : 'display:none;'}">
+              <span style="font-size:11px;color:var(--text-2);">Models (<span id="mcount_\${p.id}">\${modelCount}</span>):</span>
+              <span id="mtags_\${p.id}">\${(p.models||[]).map(m => '<span class="model-tag">' + (m.id||m) + '</span>').join('')}</span>
+            </div>
+          </div>
+        </div>\`;
+      }).join('');
+    }
+  } catch {}
+
+  list.innerHTML = html;
 }
 
 async function saveBuiltinKey(providerId){
@@ -2905,25 +2949,26 @@ async function fetchModels(providerId, btn){
   const origText = btn.textContent;
   btn.textContent = 'Fetching…';
   btn.disabled = true;
-  statusEl.textContent = '';
+  if (statusEl) statusEl.textContent = '';
   try {
     const r = await postJSON('/api/providers/fetch-models', { providerId });
     if (r.ok) {
       const tags = document.getElementById('mtags_' + providerId);
       const count = document.getElementById('mcount_' + providerId);
-      const none = document.getElementById('mnone_' + providerId);
-      if (tags) tags.innerHTML = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
+      const none = document.getElementById('mnone_' + providerId);   // old provider-card style
+      const wrap = document.getElementById('mwrap_' + providerId);   // new unified-list style
+      if (tags)  tags.innerHTML = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
       if (count) count.textContent = r.models.length;
-      if (none) none.style.display = 'none';
-      statusEl.textContent = '✓ ' + r.models.length + ' models';
-      statusEl.className = 'test-ok';
-      // Refresh agent model dropdowns
-      loadAgents();
+      if (none)  none.style.display = 'none';
+      if (wrap)  wrap.style.display = 'block';
+      if (statusEl) { statusEl.textContent = '✓ ' + r.models.length + ' models'; statusEl.className = 'test-ok'; }
+      loadAgents(); // refresh agent model dropdowns
     } else {
-      statusEl.textContent = '✗ ' + r.error;
-      statusEl.className = 'test-err';
+      if (statusEl) { statusEl.textContent = '✗ ' + r.error; statusEl.className = 'test-err'; }
     }
-  } catch(e){ statusEl.textContent = '✗ ' + e.message; statusEl.className = 'test-err'; }
+  } catch(e){
+    if (statusEl) { statusEl.textContent = '✗ ' + e.message; statusEl.className = 'test-err'; }
+  }
   finally { btn.textContent = origText; btn.disabled = false; }
 }
 document.getElementById('addProviderBtn').onclick = () => {
@@ -2942,10 +2987,10 @@ document.getElementById('apSaveBtn').onclick = async () => {
     await postJSON('/api/providers/add', { id, baseUrl, apiKey, api });
     showNotification('Provider added: ' + id);
     document.getElementById('addProviderForm').style.display = 'none';
-    loadProviders();
+    loadBuiltinProviders(); // unified list re-renders with new custom provider appended
   } catch(e){ showNotification('Failed: ' + e.message, true); }
 };
-document.getElementById('refreshProvidersBtn').onclick = loadProviders;
+document.getElementById('refreshProvidersBtn').onclick = loadBuiltinProviders;
 function showBuild(){
   hideAllViews();
   document.getElementById('buildView').classList.add('active');
