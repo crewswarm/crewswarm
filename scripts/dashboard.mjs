@@ -719,18 +719,6 @@ const html = `<!doctype html>
         </div>
       </div>
 
-      <!-- Legacy gateway (optional) toggle -->
-      <div class="card" style="margin-bottom:16px;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:18px;">🔌</span>
-          <div style="flex:1;">
-            <div style="font-weight:600; font-size:14px;">Legacy OpenClaw gateway <span style="font-size:11px; color:var(--text-2); font-weight:400;">(optional, port 18789)</span></div>
-            <div style="font-size:12px; color:var(--text-2);">No key needed — agents use direct LLM calls via the RT bus. This indicator shows whether the old OpenClaw desktop app is paired on this machine. Ignore if you never used OpenClaw.</div>
-          </div>
-          <span id="oclawBadge" style="font-size:11px; padding:2px 10px; border-radius:999px; font-weight:600; background:rgba(107,114,128,0.15); color:#6b7280; border:1px solid rgba(107,114,128,0.3);">checking…</span>
-        </div>
-      </div>
-
       <!-- LLM Providers (built-ins + any custom providers appended below) -->
       <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; padding:0 2px;">LLM Providers</div>
       <div id="builtinProvidersList"></div>
@@ -1949,7 +1937,6 @@ function showProviders(){
   document.getElementById('providersView').classList.add('active');
   setNavActive('navProviders');
   loadRTToken();
-  loadOpenClawStatus();
   loadBuiltinProviders(); // renders built-ins + custom providers in one unified list
   loadSearchTools();
 }
@@ -5284,6 +5271,8 @@ const server = http.createServer(async (req, res) => {
         const rtUp      = await portListening(18889);
         const crewLeadUp = await portListening(crewLeadPort);
         const gwUp      = await portListening(18789);
+        const oclawPaired = fs.existsSync(path.join(os.homedir(), ".openclaw", "devices", "paired.json"))
+                         || fs.existsSync(path.join(os.homedir(), ".openclaw", "device.json"));
         const ocUp      = await portListening(4096);
         const dashUp    = await portListening(listenPort);
 
@@ -5361,7 +5350,7 @@ const server = http.createServer(async (req, res) => {
         {
           id: "openclaw-gateway",
           label: "OpenClaw Gateway",
-          description: "Legacy gateway (port 18789) — only needed if pairing the OpenClaw desktop app",
+          description: oclawPaired ? "App paired ✓ — plugin can communicate via port 18789" : "No paired app detected — start if you need plugin connectivity on port 18789",
           port: 18789,
           running: gwUp,
           canRestart: true,
