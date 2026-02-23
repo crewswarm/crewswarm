@@ -143,6 +143,41 @@ function getAgentPrompts() {
       || {};
 }
 
+function writeAgentPrompt(agentId, promptText) {
+  const promptsPath = path.join(os.homedir(), ".crewswarm", "agent-prompts.json");
+  const prompts = getAgentPrompts();
+  prompts[agentId] = promptText;
+  fs.writeFileSync(promptsPath, JSON.stringify(prompts, null, 2), "utf8");
+  return promptText;
+}
+
+const BRAIN_PATH = path.join(process.cwd(), "memory", "brain.md");
+const GLOBAL_RULES_PATH = path.join(os.homedir(), ".crewswarm", "global-rules.md");
+
+function appendToBrain(agentId, entry) {
+  const date = new Date().toISOString().slice(0, 10);
+  const block = `\n## [${date}] ${agentId}: ${entry}\n`;
+  if (!fs.existsSync(BRAIN_PATH)) fs.mkdirSync(path.dirname(BRAIN_PATH), { recursive: true });
+  fs.appendFileSync(BRAIN_PATH, block, "utf8");
+  return block.trim();
+}
+
+function readGlobalRules() {
+  try { return fs.readFileSync(GLOBAL_RULES_PATH, "utf8").trim(); } catch { return ""; }
+}
+
+function writeGlobalRules(content) {
+  fs.writeFileSync(GLOBAL_RULES_PATH, content, "utf8");
+  return content;
+}
+
+function appendGlobalRule(rule) {
+  const existing = readGlobalRules();
+  const updated = existing ? `${existing}\n- ${rule}` : `# Global Agent Rules\n\n- ${rule}`;
+  writeGlobalRules(updated);
+  return updated;
+}
+
 async function searchWithBrave(query) {
   const key = getSearchToolsConfig()?.brave?.apiKey || process.env.BRAVE_API_KEY;
   if (!key) return null;
@@ -311,15 +346,29 @@ function buildSystemPrompt(cfg) {
     "- done: exact definition of success — use for precise acceptance criteria",
     "- Both fields are optional — omit for simple open-ended tasks",
     "",
-    "TOOL PERMISSIONS — you can read and change what any agent is allowed to do:",
-    "- Valid tools: write_file, read_file, mkdir, run_cmd, git, dispatch, telegram, web_search, web_fetch",
-    "- To report an agent's permissions: just tell the user — you know the defaults (see roster) or emit @@TOOLS to query",
-    "- To grant/revoke permissions: emit @@TOOLS on its own line in your reply:",
-    '  @@TOOLS {"agent":"crew-qa","grant":["write_file"],"revoke":[]}',
-    '  @@TOOLS {"agent":"crew-coder","set":["read_file","write_file","mkdir","run_cmd","web_search"]}',
-    "- grant adds to current permissions, revoke removes, set replaces entirely",
-    "- After emitting @@TOOLS, tell the user to restart the agent's bridge for changes to take effect",
-    "- Default permissions by role: qa=read_file; coder/fixer/frontend=write+read+mkdir+run; copywriter=write+read+web_search+web_fetch; github=read+run+git; main=all except telegram; pm=read+dispatch",
+    "AGENT MANAGEMENT — you can read and modify agents' tools, prompts, and global rules:",
+    "",
+    "1. TOOL PERMISSIONS — @@TOOLS (grant/revoke/set what an agent can do):",
+    "   Valid tools: write_file, read_file, mkdir, run_cmd, git, dispatch, telegram, web_search, web_fetch",
+    '   @@TOOLS {"agent":"crew-qa","grant":["write_file"],"revoke":[]}',
+    '   @@TOOLS {"agent":"crew-coder","set":["read_file","write_file","mkdir","run_cmd","web_search"]}',
+    "   grant=add, revoke=remove, set=replace. Default roles: qa=read_file; coder/fixer/frontend=write+read+mkdir+run; copywriter=write+read+web_search+web_fetch; github=read+run+git; main=all except telegram; pm=read+dispatch",
+    "",
+    "2. SYSTEM PROMPTS — @@PROMPT (read or rewrite any agent's personality/instructions):",
+    "   To read: just tell the user — you know all agent prompts from your config.",
+    '   @@PROMPT {"agent":"crew-qa","append":"- Always use @@READ_FILE before auditing, never assume file content"}',
+    '   @@PROMPT {"agent":"crew-copywriter","set":"You are a sharp B2B copywriter. Use @@WEB_SEARCH before writing. Always @@WRITE_FILE your output."}',
+    "   append=add a rule to the existing prompt, set=replace entirely.",
+    "",
+    "3. GLOBAL RULES — @@GLOBALRULE (a rule injected into ALL agents on every task):",
+    "   @@GLOBALRULE Always reply in the same language the user wrote in",
+    "   @@GLOBALRULE Never hallucinate file contents — always @@READ_FILE first",
+    "   Use sparingly — these apply to every single agent.",
+    "",
+    "4. BRAIN / SHARED MEMORY — @@BRAIN (append a durable fact to brain.md, shared by all agents):",
+    "   @@BRAIN crew-lead: project uses port 4319 for dashboard, 5010 for crew-lead, 18889 for RT bus",
+    "",
+    "After any change: tell the user to restart the affected bridge(s) for changes to take effect.",
     "",
     "When the user message includes [Web context from Brave Search], use that context to answer current events, docs, or factual lookups when relevant. When it includes [Codebase context from workspace], use it to answer questions about this codebase (where things are, how they work, what a file does).",
     "",
@@ -801,19 +850,44 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   const fullReply = await callLLM(messages, cfg);
 
   // ── @@TOOLS — permission grant/revoke command ──────────────────────────────
-  // Format: @@TOOLS {"agent":"crew-qa","grant":["write_file"],"revoke":[]}
-  //      or @@TOOLS {"agent":"crew-qa","set":["read_file","write_file"]}
   const toolsCmd = (() => {
     const m = fullReply.match(/@@TOOLS\s+(\{[^}]+\})/);
     if (!m) return null;
     try { return JSON.parse(m[1]); } catch { return null; }
   })();
 
+  // ── @@PROMPT — read/write an agent's system prompt ─────────────────────────
+  // @@PROMPT {"agent":"crew-qa","set":"You are a QA specialist..."}
+  // @@PROMPT {"agent":"crew-qa","append":"- Always use @@READ_FILE before auditing"}
+  const promptCmd = (() => {
+    const m = fullReply.match(/@@PROMPT\s+(\{[\s\S]*?\})\s*(?:\n|$)/);
+    if (!m) return null;
+    try { return JSON.parse(m[1]); } catch { return null; }
+  })();
+
+  // ── @@BRAIN — append a fact to shared brain.md ─────────────────────────────
+  // @@BRAIN crew-lead: some durable fact worth remembering
+  const brainCmd = (() => {
+    const m = fullReply.match(/@@BRAIN\s+([^\n]+)/);
+    return m ? m[1].trim() : null;
+  })();
+
+  // ── @@GLOBALRULE — append a rule to global-rules.md (injected into all agents)
+  // @@GLOBALRULE Always reply in the language the user wrote in
+  const globalRuleCmd = (() => {
+    const m = fullReply.match(/@@GLOBALRULE\s+([^\n]+)/);
+    return m ? m[1].trim() : null;
+  })();
+
   const projectSpec = parseProject(fullReply);
   const pipelineSteps = !projectSpec ? parsePipeline(fullReply) : null;
   const dispatch = !projectSpec && !pipelineSteps ? parseDispatch(fullReply, message) : null;
   let cleanReply = stripThink(stripPipeline(stripProject(stripDispatch(fullReply))))
-    .replace(/@@TOOLS\s+\{[^}]+\}/g, "").trim();
+    .replace(/@@TOOLS\s+\{[^}]+\}/g, "")
+    .replace(/@@PROMPT\s+\{[\s\S]*?\}\s*(?:\n|$)/g, "")
+    .replace(/@@BRAIN\s+[^\n]+/g, "")
+    .replace(/@@GLOBALRULE\s+[^\n]+/g, "")
+    .trim();
 
   appendHistory(sessionId, "assistant", cleanReply);
   broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply });
@@ -873,6 +947,52 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
       console.log(`[crew-lead] @@TOOLS: ${toolsCmd.agent} → ${saved.join(", ")}`);
     } catch (e) {
       cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to update tools for ${toolsCmd.agent}: ${e.message}`;
+    }
+  }
+
+  // ── Execute @@PROMPT system prompt edit ────────────────────────────────────
+  if (promptCmd?.agent) {
+    try {
+      const existing = getAgentPrompts()[promptCmd.agent] || "";
+      let newPrompt;
+      if (typeof promptCmd.set === "string") {
+        newPrompt = promptCmd.set;
+      } else if (typeof promptCmd.append === "string") {
+        newPrompt = existing ? `${existing}\n${promptCmd.append}` : promptCmd.append;
+      } else {
+        newPrompt = existing;
+      }
+      writeAgentPrompt(promptCmd.agent, newPrompt);
+      const preview = newPrompt.slice(0, 120).replace(/\n/g, " ");
+      const note = `\n\n↳ System prompt updated for **${promptCmd.agent}**: "${preview}${newPrompt.length > 120 ? "…" : ""}" — restart its bridge for changes to take effect.`;
+      cleanReply = (cleanReply || "").trimEnd() + note;
+      appendHistory(sessionId, "system", `Prompt for ${promptCmd.agent} updated.`);
+      console.log(`[crew-lead] @@PROMPT: ${promptCmd.agent} updated (${newPrompt.length} chars)`);
+    } catch (e) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to update prompt for ${promptCmd.agent}: ${e.message}`;
+    }
+  }
+
+  // ── Execute @@BRAIN append ──────────────────────────────────────────────────
+  if (brainCmd) {
+    try {
+      const block = appendToBrain("crew-lead", brainCmd);
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Added to brain.md: "${block.slice(0, 100)}"`;
+      console.log(`[crew-lead] @@BRAIN: ${brainCmd.slice(0, 80)}`);
+    } catch (e) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to write brain.md: ${e.message}`;
+    }
+  }
+
+  // ── Execute @@GLOBALRULE append ────────────────────────────────────────────
+  if (globalRuleCmd) {
+    try {
+      appendGlobalRule(globalRuleCmd);
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Global rule added (all agents): "${globalRuleCmd}" — restart bridges to apply.`;
+      appendHistory(sessionId, "system", `Global rule added: ${globalRuleCmd}`);
+      console.log(`[crew-lead] @@GLOBALRULE: ${globalRuleCmd}`);
+    } catch (e) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to write global-rules.md: ${e.message}`;
     }
   }
 

@@ -1996,6 +1996,15 @@ function buildTaskPrompt(taskText, sourceLabel, agentId) {
   const agentAllowed = loadAgentToolPermissions(agentId || "crew-main");
   const toolInstructions = buildToolInstructions(agentAllowed);
 
+  // Load global rules — injected into every agent if the file exists
+  const globalRulesPath = path.join(os.homedir(), ".crewswarm", "global-rules.md");
+  const globalRules = (() => {
+    try {
+      const txt = fs.readFileSync(globalRulesPath, "utf8").trim();
+      return txt ? `## Global Rules (apply to all agents)\n${txt}` : "";
+    } catch { return ""; }
+  })();
+
   // Load agent-specific extra memory (e.g. lessons.md for coders + fixer)
   const extraMemoryFiles = AGENT_EXTRA_MEMORY[agentId] || (bareId && AGENT_EXTRA_MEMORY[`crew-${bareId}`]) || [];
   const extraMemorySections = [];
@@ -2026,6 +2035,7 @@ function buildTaskPrompt(taskText, sourceLabel, agentId) {
   const parts = [];
   if (identityHeader) parts.push(identityHeader);
   if (agentSystemPrompt) parts.push(agentSystemPrompt);
+  if (globalRules) parts.push(globalRules);
   if (toolInstructions) parts.push(toolInstructions);
   if (sharedMemory.text) parts.push(sharedMemory.text);
   if (extraMemorySections.length > 0) parts.push(extraMemorySections.join("\n\n"));
