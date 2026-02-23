@@ -41,11 +41,9 @@ function loadConfig() {
   const modelId = modelParts.join("/");
   const provider = csSwarm?.providers?.[providerKey] || cs?.providers?.[providerKey];
 
-  const knownAgents = agents
-    .filter(a => a.id !== "crew-lead")
-    .map(a => a.id)
-    .filter(Boolean);
+  const teamAgents = agents.filter(a => a.id && a.id !== "crew-lead");
 
+  const knownAgents = teamAgents.map(a => a.id);
   if (!knownAgents.length) {
     knownAgents.push(
       "crew-main", "crew-pm", "crew-coder", "crew-qa", "crew-fixer",
@@ -59,10 +57,19 @@ function loadConfig() {
     if (a.id && a.model) agentModels[a.id] = a.model;
   }
 
+  // Full roster: id, display name, emoji, role/theme, model
+  const agentRoster = teamAgents.map(a => ({
+    id:    a.id,
+    name:  a.identity?.name  || a.name  || a.id,
+    emoji: a.identity?.emoji || a.emoji || "",
+    role:  a.identity?.theme || "",
+    model: a.model || "",
+  }));
+
   const displayName = agentCfg?.identity?.name || "crew-lead";
   const emoji       = agentCfg?.identity?.emoji || "🦊";
 
-  return { modelId, providerKey, provider, knownAgents, agentModels, displayName, emoji };
+  return { modelId, providerKey, provider, knownAgents, agentModels, agentRoster, displayName, emoji };
 }
 
 function tryRead(p) {
@@ -173,7 +180,11 @@ function buildSystemPrompt(cfg) {
   const knownAgents = cfg.knownAgents || [];
   const agentPrompts = getAgentPrompts();
   const customPrompt = (agentPrompts["crew-lead"] || "").trim();
-  const agentList = knownAgents.map(a => "  - " + a).join("\n");
+  const agentList = (cfg.agentRoster || []).length
+    ? cfg.agentRoster.map(a =>
+        `  - ${a.emoji ? a.emoji + " " : ""}${a.name} (${a.id})${a.role ? " — " + a.role : ""}${a.model ? " [" + a.model + "]" : ""}`
+      ).join("\n")
+    : knownAgents.map(a => "  - " + a).join("\n");
   const modelLine = (cfg.providerKey && cfg.modelId)
     ? `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}). When asked "what's your name?" or "what model are you?", answer with this; do not search the web or codebase.`
     : "";
@@ -185,18 +196,8 @@ function buildSystemPrompt(cfg) {
   const rules = [
     ...(modelLine ? [modelLine, ""] : []),
     ...(agentModelList ? [agentModelList, ""] : []),
-    "Available agents (for reference only — do NOT dispatch unless explicitly told to):",
+    "Your crew (name, agent ID, role, model):",
     agentList,
-    "",
-    "Agent roles:",
-    "  - crew-pm: project planning, task breakdown, roadmaps",
-    "  - crew-coder / crew-coder-front / crew-coder-back: writing code",
-    "  - crew-qa: testing and quality assurance",
-    "  - crew-fixer: debugging and fixing bugs",
-    "  - crew-security: security audits and review",
-    "  - crew-github: git operations, PRs, commits",
-    "  - crew-frontend / crew-copywriter: UI components and content",
-    "  - crew-main: general orchestration fallback",
     "",
     "DISPATCH RULES — CRITICAL:",
     "- ONLY dispatch when user uses: go build, go write, have crew-X do, dispatch, tell crew-X to, ask crew-X",
@@ -249,7 +250,11 @@ function buildSystemPrompt(cfg) {
     "You are primarily a CONVERSATIONAL assistant. Your default is to CHAT.",
     "",
   ].join("\n");
-  const intro = customPrompt ? customPrompt + "\n\n" : defaultIntro;
+  // Always inject identity line so the agent knows its name/model even with a custom prompt
+  const identityLine = `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}).`;
+  const intro = customPrompt
+    ? identityLine + "\n\n" + customPrompt + "\n\n"
+    : defaultIntro;
   return intro + rules;
 }
 
