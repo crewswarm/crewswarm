@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# openswitchctl — CrewSwarm control script for RT bus, agents, and OpenClaw integration.
+# openswitchctl — CrewSwarm control script for RT bus, agents, and optional legacy gateway.
 # Install: ln -s "$(pwd)/scripts/openswitchctl" ~/bin/openswitchctl   (or copy)
-# Requires: OPENCLAW_DIR set to CrewSwarm repo root (default: $HOME/Desktop/CrewSwarm)
+# Requires: CREWSWARM_DIR or OPENCLAW_DIR (legacy) set to repo root (default: $HOME/Desktop/CrewSwarm)
 
 set -euo pipefail
 
-OPENCLAW_DIR="${OPENCLAW_DIR:-$HOME/Desktop/CrewSwarm}"
-CFG_DIR="${OPENCREWHQ_CONFIG_DIR:-$HOME/.openclaw}"
-CFG="$CFG_DIR/openclaw.json"
-# Prefer CrewSwarm configs (same order as start-crew.mjs / gateway-bridge)
-CREW_SWARM_JSON="$HOME/.crewswarm/crewswarm.json"
-CREW_CONFIG_JSON="$HOME/.crewswarm/config.json"
-if [[ -f "$CREW_SWARM_JSON" ]]; then CFG="$CREW_SWARM_JSON"; elif [[ -f "$CREW_CONFIG_JSON" ]]; then CFG="$CREW_CONFIG_JSON"; fi
+CREWSWARM_DIR="${CREWSWARM_DIR:-${OPENCLAW_DIR:-$HOME/Desktop/CrewSwarm}}"
+OPENCLAW_DIR="$CREWSWARM_DIR"   # backward compat
+CFG_DIR="${CREWSWARM_CONFIG_DIR:-${OPENCREWHQ_CONFIG_DIR:-$HOME/.crewswarm}}"
+LEGACY_CFG_DIR="$HOME/.openclaw"
+CFG="$CFG_DIR/crewswarm.json"
+[[ -f "$CFG" ]] || CFG="$CFG_DIR/config.json"
+[[ -f "$CFG" ]] || CFG="$LEGACY_CFG_DIR/openclaw.json"
 
-# Resolve OPENCLAW_DIR when script is symlinked (e.g. from ~/bin)
-if [[ -z "${OPENCLAW_DIR:-}" ]] || [[ ! -f "$OPENCLAW_DIR/scripts/start-crew.mjs" ]]; then
+# Resolve CREWSWARM_DIR when script is symlinked (e.g. from ~/bin)
+if [[ -z "${CREWSWARM_DIR:-}" ]] || [[ ! -f "$CREWSWARM_DIR/scripts/start-crew.mjs" ]]; then
   SCRIPT_SOURCE="${BASH_SOURCE[0]}"
   while [[ -L "$SCRIPT_SOURCE" ]]; do
     SCRIPT_DIR=$(dirname "$SCRIPT_SOURCE")
@@ -24,6 +24,7 @@ if [[ -z "${OPENCLAW_DIR:-}" ]] || [[ ! -f "$OPENCLAW_DIR/scripts/start-crew.mjs
   done
   RESOLVED_DIR=$(cd "$(dirname "$SCRIPT_SOURCE")/.." && pwd)
   if [[ -f "$RESOLVED_DIR/scripts/start-crew.mjs" ]]; then
+    CREWSWARM_DIR="$RESOLVED_DIR"
     OPENCLAW_DIR="$RESOLVED_DIR"
   fi
 fi
@@ -31,8 +32,8 @@ fi
 NODE="${NODE:-node}"
 # Prefer RT daemon in repo; fall back to swarm plugin
 if [[ -z "${RT_DAEMON:-}" ]]; then
-  if [[ -f "$OPENCLAW_DIR/scripts/opencrew-rt-daemon.mjs" ]]; then
-    RT_DAEMON="$OPENCLAW_DIR/scripts/opencrew-rt-daemon.mjs"
+  if [[ -f "$CREWSWARM_DIR/scripts/opencrew-rt-daemon.mjs" ]]; then
+    RT_DAEMON="$CREWSWARM_DIR/scripts/opencrew-rt-daemon.mjs"
   else
     RT_DAEMON="$HOME/swarm/.opencode/plugin/opencrew-rt-daemon.mjs"
   fi
@@ -40,7 +41,7 @@ fi
 # Same built-ins as start-crew.mjs; list is built-ins + config agents (CrewSwarm 11–13)
 BUILT_IN_AGENTS="crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2"
 
-# Load RT token from config (crewswarm config.json or openclaw.json)
+# Load RT token from config (crewswarm first, then legacy openclaw.json)
 rt_token() {
   local t
   for f in "$HOME/.crewswarm/config.json" "$HOME/.crewswarm/crewswarm.json" "$CFG"; do
@@ -55,7 +56,7 @@ cmd_agents() {
   local cfg="$CFG"
   [[ -f "$HOME/.crewswarm/crewswarm.json" ]] && cfg="$HOME/.crewswarm/crewswarm.json"
   [[ -f "$HOME/.crewswarm/config.json" ]] && [[ ! -f "$cfg" ]] && cfg="$HOME/.crewswarm/config.json"
-  [[ ! -f "$cfg" ]] && cfg="$CFG_DIR/openclaw.json"
+  [[ ! -f "$cfg" ]] && cfg="$LEGACY_CFG_DIR/openclaw.json"
   if [[ ! -f "$cfg" ]]; then
     echo $BUILT_IN_AGENTS | tr ',' '\n'
     return
@@ -133,16 +134,16 @@ cmd_start() {
     sleep 2
   fi
   # Agent bridges
-  (cd "$OPENCLAW_DIR" && "$NODE" scripts/start-crew.mjs)
+  (cd "$CREWSWARM_DIR" && "$NODE" scripts/start-crew.mjs)
   sleep 1
   # crew-lead
   pkill -f "crew-lead.mjs" 2>/dev/null || true
   sleep 1
-  nohup "$NODE" "$OPENCLAW_DIR/crew-lead.mjs" >> /tmp/crew-lead.log 2>&1 &
+  nohup "$NODE" "$CREWSWARM_DIR/crew-lead.mjs" >> /tmp/crew-lead.log 2>&1 &
   # Dashboard
   pkill -f "scripts/dashboard.mjs" 2>/dev/null || true
   sleep 1
-  nohup "$NODE" "$OPENCLAW_DIR/scripts/dashboard.mjs" >> /tmp/dashboard.log 2>&1 &
+  nohup "$NODE" "$CREWSWARM_DIR/scripts/dashboard.mjs" >> /tmp/dashboard.log 2>&1 &
   echo "Stack started."
 }
 
@@ -163,7 +164,7 @@ cmd_send() {
     echo "Usage: openswitchctl send <agent> <message>" >&2
     exit 1
   fi
-  (cd "$OPENCLAW_DIR" && "$NODE" gateway-bridge.mjs --send "$to" "$msg")
+  (cd "$CREWSWARM_DIR" && "$NODE" gateway-bridge.mjs --send "$to" "$msg")
 }
 
 # ── broadcast <message> ──
@@ -173,7 +174,7 @@ cmd_broadcast() {
     echo "Usage: openswitchctl broadcast <message>" >&2
     exit 1
   fi
-  (cd "$OPENCLAW_DIR" && echo "/broadcast $msg" | "$NODE" gateway-bridge.mjs "/broadcast $msg")
+  (cd "$CREWSWARM_DIR" && echo "/broadcast $msg" | "$NODE" gateway-bridge.mjs "/broadcast $msg")
 }
 
 # ── dlq-replay <key> ──
@@ -183,7 +184,7 @@ cmd_dlq_replay() {
     echo "Usage: openswitchctl dlq-replay <key>" >&2
     exit 1
   fi
-  (cd "$OPENCLAW_DIR" && "$NODE" scripts/dlq-replay.mjs "$key")
+  (cd "$CREWSWARM_DIR" && "$NODE" scripts/dlq-replay.mjs "$key")
 }
 
 # ── restart-openclaw-gateway (macOS: open OpenClaw app) ──
@@ -193,13 +194,13 @@ cmd_restart_openclaw_gateway() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
     open -a OpenClaw 2>/dev/null || true
   fi
-  echo "OpenClaw Gateway restarted (or start the OpenClaw app manually)."
+  echo "Legacy gateway restarted (or start the OpenClaw app manually if installed)."
 }
 
 # ── restart-all: full stack restart via repo script ──
 cmd_restart_agents() {
-  if [[ -x "$OPENCLAW_DIR/scripts/restart-all-from-repo.sh" ]]; then
-    exec /bin/bash "$OPENCLAW_DIR/scripts/restart-all-from-repo.sh"
+  if [[ -x "$CREWSWARM_DIR/scripts/restart-all-from-repo.sh" ]]; then
+    exec /bin/bash "$CREWSWARM_DIR/scripts/restart-all-from-repo.sh"
   else
     cmd_stop
     sleep 2
@@ -222,7 +223,7 @@ cmd_restart_rt() {
 cmd_restart_gateway() {
   pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null || true
   sleep 2
-  (cd "$OPENCLAW_DIR" && export OPENCREW_RT_AUTH_TOKEN=$(rt_token) && "$NODE" scripts/start-crew.mjs)
+  (cd "$CREWSWARM_DIR" && export OPENCREW_RT_AUTH_TOKEN=$(rt_token) && "$NODE" scripts/start-crew.mjs)
 }
 
 # ── stop/start/restart single agent (for SwiftBar per-agent menu) ──
@@ -239,7 +240,7 @@ cmd_start_agent() {
   [[ -n "$agent" ]] || { echo "Usage: openswitchctl start-agent <agent>" >&2; exit 1; }
   cmd_stop_agent "$agent"
   sleep 0.5
-  (cd "$OPENCLAW_DIR" && export OPENCREW_RT_AUTH_TOKEN=$(rt_token) && "$NODE" scripts/start-crew.mjs)
+  (cd "$CREWSWARM_DIR" && export OPENCREW_RT_AUTH_TOKEN=$(rt_token) && "$NODE" scripts/start-crew.mjs)
   echo "Started (all missing agents)."
 }
 

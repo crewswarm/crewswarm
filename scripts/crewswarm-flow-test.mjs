@@ -16,7 +16,12 @@ import os from "node:os";
 import { execFile } from "node:child_process";
 
 const CREW_LEAD_URL = process.env.CREW_LEAD_URL || "http://localhost:5010";
-const RT_BASE       = path.join(os.homedir(), ".openclaw/workspace/shared-memory/claw-swarm/opencrew-rt/channels");
+// Same default as opencrew-rt-daemon; overridden by SHARED_MEMORY_DIR
+const RT_CHANNELS_BASE = path.join(
+  process.env.SHARED_MEMORY_DIR || path.join(os.homedir(), ".crewswarm", "workspace", "shared-memory"),
+  "claw-swarm", "opencrew-rt", "channels"
+);
+const RT_BASE       = RT_CHANNELS_BASE;
 const RT_DONE_LOG   = path.join(RT_BASE, "done.jsonl");
 const RT_CMD_LOG    = path.join(RT_BASE, "command.jsonl");
 const BUILD_DIR     = path.join(os.homedir(), "Desktop", "CrewBuildTest");

@@ -2439,6 +2439,9 @@ const PRESET_OPTIONS = [
   { value: 'web3',        label: '🌐 Web3 / Blockchain (Solidity)' },
   { value: 'automation',  label: '🕷️ Automation / scraping' },
   { value: 'docs',        label: '📖 Technical docs writer' },
+  { value: 'orchestrator', label: '🧠 Orchestrator / PM loop' },
+  { value: 'lead',        label: '🦊 Team lead / coordinator' },
+  { value: 'main',        label: '⚡ Main agent (general)' },
 ];
 function buildPresetOptions(placeholder) {
   var ph = placeholder || 'Presets\u2026';
@@ -2558,6 +2561,24 @@ const PROMPT_PRESETS = {
 - Use consistent structure: Overview, Installation, Usage, API Reference, Examples
 - Keep docs in sync with the actual implementation — flag any discrepancies
 - Output Markdown unless another format is explicitly requested\`,
+  orchestrator: \`You are the PM loop orchestrator. You read roadmaps, expand tasks, and route them to specialist agents.
+- Break each roadmap item into a single, scoped, actionable task
+- Route tasks to the right specialist: frontend, backend, iOS, DevOps, etc.
+- NEVER implement tasks yourself — your job is planning and delegation only
+- Keep task descriptions under 200 words, specify exact file paths
+- Mark items done only after confirmation from the executing agent\`,
+  lead: \`You are the team lead and coordinator. You delegate, track progress, and escalate blockers.
+- Assign tasks to the right agent based on their specialty
+- Track what's in progress and what's blocked
+- Escalate failures to crew-fixer and report status to crew-main
+- Do NOT implement tasks yourself — delegate everything
+- Communicate clearly: who is doing what, and what's blocked\`,
+  main: \`You are the main agent and general-purpose coordinator of the CrewSwarm crew.
+- Handle tasks that don't belong to a specialist
+- Delegate to specialist agents when a task clearly fits their domain
+- Use web search, memory, and browser tools when needed
+- Write and edit files directly for general tasks
+- Keep responses concise and action-oriented\`,
 };
 
 const PRESET_META = {
@@ -2581,6 +2602,9 @@ const PRESET_META = {
   web3:        { id: 'crew-web3',        name: 'Web3 Engineer',     emoji: '🌐' },
   automation:  { id: 'crew-automation',  name: 'Automation Bot',    emoji: '🕷️' },
   docs:        { id: 'crew-docs',        name: 'Docs Writer',       emoji: '📖' },
+  orchestrator: { id: 'orchestrator',   name: 'Orchestrator',      emoji: '🧠' },
+  lead:        { id: 'crew-lead',       name: 'Crew Lead',         emoji: '🦊' },
+  main:        { id: 'crew-main',       name: 'Main Agent',        emoji: '⚡' },
 };
 
 window.applyPromptPreset = function() {
@@ -2636,6 +2660,15 @@ function populateModelDropdown(selectId, currentVal) {
 document.getElementById('newAgentBtn').onclick = () => {
   document.getElementById('newAgentForm').style.display = 'block';
   populateModelDropdown('naModel', '');
+  // Populate preset dropdown dynamically (can't be server-rendered since PRESET_OPTIONS is client-side)
+  const sel = document.getElementById('naPromptPreset');
+  if (sel && sel.options.length <= 1) {
+    PRESET_OPTIONS.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.value; opt.textContent = p.label;
+      sel.appendChild(opt);
+    });
+  }
 };
 document.getElementById('naCancelBtn').onclick = () => {
   document.getElementById('newAgentForm').style.display = 'none';

@@ -20,7 +20,7 @@
 The stack has three layers:
 
 1. **OpenCrew RT** — WebSocket message bus. Agents subscribe to topics, tasks are dispatched targeted to one agent at a time. No broadcast races, no duplicate work.
-2. **OpenClaw Gateway** — LLM backend. Each agent maps to a model (Groq, Anthropic, OpenAI — any model the gateway supports). Handles tool execution (file write, read, exec, web search, etc.).
+2. **Direct LLM + tools** — Each agent uses its own model (Groq, Anthropic, OpenAI, etc.) from `~/.crewswarm/crewswarm.json`. Gateway-bridge handles tool execution (file write, read, run_cmd, etc.). An optional legacy gateway on port 18789 is supported but not required.
 3. **Orchestration layer** (this repo) — PM planning, phased builds, PM Loop, shared memory, fault recovery, dashboard, SwiftBar control plane.
 
 ---
@@ -62,7 +62,7 @@ A structured, multi-layer memory system that keeps the crew aligned across agent
 - **Token budget enforcement**: 2,500 chars per file, 12,000 chars total; files load in priority order and truncate at the budget, keeping context windows clean
 - **Mandatory protocol injection**: every agent call includes a `Mandatory memory protocol` header with current UTC and last handoff timestamp; if memory fails to load, the task aborts rather than running blind
 - **Handoff tracking**: `getLastHandoffTimestamp()` tells each agent exactly when the last agent-to-agent handoff occurred, preventing stale context
-- **Telemetry**: separate JSONL event log at `~/.openclaw/telemetry/events.log` tracking bootstrap events, load errors, protocol violations, retry attempts, and RT events
+- **Telemetry**: event logging for bootstrap, load errors, protocol violations, retry attempts, and RT events
 - **Memory status CLI**: `node gateway-bridge.mjs --memory-status` inspects loaded files, char counts, and missing items
 
 ### Project Management
@@ -77,7 +77,7 @@ Multiple named projects, each with its own output directory and `ROADMAP.md`. Ev
 - One-click DLQ replay from the dashboard
 
 ### Model-Agnostic
-Swap models per agent, per project. Anthropic for coder, Groq for PM expansion, OpenAI for QA — whatever the task calls for. Configure in `~/.openclaw/openclaw.json`. No code changes.
+Swap models per agent, per project. Anthropic for coder, Groq for PM expansion, OpenAI for QA — whatever the task calls for. Configure in `~/.crewswarm/crewswarm.json`. No code changes.
 
 ---
 
@@ -86,12 +86,12 @@ Swap models per agent, per project. Anthropic for coder, Groq for PM expansion, 
 | Agent | Alias | Role | Typical tasks |
 |---|---|---|---|
 | `crew-lead` | — | Chat commander | Conversational UI: roadmaps, dispatch, Q&A; uses Brave + codebase search for lookups |
-| `crew-main` | Quill | Coordinator | Chat, triage, kick off orchestrators |
+| `crew-main` | — | Coordinator | Chat, triage, kick off orchestrators |
 | `crew-pm` | Planner | Planning | Break requirements into tasks, assign agents |
-| `crew-coder` | Codex | Implementation | Write code, create files, run commands |
+| `crew-coder` | — | Implementation | Write code, create files, run commands |
 | `crew-qa` | Tester | Quality | Add tests, validate behavior |
 | `crew-fixer` | Debugger | Bug fixing | Debug failures, fix edge cases |
-| `security` | Guardian | Security | Vulnerability reviews, config hardening |
+| `crew-security` | Guardian | Security | Vulnerability reviews, config hardening |
 
 ---
 
@@ -125,7 +125,7 @@ Runs at `localhost:4319`. Sections:
 - crew-lead uses Brave Search and codebase search when your message looks like a question or lookup
 
 **Services**
-- Live status for RT Message Bus, Agent Crew, **crew-lead**, Telegram Bridge, OpenClaw Gateway, OpenCode Server, Dashboard
+- Live status for RT Message Bus, Agent Crew, **crew-lead**, Telegram Bridge, legacy gateway (optional), OpenCode Server, Dashboard
 - Restart or stop any service from one place
 
 **RT Messages**
@@ -165,8 +165,8 @@ Runs at `localhost:4319`. Sections:
 - Per-agent restart or start
 - "Open OpenCrewHQ Dashboard" with focus
 - Per-agent direct message; broadcast
-- RT Server and OpenClaw Link status
-- Debug links: RT log, crew-main log, plugin dir, OpenClaw dir
+- RT Server and legacy gateway status
+- Debug links: RT log, crew-lead log, plugin dir, CrewSwarm repo dir
 
 Install: copy `contrib/swiftbar/openswitch.10s.sh` to SwiftBar plugins dir, `chmod +x`, reload.
 
@@ -196,14 +196,14 @@ Any task that fails after max retries goes to the Dead Letter Queue. Dashboard D
 Shared memory holds current state, decisions, and handoff notes. Every agent call injects the same baseline. Restart tomorrow — the crew knows where it left off.
 
 ### 8. Swap models per task
-Use Anthropic Claude for coding quality, Groq for PM task expansion speed, OpenAI for QA validation. Configure per agent in `~/.openclaw/openclaw.json`. No code changes, no restarts required.
+Use Anthropic Claude for coding quality, Groq for PM task expansion speed, OpenAI for QA validation. Configure per agent in `~/.crewswarm/crewswarm.json`. No code changes, no restarts required.
 
 ---
 
 ## Technical Highlights (Short Bullets for Site)
 
 - OpenCrew RT WebSocket bus: command, done, issues, status, assign topics
-- OpenClaw Gateway: multi-model (Groq, Anthropic, OpenAI, NVIDIA), full tool execution
+- Direct LLM per agent (Groq, Anthropic, OpenAI, NVIDIA, etc. in crewswarm.json), full tool execution
 - PM Loop: ROADMAP.md → Groq task expansion → targeted send → mark done → self-extend
 - PID file prevents duplicate PM Loop processes; dashboard detects and kills stale instances
 - Phased PDD: MVP → Phase 1 → Phase 2; auto-breakdown of failed tasks into 2–4 subtasks

@@ -15,7 +15,7 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 ## [2026-02-22] system: CrewSwarm repo facts
 - Repo lives at `/Users/jeffhobbs/Desktop/CrewSwarm/`
 - The RT bus runs on `ws://localhost:18889`; crew-lead HTTP on `http://localhost:5010`; dashboard on `http://localhost:4319`
-- All agent tool permissions live in `~/.openclaw/openclaw.json` → `agents.list[n].tools.alsoAllow`
+- All agent tool permissions live in `~/.crewswarm/crewswarm.json` → `agents[].tools.alsoAllow` (or `tools.crewswarmAllow` for CrewSwarm @@TOOL names)
 
 ## [2026-02-22] crew-coder: tool call rules that work
 - Output ALL tool calls in ONE reply — never stop after @@MKDIR and wait for a response.

@@ -97,7 +97,37 @@ async function tgRequest(method, body = {}) {
   return json.result;
 }
 
+// Dedupe: avoid sending the same long message twice (e.g. roadmap sent via reply and again via another path)
+const lastSentByChat = new Map(); // chatId -> { content, ts }
+const DEDUPE_WINDOW_MS = 30000;  // wider window to catch SSE + RT race
+const DEDUPE_MIN_LEN = 200;      // catch shorter duplicates too
+
+// Normalise to raw content so SSE-wrapped and RT-raw versions both match
+function dedupeKey(text) {
+  return text.replace(/^✅ \*.+?\* finished:\n/, "").trim();
+}
+
+function shouldSkipDuplicate(chatId, text) {
+  if (!text) return false;
+  const key = dedupeKey(text);
+  if (key.length < DEDUPE_MIN_LEN) return false;
+  const last = lastSentByChat.get(chatId);
+  if (!last) return false;
+  if (Date.now() - last.ts > DEDUPE_WINDOW_MS) return false;
+  const lastKey = dedupeKey(last.content);
+  const same = lastKey === key;
+  const prefixMatch = lastKey.length > 200 && key.length > 200
+    && lastKey.slice(0, 200) === key.slice(0, 200)
+    && Math.abs(lastKey.length - key.length) < 200;
+  return same || prefixMatch;
+}
+
 async function tgSend(chatId, text) {
+  if (shouldSkipDuplicate(chatId, text)) {
+    log("info", "Skipping duplicate message to Telegram", { chatId, len: text.length });
+    return;
+  }
+  lastSentByChat.set(chatId, { content: text, ts: Date.now() });
   const chunks = splitMessage(text, 4000);
   for (const chunk of chunks) {
     await tgRequest("sendMessage", {
@@ -338,9 +368,18 @@ async function listenForAgentReplies() {
           try {
             const d = JSON.parse(line.slice(6));
             if (!d.from || !d.content) continue;
+            // Skip if the raw content was already forwarded by the RT path
+            let alreadySent = false;
+            for (const [chatId] of activeSessions) {
+              if (shouldSkipDuplicate(chatId, d.content)) { alreadySent = true; break; }
+            }
+            if (alreadySent) {
+              log("info", "SSE reply already sent via RT path — skipping", { from: d.from });
+              continue;
+            }
             const preview = d.content.length > 300 ? d.content.slice(0, 300) + "…" : d.content;
             const msg = `✅ *${d.from}* finished:\n${preview}\n\nReply to follow up or dispatch more work.`;
-            log("info", "Agent reply forwarded to Telegram", { from: d.from });
+            log("info", "Agent reply forwarded to Telegram (SSE)", { from: d.from });
             for (const [chatId] of activeSessions) {
               await tgSend(chatId, msg);
             }

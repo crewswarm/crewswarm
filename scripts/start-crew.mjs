@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * start-crew.mjs — Spawns one gateway-bridge daemon per agent in openclaw.json
+ * start-crew.mjs — Spawns one gateway-bridge daemon per agent in crewswarm.json
  *
  * Usage:
  *   node scripts/start-crew.mjs          # start all agents
@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-const OPENCLAW_DIR = path.resolve(process.env.OPENCLAW_DIR || process.cwd());
+const CREWSWARM_DIR = path.resolve(process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || process.cwd());
 // Config search order (same as gateway-bridge + RT daemon):
 // 1. ~/.crewswarm/config.json  (dashboard saves rt.authToken here)
 // 2. ~/.crewswarm/crewswarm.json
@@ -21,7 +21,7 @@ const OPENCLAW_DIR = path.resolve(process.env.OPENCLAW_DIR || process.cwd());
 const CREW_CONFIG  = path.join(os.homedir(), ".crewswarm", "config.json");
 const CREW_SWARM   = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 const OPENCLAW_CFG = path.join(os.homedir(), ".openclaw", "openclaw.json");
-const BRIDGE = path.join(OPENCLAW_DIR, "gateway-bridge.mjs");
+const BRIDGE = path.join(CREWSWARM_DIR, "gateway-bridge.mjs");
 
 function loadConfig() {
   // Load agent list from first available config
@@ -109,7 +109,7 @@ console.log(`  Launching new   : ${toStart.length} (${toStart.join(", ")})`);
 console.log();
 
 // crew-lead runs its own script, not gateway-bridge
-const CREW_LEAD_SCRIPT = path.join(OPENCLAW_DIR, "crew-lead.mjs");
+const CREW_LEAD_SCRIPT = path.join(CREWSWARM_DIR, "crew-lead.mjs");
 const crewLeadRunning = (() => {
   try {
     const out = execSync("ps aux", { encoding: "utf8" });
@@ -121,7 +121,7 @@ if (toStart.includes("crew-lead") && !crewLeadRunning && fs.existsSync(CREW_LEAD
   const logFile = path.join(os.tmpdir(), "bridge-crew-lead.log");
   const logFd = fs.openSync(logFile, "a");
   const proc = spawn("node", [CREW_LEAD_SCRIPT], {
-    cwd: OPENCLAW_DIR,
+    cwd: CREWSWARM_DIR,
     stdio: ["ignore", logFd, logFd],
     detached: true,
     env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: rtToken },
@@ -137,13 +137,13 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
     OPENCREW_RT_AUTH_TOKEN: rtToken,
     OPENCREW_RT_CHANNELS: "command,assign,handoff,reassign,events",
     OPENCREW_OPENCODE_ENABLED: "0",
-    OPENCLAW_DIR,
+    CREWSWARM_DIR,
   };
 
   const logFile = path.join(os.tmpdir(), `bridge-${rtId}.log`);
   const logFd = fs.openSync(logFile, "a");
   const proc = spawn("node", [BRIDGE, "--rt-daemon"], {
-    cwd: OPENCLAW_DIR,
+    cwd: CREWSWARM_DIR,
     stdio: ["ignore", logFd, logFd],
     detached: true,
     env,
@@ -153,14 +153,14 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
 }
 
 // crew-scribe — memory maintenance daemon (watches done.jsonl, writes brain.md + session-log.md)
-const SCRIBE_SCRIPT = path.join(OPENCLAW_DIR, "scripts", "crew-scribe.mjs");
+const SCRIBE_SCRIPT = path.join(CREWSWARM_DIR, "scripts", "crew-scribe.mjs");
 const scribeRunning = (() => {
   try { return execSync("ps aux", { encoding: "utf8" }).includes("crew-scribe.mjs"); } catch { return false; }
 })();
 if (!scribeRunning && fs.existsSync(SCRIBE_SCRIPT)) {
   const logFd = fs.openSync(path.join(os.tmpdir(), "crew-scribe.log"), "a");
   const proc = spawn("node", [SCRIBE_SCRIPT], {
-    cwd: OPENCLAW_DIR, stdio: ["ignore", logFd, logFd], detached: true,
+    cwd: CREWSWARM_DIR, stdio: ["ignore", logFd, logFd], detached: true,
     env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: rtToken },
   });
   proc.unref();

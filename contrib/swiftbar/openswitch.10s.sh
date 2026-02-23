@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENCLAW_DIR="${OPENCLAW_DIR:-$HOME/Desktop/CrewSwarm}"
+CREWSWARM_DIR="${CREWSWARM_DIR:-${OPENCLAW_DIR:-$HOME/Desktop/CrewSwarm}}"
 SWARM_PLUGIN_DIR="${SWARM_PLUGIN_DIR:-$HOME/swarm/.opencode/plugin}"
 # Prefer repo script so SwiftBar works without installing to ~/bin
-if [[ -x "$OPENCLAW_DIR/scripts/openswitchctl" ]]; then
-  CTL="$OPENCLAW_DIR/scripts/openswitchctl"
+if [[ -x "$CREWSWARM_DIR/scripts/openswitchctl" ]]; then
+  CTL="$CREWSWARM_DIR/scripts/openswitchctl"
 else
   CTL="$HOME/bin/openswitchctl"
 fi
 LOG_DIR="/tmp"
 DASHBOARD_URL="http://127.0.0.1:4319"
-ICONS_DIR="$OPENCLAW_DIR/website"
+ICONS_DIR="$CREWSWARM_DIR/website"
 
 # Status colors — only used on icon lines and status info rows
 STATUS_GREEN="#28a745"
@@ -126,20 +126,20 @@ for AGENT in "${AGENTS[@]}"; do
     echo "----🔴 $AGENT | bash='/bin/bash' param1='$CTL' param2=start-agent param3='$AGENT' terminal=false refresh=true"
   fi
 done
-echo "--$(_svc_icon $SVC_TG) Telegram Bridge         | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=telegram terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_CL) crew-lead               | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_OC) OpenCode Server         | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_DB) Dashboard               | bash='$OPENCLAW_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_TG) Telegram Bridge         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=telegram terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_CL) crew-lead               | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_OC) OpenCode Server         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_DB) Dashboard               | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
 if [[ "$SVC_CM" == "up" ]]; then
   echo "--🟢 ChatMock (port 8000) | bash='/bin/bash' param1='-c' param2='pkill -f chatmock.py' terminal=false refresh=true"
 else
-  echo "--🔴 ChatMock             | bash='osascript' param1='-e' param2='tell app \"Terminal\" to do script \"cd $OPENCLAW_DIR && bash scripts/chatmock-serve.sh\"' terminal=false refresh=true"
+  echo "--🔴 ChatMock             | bash='osascript' param1='-e' param2='tell app \"Terminal\" to do script \"cd $CREWSWARM_DIR && bash scripts/chatmock-serve.sh\"' terminal=false refresh=true"
 fi
 
 # ── Quick links ──────────────────────────────────────────────────────
 echo "---"
 echo "🖥️  Open Dashboard      | href='$DASHBOARD_URL/#chat'"
-echo "📁 Open CrewSwarm Repo | bash='open' param1='$OPENCLAW_DIR' terminal=false refresh=false"
+echo "📁 Open CrewSwarm Repo | bash='open' param1='$CREWSWARM_DIR' terminal=false refresh=false"
 
 # ── Logs ─────────────────────────────────────────────────────────────
 echo "---"
@@ -147,4 +147,4 @@ echo "🔧 Logs"
 echo "RT Log        | bash='open' param1='$LOG_DIR/opencrew-rt-daemon.log' terminal=false"
 echo "crew-lead Log | bash='open' param1='$LOG_DIR/crew-lead.log' terminal=false"
 echo "Dashboard Log | bash='open' param1='$LOG_DIR/dashboard.log' terminal=false"
-echo "CrewSwarm Dir | bash='open' param1='$OPENCLAW_DIR' terminal=false"
+echo "CrewSwarm Dir | bash='open' param1='$CREWSWARM_DIR' terminal=false"

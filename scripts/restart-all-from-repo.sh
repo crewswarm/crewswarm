@@ -7,7 +7,8 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
-export OPENCLAW_DIR="$REPO_DIR"
+export CREWSWARM_DIR="$REPO_DIR"
+export OPENCLAW_DIR="$REPO_DIR"   # backward compat for scripts that only check this
 export NODE="${NODE:-node}"
 
 echo "Stopping existing CrewSwarm processes..."

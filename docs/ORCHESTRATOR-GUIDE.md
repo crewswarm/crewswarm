@@ -158,13 +158,13 @@ The orchestrator shows live updates:
 **Fix:**
 ```bash
 # Check which agent is stuck
-bash ~/bin/openswitchctl status
+bash scripts/openswitchctl status   # or ~/bin/openswitchctl if installed
 
-# Check errors
-tail -50 ~/.openclaw/workspace/shared-memory/claw-swarm/opencrew-rt/channels/issues.jsonl
+# Check errors (default path; overridden by SHARED_MEMORY_DIR)
+tail -50 ~/.crewswarm/workspace/shared-memory/claw-swarm/opencrew-rt/channels/issues.jsonl
 
 # Restart stuck agent
-bash ~/bin/openswitchctl restart-agent crew-coder
+bash scripts/openswitchctl restart-agent crew-coder
 ```
 
 ### "PM not dispatching tasks"
@@ -191,7 +191,7 @@ bash ~/bin/openswitchctl status
 **Fix:**
 ```bash
 # Check agent models
-grep '"model":' ~/.openclaw/openclaw.json | head -7
+grep '"model":' ~/.crewswarm/crewswarm.json | head -7
 
 # Should all be: groq/llama-3.3-70b-versatile
 ```

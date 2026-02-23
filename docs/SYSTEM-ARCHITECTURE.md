@@ -272,9 +272,9 @@ User types in dashboard Chat tab
 
 | Process | Port | Config |
 |---|---|---|
-| `opencrew-rt-daemon.mjs` | 18889 (WebSocket) | `~/.openclaw/openclaw.json` |
-| `crew-lead.mjs` | 5010 (HTTP) | `~/.crewswarm/config.json` |
-| `scripts/dashboard.mjs` | 4319 (HTTP) | reads both config files |
+| `opencrew-rt-daemon.mjs` | 18889 (WebSocket) | `~/.crewswarm/config.json` (rt.authToken); fallback `~/.openclaw/openclaw.json` |
+| `crew-lead.mjs` | 5010 (HTTP) | `~/.crewswarm/config.json`, `crewswarm.json`, `agent-prompts.json` |
+| `scripts/dashboard.mjs` | 4319 (HTTP) | `~/.crewswarm/` first; legacy `~/.openclaw/` fallback |
 | `gateway-bridge.mjs` × N | — (outbound only) | `OPENCREW_RT_AGENT` env var per process |
 | `telegram-bridge.mjs` | — (outbound only) | `TELEGRAM_BOT_TOKEN` env var |
 | `scripts/crew-scribe.mjs` | — (no port) | reads `done.jsonl`, writes `memory/` |
@@ -285,13 +285,13 @@ User types in dashboard Chat tab
 
 | Path | Purpose |
 |---|---|
-| `~/.crewswarm/config.json` | API keys, RT auth token, crew-lead model |
-| `~/.openclaw/openclaw.json` | Per-agent model assignments, tool permissions |
-| `~/.openclaw/agent-prompts.json` | Per-agent system prompts |
+| `~/.crewswarm/crewswarm.json` | **Canonical:** agents, providers (API keys), per-agent model assignments, tool permissions. |
+| `~/.crewswarm/config.json` | RT auth token; optional crew-lead model. |
+| `~/.crewswarm/agent-prompts.json` | **Canonical:** per-agent system prompts. (Legacy fallback: `~/.openclaw/agent-prompts.json`.) |
 | `~/.crewswarm/chat-history/*.jsonl` | Per-session conversation history |
 | `~/.crewswarm/token-usage.json` | Accumulated token/cost data |
 | `~/.crewswarm/cmd-allowlist.json` | Pre-approved @@RUN_CMD patterns |
 | `~/.crewswarm/scribe-state.json` | crew-scribe read cursor for done.jsonl |
-| `~/.openclaw/workspace/…/done.jsonl` | Task completion log (RT bus output) |
-| `~/.openclaw/workspace/…/events.jsonl` | RT bus event log |
-| `~/.openclaw/workspace/…/dlq/*.json` | Failed tasks pending replay |
+| `~/.crewswarm/workspace/shared-memory/…/done.jsonl` | Task completion log (RT bus output). Default; overridden by `SHARED_MEMORY_DIR`. (Legacy: `~/.openclaw/workspace/…`.) |
+| `~/.crewswarm/workspace/shared-memory/…/events.jsonl` | RT bus event log |
+| `~/.crewswarm/logs/dlq/*.json` | Failed tasks pending replay (or under shared-memory per RT daemon). (Legacy: `~/.openclaw/workspace/…/dlq`.) |

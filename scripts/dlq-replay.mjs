@@ -14,7 +14,7 @@ const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
   || process.env.OPENCREWHQ_CONFIG_DIR   // legacy env alias
   || path.join(os.homedir(), ".crewswarm");
 const DLQ_DIR = path.join(CFG_DIR, "logs", "dlq");
-const OPENCLAW_DIR = process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
 
 const key = process.argv[2];
 if (!key) {
@@ -44,12 +44,12 @@ if (!agent) {
   process.exit(4);
 }
 
-const bridge = path.join(OPENCLAW_DIR, "gateway-bridge.mjs");
+const bridge = path.join(CREWSWARM_DIR, "gateway-bridge.mjs");
 const result = spawnSync("node", [bridge, "--send", agent, prompt], {
-  cwd: OPENCLAW_DIR,
+  cwd: CREWSWARM_DIR,
   encoding: "utf8",
   timeout: 120000,
-  env: { ...process.env, OPENCLAW_DIR },
+  env: { ...process.env, CREWSWARM_DIR },
 });
 
 if (result.status !== 0) {

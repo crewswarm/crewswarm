@@ -17,7 +17,7 @@ chmod +x ~/Library/Application\ Support/SwiftBar/Plugins/openswitch.10s.sh
 Then edit the top of the installed file to set your repo path:
 
 ```bash
-OPENCLAW_DIR="$HOME/Desktop/CrewSwarm"   # path to your CrewSwarm repo
+CREWSWARM_DIR="$HOME/Desktop/CrewSwarm"   # path to your CrewSwarm repo
 ```
 
 ## Requires

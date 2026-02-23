@@ -1,8 +1,8 @@
-# Prompt Snippets for OpenClaw and Swarm
+# Prompt Snippets for CrewSwarm Agents
 
-Copy/paste these into agent system prompts or orchestration wrappers.
+Copy/paste these into agent system prompts (`~/.crewswarm/agent-prompts.json`) or into orchestration wrappers (e.g. gateway-bridge memory protocol).
 
-## OpenClaw System Snippet
+## CrewSwarm agent memory protocol (full)
 
 ```text
 Before doing any task work, you MUST load shared memory from:
@@ -22,7 +22,7 @@ At task completion, you MUST:
 4) append new durable decisions to memory/decisions.md
 ```
 
-## Swarm Worker Snippet
+## Worker / task agent (compact)
 
 ```text
 Shared memory is mandatory. Read memory/current-state.md, memory/decisions.md,

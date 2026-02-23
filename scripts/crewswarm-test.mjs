@@ -55,9 +55,10 @@ async function httpGet(url, timeoutMs = 4000) {
 }
 
 function loadConfig() {
+  // Prefer crewswarm.json (has agents + providers), then config.json (RT token), then legacy openclaw
   const paths = [
-    join(homedir(), ".crewswarm", "config.json"),
     join(homedir(), ".crewswarm", "crewswarm.json"),
+    join(homedir(), ".crewswarm", "config.json"),
     join(homedir(), ".openclaw", "openclaw.json"),
   ];
   for (const p of paths) {
@@ -96,16 +97,14 @@ console.log(D("1. Config files"));
   if (token) pass("RT auth token present", `${token.slice(0, 8)}...`);
   else skip("RT auth token", "No token — RT daemon runs unauthenticated (fine for local)");
 
-  const ocPath = join(homedir(), ".openclaw", "openclaw.json");
-  if (existsSync(ocPath)) {
-    const oc = JSON.parse(readFileSync(ocPath, "utf8"));
-    const agents = Array.isArray(oc.agents) ? oc.agents : (oc.agents?.list || []);
-    if (agents.length) pass("openclaw.json agents", `${agents.length} agents defined`);
-    else fail("openclaw.json agents", "No agents in openclaw.json");
-    const providers = Object.keys(oc?.models?.providers || {});
+  if (cfgPath && cfg) {
+    const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
+    const providers = Object.keys(cfg?.providers || cfg?.models?.providers || {});
+    if (agents.length) pass("config agents", `${agents.length} agents in ${cfgPath}`);
+    else fail("config agents", "No agents in config");
     if (providers.length) pass("LLM providers configured", providers.join(", "));
-    else fail("LLM providers configured", "No providers in openclaw.json");
-  } else fail("openclaw.json exists", ocPath);
+    else fail("LLM providers configured", "No providers in config");
+  }
 }
 
 // 2. Processes
@@ -259,26 +258,42 @@ if (QUICK) {
   }
 }
 
-// 8. Agent model routing
+// 8. Agent model routing + prompts and profiles (uses crewswarm.json or openclaw)
 console.log(D("\n8. Agent model routing"));
 {
-  const ocPath = join(homedir(), ".openclaw", "openclaw.json");
-  if (existsSync(ocPath)) {
-    const oc = JSON.parse(readFileSync(ocPath, "utf8"));
-    const agents = Array.isArray(oc.agents) ? oc.agents : (oc.agents?.list || []);
-    const providers = oc?.models?.providers || {};
-    let allOk = true;
-    for (const agent of agents) {
-      if (!agent.model) continue;
-      const [provKey] = agent.model.split("/");
-      const prov = providers[provKey];
-      if (!prov?.baseUrl || !prov?.apiKey) {
-        fail(`${agent.id} model provider`, `"${provKey}" missing baseUrl or apiKey`);
-        allOk = false;
-      }
+  const { cfg } = loadConfig();
+  const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
+  const providers = cfg?.providers || cfg?.models?.providers || {};
+  let allOk = true;
+  for (const agent of agents) {
+    if (!agent.model) continue;
+    const [provKey] = agent.model.split("/");
+    const prov = providers[provKey];
+    if (!prov?.baseUrl || !prov?.apiKey) {
+      fail(`${agent.id} model provider`, `"${provKey}" missing baseUrl or apiKey`);
+      allOk = false;
     }
-    if (allOk && agents.length) pass("All agent models have valid providers", `${agents.filter(a=>a.model).length} configured`);
   }
+  if (allOk && agents.length) pass("All agent models have valid providers", `${agents.filter(a=>a.model).length} configured`);
+
+  // Agent prompts (crewswarm canonical path, then legacy)
+  let prompts = {};
+  for (const p of [join(homedir(), ".crewswarm", "agent-prompts.json"), join(homedir(), ".openclaw", "agent-prompts.json")]) {
+    if (existsSync(p)) {
+      try { prompts = JSON.parse(readFileSync(p, "utf8")); break; } catch {}
+    }
+  }
+  const agentsWithPrompts = new Set(Object.keys(prompts));
+  const crewIds = agents.map(a => (a.id || "").startsWith("crew-") ? a.id : `crew-${a.id}`);
+  const missingPrompts = crewIds.filter(id => !prompts[id] && !prompts[id.replace(/^crew-/, "")]);
+  if (missingPrompts.length) {
+    fail("Agent prompts coverage", `${missingPrompts.length} agents without prompt: ${missingPrompts.slice(0, 5).join(", ")}${missingPrompts.length > 5 ? "..." : ""}`);
+  } else if (agents.length) {
+    pass("Agent prompts coverage", `${agents.length} agents have prompts`);
+  }
+  const withWorkspace = agents.filter(a => a.workspace && String(a.workspace).trim());
+  if (withWorkspace.length) pass("Agent workspaces (profiles)", `${withWorkspace.length} have workspace set`);
+  else skip("Agent workspaces (profiles)", "optional");
 
   // Verify openai-local (Codex) reachable if configured
   if (portOpen(8000)) {
@@ -290,12 +305,15 @@ console.log(D("\n8. Agent model routing"));
   } else skip("Local Codex server (port 8000)", "not running");
 }
 
-// 9. RT events log
+// 9. RT events log (same default as opencrew-rt-daemon: ~/.crewswarm or SHARED_MEMORY_DIR)
 console.log(D("\n9. RT events log"));
 {
-  const logPath = join(homedir(), ".openclaw", "workspace", "shared-memory", "claw-swarm", "opencrew-rt", "events.jsonl");
-  if (existsSync(logPath)) {
-    const lines = readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean);
+  const memoryBase = process.env.SHARED_MEMORY_DIR || join(homedir(), ".crewswarm", "workspace", "shared-memory");
+  const logPath = join(memoryBase, "claw-swarm", "opencrew-rt", "events.jsonl");
+  const logPathLegacy = join(homedir(), ".openclaw", "workspace", "shared-memory", "claw-swarm", "opencrew-rt", "events.jsonl");
+  const pathToCheck = existsSync(logPath) ? logPath : (existsSync(logPathLegacy) ? logPathLegacy : null);
+  if (pathToCheck) {
+    const lines = readFileSync(pathToCheck, "utf8").trim().split("\n").filter(Boolean);
     pass("RT events.jsonl exists", `${lines.length} total events`);
     const recent = lines.slice(-200).filter(l => !l.includes("heartbeat") && !l.includes("agent.online"));
     if (recent.length > 0) {
@@ -303,7 +321,7 @@ console.log(D("\n9. RT events log"));
       const env = last.envelope || last;
       pass("Recent non-heartbeat events", `last: ${env.type} ${env.from}→${env.to} @ ${env.ts?.slice(11,19)}`);
     } else skip("Recent task events", "no task events in last 200 lines");
-  } else fail("RT events.jsonl exists", logPath);
+  } else skip("RT events.jsonl exists", `not found under ${memoryBase} or legacy path (daemon may use SHARED_MEMORY_DIR)`);
 }
 
 // 10. SwiftBar / openswitchctl

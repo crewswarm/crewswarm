@@ -34,7 +34,7 @@ Record durable choices here. Append new decisions at the top.
 
 ## [DEC-003] Centralize memory protocol prompt assembly in gateway wrapper
 - Date: 2026-02-19 08:00 UTC
-- Owner: openclaw-main
+- Owner: crew-main
 - Context: Direct chat and realtime task paths previously assembled prompts independently, risking drift in startup/shutdown memory instructions.
 - Decision: Route both paths through `buildTaskPrompt` and inject one shared mandatory memory protocol block plus handoff timestamp context.
 - Impact: All current gateway entrypoints apply the same memory checklist behavior before model execution.
@@ -42,7 +42,7 @@ Record durable choices here. Append new decisions at the top.
 
 ## [DEC-002] Enforce memory hooks in wrapper and agent prompts
 - Date: 2026-02-19 07:59 UTC
-- Owner: openclaw-main
+- Owner: crew-main
 - Context: Startup hook location remained open and could cause context drift if only one layer enforced memory loading.
 - Decision: Apply shared memory startup/shutdown requirements in both orchestration wrapper logic and agent system prompts.
 - Impact: Tasks fail closed when memory cannot load, and every runtime path uses the same baseline context.

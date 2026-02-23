@@ -20,10 +20,10 @@ const ALLOWED_AGENTS = (process.env.OPENCLAW_ALLOWED_AGENTS || DEFAULT_ALLOWED_A
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-const API_KEY = (process.env.OPENCLAW_API_KEY || "").trim();
+const API_KEY = (process.env.CREWSWARM_API_KEY || process.env.OPENCLAW_API_KEY || "").trim();
 const REQUIRE_API_KEY = (process.env.OPENCLAW_REQUIRE_API_KEY || "1") !== "0";
 
-const MEMORY_BASE_DIR = process.env.SHARED_MEMORY_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".openclaw", "workspace", "shared-memory");
+const MEMORY_BASE_DIR = process.env.SHARED_MEMORY_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".crewswarm", "workspace", "shared-memory");
 const MEMORY_NAMESPACE = process.env.SHARED_MEMORY_NAMESPACE || "claw-swarm";
 const PROTOCOL_DIR = join(MEMORY_BASE_DIR, MEMORY_NAMESPACE, "opencrew-rt");
 const CHANNEL_DIR = join(PROTOCOL_DIR, "channels");
@@ -76,7 +76,7 @@ function checkPermissions(context, providedKey) {
     failUnauthorized(`agent "${agentId}" not in allowlist`);
   }
   if (REQUIRE_API_KEY && !API_KEY) {
-    failUnauthorized("OPENCLAW_API_KEY is required but not configured");
+    failUnauthorized("API key is required (set OPENCLAW_API_KEY or CREWSWARM_API_KEY)");
   }
   if (REQUIRE_API_KEY) {
     const key = (providedKey || "").trim();

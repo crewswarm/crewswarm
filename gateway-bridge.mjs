@@ -15,10 +15,10 @@ import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 
-const STATE_DIR = path.join(os.homedir(), ".openclaw");
+const LEGACY_STATE_DIR = path.join(os.homedir(), ".openclaw");
 const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
 const CREWSWARM_CONFIG_PATH = path.join(CREWSWARM_DIR, "config.json");
-const TELEMETRY_DIR = path.join(STATE_DIR, "telemetry");
+const TELEMETRY_DIR = path.join(LEGACY_STATE_DIR, "telemetry");
 
 // ── Built-in provider base URLs — users only need to supply apiKey ──────────
 const PROVIDER_REGISTRY = {
@@ -37,7 +37,7 @@ const PROVIDER_REGISTRY = {
 
 // ── Config resolver: ~/.crewswarm/config.json first, ~/.openclaw/openclaw.json fallback ──
 function resolveConfig() {
-  const paths = [CREWSWARM_CONFIG_PATH, path.join(STATE_DIR, "openclaw.json")];
+  const paths = [CREWSWARM_CONFIG_PATH, path.join(LEGACY_STATE_DIR, "openclaw.json")];
   for (const p of paths) {
     try {
       const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -90,7 +90,7 @@ const OPENCREW_RT_AGENT = process.env.OPENCREW_RT_AGENT || "crew-main";
 function getRTToken() {
   if (process.env.OPENCREW_RT_AUTH_TOKEN) return process.env.OPENCREW_RT_AUTH_TOKEN;
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(STATE_DIR, "openclaw.json"), "utf8"));
+    const cfg = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "openclaw.json"), "utf8"));
     return cfg.env?.OPENCREW_RT_AUTH_TOKEN || "";
   } catch {
     return "";
@@ -116,7 +116,7 @@ const OPENCREW_OPENCODE_PROJECT = process.env.OPENCREW_OPENCODE_PROJECT || proce
 const OPENCREW_OPENCODE_AGENT = process.env.OPENCREW_OPENCODE_AGENT || "admin";
 const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "opencode/glm-5-free";
 const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "180000");
-// ── Auto-load agents from openclaw.json so new agents added via the dashboard
+// ── Auto-load agents from crewswarm.json / openclaw.json (legacy) so new agents added via the dashboard
 //    are immediately available without editing this file.
 function buildAgentMapsFromConfig() {
   const BUILT_IN_RT_AGENTS = "crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter";
@@ -136,7 +136,7 @@ function buildAgentMapsFromConfig() {
     return { list, map };
   }
 
-  // Merge built-in agents with any extra agents defined in openclaw.json
+  // Merge built-in agents with any extra agents defined in crewswarm.json or openclaw.json (legacy)
   try {
     const cfgPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
     const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
@@ -163,10 +163,10 @@ function buildAgentMapsFromConfig() {
   }
 }
 
-const { list: OPENCREW_RT_SWARM_AGENTS, map: OPENCREW_TO_OPENCLAW_AGENT_MAP } = buildAgentMapsFromConfig();
+const { list: OPENCREW_RT_SWARM_AGENTS, map: RT_TO_GATEWAY_AGENT_MAP } = buildAgentMapsFromConfig();
 console.log(`[bridge] Registered ${OPENCREW_RT_SWARM_AGENTS.length} RT agents: ${OPENCREW_RT_SWARM_AGENTS.join(", ")}`);
 
-// ── Direct LLM call — bypasses OpenClaw, uses agent's configured model directly ──
+// ── Direct LLM call — bypasses legacy gateway, uses agent's configured model directly ──
 
 // Load agent list — checks crewswarm.json first (canonical), falls back to openclaw.json
 function loadAgentList() {
@@ -233,7 +233,7 @@ function loadAgentLLMConfig(ocAgentId) {
 
 async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
   const llm = loadAgentLLMConfig(ocAgentId);
-  if (!llm) return null; // fall through to OpenClaw
+  if (!llm) return null; // fall through to legacy gateway
 
   const messages = [];
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
@@ -312,7 +312,7 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
     return null;
   }
 }
-const SHARED_MEMORY_BASE = process.env.SHARED_MEMORY_DIR || path.join(os.homedir(), ".openclaw", "workspace", "shared-memory");
+const SHARED_MEMORY_BASE = process.env.SHARED_MEMORY_DIR || path.join(os.homedir(), ".crewswarm", "workspace", "shared-memory");
 const SHARED_MEMORY_NAMESPACE = process.env.SHARED_MEMORY_NAMESPACE || "claw-swarm";
 const SWARM_STATUS_LOG = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "channels", "status.jsonl");
 const SWARM_DISPATCH_DIR = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "dispatch");
@@ -393,6 +393,16 @@ async function withRetry(fn, { retries = 2, baseDelayMs = 300, label = "request"
 function parseTextContent(content) {
   return typeof content === "string" ? content
     : Array.isArray(content) ? content.filter((c) => c.type === "text").map((c) => c.text).join("") : "";
+}
+
+/** Remove <think>...</think> reasoning blocks so they are not shown in task.done (e.g. local Codex / reasoning models). */
+function stripThink(text) {
+  if (!text || typeof text !== "string") return text;
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<\/think>/g, "")
+    .replace(/<think>/g, "")
+    .trim();
 }
 
 function parseJsonSafe(raw, fallback = {}) {
@@ -889,12 +899,12 @@ const AGENT_TOOL_ROLE_DEFAULTS = {
   'crew-lead':        new Set(['dispatch']),
 };
 
-// CrewSwarm @@TOOL permission names — distinct from OpenClaw tool names
+// CrewSwarm @@TOOL permission names — distinct from legacy gateway tool names
 const CREWSWARM_TOOL_NAMES = new Set(['write_file','read_file','mkdir','run_cmd','git','dispatch']);
 
 function loadAgentToolPermissions(agentId) {
   // Check config files for explicit CrewSwarm-style tool permissions.
-  // tools.alsoAllow in crewswarm.json contains OpenClaw tool names (exec, web_search, etc.)
+  // tools.alsoAllow in crewswarm.json may contain legacy gateway tool names (exec, web_search, etc.)
   // — only use it if it contains at least one CrewSwarm @@TOOL name.
   try {
     const cfgPaths = [
@@ -909,7 +919,7 @@ function loadAgentToolPermissions(agentId) {
       const crewId = agentId.startsWith("crew-") ? agentId : `crew-${agentId}`;
       const bareId = agentId.startsWith("crew-") ? agentId.slice(5) : agentId;
       const agent = agents.find(a => a.id === agentId || a.id === crewId || a.id === bareId);
-      // Only accept if the list contains CrewSwarm-style tool names, not just OpenClaw names
+      // Only accept if the list contains CrewSwarm-style tool names, not just legacy gateway names
       const allow = agent?.tools?.crewswarmAllow || agent?.tools?.alsoAllow || [];
       const crewswarmTools = allow.filter(t => CREWSWARM_TOOL_NAMES.has(t));
       if (crewswarmTools.length > 0) {
@@ -1030,6 +1040,15 @@ function recordTokenUsage(modelId, usage) {
   }
 }
 
+// Sanitize paths from agent replies — strip markdown/hallucination (backticks, trailing punctuation)
+function sanitizeToolPath(raw) {
+  if (typeof raw !== "string") return "";
+  let s = raw.trim().replace(/\s+/g, " ").replace(/`/g, "");
+  while (s.length > 1 && (s.endsWith(".") || s.endsWith(","))) s = s.slice(0, -1).trim();
+  s = s.replace(/^~/, os.homedir());
+  return s;
+}
+
 async function executeToolCalls(reply, agentId) {
   const allowed = loadAgentToolPermissions(agentId);
   const results = [];
@@ -1042,7 +1061,7 @@ async function executeToolCalls(reply, agentId) {
       results.push(`[tool:write_file] ⛔ ${agentId} does not have write_file permission`);
       continue;
     }
-    const filePath = m[1].trim().replace(/^~/, os.homedir());
+    const filePath = sanitizeToolPath(m[1]);
     const contents = m[2];
     try {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -1064,7 +1083,7 @@ async function executeToolCalls(reply, agentId) {
       results.push(`[tool:read_file] ⛔ ${agentId} does not have read_file permission`);
       continue;
     }
-    const filePath = m[1].trim().replace(/^~/, os.homedir());
+    const filePath = sanitizeToolPath(m[1]);
     try {
       const content = fs.readFileSync(filePath, "utf8");
       const snippet = content.length > 4000 ? content.slice(0, 4000) + "\n...[truncated]" : content;
@@ -1081,7 +1100,7 @@ async function executeToolCalls(reply, agentId) {
       results.push(`[tool:mkdir] ⛔ ${agentId} does not have mkdir permission`);
       continue;
     }
-    const dirPath = m[1].trim().replace(/^~/, os.homedir());
+    const dirPath = sanitizeToolPath(m[1]);
     try {
       fs.mkdirSync(dirPath, { recursive: true });
       results.push(`[tool:mkdir] ✅ Created directory: ${dirPath}`);
@@ -1161,7 +1180,7 @@ function shouldUseOpenCode(payload, prompt, incomingType) {
   if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
 
   // Only use OpenCode if explicitly requested via runtime flag or payload hint.
-  // All other tasks route through OpenClaw gateway using the agent's configured model.
+  // All other tasks route through legacy gateway using the agent's configured model.
   const runtime = String(payload?.runtime || payload?.executor || payload?.engine || "").toLowerCase();
   if (runtime === "opencode" || runtime === "codex" || runtime === "gpt5" || runtime === "gpt-5") return true;
   if (payload?.useOpenCode === true) return true;
@@ -1172,8 +1191,8 @@ function shouldConnectGateway(args) {
   if (process.env.OPENCREW_FORCE_GATEWAY === "1") return true;
   if (args.includes("--broadcast")) return false;
   if (args[0] === "--send") return false;
-  // In RT-daemon mode: skip OpenClaw Gateway unless explicitly forced.
-  // Agents use direct LLM calls; OpenClaw is optional.
+  // In RT-daemon mode: skip legacy gateway unless explicitly forced.
+  // Agents use direct LLM calls; legacy gateway is optional.
   if (args.includes("--rt-daemon")) {
     if (process.env.OPENCREW_GATEWAY_ENABLED === "1") return true;
     return false;
@@ -1647,7 +1666,7 @@ function formatError(err) {
   const lower = msg.toLowerCase();
   let hint = "Hint: run --quickstart to verify connection and channel status.";
   if (lower.includes("enoent") || lower.includes("device.json") || lower.includes("openclaw.json")) {
-    hint = `Hint: initialize OpenClaw first so identity/config exist under ${STATE_DIR}.`;
+    hint = `Hint: initialize config (e.g. run install) so identity/config exist under ~/.crewswarm or legacy path.`;
   } else if (lower.includes("econnrefused") || lower.includes("connect") || lower.includes("websocket")) {
     hint = "Hint: start the local gateway service, then re-run with --quickstart.";
   } else if (lower.includes("timeout")) {
@@ -1934,11 +1953,11 @@ function printMetrics() {
 }
 
 function loadCredentials() {
-  const dev = JSON.parse(fs.readFileSync(path.join(STATE_DIR, "identity/device.json"), "utf8"));
+  const dev = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "identity/device.json"), "utf8"));
   // Try crewswarm.json first, fall back to openclaw.json
   const cfgPath = fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
     ? path.join(os.homedir(), ".crewswarm", "crewswarm.json")
-    : path.join(STATE_DIR, "openclaw.json");
+    : path.join(LEGACY_STATE_DIR, "openclaw.json");
   const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
   const gatewayToken = cfg.gateway?.auth?.token;
   // Prefer gateway token when gateway is in token mode (avoids device token mismatch)
@@ -1947,7 +1966,7 @@ function loadCredentials() {
   }
   let deviceToken;
   try {
-    const da = JSON.parse(fs.readFileSync(path.join(STATE_DIR, "identity/device-auth.json"), "utf8"));
+    const da = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "identity/device-auth.json"), "utf8"));
     deviceToken = da?.tokens?.operator?.token;
   } catch {}
   return { dev, authToken: deviceToken || gatewayToken };
@@ -2324,7 +2343,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       payload: {
         source: OPENCREW_RT_AGENT,
         action,
-        note: "OpenClaw bridge supports run_task and collect_status command actions",
+        note: "Legacy bridge supports run_task and collect_status command actions",
       },
     });
     client.ack({ messageId: envelope.id, status: "failed", note: `unsupported action ${action}` });
@@ -2467,31 +2486,32 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         const msg = opencodeErr?.message ?? String(opencodeErr);
         if (bridge?.kind === "gateway") {
           telemetry("realtime_opencode_fallback", { taskId, incomingType, error: msg });
-          progress(`OpenCode route failed, falling back to OpenClaw model: ${msg.slice(0, 120)}`);
-          const openclawAgentId = OPENCREW_TO_OPENCLAW_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
-          reply = await bridge.chat(finalPrompt, openclawAgentId, { idempotencyKey: dispatchKey });
+          progress(`OpenCode route failed, falling back to legacy gateway model: ${msg.slice(0, 120)}`);
+          const gatewayAgentId = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
+          reply = await bridge.chat(finalPrompt, gatewayAgentId, { idempotencyKey: dispatchKey });
         } else {
           throw opencodeErr;
         }
       }
     } else {
-      // Try direct LLM call first (uses agent's configured model/provider from openclaw.json)
-      const ocAgentId = OPENCREW_TO_OPENCLAW_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
+      // Try direct LLM call first (uses agent's configured model/provider from crewswarm.json)
+      const ocAgentId = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
       const agentSysPrompt = loadAgentPrompts()[ocAgentId] || null;
       progress(`Trying direct LLM for ${OPENCREW_RT_AGENT} (mapped: ${ocAgentId})...`);
       reply = await callLLMDirect(finalPrompt, ocAgentId, agentSysPrompt);
 
       if (!reply) {
-        // Fall through to OpenClaw gateway (uses its default model)
-        progress(`No direct LLM config for ${ocAgentId}, falling back to OpenClaw gateway...`);
+        // Fall through to legacy gateway (uses its default model)
+        progress(`No direct LLM config for ${ocAgentId}, falling back to legacy gateway...`);
         telemetry("realtime_direct_llm_fallback", { taskId, ocAgentId, incomingType });
         assertTaskPromptProtocol(finalPrompt, "realtime-gateway-chat");
         reply = await bridge.chat(finalPrompt, ocAgentId, { idempotencyKey: dispatchKey });
       }
     }
     if (!reply || reply === "(timeout - no reply)") {
-      throw new Error("OpenClaw chat timeout while processing realtime task");
+      throw new Error("Chat timeout while processing realtime task");
     }
+    reply = stripThink(reply);
 
     // Execute any tool calls embedded in the agent's reply
     const toolResults = await executeToolCalls(reply, OPENCREW_RT_AGENT);
@@ -2620,7 +2640,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         idempotencyKey: dispatchKey,
       },
     });
-    client.ack({ messageId: envelope.id, status: "done", note: "openclaw completed task" });
+    client.ack({ messageId: envelope.id, status: "done", note: "task completed" });
   } catch (err) {
     const message = err?.message ?? String(err);
     const isCoding = isCodingTask(incomingType, prompt, payload);
@@ -2981,7 +3001,7 @@ try {
     }
     assertTaskPromptProtocol(finalPrompt, "direct-chat");
     
-    // Check if we should route to OpenCode instead of OpenClaw Gateway
+    // Check if we should route to OpenCode instead of legacy gateway
     if (shouldUseOpenCode({}, finalPrompt, null)) {
       console.error("[OpenCode] Routing to OpenCode CLI...");
       // Pass raw message to OpenCode (no memory wrapper)
@@ -3000,7 +3020,7 @@ try {
     });
     process.stderr.write(`📤 ${OPENCREW_RT_AGENT || "main"} ${message.slice(0, 80)}\n`);
     process.stderr.write("⏳ Waiting for assistant reply...\n");
-    const targetAgent = OPENCREW_TO_OPENCLAW_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
+    const targetAgent = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
     
     // For RT swarm agents, poll done.jsonl instead of WebSocket
     const isRTAgent = OPENCREW_RT_SWARM_AGENTS.includes(OPENCREW_RT_AGENT);

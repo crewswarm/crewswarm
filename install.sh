@@ -7,7 +7,6 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CREWSWARM_DIR="$HOME/.crewswarm"
-OPENCLAW_DIR_CFG="$HOME/.openclaw"   # kept for legacy fallback reads only
 
 # ── colours ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -113,14 +112,22 @@ else
   success "~/.crewswarm/crewswarm.json already exists — keeping it"
 fi
 
-# Bootstrap agent prompts if not present
+# Bootstrap agent prompts if not present (try repo config, then legacy .openclaw, then sync from prompts/ or empty)
 PROMPTS_FILE="$CREWSWARM_DIR/agent-prompts.json"
-if [[ ! -f "$PROMPTS_FILE" ]] && [[ -f "$REPO_DIR/.openclaw/agent-prompts.json" ]]; then
-  cp "$REPO_DIR/.openclaw/agent-prompts.json" "$PROMPTS_FILE"
-  success "Copied agent-prompts.json to ~/.crewswarm/"
-elif [[ ! -f "$PROMPTS_FILE" ]]; then
-  echo '{}' > "$PROMPTS_FILE"
-  success "Created empty ~/.crewswarm/agent-prompts.json (defaults built into gateway-bridge)"
+if [[ ! -f "$PROMPTS_FILE" ]]; then
+  if [[ -f "$REPO_DIR/config/agent-prompts.json" ]]; then
+    cp "$REPO_DIR/config/agent-prompts.json" "$PROMPTS_FILE"
+    success "Copied config/agent-prompts.json to ~/.crewswarm/"
+  elif [[ -f "$REPO_DIR/.openclaw/agent-prompts.json" ]]; then
+    cp "$REPO_DIR/.openclaw/agent-prompts.json" "$PROMPTS_FILE"
+    success "Copied .openclaw/agent-prompts.json to ~/.crewswarm/"
+  else
+    echo '{}' > "$PROMPTS_FILE"
+    success "Created ~/.crewswarm/agent-prompts.json"
+    if [[ -d "$REPO_DIR/prompts" ]] && [[ -n "$(find "$REPO_DIR/prompts" -maxdepth 1 -name '*.md' 2>/dev/null)" ]]; then
+      (cd "$REPO_DIR" && node scripts/sync-prompts.mjs 2>/dev/null) && success "Seeded agent prompts from repo prompts/*.md" || true
+    fi
+  fi
 fi
 
 ALLOWLIST="$CREWSWARM_DIR/cmd-allowlist.json"
@@ -166,7 +173,7 @@ if [[ -d "$SWIFTBAR_APP" ]] || [[ -d "$HOME/Applications/SwiftBar.app" ]]; then
   if mkdir -p "$SWIFTBAR_PLUGIN_DIR" 2>/dev/null && \
      cp "$SWIFTBAR_SRC" "$SWIFTBAR_PLUGIN_DIR/openswitch.10s.sh" 2>/dev/null; then
     chmod +x "$SWIFTBAR_PLUGIN_DIR/openswitch.10s.sh"
-    sed -i '' "s|^OPENCLAW_DIR=.*|OPENCLAW_DIR=\"$REPO_DIR\"|" \
+    sed -i '' "s|^CREWSWARM_DIR=.*|CREWSWARM_DIR=\"$REPO_DIR\"|" \
       "$SWIFTBAR_PLUGIN_DIR/openswitch.10s.sh" 2>/dev/null || true
     success "SwiftBar plugin installed → menu bar status active"
   else
