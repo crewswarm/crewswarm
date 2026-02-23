@@ -76,6 +76,61 @@ function tryRead(p) {
   try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; }
 }
 
+// ── Agent tool permission helpers ─────────────────────────────────────────────
+
+const CREWSWARM_TOOL_NAMES = new Set([
+  "write_file","read_file","mkdir","run_cmd","git","dispatch","telegram","web_search","web_fetch",
+]);
+
+const AGENT_TOOL_ROLE_DEFAULTS = {
+  "crew-qa":          ["read_file"],
+  "crew-security":    ["read_file","run_cmd"],
+  "crew-coder":       ["write_file","read_file","mkdir","run_cmd"],
+  "crew-coder-front": ["write_file","read_file","mkdir","run_cmd"],
+  "crew-coder-back":  ["write_file","read_file","mkdir","run_cmd"],
+  "crew-frontend":    ["write_file","read_file","mkdir","run_cmd"],
+  "crew-fixer":       ["write_file","read_file","mkdir","run_cmd"],
+  "crew-github":      ["read_file","run_cmd","git"],
+  "crew-copywriter":  ["write_file","read_file","web_search","web_fetch"],
+  "crew-main":        ["write_file","read_file","mkdir","run_cmd","dispatch","web_search","web_fetch"],
+  "crew-pm":          ["read_file","dispatch"],
+  "crew-telegram":    ["telegram","read_file"],
+};
+
+function readAgentTools(agentId) {
+  const swarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+  const agents = Array.isArray(swarm.agents) ? swarm.agents : [];
+  const agent  = agents.find(a => a.id === agentId);
+  const explicit = agent?.tools?.crewswarmAllow || agent?.tools?.alsoAllow || null;
+  if (explicit) {
+    const valid = explicit.filter(t => CREWSWARM_TOOL_NAMES.has(t));
+    if (valid.length) return { source: "config", tools: valid };
+  }
+  // Fuzzy-match role defaults
+  const exact = AGENT_TOOL_ROLE_DEFAULTS[agentId];
+  if (exact) return { source: "role-default", tools: exact };
+  for (const [key, val] of Object.entries(AGENT_TOOL_ROLE_DEFAULTS)) {
+    if (agentId.startsWith(key)) return { source: "role-default", tools: val };
+  }
+  return { source: "fallback", tools: ["read_file","write_file","mkdir","run_cmd"] };
+}
+
+function writeAgentTools(agentId, tools) {
+  const valid = tools.filter(t => CREWSWARM_TOOL_NAMES.has(t));
+  const swarmPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+  const swarm = tryRead(swarmPath) || {};
+  if (!Array.isArray(swarm.agents)) swarm.agents = [];
+  let agent = swarm.agents.find(a => a.id === agentId);
+  if (!agent) {
+    agent = { id: agentId };
+    swarm.agents.push(agent);
+  }
+  if (!agent.tools) agent.tools = {};
+  agent.tools.crewswarmAllow = valid;
+  fs.writeFileSync(swarmPath, JSON.stringify(swarm, null, 2), "utf8");
+  return valid;
+}
+
 function getSearchToolsConfig() {
   return tryRead(path.join(os.homedir(), ".crewswarm", "search-tools.json"))
       || tryRead(path.join(os.homedir(), ".openclaw",  "search-tools.json"))
@@ -255,6 +310,16 @@ function buildSystemPrompt(cfg) {
     "- verify: what the agent should check after completing (a specific @@READ_FILE or @@RUN_CMD)",
     "- done: exact definition of success — use for precise acceptance criteria",
     "- Both fields are optional — omit for simple open-ended tasks",
+    "",
+    "TOOL PERMISSIONS — you can read and change what any agent is allowed to do:",
+    "- Valid tools: write_file, read_file, mkdir, run_cmd, git, dispatch, telegram, web_search, web_fetch",
+    "- To report an agent's permissions: just tell the user — you know the defaults (see roster) or emit @@TOOLS to query",
+    "- To grant/revoke permissions: emit @@TOOLS on its own line in your reply:",
+    '  @@TOOLS {"agent":"crew-qa","grant":["write_file"],"revoke":[]}',
+    '  @@TOOLS {"agent":"crew-coder","set":["read_file","write_file","mkdir","run_cmd","web_search"]}',
+    "- grant adds to current permissions, revoke removes, set replaces entirely",
+    "- After emitting @@TOOLS, tell the user to restart the agent's bridge for changes to take effect",
+    "- Default permissions by role: qa=read_file; coder/fixer/frontend=write+read+mkdir+run; copywriter=write+read+web_search+web_fetch; github=read+run+git; main=all except telegram; pm=read+dispatch",
     "",
     "When the user message includes [Web context from Brave Search], use that context to answer current events, docs, or factual lookups when relevant. When it includes [Codebase context from workspace], use it to answer questions about this codebase (where things are, how they work, what a file does).",
     "",
@@ -735,10 +800,20 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
 
   const fullReply = await callLLM(messages, cfg);
 
+  // ── @@TOOLS — permission grant/revoke command ──────────────────────────────
+  // Format: @@TOOLS {"agent":"crew-qa","grant":["write_file"],"revoke":[]}
+  //      or @@TOOLS {"agent":"crew-qa","set":["read_file","write_file"]}
+  const toolsCmd = (() => {
+    const m = fullReply.match(/@@TOOLS\s+(\{[^}]+\})/);
+    if (!m) return null;
+    try { return JSON.parse(m[1]); } catch { return null; }
+  })();
+
   const projectSpec = parseProject(fullReply);
   const pipelineSteps = !projectSpec ? parsePipeline(fullReply) : null;
   const dispatch = !projectSpec && !pipelineSteps ? parseDispatch(fullReply, message) : null;
-  let cleanReply = stripThink(stripPipeline(stripProject(stripDispatch(fullReply))));
+  let cleanReply = stripThink(stripPipeline(stripProject(stripDispatch(fullReply))))
+    .replace(/@@TOOLS\s+\{[^}]+\}/g, "").trim();
 
   appendHistory(sessionId, "assistant", cleanReply);
   broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply });
@@ -776,6 +851,28 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
         ? `\n\n↳ Dispatched to ${dispatch.agent} — reply will show here when they finish.`
         : `\n\n↳ Dispatched to ${dispatch.agent} (via ctl — check RT Messages tab for reply).`;
       cleanReply = (cleanReply || "").trimEnd() + dispatchLine;
+    }
+  }
+
+  // ── Execute @@TOOLS permission change ──────────────────────────────────────
+  if (toolsCmd?.agent) {
+    try {
+      const current = readAgentTools(toolsCmd.agent).tools;
+      let updated;
+      if (Array.isArray(toolsCmd.set)) {
+        updated = toolsCmd.set;
+      } else {
+        const granted = Array.isArray(toolsCmd.grant)  ? toolsCmd.grant  : [];
+        const revoked = Array.isArray(toolsCmd.revoke) ? toolsCmd.revoke : [];
+        updated = [...new Set([...current, ...granted].filter(t => !revoked.includes(t)))];
+      }
+      const saved = writeAgentTools(toolsCmd.agent, updated);
+      const note = `\n\n↳ Tool permissions updated for **${toolsCmd.agent}**: ${saved.join(", ")} — restart its bridge for changes to take effect.`;
+      cleanReply = (cleanReply || "").trimEnd() + note;
+      appendHistory(sessionId, "system", `Tool permissions for ${toolsCmd.agent} updated to: ${saved.join(", ")}`);
+      console.log(`[crew-lead] @@TOOLS: ${toolsCmd.agent} → ${saved.join(", ")}`);
+    } catch (e) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to update tools for ${toolsCmd.agent}: ${e.message}`;
     }
   }
 
@@ -995,6 +1092,43 @@ const server = http.createServer(async (req, res) => {
       if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized — Bearer token required" }); return; }
       const agents = loadConfig().knownAgents || [];
       json(res, 200, { ok: true, agents });
+      return;
+    }
+
+    // GET /api/agents/:id/tools — read an agent's current tool permissions
+    const toolsGetMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/tools$/);
+    if (toolsGetMatch && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const agentId = toolsGetMatch[1];
+      const result  = readAgentTools(agentId);
+      json(res, 200, {
+        ok: true, agentId,
+        tools: result.tools,
+        source: result.source,
+        allTools: [...CREWSWARM_TOOL_NAMES],
+      });
+      return;
+    }
+
+    // PATCH /api/agents/:id/tools — update an agent's tool permissions
+    // Body: { "grant": ["write_file"], "revoke": ["run_cmd"] }  OR  { "set": ["read_file","write_file"] }
+    const toolsPatchMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/tools$/);
+    if (toolsPatchMatch && req.method === "PATCH") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const agentId = toolsPatchMatch[1];
+      const body    = await readBody(req);
+      const current = readAgentTools(agentId).tools;
+      let updated;
+      if (Array.isArray(body.set)) {
+        updated = body.set;
+      } else {
+        const granted  = Array.isArray(body.grant)  ? body.grant  : [];
+        const revoked  = Array.isArray(body.revoke) ? body.revoke : [];
+        updated = [...new Set([...current, ...granted].filter(t => !revoked.includes(t)))];
+      }
+      const saved = writeAgentTools(agentId, updated);
+      console.log(`[crew-lead] tools updated for ${agentId}: ${saved.join(", ")}`);
+      json(res, 200, { ok: true, agentId, tools: saved });
       return;
     }
 
