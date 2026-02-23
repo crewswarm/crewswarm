@@ -130,6 +130,12 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 - OpenCode `orchestrator`: tool-based orchestrator (`code_execute`, `code_validate`, `code_status`).
 - CrewSwarm runtime uses `orchestrator` / `crew-pm` / `crew-main` as the main coordination chain.
 
+### PM-loop synthesis → OpenCode
+
+- After the swarm completes roadmap tasks, PM-loop calls **crew-main** for final synthesis (audit + assembly).
+- The crew-main daemon is in `OPENCODE_AGENTS` in `gateway-bridge.mjs`, so it routes those tasks to **OpenCode** when `OPENCREW_OPENCODE_ENABLED` is on.
+- PM-loop sets `OPENCREW_OPENCODE_PROJECT` to the PM output dir when invoking crew-main; the bridge passes it as `payload.projectDir` so OpenCode runs in the build output directory.
+
 ---
 
 ## Agent tools (@@TOOL syntax)

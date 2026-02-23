@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CrewSwarm — Multi-Agent Dev Orchestration</title>
-  <meta name="description" content="One requirement, one build, one crew. PM-led multi-agent orchestration. Bring your own LLM — API key or fully local via Ollama." />
-  <meta property="og:title" content="CrewSwarm — Multi-Agent Dev Orchestration" />
-  <meta property="og:description" content="One requirement. One build. One crew. PM-led multi-agent orchestration. Bring your own LLM — API key or fully local." />
+  <title>CrewSwarm — Realtime Bus &amp; Daemon Orchestration for Multi-Agent Dev</title>
+  <meta name="description" content="Realtime message bus and daemon orchestration for multi-agent dev. PM and specialists run as daemons over RT channels; one requirement, one build, one crew. Bring your own LLM." />
+  <meta property="og:title" content="CrewSwarm — Realtime Bus &amp; Daemon Orchestration" />
+  <meta property="og:description" content="Realtime message bus. Daemon orchestration. PM and specialists over RT channels. One requirement, one build, one crew. Bring your own LLM." />
   <meta property="og:url" content="https://crewswarm.ai" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="CrewSwarm — Multi-Agent Dev Orchestration" />
-  <meta name="twitter:description" content="One requirement. One build. One crew. Bring your own LLM — API key or fully local via Ollama." />
+  <meta name="twitter:title" content="CrewSwarm — Realtime Bus &amp; Daemon Orchestration" />
+  <meta name="twitter:description" content="Realtime message bus. Daemon orchestration. PM and specialists over RT channels. One crew. Bring your own LLM." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <link rel="canonical" href="https://crewswarm.ai/" />
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="apple-touch-icon" href="favicon.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -28,8 +29,10 @@
     <a class="nav-logo" href="#" aria-label="CrewSwarm home">Crew<span class="nav-logo-hq">Swarm</span></a>
     <ul class="nav-links" id="navLinks" role="menubar">
       <li role="none"><a href="#how-it-works" role="menuitem" class="nav-link-item">How it works</a></li>
+      <li role="none"><a href="#system-diagram" role="menuitem" class="nav-link-item">Architecture</a></li>
       <li role="none"><a href="#features" role="menuitem" class="nav-link-item">Features</a></li>
       <li role="none"><a href="#agents" role="menuitem" class="nav-link-item">Agents</a></li>
+      <li role="none"><a href="#comparison" role="menuitem" class="nav-link-item">Compare</a></li>
       <li role="none"><a href="#get-started" role="menuitem" class="nav-link-item">Docs</a></li>
       <li role="none" class="nav-mobile-cta"><a href="#get-started" class="btn btn-sm">Get started →</a></li>
     </ul>
@@ -46,9 +49,17 @@
   <section id="hero" class="hero">
     <div class="hero-glow"></div>
     <img src="mascot.png" alt="CrewSwarm mascot" class="hero-mascot" />
-    <div class="hero-badge">Now with PM-led phased builds</div>
     <h1>One requirement.<br/>One build.<br/><span class="gradient-text">One crew.</span></h1>
-    <p class="hero-sub">Describe what you need — a PM agent plans it, specialized agents build it, with real tools, shared memory, and automatic fault recovery. Bring your own API key or run fully local with Ollama. No middleware required.</p>
+    <p class="hero-sub">Describe the outcome. CrewSwarm plans, dispatches, builds, and verifies with real files on disk.</p>
+    <div class="proof-bar visible">
+      <span class="proof-item">Realtime bus</span>
+      <span class="proof-sep" aria-hidden="true">•</span>
+      <span class="proof-item">Targeted dispatch</span>
+      <span class="proof-sep" aria-hidden="true">•</span>
+      <span class="proof-item">PM-led phases</span>
+      <span class="proof-sep" aria-hidden="true">•</span>
+      <span class="proof-item">DLQ recovery</span>
+    </div>
     <div class="hero-cta">
       <a href="#get-started" class="btn btn-primary">Get started free</a>
       <a href="#how-it-works" class="btn btn-ghost">See how it works</a>
@@ -218,7 +229,35 @@
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Architecture</div>
-        <h2>Three layers, one stack</h2>
+        <h2>PM → specialists → synthesizer over RT</h2>
+        <p class="section-desc">Agents run as daemons on a realtime message bus. The PM dispatches to specialists; the synthesizer assembles the result.</p>
+      </div>
+      <div class="rt-flow-diagram" aria-label="Architecture flow: PM to specialists to synthesizer over RT channels">
+        <div class="rt-flow-row rt-flow-pm">
+          <div class="rt-flow-node rt-flow-pm-node">
+            <span class="rt-flow-label">PM / Orchestrator</span>
+            <span class="rt-flow-detail">crew-pm · roadmap → tasks</span>
+          </div>
+        </div>
+        <div class="rt-flow-arrow">↓ <span class="rt-flow-ch">command · assign</span></div>
+        <div class="rt-flow-row rt-flow-specialists">
+          <div class="rt-flow-node">crew-coder</div>
+          <div class="rt-flow-node">crew-coder-front</div>
+          <div class="rt-flow-node">crew-coder-back</div>
+          <div class="rt-flow-node">crew-qa</div>
+          <div class="rt-flow-node">crew-fixer</div>
+        </div>
+        <div class="rt-flow-arrow">↓ <span class="rt-flow-ch">done · issues</span></div>
+        <div class="rt-flow-row rt-flow-synth">
+          <div class="rt-flow-node rt-flow-synth-node">
+            <span class="rt-flow-label">Synthesizer</span>
+            <span class="rt-flow-detail">crew-main · audit &amp; assemble</span>
+          </div>
+        </div>
+        <p class="rt-flow-caption">All over the same RT channels (command, assign, done, issues). One bus, targeted dispatch, no broadcast races.</p>
+      </div>
+      <div class="section-header" style="margin-top: 2.5rem;">
+        <h2 style="font-size: 1.35rem;">Three layers, one stack</h2>
         <p class="section-desc">CrewSwarm sits atop a modular architecture designed for reliability and flexibility.</p>
       </div>
       <div class="layers-grid">
@@ -252,8 +291,37 @@
     </div>
   </section>
 
+  <!-- HOW CREWSWARM DIFFERS -->
+  <section id="differs" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Built different</div>
+        <h2>How CrewSwarm differs from framework-only stacks</h2>
+        <p class="section-desc">CrewSwarm is a runtime, not just a library. You get a realtime bus and daemon orchestration out of the box.</p>
+      </div>
+      <div class="differs-grid">
+        <div class="differs-card">
+          <h3>Realtime bus + daemons</h3>
+          <p>Agents run as long-lived daemons connected to an RT message bus. Tasks flow over <code>command</code>, <code>assign</code>, <code>done</code>, <code>issues</code> — no in-process-only simulation. Real dispatch, real replies.</p>
+        </div>
+        <div class="differs-card">
+          <h3>Execution layer included</h3>
+          <p>Tool calls (<code>@@WRITE_FILE</code>, <code>@@RUN_CMD</code>, etc.) are executed by the gateway with allowlists and path sandboxing. You don’t have to build a runner or wire a framework to one.</p>
+        </div>
+        <div class="differs-card">
+          <h3>DLQ and fault recovery</h3>
+          <p>Failed tasks go to a Dead Letter Queue. Retry with backoff, replay from the dashboard. Framework-only stacks leave retries and observability to you.</p>
+        </div>
+        <div class="differs-card">
+          <h3>Your models, your machine</h3>
+          <p>Each agent calls its LLM directly with your API key. No proxy, no vendor lock-in. Run fully local with Ollama. Compare options on our <a href="#comparison">comparison page</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- FEATURES -->
-  <section id="features" class="section section-alt">
+  <section id="features" class="section">
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Features</div>
@@ -680,9 +748,9 @@
   <section id="comparison" class="section what-we-do-section" aria-labelledby="wwd-heading">
     <div class="container">
       <div class="section-header">
-        <div class="eyebrow">Built different</div>
+        <div class="eyebrow">Compare</div>
         <h2 id="wwd-heading">What CrewSwarm does</h2>
-        <p class="section-desc">The only fully open-source platform where a PM agent runs the build — not just a single autocomplete suggestion.</p>
+        <p class="section-desc">The only fully open-source platform where a PM agent runs the build — not just a single autocomplete suggestion. For comparison with CrewAI and other frameworks, this section outlines what CrewSwarm does differently.</p>
       </div>
       <div class="wwd-grid">
         <div class="wwd-card wwd-card-wide">
@@ -1416,8 +1484,10 @@
         <div class="footer-col">
           <div class="footer-col-title">Product</div>
           <a href="#how-it-works">How it works</a>
+          <a href="#system-diagram">Architecture</a>
           <a href="#features">Features</a>
           <a href="#agents">Agents</a>
+          <a href="#comparison">Compare</a>
           <a href="#use-cases">Use cases</a>
           <a href="#orchestration">Modes</a>
         </div>

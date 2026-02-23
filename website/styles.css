@@ -881,6 +881,25 @@ footer {
 .layer-tag { display: inline-block; font-size: 0.75rem; color: var(--accent); background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.15); padding: 0.2rem 0.6rem; border-radius: 4px; margin-bottom: 0.5rem; }
 .layer-arrow { font-size: 1.5rem; color: var(--text-3); opacity: 0.5; }
 
+/* RT flow diagram (PM → specialists → synthesizer) */
+.rt-flow-diagram { margin-top: 2rem; text-align: center; }
+.rt-flow-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; margin: 0 auto; max-width: 720px; }
+.rt-flow-node { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 1rem; font-size: 0.9rem; color: var(--text-2); }
+.rt-flow-pm-node, .rt-flow-synth-node { padding: 0.85rem 1.25rem; }
+.rt-flow-label { display: block; font-weight: 600; color: var(--text); }
+.rt-flow-detail { display: block; font-size: 0.8rem; color: var(--text-3); margin-top: 0.2rem; }
+.rt-flow-arrow { font-size: 1.1rem; color: var(--accent); opacity: 0.8; margin: 0.6rem 0; }
+.rt-flow-ch { font-size: 0.75rem; color: var(--text-3); margin-left: 0.35rem; }
+.rt-flow-caption { margin-top: 1.25rem; font-size: 0.85rem; color: var(--text-2); max-width: 520px; margin-left: auto; margin-right: auto; }
+
+/* How CrewSwarm differs (framework-only) */
+.differs-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; margin-top: 2rem; max-width: 900px; margin-left: auto; margin-right: auto; }
+.differs-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; text-align: left; }
+.differs-card h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.differs-card p { margin: 0; color: var(--text-2); font-size: 0.9rem; line-height: 1.55; }
+.differs-card a { color: var(--accent); text-decoration: underline; }
+@media (max-width: 640px) { .differs-grid { grid-template-columns: 1fr; } }
+
 /* ─── Accessibility ───────────────────────────────────────────────────────── */
 .a11y-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-top: 2rem; }
 .a11y-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; text-align: center; transition: border-color 0.2s; }

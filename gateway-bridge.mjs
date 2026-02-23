@@ -2219,8 +2219,10 @@ async function runBroadcastTask(message, { timeoutMs = 25000 } = {}) {
 /**
  * Send a task to a specific RT agent (targeted delegation). Only that agent processes it.
  * Use this for PM-led orchestration: PM plan → send each subtask to the assigned agent.
+ * When agentId is crew-main and task is synthesis, the crew-main daemon routes to OpenCode
+ * (OPENCODE_AGENTS); pass projectDir so OpenCode runs in the PM output dir.
  */
-async function runSendToAgent(agentId, message, { timeoutMs = Number(process.env.OPENCREW_RT_SEND_TIMEOUT_MS || "120000") } = {}) {
+async function runSendToAgent(agentId, message, { timeoutMs = Number(process.env.OPENCREW_RT_SEND_TIMEOUT_MS || "120000"), projectDir } = {}) {
   const taskId = `send-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const correlationId = crypto.randomUUID();
   const sender = process.env.OPENCREW_RT_SEND_SENDER || "orchestrator";
@@ -2248,6 +2250,15 @@ async function runSendToAgent(agentId, message, { timeoutMs = Number(process.env
     },
   }), { retries: 2, baseDelayMs: 300, label: "realtime send connect" });
 
+  const payload = {
+    action: "run_task",
+    prompt: message,
+    message,
+    source: sender,
+    idempotencyKey: correlationId,
+  };
+  if (projectDir) payload.projectDir = projectDir;
+
   try {
     rt.publish({
       channel: "command",
@@ -2256,13 +2267,7 @@ async function runSendToAgent(agentId, message, { timeoutMs = Number(process.env
       taskId,
       correlationId,
       priority: "high",
-      payload: {
-        action: "run_task",
-        prompt: message,
-        message,
-        source: sender,
-        idempotencyKey: correlationId,
-      },
+      payload,
     });
 
     const startedAt = Date.now();
@@ -3010,7 +3015,8 @@ try {
       process.exit(1);
     }
     process.stderr.write(`📤 Sending to ${agentId} only (no broadcast)...\n`);
-    const reply = await runSendToAgent(agentId, message);
+    const projectDir = process.env.OPENCREW_OPENCODE_PROJECT || null;
+    const reply = await runSendToAgent(agentId, message, { projectDir });
     process.stderr.write("✅ Reply received\n");
     console.log(reply);
     telemetry("send_to_agent", { agentId, replyChars: reply.length });
