@@ -708,12 +708,12 @@ const html = `<!doctype html>
           <span style="font-size:18px;">⚡</span>
           <div>
             <div style="font-weight:600; font-size:14px;">RT Bus Auth Token</div>
-            <div style="font-size:12px; color:var(--text-2);">Optional for local use — leave empty and the RT daemon allows unauthenticated connections so crew-lead can receive agent replies. Set a shared secret here (and in env when starting the daemon) only if you want to lock down the bus.</div>
+            <div style="font-size:12px; color:var(--text-2);">Auto-generated during install and saved to <code style="font-size:11px;">~/.crewswarm/config.json</code>. All services read it from there — you never need to copy it manually. Only change this if you want to rotate the secret or run the RT bus on a shared machine.</div>
           </div>
           <span id="rtTokenBadge" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">not set</span>
         </div>
         <div style="display:flex; gap:8px;">
-          <input id="rtTokenInput" type="password" placeholder="Paste your OPENCREW_RT_AUTH_TOKEN here" style="flex:1;" />
+          <input id="rtTokenInput" type="password" placeholder="Leave blank to auto-use the token from config.json" style="flex:1;" />
           <button onclick="saveRTToken()" class="btn-purple">Save</button>
           <button onclick="document.getElementById('rtTokenInput').type = document.getElementById('rtTokenInput').type === 'password' ? 'text' : 'password'" class="btn-ghost" title="Show/hide">👁</button>
         </div>
@@ -724,8 +724,8 @@ const html = `<!doctype html>
         <div style="display:flex; align-items:center; gap:10px;">
           <span style="font-size:18px;">🔌</span>
           <div style="flex:1;">
-            <div style="font-weight:600; font-size:14px;">Legacy gateway <span style="font-size:11px; color:var(--text-2); font-weight:400;">(optional, port 18789)</span></div>
-            <div style="font-size:12px; color:var(--text-2);">Agents use direct LLM calls by default. Enable only if you have a legacy message gateway running on port 18789.</div>
+            <div style="font-weight:600; font-size:14px;">Legacy OpenClaw gateway <span style="font-size:11px; color:var(--text-2); font-weight:400;">(optional, port 18789)</span></div>
+            <div style="font-size:12px; color:var(--text-2);">No key needed — agents use direct LLM calls via the RT bus. This indicator shows whether the old OpenClaw desktop app is paired on this machine. Ignore if you never used OpenClaw.</div>
           </div>
           <span id="oclawBadge" style="font-size:11px; padding:2px 10px; border-radius:999px; font-weight:600; background:rgba(107,114,128,0.15); color:#6b7280; border:1px solid rgba(107,114,128,0.3);">checking…</span>
         </div>
