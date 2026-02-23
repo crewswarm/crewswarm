@@ -921,8 +921,11 @@ const html = `<!doctype html>
         </div>
 
         <div class="card">
-          <h3>Phased Progress</h3>
-          <p class="meta" style="margin-bottom:10px;">Live task dispatch log</p>
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
+            <h3 style="margin:0;">Phased Progress</h3>
+            <span id="phasedProgressLabel" style="font-size:11px;color:var(--text-3);"></span>
+          </div>
+          <p class="meta" style="margin-bottom:10px;">Task dispatch log — filtered to the selected project when one is chosen</p>
           <div id="phasedProgress" class="log-block mono" style="max-height:180px;"></div>
         </div>
 
@@ -3202,6 +3205,8 @@ function onBuildProjectChange() {
     info.style.display = 'none';
     if (label) label.innerHTML = '← Select a project above';
   }
+  // Reload dispatch log filtered to the newly selected project
+  loadPhasedProgress();
 }
 
 // ── Stop build/continuous-build ───────────────────────────────────────────
@@ -3324,9 +3329,17 @@ async function resetAllFailed(projectId) {
 async function loadPhasedProgress(){
   const box = document.getElementById('phasedProgress');
   if (!box) return;
+  const projectId = document.getElementById('buildProjectPicker')?.value || '';
+  const label = document.getElementById('phasedProgressLabel');
   try {
-    const data = await getJSON('/api/phased-progress');
-    if (!data.length) { box.textContent = 'No phased runs yet.'; return; }
+    const url = '/api/phased-progress' + (projectId ? '?projectId=' + encodeURIComponent(projectId) : '');
+    const data = await getJSON(url);
+    const scopeText = projectId ? 'This project' : 'All projects (no project selected)';
+    if (label) label.textContent = scopeText;
+    if (!data.length) {
+      box.textContent = projectId ? 'No runs yet for this project.' : 'No phased runs yet.';
+      return;
+    }
     box.innerHTML = data.map(e => {
       const phase = e.phase || '?';
       const agent = e.agent || '?';
@@ -3739,8 +3752,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/api/phased-progress") {
       const limit = Math.min(Number(url.searchParams.get("limit")) || 80, 200);
+      const filterProject = url.searchParams.get("projectId") || null;
+      let entries = await getPhasedProgress(200); // fetch more so filter has enough to work with
+      if (filterProject) {
+        entries = entries.filter(e => e.projectId === filterProject);
+      }
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(await getPhasedProgress(limit)));
+      res.end(JSON.stringify(entries.slice(-limit)));
       return;
     }
     if (url.pathname === "/api/enhance-prompt" && req.method === "POST") {

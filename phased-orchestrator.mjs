@@ -23,6 +23,7 @@ const LOG_DIR = join(CREWSWARM_DIR, "orchestrator-logs");
 // All build output goes here so you can find it. Override with OPENCREW_OUTPUT_DIR.
 const OUTPUT_DIR = process.env.OPENCREW_OUTPUT_DIR || join(CREWSWARM_DIR, "website");
 const DISPATCH_LOG = join(LOG_DIR, "phased-dispatch.jsonl");
+const PROJECT_ID = process.env.PM_PROJECT_ID || null;
 
 if (!existsSync(LOG_DIR)) {
   await import("node:fs/promises").then((fs) => fs.mkdir(LOG_DIR, { recursive: true }));
@@ -121,7 +122,7 @@ Output ONLY the tasks, one per line.`;
 
 async function logDispatch(entry) {
   try {
-    await appendFile(DISPATCH_LOG, JSON.stringify(entry) + "\n");
+    await appendFile(DISPATCH_LOG, JSON.stringify({ ...entry, projectId: PROJECT_ID || undefined }) + "\n");
   } catch (_) {}
 }
 
