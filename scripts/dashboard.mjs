@@ -797,9 +797,15 @@ const html = `<!doctype html>
             <input id="naName" placeholder="e.g. Blaze" />
           </div>
           <div style="display:flex; gap:8px; align-items:flex-end;">
-            <div style="flex:0 0 80px;">
+            <div style="flex:0 0 auto;">
               <div class="field-label">Emoji</div>
-              <input id="naEmoji" placeholder="🔥" />
+              <div class="emoji-picker-wrap">
+                <button type="button" class="emoji-btn" id="naEmoji-btn" onclick="toggleEmojiPicker('__new__')" title="Pick emoji">🔥</button>
+                <input type="hidden" id="naEmoji" value="🔥" />
+                <div class="emoji-picker-panel" id="aemoji-panel-__new__">
+                  <div class="emoji-grid" id="aemoji-grid-__new__"></div>
+                </div>
+              </div>
             </div>
           </div>
           <div style="grid-column:1/-1;">
@@ -2576,8 +2582,11 @@ function toggleEmojiPicker(agentId) {
 }
 
 function selectEmoji(agentId, emoji) {
-  document.getElementById('aemoji-'     + agentId).value     = emoji;
-  document.getElementById('aemoji-btn-' + agentId).textContent = emoji;
+  const isNew = agentId === '__new__';
+  const inputEl = isNew ? document.getElementById('naEmoji') : document.getElementById('aemoji-' + agentId);
+  const btnEl   = isNew ? document.getElementById('naEmoji-btn') : document.getElementById('aemoji-btn-' + agentId);
+  if (inputEl) inputEl.value = emoji;
+  if (btnEl)   btnEl.textContent = emoji;
   document.getElementById('aemoji-panel-' + agentId).classList.remove('open');
 }
 
@@ -2939,7 +2948,9 @@ document.getElementById('naCreateBtn').onclick = async () => {
     await postJSON('/api/agents-config/create', { id, model, name, emoji, theme, systemPrompt, alsoAllow });
     showNotification(\`Agent "\${id}" created — restart gateway-bridge to activate it on the RT bus.\`);
     document.getElementById('newAgentForm').style.display = 'none';
-    ['naId','naName','naEmoji','naTheme','naPrompt'].forEach(x => { document.getElementById(x).value = ''; });
+    ['naId','naName','naTheme','naPrompt'].forEach(x => { document.getElementById(x).value = ''; });
+    document.getElementById('naEmoji').value = '🔥';
+    document.getElementById('naEmoji-btn').textContent = '🔥';
     document.getElementById('naModel').innerHTML = '<option value="">— select a model —</option>';
     document.getElementById('naPromptPreset').value = '';
     loadAgents_cfg();
