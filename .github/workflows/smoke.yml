@@ -31,11 +31,12 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           mkdir -p ~/.crewswarm
-          TOKEN="${CREWSWARM_RT_TOKEN:-$(node -e "console.log(require('crypto').randomBytes(16).toString('hex'))")}"
+          TOKEN="${CREWSWARM_RT_TOKEN:-ci-test-token}"
           echo "{\"rt\":{\"authToken\":\"$TOKEN\"}}" > ~/.crewswarm/config.json
           node -e "
             const fs = require('fs');
             const path = require('path');
+            const groqKey = (process.env.GROQ_API_KEY || '').trim();
             const cfg = {
               _note: 'CI bootstrap',
               agents: [
@@ -46,7 +47,7 @@ jobs:
                 { id: 'crew-pm', model: 'groq/llama-3.3-70b-versatile' }
               ],
               providers: {
-                groq: { apiKey: process.env.GROQ_API_KEY || '', baseUrl: 'https://api.groq.com/openai/v1' }
+                groq: { apiKey: groqKey, baseUrl: 'https://api.groq.com/openai/v1' }
               }
             };
             fs.writeFileSync(
@@ -65,15 +66,35 @@ jobs:
         run: |
           export CREWSWARM_DIR="$GITHUB_WORKSPACE"
           export OPENCREW_RT_AUTH_TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/config.json')).rt.authToken)")
+          export OPENCREW_RT_REQUIRE_TOKEN=1
           node scripts/opencrew-rt-daemon.mjs &
           sleep 3
           node crew-lead.mjs &
           sleep 2
           node scripts/start-crew.mjs
-          sleep 20
+          sleep 15
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:5010/health >/dev/null; then break; fi
             if [ "$i" -eq 30 ]; then echo "crew-lead never became healthy"; exit 1; fi
             sleep 1
           done
-          npm run smoke
+          for i in $(seq 1 60); do
+            s=$(curl -s http://127.0.0.1:18889/status || true)
+            if echo "$s" | grep -q '"crew-coder"' && echo "$s" | grep -q '"crew-main"'; then
+              echo "Agents connected: $s"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "Timeout: crew-coder and/or crew-main did not connect to RT"
+              curl -s http://127.0.0.1:18889/status || true
+              exit 1
+            fi
+            sleep 2
+          done
+          npm run smoke || {
+            echo "--- Bridge logs (failure) ---"
+            for f in /tmp/bridge-crew-*.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log; do
+              [ -f "$f" ] && echo "=== $f ===" && tail -200 "$f"
+            done
+            exit 1
+          }
