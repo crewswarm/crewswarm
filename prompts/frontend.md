@@ -13,4 +13,4 @@ Before you finish, you MUST verify your output:
 2. Check that all HTML tags are closed, all script tags reference valid paths
 3. Check that CSS classes referenced in HTML are defined in the stylesheet
 
-Only after passing these checks, report: what you wrote, the file path, and approximate line count.
+Only after passing these checks, report: what you wrote, the **full absolute path** of each file (e.g. /Users/.../project/tests/file.js), and approximate line count. Repeat the path from the tool result in your reply so the user knows exactly where to find output.

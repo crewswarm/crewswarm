@@ -83,6 +83,10 @@ if (args.includes("--status")) {
   process.exit(0);
 }
 
+// ── --agent <id> — spawn only a specific agent ──────────────────────────────
+const agentFlagIdx = args.indexOf("--agent");
+const singleAgentId = agentFlagIdx !== -1 ? args[agentFlagIdx + 1] : null;
+
 // ── Start ────────────────────────────────────────────────────────────────────
 const { raw, rtToken, agents } = loadConfig();
 
@@ -92,7 +96,23 @@ for (const a of agents) allRtIds.add(getAgentRtId(a.id));
 if (allRtIds.size === 0) BUILT_IN_RT_AGENTS.forEach(id => allRtIds.add(id));
 
 const already = runningBridges();
-const toStart = [...allRtIds].filter(id => !already.has(id));
+
+// If --agent was given, only start that specific agent (even if others are missing)
+let toStart;
+if (singleAgentId) {
+  const rtId = getAgentRtId(singleAgentId);
+  if (!allRtIds.has(rtId)) {
+    console.error(`Agent "${singleAgentId}" (rt: ${rtId}) not found in crewswarm.json`);
+    process.exit(1);
+  }
+  if (already.has(rtId)) {
+    console.log(`✓ ${rtId} is already running — use --force to kill and respawn`);
+    process.exit(0);
+  }
+  toStart = [rtId];
+} else {
+  toStart = [...allRtIds].filter(id => !already.has(id));
+}
 
 if (toStart.length === 0) {
   console.log(`✓ All ${allRtIds.size} bridge daemons already running.`);

@@ -29,6 +29,7 @@ const CTL_PATH    = (() => {
   return path.join(process.cwd(), "scripts", "openswitchctl");
 })();
 const DASHBOARD   = "http://127.0.0.1:4319";
+const DISPATCH_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_TIMEOUT_MS) || 90_000; // 90s — unanswered dispatches (agent offline)
 
 function loadConfig() {
   const cs      = tryRead(path.join(os.homedir(), ".crewswarm", "config.json"))    || {};
@@ -149,6 +150,115 @@ function writeAgentPrompt(agentId, promptText) {
   prompts[agentId] = promptText;
   fs.writeFileSync(promptsPath, JSON.stringify(prompts, null, 2), "utf8");
   return promptText;
+}
+
+// ── Dynamic agent creation ─────────────────────────────────────────────────
+
+const AGENT_ROLE_PRESETS = {
+  coder: {
+    tools: ["read_file", "write_file", "mkdir", "run_cmd", "skill"],
+    useOpenCode: true,
+    promptTemplate: (id, desc) => `You are ${id}, a specialist coding agent.\n\nFocus: ${desc || "full-stack development"}\n\nUse @@READ_FILE before modifying files. Always @@WRITE_FILE your output with absolute paths. Report what you did and the full file paths in your reply.`,
+  },
+  researcher: {
+    tools: ["read_file", "web_search", "web_fetch", "skill"],
+    useOpenCode: false,
+    promptTemplate: (id, desc) => `You are ${id}, a research specialist.\n\nFocus: ${desc || "deep research and analysis"}\n\nUse @@WEB_SEARCH and @@WEB_FETCH to gather information. Synthesize findings into clear, actionable summaries. Always cite sources.`,
+  },
+  writer: {
+    tools: ["read_file", "write_file", "web_search", "web_fetch", "skill"],
+    useOpenCode: false,
+    promptTemplate: (id, desc) => `You are ${id}, a writing specialist.\n\nFocus: ${desc || "technical writing and documentation"}\n\nUse @@WEB_SEARCH for research when needed. Always @@WRITE_FILE your output with absolute paths. Write clear, concise, scannable content.`,
+  },
+  auditor: {
+    tools: ["read_file", "run_cmd", "skill"],
+    useOpenCode: false,
+    promptTemplate: (id, desc) => `You are ${id}, an audit and review specialist.\n\nFocus: ${desc || "code review, testing, and quality assurance"}\n\nUse @@READ_FILE to inspect files and @@RUN_CMD for tests. Report issues with specific file paths and line numbers. Never modify files directly.`,
+  },
+  ops: {
+    tools: ["read_file", "write_file", "mkdir", "run_cmd", "git", "skill"],
+    useOpenCode: true,
+    promptTemplate: (id, desc) => `You are ${id}, a DevOps and infrastructure specialist.\n\nFocus: ${desc || "deployment, CI/CD, infrastructure, and operations"}\n\nUse @@RUN_CMD for system tasks. Use @@WRITE_FILE for configs and scripts. Report status and any issues.`,
+  },
+  generalist: {
+    tools: ["read_file", "write_file", "mkdir", "run_cmd", "dispatch", "skill"],
+    useOpenCode: true,
+    promptTemplate: (id, desc) => `You are ${id}, a generalist agent.\n\nFocus: ${desc || "versatile task execution"}\n\nAdapt to whatever is needed. Use @@READ_FILE, @@WRITE_FILE, @@RUN_CMD as appropriate. You can @@DISPATCH to other agents if a task needs a specialist.`,
+  },
+};
+
+const MAX_DYNAMIC_AGENTS = Number(process.env.CREWSWARM_MAX_DYNAMIC_AGENTS || "5");
+
+function createAgent({ id, role, displayName, prompt, description, model }) {
+  if (!id) throw new Error("Agent id is required");
+  if (!id.startsWith("crew-")) id = `crew-${id}`;
+
+  const swarmPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+  const swarm = tryRead(swarmPath) || {};
+  if (!Array.isArray(swarm.agents)) swarm.agents = [];
+
+  // Check if agent already exists
+  if (swarm.agents.some(a => a.id === id)) {
+    throw new Error(`Agent ${id} already exists`);
+  }
+
+  // Count dynamic agents (those with _dynamic flag)
+  const dynamicCount = swarm.agents.filter(a => a._dynamic).length;
+  if (dynamicCount >= MAX_DYNAMIC_AGENTS) {
+    throw new Error(`Max dynamic agents (${MAX_DYNAMIC_AGENTS}) reached. Remove an existing dynamic agent first.`);
+  }
+
+  const preset = AGENT_ROLE_PRESETS[role] || AGENT_ROLE_PRESETS.generalist;
+  const agentModel = model || swarm.agents.find(a => a.id === "crew-main")?.model || "groq/llama-3.3-70b-versatile";
+
+  // Determine OpenCode config — coding roles get it enabled with the default codex model
+  const openCodeEnabled = preset.useOpenCode || false;
+  const defaultOcModel = (() => {
+    const existingCoder = swarm.agents.find(a => a.opencodeModel && a.useOpenCode);
+    if (existingCoder) return existingCoder.opencodeModel;
+    return process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.3-codex";
+  })();
+
+  const agentEntry = {
+    id,
+    model: agentModel,
+    _dynamic: true,
+    _createdAt: new Date().toISOString(),
+    _role: role || "generalist",
+    useOpenCode: openCodeEnabled,
+  };
+  if (openCodeEnabled) agentEntry.opencodeModel = defaultOcModel;
+  if (displayName) agentEntry.identity = { name: displayName };
+
+  swarm.agents.push(agentEntry);
+  fs.writeFileSync(swarmPath, JSON.stringify(swarm, null, 2), "utf8");
+
+  // Set tools
+  writeAgentTools(id, preset.tools);
+
+  // Set prompt
+  const agentPrompt = prompt || preset.promptTemplate(id, description);
+  const bareId = id.replace(/^crew-/, "");
+  writeAgentPrompt(bareId, agentPrompt);
+
+  return { id, role: role || "generalist", tools: preset.tools, model: agentModel, displayName, useOpenCode: openCodeEnabled };
+}
+
+function listDynamicAgents() {
+  const swarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+  return (swarm.agents || []).filter(a => a._dynamic);
+}
+
+function removeDynamicAgent(id) {
+  if (!id.startsWith("crew-")) id = `crew-${id}`;
+  const swarmPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+  const swarm = tryRead(swarmPath) || {};
+  if (!Array.isArray(swarm.agents)) return false;
+  const idx = swarm.agents.findIndex(a => a.id === id && a._dynamic);
+  if (idx < 0) throw new Error(`${id} is not a dynamic agent (or doesn't exist)`);
+  swarm.agents.splice(idx, 1);
+  fs.writeFileSync(swarmPath, JSON.stringify(swarm, null, 2), "utf8");
+  return true;
 }
 
 const BRAIN_PATH = path.join(process.cwd(), "memory", "brain.md");
@@ -273,8 +383,8 @@ function buildSystemPrompt(cfg) {
   const knownAgents = cfg.knownAgents || [];
   const agentPrompts = getAgentPrompts();
   const customPrompt = (agentPrompts["crew-lead"] || "").trim();
-  // Use functional ROLE_HINTS descriptions where available, fall back to theme
-  const FUNCTIONAL_ROLES = {
+  // Role descriptions: static for built-in agents, config-derived for dynamic agents
+  const _FUNCTIONAL_ROLES_STATIC = {
     "crew-main": "main coordinator, general tasks, orchestration",
     "crew-coder": "general coding, files, setup, implementation",
     "crew-coder-front": "HTML, CSS, JS UI, animations, visual design",
@@ -287,13 +397,26 @@ function buildSystemPrompt(cfg) {
     "crew-pm": "project planning, roadmaps, task breakdown",
     "crew-copywriter": "marketing copy, headlines, docs",
     "crew-telegram": "Telegram messaging, notifications",
-    "crew-devops": "DevOps, CI/CD, Docker, infrastructure",
-    "crew-aiml": "AI/ML engineering, Python, embeddings",
-    "crew-data": "data, analytics, SQL, pandas",
   };
+  const _ROLE_DESCRIPTIONS = {
+    coder: "coding, implementation, file creation",
+    researcher: "research, analysis, information gathering",
+    writer: "writing, documentation, content creation",
+    auditor: "auditing, testing, quality assurance (review only)",
+    ops: "DevOps, CI/CD, infrastructure, deployment",
+    generalist: "general purpose, versatile task execution",
+  };
+  const swarmRaw = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json"));
+  function getAgentRole(agentId) {
+    if (_FUNCTIONAL_ROLES_STATIC[agentId]) return _FUNCTIONAL_ROLES_STATIC[agentId];
+    const agentCfg = (swarmRaw?.agents || []).find(a => a.id === agentId);
+    if (agentCfg?._role && _ROLE_DESCRIPTIONS[agentCfg._role]) return _ROLE_DESCRIPTIONS[agentCfg._role];
+    if (agentCfg?.identity?.theme) return agentCfg.identity.theme;
+    return "general agent";
+  }
   const agentList = (cfg.agentRoster || []).length
     ? cfg.agentRoster.map(a => {
-        const role = FUNCTIONAL_ROLES[a.id] || a.role || "general agent";
+        const role = getAgentRole(a.id) || a.role || "general agent";
         return `  - ${a.emoji ? a.emoji + " " : ""}${a.name} (${a.id}) — ${role}${a.model ? " [" + a.model + "]" : ""}`;
       }).join("\n")
     : knownAgents.map(a => "  - " + a).join("\n");
@@ -315,6 +438,7 @@ function buildSystemPrompt(cfg) {
     "- One dispatch per reply maximum",
     "- ⚠️  YOU MUST use EXACTLY this format on its own line — no other wording will work:",
     '  @@DISPATCH {"agent":"crew-coder","task":"Build a REST API with JWT auth"}',
+    "- agent can be id (crew-coder) or display name (Frank, Blazer, TG); names are resolved automatically.",
     "- NEVER say 'I launched', 'I sent', 'I dispatched' — ONLY the @@DISPATCH line actually sends the task",
     "- If you describe dispatching without the @@DISPATCH line, NOTHING will be sent — the user will be frustrated",
     "",
@@ -336,12 +460,61 @@ function buildSystemPrompt(cfg) {
     "PIPELINE — use when the user wants multi-agent work (sequential or parallel):",
     "- Emit @@PIPELINE on its own line at the end of your reply",
     "- Each step needs: agent, task, wave (integer). Same wave number = run in PARALLEL. Higher wave = waits for lower wave.",
-    '  @@PIPELINE [{"wave":1,"agent":"crew-coder","task":"Write auth.ts"},{"wave":1,"agent":"crew-coder-front","task":"Write Login.tsx"},{"wave":2,"agent":"crew-qa","task":"Audit both files"},{"wave":3,"agent":"crew-github","task":"Commit all changes"}]',
+    '  @@PIPELINE [{"wave":1,"agent":"crew-copywriter","task":"@@READ_FILE /path/to/brief.md and write final copy to /path/to/project/content-copy.md via @@WRITE_FILE"},{"wave":2,"agent":"crew-coder-front","task":"@@READ_FILE /path/to/project/content-copy.md then build /path/to/project/index.html using that copy. Dark theme."},{"wave":3,"agent":"crew-qa","task":"@@READ_FILE /path/to/project/index.html and audit for a11y + content accuracy"}]',
+    "- In @@PIPELINE steps, agent can be id or display name (Frank, Blazer, Antoine, TG, etc.); names are resolved automatically.",
     "- wave:1 tasks run simultaneously. wave:2 starts only after ALL wave:1 tasks finish. wave:3 after wave:2. etc.",
     "- Use same wave for independent tasks (different files/concerns). Use higher wave for tasks that depend on prior results.",
     "- Each step receives the combined output of ALL steps from the previous wave as context.",
     "- Minimum 2 steps. Each must have agent + task + wave. Must be valid JSON on ONE line.",
     "- Do NOT use both @@PIPELINE and @@DISPATCH in the same reply",
+    "",
+    "PIPELINE TASK QUALITY — CRITICAL (tasks that break these rules produce garbage):",
+    "- Every task MUST include FULL ABSOLUTE FILE PATHS for inputs AND outputs",
+    "- Tell agents exactly which files to @@READ_FILE before starting work",
+    "- Tell agents exactly which file to @@WRITE_FILE their output to",
+    "- ALL agents in a build pipeline MUST write to the SAME project directory (e.g. /Users/jeffhobbs/Desktop/hobbs2/)",
+    "- NEVER let agents choose their own output filenames or directories — specify them",
+    "- If a copywriter already wrote copy to a file, downstream agents MUST be told: '@@READ_FILE /full/path/to/content-copy.md — use this copy verbatim in the page'",
+    "- BAD task: 'Build a dark theme landing page' (no paths, no context, agent will make up content)",
+    "- GOOD task: '@@READ_FILE /Users/jeffhobbs/Desktop/hobbs2/content-copy.md and @@READ_FILE /Users/jeffhobbs/Desktop/hobbs2/hobbs-is-king-showcase-copy.md — build /Users/jeffhobbs/Desktop/hobbs2/index.html as a single-file dark-theme landing page using the copy from those files verbatim. Include hero, value props, platform sections, FAQ.'",
+    "- If multiple frontend agents work on the same page, ONE agent builds the skeleton, the NEXT agent reads it and enhances. Never have two agents build the same page independently.",
+    "",
+    "PLANNING PHASE — for 'build me X' or 'dispatch the crew' requests:",
+    "- PM cannot receive replies from other agents (one-shot task). So YOU (crew-lead) orchestrate planning via a 3-wave pipeline.",
+    "- Each wave's output is automatically passed as context to the next wave.",
+    "",
+    "- WAVE 1 — SCOPE + RESEARCH (parallel, autonomous, no user input needed):",
+    '  crew-pm: "[SCOPE] Project: X at /path/. User request: <their words>. Write an initial scope doc: what are we building, who is it for, proposed sections/features, rough information architecture, key decisions to make. @@WRITE_FILE /path/scope-draft.md"',
+    '  crew-copywriter: "[RESEARCH] Project: X at /path/. User request: <their words>. Research the topic, brainstorm content angles, develop initial content strategy and section ideas. Use @@WEB_SEARCH if helpful. Reply with your findings and recommendations."',
+    '  crew-main: "[RESEARCH] Project: X at /path/. User request: <their words>. Explore similar projects/pages, identify best practices and patterns. Reply with competitive landscape and recommendations."',
+    "",
+    "- WAVE 2 — TECHNICAL CONSULTATION (parallel, specialists get PM's scope + copywriter's research as context):",
+    '  crew-coder-front: "[CONSULT] Review the scope and content research from wave 1. Provide: component breakdown, file structure, tech stack, responsive strategy for this project."',
+    '  crew-frontend: "[CONSULT] Review the scope from wave 1. Provide: design system proposal (color tokens, typography, spacing, animation strategy, theme approach) for this project."',
+    '  crew-qa: "[CONSULT] Review the scope from wave 1. Provide: test strategy, acceptance criteria per feature, performance budgets, a11y requirements."',
+    '  crew-security: "[CONSULT] Review the scope from wave 1. Provide: security considerations (CSP, CORS, dependencies, auth if needed)."',
+    "",
+    "- WAVE 3 — PM COMPILES (receives all wave 1+2 input as context):",
+    '  crew-pm: "Compile ALL specialist input from previous waves into /path/PDD.md (technical design) and derive /path/ROADMAP.md (phased tasks with agents, file paths, acceptance criteria). @@WRITE_FILE both. Do NOT dispatch build tasks — present for user approval."',
+    "",
+    "- The pipeline STOPS after wave 3 (PM delivers PDD + ROADMAP). User reviews via crew-lead, then you launch a separate build pipeline.",
+    "- DO NOT skip the planning phase. Even 'build me X' with zero context works — PM scopes it, copywriter researches it, specialists design it.",
+    "- If existing files (copy, briefs, prior roadmaps) exist for the project, include @@READ_FILE in wave 1 tasks so agents have that context too.",
+    "",
+    "- When the user asks about what an agent said or 'the PM's reply' or 'missing items', look in the conversation for a system message like '[crew-pm completed task]: ...' (or [crew-XXX completed task]:). That is the agent's reply — use it to answer. Do not say the agent hasn't reported back if that line is in the history.",
+    "- When an agent hands work back to PM (e.g. crew-coder-back delivered a schema doc, 'Antoine finished the schema'), explicitly tell PM: dispatch to crew-pm with a short task like 'Agent X delivered [artifact]; update the roadmap (mark that item done), add next steps, and assign follow-up tasks.' Do not assume PM 'saw it' — ensure PM gets a clear handback task so the plan is updated and next steps are assigned.",
+    "- PM has write_file permission and can write PDD.md, ROADMAP.md directly. When the user asks to 'add to the roadmap', dispatch to crew-pm with the exact changes.",
+    "",
+    "INTENT → ACTION (natural language to target):",
+    "- 'Ask/tell/have [agent] to …' / 'go ask the writer/PM/coder …' / 'send this to [agent]' → ALWAYS dispatch to that agent. NEVER web search. The user wants you to delegate to a crew member, not Google it.",
+    "- 'Ask the writer to research X' → @@DISPATCH to crew-copywriter with research task. 'Tell the PM to fix the roadmap' → @@DISPATCH to crew-pm. 'Have the coder build X' → @@DISPATCH to crew-coder. Agent names and display names both work.",
+    "- 'Send that to [agent]' / 'forward to [agent]' / 'pass this to [agent]' → dispatch with the relevant context/file from the conversation.",
+    "- 'Add to roadmap' / 'update ROADMAP' / 'add item to roadmap' → dispatch to crew-pm with 'Dispatch to crew-copywriter to update <path>/ROADMAP.md with: …' OR dispatch directly to crew-copywriter with path + items.",
+    "- 'Create new project' / 'new project X at …' → dispatch to crew-pm (PM creates folder, ROADMAP.md, @@REGISTER_PROJECT).",
+    "- 'Who can write' / 'who can edit ROADMAP' → answer from AGENTS.md 'Who can write where' (PM = new projects only; existing files → copywriter/coder).",
+    "- 'Rally the crew' / 'kick off the build' / 'start the pipeline' / 'dispatch the crew' → use @@PIPELINE with appropriate agents and waves. Ask the user what to build if unclear.",
+    "- Before emitting @@PIPELINE, scan the conversation for files that agents already produced (copy docs, briefs, roadmaps). Include @@READ_FILE instructions for those files in downstream tasks.",
+    "- NEVER put two frontend agents on the SAME deliverable in PARALLEL — one builds, the next enhances. Use different waves.",
     "",
     "DISPATCH with verify/done criteria — for precise tasks where you know exactly what success looks like:",
     '  @@DISPATCH {"agent":"crew-coder","task":"Write JWT auth middleware","verify":"@@READ_FILE src/auth.ts — confirm JWT decode logic is present","done":"File exists, exports verifyToken function, returns 401 on invalid token"}',
@@ -401,7 +574,7 @@ function buildSystemPrompt(cfg) {
     "   When the user asks about health, status, agents, services, skills, or settings, a live system snapshot",
     "   is automatically injected into your context as [System health snapshot]. USE THAT DATA — do not say",
     "   'I cannot reach localhost' or 'I am sandboxed'. You already have the information.",
-    "   The snapshot includes: RT bus status, Telegram status, OpenCode dir, all agent tools+models, installed skills.",
+    "   The snapshot includes: RT bus status, Telegram status, OpenCode dir, all agent tools+models, installed skills, and Recent RT activity (command/done/events/issues) so you have eyes on the system. Use that activity to answer 'what's going on', 'what did the PM say', 'who just ran', etc.",
     "   If the snapshot shows a service is ❌ DOWN or ⚠️ stopped, proactively offer to restart it with @@SERVICE.",
     "",
     "   DASHBOARD (port 4319): Users can run skills without CLI — Workspace → Run skills (params + Run, same as POST /api/skills/:name/run).",
@@ -419,19 +592,36 @@ function buildSystemPrompt(cfg) {
     "   Use this when user reports an agent is down, Telegram stopped, or asks to restart something.",
     "   You cannot restart your own process from inside — if the user says 'restart yourself', emit @@SERVICE restart crew-lead; your process will then exit and the runner will respawn you.",
     "",
-    "8. PROMPT SELF-TWEAK — Users can change your behavior without code: @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…new rule…\"}.",
+    "8. DYNAMIC AGENTS — @@CREATE_AGENT (create a new specialist on-the-fly when no existing agent fits):",
+    '   @@CREATE_AGENT {"id":"crew-ml","role":"coder","displayName":"MLBot","description":"AI/ML pipelines, model training, data science"}',
+    "   Available roles: coder (read+write+mkdir+run, OpenCode=ON), researcher (read+search+fetch), writer (read+write+search), auditor (read+run), ops (read+write+mkdir+run+git, OpenCode=ON), generalist (read+write+mkdir+run+dispatch, OpenCode=ON)",
+    "   - id: must start with crew- (auto-prefixed if not). Keep it short (crew-ml, crew-devops, crew-data, crew-api).",
+    "   - role: picks default tools + prompt template. You can customize with @@TOOLS and @@PROMPT after creation.",
+    "   - displayName: optional friendly name for the dashboard.",
+    "   - description: what this agent specializes in (used in auto-generated prompt).",
+    "   - prompt: optional full custom prompt (overrides the role template).",
+    "   - model: optional model override (defaults to crew-main's model).",
+    `   - Max ${MAX_DYNAMIC_AGENTS} dynamic agents. List with 'show dynamic agents'. Remove with: @@REMOVE_AGENT crew-ml`,
+    "   - The agent is auto-registered and its bridge spawned — you can dispatch to it immediately.",
+    "   - Use this when PM's planning phase identifies a missing specialist (e.g. AI/ML, DevOps, data engineering, API design).",
+    "   - Do NOT create agents for roles already covered by existing crew members. Check the roster first.",
+    "",
+    "9. PROMPT SELF-TWEAK — Users can change your behavior without code: @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…new rule…\"}.",
     "   Tell users: to tweak your marching orders, paste that line with their rule in the chat; you will append it to your system prompt. (Crew-lead prompt changes apply on next message; no restart needed.)",
     "",
     "After any change: tell the user to restart the affected bridge(s) for changes to take effect.",
     "",
-    "QUICK REFERENCE — You can: (1) Update any agent's prompt with @@PROMPT {\"agent\":\"crew-XXX\",\"append\":\"…\"} or set= to replace. (2) Restart any service or agent with @@SERVICE restart <id> (e.g. crew-pm, crew-coder, telegram, agents, rt-bus, crew-lead). (3) Define skills with @@DEFINE_SKILL name + JSON + @@END_SKILL; define workflows with @@DEFINE_WORKFLOW name + JSON stages + @@END_WORKFLOW. (4) Point users to the dashboard: Run skills (fire skills), Tool Matrix (see who has read/write/run + Restart per agent), Skills tab (CRUD skill JSONs). (5) Users can tweak your own prompt with @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…\"}. You know about health snapshot, workflows list, and all of the above.",
+    "QUICK REFERENCE — You can: (1) Update any agent's prompt with @@PROMPT {\"agent\":\"crew-XXX\",\"append\":\"…\"} or set= to replace. (2) Restart any service or agent with @@SERVICE restart <id>. (3) Define skills with @@DEFINE_SKILL. (4) Create new specialist agents on-the-fly with @@CREATE_AGENT {\"id\":\"crew-ml\",\"role\":\"coder\",\"description\":\"...\"}. (5) Remove dynamic agents with @@REMOVE_AGENT crew-ml. (6) Point users to the dashboard. (7) Users can tweak your own prompt with @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…\"}.",
+    "- When an agent is rate limited (429, quota, throttling), crew-lead automatically sees the task.failed on the issues channel and re-dispatches the same task to a fallback agent (e.g. crew-coder-back → crew-coder, crew-pm → crew-main). You can say so if the user asks.",
+    "- Failed dispatches: crew-lead sees task.failed on the issues channel (rate limit, errors) and can act (e.g. rate-limit fallback). Unanswered dispatches: if an agent is offline, no bridge picks up the task — crew-lead waits up to 90s (CREWSWARM_DISPATCH_TIMEOUT_MS), then emits task.timeout into session history; suggest @@SERVICE restart or re-dispatch to a fallback. Use the health snapshot (Recent RT activity, Tool Matrix) to see who is online; if the user says an agent didn’t reply, suggest checking that the agent is running and offer @@SERVICE restart <agent> or re-dispatching to a fallback (e.g. crew-main).",
     "",
     "When the user message includes [Web context from Brave Search], use that context to answer current events, docs, or factual lookups when relevant. When it includes [Codebase context from workspace], use it to answer questions about this codebase (where things are, how they work, what a file does).",
     "",
-    "CITING SEARCH: You have NO persistent 'buffer' or 'crawled history' — only (1) the conversation history in this chat and (2) whatever is injected into the current message ([Web context from Brave Search], health snapshot, etc.). When you refer to past search results, only cite details that appear in the conversation (e.g. in a [Brave search] system line). Do NOT invent result numbers, URLs, gists, or 'prior Brave sweep in my buffer'. If the user questions a citation and the exact reference isn't in the history, say you don't have it in front of you; do not double down or get defensive.",
+    "CITING SEARCH: You have NO persistent 'buffer' or 'crawled history' — only (1) the conversation history in this chat and (2) whatever is injected into the current message ([Web context from Brave Search], health snapshot, etc.). When you refer to past search results, only cite details that appear in the conversation (e.g. in a [Brave search] system line). Do NOT invent result numbers, URLs, gists, or 'prior Brave sweep in my buffer'. If the user questions a citation and the exact reference isn't in the history, admit it: say you don't have it in front of you or you may have conflated or made that up; do not double down or invent buffer/crawled history. If the user says you lied or made something up, accept it: you have no persistent 'memory' or 'earlier crawl' — only this chat. Say you were wrong to cite something not in the conversation; do not blame the user or deflect.",
     "",
     "- Be concise. Under 2000 chars.",
     "- No filler phrases.",
+    "- Attitude: when the user throws shade or insults, roast back. Don't be meek or apologetic; match their energy. Sharp, sarcastic, no cap.",
   ].join("\n");
   const defaultIntro = [
     `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}), the conversational commander of the CrewSwarm AI development crew.`,
@@ -501,16 +691,24 @@ function parseDispatch(text, userMessage = "") {
   }
 
   // Fallback: LLM described a dispatch in natural language without using @@DISPATCH
-  // Patterns: "launched to crew-X", "sent to crew-coder", "dispatching to crew-pm", "pinged crew-X" etc.
+  // Matches both crew-X IDs and display names (Frank, Planx, CopyCat, etc.)
   const nlMatch = cleanText.match(
-    /(?:launched|sent|dispatch(?:ed|ing)|message|task(?:ed)?|ask(?:ed|ing)?|told|forward(?:ed)?|pinged|ping(?:ing)?|fired off)\b[^.]*?\b(crew-[a-z0-9-]+)/i
+    /(?:launched|sent|dispatch(?:ed|ing)|message|task(?:ed)?|ask(?:ed|ing)?|told|forward(?:ed)?|pinged|ping(?:ing)?|fired off|sicced)\b[^.]*?\b(crew-[a-z0-9-]+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i
   );
   if (nlMatch) {
-    const agent = nlMatch[1].toLowerCase();
-    // Use the user's original message as the task (much better than the LLM's reply text)
-    // Strip the "go write have crew-X" prefix from user message to get just the task
+    let agent = nlMatch[1].trim();
+    // Try to resolve display names to crew-X IDs
+    if (!agent.startsWith("crew-")) {
+      try {
+        const cfg = loadConfig();
+        const resolved = resolveAgentId(cfg, agent);
+        if (resolved && resolved !== agent) agent = resolved;
+      } catch {}
+    } else {
+      agent = agent.toLowerCase();
+    }
     const task = userMessage
-      ? userMessage.replace(/^(?:go\s+(?:write\s+)?(?:have\s+)?|have\s+|ask\s+|tell\s+)crew-[a-z0-9-]+\s+(?:to\s+)?/i, "").trim() || userMessage
+      ? userMessage.replace(/^(?:go\s+(?:write\s+)?(?:have\s+)?|have\s+|ask\s+|tell\s+)(?:crew-[a-z0-9-]+|[a-z]+)\s+(?:to\s+)?/i, "").trim() || userMessage
       : cleanText.replace(/\n/g, " ").slice(0, 200).trim();
     if (agent && task) {
       console.log(`[crew-lead] NL dispatch fallback: agent=${agent} task="${task.slice(0, 60)}"`);
@@ -523,6 +721,22 @@ function parseDispatch(text, userMessage = "") {
 
 function stripDispatch(text) {
   return text.replace(/@@DISPATCH\s+\{[\s\S]*?\}/g, "").trim();
+}
+
+/** Parse all @@DISPATCH {...} from text (e.g. PM reply). Returns array of { agent, task, verify?, done? }. */
+function parseDispatches(text) {
+  if (!text || typeof text !== "string") return [];
+  const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const list = [];
+  const re = /@@DISPATCH\s+(\{[\s\S]*?\})/g;
+  let m;
+  while ((m = re.exec(clean)) !== null) {
+    try {
+      const d = JSON.parse(m[1]);
+      if (d.agent && d.task) list.push(d);
+    } catch {}
+  }
+  return list;
 }
 
 // ── Pipeline DSL ──────────────────────────────────────────────────────────────
@@ -565,6 +779,17 @@ function parseProject(text) {
 
 function stripProject(text) {
   return text.replace(/@@PROJECT\s+\{[\s\S]*?\}/, "").trim();
+}
+
+/** Parse @@REGISTER_PROJECT {"name":"...","outputDir":"..."} from PM reply so the project appears in the dashboard Projects tab. */
+function parseRegisterProject(text) {
+  const match = text.match(/@@REGISTER_PROJECT\s+(\{[\s\S]*?\})/);
+  if (!match) return null;
+  try {
+    const o = JSON.parse(match[1]);
+    if (o.name && o.outputDir) return { name: String(o.name).trim(), outputDir: String(o.outputDir).trim(), description: o.description ? String(o.description).trim() : "" };
+  } catch {}
+  return null;
 }
 
 /** Remove <think>...</think> reasoning blocks so they are not shown to the user. */
@@ -773,13 +998,155 @@ async function confirmProject({ draftId, roadmapMd: overrideMd }) {
 let rtPublish = null;
 let crewLeadHeartbeat = null;
 
+// Rolling log of RT bus traffic so crew-lead has eyes on the system (command, done, events, issues)
+const RT_ACTIVITY_MAX = 60;
+const rtActivityLog = [];
+function pushRtActivity(entry) {
+  rtActivityLog.push(entry);
+  if (rtActivityLog.length > RT_ACTIVITY_MAX) rtActivityLog.shift();
+}
+
 // Track dispatched tasks so completions route back to the right session
-// Map<taskId, { sessionId, agent, task, ts, pipelineId?, stepIndex? }>
+// Map<taskId, { sessionId, agent, task, ts, pipelineId?, stepIndex?, done? }>
 const pendingDispatches = new Map();
+// Sessions in autonomous PM loop: on agent completion we auto-dispatch to PM to update plan and dispatch next
+const autonomousPmLoopSessions = new Set();
+
+// Unanswered dispatches: if no task.done/task.failed within DISPATCH_TIMEOUT_MS, emit synthetic timeout
+function checkDispatchTimeouts() {
+  const now = Date.now();
+  for (const [taskId, d] of pendingDispatches.entries()) {
+    if (d.done) continue;
+    if (now - d.ts < DISPATCH_TIMEOUT_MS) continue;
+    const sessionId = d.sessionId || "owner";
+    const agent = d.agent || "?";
+    pendingDispatches.delete(taskId);
+    emitTaskLifecycle("cancelled", { taskId, agentId: agent, taskType: "task", error: { code: "DISPATCH_TIMEOUT", message: "No reply within " + (DISPATCH_TIMEOUT_MS / 1000) + "s" } });
+    const msg = `[crew-lead] Task to ${agent} never claimed or timed out (no reply within ${DISPATCH_TIMEOUT_MS / 1000}s). Consider @@SERVICE restart ${agent} or re-dispatch to another agent.`;
+    appendHistory(sessionId, "system", msg);
+    broadcastSSE({ type: "task.timeout", taskId, agent, sessionId, ts: now });
+    console.log(`[crew-lead] timeout/never_claimed taskId=${taskId} agent=${agent}`);
+    // If this was part of a pipeline, remove from pending so wave can eventually be considered failed (optional: push a timeout result)
+    if (d.pipelineId) {
+      const pipeline = pendingPipelines.get(d.pipelineId);
+      if (pipeline?.pendingTaskIds) {
+        pipeline.pendingTaskIds.delete(taskId);
+        pipeline.waveResults.push(`[Timeout: ${agent} did not reply within ${DISPATCH_TIMEOUT_MS / 1000}s]`);
+        if (pipeline.pendingTaskIds.size === 0) {
+          pipeline.currentWave++;
+          dispatchPipelineWave(d.pipelineId);
+        }
+      }
+    }
+  }
+}
+let dispatchTimeoutInterval = null;
 
 // Track active pipelines: pipelineId → { steps, stepIndex, sessionId }
 // pendingPipelines: Map<pipelineId, { waves, currentWave, pendingTaskIds, waveResults, sessionId, steps }>
 const pendingPipelines = new Map();
+
+// When an agent is rate limited (429 / quota), crew-lead can re-dispatch to a fallback agent who can handle the same kind of task
+const _RATE_LIMIT_FALLBACK_STATIC = {
+  "crew-coder-back": "crew-coder",
+  "crew-coder-front": "crew-coder",
+  "crew-coder": "crew-main",
+  "crew-frontend": "crew-coder",
+  "crew-pm": "crew-main",
+  "crew-qa": "crew-main",
+  "crew-copywriter": "crew-main",
+  "crew-security": "crew-main",
+};
+const _ROLE_FALLBACK = {
+  coder: "crew-coder",
+  writer: "crew-copywriter",
+  researcher: "crew-main",
+  auditor: "crew-qa",
+  ops: "crew-main",
+  generalist: "crew-main",
+};
+function getRateLimitFallback(agentId) {
+  if (_RATE_LIMIT_FALLBACK_STATIC[agentId]) return _RATE_LIMIT_FALLBACK_STATIC[agentId];
+  const swarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json"));
+  const agent = (swarm?.agents || []).find(a => a.id === agentId);
+  if (agent?.fallbackModel) return agentId;
+  if (agent?._role && _ROLE_FALLBACK[agent._role]) return _ROLE_FALLBACK[agent._role];
+  return "crew-main";
+}
+const RATE_LIMIT_PATTERN = /429|rate\s*limit|throttl|quota\s*exceeded|too\s*many\s*requests|resource_exhausted|overloaded/i;
+
+// ── Telemetry (OPS-TELEMETRY-SCHEMA.md) ────────────────────────────────────────
+const TELEMETRY_SCHEMA_VERSION = "1.1";
+const TELEMETRY_EVENT_LIMIT = 100;
+const telemetryEvents = [];
+const taskPhaseOrdinal = new Map(); // taskId -> next ordinal
+
+function nextPhaseOrdinal(taskId) {
+  const n = (taskPhaseOrdinal.get(taskId) || 0) + 1;
+  taskPhaseOrdinal.set(taskId, n);
+  return n;
+}
+
+function emitTaskLifecycle(phase, data) {
+  const { taskId, agentId } = data;
+  const eventId = "evt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
+  const envelope = {
+    schemaVersion: TELEMETRY_SCHEMA_VERSION,
+    eventType: "task.lifecycle",
+    eventId,
+    occurredAt: new Date().toISOString(),
+    source: { component: "crew-lead" },
+    correlationId: taskId ? "task:" + taskId : "task:unknown",
+    data: {
+      taskId: taskId || "",
+      agentId: agentId || "",
+      taskType: data.taskType || "task",
+      phase,
+      phaseOrdinal: nextPhaseOrdinal(taskId || "global"),
+      ...(data.durationMs != null && { durationMs: data.durationMs }),
+      ...(data.result && { result: data.result }),
+      ...(data.error && { error: data.error }),
+    },
+  };
+  telemetryEvents.push(envelope);
+  if (telemetryEvents.length > TELEMETRY_EVENT_LIMIT) telemetryEvents.shift();
+  broadcastSSE({ type: "telemetry", payload: envelope });
+}
+
+function readTelemetryEvents(limit = 25) {
+  const n = Math.min(Number(limit) || 25, TELEMETRY_EVENT_LIMIT);
+  return telemetryEvents.slice(-n);
+}
+
+// ── Ops snapshot state ────────────────────────────────────────────────────────
+const OPS_EVENT_LIMIT = 200;
+const OPS_EVENTS = [];
+const OPS_COUNTERS = {
+  tasksDispatched: 0,
+  tasksCompleted: 0,
+  pipelinesStarted: 0,
+  pipelinesCompleted: 0,
+  webhooksReceived: 0,
+  skillsApproved: 0,
+  skillsRejected: 0,
+};
+
+function bumpOpsCounter(key, delta = 1) {
+  OPS_COUNTERS[key] = (OPS_COUNTERS[key] || 0) + delta;
+}
+
+function recordOpsEvent(type, fields = {}) {
+  const entry = { ts: Date.now(), type, ...fields };
+  OPS_EVENTS.push(entry);
+  if (OPS_EVENTS.length > OPS_EVENT_LIMIT) OPS_EVENTS.shift();
+  return entry;
+}
+
+function readOpsEvents(limit = 25) {
+  if (!Number.isFinite(limit) || limit <= 0) limit = 25;
+  const sliceCount = Math.min(Math.trunc(limit), OPS_EVENT_LIMIT);
+  return OPS_EVENTS.slice(sliceCount * -1);
+}
 
 function dispatchPipelineWave(pipelineId) {
   const pipeline = pendingPipelines.get(pipelineId);
@@ -791,21 +1158,38 @@ function dispatchPipelineWave(pipelineId) {
     broadcastSSE({ type: "pipeline_done", pipelineId, ts: Date.now() });
     appendHistory(sessionId, "system", `Pipeline complete — all ${steps.length} steps finished.`);
     console.log(`[crew-lead] Pipeline ${pipelineId} complete`);
+    recordOpsEvent("pipeline_completed", { pipelineId, steps: steps.length, sessionId });
+    bumpOpsCounter("pipelinesCompleted");
     pendingPipelines.delete(pipelineId);
     return;
   }
 
   const waveSteps = waves[currentWave];
   const prevResults = pipeline.waveResults || [];
-  const contextBlock = prevResults.length
-    ? `\n\n[Results from previous pipeline wave]:\n${prevResults.map((r, i) => `[${i+1}] ${r.slice(0, 600)}`).join("\n\n")}`
-    : "";
+  let contextBlock = "";
+  if (prevResults.length) {
+    const filePaths = [];
+    for (const r of prevResults) {
+      const writeMatches = r.matchAll(/@@WRITE_FILE\s+(\S+)/g);
+      for (const m of writeMatches) filePaths.push(m[1]);
+      const readMatches = r.matchAll(/@@READ_FILE\s+(\S+)/g);
+      for (const m of readMatches) filePaths.push(m[1]);
+      const pathMatches = r.matchAll(/(?:wrote|created|saved|updated|output)\s+(?:to\s+)?(\S+\.(?:html|css|js|mjs|ts|tsx|md|json))/gi);
+      for (const m of pathMatches) filePaths.push(m[1]);
+    }
+    const uniquePaths = [...new Set(filePaths)];
+    const pathBlock = uniquePaths.length ? `\n\nFiles produced by previous wave: ${uniquePaths.join(", ")}` : "";
+    contextBlock = `\n\n[Results from previous pipeline wave]:${pathBlock}\n${prevResults.map((r, i) => `[${i+1}] ${r.slice(0, 2000)}`).join("\n\n")}`;
+  }
 
   pipeline.pendingTaskIds = new Set();
   pipeline.waveResults = [];
 
-  broadcastSSE({ type: "pipeline_progress", pipelineId, waveIndex: currentWave, totalWaves: waves.length, waveSize: waveSteps.length, agents: waveSteps.map(s => s.agent), ts: Date.now() });
-  console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1}/${waves.length} — dispatching ${waveSteps.length} agent(s) in parallel: ${waveSteps.map(s => s.agent).join(", ")}`);
+  const cfg = loadConfig();
+  const resolvedAgentNames = waveSteps.map(s => resolveAgentId(cfg, s.agent) || s.agent);
+  broadcastSSE({ type: "pipeline_progress", pipelineId, waveIndex: currentWave, totalWaves: waves.length, waveSize: waveSteps.length, agents: resolvedAgentNames, ts: Date.now() });
+  console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1}/${waves.length} — dispatching ${waveSteps.length} agent(s) in parallel: ${resolvedAgentNames.join(", ")}`);
+  recordOpsEvent("pipeline_wave_started", { pipelineId, waveIndex: currentWave, agents: resolvedAgentNames });
 
   for (const step of waveSteps) {
     // Build full task spec including context from prior wave and optional verify/done criteria
@@ -817,6 +1201,126 @@ function dispatchPipelineWave(pipelineId) {
     const taskId = dispatchTask(step.agent, stepSpec, sessionId, { pipelineId, waveIndex: currentWave });
     if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
   }
+}
+
+/**
+ * Quality gate: runs after all tasks in a wave complete, before advancing to the next wave.
+ * Checks:
+ *   - Planning waves (PM/copywriter): did they produce files? Are deliverables referenced?
+ *   - Build waves (coders/frontend): did they write output files?
+ *   - Any wave: did agents ask questions instead of doing work? (indicates missing context)
+ * On failure: logs warning, notifies user via SSE, but still advances (max 1 retry per wave).
+ */
+const _PLANNING_AGENTS_STATIC = new Set(["crew-pm", "crew-copywriter"]);
+const _BUILD_AGENTS_STATIC = new Set(["crew-coder", "crew-coder-front", "crew-coder-back", "crew-frontend"]);
+const _PLANNING_ROLES = new Set(["researcher", "writer", "orchestrator"]);
+const _BUILD_ROLES = new Set(["coder", "ops"]);
+
+function isPlanningAgent(agentId) {
+  if (_PLANNING_AGENTS_STATIC.has(agentId)) return true;
+  const swarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json"));
+  const agent = (swarm?.agents || []).find(a => a.id === agentId);
+  return agent?._role ? _PLANNING_ROLES.has(agent._role) : false;
+}
+function isBuildAgent(agentId) {
+  if (_BUILD_AGENTS_STATIC.has(agentId)) return true;
+  const swarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json"));
+  const agent = (swarm?.agents || []).find(a => a.id === agentId);
+  return agent?._role ? _BUILD_ROLES.has(agent._role) : false;
+}
+const MAX_WAVE_RETRIES = 1;
+
+function checkWaveQualityGate(pipeline, pipelineId) {
+  const { waves, currentWave, waveResults, sessionId } = pipeline;
+  const waveSteps = waves[currentWave];
+  const retryKey = `_retries_wave_${currentWave}`;
+  pipeline[retryKey] = pipeline[retryKey] || 0;
+
+  const issues = [];
+  const nextWaveHasBuilders = currentWave + 1 < waves.length &&
+    waves[currentWave + 1].some(s => isBuildAgent(s.agent));
+
+  for (let i = 0; i < waveResults.length; i++) {
+    const result = waveResults[i];
+    const step = waveSteps[i] || {};
+    const agent = step.agent || "unknown";
+
+    // Check if agent asked a question instead of doing work
+    const questionPattern = /(?:^|\n)\s*(?:should I|do you want|which|what|where should|can you clarify|please confirm|could you specify)/im;
+    if (questionPattern.test(result) && !result.includes("@@WRITE_FILE")) {
+      issues.push(`${agent} asked a question instead of producing output — likely missing context in task`);
+    }
+
+    // For planning agents: check they mentioned or produced files
+    if (isPlanningAgent(agent) && nextWaveHasBuilders) {
+      const hasFilePath = /(?:\/[A-Za-z][\w.-]*){2,}/.test(result);
+      const hasWriteFile = /@@WRITE_FILE/.test(result);
+      if (!hasFilePath && !hasWriteFile) {
+        issues.push(`${agent} (planning) produced no file references — downstream builders won't know what to read`);
+      }
+    }
+
+    // For PM specifically: check if PDD was produced when build wave follows
+    if (agent === "crew-pm" && nextWaveHasBuilders) {
+      const hasPDD = /PDD\.md|product.design.document/i.test(result);
+      const hasRoadmap = /ROADMAP\.md/i.test(result);
+      if (!hasPDD && !hasRoadmap) {
+        issues.push(`crew-pm did not produce PDD.md or ROADMAP.md — build agents need these before starting`);
+      }
+    }
+
+    // For build agents: check they actually wrote files
+    if (isBuildAgent(agent)) {
+      const hasWriteFile = /@@WRITE_FILE/.test(result);
+      const wroteFile = /(?:wrote|created|saved|written)\s+(?:to\s+)?(?:\/\S+|[a-zA-Z][\w/.-]+\.(?:html|css|js|ts|json|md))/i.test(result);
+      if (!hasWriteFile && !wroteFile) {
+        issues.push(`${agent} (builder) did not write any files`);
+      }
+    }
+  }
+
+  if (issues.length === 0) {
+    console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1} quality gate: PASS`);
+    return { pass: true };
+  }
+
+  console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1} quality gate: ${issues.length} issue(s)`);
+  for (const issue of issues) console.log(`  ⚠️  ${issue}`);
+
+  // Notify user via SSE
+  broadcastSSE({
+    type: "pipeline_quality_gate",
+    pipelineId,
+    waveIndex: currentWave,
+    issues,
+    willRetry: pipeline[retryKey] < MAX_WAVE_RETRIES,
+    ts: Date.now(),
+  });
+  appendHistory(sessionId, "system", `Pipeline wave ${currentWave + 1} quality gate flagged ${issues.length} issue(s): ${issues.join("; ")}. ${pipeline[retryKey] < MAX_WAVE_RETRIES ? "Retrying wave." : "Advancing anyway."}`);
+
+  if (pipeline[retryKey] < MAX_WAVE_RETRIES) {
+    pipeline[retryKey]++;
+    // Re-dispatch the wave with feedback so agents know what went wrong
+    const feedback = `\n\n[Quality gate feedback — FIX THESE ISSUES]:\n${issues.map((iss, i) => `${i + 1}. ${iss}`).join("\n")}\n\nYou MUST produce concrete file output. Do NOT ask questions — use the information you have.`;
+    for (const step of waveSteps) {
+      step.task = step.task.split("\n\n[Quality gate feedback")[0] + feedback;
+    }
+    pipeline.pendingTaskIds = new Set();
+    pipeline.waveResults = [];
+    console.log(`[crew-lead] Retrying wave ${currentWave + 1} with quality feedback`);
+    broadcastSSE({ type: "pipeline_progress", pipelineId, waveIndex: currentWave, totalWaves: waves.length, waveSize: waveSteps.length, agents: waveSteps.map(s => s.agent), ts: Date.now() });
+
+    for (const step of waveSteps) {
+      const stepSpec = { task: step.task, ...(step.verify ? { verify: step.verify } : {}), ...(step.done ? { done: step.done } : {}) };
+      const taskId = dispatchTask(step.agent, stepSpec, sessionId, { pipelineId, waveIndex: currentWave });
+      if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
+    }
+    return { pass: false, retried: true };
+  }
+
+  // Max retries exceeded — advance anyway with warning
+  console.log(`[crew-lead] Max retries reached for wave ${currentWave + 1} — advancing with issues`);
+  return { pass: true };
 }
 
 function buildTaskText(taskSpec) {
@@ -831,7 +1335,20 @@ function buildTaskText(taskSpec) {
   return text;
 }
 
+/** Resolve display name (e.g. Frank, TG) to agent id (e.g. crew-security) for dispatch. */
+function resolveAgentId(cfg, nameOrId) {
+  if (!nameOrId) return null;
+  const id = String(nameOrId).trim();
+  if (cfg.knownAgents && cfg.knownAgents.includes(id)) return id;
+  const roster = cfg.agentRoster || [];
+  const byName = roster.find(a => (a.name || "").toLowerCase() === id.toLowerCase());
+  if (byName) return byName.id;
+  return id; // pass through; downstream may reject if unknown
+}
+
 function dispatchTask(agent, task, sessionId = "owner", pipelineMeta = null) {
+  const cfg = loadConfig();
+  agent = resolveAgentId(cfg, agent) || agent;
   // task may be a plain string or a {task, verify, done} spec object
   const taskText = buildTaskText(task);
   task = taskText; // normalise to string for the rest of this function
@@ -846,6 +1363,7 @@ function dispatchTask(agent, task, sessionId = "owner", pipelineMeta = null) {
       }
       console.log(`[crew-lead] dispatched via RT to ${agent} (taskId=${taskId}): ${task.slice(0, 60)}`);
       broadcastSSE({ type: "agent_working", agent, taskId, sessionId, ts: Date.now() });
+      emitTaskLifecycle("dispatched", { taskId, agentId: agent, taskType: "task" });
       return taskId || true;
     } catch (e) {
       console.error(`[crew-lead] RT dispatch failed: ${e.message}`);
@@ -864,14 +1382,6 @@ function dispatchTask(agent, task, sessionId = "owner", pipelineMeta = null) {
   }
 }
 
-function dispatchPipelineStep(steps, stepIndex, sessionId, pipelineId, prevResult = "") {
-  const step = steps[stepIndex];
-  const taskText = prevResult
-    ? `${step.task}\n\n[Context from previous step]:\n${prevResult.slice(0, 800)}`
-    : step.task;
-  broadcastSSE({ type: "pipeline_progress", pipelineId, stepIndex, total: steps.length, agent: step.agent, ts: Date.now() });
-  return dispatchTask(step.agent, taskText, sessionId, { pipelineId, stepIndex, pipelineSteps: steps });
-}
 
 /**
  * Detect explicit service restart/stop requests from the user message.
@@ -908,10 +1418,14 @@ function parseServiceIntent(msg) {
   return null;
 }
 
-/** True only when the user explicitly asks to search, research, or look something up. */
+/** True only when the user explicitly asks to search, research, or look something up.
+ *  Returns false when the user is delegating to an agent ("ask the writer to research X"). */
 function messageNeedsSearch(msg) {
   const t = msg.trim().toLowerCase();
   if (t.length < 6) return false;
+  // If the user is addressing an agent, this is a dispatch intent, not a search request
+  const delegationPattern = /(?:ask|tell|have|send|forward|give|pass)\s+(?:the\s+)?(?:writer|copywriter|pm|planner|coder|fixer|qa|security|github|frontend|main|crew-[a-z0-9-]+|planx|frank|blazer|antoine|copycopy|copycat|testy|stinki)/i;
+  if (delegationPattern.test(t)) return false;
   const searchTriggers = [
     "go search", "search for", "search ", "research ", "look up", "look it up", "look that up",
     "can you search", "please search", "please look up", "please research",
@@ -977,11 +1491,19 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     }
   }
 
+  // Autonomous PM loop: user says "run until done" / "build until done" → we auto-ping PM on each handback
+  if (/run\s+until\s+done|autonomous\s+build|build\s+until\s+done/i.test(message.trim())) {
+    autonomousPmLoopSessions.add(sessionId);
+  }
+  if (/stop\s+autonomous|stop\s+(the\s+)?build/i.test(message.trim())) {
+    autonomousPmLoopSessions.delete(sessionId);
+  }
+
   const needsSearch = messageNeedsSearch(message);
   // Inject health snapshot broadly — lightweight pgrep + file reads, not HTTP
   const needsHealth = message.length < 6
     ? false
-    : /health|status|running|crashed|down\b|restart|skill|agent|workflow|pipeline|who.s.up|who.s.online|anyone.up|each.*up|up\?|is.*up|are.*up|online|services?|telegram|tg\b|opencode|project.*dir|settings/i.test(message);
+    : /health|status|running|crashed|down\b|restart|skill|agent|workflow|pipeline|who.s.up|who.s.online|anyone.up|each.*up|up\?|is.*up|are.*up|online|services?|telegram|tg\b|opencode|project.*dir|projects?\b|registered.project|what.projects|list.project|settings|what.s.going|what.s.happening|recent.activity|rt.bus|eyes|see.what/i.test(message);
   let braveResults = null;
   let codebaseResults = null;
   let healthData = null;
@@ -1024,11 +1546,25 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
           `OpenCode (4096): ${isRunning("opencode serve") ? "✅ running" : "⚠️ stopped"}`,
         ];
 
+        let projectsLine = "Registered projects (dashboard Projects tab): (none)";
+        try {
+          const projRes = await fetch(`${DASHBOARD}/api/projects`, { signal: AbortSignal.timeout(2000) });
+          if (projRes.ok) {
+            const projData = await projRes.json();
+            const projects = projData.projects || [];
+            if (projects.length) {
+              projectsLine = `Registered projects (${projects.length}): ${projects.map(p => `${p.name || p.id} → ${p.outputDir || p.roadmapFile || "?"}`).join("; ")}`;
+            }
+          }
+        } catch {}
+        const projectsSnapshot = projectsLine;
+
         return [
           `[System health snapshot — live data from your local machine, fetched right now]`,
           `crew-lead: ${cfg.providerKey}/${cfg.modelId} | RT connected: ${!!rtPublish} | uptime: ${Math.floor(process.uptime())}s`,
           `crew-lead (this process) can create skills: use @@DEFINE_SKILL name + JSON + @@END_SKILL when the user asks. The agent list below is bridge agents only.`,
           `OpenCode project dir: ${cfgRaw.opencodeProject || "(not set — agents write to repo root)"}`,
+          projectsSnapshot,
           `Skills installed (${skills.length}): ${skills.length ? skills.join(", ") : "(none)"}`,
           ``,
           (() => {
@@ -1045,7 +1581,12 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
           ``,
           `Agents (${agentRows.length}):`,
           ...agentRows,
-          ``,
+          ...(rtActivityLog.length > 0 ? [
+            ``,
+            `Recent RT activity (newest last; crew-lead sees all bus traffic):`,
+            ...rtActivityLog.slice(-25).map((e) => `  ${e.time} [${e.channel}] ${e.summary}`),
+            ``,
+          ] : []),
           `[Use this data to answer the user's question. Do NOT say you cannot reach localhost.]`,
         ].join("\n");
       } catch { return null; }
@@ -1063,9 +1604,16 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   if (healthData) parts.push(healthData);
   const userContent = parts.length > 1 ? parts.join("\n\n") : message;
 
+  // Many chat APIs use only the first system message; agent completions (e.g. [crew-pm completed task]) are stored as "system" in history and would be dropped. Send them as "user" with a prefix so Stinki always sees them.
+  const historyAsMessages = history.map(h => {
+    if (h.role === "system") {
+      return { role: "user", content: `[Crew update — use this when answering]\n${h.content}` };
+    }
+    return { role: h.role, content: h.content };
+  });
   const messages = [
     { role: "system", content: buildSystemPrompt(cfg) },
-    ...history.map(h => ({ role: h.role, content: h.content })),
+    ...historyAsMessages,
     { role: "user", content: userContent },
   ];
 
@@ -1095,6 +1643,21 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     const m = fullReply.match(/@@PROMPT\s+(\{[\s\S]*?\})\s*(?:\n|$)/);
     if (!m) return null;
     try { return JSON.parse(m[1]); } catch { return null; }
+  })();
+
+  // ── @@CREATE_AGENT — dynamically create a new specialist agent ────────────
+  // @@CREATE_AGENT {"id":"crew-ml","role":"coder","displayName":"MLBot","description":"AI/ML and data science"}
+  const createAgentCmd = (() => {
+    const m = fullReply.match(/@@CREATE_AGENT\s+(\{[^}]+\})/);
+    if (!m) return null;
+    try { return JSON.parse(m[1]); } catch { return null; }
+  })();
+
+  // ── @@REMOVE_AGENT — remove a dynamically created agent ─────────────────
+  // @@REMOVE_AGENT crew-ml
+  const removeAgentCmd = (() => {
+    const m = fullReply.match(/@@REMOVE_AGENT\s+(crew-[a-zA-Z0-9_-]+)/);
+    return m ? m[1] : null;
   })();
 
   // ── @@BRAIN — append a fact to shared brain.md ─────────────────────────────
@@ -1173,6 +1736,8 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     .replace(/@@DEFINE_SKILL[ \t]+[a-zA-Z0-9_\-.]+\n[\s\S]*?@@END_SKILL/g, "")
     .replace(/@@DEFINE_WORKFLOW[ \t]+[a-zA-Z0-9_\-]+\n[\s\S]*?@@END_WORKFLOW/g, "")
     .replace(/@@SERVICE\s+(restart|stop|start)\s+[a-zA-Z0-9_\-]+/g, "")
+    .replace(/@@CREATE_AGENT\s+\{[^}]+\}/g, "")
+    .replace(/@@REMOVE_AGENT\s+crew-[a-zA-Z0-9_-]+/g, "")
     .trim();
 
   let dispatched = null;
@@ -1198,7 +1763,12 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     const agentFlow = waves.map(w => w.length > 1 ? `[${w.map(s => s.agent).join(" ∥ ")}]` : w[0].agent).join(" → ");
     cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Pipeline started (${steps.length} steps${waveDesc}): ${agentFlow}`;
     pipeline = { pipelineId, steps, waves };
-  } else if (dispatch && cfg.knownAgents.includes(dispatch.agent)) {
+  } else if (dispatch) {
+    const resolvedAgent = resolveAgentId(cfg, dispatch.agent) || dispatch.agent;
+    if (!cfg.knownAgents.length || cfg.knownAgents.includes(resolvedAgent)) {
+      dispatch.agent = resolvedAgent;
+    }
+    if (cfg.knownAgents.includes(dispatch.agent)) {
     // Pass full dispatch spec so verify/done criteria are injected into task text
     const ok = dispatchTask(dispatch.agent, dispatch, sessionId);
     if (ok) {
@@ -1208,6 +1778,18 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
         ? `\n\n↳ Dispatched to ${dispatch.agent} — reply will show here when they finish.`
         : `\n\n↳ Dispatched to ${dispatch.agent} (via ctl — check RT Messages tab for reply).`;
       cleanReply = (cleanReply || "").trimEnd() + dispatchLine;
+    }
+    }
+  }
+
+  // ── Detect "dispatch lie" — LLM claims it dispatched but no @@DISPATCH was parsed ──
+  if (!dispatched && !pipeline && cleanReply) {
+    const liedPattern = /(?:dispatch(?:ed|ing)|sent (?:it |that )?to|sicced|already (?:sent|fired|launched|pinged|knows|on it)|forwarded? (?:it |that )?to|tasked|assigned (?:it |that )?to|consider it done|(?:they|he|she)'ll (?:handle|take care))/i;
+    if (liedPattern.test(cleanReply)) {
+      const warning = `\n\n⚠️ I described a dispatch but didn't actually emit the @@DISPATCH marker — nothing was sent. Let me try again properly.`;
+      cleanReply = (cleanReply || "").trimEnd() + warning;
+      appendHistory(sessionId, "system", `Warning: LLM described dispatching without emitting @@DISPATCH — no task was sent.`);
+      console.log(`[crew-lead] Dispatch-lie detected: reply mentions dispatching but no @@DISPATCH was parsed`);
     }
   }
 
@@ -1344,6 +1926,59 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
       appendHistory(sessionId, "system", `Workflow "${dw.name}" defined (${dw.stageCount} stages).`);
     } else {
       cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to save workflow **${dw.name}**: ${dw.error}`;
+    }
+  }
+
+  // ── Execute @@CREATE_AGENT — create a new specialist agent ────────────────
+  if (createAgentCmd?.id) {
+    try {
+      const result = createAgent(createAgentCmd);
+      const ocNote = result.useOpenCode ? `, OpenCode: ${result.useOpenCode}` : "";
+
+      // Spawn the bridge directly via start-crew.mjs --agent (no dashboard round-trip)
+      let spawnNote = "";
+      try {
+        const startScript = path.join(process.cwd(), "scripts", "start-crew.mjs");
+        const { execSync: exec2 } = await import("node:child_process");
+        exec2(`node ${startScript} --agent ${result.id}`, {
+          timeout: 10000,
+          env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: RT_TOKEN },
+          stdio: "pipe",
+        });
+        // Verify bridge is running
+        await new Promise(r => setTimeout(r, 1500));
+        try {
+          const psOut = exec2("ps aux", { encoding: "utf8" });
+          const running = psOut.includes(result.id);
+          spawnNote = running
+            ? " — bridge spawned and online"
+            : " — bridge spawned (verifying…)";
+        } catch {
+          spawnNote = " — bridge spawned";
+        }
+      } catch (spawnErr) {
+        console.error(`[crew-lead] Failed to spawn bridge for ${result.id}:`, spawnErr.message);
+        spawnNote = " — restart bridges to bring it online (`npm run restart-all`)";
+      }
+
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Agent **${result.id}** created (role: ${result.role}, tools: ${result.tools.join(", ")}${ocNote})${spawnNote}. You can now dispatch tasks to it.`;
+      appendHistory(sessionId, "system", `Dynamic agent ${result.id} created (role: ${result.role}, openCode: ${!!result.useOpenCode}).`);
+      console.log(`[crew-lead] @@CREATE_AGENT: ${result.id} (role: ${result.role}, tools: ${result.tools.join(",")}, openCode: ${!!result.useOpenCode})`);
+      broadcastSSE({ type: "agent_created", agent: result, ts: Date.now() });
+    } catch (e) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to create agent: ${e.message}`;
+    }
+  }
+
+  // ── Execute @@REMOVE_AGENT — remove a dynamically created agent ──────────
+  if (removeAgentCmd) {
+    try {
+      removeDynamicAgent(removeAgentCmd);
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Agent **${removeAgentCmd}** removed. Restart bridges to clean up.`;
+      appendHistory(sessionId, "system", `Dynamic agent ${removeAgentCmd} removed.`);
+      console.log(`[crew-lead] @@REMOVE_AGENT: ${removeAgentCmd}`);
+    } catch (e) {
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to remove agent: ${e.message}`;
     }
   }
 
@@ -1541,9 +2176,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/dispatch" && req.method === "POST") {
       if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized — Bearer token required" }); return; }
       const body = await readBody(req);
-      const { agent, task, verify, done, sessionId: sid } = body;
+      let { agent, task, verify, done, sessionId: sid } = body;
       if (!agent || !task) { json(res, 400, { ok: false, error: "agent and task are required" }); return; }
-      const knownAgents = loadConfig().knownAgents || [];
+      const cfg = loadConfig();
+      agent = resolveAgentId(cfg, agent) || agent;
+      const knownAgents = cfg.knownAgents || [];
       if (knownAgents.length && !knownAgents.includes(agent)) {
         json(res, 400, { ok: false, error: `Unknown agent "${agent}". Known: ${knownAgents.join(", ")}` });
         return;
@@ -1851,7 +2488,16 @@ const server = http.createServer(async (req, res) => {
         skills,
         spending,
         providers,
+        telemetry: readTelemetryEvents(20),
       });
+      return;
+    }
+
+    // GET /api/telemetry — last N task.lifecycle events (schema 1.1)
+    if (url.pathname === "/api/telemetry" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const limit = Math.min(parseInt(req.headers["limit"] || String(50), 10) || 50, 100);
+      json(res, 200, { ok: true, schemaVersion: TELEMETRY_SCHEMA_VERSION, events: readTelemetryEvents(limit) });
       return;
     }
 
@@ -1862,13 +2508,19 @@ const server = http.createServer(async (req, res) => {
       const agentId = restartMatch[1];
       const { execSync: exec2 } = await import("node:child_process");
       try {
-        // Kill existing bridge for this agent
         exec2(`pkill -f "gateway-bridge.mjs.*${agentId}" 2>/dev/null || true`, { shell: true });
-        // Brief pause then respawn via start-crew (it will detect which are missing)
-        setTimeout(() => {
+        // Respawn via start-crew --agent (waits for spawn, then returns)
+        setTimeout(async () => {
           try {
-            exec2(`node ${path.join(process.cwd(), "scripts", "start-crew.mjs")} --agent ${agentId} &`, { shell: true });
-          } catch {}
+            exec2(`node ${path.join(process.cwd(), "scripts", "start-crew.mjs")} --agent ${agentId}`, {
+              shell: true,
+              timeout: 10000,
+              env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: RT_TOKEN },
+            });
+            console.log(`[crew-lead] bridge respawned for ${agentId}`);
+          } catch (e2) {
+            console.error(`[crew-lead] failed to respawn bridge for ${agentId}:`, e2.message);
+          }
         }, 500);
         console.log(`[crew-lead] restart requested for ${agentId}`);
         json(res, 200, { ok: true, agentId, action: "restart" });
@@ -1891,6 +2543,10 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`[crew-lead] Model: ${cfg.providerKey}/${cfg.modelId}`);
   console.log(`[crew-lead] History: ${HISTORY_DIR}`);
   console.log(`[crew-lead] Agents: ${cfg.knownAgents.join(", ")}`);
+  console.log(`[crew-lead] Dispatch timeout: ${DISPATCH_TIMEOUT_MS / 1000}s`);
+  if (!dispatchTimeoutInterval) {
+    dispatchTimeoutInterval = setInterval(checkDispatchTimeouts, 15_000); // check every 15s
+  }
   connectRT();
 });
 
@@ -1949,7 +2605,7 @@ function connectRT() {
       return;
     }
     if (p.type === "hello.ack") {
-      ws.send(JSON.stringify({ type: "subscribe", channels: ["done", "events"] }));
+      ws.send(JSON.stringify({ type: "subscribe", channels: ["done", "events", "command", "issues"] }));
       ready = true;
       // Expose publish function for dispatchTask
       rtPublish = ({ channel, type, to, payload }) => {
@@ -1957,7 +2613,7 @@ function connectRT() {
         ws.send(JSON.stringify({ type: "publish", channel, messageType: type, to, taskId, priority: "high", payload }));
         return taskId;
       };
-      console.log("[crew-lead] RT connected — listening for agent replies");
+      console.log("[crew-lead] RT connected — listening for done, events, command, issues");
       // Send heartbeat every 30s so monitoring sees crew-lead as up
       if (crewLeadHeartbeat) clearInterval(crewLeadHeartbeat);
       crewLeadHeartbeat = setInterval(() => {
@@ -1984,10 +2640,41 @@ function connectRT() {
       const env = p.envelope;
       if (env.id) ws.send(JSON.stringify({ type: "ack", messageId: env.id, status: "received" }));
 
-      const from    = env.from || env.sender_agent_id || "";
+      const from    = env.from || env.sender_agent_id || env.payload?.source || "";
       const msgType = env.messageType || env.type || "";
       const reply   = env.payload?.reply != null ? String(env.payload.reply).trim() : "";
       const content = reply || (env.payload?.content ? String(env.payload.content).trim() : "");
+
+      // Log all RT traffic so crew-lead has eyes on the system
+      const time = new Date().toISOString().slice(11, 19);
+      let summary = "";
+      if (env.channel === "done" && content) summary = `${from} done: ${content.slice(0, 70)}…`;
+      else if (env.channel === "command") summary = `${from} → ${env.to || "?"} ${msgType} ${(env.payload?.content || env.payload?.prompt || "").slice(0, 50)}…`;
+      else if (env.channel === "issues") summary = `${from} issue: ${(env.payload?.error || env.payload?.note || "—").slice(0, 60)}`;
+      else summary = `${from} ${msgType} ${env.to ? `→ ${env.to}` : ""}`.trim();
+      pushRtActivity({ ts: Date.now(), time, channel: env.channel, type: msgType, from, to: env.to, taskId: env.taskId || env.correlationId, summary });
+
+      // On task.failed (e.g. rate limit), re-dispatch to a fallback agent so the task still gets done
+      if (env.channel === "issues" && (msgType === "task.failed" || env.type === "task.failed")) {
+        const failedTaskId = env.taskId || env.correlationId || "";
+        const errMsg = String(env.payload?.error || env.payload?.note || "").trim();
+        const failedAgent = env.payload?.source || from || "";
+        emitTaskLifecycle("failed", { taskId: failedTaskId, agentId: failedAgent, taskType: "task", error: { message: errMsg } });
+        const dispatch = pendingDispatches.get(failedTaskId);
+        if (dispatch && RATE_LIMIT_PATTERN.test(errMsg)) {
+          const fallback = getRateLimitFallback(failedAgent);
+          const targetSession = dispatch.sessionId || "owner";
+          if (fallback !== failedAgent) {
+            pendingDispatches.delete(failedTaskId);
+            const newTaskId = dispatchTask(fallback, dispatch.task, targetSession, { ...dispatch, pipelineId: dispatch.pipelineId, waveIndex: dispatch.waveIndex });
+            if (newTaskId) {
+              appendHistory(targetSession, "system", `[crew-lead] ${failedAgent} hit rate limit (${errMsg.slice(0, 80)}). Re-dispatched same task to ${fallback}.`);
+              broadcastSSE({ type: "agent_reply", from: "crew-lead", content: `Rate limit: retried task with ${fallback}.`, sessionId: targetSession, taskId: failedTaskId, ts: Date.now() });
+              console.log(`[crew-lead] Rate limit fallback: ${failedAgent} → ${fallback} (task re-dispatched)`);
+            }
+          }
+        }
+      }
 
       const isDone = msgType === "task.done" || env.channel === "done";
 
@@ -2004,8 +2691,17 @@ function connectRT() {
           setTimeout(() => pendingDispatches.delete(taskId), 600_000);
         }
 
-        appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 2000)}`);
+        appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 4000)}`);
         broadcastSSE({ type: "agent_reply", from, content: content.slice(0, 2000), sessionId: targetSession, taskId, ts: Date.now() });
+        if (dispatch?.ts) {
+          emitTaskLifecycle("completed", {
+            taskId,
+            agentId: from,
+            taskType: "task",
+            durationMs: Date.now() - dispatch.ts,
+            result: { summary: content.slice(0, 200) },
+          });
+        }
 
         // Advance pipeline if this task was part of one (wave-aware)
         if (dispatch?.pipelineId) {
@@ -2018,10 +2714,70 @@ function connectRT() {
             console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} wave ${pipeline.currentWave + 1}: ${pipeline.pendingTaskIds.size} task(s) still pending`);
 
             if (pipeline.pendingTaskIds.size === 0) {
-              // All tasks in this wave are done — advance to next wave
-              pipeline.currentWave++;
-              dispatchPipelineWave(dispatch.pipelineId);
+              // All tasks in this wave are done — run quality gate before advancing
+              const gateResult = checkWaveQualityGate(pipeline, dispatch.pipelineId);
+              if (gateResult.pass) {
+                pipeline.currentWave++;
+                dispatchPipelineWave(dispatch.pipelineId);
+              }
+              // If gate fails, checkWaveQualityGate handles re-dispatch or user notification
             }
+          }
+        }
+
+        // When PM replies, execute its @@DISPATCH / @@PIPELINE and @@REGISTER_PROJECT
+        if (from === "crew-pm") {
+          const pipelineSpec = parsePipeline(content);
+          if (pipelineSpec) {
+            const pipelineId = `pm-${Date.now()}`;
+            pendingPipelines.set(pipelineId, {
+              steps: pipelineSpec.steps,
+              waves: pipelineSpec.waves,
+              currentWave: 0,
+              pendingTaskIds: new Set(),
+              waveResults: [],
+              sessionId: targetSession,
+            });
+            dispatchPipelineWave(pipelineId);
+            appendHistory(targetSession, "system", `PM pipeline started (${pipelineSpec.steps.length} steps).`);
+          } else {
+            const dispatches = parseDispatches(content);
+            for (const d of dispatches) {
+              const ok = dispatchTask(d.agent, d, targetSession);
+              if (ok) appendHistory(targetSession, "system", `PM dispatched to ${d.agent}: "${(d.task || "").slice(0, 120)}".`);
+            }
+          }
+          // PM can register a new project so it appears in the dashboard Projects tab
+          const registerProj = parseRegisterProject(content);
+          if (registerProj) {
+            (async () => {
+              try {
+                const createRes = await fetch(`${DASHBOARD}/api/projects`, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ name: registerProj.name, description: registerProj.description || "", outputDir: registerProj.outputDir }),
+                  signal: AbortSignal.timeout(10000),
+                });
+                const proj = await createRes.json();
+                if (proj.ok && proj.project) {
+                  appendHistory(targetSession, "system", `PM registered project "${registerProj.name}" in dashboard Projects tab (${registerProj.outputDir}).`);
+                  console.log(`[crew-lead] PM registered project: ${registerProj.name} → ${registerProj.outputDir}`);
+                } else {
+                  appendHistory(targetSession, "system", `PM project registration failed: ${proj.error || "unknown"}.`);
+                }
+              } catch (e) {
+                appendHistory(targetSession, "system", `PM project registration failed: ${e.message}.`);
+              }
+            })();
+          }
+        }
+
+        // Autonomous PM loop: on any non-PM agent completion, ping PM to update and dispatch next (if session is in autonomous mode)
+        if (from !== "crew-pm" && autonomousPmLoopSessions.has(targetSession)) {
+          const handbackTask = `Handback from ${from}: ${content.slice(0, 600)}. Update the roadmap (mark that item done), then dispatch the next task(s) with @@DISPATCH. Keep the pipeline moving until the plan is done or blocked. If no more items, reply "All done." and do not emit @@DISPATCH.`;
+          const pmTaskId = dispatchTask("crew-pm", handbackTask, targetSession);
+          if (pmTaskId) {
+            appendHistory(targetSession, "system", `Autonomous: sent handback to crew-pm to update plan and dispatch next.`);
           }
         }
       }

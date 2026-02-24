@@ -26,3 +26,9 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 - SHARED_MEMORY_FILES loaded into every prompt: current-state.md, agent-handoff.md, orchestration-protocol.md
 - telegram-context.md and decisions.md are NOT loaded into task prompts (too noisy)
 - brain.md (this file) IS loaded — keep entries brief; it will grow
+
+## [2026-02-23] crew-lead: …`.
+
+## [2026-02-23] system: dashboard edits — always run check script
+- **Every** change to `scripts/dashboard.mjs` must be followed by `node scripts/check-dashboard.mjs`. Dashboard updates frequently break the inline script (nested quotes, template literals); the check prints the exact line that breaks.
+- If the full check hangs, use `node scripts/check-dashboard.mjs --source-only`.

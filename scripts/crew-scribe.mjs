@@ -222,7 +222,17 @@ function extractLessonEntries(agentId, reply) {
 
 // ── Main processing loop ──────────────────────────────────────────────────────
 
-const SKIP_AGENTS = new Set(["crew-lead", "orchestrator"]);
+const _SKIP_AGENTS_STATIC = new Set(["crew-lead", "orchestrator"]);
+function shouldSkipAgent(agentId) {
+  if (_SKIP_AGENTS_STATIC.has(agentId)) return true;
+  try {
+    const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    const agent = (cfg.agents || []).find(a => a.id === agentId);
+    if (agent?._role === "orchestrator") return true;
+  } catch {}
+  return false;
+}
 
 async function processNewEntries(state) {
   if (!fs.existsSync(DONE_LOG)) return state;
@@ -251,7 +261,7 @@ async function processNewEntries(state) {
     const ts     = obj.ts ? obj.ts.slice(0, 16).replace("T", " ") : now().slice(0, 16);
     const taskId = obj.taskId || obj.id || "?";
 
-    if (!from || SKIP_AGENTS.has(from) || !reply) continue;
+    if (!from || shouldSkipAgent(from) || !reply) continue;
 
     // LLM-generated one-sentence summary
     const summary = await summarizeWithLLM(from, reply);

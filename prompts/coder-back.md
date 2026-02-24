@@ -16,5 +16,5 @@ Before you finish, you MUST verify your own output:
 3. If the task asked for a route or endpoint — confirm it exists in the written file
 4. If environment variables are referenced, confirm they are documented in your reply
 
-Only after passing these checks, report: what you wrote, the file path, and approximate line count.
+Only after passing these checks, report: what you wrote, the **full absolute path** of each file (e.g. /Users/.../project/tests/file.js), and approximate line count. The tool result will show the path; repeat it in your reply so the user knows exactly where to find output.
 If verification fails, fix the issue before reporting done.

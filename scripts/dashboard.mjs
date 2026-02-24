@@ -1088,6 +1088,7 @@ const html = `<!doctype html>
         </div>
         <button onclick="loadToolMatrix()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
       </div>
+      <div id="taskLifecycleContainer" style="padding:0 16px 12px;"></div>
       <div id="toolMatrixContainer" style="padding:16px;"></div>
     </div>
 
@@ -1435,12 +1436,45 @@ function startAgentReplyListener() {
         showNotification(d.from + ' finished a task');
         return;
       }
-      // pipeline_progress: a pipeline step completed, next step starting
+      // task.timeout: dispatch never claimed or timed out — replace spinner with "No reply" message
+      if (d.type === 'task.timeout' && d.agent) {
+        const spinnerId = 'agent-spinner-' + (d.taskId || d.agent);
+        const spinnerEl = document.getElementById(spinnerId);
+        if (spinnerEl) spinnerEl.remove();
+        const agentSpinner = document.getElementById('agent-spinner-' + d.agent);
+        if (agentSpinner) agentSpinner.remove();
+        const msg = '[crew-lead] Task to ' + d.agent + ' timed out (no reply in 90s). Consider @@SERVICE restart ' + d.agent + ' or re-dispatch to another agent.';
+        if (box) {
+          const el = document.createElement('div');
+          el.className = 'msg a';
+          el.style.cssText = 'opacity:.85; font-style:italic; color:var(--text-3);';
+          el.innerHTML = '<div class="meta"><strong>' + d.agent + '</strong> · no reply</div><div class="t">' + escHtml(msg) + '</div>';
+          box.appendChild(el);
+          box.scrollTop = box.scrollHeight;
+        }
+        showNotification('Task to ' + d.agent + ' timed out');
+        return;
+      }
+      // pipeline_progress: a wave or step dispatched
       if (d.type === 'pipeline_progress') {
-        const label = 'Pipeline step ' + (d.stepIndex + 1) + '/' + d.total + ' → ' + d.agent;
+        let label;
+        if (d.agents) {
+          label = 'Wave ' + (d.waveIndex + 1) + '/' + d.totalWaves + ' → ' + d.agents.join(' + ');
+        } else {
+          label = 'Step ' + (d.stepIndex + 1) + '/' + d.total + ' → ' + d.agent;
+        }
         const el = document.createElement('div');
         el.style.cssText = 'font-size:11px;color:var(--text-3);padding:2px 8px;margin:2px 0;';
         el.textContent = '↳ ' + label;
+        if (box) { box.appendChild(el); box.scrollTop = box.scrollHeight; }
+        return;
+      }
+      // pipeline_quality_gate: wave had issues
+      if (d.type === 'pipeline_quality_gate') {
+        const el = document.createElement('div');
+        const retryNote = d.willRetry ? ' — retrying wave' : ' — advancing anyway';
+        el.style.cssText = 'font-size:11px;color:var(--warning, #e8a030);padding:2px 8px;margin:2px 0;';
+        el.textContent = '⚠️ Wave ' + (d.waveIndex + 1) + ' quality gate: ' + (d.issues || []).join('; ') + retryNote;
         if (box) { box.appendChild(el); box.scrollTop = box.scrollHeight; }
         return;
       }
@@ -1456,6 +1490,14 @@ function startAgentReplyListener() {
       if (d.type === 'confirm_run_cmd' && d.approvalId) {
         showCmdApprovalToast(d.approvalId, d.agent, d.cmd);
         return;
+      }
+      // telemetry: task.lifecycle (schema 1.1) — keep list and refresh Task lifecycle panel if visible
+      if (d.type === 'telemetry' && d.payload) {
+        window._telemetryEvents = window._telemetryEvents || [];
+        window._telemetryEvents.push(d.payload);
+        if (window._telemetryEvents.length > 100) window._telemetryEvents.shift();
+        const tlView = document.getElementById('toolMatrixView');
+        if (tlView && tlView.classList.contains('active')) renderTaskLifecycle(window._telemetryEvents);
       }
     } catch {}
   };
@@ -2607,6 +2649,26 @@ async function runSkillFromUI(skillName){
   }
 }
 
+// ── Task lifecycle (telemetry schema 1.1) ────────────────────────────────────────
+window._telemetryEvents = window._telemetryEvents || [];
+function renderTaskLifecycle(events) {
+  const el = document.getElementById('taskLifecycleContainer');
+  if (!el) return;
+  events = events || [];
+  if (!events.length) {
+    el.innerHTML = '<div class="card" style="padding:12px;"><div class="meta" style="font-size:12px;">Recent task lifecycle (dispatched → completed/failed/cancelled). Dispatch a task to see events.</div></div>';
+    return;
+  }
+  const rows = events.slice().reverse().slice(0, 15).map(ev => {
+    const d = ev.data || {};
+    const phase = d.phase || '';
+    const color = phase === 'completed' ? 'var(--green)' : phase === 'failed' || phase === 'cancelled' ? 'var(--red)' : 'var(--accent)';
+    const time = (ev.occurredAt || '').replace('T', ' ').slice(0, 19);
+    return '<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;font-size:11px;color:var(--text-3);">' + time + '</td><td style="padding:6px 10px;font-size:12px;"><span style="color:' + color + ';">' + phase + '</span></td><td style="padding:6px 10px;font-size:12px;">' + (d.agentId || '') + '</td><td style="padding:6px 10px;font-size:11px;color:var(--text-3);">' + (d.taskId || '').slice(0, 20) + '</td></tr>';
+  }).join('');
+  el.innerHTML = '<div class="card" style="overflow:auto;"><div style="font-size:12px;font-weight:600;padding:8px 12px;border-bottom:1px solid var(--border);">Task lifecycle (schema 1.1)</div><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Time</th><th style="text-align:left;padding:6px 10px;">Phase</th><th style="text-align:left;padding:6px 10px;">Agent</th><th style="text-align:left;padding:6px 10px;">Task ID</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
 // ── Tool Matrix (agents × tools from health + restart) ───────────────────────────
 const TOOL_LABELS = { read_file: 'read', write_file: 'write', mkdir: 'mkdir', run_cmd: 'run', dispatch: 'dispatch', skill: 'skill', define_skill: 'define_skill', git: 'git' };
 
@@ -2623,6 +2685,8 @@ async function loadToolMatrix(){
         '<div style="color:var(--text-3);font-size:11px;margin-top:8px;">Ensure crew-lead is running on :5010 (Services tab).</div></div>';
       return;
     }
+    renderTaskLifecycle(d.telemetry || []);
+    window._telemetryEvents = d.telemetry || [];
     const bridgeAgents = (d.agents || []).filter(a => (a.id || '').toLowerCase() !== 'crew-lead');
     const crewLeadInfo = window._crewLeadInfo || { name: 'Crew Lead', emoji: '🧠' };
     const crewLeadRow = { id: 'crew-lead', name: crewLeadInfo.name, emoji: crewLeadInfo.emoji, tools: ['dispatch', 'skill', 'define_skill'] };
@@ -3043,6 +3107,24 @@ async function loadAgents_cfg(){
             </div>
             <div class="meta">Workspace: <code style="font-size:11px;">\${a.workspace}</code></div>
           </div>
+          <div style="border-top:1px solid var(--border); padding-top:10px;">
+            <div class="field-label" style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <span>OpenCode Integration</span>
+              <span style="font-size:10px; font-weight:600; color:#22c55e; padding:2px 6px; border-radius:4px; background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25);">coding engine</span>
+            </div>
+            <div class="meta" style="margin-bottom:10px; font-size:11px;">When enabled, tasks are routed through OpenCode CLI for agentic file access, tool use, and multi-step coding. The OpenCode model is used instead of the agent's own model.</div>
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+              <label style="display:flex; align-items:center; gap:7px; font-size:12px; color:var(--text-1); cursor:pointer;">
+                <input type="checkbox" id="oc-toggle-\${a.id}" \${a.useOpenCode ? 'checked' : ''} onchange="toggleOpenCodeUI('\${a.id}')" style="accent-color:#22c55e;" />
+                Route tasks through OpenCode
+              </label>
+            </div>
+            <div id="oc-model-row-\${a.id}" style="display:\${a.useOpenCode ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <select id="oc-model-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcModelText('\${a.id}')"></select>
+              <input id="oc-modeltext-\${a.id}" type="text" placeholder="or type provider/model…" value="\${a.opencodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button onclick="saveOpenCodeConfig('\${a.id}')" class="btn-green" style="white-space:nowrap; font-size:12px;">Save OpenCode</button>
+            </div>
+          </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
             <div style="font-size:11px; color:var(--text-3);">
               Session context accumulates over time. Reset clears the conversation history and re-injects shared memory.
@@ -3057,6 +3139,10 @@ async function loadAgents_cfg(){
     agents.forEach(a => {
       const sel = document.getElementById('model-' + a.id);
       if (sel) populateModelDropdown('model-' + a.id, a.model);
+    });
+    // Load OpenCode models and populate dropdowns
+    loadOcModels().then(() => {
+      agents.forEach(a => populateOcModelDropdown('oc-model-' + a.id, a.opencodeModel || ''));
     });
   } catch(e){ list.innerHTML = '<div class="meta" style="padding:20px; color:var(--red);">Error: ' + e.message + '</div>'; }
 }
@@ -3153,6 +3239,77 @@ async function saveAgentFallback(agentId){
     await postJSON('/api/agents-config/update', { agentId, fallbackModel });
     showNotification(fallbackModel ? \`Fallback set: \${fallbackModel}\` : \`Fallback cleared for \${agentId}\`);
   } catch(e){ showNotification('Failed: ' + e.message, true); }
+}
+
+// ── OpenCode per-agent config ───────────────────────────────────────────────
+let _ocModelsCache = null;
+
+async function loadOcModels() {
+  if (_ocModelsCache) return _ocModelsCache;
+  try {
+    const r = await fetch('/api/opencode-models');
+    const d = await r.json();
+    _ocModelsCache = Array.isArray(d.models) ? d.models : [];
+  } catch { _ocModelsCache = []; }
+  return _ocModelsCache;
+}
+
+function populateOcModelDropdown(selectId, currentVal) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— select OpenCode model —</option>';
+  const models = _ocModelsCache || [];
+  if (models.length === 0) {
+    sel.innerHTML += '<option disabled>(no models loaded — is OpenCode server running?)</option>';
+  }
+  const grouped = {};
+  models.forEach(m => {
+    const full = typeof m === 'string' ? m : (m.provider ? m.provider + '/' + m.id : m.id || m.name || String(m));
+    const provider = full.includes('/') ? full.split('/')[0] : 'other';
+    if (!grouped[provider]) grouped[provider] = [];
+    grouped[provider].push(full);
+  });
+  for (const [provider, ids] of Object.entries(grouped)) {
+    const grp = document.createElement('optgroup');
+    grp.label = provider.toUpperCase();
+    ids.forEach(full => {
+      const opt = document.createElement('option');
+      opt.value = full;
+      opt.textContent = full;
+      if (full === currentVal) opt.selected = true;
+      grp.appendChild(opt);
+    });
+    sel.appendChild(grp);
+  }
+  if (currentVal && !sel.value) {
+    const opt = document.createElement('option');
+    opt.value = currentVal;
+    opt.textContent = currentVal + ' (custom)';
+    opt.selected = true;
+    sel.prepend(opt);
+  }
+}
+
+function toggleOpenCodeUI(agentId) {
+  const checked = document.getElementById('oc-toggle-' + agentId).checked;
+  const row = document.getElementById('oc-model-row-' + agentId);
+  if (row) row.style.display = checked ? 'flex' : 'none';
+  saveOpenCodeConfig(agentId);
+}
+
+function syncOcModelText(agentId) {
+  const sel = document.getElementById('oc-model-' + agentId);
+  const txt = document.getElementById('oc-modeltext-' + agentId);
+  if (sel && txt && sel.value) txt.value = sel.value;
+}
+
+async function saveOpenCodeConfig(agentId) {
+  const useOpenCode = document.getElementById('oc-toggle-' + agentId)?.checked || false;
+  const opencodeModel = document.getElementById('oc-modeltext-' + agentId)?.value.trim() || '';
+  try {
+    await postJSON('/api/agents-config/update', { agentId, useOpenCode, opencodeModel });
+    showNotification(useOpenCode ? agentId + ' → OpenCode (' + (opencodeModel || 'default model') + ')' : agentId + ' → direct LLM');
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 
 const AGENT_EMOJIS = ['🤖','🧠','⚡','🔥','🎯','🛡️','🔧','🐛','🔬','📋','✍️','🐙','🎨','🖥️','📱','🔒','📊','🚀','💡','🌐','⚙️','🦊','🦾','💻','🏗️','🔍','📝','💬','🧪','🎭'];
@@ -5490,6 +5647,44 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    // ── OpenCode models API ──────────────────────────────────────────────────
+    if (url.pathname === "/api/opencode-models" && req.method === "GET") {
+      let models = [];
+      // Try CLI first (may hang if OpenCode desktop holds DB lock, so short timeout)
+      try {
+        const { execFile } = await import("node:child_process");
+        const ocBin = path.join(os.homedir(), ".opencode", "bin", "opencode");
+        const bin = fs.existsSync(ocBin) ? ocBin : "opencode";
+        models = await new Promise((resolve, reject) => {
+          const child = execFile(bin, ["models", "list", "--format", "json"], { timeout: 8000, env: { ...process.env } }, (err, stdout) => {
+            if (err) return reject(err);
+            try { resolve(JSON.parse(stdout)); } catch { resolve([]); }
+          });
+        });
+      } catch {
+        // Fallback: read auth.json to discover configured providers, then return known models
+        try {
+          const authPath = path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
+          const auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
+          const providers = Object.keys(auth || {}).map(k => k.toLowerCase());
+          const knownModels = {
+            openai:  ["openai/gpt-5.3-codex", "openai/gpt-5.1-codex", "openai/gpt-5-codex", "openai/o3", "openai/o4-mini", "openai/gpt-4.1"],
+            opencode:["opencode/glm-5-free", "opencode/claude-sonnet-4-20250514"],
+            groq:    ["groq/llama-3.3-70b-versatile", "groq/llama-4-scout-17b-16e-instruct"],
+            xai:     ["xai/grok-3-mini", "xai/grok-3"],
+          };
+          for (const p of providers) {
+            if (knownModels[p]) models.push(...knownModels[p]);
+          }
+          // Also check env vars for additional providers
+          if (process.env.GROQ_API_KEY && !providers.includes("groq")) models.push(...(knownModels.groq || []));
+          if (process.env.XAI_API_KEY && !providers.includes("xai")) models.push(...(knownModels.xai || []));
+        } catch { /* no auth info available */ }
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, models }));
+      return;
+    }
     // ── Agents API ──────────────────────────────────────────────────────────
     if (url.pathname === "/api/agents-config" && req.method === "GET") {
       const { readFile } = await import("node:fs/promises");
@@ -5511,10 +5706,12 @@ const server = http.createServer(async (req, res) => {
           name: a.identity?.name || a.id,
           emoji: a.identity?.emoji || "🤖",
           theme: a.identity?.theme || "",
-          systemPrompt: agentPrompts[a.id] || "",
+          systemPrompt: agentPrompts[a.id] || agentPrompts[a.id.replace(/^crew-/, "")] || "",
           toolProfile: a.tools?.profile || "default",
-          alsoAllow: a.tools?.alsoAllow || [],
+          alsoAllow: a.tools?.crewswarmAllow || a.tools?.alsoAllow || [],
           workspace: a.workspace || "",
+          useOpenCode: a.useOpenCode,
+          opencodeModel: a.opencodeModel || "",
           liveness, lastSeen, ageSec,
         };
       });
@@ -5593,7 +5790,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -5626,9 +5823,12 @@ const server = http.createServer(async (req, res) => {
       if (toolProfile) { if (!agent.tools) agent.tools = {}; agent.tools.profile = toolProfile; }
       if (alsoAllow !== undefined) {
         if (!agent.tools) agent.tools = {};
+        agent.tools.crewswarmAllow = alsoAllow;
         agent.tools.alsoAllow = alsoAllow;
-        agent.tools.profile = "crewswarm"; // mark as using new CrewSwarm tool system
+        agent.tools.profile = "crewswarm";
       }
+      if (useOpenCode !== undefined) agent.useOpenCode = useOpenCode;
+      if (opencodeModel !== undefined) agent.opencodeModel = opencodeModel || undefined;
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
       // System prompts live in agent-prompts.json, not crewswarm.json
       if (systemPrompt !== undefined) {

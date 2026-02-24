@@ -23,6 +23,7 @@ import {
 const LEGACY_STATE_DIR = path.join(os.homedir(), ".openclaw");
 const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
 const CREWSWARM_CONFIG_PATH = path.join(CREWSWARM_DIR, "config.json");
+const TELEGRAM_BRIDGE_CONFIG_PATH = path.join(CREWSWARM_DIR, "telegram-bridge.json");
 const TELEMETRY_DIR = path.join(LEGACY_STATE_DIR, "telemetry");
 
 // ── Built-in provider base URLs — users only need to supply apiKey ──────────
@@ -53,6 +54,15 @@ function resolveConfig() {
   return {};
 }
 
+/** Load ~/.crewswarm/telegram-bridge.json for @@TELEGRAM (token + default chat). */
+function resolveTelegramBridgeConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(TELEGRAM_BRIDGE_CONFIG_PATH, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 function resolveProviderConfig(cfg, providerKey) {
   const explicit = cfg?.models?.providers?.[providerKey] || cfg?.providers?.[providerKey];
   const builtin  = PROVIDER_REGISTRY[providerKey];
@@ -75,18 +85,33 @@ const SHARED_MEMORY_FILES = [
   // "telegram-context.md"     // Telegram chat history — too noisy for code tasks
 ];
 
-// Extra memory files injected only for specific agents
-const AGENT_EXTRA_MEMORY = {
-  "crew-fixer":    ["lessons.md"],  // mistake patterns captured by crew-scribe
+// Extra memory files injected for specific agents (static) + dynamic agents by _role
+const _AGENT_EXTRA_MEMORY_STATIC = {
+  "crew-fixer":    ["lessons.md"],
   "crew-coder":    ["lessons.md"],
   "crew-coder-front": ["lessons.md"],
   "crew-coder-back":  ["lessons.md"],
 };
+const _EXTRA_MEMORY_BY_ROLE = { coder: ["lessons.md"], ops: ["lessons.md"] };
+
+function getAgentExtraMemory(agentId) {
+  const bareId = agentId.startsWith("crew-") ? `crew-${agentId.slice(5)}` : agentId;
+  if (_AGENT_EXTRA_MEMORY_STATIC[agentId]) return _AGENT_EXTRA_MEMORY_STATIC[agentId];
+  if (_AGENT_EXTRA_MEMORY_STATIC[bareId]) return _AGENT_EXTRA_MEMORY_STATIC[bareId];
+  try {
+    const agents = loadAgentList();
+    const cfg = agents.find(a => a.id === agentId);
+    if (cfg?._role && _EXTRA_MEMORY_BY_ROLE[cfg._role]) return _EXTRA_MEMORY_BY_ROLE[cfg._role];
+  } catch {}
+  return [];
+}
 const MEMORY_BOOTSTRAP_AGENT = "gateway-bridge";
 const SHARED_MEMORY_PROTOCOL = [
   "Memory loaded. Current UTC: `$(date -u +%Y-%m-%d\\ %H:%M\\ UTC)`; last handoff: `${getLastHandoffTimestamp()}`.",
   "",
-  "Complete your task using available tools. When done, briefly note what you did."
+  "Complete your task using available tools. When done, briefly note what you did.",
+  "Your reply is sent back to whoever dispatched this task (e.g. crew-pm or crew-lead); keep it concise and actionable so they can update the plan or assign next steps.",
+  "When you create or edit files, always report the full absolute path of each file (e.g. /Users/.../project/tests/file.js) in your reply so the user knows exactly where output went."
 ].join("\n");
 const MEMORY_PROTOCOL_MARKER = "Mandatory memory protocol (apply for this task):";
 const GATEWAY_URL = "ws://127.0.0.1:18789";
@@ -124,18 +149,18 @@ const OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS = Number(process.env.OPENCREW_RT_DIS
 const OPENCREW_OPENCODE_ENABLED = (process.env.OPENCREW_OPENCODE_ENABLED || "1") !== "0";  // ON by default
 const OPENCREW_OPENCODE_FORCE = process.env.OPENCREW_OPENCODE_FORCE === "1";
 const OPENCREW_OPENCODE_BIN = process.env.OPENCREW_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
-// Read project dir fresh on every call so dashboard changes take effect without a bridge restart
+// Read project dir fresh on every call so dashboard changes take effect without a bridge restart.
+// Prefer config (dashboard) over env so changing "OpenCode Project Directory" in Settings applies immediately.
 function getOpencodeProjectDir() {
-  if (process.env.OPENCREW_OPENCODE_PROJECT) return process.env.OPENCREW_OPENCODE_PROJECT;
   try {
     const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
-    if (cfg.opencodeProject) return cfg.opencodeProject;
+    if (cfg.opencodeProject && String(cfg.opencodeProject).trim()) return String(cfg.opencodeProject).trim();
   } catch {}
-  // No configured project dir — return empty string (caller should warn/skip rather than default to cwd)
+  if (process.env.OPENCREW_OPENCODE_PROJECT) return process.env.OPENCREW_OPENCODE_PROJECT;
   return "";
 }
 const OPENCREW_OPENCODE_AGENT = process.env.OPENCREW_OPENCODE_AGENT || "admin";
-const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.1-codex";
+const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.3-codex";
 const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "180000");
 // ── Auto-load agents from crewswarm.json / openclaw.json (legacy) so new agents added via the dashboard
 //    are immediately available without editing this file.
@@ -150,31 +175,32 @@ function buildAgentMapsFromConfig() {
     return { list, map };
   }
 
-  // Merge built-in agents with any extra agents defined in crewswarm.json or openclaw.json (legacy)
-  try {
-    const cfgPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-    const cfgAgents = Array.isArray(cfg.agents) ? cfg.agents
-                    : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
+  // Merge built-in agents with all agents from crewswarm.json (canonical) + openclaw.json (legacy)
+  const map = { ...BUILT_IN_MAP };
+  const listSet = new Set(BUILT_IN_RT_AGENTS);
 
-    const map = { ...BUILT_IN_MAP };
-    const listSet = new Set(BUILT_IN_RT_AGENTS);
+  const cfgSources = [
+    path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
+    path.join(os.homedir(), ".openclaw", "openclaw.json"),
+  ];
 
-    for (const agent of cfgAgents) {
-      const rawId = agent.id;                                        // may be "coder-front" OR "crew-coder-front"
-      const bareId = rawId.replace(/^crew-/, "");                   // always "coder-front"
-      const rtId   = "crew-" + bareId;                              // always "crew-coder-front"
-      if (!map[rtId]) { map[rtId] = bareId; listSet.add(rtId); }   // register crew-X → bare
-      // Only also register the bare form if the config stored it without prefix
-      if (rawId === bareId && !map[bareId]) { map[bareId] = bareId; listSet.add(bareId); }
-    }
+  for (const cfgPath of cfgSources) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+      const cfgAgents = Array.isArray(cfg.agents) ? cfg.agents
+                      : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
 
-    return { list: [...listSet], map };
-  } catch (e) {
-    // Config unreadable — fall back to built-in list
-    const list = [...BUILT_IN_RT_AGENTS];
-    return { list, map: BUILT_IN_MAP };
+      for (const agent of cfgAgents) {
+        const rawId = agent.id;
+        const bareId = rawId.replace(/^crew-/, "");
+        const rtId   = "crew-" + bareId;
+        if (!map[rtId]) { map[rtId] = bareId; listSet.add(rtId); }
+        if (rawId === bareId && !map[bareId]) { map[bareId] = bareId; listSet.add(bareId); }
+      }
+    } catch {}
   }
+
+  return { list: [...listSet], map };
 }
 
 const { list: OPENCREW_RT_SWARM_AGENTS, map: RT_TO_GATEWAY_AGENT_MAP } = buildAgentMapsFromConfig();
@@ -936,8 +962,16 @@ function looksLikeCodingTask(prompt = "") {
 //
 
 // Agents that auto-approve @@RUN_CMD without requiring user confirmation
-// (system-level agents trusted to run commands as part of their role)
-const AUTO_APPROVE_CMD_AGENTS = new Set(["crew-fixer", "crew-github", "crew-pm"]);
+const _AUTO_APPROVE_STATIC = new Set(["crew-fixer", "crew-github", "crew-pm"]);
+const _AUTO_APPROVE_ROLES = new Set(["coder", "ops", "generalist"]);
+
+function isAutoApproveAgent(agentId) {
+  if (_AUTO_APPROVE_STATIC.has(agentId)) return true;
+  const agents = loadAgentList();
+  const cfg = agents.find(a => a.id === agentId);
+  if (cfg?.tools?.autoApproveCmd) return true;
+  return cfg?._role ? _AUTO_APPROVE_ROLES.has(cfg._role) : false;
+}
 
 // Pending command approvals: approvalId → { resolve, timer }
 const pendingCmdApprovals = new Map();
@@ -948,14 +982,14 @@ let _rtClientForApprovals = null;
 // Per-role tool defaults — used when agent has no explicit alsoAllow in config
 const AGENT_TOOL_ROLE_DEFAULTS = {
   'crew-qa':          new Set(['read_file','skill']),
-  'crew-coder':       new Set(['write_file','read_file','mkdir','run_cmd','skill']),
+  'crew-coder':       new Set(['write_file','read_file','mkdir','run_cmd','skill','define_skill']),
   'crew-coder-front': new Set(['write_file','read_file','mkdir','run_cmd','skill']),
   'crew-coder-back':  new Set(['write_file','read_file','mkdir','run_cmd','skill']),
   'crew-frontend':    new Set(['write_file','read_file','mkdir','run_cmd','skill']),
   'crew-fixer':       new Set(['write_file','read_file','mkdir','run_cmd','skill']),
   'crew-github':      new Set(['read_file','run_cmd','git','skill']),
-  'crew-pm':          new Set(['read_file','dispatch','skill']),
-  'crew-main':        new Set(['read_file','write_file','run_cmd','dispatch','skill']),
+  'crew-pm':          new Set(['read_file','write_file','mkdir','dispatch','skill']),
+  'crew-main':        new Set(['read_file','write_file','run_cmd','dispatch','skill','define_skill']),
   'crew-security':    new Set(['read_file','run_cmd']),
   'crew-copywriter':  new Set(['write_file','read_file','skill']),
   'crew-telegram':    new Set(['telegram','read_file']),
@@ -963,7 +997,7 @@ const AGENT_TOOL_ROLE_DEFAULTS = {
 };
 
 // CrewSwarm @@TOOL permission names — distinct from legacy gateway tool names
-const CREWSWARM_TOOL_NAMES = new Set(['write_file','read_file','mkdir','run_cmd','git','dispatch','skill','telegram','web_search','web_fetch']);
+const CREWSWARM_TOOL_NAMES = new Set(['write_file','read_file','mkdir','run_cmd','git','dispatch','skill','define_skill','telegram','web_search','web_fetch']);
 
 function loadAgentToolPermissions(agentId) {
   // Check config files for explicit CrewSwarm-style tool permissions.
@@ -996,14 +1030,31 @@ function loadAgentToolPermissions(agentId) {
   for (const [key, val] of Object.entries(AGENT_TOOL_ROLE_DEFAULTS)) {
     if (agentId.startsWith(key)) return val;
   }
+  // Dynamic agents: derive tools from _role in crewswarm.json
+  try {
+    const agents = loadAgentList();
+    const cfg = agents.find(a => a.id === agentId);
+    if (cfg?._role) {
+      const ROLE_TOOL_DEFAULTS = {
+        coder:      new Set(['write_file','read_file','mkdir','run_cmd','skill']),
+        researcher: new Set(['read_file','web_search','web_fetch','skill']),
+        writer:     new Set(['write_file','read_file','web_search','web_fetch','skill']),
+        auditor:    new Set(['read_file','run_cmd','skill']),
+        ops:        new Set(['read_file','write_file','mkdir','run_cmd','git','skill']),
+        generalist: new Set(['read_file','write_file','mkdir','run_cmd','dispatch','skill']),
+      };
+      if (ROLE_TOOL_DEFAULTS[cfg._role]) return ROLE_TOOL_DEFAULTS[cfg._role];
+    }
+  } catch {}
   // Unknown agent — allow read/write/mkdir/run by default
   return new Set(['read_file','write_file','mkdir','run_cmd']);
 }
 
 function buildToolInstructions(allowed) {
+  const projectDir = getOpencodeProjectDir() || process.cwd();
   const tools = [];
   if (allowed.has('write_file')) tools.push(`### Write a file to disk:
-@@WRITE_FILE /absolute/path/to/file.html
+@@WRITE_FILE ${projectDir}/file.html
 <!DOCTYPE html>
 <html>...full file contents here...</html>
 @@END_FILE`);
@@ -1024,7 +1075,8 @@ Returns top 5 results with title, URL, and snippet. Use this to research facts, 
 Returns the page text (up to 8000 chars). Use to read docs, articles, or any URL before summarising or referencing.`);
   if (allowed.has('telegram')) tools.push(`### Send a Telegram message:
 @@TELEGRAM your message text here
-Sends a message to the configured Telegram chat. Use to notify humans of task completion, errors, or important findings.`);
+@@TELEGRAM @ContactName message text here
+Sends a message to the configured Telegram chat (or to a contact by name if you use @Name). Contact names are set in Dashboard → Settings → Telegram → Contact names. Use to notify humans of task completion, errors, or important findings.`);
   if (allowed.has('skill')) {
     const skillList = (() => {
       try {
@@ -1034,7 +1086,13 @@ Sends a message to the configured Telegram chat. Use to notify humans of task co
         return files.map(f => {
           try {
             const d = JSON.parse(fs.readFileSync(path.join(SKILLS_DIR, f), "utf8"));
-            return `  - ${f.replace(".json","")} — ${d.description || ""}${d.requiresApproval ? " (⚠️ needs approval)" : ""}`;
+            const name    = f.replace(".json","");
+            const approval = d.requiresApproval ? " ⚠️ requires-approval" : "";
+            const urlLine  = d.url  ? `\n      URL: ${d.method||"POST"} ${d.url}` : "";
+            const notes    = d.paramNotes ? `\n      Params: ${d.paramNotes}` : "";
+            const defaults = d.defaultParams && Object.keys(d.defaultParams).length
+              ? `\n      Defaults: ${JSON.stringify(d.defaultParams)}` : "";
+            return `  - ${name}${approval} — ${d.description || ""}${urlLine}${notes}${defaults}`;
           } catch { return `  - ${f.replace(".json","")}`; }
         }).join("\n");
       } catch { return ""; }
@@ -1045,6 +1103,23 @@ Available skills:\n${skillList}
 Replace skillname with the skill name. Include any required params as inline JSON on the same line.
 Example: @@SKILL fly.deploy {"app":"myapp"}
 Example: @@SKILL elevenlabs.tts {"text":"Hello world","voice_id":"21m00Tcm4TlvDq8ikWAM"}`);
+    if (allowed.has('define_skill')) {
+      tools.push(`### Define or update a skill (create a reusable API integration):
+@@DEFINE_SKILL skillname
+{
+  "description": "What this skill does",
+  "url": "https://api.example.com/endpoint/{param}",
+  "method": "POST",
+  "auth": {"type": "bearer", "keyFrom": "providers.PROVIDER.apiKey"},
+  "defaultParams": {"model": "default"},
+  "paramNotes": "Required: param1. Optional: param2 (default: x).",
+  "requiresApproval": false
+}
+@@END_SKILL
+Use @@WEB_SEARCH and @@WEB_FETCH to research the API first, then define the skill.
+Auth types: "bearer" (Authorization: Bearer <key>), "header" (custom header + "header" field).
+keyFrom format: "providers.PROVIDER.apiKey" (reads from crewswarm.json) or "env.ENV_VAR_NAME".`);
+    }
   }
   if (!tools.length) return ""; // agent has no tools — instructions not needed
 
@@ -1053,6 +1128,8 @@ Example: @@SKILL elevenlabs.tts {"text":"Hello world","voice_id":"21m00Tcm4TlvDq
 
 When your task requires actions on disk or network, output the tool markers below directly in your reply.
 The system detects and executes them automatically. ALWAYS use absolute paths.
+
+PROJECT DIRECTORY (write all output files here): ${projectDir}
 
 ${tools.join("\n\n")}
 
@@ -1063,6 +1140,7 @@ CRITICAL RULES:
 - ALL tool calls go in a SINGLE reply — do NOT stop after @@MKDIR and wait for results. Chain @@MKDIR then @@WRITE_FILE immediately in the same response.
 - Do NOT write "**Tool execution results:**" — the system appends that automatically.
 - Do NOT wrap file contents in markdown fences inside @@WRITE_FILE...@@END_FILE blocks.
+- Write ALL output files under ${projectDir}/ unless the task explicitly specifies a different absolute path.
 - Disabled tools: ${['write_file','read_file','mkdir','run_cmd','git'].filter(t => !allowed.has(t)).join(', ') || 'none'}
 - To log a durable discovery to the shared knowledge base (brain.md), include this anywhere in your reply:
   @@BRAIN: <one-line fact worth remembering for future tasks>
@@ -1160,14 +1238,17 @@ async function executeSkill(skillDef, params) {
 
 async function notifyTelegramSkillApproval(agentId, skillName, params, approvalId) {
   const cfg = resolveConfig();
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || "";
-  const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID   || "";
-  if (!botToken || !chatId) return;
+  const tgBridge = resolveTelegramBridgeConfig();
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || tgBridge.token || "";
+  const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID
+    || (Array.isArray(tgBridge.allowedChatIds) && tgBridge.allowedChatIds.length ? String(tgBridge.allowedChatIds[0]) : "") || tgBridge.defaultChatId || "";
+  const chatIdVal = chatId.trim();
+  if (!botToken || !chatIdVal) return;
   const msg = `🔔 *Skill approval needed*\n*${agentId}* → *${skillName}*\nParams: \`${JSON.stringify(params).slice(0, 200)}\`\n\nApprove: POST /api/skills/approve {"approvalId":"${approvalId}"}\nOr reply approve/${approvalId} here`;
   await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "Markdown",
+    body: JSON.stringify({ chat_id: chatIdVal, text: msg, parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [[
         { text: "✅ Approve", callback_data: `skill_approve:${approvalId}` },
         { text: "❌ Reject",  callback_data: `skill_reject:${approvalId}`  },
@@ -1227,12 +1308,15 @@ function checkSpendingCap(agentId, providerKey) {
 }
 async function notifyTelegramSpending(message) {
   const cfg = resolveConfig();
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || "";
-  const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID   || "";
-  if (!botToken || !chatId) return;
+  const tgBridge = resolveTelegramBridgeConfig();
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || tgBridge.token || "";
+  const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID
+    || (Array.isArray(tgBridge.allowedChatIds) && tgBridge.allowedChatIds.length ? String(tgBridge.allowedChatIds[0]) : "") || tgBridge.defaultChatId || "";
+  const chatIdVal = chatId.trim();
+  if (!botToken || !chatIdVal) return;
   await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: `💸 Spending alert: ${message}`, parse_mode: "Markdown" }),
+    body: JSON.stringify({ chat_id: chatIdVal, text: `💸 Spending alert: ${message}`, parse_mode: "Markdown" }),
     signal: AbortSignal.timeout(5000),
   }).catch(() => {});
 }
@@ -1280,6 +1364,12 @@ function sanitizeToolPath(raw) {
   let s = raw.trim().replace(/\s+/g, " ").replace(/`/g, "");
   while (s.length > 1 && (s.endsWith(".") || s.endsWith(","))) s = s.slice(0, -1).trim();
   s = s.replace(/^~/, os.homedir());
+  // Resolve relative paths against the configured project dir so agents
+  // that output bare filenames don't accidentally write to the CrewSwarm root.
+  if (!path.isAbsolute(s)) {
+    const base = getOpencodeProjectDir() || process.cwd();
+    s = path.join(base, s);
+  }
   return s;
 }
 
@@ -1296,22 +1386,24 @@ async function executeToolCalls(reply, agentId) {
       continue;
     }
     const filePath = sanitizeToolPath(m[1]);
+    const absPath = path.resolve(filePath);
     const contents = m[2];
     try {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, contents, "utf8");
-      const msg = `[tool:write_file] ✅ Wrote ${contents.length} bytes → ${filePath}`;
+      fs.mkdirSync(path.dirname(absPath), { recursive: true });
+      fs.writeFileSync(absPath, contents, "utf8");
+      const msg = `[tool:write_file] ✅ Wrote ${contents.length} bytes → ${absPath}`;
       results.push(msg);
       console.log(`[${agentId}] ${msg}`);
     } catch (err) {
-      const msg = `[tool:write_file] ❌ Failed to write ${filePath}: ${err.message}`;
+      const msg = `[tool:write_file] ❌ Failed to write ${absPath}: ${err.message}`;
       results.push(msg);
       console.error(`[${agentId}] ${msg}`);
     }
   }
 
   // ── @@READ_FILE ───────────────────────────────────────────────────────────
-  const readRe = /@@READ_FILE[ \t]+([^\n]+)/g;
+  // Path stops at newline or next @@ so multiple @@READ_FILE on one line are parsed separately
+  const readRe = /@@READ_FILE[ \t]+([^\n@@]+)/g;
   while ((m = readRe.exec(reply)) !== null) {
     if (!allowed.has('read_file')) {
       results.push(`[tool:read_file] ⛔ ${agentId} does not have read_file permission`);
@@ -1328,7 +1420,7 @@ async function executeToolCalls(reply, agentId) {
   }
 
   // ── @@MKDIR ───────────────────────────────────────────────────────────────
-  const mkdirRe = /@@MKDIR[ \t]+([^\n]+)/g;
+  const mkdirRe = /@@MKDIR[ \t]+([^\n@@]+)/g;
   while ((m = mkdirRe.exec(reply)) !== null) {
     if (!allowed.has('mkdir')) {
       results.push(`[tool:mkdir] ⛔ ${agentId} does not have mkdir permission`);
@@ -1364,7 +1456,7 @@ async function executeToolCalls(reply, agentId) {
     }
 
     // ── Approval gate — skip for git, auto-approved agents, or allowlisted commands ─
-    const needsApproval = !isGit && !AUTO_APPROVE_CMD_AGENTS.has(agentId) && !isCommandAllowlisted(cmd) && _rtClientForApprovals;
+    const needsApproval = !isGit && !isAutoApproveAgent(agentId) && !isCommandAllowlisted(cmd) && _rtClientForApprovals;
     if (needsApproval) {
       const approvalId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       try {
@@ -1489,19 +1581,37 @@ async function executeToolCalls(reply, agentId) {
   }
 
   // ── @@TELEGRAM ────────────────────────────────────────────────────────────
+  // Supports: @@TELEGRAM message  (default chat) or @@TELEGRAM @Name message  (contact by name)
   const telegramRe = /@@TELEGRAM[ \t]+([^\n]+)/g;
   while ((m = telegramRe.exec(reply)) !== null) {
     if (!allowed.has('telegram')) {
       results.push(`[tool:telegram] ⛔ ${agentId} does not have telegram permission`);
       continue;
     }
-    const message = m[1].trim();
+    let message = m[1].trim();
     try {
       const cfg = resolveConfig();
-      const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || "";
-      const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID   || "";
+      const tgBridge = resolveTelegramBridgeConfig();
+      const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || tgBridge.token || "";
+      let chatId = process.env.TELEGRAM_CHAT_ID || cfg?.env?.TELEGRAM_CHAT_ID || cfg?.TELEGRAM_CHAT_ID
+        || (Array.isArray(tgBridge.allowedChatIds) && tgBridge.allowedChatIds.length ? String(tgBridge.allowedChatIds[0]) : "")
+        || tgBridge.defaultChatId || "";
+      const contactNames = tgBridge.contactNames || {};
+      const atNameMatch = message.match(/^@(\S+)\s+(.*)$/s);
+      if (atNameMatch) {
+        const name = atNameMatch[1];
+        message = atNameMatch[2].trim();
+        const nameLower = name.toLowerCase();
+        const found = Object.entries(contactNames).find(([, v]) => (v || "").toLowerCase() === nameLower);
+        if (found) chatId = found[0];
+        else {
+          results.push(`[tool:telegram] ❌ No contact named "${name}" in Settings → Telegram → Contact names`);
+          continue;
+        }
+      }
+      chatId = chatId.trim();
       if (!botToken || !chatId) {
-        results.push(`[tool:telegram] ❌ TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in env or ~/.crewswarm/config.json`);
+        results.push(`[tool:telegram] ❌ TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in env, ~/.crewswarm/config.json, or ~/.crewswarm/telegram-bridge.json (token + allowedChatIds or defaultChatId)`);
         continue;
       }
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -1565,14 +1675,59 @@ async function executeToolCalls(reply, agentId) {
     }
   }
 
+  // ── @@DEFINE_SKILL ────────────────────────────────────────────────────────
+  // Format: @@DEFINE_SKILL skillname\n{json}\n@@END_SKILL
+  const defineSkillRe = /@@DEFINE_SKILL[ \t]+([a-zA-Z0-9_\-\.]+)\n([\s\S]*?)@@END_SKILL/g;
+  while ((m = defineSkillRe.exec(reply)) !== null) {
+    if (!allowed.has('define_skill')) {
+      results.push(`[tool:define_skill] ⛔ ${agentId} does not have define_skill permission`);
+      continue;
+    }
+    const skillName = m[1].trim();
+    const rawJson   = m[2].trim();
+    let def;
+    try { def = JSON.parse(rawJson); } catch(e) {
+      results.push(`[tool:define_skill] ❌ ${skillName}: invalid JSON — ${e.message}`);
+      continue;
+    }
+    try {
+      fs.mkdirSync(SKILLS_DIR, { recursive: true });
+      const outPath = path.join(SKILLS_DIR, skillName + ".json");
+      fs.writeFileSync(outPath, JSON.stringify(def, null, 2), "utf8");
+      results.push(`[tool:define_skill] ✅ Skill "${skillName}" saved to ${outPath}`);
+      console.log(`[${agentId}] define_skill:${skillName} → ${outPath}`);
+    } catch(e) {
+      results.push(`[tool:define_skill] ❌ Failed to save skill "${skillName}": ${e.message}`);
+    }
+  }
+
   return results;
 }
 
-// Agents that should always run through OpenCode for real agentic file access
-const OPENCODE_AGENTS = new Set([
-  "crew-coder", "crew-coder-2", "crew-coder-front", "crew-coder-back",
-  "crew-frontend", "crew-main", "crew-fixer", "crew-devops",
-]);
+// Coding tool IDs — agents whose role defaults include write_file are considered
+// "coding" roles and default to useOpenCode=true when no explicit config is set.
+const OPENCODE_CODING_TOOLS = new Set(["write_file"]);
+
+function agentDefaultsToOpenCode(agentId) {
+  const defaults = AGENT_TOOL_ROLE_DEFAULTS[agentId];
+  if (defaults) return defaults.has("write_file") && defaults.has("run_cmd");
+  // Dynamic/unknown agents: check their explicit tool config in crewswarm.json
+  const agents = loadAgentList();
+  const cfg = agents.find(a => a.id === agentId);
+  const tools = cfg?.tools?.crewswarmAllow || [];
+  if (tools.includes("write_file") && tools.includes("run_cmd")) return true;
+  return false;
+}
+
+function getAgentOpenCodeConfig(agentId) {
+  const agents = loadAgentList();
+  const cfg = agents.find(a => a.id === agentId);
+  if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null };
+  if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null };
+  if (cfg.useOpenCode === false) return { enabled: false, model: null };
+  // No explicit setting — fall back to role-based default
+  return { enabled: agentDefaultsToOpenCode(agentId), model: cfg.opencodeModel || null };
+}
 
 function shouldUseOpenCode(payload, prompt, incomingType) {
   if (!OPENCREW_OPENCODE_ENABLED) return false;
@@ -1585,11 +1740,10 @@ function shouldUseOpenCode(payload, prompt, incomingType) {
   if (runtime === "opencode" || runtime === "codex" || runtime === "gpt5" || runtime === "gpt-5") return true;
   if (payload?.useOpenCode === true) return true;
 
-  // Auto-route coding agents through OpenCode for real agentic file access
+  // Config-driven: check crewswarm.json useOpenCode field (or role-based default)
   const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
-  if (OPENCODE_AGENTS.has(agentId)) return true;
-
-  return false;
+  const ocCfg = getAgentOpenCodeConfig(agentId);
+  return ocCfg.enabled;
 }
 
 function shouldConnectGateway(args) {
@@ -1617,7 +1771,10 @@ function runOpenCodeTask(prompt, payload = {}) {
   return new Promise((resolve, reject) => {
     // Skip protocol check for OpenCode - it doesn't need memory wrapper
     const bin = fs.existsSync(OPENCREW_OPENCODE_BIN) ? OPENCREW_OPENCODE_BIN : "opencode";
-    const model = String(payload?.model || OPENCREW_OPENCODE_MODEL);
+    // Model priority: explicit payload > per-agent opencodeModel > global default
+    const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
+    const agentOcCfg = getAgentOpenCodeConfig(agentId);
+    const model = String(payload?.model || agentOcCfg.model || OPENCREW_OPENCODE_MODEL);
     const agent = String(payload?.agent || OPENCREW_OPENCODE_AGENT || "").trim();
     const configuredDir = getOpencodeProjectDir();
     const projectDir = String(payload?.projectDir || configuredDir || process.cwd());
@@ -2268,7 +2425,7 @@ function buildTaskPrompt(taskText, sourceLabel, agentId) {
   })();
 
   // Load agent-specific extra memory (e.g. lessons.md for coders + fixer)
-  const extraMemoryFiles = AGENT_EXTRA_MEMORY[agentId] || (bareId && AGENT_EXTRA_MEMORY[`crew-${bareId}`]) || [];
+  const extraMemoryFiles = getAgentExtraMemory(agentId);
   const extraMemorySections = [];
   for (const fileName of extraMemoryFiles) {
     const fullPath = path.join(SHARED_MEMORY_DIR, fileName);
@@ -2913,7 +3070,8 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     const useOpenCode = shouldUseOpenCode(payload, prompt, incomingType);
     if (useOpenCode) {
       const routeAgent = String(payload?.agent || OPENCREW_OPENCODE_AGENT || "default");
-      const routeModel = String(payload?.model || OPENCREW_OPENCODE_MODEL);
+      const ocAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
+      const routeModel = String(payload?.model || ocAgentCfg.model || OPENCREW_OPENCODE_MODEL);
       progress(`Routing realtime task to OpenCode (${routeAgent}/${routeModel})...`);
       telemetry("realtime_route_opencode", { taskId, incomingType, from, model: routeModel, agent: routeAgent });
     }

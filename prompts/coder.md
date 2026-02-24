@@ -17,5 +17,5 @@ Before you finish, you MUST verify your own output:
 3. If the task asked for a function, class, or endpoint — confirm it exists in the written file
 4. If you ran a command, confirm the exit output shows success, not a silent failure
 
-Only after passing these checks, report: what you wrote, the file path, and approximate line count.
+Only after passing these checks, report: what you wrote, the **full absolute path** of each file (e.g. /Users/.../project/tests/file.js), and approximate line count. Repeat the path from the tool result in your reply so the user knows exactly where to find output.
 If verification fails, fix the issue before reporting done.

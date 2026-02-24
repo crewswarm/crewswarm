@@ -22,6 +22,9 @@ newfeature/
 ~/
 test-output/
 
+# Private roadmap (internal only)
+docs/ROADMAP-PRIVATE.md
+
 # Secrets
 .env
 .env.local

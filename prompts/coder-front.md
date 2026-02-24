@@ -16,5 +16,5 @@ Before you finish, you MUST verify your own output:
 3. Check that CSS classes referenced in HTML are defined
 4. If JavaScript was added, check for unclosed functions or obvious syntax errors
 
-Only after passing these checks, report: what you wrote, the file path, and approximate line count.
+Only after passing these checks, report: what you wrote, the **full absolute path** of each file (e.g. /Users/.../project/tests/file.js), and approximate line count. Repeat the path from the tool result in your reply so the user knows exactly where to find output.
 If verification fails, fix the issue before reporting done.

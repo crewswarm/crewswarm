@@ -221,11 +221,22 @@ function buildActiveAgentRoster() {
     const hint = ROLE_HINTS[a.id] || {};
     const name  = a.identity?.name  || a.name  || a.id;
     const emoji = a.identity?.emoji || a.emoji || "";
-    // Prefer ROLE_HINTS functional description over cosmetic theme names (e.g. "Violet", "Blueprint")
-    const role  = hint.role || a.identity?.theme || "general purpose agent";
 
-    // Mark as non-doer if flagged in ROLE_HINTS or identity/theme says so
-    if (hint.nonDoer || /review only|not a.*doer|non.task|internal.*only/i.test(role)) {
+    // For dynamic agents without a ROLE_HINTS entry, derive role from _role in config
+    const ROLE_DESCRIPTIONS = {
+      coder: "coding, implementation, file creation",
+      researcher: "research, analysis, information gathering",
+      writer: "writing, documentation, content creation",
+      auditor: "REVIEW ONLY — auditing, testing, quality assurance",
+      ops: "DevOps, infrastructure, deployment, CI/CD",
+      generalist: "general purpose agent — versatile task execution",
+    };
+    const NON_DOER_ROLES = new Set(["auditor"]);
+
+    const roleDesc = hint.role || (a._role && ROLE_DESCRIPTIONS[a._role]) || a.identity?.theme || "general purpose agent";
+    const role = roleDesc;
+
+    if (hint.nonDoer || NON_DOER_ROLES.has(a._role) || /review only|not a.*doer|non.task|internal.*only/i.test(role)) {
       nonDoers.add(a.id);
     }
 

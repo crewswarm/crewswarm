@@ -18,23 +18,33 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 const MAX_CLIENTS = Number(process.env.OPENCREW_RT_MAX_CLIENTS || "50");
 
-const LEGACY_COMPAT_ALLOWED_AGENTS = [
+const LEGACY_COMPAT_ALLOWED_AGENTS = new Set([
   "main", "admin", "build", "coder", "researcher", "architect", "reviewer", "qa", "fixer", "pm",
   "orchestrator", "openclaw", "openclaw-main", "opencode-pm", "opencode-qa", "opencode-fixer",
   "opencode-coder", "opencode-coder-2", "security", "crew-coder-2", "crew-lead",
-];
-const DEFAULT_ALLOWED_AGENTS = [
-  ...new Set([
-    ...LEGACY_COMPAT_ALLOWED_AGENTS,
-    ...BUILT_IN_RT_AGENTS,
-    ...Object.keys(RT_TO_GATEWAY_AGENT_MAP),
-    ...Object.values(RT_TO_GATEWAY_AGENT_MAP),
-  ]),
-].join(",");
-const ALLOWED_AGENTS = (process.env.OPENCLAW_ALLOWED_AGENTS || DEFAULT_ALLOWED_AGENTS)
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+]);
+
+const STATIC_ALLOWED = new Set([
+  ...LEGACY_COMPAT_ALLOWED_AGENTS,
+  ...BUILT_IN_RT_AGENTS,
+  ...Object.keys(RT_TO_GATEWAY_AGENT_MAP),
+  ...Object.values(RT_TO_GATEWAY_AGENT_MAP),
+]);
+
+function isAgentAllowed(agentId) {
+  if (STATIC_ALLOWED.has(agentId) || STATIC_ALLOWED.has("*")) return true;
+  const cfgPath = join(process.env.HOME || "", ".crewswarm", "crewswarm.json");
+  try {
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    const agents = Array.isArray(cfg.agents) ? cfg.agents : [];
+    return agents.some(a => a.id === agentId);
+  } catch { return false; }
+}
+
+// Legacy compat: env override still works as a full allowlist
+const ENV_OVERRIDE_AGENTS = process.env.OPENCLAW_ALLOWED_AGENTS
+  ? new Set(process.env.OPENCLAW_ALLOWED_AGENTS.split(",").map(s => s.trim()).filter(Boolean))
+  : null;
 const API_KEY = (process.env.CREWSWARM_API_KEY || process.env.OPENCLAW_API_KEY || "").trim();
 const REQUIRE_API_KEY = (process.env.OPENCLAW_REQUIRE_API_KEY || "1") !== "0";
 
@@ -87,7 +97,8 @@ function failUnauthorized(reason) {
 
 function checkPermissions(context, providedKey) {
   const agentId = (context && context.agent) || "anonymous";
-  if (!ALLOWED_AGENTS.includes(agentId) && !ALLOWED_AGENTS.includes("*")) {
+  const allowed = ENV_OVERRIDE_AGENTS ? ENV_OVERRIDE_AGENTS.has(agentId) : isAgentAllowed(agentId);
+  if (!allowed) {
     failUnauthorized(`agent "${agentId}" not in allowlist`);
   }
   if (REQUIRE_API_KEY && !API_KEY) {
@@ -347,7 +358,8 @@ function setupConnectionHandlers() {
         if (kind === "hello") {
           const claimedAgent = String(parsed.agent || "anonymous");
           const token = String(parsed.token || "");
-          if (!ALLOWED_AGENTS.includes(claimedAgent) && !ALLOWED_AGENTS.includes("*")) {
+          const helloAllowed = ENV_OVERRIDE_AGENTS ? ENV_OVERRIDE_AGENTS.has(claimedAgent) : isAgentAllowed(claimedAgent);
+          if (!helloAllowed) {
             throw new Error(`agent not allowed: ${claimedAgent}`);
           }
           validateRealtimeToken(claimedAgent, token);

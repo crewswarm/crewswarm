@@ -81,16 +81,42 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 
 ## Key files to know
 
+**Every time you edit `scripts/dashboard.mjs`:** run `node scripts/check-dashboard.mjs` before you're done. Dashboard edits often break the inline script (quotes, template literals); the check shows the exact line that breaks. Run it after every dashboard change — not just before commit. Use `--source-only` if the full check times out.
+
 | File | What it does |
 |---|---|
 | `crew-lead.mjs` | Conversational commander, HTTP server on :5010 |
 | `gateway-bridge.mjs` | Per-agent daemon — calls LLM, executes tools |
 | `scripts/dashboard.mjs` | Web UI on :4319 |
+| `scripts/check-dashboard.mjs` | Validates dashboard HTML/inline script — **run after editing dashboard.mjs** to avoid breaking the UI |
 | `telegram-bridge.mjs` | Telegram integration |
 | `scripts/crew-scribe.mjs` | Memory maintenance (summaries, lessons) |
 | `~/.crewswarm/crewswarm.json` | Agent model assignments + provider API keys |
 | `~/.crewswarm/config.json` | RT auth token |
 | `~/.crewswarm/agent-prompts.json` | System prompt per agent |
+
+**How crew-main (or any agent) can see and explain the system:** Agents do not get the full repo in context automatically. To explain how the dashboard, crew-lead, or gateway works: use **@@READ_FILE** on the paths above (e.g. `scripts/dashboard.mjs`, `crew-lead.mjs`, `gateway-bridge.mjs`) and on `AGENTS.md` / `memory/brain.md`. To propose or assign code changes: dispatch to the right specialist (e.g. @@DISPATCH to crew-coder or crew-frontend with a concrete task and file path). The user can then take that plan and have Cursor or another tool apply the edits.
+
+---
+
+## Roadmap and paths
+
+- **One ROADMAP per project.** Each project has exactly one `ROADMAP.md` at its output directory: `<outputDir>/ROADMAP.md`.
+- **Repo root** `ROADMAP.md` = ops/core (CrewSwarm itself). `website/ROADMAP.md` = website project only. Do not assume “ROADMAP.md” without a path means repo root — use the project’s outputDir when given.
+- **PM:** When a task says “the roadmap” or “ROADMAP.md”, use the project’s outputDir when given; otherwise repo root = ops/core, `website/ROADMAP.md` = website project.
+
+## Who can write where
+
+| Agent | write_file | mkdir | Notes |
+|-------|------------|-------|--------|
+| crew-coder, crew-coder-front, crew-coder-back, crew-frontend, crew-fixer | ✓ | ✓ | Full project files |
+| crew-copywriter | ✓ | ✓ | Docs, copy, content |
+| crew-qa | read-only by default | — | Grant write_file via @@TOOLS if needed |
+| crew-pm | ✓ | ✓ | **New projects only:** create folder + ROADMAP.md. For **existing** repo files (e.g. repo root ROADMAP.md) must @@DISPATCH to crew-copywriter or crew-coder with full path and items |
+| crew-github | read + run_cmd + git | — | Commits, PRs via git |
+| crew-security, crew-main | ✓ | ✓ | Per role defaults |
+
+See `~/.crewswarm/crewswarm.json` → `agents[].tools.crewswarmAllow` to override per agent. Defaults are in `gateway-bridge.mjs` → AGENT_TOOL_ROLE_DEFAULTS.
 
 ---
 
@@ -211,6 +237,60 @@ node crew-lead.mjs           # restart just crew-lead
 tail -f /tmp/crew-lead.log
 tail -f /tmp/opencrew-rt-daemon.log
 ```
+
+---
+
+## Scheduled pipelines (cron)
+
+Run a **workflow** (agents + tasks per stage) or a **skill-only** pipeline on a schedule. No daemon — cron runs the script.
+
+### Workflow (agent + task per stage)
+
+Pick the agent and what they should do in each stage. Stages run in order; each stage’s reply is passed to the next as `[Previous step output]`. Optional `tool` is for your own note (e.g. which capability that stage uses).
+
+Create `~/.crewswarm/pipelines/<name>.json`:
+
+```json
+{
+  "stages": [
+    { "agent": "crew-copywriter", "task": "Draft a 280-char tweet about our launch. Write the final tweet to /tmp/cron-tweet.txt and reply with the text.", "tool": "write_file" },
+    { "agent": "crew-main", "task": "Read /tmp/cron-tweet.txt and post it using @@SKILL twitter.post with that text. Reply when done.", "tool": "skill" }
+  ]
+}
+```
+
+Requires crew-lead and the RT bus (so dispatch returns a taskId for polling). Agents must be running (e.g. `npm run start-crew`).
+
+### Skill-only pipeline (no agents)
+
+If you only need to call skills in sequence (no agent tasks), use `steps`:
+
+```json
+{
+  "steps": [
+    { "skill": "twitter.post", "params": { "text": "Daily update: …" } },
+    { "skill": "polymarket.trade", "params": { } }
+  ]
+}
+```
+
+### Run from cron
+
+```bash
+# Run workflow or skill pipeline by name
+node scripts/run-scheduled-pipeline.mjs social
+
+# Run a single skill with inline params
+node scripts/run-scheduled-pipeline.mjs --skill twitter.post --params '{"text":"Hello from cron"}'
+```
+
+**Crontab example** (daily at 9am; create `~/.crewswarm/logs` first):
+
+```bash
+0 9 * * * cd /path/to/CrewSwarm && node scripts/run-scheduled-pipeline.mjs social >> ~/.crewswarm/logs/cron.log 2>&1
+```
+
+crew-lead must be running (port 5010). Auth: `~/.crewswarm/config.json` → `rt.authToken`.
 
 ---
 

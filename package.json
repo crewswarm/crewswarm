@@ -18,7 +18,8 @@
     "crew-cli": "node crew-cli.mjs",
     "smoke:dispatch": "node scripts/smoke-dispatch.mjs",
     "smoke:e2e": "node scripts/crewswarm-flow-test.mjs",
-    "smoke": "npm run smoke:dispatch && npm run smoke:e2e"
+    "smoke": "npm run smoke:dispatch && npm run smoke:e2e",
+    "improvement:baseline": "node scripts/improvement-baseline-test.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"
