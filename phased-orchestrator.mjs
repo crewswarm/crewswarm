@@ -15,13 +15,13 @@ import { existsSync, mkdir } from "node:fs";
 import { readFile, appendFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getProjectDir } from "./lib/project-dir.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
 const GATEWAY_BRIDGE_PATH = `${CREWSWARM_DIR}/gateway-bridge.mjs`;
 const LOG_DIR = join(CREWSWARM_DIR, "orchestrator-logs");
-// All build output goes here so you can find it. Override with OPENCREW_OUTPUT_DIR.
-const OUTPUT_DIR = process.env.OPENCREW_OUTPUT_DIR || join(CREWSWARM_DIR, "website");
+const OUTPUT_DIR = getProjectDir(join(CREWSWARM_DIR, "website"));
 const DISPATCH_LOG = join(LOG_DIR, "phased-dispatch.jsonl");
 const PROJECT_ID = process.env.PM_PROJECT_ID || null;
 

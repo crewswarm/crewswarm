@@ -1,0 +1,4 @@
+{"type":"task.start","taskId":"TEST-001","agent":"coder","instruction":"Create a sum function in src/math.ts that adds two numbers","files":["src/math.ts"],"tests":[],"ts":"2026-02-19T09:06:26.101Z"}
+{"type":"task.complete","taskId":"TEST-001","agent":"coder","durationMs":8433,"exitCode":1,"hasJson":false,"isValid":null,"result":null,"parseError":null,"outputLength":2269,"ts":"2026-02-19T09:06:34.538Z"}
+{"type":"test.start","taskId":"TEST-001","instruction":"Create a function in test-output/myfunc.js","files":["test-output/myfunc.js"],"ts":"2026-02-19T09:27:16.231Z"}
+{"type":"test.complete","taskId":"TEST-001","durationMs":101601,"exitCode":null,"validation":{"hasJson":false,"isValidJson":false,"parseError":null,"hasFilesChanged":null,"hasResult":null,"hasSummary":null,"filesCount":0},"fileChecks":[],"parsedResult":null,"outputLength":0,"ts":"2026-02-19T09:28:57.836Z"}

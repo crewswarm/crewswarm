@@ -1,0 +1,1 @@
+{"id":"bootstrap-control-1","ts":"2026-02-19T00:00:00.000Z","channel":"control","from":"system","to":"broadcast","type":"protocol.bootstrap","payload":{"status":"initialized"}}

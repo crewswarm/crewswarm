@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
+import { getProjectDir } from "./lib/project-dir.mjs";
 import {
   BUILT_IN_RT_AGENTS,
   COORDINATOR_AGENT_IDS,
@@ -149,19 +150,22 @@ const OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS = Number(process.env.OPENCREW_RT_DIS
 const OPENCREW_OPENCODE_ENABLED = (process.env.OPENCREW_OPENCODE_ENABLED || "1") !== "0";  // ON by default
 const OPENCREW_OPENCODE_FORCE = process.env.OPENCREW_OPENCODE_FORCE === "1";
 const OPENCREW_OPENCODE_BIN = process.env.OPENCREW_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
-// Read project dir fresh on every call so dashboard changes take effect without a bridge restart.
-// Prefer config (dashboard) over env so changing "OpenCode Project Directory" in Settings applies immediately.
 function getOpencodeProjectDir() {
-  try {
-    const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
-    if (cfg.opencodeProject && String(cfg.opencodeProject).trim()) return String(cfg.opencodeProject).trim();
-  } catch {}
-  if (process.env.OPENCREW_OPENCODE_PROJECT) return process.env.OPENCREW_OPENCODE_PROJECT;
-  return "";
+  return getProjectDir("") || "";
 }
 const OPENCREW_OPENCODE_AGENT = process.env.OPENCREW_OPENCODE_AGENT || "admin";
 const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.3-codex";
-const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "180000");
+const OPENCREW_OPENCODE_FALLBACK_DEFAULT = "groq/moonshotai/kimi-k2-instruct-0905";
+const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "300000");
+
+function getOpencodeFallbackModel() {
+  if (process.env.OPENCREW_OPENCODE_FALLBACK_MODEL) return process.env.OPENCREW_OPENCODE_FALLBACK_MODEL;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+    if (cfg.opencodeFallbackModel && String(cfg.opencodeFallbackModel).trim()) return String(cfg.opencodeFallbackModel).trim();
+  } catch {}
+  return OPENCREW_OPENCODE_FALLBACK_DEFAULT;
+}
 // ── Auto-load agents from crewswarm.json / openclaw.json (legacy) so new agents added via the dashboard
 //    are immediately available without editing this file.
 function buildAgentMapsFromConfig() {
@@ -295,10 +299,10 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
   messages.push({ role: "user", content: prompt });
 
   try {
-    const res = await fetch(`${llm.baseUrl}/chat/completions`, {
+    const res = await fetch(`${llm.baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${llm.apiKey}` },
-      body: JSON.stringify({ model: llm.modelId, messages, max_tokens: 8192 }),
+      body: JSON.stringify({ model: llm.modelId, messages, max_tokens: 8192, stream: false }),
       signal: AbortSignal.timeout(120000),
     });
     if (!res.ok) {
@@ -317,10 +321,10 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
       console.error(`[direct-llm] ${ocAgentId} rate-limited (429) on ${llm.modelId} — waiting 10s then retry`);
       await new Promise(r => setTimeout(r, 10000));
       try {
-        const res2 = await fetch(`${llm.baseUrl}/chat/completions`, {
+        const res2 = await fetch(`${llm.baseUrl.replace(/\/$/, "")}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${llm.apiKey}` },
-          body: JSON.stringify({ model: llm.modelId, messages, max_tokens: 8192 }),
+          body: JSON.stringify({ model: llm.modelId, messages, max_tokens: 8192, stream: false }),
           signal: AbortSignal.timeout(120000),
         });
         if (res2.ok) {
@@ -343,10 +347,10 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
         const fbProvider = fbProviders[fbProviderKey];
         if (fbProvider?.baseUrl && fbProvider?.apiKey) {
           console.warn(`[direct-llm] ${ocAgentId} → per-agent fallback (${llm.fallbackModel})`);
-          const resFb = await fetch(`${fbProvider.baseUrl}/chat/completions`, {
+          const resFb = await fetch(`${(fbProvider.baseUrl || "").replace(/\/$/, "")}/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", authorization: `Bearer ${fbProvider.apiKey}` },
-            body: JSON.stringify({ model: fbModelId, messages, max_tokens: 8192 }),
+            body: JSON.stringify({ model: fbModelId, messages, max_tokens: 8192, stream: false }),
             signal: AbortSignal.timeout(60000),
           });
           if (resFb.ok) {
@@ -376,10 +380,10 @@ async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
       if (groq?.apiKey && groq?.baseUrl) {
         const GROQ_FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL || "llama-3.3-70b-versatile";
         console.warn(`[direct-llm] ${ocAgentId} → Groq fallback (${GROQ_FALLBACK_MODEL})`);
-        const res = await fetch(`${groq.baseUrl}/chat/completions`, {
+        const res = await fetch(`${(groq.baseUrl || "").replace(/\/$/, "")}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${groq.apiKey}` },
-          body: JSON.stringify({ model: GROQ_FALLBACK_MODEL, messages, max_tokens: 8192 }),
+          body: JSON.stringify({ model: GROQ_FALLBACK_MODEL, messages, max_tokens: 8192, stream: false }),
           signal: AbortSignal.timeout(60000),
         });
         if (res.ok) {
@@ -1186,8 +1190,25 @@ function isCommandAllowlisted(cmd) {
 const SKILLS_DIR         = path.join(os.homedir(), ".crewswarm", "skills");
 const PENDING_SKILLS_FILE = path.join(os.homedir(), ".crewswarm", "pending-skills.json");
 
+/** Resolve skill name alias to actual skill file name. E.g. "benchmark" → "zeroeval.benchmark". */
+function resolveSkillAlias(skillName) {
+  const exact = path.join(SKILLS_DIR, skillName + ".json");
+  if (fs.existsSync(exact)) return skillName;
+  try {
+    const files = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".json"));
+    for (const f of files) {
+      const real = f.replace(".json", "");
+      const def = JSON.parse(fs.readFileSync(path.join(SKILLS_DIR, f), "utf8"));
+      const aliases = def.aliases || [];
+      if (aliases.includes(skillName)) return real;
+    }
+  } catch {}
+  return skillName;
+}
+
 function loadSkillDef(skillName) {
-  const file = path.join(SKILLS_DIR, skillName + ".json");
+  const resolved = resolveSkillAlias(skillName);
+  const file = path.join(SKILLS_DIR, resolved + ".json");
   if (!fs.existsSync(file)) return null;
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
@@ -1204,10 +1225,22 @@ function savePendingSkills(map) {
 
 async function executeSkill(skillDef, params) {
   const cfg = resolveConfig();
-  // Resolve URL path params e.g. {voice_id}
-  let url = skillDef.url;
-  for (const [k, v] of Object.entries(params)) {
-    url = url.replace(`{${k}}`, encodeURIComponent(String(v)));
+  let url;
+  const merged = { ...(skillDef.defaultParams || {}), ...params };
+  const aliases = skillDef.paramAliases || {};
+  for (const [param, map] of Object.entries(aliases)) {
+    if (merged[param] != null && map[merged[param]] != null) merged[param] = map[merged[param]];
+  }
+  const urlParamEmpty = (skillDef.url || "").match(/\{(\w+)\}/);
+  const emptyKey = urlParamEmpty ? urlParamEmpty[1] : null;
+  const isParamEmpty = emptyKey && (merged[emptyKey] === undefined || merged[emptyKey] === null || String(merged[emptyKey] || "").trim() === "");
+  if (skillDef.listUrl && isParamEmpty) {
+    url = skillDef.listUrl;
+  } else {
+    url = skillDef.url;
+    for (const [k, v] of Object.entries(merged)) {
+      url = url.replace(`{${k}}`, encodeURIComponent(String(v)));
+    }
   }
   const headers = { "Content-Type": "application/json", ...(skillDef.headers || {}) };
   // Auth resolution
@@ -1229,9 +1262,11 @@ async function executeSkill(skillDef, params) {
   const method  = (skillDef.method || "POST").toUpperCase();
   const timeout = skillDef.timeout || 30000;
   const reqOpts = { method, headers, signal: AbortSignal.timeout(timeout) };
-  if (method !== "GET" && method !== "HEAD") reqOpts.body = JSON.stringify(params);
+  if (method !== "GET" && method !== "HEAD") reqOpts.body = JSON.stringify(merged);
+  console.log(`[gateway] skill fetch → ${method} ${url}`);
   const res  = await fetch(url, reqOpts);
   const text = await res.text();
+  console.log(`[gateway] skill fetch ← ${res.status} ${text.slice(0, 100).replace(/\n/g, " ")}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
   try { return JSON.parse(text); } catch { return { response: text }; }
 }
@@ -1334,6 +1369,7 @@ function recordTokenUsage(modelId, usage, agentId) {
   const p = Number(usage.prompt_tokens || usage.input_tokens || 0);
   const c = Number(usage.completion_tokens || usage.output_tokens || 0);
   if (!p && !c) return;
+  const today = new Date().toISOString().slice(0, 10);
   tokenUsage.calls++;
   tokenUsage.prompt     += p;
   tokenUsage.completion += c;
@@ -1341,6 +1377,16 @@ function recordTokenUsage(modelId, usage, agentId) {
   tokenUsage.byModel[modelId].calls++;
   tokenUsage.byModel[modelId].prompt     += p;
   tokenUsage.byModel[modelId].completion += c;
+  // Daily rollup
+  if (!tokenUsage.byDay) tokenUsage.byDay = {};
+  if (!tokenUsage.byDay[today]) tokenUsage.byDay[today] = { calls: 0, prompt: 0, completion: 0, byModel: {} };
+  tokenUsage.byDay[today].calls++;
+  tokenUsage.byDay[today].prompt     += p;
+  tokenUsage.byDay[today].completion += c;
+  if (!tokenUsage.byDay[today].byModel[modelId]) tokenUsage.byDay[today].byModel[modelId] = { calls: 0, prompt: 0, completion: 0 };
+  tokenUsage.byDay[today].byModel[modelId].calls++;
+  tokenUsage.byDay[today].byModel[modelId].prompt     += p;
+  tokenUsage.byDay[today].byModel[modelId].completion += c;
   // Flush to disk every 5 calls
   if (tokenUsage.calls % 5 === 0) {
     try {
@@ -1373,14 +1419,25 @@ function sanitizeToolPath(raw) {
   return s;
 }
 
-async function executeToolCalls(reply, agentId) {
+async function executeToolCalls(reply, agentId, { suppressWriteIfSearchPending = false } = {}) {
   const allowed = loadAgentToolPermissions(agentId);
   const results = [];
+
+  // If the reply contains both @@WEB_SEARCH/@@WEB_FETCH and @@WRITE_FILE in the same
+  // message, the model is writing before it has seen real search results — suppress
+  // the write so the caller can do a follow-up call with actual search data.
+  const hasPendingSearches = /@@WEB_SEARCH[ \t]+\S|@@WEB_FETCH[ \t]+https?:\/\//.test(reply);
+  const hasWrite = /@@WRITE_FILE[ \t]+\S/.test(reply);
+  const blockWrite = suppressWriteIfSearchPending && hasPendingSearches && hasWrite;
 
   // ── @@WRITE_FILE ──────────────────────────────────────────────────────────
   const writeRe = /@@WRITE_FILE[ \t]+([^\n]+)\n([\s\S]*?)@@END_FILE/g;
   let m;
   while ((m = writeRe.exec(reply)) !== null) {
+    if (blockWrite) {
+      results.push(`[tool:write_file] ⏸ Write suppressed — waiting for search results first`);
+      continue;
+    }
     if (!allowed.has('write_file')) {
       results.push(`[tool:write_file] ⛔ ${agentId} does not have write_file permission`);
       continue;
@@ -1497,6 +1554,7 @@ async function executeToolCalls(reply, agentId) {
   }
 
   // ── @@WEB_SEARCH ──────────────────────────────────────────────────────────
+  // Uses Perplexity sonar (web-grounded LLM) as primary, falls back to Brave
   const webSearchRe = /@@WEB_SEARCH[ \t]+([^\n]+)/g;
   while ((m = webSearchRe.exec(reply)) !== null) {
     if (!allowed.has('web_search')) {
@@ -1505,8 +1563,38 @@ async function executeToolCalls(reply, agentId) {
     }
     const query = m[1].trim();
     try {
+      // ── Try Perplexity sonar first (web-grounded, accurate results) ──
+      const perplexityKey = (() => {
+        try {
+          const cfg = JSON.parse(fs.readFileSync(path.join(CREWSWARM_DIR, "crewswarm.json"), "utf8"));
+          return cfg?.providers?.perplexity?.apiKey || null;
+        } catch { return null; }
+      })();
+
+      if (perplexityKey) {
+        const pRes = await fetch("https://api.perplexity.ai/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${perplexityKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "sonar",
+            messages: [{ role: "user", content: `Search the web and return accurate, detailed results for: ${query}\n\nInclude: key facts, URLs of official sources, pricing if relevant, and any important technical details. Be specific and factual.` }],
+            max_tokens: 1024,
+          }),
+          signal: AbortSignal.timeout(20000),
+        });
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          const answer = pData.choices?.[0]?.message?.content || "";
+          const citations = (pData.citations || []).map((u, i) => `[${i+1}] ${u}`).join("\n");
+          const out = answer + (citations ? `\n\nSources:\n${citations}` : "");
+          results.push(`[tool:web_search] 🔍 Results for "${query}":\n${out}`);
+          console.log(`[${agentId}] web_search (perplexity): "${query}" → ${answer.length} chars`);
+          continue;
+        }
+      }
+
+      // ── Fallback: Brave search ──
       const braveKey = (() => {
-        // Check search-tools.json then env
         const stPaths = [
           path.join(CREWSWARM_DIR, "search-tools.json"),
           path.join(LEGACY_STATE_DIR, "search-tools.json"),
@@ -1517,7 +1605,7 @@ async function executeToolCalls(reply, agentId) {
         return process.env.BRAVE_API_KEY || null;
       })();
       if (!braveKey) {
-        results.push(`[tool:web_search] ❌ No Brave API key found. Set BRAVE_API_KEY or add to ~/.crewswarm/search-tools.json`);
+        results.push(`[tool:web_search] ❌ No search provider available (no Perplexity or Brave key)`);
         continue;
       }
       const res = await fetch(
@@ -1538,7 +1626,7 @@ async function executeToolCalls(reply, agentId) {
         `${i + 1}. **${r.title}** — ${r.url}\n   ${r.description || ""}`
       ).join("\n");
       results.push(`[tool:web_search] 🔍 Results for "${query}":\n${formatted}`);
-      console.log(`[${agentId}] web_search: "${query}" → ${hits.length} results`);
+      console.log(`[${agentId}] web_search (brave): "${query}" → ${hits.length} results`);
     } catch (err) {
       results.push(`[tool:web_search] ❌ Search failed: ${err.message}`);
     }
@@ -1667,8 +1755,19 @@ async function executeToolCalls(reply, agentId) {
     try {
       console.log(`[${agentId}] skill:${skillName} → ${skillDef.url?.slice(0, 60)}`);
       const result = await executeSkill(skillDef, merged);
-      const preview = typeof result === "string" ? result : JSON.stringify(result);
-      results.push(`[tool:skill] ✅ ${skillName}: ${preview.slice(0, 400)}`);
+      let preview;
+      const isBenchmark = skillName === "zeroeval.benchmark" || skillName === "benchmark" || skillName === "benchmarks";
+      if (isBenchmark && Array.isArray(result) && result.length) {
+        const list = result.slice(0, 30).map(b => typeof b === "object" ? b.benchmark_id : b).join(", ");
+        preview = `${result.length} benchmarks (sample): ${list}${result.length > 30 ? ` … +${result.length - 30} more` : ""}`;
+      } else if (isBenchmark && result?.models?.length) {
+        const top = result.models.slice(0, 5).map(m => `${m.model_name}: ${((m.normalized_score ?? m.score ?? 0) * 100).toFixed(1)}%`);
+        preview = `${result.name || "Benchmark"} — top 5: ${top.join("; ")}`;
+      } else {
+        preview = typeof result === "string" ? result : JSON.stringify(result);
+        if (preview.length > 400) preview = preview.slice(0, 400) + "…";
+      }
+      results.push(`[tool:skill] ✅ ${skillName}: ${preview}`);
     } catch (err) {
       results.push(`[tool:skill] ❌ ${skillName} failed: ${err.message.slice(0, 200)}`);
       console.error(`[${agentId}] skill:${skillName} error: ${err.message}`);
@@ -1722,11 +1821,11 @@ function agentDefaultsToOpenCode(agentId) {
 function getAgentOpenCodeConfig(agentId) {
   const agents = loadAgentList();
   const cfg = agents.find(a => a.id === agentId);
-  if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null };
-  if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null };
-  if (cfg.useOpenCode === false) return { enabled: false, model: null };
-  // No explicit setting — fall back to role-based default
-  return { enabled: agentDefaultsToOpenCode(agentId), model: cfg.opencodeModel || null };
+  const fallback = cfg?.opencodeFallbackModel || getOpencodeFallbackModel();
+  if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null, fallbackModel: fallback };
+  if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null, fallbackModel: fallback };
+  if (cfg.useOpenCode === false) return { enabled: false, model: null, fallbackModel: fallback };
+  return { enabled: agentDefaultsToOpenCode(agentId), model: cfg.opencodeModel || null, fallbackModel: fallback };
 }
 
 function shouldUseOpenCode(payload, prompt, incomingType) {
@@ -1802,26 +1901,69 @@ function runOpenCodeTask(prompt, payload = {}) {
 
     let stdout = "";
     let stderr = "";
+    let lastProgressAt = Date.now();
+    const agentLabel = agentId || OPENCREW_RT_AGENT || "opencode";
+
+    // Emit agent_working event so dashboard + SwiftBar can show live indicator
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast", payload: { agent: agentLabel, model, ts: Date.now() } });
+
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
       reject(new Error(`OpenCode timeout after ${OPENCREW_OPENCODE_TIMEOUT_MS}ms`));
     }, OPENCREW_OPENCODE_TIMEOUT_MS);
 
-    child.stdout.on("data", (d) => { stdout += d.toString("utf8"); });
-    child.stderr.on("data", (d) => { stderr += d.toString("utf8"); });
+    // Stream progress to log and RT bus so you can watch it live
+    child.stdout.on("data", (d) => {
+      const chunk = d.toString("utf8");
+      stdout += chunk;
+      lastProgressAt = Date.now();
+      const lines = chunk.split("\n").map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        console.log(`[OpenCode:${agentLabel}] ${line}`);
+      }
+    });
+    child.stderr.on("data", (d) => {
+      const chunk = d.toString("utf8");
+      stderr += chunk;
+      lastProgressAt = Date.now();
+      const lines = chunk.split("\n").map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (!line.includes("ExperimentalWarning") && !line.includes("--experimental")) {
+          console.log(`[OpenCode:${agentLabel}] ${line}`);
+        }
+      }
+    });
+    // Stall detector — kill and reject if no output for 120s so fallback can kick in
+    const STALL_TIMEOUT_MS = 120_000;
+    const stallCheck = setInterval(() => {
+      const stalledMs = Date.now() - lastProgressAt;
+      if (stalledMs > STALL_TIMEOUT_MS) {
+        clearTimeout(timer);
+        clearInterval(stallCheck);
+        child.kill("SIGTERM");
+        console.warn(`[OpenCode:${agentLabel}] No output for ${Math.round(stalledMs/1000)}s — killing and triggering fallback`);
+        _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast", payload: { agent: agentLabel, stalled: true, ts: Date.now() } });
+        reject(new Error(`OpenCode stalled (no output for ${Math.round(stalledMs/1000)}s)`));
+      } else if (stalledMs > 60000) {
+        console.warn(`[OpenCode:${agentLabel}] No output for ${Math.round(stalledMs/1000)}s — may be stalled`);
+      }
+    }, 30000);
     child.on("error", (err) => {
       clearTimeout(timer);
+      clearInterval(stallCheck);
       reject(err);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      clearInterval(stallCheck);
       if (code !== 0) {
-        console.error(`[OpenCode] Failed: ${stderr || stdout}`); // Debug log
+        console.error(`[OpenCode:${agentLabel}] Failed (exit ${code}): ${(stderr || stdout).slice(0, 300)}`);
         reject(new Error(`OpenCode exited ${code}: ${stderr || stdout || "unknown error"}`));
         return;
       }
       const out = (stdout || stderr || "").trim();
-      console.error(`[OpenCode] Success: ${out.substring(0, 200)}...`); // Debug log
+      console.log(`[OpenCode:${agentLabel}] Done — ${out.length} chars output`);
+      _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast", payload: { agent: agentLabel, ts: Date.now() } });
       resolve(out || "(opencode completed with no output)");
     });
   });
@@ -3075,25 +3217,46 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       progress(`Routing realtime task to OpenCode (${routeAgent}/${routeModel})...`);
       telemetry("realtime_route_opencode", { taskId, incomingType, from, model: routeModel, agent: routeAgent });
     }
+    // Emit working indicator for ALL tasks (not just OpenCode)
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast", payload: { agent: OPENCREW_RT_AGENT, ts: Date.now() } });
+
     let reply;
+    let ocAgentId = null;
+    let agentSysPrompt = null;
     if (useOpenCode) {
+      let opencodeErr;
       try {
         reply = await runOpenCodeTask(finalPrompt, payload);
-      } catch (opencodeErr) {
-        const msg = opencodeErr?.message ?? String(opencodeErr);
-        if (bridge?.kind === "gateway") {
-          telemetry("realtime_opencode_fallback", { taskId, incomingType, error: msg });
-          progress(`OpenCode route failed, falling back to legacy gateway model: ${msg.slice(0, 120)}`);
+      } catch (e) {
+        opencodeErr = e;
+        const msg = e?.message ?? String(e);
+        const isRateLimit = /429|rate\s*limit|usage.*limit|quota.*exceeded|too\s*many\s*requests/i.test(msg);
+        const isTimeout  = /timeout|timed\s*out|stall/i.test(msg);
+        const ocCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
+        const fbModel = ocCfg.fallbackModel;
+        if ((isRateLimit || isTimeout) && fbModel) {
+          const reason = isTimeout ? "timed out" : "rate limited";
+          progress(`OpenCode ${payload?.model || OPENCREW_OPENCODE_MODEL} ${reason} — retrying with fallback ${fbModel}`);
+          telemetry("realtime_opencode_fallback", { taskId, incomingType, error: msg, fallbackModel: fbModel });
+          try {
+            reply = await runOpenCodeTask(finalPrompt, { ...payload, model: fbModel });
+          } catch (fbErr) {
+            opencodeErr = fbErr;
+          }
+        }
+        if (!reply && bridge?.kind === "gateway") {
+          telemetry("realtime_opencode_fallback", { taskId, incomingType, error: opencodeErr?.message || msg });
+          progress(`OpenCode failed, falling back to legacy gateway: ${(opencodeErr?.message || msg).slice(0, 120)}`);
           const gatewayAgentId = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
           reply = await bridge.chat(finalPrompt, gatewayAgentId, { idempotencyKey: dispatchKey });
-        } else {
+        } else if (!reply) {
           throw opencodeErr;
         }
       }
     } else {
       // Try direct LLM call first (uses agent's configured model/provider from crewswarm.json)
-      const ocAgentId = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
-      const agentSysPrompt = loadAgentPrompts()[ocAgentId] || null;
+      ocAgentId = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
+      agentSysPrompt = loadAgentPrompts()[ocAgentId] || null;
       progress(`Trying direct LLM for ${OPENCREW_RT_AGENT} (mapped: ${ocAgentId})...`);
       reply = await callLLMDirect(finalPrompt, ocAgentId, agentSysPrompt);
 
@@ -3110,11 +3273,36 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     }
     reply = stripThink(reply);
 
-    // Execute any tool calls embedded in the agent's reply
-    const toolResults = await executeToolCalls(reply, OPENCREW_RT_AGENT);
+    // Execute any tool calls — suppress @@WRITE_FILE if searches are pending in the same reply
+    const toolResults = await executeToolCalls(reply, OPENCREW_RT_AGENT, { suppressWriteIfSearchPending: true });
     if (toolResults.length > 0) {
       reply = reply + "\n\n---\n**Tool execution results:**\n" + toolResults.join("\n");
       telemetry("agent_tools_executed", { taskId, agent: OPENCREW_RT_AGENT, count: toolResults.length });
+
+      // Do a follow-up LLM call whenever:
+      // (a) searches ran (agent needs to see results before writing), OR
+      // (b) write was suppressed (agent tried to write before searching)
+      const hasSearchResults = toolResults.some(r => r.includes("[tool:web_search]") || r.includes("[tool:web_fetch]") || r.includes("[tool:read_file]"));
+      const writeSuppressed = toolResults.some(r => r.includes("⏸ Write suppressed"));
+      const didWriteFile = toolResults.some(r => r.includes("[tool:write_file] ✅"));
+
+      if (hasSearchResults && (!didWriteFile || writeSuppressed)) {
+        try {
+          const followUpPrompt = `${agentSysPrompt || ""}\n\n[Original task]:\n${finalPrompt}\n\n[Tool results from your searches]:\n${toolResults.join("\n")}\n\nUsing ONLY the search results above (not your training data), write the complete output now using @@WRITE_FILE. Do not search again — just synthesize and write.`;
+          let followUpReply = ocAgentId
+            ? await callLLMDirect(followUpPrompt, ocAgentId, agentSysPrompt)
+            : null;
+          if (!followUpReply) followUpReply = await bridge.chat(followUpPrompt, ocAgentId || "main", { idempotencyKey: dispatchKey + "-followup" });
+          followUpReply = stripThink(followUpReply);
+          const followUpTools = await executeToolCalls(followUpReply, OPENCREW_RT_AGENT);
+          reply = reply + "\n\n" + followUpReply;
+          if (followUpTools.length > 0) {
+            reply = reply + "\n\n---\n**Follow-up tool results:**\n" + followUpTools.join("\n");
+          }
+        } catch (err) {
+          console.warn(`[bridge] Follow-up synthesis call failed: ${err.message}`);
+        }
+      }
     }
 
     // Validate coding artifacts for coding tasks
@@ -3250,6 +3438,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         idempotencyKey: dispatchKey,
       },
     });
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast", payload: { agent: OPENCREW_RT_AGENT, ts: Date.now() } });
     client.ack({ messageId: envelope.id, status: "done", note: "task completed" });
   } catch (err) {
     const message = err?.message ?? String(err);

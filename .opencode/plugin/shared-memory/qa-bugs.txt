@@ -1,0 +1,6 @@
+QA Test Results - BUGS FOUND
+==================================================
+
+1. TEST: shared-memory authorization checks
+   ERROR: Agent allowlist missing
+

@@ -107,13 +107,42 @@ _agent_up() {
   [[ "$STATE" =~ (^|[[:space:]])${a}:up($|[[:space:]]) ]] && return 0 || return 1
 }
 
+# Check which agents are actively coding via their bridge logs
+_agent_coding() {
+  local a="$1"
+  local logfile="/tmp/bridge-${a}.log"
+  [[ ! -f "$logfile" ]] && return 1
+  # Check if last line was within 60s and contains OpenCode output (not Done/idle)
+  local last_mod last_line
+  last_mod=$(stat -f %m "$logfile" 2>/dev/null || echo 0)
+  local age=$(( $(date +%s) - last_mod ))
+  [[ "$age" -gt 60 ]] && return 1
+  last_line=$(tail -3 "$logfile" 2>/dev/null | grep "\[OpenCode:" | tail -1)
+  [[ -z "$last_line" ]] && return 1
+  # Idle if last OpenCode line says Done or subscribed
+  [[ "$last_line" =~ (Done —|subscribed:|daemon online) ]] && return 1
+  return 0
+}
+
+CODING_AGENTS=()
+for AGENT in "${AGENTS[@]}"; do
+  _agent_coding "$AGENT" && CODING_AGENTS+=("$AGENT")
+done
+
 # ── Crew — each agent listed once with status icon ──────────────────
 echo "---"
-echo "🤖 Crew (${AGENTS_FRAC}) | sfimage=person.3.sequence.fill"
+CODING_COUNT="${#CODING_AGENTS[@]}"
+if [[ "$CODING_COUNT" -gt 0 ]]; then
+  echo "🤖 Crew — ⚡ ${CODING_COUNT} coding (${AGENTS_FRAC}) | sfimage=person.3.sequence.fill"
+else
+  echo "🤖 Crew (${AGENTS_FRAC}) | sfimage=person.3.sequence.fill"
+fi
 for AGENT in "${AGENTS[@]}"; do
   [[ -z "$AGENT" ]] && continue
+  CODING_LABEL=""
+  _agent_coding "$AGENT" && CODING_LABEL=" ⚡"
   if _agent_up "$AGENT"; then
-    echo "🟢 $AGENT | bash='/bin/bash' param1='$CTL' param2=restart-agent param3='$AGENT' terminal=false refresh=true"
+    echo "🟢 $AGENT${CODING_LABEL} | bash='/bin/bash' param1='$CTL' param2=restart-agent param3='$AGENT' terminal=false refresh=true"
   else
     echo "🔴 $AGENT | bash='/bin/bash' param1='$CTL' param2=start-agent param3='$AGENT' terminal=false refresh=true"
   fi
@@ -147,8 +176,10 @@ fi
 
 # ── Quick links ──────────────────────────────────────────────────────
 echo "---"
-echo "🖥️  Open Dashboard      | href='$DASHBOARD_URL/#chat'"
-echo "📁 Open CrewSwarm Repo | bash='open' param1='$CREWSWARM_DIR' terminal=false refresh=false"
+echo "🛸 CrewSwarm"
+echo "--💬 Open Chat            | href='$DASHBOARD_URL/#chat'"
+echo "--🖥️  Open Dashboard       | href='$DASHBOARD_URL'"
+echo "--📁 Open Repo             | bash='open' param1='$CREWSWARM_DIR' terminal=false refresh=false"
 
 # ── Logs ─────────────────────────────────────────────────────────────
 echo "---"

@@ -16,11 +16,12 @@ import { readFile, appendFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { getProjectDir } from "./lib/project-dir.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
 const GATEWAY_BRIDGE_PATH = join(REPO_DIR, "gateway-bridge.mjs");
-const OUTPUT_DIR = process.env.OPENCREW_OUTPUT_DIR || join(REPO_DIR, "website");
+const OUTPUT_DIR = getProjectDir(join(REPO_DIR, "website"));
 const LOG_DIR = join(REPO_DIR, "orchestrator-logs");
 const BUILD_LOG = join(LOG_DIR, "continuous-build.jsonl");
 const TASK_TIMEOUT_MS = Number(process.env.PHASED_TASK_TIMEOUT_MS || "300000");

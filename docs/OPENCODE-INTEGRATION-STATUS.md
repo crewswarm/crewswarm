@@ -118,6 +118,23 @@ OPENCREW_RT_AGENT=crew-coder \
 node gateway-bridge.mjs "Create /tmp/test.txt"
 ```
 
+### **Kimi K2 Instruct: "no reasoning" error**
+Kimi K2 Instruct is a **non-reasoning** model. OpenCode may error if it expects `reasoning_content`. Fix: add to `~/.opencode/opencode.jsonc` or `.opencode/opencode.jsonc`:
+
+```json
+"provider": {
+  "groq": {
+    "models": {
+      "moonshotai/kimi-k2-instruct-0905": {
+        "reasoning": false
+      }
+    }
+  }
+}
+```
+
+For **Kimi K2.5** (reasoning model), use `reasoning: true` and `interleaved: { "field": "reasoning_content" }` — see [PhysShell gist](https://gist.github.com/PhysShell/f3e1293cef48625e12483b70c2e6c88d).
+
 ### **Option 3: Hybrid Mode (Current Setup)**
 - **Coordination/Planning** → Groq Llama 3.3 70B (free, unlimited) ✅
 - **Code Generation** → OpenClaw Gateway with Groq ✅

@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenCode Swarm - Multi-Agent Orchestration</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0a12;
+      color: #e0e0e0;
+      min-height: 100vh;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    
+    nav {
+      padding: 20px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(0, 217, 255, 0.1);
+    }
+    
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #00d9ff, #0099cc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 32px;
+    }
+    
+    .nav-links a {
+      color: #a0a0a0;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    
+    .nav-links a:hover {
+      color: #00d9ff;
+    }
+    
+    .hero {
+      padding: 140px 0 100px;
+      text-align: center;
+      position: relative;
+    }
+    
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(0, 217, 255, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    
+    .hero-badge {
+      display: inline-block;
+      padding: 8px 16px;
+      background: rgba(0, 217, 255, 0.1);
+      border: 1px solid rgba(0, 217, 255, 0.3);
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #00d9ff;
+      margin-bottom: 32px;
+      letter-spacing: 0.5px;
+      opacity: 0;
+      animation: fadeInUp 0.6s ease forwards;
+      animation-delay: 0.2s;
+    }
+    
+    .hero h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(42px, 8vw, 72px);
+      font-weight: 800;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #ffffff 0%, #00d9ff 50%, #00ffaa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.1;
+      opacity: 0;
+      animation: headlineReveal 0.8s ease forwards;
+      animation-delay: 0.4s;
+    }
+    
+    .hero-headline-word {
+      display: inline-block;
+      opacity: 0;
+      transform: translateY(30px);
+      animation: wordReveal 0.6s ease forwards;
+    }
+    
+    .hero-headline-word:nth-child(1) { animation-delay: 0.5s; }
+    .hero-headline-word:nth-child(2) { animation-delay: 0.65s; }
+    .hero-headline-word:nth-child(3) { animation-delay: 0.8s; }
+    .hero-headline-word:nth-child(4) { animation-delay: 0.95s; }
+    
+    .hero .value-prop {
+      font-size: clamp(18px, 2.5vw, 22px);
+      color: #8a8a9a;
+      max-width: 580px;
+      margin: 0 auto 48px;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease forwards;
+      animation-delay: 1.1s;
+      line-height: 1.7;
+    }
+    
+    .hero .value-prop strong {
+      color: #00d9ff;
+      font-weight: 500;
+    }
+    
+    .hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      margin-bottom: 48px;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease forwards;
+      animation-delay: 1.3s;
+    }
+    
+    .stat-item {
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-family: 'Syne', sans-serif;
+      font-size: 32px;
+      font-weight: 700;
+      color: #fff;
+      display: block;
+    }
+    
+    .stat-label {
+      font-size: 13px;
+      color: #6a6a7a;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .cta-buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      opacity: 0;
+      animation: fadeInUp 0.7s ease forwards;
+      animation-delay: 1.5s;
+    }
+    
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    @keyframes headlineReveal {
+      from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    
+    @keyframes wordReveal {
+      from {
+        opacity: 0;
+        transform: translateY(30px) rotateX(-15deg);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) rotateX(0);
+      }
+    }
+    
+    .btn {
+      padding: 16px 36px;
+      border-radius: 100px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: 'Space Grotesk', sans-serif;
+      text-decoration: none;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .btn:hover::after {
+      opacity: 1;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #00d9ff, #00ffaa);
+      color: #0a0a12;
+      border: none;
+      box-shadow: 0 4px 20px rgba(0, 217, 255, 0.25);
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 32px rgba(0, 217, 255, 0.4);
+    }
+    
+    .btn-secondary {
+      background: transparent;
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+    
+    .features {
+      padding: 80px 0;
+    }
+    
+    .features h2 {
+      text-align: center;
+      font-size: 36px;
+      margin-bottom: 48px;
+      color: #fff;
+    }
+    
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+    }
+    
+    .feature-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(0, 217, 255, 0.1);
+      border-radius: 16px;
+      padding: 32px;
+      transition: all 0.3s;
+    }
+    
+    .feature-card:hover {
+      border-color: rgba(0, 217, 255, 0.3);
+      transform: translateY(-4px);
+    }
+    
+    .feature-icon {
+      font-size: 32px;
+      margin-bottom: 16px;
+    }
+    
+    .feature-card h3 {
+      font-size: 20px;
+      margin-bottom: 12px;
+      color: #fff;
+    }
+    
+    .feature-card p {
+      color: #a0a0a0;
+      font-size: 15px;
+    }
+    
+    .code-section {
+      padding: 80px 0;
+      background: rgba(0, 0, 0, 0.2);
+    }
+    
+    .code-section h2 {
+      text-align: center;
+      font-size: 36px;
+      margin-bottom: 48px;
+      color: #fff;
+    }
+    
+    .code-block {
+      background: #0d0d1a;
+      border-radius: 12px;
+      padding: 24px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 14px;
+      overflow-x: auto;
+      border: 1px solid rgba(0, 217, 255, 0.1);
+    }
+    
+    .code-block .comment { color: #6a9955; }
+    .code-block .keyword { color: #569cd6; }
+    .code-block .string { color: #ce9178; }
+    .code-block .function { color: #dcdcaa; }
+    
+    footer {
+      padding: 40px 0;
+      text-align: center;
+      border-top: 1px solid rgba(0, 217, 255, 0.1);
+      color: #666;
+    }
+    
+    footer a {
+      color: #00d9ff;
+      text-decoration: none;
+    }
+    
+    @media (max-width: 768px) {
+      .hero { padding: 80px 0 60px; }
+      .hero h1 { font-size: 36px; }
+      .hero-stats { 
+        flex-direction: column; 
+        gap: 24px; 
+      }
+      .nav-links { display: none; }
+      .cta-buttons { flex-direction: column; align-items: center; }
+      .btn { width: 100%; max-width: 280px; text-align: center; }
+    }
+    
+    .grain-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div class="grain-overlay"></div>
+  <nav class="container">
+    <div class="logo">OpenCode Swarm</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="dashboard.html">Dashboard</a>
+      <a href="https://github.com/anomalyco/opencode">GitHub</a>
+    </div>
+  </nav>
+
+  <section class="hero container">
+    <div class="hero-badge">Multi-Agent Orchestration Platform</div>
+    <h1>
+      <span class="hero-headline-word">Orchestrate</span>
+      <span class="hero-headline-word">AI Agents</span>
+      <span class="hero-headline-word">at</span>
+      <span class="hero-headline-word">Scale</span>
+    </h1>
+    <p class="value-prop">
+      Deploy <strong>coordinated agent swarms</strong> that write real code, 
+      validate every change, and deliver <strong>production-ready results</strong> — 
+      not just suggestions.
+    </p>
+    <div class="hero-stats">
+      <div class="stat-item">
+        <span class="stat-value">10x</span>
+        <span class="stat-label">Faster Development</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value">100%</span>
+        <span class="stat-label">Code Verification</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value">Real</span>
+        <span class="stat-label">File Output</span>
+      </div>
+    </div>
+    <div class="cta-buttons">
+      <a href="dashboard.html" class="btn btn-primary">Open Dashboard</a>
+      <a href="#quickstart" class="btn btn-secondary">Get Started</a>
+    </div>
+  </section>
+
+  <section id="features" class="features container">
+    <h2>Core Features</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">📡</div>
+        <h3>OpenCrew RT</h3>
+        <p><strong>WebSocket Realtime Protocol</strong> for agent coordination. Channels: command, assign, status, issues, handoff, done, reassign. At-least-once delivery with durable JSONL logs. Token auth, rate limiting, and TLS support.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧠</div>
+        <h3>Shared Memory</h3>
+        <p><strong>Persistent cross-session state</strong> stored in <code>~/.ai-swarm-memory/</code>. Agents share context, lessons, and project knowledge. Supports namespaces, JSONL logs, and atomic writes.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🐝</div>
+        <h3>Multi-Agent Orchestration</h3>
+        <p><strong>Coordinated agent swarms</strong> with role-based dispatch: Orchestrator, PM, QA, Fixer. Automatic task assignment, issue escalation, and handoff flows.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Real-Time Dashboard</h3>
+        <p><strong>Live monitoring interface</strong> with Agent Overview (totals, tokens, costs), Activity Timeline charts, Token Distribution by type, Live Activity Feed, Session cards with controls, and Shared Memory panel. Demo mode for testing.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔧</div>
+        <h3>Code Execution</h3>
+        <p>Production-grade code execution with strict validation, file verification, and automatic retry logic.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Strict Verification</h3>
+        <p>Every code change is validated. No more "I'll help you" responses that don't produce actual files.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="quickstart" class="code-section">
+    <div class="container">
+      <h2>Quick Start</h2>
+      <div class="code-block">
+<span class="comment"># Dispatch a coding task to the swarm</span>
+<span class="keyword">node</span> orchestrator-dispatch.mjs <span class="string">TASK-001</span> \
+  <span class="string">"Create a TypeScript function that reverses a string"</span> \
+  src/utils/reverse.ts
+
+<span class="comment"># Check task status</span>
+<span class="keyword">cat</span> ~/.opencode/task-logs/TASK-001.jsonl
+
+<span class="comment"># Open the dashboard</span>
+<span class="keyword">open</span> .opencode/plugin/dashboard.html
+      </div>
+    </div>
+  </section>
+
+  <footer class="container">
+    <p>OpenCode Swarm Plugin | <a href="README.md">Documentation</a> | <a href="https://opencode.ai">opencode.ai</a></p>
+  </footer>
+</body>
+</html>

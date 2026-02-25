@@ -29,7 +29,8 @@ const CTL_PATH    = (() => {
   return path.join(process.cwd(), "scripts", "openswitchctl");
 })();
 const DASHBOARD   = "http://127.0.0.1:4319";
-const DISPATCH_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_TIMEOUT_MS) || 90_000; // 90s — unanswered dispatches (agent offline)
+const DISPATCH_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_TIMEOUT_MS) || 300_000; // 5 min — unclaimed dispatches (OpenCode tasks need time to spin up)
+const DISPATCH_CLAIMED_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS) || 900_000; // 15 min — agent claimed, working (OpenCode CLI can be slow)
 
 function loadConfig() {
   const cs      = tryRead(path.join(os.homedir(), ".crewswarm", "config.json"))    || {};
@@ -70,7 +71,15 @@ function loadConfig() {
   const displayName = agentCfg?.identity?.name || "crew-lead";
   const emoji       = agentCfg?.identity?.emoji || "🦊";
 
-  return { modelId, providerKey, provider, knownAgents, agentModels, agentRoster, displayName, emoji };
+  let fallbackProvider = null, fallbackModelId = null, fallbackProviderKey = null;
+  if (agentCfg?.fallbackModel) {
+    const [fbPk, ...fbMp] = agentCfg.fallbackModel.split("/");
+    fallbackProviderKey = fbPk;
+    fallbackModelId = fbMp.join("/");
+    fallbackProvider = csSwarm?.providers?.[fbPk] || cs?.providers?.[fbPk];
+  }
+
+  return { modelId, providerKey, provider, knownAgents, agentModels, agentRoster, displayName, emoji, fallbackModelId, fallbackProviderKey, fallbackProvider };
 }
 
 function tryRead(p) {
@@ -377,6 +386,86 @@ function clearHistory(sessionId) {
   if (fs.existsSync(file)) fs.unlinkSync(file);
 }
 
+/** Resolve skill name alias to actual skill file name. E.g. "benchmark" → "zeroeval.benchmark". */
+function resolveSkillAlias(skillName) {
+  const skillsDir = path.join(os.homedir(), ".crewswarm", "skills");
+  const exact = path.join(skillsDir, `${skillName}.json`);
+  if (fs.existsSync(exact)) return skillName;
+  try {
+    const files = fs.readdirSync(skillsDir).filter(f => f.endsWith(".json"));
+    for (const f of files) {
+      const real = f.replace(".json", "");
+      const def = JSON.parse(fs.readFileSync(path.join(skillsDir, f), "utf8"));
+      const aliases = def.aliases || [];
+      if (aliases.includes(skillName)) return real;
+    }
+  } catch {}
+  return skillName;
+}
+
+/** Execute a skill from crew-lead (used when crew-lead emits @@SKILL in its reply). */
+async function executeSkillFromCrewLead(skillName, params) {
+  const resolved = resolveSkillAlias(skillName);
+  const skillsDir = path.join(os.homedir(), ".crewswarm", "skills");
+  const skillFile = path.join(skillsDir, `${resolved}.json`);
+  if (!fs.existsSync(skillFile)) throw new Error(`Skill "${skillName}" not found`);
+  const skillDef = JSON.parse(fs.readFileSync(skillFile, "utf8"));
+  const swarmCfg = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+  const merged = { ...(skillDef.defaultParams || {}), ...params };
+
+  // cmd-type skill: run a shell command with interpolated params
+  if (skillDef.type === "cmd") {
+    const allowed = skillDef.allowedValues || {};
+    for (const [key, whitelist] of Object.entries(allowed)) {
+      if (merged[key] !== undefined && !whitelist.includes(String(merged[key]))) {
+        throw new Error(`Skill ${skillName}: invalid value for "${key}": ${merged[key]}. Allowed: ${whitelist.join(", ")}`);
+      }
+    }
+    let cmd = skillDef.cmd || "";
+    for (const [k, v] of Object.entries(merged)) cmd = cmd.replace(new RegExp(`\\{${k}\\}`, "g"), String(v).replace(/[^a-zA-Z0-9._\-\/]/g, ""));
+    console.log(`[crew-lead] @@SKILL ${skillName} → cmd: ${cmd}`);
+    const { execSync } = await import("child_process");
+    const output = execSync(cmd, { timeout: skillDef.timeout || 10000, encoding: "utf8" });
+    return { output };
+  }
+  const aliases = skillDef.paramAliases || {};
+  for (const [param, map] of Object.entries(aliases)) {
+    if (merged[param] != null && map[merged[param]] != null) merged[param] = map[merged[param]];
+  }
+  let urlStr;
+  const urlParam = (skillDef.url || "").match(/\{(\w+)\}/);
+  const emptyKey = urlParam ? urlParam[1] : null;
+  const paramEmpty = emptyKey && (merged[emptyKey] === undefined || merged[emptyKey] === null || String(merged[emptyKey] || "").trim() === "");
+  if (skillDef.listUrl && paramEmpty) {
+    urlStr = skillDef.listUrl;
+  } else {
+    urlStr = skillDef.url || "";
+    for (const [k, v] of Object.entries(merged)) urlStr = urlStr.replace(`{${k}}`, encodeURIComponent(String(v)));
+  }
+  const headers = { "Content-Type": "application/json", ...(skillDef.headers || {}) };
+  if (skillDef.auth) {
+    const auth = skillDef.auth;
+    let token = auth.token || "";
+    if (auth.keyFrom) {
+      if (auth.keyFrom.startsWith("env.")) token = process.env[auth.keyFrom.slice(4)] || "";
+      else { let val = swarmCfg; for (const p of auth.keyFrom.split(".")) val = val?.[p]; if (val) token = String(val); }
+    }
+    if (token) {
+      if (auth.type === "bearer" || !auth.type) headers["Authorization"] = `Bearer ${token}`;
+      else if (auth.type === "header") headers[auth.header || "X-API-Key"] = token;
+    }
+  }
+  const method = (skillDef.method || "POST").toUpperCase();
+  const reqOpts = { method, headers, signal: AbortSignal.timeout(skillDef.timeout || 30000) };
+  if (method !== "GET" && method !== "HEAD") reqOpts.body = JSON.stringify(merged);
+  console.log(`[crew-lead] @@SKILL ${skillName} → ${method} ${urlStr}`);
+  const r = await fetch(urlStr, reqOpts);
+  const text = await r.text();
+  console.log(`[crew-lead] @@SKILL ${skillName} ← ${r.status} ${text.slice(0, 120).replace(/\n/g, " ")}`);
+  if (!r.ok) throw new Error(`Skill ${skillName}: ${r.status} ${text.slice(0, 150)}`);
+  try { return JSON.parse(text); } catch { return { response: text }; }
+}
+
 // ── System prompt ─────────────────────────────────────────────────────────────
 
 function buildSystemPrompt(cfg) {
@@ -422,9 +511,12 @@ function buildSystemPrompt(cfg) {
     : knownAgents.map(a => "  - " + a).join("\n");
   const modelLine = "";  // identity now injected once at top of prompt — no duplicate needed
   const agentModels = cfg.agentModels || {};
+  const myModel = `${cfg.providerKey}/${cfg.modelId}`;
   const agentModelList = Object.keys(agentModels).length
-    ? "Each agent's assigned model (use when asked which models agents run):\n" +
-      Object.entries(agentModels).map(([id, model]) => `  - ${id}: ${model}`).join("\n")
+    ? `YOUR model (crew-lead): ${myModel}. Other agents:\n` +
+      Object.entries(agentModels)
+        .filter(([id]) => id !== "crew-lead")
+        .map(([id, model]) => `  - ${id}: ${model}`).join("\n")
     : "";
   const rules = [
     ...(modelLine ? [modelLine, ""] : []),
@@ -442,18 +534,15 @@ function buildSystemPrompt(cfg) {
     "- NEVER say 'I launched', 'I sent', 'I dispatched' — ONLY the @@DISPATCH line actually sends the task",
     "- If you describe dispatching without the @@DISPATCH line, NOTHING will be sent — the user will be frustrated",
     "",
-    "PROJECT CREATION — CRITICAL RULES:",
-    "- These trigger words mean the user wants to build NOW — respond with @@PROJECT immediately, no questions:",
-    "  'build me', 'build a', 'create a', 'create me', 'make me', 'make a', 'start a', 'kick off', 'let's build', 'i want to build'",
-    "- When triggered: write 1-2 sentences max confirming what you are building, then add @@PROJECT at the end",
-    "- Do NOT ask 'would you like to add features?' or 'what stack should we use?' — just emit @@PROJECT",
-    "- The user will see the full AI-generated roadmap in the UI and can edit it before building starts",
-    "- Purely hypothetical questions (what would X look like, can you explain X) = just chat, no @@PROJECT",
+    "PROJECT CREATION vs PIPELINE — DECISION RULE:",
+    "- When user says 'build me X', 'create a X', 'make me X', 'kick off', etc. → ALWAYS use @@PIPELINE (the 3-wave planning pipeline below).",
+    "- @@PIPELINE is your default for ANY multi-step build request. It dispatches real agents to plan + build.",
+    "- @@PROJECT is ONLY for simple quick-draft roadmaps when user explicitly asks for 'just a roadmap' or 'draft a plan' without wanting agents to execute.",
+    "- When in doubt: use @@PIPELINE. It always produces better results than @@PROJECT.",
+    "- Do NOT ask 'would you like to add features?' or 'what stack should we use?' — just emit @@PIPELINE and go.",
     "",
-    "To draft a project roadmap (add at very end of reply, on its own line):",
+    "@@PROJECT (rare — only for simple roadmap draft without agent execution):",
     '@@PROJECT {"name":"FocusFlow","description":"Pomodoro timer: 25/5 intervals, streak tracking, daily stats, task list, desktop notifications","outputDir":"/Users/jeffhobbs/Desktop/focusflow"}',
-    "",
-    "Rules for @@PROJECT JSON:",
     "- outputDir: /Users/jeffhobbs/Desktop/<kebab-case-slug>",
     "- description: list specific features so the roadmap AI produces real technical tasks, not vague ones",
     "",
@@ -505,6 +594,13 @@ function buildSystemPrompt(cfg) {
     "- When an agent hands work back to PM (e.g. crew-coder-back delivered a schema doc, 'Antoine finished the schema'), explicitly tell PM: dispatch to crew-pm with a short task like 'Agent X delivered [artifact]; update the roadmap (mark that item done), add next steps, and assign follow-up tasks.' Do not assume PM 'saw it' — ensure PM gets a clear handback task so the plan is updated and next steps are assigned.",
     "- PM has write_file permission and can write PDD.md, ROADMAP.md directly. When the user asks to 'add to the roadmap', dispatch to crew-pm with the exact changes.",
     "",
+    "DISPATCH vs CHAT — CRITICAL RULE:",
+    "- Your DEFAULT is to CHAT. Only dispatch when the user EXPLICITLY asks you to send work to an agent.",
+    "- Questions like 'can you do X?', 'how does X work?', 'is X possible?', 'what should we do?' → ANSWER THEM. Do NOT dispatch.",
+    "- ONLY dispatch when user says 'have [agent] do X', 'send this to [agent]', 'dispatch [agent]', 'kick off', 'rally the crew', 'build me X', or clearly wants agent work done.",
+    "- If the user is ASKING you something, ANSWER IT. If the user is TELLING you to assign work, DISPATCH IT.",
+    "- When in doubt: CHAT. Never dispatch a conversational question to an agent.",
+    "",
     "INTENT → ACTION (natural language to target):",
     "- 'Ask/tell/have [agent] to …' / 'go ask the writer/PM/coder …' / 'send this to [agent]' → ALWAYS dispatch to that agent. NEVER web search. The user wants you to delegate to a crew member, not Google it.",
     "- 'Ask the writer to research X' → @@DISPATCH to crew-copywriter with research task. 'Tell the PM to fix the roadmap' → @@DISPATCH to crew-pm. 'Have the coder build X' → @@DISPATCH to crew-coder. Agent names and display names both work.",
@@ -547,7 +643,11 @@ function buildSystemPrompt(cfg) {
     "",
     "5. SKILLS — call external APIs or define new ones:",
     "   Skills live in ~/.crewswarm/skills/. Each is a JSON file with a URL, method, auth, and params.",
-    "   Any agent with 'skill' permission can call: @@SKILL skillname {\"param\":\"value\"}",
+    "   YOU (crew-lead) can call skills directly — emit @@SKILL skillname {\"param\":\"value\"} and it will be executed; the result is appended to your reply. No need to dispatch.",
+    "   Use ONLY exact skill names from the health snapshot (e.g. zeroeval.benchmark). Never invent names like benchmark.list. Users may say 'benchmark' or 'benchmarks' — that maps to zeroeval.benchmark.",
+    "   zeroeval.benchmark is READ-ONLY: fetches pre-computed leaderboards. Workflow: (1) call with {} to list available benchmark IDs, (2) call with {\"benchmark_id\":\"X\"} for that leaderboard. Results are truncated (top 10 models, 50 IDs max). Dashboard → Benchmarks shows the same flow. No evals, no run_id, no ETA.",
+    "   CRITICAL: Never claim a skill ran or returned results (e.g. 'queued', 'ETA', 'in progress') unless you actually emitted @@SKILL. The result is appended to your reply only when you emit it. Do not fabricate skill outcomes.",
+    "   Other agents with 'skill' permission can also call: @@SKILL skillname {\"param\":\"value\"}",
     "   You can list skills by calling GET /api/skills on crew-lead (port 5010).",
     "   To create or update a skill (use crew-main to research the API first):",
     '   @@DISPATCH {"agent":"crew-main","task":"Research the Notion API append-to-database endpoint and create a skill using @@DEFINE_SKILL notion.append\\n{...JSON skill def...}\\n@@END_SKILL"}',
@@ -611,13 +711,20 @@ function buildSystemPrompt(cfg) {
     "",
     "After any change: tell the user to restart the affected bridge(s) for changes to take effect.",
     "",
-    "QUICK REFERENCE — You can: (1) Update any agent's prompt with @@PROMPT {\"agent\":\"crew-XXX\",\"append\":\"…\"} or set= to replace. (2) Restart any service or agent with @@SERVICE restart <id>. (3) Define skills with @@DEFINE_SKILL. (4) Create new specialist agents on-the-fly with @@CREATE_AGENT {\"id\":\"crew-ml\",\"role\":\"coder\",\"description\":\"...\"}. (5) Remove dynamic agents with @@REMOVE_AGENT crew-ml. (6) Point users to the dashboard. (7) Users can tweak your own prompt with @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…\"}.",
+    "QUICK REFERENCE — You can: (1) Update any agent's prompt with @@PROMPT {\"agent\":\"crew-XXX\",\"append\":\"…\"} or set= to replace. (2) Restart any service or agent with @@SERVICE restart <id>. (3) Define skills with @@DEFINE_SKILL. (4) Create new specialist agents on-the-fly with @@CREATE_AGENT {\"id\":\"crew-ml\",\"role\":\"coder\",\"description\":\"...\"}. (5) Remove dynamic agents with @@REMOVE_AGENT crew-ml. (6) Point users to the dashboard. (7) Users can tweak your own prompt with @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…\"}. (8) PIPELINE CANCEL: if user says 'stop pipeline', 'cancel it', 'abort', 'kill it', etc. — all running pipelines are cancelled instantly and remaining waves are dropped.",
     "- When an agent is rate limited (429, quota, throttling), crew-lead automatically sees the task.failed on the issues channel and re-dispatches the same task to a fallback agent (e.g. crew-coder-back → crew-coder, crew-pm → crew-main). You can say so if the user asks.",
-    "- Failed dispatches: crew-lead sees task.failed on the issues channel (rate limit, errors) and can act (e.g. rate-limit fallback). Unanswered dispatches: if an agent is offline, no bridge picks up the task — crew-lead waits up to 90s (CREWSWARM_DISPATCH_TIMEOUT_MS), then emits task.timeout into session history; suggest @@SERVICE restart or re-dispatch to a fallback. Use the health snapshot (Recent RT activity, Tool Matrix) to see who is online; if the user says an agent didn’t reply, suggest checking that the agent is running and offer @@SERVICE restart <agent> or re-dispatching to a fallback (e.g. crew-main).",
+    "- Failed dispatches: crew-lead sees task.failed on the issues channel (rate limit, errors) and can act (e.g. rate-limit fallback). Unanswered dispatches: if an agent is offline, no bridge picks up the task — crew-lead waits up to 300s unclaimed / 900s after claiming (CREWSWARM_DISPATCH_TIMEOUT_MS / CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS), then emits task.timeout into session history; suggest @@SERVICE restart or re-dispatch to a fallback. Use the health snapshot (Recent RT activity, Tool Matrix) to see who is online; if the user says an agent didn’t reply, suggest checking that the agent is running and offer @@SERVICE restart <agent> or re-dispatching to a fallback (e.g. crew-main).",
     "",
     "When the user message includes [Web context from Brave Search], use that context to answer current events, docs, or factual lookups when relevant. When it includes [Codebase context from workspace], use it to answer questions about this codebase (where things are, how they work, what a file does).",
     "",
     "CITING SEARCH: You have NO persistent 'buffer' or 'crawled history' — only (1) the conversation history in this chat and (2) whatever is injected into the current message ([Web context from Brave Search], health snapshot, etc.). When you refer to past search results, only cite details that appear in the conversation (e.g. in a [Brave search] system line). Do NOT invent result numbers, URLs, gists, or 'prior Brave sweep in my buffer'. If the user questions a citation and the exact reference isn't in the history, admit it: say you don't have it in front of you or you may have conflated or made that up; do not double down or invent buffer/crawled history. If the user says you lied or made something up, accept it: you have no persistent 'memory' or 'earlier crawl' — only this chat. Say you were wrong to cite something not in the conversation; do not blame the user or deflect.",
+    "",
+    "TOOL USAGE — CRITICAL:",
+    "- You (crew-lead) CANNOT use @@READ_FILE, @@WRITE_FILE, @@MKDIR, or @@RUN_CMD yourself. Those tools only work for agents running through gateway-bridge.",
+    "- NEVER output @@READ_FILE and then pretend you received file contents. You did NOT read the file. You CANNOT read files.",
+    "- NEVER fabricate file contents, system health output, or tool results. If you don't have data, say so.",
+    "- To read or write files: DISPATCH an agent (crew-coder, crew-main, etc.) with the @@READ_FILE/@@WRITE_FILE task. The agent will execute it and reply with results.",
+    "- The ONLY @@markers you can use: @@DISPATCH, @@PIPELINE, @@PROMPT, @@TOOLS, @@SERVICE, @@PROJECT, @@BRAIN, @@CREATE_AGENT, @@REMOVE_AGENT, @@DEFINE_SKILL, @@DEFINE_WORKFLOW.",
     "",
     "- Be concise. Under 2000 chars.",
     "- No filler phrases.",
@@ -625,6 +732,8 @@ function buildSystemPrompt(cfg) {
   ].join("\n");
   const defaultIntro = [
     `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}), the conversational commander of the CrewSwarm AI development crew.`,
+    "",
+    `Your model is ${cfg.providerKey}/${cfg.modelId}. When describing YOUR model (asked or volunteered), always say ${cfg.providerKey}/${cfg.modelId}. Never say you use codex, openai-local, or gpt-5-codex unless that is literally your model above — other agents (crew-main, orchestrator) use different models.`,
     "",
     "IMPORTANT: You are running as a local Node.js process on the user's own machine — NOT in a cloud sandbox.",
     "You have direct access to the live system via context injection. When you see [System health snapshot] in",
@@ -644,34 +753,155 @@ function buildSystemPrompt(cfg) {
 
 // ── LLM call ─────────────────────────────────────────────────────────────────
 
+async function _callLLMOnce(baseUrl, apiKey, modelId, providerKey, messages) {
+  const isAnthropic = providerKey === "anthropic" || baseUrl.includes("anthropic.com");
+  const headers = { "content-type": "application/json" };
+  if (isAnthropic) {
+    headers["x-api-key"] = apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+  } else {
+    headers["authorization"] = `Bearer ${apiKey}`;
+  }
+
+  const body = { model: modelId, messages, max_tokens: 2048, temperature: 0.7, stream: false };
+  const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LLM_TIMEOUT),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => res.statusText);
+    const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+    console.error(`[crew-lead] LLM ${res.status} @ ${url} model=${modelId}: ${err.slice(0, 400)}`);
+    throw new Error(`LLM ${res.status}: ${err.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const reply = data?.choices?.[0]?.message?.content || "";
+  _recordCrewLeadTokens(modelId, data.usage);
+  return reply;
+}
+
+const TOKEN_USAGE_FILE = path.join(os.homedir(), ".crewswarm", "token-usage.json");
+
+function _recordCrewLeadTokens(modelId, usage) {
+  if (!usage) return;
+  const p = Number(usage.prompt_tokens || usage.input_tokens || 0);
+  const c = Number(usage.completion_tokens || usage.output_tokens || 0);
+  if (!p && !c) return;
+  const today = new Date().toISOString().slice(0, 10);
+  let data = { calls: 0, prompt: 0, completion: 0, byModel: {}, byDay: {} };
+  try { data = JSON.parse(fs.readFileSync(TOKEN_USAGE_FILE, "utf8")); } catch {}
+  if (!data.byDay) data.byDay = {};
+  data.calls++;
+  data.prompt     += p;
+  data.completion += c;
+  if (!data.byModel[modelId]) data.byModel[modelId] = { calls: 0, prompt: 0, completion: 0 };
+  data.byModel[modelId].calls++;
+  data.byModel[modelId].prompt     += p;
+  data.byModel[modelId].completion += c;
+  if (!data.byDay[today]) data.byDay[today] = { calls: 0, prompt: 0, completion: 0, byModel: {} };
+  data.byDay[today].calls++;
+  data.byDay[today].prompt     += p;
+  data.byDay[today].completion += c;
+  if (!data.byDay[today].byModel[modelId]) data.byDay[today].byModel[modelId] = { calls: 0, prompt: 0, completion: 0 };
+  data.byDay[today].byModel[modelId].calls++;
+  data.byDay[today].byModel[modelId].prompt     += p;
+  data.byDay[today].byModel[modelId].completion += c;
+  try {
+    fs.mkdirSync(path.dirname(TOKEN_USAGE_FILE), { recursive: true });
+    fs.writeFileSync(TOKEN_USAGE_FILE, JSON.stringify(data, null, 2));
+  } catch {}
+}
+
+/** Inject active-model note when crew-lead is running on fallback. PREPEND so model sees it first.
+ *  Also patch health snapshot in user messages so it shows the actual running model, not the primary. */
+function patchMessagesWithActiveModel(messages, activeModel, primaryModel, reason) {
+  const out = messages.map(m => ({ ...m }));
+  const sysIdx = out.findIndex(m => m.role === "system");
+  if (sysIdx < 0) return out;
+  const note = `CRITICAL — you are on FALLBACK: ${activeModel} (primary ${primaryModel} failed: ${reason}). When asked what model you use, say ${activeModel}. Never say codex or openai-local — that's crew-main.\n\n`;
+  out[sysIdx] = { ...out[sysIdx], content: note + out[sysIdx].content };
+  // Fix health snapshot in user messages — it shows cfg primary; when on fallback, show actual model
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].role === "user" && out[i].content.includes("crew-lead:")) {
+      out[i] = {
+        ...out[i],
+        content: out[i].content.replace(/(crew-lead:)\s*[\w-]+\/[\w.-]+(\s*\|)/g, `$1 ${activeModel} (fallback — primary failed)$2`),
+      };
+    }
+  }
+  return out;
+}
+
+function trimMessagesForFallback(messages) {
+  if (messages.length <= 3) return messages;
+  const system = messages.find(m => m.role === "system");
+  const nonSystem = messages.filter(m => m.role !== "system");
+
+  const trimmedSystem = system ? [{
+    ...system,
+    content: system.content.length > 1500
+      ? system.content.slice(0, 1500) + "\n[...system prompt trimmed for context limit — respond concisely]"
+      : system.content,
+  }] : [];
+
+  const recent = nonSystem.slice(-6);
+  const trimmedRecent = recent.map(m => ({
+    ...m,
+    content: m.content.length > 2000 ? m.content.slice(0, 2000) + "\n[...trimmed]" : m.content,
+  }));
+  return [...trimmedSystem, ...trimmedRecent];
+}
+
 async function callLLM(messages, cfg) {
   const { provider, modelId, providerKey } = cfg;
   if (!provider?.apiKey || !provider?.baseUrl) {
     throw new Error(`No API key for provider "${providerKey}". Check Providers in the dashboard.`);
   }
 
-  const isAnthropic = providerKey === "anthropic" || provider.baseUrl.includes("anthropic.com");
-  const headers = { "content-type": "application/json" };
-  if (isAnthropic) {
-    headers["x-api-key"] = provider.apiKey;
-    headers["anthropic-version"] = "2023-06-01";
-  } else {
-    headers["authorization"] = `Bearer ${provider.apiKey}`;
-  }
+  const hasFallback = cfg.fallbackProvider?.apiKey && cfg.fallbackProvider?.baseUrl && cfg.fallbackModelId;
+  const fbLabel = hasFallback ? `${cfg.fallbackProviderKey}/${cfg.fallbackModelId}` : null;
 
-  const res = await fetch(`${provider.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ model: modelId, messages, max_tokens: 2048, temperature: 0.7 }),
-    signal: AbortSignal.timeout(LLM_TIMEOUT),
-  });
+  try {
+    const reply = await _callLLMOnce(provider.baseUrl, provider.apiKey, modelId, providerKey, messages);
+    const primaryLabel = `${providerKey}/${modelId}`;
+    const url = `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    console.log(`[crew-lead] LLM reply from primary ${primaryLabel} @ ${url}`);
+    return { reply, usedFallback: false, model: primaryLabel };
+  } catch (err) {
+    if (!hasFallback) throw err;
+    const isRateLimit = /429|rate\s*limit|quota.*exceeded|too\s*many\s*requests|usage.*limit/i.test(err.message);
+    const isContextErr = /400.*reduce.*length|400.*context|400.*too long|400.*max.*token|content_length|please reduce/i.test(err.message);
+    if (!isRateLimit && !isContextErr) throw err;
 
-  if (!res.ok) {
-    const err = await res.text().catch(() => res.statusText);
-    throw new Error(`LLM ${res.status}: ${err.slice(0, 200)}`);
+    const reason = isRateLimit ? "rate limit" : "context length";
+    console.log(`[crew-lead] Primary ${providerKey}/${modelId} failed (${reason}) — falling back to ${fbLabel}`);
+    const fallbackMessages = isContextErr ? trimMessagesForFallback(messages) : messages;
+    // So crew-lead knows which model is actually running when on fallback
+    const primaryLabel = `${providerKey}/${modelId}`;
+    const fallbackMessagesWithModelNote = patchMessagesWithActiveModel(fallbackMessages, fbLabel, primaryLabel, reason);
+
+    try {
+      const reply = await _callLLMOnce(cfg.fallbackProvider.baseUrl, cfg.fallbackProvider.apiKey, cfg.fallbackModelId, cfg.fallbackProviderKey, fallbackMessagesWithModelNote);
+      const fbUrl = `${cfg.fallbackProvider.baseUrl.replace(/\/$/, "")}/chat/completions`;
+      console.log(`[crew-lead] LLM reply from fallback ${fbLabel} @ ${fbUrl}`);
+      return { reply, usedFallback: true, model: fbLabel, reason };
+    } catch (fbErr) {
+      const fbContextErr = /400|context.*length|too long|reduce.*length|max.*token|content_length|please reduce/i.test(fbErr.message);
+      if (fbContextErr) {
+        console.log(`[crew-lead] Fallback also hit context limit — retrying with aggressively trimmed messages`);
+        const trimmed = trimMessagesForFallback(messages);
+        const trimmedWithNote = patchMessagesWithActiveModel(trimmed, fbLabel, `${providerKey}/${modelId}`, "context length (trimmed)");
+        const reply = await _callLLMOnce(cfg.fallbackProvider.baseUrl, cfg.fallbackProvider.apiKey, cfg.fallbackModelId, cfg.fallbackProviderKey, trimmedWithNote);
+        const fbUrl = `${cfg.fallbackProvider.baseUrl.replace(/\/$/, "")}/chat/completions`;
+        console.log(`[crew-lead] LLM reply from fallback ${fbLabel} (trimmed) @ ${fbUrl}`);
+        return { reply, usedFallback: true, model: fbLabel, reason: "context length (trimmed)" };
+      }
+      throw fbErr;
+    }
   }
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content || "";
 }
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
@@ -691,9 +921,9 @@ function parseDispatch(text, userMessage = "") {
   }
 
   // Fallback: LLM described a dispatch in natural language without using @@DISPATCH
-  // Matches both crew-X IDs and display names (Frank, Planx, CopyCat, etc.)
+  // Only match strong dispatch verbs — avoid false positives from conversational text
   const nlMatch = cleanText.match(
-    /(?:launched|sent|dispatch(?:ed|ing)|message|task(?:ed)?|ask(?:ed|ing)?|told|forward(?:ed)?|pinged|ping(?:ing)?|fired off|sicced)\b[^.]*?\b(crew-[a-z0-9-]+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i
+    /(?:dispatch(?:ed|ing)|tasked|sicced|fired off|forwarded? to)\b[^.]*?\b(crew-[a-z0-9-]+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i
   );
   if (nlMatch) {
     let agent = nlMatch[1].trim();
@@ -745,17 +975,65 @@ function parseDispatches(text) {
 
 function parsePipeline(text) {
   const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  const match = clean.match(/@@PIPELINE\s+(\[[\s\S]*?\])/);
-  if (!match) return null;
+
+  // Extract JSON array using bracket-counting (regex [\s\S]*?] fails on nested brackets like [SCOPE])
+  function extractJsonArray(str, startIdx) {
+    if (str[startIdx] !== "[") return null;
+    let depth = 0;
+    for (let i = startIdx; i < str.length; i++) {
+      if (str[i] === "[") depth++;
+      else if (str[i] === "]") { depth--; if (depth === 0) return str.slice(startIdx, i + 1); }
+    }
+    return null;
+  }
+
+  let jsonStr = null;
+
+  // Try explicit @@PIPELINE marker first
+  const markerIdx = clean.indexOf("@@PIPELINE");
+  if (markerIdx !== -1) {
+    const bracketIdx = clean.indexOf("[", markerIdx);
+    if (bracketIdx !== -1) jsonStr = extractJsonArray(clean, bracketIdx);
+  }
+
+  // Fallback: find last JSON array in text that looks like pipeline steps
+  if (!jsonStr) {
+    let lastBracket = clean.lastIndexOf("[{");
+    if (lastBracket !== -1) {
+      const candidate = extractJsonArray(clean, lastBracket);
+      if (candidate) {
+        try {
+          const test = JSON.parse(candidate);
+          if (Array.isArray(test) && test.length >= 2 && test.every(s => s.agent && s.task)) {
+            jsonStr = candidate;
+          }
+        } catch {}
+      }
+    }
+  }
+
+  if (!jsonStr) return null;
   try {
-    const steps = JSON.parse(match[1]);
+    const steps = JSON.parse(jsonStr);
     if (!Array.isArray(steps) || steps.length < 2) return null;
     if (!steps.every(s => s.agent && s.task)) return null;
 
-    // Assign sequential wave numbers to steps that don't have one (backward compat)
     steps.forEach((s, i) => { if (s.wave == null) s.wave = i + 1; });
 
-    // Group into ordered waves: Map<waveNum, step[]>
+    // Auto-append crew-pm ROADMAP update as final wave if any coding agents are present
+    // and crew-pm isn't already in the pipeline
+    const codingAgents = new Set(['crew-coder','crew-coder-front','crew-coder-back','crew-frontend','crew-fixer','crew-ml']);
+    const hasCodingAgent = steps.some(s => codingAgents.has(s.agent) || codingAgents.has((s.agent||'').toLowerCase()));
+    const hasPm = steps.some(s => s.agent === 'crew-pm' || s.agent === 'pm');
+    if (hasCodingAgent && !hasPm) {
+      const maxWave = Math.max(...steps.map(s => Number(s.wave)));
+      steps.push({
+        wave: maxWave + 1,
+        agent: 'crew-pm',
+        task: 'Read the project ROADMAP.md and mark any completed phases/tasks as done based on the work just finished by the coding agents. Use @@READ_FILE to read the roadmap first, then @@WRITE_FILE to update it. Only mark items complete if they were actually built.',
+      });
+    }
+
     const waveMap = new Map();
     for (const s of steps) {
       const w = Number(s.wave);
@@ -768,7 +1046,28 @@ function parsePipeline(text) {
 }
 
 function stripPipeline(text) {
-  return text.replace(/@@PIPELINE\s+\[[\s\S]*?\]/g, "").trim();
+  // Remove pipeline JSON using bracket-counting (handles nested brackets like [SCOPE])
+  const markerIdx = text.indexOf("@@PIPELINE");
+  if (markerIdx !== -1) {
+    const bracketIdx = text.indexOf("[", markerIdx);
+    if (bracketIdx !== -1) {
+      let depth = 0;
+      for (let i = bracketIdx; i < text.length; i++) {
+        if (text[i] === "[") depth++;
+        else if (text[i] === "]") { depth--; if (depth === 0) return (text.slice(0, markerIdx) + text.slice(i + 1)).trim(); }
+      }
+    }
+  }
+  // Fallback: strip trailing JSON array
+  const lastBracket = text.lastIndexOf("[{");
+  if (lastBracket !== -1) {
+    let depth = 0;
+    for (let i = lastBracket; i < text.length; i++) {
+      if (text[i] === "[") depth++;
+      else if (text[i] === "]") { depth--; if (depth === 0) return text.slice(0, lastBracket).trim(); }
+    }
+  }
+  return text.trim();
 }
 
 function parseProject(text) {
@@ -1012,26 +1311,58 @@ const pendingDispatches = new Map();
 // Sessions in autonomous PM loop: on agent completion we auto-dispatch to PM to update plan and dispatch next
 const autonomousPmLoopSessions = new Set();
 
-// Unanswered dispatches: if no task.done/task.failed within DISPATCH_TIMEOUT_MS, emit synthetic timeout
+// Check if an agent is currently connected to the RT bus
+async function isAgentOnRtBus(agentId) {
+  try {
+    const resp = await fetch("http://127.0.0.1:18889/status", { signal: AbortSignal.timeout(3000) });
+    const data = await resp.json();
+    return Array.isArray(data.agents) && data.agents.includes(agentId);
+  } catch { return false; }
+}
+
+// Unanswered dispatches: timeout logic with auto-extend when agent is on RT bus
 function checkDispatchTimeouts() {
   const now = Date.now();
   for (const [taskId, d] of pendingDispatches.entries()) {
     if (d.done) continue;
-    if (now - d.ts < DISPATCH_TIMEOUT_MS) continue;
-    const sessionId = d.sessionId || "owner";
+    const elapsed = now - (d.claimedAt || d.ts);
+    const limit = d.claimed ? DISPATCH_CLAIMED_TIMEOUT_MS : DISPATCH_TIMEOUT_MS;
+    if (elapsed < limit) continue;
+
     const agent = d.agent || "?";
+
+    // Before timing out unclaimed tasks: check if agent is on the RT bus
+    // If online, auto-claim (they're likely just slow, not offline)
+    if (!d.claimed) {
+      if (!d._autoExtended) {
+        d._autoExtended = true;
+        isAgentOnRtBus(agent).then(online => {
+          if (online && !d.done) {
+            d.claimed = true;
+            d.claimedAt = Date.now();
+            console.log(`[crew-lead] ⚡ Auto-extending timeout for ${agent} (online on RT bus but slow to claim) — ${DISPATCH_CLAIMED_TIMEOUT_MS / 1000}s`);
+            broadcastSSE({ type: "task.claimed", taskId, agent, ts: d.claimedAt, autoExtended: true });
+          }
+        });
+        continue; // give the RT bus check a cycle before timing out
+      }
+    }
+
+    const sessionId = d.sessionId || "owner";
+    const kind = d.claimed ? "claimed_timeout" : "never_claimed";
     pendingDispatches.delete(taskId);
-    emitTaskLifecycle("cancelled", { taskId, agentId: agent, taskType: "task", error: { code: "DISPATCH_TIMEOUT", message: "No reply within " + (DISPATCH_TIMEOUT_MS / 1000) + "s" } });
-    const msg = `[crew-lead] Task to ${agent} never claimed or timed out (no reply within ${DISPATCH_TIMEOUT_MS / 1000}s). Consider @@SERVICE restart ${agent} or re-dispatch to another agent.`;
+    emitTaskLifecycle("cancelled", { taskId, agentId: agent, taskType: "task", error: { code: "DISPATCH_TIMEOUT", message: `${kind}: no reply within ${Math.round(limit / 1000)}s` } });
+    const msg = d.claimed
+      ? `[crew-lead] Task to ${agent} timed out after ${Math.round(limit / 1000)}s (agent claimed it but never finished). Consider @@SERVICE restart ${agent}.`
+      : `[crew-lead] Task to ${agent} never claimed (no response within ${Math.round(limit / 1000)}s). Agent may be offline — try @@SERVICE restart ${agent} or re-dispatch to another agent.`;
     appendHistory(sessionId, "system", msg);
-    broadcastSSE({ type: "task.timeout", taskId, agent, sessionId, ts: now });
-    console.log(`[crew-lead] timeout/never_claimed taskId=${taskId} agent=${agent}`);
-    // If this was part of a pipeline, remove from pending so wave can eventually be considered failed (optional: push a timeout result)
+    broadcastSSE({ type: "task.timeout", taskId, agent, sessionId, kind, ts: now });
+    console.log(`[crew-lead] ${kind} taskId=${taskId} agent=${agent} elapsed=${Math.round(elapsed / 1000)}s`);
     if (d.pipelineId) {
       const pipeline = pendingPipelines.get(d.pipelineId);
       if (pipeline?.pendingTaskIds) {
         pipeline.pendingTaskIds.delete(taskId);
-        pipeline.waveResults.push(`[Timeout: ${agent} did not reply within ${DISPATCH_TIMEOUT_MS / 1000}s]`);
+        pipeline.waveResults.push(`[Timeout: ${agent} — ${kind} after ${Math.round(limit / 1000)}s]`);
         if (pipeline.pendingTaskIds.size === 0) {
           pipeline.currentWave++;
           dispatchPipelineWave(d.pipelineId);
@@ -1040,11 +1371,39 @@ function checkDispatchTimeouts() {
     }
   }
 }
+
+// Mark a pending dispatch as claimed/in-progress — extends timeout to DISPATCH_CLAIMED_TIMEOUT_MS
+function markDispatchClaimed(taskId, agent) {
+  const d = pendingDispatches.get(taskId);
+  if (!d || d.done) return;
+  if (!d.claimed) {
+    d.claimed = true;
+    d.claimedAt = Date.now();
+    console.log(`[crew-lead] ⚡ ${agent || d.agent} claimed task ${taskId} — extending timeout to ${DISPATCH_CLAIMED_TIMEOUT_MS / 1000}s`);
+    broadcastSSE({ type: "task.claimed", taskId, agent: agent || d.agent, ts: d.claimedAt });
+  }
+}
 let dispatchTimeoutInterval = null;
 
 // Track active pipelines: pipelineId → { steps, stepIndex, sessionId }
 // pendingPipelines: Map<pipelineId, { waves, currentWave, pendingTaskIds, waveResults, sessionId, steps }>
 const pendingPipelines = new Map();
+
+function cancelAllPipelines(sessionId) {
+  if (pendingPipelines.size === 0) return 0;
+  let cancelled = 0;
+  for (const [pid, pipeline] of pendingPipelines) {
+    const waveInfo = `wave ${pipeline.currentWave + 1}/${pipeline.waves.length}`;
+    console.log(`[crew-lead] Cancelling pipeline ${pid} (${waveInfo}, ${pipeline.pendingTaskIds.size} pending tasks)`);
+    broadcastSSE({ type: "pipeline_cancelled", pipelineId: pid, ts: Date.now() });
+    cancelled++;
+  }
+  pendingPipelines.clear();
+  if (sessionId) {
+    appendHistory(sessionId, "system", `Cancelled ${cancelled} running pipeline(s).`);
+  }
+  return cancelled;
+}
 
 // When an agent is rate limited (429 / quota), crew-lead can re-dispatch to a fallback agent who can handle the same kind of task
 const _RATE_LIMIT_FALLBACK_STATIC = {
@@ -1272,10 +1631,49 @@ function checkWaveQualityGate(pipeline, pipelineId) {
     // For build agents: check they actually wrote files
     if (isBuildAgent(agent)) {
       const hasWriteFile = /@@WRITE_FILE/.test(result);
-      const wroteFile = /(?:wrote|created|saved|written)\s+(?:to\s+)?(?:\/\S+|[a-zA-Z][\w/.-]+\.(?:html|css|js|ts|json|md))/i.test(result);
-      if (!hasWriteFile && !wroteFile) {
+      const wroteFile = /(?:wrote|created|saved|written|updated|enhanced|implemented|added)\s+(?:to\s+)?(?:\/\S+|[a-zA-Z][\w/.-]+\.(?:html|css|js|ts|py|json|md|txt|sh|yaml|yml))/i.test(result);
+      const opencodeWrote = /(?:←\s*Write|Wrote file|Write\s+\.\.[\w/.-]+\.(?:html|css|js|ts|py|json|md)|Created\s+`\/)/i.test(result);
+      const explicitDone = /Done\.\s+(?:Created|Updated|Enhanced|Implemented|The\s+(?:file|prototype|component))/i.test(result);
+      if (!hasWriteFile && !wroteFile && !opencodeWrote && !explicitDone) {
         issues.push(`${agent} (builder) did not write any files`);
       }
+    }
+  }
+
+  // ── QA FAIL auto-fixer: if a QA agent returned FAIL verdict, insert fixer wave ──
+  const qaFixRetryKey = `_qa_fix_retries_wave_${currentWave}`;
+  pipeline[qaFixRetryKey] = pipeline[qaFixRetryKey] || 0;
+  const MAX_QA_FIX_LOOPS = 2;
+
+  for (let i = 0; i < waveResults.length; i++) {
+    const result = waveResults[i];
+    const step = waveSteps[i] || {};
+    const agent = step.agent || "unknown";
+    const isQaAgent = agent === "crew-qa" || agent.includes("qa");
+    if (!isQaAgent) continue;
+
+    const hasFailVerdict = /verdict\s*:\s*FAIL/i.test(result);
+    const criticalCount = (result.match(/###\s*CRITICAL|severity.*critical/gi) || []).length;
+
+    if ((hasFailVerdict || criticalCount >= 2) && pipeline[qaFixRetryKey] < MAX_QA_FIX_LOOPS) {
+      pipeline[qaFixRetryKey]++;
+      console.log(`[crew-lead] Pipeline ${pipelineId} QA FAIL detected — auto-dispatching crew-fixer (loop ${pipeline[qaFixRetryKey]}/${MAX_QA_FIX_LOOPS})`);
+
+      const fixerTask = `Fix all CRITICAL and HIGH issues found by crew-qa. QA report:\n\n${result.slice(0, 4000)}\n\nRead each failing file, patch in place (same path, no _fixed variants), run python3 -m py_compile on each fixed file to confirm PASS.`;
+
+      // Insert: fixer wave, then re-run this QA wave
+      const qaWaveClone = waveSteps.map(s => ({ ...s, task: s.task.split("\n\n[Quality gate feedback")[0] }));
+      waves.splice(currentWave + 1, 0,
+        [{ agent: "crew-fixer", task: fixerTask }],
+        qaWaveClone
+      );
+
+      broadcastSSE({ type: "pipeline_qa_fail_autofix", pipelineId, waveIndex: currentWave, loop: pipeline[qaFixRetryKey], ts: Date.now() });
+      appendHistory(sessionId, "system", `QA FAIL detected — auto-dispatching crew-fixer (loop ${pipeline[qaFixRetryKey]}/${MAX_QA_FIX_LOOPS}), then re-running QA.`);
+
+      pipeline.currentWave++;
+      dispatchPipelineWave(pipelineId);
+      return { pass: false, qaAutoFix: true };
     }
   }
 
@@ -1499,24 +1897,76 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     autonomousPmLoopSessions.delete(sessionId);
   }
 
+  // Pipeline cancel: "stop pipeline", "cancel pipeline", "abort", "stop everything", "kill it"
+  if (/\b(stop|cancel|abort|kill|halt)\b.*(pipeline|dispatch|task|everything|it|all|them)\b|\b(pipeline|dispatch).*(stop|cancel|abort|kill|halt)\b/i.test(message.trim())) {
+    const count = cancelAllPipelines(sessionId);
+    if (count > 0) {
+      const reply = `Cancelled ${count} running pipeline(s). All pending waves have been dropped. You can re-dispatch when ready.`;
+      broadcastSSE({ type: "chat", from: "crew-lead", content: reply, sessionId, ts: Date.now() });
+      return res.json({ reply, sessionId });
+    }
+  }
+
   const needsSearch = messageNeedsSearch(message);
   // Inject health snapshot broadly — lightweight pgrep + file reads, not HTTP
   const needsHealth = message.length < 6
     ? false
     : /health|status|running|crashed|down\b|restart|skill|agent|workflow|pipeline|who.s.up|who.s.online|anyone.up|each.*up|up\?|is.*up|are.*up|online|services?|telegram|tg\b|opencode|project.*dir|projects?\b|registered.project|what.projects|list.project|settings|what.s.going|what.s.happening|recent.activity|rt.bus|eyes|see.what/i.test(message);
+  const needsBenchmarkCatalog = message.length > 4 && /benchmark|zeroeval|leaderboard|llm-stats|swe-bench|livecodebench|mmlu|gpqa|humaneval|gsm8k|what\.tests?|which\.tests?|available\.tests?/i.test(message);
   let braveResults = null;
   let codebaseResults = null;
   let healthData = null;
+  let benchmarkCatalog = null;
+  const fetchBenchmarkCatalog = async () => {
+    const r = await fetch("https://api.zeroeval.com/leaderboard/benchmarks", { signal: AbortSignal.timeout(10000) });
+    const arr = await r.json();
+    if (!Array.isArray(arr) || !arr.length) return null;
+    const limit = 250;
+    const rows = arr.slice(0, limit).map(b => {
+      const id = b.benchmark_id || b.id || "";
+      const name = (b.name || id).slice(0, 35);
+      const desc = (b.description || "").slice(0, 60).replace(/\n/g, " ");
+      return `${id} | ${name} | ${desc}`;
+    });
+    const suffix = arr.length > limit ? `\n… and ${arr.length - limit} more (full list at api.zeroeval.com)` : "";
+    return `[Benchmark catalog from ZeroEval — use benchmark_id in @@SKILL zeroeval.benchmark {"benchmark_id":"<id>"}]\n${rows.join("\n")}${suffix}`;
+  };
   try {
-    const [b, c, h] = await Promise.all([
+    const [b, c, h, bc] = await Promise.all([
     needsSearch ? searchWithBrave(message).catch(() => null) : null,
     needsSearch ? Promise.resolve(searchCodebase(message)).catch(() => null) : null,
     needsHealth ? (async () => {
       try {
         const cfgRaw    = tryRead(path.join(os.homedir(), ".crewswarm", "config.json")) || {};
         const skillsDir = path.join(os.homedir(), ".crewswarm", "skills");
-        let skills = [];
-        try { skills = fs.readdirSync(skillsDir).filter(f => f.endsWith(".json")).map(f => f.replace(".json","")); } catch {}
+        let skillsDetail = [];
+        try {
+          const files = fs.readdirSync(skillsDir).filter(f => f.endsWith(".json"));
+          for (const f of files) {
+            const name = f.replace(".json", "");
+            try {
+              const def = JSON.parse(fs.readFileSync(path.join(skillsDir, f), "utf8"));
+              const desc = (def.description || "").replace(/\s+/g, " ").trim().slice(0, 100);
+              const notes = def.paramNotes || "";
+              const example = `@@SKILL ${name} ${JSON.stringify(def.defaultParams || {})}`;
+              let line = `  - ${name}: ${desc}`;
+              if (notes) line += ` | Params: ${notes}`;
+              if (def.listUrl && def.listUrlIdField) {
+                try {
+                  const r = await fetch(def.listUrl, { signal: AbortSignal.timeout(5000) });
+                  const arr = await r.json();
+                  if (Array.isArray(arr) && arr.length) {
+                    const idField = def.listUrlIdField;
+                    const ids = arr.slice(0, 50).map(b => b[idField]).filter(Boolean);
+                    line += ` | IDs (live): ${ids.join(", ")}${arr.length > 50 ? ` … +${arr.length - 50} more` : ""}`;
+                  }
+                } catch {}
+              }
+              line += ` | Example: ${example}`;
+              skillsDetail.push(line);
+            } catch { skillsDetail.push(`  - ${name}: (parse failed)`); }
+          }
+        } catch {}
         // Quick service status via pgrep (processes, not agent connections)
         const { execSync: esc } = await import("node:child_process");
         const isRunning = (pat) => { try { esc(`pgrep -f "${pat}"`, { stdio: "ignore" }); return true; } catch { return false; } };
@@ -1565,7 +2015,8 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
           `crew-lead (this process) can create skills: use @@DEFINE_SKILL name + JSON + @@END_SKILL when the user asks. The agent list below is bridge agents only.`,
           `OpenCode project dir: ${cfgRaw.opencodeProject || "(not set — agents write to repo root)"}`,
           projectsSnapshot,
-          `Skills installed (${skills.length}): ${skills.length ? skills.join(", ") : "(none)"}`,
+          `Skills installed (${skillsDetail.length}):`,
+          ...(skillsDetail.length ? skillsDetail : ["(none)"]),
           ``,
           (() => {
             let pipelineNames = [];
@@ -1591,10 +2042,12 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
         ].join("\n");
       } catch { return null; }
     })() : null,
+    needsBenchmarkCatalog ? fetchBenchmarkCatalog().catch(() => null) : null,
   ]);
     braveResults = b;
     codebaseResults = c;
     healthData = h;
+    benchmarkCatalog = bc;
   } catch (e) {
     console.error("[crew-lead] context fetch failed:", e?.message || e);
   }
@@ -1602,6 +2055,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   if (braveResults) parts.push(`[Web context from Brave Search]\n${braveResults}`);
   if (codebaseResults) parts.push(`[Codebase context from workspace]\n${codebaseResults}`);
   if (healthData) parts.push(healthData);
+  if (benchmarkCatalog) parts.push(benchmarkCatalog);
   const userContent = parts.length > 1 ? parts.join("\n\n") : message;
 
   // Many chat APIs use only the first system message; agent completions (e.g. [crew-pm completed task]) are stored as "system" in history and would be dropped. Send them as "user" with a prefix so Stinki always sees them.
@@ -1627,7 +2081,11 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   }
   broadcastSSE({ type: "chat_message", sessionId, role: "user", content: message });
 
-  const fullReply = await callLLM(messages, cfg);
+  const llmResult = await callLLM(messages, cfg);
+  const fullReply = llmResult.reply;
+  const usedFallback = llmResult.usedFallback;
+  const activeModel = llmResult.model;
+  const fallbackReason = llmResult.reason;
 
   // ── @@TOOLS — permission grant/revoke command ──────────────────────────────
   const toolsCmd = (() => {
@@ -1725,10 +2183,23 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     }
   }
 
-  const projectSpec = parseProject(fullReply);
-  const pipelineSteps = !projectSpec ? parsePipeline(fullReply) : null;
+  const pipelineSteps = parsePipeline(fullReply);
+  const projectSpec = !pipelineSteps ? parseProject(fullReply) : null;
   const dispatch = !projectSpec && !pipelineSteps ? parseDispatch(fullReply, message) : null;
+  // ── @@SKILL — crew-lead executes skills directly (no dispatch needed)
+  const skillCalls = [];
+  // Require skill name to be followed by JSON params or end-of-line — prevents "@@SKILL line" in prose
+  const skillRe = /@@SKILL[ \t]+([a-zA-Z0-9_\-\.]+)[ \t]*(\{[^\n]*\})?(?=[ \t]*$|[ \t]*\n|[ \t]*\{)/gm;
+  let skMatch;
+  while ((skMatch = skillRe.exec(fullReply)) !== null) {
+    const skillName = skMatch[1].trim();
+    let params = {};
+    try { if (skMatch[2]) params = JSON.parse(skMatch[2]); } catch {}
+    skillCalls.push({ skillName, params });
+  }
+
   let cleanReply = stripThink(stripPipeline(stripProject(stripDispatch(fullReply))))
+    .replace(/@@SKILL[ \t]+[a-zA-Z0-9_\-\.]+[ \t]*(\{[^\n]*\})?(?=[ \t]*$|[ \t]*\n|[ \t]*\{)/gm, "")
     .replace(/@@TOOLS\s+\{[^}]+\}/g, "")
     .replace(/@@PROMPT\s+\{[\s\S]*?\}\s*(?:\n|$)/g, "")
     .replace(/@@BRAIN\s+[^\n]+/g, "")
@@ -1786,10 +2257,32 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   if (!dispatched && !pipeline && cleanReply) {
     const liedPattern = /(?:dispatch(?:ed|ing)|sent (?:it |that )?to|sicced|already (?:sent|fired|launched|pinged|knows|on it)|forwarded? (?:it |that )?to|tasked|assigned (?:it |that )?to|consider it done|(?:they|he|she)'ll (?:handle|take care))/i;
     if (liedPattern.test(cleanReply)) {
-      const warning = `\n\n⚠️ I described a dispatch but didn't actually emit the @@DISPATCH marker — nothing was sent. Let me try again properly.`;
-      cleanReply = (cleanReply || "").trimEnd() + warning;
-      appendHistory(sessionId, "system", `Warning: LLM described dispatching without emitting @@DISPATCH — no task was sent.`);
-      console.log(`[crew-lead] Dispatch-lie detected: reply mentions dispatching but no @@DISPATCH was parsed`);
+      console.log(`[crew-lead] Dispatch-lie detected — auto-retrying with extraction call`);
+      let _lieRetryOk = false;
+      try {
+        const _lieRetryMsgs = [
+          ...messages,
+          { role: "assistant", content: fullReply },
+          { role: "user", content: "You described dispatching but the @@DISPATCH line was missing. Emit ONLY the @@DISPATCH JSON now. No prose, no explanation.\nFormat: @@DISPATCH {\"agent\":\"crew-X\",\"task\":\"...\"}" },
+        ];
+        const _lieResult = await callLLM(_lieRetryMsgs, cfg);
+        const _lieDispatch = !projectSpec ? parseDispatch(_lieResult.reply || "", message) : null;
+        if (_lieDispatch && _lieDispatch.agent) {
+          console.log(`[crew-lead] Dispatch-lie retry succeeded -> ${_lieDispatch.agent}`);
+          const _lieTaskId = dispatchTask(_lieDispatch.agent, _lieDispatch.task, sessionId);
+          if (_lieTaskId) {
+            dispatched = _lieDispatch;
+            cleanReply = (cleanReply || "").trimEnd() + `\n\n\u21b3 Dispatched to ${_lieDispatch.agent} \u2014 reply will show here when they finish.`;
+            _lieRetryOk = true;
+          }
+        }
+      } catch (_lieErr) {
+        console.error(`[crew-lead] Dispatch-lie retry error: ${_lieErr.message}`);
+      }
+      if (!_lieRetryOk) {
+        cleanReply = (cleanReply || "").trimEnd() + `\n\n\u26a0\ufe0f Dispatch failed even after retry \u2014 please ask me again.`;
+        appendHistory(sessionId, "system", `Warning: LLM described dispatching without emitting @@DISPATCH — retry also failed.`);
+      }
     }
   }
 
@@ -1982,8 +2475,119 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     }
   }
 
+  if (usedFallback) {
+    const primaryLabel = `${cfg.providerKey}/${cfg.modelId}`;
+    const fbUrl = `${cfg.fallbackProvider.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    // Strip any fallback line the model echoed (avoids duplicate banner)
+    const stripped = (cleanReply || "").replace(/^⚡\s*\*fallback:[^*]*\*[^\n]*\n?/gm, "").trimStart();
+    cleanReply = `⚡ *fallback: ${activeModel}* @ ${fbUrl} (primary ${primaryLabel} failed: ${fallbackReason})\n\n${stripped}`;
+  }
+
+  // Trim blank space left by stripped @@SKILL-only replies before appending results
+  if (skillCalls.length > 0) cleanReply = (cleanReply || "").trim();
+
+  // Execute @@SKILL calls — collect display blocks (for user) and feedback blocks (for LLM second pass)
+  const skillDisplayBlocks = [];
+  const skillFeedbackBlocks = [];
+
+  for (const { skillName, params } of skillCalls) {
+    try {
+      const result = await executeSkillFromCrewLead(skillName, params);
+      console.log(`[crew-lead] @@SKILL ${skillName} → OK`);
+      const isBenchmark = skillName === "zeroeval.benchmark" || skillName === "benchmark" || skillName === "benchmarks";
+      const _skillCount = isBenchmark && result?.models?.length ? ` · ${Math.min(Number(params?.limit ?? params?.top ?? 100), result.models.length)}/${result.models.length} models` : "";
+      const skillTag = `↳ *skill: ${skillName}${_skillCount}*`;
+
+      let displayBlock = "";
+      let feedbackBlock = "";
+
+      if (isBenchmark && Array.isArray(result) && result.length) {
+        const list = result.slice(0, 50).map(b => {
+          const id = typeof b === "object" ? b.benchmark_id : b;
+          const name = typeof b === "object" ? b.name || "" : "";
+          return `  - ${id}${name ? `: ${name}` : ""}`;
+        }).join("\n");
+        const body = `**Available benchmarks** (omit benchmark_id or use empty to list):\n${list}${result.length > 50 ? `\n  … and ${result.length - 50} more` : ""}`;
+        displayBlock = `${skillTag}\n\n${body}`;
+        feedbackBlock = `[Skill result: ${skillName} — benchmark list]\n${body}`;
+      } else if (isBenchmark && result && !result.models?.length && !Array.isArray(result)) {
+        const name = result.name || result.benchmark_id || skillName;
+        displayBlock = `${skillTag}\n\n*${name}* — no models found for this benchmark yet.`;
+        feedbackBlock = `[Skill result: ${skillName}]\nNo models found for benchmark "${name}".`;
+      } else if (isBenchmark && result?.models?.length) {
+        const limit = Number(params?.limit ?? params?.top ?? 100);
+        const top = result.models.slice(0, limit);
+        const rows = top.map(m => {
+          const pct = ((m.normalized_score ?? m.score ?? 0) * 100).toFixed(1);
+          const inC = m.input_cost_per_million ?? 0;
+          const outC = m.output_cost_per_million ?? 0;
+          const inCents = inC > 0 ? Math.round(inC * 100) + '¢' : '?';
+          const outCents = outC > 0 ? Math.round(outC * 100) + '¢' : '?';
+          const cost = (inC > 0 || outC > 0) ? ` @ ${inCents} → ${outCents}` : "";
+          const score = (m.normalized_score ?? m.score) ?? 0;
+          const centsPerPt = (inC + outC) > 0 && score > 0 ? ` → ${((inC + outC) * 100 / (score * 100)).toFixed(1)} ¢/pt` : "";
+          return `  ${m.rank}. **${m.model_name}** (${m.organization_name}) — ${pct}%${cost}${centsPerPt}`;
+        }).join("\n");
+        const showing = top.length < result.models.length ? ` (showing ${top.length} of ${result.models.length} — add "limit":N for more)` : ` (all ${result.models.length} models)`;
+        const body = `**${result.name || "Benchmark"}** — top ${top.length}${showing}:\n${rows}`;
+        displayBlock = `${skillTag}\n\n${body}`;
+        feedbackBlock = `[Skill result: ${skillName}]\n${body}`;
+      } else if (result?.output !== undefined) {
+        const out = String(result.output).trim();
+        displayBlock = `${skillTag}\n\n\`\`\`\n${out.slice(0, 3000)}${out.length > 3000 ? "\n… (truncated)" : ""}\n\`\`\``;
+        feedbackBlock = `[Skill result: ${skillName}]\n${out.slice(0, 3000)}`;
+      } else {
+        const raw = typeof result === "object" ? JSON.stringify(result) : String(result);
+        displayBlock = `${skillTag}: ${raw.slice(0, 600)}${raw.length > 600 ? "…" : ""}`;
+        feedbackBlock = `[Skill result: ${skillName}]\n${raw.slice(0, 600)}`;
+      }
+
+      // Check feedbackLoop flag from skill JSON (default: true — opt out with "feedbackLoop": false)
+      const resolvedSkillName = resolveSkillAlias(skillName);
+      const skillDefPath = path.join(os.homedir(), ".crewswarm", "skills", `${resolvedSkillName}.json`);
+      const skillDefRaw = fs.existsSync(skillDefPath) ? JSON.parse(fs.readFileSync(skillDefPath, "utf8")) : {};
+      const wantsFeedback = skillDefRaw.feedbackLoop !== false;
+
+      skillDisplayBlocks.push(displayBlock);
+      if (wantsFeedback) skillFeedbackBlocks.push(feedbackBlock);
+
+    } catch (e) {
+      console.error(`[crew-lead] @@SKILL ${skillName} failed:`, e.message);
+      const errBlock = `↳ *${skillName}* failed: ${e.message}`;
+      skillDisplayBlocks.push(errBlock);
+      skillFeedbackBlocks.push(`[Skill result: ${skillName}]\nFailed: ${e.message}`);
+    }
+  }
+
+  // Append display blocks so the user always sees the raw skill data
+  if (skillDisplayBlocks.length > 0) {
+    cleanReply = (cleanReply ? cleanReply + "\n\n" : "") + skillDisplayBlocks.join("\n\n");
+  }
+
+  // Feedback loop: second LLM call so the model actually reads the results and responds
+  if (skillFeedbackBlocks.length > 0) {
+    try {
+      const feedbackUserMsg = skillFeedbackBlocks.join("\n\n")
+        + "\n\nBased ONLY on the skill results above, respond to the user's original question. "
+        + "Be concise and specific. Do not invent numbers or models not in the results above.";
+      const feedbackMessages = [
+        ...messages,
+        { role: "assistant", content: fullReply },
+        { role: "user", content: feedbackUserMsg },
+      ];
+      console.log(`[crew-lead] Skill feedback loop — second LLM call (${skillFeedbackBlocks.length} skill(s))`);
+      const feedbackResult = await callLLM(feedbackMessages, cfg);
+      if (feedbackResult.reply?.trim()) {
+        cleanReply = cleanReply + "\n\n" + feedbackResult.reply.trim();
+      }
+    } catch (fbErr) {
+      console.error(`[crew-lead] Skill feedback loop failed:`, fbErr.message);
+      // Non-fatal — user still sees raw skill data above
+    }
+  }
+
   appendHistory(sessionId, "assistant", cleanReply);
-  broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply });
+  broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply, ...(usedFallback ? { fallbackModel: activeModel, fallbackReason } : {}) });
 
   return { reply: cleanReply, dispatched, pendingProject, pipeline };
 }
@@ -2318,17 +2922,31 @@ const server = http.createServer(async (req, res) => {
     const skillRunMatch = url.pathname.match(/^\/api\/skills\/([a-zA-Z0-9_\-\.]+)\/run$/);
     if (skillRunMatch && req.method === "POST") {
       if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
-      const skillName = skillRunMatch[1];
+      const skillName = resolveSkillAlias(skillRunMatch[1]);
       const skillFile = path.join(SKILLS_DIR, `${skillName}.json`);
       if (!fs.existsSync(skillFile)) { json(res, 404, { ok: false, error: "Skill not found" }); return; }
       let skillDef;
       try { skillDef = JSON.parse(fs.readFileSync(skillFile, "utf8")); } catch (e) { json(res, 500, { ok: false, error: "Invalid skill JSON" }); return; }
       let body = {};
       try { body = await readBody(req); } catch {}
-      const params = { ...(skillDef.defaultParams || {}), ...(body.params || body) };
+      const bodyParams = body.params || body;
+      const wantDiscovery = (typeof bodyParams === "object" && Object.keys(bodyParams || {}).length === 0) || (bodyParams && bodyParams.benchmark_id === "");
+      let params = wantDiscovery && skillDef.listUrl ? {} : { ...(skillDef.defaultParams || {}), ...bodyParams };
+      const aliases = skillDef.paramAliases || {};
+      for (const [param, map] of Object.entries(aliases)) {
+        if (params[param] != null && map[params[param]] != null) params[param] = map[params[param]];
+      }
       const swarmCfg = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
-      let urlStr = skillDef.url || "";
-      for (const [k, v] of Object.entries(params)) urlStr = urlStr.replace(`{${k}}`, encodeURIComponent(String(v)));
+      let urlStr;
+      const urlParam = (skillDef.url || "").match(/\{(\w+)\}/);
+      const emptyKey = urlParam ? urlParam[1] : null;
+      const paramEmpty = emptyKey && (params[emptyKey] === undefined || params[emptyKey] === null || String(params[emptyKey] || "").trim() === "");
+      if (skillDef.listUrl && (wantDiscovery || paramEmpty)) {
+        urlStr = skillDef.listUrl;
+      } else {
+        urlStr = skillDef.url || "";
+        for (const [k, v] of Object.entries(params)) urlStr = urlStr.replace(`{${k}}`, encodeURIComponent(String(v)));
+      }
       const headers = { "Content-Type": "application/json", ...(skillDef.headers || {}) };
       if (skillDef.auth) {
         const auth = skillDef.auth;
@@ -2550,13 +3168,25 @@ server.listen(PORT, "127.0.0.1", () => {
   connectRT();
 });
 
+let _portRetries = 0;
 server.on("error", (err) => {
   if (err.code === "EADDRINUSE") {
-    console.error(`[crew-lead] Port ${PORT} already in use — kill the existing process first`);
+    if (_portRetries < 6) {
+      _portRetries++;
+      const delay = _portRetries * 1000;
+      console.error(`[crew-lead] Port ${PORT} in use — retry ${_portRetries}/6 in ${delay}ms (waiting for old process to exit)`);
+      setTimeout(() => {
+        server.close();
+        server.listen(PORT, "127.0.0.1");
+      }, delay);
+    } else {
+      console.error(`[crew-lead] Port ${PORT} still in use after 6 retries — run: lsof -ti :${PORT} | xargs kill -9`);
+      process.exit(1);
+    }
   } else {
     console.error("[crew-lead] server error:", err.message);
+    process.exit(1);
   }
-  process.exit(1);
 });
 
 // Keep alive — don't crash on unhandled promise rejections or async errors
@@ -2605,7 +3235,7 @@ function connectRT() {
       return;
     }
     if (p.type === "hello.ack") {
-      ws.send(JSON.stringify({ type: "subscribe", channels: ["done", "events", "command", "issues"] }));
+      ws.send(JSON.stringify({ type: "subscribe", channels: ["done", "events", "command", "issues", "status"] }));
       ready = true;
       // Expose publish function for dispatchTask
       rtPublish = ({ channel, type, to, payload }) => {
@@ -2654,6 +3284,20 @@ function connectRT() {
       else summary = `${from} ${msgType} ${env.to ? `→ ${env.to}` : ""}`.trim();
       pushRtActivity({ ts: Date.now(), time, channel: env.channel, type: msgType, from, to: env.to, taskId: env.taskId || env.correlationId, summary });
 
+      // Forward agent_working / agent_idle events from bridges to SSE clients + SwiftBar
+      if (msgType === "agent_working" || msgType === "agent_idle") {
+        const agent = env.payload?.agent || from;
+        const model = env.payload?.model || "";
+        const stalled = env.payload?.stalled || false;
+        broadcastSSE({ type: msgType, agent, model, stalled, ts: Date.now() });
+      }
+
+      // On task.in_progress (agent claimed the task), extend timeout so long-running tasks survive
+      if (env.channel === "status" && (msgType === "task.in_progress" || msgType === "task.claimed")) {
+        const claimedTaskId = env.taskId || env.correlationId || "";
+        if (claimedTaskId) markDispatchClaimed(claimedTaskId, from);
+      }
+
       // On task.failed (e.g. rate limit), re-dispatch to a fallback agent so the task still gets done
       if (env.channel === "issues" && (msgType === "task.failed" || env.type === "task.failed")) {
         const failedTaskId = env.taskId || env.correlationId || "";
@@ -2689,6 +3333,21 @@ function connectRT() {
           dispatch.done = true;
           dispatch.result = content.slice(0, 4000);
           setTimeout(() => pendingDispatches.delete(taskId), 600_000);
+        }
+
+        // ── Auto-retry if agent asked a question instead of doing the work ──────
+        const _autoRetryKey = `_question_retried_${taskId}`;
+        const _askedQuestion = /(?:would you like|shall i|should i|do you want|want me to|may i|can i proceed|would it help|do you need|is that correct|shall we|ready to proceed|would you prefer|let me know|please (?:confirm|clarify|specify|advise))\??/i.test(content);
+        const _didWork = /@@WRITE_FILE|@@RUN_CMD|wrote|created|updated|fixed|patched|done\.|complete/i.test(content);
+        if (_askedQuestion && !_didWork && !pendingPipelines.has(dispatch?.pipelineId) && !global[_autoRetryKey]) {
+          global[_autoRetryKey] = true;
+          const _originalTask = dispatch?.task || "";
+          const _retryTask = (_originalTask.slice(0, 2000) || content.slice(0, 500)) +
+            "\n\nDo NOT ask for permission or confirmation. Proceed immediately with your best judgment. Just do it.";
+          console.log(`[crew-lead] Agent ${from} asked a question instead of working — auto-retrying`);
+          appendHistory(targetSession, "system", `${from} asked a question instead of acting — auto-retrying with explicit instruction.`);
+          dispatchTask(from, _retryTask, targetSession);
+          return;
         }
 
         appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 4000)}`);

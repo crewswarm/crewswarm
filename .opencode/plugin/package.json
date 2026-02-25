@@ -1,0 +1,32 @@
+{
+  "name": "opencode-openclaw-bridge",
+  "version": "1.0.0",
+  "description": "OpenCrewHQ plugin suite: OpenClaw bridge, shared memory, and realtime protocol",
+  "main": "opencrew-suite.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --project tsconfig.json --watch",
+    "rt:daemon": "node ./opencrew-rt-daemon.mjs"
+  },
+  "keywords": [
+    "opencode",
+    "openclaw",
+    "bridge",
+    "plugin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.19.33",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.2.6",
+    "ws": "^8.19.0"
+  }
+}

@@ -108,6 +108,7 @@ async function summarizeWithLLM(agentId, reply) {
       headers,
       body: JSON.stringify({
         model: llm.model,
+        stream: false,
         messages: [
           {
             role: "system",

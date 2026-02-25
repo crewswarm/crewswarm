@@ -119,11 +119,9 @@ if [[ -d "$REPO_DIR/skills" ]]; then
   for f in "$REPO_DIR/skills"/*.json; do
     [[ -f "$f" ]] || continue
     dest="$SKILLS_DIR/$(basename "$f")"
-    if [[ ! -f "$dest" ]]; then
-      cp "$f" "$dest"
-    fi
+    cp "$f" "$dest"
   done
-  success "Skills available in ~/.crewswarm/skills/"
+  success "Skills synced to ~/.crewswarm/skills/"
 fi
 
 # Bootstrap agent prompts if not present (try repo config, then legacy .openclaw, then sync from prompts/ or empty)

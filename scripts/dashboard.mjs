@@ -497,6 +497,11 @@ const html = `<!doctype html>
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    #rtView::-webkit-scrollbar { width: 8px; }
+    #rtView::-webkit-scrollbar-track { background: var(--bg-card); border-radius: 4px; }
+    #rtView::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; opacity: 0.7; }
+    #rtView::-webkit-scrollbar-thumb:hover { background: var(--accent); opacity: 1; }
+    #rtView { scrollbar-width: thin; scrollbar-color: var(--accent) var(--bg-card); }
   </style>
 </head>
 <body>
@@ -553,6 +558,9 @@ const html = `<!doctype html>
       <button class="nav-item" id="navRunSkills" onclick="showRunSkills()">
         <span class="nav-icon">⚡</span> Run skills
       </button>
+      <button class="nav-item" id="navBenchmarks" onclick="showBenchmarks()">
+        <span class="nav-icon">📊</span> Benchmarks
+      </button>
       <button class="nav-item" id="navToolMatrix" onclick="showToolMatrix()">
         <span class="nav-icon">📋</span> Tool Matrix
       </button>
@@ -583,6 +591,7 @@ const html = `<!doctype html>
     <div class="view" id="rtView">
       <div class="page-header">
         <div><div class="page-title">RT Messages</div><div class="page-sub">Live feed from CrewSwarm RT message bus</div></div>
+        <button id="rtScrollBtn" onclick="document.getElementById('rtView').scrollTop=document.getElementById('rtView').scrollHeight" style="display:none;position:fixed;bottom:32px;right:32px;z-index:999;background:var(--accent);color:#fff;border:none;border-radius:50px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity .2s;">⬇ Latest</button>
       </div>
       <div id="rtMessages"></div>
     </div>
@@ -827,20 +836,49 @@ const html = `<!doctype html>
 
       <!-- Usage: Token stats + Spending caps -->
       <div id="stab-panel-usage" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1100px;">
-        <div class="card">
-          <div class="card-title" style="margin-bottom:16px;">💰 Token Usage</div>
-          <div id="tokenUsageWidget"><div style="color:var(--text-3);font-size:12px;">Loading…</div></div>
-        </div>
-        <div class="card">
-          <div class="card-title" style="margin-bottom:10px;">💸 Spending (Today)</div>
-          <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
-            Two-level caps: global daily limits and per-agent limits. Set in
-            <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">~/.crewswarm/crewswarm.json</code>
-            under <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">globalSpendingCaps</code>.
+
+        <!-- Grand Total Banner -->
+        <div class="card" style="grid-column:1/-1;background:linear-gradient(135deg,var(--bg-1) 0%,var(--bg-0) 100%);border:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:14px;font-weight:700;color:var(--text-1);">&#x1F4CA; Total Spend</span>
+              <select id="grandTotalDays" style="font-size:11px;padding:3px 6px;" onchange="loadAllUsage()">
+                <option value="1">Today</option>
+                <option value="7">Last 7 days</option>
+                <option value="14" selected>Last 14 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:24px;flex-wrap:wrap;" id="grandTotalWidget">
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">Agents (direct)</div><div style="font-size:20px;font-weight:700;color:var(--accent);" id="gtAgentCost">—</div></div>
+              <div style="text-align:center;font-size:20px;color:var(--text-3);line-height:2;">+</div>
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">OpenCode</div><div style="font-size:20px;font-weight:700;color:var(--green);" id="gtOcCost">—</div></div>
+              <div style="text-align:center;font-size:20px;color:var(--text-3);line-height:2;">=</div>
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">Grand Total</div><div style="font-size:22px;font-weight:800;color:var(--yellow,#fbbf24);" id="gtTotal">—</div></div>
+            </div>
           </div>
-          <div id="spendingWidget" style="font-size:12px;">Loading…</div>
+        </div>
+
+        <!-- Token Usage (all-time breakdown) -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:16px;">&#x1F4B0; Token Usage <span style="font-size:11px;font-weight:400;color:var(--text-3);">(direct LLM calls)</span></div>
+          <div id="tokenUsageWidget"><div style="color:var(--text-3);font-size:12px;">Loading&#x2026;</div></div>
+        </div>
+
+        <!-- Agent Spending with time range -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div class="card-title" style="margin:0;">&#x1F4B8; Agent Spending</div>
+            <select id="spendingDays" style="font-size:11px;padding:3px 6px;" onchange="loadSpending()">
+              <option value="1" selected>Today</option>
+              <option value="7">Last 7 days</option>
+              <option value="14">Last 14 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </div>
+          <div id="spendingWidget" style="font-size:12px;">Loading&#x2026;</div>
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-            <button onclick="loadSpending()" class="btn-ghost" style="font-size:11px;">↻ Refresh</button>
+            <button onclick="loadSpending()" class="btn-ghost" style="font-size:11px;">&#x21BB; Refresh</button>
             <button onclick="resetSpending()" class="btn-ghost" style="font-size:11px;color:var(--red);">Reset Today</button>
           </div>
           <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
@@ -857,6 +895,22 @@ const html = `<!doctype html>
             </div>
             <button onclick="saveGlobalCaps()" class="btn-green" style="font-size:12px;">Save Caps</button>
           </div>
+        </div>
+
+        <!-- OpenCode Usage full width -->
+        <div class="card" style="grid-column:1/-1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div class="card-title" style="margin:0;">&#x1F680; OpenCode Usage <span style="font-size:11px;font-weight:400;color:var(--text-3);">(OpenCode DB &#x2014; all agents + Cursor sessions)</span></div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select id="ocStatsDays" style="font-size:11px;padding:3px 6px;" onchange="loadOcStats()">
+                <option value="7">Last 7 days</option>
+                <option value="14" selected>Last 14 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
+              <button onclick="loadOcStats()" class="btn-ghost" style="font-size:11px;">&#x21BB; Refresh</button>
+            </div>
+          </div>
+          <div id="ocStatsWidget"><div style="color:var(--text-3);font-size:12px;">Loading&#x2026;</div></div>
         </div>
       </div>
 
@@ -959,7 +1013,7 @@ const html = `<!doctype html>
         </div>
       </div>
 
-      <!-- System: OpenCode dir -->
+      <!-- System: OpenCode dir + fallback -->
       <div id="stab-panel-system" style="display:none;padding:16px;max-width:800px;">
         <div class="card">
           <div class="card-title" style="margin-bottom:6px;">📂 OpenCode Project Directory</div>
@@ -969,9 +1023,20 @@ const html = `<!doctype html>
           </div>
           <div style="display:flex;gap:6px;align-items:center;">
             <input id="opencodeProjInput" placeholder="e.g. /Users/you/Desktop/myproject" style="flex:1;font-size:13px;font-family:monospace;" />
-            <button onclick="saveOpencodeProject()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+            <button onclick="saveOpencodeSettings()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
           </div>
           <div id="opencodeProjStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+        <div class="card" style="margin-top:16px;">
+          <div class="card-title" style="margin-bottom:6px;">⚡ OpenCode Fallback Model</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            When the primary model hits rate limits, OpenCode retries with this model. Use a different provider (e.g. groq) to avoid the same limit.
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <select id="opencodeFallbackSelect" style="flex:1;min-width:280px;font-size:13px;font-family:monospace;"></select>
+            <button onclick="saveOpencodeSettings()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="opencodeFallbackStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
         </div>
       </div>
 
@@ -1077,6 +1142,27 @@ const html = `<!doctype html>
         <button onclick="loadRunSkills()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
       </div>
       <div id="runSkillsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;padding:16px;"></div>
+    </div>
+
+    <!-- Benchmarks — ZeroEval / llm-stats leaderboards -->
+    <div class="view" id="benchmarksView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Benchmarks</div>
+          <div class="page-sub">LLM leaderboard data from <a href="https://llm-stats.com" target="_blank" rel="noopener" style="color:var(--accent);">llm-stats.com</a> — compare models on SWE-Bench Verified, LiveCodeBench, and more</div>
+        </div>
+        <button onclick="loadBenchmarks()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:16px;">
+        <div class="card" style="max-width:400px;">
+          <label style="font-weight:600;font-size:13px;">Benchmark</label>
+          <select id="benchmarkSelect" onchange="loadBenchmarkLeaderboard(this.value)" style="width:100%;margin-top:6px;padding:8px 12px;">
+            <option value="">— Pick benchmark —</option>
+          </select>
+        </div>
+        <div id="benchmarkMeta" style="font-size:12px;color:var(--text-2);display:none;"></div>
+        <div id="benchmarkTable" class="card" style="overflow:auto;"></div>
+      </div>
     </div>
 
     <!-- Tool Matrix — agents × tools from health + quick restart -->
@@ -1220,6 +1306,11 @@ async function loadMessages(){
 }
 async function loadRTMessages(){
   const box = document.getElementById('rtMessages');
+  const rtView = document.getElementById('rtView');
+  // Preserve scroll intent: if user scrolled up, remember their offset from the bottom
+  const prevScrollFromBottom = rtView._userScrolledUp
+    ? (rtView.scrollHeight - rtView.scrollTop)
+    : null;
   const data = await getJSON('/api/rt-messages');
   box.innerHTML = '';
   const SKIP = new Set(['agent.heartbeat','agent.online','agent.offline']);
@@ -1248,18 +1339,56 @@ async function loadRTMessages(){
     badge.textContent = (m.type || '') + (m.ts ? ' · ' + new Date(m.ts).toLocaleTimeString() : '');
     meta.appendChild(badge);
 
-    // Safe text body — textContent prevents any HTML/script injection
+    // Safe text body — collapsible if > 30 lines
+    const COLLAPSE_LINES = 30;
+    const lines = messageText.split("\\n");
+    const isLong = lines.length > COLLAPSE_LINES;
     const body = document.createElement('div');
     body.className = 't';
     body.style.whiteSpace = 'pre-wrap';
-    body.textContent = messageText;
+    if (!isLong) {
+      body.textContent = messageText;
+    } else {
+      const preview = lines.slice(0, COLLAPSE_LINES).join("\\n");
+      const full = messageText;
+      let expanded = false;
+      const textNode = document.createTextNode(preview);
+      body.appendChild(textNode);
+      const toggle = document.createElement('button');
+      toggle.style.cssText = 'display:block;margin-top:6px;background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--accent);cursor:pointer;opacity:.8;';
+      toggle.textContent = '▼ Show ' + (lines.length - COLLAPSE_LINES) + ' more lines';
+      toggle.onclick = () => {
+        expanded = !expanded;
+        textNode.textContent = expanded ? full : preview;
+        toggle.textContent = expanded ? '▲ Collapse' : '▼ Show ' + (lines.length - COLLAPSE_LINES) + ' more lines';
+      };
+      body.appendChild(toggle);
+    }
 
     div.appendChild(meta);
     div.appendChild(body);
     box.appendChild(div);
   });
   if (!box.children.length) box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;">No messages yet.</div>';
-  box.scrollTop = box.scrollHeight;
+  const scrollBtn = document.getElementById('rtScrollBtn');
+  const _rtAtBottom = () => rtView.scrollHeight - rtView.scrollTop - rtView.clientHeight < 120;
+  // Restore position: if user had scrolled up, keep them at the same relative spot
+  if (prevScrollFromBottom !== null) {
+    rtView.scrollTop = rtView.scrollHeight - prevScrollFromBottom;
+  } else {
+    // User was at bottom (or first load) — scroll to bottom
+    rtView.scrollTop = rtView.scrollHeight;
+  }
+  scrollBtn.style.display = _rtAtBottom() ? 'none' : 'block';
+  // Bind scroll listener once to track user intent
+  if (!rtView._scrollListenerBound) {
+    rtView._scrollListenerBound = true;
+    rtView.addEventListener('scroll', () => {
+      const atBottom = _rtAtBottom();
+      scrollBtn.style.display = atBottom ? 'none' : 'block';
+      rtView._userScrolledUp = !atBottom;
+    });
+  }
 }
 async function loadDLQ(){
   const data = await getJSON('/api/dlq');
@@ -1353,6 +1482,9 @@ function showRT(){
   document.getElementById('rtView').classList.add('active');
   setNavActive('navRT');
   loadRTMessages();
+  // Hide scroll btn until user has had a chance to scroll up
+  const scrollBtn = document.getElementById('rtScrollBtn');
+  if (scrollBtn) scrollBtn.style.display = 'none';
 }
 function showDLQ(){
   hideAllViews();
@@ -1405,6 +1537,16 @@ function startAgentReplyListener() {
         appendRoadmapCard(box, d.pendingProject);
         box.scrollTop = box.scrollHeight;
         return;
+      }
+      // agent_working from OpenCode bridge — show pulsing coding dot on agent card
+      if (d.type === 'agent_working' && d.agent) {
+        const dot = document.getElementById('coding-dot-' + d.agent);
+        if (dot) dot.style.display = 'inline-flex';
+      }
+      // agent_idle from OpenCode bridge — hide coding dot
+      if (d.type === 'agent_idle' && d.agent) {
+        const dot = document.getElementById('coding-dot-' + d.agent);
+        if (dot) dot.style.display = 'none';
       }
       // agent_working: crew-lead dispatched a task — show a "waiting" indicator
       if (d.type === 'agent_working' && d.agent) {
@@ -1724,20 +1866,74 @@ async function loadTelegramSessions() {
 // ── Token usage widget ────────────────────────────────────────────────────────
 
 // Approximate cost per 1M tokens by model prefix (input / output)
+// Keys matched via .includes() — more specific keys must come before general ones
 const MODEL_COST_PER_M = {
-  'llama-3.3-70b':         [0.59,  0.79],
-  'llama-3.1-8b':          [0.05,  0.08],
-  'llama-3.1-70b':         [0.59,  0.79],
+  // ── xAI Grok (2026 pricing) ───────────────────────────────────────────────
+  'grok-4-1-fast':         [0.20,  0.50],  // grok-4.1-fast + non-reasoning variant
+  'grok-4-fast':           [0.20,  0.50],
+  'grok-4':                [3.00, 15.00],
+  'grok-3-mini':           [0.30,  0.50],
+  'grok-3':                [3.00, 15.00],
+  'grok-code-fast':        [0.20,  1.50],
+  'grok-beta':             [5.00, 15.00],  // legacy
+  // ── OpenAI gpt-5.x (via openai or openai-local proxy) ───────────────────
+  'gpt-5.3-codex':         [2.50, 20.00],  // estimate — newer than 5.2
+  'gpt-5.2-codex':         [1.75, 14.00],
+  'gpt-5.2':               [1.75, 14.00],
+  'gpt-5.1-codex-max':     [2.50, 20.00],  // estimate — max tier
+  'gpt-5.1-codex-mini':    [0.25,  2.00],
+  'gpt-5.1-codex':         [1.25, 10.00],
+  'gpt-5.1':               [1.25, 10.00],
+  'gpt-5-codex':           [1.25, 10.00],
+  'gpt-5-nano':            [0.15,  0.60],  // estimate
+  'gpt-5':                 [1.25, 10.00],
+  'codex-mini':            [0.25,  2.00],
+  // ── OpenAI legacy ────────────────────────────────────────────────────────
+  'gpt-oss-120b':          [0.90,  0.90],  // Groq-hosted OSS model, estimate
+  'gpt-oss-20b':           [0.20,  0.20],  // estimate
   'gpt-4o-mini':           [0.15,  0.60],
   'gpt-4o':                [2.50, 10.00],
   'gpt-4':                 [30.0, 60.00],
+  // ── DeepSeek ─────────────────────────────────────────────────────────────
+  'deepseek-reasoner':     [0.70,  2.50],  // R1
+  'deepseek-chat':         [0.27,  1.10],
+  // ── Mistral ──────────────────────────────────────────────────────────────
+  'mistral-large':         [0.50,  1.50],  // mistral-large-latest = Large 3 2512 (Dec 2025)
+  'mistral-small':         [0.10,  0.30],
+  // ── Google Gemini ─────────────────────────────────────────────────────────
+  'gemini-2.5-pro':        [1.25, 10.00],
+  'gemini-2.5-flash':      [0.075, 0.30],
+  'gemini-2.0-flash':      [0.10,  0.40],
+  // ── Anthropic Claude ─────────────────────────────────────────────────────
+  'claude-opus-4':         [15.0, 75.00],
+  'claude-sonnet-4':       [3.00, 15.00],
+  'claude-haiku-4':        [0.80,  4.00],
   'claude-3-5-haiku':      [0.80,  4.00],
   'claude-3-haiku':        [0.25,  1.25],
   'claude-3-5-sonnet':     [3.00, 15.00],
   'claude-3-7-sonnet':     [3.00, 15.00],
-  'mistral-small':         [0.10,  0.30],
-  'mistral-large':         [2.00,  6.00],
+  // ── Groq-hosted (inference pricing) ──────────────────────────────────────
+  'kimi-k2-instruct':      [1.00,  3.00],
+  'kimi-k2':               [0.60,  2.50],
+  'llama-4-maverick':      [0.50,  0.77],
+  'llama-4-scout':         [0.11,  0.34],
+  'llama-3.3-70b':         [0.59,  0.79],
+  'llama-3.1-70b':         [0.59,  0.79],
+  'llama3.1-70b':          [0.59,  0.79],
+  'llama-3.1-8b':          [0.05,  0.08],
+  'llama3.1-8b':           [0.10,  0.10],  // Cerebras pricing
+  'qwen3-32b':             [0.29,  0.39],
+  'llama-guard':           [0.20,  0.20],
+  // ── Perplexity ───────────────────────────────────────────────────────────
   'sonar-pro':             [3.00, 15.00],
+  'sonar':                 [1.00,  1.00],
+  // ── OpenCode free models ──────────────────────────────────────────────────
+  'big-pickle':            [0.00,  0.00],  // free
+  'trinity-large-preview': [0.00,  0.00],  // free
+  'minimax-m2.5-free':     [0.00,  0.00],  // free
+  'glm-':                  [0.10,  0.10],  // estimate
+  'minimax':               [0.30,  1.00],  // estimate
+  // ── Default fallback ─────────────────────────────────────────────────────
   'default':               [1.00,  3.00],
 };
 
@@ -1758,7 +1954,7 @@ async function loadTokenUsage() {
   const totalTokens = (u.prompt || 0) + (u.completion || 0);
   const cost = estimateCost(u.byModel);
 
-  // Full widget
+  // ── Totals row ────────────────────────────────────────────────────────────
   let html =
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">' +
       '<div style="text-align:center;">' +
@@ -1771,11 +1967,40 @@ async function loadTokenUsage() {
       '</div>' +
       '<div style="text-align:center;">' +
         '<div style="font-size:20px;font-weight:700;color:var(--yellow,#fbbf24);">$' + cost.toFixed(4) + '</div>' +
-        '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">est. cost</div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">est. cost (all-time)</div>' +
       '</div>' +
     '</div>';
+
+  // ── Daily history ─────────────────────────────────────────────────────────
+  const byDay = u.byDay || {};
+  const days = Object.keys(byDay).sort().reverse().slice(0, 14);
+  if (days.length) {
+    const maxCost = Math.max(...days.map(function(d){ return estimateCost(byDay[d].byModel || {}); }), 0.0001);
+    html += '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin:12px 0 6px;">Daily cost (last ' + days.length + ' days)</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:3px;">';
+    days.forEach(function(day) {
+      const ds = byDay[day];
+      const dc = estimateCost(ds.byModel || {});
+      const pct = Math.max((dc / maxCost) * 100, 2);
+      const tok = ((ds.prompt||0) + (ds.completion||0)) / 1000;
+      const isToday = day === new Date().toISOString().slice(0, 10);
+      html += '<div style="display:flex;align-items:center;gap:8px;font-size:11px;">' +
+        '<span style="width:70px;color:var(--text-3);flex-shrink:0;">' + (isToday ? 'today' : day.slice(5)) + '</span>' +
+        '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:14px;overflow:hidden;">' +
+          '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;"></div>' +
+        '</div>' +
+        '<span style="width:52px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + dc.toFixed(4) + '</span>' +
+        '<span style="width:44px;text-align:right;color:var(--text-3);">' + tok.toFixed(1) + 'k</span>' +
+      '</div>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div style="font-size:11px;color:var(--text-3);margin-top:8px;">No daily history yet — data accumulates with next LLM call after restart.</div>';
+  }
+
+  // ── By model (all-time) ───────────────────────────────────────────────────
   if (Object.keys(u.byModel||{}).length) {
-    html += '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px;">By model</div>';
+    html += '<div style="font-size:11px;color:var(--text-3);margin:12px 0 6px;">By model (all-time)</div>';
     Object.entries(u.byModel||{})
       .sort((a,b) => (b[1].prompt+b[1].completion) - (a[1].prompt+a[1].completion))
       .forEach(function(entry) {
@@ -1790,6 +2015,87 @@ async function loadTokenUsage() {
       });
   }
   box.innerHTML = html;
+}
+
+async function loadOcStats() {
+  const box = document.getElementById('ocStatsWidget');
+  if (!box) return;
+  const days = document.getElementById('ocStatsDays')?.value || '14';
+  _ocTotalCost = null;
+  box.innerHTML = '<div style="color:var(--text-3);font-size:12px;">Loading&#x2026;</div>';
+  try {
+    const d = await getJSON('/api/opencode-stats?days=' + days);
+    if (!d.ok || !Object.keys(d.byDay||{}).length) {
+      box.innerHTML = '<div style="color:var(--text-3);font-size:12px;">' + (d.error || 'No OpenCode data found') + '</div>';
+      return;
+    }
+    const byDay = d.byDay;
+    const sortedDays = Object.keys(byDay).sort().reverse();
+    const totalCost = sortedDays.reduce(function(s,day){ return s + byDay[day].cost; }, 0);
+    const totalIn   = sortedDays.reduce(function(s,day){ return s + byDay[day].input_tok; }, 0);
+    const totalOut  = sortedDays.reduce(function(s,day){ return s + byDay[day].output_tok; }, 0);
+    const totalCalls= sortedDays.reduce(function(s,day){ return s + byDay[day].calls; }, 0);
+    const maxCost   = Math.max(...sortedDays.map(function(d){ return byDay[d].cost; }), 0.0001);
+
+    let html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">' +
+      '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--yellow,#fbbf24);">$' + totalCost.toFixed(4) + '</div><div style="font-size:11px;color:var(--text-3);">total cost</div></div>' +
+      '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--accent);">' + totalCalls.toLocaleString() + '</div><div style="font-size:11px;color:var(--text-3);">messages</div></div>' +
+      '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--green);">' + (totalIn/1e6).toFixed(1) + 'M</div><div style="font-size:11px;color:var(--text-3);">input tokens</div></div>' +
+      '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--green);">' + (totalOut/1e6).toFixed(2) + 'M</div><div style="font-size:11px;color:var(--text-3);">output tokens</div></div>' +
+    '</div>';
+
+    // Daily bars
+    html += '<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:16px;">';
+    const today = new Date().toISOString().slice(0,10);
+    sortedDays.forEach(function(day) {
+      const ds = byDay[day];
+      const pct = Math.max((ds.cost / maxCost) * 100, ds.cost > 0 ? 2 : 0);
+      const isToday = day === today;
+      const tok = (ds.input_tok + ds.output_tok) / 1e6;
+      html += '<div style="display:flex;align-items:center;gap:8px;font-size:11px;">' +
+        '<span style="width:70px;color:var(--text-3);flex-shrink:0;">' + (isToday ? 'today' : day.slice(5)) + '</span>' +
+        '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:16px;overflow:hidden;">' +
+          '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;opacity:0.85;"></div>' +
+        '</div>' +
+        '<span style="width:60px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + ds.cost.toFixed(4) + '</span>' +
+        '<span style="width:50px;text-align:right;color:var(--text-3);">' + tok.toFixed(2) + 'M</span>' +
+        '<span style="width:36px;text-align:right;color:var(--text-3);">' + ds.calls + '</span>' +
+      '</div>';
+    });
+    html += '</div>';
+
+    // All models across period
+    const allModels = {};
+    sortedDays.forEach(function(day) {
+      Object.entries(byDay[day].byModel||{}).forEach(function(e) {
+        const m = e[0], s = e[1];
+        if (!allModels[m]) allModels[m] = { cost:0, input_tok:0, output_tok:0, calls:0 };
+        allModels[m].cost += s.cost;
+        allModels[m].input_tok += s.input_tok;
+        allModels[m].output_tok += s.output_tok;
+        allModels[m].calls += s.calls;
+      });
+    });
+    const sortedModels = Object.entries(allModels).sort(function(a,b){ return b[1].cost - a[1].cost; });
+    if (sortedModels.length) {
+      html += '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px;">By model</div>';
+      sortedModels.forEach(function(e) {
+        const m = e[0], s = e[1];
+        const tok = (s.input_tok + s.output_tok) / 1e6;
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">' +
+          '<code style="color:var(--accent);">' + m + '</code>' +
+          '<span style="color:var(--text-2);">' + tok.toFixed(2) + 'M tok · ' + s.calls + ' calls · ' +
+            '<span style="color:var(--yellow,#fbbf24);font-weight:600;">$' + s.cost.toFixed(4) + '</span>' +
+          '</span>' +
+        '</div>';
+      });
+    }
+    _ocTotalCost = totalCost;
+    updateGrandTotal();
+    box.innerHTML = html;
+  } catch(e) {
+    box.innerHTML = '<div style="color:var(--red);font-size:12px;">Error: ' + e.message + '</div>';
+  }
 }
 
 async function checkCrewLeadStatus() {
@@ -2526,16 +2832,27 @@ async function loadOpencodeProject(){
     const d = await getJSON('/api/settings/opencode-project');
     const inp = document.getElementById('opencodeProjInput');
     const st  = document.getElementById('opencodeProjStatus');
-    if (inp) inp.placeholder = d.dir || 'e.g. /Users/you/Desktop/myproject';
-    if (inp && d.dir) inp.value = d.dir;
+    if (inp) { inp.placeholder = d.dir || 'e.g. /Users/you/Desktop/myproject'; inp.value = d.dir || ''; }
     if (st) st.textContent = d.dir ? ('✅ Current: ' + d.dir) : '⚠️ Not set — OpenCode will write files to the CrewSwarm repo root. Set this to your project folder.';
+    const fbSel = document.getElementById('opencodeFallbackSelect');
+    const fbSt  = document.getElementById('opencodeFallbackStatus');
+    if (fbSel) {
+      if (_allModels.length === 0) {
+        const ac = await getJSON('/api/agents-config');
+        _allModels = ac.allModels || [];
+        _modelsByProvider = ac.modelsByProvider || {};
+      }
+      populateModelDropdown('opencodeFallbackSelect', d.fallbackModel || '');
+    }
+    if (fbSt) fbSt.textContent = d.fallbackModel ? ('✅ Fallback: ' + d.fallbackModel) : '⚠️ Using default groq/kimi-k2-instruct-0905';
   } catch {}
 }
-async function saveOpencodeProject(){
-  const dir = (document.getElementById('opencodeProjInput').value || '').trim();
+async function saveOpencodeSettings(){
+  const dir = (document.getElementById('opencodeProjInput')?.value || '').trim();
+  const fallbackModel = (document.getElementById('opencodeFallbackSelect')?.value || '').trim();
   try {
-    await postJSON('/api/settings/opencode-project', { dir });
-    showNotification(dir ? 'Project dir saved — takes effect on next task (no restart needed)' : 'Project dir cleared');
+    await postJSON('/api/settings/opencode-project', { dir: dir || undefined, fallbackModel: fallbackModel || undefined });
+    showNotification('OpenCode settings saved — fallback takes effect on next task (no restart needed)');
     loadOpencodeProject();
   } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
 }
@@ -2553,7 +2870,7 @@ function showSettingsTab(tab){
     panel.style.display = t === tab ? (t === 'usage' ? 'grid' : 'block') : 'none';
     btn.classList.toggle('active', t === tab);
   });
-  if (tab === 'usage')    { loadTokenUsage(); loadSpending(); }
+  if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
   if (tab === 'security') { loadCmdAllowlist(); }
   if (tab === 'system')   { loadOpencodeProject(); }
   if (tab === 'telegram') { loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
@@ -2574,6 +2891,16 @@ function showRunSkills(){
   loadRunSkills();
 }
 
+function showBenchmarks(){
+  hideAllViews();
+  document.getElementById('benchmarksView').classList.add('active');
+  setNavActive('navBenchmarks');
+  loadBenchmarkOptions().then(() => {
+    const sel = document.getElementById('benchmarkSelect');
+    if (sel && sel.value) loadBenchmarkLeaderboard(sel.value);
+  });
+}
+
 function showToolMatrix(){
   hideAllViews();
   document.getElementById('toolMatrixView').classList.add('active');
@@ -2583,6 +2910,76 @@ function showToolMatrix(){
 
 // keep old name working for any legacy calls
 function showIntegrations(){ showSkills(); }
+
+// ── Benchmarks (ZeroEval / llm-stats) ───────────────────────────────────────────
+async function loadBenchmarkOptions() {
+  const sel = document.getElementById('benchmarkSelect');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Loading… —</option>';
+  try {
+    const r = await fetch('/api/zeroeval/benchmarks');
+    const arr = await r.json();
+    if (!Array.isArray(arr)) throw new Error('Expected array');
+    sel.innerHTML = '<option value="">— Pick benchmark —</option>';
+    arr.forEach(b => {
+      const id = typeof b === 'object' ? (b.benchmark_id || b.id) : b;
+      const name = typeof b === 'object' ? (b.name || id) : id;
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (cur && arr.some(b => (typeof b === 'object' ? b.benchmark_id : b) === cur)) sel.value = cur;
+  } catch (e) {
+    sel.innerHTML = '<option value="">— Failed to load —</option>';
+  }
+}
+
+async function loadBenchmarks() {
+  await loadBenchmarkOptions();
+  const sel = document.getElementById('benchmarkSelect');
+  if (sel && sel.value) loadBenchmarkLeaderboard(sel.value);
+}
+
+async function loadBenchmarkLeaderboard(benchmarkId) {
+  const tableEl = document.getElementById('benchmarkTable');
+  const metaEl = document.getElementById('benchmarkMeta');
+  if (!tableEl || !metaEl) return;
+  if (!benchmarkId) {
+    tableEl.innerHTML = '';
+    metaEl.style.display = 'none';
+    return;
+  }
+  tableEl.innerHTML = '<div class="meta" style="padding:20px;">Loading…</div>';
+  metaEl.style.display = 'none';
+  try {
+    const r = await fetch('/api/zeroeval/benchmarks/' + encodeURIComponent(benchmarkId));
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || data.detail || 'Failed to load');
+    const models = data.models || [];
+    const stats = data.statistics || {};
+    metaEl.innerHTML = '<b>' + escHtml(data.name || benchmarkId) + '</b>: ' + (data.description || '').slice(0, 200) + '… | ' + stats.total_models + ' models, avg ' + ((stats.average_score || 0) * 100).toFixed(1) + '%';
+    metaEl.style.display = 'block';
+    if (!models.length) {
+      tableEl.innerHTML = '<div class="meta" style="padding:20px;">No model scores for this benchmark.</div>';
+      return;
+    }
+    const rows = models.slice(0, 100).map(m => {
+      const score = (m.normalized_score != null ? m.normalized_score : m.score) ?? 0;
+      const pct = (score * 100).toFixed(1);
+      const inp = m.input_cost_per_million != null ? Math.round(m.input_cost_per_million * 100) + '¢' : '—';
+      const out = m.output_cost_per_million != null ? Math.round(m.output_cost_per_million * 100) + '¢' : '—';
+      const inC = m.input_cost_per_million ?? 0;
+      const outC = m.output_cost_per_million ?? 0;
+      const centsPerPt = (inC + outC) > 0 && score > 0 ? ((inC + outC) * 100 / (score * 100)).toFixed(1) + '¢/pt' : '—';
+      return '<tr><td style="padding:6px 10px;">' + (m.rank || '-') + '</td><td style="padding:6px 10px;">' + escHtml(m.model_name || m.model_id) + '</td><td style="padding:6px 10px;">' + escHtml(m.organization_name || '') + '</td><td style="padding:6px 10px;font-weight:600;">' + pct + '%</td><td style="padding:6px 10px;font-size:11px;" title="¢ per 1M input tokens">' + inp + '</td><td style="padding:6px 10px;font-size:11px;" title="¢ per 1M output tokens">' + out + '</td><td style="padding:6px 10px;font-size:11px;" title="¢ per score point (1M in+out / score%)">' + centsPerPt + '</td><td style="padding:6px 10px;font-size:11px;">' + (m.analysis_method || '-').slice(0, 40) + '</td></tr>';
+    }).join('');
+    tableEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Rank</th><th style="text-align:left;padding:6px 10px;">Model</th><th style="text-align:left;padding:6px 10px;">Org</th><th style="text-align:left;padding:6px 10px;">Score</th><th style="text-align:left;padding:6px 10px;" title="¢ per 1M input">in ¢</th><th style="text-align:left;padding:6px 10px;" title="¢ per 1M output">out ¢</th><th style="text-align:left;padding:6px 10px;" title="¢ per score point">¢/pt</th><th style="text-align:left;padding:6px 10px;">Method</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  } catch (e) {
+    tableEl.innerHTML = '<div style="color:var(--red);padding:20px;">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
 
 // ── Run skills (from health snapshot) ───────────────────────────────────────────
 async function loadRunSkills(){
@@ -2847,48 +3244,149 @@ async function deleteSkill(name){
 }
 
 // ── Spending ──────────────────────────────────────────────────────────────────
+var _agentTotalCost = null;
+var _ocTotalCost = null;
+function updateGrandTotal() {
+  var a = _agentTotalCost, o = _ocTotalCost;
+  var aEl = document.getElementById('gtAgentCost');
+  var oEl = document.getElementById('gtOcCost');
+  var tEl = document.getElementById('gtTotal');
+  if (!aEl) return;
+  if (a !== null) aEl.textContent = '$' + a.toFixed(4);
+  if (o !== null) oEl.textContent = '$' + o.toFixed(4);
+  if (a !== null && o !== null) tEl.textContent = '$' + (a + o).toFixed(4);
+}
+async function loadAllUsage() {
+  var days = parseInt(document.getElementById('grandTotalDays')?.value || '14');
+  var ocSel = document.getElementById('ocStatsDays');
+  var spSel = document.getElementById('spendingDays');
+  if (ocSel) ocSel.value = String(days);
+  if (spSel) spSel.value = String(days === 1 ? 1 : days);
+  _agentTotalCost = null;
+  _ocTotalCost = null;
+  document.getElementById('gtAgentCost').textContent = '—';
+  document.getElementById('gtOcCost').textContent = '—';
+  document.getElementById('gtTotal').textContent = '—';
+  loadSpending();
+  loadOcStats();
+}
 async function loadSpending(){
   const el = document.getElementById('spendingWidget');
+  const days = parseInt(document.getElementById('spendingDays')?.value || '1');
   try {
-    const d = await (await fetch('/api/spending')).json();
-    const { spending, caps } = d;
-    const gTokens = spending.global?.tokens || 0;
-    const gCost   = (spending.global?.costUSD || 0).toFixed(4);
-    const gCapTok = caps.global?.dailyTokenLimit;
-    const gCapCost = caps.global?.dailyCostLimitUSD;
-    let out = '<div style="margin-bottom:10px;">'
-            + '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em;">Global &middot; ' + (spending.date||'today') + '</div>'
-            + '<div style="display:flex;gap:20px;"><span>' + gTokens.toLocaleString() + ' tokens' + (gCapTok ? ' / ' + Number(gCapTok).toLocaleString() : '') + '</span>'
-            + '<span>$' + gCost + (gCapCost ? ' / $' + gCapCost : '') + '</span></div>';
-    if (gCapTok) {
-      const pct = Math.min(100, (gTokens/gCapTok)*100);
-      const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? '#fbbf24' : 'var(--green)';
-      out += '<div style="margin-top:4px;height:4px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;transition:width .3s;"></div></div>';
+    if (days <= 1) {
+      // Today: real-time from crew-lead
+      const d = await (await fetch('/api/spending')).json();
+      const { spending, caps } = d;
+      const gTokens = spending.global?.tokens || 0;
+      const gCost   = spending.global?.costUSD || 0;
+      const gCapTok = caps.global?.dailyTokenLimit;
+      const gCapCost = caps.global?.dailyCostLimitUSD;
+      let out = '<div style="margin-bottom:10px;">'
+              + '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em;">Global &middot; ' + (spending.date||'today') + '</div>'
+              + '<div style="display:flex;gap:20px;"><span>' + gTokens.toLocaleString() + ' tokens' + (gCapTok ? ' / ' + Number(gCapTok).toLocaleString() : '') + '</span>'
+              + '<span style="color:var(--yellow,#fbbf24);font-weight:600;">$' + gCost.toFixed(4) + '</span>' + (gCapCost ? '<span> / $' + gCapCost + '</span>' : '') + '</div>';
+      if (gCapTok) {
+        const pct = Math.min(100, (gTokens/gCapTok)*100);
+        const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? '#fbbf24' : 'var(--green)';
+        out += '<div style="margin-top:4px;height:4px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;transition:width .3s;"></div></div>';
+      }
+      out += '</div>';
+      const agents = Object.entries(spending.agents || {});
+      if (agents.length) {
+        out += '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Per Agent</div>';
+        out += agents.map(function(entry) {
+          var id = entry[0], v = entry[1];
+          const agentCap = caps.agents && caps.agents[id];
+          const toks  = v.tokens || 0;
+          const cost  = (v.costUSD||0).toFixed(4);
+          const capTok = agentCap && agentCap.dailyTokenLimit;
+          const pct    = capTok ? Math.min(100, (toks/capTok)*100) : null;
+          let row = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
+                  + '<span style="min-width:140px;font-size:12px;">' + id + '</span>'
+                  + '<span style="font-size:12px;">' + toks.toLocaleString() + ' tok' + (capTok ? ' / ' + Number(capTok).toLocaleString() : '') + ' &middot; <span style="color:var(--yellow,#fbbf24);">$' + cost + '</span></span>';
+          if (pct !== null) {
+            const barColor = pct > 80 ? 'var(--red)' : 'var(--accent)';
+            row += '<div style="flex:1;height:3px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;"></div></div>';
+          }
+          return row + '</div>';
+        }).join('');
+      } else { out += '<div style="color:var(--text-3);">No per-agent data yet for today.</div>'; }
+      if (gCapTok) document.getElementById('gcapTokens').value = gCapTok;
+      if (gCapCost) document.getElementById('gcapCost').value = gCapCost;
+      _agentTotalCost = gCost;
+      updateGrandTotal();
+      el.innerHTML = out;
+    } else {
+      // Multi-day: compute from token-usage.json byDay
+      const u = await getJSON('/api/token-usage').catch(function(){ return {}; });
+      const byDay = u.byDay || {};
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      const filteredDays = Object.keys(byDay).filter(function(d){ return d >= cutoff; }).sort().reverse();
+      if (!filteredDays.length) {
+        el.innerHTML = '<div style="color:var(--text-3);">No data for this period.</div>';
+        _agentTotalCost = 0;
+        updateGrandTotal();
+        return;
+      }
+      // Aggregate byModel across days
+      const aggByModel = {};
+      var totalTok = 0, totalCost = 0;
+      filteredDays.forEach(function(day) {
+        const dm = byDay[day].byModel || {};
+        Object.entries(dm).forEach(function(e) {
+          var m = e[0], s = e[1];
+          if (!aggByModel[m]) aggByModel[m] = { prompt: 0, completion: 0 };
+          aggByModel[m].prompt += s.prompt || 0;
+          aggByModel[m].completion += s.completion || 0;
+          totalTok += (s.prompt||0) + (s.completion||0);
+        });
+      });
+      totalCost = estimateCost(aggByModel);
+      let out = '<div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
+              + '<span style="font-size:12px;color:var(--text-3);">Last ' + days + ' days &middot; ' + filteredDays.length + ' days of data</span>'
+              + '<span style="font-size:16px;font-weight:700;color:var(--yellow,#fbbf24);">$' + totalCost.toFixed(4) + '</span>'
+              + '</div>';
+      // Daily breakdown bar chart
+      const maxDayCost = Math.max(...filteredDays.map(function(d){ return estimateCost(byDay[d].byModel||{}); }), 0.0001);
+      const today = new Date().toISOString().slice(0,10);
+      out += '<div style="display:flex;flex-direction:column;gap:3px;margin-bottom:12px;">';
+      filteredDays.forEach(function(day) {
+        const dc = estimateCost(byDay[day].byModel||{});
+        const pct = Math.max((dc/maxDayCost)*100, dc > 0 ? 2 : 0);
+        const isToday = day === today;
+        const tok = ((byDay[day].prompt||0)+(byDay[day].completion||0))/1000;
+        out += '<div style="display:flex;align-items:center;gap:8px;font-size:11px;">'
+             + '<span style="width:64px;color:var(--text-3);flex-shrink:0;">' + (isToday ? 'today' : day.slice(5)) + '</span>'
+             + '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:12px;overflow:hidden;">'
+             +   '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;opacity:.8;"></div>'
+             + '</div>'
+             + '<span style="width:58px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + dc.toFixed(4) + '</span>'
+             + '<span style="width:40px;text-align:right;color:var(--text-3);">' + tok.toFixed(0) + 'k</span>'
+             + '</div>';
+      });
+      out += '</div>';
+      // Top models
+      const sortedModels = Object.entries(aggByModel).sort(function(a,b){
+        return estimateCost({b:b[1]}) - estimateCost({a:a[1]});
+      });
+      if (sortedModels.length) {
+        out += '<div style="font-size:11px;color:var(--text-3);margin-bottom:4px;">By model</div>';
+        sortedModels.slice(0,8).forEach(function(e) {
+          var m = e[0], s = e[1];
+          const mc = estimateCost({x:s});
+          const tok = ((s.prompt||0)+(s.completion||0))/1000;
+          out += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;border-bottom:1px solid var(--border);">'
+               + '<code style="color:var(--accent);">' + m + '</code>'
+               + '<span style="color:var(--text-2);">' + tok.toFixed(1) + 'k tok &middot; <span style="color:var(--yellow,#fbbf24);">$' + mc.toFixed(4) + '</span></span>'
+               + '</div>';
+        });
+      }
+      _agentTotalCost = totalCost;
+      updateGrandTotal();
+      el.innerHTML = out;
     }
-    out += '</div>';
-    const agents = Object.entries(spending.agents || {});
-    if (agents.length) {
-      out += '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Per Agent</div>';
-      out += agents.map(function([id, v]) {
-        const agentCap = caps.agents && caps.agents[id];
-        const toks  = v.tokens || 0;
-        const cost  = (v.costUSD||0).toFixed(4);
-        const capTok = agentCap && agentCap.dailyTokenLimit;
-        const pct    = capTok ? Math.min(100, (toks/capTok)*100) : null;
-        let row = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
-                + '<span style="min-width:140px;font-size:12px;">' + id + '</span>'
-                + '<span style="font-size:12px;">' + toks.toLocaleString() + ' tok' + (capTok ? ' / ' + Number(capTok).toLocaleString() : '') + ' &middot; $' + cost + '</span>';
-        if (pct !== null) {
-          const barColor = pct > 80 ? 'var(--red)' : 'var(--accent)';
-          row += '<div style="flex:1;height:3px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;"></div></div>';
-        }
-        return row + '</div>';
-      }).join('');
-    } else { out += '<div style="color:var(--text-3);">No per-agent data yet for today.</div>'; }
-    if (gCapTok) document.getElementById('gcapTokens').value = gCapTok;
-    if (gCapCost) document.getElementById('gcapCost').value = gCapCost;
-    el.innerHTML = out;
-  } catch(e) { el.innerHTML = '<div style="color:var(--text-3);">Error loading spending data</div>'; }
+  } catch(e) { el.innerHTML = '<div style="color:var(--text-3);">Error: ' + e.message + '</div>'; }
 }
 async function resetSpending(){
   if (!confirm("Reset today's spending counters?")) return;
@@ -3017,9 +3515,13 @@ async function loadAgents_cfg(){
         : '<span title="● unknown — never seen" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:4px;flex-shrink:0;"></span>';
       card.innerHTML = \`
         <div class="agent-card-header">
-          <div class="agent-avatar">\${a.emoji}</div>
+          <div class="agent-avatar" id="avatar-\${a.id}" style="position:relative;">\${a.emoji}</div>
           <div class="agent-meta">
-            <div class="agent-id" style="display:flex;align-items:center;">\${liveDot}\${a.id} <span class="meta" style="font-weight:400;margin-left:4px;">· \${a.name}</span></div>
+            <div class="agent-id" style="display:flex;align-items:center;">\${liveDot}\${a.id} <span class="meta" style="font-weight:400;margin-left:4px;">· \${a.name}</span>
+              <span id="coding-dot-\${a.id}" style="display:none;margin-left:8px;align-items:center;gap:4px;font-size:11px;color:var(--accent);">
+                <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1s ease-in-out infinite;"></span>coding
+              </span>
+            </div>
             <div class="agent-model" id="cur-model-\${a.id}">\${a.model}</div>
           </div>
           <button class="btn-ghost" style="font-size:11px; padding:4px 10px;" onclick="toggleAgentBody('\${a.id}')">Edit ▾</button>
@@ -3448,143 +3950,357 @@ function buildPresetOptions(placeholder) {
 }
 
 const PROMPT_PRESETS = {
-  frontend: \`You are a frontend specialist. You write HTML, CSS, and vanilla JavaScript.
-- ALWAYS read the existing file before editing
-- NEVER replace or recreate files — only append, insert, or patch
-- Produce clean, modern, accessible markup and styles
-- Match the existing design system and CSS class names\`,
-  backend: \`You are a backend specialist. You write Node.js, APIs, and server-side scripts.
-- ALWAYS read existing files before editing
-- NEVER replace existing files — only append or patch
-- Follow existing patterns, naming conventions, and code style
-- Prefer ES modules (import/export) and async/await\`,
-  fullstack: \`You are a full-stack coder. You work across HTML, CSS, JavaScript, and Node.js.
-- ALWAYS read the existing file first
-- NEVER replace or recreate files — patch only
-- Keep changes minimal and targeted to the requested task
-- Match the existing code style and structure\`,
-  qa: \`You are a QA and testing specialist. You write tests, find bugs, and verify implementations.
-- Check that features match their requirements
-- Write clear, runnable test cases
-- Report failures with file path, line number, and expected vs actual output
-- Do NOT fix bugs yourself — report them clearly so crew-fixer can address them\`,
-  github: \`You are a Git and GitHub specialist. You handle all version control operations.
-- Always run git status before acting
-- Write clear, conventional commit messages (feat:, fix:, chore:, docs:)
-- Never force-push to main or master
-- Use the exec tool to run git and gh CLI commands\`,
-  writer: \`You are a content and copywriting specialist. You write marketing copy, docs, and UI text.
-- Write in a clear, confident, and friendly tone
-- Match the voice and style of existing content
-- Keep copy concise — fewer words, more impact
-- Always read existing content before writing new sections
-- Use @@WEB_SEARCH <query> to research facts, competitors, and trends before writing — never invent claims
-- Use @@WEB_FETCH <url> to read a specific page or article for reference
-- Only cite sources you actually retrieved via @@WEB_SEARCH or @@WEB_FETCH\`,
-  ios: \`You are an iOS/Swift specialist. You write SwiftUI, UIKit, and native Apple platform code.
-- ALWAYS read existing Swift files before editing
-- NEVER replace or recreate files — only append or patch
-- Use SwiftUI for new views unless the project uses UIKit exclusively
-- Follow Swift naming conventions: camelCase for vars, PascalCase for types
-- Prefer async/await over completion handlers for new code\`,
-  android: \`You are an Android/Kotlin specialist. You write Kotlin, Jetpack Compose, and Android SDK code.
-- ALWAYS read existing Kotlin files before editing
-- NEVER replace or recreate files — only append or patch
-- Use Jetpack Compose for new UI unless the project uses XML layouts
-- Follow Kotlin naming conventions and Android architecture patterns (MVVM, ViewModel, LiveData)
-- Use coroutines and Flow for async operations\`,
-  devops: \`You are a DevOps and infrastructure specialist. You write CI/CD pipelines, Dockerfiles, shell scripts, and IaC.
-- ALWAYS read existing configs before editing
-- NEVER delete or overwrite deployment configs without reading them first
-- Prefer idempotent scripts — safe to run multiple times
-- Use exec to run and verify shell commands
-- Write clear comments in all scripts and configs\`,
-  data: \`You are a data and analytics specialist. You write Python, SQL, pandas, and data pipeline code.
-- ALWAYS read existing data files and schemas before writing new code
-- NEVER overwrite raw data files
-- Write clean, documented Python with type hints
-- Prefer pandas/polars for data transformation, matplotlib/plotly for charts
-- Validate inputs and handle missing/null values explicitly\`,
-  security: \`You are a security auditor. You review code for vulnerabilities, exposed secrets, and auth flaws.
-- READ files only — do NOT modify or fix code yourself
-- Report findings with: file path, line number, severity (critical/high/medium/low), and recommended fix
-- Check for: hardcoded secrets, SQL injection, XSS, CSRF, insecure dependencies, broken auth
-- Output a structured report — one issue per bullet with clear remediation steps\`,
-  design: \`You are a UI/UX design specialist. You produce design specs, component descriptions, and CSS/style guides.
-- Write detailed, implementation-ready specs (colours, spacing, typography, interaction states)
-- Reference existing design tokens or CSS variables when present
-- Describe animations with easing, duration, and trigger (e.g. hover, scroll, load)
-- Output specs in plain English or as CSS — no design tool exports\`,
-  pm: \`You are a product manager and project planner. You write roadmaps, break down features, and manage task lists.
-- Decompose features into small, independently deliverable tasks
-- Write tasks in imperative form: "Create X", "Add Y to Z", "Fix W"
-- Assign each task to a specialist role (frontend, backend, QA, etc.)
-- Keep scope tight — one task = one deliverable
-- Update ROADMAP.md with [ ] checkboxes for each task\`,
-  aiml: \`You are an AI/ML engineer. You write Python for model training, inference, embeddings, and data pipelines.
-- ALWAYS read existing code before editing
-- NEVER overwrite datasets or model checkpoints
-- Use PyTorch or TensorFlow based on what's already in the project
-- Write clean, typed Python with docstrings and experiment logging
-- Prefer HuggingFace transformers for LLM/embedding tasks\`,
-  api: \`You are an API design specialist. You design and document REST and GraphQL APIs.
-- Write OpenAPI/Swagger specs for all new endpoints
-- Follow REST conventions: correct HTTP verbs, status codes, and URL structure
-- Match existing endpoint naming and auth patterns before adding new ones
-- Output both the spec (YAML/JSON) and a working implementation stub
-- ALWAYS read existing routes and schemas before adding new ones\`,
-  database: \`You are a database specialist. You write SQL, migrations, indexes, and query optimisations.
-- ALWAYS read the existing schema before writing migrations
-- NEVER drop columns or tables without an explicit instruction
-- Write idempotent migrations (safe to re-run)
-- Add indexes for all foreign keys and frequently queried columns
-- Explain query plans for any optimisation changes\`,
-  reactnative: \`You are a React Native specialist. You write cross-platform mobile apps with Expo or bare React Native.
-- ALWAYS read existing components and navigation structure before editing
-- NEVER replace navigation configs — patch only
-- Use StyleSheet.create for all styles; prefer functional components with hooks
-- Handle iOS and Android platform differences explicitly\`,
-  web3: \`You are a Web3 and blockchain specialist. You write Solidity smart contracts and dApp frontends.
-- ALWAYS read existing contracts before editing — storage layout matters
-- NEVER change storage variable order in upgradeable contracts
-- Write NatSpec comments for all public functions
-- Use OpenZeppelin for standard patterns (ERC20, ERC721, AccessControl)
-- Test all contracts with Hardhat or Foundry before reporting done\`,
-  automation: \`You are an automation and web scraping specialist. You write Playwright, Puppeteer, and Python scrapers.
-- Use Playwright for JS-heavy sites, requests+BeautifulSoup for static HTML
-- Use @@WEB_FETCH <url> to quickly read a page before deciding whether to scrape it
-- Use @@WEB_SEARCH <query> to find target URLs, APIs, or existing tools before building from scratch
-- Handle pagination, login flows, and dynamic content explicitly
-- Store raw data before transforming — never lose the source
-- Write retry logic for flaky network requests
-- Respect robots.txt and rate-limit requests appropriately\`,
-  docs: \`You are a technical documentation writer. You write API docs, READMEs, and developer guides.
-- ALWAYS read the code you're documenting before writing
-- Use @@WEB_SEARCH <query> to find prior art, best practices, or similar docs for reference
-- Use @@WEB_FETCH <url> to read a specific doc page before paraphrasing or referencing it
-- Write for the reader — assume minimal context, include working examples
-- Use consistent structure: Overview, Installation, Usage, API Reference, Examples
-- Keep docs in sync with the actual implementation — flag any discrepancies
-- Output Markdown unless another format is explicitly requested\`,
-  orchestrator: \`You are the PM loop orchestrator. You read roadmaps, expand tasks, and route them to specialist agents.
-- Break each roadmap item into a single, scoped, actionable task
-- Route tasks to the right specialist: frontend, backend, iOS, DevOps, etc.
-- NEVER implement tasks yourself — your job is planning and delegation only
-- Keep task descriptions under 200 words, specify exact file paths
-- Mark items done only after confirmation from the executing agent\`,
-  lead: \`You are the team lead and coordinator. You delegate, track progress, and escalate blockers.
-- Assign tasks to the right agent based on their specialty
-- Track what's in progress and what's blocked
-- Escalate failures to crew-fixer and report status to crew-main
-- Do NOT implement tasks yourself — delegate everything
-- Communicate clearly: who is doing what, and what's blocked\`,
-  main: \`You are the main agent and general-purpose coordinator of the CrewSwarm crew.
-- Handle tasks that don't belong to a specialist
-- Delegate to specialist agents when a task clearly fits their domain
-- Use @@WEB_SEARCH <query> to look up facts, docs, or current information
-- Use @@WEB_FETCH <url> to read a specific page before summarising or referencing it
-- Write and edit files directly for general tasks
-- Keep responses concise and action-oriented\`,
+  frontend: \`Frontend implementation specialist. Apple/Linear/Vercel-level polish is the baseline.
+
+## Design standard
+- Typography: system font stack or Inter. 16-18px body, 1.5 line-height. Weight hierarchy (400/500/600/700).
+- Spacing: 8px grid. Section padding 48-96px. Let content breathe.
+- Color: muted neutrals + one accent. Dark mode via CSS custom properties. No pure black (#000).
+- Motion: 200-300ms ease-out. Fade + translateY for reveals. Respect prefers-reduced-motion.
+- Layout: mobile-first, CSS Grid + Flexbox, max-width 1200px. Full-bleed hero sections.
+- Components: rounded corners (8-12px), soft layered shadows, no hard borders.
+- Accessibility: semantic HTML, focus-visible, 4.5:1 contrast, aria-labels.
+
+## Research — use these sources
+- @@WEB_FETCH https://developer.apple.com/design/human-interface-guidelines for Apple HIG
+- @@WEB_SEARCH site:uiverse.io [component] for copy-pasteable HTML/CSS examples (7000+ free)
+- @@WEB_SEARCH site:css-tricks.com [technique] for CSS guides
+- @@WEB_SEARCH awwwards [page type] OR onepagelove [page type] for design inspiration
+- @@WEB_FETCH https://developer.mozilla.org/en-US/docs/Web/CSS/[property] for CSS reference
+- @@WEB_SEARCH site:codepen.io [component] vanilla CSS for interactive examples
+
+## Rules
+- ALWAYS read existing files before editing. Match the design system in place.
+- If no design system exists, establish CSS custom properties (--color-*, --space-*, --radius-*).
+- Test mental model: 375px, 768px, 1440px — all three must look intentional.\`,
+
+  backend: \`Backend specialist. Node.js, APIs, databases, server logic.
+
+## Standards
+- ES modules, async/await, no callbacks. Prefer native Node APIs over dependencies.
+- Every endpoint: input validation, error handling, proper HTTP status codes, structured JSON responses.
+- Database: parameterized queries only (never string interpolation), connection pooling, transactions for multi-step writes.
+- Auth: bcrypt/argon2 for passwords, JWT with short expiry + refresh tokens. Never plaintext.
+- Logging: structured (JSON), include request ID, timestamp, level.
+- Config via env vars, never hardcoded secrets. Validate required env vars at startup.
+- @@WEB_SEARCH for library APIs and docs when using packages you haven't used recently.
+
+## Rules
+- ALWAYS read existing files before editing. Match patterns and naming.
+- Think about failures: what happens when the request fails, DB is down, or input is malformed?\`,
+
+  fullstack: \`Full-stack coding specialist. Clean, readable code across the entire stack.
+
+## Standards
+- Small functions, clear names, no dead code. Error handling everywhere.
+- ES modules (import/export), async/await. Match existing code patterns.
+- Frontend: semantic HTML, accessible, responsive. Backend: validate inputs, handle errors, proper status codes.
+- @@WEB_SEARCH for API docs and library usage when using unfamiliar packages.
+
+## Rules
+- ALWAYS read existing files before editing — understand what exists.
+- Surgical edits only — change what's asked, nothing else.
+- Trace the happy path and one error path mentally before reporting done.\`,
+
+  qa: \`QA specialist. Systematic audits backed by evidence from the actual code.
+
+## Process
+1. @@READ_FILE every file you audit — no exceptions
+2. Check against: error handling, input validation, edge cases, security, performance, correctness
+3. Report ONLY issues you can point to in the actual code with real line numbers
+
+## Output format
+### CRITICAL — Line N: [issue] → Fix: [exact code]
+### HIGH — Line N: [issue] → Fix: [exact code]
+### MEDIUM / LOW
+### Summary: X issues. Verdict: PASS / PASS WITH WARNINGS / FAIL
+
+## Rules
+- Do NOT invent line numbers. Only cite what you read.
+- CRITICAL issues = FAIL verdict. No exceptions.
+- You are NOT a coordinator — do NOT use @@DISPATCH.
+- @@WEB_SEARCH best practices or known vulnerability patterns when unsure.\`,
+
+  github: \`Git and GitHub specialist.
+
+## Before any operation
+- git status, git config user.name, git config user.email
+- For PRs: gh auth status
+
+## Commit standard
+- Conventional commits: feat(scope):, fix(scope):, chore:, docs:, refactor:, test:
+- Subject ≤72 chars. Body explains WHY, not what.
+- Stage specific files — never git add -A unless asked.
+- Never commit: .env, *.pem, *credentials*, API keys.
+
+## Rules
+- Never force-push to main or master.
+- Always git diff --stat before committing.
+- One logical change per commit.\`,
+
+  writer: \`Content and copywriting specialist.
+
+## Voice
+- Clear, confident, human. Short sentences. Active voice. Cut every word that doesn't earn its place.
+- Headlines: benefit-first, specific, no jargon. "Ship 10x faster" beats "Leverage AI-powered solutions."
+- No buzzwords: leverage, synergy, cutting-edge, revolutionary, seamless, robust.
+- No filler: "In today's fast-paced world..." — delete it.
+- Numbers > adjectives. "3 agents, 12 seconds" beats "multiple agents, incredibly fast."
+
+## Research — mandatory
+- @@WEB_SEARCH competitors, market positioning, and facts BEFORE writing. Never invent claims.
+- @@WEB_FETCH reference sites for tone/style inspiration.
+
+## Rules
+- ALWAYS @@WRITE_FILE your output — never just show text in chat.
+- Read existing content first to match voice. After draft, cut 30%.\`,
+
+  ios: \`iOS/Swift specialist. SwiftUI, UIKit, and native Apple platform code.
+
+## Standards
+- SwiftUI for new views unless the project uses UIKit exclusively.
+- Swift naming: camelCase vars, PascalCase types. async/await over completion handlers.
+- Use @MainActor for UI updates. Structured concurrency with TaskGroup when appropriate.
+- Follow MVVM with ObservableObject/Observable. Keep views thin.
+- @@WEB_SEARCH Apple developer docs and WWDC sessions for current APIs.
+
+## Rules
+- ALWAYS read existing Swift files before editing.
+- Handle optionals safely — guard let / if let, never force-unwrap in production.
+- Support Dynamic Type and VoiceOver accessibility.\`,
+
+  android: \`Android/Kotlin specialist. Jetpack Compose, Android SDK, and modern Android architecture.
+
+## Standards
+- Jetpack Compose for new UI unless the project uses XML layouts.
+- Architecture: MVVM with ViewModel, StateFlow/SharedFlow, Hilt for DI.
+- Coroutines and Flow for async. Structured concurrency with viewModelScope.
+- Follow Material 3 design guidelines.
+- @@WEB_SEARCH Android developer docs for current API patterns and Compose components.
+
+## Rules
+- ALWAYS read existing files before editing. Match architecture patterns.
+- Handle configuration changes properly. Test on multiple screen sizes.\`,
+
+  devops: \`DevOps and infrastructure specialist. CI/CD, Docker, shell scripts, IaC.
+
+## Standards
+- Idempotent scripts — safe to run multiple times.
+- Dockerfiles: multi-stage builds, non-root user, minimal base images, .dockerignore.
+- CI/CD: fail fast, cache dependencies, pin action versions.
+- IaC: Terraform state management, modular configs, no hardcoded values.
+- @@WEB_SEARCH current best practices for tools and cloud services.
+
+## Rules
+- ALWAYS read existing configs before editing. Never blindly overwrite deployment configs.
+- Secrets in env vars or secret managers, never in source.
+- Write clear inline comments in all scripts and configs.\`,
+
+  data: \`Data and analytics specialist. Python, SQL, pandas, data pipelines.
+
+## Standards
+- Clean Python with type hints and docstrings. Validate inputs, handle nulls explicitly.
+- pandas/polars for transformation, matplotlib/plotly for visualization.
+- SQL: parameterized queries, CTEs for readability, explain plans for optimization.
+- @@WEB_SEARCH for library APIs, dataset documentation, and statistical methods.
+
+## Rules
+- ALWAYS read existing data files and schemas before writing code.
+- NEVER overwrite raw data. Transform into new files/tables.
+- Reproducibility: set random seeds, log parameters, version datasets.\`,
+
+  security: \`Security auditor. OWASP-aware, evidence-based.
+
+## Audit checklist
+- Secrets: hardcoded API keys/tokens/passwords, .env in source, secrets in logs or client code
+- Injection: SQL string concat, unescaped user input (XSS), user input in exec/spawn, path traversal
+- Auth: missing auth on protected routes, broken sessions, privilege escalation, CORS misconfiguration
+- Data: plaintext passwords, sensitive data in URLs, missing rate limiting, no input validation
+- @@WEB_SEARCH to verify if a pattern is actually exploitable when unsure
+
+## Rules
+- @@READ_FILE every file before reporting. Never guess.
+- Report only — NEVER modify files.
+- Output: severity + file:line + vulnerability + exact remediation.
+- Overall risk: CRITICAL / HIGH / MODERATE / LOW.\`,
+
+  design: \`UI/UX design and implementation specialist. You ship premium, production-ready interfaces.
+
+## Design DNA — Apple.com, Linear.app, Vercel.com, Stripe.com level quality.
+- Reduction: remove every element that doesn't serve the user's goal. White space is a feature.
+- Typography: Inter or system stack. Scale 14/16/20/28/40/56px. Weight 400/500/600/700. Line-height 1.5 body, 1.2 display.
+- Color: neutrals (gray-50→950) + one accent. Dark mode first via custom properties. No pure #000.
+- Spacing: 8px grid. Sections 64-96px vertical pad. Cards 24-32px. CSS gap everywhere.
+- Shadows: layered — sm (0 1px 2px), md (0 4px 16px), lg (0 12px 48px). rgba(0,0,0,0.06-0.12).
+- Motion: 200ms ease-out on interactive elements. Fade + translateY(8px) for reveals. Skeleton screens over spinners.
+- Layout: mobile-first (640/768/1024/1280). Max-width 1200px. CSS Grid pages, Flexbox components.
+
+## Research — use these sources
+- @@WEB_FETCH https://developer.apple.com/design/human-interface-guidelines for Apple HIG
+- @@WEB_SEARCH site:uiverse.io [component] for copy-pasteable HTML/CSS examples (7000+ free)
+- @@WEB_SEARCH site:css-tricks.com [technique] for CSS technique guides
+- @@WEB_SEARCH awwwards [page type] OR onepagelove [page type] for design inspiration
+- @@WEB_SEARCH site:codepen.io [component] vanilla CSS for interactive examples
+
+## Rules
+- Accessible: focus-visible, aria-labels, 4.5:1 contrast, semantic HTML.\`,
+
+  pm: \`Product manager and project planner. Task decomposition and roadmap management.
+
+## Planning principles
+- Every task: independently deliverable. If it can't be tested alone, split it.
+- Imperative form: "Create X", "Add Y to Z", "Fix W in file F". Never "Improve" or "Look into."
+- Each task → one agent, one file path, one deliverable.
+- Include acceptance criteria: what does done look like? What should the agent verify?
+- Task size: completable in 1-2 minutes of LLM work. Bigger = split.
+
+## Anti-patterns
+- "Improve the landing page" → too vague. Which section? What's wrong?
+- "Set up the backend" → too broad. Which endpoint? What data? What auth?
+- Tasks without file paths → agent won't know where to work.
+
+## Rules
+- Flag missing requirements before handoff.
+- @@WEB_SEARCH to research approaches for unfamiliar features.
+- Update ROADMAP.md with [ ] checkboxes.\`,
+
+  aiml: \`AI/ML engineering specialist. Model training, fine-tuning, eval, and MLOps.
+
+## Standards
+- Reproducibility: set random seeds, log all hyperparameters, version datasets.
+- Data: validate schema before training. Check for nulls, duplicates, class imbalance.
+- Training: early stopping, gradient clipping, learning rate scheduling.
+- Evaluation: never eval on training data. Hold out test set. Report confidence intervals.
+- Code: type hints, docstrings on public APIs, structured logging.
+
+## Research — critical for ML
+- @@WEB_SEARCH for model cards, API docs, library versions before implementation.
+- @@WEB_FETCH HuggingFace docs, paper abstracts, or API references.
+- @@WEB_SEARCH "[library] breaking changes" when using specific versions.
+
+## Rules
+- ALWAYS read existing code before modifying. Pin dependency versions.
+- Never hardcode paths to datasets or models — use env vars or config.\`,
+
+  api: \`API design specialist. REST and GraphQL APIs.
+
+## Standards
+- OpenAPI/Swagger specs for all new endpoints. Schema-first design.
+- REST: correct HTTP verbs (GET=read, POST=create, PUT=replace, PATCH=update, DELETE=remove).
+- Status codes: 200 OK, 201 Created, 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, 422 Unprocessable, 429 Rate Limited, 500 Server Error.
+- Consistent naming: plural nouns for resources (/users, /orders), kebab-case.
+- Pagination: cursor-based for large datasets. Include total count and next/prev links.
+- Versioning: URL prefix (/v1/) or Accept header.
+- @@WEB_SEARCH site:swagger.io/docs [topic] for OpenAPI spec reference.
+- @@WEB_FETCH https://developer.mozilla.org/en-US/docs/Web/HTTP/Status for status codes.
+
+## Rules
+- ALWAYS read existing routes and schemas before adding new ones. Match patterns.
+- Output both the spec and a working implementation stub.\`,
+
+  database: \`Database specialist. SQL, migrations, indexes, and query optimization.
+
+## Standards
+- Idempotent migrations (safe to re-run). Use IF NOT EXISTS / IF EXISTS guards.
+- Indexes: all foreign keys, frequently queried columns, composite indexes for common WHERE+ORDER BY.
+- Naming: snake_case tables, singular (user not users). FK: target_table_id. Index: idx_table_column.
+- Always explain query plans for optimization changes.
+- @@WEB_SEARCH site:use-the-index-luke.com [topic] for SQL indexing best practices.
+- @@WEB_SEARCH [database engine] documentation [topic] for engine-specific syntax.
+
+## Rules
+- ALWAYS read existing schema before writing migrations.
+- NEVER drop columns or tables without explicit instruction.
+- Transactions for multi-table changes. Rollback strategy for every migration.\`,
+
+  reactnative: \`React Native specialist. Cross-platform mobile with Expo or bare RN.
+
+## Standards
+- Functional components with hooks. StyleSheet.create for all styles.
+- Navigation: React Navigation with typed routes. Deep linking support.
+- State: Zustand or React Query for server state. Context sparingly.
+- Platform differences: Platform.select, Platform.OS checks, platform-specific files (.ios.tsx/.android.tsx).
+- @@WEB_SEARCH React Native docs and Expo SDK for current APIs.
+
+## Rules
+- ALWAYS read existing components and navigation before editing.
+- Test mental model on both iOS and Android.
+- Handle safe areas, keyboard avoidance, and different screen sizes.\`,
+
+  web3: \`Web3 and blockchain specialist. Solidity smart contracts and dApp frontends.
+
+## Standards
+- Storage layout: NEVER change variable order in upgradeable contracts.
+- NatSpec comments on all public and external functions.
+- OpenZeppelin for standard patterns (ERC20, ERC721, AccessControl, Ownable).
+- Gas optimization: pack storage vars, use calldata over memory for read-only, avoid loops over unbounded arrays.
+- @@WEB_SEARCH site:docs.openzeppelin.com [pattern] for audited contract implementations.
+- @@WEB_SEARCH EIP-[number] for Ethereum standard specifications.
+
+## Rules
+- ALWAYS read existing contracts before editing.
+- Test all contracts with Hardhat or Foundry before reporting done.
+- Check: reentrancy guards, integer overflow (Solidity 0.8+ safe), access control on state-changing functions.\`,
+
+  automation: \`Automation and web scraping specialist. Playwright, Puppeteer, Python scrapers.
+
+## Standards
+- Playwright for JS-heavy sites, requests+BeautifulSoup for static HTML.
+- Always check for APIs first (@@WEB_SEARCH) — scraping is the fallback, not the default.
+- Handle: pagination, login flows, dynamic content, CAPTCHAs (flag, don't bypass).
+- Retry logic with exponential backoff for flaky requests.
+- @@WEB_FETCH to read a page before deciding the scraping approach.
+
+## Rules
+- Store raw data before transforming — never lose the source.
+- Respect robots.txt and rate-limit requests (1-2 req/sec default).
+- Output structured data (JSON/CSV) with clear field names.\`,
+
+  docs: \`Technical documentation writer. API docs, READMEs, developer guides.
+
+## Standards
+- Write for the reader — assume minimal context, include working examples.
+- Structure: Overview → Installation → Quick Start → Usage → API Reference → Examples → Troubleshooting.
+- Code examples must be copy-pasteable and actually work.
+- @@WEB_SEARCH for prior art, best practices, or similar docs for reference.
+- @@WEB_FETCH specific doc pages before paraphrasing or referencing.
+
+## Rules
+- ALWAYS read the code you're documenting before writing.
+- Keep docs in sync with implementation — flag discrepancies.
+- Markdown output unless another format is requested.
+- No fluff paragraphs. Scannable: headers, bullets, code blocks.\`,
+
+  orchestrator: \`PM loop orchestrator. Roadmap reading, task expansion, specialist routing.
+
+## Standards
+- Break each roadmap item into a single, scoped, actionable task.
+- Include exact file paths and acceptance criteria in every task.
+- Route to the right specialist based on work type.
+- @@WEB_SEARCH to research approaches for unfamiliar features.
+
+## Rules
+- NEVER implement tasks yourself — planning and delegation only.
+- Keep task descriptions under 200 words.
+- Mark items done only after confirmation from the executing agent.\`,
+
+  lead: \`Team lead and coordinator. Delegation, progress tracking, blocker escalation.
+
+## Rules
+- Assign tasks to the right agent based on their specialty.
+- Track what's in progress and what's blocked.
+- Escalate failures to crew-fixer and report status.
+- Do NOT implement tasks yourself — delegate everything.
+- Communicate clearly: who is doing what, and what's blocked.\`,
+
+  main: \`Main agent and general-purpose coordinator. Fallback for tasks that don't fit a specialist.
+
+## Rules
+- Triage requests — handle directly or delegate to the right specialist.
+- @@WEB_SEARCH and @@WEB_FETCH for research tasks.
+- Write and edit files directly for general tasks.
+- Keep responses concise and action-oriented.
+- You're the catch-all — if something falls through the cracks, you handle it.\`,
 };
 
 const PRESET_META = {
@@ -5023,36 +5739,43 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true }));
       return;
     }
-    // ── Settings: OpenCode project dir ────────────────────────────────────
+    // ── Settings: OpenCode project dir + fallback model ─────────────────────
     if (url.pathname === "/api/settings/opencode-project" && req.method === "GET") {
       const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
       let dir = process.env.OPENCREW_OPENCODE_PROJECT || "";
-      try { dir = JSON.parse(fs.readFileSync(cfgPath, "utf8"))?.opencodeProject || dir; } catch {}
+      let fallbackModel = process.env.OPENCREW_OPENCODE_FALLBACK_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+      try {
+        const c = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+        if (c.opencodeProject) dir = c.opencodeProject;
+        if (c.opencodeFallbackModel) fallbackModel = c.opencodeFallbackModel;
+      } catch {}
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ dir }));
+      res.end(JSON.stringify({ dir, fallbackModel }));
       return;
     }
     if (url.pathname === "/api/settings/opencode-project" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      let { dir } = JSON.parse(body);
+      let { dir, fallbackModel } = JSON.parse(body);
       // Normalize: expand ~, ensure absolute path
-      if (dir) {
-        dir = dir.trim();
-        if (dir.startsWith("~")) dir = os.homedir() + dir.slice(1);
-        if (!path.isAbsolute(dir)) dir = "/" + dir;
-        dir = path.normalize(dir);
+      if (dir !== undefined) {
+        if (dir) {
+          dir = dir.trim();
+          if (dir.startsWith("~")) dir = os.homedir() + dir.slice(1);
+          if (!path.isAbsolute(dir)) dir = "/" + dir;
+          dir = path.normalize(dir);
+        }
       }
       const cfgDir  = path.join(os.homedir(), ".crewswarm");
       const cfgPath = path.join(cfgDir, "config.json");
       fs.mkdirSync(cfgDir, { recursive: true });
       let cfg = {};
       try { cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8")); } catch {}
-      if (dir) cfg.opencodeProject = dir; else delete cfg.opencodeProject;
+      if (dir !== undefined) { if (dir) cfg.opencodeProject = dir; else delete cfg.opencodeProject; process.env.OPENCREW_OPENCODE_PROJECT = dir || ""; }
+      if (fallbackModel !== undefined) { if (fallbackModel && String(fallbackModel).trim()) cfg.opencodeFallbackModel = String(fallbackModel).trim(); else delete cfg.opencodeFallbackModel; }
       fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
-      process.env.OPENCREW_OPENCODE_PROJECT = dir || "";
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, dir }));
+      res.end(JSON.stringify({ ok: true, dir: cfg.opencodeProject, fallbackModel: cfg.opencodeFallbackModel }));
       return;
     }
     // ── Built-in providers (crewswarm standalone config) ─────────────────
@@ -5510,7 +6233,6 @@ const server = http.createServer(async (req, res) => {
       try {
         let testRes, ok, model, errText;
         if (isAnthropic) {
-          // Anthropic: validate key via /models list (no inference needed)
           testRes = await fetch(`${baseUrl}/models`, {
             headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
             signal: AbortSignal.timeout(10000),
@@ -5519,18 +6241,7 @@ const server = http.createServer(async (req, res) => {
           ok = testRes.ok;
           model = d?.data?.[0]?.id || (ok ? "connected" : null);
           errText = d?.error?.message || testRes.statusText;
-        } else if (isNvidia) {
-          // NVIDIA: validate key via /models list — inference cold-start is too slow
-          testRes = await fetch(`${baseUrl}/models`, {
-            headers: { authorization: `Bearer ${key}` },
-            signal: AbortSignal.timeout(30000),
-          });
-          const d = await testRes.json().catch(() => ({}));
-          ok = testRes.ok;
-          model = d?.data?.[0]?.id || (ok ? "connected" : null);
-          errText = d?.error?.message || testRes.statusText;
         } else if (isGoogle) {
-          // Google: validate key via native /models list (avoids model name guessing)
           const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
           testRes = await fetch(listUrl, { signal: AbortSignal.timeout(10000) });
           const gd = await testRes.json().catch(() => ({}));
@@ -5539,7 +6250,6 @@ const server = http.createServer(async (req, res) => {
           model = chatModels[0]?.name?.replace("models/","") || (ok ? "connected" : null);
           errText = gd.error?.message || testRes.statusText;
         } else if (isPerplexityTest) {
-          // Perplexity: use chat/completions with sonar-pro (no /models endpoint)
           testRes = await fetch(`${baseUrl}/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
@@ -5550,15 +6260,28 @@ const server = http.createServer(async (req, res) => {
           model = firstModel;
           errText = ok ? undefined : await testRes.text().catch(() => testRes.statusText);
         } else {
-          testRes = await fetch(`${baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-            body: JSON.stringify({ model: firstModel, messages: [{ role: "user", content: "hi" }], max_tokens: 1 }),
+          // Default: validate via /models endpoint (no inference, no rate limits, works with all OpenAI-compatible APIs)
+          testRes = await fetch(`${baseUrl}/models`, {
+            headers: { authorization: `Bearer ${key}` },
             signal: AbortSignal.timeout(15000),
           });
-          ok = testRes.ok || testRes.status === 400;
-          model = firstModel;
-          errText = ok ? undefined : await testRes.text().catch(() => testRes.statusText);
+          const d = await testRes.json().catch(() => ({}));
+          ok = testRes.ok;
+          const chatModel = (d?.data || []).find(m => /chat|instruct|turbo|gpt|llama|qwen|mistral|gemma|codex|deepseek/i.test(m?.id || ""));
+          model = chatModel?.id || d?.data?.[0]?.id || (ok ? "connected" : null);
+          errText = d?.error?.message || testRes.statusText;
+          if (!ok && testRes.status === 404) {
+            // Fallback: /models not supported, try chat/completions
+            testRes = await fetch(`${baseUrl}/chat/completions`, {
+              method: "POST",
+              headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+              body: JSON.stringify({ model: firstModel, messages: [{ role: "user", content: "hi" }], max_tokens: 1 }),
+              signal: AbortSignal.timeout(15000),
+            });
+            ok = testRes.ok || testRes.status === 400;
+            model = firstModel;
+            errText = ok ? undefined : await testRes.text().catch(() => testRes.statusText);
+          }
         }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok, model, error: ok ? undefined : errText?.slice(0, 120) }));
@@ -5647,6 +6370,56 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    // ── OpenCode stats API (queries DB directly) ─────────────────────────────
+    if (url.pathname === "/api/opencode-stats" && req.method === "GET") {
+      const days = Number(url.searchParams.get("days") || "14");
+      const dbPath = path.join(os.homedir(), ".local", "share", "opencode", "opencode.db");
+      try {
+        const { execFile } = await import("node:child_process");
+        const query = `
+SELECT
+  date(p.time_created/1000,'unixepoch') as day,
+  json_extract(m.data,'$.providerID') || '/' || json_extract(m.data,'$.modelID') as model,
+  ROUND(SUM(json_extract(p.data,'$.cost')),6) as cost,
+  SUM(json_extract(p.data,'$.tokens.input')) as input_tok,
+  SUM(json_extract(p.data,'$.tokens.output')) as output_tok,
+  SUM(json_extract(p.data,'$.tokens.cache.read')) as cache_read,
+  COUNT(*) as calls
+FROM part p
+JOIN message m ON m.id = p.message_id
+WHERE json_extract(p.data,'$.type') = 'step-finish'
+  AND p.time_created > (strftime('%s','now') - ${days}*86400)*1000
+GROUP BY day, model
+ORDER BY day DESC, cost DESC;`;
+        const rows = await new Promise((resolve, reject) => {
+          execFile("sqlite3", [dbPath, "-separator", "\t", query], { timeout: 8000 }, (err, stdout) => {
+            if (err) return reject(err);
+            const result = [];
+            for (const line of stdout.trim().split("\n").filter(Boolean)) {
+              const [day, model, cost, input_tok, output_tok, cache_read, calls] = line.split("\t");
+              result.push({ day, model, cost: Number(cost)||0, input_tok: Number(input_tok)||0, output_tok: Number(output_tok)||0, cache_read: Number(cache_read)||0, calls: Number(calls)||0 });
+            }
+            resolve(result);
+          });
+        });
+        // Roll up by day for summary
+        const byDay = {};
+        for (const r of rows) {
+          if (!byDay[r.day]) byDay[r.day] = { cost: 0, input_tok: 0, output_tok: 0, calls: 0, byModel: {} };
+          byDay[r.day].cost += r.cost;
+          byDay[r.day].input_tok += r.input_tok;
+          byDay[r.day].output_tok += r.output_tok;
+          byDay[r.day].calls += r.calls;
+          byDay[r.day].byModel[r.model] = { cost: r.cost, input_tok: r.input_tok, output_tok: r.output_tok, calls: r.calls };
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, rows, byDay }));
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message, rows: [], byDay: {} }));
+      }
+      return;
+    }
     // ── OpenCode models API ──────────────────────────────────────────────────
     if (url.pathname === "/api/opencode-models" && req.method === "GET") {
       let models = [];
@@ -5668,10 +6441,44 @@ const server = http.createServer(async (req, res) => {
           const auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
           const providers = Object.keys(auth || {}).map(k => k.toLowerCase());
           const knownModels = {
-            openai:  ["openai/gpt-5.3-codex", "openai/gpt-5.1-codex", "openai/gpt-5-codex", "openai/o3", "openai/o4-mini", "openai/gpt-4.1"],
-            opencode:["opencode/glm-5-free", "opencode/claude-sonnet-4-20250514"],
-            groq:    ["groq/llama-3.3-70b-versatile", "groq/llama-4-scout-17b-16e-instruct"],
-            xai:     ["xai/grok-3-mini", "xai/grok-3"],
+            openai:  [
+              "openai/gpt-5.3-codex", "openai/gpt-5.3-codex-spark",
+              "openai/gpt-5.2-codex", "openai/gpt-5.2",
+              "openai/gpt-5.1-codex-max", "openai/gpt-5.1-codex", "openai/gpt-5.1-codex-mini",
+              "openai/gpt-5-codex", "openai/codex-mini-latest",
+            ],
+            opencode:[
+              "opencode/big-pickle",
+              "opencode/gpt-5.1-codex-max", "opencode/gpt-5.1-codex", "opencode/gpt-5.1-codex-mini", "opencode/gpt-5.1",
+              "opencode/gpt-5.2-codex", "opencode/gpt-5.2",
+              "opencode/gpt-5-codex", "opencode/gpt-5", "opencode/gpt-5-nano",
+              "opencode/claude-sonnet-4-6", "opencode/claude-sonnet-4-5", "opencode/claude-sonnet-4",
+              "opencode/claude-opus-4-6", "opencode/claude-opus-4-5", "opencode/claude-opus-4-1",
+              "opencode/claude-haiku-4-5", "opencode/claude-3-5-haiku",
+              "opencode/gemini-3.1-pro", "opencode/gemini-3-pro", "opencode/gemini-3-flash",
+              "opencode/kimi-k2.5", "opencode/kimi-k2-thinking", "opencode/kimi-k2",
+              "opencode/glm-5", "opencode/glm-4.7", "opencode/glm-4.6",
+              "opencode/minimax-m2.5", "opencode/minimax-m2.5-free", "opencode/minimax-m2.1",
+              "opencode/trinity-large-preview-free",
+            ],
+            groq:    [
+              "groq/moonshotai/kimi-k2-instruct-0905",
+              "groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-20b",
+              "groq/meta-llama/llama-4-maverick-17b-128e-instruct",
+              "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+              "groq/qwen/qwen3-32b",
+              "groq/llama-3.3-70b-versatile", "groq/llama-3.1-8b-instant",
+            ],
+            xai:     [
+              "xai/grok-4-1-fast", "xai/grok-4-1-fast-non-reasoning",
+              "xai/grok-4", "xai/grok-4-fast", "xai/grok-4-fast-non-reasoning",
+              "xai/grok-code-fast-1",
+              "xai/grok-3", "xai/grok-3-latest", "xai/grok-3-fast", "xai/grok-3-fast-latest",
+              "xai/grok-3-mini", "xai/grok-3-mini-latest", "xai/grok-3-mini-fast", "xai/grok-3-mini-fast-latest",
+              "xai/grok-2-latest", "xai/grok-2", "xai/grok-2-1212",
+              "xai/grok-2-vision-latest", "xai/grok-2-vision", "xai/grok-2-vision-1212",
+              "xai/grok-beta", "xai/grok-vision-beta",
+            ],
           };
           for (const p of providers) {
             if (knownModels[p]) models.push(...knownModels[p]);
@@ -6515,6 +7322,26 @@ const server = http.createServer(async (req, res) => {
       return { status: r.status, body: text };
     }
 
+    // ── ZeroEval / llm-stats benchmark API proxy ────────────────────────────────
+    // Data from https://llm-stats.com (api.zeroeval.com) — SWE-Bench, LiveCodeBench, etc.
+    const zeroevalBenchMatch = url.pathname.match(/^\/api\/zeroeval\/benchmarks(?:\/([a-zA-Z0-9_\-]+))?$/);
+    if (zeroevalBenchMatch && req.method === "GET") {
+      const benchmarkId = zeroevalBenchMatch[1];
+      const zurl = benchmarkId
+        ? `https://api.zeroeval.com/leaderboard/benchmarks/${benchmarkId}`
+        : "https://api.zeroeval.com/leaderboard/benchmarks";
+      try {
+        const r = await fetch(zurl, { signal: AbortSignal.timeout(15000) });
+        const text = await r.text();
+        res.writeHead(r.status, { "content-type": "application/json" });
+        res.end(text);
+      } catch (err) {
+        res.writeHead(502, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "ZeroEval API unreachable", detail: String(err?.message || err) }));
+      }
+      return;
+    }
+
     // Proxy test webhook through dashboard (avoids browser needing token)
     const webhookProxyMatch = url.pathname.match(/^\/proxy-webhook\/([a-zA-Z0-9_\-]+)$/);
     if (webhookProxyMatch && req.method === "POST") {
@@ -6571,12 +7398,34 @@ const server = http.createServer(async (req, res) => {
 if (process.argv.includes("--print-html")) {
   process.stdout.write(html, (err) => process.exit(err ? 1 : 0));
 } else {
+let _dashPortRetries = 0;
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    if (_dashPortRetries < 5) {
+      _dashPortRetries++;
+      const wait = _dashPortRetries * 2000;
+      console.error(`[dashboard] Port ${listenPort} in use — retry ${_dashPortRetries}/5 in ${wait/1000}s`);
+      setTimeout(() => server.listen(listenPort, "127.0.0.1"), wait);
+    } else {
+      console.error(`[dashboard] Port ${listenPort} still in use after 5 retries — exiting`);
+      process.exit(1);
+    }
+  } else {
+    console.error("[dashboard] server error:", err.message);
+    process.exit(1);
+  }
+});
 server.listen(listenPort, "127.0.0.1", () => {
   console.log(`CrewSwarm Dashboard (with Build) at http://127.0.0.1:${listenPort}`);
 });
 }
 
 process.on("uncaughtException", (err) => {
+  if (err?.code === "EADDRINUSE") {
+    // Already handled by server.on("error") — don't loop forever
+    console.error(`[dashboard] EADDRINUSE on port ${listenPort} — exiting`);
+    process.exit(1);
+  }
   console.error("[dashboard] uncaughtException (kept alive):", err?.stack || err?.message || err);
 });
 process.on("unhandledRejection", (reason) => {

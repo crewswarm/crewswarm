@@ -3,8 +3,6 @@
 # Run from repo root: ./scripts/restart-all-from-repo.sh
 # Optional: pass --no-dashboard to skip starting the dashboard.
 
-set -euo pipefail
-
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 export CREWSWARM_DIR="$REPO_DIR"
@@ -12,12 +10,28 @@ export OPENCLAW_DIR="$REPO_DIR"   # backward compat for scripts that only check 
 export NODE="${NODE:-node}"
 
 echo "Stopping existing CrewSwarm processes..."
-pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null || true
-pkill -f "opencrew-rt-daemon.mjs" 2>/dev/null || true
-pkill -f "crew-lead.mjs" 2>/dev/null || true
-pkill -f "scripts/dashboard.mjs" 2>/dev/null || true
-pkill -f "opencode serve" 2>/dev/null || true
+# Kill by port first (catches zombies that survive name-based pkill)
+lsof -ti :5010  2>/dev/null | xargs kill -9 2>/dev/null; true
+lsof -ti :4319  2>/dev/null | xargs kill -9 2>/dev/null; true
+lsof -ti :18889 2>/dev/null | xargs kill -9 2>/dev/null; true
+lsof -ti :4096  2>/dev/null | xargs kill -9 2>/dev/null; true
+# Kill by process name
+pkill -9 -f "gateway-bridge.mjs" 2>/dev/null; true
+pkill -9 -f "opencrew-rt-daemon.mjs" 2>/dev/null; true
+pkill -9 -f "crew-lead.mjs" 2>/dev/null; true
+pkill -9 -f "scripts/dashboard.mjs" 2>/dev/null; true
+pkill -9 -f "opencode serve" 2>/dev/null; true
+# Remove stale PID files
+find /tmp -maxdepth 1 -name "bridge-*.pid" -delete 2>/dev/null; true
 sleep 2
+# Confirm ports are clear before starting
+for port in 5010 4319 18889 4096; do
+  HELD=$(lsof -ti :$port 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$HELD" -gt 0 ]; then
+    echo "  WARNING: port $port still held by $HELD process(es) — force killing..."
+    lsof -ti :$port 2>/dev/null | xargs kill -9 2>/dev/null; true
+  fi
+done
 
 echo "Starting OpenCode server (port 4096)..."
 OPENCODE_BIN="$(command -v opencode 2>/dev/null)" || OPENCODE_BIN="/usr/local/bin/opencode"

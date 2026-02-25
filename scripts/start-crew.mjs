@@ -53,23 +53,62 @@ function getAgentRtId(agentId) {
   return normalizeRtAgentId(agentId);
 }
 
+const PID_DIR = os.tmpdir();
+
+function bridgePidFile(agentId) {
+  return path.join(PID_DIR, `bridge-${agentId}.pid`);
+}
+
+function isProcessAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
 function runningBridges() {
+  const agents = new Set();
+  // Primary: check PID files (reliable on macOS where ps doesn't show env vars)
   try {
-    const out = execSync("ps aux", { encoding: "utf8" });
-    const lines = out.split("\n").filter(l => l.includes("gateway-bridge.mjs --rt-daemon"));
-    const agents = new Set();
-    for (const line of lines) {
-      const m = line.match(/OPENCREW_RT_AGENT=["']?([^\s"']+)/);
-      if (m) agents.add(m[1]);
+    const files = fs.readdirSync(PID_DIR).filter(f => f.startsWith("bridge-") && f.endsWith(".pid"));
+    for (const f of files) {
+      const agentId = f.replace(/^bridge-/, "").replace(/\.pid$/, "");
+      try {
+        const pid = parseInt(fs.readFileSync(path.join(PID_DIR, f), "utf8").trim(), 10);
+        if (pid && isProcessAlive(pid)) {
+          agents.add(agentId);
+        } else {
+          fs.unlinkSync(path.join(PID_DIR, f)); // stale PID file
+        }
+      } catch { /* unreadable, skip */ }
     }
-    return agents;
-  } catch { return new Set(); }
+  } catch { /* PID_DIR unreadable, fall through */ }
+  // Fallback: ps-based detection (works if env vars visible, e.g. Linux)
+  if (agents.size === 0) {
+    try {
+      const out = execSync("ps aux", { encoding: "utf8" });
+      const lines = out.split("\n").filter(l => l.includes("gateway-bridge.mjs --rt-daemon"));
+      for (const line of lines) {
+        const m = line.match(/OPENCREW_RT_AGENT=["']?([^\s"']+)/);
+        if (m) agents.add(m[1]);
+      }
+    } catch { /* ignore */ }
+  }
+  return agents;
 }
 
 const args = process.argv.slice(2);
 
 if (args.includes("--stop")) {
   console.log("Stopping all bridge daemons…");
+  // Kill by PID files first (precise), then sweep with pkill
+  try {
+    const pidFiles = fs.readdirSync(PID_DIR).filter(f => f.startsWith("bridge-") && f.endsWith(".pid"));
+    for (const f of pidFiles) {
+      try {
+        const pid = parseInt(fs.readFileSync(path.join(PID_DIR, f), "utf8").trim(), 10);
+        if (pid) try { process.kill(pid, 9); } catch { /* already dead */ }
+        fs.unlinkSync(path.join(PID_DIR, f));
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
   try { execSync("pkill -9 -f 'gateway-bridge.mjs --rt-daemon'", { stdio: "ignore" }); } catch {}
   console.log("✓ Done");
   process.exit(0);
@@ -168,6 +207,8 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
     env,
   });
   proc.unref();
+  // Write PID file so runningBridges() can reliably detect this process on macOS
+  try { fs.writeFileSync(bridgePidFile(rtId), String(proc.pid)); } catch { /* best-effort */ }
   console.log(`  ✓ Spawned ${rtId} (pid ${proc.pid})`);
 }
 

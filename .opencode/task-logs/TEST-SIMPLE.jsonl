@@ -1,0 +1,2 @@
+{"type":"test.start","taskId":"TEST-SIMPLE","instruction":"Create a simple test function in test-output/simple.js","files":["test-output/simple.js"],"ts":"2026-02-19T09:41:46.798Z"}
+{"type":"test.complete","taskId":"TEST-SIMPLE","durationMs":3174,"exitCode":2,"validation":{"hasJson":false,"isValidJson":false,"parseError":null,"hasFilesChanged":null,"hasResult":null,"hasSummary":null,"filesCount":0},"fileChecks":[],"parsedResult":null,"outputLength":0,"ts":"2026-02-19T09:41:49.978Z"}

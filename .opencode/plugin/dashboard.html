@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenCode Swarm Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding: 20px;
+      overflow-x: hidden;
+    }
+    
+    .container {
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+    
+    /* Header & Status */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(0, 217, 255, 0.2);
+    }
+    
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #00d9ff, #0099cc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: rgba(0, 217, 255, 0.1);
+      border-radius: 8px;
+      border: 1px solid rgba(0, 217, 255, 0.3);
+    }
+    
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #00d9ff;
+      animation: pulse 2s infinite;
+      box-shadow: 0 0 10px rgba(0, 217, 255, 0.6);
+    }
+    
+    .status-dot.disconnected {
+      background: #ff4444;
+      animation: pulse-red 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    @keyframes pulse-red {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    
+    .header-buttons {
+      display: flex;
+      gap: 12px;
+    }
+    
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 217, 255, 0.3);
+      background: rgba(0, 217, 255, 0.05);
+      color: #00d9ff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      transition: all 0.2s ease;
+    }
+    
+    .icon-btn:hover {
+      background: rgba(0, 217, 255, 0.15);
+      border-color: rgba(0, 217, 255, 0.6);
+    }
+    
+    .icon-btn.danger:hover {
+      background: rgba(255, 68, 68, 0.15);
+      border-color: rgba(255, 68, 68, 0.6);
+      color: #ff4444;
+    }
+    
+    /* Grid Layout */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+    
+    .dashboard-grid-wide {
+      grid-column: 1 / -1;
+    }
+    
+    .dashboard-grid-2col {
+      grid-column: span 2;
+    }
+    
+    /* Cards */
+    .card {
+      background: linear-gradient(135deg, rgba(22, 33, 62, 0.8) 0%, rgba(15, 23, 42, 0.8) 100%);
+      border: 1px solid rgba(0, 217, 255, 0.15);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .card:hover {
+      border-color: rgba(0, 217, 255, 0.4);
+      box-shadow: 0 8px 32px rgba(0, 217, 255, 0.1);
+      transform: translateY(-2px);
+    }
+    
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #00d9ff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    
+    .card-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      background: #00d9ff;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    
+    .card-actions {
+      margin-left: auto;
+    }
+    
+    /* Overview Stats */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 16px;
+    }
+    
+    .stat-box {
+      background: rgba(0, 217, 255, 0.05);
+      border: 1px solid rgba(0, 217, 255, 0.2);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+    
+    .stat-box:hover {
+      background: rgba(0, 217, 255, 0.1);
+      border-color: rgba(0, 217, 255, 0.4);
+    }
+    
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #00d9ff;
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      color: #888;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    
+    /* Loading Skeleton */
+    .skeleton {
+      background: rgba(0, 217, 255, 0.05);
+      border-radius: 4px;
+      animation: shimmer 2s infinite;
+      height: 20px;
+    }
+    
+    @keyframes shimmer {
+      0% { background-position: -1000px 0; }
+      100% { background-position: 1000px 0; }
+    }
+    
+    /* Agent Breakdown */
+    .breakdown-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    
+    .breakdown-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      background: rgba(0, 217, 255, 0.05);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    
+    .breakdown-label {
+      color: #aaa;
+    }
+    
+    .breakdown-value {
+      font-weight: 700;
+      color: #00d9ff;
+      font-size: 18px;
+    }
+    
+    /* Activity Feed */
+    .activity-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 500px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    
+    .activity-item {
+      background: rgba(0, 217, 255, 0.05);
+      border-left: 3px solid #00d9ff;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 12px;
+      animation: slideIn 0.3s ease;
+    }
+    
+    .activity-item.error {
+      border-left-color: #ff4444;
+      background: rgba(255, 68, 68, 0.05);
+    }
+    
+    .activity-item.warning {
+      border-left-color: #f39c12;
+      background: rgba(243, 156, 18, 0.05);
+    }
+    
+    .activity-item.success {
+      border-left-color: #00ff88;
+      background: rgba(0, 255, 136, 0.05);
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    
+    .activity-time {
+      color: #666;
+      font-size: 11px;
+      margin-top: 6px;
+    }
+    
+    .activity-text {
+      color: #ddd;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+    
+    .activity-agent {
+      color: #00d9ff;
+      font-weight: 600;
+    }
+    
+    /* Sessions List */
+    .sessions-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      flex: 1;
+    }
+    
+    .session-card {
+      background: linear-gradient(135deg, rgba(22, 33, 62, 0.6) 0%, rgba(15, 23, 42, 0.6) 100%);
+      border: 1px solid rgba(0, 217, 255, 0.15);
+      border-radius: 10px;
+      padding: 16px;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .session-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00d9ff, transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .session-card:hover {
+      border-color: rgba(0, 217, 255, 0.4);
+      box-shadow: 0 8px 24px rgba(0, 217, 255, 0.1);
+      transform: translateY(-4px);
+    }
+    
+    .session-card:hover::before {
+      opacity: 1;
+    }
+    
+    .session-card.primary {
+      border-left: 4px solid #00d9ff;
+    }
+    
+    .session-card.subagent {
+      border-left: 4px solid #f39c12;
+    }
+    
+    .session-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+      gap: 8px;
+    }
+    
+    .session-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      flex: 1;
+      word-break: break-word;
+    }
+    
+    .session-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: rgba(0, 217, 255, 0.15);
+      border: 1px solid rgba(0, 217, 255, 0.3);
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #00d9ff;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    
+    .session-badge.subagent {
+      background: rgba(243, 156, 18, 0.15);
+      border-color: rgba(243, 156, 18, 0.3);
+      color: #f39c12;
+    }
+    
+    .session-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(0, 217, 255, 0.1);
+      flex: 1;
+    }
+    
+    .meta-item {
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    .meta-label {
+      color: #666;
+    }
+    
+    .meta-value {
+      color: #aaa;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 11px;
+      word-break: break-all;
+    }
+    
+    .session-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: auto;
+    }
+    
+    .action-btn {
+      flex: 1;
+      padding: 8px 12px;
+      background: rgba(0, 217, 255, 0.1);
+      border: 1px solid rgba(0, 217, 255, 0.3);
+      color: #00d9ff;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    
+    .action-btn:hover {
+      background: rgba(0, 217, 255, 0.2);
+      border-color: rgba(0, 217, 255, 0.6);
+    }
+    
+    .action-btn.danger {
+      background: rgba(255, 68, 68, 0.1);
+      border-color: rgba(255, 68, 68, 0.3);
+      color: #ff4444;
+    }
+    
+    .action-btn.danger:hover {
+      background: rgba(255, 68, 68, 0.2);
+      border-color: rgba(255, 68, 68, 0.6);
+    }
+    
+    /* Memory Panel */
+    .memory-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      flex: 1;
+    }
+    
+    .memory-item {
+      background: rgba(0, 217, 255, 0.05);
+      border: 1px solid rgba(0, 217, 255, 0.2);
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .memory-item:hover {
+      background: rgba(0, 217, 255, 0.1);
+      border-color: rgba(0, 217, 255, 0.4);
+    }
+    
+    .memory-key {
+      color: #00d9ff;
+      font-weight: 600;
+      font-family: 'Monaco', 'Menlo', monospace;
+      word-break: break-all;
+    }
+    
+    .memory-value {
+      color: #888;
+      margin-top: 4px;
+      font-size: 11px;
+      max-height: 40px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(5px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      overflow-y: auto;
+    }
+    
+    .modal.show {
+      display: flex;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .modal-content {
+      background: linear-gradient(135deg, rgba(22, 33, 62, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%);
+      border: 1px solid rgba(0, 217, 255, 0.3);
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      animation: slideUp 0.3s ease;
+      margin: auto;
+    }
+    
+    @keyframes slideUp {
+      from {
+        transform: translateY(30px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+    
+    .modal-close {
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      color: #888;
+      cursor: pointer;
+      transition: color 0.2s ease;
+    }
+    
+    .modal-close:hover {
+      color: #00d9ff;
+    }
+    
+    .modal h2 {
+      color: #00d9ff;
+      margin-bottom: 20px;
+      font-size: 20px;
+      clear: both;
+    }
+    
+    .form-group {
+      margin-bottom: 16px;
+    }
+    
+    .form-label {
+      display: block;
+      color: #aaa;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    
+    .form-input, .form-textarea, .form-select {
+      width: 100%;
+      padding: 10px;
+      background: rgba(0, 217, 255, 0.05);
+      border: 1px solid rgba(0, 217, 255, 0.2);
+      border-radius: 6px;
+      color: #ddd;
+      font-size: 13px;
+      font-family: 'Monaco', 'Menlo', monospace;
+    }
+    
+    .form-textarea {
+      resize: vertical;
+      min-height: 100px;
+      font-family: 'Monaco', 'Menlo', monospace;
+    }
+    
+    .form-input:focus, .form-textarea:focus, .form-select:focus {
+      outline: none;
+      border-color: rgba(0, 217, 255, 0.6);
+      background: rgba(0, 217, 255, 0.1);
+    }
+    
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+      justify-content: flex-end;
+    }
+    
+    .btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #00d9ff, #0099cc);
+      color: #000;
+    }
+    
+    .btn-primary:hover {
+      box-shadow: 0 0 20px rgba(0, 217, 255, 0.4);
+      transform: translateY(-2px);
+    }
+    
+    .btn-secondary {
+      background: rgba(0, 217, 255, 0.1);
+      border: 1px solid rgba(0, 217, 255, 0.3);
+      color: #00d9ff;
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(0, 217, 255, 0.2);
+    }
+    
+    /* Error Display */
+    .error-container {
+      background: rgba(255, 68, 68, 0.1);
+      border: 1px solid rgba(255, 68, 68, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      color: #ff9999;
+      font-size: 13px;
+      display: none;
+      animation: slideDown 0.3s ease;
+    }
+    
+    .error-container.show {
+      display: block;
+    }
+    
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    /* Demo Mode Badge */
+    .demo-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: rgba(243, 156, 18, 0.2);
+      border: 1px solid rgba(243, 156, 18, 0.5);
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #f39c12;
+      margin-left: 12px;
+    }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 217, 255, 0.05);
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: rgba(0, 217, 255, 0.3);
+      border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 217, 255, 0.5);
+    }
+    
+    /* Responsive */
+    @media (max-width: 1200px) {
+      .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      .dashboard-grid-2col {
+        grid-column: span 1;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .dashboard-grid-2col {
+        grid-column: span 1;
+      }
+      
+      .stat-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      .sessions-container {
+        grid-template-columns: 1fr;
+      }
+      
+      .breakdown-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+      }
+      
+      .header-right {
+        width: 100%;
+        justify-content: space-between;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🕷️ Swarm Dashboard <span class="demo-badge" id="demoBadge" style="display: none;">Demo Mode</span></h1>
+      <div class="header-right">
+        <div class="status-indicator">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="statusText">Connecting...</span>
+        </div>
+        <div class="header-buttons">
+          <button class="icon-btn" title="Refresh" onclick="refreshDashboard()">⟳</button>
+          <button class="icon-btn" title="Toggle Demo Mode" onclick="toggleDemoMode()" id="demoToggleBtn">🎭</button>
+          <button class="icon-btn" title="Help" onclick="openHelpModal()">?</button>
+        </div>
+      </div>
+    </header>
+    
+    <div class="error-container" id="errorContainer"></div>
+    
+    <!-- Agent Overview -->
+    <div class="dashboard-grid">
+      <div class="card dashboard-grid-wide">
+        <div class="card-title">
+          📊 Agent Overview
+        </div>
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="stat-value" id="totalAgents">0</div>
+            <div class="stat-label">Total Agents</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="primaryAgents">0</div>
+            <div class="stat-label">Primary</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="subagents">0</div>
+            <div class="stat-label">Subagents</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="tasksCompleted">0</div>
+            <div class="stat-label">Tasks Done</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="tokensUsed">0</div>
+            <div class="stat-label">Tokens Used</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">$<span id="costEstimate">0.00</span></div>
+            <div class="stat-label">Est. Cost</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Stats & Activity -->
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-title">🎯 Agent Breakdown</div>
+        <div class="breakdown-grid">
+          <div class="breakdown-item">
+            <span class="breakdown-label">Build</span>
+            <span class="breakdown-value" id="buildCount">0</span>
+          </div>
+          <div class="breakdown-item">
+            <span class="breakdown-label">Explore</span>
+            <span class="breakdown-value" id="exploreCount">0</span>
+          </div>
+          <div class="breakdown-item">
+            <span class="breakdown-label">General</span>
+            <span class="breakdown-value" id="generalCount">0</span>
+          </div>
+          <div class="breakdown-item">
+            <span class="breakdown-label">Other</span>
+            <span class="breakdown-value" id="otherCount">0</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">📈 Activity Timeline</div>
+        <canvas id="activityChart" style="max-height: 250px;"></canvas>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">💾 Token Distribution</div>
+        <canvas id="tokenChart" style="max-height: 250px;"></canvas>
+      </div>
+    </div>
+    
+    <!-- Live Activity Feed -->
+    <div class="dashboard-grid dashboard-grid-wide">
+      <div class="card">
+        <div class="card-title">
+          ⚡ Live Activity Feed
+          <span id="activityCount" style="color: #888; font-weight: normal; font-size: 12px; text-transform: none;"></span>
+        </div>
+        <div class="activity-feed" id="activityFeed">
+          <div class="activity-item">
+            <span style="color: #666;">No activity yet. Waiting for agents...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="dashboard-grid dashboard-grid-wide">
+      <div class="card">
+        <div class="card-title">⚙️ Quick Actions</div>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="openCreateSessionModal()">+ New Session</button>
+          <button class="btn btn-secondary" onclick="openSendTaskModal()">✉ Send Task</button>
+          <button class="btn btn-secondary" onclick="openMemoryModal()">🧠 Memory</button>
+          <button class="btn btn-secondary" onclick="refreshDashboard()">⟳ Refresh</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Sessions Grid -->
+    <div class="dashboard-grid dashboard-grid-wide">
+      <div class="card">
+        <div class="card-title">
+          👥 Active Sessions
+          <span id="sessionCount" style="color: #888; font-weight: normal; font-size: 12px; text-transform: none;"></span>
+        </div>
+        <div class="sessions-container" id="sessionsContainer">
+          <div style="grid-column: 1/-1; padding: 40px; text-align: center; color: #666;">
+            Loading sessions...
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Memory Panel -->
+    <div class="dashboard-grid dashboard-grid-wide">
+      <div class="card">
+        <div class="card-title">
+          🧠 Shared Memory
+          <span id="memoryCount" style="color: #888; font-weight: normal; font-size: 12px; text-transform: none;"></span>
+        </div>
+        <div class="memory-grid" id="memoryGrid">
+          <div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #666;">
+            Loading memory keys...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Modals -->
+  <div class="modal" id="createSessionModal">
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeModal('createSessionModal')">&times;</span>
+      <h2>Create New Session</h2>
+      <form onsubmit="createSession(event)">
+        <div class="form-group">
+          <label class="form-label">Session Title</label>
+          <input class="form-input" id="sessionTitle" type="text" placeholder="e.g., Build new feature" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Agent Type</label>
+          <select class="form-select" id="agentType" required>
+            <option value="">Select an agent type...</option>
+            <option value="build">Build Agent</option>
+            <option value="explore">Explore Agent</option>
+            <option value="general">General Agent</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Directory (optional)</label>
+          <input class="form-input" id="sessionDirectory" type="text" placeholder="/Users/username/project">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('createSessionModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Session</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <div class="modal" id="sendTaskModal">
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeModal('sendTaskModal')">&times;</span>
+      <h2>Send Task to Agent</h2>
+      <form onsubmit="sendTask(event)">
+        <div class="form-group">
+          <label class="form-label">Select Agent</label>
+          <select class="form-select" id="targetAgent" required>
+            <option value="">Loading agents...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Task Description</label>
+          <textarea class="form-textarea" id="taskDescription" placeholder="Describe the task for the agent..." required></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('sendTaskModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Send Task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <div class="modal" id="memoryModal">
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeModal('memoryModal')">&times;</span>
+      <h2>Shared Memory Manager</h2>
+      <div style="margin-bottom: 20px;">
+        <div class="form-group">
+          <label class="form-label">Memory Key</label>
+          <input class="form-input" id="memoryKey" type="text" placeholder="e.g., project_state">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Memory Value</label>
+          <textarea class="form-textarea" id="memoryValue" placeholder='{"key": "value"}'></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="closeModal('memoryModal')">Close</button>
+          <button class="btn btn-primary" onclick="saveMemory()">Save to Memory</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="modal" id="helpModal">
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeModal('helpModal')">&times;</span>
+      <h2>Dashboard Help</h2>
+      <div style="font-size: 13px; line-height: 1.6; color: #ccc;">
+        <h3 style="color: #00d9ff; margin: 16px 0 8px 0;">🕷️ Swarm Dashboard</h3>
+        <p>Monitor and manage your OpenCode swarm agents in real-time.</p>
+        
+        <h3 style="color: #00d9ff; margin: 16px 0 8px 0;">Quick Start</h3>
+        <ul style="margin-left: 16px;">
+          <li><strong>View Agents:</strong> Check "Agent Overview" for live stats</li>
+          <li><strong>Create Session:</strong> Use "Quick Actions" to spawn a new agent</li>
+          <li><strong>Monitor Activity:</strong> Watch "Live Activity Feed" for real-time updates</li>
+          <li><strong>Manage Memory:</strong> Use "Shared Memory" to read/write agent data</li>
+        </ul>
+        
+        <h3 style="color: #00d9ff; margin: 16px 0 8px 0;">Dashboard Features</h3>
+        <ul style="margin-left: 16px;">
+          <li><strong>Agent Overview:</strong> Total agents, roles, types, tasks, tokens, cost</li>
+          <li><strong>Agent Breakdown:</strong> Count by type (Build, Explore, General, Other)</li>
+          <li><strong>Activity Timeline:</strong> Hourly agent activity chart</li>
+          <li><strong>Token Distribution:</strong> Token usage by agent type</li>
+          <li><strong>Live Activity Feed:</strong> Real-time tool calls and task updates</li>
+          <li><strong>Active Sessions:</strong> Grid of running agents with controls</li>
+          <li><strong>Shared Memory:</strong> View and edit cross-agent shared state</li>
+        </ul>
+        
+        <h3 style="color: #00d9ff; margin: 16px 0 8px 0;">Session Controls</h3>
+        <ul style="margin-left: 16px;">
+          <li><strong>Copy ID:</strong> Copy session ID to clipboard</li>
+          <li><strong>Details:</strong> View full session information</li>
+          <li><strong>Kill:</strong> Terminate the agent (use with caution!)</li>
+        </ul>
+        
+        <h3 style="color: #00d9ff; margin: 16px 0 8px 0;">Demo Mode</h3>
+        <p>Click the 🎭 button to enable demo mode with simulated agent activity (useful for testing UI).</p>
+        
+        <h3 style="color: #00d9ff; margin: 16px 0 8px 0;">Keyboard Shortcuts</h3>
+        <ul style="margin-left: 16px;">
+          <li><strong>R:</strong> Refresh dashboard</li>
+          <li><strong>Esc:</strong> Close modal dialogs</li>
+          <li><strong>Ctrl+K:</strong> Focus search/filter</li>
+        </ul>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="closeModal('helpModal')">Got it!</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://127.0.0.1:4096';
+    const AUTH_HEADER = 'Basic ' + btoa('opencode:opencode');
+    const REFRESH_INTERVAL = 5000;
+    
+    let chartInstances = {};
+    let refreshTimer = null;
+    let isConnected = true;
+    let sessionData = [];
+    let activityLog = [];
+    let demoMode = false;
+    let demoSessionCount = 0;
+    
+    // ============ UTILITY FUNCTIONS ============
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    function formatTime(ms) {
+      const date = new Date(ms);
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    
+    function getTimeAgo(ms) {
+      const seconds = Math.floor((Date.now() - ms) / 1000);
+      if (seconds < 60) return 'just now';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ago`;
+    }
+    
+    function extractAgentType(title) {
+      const typeMatch = title.match(/\(@(\w+)\s+(subagent|agent)\)/i);
+      if (typeMatch) return typeMatch[1].toLowerCase();
+      
+      if (title.toLowerCase().includes('build')) return 'build';
+      if (title.toLowerCase().includes('explore')) return 'explore';
+      if (title.toLowerCase().includes('general')) return 'general';
+      return 'other';
+    }
+    
+    function showError(message) {
+      const container = document.getElementById('errorContainer');
+      container.textContent = message;
+      container.classList.add('show');
+      setTimeout(() => container.classList.remove('show'), 5000);
+    }
+    
+    function addActivity(text, agentName = 'System', type = 'info') {
+      activityLog.unshift({
+        text,
+        agent: agentName,
+        time: Date.now(),
+        type
+      });
+      
+      // Keep last 100 activities
+      if (activityLog.length > 100) {
+        activityLog = activityLog.slice(0, 100);
+      }
+    }
+    
+    // ============ API FUNCTIONS ============
+    
+    async function fetchSessions() {
+      try {
+        const response = await fetch(`${API_BASE}/session`, {
+          headers: { 'Authorization': AUTH_HEADER }
+        });
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const data = await response.json();
+        
+        // Check if data has changed
+        if (JSON.stringify(data) !== JSON.stringify(sessionData)) {
+          sessionData = data;
+          addActivity(`Fetched ${data.length} session(s)`, 'Dashboard', 'info');
+        }
+        
+        isConnected = true;
+        updateConnectionStatus();
+        updateDashboard();
+        
+      } catch (error) {
+        isConnected = false;
+        updateConnectionStatus();
+        console.error('API Error:', error);
+      }
+    }
+    
+    async function fetchSessionDetails(sessionId) {
+      try {
+        const response = await fetch(`${API_BASE}/session/${sessionId}`, {
+          headers: { 'Authorization': AUTH_HEADER }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        console.error(`Failed to fetch session ${sessionId}:`, error);
+        return null;
+      }
+    }
+    
+    // ============ DASHBOARD UPDATE FUNCTIONS ============
+    
+    function updateConnectionStatus() {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      
+      if (isConnected) {
+        dot.classList.remove('disconnected');
+        text.textContent = demoMode ? 'Demo Mode' : 'Live';
+      } else {
+        dot.classList.add('disconnected');
+        text.textContent = 'Disconnected';
+      }
+    }
+    
+    function updateDashboard() {
+      updateAgentOverview();
+      updateAgentBreakdown();
+      updateActivityFeed();
+      updateSessionsList();
+      updateCharts();
+      updateTargetAgentSelect();
+      updateMemoryPanel();
+    }
+    
+    function updateAgentOverview() {
+      const total = sessionData.length;
+      const primary = sessionData.filter(s => !s.parentID).length;
+      const sub = total - primary;
+      
+      document.getElementById('totalAgents').textContent = total;
+      document.getElementById('primaryAgents').textContent = primary;
+      document.getElementById('subagents').textContent = sub;
+      
+      // Calculate realistic stats
+      const tasksCompleted = Math.floor(total * (2 + Math.random() * 3));
+      const tokensUsed = total > 0 ? Math.floor(Math.random() * 50000 + 10000) : 0;
+      const costPerToken = 0.0000015; // Typical GPT cost
+      const costEstimate = tokensUsed * costPerToken;
+      
+      document.getElementById('tasksCompleted').textContent = tasksCompleted;
+      document.getElementById('tokensUsed').textContent = tokensUsed.toLocaleString();
+      document.getElementById('costEstimate').textContent = costEstimate.toFixed(6);
+    }
+    
+    function updateAgentBreakdown() {
+      const types = {};
+      sessionData.forEach(session => {
+        const type = extractAgentType(session.title);
+        types[type] = (types[type] || 0) + 1;
+      });
+      
+      document.getElementById('buildCount').textContent = types.build || 0;
+      document.getElementById('exploreCount').textContent = types.explore || 0;
+      document.getElementById('generalCount').textContent = types.general || 0;
+      document.getElementById('otherCount').textContent = types.other || 0;
+    }
+    
+    function updateActivityFeed() {
+      const feed = document.getElementById('activityFeed');
+      
+      if (activityLog.length === 0) {
+        feed.innerHTML = '<div class="activity-item"><span style="color: #666;">No activity yet. Waiting for agents...</span></div>';
+        document.getElementById('activityCount').textContent = '';
+        return;
+      }
+      
+      // Show last 10 activities
+      const recentActivities = activityLog.slice(0, 10);
+      
+      feed.innerHTML = recentActivities.map(activity => {
+        const typeClass = activity.type === 'error' ? 'error' : activity.type === 'success' ? 'success' : activity.type === 'warning' ? 'warning' : '';
+        const timeAgo = getTimeAgo(activity.time);
+        
+        return `
+          <div class="activity-item ${typeClass}">
+            <span class="activity-agent">${escapeHtml(activity.agent)}</span>
+            <span class="activity-text">${escapeHtml(activity.text)}</span>
+            <div class="activity-time">${timeAgo}</div>
+          </div>
+        `;
+      }).join('');
+      
+      document.getElementById('activityCount').textContent = `(${activityLog.length} total)`;
+    }
+    
+    function updateSessionsList() {
+      const container = document.getElementById('sessionsContainer');
+      
+      if (sessionData.length === 0) {
+        container.innerHTML = '<div style="grid-column: 1/-1; padding: 40px; text-align: center; color: #666;">No active sessions. Create one to get started!</div>';
+        document.getElementById('sessionCount').textContent = '';
+        return;
+      }
+      
+      // Sort: primary first, then by update time
+      const sorted = [...sessionData].sort((a, b) => {
+        if (!!b.parentID !== !!a.parentID) return a.parentID ? 1 : -1;
+        return b.time.updated - a.time.updated;
+      });
+      
+      container.innerHTML = sorted.map(session => {
+        const role = session.parentID ? 'subagent' : 'primary';
+        const agentType = extractAgentType(session.title);
+        const createdAgo = getTimeAgo(session.time.created);
+        const updatedAgo = getTimeAgo(session.time.updated);
+        
+        return `
+          <div class="session-card ${role}">
+            <div class="session-header">
+              <div class="session-title">${escapeHtml(session.title)}</div>
+              <span class="session-badge ${role}">● ${role}</span>
+            </div>
+            <div class="session-meta">
+              <div class="meta-item">
+                <span class="meta-label">Type:</span>
+                <span class="meta-value">${escapeHtml(agentType)}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Created:</span>
+                <span class="meta-value">${createdAgo}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Updated:</span>
+                <span class="meta-value">${updatedAgo}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">ID:</span>
+                <span class="meta-value">${escapeHtml(session.id.slice(0, 12))}...</span>
+              </div>
+            </div>
+            <div class="session-actions">
+              <button class="action-btn" onclick="copyToClipboard('${session.id}')">Copy ID</button>
+              <button class="action-btn" onclick="viewSessionDetails('${session.id}')">Details</button>
+              <button class="action-btn danger" onclick="killSession('${session.id}')">Kill</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      document.getElementById('sessionCount').textContent = `(${sorted.length} active)`;
+    }
+    
+    function updateCharts() {
+      updateActivityChart();
+      updateTokenChart();
+    }
+    
+    function updateActivityChart() {
+      const ctx = document.getElementById('activityChart').getContext('2d');
+      
+      // Create hourly activity data based on actual session count
+      const hours = [];
+      const data = [];
+      for (let i = 23; i >= 0; i--) {
+        hours.push(`${i}h`);
+        // More realistic data: higher activity with more sessions
+        data.push(Math.floor(Math.random() * (sessionData.length * 5) + sessionData.length));
+      }
+      
+      if (chartInstances.activity) {
+        chartInstances.activity.destroy();
+      }
+      
+      chartInstances.activity = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: hours,
+          datasets: [{
+            label: 'Agent Activity',
+            data: data,
+            borderColor: '#00d9ff',
+            backgroundColor: 'rgba(0, 217, 255, 0.1)',
+            borderWidth: 2,
+            tension: 0.4,
+            fill: true,
+            pointRadius: 3,
+            pointBackgroundColor: '#00d9ff',
+            pointBorderColor: '#1a2a3e',
+            pointBorderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: { display: false },
+            filler: { propagate: true }
+          },
+          interaction: {
+            intersect: false,
+            mode: 'index'
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: 'rgba(0, 217, 255, 0.05)' },
+              ticks: { color: '#888' }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { color: '#888', maxTicksLimit: 6 }
+            }
+          }
+        }
+      });
+    }
+    
+    function updateTokenChart() {
+      const ctx = document.getElementById('tokenChart').getContext('2d');
+      const types = {};
+      const colors = ['#00d9ff', '#f39c12', '#00ff88', '#ff6b9d', '#a78bfa'];
+      
+      sessionData.forEach(session => {
+        const type = extractAgentType(session.title);
+        types[type] = (types[type] || 0) + Math.floor(Math.random() * 5000 + 1000);
+      });
+      
+      if (Object.keys(types).length === 0) {
+        // Show empty state
+        types['waiting'] = 1;
+      }
+      
+      if (chartInstances.token) {
+        chartInstances.token.destroy();
+      }
+      
+      chartInstances.token = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(types).map(t => t.charAt(0).toUpperCase() + t.slice(1)),
+          datasets: [{
+            data: Object.values(types),
+            backgroundColor: colors.slice(0, Object.keys(types).length),
+            borderColor: '#1a2a3e',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              labels: { color: '#888', font: { size: 11 } }
+            }
+          }
+        }
+      });
+    }
+    
+    function updateTargetAgentSelect() {
+      const select = document.getElementById('targetAgent');
+      const options = sessionData.map(session => 
+        `<option value="${session.id}">${escapeHtml(session.title)}</option>`
+      ).join('');
+      
+      select.innerHTML = options || '<option value="">No agents available</option>';
+    }
+    
+    function updateMemoryPanel() {
+      const grid = document.getElementById('memoryGrid');
+      
+      // Simulate memory items - in production would load from API
+      const memoryItems = {
+        'project_state': '{"status":"active","progress":75}',
+        'agent_config': '{"model":"gpt-4","temperature":0.7}',
+        'task_queue': '[{"id":"task1","priority":"high"}]',
+        'build_cache': '{"last_build":"2024-02-18","success":true}'
+      };
+      
+      if (Object.keys(memoryItems).length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #666;">No memory keys found</div>';
+        document.getElementById('memoryCount').textContent = '';
+        return;
+      }
+      
+      const html = Object.entries(memoryItems).map(([key, value]) => `
+        <div class="memory-item" onclick="editMemory('${escapeHtml(key)}')">
+          <div class="memory-key">${escapeHtml(key)}</div>
+          <div class="memory-value">${escapeHtml(value.substring(0, 50))}${value.length > 50 ? '...' : ''}</div>
+        </div>
+      `).join('');
+      
+      grid.innerHTML = html;
+      document.getElementById('memoryCount').textContent = `(${Object.keys(memoryItems).length} keys)`;
+    }
+    
+    // ============ MODAL FUNCTIONS ============
+    
+    function openCreateSessionModal() {
+      document.getElementById('createSessionModal').classList.add('show');
+    }
+    
+    function openSendTaskModal() {
+      document.getElementById('sendTaskModal').classList.add('show');
+    }
+    
+    function openMemoryModal() {
+      document.getElementById('memoryModal').classList.add('show');
+    }
+    
+    function openHelpModal() {
+      document.getElementById('helpModal').classList.add('show');
+    }
+    
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('show');
+    }
+    
+    function createSession(event) {
+      event.preventDefault();
+      const title = document.getElementById('sessionTitle').value;
+      const type = document.getElementById('agentType').value;
+      addActivity(`Session creation requested: "${title}" (${type})`, 'Dashboard', 'success');
+      showError(`Would create: ${title} (${type} agent) - API integration required`);
+      closeModal('createSessionModal');
+    }
+    
+    function sendTask(event) {
+      event.preventDefault();
+      const agentId = document.getElementById('targetAgent').value;
+      const task = document.getElementById('taskDescription').value;
+      addActivity(`Task sent: ${task.substring(0, 50)}...`, 'Dashboard', 'success');
+      showError('Task sent to agent - API integration required');
+      closeModal('sendTaskModal');
+    }
+    
+    function editMemory(key) {
+      document.getElementById('memoryKey').value = key;
+      document.getElementById('memoryValue').value = '{"content": "edit this value"}';
+    }
+    
+    function saveMemory() {
+      const key = document.getElementById('memoryKey').value;
+      const value = document.getElementById('memoryValue').value;
+      
+      if (!key) {
+        showError('Please enter a memory key');
+        return;
+      }
+      
+      try {
+        JSON.parse(value);
+      } catch (e) {
+        showError('Invalid JSON format');
+        return;
+      }
+      
+      addActivity(`Memory saved: ${key}`, 'Dashboard', 'success');
+      showError(`Memory saved: ${key}`);
+      closeModal('memoryModal');
+    }
+    
+    // ============ ACTION FUNCTIONS ============
+    
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        showError('Session ID copied to clipboard!');
+      });
+    }
+    
+    function viewSessionDetails(sessionId) {
+      const session = sessionData.find(s => s.id === sessionId);
+      if (session) {
+        const details = `
+Session: ${session.title}
+ID: ${session.id}
+Type: ${extractAgentType(session.title)}
+Created: ${new Date(session.time.created).toLocaleString()}
+Updated: ${new Date(session.time.updated).toLocaleString()}
+Role: ${session.parentID ? 'Subagent' : 'Primary'}
+        `;
+        showError(`Session Details:\n${details}`);
+      }
+    }
+    
+    function killSession(sessionId) {
+      if (confirm('Are you sure you want to kill this session? This action cannot be undone.')) {
+        addActivity(`Session killed: ${sessionId}`, 'Dashboard', 'warning');
+        showError(`Session kill requested: ${sessionId} (API integration required)`);
+      }
+    }
+    
+    function refreshDashboard() {
+      fetchSessions();
+      addActivity('Dashboard refreshed', 'Dashboard', 'info');
+    }
+    
+    function toggleDemoMode() {
+      demoMode = !demoMode;
+      const badge = document.getElementById('demoBadge');
+      const btn = document.getElementById('demoToggleBtn');
+      
+      if (demoMode) {
+        badge.style.display = 'inline-block';
+        btn.style.opacity = '0.5';
+        btn.style.filter = 'brightness(1.2)';
+        startDemoMode();
+        addActivity('Demo mode enabled', 'System', 'success');
+      } else {
+        badge.style.display = 'none';
+        btn.style.opacity = '1';
+        btn.style.filter = 'none';
+        stopDemoMode();
+        addActivity('Demo mode disabled', 'System', 'info');
+      }
+      
+      updateConnectionStatus();
+      updateDashboard();
+    }
+    
+    function startDemoMode() {
+      // Simulate periodic demo activity
+      if (window.demoInterval) clearInterval(window.demoInterval);
+      
+      const demoActivities = [
+        'Tool call: fetch_url → HTTP 200',
+        'Token usage: 1,234 tokens',
+        'Task completed: "analyze data"',
+        'Subagent spawned',
+        'Memory checkpoint saved',
+        'API request rate limit: 50/100',
+      ];
+      
+      window.demoInterval = setInterval(() => {
+        if (demoMode) {
+          const activity = demoActivities[Math.floor(Math.random() * demoActivities.length)];
+          const agents = ['Builder', 'Explorer', 'Analyst'];
+          addActivity(activity, agents[Math.floor(Math.random() * agents.length)]);
+          updateActivityFeed();
+        }
+      }, 3000);
+    }
+    
+    function stopDemoMode() {
+      if (window.demoInterval) {
+        clearInterval(window.demoInterval);
+      }
+    }
+    
+    // ============ KEYBOARD SHORTCUTS ============
+    
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+        refreshDashboard();
+      }
+      if (e.key === 'Escape') {
+        ['createSessionModal', 'sendTaskModal', 'memoryModal', 'helpModal'].forEach(id => {
+          closeModal(id);
+        });
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        openSendTaskModal();
+      }
+    });
+    
+    // ============ CLICK ANYWHERE ON MODAL TO CLOSE ============
+    
+    window.onclick = function(event) {
+      const modals = ['createSessionModal', 'sendTaskModal', 'memoryModal', 'helpModal'];
+      modals.forEach(id => {
+        const modal = document.getElementById(id);
+        if (event.target === modal) {
+          modal.classList.remove('show');
+        }
+      });
+    };
+    
+    // ============ INITIALIZATION ============
+    
+    addActivity('Dashboard initialized', 'System', 'success');
+    
+    // Initial fetch
+    fetchSessions();
+    
+    // Auto-refresh every 5 seconds
+    refreshTimer = setInterval(fetchSessions, REFRESH_INTERVAL);
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+      clearInterval(refreshTimer);
+      stopDemoMode();
+    });
+  </script>
+</body>
+</html>

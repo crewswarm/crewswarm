@@ -99,6 +99,37 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 
 ---
 
+## Benchmarks (ZeroEval / llm-stats.com)
+
+LLM leaderboard data from [llm-stats.com](https://llm-stats.com) — compare models on SWE-Bench Verified, LiveCodeBench, MMLU, and more.
+
+- **Dashboard → Benchmarks tab** — pick a benchmark (SWE-Bench Verified, LiveCodeBench, etc.) and view ranked model scores.
+- **Skill for agents:** `@@SKILL zeroeval.benchmark {"benchmark_id":"swe-bench-verified"}` or `livecodebench`, `mmlu`, `gpqa`, `humaneval`, `gsm8k`, etc.
+- **API proxy** (dashboard): `GET /api/zeroeval/benchmarks` — list benchmarks; `GET /api/zeroeval/benchmarks/{id}` — leaderboard for one benchmark.
+- **Source:** `https://api.zeroeval.com/leaderboard/benchmarks/{benchmark_id}` (no auth).
+
+---
+
+## Skill plugins (add skills without custom code)
+
+Skills in `~/.crewswarm/skills/*.json` are **data-driven plugins**. Drop a JSON file and it works — no edits to crew-lead or gateway-bridge.
+
+**Core fields:** `description`, `url`, `method`, `defaultParams`, `paramNotes`
+
+**Optional — discoverable params:**
+- `listUrl` — when the main URL's path param is empty, call this instead (e.g. list all).
+- `listUrlIdField` — when building health snapshot, fetch listUrl and extract this field from each item → shows "IDs (live): x, y, z" to agents.
+
+**Optional — skill name aliases:**
+- `aliases` — `["benchmark", "benchmarks"]` — friendly names that map to this skill. `@@SKILL benchmark {}` resolves to `zeroeval.benchmark`.
+
+**Optional — param normalization:**
+- `paramAliases` — `{"paramName": {"wrong-value": "correct-value"}}` — e.g. `{"benchmark_id": {"human-eval": "humaneval"}}`
+
+**Example:** See `skills/zeroeval.benchmark.json`. Install copies from `skills/` to `~/.crewswarm/skills/` (install overwrites bundled skills).
+
+---
+
 ## Roadmap and paths
 
 - **One ROADMAP per project.** Each project has exactly one `ROADMAP.md` at its output directory: `<outputDir>/ROADMAP.md`.

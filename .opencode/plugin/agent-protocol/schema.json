@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentProtocolEnvelope",
+  "type": "object",
+  "required": [
+    "id",
+    "ts",
+    "channel",
+    "from",
+    "to",
+    "type",
+    "payload"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "ts": { "type": "string", "format": "date-time" },
+    "channel": {
+      "type": "string",
+      "enum": ["control", "tasks", "events", "errors"]
+    },
+    "from": { "type": "string", "minLength": 1 },
+    "to": { "type": "string", "minLength": 1 },
+    "type": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" },
+    "correlationId": { "type": "string" },
+    "priority": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
+  },
+  "additionalProperties": true
+}

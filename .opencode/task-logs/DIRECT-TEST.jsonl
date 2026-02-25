@@ -1,0 +1,1 @@
+{"type":"test.start","taskId":"DIRECT-TEST","instruction":"Write the text SUCCESS to test-output/direct-test.txt","files":["test-output/direct-test.txt"],"ts":"2026-02-20T00:03:46.761Z"}

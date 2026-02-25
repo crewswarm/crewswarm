@@ -1,0 +1,4 @@
+{"type":"test.start","taskId":"TEST-FIX","instruction":"Create a test function in test-output/fix-test.js","files":["test-output/fix-test.js"],"ts":"2026-02-19T09:39:57.865Z"}
+{"type":"test.complete","taskId":"TEST-FIX","durationMs":1965,"exitCode":1,"validation":{"hasJson":false,"isValidJson":false,"parseError":null,"hasFilesChanged":null,"hasResult":null,"hasSummary":null,"filesCount":0},"fileChecks":[],"parsedResult":null,"outputLength":2269,"ts":"2026-02-19T09:39:59.838Z"}
+{"type":"test.start","taskId":"TEST-FIX","instruction":"Create a test function in test-output/fix-test.js","files":["test-output/fix-test.js"],"ts":"2026-02-19T09:40:10.679Z"}
+{"type":"test.complete","taskId":"TEST-FIX","durationMs":1936,"exitCode":1,"validation":{"hasJson":false,"isValidJson":false,"parseError":null,"hasFilesChanged":null,"hasResult":null,"hasSummary":null,"filesCount":0},"fileChecks":[],"parsedResult":null,"outputLength":2269,"ts":"2026-02-19T09:40:12.659Z"}

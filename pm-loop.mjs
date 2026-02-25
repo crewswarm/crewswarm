@@ -32,6 +32,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { COORDINATOR_AGENT_IDS } from "./lib/agent-registry.mjs";
+import { getProjectDir } from "./lib/project-dir.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -47,7 +48,7 @@ const projDirIdx     = args.indexOf("--project-dir");
 // ── Config ────────────────────────────────────────────────────────────────
 const CREWSWARM_DIR  = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
 const OUTPUT_DIR     = projDirIdx >= 0 ? args[projDirIdx + 1]
-                     : (process.env.OPENCREW_OUTPUT_DIR || join(CREWSWARM_DIR, "website"));
+                     : getProjectDir(join(CREWSWARM_DIR, "website"));
 const ROADMAP_FILE   = process.env.PM_ROADMAP_FILE || join(OUTPUT_DIR, "ROADMAP.md");
 const BRIDGE_PATH    = join(CREWSWARM_DIR, "gateway-bridge.mjs");
 const FEATURES_DOC   = process.env.PM_FEATURES_DOC || null;
@@ -365,11 +366,12 @@ async function runCopywriterPass(itemText, task) {
 
   console.log(`  ✍️  Copywriter pass for: ${itemText.slice(0, 60)}...`);
   try {
-    const resp = await fetch(`${mistral.baseUrl}/chat/completions`, {
+    const resp = await fetch(`${mistral.baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${mistral.apiKey}` },
       body: JSON.stringify({
         model: "mistral-large-latest",
+        stream: false,
         messages: [
           { role: "system", content: copywriterPrompt },
           { role: "user", content: `Write the copy for this task:\n\n"${itemText}"\n\nThe coder will implement your copy. Output labeled copy only (Headline:, Body:, CTA: etc). Be clear and specific.${webContext}` }
@@ -477,10 +479,10 @@ async function callPMLLM(messages, { maxTokens = 400, temperature = 0.3 } = {}) 
     messages,
     max_tokens: maxTokens,
     temperature,
+    stream: false,
     ...(isPerplexity ? { search_recency_filter: "month" } : {}),
   };
-
-  const resp = await fetch(`${provider.baseUrl}/chat/completions`, {
+  const resp = await fetch(`${(provider.baseUrl || "").replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${provider.apiKey}` },
     body: JSON.stringify(body),
@@ -729,7 +731,7 @@ ${extendWebSnippet}
 ${isPerplexity ? "Search for relevant best practices, then generate" : "Generate"} 4 new roadmap items that would meaningfully improve this project:`;
 
   try {
-    const resp = await fetch(`${provider.baseUrl}/chat/completions`, {
+    const resp = await fetch(`${(provider.baseUrl || "").replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -737,6 +739,7 @@ ${isPerplexity ? "Search for relevant best practices, then generate" : "Generate
       },
       body: JSON.stringify({
         model: provider.model,
+        stream: false,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user",   content: userPrompt },
