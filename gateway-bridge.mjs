@@ -1881,8 +1881,11 @@ function runOpenCodeTask(prompt, payload = {}) {
       console.warn(`[OpenCode] No project dir configured — writing to cwd (${process.cwd()}). Set one in Dashboard → Settings → OpenCode Project Directory.`);
     }
     
+    // Prefix prompt with agent ID so OpenCode session titles are identifiable
+    const agentPrefix = agentId ? `[${agentId}] ` : "";
+    const titledPrompt = agentPrefix + String(prompt);
     // Fixed: use --model (not -m), and proper command structure
-    const args = ["run", String(prompt), "--model", model, "--dir", projectDir];
+    const args = ["run", titledPrompt, "--model", model, "--dir", projectDir];
     if (agent) args.push("--agent", agent);
 
     console.error(`[OpenCode] Running: ${bin} ${args.join(' ')}`); // Debug log

@@ -104,3 +104,8 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 - Fixed stop-loss timing: calculate position_value BEFORE stop-loss check, track entry_price separately
 - Fixed price_change scoping: calculate fresh each iteration inside loop, not carried from previous iteration
 - main.py already passed position_size/stop_loss_pct to run_backtest; CORS already fixed to use env var instead of "*"
+
+## [2026-02-24] crew-coder-back: llm-trading-api project created
+- Created FastAPI backend at /Users/jeffhobbs/Desktop/llm-trading-api/ with multi-provider LLM support
+- Supports OpenAI, Anthropic, Groq, Mistral, Cerebras via environment-configured API keys
+- API key auth via X-API-Key header, CORS configurable via env vars

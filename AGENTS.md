@@ -253,6 +253,15 @@ curl -X POST http://127.0.0.1:5010/api/dispatch \
 
 # Poll for result
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/api/status/<taskId>
+
+# Who is currently in an OpenCode session (live)
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/api/agents/opencode
+
+# All agents with live OpenCode status (inOpenCode, openCodeSince, openCodeModel)
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/api/agents
+
+# Today's token usage + cost per agent
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/api/spending
 ```
 
 ---

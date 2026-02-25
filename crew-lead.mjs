@@ -553,6 +553,8 @@ function buildSystemPrompt(cfg) {
     "- In @@PIPELINE steps, agent can be id or display name (Frank, Blazer, Antoine, TG, etc.); names are resolved automatically.",
     "- wave:1 tasks run simultaneously. wave:2 starts only after ALL wave:1 tasks finish. wave:3 after wave:2. etc.",
     "- Use same wave for independent tasks (different files/concerns). Use higher wave for tasks that depend on prior results.",
+    "- NEVER put crew-qa in the same wave as builder agents (crew-coder*, crew-frontend, crew-ml, crew-fixer). QA must always be its own wave AFTER builders finish, so the quality gate can detect failures and auto-insert crew-fixer.",
+    "- Correct pipeline order: builders → crew-qa → crew-fixer (if needed, auto-inserted) → crew-qa (re-check) → crew-pm",
     "- Each step receives the combined output of ALL steps from the previous wave as context.",
     "- Minimum 2 steps. Each must have agent + task + wave. Must be valid JSON on ONE line.",
     "- Do NOT use both @@PIPELINE and @@DISPATCH in the same reply",
@@ -649,6 +651,11 @@ function buildSystemPrompt(cfg) {
     "   CRITICAL: Never claim a skill ran or returned results (e.g. 'queued', 'ETA', 'in progress') unless you actually emitted @@SKILL. The result is appended to your reply only when you emit it. Do not fabricate skill outcomes.",
     "   Other agents with 'skill' permission can also call: @@SKILL skillname {\"param\":\"value\"}",
     "   You can list skills by calling GET /api/skills on crew-lead (port 5010).",
+    "   CREW-LEAD API (use @@RUN_CMD curl with Bearer token from ~/.crewswarm/config.json → rt.authToken):",
+    "   GET /api/agents — list all agents, includes inOpenCode/openCodeSince/openCodeModel fields",
+    "   GET /api/agents/opencode — who is currently in an active OpenCode session (count + elapsed time)",
+    "   GET /api/status/:taskId — poll a dispatched task for completion",
+    "   GET /api/spending — today's token usage and cost per agent",
     "   To create or update a skill (use crew-main to research the API first):",
     '   @@DISPATCH {"agent":"crew-main","task":"Research the Notion API append-to-database endpoint and create a skill using @@DEFINE_SKILL notion.append\\n{...JSON skill def...}\\n@@END_SKILL"}',
     "   You can create skills yourself with @@DEFINE_SKILL (you have it). When the user asks you to create a skill, emit @@DEFINE_SKILL name\\n{...JSON...}\\n@@END_SKILL. If you need API research first, dispatch to crew-main; otherwise define directly. Example:",
@@ -1025,6 +1032,26 @@ function parsePipeline(text) {
     const codingAgents = new Set(['crew-coder','crew-coder-front','crew-coder-back','crew-frontend','crew-fixer','crew-ml']);
     const hasCodingAgent = steps.some(s => codingAgents.has(s.agent) || codingAgents.has((s.agent||'').toLowerCase()));
     const hasPm = steps.some(s => s.agent === 'crew-pm' || s.agent === 'pm');
+    const hasQa = steps.some(s => s.agent === 'crew-qa' || s.agent === 'qa');
+    const hasFixer = steps.some(s => s.agent === 'crew-fixer' || s.agent === 'fixer');
+
+    // If pipeline has fixer but only one QA pass, insert a re-QA wave after fixer
+    // so the pattern is always: ... → fixer → QA (re-check) → pm
+    if (hasFixer && hasQa) {
+      const fixerWaves = steps.filter(s => s.agent === 'crew-fixer' || s.agent === 'fixer').map(s => Number(s.wave));
+      const maxFixerWave = Math.max(...fixerWaves);
+      const qaAfterFixer = steps.some(s => (s.agent === 'crew-qa' || s.agent === 'qa') && Number(s.wave) > maxFixerWave);
+      if (!qaAfterFixer) {
+        // Shift all waves after fixer up by 1 to make room
+        steps.forEach(s => { if (Number(s.wave) > maxFixerWave) s.wave = Number(s.wave) + 1; });
+        steps.push({
+          wave: maxFixerWave + 1,
+          agent: 'crew-qa',
+          task: 'Re-audit the previously flagged files after crew-fixer ran. Read qa-report-phase3.md (or the latest qa-report) to know what was fixed. Run py_compile on all .py files. Confirm CRITICAL and HIGH issues are resolved. Write an updated qa-report with final verdict.',
+        });
+      }
+    }
+
     if (hasCodingAgent && !hasPm) {
       const maxWave = Math.max(...steps.map(s => Number(s.wave)));
       steps.push({
@@ -1364,7 +1391,10 @@ function checkDispatchTimeouts() {
         pipeline.pendingTaskIds.delete(taskId);
         pipeline.waveResults.push(`[Timeout: ${agent} — ${kind} after ${Math.round(limit / 1000)}s]`);
         if (pipeline.pendingTaskIds.size === 0) {
+          if (!pipeline.completedWaveResults) pipeline.completedWaveResults = [];
+          pipeline.completedWaveResults.push([...pipeline.waveResults]);
           pipeline.currentWave++;
+          savePipelineState(d.pipelineId);
           dispatchPipelineWave(d.pipelineId);
         }
       }
@@ -1389,6 +1419,79 @@ let dispatchTimeoutInterval = null;
 // pendingPipelines: Map<pipelineId, { waves, currentWave, pendingTaskIds, waveResults, sessionId, steps }>
 const pendingPipelines = new Map();
 
+// ── Pipeline state persistence (survives crew-lead restarts) ─────────────────
+const PIPELINE_STATE_DIR = path.join(os.homedir(), ".crewswarm", "pipelines");
+try { fs.mkdirSync(PIPELINE_STATE_DIR, { recursive: true }); } catch {}
+
+function savePipelineState(pipelineId) {
+  const pipeline = pendingPipelines.get(pipelineId);
+  if (!pipeline) return;
+  try {
+    const serializable = {
+      pipelineId,
+      sessionId: pipeline.sessionId,
+      steps: pipeline.steps,
+      waves: pipeline.waves,
+      currentWave: pipeline.currentWave,
+      completedWaveResults: pipeline.completedWaveResults || [],
+      status: "in_progress",
+      savedAt: Date.now(),
+    };
+    // Persist any dynamic keys (retry counters, etc.)
+    for (const [k, v] of Object.entries(pipeline)) {
+      if (k.startsWith("_")) serializable[k] = v;
+    }
+    fs.writeFileSync(
+      path.join(PIPELINE_STATE_DIR, `${pipelineId}.json`),
+      JSON.stringify(serializable, null, 2)
+    );
+  } catch (e) {
+    console.error(`[pipeline-state] Failed to save ${pipelineId}:`, e.message);
+  }
+}
+
+function deletePipelineState(pipelineId) {
+  try { fs.unlinkSync(path.join(PIPELINE_STATE_DIR, `${pipelineId}.json`)); } catch {}
+}
+
+function resumePipelines() {
+  let resumed = 0;
+  try {
+    const files = fs.readdirSync(PIPELINE_STATE_DIR).filter(f => f.endsWith(".json"));
+    for (const file of files) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(path.join(PIPELINE_STATE_DIR, file), "utf8"));
+        if (raw.status !== "in_progress") { deletePipelineState(raw.pipelineId); continue; }
+        // Don't resume pipelines older than 2 hours (stale)
+        if (Date.now() - raw.savedAt > 2 * 60 * 60 * 1000) {
+          console.log(`[pipeline-state] Dropping stale pipeline ${raw.pipelineId} (saved ${Math.round((Date.now() - raw.savedAt) / 60000)}m ago)`);
+          deletePipelineState(raw.pipelineId); continue;
+        }
+        console.log(`[pipeline-state] Resuming pipeline ${raw.pipelineId} from wave ${raw.currentWave + 1}/${raw.waves.length}`);
+        const pipeline = {
+          sessionId: raw.sessionId,
+          steps: raw.steps,
+          waves: raw.waves,
+          currentWave: raw.currentWave,
+          waveResults: raw.completedWaveResults?.slice(-1)?.[0] || [],
+          completedWaveResults: raw.completedWaveResults || [],
+          pendingTaskIds: new Set(),
+        };
+        // Restore dynamic keys
+        for (const [k, v] of Object.entries(raw)) {
+          if (k.startsWith("_")) pipeline[k] = v;
+        }
+        pendingPipelines.set(raw.pipelineId, pipeline);
+        dispatchPipelineWave(raw.pipelineId);
+        resumed++;
+      } catch (e) {
+        console.error(`[pipeline-state] Failed to resume ${file}:`, e.message);
+      }
+    }
+  } catch {}
+  if (resumed > 0) console.log(`[pipeline-state] Resumed ${resumed} pipeline(s)`);
+}
+
 function cancelAllPipelines(sessionId) {
   if (pendingPipelines.size === 0) return 0;
   let cancelled = 0;
@@ -1396,6 +1499,7 @@ function cancelAllPipelines(sessionId) {
     const waveInfo = `wave ${pipeline.currentWave + 1}/${pipeline.waves.length}`;
     console.log(`[crew-lead] Cancelling pipeline ${pid} (${waveInfo}, ${pipeline.pendingTaskIds.size} pending tasks)`);
     broadcastSSE({ type: "pipeline_cancelled", pipelineId: pid, ts: Date.now() });
+    deletePipelineState(pid);
     cancelled++;
   }
   pendingPipelines.clear();
@@ -1520,6 +1624,7 @@ function dispatchPipelineWave(pipelineId) {
     recordOpsEvent("pipeline_completed", { pipelineId, steps: steps.length, sessionId });
     bumpOpsCounter("pipelinesCompleted");
     pendingPipelines.delete(pipelineId);
+    deletePipelineState(pipelineId);
     return;
   }
 
@@ -1549,6 +1654,7 @@ function dispatchPipelineWave(pipelineId) {
   broadcastSSE({ type: "pipeline_progress", pipelineId, waveIndex: currentWave, totalWaves: waves.length, waveSize: waveSteps.length, agents: resolvedAgentNames, ts: Date.now() });
   console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1}/${waves.length} — dispatching ${waveSteps.length} agent(s) in parallel: ${resolvedAgentNames.join(", ")}`);
   recordOpsEvent("pipeline_wave_started", { pipelineId, waveIndex: currentWave, agents: resolvedAgentNames });
+  savePipelineState(pipelineId);
 
   for (const step of waveSteps) {
     // Build full task spec including context from prior wave and optional verify/done criteria
@@ -1634,7 +1740,30 @@ function checkWaveQualityGate(pipeline, pipelineId) {
       const wroteFile = /(?:wrote|created|saved|written|updated|enhanced|implemented|added)\s+(?:to\s+)?(?:\/\S+|[a-zA-Z][\w/.-]+\.(?:html|css|js|ts|py|json|md|txt|sh|yaml|yml))/i.test(result);
       const opencodeWrote = /(?:←\s*Write|Wrote file|Write\s+\.\.[\w/.-]+\.(?:html|css|js|ts|py|json|md)|Created\s+`\/)/i.test(result);
       const explicitDone = /Done\.\s+(?:Created|Updated|Enhanced|Implemented|The\s+(?:file|prototype|component))/i.test(result);
+      // OpenCode agents write silently — check if any src files changed in last 20 min as fallback
+      let opencodeFilesChanged = false;
       if (!hasWriteFile && !wroteFile && !opencodeWrote && !explicitDone) {
+        try {
+          const cutoff = Date.now() - 20 * 60 * 1000;
+          const dirs = ["/Users/jeffhobbs/Desktop/polymarket-ai-strat/src"];
+          const exts = new Set([".py",".js",".ts",".html",".css",".md"]);
+          const checkDir = (d) => {
+            try {
+              for (const f of fs.readdirSync(d)) {
+                const full = path.join(d, f);
+                try {
+                  const st = fs.statSync(full);
+                  if (st.isDirectory()) { if (checkDir(full)) return true; }
+                  else if (exts.has(path.extname(f)) && st.mtimeMs > cutoff) return true;
+                } catch {}
+              }
+            } catch {}
+            return false;
+          };
+          opencodeFilesChanged = dirs.some(checkDir);
+        } catch {}
+      }
+      if (!hasWriteFile && !wroteFile && !opencodeWrote && !explicitDone && !opencodeFilesChanged) {
         issues.push(`${agent} (builder) did not write any files`);
       }
     }
@@ -2824,7 +2953,24 @@ const server = http.createServer(async (req, res) => {
       const agents = cfg.agentRoster.length
         ? cfg.agentRoster.map(a => ({ ...a, tools: readAgentTools(a.id).tools }))
         : (cfg.knownAgents || []).map(id => ({ id, tools: readAgentTools(id).tools }));
-      json(res, 200, { ok: true, agents });
+      // Annotate each agent with live OpenCode status
+      const enriched = agents.map(a => ({
+        ...a,
+        inOpenCode: activeOpenCodeAgents.has(a.id),
+        openCodeSince: activeOpenCodeAgents.get(a.id)?.since || null,
+        openCodeModel: activeOpenCodeAgents.get(a.id)?.model || null,
+      }));
+      json(res, 200, { ok: true, agents: enriched });
+      return;
+    }
+
+    // GET /api/agents/opencode — who is currently in an OpenCode session
+    if (url.pathname === "/api/agents/opencode" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const active = [...activeOpenCodeAgents.entries()].map(([id, info]) => ({
+        id, model: info.model, since: info.since, elapsedMs: Date.now() - info.since,
+      }));
+      json(res, 200, { ok: true, count: active.length, agents: active });
       return;
     }
 
@@ -3213,6 +3359,10 @@ const RT_TOKEN = process.env.OPENCREW_RT_AUTH_TOKEN || (() => {
 // SSE clients listening for agent replies
 const sseClients = new Set();
 
+// Live registry of agents currently in an OpenCode session
+const activeOpenCodeAgents = new Map(); // agentId → { model, since }
+
+
 function broadcastSSE(payload) {
   const event = JSON.stringify(payload);
   for (const client of sseClients) {
@@ -3244,6 +3394,8 @@ function connectRT() {
         return taskId;
       };
       console.log("[crew-lead] RT connected — listening for done, events, command, issues");
+      // Resume any in-progress pipelines from before restart
+      setTimeout(resumePipelines, 2000);
       // Send heartbeat every 30s so monitoring sees crew-lead as up
       if (crewLeadHeartbeat) clearInterval(crewLeadHeartbeat);
       crewLeadHeartbeat = setInterval(() => {
@@ -3289,6 +3441,11 @@ function connectRT() {
         const agent = env.payload?.agent || from;
         const model = env.payload?.model || "";
         const stalled = env.payload?.stalled || false;
+        if (msgType === "agent_working") {
+          activeOpenCodeAgents.set(agent, { model, since: Date.now() });
+        } else {
+          activeOpenCodeAgents.delete(agent);
+        }
         broadcastSSE({ type: msgType, agent, model, stalled, ts: Date.now() });
       }
 
@@ -3373,11 +3530,17 @@ function connectRT() {
             console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} wave ${pipeline.currentWave + 1}: ${pipeline.pendingTaskIds.size} task(s) still pending`);
 
             if (pipeline.pendingTaskIds.size === 0) {
+              // Accumulate completed wave results before advancing
+              if (!pipeline.completedWaveResults) pipeline.completedWaveResults = [];
+              pipeline.completedWaveResults.push([...pipeline.waveResults]);
               // All tasks in this wave are done — run quality gate before advancing
               const gateResult = checkWaveQualityGate(pipeline, dispatch.pipelineId);
               if (gateResult.pass) {
                 pipeline.currentWave++;
+                savePipelineState(dispatch.pipelineId);
                 dispatchPipelineWave(dispatch.pipelineId);
+              } else {
+                savePipelineState(dispatch.pipelineId);
               }
               // If gate fails, checkWaveQualityGate handles re-dispatch or user notification
             }
