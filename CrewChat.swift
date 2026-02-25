@@ -61,6 +61,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     var pendingCardView: NSView?
     var lastAppendedAssistantContent: String = ""
     var lastAppendedUserContent: String = ""
+    var projectPopUp: NSPopUpButton!
+    var activeProjectId: String = ""
+    var projectMap: [String: String] = [:] // title → id
+
+    private let projectIdKey = "crewswarm_chat_active_project_id"
 
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.accessory) // no Dock icon
@@ -68,6 +73,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
         loadAgentInfo()
         checkStatus()
         loadHistory()
+        let savedId = UserDefaults.standard.string(forKey: projectIdKey) ?? ""
+        loadProjects(autoSelectId: savedId.isEmpty ? nil : savedId)
         startSSE()
     }
 
@@ -175,6 +182,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
         stack.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(scrollView)
 
+        // ── Project selector bar ─────────────────────────────────────────
+        let projectBar = NSView()
+        projectBar.wantsLayer = true
+        projectBar.layer?.backgroundColor = NSColor(red:0.04, green:0.06, blue:0.10, alpha:1).cgColor
+        projectBar.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(projectBar)
+
+        let projectLbl = label("Project:", size: 10, color: .crewMuted)
+        projectLbl.translatesAutoresizingMaskIntoConstraints = false
+        projectBar.addSubview(projectLbl)
+
+        projectPopUp = NSPopUpButton()
+        projectPopUp.isBordered = false
+        projectPopUp.wantsLayer = true
+        projectPopUp.layer?.cornerRadius = 6
+        projectPopUp.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.04).cgColor
+        projectPopUp.font = .systemFont(ofSize: 11)
+        projectPopUp.contentTintColor = .crewMuted
+        projectPopUp.target = self
+        projectPopUp.action = #selector(projectChanged)
+        projectPopUp.translatesAutoresizingMaskIntoConstraints = false
+        projectBar.addSubview(projectPopUp)
+
+        let openProjectsBtn = NSButton(title: "📁 Projects", target: self, action: #selector(openProjectsInBrowser))
+        openProjectsBtn.isBordered = false
+        openProjectsBtn.font = .systemFont(ofSize: 11)
+        openProjectsBtn.contentTintColor = .crewMuted
+        openProjectsBtn.toolTip = "Open Projects tab in dashboard (browser)"
+        openProjectsBtn.translatesAutoresizingMaskIntoConstraints = false
+        projectBar.addSubview(openProjectsBtn)
+
         let inputBar = NSView()
         inputBar.wantsLayer = true
         inputBar.layer?.backgroundColor = NSColor.crewCard.cgColor
@@ -206,6 +244,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
         inputBar.addSubview(sendBtn)
 
         NSLayoutConstraint.activate([
+            // project bar sits above input bar
+            projectBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            projectBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            projectBar.bottomAnchor.constraint(equalTo: inputBar.topAnchor),
+            projectBar.heightAnchor.constraint(equalToConstant: 30),
+
+            projectLbl.leadingAnchor.constraint(equalTo: projectBar.leadingAnchor, constant: 14),
+            projectLbl.centerYAnchor.constraint(equalTo: projectBar.centerYAnchor),
+
+            projectPopUp.leadingAnchor.constraint(equalTo: projectLbl.trailingAnchor, constant: 6),
+            projectPopUp.centerYAnchor.constraint(equalTo: projectBar.centerYAnchor),
+            projectPopUp.heightAnchor.constraint(equalToConstant: 22),
+
+            openProjectsBtn.leadingAnchor.constraint(equalTo: projectPopUp.trailingAnchor, constant: 8),
+            openProjectsBtn.trailingAnchor.constraint(equalTo: projectBar.trailingAnchor, constant: -10),
+            openProjectsBtn.centerYAnchor.constraint(equalTo: projectBar.centerYAnchor),
+            openProjectsBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
+
             inputBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             inputBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             inputBar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -223,7 +279,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             scrollView.topAnchor.constraint(equalTo: header.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: inputBar.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: projectBar.topAnchor),
 
             stack.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
         ])
@@ -390,8 +446,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
                 return t
             }
 
-            let result = await apiPost("/api/crew-lead/chat",
-                body: ["message": text, "sessionId": SESSION, "firstName": FIRSTNAME])
+            var chatBody: [String: Any] = ["message": text, "sessionId": SESSION, "firstName": FIRSTNAME]
+            let pid = await MainActor.run { self.activeProjectId }
+            if !pid.isEmpty { chatBody["projectId"] = pid }
+            let result = await apiPost("/api/crew-lead/chat", body: chatBody)
 
             await MainActor.run {
                 typing.removeFromSuperview()
@@ -451,6 +509,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             for v in stack.arrangedSubviews { v.removeFromSuperview() }
             addNote("History cleared", color: .crewMuted)
         }
+    }
+
+    // ── Project selector ──────────────────────────────────────────────────────
+    func loadProjects(autoSelectId: String?) {
+        Task {
+            let r = await apiGet("/api/projects")
+            guard let projects = r["projects"] as? [[String:Any]] else { return }
+            await MainActor.run {
+                let prevId = autoSelectId ?? self.activeProjectId
+                self.projectMap = [:]
+                self.projectPopUp.removeAllItems()
+                self.projectPopUp.addItem(withTitle: "— no project —")
+                for p in projects {
+                    guard let id = p["id"] as? String, let name = p["name"] as? String else { continue }
+                    let folder = (p["outputDir"] as? String)?.split(separator: "/").last.map(String.init) ?? ""
+                    let title = folder.isEmpty ? name : "\(name) (\(folder))"
+                    self.projectPopUp.addItem(withTitle: title)
+                    self.projectMap[title] = id
+                }
+                // Restore previously selected project if still present
+                if !prevId.isEmpty, let title = self.projectMap.first(where: { $0.value == prevId })?.key {
+                    self.projectPopUp.selectItem(withTitle: title)
+                    self.activeProjectId = prevId
+                    UserDefaults.standard.set(prevId, forKey: self.projectIdKey)
+                } else {
+                    self.projectPopUp.selectItem(at: 0)
+                    self.activeProjectId = ""
+                    UserDefaults.standard.removeObject(forKey: self.projectIdKey)
+                }
+            }
+        }
+    }
+
+    @objc func projectChanged() {
+        let title = projectPopUp.titleOfSelectedItem ?? ""
+        activeProjectId = projectMap[title] ?? ""
+        UserDefaults.standard.set(activeProjectId.isEmpty ? nil : activeProjectId, forKey: projectIdKey)
+    }
+
+    @objc func openProjectsInBrowser() {
+        guard let url = URL(string: "\(API_BASE)/#projects") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     // ── Status / history ──────────────────────────────────────────────────────
@@ -538,7 +638,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
                             self.scrollToBottom()
                         } else if type_ == "project_launched",
                            let proj = d["project"] as? [String:Any], let name = proj["name"] as? String {
+                            let newId = proj["projectId"] as? String ?? proj["id"] as? String
                             self.addNote("🚀 \(name) launched — crew is building!", color: .crewBlue)
+                            self.loadProjects(autoSelectId: newId)
                         } else if type_ == "draft_discarded", let id = d["draftId"] as? String, id == self.pendingDraftId {
                             if let card = self.pendingCardView { card.removeFromSuperview(); self.pendingCardView = nil }
                             self.pendingDraftId = nil

@@ -216,11 +216,39 @@
     border-radius: 10px;
   }
 
+  /* Project selector */
+  #projectbar {
+    padding: 6px 14px 4px;
+    background: #161616;
+    border-top: 1px solid #1e1e1e;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+  #projectbar label {
+    font-size: 10px;
+    color: #555;
+    white-space: nowrap;
+  }
+  #projectSelect {
+    flex: 1;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 7px;
+    color: #aaa;
+    font-size: 11px;
+    padding: 3px 7px;
+    outline: none;
+    cursor: pointer;
+  }
+  #projectSelect:focus { border-color: #444; }
+
   /* Input area */
   #inputarea {
-    padding: 10px 14px 14px;
+    padding: 6px 14px 14px;
     background: #161616;
-    border-top: 1px solid #222;
+    border-top: none;
     display: flex;
     gap: 8px;
     align-items: flex-end;
@@ -268,6 +296,13 @@
 
 <div id="messages"></div>
 
+<div id="projectbar">
+  <label>Project:</label>
+  <select id="projectSelect">
+    <option value="">— none —</option>
+  </select>
+</div>
+
 <div id="inputarea">
   <textarea id="input" rows="1" placeholder="Talk to crew-lead…"></textarea>
   <button id="sendBtn" disabled>
@@ -279,10 +314,31 @@
 const API = 'http://127.0.0.1:4319';
 const SESSION = 'owner';
 
-const messagesEl = document.getElementById('messages');
-const input      = document.getElementById('input');
-const sendBtn    = document.getElementById('sendBtn');
-const dot        = document.getElementById('statusDot');
+const messagesEl    = document.getElementById('messages');
+const input         = document.getElementById('input');
+const sendBtn       = document.getElementById('sendBtn');
+const dot           = document.getElementById('statusDot');
+const projectSelect = document.getElementById('projectSelect');
+
+// ── Project dropdown ───────────────────────────────────────────────────
+async function loadProjectsDropdown(autoSelectId) {
+  try {
+    const r = await fetch(API + '/api/projects');
+    const d = await r.json();
+    const projects = d.projects || [];
+    const prev = autoSelectId || projectSelect.value;
+    projectSelect.innerHTML = '<option value="">— none —</option>';
+    projects.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name + (p.outputDir ? ' (' + p.outputDir.split('/').pop() + ')' : '');
+      projectSelect.appendChild(opt);
+    });
+    if (prev && projectSelect.querySelector('option[value="' + prev + '"]')) {
+      projectSelect.value = prev;
+    }
+  } catch {}
+}
 
 // ── Status check ──────────────────────────────────────────────────────
 async function checkStatus() {
@@ -310,16 +366,20 @@ async function loadHistory() {
 }
 
 // ── Add bubble ────────────────────────────────────────────────────────
-function addBubble(label, text, type) {
+function addBubble(label, text, type, parsedBy) {
   const wrap = document.createElement('div');
   wrap.className = 'bubble-wrap ' + (type === 'user' ? 'user' : 'agent');
   const lbl = document.createElement('div');
   lbl.className = 'label';
   lbl.textContent = label;
+  const parse = document.createElement('div');
+  parse.className = 'parsing-source';
+  parse.textContent = parsedBy;
   const bub = document.createElement('div');
   bub.className = 'bubble ' + type;
   bub.textContent = text;
   wrap.appendChild(lbl);
+  wrap.appendChild(parse);
   wrap.appendChild(bub);
   messagesEl.appendChild(wrap);
   return bub;
@@ -443,7 +503,7 @@ async function send() {
     const r = await fetch(API + '/api/crew-lead/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message: text, sessionId: SESSION, firstName: 'Jeff' }),
+      body: JSON.stringify({ message: text, sessionId: SESSION, firstName: 'Jeff', projectId: projectSelect.value || undefined }),
     });
     const d = await r.json();
     typingBub.className = 'bubble agent';
@@ -470,6 +530,8 @@ function listenForAgentReplies() {
     try {
       const d = JSON.parse(e.data);
       if (d.type === 'project_launched' && d.project) {
+        const newId = d.project.projectId || d.project.id;
+        setTimeout(() => loadProjectsDropdown(newId), 800);
         addBubble('🚀', d.project.name + ' launched — crew is building!', 'agent-done');
         scrollBottom();
         return;
@@ -505,6 +567,7 @@ document.getElementById('clearBtn').addEventListener('click', async () => {
 checkStatus();
 setInterval(checkStatus, 10000);
 loadHistory();
+loadProjectsDropdown();
 listenForAgentReplies();
 input.focus();
 </script>

@@ -186,6 +186,79 @@ const activeSessions = new Map();
 // Track last crew-main reply time to debounce rapid messages
 const lastReplyTime = new Map();
 
+// ── Per-chat active project ───────────────────────────────────────────────────
+// Set once via /project <name>, cleared via /project off or /home
+// Persists for the lifetime of the bridge process (survives messages, not restarts)
+const activeProjectByChatId = new Map(); // chatId → { id, name, outputDir }
+
+const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://127.0.0.1:4319";
+
+async function fetchProjects() {
+  const r = await fetch(`${DASHBOARD_URL}/api/projects`, { signal: AbortSignal.timeout(5000) });
+  const d = await r.json();
+  return d.projects || [];
+}
+
+async function handleCommand(chatId, text) {
+  const lower = text.toLowerCase().trim();
+
+  // /projects — list all registered projects
+  if (lower === "/projects" || lower === "/project") {
+    try {
+      const projects = await fetchProjects();
+      if (!projects.length) {
+        await tgSend(chatId, "No projects registered yet. Create one via the dashboard or by chatting with crew-lead.");
+        return true;
+      }
+      const current = activeProjectByChatId.get(chatId);
+      const lines = projects.map(p => {
+        const active = current && current.id === p.id ? " ✅" : "";
+        const pct = p.roadmap?.total ? Math.round((p.roadmap.done / p.roadmap.total) * 100) : 0;
+        return `• *${p.name}*${active} — ${pct}% done\n  \`/project ${p.name}\`\n  📁 ${p.outputDir || "?"}`;
+      });
+      const msg = `*Registered projects (${projects.length}):*\n\n${lines.join("\n\n")}\n\n_Use /project <name> to set active context. /home to return to general mode._`;
+      await tgSend(chatId, msg);
+    } catch (e) {
+      await tgSend(chatId, `⚠️ Could not fetch projects: ${e.message}`);
+    }
+    return true;
+  }
+
+  // /home or /project off — clear active project, back to general crew-lead mode
+  if (lower === "/home" || lower === "/project off" || lower === "/project none" || lower === "/project clear") {
+    activeProjectByChatId.delete(chatId);
+    await tgSend(chatId, "✅ Back to general mode — no active project. crew-lead will act as director.");
+    return true;
+  }
+
+  // /project <name> — set active project by name or partial match
+  if (lower.startsWith("/project ")) {
+    const query = text.slice(9).trim().toLowerCase();
+    try {
+      const projects = await fetchProjects();
+      const match = projects.find(p =>
+        p.name.toLowerCase() === query ||
+        p.name.toLowerCase().includes(query) ||
+        (p.id && p.id.toLowerCase().includes(query)) ||
+        (p.outputDir && p.outputDir.toLowerCase().includes(query))
+      );
+      if (!match) {
+        const names = projects.map(p => `  • ${p.name}`).join("\n");
+        await tgSend(chatId, `❌ No project matching "${query}".\n\nAvailable:\n${names || "(none)"}`);
+        return true;
+      }
+      activeProjectByChatId.set(chatId, { id: match.id, name: match.name, outputDir: match.outputDir });
+      const roadmap = match.roadmapFile ? `\nROADMAP: ${match.roadmapFile}` : "";
+      await tgSend(chatId, `✅ *${match.name}* is now the active project.\n📁 ${match.outputDir || "?"}${roadmap}\n\nEvery message you send will include this project's context. Use /home to return to general mode.`);
+    } catch (e) {
+      await tgSend(chatId, `⚠️ Could not look up projects: ${e.message}`);
+    }
+    return true;
+  }
+
+  return false; // not a command we handle
+}
+
 function connectRT() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(RT_URL);
@@ -427,6 +500,12 @@ async function pollLoop() {
         // Track session so replies get routed back
         activeSessions.set(chatId, { username, firstName, lastSeen: Date.now() });
 
+        // Handle slash commands — /projects, /project <name>, /home — don't forward to crew-lead
+        if (text.startsWith("/")) {
+          const handled = await handleCommand(chatId, text);
+          if (handled) continue;
+        }
+
         // Add to in-memory and persistent conversation history
         addToHistory(chatId, "user", text);
         persistTurn("user", text, firstName || username);
@@ -435,11 +514,14 @@ async function pollLoop() {
         const correlationId = randomUUID();
         const history       = formatHistory(chatId);
 
+        // Inject active project context if set for this chat
+        const activeProj = activeProjectByChatId.get(chatId);
+
         // Send to crew-lead HTTP server — each Telegram chatId gets its own session
         fetch(`${CREW_LEAD_URL}/chat`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: text, sessionId: `telegram-${chatId}`, firstName: firstName || username }),
+          body: JSON.stringify({ message: text, sessionId: `telegram-${chatId}`, firstName: firstName || username, projectId: activeProj?.id || undefined }),
           signal: AbortSignal.timeout(65000),
         }).then(async r => {
           const d = await r.json();

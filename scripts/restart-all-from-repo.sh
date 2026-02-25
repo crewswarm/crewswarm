@@ -51,8 +51,11 @@ echo "Starting gateway bridges (crew-main, crew-pm, crew-coder, etc.)..."
 sleep 1
 
 echo "Starting crew-lead (port 5010)..."
-nohup "$NODE" crew-lead.mjs >> /tmp/crew-lead.log 2>&1 &
-sleep 1
+# crew-lead is spawned by start-crew.mjs above; this is a safety net only.
+if ! lsof -ti :5010 >/dev/null 2>&1; then
+  nohup "$NODE" crew-lead.mjs >> /tmp/crew-lead.log 2>&1 &
+  sleep 1
+fi
 
 START_DASH=1
 for arg in "$@"; do
@@ -69,7 +72,7 @@ fi
 
 echo ""
 echo "Stack restarted from repo. Check:"
-echo "  OpenCode:   port 4096  (opencode serve — sessions, MCP)"
+echo "  OpenCode:   port 4096  (opencode serve — sessions, MCP, --attach target)"
 echo "  RT bus:     port 18889 (opencrew-rt-daemon.mjs)"
 echo "  crew-lead:  port 5010  (chat + receives agent replies)"
 echo "  dashboard:  port 4319  (Chat tab, RT Messages, Services)"

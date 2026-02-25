@@ -1,0 +1,7 @@
+{
+  "id": "crew-coder-back",
+  "model": "anthropic/claude-3-5-sonnet",
+  "tools": {
+    "crewswarmAllow": ["read_file", "write_file", "mkdir", "run_cmd"]
+  }
+}

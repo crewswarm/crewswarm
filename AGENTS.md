@@ -95,6 +95,8 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 | `~/.crewswarm/config.json` | RT auth token |
 | `~/.crewswarm/agent-prompts.json` | System prompt per agent |
 
+**Crew laws:** `memory/law.md` defines four principles injected into every agent: (1) do not harm the user, (2) no access to personal/private resources without permission, (3) do not break the machine, (4) create value (make the user money or equivalent). See [Laws of robotics](https://en.wikipedia.org/wiki/Laws_of_robotics). Edit `memory/law.md` to tweak.
+
 **How crew-main (or any agent) can see and explain the system:** Agents do not get the full repo in context automatically. To explain how the dashboard, crew-lead, or gateway works: use **@@READ_FILE** on the paths above (e.g. `scripts/dashboard.mjs`, `crew-lead.mjs`, `gateway-bridge.mjs`) and on `AGENTS.md` / `memory/brain.md`. To propose or assign code changes: dispatch to the right specialist (e.g. @@DISPATCH to crew-coder or crew-frontend with a concrete task and file path). The user can then take that plan and have Cursor or another tool apply the edits.
 
 ---
@@ -159,7 +161,7 @@ See `~/.crewswarm/crewswarm.json` → `agents[].tools.crewswarmAllow` to overrid
 | `crew-coder-front` | Frontend / UI |
 | `crew-coder-back` | Backend / API |
 | `crew-frontend` | CSS / design |
-| `crew-qa` | Testing & audit |
+| `crew-qa` | Testing & audit (report path: crew-lead injects `<projectDir>/qa-report.md` so QA never gets a random path) |
 | `crew-fixer` | Bug fixing |
 | `crew-pm` | Planning & roadmaps |
 | `crew-security` | Security review |
@@ -192,6 +194,10 @@ See `~/.crewswarm/crewswarm.json` → `agents[].tools.crewswarmAllow` to overrid
 - After the swarm completes roadmap tasks, PM-loop calls **crew-main** for final synthesis (audit + assembly).
 - The crew-main daemon is in `OPENCODE_AGENTS` in `gateway-bridge.mjs`, so it routes those tasks to **OpenCode** when `OPENCREW_OPENCODE_ENABLED` is on.
 - PM-loop sets `OPENCREW_OPENCODE_PROJECT` to the PM output dir when invoking crew-main; the bridge passes it as `payload.projectDir` so OpenCode runs in the build output directory.
+
+### Ouroboros-style LLM ↔ OpenCode loop
+
+- When an agent has **OpenCode loop** enabled (`opencodeLoop: true` in `crewswarm.json` or `OPENCREW_OPENCODE_LOOP=1`), the gateway runs a multi-step loop instead of a single OpenCode call: the **role’s LLM** is asked for “STEP: &lt;instruction&gt; or DONE”; each STEP is sent to OpenCode as a mini task; results are fed back until the LLM says DONE or `OPENCREW_OPENCODE_LOOP_MAX_ROUNDS` (default 10) is reached. Same idea as [Ouroboros](https://github.com/joi-lab/ouroboros) tool loop, adapted for multi-agent: each agent can run this loop when handling a task.
 
 ---
 
@@ -278,6 +284,16 @@ tail -f /tmp/crew-lead.log
 tail -f /tmp/opencrew-rt-daemon.log
 ```
 
+### Background consciousness (optional, Ouroboros-style)
+
+When enabled, **crew-main** is periodically given a short "reflect between tasks" cycle when no pipelines are running: it reads `memory/brain.md`, considers follow-ups and system health, and can emit one `@@BRAIN:` or `@@DISPATCH` or reply `NO_ACTION`. Keeps the crew proactive and lets crew-main **manage the process for the user**.
+
+- **Enable:** `CREWSWARM_BG_CONSCIOUSNESS=1` (or `true`/`yes`) when starting crew-lead. Optional: `CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS=900000` (default 15 min).
+- **Example:** `CREWSWARM_BG_CONSCIOUSNESS=1 node crew-lead.mjs`
+- Runs only when there are no active pipelines; throttle respects the interval.
+- **User visibility:** crew-main’s background reply is appended to the **owner** chat as `[crew-main — background]: …` and written to **`~/.crewswarm/process-status.md`** so the user (or a dashboard) can see current status, suggested next steps, and any follow-up actions.
+- **Cheap model (recommended):** If a **Groq** API key is in `~/.crewswarm/crewswarm.json` under `providers.groq`, the background cycle uses a **direct Groq call** instead of dispatching to crew-main — super cheap and fast. Default model: `groq/llama-3.1-8b-instant`. Override with `CREWSWARM_BG_CONSCIOUSNESS_MODEL=groq/llama-3.3-70b-versatile` (or any `provider/model` from your config). If no Groq (or chosen provider) is configured, crew-lead falls back to dispatching the cycle to **crew-main** (uses his model).
+
 ---
 
 ## Scheduled pipelines (cron)
@@ -345,6 +361,8 @@ Edit `~/.crewswarm/crewswarm.json`:
 ```
 
 Format is always `provider/model-id`. Provider must have an API key in the `providers` block of the same file.
+
+To enable the **Ouroboros-style LLM ↔ OpenCode loop** for an agent (LLM decomposes task into steps, each step run by OpenCode, until DONE), set `opencodeLoop: true` for that agent in `crewswarm.json`, or set env `OPENCREW_OPENCODE_LOOP=1` for all. Optional: `OPENCREW_OPENCODE_LOOP_MAX_ROUNDS` (default 10).
 
 ### Change an agent's system prompt
 

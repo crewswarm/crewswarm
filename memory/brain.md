@@ -3,6 +3,16 @@
 Agents: append discoveries here. This is the persistent knowledge base for this workspace.
 Read it to avoid repeating mistakes. Write to it when you learn something durable.
 
+## [2026-02-25] system: opencode --attach implemented
+
+- `opencode run --attach http://127.0.0.1:<port>` eliminates per-run MCP server cold boot.
+- `start-crew.mjs` checks port 4096 first (started by restart-all). If not up, starts a fresh headless serve on 4097.
+- `gateway-bridge.mjs` probes `/global/health` before each run; if healthy, adds `--attach <url>` to the opencode args.
+- No password needed — serve only listens on 127.0.0.1 (loopback-only, trusted local access).
+- **Key finding**: `opencode run --attach` only works when stdin is NOT a terminal (i.e., closed/piped). The bridge always uses `stdio: ["ignore", "pipe", "pipe"]` so this is handled automatically.
+- **Key finding**: URL-embedded basic auth (`http://user:pass@host`) causes "Session not found" on opencode serve — do NOT use a password with --attach.
+- `--format json` was NOT implemented — the raw event schema is undocumented and the existing text parsing works fine.
+
 ## Format
 
 ```
@@ -11,6 +21,20 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 ```
 
 ---
+
+## [2026-02-25] system: background consciousness (crew-main between tasks)
+- When `CREWSWARM_BG_CONSCIOUSNESS=1`, crew-lead dispatches **crew-main** every 15 min (or CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS) when no pipelines are active.
+- Task: read brain.md, one-sentence system/crew state, optionally one @@BRAIN or @@DISPATCH else NO_ACTION. Ouroboros-style "thinks between tasks"; keeps crew proactive.
+- crew-main manages the process for the user: his reply is shown in owner chat and written to **~/.crewswarm/process-status.md** so the user (or dashboard) can see status and next steps.
+
+## [2026-02-25] system: Desktop projects — never use CrewSwarm as base
+- **Two separate projects:** (1) **polymarket-ai-strat** → `/Users/jeffhobbs/Desktop/polymarket-ai-strat/` (2) **llm-trading-api** → `/Users/jeffhobbs/Desktop/llm-trading-api/`. Do not conflate them.
+- **Never** use `/Users/jeffhobbs/Desktop/CrewSwarm/<project-name>/` for either. Correct base is always `.../Desktop/<project-name>/`. For pip, run_cmd, or @@READ_FILE: use the Desktop path (e.g. `pip install -r /Users/jeffhobbs/Desktop/polymarket-ai-strat/requirements.txt`), never `.../CrewSwarm/polymarket-ai-strat/...`.
+- polymarket-ai-strat: **main.py** at `src/api/main.py` (not `src/api/routers/main.py`). backtests: `src/api/routers/backtests.py`.
+
+## [2026-02-25] system: crew-mega upgrade plan lives in CrewSwarm only
+- **Re-implementation plan for crew-mega (QA-failed phases 1,2,4,5)** is in `/Users/jeffhobbs/Desktop/CrewSwarm/ROADMAP.md` — see section "crew-mega Upgrade (user requested 10x improvement)".
+- Do NOT point people to `polymarket-ai-strat/ROADMAP.md` for crew-mega; that project's ROADMAP is Phase 4 (Strategy Persistence, Market Browser, Performance) only. CrewSwarm config work = CrewSwarm repo.
 
 ## [2026-02-22] system: CrewSwarm repo facts
 - Repo lives at `/Users/jeffhobbs/Desktop/CrewSwarm/`
@@ -93,19 +117,49 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 - If a dispatch fails after retry, do NOT tell the user "please ask me again" without also logging why. Check RT bus health first.
 - QA output file is always `qa-report.md`, never `qa-results.md` or `qa-output.md`.
 
+## [2026-02-25] system: self-commit multi-model review — REQUIRED when enabled
+- When crew-github is pointed at the CrewSwarm repo itself (self-modification), NO commit may land without a multi-model review step first.
+- Review ensemble (from Ouroboros pattern): at least 2 of — o3, gemini-2.5-pro, claude-opus — must approve before `git commit`.
+- Implementation: add a review wave BEFORE crew-github in any self-mod pipeline. Dispatch the diff to 2+ review agents; only proceed if both approve. Rejection = back to crew-coder with feedback.
+- This is NOT needed for external project commits (polymarket, hobbs2, etc.) — only when the agent is writing to `/Users/jeffhobbs/Desktop/CrewSwarm/` itself.
+- Reference: Ouroboros `review.py` + `control.py` for implementation pattern (github.com/joi-lab/ouroboros).
+
 ## [2026-02-25] QA + dispatch: ALWAYS discover project structure before auditing
 - QA must run `@@RUN_CMD find /project -name "*.py"` first if paths are unknown — never assume flat structure
 - Projects in this system use src/ subdirectories (e.g. src/backtest/engine.py, src/api/main.py)
 - When QA says "file not found", the fix is to update the PROMPT not re-dispatch with hardcoded paths
 - Fix root cause first (prompt/config), THEN re-dispatch — never override with a one-off dispatch patch
 
-## [2026-02-25] crew-fixer: backtest engine bugs fixed
+## [2026-02-25] crew-fixer: backtest engine bugs fixed in polymarket-ai-strat
+- PROJECT: /Users/jeffhobbs/Desktop/polymarket-ai-strat/ (NOT llm-trading-api — that is a separate unrelated project)
 - Fixed position sizing for shorts: multiply by position direction (+1/-1) so short positions get positive position_value
 - Fixed stop-loss timing: calculate position_value BEFORE stop-loss check, track entry_price separately
 - Fixed price_change scoping: calculate fresh each iteration inside loop, not carried from previous iteration
 - main.py already passed position_size/stop_loss_pct to run_backtest; CORS already fixed to use env var instead of "*"
+- Key files: src/backtest/engine.py, src/api/main.py, src/data/historical_data.py
+
+## [2026-02-25] crew-lead dispatch: ALWAYS include project path and key files
+- When dispatching to ANY agent (QA, fixer, coder), always include the full absolute project path, key files to read, and what to write
+- "send to QA" with no context = vague task = agent asks for clarification = wasted cycle
+- Minimum dispatch must include: project dir, specific files to check, output file path
+- crew-lead updated its own prompt via @@PROMPT to enforce this — check agent-prompts.json → "crew-lead" key
 
 ## [2026-02-24] crew-coder-back: llm-trading-api project created
 - Created FastAPI backend at /Users/jeffhobbs/Desktop/llm-trading-api/ with multi-provider LLM support
 - Supports OpenAI, Anthropic, Groq, Mistral, Cerebras via environment-configured API keys
 - API key auth via X-API-Key header, CORS configurable via env vars
+
+## [2026-02-25] crew-lead: crew-lead: When dispatching to crew-qa, always include full project details (files, paths, features) in the task to avoid user meltdowns like this one.
+
+## [2026-02-25] crew-lead: for project-specific tips.
+
+## [2026-02-25] crew-lead: to build a collective memory (e.g., logging best practices for prompts).
+
+## [2026-02-25] crew-mega: Polymarket specialist
+- Always read ROADMAP.md first — tracks all and features priorities
+- Backtest entry point: python3 -m src.api.main with --strategy flag
+- Key metrics: Sharpe ratio (higher = better), max_drawdown (lower = better), total_return
+- Strategy code lives in src/backtest/strategies/ — use existing patterns
+- Parameter extraction: see src/ai/parameter_extractor.py
+
+## [2026-02-25] crew-lead: crew-lead: fact to remember he is actually good at his job and is proactive for reading the ROAMAP and keeping the team on task - he is organized and can remember exactly where the project is - when asked about status he knows exactly what each member of the team is doing and their activity

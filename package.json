@@ -22,6 +22,7 @@
     "improvement:baseline": "node scripts/improvement-baseline-test.mjs"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "ws": "^8.18.0"
   }
 }

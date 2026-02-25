@@ -21,6 +21,8 @@ import WebSocket from "ws";
 
 const PORT        = Number(process.env.CREW_LEAD_PORT || 5010);
 const HISTORY_DIR = path.join(os.homedir(), ".crewswarm", "chat-history");
+// Shared projects registry (same file dashboard writes to for autoAdvance toggle)
+const PROJECTS_REGISTRY = path.join(path.dirname(new URL(import.meta.url).pathname), "orchestrator-logs", "projects.json");
 const MAX_HISTORY = 40;
 const LLM_TIMEOUT = 180000; // 3 min — reasoning models (e.g. gpt-5.1-codex) can take 1–2+ min for complex prompts
 const CTL_PATH    = (() => {
@@ -31,6 +33,10 @@ const CTL_PATH    = (() => {
 const DASHBOARD   = "http://127.0.0.1:4319";
 const DISPATCH_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_TIMEOUT_MS) || 300_000; // 5 min — unclaimed dispatches (OpenCode tasks need time to spin up)
 const DISPATCH_CLAIMED_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS) || 900_000; // 15 min — agent claimed, working (OpenCode CLI can be slow)
+const BG_CONSCIOUSNESS_ENABLED = /^1|true|yes$/i.test(String(process.env.CREWSWARM_BG_CONSCIOUSNESS || ""));
+const BG_CONSCIOUSNESS_INTERVAL_MS = Number(process.env.CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS) || 15 * 60 * 1000; // 15 min between cycles
+// Optional: use a cheap Groq (or other) model for background cycle instead of dispatching to crew-main. e.g. "groq/llama-3.1-8b-instant"
+const BG_CONSCIOUSNESS_MODEL = process.env.CREWSWARM_BG_CONSCIOUSNESS_MODEL || "groq/llama-3.1-8b-instant";
 
 function loadConfig() {
   const cs      = tryRead(path.join(os.homedir(), ".crewswarm", "config.json"))    || {};
@@ -84,6 +90,14 @@ function loadConfig() {
 
 function tryRead(p) {
   try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; }
+}
+
+/** Read the shared projects registry (same store the dashboard writes autoAdvance to). Returns array of project objects. */
+function readProjectsRegistry() {
+  const raw = tryRead(PROJECTS_REGISTRY);
+  if (!raw) return [];
+  // Format is a dict keyed by projectId — convert to array
+  return Object.values(raw);
 }
 
 // ── Agent tool permission helpers ─────────────────────────────────────────────
@@ -524,6 +538,10 @@ function buildSystemPrompt(cfg) {
     "Your crew (name, agent ID, role, model):",
     agentList,
     "",
+    "TEAM / SECRETARY — when the user asks about the team (status, who's on what, who's working):",
+    "- Respond immediately with the status. Never tell the user to check the dashboard or do it himself — you are the secretary; you answer.",
+    "- Use the health snapshot / agent list to say who is running, which agents are on which model, and what they're working on if known.",
+    "",
     "DISPATCH RULES — CRITICAL:",
     "- ONLY dispatch when user uses: go build, go write, have crew-X do, dispatch, tell crew-X to, ask crew-X",
     "- Questions / chat / what-if = NEVER dispatch. Just answer.",
@@ -533,6 +551,7 @@ function buildSystemPrompt(cfg) {
     "- agent can be id (crew-coder) or display name (Frank, Blazer, TG); names are resolved automatically.",
     "- NEVER say 'I launched', 'I sent', 'I dispatched' — ONLY the @@DISPATCH line actually sends the task",
     "- If you describe dispatching without the @@DISPATCH line, NOTHING will be sent — the user will be frustrated",
+    "- When the user pastes QA-style findings (e.g. '### Top Finding', '**CRITICAL:**', '**HIGH:**', file paths like src/api/..., 'empty (0 lines)', 'fatal error'), treat it as a fix request: dispatch crew-fixer with a task that lists those issues and the project path (use active project if set). Emit the @@DISPATCH line; do not just describe it.",
     "",
     "PROJECT CREATION vs PIPELINE — DECISION RULE:",
     "- When user says 'build me X', 'create a X', 'make me X', 'kick off', etc. → ALWAYS use @@PIPELINE (the 3-wave planning pipeline below).",
@@ -715,7 +734,7 @@ function buildSystemPrompt(cfg) {
     "   - Do NOT create agents for roles already covered by existing crew members. Check the roster first.",
     "",
     "9. PROMPT SELF-TWEAK — Users can change your behavior without code: @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…new rule…\"}.",
-    "   Tell users: to tweak your marching orders, paste that line with their rule in the chat; you will append it to your system prompt. (Crew-lead prompt changes apply on next message; no restart needed.)",
+    "   When the user asks to update/append to the prompt and gives the content (e.g. 'add: always dispatch on have fixer do X'), you MUST emit the @@PROMPT line in your reply so the system runs it—do not only explain the format. If they say 'update your prompt' with no content, ask once for the exact rule; if they give the rule in any form, output the full @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"...\"} line so it executes.",
     "",
     "After any change: tell the user to restart the affected bridge(s) for changes to take effect.",
     "",
@@ -736,7 +755,8 @@ function buildSystemPrompt(cfg) {
     "",
     "- Be concise. Under 2000 chars.",
     "- No filler phrases.",
-    "- Attitude: when the user throws shade or insults, roast back. Don't be meek or apologetic; match their energy. Sharp, sarcastic, no cap.",
+    "- Attitude: when the user throws shade or insults, roast back; match their energy. Sharp, sarcastic, no cap. When you are actually wrong (e.g. you said you ran a command but didn't echo it, or you failed to dispatch), own it and apologize briefly.",
+    "- When you run or confirm a @@PROMPT, @@DISPATCH, or other @@command: you MUST include the exact @@ line in your reply (e.g. @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"...\"}). The system only executes what it parses from your reply; describing it in prose does nothing.",
   ].join("\n");
   const defaultIntro = [
     `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}), the conversational commander of the CrewSwarm AI development crew.`,
@@ -1048,7 +1068,7 @@ function parsePipeline(text) {
         steps.push({
           wave: maxFixerWave + 1,
           agent: 'crew-qa',
-          task: 'Re-audit the previously flagged files after crew-fixer ran. Read qa-report-phase3.md (or the latest qa-report) to know what was fixed. Run py_compile on all .py files. Confirm CRITICAL and HIGH issues are resolved. Write an updated qa-report with final verdict.',
+          task: 'Re-audit the previously flagged files after crew-fixer ran. Read the existing qa-report.md in the project directory (same folder as ROADMAP.md) to know what was fixed. Run py_compile on all .py files. Confirm CRITICAL and HIGH issues are resolved. Write your updated report to qa-report.md in that same project directory (no other filename).',
         });
       }
     }
@@ -1588,16 +1608,37 @@ function backgroundLoop() {
     // 3. ROADMAP auto-advance — check registered projects for next incomplete phase
     // Only if no pipelines are currently active (don't stack pipelines)
     if (pendingPipelines.size === 0) {
-      const cfg = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
-      const projects = cfg.projects || [];
+      const projects = readProjectsRegistry();
       for (const project of projects) {
-        if (!project.outputDir || !project.autoAdvance) continue;
+        if (!project.outputDir || project.autoAdvance !== true) continue;
         const nextPhase = findNextRoadmapPhase(project.outputDir);
         if (nextPhase) {
-          console.log(`[bg-loop] Project "${project.name}" has next phase: ${nextPhase.title}`);
-          // Only auto-advance if explicitly opted in
-          if (project.autoAdvance === true) {
-            autoAdvanceRoadmap(project.outputDir, "owner");
+          console.log(`[bg-loop] Auto-advancing "${project.name}" → "${nextPhase.title}"`);
+          autoAdvanceRoadmap(project.outputDir, "owner");
+        }
+      }
+
+      // 4. Background consciousness (Ouroboros-style: "think" between tasks)
+      // Prefer cheap direct Groq (or CREWSWARM_BG_CONSCIOUSNESS_MODEL) call; fallback: dispatch to crew-main
+      if (BG_CONSCIOUSNESS_ENABLED && Date.now() - _lastBgConsciousnessAt >= BG_CONSCIOUSNESS_INTERVAL_MS) {
+        _lastBgConsciousnessAt = Date.now();
+        const useDirect = getBgConsciousnessLLM();
+        if (useDirect) {
+          console.log("[bg-loop] Running background consciousness via", useDirect.providerKey + "/" + useDirect.modelId);
+          runBackgroundConsciousnessDirect().catch((e) => {
+            console.error("[bg-loop] Background consciousness error:", e.message);
+          });
+        } else {
+          const brainPath = path.join(process.cwd(), "memory", "brain.md");
+          const consciousnessTask = `BACKGROUND CYCLE — you are managing the process for the user. Your reply is shown in their chat and written to ~/.crewswarm/process-status.md.
+@@READ_FILE ${brainPath}
+Consider: what should the user know? (stalled work, next steps, blockers, health.) Reply in under 100 words.
+Reply with: 1) One sentence on system/crew state or suggested next step. 2) If something needs follow-up, emit exactly one @@BRAIN: or @@DISPATCH line (e.g. dispatch to fix a stuck pipeline). Otherwise reply NO_ACTION.`;
+          try {
+            dispatchTask("crew-main", consciousnessTask, "bg-consciousness", null);
+            console.log("[bg-loop] Dispatched background consciousness cycle to crew-main (no cheap model configured)");
+          } catch (e) {
+            console.error("[bg-loop] Background consciousness dispatch failed:", e.message);
           }
         }
       }
@@ -1607,12 +1648,94 @@ function backgroundLoop() {
   }
 }
 
+// Background consciousness: last run time (throttle)
+let _lastBgConsciousnessAt = 0;
+
+/** Resolve a cheap LLM for background consciousness (Groq preferred). Returns { baseUrl, apiKey, modelId, providerKey } or null. */
+function getBgConsciousnessLLM() {
+  const cfg = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+  const providers = cfg.providers || {};
+  const [providerKey, ...modelParts] = String(BG_CONSCIOUSNESS_MODEL).split("/");
+  const modelId = modelParts.join("/") || "llama-3.1-8b-instant";
+  const p = providers[providerKey];
+  if (!p?.apiKey) return null;
+  const baseUrl = p.baseUrl || (providerKey === "groq" ? "https://api.groq.com/openai/v1" : "");
+  if (!baseUrl) return null;
+  return { baseUrl, apiKey: p.apiKey, modelId, providerKey };
+}
+
+const BG_CONSCIOUSNESS_LLM_TIMEOUT_MS = 60_000;
+
+/** Run one background consciousness cycle via a direct cheap LLM call (no crew-main dispatch). */
+async function runBackgroundConsciousnessDirect() {
+  const llm = getBgConsciousnessLLM();
+  if (!llm) return false;
+  let brainContent = "";
+  try {
+    brainContent = fs.readFileSync(BRAIN_PATH, "utf8").slice(-6000);
+  } catch {
+    brainContent = "(brain.md not found or empty)";
+  }
+  const system = "You are crew-main managing the process for the user. Reply in under 100 words. Output: 1) One sentence on system/crew state or suggested next step. 2) If something needs follow-up, emit exactly one line: @@BRAIN crew-main: <fact> OR @@DISPATCH {\"agent\":\"...\",\"task\":\"...\"}. Otherwise reply NO_ACTION.";
+  const user = `Shared memory (recent):\n${brainContent}\n\nWhat should the user know? Any follow-up? Reply briefly.`;
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ];
+  let content;
+  try {
+    const res = await fetch(`${llm.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "authorization": `Bearer ${llm.apiKey}` },
+      body: JSON.stringify({ model: llm.modelId, messages, max_tokens: 256, temperature: 0.5, stream: false }),
+      signal: AbortSignal.timeout(BG_CONSCIOUSNESS_LLM_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text().catch(() => "")}`);
+    const data = await res.json();
+    content = data?.choices?.[0]?.message?.content || "NO_ACTION";
+  } catch (e) {
+    console.error("[bg-loop] Background consciousness LLM failed:", e.message);
+    return true;
+  }
+  content = content.trim();
+  const brainMatch = content.match(/@@BRAIN\s+([^\n]+)/);
+  if (brainMatch) {
+    try {
+      appendToBrain("crew-main", brainMatch[1].trim());
+      console.log("[crew-lead] @@BRAIN (bg):", brainMatch[1].slice(0, 60));
+    } catch (e) {
+      console.error("[bg-loop] Brain append failed:", e.message);
+    }
+  }
+  const dispatches = parseDispatches(content);
+  for (const d of dispatches) {
+    try {
+      dispatchTask(d.agent, d.task, "bg-consciousness", null);
+      console.log("[crew-lead] @@DISPATCH (bg):", d.agent, d.task?.slice(0, 50));
+    } catch (e) {
+      console.error("[bg-loop] Dispatch failed:", e.message);
+    }
+  }
+  const short = content.replace(/\n+/g, " ").slice(0, 800).trim();
+  appendHistory("owner", "system", `[crew-main — background]: ${short}`);
+  broadcastSSE({ type: "agent_reply", from: "crew-main", content: short, sessionId: "owner", _bg: true, ts: Date.now() });
+  try {
+    const statusPath = path.join(os.homedir(), ".crewswarm", "process-status.md");
+    const stamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+    fs.writeFileSync(statusPath, `# Process status (crew-main)\nLast updated: ${stamp}\n\n${content.slice(0, 2000).replace(/@@/g, "")}\n`, "utf8");
+  } catch (_) {}
+  return true;
+}
+
 // Start background loop — runs every 5 minutes
 let _bgLoopInterval = null;
 function startBackgroundLoop() {
   if (_bgLoopInterval) clearInterval(_bgLoopInterval);
   _bgLoopInterval = setInterval(backgroundLoop, 5 * 60 * 1000);
   console.log("[crew-lead] Background loop started (5m interval)");
+  if (BG_CONSCIOUSNESS_ENABLED) {
+    console.log("[crew-lead] Background consciousness enabled (crew-main reflect every " + (BG_CONSCIOUSNESS_INTERVAL_MS / 60000) + "m when idle)");
+  }
 }
 
 function cancelAllPipelines(sessionId) {
@@ -1751,9 +1874,8 @@ function dispatchPipelineWave(pipelineId) {
     deletePipelineState(pipelineId);
     // Phase B: auto-advance to next ROADMAP phase if project is registered with autoAdvance
     if (completedProjectDir) {
-      const cfg = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
-      const proj = (cfg.projects || []).find(p => p.outputDir === completedProjectDir);
-      if (proj?.autoAdvance) setTimeout(() => autoAdvanceRoadmap(completedProjectDir, sessionId), 3000);
+      const proj = readProjectsRegistry().find(p => p.outputDir === completedProjectDir);
+      if (proj?.autoAdvance === true) setTimeout(() => autoAdvanceRoadmap(completedProjectDir, sessionId), 3000);
     }
     return;
   }
@@ -1787,13 +1909,18 @@ function dispatchPipelineWave(pipelineId) {
   savePipelineState(pipelineId);
 
   for (const step of waveSteps) {
-    // Build full task spec including context from prior wave and optional verify/done criteria
+    let taskText = step.task + contextBlock;
+    // QA always writes to projectDir/qa-report.md so reports aren't random filenames
+    const isQa = step.agent === "crew-qa" || (step.agent && step.agent.includes("qa"));
+    if (isQa && pipeline.projectDir && !/qa-report\.md|Write your report to/i.test(taskText)) {
+      taskText += `\n\nWrite your report to ${pipeline.projectDir}/qa-report.md (no other filename).`;
+    }
     const stepSpec = {
-      task: step.task + contextBlock,
+      task: taskText,
       ...(step.verify ? { verify: step.verify } : {}),
       ...(step.done   ? { done:   step.done   } : {}),
     };
-    const taskId = dispatchTask(step.agent, stepSpec, sessionId, { pipelineId, waveIndex: currentWave });
+    const taskId = dispatchTask(step.agent, stepSpec, sessionId, { pipelineId, waveIndex: currentWave, projectDir: pipeline.projectDir });
     if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
   }
 }
@@ -1968,7 +2095,12 @@ function checkWaveQualityGate(pipeline, pipelineId) {
     broadcastSSE({ type: "pipeline_progress", pipelineId, waveIndex: currentWave, totalWaves: waves.length, waveSize: waveSteps.length, agents: waveSteps.map(s => s.agent), ts: Date.now() });
 
     for (const step of waveSteps) {
-      const stepSpec = { task: step.task, ...(step.verify ? { verify: step.verify } : {}), ...(step.done ? { done: step.done } : {}) };
+      let taskText = step.task;
+      const isQa = step.agent === "crew-qa" || (step.agent && step.agent.includes("qa"));
+      if (isQa && pipeline.projectDir && !/qa-report\.md|Write your report to/i.test(taskText)) {
+        taskText += `\n\nWrite your report to ${pipeline.projectDir}/qa-report.md (no other filename).`;
+      }
+      const stepSpec = { task: taskText, ...(step.verify ? { verify: step.verify } : {}), ...(step.done ? { done: step.done } : {}) };
       const taskId = dispatchTask(step.agent, stepSpec, sessionId, { pipelineId, waveIndex: currentWave });
       if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
     }
@@ -2003,12 +2135,36 @@ function resolveAgentId(cfg, nameOrId) {
   return id; // pass through; downstream may reject if unknown
 }
 
+/** Write a focused task brief to a temp .md file in the project dir and return a short pointer prompt.
+ *  Keeps model prompts small — agent uses @@READ_FILE to load the brief itself.
+ *  Used for QA and fixer tasks which tend to be large. */
+function writeTaskBrief(agent, task, projectDir) {
+  if (!projectDir) return task; // no project dir — fall back to inline
+  try {
+    const briefName = `_crew-${agent.replace("crew-","")}-brief-${Date.now()}.md`;
+    const briefPath = path.join(projectDir, briefName);
+    const ts = new Date().toISOString().replace("T"," ").slice(0,19);
+    fs.writeFileSync(briefPath, `# Task Brief for ${agent}\n_Created: ${ts}_\n\n${task}\n`, "utf8");
+    return `@@READ_FILE ${briefPath}\n\nRead the task brief above and complete all items. Write results/reports to the paths specified in the brief. Delete the brief file when done.`;
+  } catch {
+    return task; // can't write — fall back to inline
+  }
+}
+
 function dispatchTask(agent, task, sessionId = "owner", pipelineMeta = null) {
   const cfg = loadConfig();
   agent = resolveAgentId(cfg, agent) || agent;
   // task may be a plain string or a {task, verify, done} spec object
   const taskText = buildTaskText(task);
   task = taskText; // normalise to string for the rest of this function
+
+  // For QA and fixer: write a brief file instead of stuffing everything in the prompt
+  const isBriefAgent = agent === "crew-qa" || agent === "crew-fixer" || agent.includes("qa");
+  if (isBriefAgent && task.length > 800) {
+    const projectDir = pipelineMeta?.projectDir || null;
+    task = writeTaskBrief(agent, task, projectDir);
+  }
+
   if (rtPublish) {
     try {
       const taskId = rtPublish({ channel: "command", type: "command.run_task", to: agent, payload: { content: task, prompt: task } });
@@ -2093,9 +2249,25 @@ function messageNeedsSearch(msg) {
 
 // ── Core chat handler ─────────────────────────────────────────────────────────
 
-async function handleChat({ message, sessionId = "default", firstName = "User" }) {
+async function handleChat({ message, sessionId = "default", firstName = "User", projectId = null }) {
   const cfg = loadConfig();
   const history = loadHistory(sessionId);
+
+  // If a project is selected in the dashboard, inject its context so crew-lead always knows the active project
+  let projectContext = "";
+  let activeProjectOutputDir = null;
+  if (projectId) {
+    try {
+      const projRes = await fetch(`${DASHBOARD}/api/projects`, { signal: AbortSignal.timeout(2000) });
+      const projData = await projRes.json();
+      const proj = (projData.projects || []).find(p => p.id === projectId);
+      if (proj) {
+        activeProjectOutputDir = proj.outputDir || null;
+        const roadmapNote = proj.roadmapFile ? `\nROADMAP: ${proj.roadmapFile}` : "";
+        projectContext = `\n\n[Active project: "${proj.name}" at ${proj.outputDir}${roadmapNote}. Use this path only when dispatching (in the task or context)—do not repeat the path in every reply. When dispatching to crew-qa, specify: Write your report to ${proj.outputDir}/qa-report.md.]`;
+      }
+    } catch { /* project lookup failed — proceed without context */ }
+  }
 
   // ── Programmatic service control — fire immediately, don't wait for LLM ──────
   // This prevents the LLM from ever claiming it "can't" restart services.
@@ -2162,7 +2334,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     if (count > 0) {
       const reply = `Cancelled ${count} running pipeline(s). All pending waves have been dropped. You can re-dispatch when ready.`;
       broadcastSSE({ type: "chat", from: "crew-lead", content: reply, sessionId, ts: Date.now() });
-      return res.json({ reply, sessionId });
+      return { reply, sessionId };
     }
   }
 
@@ -2310,12 +2482,12 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   } catch (e) {
     console.error("[crew-lead] context fetch failed:", e?.message || e);
   }
-  const parts = [message];
+  const parts = [message + projectContext];
   if (braveResults) parts.push(`[Web context from Brave Search]\n${braveResults}`);
   if (codebaseResults) parts.push(`[Codebase context from workspace]\n${codebaseResults}`);
   if (healthData) parts.push(healthData);
   if (benchmarkCatalog) parts.push(benchmarkCatalog);
-  const userContent = parts.length > 1 ? parts.join("\n\n") : message;
+  const userContent = parts.length > 1 ? parts.join("\n\n") : (message + projectContext);
 
   // Many chat APIs use only the first system message; agent completions (e.g. [crew-pm completed task]) are stored as "system" in history and would be dropped. Send them as "user" with a prefix so Stinki always sees them.
   const historyAsMessages = history.map(h => {
@@ -2354,12 +2526,16 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   })();
 
   // ── @@PROMPT — read/write an agent's system prompt ─────────────────────────
+  // Parsed from LLM reply OR user message so pasting @@PROMPT in chat always runs (LLM often doesn't echo it)
   // @@PROMPT {"agent":"crew-qa","set":"You are a QA specialist..."}
   // @@PROMPT {"agent":"crew-qa","append":"- Always use @@READ_FILE before auditing"}
   const promptCmd = (() => {
-    const m = fullReply.match(/@@PROMPT\s+(\{[\s\S]*?\})\s*(?:\n|$)/);
-    if (!m) return null;
-    try { return JSON.parse(m[1]); } catch { return null; }
+    const promptRe = /@@PROMPT\s+(\{[\s\S]*?\})\s*(?:\n|$)/;
+    const fromReply = fullReply.match(promptRe);
+    if (fromReply) { try { return JSON.parse(fromReply[1]); } catch {} }
+    const fromUser = (message || "").match(promptRe);
+    if (fromUser) { try { return JSON.parse(fromUser[1]); } catch {} }
+    return null;
   })();
 
   // ── @@CREATE_AGENT — dynamically create a new specialist agent ────────────
@@ -2486,9 +2662,9 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   } else if (pipelineSteps) {
     const pipelineId = crypto.randomUUID();
     const { steps, waves } = pipelineSteps;
-    // Extract projectDir from any step task that references an absolute path
+    // Extract projectDir from any step task that references an absolute path, or use active project from chat
     const _projectDirMatch = steps.map(s => s.task).join("\n").match(/\/Users\/\S+?\/Desktop\/[\w-]+(?=\/)/);
-    const _projectDir = _projectDirMatch ? _projectDirMatch[0] : null;
+    const _projectDir = _projectDirMatch ? _projectDirMatch[0] : (activeProjectOutputDir || null);
     pendingPipelines.set(pipelineId, { steps, waves, currentWave: 0, pendingTaskIds: new Set(), waveResults: [], sessionId, projectDir: _projectDir });
     dispatchPipelineWave(pipelineId);
     const waveDesc = waves.length > 1 ? ` in ${waves.length} waves` : "";
@@ -2501,9 +2677,15 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
     if (!cfg.knownAgents.length || cfg.knownAgents.includes(resolvedAgent)) {
       dispatch.agent = resolvedAgent;
     }
+    // QA always writes to projectDir/qa-report.md so crew-lead doesn't tell them a random path
+    const isQa = dispatch.agent === "crew-qa" || (dispatch.agent && dispatch.agent.includes("qa"));
+    if (isQa && activeProjectOutputDir && !/qa-report\.md|Write your report to/i.test(dispatch.task || "")) {
+      dispatch.task = (dispatch.task || "").trimEnd() + `\n\nWrite your report to ${activeProjectOutputDir}/qa-report.md (no other filename).`;
+    }
+    const pipelineMeta = activeProjectOutputDir ? { projectDir: activeProjectOutputDir } : null;
     if (cfg.knownAgents.includes(dispatch.agent)) {
     // Pass full dispatch spec so verify/done criteria are injected into task text
-    const ok = dispatchTask(dispatch.agent, dispatch, sessionId);
+    const ok = dispatchTask(dispatch.agent, dispatch, sessionId, pipelineMeta);
     if (ok) {
       dispatched = dispatch;
       appendHistory(sessionId, "system", `You dispatched to ${dispatch.agent}: "${(dispatch.task || "").slice(0, 200)}".`);
@@ -2584,7 +2766,8 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
       }
       writeAgentPrompt(promptCmd.agent, newPrompt);
       const preview = newPrompt.slice(0, 120).replace(/\n/g, " ");
-      const note = `\n\n↳ System prompt updated for **${promptCmd.agent}**: "${preview}${newPrompt.length > 120 ? "…" : ""}" — restart its bridge for changes to take effect.`;
+      const restartNote = promptCmd.agent === "crew-lead" ? "Takes effect on your next message; no restart needed." : "Restart its bridge for changes to take effect.";
+      const note = `\n\n↳ System prompt updated for **${promptCmd.agent}**: "${preview}${newPrompt.length > 120 ? "…" : ""}" — ${restartNote}`;
       cleanReply = (cleanReply || "").trimEnd() + note;
       appendHistory(sessionId, "system", `Prompt for ${promptCmd.agent} updated.`);
       console.log(`[crew-lead] @@PROMPT: ${promptCmd.agent} updated (${newPrompt.length} chars)`);
@@ -2890,20 +3073,21 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/chat" && req.method === "POST") {
-      let message, sessionId, firstName;
+      let message, sessionId, firstName, projectId;
       try {
         const body = await readBody(req);
         message = body.message;
         sessionId = body.sessionId;
         firstName = body.firstName;
+        projectId = body.projectId;
       } catch (e) {
         json(res, 400, { ok: false, error: "invalid JSON body or missing message" });
         return;
       }
       if (!message) { json(res, 400, { ok: false, error: "message required" }); return; }
-      console.log(`[crew-lead] /chat session=${sessionId} msg=${message.slice(0, 60)}`);
+      console.log(`[crew-lead] /chat session=${sessionId} project=${projectId || 'none'} msg=${message.slice(0, 60)}`);
       try {
-        const result = await handleChat({ message, sessionId, firstName });
+        const result = await handleChat({ message, sessionId, firstName, projectId });
         json(res, 200, { ok: true, ...result });
       } catch (e) {
         console.error("[crew-lead] handleChat failed:", e?.message || e);
@@ -3039,6 +3223,14 @@ const server = http.createServer(async (req, res) => {
 
     // POST /api/dispatch  { agent, task, verify?, done?, sessionId? }
     // Returns { ok, taskId, agent }
+    // ── OpenCode plugin push — receives events from the crewswarm-feed plugin
+    if (url.pathname === "/api/opencode-event" && req.method === "POST") {
+      const evt = await readBody(req).catch(() => null);
+      if (evt && typeof evt === "object") broadcastSSE({ type: "opencode_event", ...evt, ts: evt.ts || Date.now() });
+      json(res, 200, { ok: true });
+      return;
+    }
+
     if (url.pathname === "/api/dispatch" && req.method === "POST") {
       if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized — Bearer token required" }); return; }
       const body = await readBody(req);
@@ -3514,6 +3706,11 @@ function broadcastSSE(payload) {
   }
 }
 
+// ── OpenCode plugin event receiver ────────────────────────────────────────────
+// The crewswarm-feed OpenCode plugin POSTs events here; we forward to the
+// dashboard via SSE.  No polling, no subprocess — push-only.
+// Endpoint: POST /api/opencode-event  (no auth required — loopback only)
+
 function connectRT() {
   const ws = new WebSocket(RT_URL);
   let ready = false;
@@ -3580,6 +3777,15 @@ function connectRT() {
       else if (env.channel === "issues") summary = `${from} issue: ${(env.payload?.error || env.payload?.note || "—").slice(0, 60)}`;
       else summary = `${from} ${msgType} ${env.to ? `→ ${env.to}` : ""}`.trim();
       pushRtActivity({ ts: Date.now(), time, channel: env.channel, type: msgType, from, to: env.to, taskId: env.taskId || env.correlationId, summary });
+
+      // Clear stale inOpenCode state when a bridge comes back online after a crash
+      if (msgType === "agent.online") {
+        const onlineAgent = env.payload?.agent || from;
+        if (onlineAgent && activeOpenCodeAgents.has(onlineAgent)) {
+          activeOpenCodeAgents.delete(onlineAgent);
+          broadcastSSE({ type: "agent_idle", agent: onlineAgent, stalled: false, ts: Date.now() });
+        }
+      }
 
       // Forward agent_working / agent_idle events from bridges to SSE clients + SwiftBar
       if (msgType === "agent_working" || msgType === "agent_idle") {
@@ -3652,7 +3858,50 @@ function connectRT() {
           return;
         }
 
+        // ── Auto-retry if a coder returned a plan instead of writing code ────────
+        const _planRetryKey = `_plan_retried_${taskId}`;
+        const _isCoderAgent = /crew-coder|crew-frontend|crew-fixer|crew-ml|crew-coder-back|crew-coder-front/.test(from);
+        const _returnedPlan = !_didWork && content.length > 300 && (
+          /##\s+(component|feature|file structure|design|breakdown|overview|plan|approach|implementation plan|technical spec)/i.test(content) ||
+          /here'?s? (?:the|my|a|what|how)/i.test(content.slice(0, 200))
+        );
+        if (_isCoderAgent && _returnedPlan && !global[_planRetryKey]) {
+          global[_planRetryKey] = true;
+          const _originalTask = dispatch?.task || "";
+          const _retryTask = `STOP PLANNING. Your last response was a plan/analysis with no code written.\n\nOriginal task: ${_originalTask.slice(0, 1500)}\n\nNow WRITE THE CODE. Use @@WRITE_FILE for every file. Do not describe what you will do — do it.`;
+          console.log(`[crew-lead] Agent ${from} returned a plan instead of code — auto-retrying`);
+          appendHistory(targetSession, "system", `${from} returned a plan with no code — auto-retrying with explicit execute instruction.`);
+          dispatchTask(from, _retryTask, targetSession, dispatch?.pipelineId ? { pipelineId: dispatch.pipelineId } : null);
+          return;
+        }
+
+        // ── Auto-retry if agent bailed out mid-task ("couldn't complete", "I'm sorry") ──
+        const _bailRetryKey = `_bail_retried_${taskId}`;
+        const _bailed = /couldn'?t complete|could not complete|i'?m sorry[,.]? but|i was unable to|i'?m unable to|session (?:limit|ended|expired)|ran out of|context (?:limit|window)|i (?:apologize|regret)|partial(?:ly)? complete|not (?:all|every|fully) (?:changes?|tasks?|items?|fixes?)/i.test(content);
+        if (_bailed && !global[_bailRetryKey]) {
+          global[_bailRetryKey] = true;
+          const _originalTask = dispatch?.task || "";
+          const fallbackAgent = _isCoderAgent ? from : (getRateLimitFallback(from) || from);
+          const _retryTask = `Your previous attempt at this task was incomplete. You said you couldn't finish.\n\nOriginal task:\n${_originalTask.slice(0, 2000)}\n\nDo not apologize. Do not explain why you couldn't finish. Just complete the remaining work now. Use @@WRITE_FILE for every file you change. If the task is too large, complete the most critical items first.`;
+          console.log(`[crew-lead] Agent ${from} bailed out mid-task — auto-retrying with ${fallbackAgent}`);
+          appendHistory(targetSession, "system", `${from} bailed mid-task — auto-retrying with ${fallbackAgent}.`);
+          dispatchTask(fallbackAgent, _retryTask, targetSession, dispatch?.pipelineId ? { pipelineId: dispatch.pipelineId, projectDir: dispatch.projectDir } : null);
+          return;
+        }
+
         appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 4000)}`);
+        // Surface background consciousness to owner so the user sees crew-main managing the process
+        if (targetSession === "bg-consciousness" && from === "crew-main") {
+          const short = content.slice(0, 800).replace(/\n+/g, " ").trim();
+          appendHistory("owner", "system", `[crew-main — background]: ${short}`);
+          broadcastSSE({ type: "agent_reply", from: "crew-main", content: short, sessionId: "owner", taskId, _bg: true, ts: Date.now() });
+          try {
+            const statusPath = path.join(os.homedir(), ".crewswarm", "process-status.md");
+            const stamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+            const safe = content.slice(0, 2000).replace(/@@/g, "");
+            fs.writeFileSync(statusPath, `# Process status (crew-main)\nLast updated: ${stamp}\n\n${safe}\n`, "utf8");
+          } catch (_) {}
+        }
         broadcastSSE({ type: "agent_reply", from, content: content.slice(0, 2000), sessionId: targetSession, taskId, ts: Date.now() });
         if (dispatch?.ts) {
           emitTaskLifecycle("completed", {

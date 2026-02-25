@@ -593,6 +593,14 @@ const html = `<!doctype html>
         <div><div class="page-title">RT Messages</div><div class="page-sub">Live feed from CrewSwarm RT message bus</div></div>
         <button id="rtScrollBtn" onclick="document.getElementById('rtView').scrollTop=document.getElementById('rtView').scrollHeight" style="display:none;position:fixed;bottom:32px;right:32px;z-index:999;background:var(--accent);color:#fff;border:none;border-radius:50px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity .2s;">⬇ Latest</button>
       </div>
+      <!-- OpenCode live feed -->
+      <div id="ocFeedWrap" style="margin:0 0 18px 0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:.04em;text-transform:uppercase;">OpenCode Activity</span>
+          <span id="ocFeedDot" style="display:none;width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;" title="Live"></span>
+        </div>
+        <div id="ocFeed" style="display:flex;flex-direction:column;gap:4px;min-height:32px;"></div>
+      </div>
       <div id="rtMessages"></div>
     </div>
 
@@ -632,10 +640,18 @@ const html = `<!doctype html>
       </div>
       <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
         <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
-        <div style="display:flex;gap:8px;align-items:flex-end;">
-          <textarea id="chatInput" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send)"
-            style="flex:1;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;width:auto;"
-            onkeydown="chatKeydown(event)"></textarea>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
+          <span style="font-size:11px;color:var(--text-3);white-space:nowrap;align-self:center;">Project:</span>
+          <select id="chatProjectSelect" style="width:200px;max-width:200px;font-size:12px;padding:6px 8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;align-self:center;" onchange="onChatProjectChange()" title="Active project for dispatch context">
+            <option value="">— none —</option>
+          </select>
+          <div style="flex:1;position:relative;min-width:0;overflow:visible;">
+            <textarea id="chatInput" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
+              style="width:100%;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;min-width:0;box-sizing:border-box;"
+              onkeydown="chatKeydown(event)" oninput="chatAtAtInput(event)"></textarea>
+            <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
+            <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
+          </div>
           <button onclick="sendChat()" class="btn-green" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
         </div>
       </div>
@@ -1277,11 +1293,39 @@ async function loadSessions(){
     box.innerHTML = '';
     if (!data.length) { box.innerHTML = '<div class="meta" style="padding:20px;">Sessions from OpenCode server (4096).</div>'; return; }
     if (!selected && data[0]) selected = data[0].id;
+    // Crew agent from title: "[crew-fixer] ..." or "crew-fixer" (we prefix prompts with [agentId])
+    function crewAgentFromTitle(title) {
+      if (!title || typeof title !== 'string') return null;
+      const m = title.match(/\[?(crew-\w+)\]?/);
+      return m ? m[1] : null;
+    }
+    // Infer role from task keywords when slug is OpenCode codename (sunny-comet, calm-tiger)
+    function inferAgentFromTitle(title) {
+      if (!title || typeof title !== 'string') return null;
+      const t = title;
+      if (/\bFixer\b|fixer\s+task|fix\s+.*\.py|syntax\s+error/i.test(t)) return 'fixer';
+      if (/\bQA\b|qa\s+audit|audit:/i.test(t)) return 'qa';
+      if (/\bPM\b|crew-pm|roadmap\b/i.test(t)) return 'pm';
+      if (/\bCoder\b|coder\s+task|frontend\b|backend\b/i.test(t)) return 'coder';
+      if (/\bSecurity\b|security\s+review/i.test(t)) return 'security';
+      if (/\bCopywriter\b|copy\s+task/i.test(t)) return 'copywriter';
+      return null;
+    }
+    // OpenCode uses random adjective-noun slugs (sunny-comet, calm-tiger); they don't map to crew agents
+    function isOpencodeCodename(slug) {
+      return slug && /^[a-z]+-[a-z]+$/.test(slug) && !slug.startsWith('crew-');
+    }
     data.forEach(s => {
       const div = document.createElement('div');
       div.className = 'row' + (s.id === selected ? ' active' : '');
       div.onclick = () => { selected = s.id; refreshAll(); };
-      div.innerHTML = '<div><strong>' + (s.title || s.slug || s.id) + '</strong></div><div class="meta">' + (s.directory || '-') + '</div>';
+      const crewAgent = crewAgentFromTitle(s.title || '');
+      const inferred = inferAgentFromTitle(s.title || '');
+      const slug = s.slug || '';
+      const agent = crewAgent || (slug && !isOpencodeCodename(slug) ? slug : null) || inferred;
+      const slugLabel = isOpencodeCodename(slug) ? ' (' + slug + ')' : '';
+      const assigned = agent ? ('Assigned to: ' + agent + slugLabel) : (slug ? ('Assigned to: ' + slug + ' (OpenCode session)') : '');
+      div.innerHTML = '<div><strong>' + (s.title || s.slug || s.id) + '</strong></div><div class="meta">' + (s.directory || '-') + '</div>' + (assigned ? '<div class="meta" style="font-size:11px;color:var(--accent);">' + assigned + '</div>' : '');
       box.appendChild(div);
     });
   } catch (e) { document.getElementById('sessions').innerHTML = '<div class="meta" style="padding:20px; color:#ef4444;">Error loading sessions.</div>'; }
@@ -1450,6 +1494,9 @@ async function showChat(){
   hideAllViews();
   document.getElementById('chatView').classList.add('active');
   setNavActive('navChat');
+  _chatActiveProjectId = getStoredChatProjectId();
+  const sel = document.getElementById('chatProjectSelect');
+  if (sel && _chatActiveProjectId && sel.querySelector('option[value="' + _chatActiveProjectId + '"]')) sel.value = _chatActiveProjectId;
   checkCrewLeadStatus();
   startAgentReplyListener();
   loadCrewLeadInfo();
@@ -1548,6 +1595,37 @@ function startAgentReplyListener() {
         const dot = document.getElementById('coding-dot-' + d.agent);
         if (dot) dot.style.display = 'none';
       }
+      // OpenCode serve live events — tool calls, file edits, session boundaries
+      if (d.type === 'opencode_event') {
+        const feed = document.getElementById('ocFeed');
+        const liveDot = document.getElementById('ocFeedDot');
+        if (!feed) return;
+        if (liveDot) liveDot.style.display = 'inline-block';
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:8px;background:var(--bg-2);font-size:12px;font-family:var(--font-mono,monospace);animation:fadeIn .25s ease;';
+        const time = new Date(d.ts || Date.now()).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        let icon = '⚙️', label = '';
+        if (d.kind === 'session_start') { icon = '▶'; row.style.borderLeft = '3px solid #22c55e'; var _sd = d.dir || ''; label = 'session started' + (_sd ? ' — ' + _sd.split('/').pop() : ''); }
+        else if (d.kind === 'session_end') { icon = '■'; row.style.borderLeft = '3px solid var(--text-3)'; label = 'session ended'; if (liveDot) liveDot.style.display = 'none'; }
+        else if (d.kind === 'file_edit') { icon = '✏️'; row.style.borderLeft = '3px solid #f59e0b'; label = (d.file || d.path || '') + (d.extra ? ' <span style="opacity:.5;">'+d.extra+'</span>' : ''); }
+        else if (d.kind === 'error') { icon = '✗'; row.style.borderLeft = '3px solid #ef4444'; row.style.color = '#ef4444'; label = d.message || 'error'; }
+        else if (d.kind === 'tool') {
+          const toolColors = { read_file:'#60a5fa', write_file:'#f59e0b', bash:'#a78bfa', list_directory:'#6ee7b7', grep:'#6ee7b7' };
+          const tc = toolColors[d.tool] || 'var(--text-2)';
+          icon = d.phase === 'done' ? '✓' : '→';
+          row.style.borderLeft = '3px solid ' + tc;
+          row.style.color = d.phase === 'done' ? 'var(--text-2)' : 'var(--text-1)';
+          label = '<span style="color:' + tc + ';font-weight:600;">' + (d.tool || '') + '</span>' + (d.label ? ' <span style="opacity:.6;">' + d.label + '</span>' : '');
+        }
+        row.innerHTML = '<span style="opacity:.4;flex-shrink:0;">' + time + '</span>' +
+          '<span style="flex-shrink:0;">' + icon + '</span>' +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + label + '</span>';
+        feed.appendChild(row);
+        // Cap at 80 rows
+        while (feed.children.length > 80) feed.removeChild(feed.firstChild);
+        feed.scrollTop = feed.scrollHeight;
+        return;
+      }
       // agent_working: crew-lead dispatched a task — show a "waiting" indicator
       if (d.type === 'agent_working' && d.agent) {
         const spinnerId = 'agent-spinner-' + (d.taskId || d.agent);
@@ -1618,6 +1696,23 @@ function startAgentReplyListener() {
         el.style.cssText = 'font-size:11px;color:var(--warning, #e8a030);padding:2px 8px;margin:2px 0;';
         el.textContent = '⚠️ Wave ' + (d.waveIndex + 1) + ' quality gate: ' + (d.issues || []).join('; ') + retryNote;
         if (box) { box.appendChild(el); box.scrollTop = box.scrollHeight; }
+        return;
+      }
+      // project_launched: new project registered — reload dropdown and auto-select
+      if (d.type === 'project_launched' && d.project) {
+        const newId = d.project.projectId || d.project.id;
+        setTimeout(async () => {
+          await loadProjects();
+          if (newId) autoSelectChatProject(newId);
+          const box = document.getElementById('chatMessages');
+          if (box) {
+            const el = document.createElement('div');
+            el.style.cssText = 'font-size:11px;color:var(--green);padding:2px 8px;margin:2px 0;';
+            el.textContent = '📁 Project "' + (d.project.name || newId) + '" registered — selected in chat';
+            box.appendChild(el);
+            box.scrollTop = box.scrollHeight;
+          }
+        }, 800);
         return;
       }
       // pipeline_done: all steps complete
@@ -2110,8 +2205,70 @@ async function checkCrewLeadStatus() {
   } catch {}
 }
 
+// @@ autocomplete: type @@ for list, @@PROMPT (or pick) shows exact JSON
+const ATAT_COMMANDS = [
+  { id: 'DISPATCH', label: 'Dispatch task to an agent', template: \'{"agent":"crew-coder","task":"Your task here"}\' },
+  { id: 'PROMPT', label: 'Append or set agent system prompt', template: \'{"agent":"crew-lead","append":"Your new rule here"}\' },
+  { id: 'PIPELINE', label: 'Multi-step pipeline (waves of agents)', template: \'[{"wave":1,"agent":"crew-coder","task":"..."},{"wave":2,"agent":"crew-qa","task":"..."}]\' },
+  { id: 'SKILL', label: 'Run a skill by name', template: \'skillName {"param":"value"}\' },
+  { id: 'SERVICE', label: 'Restart/stop a service or agent', template: \'restart crew-coder\' },
+  { id: 'PROJECT', label: 'Draft a new project roadmap', template: \'{"name":"MyApp","description":"...","outputDir":"/path/to/dir"}\' },
+  { id: 'BRAIN', label: 'Append a fact to brain.md', template: \'crew-lead: fact to remember\' },
+  { id: 'TOOLS', label: 'Grant/revoke tools for an agent', template: \'{"agent":"crew-qa","allow":["read_file","write_file"]}\' },
+  { id: 'CREATE_AGENT', label: 'Create a dynamic agent', template: \'{"id":"crew-ml","role":"coder","description":"ML specialist"}\' },
+  { id: 'REMOVE_AGENT', label: 'Remove a dynamic agent', template: \'crew-ml\' },
+  { id: 'DEFINE_SKILL', label: 'Define a new skill (then @@END_SKILL)', template: \'skillName\\n{"description":"...","url":"..."}\' },
+  { id: 'DEFINE_WORKFLOW', label: 'Save a workflow for cron', template: \'name\\n[{"agent":"crew-copywriter","task":"..."}]\' },
+];
+function chatAtAtInput() {
+  const ta = document.getElementById('chatInput');
+  const menu = document.getElementById('chatAtAtMenu');
+  const hint = document.getElementById('chatAtAtTemplate');
+  if (!ta || !menu || !hint) return;
+  try {
+  const val = ta.value;
+  const caret = ta.selectionStart;
+  const before = val.slice(0, caret);
+  const lastAt = before.lastIndexOf('@@');
+  if (lastAt === -1) { menu.style.display = 'none'; hint.style.display = 'none'; return; }
+  const afterAt = before.slice(lastAt + 2);
+  if (/\\s/.test(afterAt)) { menu.style.display = 'none'; hint.style.display = 'none'; return; }
+  const prefix = afterAt.toUpperCase();
+  const filtered = ATAT_COMMANDS.filter(function(c) { return c.id.indexOf(prefix) === 0; });
+  if (filtered.length === 0) { menu.style.display = 'none'; hint.style.display = 'none'; return; }
+  menu.style.display = 'block';
+  menu.style.visibility = 'visible';
+  menu.innerHTML = '';
+  filtered.forEach(function(c) {
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);';
+    row.onmouseenter = function() { row.style.background = 'var(--bg-hover)'; };
+    row.onmouseleave = function() { row.style.background = ''; };
+    row.innerHTML = '<span style="color:var(--accent);font-weight:600;">@@' + c.id + '</span> <span style="color:var(--text-3);">' + c.label + '</span>';
+    row.onclick = function() {
+      const insert = '@@' + c.id + (c.template ? ' ' + c.template : '');
+      ta.value = val.slice(0, lastAt) + insert + val.slice(caret);
+      ta.selectionStart = ta.selectionEnd = lastAt + insert.length;
+      ta.focus();
+      menu.style.display = 'none';
+      hint.style.display = 'block';
+      hint.textContent = (c.id === 'PROMPT' ? 'Full line to send: @@PROMPT ' : 'Template: ') + (c.template ? c.template : '');
+    };
+    menu.appendChild(row);
+  });
+  const exact = filtered.find(function(c) { return c.id === prefix; });
+  if (exact) {
+    hint.style.display = 'block';
+    hint.textContent = (exact.id === 'PROMPT' ? 'Full line: @@PROMPT ' : 'Template: ') + (exact.template || '');
+  } else {
+    hint.style.display = 'none';
+  }
+  } catch (err) { if (typeof console !== 'undefined') console.warn('chatAtAtInput', err); }
+}
 function chatKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  var menu = document.getElementById('chatAtAtMenu');
+  if (menu && menu.style.display === 'block' && (e.key === 'Escape' || e.key === 'Tab')) { menu.style.display = 'none'; }
 }
 
 function appendChatBubble(role, text) {
@@ -2229,7 +2386,7 @@ async function sendChat() {
   box.appendChild(typingDiv);
   box.scrollTop = box.scrollHeight;
   try {
-    const d = await postJSON('/api/crew-lead/chat', { message: text, sessionId: chatSessionId });
+    const d = await postJSON('/api/crew-lead/chat', { message: text, sessionId: chatSessionId, projectId: _chatActiveProjectId || undefined });
     document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
     if (d.ok === false && d.error) {
       appendChatBubble('assistant', '⚠️ ' + d.error);
@@ -3621,10 +3778,16 @@ async function loadAgents_cfg(){
                 Route tasks through OpenCode
               </label>
             </div>
-            <div id="oc-model-row-\${a.id}" style="display:\${a.useOpenCode ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+            <div id="oc-model-row-\${a.id}" style="display:\${a.useOpenCode ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
               <select id="oc-model-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcModelText('\${a.id}')"></select>
               <input id="oc-modeltext-\${a.id}" type="text" placeholder="or type provider/model…" value="\${a.opencodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
               <button onclick="saveOpenCodeConfig('\${a.id}')" class="btn-green" style="white-space:nowrap; font-size:12px;">Save OpenCode</button>
+            </div>
+            <div id="oc-fallback-row-\${a.id}" style="display:\${a.useOpenCode ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <span style="font-size:11px; color:var(--text-3); white-space:nowrap;">⚡ OC Fallback:</span>
+              <select id="oc-fallback-sel-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcFallbackText('\${a.id}')"></select>
+              <input id="oc-fallback-\${a.id}" type="text" placeholder="opencode/model or leave blank" value="\${a.opencodeFallbackModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button onclick="saveOpenCodeFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:12px;">Save fallback</button>
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
@@ -3644,7 +3807,10 @@ async function loadAgents_cfg(){
     });
     // Load OpenCode models and populate dropdowns
     loadOcModels().then(() => {
-      agents.forEach(a => populateOcModelDropdown('oc-model-' + a.id, a.opencodeModel || ''));
+      agents.forEach(a => {
+        populateOcModelDropdown('oc-model-' + a.id, a.opencodeModel || '');
+        populateOcModelDropdown('oc-fallback-sel-' + a.id, a.opencodeFallbackModel || '');
+      });
     });
   } catch(e){ list.innerHTML = '<div class="meta" style="padding:20px; color:var(--red);">Error: ' + e.message + '</div>'; }
 }
@@ -3756,37 +3922,80 @@ async function loadOcModels() {
   return _ocModelsCache;
 }
 
+const OC_MODEL_LABELS = {
+  'opencode/big-pickle':              'Big Pickle (Stealth)',
+  'opencode/trinity-large-preview-free': 'Trinity Large Preview (Stealth)',
+  'opencode/gpt-5':                   'GPT 5',
+  'opencode/gpt-5-codex':             'GPT 5 Codex',
+  'opencode/gpt-5-nano':              'GPT 5 Nano',
+  'opencode/gpt-5.1':                 'GPT 5.1',
+  'opencode/gpt-5.1-codex':          'GPT 5.1 Codex',
+  'opencode/gpt-5.1-codex-max':      'GPT 5.1 Codex Max',
+  'opencode/gpt-5.1-codex-mini':     'GPT 5.1 Codex Mini',
+  'opencode/gpt-5.2':                 'GPT 5.2',
+  'opencode/gpt-5.2-codex':          'GPT 5.2 Codex',
+  'opencode/alpha-gpt-5.3-codex':    'GPT 5.3 Codex (alpha)',
+  'opencode/alpha-gpt-5.4':          'GPT 5.4 (alpha)',
+  'opencode/claude-sonnet-4':         'Claude Sonnet 4',
+  'opencode/claude-sonnet-4-5':       'Claude Sonnet 4.5',
+  'opencode/claude-sonnet-4-6':       'Claude Sonnet 4.6',
+  'opencode/claude-opus-4-1':         'Claude Opus 4.1',
+  'opencode/claude-opus-4-5':         'Claude Opus 4.5',
+  'opencode/claude-opus-4-6':         'Claude Opus 4.6',
+  'opencode/claude-haiku-4-5':        'Claude Haiku 4.5',
+  'opencode/claude-3-5-haiku':        'Claude 3.5 Haiku',
+  'opencode/gemini-3-flash':          'Gemini 3 Flash',
+  'opencode/gemini-3-pro':            'Gemini 3 Pro',
+  'opencode/gemini-3.1-pro':          'Gemini 3.1 Pro',
+  'opencode/kimi-k2':                 'Kimi K2',
+  'opencode/kimi-k2-thinking':        'Kimi K2 Thinking',
+  'opencode/kimi-k2.5':               'Kimi K2.5',
+  'opencode/kimi-k2.5-free':          'Kimi K2.5 Free',
+  'opencode/glm-4.6':                 'GLM 4.6 (Z.ai)',
+  'opencode/glm-4.7':                 'GLM 4.7 (Z.ai)',
+  'opencode/glm-5':                   'GLM 5 (Z.ai)',
+  'opencode/glm-5-free':              'GLM 5 Free (Z.ai)',
+  'opencode/minimax-m2.1':            'MiniMax M2.1',
+  'opencode/minimax-m2.1-free':       'MiniMax M2.1 Free',
+  'opencode/minimax-m2.5':            'MiniMax M2.5',
+  'opencode/minimax-m2.5-free':       'MiniMax M2.5 Free',
+};
+
 function populateOcModelDropdown(selectId, currentVal) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
-  sel.innerHTML = '<option value="">— select OpenCode model —</option>';
-  const models = _ocModelsCache || [];
-  if (models.length === 0) {
-    sel.innerHTML += '<option disabled>(no models loaded — is OpenCode server running?)</option>';
-  }
+  sel.innerHTML = '<option value="">— select model —</option>';
+
+  // Merge OpenCode server models + all provider models so Groq/xAI/etc all appear
+  const ocModels = (_ocModelsCache || []).map(m =>
+    typeof m === 'string' ? m : (m.provider ? m.provider + '/' + m.id : m.id || m.name || String(m))
+  );
+  const allCombined = [...new Set([...ocModels, ...(_allModels || [])])].filter(Boolean);
+
   const grouped = {};
-  models.forEach(m => {
-    const full = typeof m === 'string' ? m : (m.provider ? m.provider + '/' + m.id : m.id || m.name || String(m));
+  allCombined.forEach(full => {
     const provider = full.includes('/') ? full.split('/')[0] : 'other';
     if (!grouped[provider]) grouped[provider] = [];
     grouped[provider].push(full);
   });
+
   for (const [provider, ids] of Object.entries(grouped)) {
     const grp = document.createElement('optgroup');
     grp.label = provider.toUpperCase();
     ids.forEach(full => {
       const opt = document.createElement('option');
       opt.value = full;
-      opt.textContent = full;
+      opt.textContent = OC_MODEL_LABELS[full] || full;
       if (full === currentVal) opt.selected = true;
       grp.appendChild(opt);
     });
     sel.appendChild(grp);
   }
+
   if (currentVal && !sel.value) {
     const opt = document.createElement('option');
     opt.value = currentVal;
-    opt.textContent = currentVal + ' (custom)';
+    opt.textContent = (OC_MODEL_LABELS[currentVal] || currentVal) + ' (custom)';
     opt.selected = true;
     sel.prepend(opt);
   }
@@ -3803,6 +4012,20 @@ function syncOcModelText(agentId) {
   const sel = document.getElementById('oc-model-' + agentId);
   const txt = document.getElementById('oc-modeltext-' + agentId);
   if (sel && txt && sel.value) txt.value = sel.value;
+}
+
+function syncOcFallbackText(agentId) {
+  const sel = document.getElementById('oc-fallback-sel-' + agentId);
+  const txt = document.getElementById('oc-fallback-' + agentId);
+  if (sel && txt && sel.value) txt.value = sel.value;
+}
+
+async function saveOpenCodeFallback(agentId) {
+  const opencodeFallbackModel = (document.getElementById('oc-fallback-' + agentId)?.value || '').trim();
+  try {
+    await postJSON('/api/agents-config/update', { agentId, opencodeFallbackModel });
+    showNotification(opencodeFallbackModel ? agentId + ' OC fallback → ' + opencodeFallbackModel : 'OC fallback cleared for ' + agentId);
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 
 async function saveOpenCodeConfig(agentId) {
@@ -4574,6 +4797,7 @@ async function loadProjects(){
     const projects = data.projects || [];
     _projectsData = {};
     projects.forEach(p => { _projectsData[p.id] = p; });
+    populateChatProjectDropdown(projects);
     if (!projects.length) {
       list.innerHTML = '<div class="meta" style="padding:20px;">No projects yet. Click &quot;+ New Project&quot; to create one.</div>';
       return;
@@ -4612,7 +4836,11 @@ async function loadProjects(){
         +   '<button data-action="edit-roadmap" data-id="' + id + '" class="btn-ghost" style="font-size:13px;" id="roadmap-btn-' + id + '">📋 Roadmap</button>'
         +   '<button data-action="chat-project" data-id="' + id + '" data-name="' + escHtml(p.name) + '" class="btn-ghost" style="font-size:13px;">🧠 Chat</button>'
         +   retryBtn
-        +   '<button data-action="delete" data-id="' + id + '" style="margin-left:auto;background:transparent;color:var(--text-3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;" title="Remove from dashboard (files stay on disk)">🗑 Delete</button>'
+        +   '<label style="margin-left:auto;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-3);user-select:none;" title="When enabled, crew-lead automatically starts the next ROADMAP phase when the current pipeline completes">'
+        +     '<input type="checkbox" data-action="toggle-auto-advance" data-id="' + id + '" ' + (p.autoAdvance ? 'checked' : '') + ' style="accent-color:var(--green);width:14px;height:14px;cursor:pointer;">'
+        +     '⚡ Auto-advance'
+        +   '</label>'
+        +   '<button data-action="delete" data-id="' + id + '" style="background:transparent;color:var(--text-3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;" title="Remove from dashboard (files stay on disk)">🗑 Delete</button>'
         + '</div>'
         + '<div id="proj-pm-status-' + id + '" style="display:none;margin-top:10px;font-size:12px;padding:8px 12px;background:rgba(99,102,241,0.08);border-radius:6px;border:1px solid rgba(99,102,241,0.2);color:#a5b4fc;"></div>'
         + '<div id="rm-editor-' + id + '" style="display:none;margin-top:14px;">'
@@ -4659,11 +4887,21 @@ document.getElementById('projectsList').addEventListener('click', e => {
     case 'chat-project': {
       const name = btn.dataset.name || id;
       showChat();
-      // Pre-fill a project context message
+      // Auto-select this project in the chat dropdown
+      autoSelectChatProject(id);
       const inp = document.getElementById('chatInput');
-      if (inp && !inp.value) inp.value = "Let's work on the " + name + " project.";
       inp?.focus();
       break;
+    }
+    case 'toggle-auto-advance': {
+      const checked = btn.checked;
+      postJSON('/api/projects/update', { projectId: id, autoAdvance: checked })
+        .then(() => {
+          if (_projectsData[id]) _projectsData[id].autoAdvance = checked;
+          showNotification('Auto-advance ' + (checked ? 'enabled' : 'disabled') + ' for ' + (proj?.name || id));
+        })
+        .catch(e => { showNotification('Failed: ' + e.message, true); btn.checked = !checked; });
+      return; // don't prevent default on checkbox
     }
     case 'add-item':     addRoadmapItem(id); break;
     case 'skip-next':    skipNextItem(id); break;
@@ -4672,6 +4910,80 @@ document.getElementById('projectsList').addEventListener('click', e => {
     case 'close-editor': closeRoadmapEditor(id); break;
   }
 });
+
+// ── Chat project dropdown (next to input; persisted so it survives tab switch and reload) ───
+
+const CHAT_ACTIVE_PROJECT_KEY = 'crewswarm_chat_active_project_id';
+let _chatActiveProjectId = '';
+
+function getStoredChatProjectId() {
+  try { return localStorage.getItem(CHAT_ACTIVE_PROJECT_KEY) || ''; } catch { return ''; }
+}
+function setStoredChatProjectId(id) {
+  try { if (id) localStorage.setItem(CHAT_ACTIVE_PROJECT_KEY, id); else localStorage.removeItem(CHAT_ACTIVE_PROJECT_KEY); } catch {}
+}
+
+function populateChatProjectDropdown(projects) {
+  const sel = document.getElementById('chatProjectSelect');
+  if (!sel) return;
+  const prev = getStoredChatProjectId() || sel.value || _chatActiveProjectId;
+  sel.innerHTML = '<option value="">— none —</option>';
+  (projects || []).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name + (p.outputDir ? ' (' + p.outputDir.split('/').pop() + ')' : '');
+    sel.appendChild(opt);
+  });
+  if (prev && sel.querySelector('option[value="' + prev + '"]')) {
+    sel.value = prev;
+    _chatActiveProjectId = prev;
+    setStoredChatProjectId(prev);
+    // Sync config.json so gateway-bridge gets the right --dir even after a restart
+    const restoredProj = _projectsData[prev];
+    if (restoredProj && restoredProj.outputDir) {
+      postJSON('/api/settings/opencode-project', { dir: restoredProj.outputDir }).catch(() => {});
+    }
+  } else {
+    _chatActiveProjectId = '';
+    setStoredChatProjectId('');
+  }
+  updateChatProjectHint();
+}
+
+function onChatProjectChange() {
+  const sel = document.getElementById('chatProjectSelect');
+  _chatActiveProjectId = sel ? sel.value : '';
+  setStoredChatProjectId(_chatActiveProjectId);
+  updateChatProjectHint();
+  const proj = _projectsData[_chatActiveProjectId];
+  if (proj && proj.outputDir) {
+    postJSON('/api/settings/opencode-project', { dir: proj.outputDir }).catch(() => {});
+  }
+}
+
+function updateChatProjectHint() {
+  const hint = document.getElementById('chatProjectHint');
+  if (!hint) return;
+  if (_chatActiveProjectId && _projectsData[_chatActiveProjectId]) {
+    const p = _projectsData[_chatActiveProjectId];
+    hint.textContent = p.outputDir || '';
+    hint.style.display = p.outputDir ? 'block' : 'none';
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+function autoSelectChatProject(projectId) {
+  _chatActiveProjectId = projectId;
+  setStoredChatProjectId(projectId);
+  const sel = document.getElementById('chatProjectSelect');
+  if (sel && sel.querySelector('option[value="' + projectId + '"]')) {
+    sel.value = projectId;
+    updateChatProjectHint();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function resumeProject(projectId) {
   try {
@@ -5007,6 +5319,18 @@ async function continuousBuildRun(){
 }
 refreshAll();
 setInterval(refreshAll, 3000);
+// Populate chat project dropdown on load; respect #projects deep link (e.g. from native app)
+(async () => {
+  try {
+    const data = await getJSON('/api/projects');
+    const projects = data.projects || [];
+    _projectsData = {};
+    projects.forEach(p => { _projectsData[p.id] = p; });
+    populateChatProjectDropdown(projects);
+    if (location.hash === '#projects') showProjects();
+  } catch {}
+})();
+window.addEventListener('hashchange', () => { if (location.hash === '#projects') showProjects(); });
 document.getElementById('refreshBtn').onclick = refreshAll;
 document.getElementById('runBuildBtn').onclick = runBuild;
 document.getElementById('continuousBuildBtn').onclick = continuousBuildRun;
@@ -5560,6 +5884,23 @@ const server = http.createServer(async (req, res) => {
       await wf(registryFile, JSON.stringify(projects, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (url.pathname === "/api/projects/update" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const { projectId, autoAdvance } = JSON.parse(body || "{}");
+      if (!projectId) throw new Error("projectId required");
+      const registryFile = path.join(OPENCLAW_DIR, "orchestrator-logs", "projects.json");
+      const { existsSync } = await import("node:fs");
+      const { readFile: rf, writeFile: wf } = await import("node:fs/promises");
+      let projects = {};
+      if (existsSync(registryFile)) projects = JSON.parse(await rf(registryFile, "utf8").catch(() => "{}"));
+      if (!projects[projectId]) throw new Error("Project not found: " + projectId);
+      if (autoAdvance !== undefined) projects[projectId].autoAdvance = Boolean(autoAdvance);
+      await wf(registryFile, JSON.stringify(projects, null, 2));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, project: projects[projectId] }));
       return;
     }
     if (url.pathname === "/api/pm-loop/status" && req.method === "GET") {
@@ -6448,18 +6789,26 @@ ORDER BY day DESC, cost DESC;`;
               "openai/gpt-5-codex", "openai/codex-mini-latest",
             ],
             opencode:[
+              // Stealth
               "opencode/big-pickle",
+              "opencode/trinity-large-preview-free",
+              // OpenAI
               "opencode/gpt-5.1-codex-max", "opencode/gpt-5.1-codex", "opencode/gpt-5.1-codex-mini", "opencode/gpt-5.1",
               "opencode/gpt-5.2-codex", "opencode/gpt-5.2",
+              "opencode/alpha-gpt-5.3-codex", "opencode/alpha-gpt-5.4",
               "opencode/gpt-5-codex", "opencode/gpt-5", "opencode/gpt-5-nano",
+              // Anthropic
               "opencode/claude-sonnet-4-6", "opencode/claude-sonnet-4-5", "opencode/claude-sonnet-4",
               "opencode/claude-opus-4-6", "opencode/claude-opus-4-5", "opencode/claude-opus-4-1",
               "opencode/claude-haiku-4-5", "opencode/claude-3-5-haiku",
+              // Google
               "opencode/gemini-3.1-pro", "opencode/gemini-3-pro", "opencode/gemini-3-flash",
-              "opencode/kimi-k2.5", "opencode/kimi-k2-thinking", "opencode/kimi-k2",
-              "opencode/glm-5", "opencode/glm-4.7", "opencode/glm-4.6",
-              "opencode/minimax-m2.5", "opencode/minimax-m2.5-free", "opencode/minimax-m2.1",
-              "opencode/trinity-large-preview-free",
+              // Moonshot AI
+              "opencode/kimi-k2.5", "opencode/kimi-k2.5-free", "opencode/kimi-k2-thinking", "opencode/kimi-k2",
+              // Z.ai
+              "opencode/glm-5", "opencode/glm-5-free", "opencode/glm-4.7", "opencode/glm-4.6",
+              // MiniMax
+              "opencode/minimax-m2.5", "opencode/minimax-m2.5-free", "opencode/minimax-m2.1", "opencode/minimax-m2.1-free",
             ],
             groq:    [
               "groq/moonshotai/kimi-k2-instruct-0905",
@@ -6597,7 +6946,7 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -6636,6 +6985,7 @@ ORDER BY day DESC, cost DESC;`;
       }
       if (useOpenCode !== undefined) agent.useOpenCode = useOpenCode;
       if (opencodeModel !== undefined) agent.opencodeModel = opencodeModel || undefined;
+      if (opencodeFallbackModel !== undefined) agent.opencodeFallbackModel = opencodeFallbackModel || undefined;
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
       // System prompts live in agent-prompts.json, not crewswarm.json
       if (systemPrompt !== undefined) {

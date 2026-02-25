@@ -78,6 +78,7 @@ const SHARED_MEMORY_DIR = path.resolve(process.cwd(), "memory");
 const SHARED_MEMORY_MAX_FILE_CHARS = 8000;
 const SHARED_MEMORY_MAX_TOTAL_CHARS = 40000;
 const SHARED_MEMORY_FILES = [
+  "law.md",                    // Crew laws — no harm, no unauthorized access, don't break machine, create value
   "current-state.md",          // System overview — what CrewSwarm is, CRITICAL task guidance
   "agent-handoff.md",          // Current status, last completed work, agent rules
   "orchestration-protocol.md", // Agent roster, tool permissions, dispatch syntax
@@ -154,9 +155,26 @@ function getOpencodeProjectDir() {
   return getProjectDir("") || "";
 }
 const OPENCREW_OPENCODE_AGENT = process.env.OPENCREW_OPENCODE_AGENT || "admin";
-const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.3-codex";
-const OPENCREW_OPENCODE_FALLBACK_DEFAULT = "groq/moonshotai/kimi-k2-instruct-0905";
+// Primary OpenCode model: kimi-k2 is reliable at exact file edits on Groq (free tier).
+// openai/gpt-5.x-codex models are rate-limited and fall back to imprecise smaller models.
+const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+const OPENCREW_OPENCODE_FALLBACK_DEFAULT = "groq/llama-3.3-70b-versatile";
 const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "300000");
+
+// Free OpenCode model rotation chain — tried in order when primary hits rate limit.
+const OPENCODE_FREE_MODEL_CHAIN = [
+  "groq/moonshotai/kimi-k2-instruct-0905",
+  "groq/qwen/qwen3-32b",
+  "groq/llama-3.3-70b-versatile",
+  "opencode/gpt-5.1-codex-mini",
+];
+
+// Detect a rate-limited OpenCode session: process exited null and only printed the banner.
+// Pattern: ANSI codes + "> agentname · modelname" with no actual tool output.
+function isOpencodeRateLimitBanner(output) {
+  const stripped = output.replace(/\x1b\[[0-9;]*m/g, "").trim();
+  return /^>\s+\S+\s+·\s+\S+\s*$/.test(stripped);
+}
 
 function getOpencodeFallbackModel() {
   if (process.env.OPENCREW_OPENCODE_FALLBACK_MODEL) return process.env.OPENCREW_OPENCODE_FALLBACK_MODEL;
@@ -1127,6 +1145,11 @@ keyFrom format: "providers.PROVIDER.apiKey" (reads from crewswarm.json) or "env.
   }
   if (!tools.length) return ""; // agent has no tools — instructions not needed
 
+  const externalProjectHint =
+    projectDir === process.cwd()
+      ? `- If the task refers to an external project by name (e.g. polymarket-ai-strat), its root is typically ${path.join(os.homedir(), "Desktop", "<project-name>")}, not under PROJECT DIRECTORY. Do not use paths like .../CrewSwarm/<project-name>/...; use .../Desktop/<project-name>/... instead.`
+      : "";
+
   return `
 ## Agent Tools — ACTIVE for this session
 
@@ -1138,7 +1161,7 @@ PROJECT DIRECTORY (write all output files here): ${projectDir}
 ${tools.join("\n\n")}
 
 CRITICAL RULES:
-- Output the @@TOOL markers directly — do NOT describe or simulate what you would do.
+${externalProjectHint ? externalProjectHint + "\n" : ""}- Output the @@TOOL markers directly — do NOT describe or simulate what you would do.
 - Use @@WRITE_FILE to write files — never just show code in markdown blocks.
 - @@END_FILE MUST appear on its own line immediately after the last line of file content.
 - ALL tool calls go in a SINGLE reply — do NOT stop after @@MKDIR and wait for results. Chain @@MKDIR then @@WRITE_FILE immediately in the same response.
@@ -1469,7 +1492,10 @@ async function executeToolCalls(reply, agentId, { suppressWriteIfSearchPending =
     const filePath = sanitizeToolPath(m[1]);
     try {
       const content = fs.readFileSync(filePath, "utf8");
-      const snippet = content.length > 4000 ? content.slice(0, 4000) + "\n...[truncated]" : content;
+      // Docs/briefs get a higher limit — they are reference material, not code blobs
+      const isDoc = /\.(md|txt|json|yaml|yml|toml)$/i.test(filePath);
+      const readLimit = isDoc ? 12000 : 4000;
+      const snippet = content.length > readLimit ? content.slice(0, readLimit) + "\n...[truncated]" : content;
       results.push(`[tool:read_file] 📄 ${filePath} (${content.length} bytes):\n${snippet}`);
     } catch (err) {
       results.push(`[tool:read_file] ❌ Cannot read ${filePath}: ${err.message}`);
@@ -1822,10 +1848,11 @@ function getAgentOpenCodeConfig(agentId) {
   const agents = loadAgentList();
   const cfg = agents.find(a => a.id === agentId);
   const fallback = cfg?.opencodeFallbackModel || getOpencodeFallbackModel();
-  if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null, fallbackModel: fallback };
-  if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null, fallbackModel: fallback };
-  if (cfg.useOpenCode === false) return { enabled: false, model: null, fallbackModel: fallback };
-  return { enabled: agentDefaultsToOpenCode(agentId), model: cfg.opencodeModel || null, fallbackModel: fallback };
+  const loop = cfg?.opencodeLoop === true || process.env.OPENCREW_OPENCODE_LOOP === "1";
+  if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null, fallbackModel: fallback, loop: false };
+  if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null, fallbackModel: fallback, loop };
+  if (cfg.useOpenCode === false) return { enabled: false, model: null, fallbackModel: fallback, loop: false };
+  return { enabled: agentDefaultsToOpenCode(agentId), model: cfg.opencodeModel || null, fallbackModel: fallback, loop };
 }
 
 function shouldUseOpenCode(payload, prompt, incomingType) {
@@ -1868,33 +1895,70 @@ function createOpenCodeOnlyBridge() {
 
 function runOpenCodeTask(prompt, payload = {}) {
   return new Promise((resolve, reject) => {
-    // Skip protocol check for OpenCode - it doesn't need memory wrapper
     const bin = fs.existsSync(OPENCREW_OPENCODE_BIN) ? OPENCREW_OPENCODE_BIN : "opencode";
     // Model priority: explicit payload > per-agent opencodeModel > global default
     const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
     const agentOcCfg = getAgentOpenCodeConfig(agentId);
     const model = String(payload?.model || agentOcCfg.model || OPENCREW_OPENCODE_MODEL);
-    const agent = String(payload?.agent || OPENCREW_OPENCODE_AGENT || "").trim();
+    const OC_AGENT_MAP = {
+      "crew-coder":       "coder",
+      "crew-coder-front": "coder-front",
+      "crew-coder-back":  "coder-back",
+      "crew-fixer":       "fixer",
+      "crew-frontend":    "frontend",
+      "crew-qa":          "qa",
+      "crew-security":    "security",
+      "crew-pm":          "pm",
+    };
+    const ocAgentName = OC_AGENT_MAP[agentId] || payload?.agent || OPENCREW_OPENCODE_AGENT || "admin";
+    const agent = String(ocAgentName).trim();
     const configuredDir = getOpencodeProjectDir();
-    const projectDir = String(payload?.projectDir || configuredDir || process.cwd());
-    if (!payload?.projectDir && !configuredDir) {
+    let projectDir = payload?.projectDir || configuredDir || null;
+    // Only fall through to task-text extraction when NO dir is configured at all.
+    // Avoid when configuredDir === process.cwd() — extractProjectDirFromTask can
+    // pick up sentence-ending periods (e.g. "…/CrewSwarm.") producing an invalid cwd.
+    if (!projectDir) {
+      const fromTask = extractProjectDirFromTask(prompt);
+      if (fromTask) projectDir = fromTask;
+    }
+    // Strip trailing punctuation that sentence parsing may have attached to the path.
+    projectDir = String(projectDir || process.cwd()).replace(/[.,;!?]+$/, "");
+    if (!payload?.projectDir && !configuredDir && projectDir === process.cwd()) {
       console.warn(`[OpenCode] No project dir configured — writing to cwd (${process.cwd()}). Set one in Dashboard → Settings → OpenCode Project Directory.`);
     }
-    
-    // Prefix prompt with agent ID so OpenCode session titles are identifiable
     const agentPrefix = agentId ? `[${agentId}] ` : "";
     const titledPrompt = agentPrefix + String(prompt);
-    // Fixed: use --model (not -m), and proper command structure
-    const args = ["run", titledPrompt, "--model", model, "--dir", projectDir];
+    // Omit --dir to avoid triggering opencode's rg (ripgrep) spawn without stdin:ignore
+    // (opencode bug: rg hangs waiting for stdin when --dir is passed — PR pending).
+    // cwd on the spawn call below sets the working directory equivalently.
+    const args = ["run", titledPrompt, "--model", model];
     if (agent) args.push("--agent", agent);
 
-    console.error(`[OpenCode] Running: ${bin} ${args.join(' ')}`); // Debug log
+    console.error(`[OpenCode] Running: ${bin} run [prompt] --model ${model} (cwd=${projectDir})`);
 
     const cleanEnv = { ...process.env };
     delete cleanEnv.OPENCODE_SERVER_USERNAME;
     delete cleanEnv.OPENCODE_SERVER_PASSWORD;
     delete cleanEnv.OPENCODE_CLIENT;
     delete cleanEnv.OPENCODE;
+
+    // Helper: restart opencode serve if it's not responding (causes ENOENT on spawn)
+    async function ensureOpencodeServe() {
+      try {
+        const r = await fetch("http://127.0.0.1:4096/", { signal: AbortSignal.timeout(2000) }).catch(() => null);
+        if (r && r.ok) return; // serve is healthy
+      } catch {}
+      // Serve is down — kill any stale instance and restart
+      console.warn("[OpenCode] serve not responding — restarting...");
+      try { spawn("pkill", ["-f", "opencode serve"], { stdio: "ignore" }); } catch {}
+      await new Promise(r => setTimeout(r, 1500));
+      const serveProc = spawn(bin, ["serve", "--port", "4096", "--hostname", "127.0.0.1"], {
+        detached: true, stdio: "ignore", env: cleanEnv,
+      });
+      serveProc.unref();
+      await new Promise(r => setTimeout(r, 3000)); // wait for serve to be ready
+      console.warn("[OpenCode] serve restarted");
+    }
 
     const child = spawn(bin, args, {
       cwd: projectDir,
@@ -1936,8 +2000,8 @@ function runOpenCodeTask(prompt, payload = {}) {
         }
       }
     });
-    // Stall detector — kill and reject if no output for 120s so fallback can kick in
-    const STALL_TIMEOUT_MS = 120_000;
+    // Stall detector — kill and reject if no output for too long so fallback can kick in
+    const STALL_TIMEOUT_MS = 180_000;
     const stallCheck = setInterval(() => {
       const stalledMs = Date.now() - lastProgressAt;
       if (stalledMs > STALL_TIMEOUT_MS) {
@@ -1959,12 +2023,18 @@ function runOpenCodeTask(prompt, payload = {}) {
     child.on("close", (code) => {
       clearTimeout(timer);
       clearInterval(stallCheck);
+      const out = (stdout || stderr || "").trim();
       if (code !== 0) {
-        console.error(`[OpenCode:${agentLabel}] Failed (exit ${code}): ${(stderr || stdout).slice(0, 300)}`);
-        reject(new Error(`OpenCode exited ${code}: ${stderr || stdout || "unknown error"}`));
+        const bannerOnly = isOpencodeRateLimitBanner(out);
+        if (bannerOnly) {
+          console.warn(`[OpenCode:${agentLabel}] Rate limit detected (banner-only exit null) — will rotate model`);
+          reject(new Error(`OpenCode rate limited (banner-only): ${model}`));
+        } else {
+          console.error(`[OpenCode:${agentLabel}] Failed (exit ${code}): ${out.slice(0, 300)}`);
+          reject(new Error(`OpenCode exited ${code}: ${out || "unknown error"}`));
+        }
         return;
       }
-      const out = (stdout || stderr || "").trim();
       console.log(`[OpenCode:${agentLabel}] Done — ${out.length} chars output`);
       _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast", payload: { agent: agentLabel, ts: Date.now() } });
       resolve(out || "(opencode completed with no output)");
@@ -2543,7 +2613,65 @@ function loadAgentPrompts() {
   return {};
 }
 
-function buildTaskPrompt(taskText, sourceLabel, agentId) {
+/** Extract project root from task text when it contains absolute paths (e.g. /Users/.../Desktop/polymarket-ai-strat/...). */
+function extractProjectDirFromTask(taskText) {
+  if (!taskText || typeof taskText !== "string") return null;
+  // Match /Users/<user>/Desktop/<project-name> with optional trailing slash or /subpath
+  const m = taskText.match(/\/Users\/[^/]+\/Desktop\/[^/\s]+/);
+  if (!m) return null;
+  return m[0];
+}
+
+/** Minimal prompt for OpenCode: task + project path only. No shared memory or tool doc — OpenCode reads files. */
+function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
+  let dir = projectDir || getOpencodeProjectDir() || null;
+  if (!dir || dir === process.cwd()) {
+    const fromTask = extractProjectDirFromTask(taskText);
+    if (fromTask) dir = fromTask;
+  }
+  dir = dir || process.cwd();
+  return `[${agentId}] ${taskText}\n\nProject directory: ${dir}. Use the project files to complete this task only.`;
+}
+
+/**
+ * Ouroboros-style LLM ↔ OpenCode loop (see https://github.com/joi-lab/ouroboros).
+ * LLM decomposes task into steps; each step is executed by OpenCode; results fed back until DONE or max rounds.
+ */
+async function runOuroborosStyleLoop(originalTask, agentId, projectDir, payload, progress) {
+  const DECOMPOSER_SYSTEM = "You are a task decomposer. Output exactly one line: either STEP: <one clear instruction to do now> or DONE. No other text.";
+  const maxRounds = Math.min(20, Math.max(1, parseInt(process.env.OPENCREW_OPENCODE_LOOP_MAX_ROUNDS || "10", 10)));
+  const steps = [];
+  let prompt = `${originalTask}\n\nOutput the first step: STEP: <instruction> or DONE.`;
+  let lastReply = "";
+
+  for (let round = 0; round < maxRounds; round++) {
+    const reply = await callLLMDirect(prompt, agentId, DECOMPOSER_SYSTEM);
+    if (!reply || !reply.trim()) break;
+    lastReply = reply.trim();
+
+    if (/^\s*DONE\s*$/im.test(lastReply) || /\bDONE\s*$/im.test(lastReply)) break;
+
+    const stepMatch = lastReply.match(/STEP:\s*([\s\S]+?)(?:\n\n|\n*$)/im) || lastReply.match(/STEP:\s*(.+)/i);
+    const step = stepMatch ? stepMatch[1].trim().replace(/\n.*/gs, "").trim() : lastReply.slice(0, 500);
+    if (!step) break;
+
+    progress(`Round ${round + 1}/${maxRounds}: ${step.slice(0, 60)}${step.length > 60 ? "…" : ""}`);
+    let ocResult;
+    try {
+      ocResult = await runOpenCodeTask(buildMiniTaskForOpenCode(step, agentId, projectDir), payload);
+    } catch (e) {
+      ocResult = `Error: ${e?.message || String(e)}`;
+    }
+    steps.push({ step, result: ocResult });
+    prompt = `Task: ${originalTask}\n\nCompleted steps:\n${steps.map((s, i) => `${i + 1}. ${s.step}\nResult: ${s.result}`).join("\n\n")}\n\nWhat is the next step? Reply with exactly: STEP: <instruction> or DONE.`;
+  }
+
+  if (steps.length === 0) return lastReply || "No steps executed.";
+  return steps.map(s => s.result).join("\n\n---\n\n");
+}
+
+function buildTaskPrompt(taskText, sourceLabel, agentId, options = {}) {
+  const { projectDir: taskProjectDir } = options;
   const sharedMemory = loadSharedMemoryBundle();
   if (sharedMemory.loadFailed) {
     return { finalPrompt: "MEMORY_LOAD_FAILED", sharedMemory };
@@ -2596,11 +2724,24 @@ function buildTaskPrompt(taskText, sourceLabel, agentId) {
     }
   }
 
+  // Fixer: when a path in the task doesn't exist, discover it by searching the project (so wrong paths like src/api/routers/main.py → find src/api/main.py)
+  const projectRoot = taskProjectDir || (agentId === "crew-fixer" ? getOpencodeProjectDir() : null);
+  const desktopProjectsHint = path.join(os.homedir(), "Desktop", "<project-name>");
+  let projectDiscoveryRule = "";
+  if (agentId === "crew-fixer") {
+    if (projectRoot) {
+      projectDiscoveryRule = `## Project discovery (apply when a path in the task is missing or wrong)\nProject root: ${projectRoot}\n- If a path in the task does not exist, search the project first: use @@RUN_CMD find "${projectRoot}" -name '<filename>' (e.g. main.py) or ls to locate the file. Do not report "file not found" until you have tried to resolve the path within this project.`;
+    } else {
+      projectDiscoveryRule = `## Project discovery (external projects)\n- External projects (e.g. polymarket-ai-strat) are NOT inside the CrewSwarm repo. Their root is typically ${desktopProjectsHint}. If a path contains "CrewSwarm/<project-name>/", replace that with "${path.join(os.homedir(), "Desktop")}/<project-name>/". Example: polymarket-ai-strat main.py is at ${path.join(os.homedir(), "Desktop", "polymarket-ai-strat", "src/api/main.py")} (not under CrewSwarm, and not src/api/routers/main.py). Use @@RUN_CMD find to locate files if unsure.`;
+    }
+  }
+
   const parts = [];
   if (identityHeader) parts.push(identityHeader);
   if (agentSystemPrompt) parts.push(agentSystemPrompt);
   if (globalRules) parts.push(globalRules);
   if (toolInstructions) parts.push(toolInstructions);
+  if (projectDiscoveryRule) parts.push(projectDiscoveryRule);
   if (sharedMemory.text) parts.push(sharedMemory.text);
   if (extraMemorySections.length > 0) parts.push(extraMemorySections.join("\n\n"));
   parts.push(contextNote);
@@ -3206,7 +3347,8 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
   });
 
   try {
-    const { finalPrompt, sharedMemory } = buildTaskPrompt(prompt, `Realtime task from ${from} (${incomingType})`, OPENCREW_RT_AGENT);
+    const taskProjectDir = payload?.projectDir || getOpencodeProjectDir() || null;
+    const { finalPrompt, sharedMemory } = buildTaskPrompt(prompt, `Realtime task from ${from} (${incomingType})`, OPENCREW_RT_AGENT, { projectDir: taskProjectDir });
     if (sharedMemory.loadFailed || finalPrompt === "MEMORY_LOAD_FAILED") {
       throw new Error("MEMORY_LOAD_FAILED");
     }
@@ -3227,24 +3369,61 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     let ocAgentId = null;
     let agentSysPrompt = null;
     if (useOpenCode) {
+      let projectDir = payload?.projectDir || getOpencodeProjectDir() || null;
+      if (!projectDir || projectDir === process.cwd()) {
+        const fromTask = extractProjectDirFromTask(prompt);
+        if (fromTask) projectDir = fromTask;
+      }
+      projectDir = projectDir || process.cwd();
+      const ocAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
       let opencodeErr;
-      try {
-        reply = await runOpenCodeTask(finalPrompt, payload);
-      } catch (e) {
+
+      if (ocAgentCfg.loop) {
+        // Ouroboros-style: LLM decomposes → OpenCode executes each step → repeat until DONE
+        progress("OpenCode loop mode: LLM ↔ OpenCode until DONE...");
+        try {
+          reply = await runOuroborosStyleLoop(prompt, OPENCREW_RT_AGENT, projectDir, payload, progress);
+        } catch (e) {
+          opencodeErr = e;
+          progress(`OpenCode loop failed: ${e?.message?.slice(0, 80)} — falling back to single shot`);
+          const ocPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
+          reply = await runOpenCodeTask(ocPrompt, payload);
+        }
+      } else {
+        // Single-shot: mini task only (no shared memory / tool doc — OpenCode reads files)
+        const ocPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
+        try {
+          reply = await runOpenCodeTask(ocPrompt, payload);
+        } catch (e) {
         opencodeErr = e;
         const msg = e?.message ?? String(e);
-        const isRateLimit = /429|rate\s*limit|usage.*limit|quota.*exceeded|too\s*many\s*requests/i.test(msg);
+        const isRateLimit = /429|rate\s*limit|usage.*limit|quota.*exceeded|too\s*many\s*requests|banner-only/i.test(msg);
         const isTimeout  = /timeout|timed\s*out|stall/i.test(msg);
-        const ocCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
-        const fbModel = ocCfg.fallbackModel;
-        if ((isRateLimit || isTimeout) && fbModel) {
-          const reason = isTimeout ? "timed out" : "rate limited";
-          progress(`OpenCode ${payload?.model || OPENCREW_OPENCODE_MODEL} ${reason} — retrying with fallback ${fbModel}`);
-          telemetry("realtime_opencode_fallback", { taskId, incomingType, error: msg, fallbackModel: fbModel });
-          try {
-            reply = await runOpenCodeTask(finalPrompt, { ...payload, model: fbModel });
-          } catch (fbErr) {
-            opencodeErr = fbErr;
+        if (isRateLimit || isTimeout) {
+          // Build rotation chain: free models first, then configured fallback, deduplicated
+          // Track ALL tried models (primary + each fallback attempt) to avoid re-trying failed ones
+          const primaryModel = String(payload?.model || OPENCREW_OPENCODE_MODEL);
+          const configFallback = getAgentOpenCodeConfig(OPENCREW_RT_AGENT).fallbackModel;
+          const triedModels = new Set([primaryModel]);
+          // Per-agent opencodeFallbackModel goes FIRST, then global free chain as safety net
+          const chain = [...(configFallback ? [configFallback] : []), ...OPENCODE_FREE_MODEL_CHAIN]
+            .filter((m, i, arr) => m !== primaryModel && arr.indexOf(m) === i);
+          for (const fbModel of chain) {
+            if (triedModels.has(fbModel)) continue; // skip already-tried models
+            triedModels.add(fbModel);
+            const reason = isTimeout ? "timed out" : "rate limited";
+            progress(`OpenCode ${primaryModel} ${reason} — rotating to ${fbModel}`);
+            telemetry("realtime_opencode_fallback", { taskId, incomingType, error: msg, fallbackModel: fbModel });
+            try {
+              reply = await runOpenCodeTask(ocPrompt, { ...payload, model: fbModel });
+              if (reply) break;
+            } catch (fbErr) {
+              opencodeErr = fbErr;
+              const fbMsg = fbErr?.message ?? String(fbErr);
+              const fbRateLimit = /429|rate\s*limit|usage.*limit|quota.*exceeded|banner-only|stall/i.test(fbMsg);
+              if (!fbRateLimit) break; // non-rate-limit/stall error — stop rotating
+              // rate-limited/stalled on this fallback too — continue to next in chain
+            }
           }
         }
         if (!reply && bridge?.kind === "gateway") {
@@ -3255,6 +3434,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         } else if (!reply) {
           throw opencodeErr;
         }
+      }
       }
     } else {
       // Try direct LLM call first (uses agent's configured model/provider from crewswarm.json)
@@ -3596,7 +3776,98 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
   }
 }
 
+// Sync dashboard tool permissions → OpenCode agent profiles in .opencode/opencode.jsonc
+// Called at daemon startup so the two permission systems stay in sync automatically.
+function syncOpenCodePermissions() {
+  try {
+    const ocCfgPath = path.join(process.cwd(), ".opencode", "opencode.jsonc");
+    if (!fs.existsSync(ocCfgPath)) return;
+
+    // CrewSwarm tool → OpenCode permission keys
+    const TOOL_TO_OC = {
+      write_file: { write: "allow", edit: "allow" },
+      read_file:  { read: "allow", glob: "allow", grep: "allow" },
+      run_cmd:    { bash: "allow" },
+      dispatch:   { task: "allow" },
+      // git handled separately below — bash allow is too broad
+    };
+
+    // CrewSwarm agent-id → OpenCode agent profile name
+    const AGENT_TO_OC_PROFILE = {
+      "crew-coder":       "coder",
+      "crew-coder-front": "coder",
+      "crew-coder-back":  "coder",
+      "crew-fixer":       "fixer",
+      "crew-frontend":    "coder",
+      "crew-qa":          "qa",
+      "crew-security":    "security",
+      "crew-pm":          "pm",
+    };
+
+    const agents = loadAgentList();
+    if (!agents?.length) return;
+
+    let raw = fs.readFileSync(ocCfgPath, "utf8");
+    // Strip single-line comments so JSON.parse works
+    const stripped = raw.replace(/\/\/[^\n]*/g, "");
+    let cfg;
+    try { cfg = JSON.parse(stripped); } catch { return; }
+    if (!cfg.agent) cfg.agent = {};
+
+    for (const agentCfg of agents) {
+      const agentId = agentCfg.id || agentCfg.agentId;
+      if (!agentId) continue;
+      const profile = AGENT_TO_OC_PROFILE[agentId];
+      if (!profile) continue;
+
+      const tools = loadAgentToolPermissions(agentId); // reads crewswarm.json → role defaults
+      const ocPerms = {};
+
+      for (const [tool, perms] of Object.entries(TOOL_TO_OC)) {
+        if (tools.has(tool)) {
+          Object.assign(ocPerms, perms);
+        }
+      }
+
+      // git tool: allow git commands in bash (don't grant full bash)
+      if (tools.has("git") && !tools.has("run_cmd")) {
+        ocPerms.bash = typeof ocPerms.bash === "object" ? ocPerms.bash : {};
+        if (ocPerms.bash !== "allow") {
+          ocPerms.bash["git *"] = "allow";
+          ocPerms.bash["git diff*"] = "allow";
+          ocPerms.bash["git log*"] = "allow";
+          ocPerms.bash["git status*"] = "allow";
+        }
+      }
+
+      // Always deny dangerous stuff for non-admin agents
+      if (profile !== "admin") {
+        ocPerms.question = "deny";
+        ocPerms.plan_enter = "deny";
+        ocPerms.plan_exit = "deny";
+      }
+
+      // Merge into existing profile, preserving model/prompt/mode
+      if (!cfg.agent[profile]) cfg.agent[profile] = {};
+      cfg.agent[profile].permission = {
+        ...cfg.agent[profile].permission,
+        ...ocPerms,
+      };
+    }
+
+    // Re-serialize preserving the comment header
+    const headerComment = raw.match(/^(\s*\/\/[^\n]*\n)*/)?.[0] || "";
+    const newJson = JSON.stringify(cfg, null, "\t");
+    // Restore the schema comment at top if it was there
+    fs.writeFileSync(ocCfgPath, newJson + "\n");
+    console.error(`[sync-oc-perms] Synced ${agents.length} agents → ${ocCfgPath}`);
+  } catch (err) {
+    console.error("[sync-oc-perms] Failed:", err.message);
+  }
+}
+
 async function runRealtimeDaemon(bridge) {
+  syncOpenCodePermissions();
   progress(`Starting OpenCrew realtime daemon via ${OPENCREW_RT_URL}...`);
   let stopRequested = false;
   let currentClient = null;

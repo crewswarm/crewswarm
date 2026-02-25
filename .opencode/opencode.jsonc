@@ -208,11 +208,16 @@
 		"pm": {
 			"model": "openai/gpt-5.3-codex",
 			"permission": {
-				"edit": "deny",
-				"write": "deny",
+				"read": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"write": "allow",
+				"edit": "allow",
 				"bash": { "*": "deny" },
 				"task": "allow",
-				"worktree_*": "allow"
+				"worktree_*": "allow",
+				"plan_read": "deny",
+				"todoread": "deny"
 			}
 		},
 		"qa": {

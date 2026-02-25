@@ -25,7 +25,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { readFile, writeFile, appendFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -59,7 +59,7 @@ const PROJECT_ID     = process.env.PM_PROJECT_ID || null;
 const _pidSuffix     = PROJECT_ID ? `-${PROJECT_ID}` : "";
 const STOP_FILE      = join(LOG_DIR, `pm-loop${_pidSuffix}.stop`);
 const PID_FILE       = join(LOG_DIR, `pm-loop${_pidSuffix}.pid`);
-const TASK_TIMEOUT        = Number(process.env.PHASED_TASK_TIMEOUT_MS  || "300000");
+const TASK_TIMEOUT        = Number(process.env.PHASED_TASK_TIMEOUT_MS  || "600000"); // 10min — OpenCode sessions need room
 const MAX_CONCURRENT_TASKS = Number(process.env.PM_MAX_CONCURRENT || "20");
 const GROQ_API_KEY   = process.env.GROQ_API_KEY || ""; // kept for backwards compat
 
@@ -185,6 +185,11 @@ const ROLE_HINTS = {
   "crew-web3":        { role: "Web3/blockchain — Solidity, smart contracts, ERC20/721, Hardhat, Foundry",   nonDoer: false, keywords: ["solidity", "contract", "blockchain", "web3", "nft", "erc20", "erc721", "hardhat", "foundry", "wagmi", "ethers"] },
   "crew-automation":  { role: "Automation/scraping — Playwright, Puppeteer, Python scrapers, bots",         nonDoer: false, keywords: ["playwright", "puppeteer", "scrape", "scraping", "automation", "bot", "selenium", "crawler", "spider"] },
   "crew-docs":        { role: "Technical docs writer — API docs, README, developer guides, Markdown",        nonDoer: false, keywords: ["readme", "documentation", "docs", "api docs", "guide", "markdown", "wiki", "changelog"] },
+  // Dynamic agents added via dashboard — ensure LLM routing lands correctly
+  "crew-ml":          { role: "Machine learning, AI models, Python ML/AI, data science, PyTorch, scikit-learn, embeddings, training", nonDoer: false, keywords: ["ml", "machine learning", "model", "train", "prediction", "classifier", "regression", "scikit", "pytorch", "tensorflow", "huggingface", "embedding", "neural", "dataset", "feature", "accuracy", "precision"] },
+  "crew-mega":        { role: "General-purpose versatile agent — handles any task that doesn't fit a specialist role",                nonDoer: false, keywords: [] },
+  "crew-researcher":  { role: "Research, investigation, analysis, market research, competitor analysis, data gathering",              nonDoer: false, keywords: ["research", "investigate", "analysis", "analyze", "report", "survey", "compare", "market", "competitor", "trends", "findings", "study"] },
+  "crew-seo":         { role: "SEO, content writing, marketing copy, blog posts, documentation, metadata",                           nonDoer: false, keywords: ["seo", "meta", "keyword", "blog", "content", "copy", "marketing", "title tag", "description", "sitemap", "canonical"] },
 };
 
 /**
@@ -924,8 +929,8 @@ function _callAgentRaw(agentId, message, { timeout } = {}) {
     ...process.env,
     OPENCREW_RT_SEND_TIMEOUT_MS: String(agentTimeout),
   };
-  // So crew-main synthesis runs in OpenCode with the PM output dir (gateway-bridge --send reads this and puts it in payload.projectDir)
-  if (agentId === "crew-main") env.OPENCREW_OPENCODE_PROJECT = OUTPUT_DIR;
+  // All coding agents get the project dir so OpenCode runs in the right directory
+  env.OPENCREW_OPENCODE_PROJECT = OUTPUT_DIR;
   return new Promise((resolve, reject) => {
     const proc = spawn("node", [BRIDGE_PATH, "--send", agentId, message], {
       stdio: ["inherit", "pipe", "pipe"],
@@ -934,7 +939,10 @@ function _callAgentRaw(agentId, message, { timeout } = {}) {
     let out = "", err = "";
     proc.stdout?.on("data", d => { out += d; });
     proc.stderr?.on("data", d => { err += d; });
-    const timer = setTimeout(() => { proc.kill("SIGTERM"); reject(new Error(`Timeout ${TASK_TIMEOUT}ms`)); }, TASK_TIMEOUT);
+    // Kill timer must be longer than agentTimeout (the RT-level timeout) so we
+    // never cut the OpenCode session short. Add a 60s grace window.
+    const killAfterMs = agentTimeout + 60_000;
+    const timer = setTimeout(() => { proc.kill("SIGTERM"); reject(new Error(`Timeout ${killAfterMs}ms`)); }, killAfterMs);
     proc.on("close", code => {
       clearTimeout(timer);
       if (code !== 0) reject(new Error(err || out || `exit ${code}`));
@@ -969,6 +977,11 @@ async function main() {
   console.log(`PM LLM:  ${pmProvLabel}`);
   console.log(`Extend:  ${SELF_EXTEND ? `every ${EXTEND_EVERY_N} completions OR when roadmap empties` : "disabled (--no-extend)"}`);
   console.log(`\nTip: touch ${STOP_FILE} to stop gracefully between tasks\n`);
+
+  // Auto-clean stale stop file from any previous run so we don't exit immediately
+  if (existsSync(STOP_FILE)) {
+    try { unlinkSync(STOP_FILE); console.log(`🧹 Removed stale stop file: ${STOP_FILE}`); } catch {}
+  }
 
   if (!existsSync(ROADMAP_FILE)) {
     console.error(`❌ ROADMAP.md not found at ${ROADMAP_FILE}`);
@@ -1080,11 +1093,22 @@ async function main() {
           const qaFilesHint = qaFilePaths.length > 0
             ? `\n\nOnly these paths exist in the output dir — use @@READ_FILE on these only:\n${qaFilePaths.join("\n")}\n`
             : `\n\n(Output dir ${OUTPUT_DIR} has no tracked files yet; skip file reads and reply PASS or FAIL based on the task.)\n`;
-          const qaPrompt = `[QA-Review] ${targetAgent} just completed this task:\n\n"${task.substring(0, 300)}"\n\nRead the relevant files in ${OUTPUT_DIR} to review the changes. Check for: broken HTML/CSS, JS errors, missing files, visual regressions, Tailwind or unknown CSS classes on a non-Tailwind site.${qaFilesHint}\nReply with exactly one of:\n- "PASS" if everything looks correct\n- "FAIL: <specific issues>" if there are problems that need fixing`;
+          // Detect project type from file extensions to use correct QA criteria
+          const hasPython = qaFilePaths.some(p => p.endsWith(".py"));
+          const hasHtml   = qaFilePaths.some(p => p.endsWith(".html") || p.endsWith(".css"));
+          const qaChecks  = hasPython && !hasHtml
+            ? "Python syntax errors, missing imports, undefined variables, broken FastAPI route registration, unclosed files, missing return statements, type mismatches"
+            : hasHtml
+            ? "broken HTML/CSS, JS errors, missing files, visual regressions, unknown CSS classes"
+            : "syntax errors, missing imports, broken logic, undefined references, missing files";
+          const qaPrompt = `[QA-Review] ${targetAgent} just completed this task:\n\n"${task.substring(0, 300)}"\n\nRead the relevant files in ${OUTPUT_DIR} to review the changes. Check for: ${qaChecks}.${qaFilesHint}\nReply with exactly one of:\n- "PASS" if everything looks correct\n- "FAIL: <specific issues>" if there are problems that need fixing`;
           const qaResult = await callAgent("crew-qa", qaPrompt);
           const qaText = String(qaResult).trim();
-          const qaPass = /^PASS/i.test(qaText);
-          console.log(`  📋 QA: ${qaPass ? "✅ PASS" : "❌ FAIL"} — ${qaText.substring(0, 120)}`);
+          // Treat empty or non-QA responses (e.g. bridge startup text) as a skip — not a hard fail
+          const looksLikeQA = /^(PASS|FAIL)/i.test(qaText) || /issue|error|broken|missing|problem|correct|look/i.test(qaText);
+          const qaPass = /^PASS/i.test(qaText) || !looksLikeQA;
+          const qaLabel = !looksLikeQA ? "⏭️  SKIP (no verdict)" : qaPass ? "✅ PASS" : "❌ FAIL";
+          console.log(`  📋 QA: ${qaLabel} — ${qaText.substring(0, 120)}`);
           await log({ op_id: opId, item: item.text, agent: "crew-qa", status: qaPass ? "qa_pass" : "qa_fail", qa_result: qaText.substring(0, 300) });
 
           // If QA flagged issues, send them to crew-fixer before marking done

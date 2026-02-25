@@ -49,6 +49,7 @@ function loadConfig() {
   return { raw, rtToken, agents };
 }
 
+
 function getAgentRtId(agentId) {
   return normalizeRtAgentId(agentId);
 }
@@ -110,6 +111,8 @@ if (args.includes("--stop")) {
     }
   } catch { /* ignore */ }
   try { execSync("pkill -9 -f 'gateway-bridge.mjs --rt-daemon'", { stdio: "ignore" }); } catch {}
+  // Also stop the CrewSwarm-owned opencode serve (port 4097) if running.
+  try { execSync("pkill -9 -f 'opencode serve --port 4097'", { stdio: "ignore" }); } catch {}
   console.log("✓ Done");
   process.exit(0);
 }
@@ -193,7 +196,7 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
     OPENCREW_RT_AUTH_TOKEN: rtToken,
     OPENCREW_RT_CHANNELS: process.env.OPENCREW_RT_CHANNELS || "command,assign,handoff,reassign,events",
     OPENCREW_OPENCODE_ENABLED: process.env.OPENCREW_OPENCODE_ENABLED ?? "1",
-    OPENCREW_OPENCODE_MODEL: process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.1-codex",
+    OPENCREW_OPENCODE_MODEL: process.env.OPENCREW_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905",
     OPENCREW_OPENCODE_PROJECT: process.env.OPENCREW_OPENCODE_PROJECT || CREWSWARM_DIR,
     CREWSWARM_DIR,
   };
