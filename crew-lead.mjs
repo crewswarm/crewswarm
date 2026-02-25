@@ -609,6 +609,7 @@ function buildSystemPrompt(cfg) {
     "- 'Send that to [agent]' / 'forward to [agent]' / 'pass this to [agent]' → dispatch with the relevant context/file from the conversation.",
     "- 'Add to roadmap' / 'update ROADMAP' / 'add item to roadmap' → dispatch to crew-pm with 'Dispatch to crew-copywriter to update <path>/ROADMAP.md with: …' OR dispatch directly to crew-copywriter with path + items.",
     "- 'Create new project' / 'new project X at …' → dispatch to crew-pm (PM creates folder, ROADMAP.md, @@REGISTER_PROJECT).",
+    "- @@REGISTER_PROJECT supports optional 'autoAdvance': true field — when set, crew-lead will automatically start the next ROADMAP phase pipeline when the current one completes.",
     "- 'Who can write' / 'who can edit ROADMAP' → answer from AGENTS.md 'Who can write where' (PM = new projects only; existing files → copywriter/coder).",
     "- 'Rally the crew' / 'kick off the build' / 'start the pipeline' / 'dispatch the crew' → use @@PIPELINE with appropriate agents and waves. Ask the user what to build if unclear.",
     "- Before emitting @@PIPELINE, scan the conversation for files that agents already produced (copy docs, briefs, roadmaps). Include @@READ_FILE instructions for those files in downstream tasks.",
@@ -1385,6 +1386,7 @@ function checkDispatchTimeouts() {
     appendHistory(sessionId, "system", msg);
     broadcastSSE({ type: "task.timeout", taskId, agent, sessionId, kind, ts: now });
     console.log(`[crew-lead] ${kind} taskId=${taskId} agent=${agent} elapsed=${Math.round(elapsed / 1000)}s`);
+    recordAgentTimeout(agent);
     if (d.pipelineId) {
       const pipeline = pendingPipelines.get(d.pipelineId);
       if (pipeline?.pendingTaskIds) {
@@ -1490,6 +1492,127 @@ function resumePipelines() {
     }
   } catch {}
   if (resumed > 0) console.log(`[pipeline-state] Resumed ${resumed} pipeline(s)`);
+}
+
+// ── Phase B: ROADMAP awareness ───────────────────────────────────────────────
+
+function parseRoadmapPhases(content) {
+  const phases = [];
+  let current = null;
+  for (const line of content.split("\n")) {
+    const phaseMatch = line.match(/^#{1,3}\s*(Phase\s[\w\d–\-]+.*)/i);
+    if (phaseMatch) {
+      if (current) phases.push(current);
+      current = { title: phaseMatch[1].trim(), items: [], raw: line };
+    } else if (current && line.match(/^\s*-\s*\[([ xX])\]/)) {
+      current.items.push({ done: /\[x\]/i.test(line), text: line.trim() });
+    }
+  }
+  if (current) phases.push(current);
+  return phases;
+}
+
+function findNextRoadmapPhase(projectDir) {
+  const roadmapPath = path.join(projectDir, "ROADMAP.md");
+  if (!fs.existsSync(roadmapPath)) return null;
+  try {
+    const content = fs.readFileSync(roadmapPath, "utf8");
+    const phases = parseRoadmapPhases(content);
+    return phases.find(p => p.items.length > 0 && p.items.some(i => !i.done)) || null;
+  } catch { return null; }
+}
+
+async function autoAdvanceRoadmap(projectDir, sessionId) {
+  if (!projectDir) return;
+  const nextPhase = findNextRoadmapPhase(projectDir);
+  if (!nextPhase) {
+    console.log(`[roadmap] All phases complete in ${projectDir}`);
+    return;
+  }
+  const unchecked = nextPhase.items.filter(i => !i.done);
+  console.log(`[roadmap] Auto-advancing to "${nextPhase.title}" — ${unchecked.length} items pending in ${projectDir}`);
+
+  const task = `The previous pipeline phase just completed. Auto-advancing to the next phase.
+
+Project: ${projectDir}
+Next phase: ${nextPhase.title}
+Unchecked items:
+${unchecked.map(i => i.text).join("\n")}
+
+@@READ_FILE ${path.join(projectDir, "ROADMAP.md")}
+
+Plan and execute this phase as a @@PIPELINE. Use the correct agents for each task. End with crew-qa → crew-fixer → crew-qa → crew-pm (ROADMAP update). All file paths must be absolute.`;
+
+  appendHistory(sessionId, "system", `[Auto-advance] Starting "${nextPhase.title}" (${unchecked.length} items)`);
+  broadcastSSE({ type: "roadmap_advance", phase: nextPhase.title, projectDir, ts: Date.now() });
+
+  // Send as a chat message from crew-lead itself so it goes through full pipeline routing
+  await handleChat({ message: task, sessionId, _autoAdvance: true });
+}
+
+// ── Phase C: Background loop ─────────────────────────────────────────────────
+
+const _agentTimeoutCounts = new Map(); // agentId → count of timeouts in last 24h
+const _timeoutLog = []; // { agent, ts } entries
+
+function recordAgentTimeout(agent) {
+  _timeoutLog.push({ agent, ts: Date.now() });
+  // Prune entries older than 24h
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  while (_timeoutLog.length && _timeoutLog[0].ts < cutoff) _timeoutLog.shift();
+  const counts = {};
+  for (const e of _timeoutLog) counts[e.agent] = (counts[e.agent] || 0) + 1;
+  for (const [id, n] of Object.entries(counts)) _agentTimeoutCounts.set(id, n);
+}
+
+function backgroundLoop() {
+  try {
+    // 1. Stall detection — pipelines with no task activity for >15 min
+    for (const [pid, pipeline] of pendingPipelines) {
+      if (!pipeline._lastActivity) pipeline._lastActivity = Date.now();
+      const staleMs = Date.now() - pipeline._lastActivity;
+      if (staleMs > 15 * 60 * 1000 && pipeline.pendingTaskIds.size > 0) {
+        console.log(`[bg-loop] Pipeline ${pid} appears stalled (${Math.round(staleMs / 60000)}m no activity) — ${pipeline.pendingTaskIds.size} tasks pending`);
+        broadcastSSE({ type: "pipeline_stalled", pipelineId: pid, staleMinutes: Math.round(staleMs / 60000), ts: Date.now() });
+      }
+    }
+
+    // 2. Agent timeout pattern alerts
+    for (const [agent, count] of _agentTimeoutCounts) {
+      if (count >= 3) {
+        console.log(`[bg-loop] ⚠️  ${agent} has timed out ${count}x in last 24h — consider checking its model or restarting its bridge`);
+        broadcastSSE({ type: "agent_timeout_pattern", agent, count, ts: Date.now() });
+      }
+    }
+
+    // 3. ROADMAP auto-advance — check registered projects for next incomplete phase
+    // Only if no pipelines are currently active (don't stack pipelines)
+    if (pendingPipelines.size === 0) {
+      const cfg = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+      const projects = cfg.projects || [];
+      for (const project of projects) {
+        if (!project.outputDir || !project.autoAdvance) continue;
+        const nextPhase = findNextRoadmapPhase(project.outputDir);
+        if (nextPhase) {
+          console.log(`[bg-loop] Project "${project.name}" has next phase: ${nextPhase.title}`);
+          // Only auto-advance if explicitly opted in
+          if (project.autoAdvance === true) {
+            autoAdvanceRoadmap(project.outputDir, "owner");
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[bg-loop] Error:", e.message);
+  }
+}
+
+// Start background loop — runs every 5 minutes
+let _bgLoopInterval = null;
+function startBackgroundLoop() {
+  if (_bgLoopInterval) clearInterval(_bgLoopInterval);
+  _bgLoopInterval = setInterval(backgroundLoop, 5 * 60 * 1000);
+  console.log("[crew-lead] Background loop started (5m interval)");
 }
 
 function cancelAllPipelines(sessionId) {
@@ -1623,8 +1746,15 @@ function dispatchPipelineWave(pipelineId) {
     console.log(`[crew-lead] Pipeline ${pipelineId} complete`);
     recordOpsEvent("pipeline_completed", { pipelineId, steps: steps.length, sessionId });
     bumpOpsCounter("pipelinesCompleted");
+    const completedProjectDir = pipeline.projectDir;
     pendingPipelines.delete(pipelineId);
     deletePipelineState(pipelineId);
+    // Phase B: auto-advance to next ROADMAP phase if project is registered with autoAdvance
+    if (completedProjectDir) {
+      const cfg = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+      const proj = (cfg.projects || []).find(p => p.outputDir === completedProjectDir);
+      if (proj?.autoAdvance) setTimeout(() => autoAdvanceRoadmap(completedProjectDir, sessionId), 3000);
+    }
     return;
   }
 
@@ -2356,7 +2486,10 @@ async function handleChat({ message, sessionId = "default", firstName = "User" }
   } else if (pipelineSteps) {
     const pipelineId = crypto.randomUUID();
     const { steps, waves } = pipelineSteps;
-    pendingPipelines.set(pipelineId, { steps, waves, currentWave: 0, pendingTaskIds: new Set(), waveResults: [], sessionId });
+    // Extract projectDir from any step task that references an absolute path
+    const _projectDirMatch = steps.map(s => s.task).join("\n").match(/\/Users\/\S+?\/Desktop\/[\w-]+(?=\/)/);
+    const _projectDir = _projectDirMatch ? _projectDirMatch[0] : null;
+    pendingPipelines.set(pipelineId, { steps, waves, currentWave: 0, pendingTaskIds: new Set(), waveResults: [], sessionId, projectDir: _projectDir });
     dispatchPipelineWave(pipelineId);
     const waveDesc = waves.length > 1 ? ` in ${waves.length} waves` : "";
     appendHistory(sessionId, "system", `Pipeline started (${steps.length} steps${waveDesc}): ${waves.map(w => w.map(s => s.agent).join("+")).join(" → ")}`);
@@ -2974,6 +3107,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // GET /api/background — background loop status: stalls, timeout patterns, ROADMAP state
+    if (url.pathname === "/api/background" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const timeoutPatterns = [..._agentTimeoutCounts.entries()].map(([agent, count]) => ({ agent, count }));
+      const stalledPipelines = [...pendingPipelines.entries()]
+        .filter(([, p]) => p._lastActivity && (Date.now() - p._lastActivity) > 15 * 60 * 1000)
+        .map(([id, p]) => ({ id, staleMinutes: Math.round((Date.now() - p._lastActivity) / 60000), pendingTasks: p.pendingTaskIds.size }));
+      json(res, 200, { ok: true, activePipelines: pendingPipelines.size, stalledPipelines, timeoutPatterns });
+      return;
+    }
+
     // GET /api/agents/:id/tools — read an agent's current tool permissions
     const toolsGetMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/tools$/);
     if (toolsGetMatch && req.method === "GET") {
@@ -3396,6 +3540,7 @@ function connectRT() {
       console.log("[crew-lead] RT connected — listening for done, events, command, issues");
       // Resume any in-progress pipelines from before restart
       setTimeout(resumePipelines, 2000);
+      startBackgroundLoop();
       // Send heartbeat every 30s so monitoring sees crew-lead as up
       if (crewLeadHeartbeat) clearInterval(crewLeadHeartbeat);
       crewLeadHeartbeat = setInterval(() => {
@@ -3526,6 +3671,7 @@ function connectRT() {
             // Record this task's result and mark it done in the current wave
             pipeline.waveResults.push(content);
             pipeline.pendingTaskIds.delete(taskId);
+            pipeline._lastActivity = Date.now();
 
             console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} wave ${pipeline.currentWave + 1}: ${pipeline.pendingTaskIds.size} task(s) still pending`);
 
