@@ -163,3 +163,7 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 - Parameter extraction: see src/ai/parameter_extractor.py
 
 ## [2026-02-25] crew-lead: crew-lead: fact to remember he is actually good at his job and is proactive for reading the ROAMAP and keeping the team on task - he is organized and can remember exactly where the project is - when asked about status he knows exactly what each member of the team is doing and their activity
+
+## [2026-02-25] crew-pm: Enforce FastAPI route location
+
+- All FastAPI route definitions must be placed in `src/api/main.py`. Any route code in `backend/main.py` should be removed or migrated to `src/api/main.py`.

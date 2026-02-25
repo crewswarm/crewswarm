@@ -3066,6 +3066,37 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // GET /api/services/health — check OpenCode + bridges, optionally restart
+    // POST /api/services/restart-opencode — kill + relaunch opencode serve
+    if (url.pathname === "/api/services/health" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const { execSync } = await import("node:child_process");
+      let ocAlive = false;
+      try {
+        const ocRes = await fetch("http://127.0.0.1:4096/health", { signal: AbortSignal.timeout(3000) }).catch(() => null);
+        ocAlive = !!ocRes;
+      } catch {}
+      let bridgeCount = 0;
+      try {
+        const out = execSync(`pgrep -f "gateway-bridge.mjs --rt-daemon" | wc -l`, { encoding: "utf8" });
+        bridgeCount = parseInt(out.trim(), 10);
+      } catch {}
+      json(res, 200, { ok: true, opencode: { alive: ocAlive, port: 4096 }, bridges: { count: bridgeCount }, crewLead: { alive: true, port: PORT } });
+      return;
+    }
+
+    if (url.pathname === "/api/services/restart-opencode" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const { execSync } = await import("node:child_process");
+      try {
+        execSync(`pkill -f "opencode serve" 2>/dev/null; sleep 1; nohup opencode serve --port 4096 --hostname 127.0.0.1 >> /tmp/opencode-server.log 2>&1 &`, { timeout: 5000, shell: true });
+        json(res, 200, { ok: true, message: "OpenCode restart triggered — allow ~6s to come up" });
+      } catch (e) {
+        json(res, 500, { ok: false, error: e.message });
+      }
+      return;
+    }
+
     if (url.pathname === "/status" && req.method === "GET") {
       const cfg = loadConfig();
       json(res, 200, { ok: true, model: cfg.model, rtConnected: rtPublish !== null, agents: cfg.knownAgents });

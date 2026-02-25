@@ -1,36 +1,43 @@
 from fastapi import APIRouter, Query
-import sqlite3
+import requests
+from src.models.price_history import PriceHistory
 from datetime import datetime, timedelta
 
 router = APIRouter()
 
 
-@router.get("/backtests")
-def get_backtests(start_date: str = Query(...), end_date: str = Query(...)):
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    query = """
-        SELECT id, created_at, strategy, result 
-        FROM backtests
-        WHERE created_at BETWEEN ? AND ?
-        ORDER BY created_at
-    """
-    cursor.execute(query, (start_date, end_date))
-    results = []
+@router.post("/backtests")
+def get_backtests(
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    page: int = 1,
+    page_size: int = 100,
+):
+    # Fetch paginated data from external API
+    base_url = "https://api.example.com/backtests"
+    params = {
+        "start_date": start_date,
+        "end_date": end_date,
+        "page": page,
+        "page_size": page_size,
+    }
+
+    all_results = []
     while True:
-        batch = cursor.fetchmany(1000)
-        if not batch:
+        start_time = datetime.now()
+        response = requests.get(base_url, params=params)
+        print(f"API request took: {datetime.now() - start_time}")
+        data = response.json()
+        if not data:
             break
-        results.extend(
-            [
-                {
-                    "id": row[0],
-                    "created_at": row[1],
-                    "strategy": row[2],
-                    "result": row[3],
-                }
-                for row in batch
-            ]
-        )
-    conn.close()
-    return {"data": results}
+
+        start_insert = datetime.now()
+        PriceHistory.objects.bulk_create(PriceHistory(**item) for item in data)
+        print(f"Bulk insert took: {datetime.now() - start_insert}")
+
+        all_results.extend(data)
+
+        # Update page for next iteration
+        params["page"] = page + 1
+        page += 1
+    return {"data": all_results}

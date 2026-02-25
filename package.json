@@ -24,5 +24,8 @@
   "dependencies": {
     "bcrypt": "^6.0.0",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "eslint": "^10.0.2"
   }
 }

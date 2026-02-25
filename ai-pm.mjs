@@ -233,6 +233,10 @@ async function waitForTask(taskId, timeoutMs = TASK_TIMEOUT) {
 }
 
 async function healthCheckAndRestart() {
+  const { execSync } = await import("node:child_process");
+  const crewDir = path.dirname(new URL(import.meta.url).pathname);
+  let restarted = false;
+
   // 1. Verify crew-lead is alive
   try {
     await crewGet("/health");
@@ -241,34 +245,52 @@ async function healthCheckAndRestart() {
     return false;
   }
 
-  // 2. Check how many bridge daemons are running
-  const { execSync } = await import("node:child_process");
+  // 2. Check OpenCode server (port 4096)
+  let ocAlive = false;
+  try {
+    const ocRes = await fetch("http://127.0.0.1:4096/health", { signal: AbortSignal.timeout(3000) }).catch(() => null);
+    // OpenCode returns HTML on /, not /health — treat any non-error response as alive
+    ocAlive = !!ocRes;
+  } catch {}
+
+  if (!ocAlive) {
+    console.log(`     ❌ OpenCode server DOWN (port 4096) — restarting...`);
+    try {
+      execSync(`pkill -f "opencode serve" 2>/dev/null; sleep 1; nohup opencode serve --port 4096 --hostname 127.0.0.1 >> /tmp/opencode-server.log 2>&1 &`, {
+        timeout: 5000, shell: true,
+      });
+      await sleep(6000); // give OC time to come up
+      console.log(`     ✅ OpenCode restart triggered`);
+      restarted = true;
+    } catch (e) {
+      console.log(`     ⚠️  OpenCode restart failed: ${e.message?.slice(0, 80)}`);
+    }
+  }
+
+  // 3. Check how many bridge daemons are running
   let bridgeCount = 0;
   try {
     const out = execSync(`pgrep -f "gateway-bridge.mjs --rt-daemon" | wc -l`, { encoding: "utf8" });
     bridgeCount = parseInt(out.trim(), 10);
   } catch {}
 
-  console.log(`     🔍 Health check: crew-lead ✅  bridge daemons running: ${bridgeCount}`);
+  console.log(`     🔍 Health check: crew-lead ✅  OpenCode: ${ocAlive ? "✅" : "⚠️ restarted"}  bridges: ${bridgeCount}`);
 
   if (bridgeCount < 3) {
     console.log(`     🚀 Low bridge count (${bridgeCount}) — restarting crew daemons...`);
     try {
-      const crewDir = path.dirname(new URL(import.meta.url).pathname);
       execSync(`pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null; sleep 1; node ${crewDir}/scripts/start-crew.mjs >> /tmp/crew-restart-ai-pm.log 2>&1 &`, {
-        timeout: 5000,
-        shell: true,
+        timeout: 5000, shell: true,
       });
-      await sleep(8000); // give bridges time to come up
+      await sleep(8000);
       console.log(`     ✅ Bridge restart triggered`);
-      return true;
+      restarted = true;
     } catch (e) {
       console.log(`     ⚠️  Bridge restart failed: ${e.message?.slice(0, 60)}`);
-      return false;
     }
   }
 
-  return false; // bridges look fine, task just stalled
+  return restarted;
 }
 
 // ── LLM (PM brain) ────────────────────────────────────────────────────────────
@@ -438,7 +460,7 @@ function getAgentRoster() {
       "crew-ml":          "machine learning, AI models, data science, training pipelines",
       "crew-mega":        "versatile general-purpose tasks",
     };
-    const NON_DOERS = new Set(["crew-qa","crew-security","crew-fixer","crew-pm","crew-lead","orchestrator","crew-telegram","crew-main","crew-researcher","crew-seo","crew-copywriter","crew-github"]);
+    const NON_DOERS = new Set(["crew-qa","crew-security","crew-fixer","crew-pm","crew-lead","orchestrator","crew-telegram","crew-main","crew-researcher","crew-seo","crew-copywriter","crew-github","crew-architect"]);
     return agents
       .filter(a => {
         if (NON_DOERS.has(a.id)) return false;
@@ -580,6 +602,24 @@ async function main() {
       })
     );
 
+    // Architect pass: enforce structure, merge duplicates, fix imports before QA
+    async function runArchitect() {
+      console.log(`     🏗️  Architect pass — cleaning structure...`);
+      const archPrompt = `Audit and clean the project at ${PROJECT_DIR}:
+1. Delete any files outside src/ that duplicate files inside src/ (e.g. backend/main.py, database.py at root, *.bak, _crew-*.md, extra qa-report-*.md, *.prof, extra *.sqlite/.db files beyond app.db)
+2. Fix any broken imports in src/api/main.py and src/api/routers/ (e.g. "from ..backend" should be "from src", "Database()" must be imported)
+3. Remove duplicate router includes in main.py
+4. Report: "Deleted: X", "Fixed import: Y". Do NOT touch ROADMAP.md or qa-report.md. Do NOT write business logic.
+Project canonical tree: src/api/main.py, src/api/routers/, src/backtest/, src/data/, src/frontend/, src/ai/`;
+      try {
+        const archId = await dispatch("crew-architect", archPrompt, PROJECT_DIR);
+        const archResult = await waitForTask(archId, TASK_TIMEOUT);
+        console.log(`     🏗️  Architect done: ${(archResult || "").slice(0, 120)}`);
+      } catch (e) {
+        console.log(`     ⚠️  Architect pass failed (non-fatal): ${e.message?.slice(0, 60)}`);
+      }
+    }
+
     // QA helper: ask crew-qa to audit a completed task. Returns { passed, feedback }.
     async function runQA(taskDescription, attemptNum) {
       const qaPrompt = `QA this task in ${PROJECT_DIR} — reply QA_PASS or QA_FAIL: <issues>. Do NOT modify ROADMAP.md or qa-report.md. Task: ${taskDescription}`;
@@ -598,6 +638,9 @@ async function main() {
       console.log(`     ${passed ? "✅ QA passed" : `❌ QA failed: ${feedback.slice(0, 120)}`}`);
       return { passed, feedback };
     }
+
+    // Architect pass: clean up duplicates + fix imports before QA sees the code
+    await runArchitect();
 
     // Process results with QA → Fix → QA loop (max 2 repair cycles per task)
     const MAX_QA_REPAIRS = 2;

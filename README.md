@@ -308,6 +308,18 @@ CrewSwarm/
 
 ## Docs
 
+### Polymarket Data Fetcher & Backtest Setup
+
+1. **Data Fetcher**
+   - Ensure `POLYMARKET_API_KEY` is set in `.env`
+   - Run: `npm run fetch:polymarket`
+   - Configuration: `config/fetchers/polymarket.js`
+
+2. **Backtest with Real Price History**
+   - Verify database connection in `config/db.js`
+   - Run: `npm run backtest -- --use-db`
+   - Results saved to: `data/backtest-results/`
+
 - [System Architecture](docs/SYSTEM-ARCHITECTURE.md)
 - [Orchestrator Guide](docs/ORCHESTRATOR-GUIDE.md)
 - [Phased Builds (PDD)](docs/PHASED-ORCHESTRATOR.md)
