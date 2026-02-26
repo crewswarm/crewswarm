@@ -1811,7 +1811,7 @@ stack:
   roadmap: ROADMAP.md
 orchestrator:
   mode: phased
-  launch_command: node unified-orchestrator.mjs "${meta.stack} starter in projects/${meta.slug}"
+  launch_command: node scripts/run.mjs "${meta.stack} starter in projects/${meta.slug}"
   phases:
     - MVP
     - Phase 1
@@ -1885,7 +1885,7 @@ This bundle ships with:
 1. Copy the files into "projects/${meta.slug}".
 2. Update "ROADMAP.md" with the backlog you want the PM Loop to execute.
 3. Run:
-   node unified-orchestrator.mjs "${meta.stack} starter" --project projects/${meta.slug}
+   node scripts/run.mjs "${meta.stack} starter" --project projects/${meta.slug}
 4. Monitor progress in the RT Messages tab or SwiftBar status menu.
 
 ## Stack metadata

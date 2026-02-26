@@ -41,7 +41,7 @@ These are for running multi-agent pipelines from the command line without the da
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/run.mjs "requirement"` | Run `unified-orchestrator.mjs` with a natural-language requirement |
+| `scripts/run.mjs "requirement"` | Run a natural-language requirement through the full orchestration pipeline |
 | `unified-orchestrator.mjs` | Full orchestration: PM plan → parser → JSON → workers → verification |
 | `natural-pm-orchestrator.mjs` | Simpler: PM plan → regex parse → dispatch (good for quick tasks) |
 | `phased-orchestrator.mjs` | Phased build loop (also used by dashboard Build tab) |

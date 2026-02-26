@@ -136,15 +136,12 @@ if [[ -d "$REPO_DIR/skills" ]]; then
   success "Skills synced to ~/.crewswarm/skills/"
 fi
 
-# Bootstrap agent prompts if not present (try repo config, then legacy .openclaw, then sync from prompts/ or empty)
+# Bootstrap agent prompts if not present (try repo config/prompts/ dir, or empty default)
 PROMPTS_FILE="$CREWSWARM_DIR/agent-prompts.json"
 if [[ ! -f "$PROMPTS_FILE" ]]; then
   if [[ -f "$REPO_DIR/config/agent-prompts.json" ]]; then
     cp "$REPO_DIR/config/agent-prompts.json" "$PROMPTS_FILE"
     success "Copied config/agent-prompts.json to ~/.crewswarm/"
-  elif [[ -f "$REPO_DIR/.openclaw/agent-prompts.json" ]]; then
-    cp "$REPO_DIR/.openclaw/agent-prompts.json" "$PROMPTS_FILE"
-    success "Copied .openclaw/agent-prompts.json to ~/.crewswarm/"
   else
     echo '{}' > "$PROMPTS_FILE"
     success "Created ~/.crewswarm/agent-prompts.json"

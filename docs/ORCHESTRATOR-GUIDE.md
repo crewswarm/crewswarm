@@ -41,11 +41,7 @@ Or use the **Build tab** for a project-scoped build loop against a `ROADMAP.md`.
 ## CLI (scripted / power users)
 
 ```bash
-# Simple way — wraps unified-orchestrator.mjs
 node scripts/run.mjs "Build JWT-based user authentication with login, register, and password reset"
-
-# Direct
-node unified-orchestrator.mjs "Your requirement here"
 ```
 
 ### CLI examples

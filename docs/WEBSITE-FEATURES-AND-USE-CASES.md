@@ -102,7 +102,7 @@ Swap models per agent, per project. Anthropic for coder, Groq for PM expansion, 
 | **Phased PDD** | `node phased-orchestrator.mjs --all "…"` | Larger or ambiguous work; auto-phases, auto-retries |
 | **PM Loop** | `node pm-loop.mjs` | Continuous builds; self-generates tasks; runs forever |
 | **Continuous Build** | `node continuous-build.mjs` | Websites and structured outputs with defined required sections |
-| **Unified** | `node unified-orchestrator.mjs "…"` | Single-shot structured runs |
+| **Unified** | `node scripts/run.mjs "…"` | Single-shot structured runs |
 | **Targeted send** | `node gateway-bridge.mjs --send <agent> "…"` | One task, one agent, right now |
 | **Dashboard** | `node scripts/dashboard.mjs` | All of the above with a UI |
 

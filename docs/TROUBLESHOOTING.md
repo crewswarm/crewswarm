@@ -52,13 +52,11 @@ So: same token everywhere; direct send works because the token is in env; PM loo
 
 **Symptom:** An agent or UI tries to spawn/target another agent and gets "agentId is not allowed" or "allowed: none".
 
-**Explanation:** The RT daemon has an allowlist: built-in default includes all crew-* agents; you can override with `OPENCLAW_ALLOWED_AGENTS`. crew-lead and the dashboard dispatch via the RT bus; direct `sessions_spawn` from some clients is restricted.
+**Explanation:** The RT daemon has an allowlist: built-in default includes all crew-* agents; you can override with `CREWSWARM_ALLOWED_AGENTS`. crew-lead and the dashboard dispatch via the RT bus; direct `sessions_spawn` from some clients is restricted.
 
 **Fix:** Use crew-lead chat or the dashboard to dispatch tasks. For scripted builds, use the orchestrator from the CrewSwarm repo:
 ```bash
 node scripts/run.mjs "your requirement"
-# or
-node natural-pm-orchestrator.mjs "your requirement"
 ```
 
 ---
@@ -93,7 +91,7 @@ Ensure the RT server is listening on port 18889 and that `~/.crewswarm/config.js
 
 ## Orchestrator hangs or times out
 
-**Symptom:** `node scripts/run.mjs "requirement"` or natural-pm-orchestrator runs but PM or workers never complete.
+**Symptom:** `node scripts/run.mjs "requirement"` runs but PM or workers never complete.
 
 **Checks:**
 1. Daemons running? `bash scripts/openswitchctl status`

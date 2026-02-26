@@ -130,7 +130,7 @@ bash scripts/openswitchctl status
 bash scripts/openswitchctl restart
 bash scripts/openswitchctl restart-agent crew-coder
 bash scripts/openswitchctl send crew-coder "Your task here"
-node scripts/crewswarm-test.mjs --quick
+npm run health
 ```
 
 More detail: [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

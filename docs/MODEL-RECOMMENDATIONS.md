@@ -1,6 +1,6 @@
-# OpenCrewHQ — Model Guide
+# Model Recommendations
 
-All providers below are pre-configured in `~/.openclaw/openclaw.json`. To swap a model for any agent, change its `"model"` field — no code changes required. The `OPENCREW_OPENCODE_MODEL` env var overrides the model used by OpenCode (the primary coding executor).
+All providers below are pre-configured in `~/.crewswarm/crewswarm.json`. To swap a model for any agent, change its `"model"` field — no code changes required. The `OPENCREW_OPENCODE_MODEL` env var overrides the model used by OpenCode (the primary coding executor).
 
 ---
 
@@ -197,7 +197,7 @@ ollama pull deepseek-coder:6.7b # DeepSeek coder model
 ollama pull llama3.1:8b        # General purpose
 ```
 
-Then add to `~/.openclaw/openclaw.json` under `models.providers.ollama.models`:
+Then add to `~/.crewswarm/crewswarm.json` under `models.providers.ollama.models`:
 ```json
 { "id": "qwen2.5-coder:7b", "name": "Qwen 2.5 Coder 7B", "contextWindow": 128000 }
 ```
@@ -254,7 +254,7 @@ OPENCREW_OPENCODE_MODEL=ollama/qwen2.5-coder:7b node pm-loop.mjs
 
 ## Providers Not Yet Wired (easy to add)
 
-These use the same OpenAI-compatible API format. Add to `~/.openclaw/openclaw.json` under `models.providers`:
+These use the same OpenAI-compatible API format. Add to `~/.crewswarm/crewswarm.json` under `models.providers`:
 
 ### OpenAI
 ```json
@@ -412,7 +412,7 @@ OPENCREW_OPENCODE_MODEL=google/gemini-2.0-flash node pm-loop.mjs
 
 ## Switching models
 
-**Per-agent (in `~/.openclaw/openclaw.json`):**
+**Per-agent (in `~/.crewswarm/crewswarm.json`):**
 ```json
 { "id": "coder", "model": "anthropic/claude-sonnet-4-20250514" }
 ```

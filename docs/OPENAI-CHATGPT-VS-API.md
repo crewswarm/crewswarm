@@ -35,7 +35,7 @@ So for **Codex itself** you can use your premium account. CrewSwarm does not use
 
 You log in once (`python chatmock.py login` or the Mac app), then run the server (`python chatmock.py serve`). Any app that talks to the OpenAI API can point at this server as `baseUrl` and use your plan’s limits instead of paying per API call.
 
-### Using it with CrewSwarm / OpenClaw
+### Using it with CrewSwarm
 
 1. Install and run ChatMock (see [ChatMock README](https://github.com/RayBytes/ChatMock)) so it is listening (e.g. `http://127.0.0.1:8000/v1`).
 2. In Dashboard → **Providers** → **Built-in**, find **OpenAI (local)** (same row as Ollama). Click to expand, then **Save** (you can leave the key blank — we store a placeholder so the stack works). Use **Test** to confirm ChatMock is reachable.

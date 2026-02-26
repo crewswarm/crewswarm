@@ -1,19 +1,19 @@
-# Quick Start: Adding New OpenClaw Agents
+# Quick Start: Adding New Agents
 
 **Last Updated:** 2026-02-20
 
 ## TL;DR
-OpenClaw agents are already "plugins" - just edit JSON, no code needed!
+CrewSwarm agents are already "plugins" - just edit JSON, no code needed!
 
 ## Prerequisites
-- OpenClaw installed: `npm install -g openclaw`
-- Gateway running on port 18789
+- Node.js 20+ and dependencies: `npm install`
+- RT bus running on port 18889
 - OpenCrew RT configured
 
 ## Steps to Add a New Agent
 
-### 1. Edit OpenClaw Config
-**File:** `~/.openclaw/openclaw.json`
+### 1. Edit Agent Config
+**File:** `~/.crewswarm/crewswarm.json`
 
 Add to `agents.list`:
 ```json
@@ -42,15 +42,15 @@ Add to `agents.list`:
 - `research`: Read-only + web search
 - `review`: Read + grep only
 
-### 2. Restart OpenClaw Gateway
+### 2. Restart Agent Bridges
 ```bash
-pkill -f openclaw-gateway
+node scripts/start-crew.mjs --stop
 # Gateway auto-restarts in ~3 seconds
 sleep 5
 ```
 
 ### 3. Add Routing in Gateway Bridge
-**File:** `/Users/jeffhobbs/Desktop/OpenClaw/gateway-bridge.mjs`
+**File:** `/Users/jeffhobbs/Desktop/CrewSwarm/gateway-bridge.mjs`
 
 Find `OPENCREW_TO_OPENCLAW_AGENT_MAP` (around line 70):
 ```javascript
@@ -79,7 +79,7 @@ bin/openswitchctl status
 ### 6. Test New Agent
 ```bash
 # Direct test via gateway
-cd /Users/jeffhobbs/Desktop/OpenClaw
+cd /Users/jeffhobbs/Desktop/CrewSwarm
 node gateway-bridge.mjs --agent your-agent-id "Create test.txt with hello world"
 
 # Test via swarm
@@ -88,7 +88,7 @@ bin/openswitchctl send your-rt-agent-name "Create example.js with a function"
 
 ## Example: Adding a "Researcher" Agent
 
-**1. `~/.openclaw/openclaw.json`:**
+**1. `~/.crewswarm/crewswarm.json`:**
 ```json
 {
   "id": "researcher",
@@ -105,7 +105,7 @@ bin/openswitchctl send your-rt-agent-name "Create example.js with a function"
 }
 ```
 
-**2. Restart gateway:** `pkill -f openclaw-gateway`
+**2. Restart gateway:** `node scripts/start-crew.mjs --stop`
 
 **3. `gateway-bridge.mjs`:**
 ```javascript
@@ -123,7 +123,7 @@ const OPENCREW_RT_SWARM_AGENTS = "crew-main,crew-researcher,...";
 
 ## Why NOT Extract to Plugin?
 
-1. **Already configurable** - OpenClaw is designed for JSON config
+1. **Already configurable** - CrewSwarm is designed for JSON config
 2. **No code duplication** - One gateway, many agents
 3. **Shared infrastructure** - Memory, validation, telemetry
 4. **Simpler maintenance** - One codebase, one deploy
@@ -131,9 +131,9 @@ const OPENCREW_RT_SWARM_AGENTS = "crew-main,crew-researcher,...";
 ## When to Create a Separate Plugin?
 
 Only if you need:
-- **Custom tool implementations** (OpenClaw doesn't provide)
+- **Custom tool implementations** (requires custom agent code)
 - **Different gateway protocol** (not WebSocket)
-- **Standalone distribution** (no OpenClaw dependency)
+- **Standalone distribution** (no extra dependencies)
 
-For 99% of use cases: **Just add agents to OpenClaw config!**
+For 99% of use cases: **Just add agents to crewswarm.json!**
 
