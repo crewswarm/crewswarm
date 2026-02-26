@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CrewSwarm — Multi-Agent Orchestrator for OpenCode &amp; Cursor</title>
-  <meta name="description" content="CrewSwarm is the multi-agent orchestration layer for OpenCode and Cursor. Led by Stinki — the AI captain who orchestrates, roasts, and ships. PM, coder, QA, fixer and more collaborate over a realtime bus. Bring your own LLM." />
-  <meta property="og:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode &amp; Cursor" />
-  <meta property="og:description" content="The orchestration layer for OpenCode and Cursor. PM-led builds, realtime dispatch, fault recovery. One requirement, one crew, real files on disk." />
+  <title>CrewSwarm — Multi-Agent Orchestrator for OpenCode, Cursor &amp; Claude Code</title>
+  <meta name="description" content="CrewSwarm orchestrates a crew of specialist AI agents across OpenCode, Cursor CLI, and Claude Code. Led by Stinki — the AI captain who plans, dispatches, and ships. PM, coder, QA, fixer and more collaborate over a realtime bus. Bring your own LLM." />
+  <meta property="og:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode, Cursor &amp; Claude Code" />
+  <meta property="og:description" content="Orchestrate specialist AI agents across OpenCode, Cursor CLI, and Claude Code. PM-led builds, realtime dispatch, fault recovery. One requirement, one crew, real files on disk." />
   <meta property="og:url" content="https://crewswarm.ai" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.fly.dev/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode &amp; Cursor" />
-  <meta name="twitter:description" content="Route each agent through OpenCode, Cursor CLI, or direct API. PM-led builds, realtime dispatch, real files on disk. Free &amp; open source." />
+  <meta name="twitter:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode, Cursor &amp; Claude Code" />
+  <meta name="twitter:description" content="Route each agent through OpenCode, Cursor CLI, Claude Code, or direct API. PM-led builds, realtime dispatch, real files on disk. Free &amp; open source." />
   <meta name="twitter:image" content="https://crewswarm.fly.dev/og-image.png" />
   <link rel="canonical" href="https://crewswarm.ai/" />
   <link rel="icon" type="image/png" href="favicon.png" />
@@ -57,11 +57,13 @@
       </picture>
     </div>
     <h1>One requirement.<br/>One build.<br/><span class="gradient-text">One crew.</span></h1>
-    <p class="hero-sub">The multi-agent orchestration layer for <strong>OpenCode</strong> and <strong>Cursor</strong>. Plan, dispatch, build, and verify — with real files on disk.</p>
+    <p class="hero-sub">The multi-agent orchestration layer for <strong>OpenCode</strong>, <strong>Cursor</strong>, and <strong>Claude Code</strong>. Plan, dispatch, build, and verify — with real files on disk.</p>
     <div class="proof-bar visible">
       <span class="proof-item">OpenCode sessions</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">Cursor CLI routing</span>
+      <span class="proof-sep" aria-hidden="true">•</span>
+      <span class="proof-item">Claude Code executor</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">PM-led phases</span>
       <span class="proof-sep" aria-hidden="true">•</span>
@@ -288,8 +290,8 @@
           <div class="layer-num">02</div>
           <div class="layer-content">
             <h3>Execution layer</h3>
-            <span class="layer-tag">OpenCode · Cursor CLI · Direct API</span>
-            <p>Each agent runs in the mode you choose: <strong>OpenCode</strong> for full file editing with session memory, <strong>Cursor CLI</strong> for deep reasoning tasks, or a <strong>direct LLM call</strong> for speed. Switch per agent from the dashboard — no restarts.</p>
+            <span class="layer-tag">OpenCode · Cursor CLI · Claude Code · Direct API</span>
+            <p>Each agent runs in the engine you choose: <strong>OpenCode</strong> for persistent sessions and file editing, <strong>Cursor CLI</strong> for deep reasoning, <strong>Claude Code</strong> for full workspace context, or a <strong>direct LLM call</strong> for speed. Switch per agent from the dashboard — no restarts.</p>
           </div>
         </div>
         <div class="layer-arrow">↓</div>
@@ -311,12 +313,12 @@
       <div class="section-header">
         <div class="eyebrow">Built different</div>
         <h2>How CrewSwarm differs from framework-only stacks</h2>
-        <p class="section-desc">CrewSwarm is a runtime, not just a library. You get a realtime bus, daemon orchestration, and first-class OpenCode &amp; Cursor CLI routing out of the box.</p>
+        <p class="section-desc">CrewSwarm is a runtime, not just a library. You get a realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, and Claude Code out of the box.</p>
       </div>
       <div class="differs-grid">
         <div class="differs-card">
-          <h3>OpenCode &amp; Cursor CLI first-class</h3>
-          <p>Every agent can run inside <strong>OpenCode</strong> (persistent sessions, full file editing) or <strong>Cursor CLI</strong> (opus-thinking, sonnet-4.6). Switch modes per agent from the dashboard — no config files, no restarts.</p>
+          <h3>Three execution engines, first-class</h3>
+          <p>Every agent can run inside <strong>OpenCode</strong> (persistent sessions, full file editing), <strong>Cursor CLI</strong> (opus-thinking, sonnet-4.6), or <strong>Claude Code</strong> (full workspace context, native tool use). Switch per agent from the dashboard — no config files, no restarts.</p>
         </div>
         <div class="differs-card">
           <h3>Realtime bus + daemons</h3>
@@ -373,44 +375,59 @@
           <p>Retry with backoff, task leases, heartbeat checks. After max retries, tasks go to the Dead Letter Queue for replay from the dashboard.</p>
         </div>
         <div class="feature-card feature-card-wide">
-          <div class="feature-icon" style="font-size:1.4rem;">⚡</div>
-          <h3>OpenCode &amp; Cursor CLI routing</h3>
-          <p>Route any agent through <strong>OpenCode</strong> (persistent sessions, full file editing) or <strong>Cursor CLI</strong> (sonnet, opus-thinking). Switch per-agent or bulk-set all coders in one click from the dashboard. Sessions persist across tasks so context isn't lost.</p>
-          <div class="feature-code" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
-            <span style="display:flex;align-items:center;gap:6px;">
-              <!-- OpenCode logo (geometric: outer dark frame, inner lighter square) -->
-              <svg viewBox="0 0 24 30" width="13" height="16" style="flex-shrink:0;" aria-label="OpenCode">
-                <rect width="24" height="30" fill="#3a3836"/>
-                <rect x="6" y="12" width="12" height="12" fill="#CFCECD"/>
-              </svg>
-              OpenCode · session memory · file editing
-            </span>
-            <span style="color:var(--text-3,#6b7280);">|</span>
-            <span style="display:flex;align-items:center;gap:6px;">
-              <!-- Cursor logo (official from simpleicons.org) -->
-              <img src="https://cdn.simpleicons.org/cursor/ffffff" alt="Cursor" width="14" height="14" style="flex-shrink:0;opacity:0.85;" loading="lazy"/>
-              Cursor CLI · sonnet-4.6 · opus thinking
-            </span>
-            <span style="color:var(--text-3,#6b7280);">|</span>
-            <span>Direct API · fastest path</span>
+          <div class="feature-icon">🚀</div>
+          <h3>Three execution engines — your choice per agent</h3>
+          <p>CrewSwarm doesn't run agents itself — it <strong>routes work into the best coding engine for each task</strong>. Switch per agent from the dashboard. No restarts, no config files.</p>
+          <div class="engines-grid">
+            <div class="engine-card">
+              <div class="engine-header">
+                <svg viewBox="0 0 24 30" width="18" height="22" aria-label="OpenCode" style="flex-shrink:0;">
+                  <rect width="24" height="30" fill="#3a3836"/>
+                  <rect x="6" y="12" width="12" height="12" fill="#CFCECD"/>
+                </svg>
+                <strong>OpenCode</strong>
+              </div>
+              <ul class="engine-traits">
+                <li>Persistent sessions per agent</li>
+                <li>Full file editing + bash</li>
+                <li>Context survives across tasks</li>
+              </ul>
+              <div class="engine-tag">Best for: crew-coder, crew-fixer, crew-coder-front/back</div>
+            </div>
+            <div class="engine-card">
+              <div class="engine-header">
+                <img src="https://cdn.simpleicons.org/cursor/ffffff" alt="Cursor" width="18" height="18" style="flex-shrink:0;opacity:0.9;" loading="lazy"/>
+                <strong>Cursor CLI</strong>
+              </div>
+              <ul class="engine-traits">
+                <li>opus-thinking + sonnet-4.6</li>
+                <li>Deep reasoning &amp; architecture</li>
+                <li>Parallel wave dispatch</li>
+              </ul>
+              <div class="engine-tag">Best for: crew-main, crew-architect, complex reasoning</div>
+            </div>
+            <div class="engine-card">
+              <div class="engine-header">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="#d4a853" style="flex-shrink:0;" aria-label="Claude Code"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>
+                <strong>Claude Code</strong>
+              </div>
+              <ul class="engine-traits">
+                <li>Full workspace context</li>
+                <li>Native Anthropic tool use</li>
+                <li>Session continuity per agent</li>
+              </ul>
+              <div class="engine-tag">Best for: large refactors, multi-file reasoning</div>
+            </div>
           </div>
         </div>
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🖥️</div>
-          <h3>Nine control surfaces</h3>
-          <p>Pick how you want to drive the crew. Every surface targets the same RT bus and the same crew — from your terminal to your phone.</p>
+          <h3>Seven control surfaces</h3>
+          <p>Pick how you want to drive the crew. Every surface targets the same RT bus and the same agents — from your terminal to your phone.</p>
           <div class="control-surfaces">
-            <div class="cs-item">
-              <strong>CLI</strong>
-              <span>gateway-bridge · direct dispatch</span>
-            </div>
             <div class="cs-item">
               <strong>Dashboard</strong>
               <span>Build · Chat · Services · RT · DLQ · Send</span>
-            </div>
-            <div class="cs-item">
-              <strong>SwiftBar</strong>
-              <span>Status · Control · Agents · Logs</span>
             </div>
             <div class="cs-item cs-native">
               <strong>Chat (crew-lead)</strong>
@@ -419,6 +436,14 @@
             <div class="cs-item cs-native">
               <strong>CrewChat</strong>
               <span>Menu bar app — same conversation, one click</span>
+            </div>
+            <div class="cs-item">
+              <strong>SwiftBar</strong>
+              <span>Status · Control · Agents · Logs</span>
+            </div>
+            <div class="cs-item">
+              <strong>CLI</strong>
+              <span>gateway-bridge · direct dispatch · REST API</span>
             </div>
             <div class="cs-item cs-messenger">
               <div class="cs-messenger-icons">
@@ -433,25 +458,6 @@
               </div>
               <strong>WhatsApp</strong>
               <span>Personal bot via Baileys — QR scan once, chat with the crew from WhatsApp</span>
-            </div>
-            <div class="cs-item cs-openclaw" style="--p-color:#CFCECD;">
-              <div class="cs-openclaw-logo">
-                <!-- OpenCode official geometric logo -->
-                <svg viewBox="0 0 24 30" width="14" height="18" aria-label="OpenCode">
-                  <rect width="24" height="30" fill="#3a3836"/>
-                  <rect x="6" y="12" width="12" height="12" fill="#CFCECD"/>
-                </svg>
-              </div>
-              <strong>OpenCode CLI</strong>
-              <span>Persistent sessions · full file editing per agent</span>
-            </div>
-            <div class="cs-item cs-openclaw" style="--p-color:#ffffff;">
-              <div class="cs-openclaw-logo">
-                <!-- Cursor official logo from simpleicons -->
-                <img src="https://cdn.simpleicons.org/cursor/ffffff" alt="Cursor" width="16" height="16" loading="lazy" style="opacity:0.9;"/>
-              </div>
-              <strong>Cursor CLI</strong>
-              <span>sonnet-4.6 · opus-thinking · select per agent</span>
             </div>
           </div>
         </div>
