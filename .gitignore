@@ -25,6 +25,28 @@ test-output/
 # Private roadmap (internal only)
 docs/ROADMAP-PRIVATE.md
 
+# Agent-written garbage (Python project files that don't belong here)
+*.pyc
+__pycache__/
+*.prof
+*.prof.run
+profile_output.*
+main.py
+requirements.txt
+database.py
+run_migrations.py
+server.js
+migrations/
+models/
+routes/
+backend/
+src/api/
+tests/
+__tests__/
+.ai-pm-notes.md
+qa-report.md
+security-considerations-*.md
+
 # Secrets
 .env
 .env.local

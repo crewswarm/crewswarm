@@ -1494,6 +1494,12 @@ Canonical source tree: ${canonicalTree}`;
       const { execSync } = await import("node:child_process");
       try {
         console.log(`\n  📦 Committing ${batchDone} completed task(s)...`);
+        // Safety check: confirm git root is PROJECT_DIR before add -A
+        const gitRoot = execSync(`git -C "${PROJECT_DIR}" rev-parse --show-toplevel`, { encoding: "utf8" }).trim();
+        if (gitRoot !== PROJECT_DIR) {
+          console.log(`  ⚠️  Git root mismatch: ${gitRoot} ≠ ${PROJECT_DIR} — skipping commit to avoid polluting wrong repo`);
+          throw new Error("git root mismatch");
+        }
         const commitMsg = `feat: batch ${batchNum} — ${batchDone} task(s) completed via AI-PM`;
         execSync(`git -C "${PROJECT_DIR}" add -A && git -C "${PROJECT_DIR}" commit -m "${commitMsg}" || true`, { shell: true, stdio: "pipe" });
         console.log(`  ✅ Committed`);
