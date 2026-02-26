@@ -1,6 +1,6 @@
 # CrewSwarm — System Architecture
 
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-26
 
 ---
 
@@ -13,60 +13,60 @@ CrewSwarm is a standalone multi-agent orchestration platform. A conversational c
 ## Component Map
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Control Surfaces                         │
-│                                                                 │
-│  crew-cli.mjs   Dashboard (4319)   SwiftBar (macOS)  Telegram  │
-│       │               │                  │               │      │
-│       └───────────────┴──────────────────┴───────────────┘      │
-│                               │                                 │
-│                        HTTP :5010                               │
-│                    crew-lead.mjs                                │
-│          (chat · dispatch · pipeline DSL · approval relay)      │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ WebSocket pub/sub
-                   ┌────────────┴────────────┐
-                   │  RT Bus  :18889          │
-                   │  opencrew-rt-daemon.mjs  │
-                   │  channels: command       │
-                   │           done           │
-                   │           issues         │
-                   │           events         │
-                   │           status         │
-                   └────────────┬────────────┘
-                                │ task.assigned / command.run_task
-          ┌──────────┬──────────┼──────────┬──────────┐
-          │          │          │          │          │
-      crew-pm  crew-coder  crew-qa  crew-fixer  crew-github  …
-          │          │
-          └──────────┴─────── gateway-bridge.mjs (one process per agent)
-                                  │
-                          ┌───────┴───────┐
-                          │  Direct LLM   │  ← per-provider API (Groq/Anthropic/OpenAI/…)
-                          │  call         │
-                          └───────┬───────┘
-                                  │ reply text
-                          ┌───────┴────────────┐
-                          │  Tool execution     │
-                          │  @@WRITE_FILE       │ → real file I/O
-                          │  @@READ_FILE        │ → real file I/O
-                          │  @@MKDIR            │ → real dir creation
-                          │  @@RUN_CMD          │ → shell (with approval gate)
-                          └───────┬────────────┘
-                                  │
-                    ┌─────────────┴──────────────┐
-                    │         Memory              │
-                    │  memory/brain.md            │ ← persistent facts
-                    │  memory/session-log.md      │ ← task summaries
-                    │  memory/current-state.md    │
-                    │  memory/orchestration-      │
-                    │    protocol.md              │
-                    └─────────────┬──────────────┘
-                                  │
-                         crew-scribe.mjs
-                    (polls done.jsonl every 4s,
-                     writes LLM summaries to session-log.md,
-                     deduplicates @@BRAIN entries to brain.md)
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              Control Surfaces                                │
+│                                                                              │
+│  Dashboard (4319)  SwiftBar (macOS)  Telegram  WhatsApp  crew-cli.mjs       │
+│       │                  │               │         │          │              │
+│       └──────────────────┴───────────────┴─────────┴──────────┘             │
+│                                      │                                       │
+│                               HTTP :5010                                     │
+│                           crew-lead.mjs                                      │
+│             (chat · dispatch · pipeline DSL · approval relay)                │
+└──────────────────────────────────────┬───────────────────────────────────────┘
+                                       │ WebSocket pub/sub
+                          ┌────────────┴────────────┐
+                          │  RT Bus  :18889          │
+                          │  opencrew-rt-daemon.mjs  │
+                          └────────────┬────────────┘
+                                       │ task.assigned / command.run_task
+               ┌──────────┬────────────┼──────────┬──────────┐
+               │          │            │          │          │
+           crew-pm  crew-coder  crew-qa  crew-fixer  crew-github  …
+               │          │
+               └──────────┴─────── gateway-bridge.mjs (one process per agent)
+                                         │
+                                 ┌───────┴───────┐
+                                 │  Direct LLM   │  ← Groq/Anthropic/OpenAI/…
+                                 └───────┬───────┘
+                                         │ reply text
+                                 ┌───────┴────────────┐
+                                 │  Tool execution     │
+                                 │  @@WRITE_FILE       │ → real file I/O
+                                 │  @@READ_FILE        │ → real file I/O
+                                 │  @@RUN_CMD          │ → shell (approval gate)
+                                 └───────┬────────────┘
+                                         │ (when OpenCode mode)
+                                 ┌───────┴────────────┐
+                                 │  Code Engine :4096  │ ← opencode serve
+                                 │  (OpenCode /        │    Claude Code CLI
+                                 │   Cursor CLI)       │    Cursor CLI
+                                 └────────────────────┘
+
+  ┌─────────────────────────────────────────────┐  (optional — core works without)
+  │  MCP + OpenAI API  :5020                     │
+  │  scripts/mcp-server.mjs                      │
+  │  • MCP tools/list + tools/call (JSON-RPC)    │ ← Cursor MCP, Claude Code MCP
+  │  • GET /v1/models  POST /v1/chat/completions  │ ← Open WebUI, LM Studio, Aider
+  └─────────────────────────────────────────────┘
+
+                               ┌──────────────────────┐
+                               │       Memory          │
+                               │  memory/brain.md      │ ← persistent facts
+                               │  memory/session-log   │ ← task summaries
+                               └──────────┬───────────┘
+                                          │
+                                   crew-scribe.mjs
 ```
 
 ---
@@ -210,9 +210,9 @@ Markdown files injected into every agent's task prompt via `gateway-bridge.mjs`.
 
 ---
 
-### 6. Dashboard (`scripts/dashboard.mjs`) — Port 4319
+### 6. Dashboard — Port 4319
 
-Node.js HTTP server serving a single-page web app. All UI is client-side JavaScript inside one server-side template literal.
+Node.js API server (`scripts/dashboard.mjs`) + Vite frontend (`frontend/`). In production, `dashboard.mjs` serves the built Vite app from `frontend/dist`. In development, run `npm run dev` inside `frontend/` to get hot-reload on port 5173 (proxies `/api` to 4319).
 
 **Server-side API routes:**
 
@@ -243,6 +243,33 @@ Long-polls the Telegram Bot API. Routes every inbound message to `crew-lead /cha
 - Subscribes to crew-lead SSE → forwards `agent_reply` events back to active Telegram sessions
 - Maintains in-memory per-chatId conversation history
 - Persists Telegram context to `memory/telegram-context.md` (not loaded into prompts)
+- All `fetch` calls have client-side timeouts (45s for long-poll, 15s for send) to prevent silent hangs
+
+---
+
+### 8. WhatsApp Bridge (`whatsapp-bridge.mjs`)
+
+Personal bot via [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web automation). Scan QR once; auth persists in `~/.crewswarm/whatsapp-auth/`.
+
+- Routes inbound messages to `crew-lead /chat` with a per-JID session
+- `sock.sendMessage` wrapped in a 15-second `Promise.race` timeout — triggers reconnect on stall
+- Optional number allowlist via `WA_ALLOWED_NUMBERS` in `crewswarm.json` env block
+
+---
+
+### 9. MCP + OpenAI-compatible API (`scripts/mcp-server.mjs`) — Port 5020 *(optional)*
+
+Exposes all CrewSwarm agents and skills to external tools. **The core stack works without this.** If port 5020 is down, everything else (dashboard, chat, Telegram, WhatsApp, all agents) continues normally.
+
+**MCP (JSON-RPC over HTTP at `/mcp`):**
+- `tools/list` — dynamically enumerates agents as tools
+- `dispatch_agent`, `list_agents`, `run_pipeline`, `chat_stinki`, `crewswarm_status`, `smart_dispatch`
+- Compatible with Cursor MCP, Claude Code MCP, any MCP client
+
+**OpenAI-compatible API:**
+- `GET /v1/models` — lists all agents as selectable models
+- `POST /v1/chat/completions` — routes to crew-lead or dispatches to a specific agent
+- Works with Open WebUI, LM Studio, Aider, Continue.dev
 
 ---
 
@@ -272,11 +299,14 @@ User types in dashboard Chat tab
 
 | Process | Port | Config |
 |---|---|---|
-| `opencrew-rt-daemon.mjs` | 18889 (WebSocket) | `~/.crewswarm/config.json` (rt.authToken); fallback `~/.openclaw/openclaw.json` |
+| `opencrew-rt-daemon.mjs` | 18889 (WebSocket) | `~/.crewswarm/config.json` (rt.authToken) |
 | `crew-lead.mjs` | 5010 (HTTP) | `~/.crewswarm/config.json`, `crewswarm.json`, `agent-prompts.json` |
-| `scripts/dashboard.mjs` | 4319 (HTTP) | `~/.crewswarm/` first; legacy `~/.openclaw/` fallback |
+| `scripts/dashboard.mjs` | 4319 (HTTP) | `~/.crewswarm/`; serves `frontend/dist` Vite build |
+| `scripts/mcp-server.mjs` | 5020 (HTTP) | optional; reads crew-lead :5010 dynamically |
+| Code Engine (`opencode serve`) | 4096 (HTTP) | optional; used when agents run in OpenCode mode |
 | `gateway-bridge.mjs` × N | — (outbound only) | `OPENCREW_RT_AGENT` env var per process |
 | `telegram-bridge.mjs` | — (outbound only) | `TELEGRAM_BOT_TOKEN` env var |
+| `whatsapp-bridge.mjs` | — (outbound only) | Baileys auth in `~/.crewswarm/whatsapp-auth/` |
 | `scripts/crew-scribe.mjs` | — (no port) | reads `done.jsonl`, writes `memory/` |
 
 ---

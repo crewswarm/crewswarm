@@ -8217,8 +8217,8 @@ ORDER BY day DESC, cost DESC;`;
         },
         {
           id: "opencode",
-          label: "OpenCode Server",
-          description: "opencode serve — sessions and MCP on port 4096",
+          label: "Code Engine",
+          description: "Coding execution server (OpenCode / Claude Code / Cursor) — port 4096",
           port: 4096,
           running: ocUp,
           canRestart: true,
@@ -8232,6 +8232,15 @@ ORDER BY day DESC, cost DESC;`;
           running: dashUp,
           canRestart: true,
           pid: process.pid,
+        },
+        {
+          id: "mcp",
+          label: "MCP + OpenAI API",
+          description: "MCP tools + /v1/chat/completions for Open WebUI, LM Studio, Aider — port 5020",
+          port: 5020,
+          running: await (async () => { try { const r = await fetch("http://127.0.0.1:5020/health", { signal: AbortSignal.timeout(1500) }); return r.ok; } catch { return false; } })(),
+          canRestart: true,
+          pid: null,
         },
         {
           id: "openclaw-gateway",
@@ -8252,7 +8261,7 @@ ORDER BY day DESC, cost DESC;`;
           { id: "agents", label: "Agent Crew", description: "0 agents connected", port: null, running: false, canRestart: true, pid: null },
           { id: "crew-lead", label: "crew-lead", description: "Chat commander", port: 5010, running: false, canRestart: true, pid: null },
           { id: "telegram", label: "Telegram Bridge", description: "@CrewSwarm_bot", port: null, running: false, canRestart: true, pid: null },
-          { id: "opencode", label: "OpenCode Server", description: "opencode serve — port 4096", port: 4096, running: false, canRestart: true, pid: null },
+          { id: "opencode", label: "Code Engine", description: "opencode serve — port 4096", port: 4096, running: false, canRestart: true, pid: null },
           { id: "dashboard", label: "Dashboard", description: "This dashboard", port: listenPort, running: true, canRestart: true, pid: process.pid },
           { id: "openclaw-gateway", label: "OpenClaw Gateway", description: "Legacy gateway (port 18789) — only needed if pairing the OpenClaw desktop app", port: 18789, running: false, canRestart: true, pid: null },
         ];
@@ -8386,6 +8395,13 @@ ORDER BY day DESC, cost DESC;`;
         } catch (openCodeErr) {
           console.error("[dashboard] OpenCode start failed:", openCodeErr?.message || openCodeErr);
         }
+      } else if (id === "mcp") {
+        try { execSync(`pkill -f "mcp-server.mjs"`, { stdio: "ignore" }); } catch {}
+        try { execSync(`lsof -ti :5020 | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
+        await new Promise(r => setTimeout(r, 800));
+        spawnProc("node", [path.join(OPENCLAW_DIR, "scripts", "mcp-server.mjs")], {
+          cwd: OPENCLAW_DIR, detached: true, stdio: "ignore", env: process.env,
+        }).unref();
       } else if (id === "openclaw-gateway") {
         // Kill legacy gateway then reopen the OpenClaw app (it auto-respawns the gateway)
         try { execSync(`pkill -f "openclaw-gateway"`, { stdio: "ignore" }); } catch {}
@@ -8442,6 +8458,9 @@ ORDER BY day DESC, cost DESC;`;
         try { execSync(`open -a OpenClaw`, { stdio: "ignore" }); } catch {}
       } else if (id === "opencode") {
         try { execSync(`pkill -f "opencode serve"`, { stdio: "ignore" }); } catch {}
+      } else if (id === "mcp") {
+        try { execSync(`pkill -f "mcp-server.mjs"`, { stdio: "ignore" }); } catch {}
+        try { execSync(`lsof -ti :5020 | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
       } else if (id === "dashboard") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, message: "Restarting dashboard..." }));

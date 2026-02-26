@@ -61,9 +61,11 @@ _proc_up() { pgrep -f "$1" &>/dev/null && echo "up" || echo "down"; }
 SVC_RT="$RT_STATE"
 SVC_AG="$(_proc_up 'gateway-bridge.mjs')"
 SVC_TG="$(_proc_up 'telegram-bridge.mjs')"
+SVC_WA="$(_proc_up 'whatsapp-bridge.mjs')"
 SVC_CL="$(_proc_up 'crew-lead.mjs')"
 SVC_OC="$(_port_up 4096)"
 SVC_DB="$(_port_up 4319)"
+SVC_MCP="$(_port_up 5020)"
 SVC_CM="$(_port_up 8000)"
 
 # Get dynamic agent list
@@ -89,7 +91,7 @@ fi
 
 # ── Primary action — chat first ─────────────────────────────────────
 echo "---"
-echo "💬 Open CrewChat | bash='open' param1='-a' param2='CrewChat' terminal=false refresh=false color=#38bdf8"
+echo "💬 Open Chat | href='${DASHBOARD_URL}/#chat' color=#38bdf8"
 echo "🖥️  Open Dashboard | href='$DASHBOARD_URL'"
 echo "---"
 echo "⚙️ Stack Controls"
@@ -139,8 +141,10 @@ for AGENT in "${AGENTS[@]}"; do
   fi
 done
 echo "--$(_svc_icon $SVC_TG) Telegram Bridge         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=telegram terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_WA) WhatsApp Bridge         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=whatsapp terminal=false refresh=true"
 echo "--$(_svc_icon $SVC_CL) crew-lead               | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_OC) OpenCode Server         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_OC) Code Engine             | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_MCP) MCP + OpenAI API        | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=mcp terminal=false refresh=true"
 echo "--$(_svc_icon $SVC_DB) Dashboard               | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
 if [[ "$SVC_CM" == "up" ]]; then
   echo "--🟢 ChatMock (port 8000) | bash='/bin/bash' param1='-c' param2='pkill -f chatmock.py' terminal=false refresh=true"
@@ -155,7 +159,10 @@ echo "📁 Open CrewSwarm Repo | bash='open' param1='$CREWSWARM_DIR' terminal=fa
 # ── Logs ─────────────────────────────────────────────────────────────
 echo "---"
 echo "🔧 Logs"
-echo "RT Log        | bash='open' param1='$LOG_DIR/opencrew-rt-daemon.log' terminal=false"
-echo "crew-lead Log | bash='open' param1='$LOG_DIR/crew-lead.log' terminal=false"
-echo "Dashboard Log | bash='open' param1='$LOG_DIR/dashboard.log' terminal=false"
-echo "CrewSwarm Dir | bash='open' param1='$CREWSWARM_DIR' terminal=false"
+echo "RT Log           | bash='open' param1='$LOG_DIR/opencrew-rt-daemon.log' terminal=false"
+echo "crew-lead Log    | bash='open' param1='$LOG_DIR/crew-lead.log' terminal=false"
+echo "Dashboard Log    | bash='open' param1='$LOG_DIR/dashboard.log' terminal=false"
+echo "MCP Log          | bash='open' param1='$LOG_DIR/crewswarm-mcp.log' terminal=false"
+echo "Telegram Log     | bash='open' param1='$LOG_DIR/telegram-bridge.log' terminal=false"
+echo "WhatsApp Log     | bash='open' param1='$LOG_DIR/whatsapp-bridge.log' terminal=false"
+echo "CrewSwarm Dir    | bash='open' param1='$CREWSWARM_DIR' terminal=false"

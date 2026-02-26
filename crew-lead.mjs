@@ -1023,7 +1023,7 @@ function buildSystemPrompt(cfg) {
     "",
     "After any change: tell the user to restart the affected bridge(s) for changes to take effect.",
     "",
-    "QUICK REFERENCE — You can: (1) Update any agent's prompt with @@PROMPT {\"agent\":\"crew-XXX\",\"append\":\"…\"} or set= to replace. (2) Restart any service or agent with @@SERVICE restart <id>. (3) Define skills with @@DEFINE_SKILL. (4) Create new specialist agents on-the-fly with @@CREATE_AGENT {\"id\":\"crew-ml\",\"role\":\"coder\",\"description\":\"...\"}. (5) Remove dynamic agents with @@REMOVE_AGENT crew-ml. (6) Point users to the dashboard. (7) Users can tweak your own prompt with @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…\"}. (8) PIPELINE CANCEL: if user says 'stop pipeline', 'cancel it', 'abort', 'kill it', etc. — all running pipelines are cancelled instantly and remaining waves are dropped.",
+    "QUICK REFERENCE — You can: (1) Update any agent's prompt with @@PROMPT {\"agent\":\"crew-XXX\",\"append\":\"…\"} or set= to replace. (2) Restart any service or agent with @@SERVICE restart <id>. (3) Define skills with @@DEFINE_SKILL. (4) Create new specialist agents on-the-fly with @@CREATE_AGENT {\"id\":\"crew-ml\",\"role\":\"coder\",\"description\":\"...\"}. (5) Remove dynamic agents with @@REMOVE_AGENT crew-ml. (6) Point users to the dashboard. (7) Users can tweak your own prompt with @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"…\"}. (8) PIPELINE CANCEL: if user says 'stop pipeline', 'cancel it', 'abort', 'kill it', etc. — all running pipelines are cancelled instantly and remaining waves are dropped. (9) GRACEFUL STOP — emit @@STOP: cancels all pipelines, signals every PM loop to halt after its current task, clears autonomous mode. Agent bridges keep running. Use when user says 'stop everything', 'emergency stop', 'pause all'. (10) HARD KILL — emit @@KILL: everything @@STOP does PLUS SIGTERMs all agent bridge processes and PM loop processes immediately. Use when agents are stuck/looping and graceful isn't enough. User must restart bridges after with @@SERVICE restart agents. Tell the user what was killed.",
     "- When an agent is rate limited (429, quota, throttling), crew-lead automatically sees the task.failed on the issues channel and re-dispatches the same task to a fallback agent (e.g. crew-coder-back → crew-coder, crew-pm → crew-main). You can say so if the user asks.",
     "- Failed dispatches: crew-lead sees task.failed on the issues channel (rate limit, errors) and can act (e.g. rate-limit fallback). Unanswered dispatches: if an agent is offline, no bridge picks up the task — crew-lead waits up to 300s unclaimed / 900s after claiming (CREWSWARM_DISPATCH_TIMEOUT_MS / CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS), then emits task.timeout into session history; suggest @@SERVICE restart or re-dispatch to a fallback. Use the health snapshot (Recent RT activity, Tool Matrix) to see who is online; if the user says an agent didn’t reply, suggest checking that the agent is running and offer @@SERVICE restart <agent> or re-dispatching to a fallback (e.g. crew-main).",
     "",
@@ -2851,6 +2851,66 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     autonomousPmLoopSessions.delete(sessionId);
   }
 
+  // Hard kill: "kill everything", "kill all agents", "nuke it" — SIGTERM bridges + PM loops
+  if (/\bkill\s+(everything|all|it\s+all|all\s+agents?|the\s+agents?)\b|\bnuke\s+it\b|\bnuke\s+everything\b/i.test(message.trim())) {
+    const pipelineCancelled = cancelAllPipelines(sessionId);
+    autonomousPmLoopSessions.clear();
+    let pmLoopsKilled = 0, bridgesKilled = 0;
+    try {
+      const { execSync } = await import("node:child_process");
+      const logsDir = path.join(path.dirname(new URL(import.meta.url).pathname), "orchestrator-logs");
+      if (fs.existsSync(logsDir)) {
+        for (const f of fs.readdirSync(logsDir)) {
+          if (f.startsWith("pm-loop") && f.endsWith(".pid")) {
+            fs.writeFileSync(path.join(logsDir, f.replace(".pid", ".stop")), new Date().toISOString());
+            const pid = parseInt(fs.readFileSync(path.join(logsDir, f), "utf8").trim(), 10);
+            if (pid) { try { process.kill(pid, "SIGTERM"); pmLoopsKilled++; } catch {} }
+          }
+        }
+      }
+      try { execSync(`pkill -f "gateway-bridge.mjs" 2>/dev/null`, { stdio: "ignore", shell: true }); bridgesKilled = 1; } catch {}
+    } catch {}
+    const parts = [];
+    if (pipelineCancelled > 0) parts.push(`${pipelineCancelled} pipeline(s) cancelled`);
+    if (pmLoopsKilled > 0) parts.push(`${pmLoopsKilled} PM loop(s) killed`);
+    if (bridgesKilled) parts.push("all agent bridges killed");
+    if (parts.length === 0) parts.push("nothing was running");
+    const reply = `💀 Hard kill executed: ${parts.join(", ")}. Use \`@@SERVICE restart agents\` or the Services tab to bring bridges back up.`;
+    broadcastSSE({ type: "chat", from: "crew-lead", content: reply, sessionId, ts: Date.now() });
+    broadcastSSE({ type: "kill_all", ts: Date.now(), summary: parts.join(", ") });
+    appendHistory(sessionId, "assistant", reply);
+    return { reply, sessionId };
+  }
+
+  // Graceful stop: "stop everything", "stop all", "emergency stop", "halt everything"
+  if (/\b(stop|halt|abort|cancel)\s+(everything|all|it\s+all)\b|\bemergency\s+stop\b/i.test(message.trim())) {
+    const pipelineCancelled = cancelAllPipelines(sessionId);
+    const wasAutonomous = autonomousPmLoopSessions.has(sessionId);
+    autonomousPmLoopSessions.clear();
+    let pmLoopsStopped = 0;
+    try {
+      const logsDir = path.join(path.dirname(new URL(import.meta.url).pathname), "orchestrator-logs");
+      if (fs.existsSync(logsDir)) {
+        for (const f of fs.readdirSync(logsDir)) {
+          if (f.startsWith("pm-loop") && f.endsWith(".pid")) {
+            fs.writeFileSync(path.join(logsDir, f.replace(".pid", ".stop")), new Date().toISOString());
+            pmLoopsStopped++;
+          }
+        }
+      }
+    } catch {}
+    const parts = [];
+    if (pipelineCancelled > 0) parts.push(`${pipelineCancelled} pipeline(s) cancelled`);
+    if (pmLoopsStopped > 0) parts.push(`${pmLoopsStopped} PM loop(s) signalled to stop after current task`);
+    if (wasAutonomous) parts.push("autonomous mode cleared");
+    if (parts.length === 0) parts.push("nothing was running — all clear");
+    const reply = `🛑 Graceful stop: ${parts.join(", ")}. PM loops will finish their current task then halt. Say "kill everything" to hard-kill agent bridges immediately.`;
+    broadcastSSE({ type: "chat", from: "crew-lead", content: reply, sessionId, ts: Date.now() });
+    broadcastSSE({ type: "stop_all", ts: Date.now(), summary: parts.join(", ") });
+    appendHistory(sessionId, "assistant", reply);
+    return { reply, sessionId };
+  }
+
   // Pipeline cancel: "stop pipeline", "cancel pipeline", "abort", "stop everything", "kill it"
   if (/\b(stop|cancel|abort|kill|halt)\b.*(pipeline|dispatch|task|everything|it|all|them)\b|\b(pipeline|dispatch).*(stop|cancel|abort|kill|halt)\b/i.test(message.trim())) {
     const count = cancelAllPipelines(sessionId);
@@ -3117,6 +3177,65 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     return m ? m[1].trim() : null;
   })();
 
+  // ── @@STOP — graceful stop: cancel pipelines + signal PM loops + clear autonomous ─
+  // PM loops finish their current task before halting. Agent bridges keep running.
+  if (/@@STOP\b/.test(fullReply) && !/@@KILL\b/.test(fullReply)) {
+    const pipelineCancelled = cancelAllPipelines(sessionId);
+    const wasAutonomous = autonomousPmLoopSessions.has(sessionId);
+    autonomousPmLoopSessions.clear();
+    let pmLoopsStopped = 0;
+    try {
+      const logsDir = path.join(path.dirname(new URL(import.meta.url).pathname), "orchestrator-logs");
+      if (fs.existsSync(logsDir)) {
+        for (const f of fs.readdirSync(logsDir)) {
+          if (f.startsWith("pm-loop") && f.endsWith(".pid")) {
+            fs.writeFileSync(path.join(logsDir, f.replace(".pid", ".stop")), new Date().toISOString());
+            pmLoopsStopped++;
+          }
+        }
+      }
+    } catch {}
+    const parts = [];
+    if (pipelineCancelled > 0) parts.push(`${pipelineCancelled} pipeline(s) cancelled`);
+    if (pmLoopsStopped > 0) parts.push(`${pmLoopsStopped} PM loop(s) signalled to stop after current task`);
+    if (wasAutonomous) parts.push("autonomous mode cleared");
+    if (parts.length === 0) parts.push("nothing was running");
+    console.log(`[crew-lead] @@STOP executed: ${parts.join(", ")}`);
+    broadcastSSE({ type: "stop_all", ts: Date.now(), summary: parts.join(", ") });
+  }
+
+  // ── @@KILL — hard kill: everything @@STOP does + SIGTERM agent bridges + PM loop procs ─
+  // Use when agents are stuck, looping, or unresponsive and you need them dead now.
+  if (/@@KILL\b/.test(fullReply)) {
+    const pipelineCancelled = cancelAllPipelines(sessionId);
+    autonomousPmLoopSessions.clear();
+    let pmLoopsKilled = 0;
+    let bridgesKilled = 0;
+    try {
+      const { execSync } = await import("node:child_process");
+      const logsDir = path.join(path.dirname(new URL(import.meta.url).pathname), "orchestrator-logs");
+      // Hard-kill each PM loop process by PID
+      if (fs.existsSync(logsDir)) {
+        for (const f of fs.readdirSync(logsDir)) {
+          if (f.startsWith("pm-loop") && f.endsWith(".pid")) {
+            fs.writeFileSync(path.join(logsDir, f.replace(".pid", ".stop")), new Date().toISOString());
+            const pid = parseInt(fs.readFileSync(path.join(logsDir, f), "utf8").trim(), 10);
+            if (pid) { try { process.kill(pid, "SIGTERM"); pmLoopsKilled++; } catch {} }
+          }
+        }
+      }
+      // Kill all agent gateway bridges (they will be respawnable via @@SERVICE restart agents)
+      try { execSync(`pkill -f "gateway-bridge.mjs" 2>/dev/null`, { stdio: "ignore", shell: true }); bridgesKilled = 1; } catch {}
+    } catch {}
+    const parts = [];
+    if (pipelineCancelled > 0) parts.push(`${pipelineCancelled} pipeline(s) cancelled`);
+    if (pmLoopsKilled > 0) parts.push(`${pmLoopsKilled} PM loop process(es) SIGTERM'd`);
+    if (bridgesKilled) parts.push("all agent bridges killed (restart with @@SERVICE restart agents)");
+    if (parts.length === 0) parts.push("nothing was running");
+    console.log(`[crew-lead] @@KILL executed: ${parts.join(", ")}`);
+    broadcastSSE({ type: "kill_all", ts: Date.now(), summary: parts.join(", ") });
+  }
+
   // ── @@SERVICE — restart/stop a service or agent bridge ──────────────────────
   // @@SERVICE restart telegram   @@SERVICE stop agents   @@SERVICE restart crew-coder
   const serviceCmd = (() => {
@@ -3192,6 +3311,8 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     .replace(/@@DEFINE_SKILL[ \t]+[a-zA-Z0-9_\-.]+\n[\s\S]*?@@END_SKILL/g, "")
     .replace(/@@DEFINE_WORKFLOW[ \t]+[a-zA-Z0-9_\-]+\n[\s\S]*?@@END_WORKFLOW/g, "")
     .replace(/@@SERVICE\s+(restart|stop|start)\s+[a-zA-Z0-9_\-]+/g, "")
+    .replace(/@@STOP\b/g, "")
+    .replace(/@@KILL\b/g, "")
     .replace(/@@CREATE_AGENT\s+\{[^}]+\}/g, "")
     .replace(/@@REMOVE_AGENT\s+crew-[a-zA-Z0-9_-]+/g, "")
     .trim();

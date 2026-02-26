@@ -28,9 +28,11 @@ Switch modes from the **Settings → Agents** tab with the bulk setter buttons, 
 **Ports when running:**
 | Service | Port |
 |---|---|
-| Dashboard | 4319 |
+| Dashboard (Vite frontend + API) | 4319 |
 | crew-lead (chat + dispatch) | 5010 |
 | RT message bus | 18889 |
+| Code Engine (OpenCode / Claude Code / Cursor) | 4096 |
+| MCP + OpenAI-compatible API (optional) | 5020 |
 
 ---
 
@@ -101,8 +103,11 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 |---|---|
 | `crew-lead.mjs` | Conversational commander, HTTP server on :5010 |
 | `gateway-bridge.mjs` | Per-agent daemon — calls LLM, executes tools |
-| `scripts/dashboard.mjs` | Web UI on :4319 |
+| `scripts/dashboard.mjs` | API server on :4319; serves Vite frontend from `frontend/dist` |
+| `frontend/` | Vite dashboard UI (`npm run build` outputs to `frontend/dist`) |
+| `scripts/mcp-server.mjs` | MCP + OpenAI-compatible API on :5020 — exposes agents/skills to Cursor, Claude Code, Open WebUI, etc. **(optional — core stack works without it)** |
 | `scripts/check-dashboard.mjs` | Validates dashboard HTML/inline script — **run after editing dashboard.mjs** to avoid breaking the UI |
+| `scripts/health-check.mjs` | Fast diagnostic — checks all services, agents, and MCP in one shot |
 | `telegram-bridge.mjs` | Telegram integration |
 | `whatsapp-bridge.mjs` | WhatsApp integration (personal bot via Baileys — scan QR once) |
 | `scripts/crew-scribe.mjs` | Memory maintenance (summaries, lessons) |
@@ -253,6 +258,15 @@ Or pipeline multiple agents:
 ```
 
 Tasks in the same `wave` run in parallel. Higher waves wait for lower waves.
+
+**Stopping and killing activity:**
+
+| Command | Phrase examples | What it does |
+|---|---|---|
+| `@@STOP` | "stop everything", "emergency stop", "pause all" | Cancels all pipelines instantly. Signals PM loops to halt **after their current task**. Clears autonomous mode. Agent bridges stay up. |
+| `@@KILL` | "kill everything", "kill all agents", "nuke it" | Everything `@@STOP` does + **SIGTERMs all agent bridge processes and PM loop processes immediately**. Use when agents are stuck or looping. Bridges must be restarted after (`@@SERVICE restart agents` or Services tab). |
+
+In-flight tasks already dispatched to agents cannot be recalled by either command — they run to completion or hit timeout. Use the **Services tab → ⏹ Stop** to hard-kill individual services (dashboard, Code Engine, MCP, etc.).
 
 ---
 

@@ -228,6 +228,46 @@ async function runE2E() {
     if (!dispatched) ok("Question → answered directly (no dispatch)", reply.slice(0, 80));
     else bad("Question triggered dispatch", reply.slice(0, 80));
   } catch (e) { bad("Question E2E", e.message); }
+
+  // ── @@STOP / @@KILL fast-path tests ────────────────────────────────────────
+  sec("Stop / Kill fast-path (E2E)");
+
+  // "stop everything" → graceful stop response, no LLM round-trip
+  console.log(`  ${D}Sending "stop everything"…${R}`);
+  try {
+    const t = Date.now();
+    const res = await fetch(`${CREW_LEAD}/chat`, {
+      method: "POST", headers: authHeaders(),
+      body: JSON.stringify({ message: "stop everything", sessionId: "stop-test" }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const d = await res.json();
+    const reply = (d.reply || "").toLowerCase();
+    const elapsed = Date.now() - t;
+    const isStop = /stop|cancel|clear|nothing.*running|all clear/i.test(reply);
+    // Fast-path should respond in <3s (no LLM call)
+    if (isStop && elapsed < 4000) ok(`"stop everything" → fast-path stop reply (${elapsed}ms)`, reply.slice(0, 80));
+    else if (isStop) ok(`"stop everything" → stop reply (${elapsed}ms — slow, may have hit LLM)`, reply.slice(0, 80));
+    else bad(`"stop everything" → unexpected reply`, reply.slice(0, 80));
+  } catch (e) { bad('"stop everything" E2E', e.message); }
+
+  // "kill everything" → hard kill response
+  console.log(`  ${D}Sending "kill everything"…${R}`);
+  try {
+    const t = Date.now();
+    const res = await fetch(`${CREW_LEAD}/chat`, {
+      method: "POST", headers: authHeaders(),
+      body: JSON.stringify({ message: "kill everything", sessionId: "kill-test" }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const d = await res.json();
+    const reply = (d.reply || "").toLowerCase();
+    const elapsed = Date.now() - t;
+    const isKill = /kill|dead|bridge|restart|nothing.*running/i.test(reply);
+    if (isKill && elapsed < 4000) ok(`"kill everything" → fast-path kill reply (${elapsed}ms)`, reply.slice(0, 80));
+    else if (isKill) ok(`"kill everything" → kill reply (${elapsed}ms)`, reply.slice(0, 80));
+    else bad(`"kill everything" → unexpected reply`, reply.slice(0, 80));
+  } catch (e) { bad('"kill everything" E2E', e.message); }
 }
 
 async function run() {

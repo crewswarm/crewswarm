@@ -147,6 +147,15 @@ try {
   ok("dashboard up", `${j.agents?.length||0} agents configured`);
 } catch(e){ bad("dashboard up", e.message); }
 
+// Dashboard serves Vite dist (index.html should be HTML, not a 404)
+try {
+  const r = await fetch("http://localhost:4319/", { signal: AbortSignal.timeout(3000) });
+  const body = await r.text();
+  const isHtml = r.ok && /<!doctype html|<html/i.test(body);
+  if (isHtml) ok("dashboard serves Vite frontend", `HTTP ${r.status}`);
+  else bad("dashboard root not HTML", `status=${r.status} body=${body.slice(0,60)}`);
+} catch(e){ bad("dashboard Vite serve", e.message); }
+
 // ── Phase 2: crew-lead chat ────────────────────────────────────────────────
 sec("2 · crew-lead Chat");
 try {

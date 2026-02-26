@@ -61,9 +61,11 @@ _proc_up() { pgrep -f "$1" &>/dev/null && echo "up" || echo "down"; }
 SVC_RT="$RT_STATE"
 SVC_AG="$(_proc_up 'gateway-bridge.mjs')"
 SVC_TG="$(_proc_up 'telegram-bridge.mjs')"
+SVC_WA="$(_proc_up 'whatsapp-bridge.mjs')"
 SVC_CL="$(_proc_up 'crew-lead.mjs')"
 SVC_OC="$(_port_up 4096)"
 SVC_DB="$(_port_up 4319)"
+SVC_MCP="$(_port_up 5020)"
 SVC_CM="$(_port_up 8000)"
 
 # Get dynamic agent list
@@ -87,7 +89,10 @@ else
   fi
 fi
 
-# ── Stack controls ──────────────────────────────────────────────────
+# ── Primary action — chat first ─────────────────────────────────────
+echo "---"
+echo "💬 Open Chat | href='${DASHBOARD_URL}/#chat' color=#38bdf8"
+echo "🖥️  Open Dashboard | href='$DASHBOARD_URL'"
 echo "---"
 echo "⚙️ Stack Controls"
 echo "▶ Start   | bash='/bin/bash' param1='$CTL' param2=start terminal=false refresh=true"
@@ -107,42 +112,13 @@ _agent_up() {
   [[ "$STATE" =~ (^|[[:space:]])${a}:up($|[[:space:]]) ]] && return 0 || return 1
 }
 
-# Check which agents are actively coding via their bridge logs
-_agent_coding() {
-  local a="$1"
-  local logfile="/tmp/bridge-${a}.log"
-  [[ ! -f "$logfile" ]] && return 1
-  # Check if last line was within 60s and contains OpenCode output (not Done/idle)
-  local last_mod last_line
-  last_mod=$(stat -f %m "$logfile" 2>/dev/null || echo 0)
-  local age=$(( $(date +%s) - last_mod ))
-  [[ "$age" -gt 60 ]] && return 1
-  last_line=$(tail -3 "$logfile" 2>/dev/null | grep "\[OpenCode:" | tail -1)
-  [[ -z "$last_line" ]] && return 1
-  # Idle if last OpenCode line says Done or subscribed
-  [[ "$last_line" =~ (Done —|subscribed:|daemon online) ]] && return 1
-  return 0
-}
-
-CODING_AGENTS=()
-for AGENT in "${AGENTS[@]}"; do
-  _agent_coding "$AGENT" && CODING_AGENTS+=("$AGENT")
-done
-
 # ── Crew — each agent listed once with status icon ──────────────────
 echo "---"
-CODING_COUNT="${#CODING_AGENTS[@]}"
-if [[ "$CODING_COUNT" -gt 0 ]]; then
-  echo "🤖 Crew — ⚡ ${CODING_COUNT} coding (${AGENTS_FRAC}) | sfimage=person.3.sequence.fill"
-else
-  echo "🤖 Crew (${AGENTS_FRAC}) | sfimage=person.3.sequence.fill"
-fi
+echo "🤖 Crew (${AGENTS_FRAC}) | sfimage=person.3.sequence.fill"
 for AGENT in "${AGENTS[@]}"; do
   [[ -z "$AGENT" ]] && continue
-  CODING_LABEL=""
-  _agent_coding "$AGENT" && CODING_LABEL=" ⚡"
   if _agent_up "$AGENT"; then
-    echo "🟢 $AGENT${CODING_LABEL} | bash='/bin/bash' param1='$CTL' param2=restart-agent param3='$AGENT' terminal=false refresh=true"
+    echo "🟢 $AGENT | bash='/bin/bash' param1='$CTL' param2=restart-agent param3='$AGENT' terminal=false refresh=true"
   else
     echo "🔴 $AGENT | bash='/bin/bash' param1='$CTL' param2=start-agent param3='$AGENT' terminal=false refresh=true"
   fi
@@ -165,8 +141,10 @@ for AGENT in "${AGENTS[@]}"; do
   fi
 done
 echo "--$(_svc_icon $SVC_TG) Telegram Bridge         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=telegram terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_WA) WhatsApp Bridge         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=whatsapp terminal=false refresh=true"
 echo "--$(_svc_icon $SVC_CL) crew-lead               | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_OC) OpenCode Server         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_OC) Code Engine             | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_MCP) MCP + OpenAI API        | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=mcp terminal=false refresh=true"
 echo "--$(_svc_icon $SVC_DB) Dashboard               | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
 if [[ "$SVC_CM" == "up" ]]; then
   echo "--🟢 ChatMock (port 8000) | bash='/bin/bash' param1='-c' param2='pkill -f chatmock.py' terminal=false refresh=true"
@@ -176,15 +154,15 @@ fi
 
 # ── Quick links ──────────────────────────────────────────────────────
 echo "---"
-echo "🛸 CrewSwarm"
-echo "--💬 Open Chat            | href='$DASHBOARD_URL/#chat'"
-echo "--🖥️  Open Dashboard       | href='$DASHBOARD_URL'"
-echo "--📁 Open Repo             | bash='open' param1='$CREWSWARM_DIR' terminal=false refresh=false"
+echo "📁 Open CrewSwarm Repo | bash='open' param1='$CREWSWARM_DIR' terminal=false refresh=false"
 
 # ── Logs ─────────────────────────────────────────────────────────────
 echo "---"
 echo "🔧 Logs"
-echo "RT Log        | bash='open' param1='$LOG_DIR/opencrew-rt-daemon.log' terminal=false"
-echo "crew-lead Log | bash='open' param1='$LOG_DIR/crew-lead.log' terminal=false"
-echo "Dashboard Log | bash='open' param1='$LOG_DIR/dashboard.log' terminal=false"
-echo "CrewSwarm Dir | bash='open' param1='$CREWSWARM_DIR' terminal=false"
+echo "RT Log           | bash='open' param1='$LOG_DIR/opencrew-rt-daemon.log' terminal=false"
+echo "crew-lead Log    | bash='open' param1='$LOG_DIR/crew-lead.log' terminal=false"
+echo "Dashboard Log    | bash='open' param1='$LOG_DIR/dashboard.log' terminal=false"
+echo "MCP Log          | bash='open' param1='$LOG_DIR/crewswarm-mcp.log' terminal=false"
+echo "Telegram Log     | bash='open' param1='$LOG_DIR/telegram-bridge.log' terminal=false"
+echo "WhatsApp Log     | bash='open' param1='$LOG_DIR/whatsapp-bridge.log' terminal=false"
+echo "CrewSwarm Dir    | bash='open' param1='$CREWSWARM_DIR' terminal=false"

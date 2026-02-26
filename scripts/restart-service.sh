@@ -26,6 +26,16 @@ case "$SERVICE" in
     pkill -f "scripts/dashboard.mjs" 2>/dev/null; sleep 1
     nohup node "$DIR/scripts/dashboard.mjs" >> /tmp/dashboard.log 2>&1 &
     ;;
+  mcp)
+    pkill -f "mcp-server.mjs" 2>/dev/null
+    lsof -ti :5020 2>/dev/null | xargs kill -9 2>/dev/null || true
+    sleep 1
+    nohup node "$DIR/scripts/mcp-server.mjs" >> /tmp/crewswarm-mcp.log 2>&1 &
+    ;;
+  whatsapp)
+    pkill -f "whatsapp-bridge.mjs" 2>/dev/null; sleep 1
+    nohup node "$DIR/whatsapp-bridge.mjs" >> /tmp/whatsapp-bridge.log 2>&1 &
+    ;;
   *)
     echo "Unknown service: $SERVICE"
     exit 1
