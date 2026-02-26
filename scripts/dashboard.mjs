@@ -3262,7 +3262,7 @@ function showSettings(){
   showSettingsTab('usage');
 }
 function showSettingsTab(tab){
-  ['usage','security','webhooks','telegram','system'].forEach(t => {
+  ['usage','security','webhooks','telegram','whatsapp','system'].forEach(t => {
     const panel = document.getElementById('stab-panel-' + t);
     const btn   = document.getElementById('stab-' + t);
     if (!panel || !btn) return;
@@ -3357,16 +3357,20 @@ async function loadBenchmarkLeaderboard(benchmarkId) {
     const r = await fetch('/api/zeroeval/benchmarks/' + encodeURIComponent(benchmarkId));
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || data.detail || 'Failed to load');
-    const models = data.models || [];
-    const stats = data.statistics || {};
-    metaEl.innerHTML = '<b>' + escHtml(data.name || benchmarkId) + '</b>: ' + (data.description || '').slice(0, 200) + '… | ' + stats.total_models + ' models, avg ' + ((stats.average_score || 0) * 100).toFixed(1) + '%';
+    // Support both old shape (models/statistics) and new shape (entries/total_models at root)
+    const models = data.entries || data.models || [];
+    const totalModels = data.total_models ?? data.statistics?.total_models ?? models.length;
+    const avgScore = data.statistics?.average_score ?? (models.length ? models.reduce((s,m)=>(s+(m.normalized_score??m.benchmark_score??m.score??0)),0)/models.length : 0);
+    const displayName = data.benchmark_name || data.name || benchmarkId;
+    const displayDesc = data.benchmark_description || data.description || '';
+    metaEl.innerHTML = '<b>' + escHtml(displayName) + '</b>' + (displayDesc ? ': ' + escHtml(displayDesc.slice(0, 200)) : '') + ' | ' + totalModels + ' models, avg ' + (avgScore * 100).toFixed(1) + '%';
     metaEl.style.display = 'block';
     if (!models.length) {
       tableEl.innerHTML = '<div class="meta" style="padding:20px;">No model scores for this benchmark.</div>';
       return;
     }
     const rows = models.slice(0, 100).map(m => {
-      const score = (m.normalized_score != null ? m.normalized_score : m.score) ?? 0;
+      const score = (m.normalized_score != null ? m.normalized_score : (m.benchmark_score != null ? m.benchmark_score : m.score)) ?? 0;
       const pct = (score * 100).toFixed(1);
       const inp = m.input_cost_per_million != null ? Math.round(m.input_cost_per_million * 100) + '¢' : '—';
       const out = m.output_cost_per_million != null ? Math.round(m.output_cost_per_million * 100) + '¢' : '—';
