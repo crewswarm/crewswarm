@@ -29,7 +29,17 @@ async function loadSessions(){
     const data = await getJSON('/api/sessions');
     const box = document.getElementById('sessions');
     box.innerHTML = '';
-    if (!data.length) { box.innerHTML = '<div class="meta" style="padding:20px;">Sessions from OpenCode server (4096).</div>'; return; }
+    if (!data.length) {
+      box.innerHTML = '<div style="padding:20px 16px;">'
+        + '<div style="font-size:13px;font-weight:600;margin-bottom:6px;">No OpenCode sessions</div>'
+        + '<div style="font-size:12px;color:var(--text-3);line-height:1.6;">'
+        + 'This tab shows sessions from the <strong>OpenCode</strong> execution engine (port 4096). '
+        + 'Start it from <strong>Services → Code Engine</strong>, then run a task to see sessions here.<br><br>'
+        + '<strong>Claude Code</strong> and <strong>Cursor CLI</strong> don\'t expose a session REST API, '
+        + 'so their runs aren\'t listed here — use the Chat tab\'s activity feed or the RT Messages tab to follow those tasks.'
+        + '</div></div>';
+      return;
+    }
     if (!selected && data[0]) selected = data[0].id;
     // Crew agent from title: "[crew-fixer] ..." or "crew-fixer" (we prefix prompts with [agentId])
     function crewAgentFromTitle(title) {
@@ -86,89 +96,164 @@ async function loadMessages(){
     box.scrollTop = box.scrollHeight;
   } catch (e) { box.innerHTML = '<div class="meta">Error</div>'; }
 }
-async function loadRTMessages(){
-  const box = document.getElementById('rtMessages');
-  const rtView = document.getElementById('rtView');
-  // Preserve scroll intent: if user scrolled up, remember their offset from the bottom
-  const prevScrollFromBottom = rtView._userScrolledUp
-    ? (rtView.scrollHeight - rtView.scrollTop)
-    : null;
-  const data = await getJSON('/api/rt-messages');
-  box.innerHTML = '';
-  const SKIP = new Set(['agent.heartbeat','agent.online','agent.offline']);
-  data.forEach(m => {
-    if (SKIP.has(m.type)) return;
-    const payload = m.payload || {};
-    let messageText = payload.reply || payload.prompt || payload.message || payload.content || '';
-    if (!messageText || messageText === 'run_task') return;
+// ── RT Messages state ─────────────────────────────────────────────────────────
+let _rtPaused = false;
+let _rtFilter = 'tasks'; // 'tasks' | 'replies' | 'all'
+let _rtSearch = '';
+let _rtSeenIds = new Set(); // track rendered message IDs to avoid re-render flicker
+const RT_SKIP = new Set(['agent.heartbeat','agent.online','agent.offline']);
+const RT_TASK_TYPES = new Set(['task.dispatched','task.completed','task.failed','task.cancelled','task.started']);
 
-    const isUser = m.from && (m.from === 'orchestrator' || m.from === 'PM Loop' || m.from === 'crew-lead' || m.from?.includes('main'));
-    const div = document.createElement('div');
-    div.className = 'msg ' + (isUser ? 'u' : 'a');
-
-    // Safe meta header using DOM (avoids XSS from injected HTML in from/to)
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    const fromEl = document.createElement('strong');
-    fromEl.textContent = m.from || '?';
-    const toEl = document.createElement('strong');
-    toEl.textContent = m.to || '?';
-    meta.appendChild(fromEl);
-    meta.appendChild(document.createTextNode(' → '));
-    meta.appendChild(toEl);
-    const badge = document.createElement('span');
-    badge.style.cssText = 'margin-left:8px;font-size:10px;opacity:.6;';
-    badge.textContent = (m.type || '') + (m.ts ? ' · ' + new Date(m.ts).toLocaleTimeString() : '');
-    meta.appendChild(badge);
-
-    // Safe text body — collapsible if > 30 lines
-    const COLLAPSE_LINES = 30;
-    const lines = messageText.split("\\n");
-    const isLong = lines.length > COLLAPSE_LINES;
-    const body = document.createElement('div');
-    body.className = 't';
-    body.style.whiteSpace = 'pre-wrap';
-    if (!isLong) {
-      body.textContent = messageText;
-    } else {
-      const preview = lines.slice(0, COLLAPSE_LINES).join("\\n");
-      const full = messageText;
-      let expanded = false;
-      const textNode = document.createTextNode(preview);
-      body.appendChild(textNode);
-      const toggle = document.createElement('button');
-      toggle.style.cssText = 'display:block;margin-top:6px;background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--accent);cursor:pointer;opacity:.8;';
-      toggle.textContent = '▼ Show ' + (lines.length - COLLAPSE_LINES) + ' more lines';
-      toggle.onclick = () => {
-        expanded = !expanded;
-        textNode.textContent = expanded ? full : preview;
-        toggle.textContent = expanded ? '▲ Collapse' : '▼ Show ' + (lines.length - COLLAPSE_LINES) + ' more lines';
-      };
-      body.appendChild(toggle);
-    }
-
-    div.appendChild(meta);
-    div.appendChild(body);
-    box.appendChild(div);
-  });
-  if (!box.children.length) box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;">No messages yet.</div>';
-  const scrollBtn = document.getElementById('rtScrollBtn');
-  const _rtAtBottom = () => rtView.scrollHeight - rtView.scrollTop - rtView.clientHeight < 120;
-  // Restore position: if user had scrolled up, keep them at the same relative spot
-  if (prevScrollFromBottom !== null) {
-    rtView.scrollTop = rtView.scrollHeight - prevScrollFromBottom;
-  } else {
-    // User was at bottom (or first load) — scroll to bottom
-    rtView.scrollTop = rtView.scrollHeight;
+function _rtMatchesFilter(m) {
+  if (RT_SKIP.has(m.type)) return false;
+  const payload = m.payload || {};
+  const text = payload.reply || payload.prompt || payload.message || payload.content || '';
+  if (!text || text === 'run_task') return false;
+  if (_rtFilter === 'tasks' && !RT_TASK_TYPES.has(m.type)) return false;
+  if (_rtFilter === 'replies') {
+    const hasReply = !!(payload.reply || payload.message || payload.content);
+    if (!hasReply) return false;
   }
-  scrollBtn.style.display = _rtAtBottom() ? 'none' : 'block';
-  // Bind scroll listener once to track user intent
+  if (_rtSearch) {
+    const q = _rtSearch.toLowerCase();
+    const inFrom = (m.from || '').toLowerCase().includes(q);
+    const inTo   = (m.to   || '').toLowerCase().includes(q);
+    const inText = text.toLowerCase().includes(q);
+    const inType = (m.type || '').toLowerCase().includes(q);
+    if (!inFrom && !inTo && !inText && !inType) return false;
+  }
+  return true;
+}
+
+function _rtBuildElement(m) {
+  const payload = m.payload || {};
+  const messageText = payload.reply || payload.prompt || payload.message || payload.content || '';
+  const isTask = RT_TASK_TYPES.has(m.type);
+  const isUser = m.from && (m.from === 'orchestrator' || m.from === 'PM Loop' || m.from === 'crew-lead' || (m.from || '').includes('main'));
+
+  const div = document.createElement('div');
+  div.className = 'msg ' + (isUser ? 'u' : 'a');
+  if (isTask) div.style.cssText = 'border-left:2px solid var(--accent);padding-left:8px;';
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const fromEl = document.createElement('strong');
+  fromEl.textContent = m.from || '?';
+  const toEl = document.createElement('strong');
+  toEl.textContent = m.to || '?';
+  meta.appendChild(fromEl);
+  meta.appendChild(document.createTextNode(' → '));
+  meta.appendChild(toEl);
+  const badge = document.createElement('span');
+  badge.style.cssText = 'margin-left:8px;font-size:10px;opacity:.6;';
+  badge.textContent = (m.type || '') + (m.ts ? ' · ' + new Date(m.ts).toLocaleTimeString() : '');
+  meta.appendChild(badge);
+
+  const COLLAPSE_LINES = 20;
+  const lines = messageText.split('\n');
+  const isLong = lines.length > COLLAPSE_LINES;
+  const body = document.createElement('div');
+  body.className = 't';
+  body.style.whiteSpace = 'pre-wrap';
+  if (!isLong) {
+    body.textContent = messageText;
+  } else {
+    const preview = lines.slice(0, COLLAPSE_LINES).join('\n');
+    let expanded = false;
+    const textNode = document.createTextNode(preview);
+    body.appendChild(textNode);
+    const toggle = document.createElement('button');
+    toggle.style.cssText = 'display:block;margin-top:6px;background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--accent);cursor:pointer;opacity:.8;';
+    toggle.textContent = '▼ +' + (lines.length - COLLAPSE_LINES) + ' lines';
+    toggle.onclick = () => {
+      expanded = !expanded;
+      textNode.textContent = expanded ? messageText : preview;
+      toggle.textContent = expanded ? '▲ Collapse' : '▼ +' + (lines.length - COLLAPSE_LINES) + ' lines';
+    };
+    body.appendChild(toggle);
+  }
+
+  div.appendChild(meta);
+  div.appendChild(body);
+  return div;
+}
+
+async function loadRTMessages(){
+  if (_rtPaused) return;
+  const box    = document.getElementById('rtMessages');
+  const rtView = document.getElementById('rtView');
+  if (!box || !rtView) return;
+
+  const data = await getJSON('/api/rt-messages');
+  const filtered = data.filter(_rtMatchesFilter);
+
+  // Check if the set of visible messages changed (by type+ts key)
+  const newIds = new Set(filtered.map(m => (m.type||'') + '|' + (m.ts||'') + '|' + (m.from||'')));
+  const changed = newIds.size !== _rtSeenIds.size || [...newIds].some(id => !_rtSeenIds.has(id));
+
+  if (!changed) return; // nothing new — don't repaint
+
+  // Record scroll position BEFORE touching the DOM
+  const rtAtBottom = () => rtView.scrollHeight - rtView.scrollTop - rtView.clientHeight < 100;
+  const wasAtBottom = rtAtBottom();
+
+  _rtSeenIds = newIds;
+  box.innerHTML = '';
+  if (!filtered.length) {
+    box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;opacity:.6;">No messages match the current filter.</div>';
+  } else {
+    filtered.forEach(m => box.appendChild(_rtBuildElement(m)));
+  }
+
+  // Only scroll to bottom if user was already at bottom before repaint
+  if (wasAtBottom) rtView.scrollTop = rtView.scrollHeight;
+
+  const scrollBtn = document.getElementById('rtScrollBtn');
+  if (scrollBtn) scrollBtn.style.display = rtAtBottom() ? 'none' : 'block';
+
+  // Bind scroll listener once
   if (!rtView._scrollListenerBound) {
     rtView._scrollListenerBound = true;
     rtView.addEventListener('scroll', () => {
-      const atBottom = _rtAtBottom();
-      scrollBtn.style.display = atBottom ? 'none' : 'block';
-      rtView._userScrolledUp = !atBottom;
+      if (scrollBtn) scrollBtn.style.display = rtAtBottom() ? 'none' : 'block';
+    });
+  }
+}
+
+function toggleRTPause(){
+  _rtPaused = !_rtPaused;
+  const btn = document.getElementById('rtPauseBtn');
+  if (btn) { btn.textContent = _rtPaused ? '▶ Resume' : '⏸ Pause'; btn.style.background = _rtPaused ? 'var(--accent)' : ''; btn.style.color = _rtPaused ? '#fff' : ''; }
+}
+
+function clearRTMessages(){
+  _rtSeenIds = new Set();
+  const box = document.getElementById('rtMessages');
+  if (box) box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;opacity:.6;">Cleared. New messages will appear on next poll.</div>';
+}
+
+function _initRTFilters(){
+  // Filter chips
+  document.querySelectorAll('.rt-filter-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _rtFilter = btn.dataset.filter;
+      _rtSeenIds = new Set(); // force repaint with new filter
+      document.querySelectorAll('.rt-filter-chip').forEach(b => {
+        const active = b === btn;
+        b.style.background = active ? 'var(--accent)' : 'transparent';
+        b.style.color = active ? '#fff' : 'var(--text-2)';
+        b.classList.toggle('active', active);
+      });
+      loadRTMessages();
+    });
+  });
+  // Search
+  const search = document.getElementById('rtSearch');
+  if (search) {
+    search.addEventListener('input', () => {
+      _rtSearch = search.value.trim();
+      _rtSeenIds = new Set();
+      loadRTMessages();
     });
   }
 }
@@ -271,8 +356,8 @@ function showRT(){
   hideAllViews();
   document.getElementById('rtView').classList.add('active');
   setNavActive('navRT');
+  _initRTFilters();
   loadRTMessages();
-  // Hide scroll btn until user has had a chance to scroll up
   const scrollBtn = document.getElementById('rtScrollBtn');
   if (scrollBtn) scrollBtn.style.display = 'none';
 }
@@ -4859,6 +4944,8 @@ const ACTION_REGISTRY = {
     const v = document.getElementById('rtView');
     if (v) v.scrollTop = v.scrollHeight;
   },
+  toggleRTPause,
+  clearRTMessages,
   // RT token visibility toggle
   toggleRTTokenVis: () => {
     const i = document.getElementById('rtTokenInput');

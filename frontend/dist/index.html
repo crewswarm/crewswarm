@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="/assets/index-ccwsOEmt.js"></script>
+  <script type="module" crossorigin src="/assets/index-C8jUJgIl.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-CrbZb7ep.css">
 </head>
 <body>
@@ -31,7 +31,7 @@
         <span class="nav-badge hidden" id="chatBadge">●</span>
       </button>
       <button class="nav-item" id="navSwarm" data-view="swarm">
-        <span class="nav-icon">💬</span> Sessions
+        <span class="nav-icon">💬</span> Code Sessions
       </button>
       <button class="nav-item" id="navRT" data-view="rt">
         <span class="nav-icon">📡</span> RT Messages
@@ -97,18 +97,29 @@
     <!-- RT Messages -->
     <div class="view" id="rtView">
       <div class="page-header">
-        <div><div class="page-title">RT Messages</div><div class="page-sub">Live feed from CrewSwarm RT message bus</div></div>
-        <button id="rtScrollBtn" data-action="scrollRTToBottom" style="display:none;position:fixed;bottom:32px;right:32px;z-index:999;background:var(--accent);color:#fff;border:none;border-radius:50px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity .2s;">⬇ Latest</button>
+        <div><div class="page-title">RT Messages</div><div class="page-sub">Live feed from the CrewSwarm RT message bus</div></div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button id="rtPauseBtn" data-action="toggleRTPause" class="btn-ghost" style="font-size:12px;">⏸ Pause</button>
+          <button data-action="clearRTMessages" class="btn-ghost" style="font-size:12px;">🗑 Clear</button>
+        </div>
+      </div>
+      <!-- Filter chips -->
+      <div style="display:flex;gap:6px;padding:0 0 12px 0;flex-wrap:wrap;">
+        <button class="rt-filter-chip active" data-filter="tasks" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer;">Tasks</button>
+        <button class="rt-filter-chip" data-filter="replies" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer;">Replies</button>
+        <button class="rt-filter-chip" data-filter="all" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer;">All</button>
+        <input id="rtSearch" placeholder="Filter by agent or keyword…" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-2);width:180px;margin-left:4px;" />
       </div>
       <!-- OpenCode live feed -->
-      <div id="ocFeedWrap" style="margin:0 0 18px 0;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-          <span style="font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:.04em;text-transform:uppercase;">OpenCode Activity</span>
-          <span id="ocFeedDot" style="display:none;width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;" title="Live"></span>
+      <div id="ocFeedWrap" style="margin:0 0 14px 0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <span style="font-size:11px;font-weight:600;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;">Code Engine Activity</span>
+          <span id="ocFeedDot" style="display:none;width:7px;height:7px;border-radius:50%;background:#22c55e;animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;" title="Live"></span>
         </div>
-        <div id="ocFeed" style="display:flex;flex-direction:column;gap:4px;min-height:32px;"></div>
+        <div id="ocFeed" style="display:flex;flex-direction:column;gap:4px;min-height:28px;"></div>
       </div>
       <div id="rtMessages"></div>
+      <button id="rtScrollBtn" data-action="scrollRTToBottom" style="display:none;position:fixed;bottom:32px;right:32px;z-index:999;background:var(--accent);color:#fff;border:none;border-radius:50px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);">⬇ Latest</button>
     </div>
 
     <!-- DLQ -->
