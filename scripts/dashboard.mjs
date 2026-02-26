@@ -1182,11 +1182,26 @@ const html = `<!doctype html>
         <div class="card" style="grid-column:1/-1;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <div class="card-title">🔌 Skills</div>
-            <button onclick="toggleAddSkill()" class="btn-purple" style="font-size:12px;">+ Add Skill</button>
+            <div style="display:flex;gap:8px;">
+              <button onclick="toggleImportSkill()" class="btn-ghost" style="font-size:12px;">⬇ Import URL</button>
+              <button onclick="toggleAddSkill()" class="btn-purple" style="font-size:12px;">+ Add Skill</button>
+            </div>
           </div>
           <div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5;">
             Skills let agents call external APIs with <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@SKILL skillname {params}</code>.
             Store skill definitions in <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">~/.crewswarm/skills/</code>.
+          </div>
+
+          <!-- Import from URL -->
+          <div id="importSkillForm" style="display:none;border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;background:var(--bg-2);">
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Import Skill from URL</div>
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Paste a raw URL to a <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">SKILL.md</code> or <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">.json</code> skill file. GitHub blob URLs are auto-converted to raw.</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input id="importSkillUrl" placeholder="https://github.com/…/SKILL.md or https://raw.githubusercontent.com/…" style="flex:1;font-size:12px;" />
+              <button onclick="importSkillFromUrl()" class="btn-green" style="font-size:12px;" id="importSkillBtn">Import</button>
+              <button onclick="toggleImportSkill()" class="btn-ghost" style="font-size:12px;">Cancel</button>
+            </div>
+            <div id="importSkillStatus" style="font-size:11px;margin-top:8px;color:var(--text-3);"></div>
           </div>
 
           <!-- Search -->
@@ -3690,6 +3705,42 @@ function toggleAddSkill(){
   cancelSkillForm();
   const f = document.getElementById('addSkillForm');
   f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('importSkillForm').style.display = 'none';
+}
+
+function toggleImportSkill(){
+  cancelSkillForm();
+  const f = document.getElementById('importSkillForm');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  if (f.style.display !== 'none') document.getElementById('importSkillUrl').focus();
+}
+
+async function importSkillFromUrl(){
+  const urlInput = document.getElementById('importSkillUrl');
+  const status = document.getElementById('importSkillStatus');
+  const btn = document.getElementById('importSkillBtn');
+  const skillUrl = urlInput.value.trim();
+  if (!skillUrl) { status.textContent = 'Paste a URL first.'; status.style.color = 'var(--red)'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+  status.style.color = 'var(--text-3)';
+  status.textContent = 'Fetching…';
+  try {
+    const r = await fetch('/api/skills/import', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ url: skillUrl }) });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'Import failed');
+    status.style.color = 'var(--green)';
+    status.textContent = 'Imported as "' + d.name + '" ✓';
+    urlInput.value = '';
+    await loadSkills();
+    setTimeout(() => { document.getElementById('importSkillForm').style.display = 'none'; status.textContent = ''; }, 2000);
+  } catch(e) {
+    status.style.color = 'var(--red)';
+    status.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import';
+  }
 }
 
 function cancelSkillForm(){
@@ -8540,6 +8591,78 @@ ORDER BY day DESC, cost DESC;`;
       const { status, body: rb } = await proxyToCL("POST", url.pathname, body || undefined);
       res.writeHead(status, { "content-type": "application/json" });
       res.end(rb);
+      return;
+    }
+
+    // Skill import from URL — handled directly (not proxied, needs outbound fetch)
+    if (url.pathname === "/api/skills/import" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      try {
+        const { url: skillUrl } = JSON.parse(body || "{}");
+        if (!skillUrl) throw new Error("url is required");
+
+        // Convert GitHub blob URLs to raw
+        const rawUrl = skillUrl
+          .replace("https://github.com/", "https://raw.githubusercontent.com/")
+          .replace("/blob/", "/");
+
+        const resp = await fetch(rawUrl, { signal: AbortSignal.timeout(10000) });
+        if (!resp.ok) throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);
+        const text = await resp.text();
+
+        let skill;
+        const lowerUrl = rawUrl.toLowerCase();
+
+        if (lowerUrl.endsWith(".json")) {
+          // JSON skill format
+          skill = JSON.parse(text);
+          if (!skill.description) throw new Error("Invalid skill JSON: missing description");
+        } else {
+          // SKILL.md format — parse YAML frontmatter
+          const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+          const fm = {};
+          if (fmMatch) {
+            for (const line of fmMatch[1].split(/\r?\n/)) {
+              const m = line.match(/^(\w[\w-]*):\s*(.+)/);
+              if (m) fm[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, "");
+            }
+          }
+          // Fall back to filename if no name in frontmatter
+          const urlParts = rawUrl.split("/");
+          const fileBase = urlParts[urlParts.length - 1].replace(/\.(md|json)$/i, "");
+          const folderName = urlParts[urlParts.length - 2] || fileBase;
+          skill = {
+            description: fm.description || fm.name || `Skill from ${folderName}`,
+            url: fm.url || "",
+            method: fm.method || "POST",
+          };
+          if (fm.name) skill._importedName = fm.name;
+          const body2 = text.replace(/^---[\s\S]*?---\r?\n/, "").trim();
+          if (body2) skill.paramNotes = body2.slice(0, 500);
+        }
+
+        // Determine skill name: prefer explicit field, else infer from URL
+        const urlParts = rawUrl.split("/");
+        const fileBase = urlParts[urlParts.length - 1].replace(/\.(md|json)$/i, "");
+        const folderName = urlParts[urlParts.length - 2];
+        const inferredName = (folderName && folderName !== "skills" ? folderName : fileBase)
+          .toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+        const skillName = (skill.name || skill._importedName || inferredName).toLowerCase();
+        delete skill._importedName;
+        delete skill.name;
+
+        // Save to ~/.crewswarm/skills/<name>.json
+        const skillsDir = path.join(process.env.HOME || "/tmp", ".crewswarm", "skills");
+        if (!fs.existsSync(skillsDir)) fs.mkdirSync(skillsDir, { recursive: true });
+        const outPath = path.join(skillsDir, `${skillName}.json`);
+        fs.writeFileSync(outPath, JSON.stringify(skill, null, 2), "utf8");
+
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, name: skillName, skill, path: outPath }));
+      } catch (e) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
       return;
     }
 

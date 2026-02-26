@@ -34,7 +34,7 @@ So: same token everywhere; direct send works because the token is in env; PM loo
      "rt": { "authToken": "<your-secret-token>" }
    }
    ```
-   (Legacy: `~/.openclaw/openclaw.json` can have `"env": { "OPENCREW_RT_AUTH_TOKEN": "<same>" }`.)
+
 
 3. If you use `env.OPENCREW_RT_AUTH_TOKEN` in `~/.crewswarm/crewswarm.json`, set it to the same value as `config.json`’s `rt.authToken`, or delete it to avoid two sources.
 
@@ -73,7 +73,7 @@ node natural-pm-orchestrator.mjs "your requirement"
 1. Check status: `bash scripts/openswitchctl status` — you want `rt:up` and `agents: N/N` (e.g. 13/13).
 2. If agents are down: `bash scripts/openswitchctl start` (or Start from the dashboard).
 3. If token errors: fix token alignment (see above).
-4. Run the system test: `node scripts/crewswarm-test.mjs --quick` to see which check fails.
+4. Run the health check: `npm run health` to see which component fails.
 
 ---
 

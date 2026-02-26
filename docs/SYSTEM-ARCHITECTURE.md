@@ -129,7 +129,7 @@ WebSocket pub/sub message bus. All agent communication flows through it.
 The per-agent daemon. Bridges the RT bus to direct LLM API calls and executes tool calls from agent replies.
 
 **Startup flow:**
-1. Reads agent config from `~/.openclaw/openclaw.json` or `~/.crewswarm/config.json`
+1. Reads agent config from `~/.crewswarm/crewswarm.json` and `~/.crewswarm/config.json`
 2. Loads shared memory files into memory
 3. Connects to RT bus, subscribes to channels
 4. Sends `agent.online` + heartbeat every 30s
@@ -317,11 +317,11 @@ User types in dashboard Chat tab
 |---|---|
 | `~/.crewswarm/crewswarm.json` | **Canonical:** agents, providers (API keys), per-agent model assignments, tool permissions. |
 | `~/.crewswarm/config.json` | RT auth token; optional crew-lead model. |
-| `~/.crewswarm/agent-prompts.json` | **Canonical:** per-agent system prompts. (Legacy fallback: `~/.openclaw/agent-prompts.json`.) |
+| `~/.crewswarm/agent-prompts.json` | Per-agent system prompts. |
 | `~/.crewswarm/chat-history/*.jsonl` | Per-session conversation history |
 | `~/.crewswarm/token-usage.json` | Accumulated token/cost data |
 | `~/.crewswarm/cmd-allowlist.json` | Pre-approved @@RUN_CMD patterns |
 | `~/.crewswarm/scribe-state.json` | crew-scribe read cursor for done.jsonl |
-| `~/.crewswarm/workspace/shared-memory/…/done.jsonl` | Task completion log (RT bus output). Default; overridden by `SHARED_MEMORY_DIR`. (Legacy: `~/.openclaw/workspace/…`.) |
+| `~/.crewswarm/workspace/shared-memory/…/done.jsonl` | Task completion log (RT bus output). Default; overridden by `SHARED_MEMORY_DIR`. |
 | `~/.crewswarm/workspace/shared-memory/…/events.jsonl` | RT bus event log |
-| `~/.crewswarm/logs/dlq/*.json` | Failed tasks pending replay (or under shared-memory per RT daemon). (Legacy: `~/.openclaw/workspace/…/dlq`.) |
+| `~/.crewswarm/logs/dlq/*.json` | Failed tasks pending replay (or under shared-memory per RT daemon). |

@@ -1,25 +1,25 @@
 # 🚀 Orchestrator Guide
 
-**Last Updated:** 2026-02-20  
-**Canonical orchestrator:** `unified-orchestrator.mjs` (or `node scripts/run.mjs "requirement"`)
+**Last Updated:** 2026-02-26
+
+> **Preferred approach:** Use the **Chat tab** in the dashboard — type naturally, crew-lead dispatches to crew-pm and the right agents automatically. The CLI orchestrators below are for programmatic/scripted use.
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues.
 
 ## What This Does
 
-You bark orders → PM plans → Parser structures → Workers execute → Verification → Done.
+You give a requirement → PM plans → agents execute in parallel waves → verification → files on disk.
 
 ```
 YOU: "Build user authentication"
   ↓
-PM: Analyzes, dispatches tasks to all agents
+crew-pm: plans tasks
   ↓
-├─→ Codex: Implements auth (parallel)
-├─→ Tester: Writes tests (waits for Codex)
-├─→ Security: Audits code (waits for Codex)
-└─→ PM: Monitors + reports when done
+├─→ crew-coder:    implements auth (wave 1)
+├─→ crew-qa:       audits output  (wave 2)
+└─→ crew-github:   commits to git (wave 3)
 
-Result: Production-ready code ✓
+Result: Files written to disk ✓
 ```
 
 ## How to Use
@@ -178,11 +178,11 @@ Handled by external unified orchestrator (`unified-orchestrator.mjs`)
 
 **Fix:**
 ```bash
-# Check RT server
-curl http://127.0.0.1:4318/api/status
+# Check crew-lead (port 5010)
+curl http://127.0.0.1:5010/health
 
-# Check agent connectivity
-bash ~/bin/openswitchctl status
+# Check agent status
+npm run health
 ```
 
 ### "Code quality is poor"

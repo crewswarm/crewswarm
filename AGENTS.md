@@ -150,6 +150,10 @@ Skills in `~/.crewswarm/skills/*.json` are **data-driven plugins**. Drop a JSON 
 
 **Example:** See `skills/zeroeval.benchmark.json`. Install copies from `skills/` to `~/.crewswarm/skills/` (install overwrites bundled skills).
 
+**SKILL.md format (ClawHub-compatible):** Skills can also be a folder with a `SKILL.md` file (YAML frontmatter + body). Drop a `~/.crewswarm/skills/<name>/SKILL.md` folder and it works alongside JSON skills.
+
+**Import from URL (dashboard):** In the **Skills tab → Import URL**, paste any raw URL to a `.json` or `SKILL.md` skill file. GitHub blob URLs are auto-converted to raw. The skill is saved to `~/.crewswarm/skills/` and immediately available to agents.
+
 ---
 
 ## Roadmap and paths
