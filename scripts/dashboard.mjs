@@ -8601,6 +8601,15 @@ ORDER BY day DESC, cost DESC;`;
         const { url: skillUrl } = JSON.parse(body || "{}");
         if (!skillUrl) throw new Error("url is required");
 
+        // ── Security: validate import source URL ─────────────────────────────
+        let parsedImportUrl;
+        try { parsedImportUrl = new URL(skillUrl); } catch { throw new Error("Invalid URL"); }
+        const importHost = parsedImportUrl.hostname.toLowerCase();
+        // Block SSRF: reject private/loopback addresses and non-HTTPS sources
+        const BLOCKED_HOSTS = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0)/;
+        if (BLOCKED_HOSTS.test(importHost)) throw new Error("Blocked: cannot import from private/loopback addresses");
+        if (parsedImportUrl.protocol !== "https:") throw new Error("Only HTTPS import URLs are allowed");
+
         // Convert GitHub blob URLs to raw
         const rawUrl = skillUrl
           .replace("https://github.com/", "https://raw.githubusercontent.com/")
@@ -8609,6 +8618,8 @@ ORDER BY day DESC, cost DESC;`;
         const resp = await fetch(rawUrl, { signal: AbortSignal.timeout(10000) });
         if (!resp.ok) throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);
         const text = await resp.text();
+        // Reject unreasonably large skill files (>64KB)
+        if (text.length > 65536) throw new Error("Skill file too large (>64KB)");
 
         let skill;
         const lowerUrl = rawUrl.toLowerCase();
@@ -8627,7 +8638,6 @@ ORDER BY day DESC, cost DESC;`;
               if (m) fm[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, "");
             }
           }
-          // Fall back to filename if no name in frontmatter
           const urlParts = rawUrl.split("/");
           const fileBase = urlParts[urlParts.length - 1].replace(/\.(md|json)$/i, "");
           const folderName = urlParts[urlParts.length - 2] || fileBase;
@@ -8641,13 +8651,36 @@ ORDER BY day DESC, cost DESC;`;
           if (body2) skill.paramNotes = body2.slice(0, 500);
         }
 
+        // ── Security: scan the skill payload itself ───────────────────────────
+        const warnings = [];
+        // Flag cmd-type skills (can execute arbitrary shell commands)
+        if (skill.type === "cmd" || skill.cmd) {
+          warnings.push("cmd_skill: this skill executes shell commands via @@RUN_CMD");
+        }
+        // Flag skill URLs targeting private/loopback ranges (SSRF in skill execution)
+        if (skill.url) {
+          try {
+            const su = new URL(skill.url.replace(/\{[^}]*\}/g, "placeholder"));
+            const sh = su.hostname.toLowerCase();
+            if (BLOCKED_HOSTS.test(sh)) warnings.push("ssrf_risk: skill url targets a private/loopback address");
+            if (su.protocol !== "https:" && !sh.includes("localhost")) warnings.push("insecure_url: skill url uses non-HTTPS");
+          } catch { /* relative or template URL — ok */ }
+        }
+        // Flag requiresApproval=false on skills that write data (POST/PUT/DELETE)
+        const method = (skill.method || "GET").toUpperCase();
+        if (["POST","PUT","DELETE","PATCH"].includes(method) && skill.requiresApproval === false) {
+          warnings.push("no_approval: write-method skill has requiresApproval:false — agents can use it without confirmation");
+        }
+
         // Determine skill name: prefer explicit field, else infer from URL
         const urlParts = rawUrl.split("/");
         const fileBase = urlParts[urlParts.length - 1].replace(/\.(md|json)$/i, "");
         const folderName = urlParts[urlParts.length - 2];
-        const inferredName = (folderName && folderName !== "skills" ? folderName : fileBase)
-          .toLowerCase().replace(/[^a-z0-9._-]/g, "-");
-        const skillName = (skill.name || skill._importedName || inferredName).toLowerCase();
+        const rawName = skill.name || skill._importedName ||
+          (folderName && folderName !== "skills" ? folderName : fileBase);
+        // Sanitize: strip path traversal, lowercase, replace unsafe chars
+        const skillName = rawName.toLowerCase().replace(/\.\./g, "").replace(/[^a-z0-9._-]/g, "-").replace(/^[-.]|[-.]$/g, "");
+        if (!skillName) throw new Error("Could not determine a valid skill name");
         delete skill._importedName;
         delete skill.name;
 
@@ -8655,10 +8688,12 @@ ORDER BY day DESC, cost DESC;`;
         const skillsDir = path.join(process.env.HOME || "/tmp", ".crewswarm", "skills");
         if (!fs.existsSync(skillsDir)) fs.mkdirSync(skillsDir, { recursive: true });
         const outPath = path.join(skillsDir, `${skillName}.json`);
+        // Final path traversal guard
+        if (!outPath.startsWith(skillsDir)) throw new Error("Invalid skill name");
         fs.writeFileSync(outPath, JSON.stringify(skill, null, 2), "utf8");
 
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: true, name: skillName, skill, path: outPath }));
+        res.end(JSON.stringify({ ok: true, name: skillName, skill, path: outPath, warnings }));
       } catch (e) {
         res.writeHead(400, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: e.message }));

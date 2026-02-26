@@ -2517,16 +2517,26 @@ async function importSkillFromUrl(){
   const skillUrl = urlInput.value.trim();
   if (!skillUrl) { status.style.color = 'var(--red)'; status.textContent = 'Paste a URL first.'; return; }
   btn.disabled = true; btn.textContent = 'Importing…';
-  status.style.color = 'var(--text-3)'; status.textContent = 'Fetching…';
+  status.style.color = 'var(--text-3)'; status.textContent = 'Fetching & scanning…';
   try {
     const r = await fetch('/api/skills/import', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ url: skillUrl }) });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'Import failed');
-    status.style.color = 'var(--green)';
-    status.textContent = 'Imported as "' + d.name + '" ✓';
+    // Show security warnings if any
+    if (d.warnings && d.warnings.length) {
+      status.style.color = 'var(--yellow)';
+      const warnLabels = { cmd_skill: '⚠ executes shell commands', ssrf_risk: '⚠ targets private network', insecure_url: '⚠ non-HTTPS endpoint', no_approval: '⚠ no approval gate on write' };
+      const msgs = d.warnings.map(w => warnLabels[w.split(':')[0]] || w);
+      status.innerHTML = '✓ Imported <strong>"' + d.name + '"</strong> — ' + msgs.join(' · ');
+    } else {
+      status.style.color = 'var(--green)';
+      status.textContent = '✓ Imported "' + d.name + '" — no security warnings';
+    }
     urlInput.value = '';
     await loadSkills();
-    setTimeout(() => { document.getElementById('importSkillForm').style.display = 'none'; status.textContent = ''; }, 2000);
+    if (!d.warnings || !d.warnings.length) {
+      setTimeout(() => { document.getElementById('importSkillForm').style.display = 'none'; status.textContent = ''; }, 3000);
+    }
   } catch(e) {
     status.style.color = 'var(--red)';
     status.textContent = 'Error: ' + e.message;
