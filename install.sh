@@ -409,6 +409,7 @@ if [[ "$START_NOW" =~ ^[Yy] ]]; then
   wait_for_port "RT bus  :18889"   18889
   wait_for      "crew-lead :5010"  "http://127.0.0.1:5010/health"
   wait_for      "Dashboard :4319"  "http://127.0.0.1:4319"
+  wait_for      "MCP/OpenAI :5020" "http://127.0.0.1:5020/health"
 
   BRIDGE_COUNT=$(pgrep -f "gateway-bridge.mjs" 2>/dev/null | wc -l | tr -d ' ')
   printf "  %-22s" "Agent bridges"
@@ -431,8 +432,12 @@ if [[ "$START_NOW" =~ ^[Yy] ]]; then
   sleep 1
   open "http://127.0.0.1:4319" 2>/dev/null || true
   echo ""
-  echo "  Logs: /tmp/opencrew-rt-daemon.log  /tmp/crew-lead.log  /tmp/dashboard.log"
+  echo "  Logs: /tmp/opencrew-rt-daemon.log  /tmp/crew-lead.log  /tmp/dashboard.log  /tmp/crewswarm-mcp.log"
   echo "  Restart later: cd $REPO_DIR && npm run restart-all"
+  echo ""
+  echo "  OpenAI-compatible API (Open WebUI, LM Studio, Aider, etc.):"
+  echo "    Base URL: http://127.0.0.1:5020/v1   API key: (any string)"
+  echo "    Models:   http://127.0.0.1:5020/v1/models  (one per agent)"
   echo ""
 else
   echo ""

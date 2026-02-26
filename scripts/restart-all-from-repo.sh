@@ -15,17 +15,19 @@ lsof -ti :5010  2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :4319  2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :18889 2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :4096  2>/dev/null | xargs kill -9 2>/dev/null; true
+lsof -ti :5020  2>/dev/null | xargs kill -9 2>/dev/null; true
 # Kill by process name
 pkill -9 -f "gateway-bridge.mjs" 2>/dev/null; true
 pkill -9 -f "opencrew-rt-daemon.mjs" 2>/dev/null; true
 pkill -9 -f "crew-lead.mjs" 2>/dev/null; true
 pkill -9 -f "scripts/dashboard.mjs" 2>/dev/null; true
+pkill -9 -f "scripts/mcp-server.mjs" 2>/dev/null; true
 pkill -9 -f "opencode serve" 2>/dev/null; true
 # Remove stale PID files
 find /tmp -maxdepth 1 -name "bridge-*.pid" -delete 2>/dev/null; true
 sleep 2
 # Confirm ports are clear before starting
-for port in 5010 4319 18889 4096; do
+for port in 5010 4319 18889 4096 5020; do
   HELD=$(lsof -ti :$port 2>/dev/null | wc -l | tr -d ' ')
   if [ "$HELD" -gt 0 ]; then
     echo "  WARNING: port $port still held by $HELD process(es) — force killing..."
@@ -70,12 +72,17 @@ if [[ "$START_DASH" -eq 1 ]]; then
   echo "Dashboard: http://127.0.0.1:4319"
 fi
 
+echo "Starting MCP + OpenAI-compat server (port 5020)..."
+nohup "$NODE" scripts/mcp-server.mjs >> /tmp/crewswarm-mcp.log 2>&1 &
+sleep 1
+
 echo ""
 echo "Stack restarted from repo. Check:"
 echo "  OpenCode:   port 4096  (opencode serve — sessions, MCP, --attach target)"
 echo "  RT bus:     port 18889 (opencrew-rt-daemon.mjs)"
 echo "  crew-lead:  port 5010  (chat + receives agent replies)"
 echo "  dashboard:  port 4319  (Chat tab, RT Messages, Services)"
+echo "  MCP/OpenAI: port 5020  (MCP tools + /v1/chat/completions for Open WebUI etc.)"
 echo "  bridges:    node scripts/start-crew.mjs --status"
 echo ""
-echo "Logs: /tmp/opencode.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log /tmp/dashboard.log"
+echo "Logs: /tmp/opencode.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log /tmp/dashboard.log /tmp/crewswarm-mcp.log"
