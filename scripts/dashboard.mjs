@@ -6596,8 +6596,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/crew-lead/status" && req.method === "GET") {
       try {
         const { execSync: es } = await import("node:child_process");
-        const out = es("ps aux", { encoding: "utf8" });
-        const online = out.includes("crew-lead.mjs");
+        es("pgrep -f 'crew-lead.mjs'", { encoding: "utf8", timeout: 2000, stdio: "pipe" });
+        const online = true;
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, online }));
       } catch {
@@ -7700,14 +7700,14 @@ ORDER BY day DESC, cost DESC;`;
 
         function countProcs(pattern) {
           try {
-            const out = execSync(`pgrep -f "${pattern}" | wc -l`, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+            const out = execSync(`pgrep -f "${pattern}" | wc -l`, { encoding: "utf8", timeout: 2000, stdio: ["pipe", "pipe", "pipe"] }).trim();
             return parseInt(out, 10) || 0;
           } catch { return 0; }
         }
 
         function procStartTime(pid) {
           try {
-            const out = execSync(`ps -p ${pid} -o lstart=`, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+            const out = execSync(`ps -p ${pid} -o lstart=`, { encoding: "utf8", timeout: 1500, stdio: ["pipe", "pipe", "pipe"] }).trim();
             return out ? new Date(out).getTime() : null;
           } catch { return null; }
         }
