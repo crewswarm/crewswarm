@@ -715,7 +715,7 @@ const html = `<!doctype html>
           <span id="rtTokenBadge" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">not set</span>
         </div>
         <div style="display:flex; gap:8px;">
-          <input id="rtTokenInput" type="password" placeholder="Leave blank to auto-use the token from config.json" style="flex:1;" />
+          <input id="rtTokenInput" type="password" autocomplete="new-password" placeholder="Leave blank to auto-use the token from config.json" style="flex:1;" />
           <button onclick="saveRTToken()" class="btn-purple">Save</button>
           <button onclick="document.getElementById('rtTokenInput').type = document.getElementById('rtTokenInput').type === 'password' ? 'text' : 'password'" class="btn-ghost" title="Show/hide">👁</button>
         </div>
@@ -731,7 +731,7 @@ const html = `<!doctype html>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <input id="apId"      placeholder="Provider ID (e.g. together)" />
           <input id="apBaseUrl" placeholder="Base URL (e.g. https://api.together.xyz/v1)" />
-          <input id="apKey"     placeholder="API Key" type="password" />
+          <input id="apKey"     placeholder="API Key" type="password" autocomplete="new-password" />
           <select id="apApi">
             <option value="openai-completions">openai-completions</option>
             <option value="openai-responses">openai-responses</option>
@@ -1001,7 +1001,7 @@ const html = `<!doctype html>
             <div class="card" style="align-self:start;">
               <div class="card-title" style="margin-bottom:12px;">⚙️ Bot Configuration</div>
               <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Telegram Bot Token</label>
-              <input id="tgTokenInput" type="password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
+              <input id="tgTokenInput" type="password" autocomplete="new-password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
               <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed chat IDs <span style="color:var(--text-3);font-weight:400;">(comma-separated)</span></label>
               <input id="tgAllowedIds" placeholder="1693963111, 987654321" style="width:100%;margin-bottom:12px;" />
               <div id="tgContactNamesList" style="margin-bottom:12px;"></div>
@@ -2813,7 +2813,7 @@ async function loadSearchTools(){
       </div>
       <div class="st-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
         <div style="display:flex;gap:8px;">
-          <input id="st_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />
+          <input id="st_\${p.id}" type="password" autocomplete="new-password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />
           <button onclick="saveSearchTool('\${p.id}')" class="btn-purple">Save</button>
           <button onclick="testSearchTool('\${p.id}')" class="btn-ghost">Test</button>
           <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>
@@ -2873,7 +2873,7 @@ async function loadBuiltinProviders(){
       <div class="bp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
         \${isOllama ? \`<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;">Ollama runs locally — no API key required. Make sure Ollama is running on port 11434.</div>\` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          \${isOllama ? '' : \`<input id="bp_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />\`}
+          \${isOllama ? '' : \`<input id="bp_\${p.id}" type="password" autocomplete="new-password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />\`}
           \${isOllama
             ? \`<button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost" style="flex:1;">Test Connection</button>\`
             : \`<button onclick="saveBuiltinKey('\${p.id}')" class="btn-purple">Save</button>
@@ -2915,7 +2915,7 @@ async function loadBuiltinProviders(){
           </div>
           <div class="cp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <input id="key_\${p.id}" type="password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />
+              <input id="key_\${p.id}" type="password" autocomplete="new-password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />
               <button onclick="saveKey('\${p.id}')" class="btn-purple">Save</button>
               <button onclick="testKey('\${p.id}')" class="btn-ghost">Test</button>
               <button onclick="fetchModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
@@ -4959,7 +4959,7 @@ async function loadProviders(){
         </div>
         <div class="provider-body">
           <div class="key-row">
-            <input class="key-input" type="password" id="key_\${p.id}" value="\${p.maskedKey || ''}" placeholder="Paste API key…" />
+            <input class="key-input" type="password" autocomplete="new-password" id="key_\${p.id}" value="\${p.maskedKey || ''}" placeholder="Paste API key…" />
             <button onclick="toggleKeyVis('key_\${p.id}', this)" style="background:#334155; padding:6px 10px; font-size:12px;">👁</button>
             <button onclick="saveKey('\${p.id}')" style="background:#6366f1; padding:6px 14px; font-size:12px;">Save</button>
             <button onclick="testKey('\${p.id}')" style="background:#334155; padding:6px 10px; font-size:12px;">Test</button>
