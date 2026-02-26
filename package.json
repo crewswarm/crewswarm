@@ -12,6 +12,7 @@
     "pm-loop": "node pm-loop.mjs",
     "gateway": "node gateway-bridge.mjs",
     "telegram": "node telegram-bridge.mjs",
+    "whatsapp": "node whatsapp-bridge.mjs",
     "start-crew": "node scripts/start-crew.mjs",
     "rt-daemon": "node scripts/opencrew-rt-daemon.mjs",
     "restart-all": "bash scripts/restart-all-from-repo.sh",
@@ -22,6 +23,7 @@
     "improvement:baseline": "node scripts/improvement-baseline-test.mjs"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "bcrypt": "^6.0.0",
     "ws": "^8.18.0"
   },

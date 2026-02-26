@@ -7678,6 +7678,7 @@ ORDER BY day DESC, cost DESC;`;
 
         const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
         const tgPid     = pidRunning(path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.pid"));
+        const waPid     = pidRunning(path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"));
         const rtUp      = await portListening(18889);
         const crewLeadUp = await portListening(crewLeadPort);
         const gwUp      = await portListening(18789);
@@ -7746,6 +7747,15 @@ ORDER BY day DESC, cost DESC;`;
           running: tgPid !== null,
           canRestart: true,
           pid: tgPid,
+        },
+        {
+          id: "whatsapp",
+          label: "WhatsApp Bridge",
+          description: waPid !== null ? "Personal bot via Baileys — linked device active" : "Personal bot via Baileys — run once to scan QR",
+          port: null,
+          running: waPid !== null,
+          canRestart: true,
+          pid: waPid,
         },
         {
           id: "opencode",
@@ -7877,6 +7887,20 @@ ORDER BY day DESC, cost DESC;`;
           res.end(JSON.stringify({ ok: false, message: "Telegram not restarted — set TELEGRAM_BOT_TOKEN or configure via Settings → Telegram." }));
           return;
         }
+      } else if (id === "whatsapp") {
+        try {
+          const pid = parseInt(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"), "utf8").trim(), 10);
+          if (pid) process.kill(pid, "SIGTERM");
+        } catch {}
+        await new Promise(r => setTimeout(r, 800));
+        // WhatsApp bridge uses auth files — no token needed, just spawn it
+        const waCfg = (() => { try { return JSON.parse(fs.readFileSync(CREW_CFG_PATH, "utf8")); } catch { return {}; } })();
+        const waEnv = waCfg.env || {};
+        spawnProc("node", [path.join(OPENCLAW_DIR, "whatsapp-bridge.mjs")], {
+          cwd: OPENCLAW_DIR,
+          env: { ...process.env, ...(waEnv.WA_ALLOWED_NUMBERS ? { WA_ALLOWED_NUMBERS: waEnv.WA_ALLOWED_NUMBERS } : {}) },
+          detached: true, stdio: "ignore",
+        }).unref();
       } else if (id === "crew-lead") {
         try { execSync(`pkill -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
         await new Promise(r => setTimeout(r, 800));
@@ -7943,6 +7967,11 @@ ORDER BY day DESC, cost DESC;`;
       } else if (id === "telegram") {
         try {
           const pid = parseInt(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.pid"), "utf8").trim(), 10);
+          if (pid) process.kill(pid, "SIGTERM");
+        } catch {}
+      } else if (id === "whatsapp") {
+        try {
+          const pid = parseInt(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"), "utf8").trim(), 10);
           if (pid) process.kill(pid, "SIGTERM");
         } catch {}
       } else if (id === "crew-lead") {

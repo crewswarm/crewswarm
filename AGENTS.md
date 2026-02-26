@@ -9,7 +9,7 @@
 
 **The multi-agent orchestration layer for OpenCode and Cursor.** CrewSwarm runs a crew of specialist AI agents (coder, QA, PM, fixer, security, copywriter, etc.) that collaborate on tasks via a real-time WebSocket bus. Each agent can be routed through **OpenCode CLI**, **Cursor CLI**, or a direct LLM API call — you pick per agent from the dashboard.
 
-You interact through a web dashboard, Telegram, or by chatting directly with crew-lead.
+You interact through a web dashboard, Telegram, WhatsApp, or by chatting directly with crew-lead.
 
 ### Execution modes (per agent)
 
@@ -62,6 +62,7 @@ The installer will:
 - Optionally start all services and open the dashboard in the browser
 - Optionally set up SwiftBar menu bar plugin (macOS)
 - Optionally set up Telegram bot
+- Optionally set up WhatsApp bot
 
 ### Step 4 — Add at least one API key
 
@@ -99,6 +100,7 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 | `scripts/dashboard.mjs` | Web UI on :4319 |
 | `scripts/check-dashboard.mjs` | Validates dashboard HTML/inline script — **run after editing dashboard.mjs** to avoid breaking the UI |
 | `telegram-bridge.mjs` | Telegram integration |
+| `whatsapp-bridge.mjs` | WhatsApp integration (personal bot via Baileys — scan QR once) |
 | `scripts/crew-scribe.mjs` | Memory maintenance (summaries, lessons) |
 | `~/.crewswarm/crewswarm.json` | Agent model assignments + provider API keys |
 | `~/.crewswarm/config.json` | RT auth token |
@@ -434,6 +436,40 @@ In `~/.crewswarm/crewswarm.json` under `providers`:
 ```
 
 Then use `my-provider/model-name` in any agent's `model` field.
+
+---
+
+## WhatsApp bridge — how to set up
+
+Personal bot approach using [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web automation). Your phone number becomes a linked device — no Business API or Meta approval needed.
+
+**Start the bridge:**
+```bash
+npm run whatsapp
+# or: node whatsapp-bridge.mjs
+```
+
+On first run a QR code prints to the terminal. Open WhatsApp on your phone → **Linked Devices → Link a Device** and scan it. Auth persists in `~/.crewswarm/whatsapp-auth/` — no re-scan after restart.
+
+**Restrict who can message the bot (recommended):**
+
+In `~/.crewswarm/crewswarm.json` `env` block:
+```json
+"WA_ALLOWED_NUMBERS": "+15551234567,+15559876543"
+```
+Numbers in international format. Leave empty to allow any sender.
+
+**Commands (same as Telegram):**
+```
+/projects           — list registered projects
+/project <name>     — set active project context
+/home               — clear active project
+/status             — show bridge status
+```
+
+**Logs:** `~/.crewswarm/logs/whatsapp-bridge.jsonl` and `whatsapp-messages.jsonl`
+
+**Note on stability:** Baileys reverse-engineers the WhatsApp Web protocol. It can break after WhatsApp updates. For production use, prefer the official WhatsApp Business API. For personal assistant / home automation use, Baileys is the right choice.
 
 ---
 
