@@ -1123,13 +1123,18 @@ function buildSystemPrompt(cfg) {
 // Cheap pre-flight call (Groq llama-3.1-8b-instant, ~$0.00005/task) that rates
 // task complexity 1-5 and suggests which agents to involve.
 // Returns null if classification is skipped or fails — never blocks the main flow.
-const TASK_VERBS = /\b(build|create|write|add|fix|refactor|audit|review|test|deploy|implement|design|plan|make|update|change|convert|generate|analyze|set.?up|migrate|scaffold|integrate|optimize|debug|ship|launch|configure|set)\b/i;
-const QUESTION_START = /^(what|how|why|who|when|where|can you|do you|is it|are you|tell me|explain|show me|what is|what are|is there|does|did|will|would|should|could|have you|i('m| am) asking|no[,\s]|just |i mean)/i;
+// Strong action verbs that clearly indicate a deliverable task (not status checks or questions).
+// Deliberately excludes: verify/check/test/review/look/see/confirm/status — those are observational.
+const TASK_VERBS = /\b(build|create|write|add|fix|refactor|deploy|implement|design|plan|make|update|change|convert|generate|set.?up|migrate|scaffold|integrate|optimize|debug|ship|launch|configure|refactor|rewrite|delete|remove)\b/i;
+// Patterns that indicate a statement/question/observation — never a dispatch trigger.
+const QUESTION_START = /^(what|how|why|who|when|where|can you|do you|is it|are you|tell me|explain|show me|what is|what are|is there|does|did|will|would|should|could|have you|i('m| am) asking|no[,\s]|just |i mean|verify|verifying|checking|confirming|testing|looking|seeing)/i;
+const STATUS_CHECK = /\b(verify|verif|check(ing)?|confirm(ing)?|status|health|is .* (up|down|running|broken|working)|no .* issues?|any .* issues?|timeout issues?|looking at|seeing if)\b/i;
 
 async function classifyTask(message, cfg) {
   const words = message.trim().split(/\s+/).length;
-  if (words < 6) return null;
+  if (words < 10) return null; // raised from 6 — short messages are conversational
   if (QUESTION_START.test(message.trim())) return null;
+  if (STATUS_CHECK.test(message)) return null; // status checks / health checks — never dispatch
   if (!TASK_VERBS.test(message)) return null;
 
   const providers = cfg.providers || {};
@@ -3030,15 +3035,15 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     if (score >= 4) {
       messages.push({
         role: "system",
-        content: `[Task Classifier — complexity ${score}/5] ${reason}. Suggested agents: ${agents.join(" → ")}. Breakdown: ${breakdown.join("; ")}. This is a COMPLEX multi-agent task. Dispatch to crew-main with the breakdown as context, or use @@PIPELINE. Do NOT dispatch to a single coding agent — this needs coordination.`,
+        content: `[Task Classifier — complexity ${score}/5] ${reason}. Suggested agents: ${agents.join(" → ")}. Possible breakdown: ${breakdown.join("; ")}. If the user is asking you to BUILD/DO this (not just asking about it), consider @@PIPELINE or crew-main. If the user is asking a question or checking status, JUST ANSWER — do not dispatch.`,
       });
     } else if (score === 3) {
       messages.push({
         role: "system",
-        content: `[Task Classifier — complexity ${score}/5] ${reason}. Likely a single agent: ${agents[0] || "crew-coder"}. Dispatch directly unless the user wants full orchestration.`,
+        content: `[Task Classifier — complexity ${score}/5] ${reason}. If this is an action request, ${agents[0] || "crew-coder"} is likely sufficient.`,
       });
     }
-    // Score 1-2: no hint needed, crew-lead handles or dispatches normally
+    // Score 1-2: no hint needed
   }
 
   appendHistory(sessionId, "user", message);
