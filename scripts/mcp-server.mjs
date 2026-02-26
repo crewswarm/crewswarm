@@ -5,7 +5,8 @@
  * Exposes the entire CrewSwarm fleet as MCP tools — 100% dynamic.
  * Every agent and every skill discovered at runtime becomes a callable tool.
  *
- * Compatible with: Cursor, Claude Code CLI, OpenCode, Claude Desktop
+ * Compatible with: Cursor, Claude Code CLI, OpenCode, Claude Desktop,
+ *                  Open WebUI, LM Studio, Aider, Continue.dev, any OpenAI-compatible tool
  *
  * Transports:
  *   HTTP (default)  — point your MCP client at http://localhost:5020/mcp
@@ -504,6 +505,118 @@ if (STDIO_MODE) {
       return;
     }
 
+    // ── OpenAI-compatible API (/v1/*) ──────────────────────────────────────────
+    // Lets any tool with a "custom base URL" setting (Open WebUI, LM Studio,
+    // Aider, Continue.dev, Cursor, etc.) use CrewSwarm agents as models.
+    // Set base URL to http://127.0.0.1:5020 — each agent appears as a model.
+
+    if (url.pathname === "/v1/models") {
+      const agents = loadAgents();
+      const models = [
+        // crew-lead (Stinki) — the general-purpose commander
+        { id: "crewswarm", object: "model", created: 1700000000, owned_by: "crewswarm",
+          description: "🧠 Stinki — crew-lead, general purpose commander" },
+        // One model per agent
+        ...agents.map(a => ({
+          id: a.id,
+          object: "model",
+          created: 1700000000,
+          owned_by: "crewswarm",
+          description: `${a.emoji || ""} ${a.name} — ${a.role || a.id}`.trim(),
+        })),
+      ];
+      res.writeHead(200, { "content-type": "application/json", ...corsHeaders });
+      res.end(JSON.stringify({ object: "list", data: models }));
+      return;
+    }
+
+    if (url.pathname === "/v1/chat/completions" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      let payload;
+      try { payload = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({ error: { message: "Invalid JSON", type: "invalid_request_error" } }));
+        return;
+      }
+
+      const { model = "crewswarm", messages = [], stream = false } = payload;
+      // Extract the last user message as the task
+      const lastUser = [...messages].reverse().find(m => m.role === "user");
+      const task = typeof lastUser?.content === "string"
+        ? lastUser.content
+        : lastUser?.content?.map?.(c => c.text || "").join("") || "";
+
+      if (!task) {
+        res.writeHead(400, { "content-type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({ error: { message: "No user message found", type: "invalid_request_error" } }));
+        return;
+      }
+
+      // Route: "crewswarm" / "crew-lead" → /chat  |  anything else → dispatch
+      const isChatRoute = model === "crewswarm" || model === "crew-lead";
+      let reply = "";
+      try {
+        if (isChatRoute) {
+          const r = await fetch(`${CREW_LEAD_URL}/chat`, {
+            method: "POST", headers: crewHeaders(),
+            body: JSON.stringify({ message: task, sessionId: `openai-compat-${Date.now()}` }),
+            signal: AbortSignal.timeout(120_000),
+          });
+          const d = await r.json();
+          reply = d.reply || d.message || "(no reply)";
+        } else {
+          const r = await fetch(`${CREW_LEAD_URL}/api/dispatch`, {
+            method: "POST", headers: crewHeaders(),
+            body: JSON.stringify({ agent: model, task }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          const dispatched = await r.json();
+          const taskId = dispatched.taskId;
+          if (!taskId) throw new Error(dispatched.error || "dispatch failed");
+
+          // Poll for result (90s max)
+          const start = Date.now();
+          while (Date.now() - start < 90_000) {
+            await new Promise(r => setTimeout(r, 2000));
+            const sr = await fetch(`${CREW_LEAD_URL}/api/status/${taskId}`, {
+              headers: crewHeaders(), signal: AbortSignal.timeout(5_000),
+            });
+            const s = await sr.json();
+            if (s.status === "completed" || s.reply) { reply = s.reply || s.result || "(done)"; break; }
+            if (s.status === "failed") { reply = `Error: ${s.error || "task failed"}`; break; }
+          }
+          if (!reply) reply = `Task dispatched to ${model} (taskId: ${taskId}) — timed out waiting for reply.`;
+        }
+      } catch (e) {
+        reply = `Error: ${e.message}`;
+      }
+
+      const completionId = `chatcmpl-${Date.now().toString(36)}`;
+      const ts = Math.floor(Date.now() / 1000);
+
+      if (stream) {
+        // Streaming response — send as a single chunk then [DONE]
+        res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", ...corsHeaders });
+        const chunk = { id: completionId, object: "chat.completion.chunk", created: ts, model,
+          choices: [{ index: 0, delta: { role: "assistant", content: reply }, finish_reason: null }] };
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        const done = { id: completionId, object: "chat.completion.chunk", created: ts, model,
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }] };
+        res.write(`data: ${JSON.stringify(done)}\n\n`);
+        res.write("data: [DONE]\n\n");
+        res.end();
+      } else {
+        res.writeHead(200, { "content-type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({
+          id: completionId, object: "chat.completion", created: ts, model,
+          choices: [{ index: 0, message: { role: "assistant", content: reply }, finish_reason: "stop" }],
+          usage: { prompt_tokens: Math.ceil(task.length / 4), completion_tokens: Math.ceil(reply.length / 4), total_tokens: Math.ceil((task.length + reply.length) / 4) },
+        }));
+      }
+      return;
+    }
+
     if (url.pathname !== "/mcp") {
       res.writeHead(404, corsHeaders);
       res.end("not found");
@@ -551,12 +664,15 @@ if (STDIO_MODE) {
     console.log(`  Agents        : ${agents.length} (${agents.map(a => (a.emoji || "") + a.name).join(", ")})`);
     console.log(`  Skills        : ${skills.length} (${skills.map(s => s.name).join(", ")})`);
     console.log(`${"─".repeat(50)}`);
-    console.log(`\nCursor .cursor/mcp.json:`);
-    console.log(`  { "crewswarm": { "url": "http://127.0.0.1:${PORT}/mcp" } }`);
-    console.log(`\nClaude Code stdio:`);
-    console.log(`  node scripts/mcp-server.mjs --stdio`);
-    console.log(`\nOpenCode mcp config:`);
-    console.log(`  { "mcpServers": { "crewswarm": { "type": "http", "url": "http://127.0.0.1:${PORT}/mcp" } } }`);
+    console.log(`\nMCP clients (Cursor / Claude Code / OpenCode):`);
+    console.log(`  Cursor .cursor/mcp.json:  { "crewswarm": { "url": "http://127.0.0.1:${PORT}/mcp" } }`);
+    console.log(`  Claude Code stdio:        node scripts/mcp-server.mjs --stdio`);
+    console.log(`  OpenCode:                 { "mcpServers": { "crewswarm": { "type": "http", "url": "http://127.0.0.1:${PORT}/mcp" } } }`);
+    console.log(`\nOpenAI-compatible API (Open WebUI / LM Studio / Aider / Continue.dev):`);
+    console.log(`  Base URL : http://127.0.0.1:${PORT}/v1`);
+    console.log(`  API key  : (any string — uses CrewSwarm auth token internally)`);
+    console.log(`  Models   : GET http://127.0.0.1:${PORT}/v1/models   (one per agent)`);
+    console.log(`  Chat     : POST http://127.0.0.1:${PORT}/v1/chat/completions`);
     console.log();
   });
 }
