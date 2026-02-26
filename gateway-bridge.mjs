@@ -1177,20 +1177,41 @@ Sends a message to the configured Telegram chat (or to a contact by name if you 
     const skillList = (() => {
       try {
         if (!fs.existsSync(SKILLS_DIR)) return "(none installed yet)";
-        const files = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".json"));
-        if (!files.length) return "(none installed yet)";
-        return files.map(f => {
+        const entries = [];
+        // JSON skills
+        const jsonFiles = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".json"));
+        for (const f of jsonFiles) {
           try {
             const d = JSON.parse(fs.readFileSync(path.join(SKILLS_DIR, f), "utf8"));
-            const name    = f.replace(".json","");
+            const name     = f.replace(".json","");
             const approval = d.requiresApproval ? " ⚠️ requires-approval" : "";
             const urlLine  = d.url  ? `\n      URL: ${d.method||"POST"} ${d.url}` : "";
             const notes    = d.paramNotes ? `\n      Params: ${d.paramNotes}` : "";
             const defaults = d.defaultParams && Object.keys(d.defaultParams).length
               ? `\n      Defaults: ${JSON.stringify(d.defaultParams)}` : "";
-            return `  - ${name}${approval} — ${d.description || ""}${urlLine}${notes}${defaults}`;
-          } catch { return `  - ${f.replace(".json","")}`; }
-        }).join("\n");
+            entries.push(`  - ${name}${approval} — ${d.description || ""}${urlLine}${notes}${defaults}`);
+          } catch { entries.push(`  - ${f.replace(".json","")}`); }
+        }
+        // SKILL.md skills (AgentSkills / ClawHub format)
+        const dirs = fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
+          .filter(e => e.isDirectory() && fs.existsSync(path.join(SKILLS_DIR, e.name, "SKILL.md")));
+        for (const dir of dirs) {
+          const md = loadSkillMd(dir.name);
+          if (md) {
+            const tag = md.url ? "" : " 📄 instruction-card";
+            entries.push(`  - ${dir.name}${tag} — ${md.description}`);
+          }
+        }
+        // Standalone .md skills
+        const mdFiles = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".md"));
+        for (const f of mdFiles) {
+          const name = f.replace(".md","");
+          if (!jsonFiles.some(j => j.replace(".json","") === name)) {
+            const md = loadSkillMd(name);
+            if (md) entries.push(`  - ${name} 📄 — ${md.description}`);
+          }
+        }
+        return entries.length ? entries.join("\n") : "(none installed yet)";
       } catch { return ""; }
     })();
     tools.push(`### Call an external skill (API integration):
@@ -1287,6 +1308,76 @@ function isCommandAllowlisted(cmd) {
 const SKILLS_DIR         = path.join(os.homedir(), ".crewswarm", "skills");
 const PENDING_SKILLS_FILE = path.join(os.homedir(), ".crewswarm", "pending-skills.json");
 
+// ── AgentSkills SKILL.md loader ───────────────────────────────────────────────
+// Supports ClawHub-compatible skills: drop a folder with a SKILL.md into
+// ~/.crewswarm/skills/<name>/SKILL.md and it works alongside JSON skills.
+// SKILL.md uses YAML frontmatter (name, description, aliases, url, method).
+// If the skill has a url in frontmatter → executes like a JSON skill.
+// If not → injects the SKILL.md content as the skill result (instruction card).
+
+function parseSkillMdFrontmatter(raw) {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return {};
+  const front = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const m = line.match(/^(\w[\w-]*):\s*(.+)$/);
+    if (!m) continue;
+    let val = m[2].trim();
+    // parse simple arrays: ["a","b"] or [a, b]
+    if (val.startsWith("[")) {
+      try { val = JSON.parse(val.replace(/'/g, '"')); } catch { val = val.slice(1,-1).split(",").map(s => s.trim().replace(/^['"]|['"]$/g,"")); }
+    }
+    front[m[1]] = val;
+  }
+  return front;
+}
+
+function loadSkillMd(skillName) {
+  // Try ~/.crewswarm/skills/<name>/SKILL.md  or  ~/.crewswarm/skills/<name>.md
+  const candidates = [
+    path.join(SKILLS_DIR, skillName, "SKILL.md"),
+    path.join(SKILLS_DIR, skillName + ".md"),
+  ];
+  for (const f of candidates) {
+    if (!fs.existsSync(f)) continue;
+    try {
+      const raw  = fs.readFileSync(f, "utf8");
+      const meta = parseSkillMdFrontmatter(raw);
+      const body = raw.replace(/^---[\s\S]*?---\r?\n/, "").trim();
+      return {
+        _type:       "skill-md",
+        name:        meta.name || skillName,
+        description: meta.description || "",
+        aliases:     Array.isArray(meta.aliases) ? meta.aliases : (meta.aliases ? [meta.aliases] : []),
+        url:         meta.url || null,
+        method:      meta.method || "GET",
+        defaultParams: meta.defaultParams ? (typeof meta.defaultParams === "string" ? JSON.parse(meta.defaultParams) : meta.defaultParams) : {},
+        _body:       body,
+        _file:       f,
+      };
+    } catch { continue; }
+  }
+  // Also scan subdirs for aliases
+  try {
+    const entries = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue;
+      const f = path.join(SKILLS_DIR, ent.name, "SKILL.md");
+      if (!fs.existsSync(f)) continue;
+      try {
+        const raw  = fs.readFileSync(f, "utf8");
+        const meta = parseSkillMdFrontmatter(raw);
+        const aliases = Array.isArray(meta.aliases) ? meta.aliases : (meta.aliases ? [meta.aliases] : []);
+        if (aliases.includes(skillName) || (meta.name && meta.name === skillName)) {
+          const body = raw.replace(/^---[\s\S]*?---\r?\n/, "").trim();
+          return { _type:"skill-md", name: meta.name || ent.name, description: meta.description||"", aliases, url: meta.url||null, method: meta.method||"GET", defaultParams:{}, _body: body, _file: f };
+        }
+      } catch { continue; }
+    }
+  } catch {}
+  return null;
+}
+
 /** Resolve skill name alias to actual skill file name. E.g. "benchmark" → "zeroeval.benchmark". */
 function resolveSkillAlias(skillName) {
   const exact = path.join(SKILLS_DIR, skillName + ".json");
@@ -1306,8 +1397,11 @@ function resolveSkillAlias(skillName) {
 function loadSkillDef(skillName) {
   const resolved = resolveSkillAlias(skillName);
   const file = path.join(SKILLS_DIR, resolved + ".json");
-  if (!fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+  if (fs.existsSync(file)) {
+    try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+  }
+  // Fall back to SKILL.md format (AgentSkills / ClawHub)
+  return loadSkillMd(skillName);
 }
 
 function loadPendingSkills() {
@@ -1321,6 +1415,12 @@ function savePendingSkills(map) {
 }
 
 async function executeSkill(skillDef, params) {
+  // AgentSkills / ClawHub SKILL.md — instruction card with no URL → return content
+  if (skillDef._type === "skill-md" && !skillDef.url) {
+    const paramStr = Object.keys(params).length ? `\nCalled with params: ${JSON.stringify(params)}` : "";
+    return `[Skill: ${skillDef.name}]\n${skillDef._body}${paramStr}`;
+  }
+  // SKILL.md with a url → treat exactly like a JSON skill (fall through)
   const cfg = resolveConfig();
   let url;
   const merged = { ...(skillDef.defaultParams || {}), ...params };

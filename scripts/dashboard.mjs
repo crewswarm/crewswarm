@@ -643,10 +643,6 @@ const html = `<!doctype html>
       <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
         <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
         <div style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
-          <span style="font-size:11px;color:var(--text-3);white-space:nowrap;align-self:center;">Project:</span>
-          <select id="chatProjectSelect" style="width:200px;max-width:200px;font-size:12px;padding:6px 8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;align-self:center;" onchange="onChatProjectChange()" title="Active project for dispatch context">
-            <option value="">— none —</option>
-          </select>
           <div style="flex:1;position:relative;min-width:0;overflow:visible;">
             <textarea id="chatInput" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
               style="width:100%;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;min-width:0;box-sizing:border-box;"
@@ -655,6 +651,12 @@ const html = `<!doctype html>
             <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
           </div>
           <button onclick="sendChat()" class="btn-green" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+          <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">Project context:</span>
+          <select id="chatProjectSelect" style="width:200px;max-width:200px;font-size:12px;padding:6px 8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" onchange="onChatProjectChange()" title="Active project for dispatch context">
+            <option value="">— none —</option>
+          </select>
         </div>
       </div>
     </div>
@@ -1575,7 +1577,10 @@ function setNavActive(navId){
 }
 function hideAllViews(){
   document.querySelectorAll('.view, .view-sessions').forEach(el => el.classList.remove('active'));
+  const mb = document.querySelector('.msg-bar');
+  if (mb) mb.style.display = '';
 }
+
 async function pickFolder(inputId) {
   const input = document.getElementById(inputId);
   const def = encodeURIComponent(input?.value || '${process.env.HOME}');
@@ -1599,6 +1604,8 @@ async function showChat(){
   hideAllViews();
   document.getElementById('chatView').classList.add('active');
   setNavActive('navChat');
+  const mb = document.querySelector('.msg-bar');
+  if (mb) mb.style.display = 'none';
   _chatActiveProjectId = getStoredChatProjectId();
   const sel = document.getElementById('chatProjectSelect');
   if (sel && _chatActiveProjectId && sel.querySelector('option[value="' + _chatActiveProjectId + '"]')) sel.value = _chatActiveProjectId;
@@ -3514,7 +3521,7 @@ function renderTaskLifecycle(events) {
 }
 
 // ── Tool Matrix (agents × tools from health + restart) ───────────────────────────
-const TOOL_LABELS = { read_file: 'read', write_file: 'write', mkdir: 'mkdir', run_cmd: 'run', dispatch: 'dispatch', skill: 'skill', define_skill: 'define_skill', git: 'git' };
+const TOOL_LABELS = { read_file: 'read', write_file: 'write', mkdir: 'mkdir', run_cmd: 'run', dispatch: 'dispatch', skill: 'skill', define_skill: 'define_skill', git: 'git', telegram: 'tg', whatsapp: 'wa' };
 
 async function loadToolMatrix(){
   const el = document.getElementById('toolMatrixContainer');
@@ -3533,7 +3540,7 @@ async function loadToolMatrix(){
     window._telemetryEvents = d.telemetry || [];
     const bridgeAgents = (d.agents || []).filter(a => (a.id || '').toLowerCase() !== 'crew-lead');
     const crewLeadInfo = window._crewLeadInfo || { name: 'Crew Lead', emoji: '🧠' };
-    const crewLeadRow = { id: 'crew-lead', name: crewLeadInfo.name, emoji: crewLeadInfo.emoji, tools: ['dispatch', 'skill', 'define_skill'] };
+    const crewLeadRow = { id: 'crew-lead', name: crewLeadInfo.name, emoji: crewLeadInfo.emoji, tools: ['dispatch', 'skill', 'define_skill', 'telegram', 'whatsapp'] };
     const agents = [crewLeadRow, ...bridgeAgents];
     const toolKeys = [...new Set(['define_skill', 'skill', ...agents.flatMap(a => Array.isArray(a.tools) ? a.tools : Object.keys(a.tools || {}))])].sort();
     const labels = toolKeys.map(t => TOOL_LABELS[t] || t);
@@ -6787,10 +6794,15 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/crew-lead/chat" && req.method === "POST") {
       let body = ""; for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+      // Forward RT auth token so crew-lead's /chat Bearer check passes
+      let clAuthToken = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+      if (!clAuthToken) {
+        try { clAuthToken = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch {}
+      }
       try {
         const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/chat`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", ...(clAuthToken ? { "authorization": `Bearer ${clAuthToken}` } : {}) },
           body,
           signal: AbortSignal.timeout(200000), // 3m20s — allow crew-lead + reasoning LLM to finish
         });
@@ -6809,8 +6821,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/crew-lead/clear" && req.method === "POST") {
       let body = ""; for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+      let clAuthToken2 = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+      if (!clAuthToken2) { try { clAuthToken2 = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch {} }
       const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/clear`, {
-        method: "POST", headers: { "content-type": "application/json" }, body,
+        method: "POST", headers: { "content-type": "application/json", ...(clAuthToken2 ? { "authorization": `Bearer ${clAuthToken2}` } : {}) }, body,
         signal: AbortSignal.timeout(5000),
       }).catch(() => null);
       res.writeHead(200, { "content-type": "application/json" });

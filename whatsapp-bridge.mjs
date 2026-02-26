@@ -36,6 +36,7 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
+import http from "node:http";
 import WebSocket from "ws";
 
 const require = createRequire(import.meta.url);
@@ -65,6 +66,7 @@ const CREW_LEAD_URL = process.env.CREW_LEAD_URL          || "http://127.0.0.1:50
 const DASHBOARD_URL = process.env.DASHBOARD_URL          || "http://127.0.0.1:4319";
 const AGENT_NAME    = "crew-whatsapp";
 const TARGET        = process.env.WA_TARGET_AGENT        || env.WA_TARGET_AGENT        || "crew-lead";
+const HTTP_PORT     = parseInt(process.env.WA_HTTP_PORT  || env.WA_HTTP_PORT           || "5015", 10);
 
 // Allowlist — phone numbers in international format, e.g. "+15551234567"
 // Numbers are normalised to JID format: "15551234567@s.whatsapp.net"
@@ -518,15 +520,21 @@ async function main() {
     if (type !== "notify") return;
 
     for (const msg of messages) {
-      // Ignore our own sent messages
-      if (msg.key.fromMe) continue;
-
       const jid = msg.key.remoteJid;
       if (!jid) continue;
 
-      // Only handle 1:1 chats (not groups unless you want group support)
+      // Only handle 1:1 chats (not groups)
       const isGroup = jid.endsWith("@g.us");
       if (isGroup) continue;
+
+      // WhatsApp multi-device uses @lid (Linked Identity) JIDs for self-chat messages.
+      // These arrive as fromMe:true with a @lid suffix — this is the personal bot pattern.
+      const isSelfChatLid = msg.key.fromMe && jid.endsWith("@lid");
+      const ownJid = sock.user?.id?.split(":")[0] + "@s.whatsapp.net";
+      const isSelfChatOwn = msg.key.fromMe && jid === ownJid;
+
+      // Block outgoing messages that aren't self-chat (i.e. bot's own replies going out)
+      if (msg.key.fromMe && !isSelfChatLid && !isSelfChatOwn) continue;
 
       // Extract text content
       const text = (
@@ -538,17 +546,20 @@ async function main() {
 
       if (!text) continue;
 
-      // Allowlist check
-      if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
-        log("warn", "Blocked unauthorized sender", { jid });
-        await sendToJid(jid, "⛔ Unauthorized.");
-        continue;
+      // Self-chat via @lid is implicitly trusted (it's the linked number's own messages).
+      // For regular DMs, check the allowlist against the sender's JID.
+      if (!isSelfChatLid && !isSelfChatOwn) {
+        if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
+          log("warn", "Blocked unauthorized sender", { jid });
+          await sendToJid(jid, "⛔ Unauthorized.");
+          continue;
+        }
       }
 
-      log("info", "Incoming WhatsApp message", { jid, preview: text.slice(0, 80) });
+      log("info", "Incoming WhatsApp message", { jid, fromMe: msg.key.fromMe, preview: text.slice(0, 80) });
       logMessage({ direction: "inbound", jid, text });
 
-      // Track session for reply routing
+      // Track session for reply routing (always reply to the chat JID)
       activeSessions.set(jid, { jid, lastSeen: Date.now() });
 
       // Handle slash commands
@@ -594,6 +605,46 @@ async function main() {
         await sendToJid(jid, `⚠️ crew-lead error: ${e.message.slice(0, 100)}`);
       });
     }
+  });
+
+  // ── Outbound HTTP API ────────────────────────────────────────────────────────
+  // POST /send  { "jid": "13109050857@s.whatsapp.net", "text": "hello" }
+  // POST /send  { "phone": "+13109050857", "text": "hello" }
+  // Used by crew-lead @@WHATSAPP tool.
+
+  const httpServer = http.createServer(async (req, res) => {
+    if (req.method === "POST" && req.url === "/send") {
+      let body = "";
+      req.on("data", d => { body += d; });
+      req.on("end", async () => {
+        try {
+          const { jid, phone, text } = JSON.parse(body);
+          if (!text) { res.writeHead(400); res.end(JSON.stringify({ error: "text required" })); return; }
+          let targetJid = jid;
+          if (!targetJid && phone) {
+            targetJid = phone.replace(/^\+/, "").replace(/\D/g, "") + "@s.whatsapp.net";
+          }
+          if (!targetJid) { res.writeHead(400); res.end(JSON.stringify({ error: "jid or phone required" })); return; }
+          await sendToJid(targetJid, text);
+          logMessage({ direction: "outbound", jid: targetJid, text });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, jid: targetJid }));
+        } catch (e) {
+          res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+    if (req.method === "GET" && req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, number: sock.user?.id?.split(":")[0] || null }));
+      return;
+    }
+    res.writeHead(404); res.end("Not found");
+  });
+
+  httpServer.listen(HTTP_PORT, "127.0.0.1", () => {
+    log("info", `WhatsApp HTTP API listening on :${HTTP_PORT}`);
   });
 }
 

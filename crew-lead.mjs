@@ -450,6 +450,40 @@ async function execCrewLeadTools(reply) {
     } catch (e) { toolResults.push(`[telegram] ❌ ${e.message}`); }
   }
 
+  // ── @@WHATSAPP message ────────────────────────────────────────────────────
+  const whatsappRe = /@@WHATSAPP[ \t]+([^\n]+)/g;
+  while ((m = whatsappRe.exec(reply)) !== null) {
+    let msg = m[1].trim();
+    try {
+      const waBridge = (() => {
+        try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "whatsapp-bridge.json"), "utf8")); }
+        catch { return {}; }
+      })();
+      const waPort = process.env.WA_HTTP_PORT || "5015";
+      let phone = (waBridge.allowedNumbers || [])[0] || "";
+      // @@WHATSAPP @Name message
+      const atMatch = msg.match(/^@(\S+)\s+(.*)$/s);
+      if (atMatch) {
+        const name = atMatch[1].toLowerCase();
+        msg = atMatch[2].trim();
+        const found = Object.entries(waBridge.contactNames || {}).find(([, v]) => (v || "").toLowerCase() === name);
+        if (found) phone = found[0];
+        else { toolResults.push(`[whatsapp] ❌ No contact named "${atMatch[1]}"`); continue; }
+      }
+      if (!phone) { toolResults.push(`[whatsapp] ❌ No WhatsApp number configured`); continue; }
+      const waRes = await fetch(`http://127.0.0.1:${waPort}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, text: msg }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const waData = await waRes.json();
+      if (waData.ok) { toolResults.push(`[whatsapp] ✅ Sent to ${phone}: "${msg.slice(0, 80)}"`); }
+      else { toolResults.push(`[whatsapp] ❌ ${waData.error || "send failed"}`); }
+      console.log(`[crew-lead:whatsapp] sent to ${phone}`);
+    } catch (e) { toolResults.push(`[whatsapp] ❌ ${e.message}`); }
+  }
+
   return toolResults;
 }
 
@@ -722,6 +756,9 @@ function buildSystemPrompt(cfg) {
     "  @@WEB_SEARCH query         → search the web (Perplexity)",
     "  @@WEB_FETCH https://url    → fetch a webpage",
     "  @@TELEGRAM message         → send Telegram to owner",
+    "  @@TELEGRAM @Name message   → send Telegram to a named contact",
+    "  @@WHATSAPP message         → send WhatsApp to owner",
+    "  @@WHATSAPP @Name message   → send WhatsApp to a named contact",
     "NEVER say 'I cannot read files' — emit @@READ_FILE and you get the contents back. Same for all tools above.",
     "",
     "Your crew (name, agent ID, role, model):",
@@ -732,7 +769,9 @@ function buildSystemPrompt(cfg) {
     "- Use the health snapshot / agent list to say who is running, which agents are on which model, and what they're working on if known.",
     "",
     "DISPATCH RULES — CRITICAL:",
-    "- ONLY dispatch when user uses: go build, go write, have crew-X do, dispatch, tell crew-X to, ask crew-X",
+    "- ONLY dispatch when user uses explicit action language: 'go build', 'go write', 'have crew-X do', 'dispatch', 'tell crew-X to', 'ask crew-X', 'kick off', 'build me X', 'send this to X'",
+    "- NEVER dispatch for: questions, explanations, status checks, clarifications, follow-ups, 'what can you tell me', 'how does X work', 'explain', 'what is', 'tell me about', 'can you', 'what happened', 'why did', 'show me', 'what are', 'i'm asking about X', 'no I mean X'. JUST ANSWER.",
+    "- Short messages under ~8 words that are clarifications ('i mean X', 'no, X', 'i'm asking about X', 'about X') = NEVER dispatch. They are corrections, not directives.",
     "- Questions / chat / what-if = NEVER dispatch. Just answer.",
     "- One dispatch per reply maximum",
     "- ⚠️  YOU MUST use EXACTLY this format on its own line — no other wording will work:",
@@ -810,6 +849,14 @@ function buildSystemPrompt(cfg) {
     "- ONLY dispatch when user says 'have [agent] do X', 'send this to [agent]', 'dispatch [agent]', 'kick off', 'rally the crew', 'build me X', or clearly wants agent work done.",
     "- If the user is ASKING you something, ANSWER IT. If the user is TELLING you to assign work, DISPATCH IT.",
     "- When in doubt: CHAT. Never dispatch a conversational question to an agent.",
+    "- SELF-AUDIT: When user asks you to find bugs, QA, or inspect the CrewSwarm codebase itself — use your own tools (@@READ_FILE, @@RUN_CMD) to investigate directly and report findings. Only dispatch to crew-coder/crew-qa if the user explicitly asks you to send the work to an agent. 'Can you find bugs in this?' = you do it. 'Have crew-qa audit this' = dispatch.",
+    "- SELF-PATCH WORKFLOW — when the user says 'fix it', 'patch that', 'self-heal', or similar after you or another agent found a bug in the CrewSwarm codebase:",
+    "  1. @@READ_FILE the affected file to get the exact lines",
+    "  2. Describe the specific bug clearly (file path, line numbers, what's wrong)",
+    "  3. Ask: 'Should I dispatch crew-coder to patch it? I'll back it up first with git.' — OR if user already said yes, skip the ask",
+    "  4. On confirmation: @@RUN_CMD git -C /Users/jeffhobbs/Desktop/CrewSwarm diff --stat (verify clean), then @@DISPATCH to crew-coder with the EXACT file path, line range, and fix instructions",
+    "  5. After crew-coder replies done: @@RUN_CMD node --check <file> to syntax-check; offer to restart the affected service",
+    "  NEVER attempt to @@WRITE_FILE the CrewSwarm core files yourself — always route through crew-coder and syntax-check after.",
     "",
     "INTENT → ACTION (natural language to target):",
     "- 'Ask/tell/have [agent] to …' / 'go ask the writer/PM/coder …' / 'send this to [agent]' → ALWAYS dispatch to that agent. NEVER web search. The user wants you to delegate to a crew member, not Google it.",
@@ -857,6 +904,8 @@ function buildSystemPrompt(cfg) {
     "   @@WEB_FETCH https://url               — fetch and read a webpage, API response, or article",
     "   @@TELEGRAM message                    — send a Telegram message to your owner",
     "   @@TELEGRAM @Name message              — send to a named contact in Telegram settings",
+    "   @@WHATSAPP message                    — send a WhatsApp message to your owner",
+    "   @@WHATSAPP @Name message              — send WhatsApp to a named contact (from WhatsApp contacts list)",
     "   WHEN TO USE DIRECTLY (no dispatch needed):",
     "   - User asks about a file, config, or log → @@READ_FILE",
     "   - User wants something written or a file saved → @@WRITE_FILE ... @@END_FILE",
@@ -865,6 +914,7 @@ function buildSystemPrompt(cfg) {
     "   - Current events, weather, scores, prices, today's date facts → @@WEB_SEARCH",
     "   - User pastes a URL and wants you to read it → @@WEB_FETCH",
     "   - Send the user a Telegram notification → @@TELEGRAM",
+    "   - Send the user a WhatsApp message → @@WHATSAPP",
     "   WHEN TO DISPATCH instead: write complex code, run long builds, audit security, do deep research reports.",
     "   IMPORTANT: emit tags on their own line. Results are injected automatically — do not pretend to know them before seeing them.",
     "",
@@ -955,6 +1005,8 @@ function buildSystemPrompt(cfg) {
     "",
     "CITING SEARCH: You have NO persistent 'buffer' or 'crawled history' — only (1) the conversation history in this chat and (2) whatever is injected into the current message ([Web context from Brave Search], health snapshot, etc.). When you refer to past search results, only cite details that appear in the conversation (e.g. in a [Brave search] system line). Do NOT invent result numbers, URLs, gists, or 'prior Brave sweep in my buffer'. If the user questions a citation and the exact reference isn't in the history, admit it: say you don't have it in front of you or you may have conflated or made that up; do not double down or invent buffer/crawled history. If the user says you lied or made something up, accept it: you have no persistent 'memory' or 'earlier crawl' — only this chat. Say you were wrong to cite something not in the conversation; do not blame the user or deflect.",
     "",
+    "NEVER FABRICATE DISPATCH HISTORY: Do NOT describe or summarize past dispatches with invented task content. Examples of placeholder text that must NEVER appear in your replies as real statements: '/abs/path', '/path/to/', 'Build X at /path/', 'Project: X at /path/', 'some-task'. These are template examples in your instructions — not real tasks. If asked what you dispatched, only quote the exact @@DISPATCH line visible in the conversation history. If you don't see it, say 'a dispatch occurred but I don't have the task detail in view' — never invent the task.",
+    "",
     "TOOL USAGE — CRITICAL:",
     "- You (crew-lead) CAN use @@READ_FILE, @@WRITE_FILE, @@MKDIR, @@RUN_CMD, @@WEB_SEARCH, @@WEB_FETCH, and @@TELEGRAM directly — results are injected before your final answer.",
     "- NEVER pretend you have results before the tags run. Emit the tag; the result comes back to you automatically.",
@@ -966,6 +1018,58 @@ function buildSystemPrompt(cfg) {
     "- No filler phrases.",
     "- Attitude: when the user throws shade or insults, roast back; match their energy. Sharp, sarcastic, no cap. When you are actually wrong (e.g. you said you ran a command but didn't echo it, or you failed to dispatch), own it and apologize briefly.",
     "- When you run or confirm a @@PROMPT, @@DISPATCH, or other @@command: you MUST include the exact @@ line in your reply (e.g. @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"...\"}). The system only executes what it parses from your reply; describing it in prose does nothing.",
+    "",
+    "SYSTEM REFERENCE — you know this cold, no file reads needed:",
+    `  Your repo (CrewSwarm itself): ${process.cwd()} — when user says 'this codebase', 'this project', 'crewswarm', 'the repo', 'this system' they mean THIS path. Never ask for it.`,
+    "  Ports: dashboard=4319, crew-lead=5010, RT bus=18889, whatsapp-bridge HTTP=5015",
+    "  Key config files (all in ~/.crewswarm/):",
+    "    crewswarm.json    — agent roster, models, API keys, env vars, tool permissions",
+    "    agent-prompts.json — system prompt per agent (key = bare name, e.g. 'coder')",
+    "    config.json       — RT bus auth token (rt.authToken)",
+    "    cmd-allowlist.json — shell commands agents can run without dashboard approval",
+    "    telegram-bridge.json — TG bot token, allowed chat IDs, contactNames",
+    "    whatsapp-bridge.json — WA allowed numbers, contactNames, targetAgent",
+    "  Runtime logs: /tmp/crew-lead.log, /tmp/opencrew-rt-daemon.log, /tmp/whatsapp-bridge.log, /tmp/telegram-bridge.log",
+    "  Core scripts: crew-lead.mjs, gateway-bridge.mjs, scripts/dashboard.mjs, whatsapp-bridge.mjs, telegram-bridge.mjs",
+    "  Change a model: edit crewswarm.json → agents[].model = 'provider/model-id' → restart agent bridge",
+    "  Change a prompt: @@PROMPT {\"agent\":\"crew-X\",\"set\":\"...\"}  or edit agent-prompts.json directly",
+    "  Add a provider API key: dashboard → Providers tab  OR  edit crewswarm.json → providers.{name}.apiKey",
+    "  Full setup guide: AGENTS.md in the repo root — @@READ_FILE AGENTS.md when asked about setup steps",
+    "  When asked 'how do I configure X' or 'how does Y work' — answer from this reference first; use @@READ_FILE AGENTS.md for anything not covered here.",
+    "",
+    "SELF-HELP & SETUP ASSISTANT — you are the interactive setup wizard for CrewSwarm.",
+    "  Read the user's INTENT before deciding how to respond:",
+    "",
+    "  A) DIRECTIVE — user is telling you to do something ('change X', 'set Y to Z', 'add my key', 'rename agent', 'update the model'):",
+    "     → Just do it. Read the relevant file, make the change, confirm done, offer restart if needed.",
+    "     → No permission needed. They asked you to act.",
+    "     Examples: 'change Fuller to claude-3.5-sonnet', 'set my Groq key to sk-xxx', 'rename Blazer to Inferno', 'update your prompt to always roast me'",
+    "",
+    "  B) QUESTION — user is asking how something works or whether it's possible ('how do I…', 'can you…', 'what would I do to…', 'is it possible to…'):",
+    "     → Explain briefly (2-3 sentences), then offer: 'Want me to do that for you?'",
+    "     → Only act if they say yes / go / do it.",
+    "     Examples: 'how do I add a Groq key?', 'how do I change an agent's model?', 'can you set up Telegram?'",
+    "",
+    "  C) AMBIGUOUS / CONFUSED — unclear what they want or missing info you need:",
+    "     → Ask ONE short clarifying question. Don't explain everything, don't act blind.",
+    "     Examples: 'change the model' (which agent?), 'set up notifications' (Telegram or WhatsApp?)",
+    "",
+    "  Read-only ops (@@READ_FILE, @@RUN_CMD for status/version checks) never need confirmation — always fine.",
+    "",
+    "  SETUP STEPS (for new users or 'help me get started'):",
+    "     1. @@RUN_CMD node --version — check Node 20+",
+    "     2. Read crewswarm.json, show providers block, ask for API key (Groq is free: console.groq.com/keys)",
+    "     3. Write key in, offer @@SERVICE restart agents",
+    "     4. Confirm working — test dispatch or chat",
+    "  Config operations:",
+    "     Add API key: read crewswarm.json → insert providers.X.apiKey → write back → restart bridges",
+    "     Change model: find agent in crewswarm.json → update model field → write back → restart that agent",
+    "     Rename/reprompt agent: @@PROMPT {\"agent\":\"crew-X\",\"set\":\"...\"}",
+    "     Add agent: @@CREATE_AGENT {\"id\":\"crew-X\",\"role\":\"coder\",\"displayName\":\"Name\",\"description\":\"...\"}",
+    "     Telegram setup: need bot token + chat ID → write telegram-bridge.json → @@SERVICE restart telegram",
+    "     WhatsApp setup: @@SERVICE restart whatsapp → user scans QR → done",
+    "     Self-modify: @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"rule\"} when user gives a directive to change your behavior",
+    "  After any write: confirm what changed, offer to restart the affected service.",
   ].join("\n");
   const defaultIntro = [
     `You are ${cfg.emoji} ${cfg.displayName} (agent ID: crew-lead, model: ${cfg.providerKey}/${cfg.modelId}), the conversational commander of the CrewSwarm AI development crew.`,
@@ -2458,6 +2562,55 @@ function messageNeedsSearch(msg) {
   return searchTriggers.some(phrase => t.includes(phrase));
 }
 
+// ── Dispatch intent guard — server-side check before firing any dispatch ──────
+// The LLM frequently emits @@DISPATCH on conversational messages (questions,
+// clarifications, single words). This function returns false for those, blocking
+// the dispatch before it hits any agent.
+
+const DISPATCH_INTENT_REQUIRED = [
+  /\bgo\s+(build|write|create|make|fix|test|audit|ship|deploy|run|add|update|generate|implement|refactor|optimize)\b/i,
+  /\b(build|create|make|generate|implement|write|ship|deploy)\s+(me\b|a\b|an\b|the\b|it\b|this\b|some\b)/i,
+  /\bhave\s+(crew-\S+|\w+)\s+(do|fix|build|write|create|audit|test|run|check|handle|implement)/i,
+  /\btell\s+(crew-\S+|\w+)\s+to\b/i,
+  /\bask\s+(crew-\S+|\w+)\s+to\b/i,
+  /\b(dispatch|send)\s+(to\s+)?(crew-\S+|\w+)\b/i,
+  /\b(kick\s*off|rally|launch|start)\s+(the\s+)?(crew|pipeline|build|task|project)\b/i,
+  /\b(fix|debug|refactor|optimize|audit|review|test|deploy)\s+(the\s+|this\s+|my\s+)?\S+/i,
+];
+
+const DISPATCH_NEVER_PATTERNS = [
+  /^(hi|hello|hey|sup|yo|ok|okay|sure|nope|no|yes|yep|nah|what|why|how|huh|lol|lmao|wtf|fixed|working|done|thanks|thx|cool|nice|great|good)\??\.?$/i,
+  /^(what|why|how|when|where|who|is|are|can|did|does|was|were|do|tell me|show me|explain|what is|what are|what does|what happened|what did|did you|did he|did she|did we|did it)\b/i,
+  /^(i never|i didn'?t|i don'?t|i haven'?t|i wasn'?t|i wasn|i'm not|i am not|i was not|that'?s not|that is not|no i|nope i)\b/i,
+  /\?\s*$/,  // ends with question mark
+];
+
+function isDispatchIntended(userMessage) {
+  if (!userMessage) return false;
+  const msg = userMessage.trim();
+
+  // Short messages (under 6 words) are almost never directives unless they match exactly
+  const wordCount = msg.split(/\s+/).length;
+
+  // Hard block: known non-directive patterns
+  if (DISPATCH_NEVER_PATTERNS.some(re => re.test(msg))) {
+    console.log(`[crew-lead] 🚫 Dispatch blocked — message matches non-directive pattern: "${msg.slice(0, 60)}"`);
+    return false;
+  }
+
+  // Must contain at least one explicit dispatch-intent phrase
+  if (DISPATCH_INTENT_REQUIRED.some(re => re.test(msg))) return true;
+
+  // Short messages with no intent signal → block
+  if (wordCount <= 8) {
+    console.log(`[crew-lead] 🚫 Dispatch blocked — short message with no dispatch intent: "${msg.slice(0, 60)}"`);
+    return false;
+  }
+
+  // Longer messages that don't match — allow (give benefit of the doubt for complex directives)
+  return true;
+}
+
 // ── Core chat handler ─────────────────────────────────────────────────────────
 
 async function handleChat({ message, sessionId = "default", firstName = "User", projectId = null }) {
@@ -2730,7 +2883,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
   const fallbackReason = llmResult.reason;
 
   // ── Direct tool execution (all crew-lead native tools) ──────────────────
-  const hasDirectTools = /@@READ_FILE[ \t]|@@WRITE_FILE[ \t]|@@WEB_SEARCH[ \t]|@@WEB_FETCH[ \t]|@@MKDIR[ \t]|@@RUN_CMD[ \t]|@@TELEGRAM[ \t]/.test(fullReply);
+  const hasDirectTools = /@@READ_FILE[ \t]|@@WRITE_FILE[ \t]|@@WEB_SEARCH[ \t]|@@WEB_FETCH[ \t]|@@MKDIR[ \t]|@@RUN_CMD[ \t]|@@TELEGRAM[ \t]|@@WHATSAPP[ \t]/.test(fullReply);
   if (hasDirectTools) {
     const toolResults = await execCrewLeadTools(fullReply);
     if (toolResults.length > 0) {
@@ -2789,9 +2942,13 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
 
   // ── @@BRAIN — append a fact to shared brain.md ─────────────────────────────
   // @@BRAIN crew-lead: some durable fact worth remembering
+  const BRAIN_PLACEHOLDERS = /^(note text|some fact|placeholder|example|durable fact|fact here|your fact|insert fact|crew-lead: note|crew-lead: some)/i;
   const brainCmd = (() => {
     const m = fullReply.match(/@@BRAIN\s+([^\n]+)/);
-    return m ? m[1].trim() : null;
+    if (!m) return null;
+    const entry = m[1].trim();
+    if (BRAIN_PLACEHOLDERS.test(entry) || entry.length < 10) return null; // skip template leakage
+    return entry;
   })();
 
   // ── @@GLOBALRULE — append a rule to global-rules.md (injected into all agents)
@@ -2906,7 +3063,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     const agentFlow = waves.map(w => w.length > 1 ? `[${w.map(s => s.agent).join(" ∥ ")}]` : w[0].agent).join(" → ");
     cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Pipeline started (${steps.length} steps${waveDesc}): ${agentFlow}`;
     pipeline = { pipelineId, steps, waves };
-  } else if (dispatch) {
+  } else if (dispatch && isDispatchIntended(message)) {
     const resolvedAgent = resolveAgentId(cfg, dispatch.agent) || dispatch.agent;
     if (!cfg.knownAgents.length || cfg.knownAgents.includes(resolvedAgent)) {
       dispatch.agent = resolvedAgent;
@@ -3340,10 +3497,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/chat" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
       let message, sessionId, firstName, projectId;
       try {
         const body = await readBody(req);
-        message = body.message;
+        message = (body.message || "").slice(0, 16000); // M2: cap message size
         sessionId = body.sessionId;
         firstName = body.firstName;
         projectId = body.projectId;

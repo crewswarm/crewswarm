@@ -3,6 +3,10 @@
 > This file is read automatically by Cursor, Claude Code, Codex, and most AI coding assistants.
 > If a user says "set this up", "install CrewSwarm", or "get me started" — follow the steps below.
 
+## AI Assistant Rules (Cursor / Coding Agent)
+
+- **NEVER modify Stinki's (crew-lead) personality, tone, or character.** The user set it up intentionally. Do not add tone rules, professionalism rules, or behavior softening to `crew-lead.mjs` or `~/.crewswarm/agent-prompts.json` for crew-lead. The only exception is if a tone/personality instruction is actively breaking functional prompt parsing (e.g. causing syntax errors or tool failures).
+
 ---
 
 ## What is CrewSwarm?

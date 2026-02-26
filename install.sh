@@ -83,27 +83,39 @@ CREWSWARM_JSON="$CREWSWARM_DIR/crewswarm.json"
 if [[ ! -f "$CREWSWARM_JSON" ]]; then
   cat > "$CREWSWARM_JSON" <<'EOF'
 {
-  "_note": "CrewSwarm agent config — edit models and providers here",
+  "_note": "CrewSwarm agent config — edit models and providers here. All agents default to Groq (free). Swap any model to your preferred provider once you add API keys.",
   "agents": [
-    { "id": "crew-main",         "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-pm",           "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-coder",        "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-coder-front",  "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-coder-back",   "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-qa",           "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-fixer",        "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-security",     "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-github",       "model": "groq/llama-3.3-70b-versatile" },
-    { "id": "crew-copywriter",   "model": "groq/llama-3.3-70b-versatile" }
+    { "id": "crew-lead",         "model": "groq/llama-3.3-70b-versatile", "_note": "Stinki — conversational commander. Runs on port 5010." },
+    { "id": "crew-main",         "model": "groq/llama-3.3-70b-versatile", "_note": "General coordinator, fallback agent" },
+    { "id": "crew-pm",           "model": "groq/llama-3.3-70b-versatile", "_note": "Planning, roadmaps, task breakdown" },
+    { "id": "crew-coder",        "model": "groq/llama-3.3-70b-versatile", "_note": "Full-stack coding" },
+    { "id": "crew-coder-front",  "model": "groq/llama-3.3-70b-versatile", "_note": "Frontend / HTML / CSS / JS" },
+    { "id": "crew-coder-back",   "model": "groq/llama-3.3-70b-versatile", "_note": "Backend / API / database" },
+    { "id": "crew-frontend",     "model": "groq/llama-3.3-70b-versatile", "_note": "CSS / design polish" },
+    { "id": "crew-qa",           "model": "groq/llama-3.3-70b-versatile", "_note": "Testing and QA audits" },
+    { "id": "crew-fixer",        "model": "groq/llama-3.3-70b-versatile", "_note": "Bug fixing, root cause analysis" },
+    { "id": "crew-security",     "model": "groq/llama-3.3-70b-versatile", "_note": "Security audits" },
+    { "id": "crew-github",       "model": "groq/llama-3.3-70b-versatile", "_note": "Git commits, branches, PRs" },
+    { "id": "crew-copywriter",   "model": "groq/llama-3.3-70b-versatile", "_note": "Writing, docs, marketing copy" },
+    { "id": "crew-seo",          "model": "groq/llama-3.3-70b-versatile", "_note": "SEO, structured data, performance" },
+    { "id": "crew-researcher",   "model": "groq/llama-3.3-70b-versatile", "_note": "Web research and analysis — swap to perplexity/sonar for best results" },
+    { "id": "crew-mega",         "model": "groq/llama-3.3-70b-versatile", "_note": "High-performance generalist — swap to a frontier model (claude, gpt-4o) for heavy tasks" },
+    { "id": "crew-architect",    "model": "groq/llama-3.3-70b-versatile", "_note": "Project structure, path enforcement, correctness" },
+    { "id": "crew-ml",           "model": "groq/llama-3.3-70b-versatile", "_note": "AI/ML pipelines and data work" },
+    { "id": "orchestrator",      "model": "groq/llama-3.3-70b-versatile", "_note": "PM-loop orchestrator — reads roadmaps and routes tasks" }
   ],
   "providers": {
-    "groq":      { "apiKey": "", "baseUrl": "https://api.groq.com/openai/v1" },
-    "anthropic": { "apiKey": "", "baseUrl": "https://api.anthropic.com/v1" },
-    "openai":    { "apiKey": "", "baseUrl": "https://api.openai.com/v1" },
-    "mistral":   { "apiKey": "", "baseUrl": "https://api.mistral.ai/v1" },
-    "deepseek":  { "apiKey": "", "baseUrl": "https://api.deepseek.com/v1" },
-    "cerebras":  { "apiKey": "", "baseUrl": "https://api.cerebras.ai/v1" },
-    "ollama":    { "apiKey": "ollama", "baseUrl": "http://localhost:11434/v1" }
+    "groq":        { "apiKey": "", "baseUrl": "https://api.groq.com/openai/v1" },
+    "anthropic":   { "apiKey": "", "baseUrl": "https://api.anthropic.com/v1" },
+    "openai":      { "apiKey": "", "baseUrl": "https://api.openai.com/v1" },
+    "xai":         { "apiKey": "", "baseUrl": "https://api.x.ai/v1" },
+    "deepseek":    { "apiKey": "", "baseUrl": "https://api.deepseek.com/v1" },
+    "mistral":     { "apiKey": "", "baseUrl": "https://api.mistral.ai/v1" },
+    "cerebras":    { "apiKey": "", "baseUrl": "https://api.cerebras.ai/v1" },
+    "perplexity":  { "apiKey": "", "baseUrl": "https://api.perplexity.ai" },
+    "nvidia":      { "apiKey": "", "baseUrl": "https://integrate.api.nvidia.com/v1" },
+    "google":      { "apiKey": "", "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai" },
+    "ollama":      { "apiKey": "ollama", "baseUrl": "http://localhost:11434/v1" }
   }
 }
 EOF
@@ -278,6 +290,69 @@ if [[ "$SETUP_TG" =~ ^[Yy] ]]; then
   fi
 else
   skip "Skipping Telegram (add TELEGRAM_BOT_TOKEN=xxx to .env later)"
+fi
+
+# ── 6d. WhatsApp bridge ───────────────────────────────────────────────────────
+echo ""
+echo -n "  Set up WhatsApp bridge? [y/N] "
+read -r SETUP_WA
+SETUP_WA="${SETUP_WA:-N}"
+if [[ "$SETUP_WA" =~ ^[Yy] ]]; then
+  echo ""
+  echo "  WhatsApp uses your personal number as a linked device (no business account needed)."
+  echo -n "  Your WhatsApp number in international format (e.g. 14155552671), or leave blank to allow anyone: "
+  read -r WA_NUMBER
+  echo -n "  Your name (so the crew knows who you are, e.g. Jeff): "
+  read -r WA_NAME
+
+  WA_CFG="$CREWSWARM_DIR/whatsapp-bridge.json"
+  if [[ -n "$WA_NUMBER" ]]; then
+    ALLOWED_JSON="[\"$WA_NUMBER\"]"
+    CONTACTS_JSON="{\"$WA_NUMBER\":\"${WA_NAME:-Owner}\"}"
+  else
+    ALLOWED_JSON="[]"
+    CONTACTS_JSON="{}"
+  fi
+
+  cat > "$WA_CFG" <<EOF
+{
+  "allowedNumbers": $ALLOWED_JSON,
+  "contactNames": $CONTACTS_JSON,
+  "targetAgent": "crew-lead"
+}
+EOF
+  success "WhatsApp config saved to ~/.crewswarm/whatsapp-bridge.json"
+  echo "    Start bridge: npm run whatsapp"
+  echo "    Then scan the QR code with WhatsApp → Linked Devices → Link a Device"
+  echo "    Bridge runs on port 5015. Messages route to crew-lead automatically."
+else
+  skip "Skipping WhatsApp (run 'npm run whatsapp' later and scan QR to activate)"
+fi
+
+# ── 6e. Autonomous / background consciousness ─────────────────────────────────
+echo ""
+echo -n "  Enable autonomous mode? Crew-lead reflects between tasks and can self-initiate [y/N] "
+read -r SETUP_AUTO
+SETUP_AUTO="${SETUP_AUTO:-N}"
+ENV_FILE="$REPO_DIR/.env"
+if [[ "$SETUP_AUTO" =~ ^[Yy] ]]; then
+  echo -n "  Check interval in minutes (default 15): "
+  read -r AUTO_INTERVAL
+  AUTO_INTERVAL="${AUTO_INTERVAL:-15}"
+  AUTO_MS=$(( AUTO_INTERVAL * 60 * 1000 ))
+
+  if [[ -f "$ENV_FILE" ]] && grep -q "CREWSWARM_BG_CONSCIOUSNESS" "$ENV_FILE"; then
+    sed -i '' "s|^CREWSWARM_BG_CONSCIOUSNESS=.*|CREWSWARM_BG_CONSCIOUSNESS=1|" "$ENV_FILE"
+    sed -i '' "s|^CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS=.*|CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS=$AUTO_MS|" "$ENV_FILE"
+  else
+    echo "" >> "$ENV_FILE"
+    echo "CREWSWARM_BG_CONSCIOUSNESS=1" >> "$ENV_FILE"
+    echo "CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS=$AUTO_MS" >> "$ENV_FILE"
+  fi
+  success "Autonomous mode enabled (every ${AUTO_INTERVAL}min) — saved to .env"
+  echo "    crew-lead will reflect between tasks, suggest follow-ups, and monitor the crew."
+else
+  skip "Skipping autonomous mode (set CREWSWARM_BG_CONSCIOUSNESS=1 in .env to enable later)"
 fi
 
 # ── 7. Start now? ─────────────────────────────────────────────────────────────

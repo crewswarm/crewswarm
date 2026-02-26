@@ -147,3 +147,4 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 ## [2026-02-26] system: READ-BEFORE-WRITE — hard rule for all agents
 - Before creating or modifying ANY file, @@READ_FILE every relevant existing file first. If the needed functionality already exists, reply "no-op" — do NOT create a duplicate.
 - @@READ_FILE the target module before adding any import. If the symbol is missing, abort rather than inventing a new file.
+
