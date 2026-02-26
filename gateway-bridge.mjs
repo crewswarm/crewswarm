@@ -1339,6 +1339,32 @@ function parseSkillMdFrontmatter(raw) {
   return front;
 }
 
+/** Run clawscan on a skill directory/file. Returns { safe, score, findings } */
+function clawscanSkill(skillPath) {
+  try {
+    const dir = skillPath.endsWith("SKILL.md") ? path.dirname(skillPath) : skillPath;
+    const { execSync } = require("child_process");
+    const out = execSync(`npx clawscan scan "${dir}" --json 2>/dev/null || npx clawscan scan "${dir}" 2>&1`, {
+      timeout: 15000, encoding: "utf8", stdio: ["pipe","pipe","pipe"],
+    });
+    // Try JSON output first
+    try {
+      const j = JSON.parse(out);
+      return { safe: (j.score || 0) < 40, score: j.score || 0, findings: j.findings || [] };
+    } catch {}
+    // Fallback: parse text output
+    const scoreMatch = out.match(/score:\s*(\d+)/i);
+    const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
+    const dangerous = /🔴|DANGEROUS|CRITICAL/i.test(out);
+    const warning   = /🟡|WARNING/i.test(out);
+    return { safe: !dangerous, score, findings: [], raw: out.slice(0, 500) };
+  } catch (e) {
+    // clawscan unavailable — skip scan, log warning
+    console.warn("[skill-scan] clawscan unavailable, skipping scan for", skillPath, e?.message?.slice(0,80));
+    return { safe: true, score: -1, skipped: true };
+  }
+}
+
 function loadSkillMd(skillName) {
   // Try ~/.crewswarm/skills/<name>/SKILL.md  or  ~/.crewswarm/skills/<name>.md
   const candidates = [
@@ -1351,6 +1377,16 @@ function loadSkillMd(skillName) {
       const raw  = fs.readFileSync(f, "utf8");
       const meta = parseSkillMdFrontmatter(raw);
       const body = raw.replace(/^---[\s\S]*?---\r?\n/, "").trim();
+      // ── Security scan ──────────────────────────────────────────────────────
+      const scan = clawscanSkill(f);
+      if (!scan.safe && !scan.skipped) {
+        console.error(`[skill-scan] ⛔ BLOCKED skill "${skillName}" — clawscan score ${scan.score}/100. Remove from ~/.crewswarm/skills/ to suppress.`);
+        return null; // refuse to load
+      }
+      if (scan.score >= 20 && !scan.skipped) {
+        console.warn(`[skill-scan] ⚠️  Skill "${skillName}" scored ${scan.score}/100 — loaded with caution.`);
+      }
+      // ───────────────────────────────────────────────────────────────────────
       return {
         _type:       "skill-md",
         name:        meta.name || skillName,
@@ -1361,6 +1397,7 @@ function loadSkillMd(skillName) {
         defaultParams: meta.defaultParams ? (typeof meta.defaultParams === "string" ? JSON.parse(meta.defaultParams) : meta.defaultParams) : {},
         _body:       body,
         _file:       f,
+        _scanScore:  scan.score,
       };
     } catch { continue; }
   }
