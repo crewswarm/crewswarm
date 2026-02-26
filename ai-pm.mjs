@@ -431,6 +431,25 @@ async function detectTestSetup(projectDir) {
   return setup;
 }
 
+// Run the project's bootVerify command (from .ai-pm.json) as a hard gate.
+// Returns { passed, output } — if this fails the build is rejected regardless of agent claims.
+async function runBootVerify(projectDir, cmd, timeoutMs = 45000) {
+  const { execSync } = await import("node:child_process");
+  try {
+    const out = execSync(cmd, {
+      cwd: projectDir,
+      encoding: "utf8",
+      timeout: timeoutMs,
+      stdio: "pipe",
+      shell: true,
+    });
+    return { passed: true, output: (out || "").slice(0, 800) };
+  } catch (e) {
+    const out = ((e.stdout || "") + "\n" + (e.stderr || "") + "\n" + (e.message || "")).slice(0, 800);
+    return { passed: false, output: out };
+  }
+}
+
 async function runRealTests(projectDir, timeoutMs = 90000) {
   const { spawn } = await import("node:child_process");
   const setup = await detectTestSetup(projectDir);
@@ -783,7 +802,9 @@ function getLLMConfig() {
 
   // Prefer Groq (fast, free, reliable) → xAI → Anthropic → any provider with a key
   const preference = ["groq", "xai", "anthropic", "openai", "mistral", "cerebras"];
-  const GROQ_MODEL  = "llama-3.3-70b-versatile";
+  // Qwen3-32b is a thinking model — ideal for PM-layer reasoning: task decomposition,
+  // route decisions, architectural analysis. kimi-k2 is for execution (coding agents).
+  const GROQ_MODEL  = "qwen/qwen3-32b";
   const XAI_MODEL   = "grok-3-mini";
   const defaultModels = { groq: GROQ_MODEL, xai: XAI_MODEL };
 
@@ -984,6 +1005,8 @@ function buildProjectContext(projectDir) {
 
   // Load project-specific hints from .ai-pm.json
   let hints = "";
+  let mustReadSection = "";
+  let bootVerifyLine = "";
   const doNotTouch = ["ROADMAP.md", "qa-report.md", ".ai-pm-notes.md", ".ai-pm.json"];
   const hintsFile = path.join(projectDir, ".ai-pm.json");
   if (fs.existsSync(hintsFile)) {
@@ -993,20 +1016,29 @@ function buildProjectContext(projectDir) {
         hints = `\n\nProject rules:\n${cfg.hints.map(h => `- ${h}`).join("\n")}`;
       }
       if (cfg.startCmd) hints += `\nStart command: ${cfg.startCmd}`;
-      if (cfg.bootVerify) hints += `\nBoot verify: ${cfg.bootVerify}`;
+      if (cfg.bootVerify) {
+        hints += `\nBoot verify command: ${cfg.bootVerify}`;
+        bootVerifyLine = `- After completing ANY code change, run: @@RUN_CMD cd ${projectDir} && ${cfg.bootVerify}\n  Your reply MUST include this output. A task with no verification output is treated as FAILED.`;
+      }
       if (Array.isArray(cfg.doNotTouch)) doNotTouch.push(...cfg.doNotTouch);
+      if (Array.isArray(cfg.mustReadFirst) && cfg.mustReadFirst.length) {
+        mustReadSection = `\n\nREAD THESE FILES FIRST (mandatory before any @@WRITE_FILE):\n${cfg.mustReadFirst.map(f => `@@READ_FILE ${path.join(projectDir, f)}`).join("\n")}`;
+      }
     } catch {}
   }
 
   const tree = scanDir(projectDir).slice(0, 80);
   return `Project directory: ${projectDir}
 Project file tree:
-${tree.map(f => `- ${f}`).join("\n")}${hints}
+${tree.map(f => `- ${f}`).join("\n")}${hints}${mustReadSection}
 
 STRICT RULES:
 - DO NOT modify or touch: ${doNotTouch.join(", ")}
 - Only write to source files directly relevant to your task.
-- Always @@READ_FILE before @@WRITE_FILE.`.trim();
+- @@READ_FILE every file you will modify or import from — before writing a single line.
+- If you are replacing or adding a function call: @@RUN_CMD grep -rn "old_function_name" ${projectDir}/src to find ALL call sites and fix every one.
+- NEVER claim a task is "done", "implemented", or "fixed" without showing real terminal output proving it works.
+${bootVerifyLine}`.trim();
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -1319,17 +1351,49 @@ Canonical source tree: ${canonicalTree}`;
         /unable to.*access/i, /could not.*open/i, /file.*not found/i,
         /verify.*correct.*path/i, /ensure.*files.*are.*in.*place/i,
         /appears to be empty/i, /please.*verify/i,
+        // Agent returned a question or plan instead of actual work
+        /would you like me to/i, /should i (create|proceed|implement)/i,
+        /please (specify|clarify|confirm|provide)/i,
+        /^(1\.|2\.|3\.).*\n.*(1\.|2\.|3\.)/m, // numbered option list (asking user to choose)
       ];
+      // If the reply has no @@WRITE_FILE, @@RUN_CMD, or @@READ_FILE and is short, it's likely a non-answer
+      const hasToolCall = /@@(WRITE_FILE|RUN_CMD|READ_FILE|MKDIR|APPEND_FILE)/.test(agentReply || "");
+      const replyLen = (agentReply || "").length;
+      const isLikelyNonAnswer = !hasToolCall && replyLen < 800;
 
       if (r.status === "fulfilled") {
         const { dur, result: agentReply } = r.value;
-        const agentFailure = AGENT_FAIL_PATTERNS.some(p => p.test(agentReply || ""));
+        const agentFailure = AGENT_FAIL_PATTERNS.some(p => p.test(agentReply || "")) || isLikelyNonAnswer;
         if (agentFailure) {
-          console.log(`  ⚠️  [${i+1}] ${agent} replied with error (${(agentReply||"").slice(0,80)}...) — treating as fail`);
+          const reason = isLikelyNonAnswer && !AGENT_FAIL_PATTERNS.some(p => p.test(agentReply || ""))
+            ? "no tool calls — agent returned text only (plan/question instead of work)"
+            : (agentReply||"").slice(0,80);
+          console.log(`  ⚠️  [${i+1}] ${agent} replied with error (${reason}...) — treating as fail`);
           lastError = (agentReply || "").slice(0, 200);
         } else {
-          console.log(`  ✅ [${i+1}] ${agent} built in ${dur}s — running QA`);
-          buildSucceeded = true;
+          // Programmatic boot verify — agent claims mean nothing without this passing
+          let bootOk = true;
+          const pmCfgFile = path.join(PROJECT_DIR, ".ai-pm.json");
+          if (fs.existsSync(pmCfgFile)) {
+            try {
+              const pmCfg = JSON.parse(fs.readFileSync(pmCfgFile, "utf8"));
+              if (pmCfg.bootVerify) {
+                console.log(`  🔍 [${i+1}] Boot verify...`);
+                const bv = await runBootVerify(testDir, pmCfg.bootVerify);
+                if (!bv.passed) {
+                  bootOk = false;
+                  lastError = `Boot verify failed (agent claimed done but app is broken):\n${bv.output}`;
+                  console.log(`  ❌ [${i+1}] Boot verify FAILED — overriding agent success claim`);
+                } else {
+                  console.log(`  ✓  [${i+1}] Boot verify passed`);
+                }
+              }
+            } catch {}
+          }
+          if (bootOk) {
+            console.log(`  ✅ [${i+1}] ${agent} built in ${dur}s — running QA`);
+            buildSucceeded = true;
+          }
         }
       } else {
         lastError = r.reason?.message?.slice(0, 120) || "unknown error";

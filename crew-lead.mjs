@@ -33,10 +33,21 @@ const CTL_PATH    = (() => {
 const DASHBOARD   = "http://127.0.0.1:4319";
 const DISPATCH_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_TIMEOUT_MS) || 300_000; // 5 min — unclaimed dispatches (OpenCode tasks need time to spin up)
 const DISPATCH_CLAIMED_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS) || 900_000; // 15 min — agent claimed, working (OpenCode CLI can be slow)
-const BG_CONSCIOUSNESS_ENABLED = /^1|true|yes$/i.test(String(process.env.CREWSWARM_BG_CONSCIOUSNESS || ""));
-const BG_CONSCIOUSNESS_INTERVAL_MS = Number(process.env.CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS) || 15 * 60 * 1000; // 15 min between cycles
-// Optional: use a cheap Groq (or other) model for background cycle instead of dispatching to crew-main. e.g. "groq/llama-3.1-8b-instant"
+const BG_CONSCIOUSNESS_INTERVAL_MS = Number(process.env.CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS) || 15 * 60 * 1000;
 const BG_CONSCIOUSNESS_MODEL = process.env.CREWSWARM_BG_CONSCIOUSNESS_MODEL || "groq/llama-3.1-8b-instant";
+// Runtime-mutable — can be toggled via dashboard without restart.
+// Reads from env first, then from ~/.crewswarm/config.json bgConsciousness field.
+function loadBgConsciousnessEnabled() {
+  if (process.env.CREWSWARM_BG_CONSCIOUSNESS) return /^1|true|yes$/i.test(String(process.env.CREWSWARM_BG_CONSCIOUSNESS));
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+    if (typeof cfg.bgConsciousness === "boolean") return cfg.bgConsciousness;
+  } catch {}
+  return false;
+}
+let _bgConsciousnessEnabled = loadBgConsciousnessEnabled();
+// Proxy so existing code using BG_CONSCIOUSNESS_ENABLED still works
+const BG_CONSCIOUSNESS_ENABLED_REF = { get enabled() { return _bgConsciousnessEnabled; } };
 
 function loadConfig() {
   const cs      = tryRead(path.join(os.homedir(), ".crewswarm", "config.json"))    || {};
@@ -103,7 +114,7 @@ function readProjectsRegistry() {
 // ── Agent tool permission helpers ─────────────────────────────────────────────
 
 const CREWSWARM_TOOL_NAMES = new Set([
-  "write_file","read_file","mkdir","run_cmd","git","dispatch","telegram","web_search","web_fetch","skill",
+  "write_file","read_file","mkdir","run_cmd","git","dispatch","telegram","web_search","web_fetch","skill","define_skill",
 ]);
 
 const AGENT_TOOL_ROLE_DEFAULTS = {
@@ -286,12 +297,180 @@ function removeDynamicAgent(id) {
 
 const BRAIN_PATH = path.join(process.cwd(), "memory", "brain.md");
 const GLOBAL_RULES_PATH = path.join(os.homedir(), ".crewswarm", "global-rules.md");
+const CREWSWARM_CFG_FILE = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 
-function appendToBrain(agentId, entry) {
+// ── crew-lead direct tools — full agent capability ────────────────────────
+// All tools execute inline in crew-lead when the LLM includes their tags.
+// Only fires when the LLM decides to use them, not on every message.
+const CREWLEAD_BLOCKED_CMDS = /rm\s+-rf\s+\/(?!\S)|mkfs|dd\s+if=|:(){ :|:& };:|shutdown|reboot|halt|pkill\s+-9\s+crew-lead/i;
+
+async function execCrewLeadTools(reply) {
+  const toolResults = [];
+  const resolvePath = p => (p || "").trim().replace(/[.,;!?]+$/, "").replace(/^~/, os.homedir());
+  let m;
+
+  // ── @@READ_FILE /path ─────────────────────────────────────────────────────
+  const readRe = /@@READ_FILE[ \t]+([^\n@@]+)/g;
+  while ((m = readRe.exec(reply)) !== null) {
+    const filePath = resolvePath(m[1]);
+    try {
+      const content = fs.readFileSync(filePath, "utf8");
+      const isDoc = /\.(md|txt|json|yaml|yml|toml)$/i.test(filePath);
+      const limit = isDoc ? 12000 : 6000;
+      const snippet = content.length > limit ? content.slice(0, limit) + "\n...[truncated]" : content;
+      toolResults.push(`[read_file] 📄 ${filePath} (${content.length} bytes):\n${snippet}`);
+      console.log(`[crew-lead:read_file] ${filePath}`);
+    } catch (e) { toolResults.push(`[read_file] ❌ ${filePath}: ${e.message}`); }
+  }
+
+  // ── @@WRITE_FILE /path\ncontent\n@@END_FILE ───────────────────────────────
+  const writeRe = /@@WRITE_FILE[ \t]+([^\n]+)\n([\s\S]*?)@@END_FILE/g;
+  while ((m = writeRe.exec(reply)) !== null) {
+    const filePath = resolvePath(m[1]);
+    const contents = m[2];
+    try {
+      fs.mkdirSync(path.dirname(path.resolve(filePath)), { recursive: true });
+      fs.writeFileSync(filePath, contents, "utf8");
+      toolResults.push(`[write_file] ✅ Wrote ${contents.length} bytes → ${filePath}`);
+      console.log(`[crew-lead:write_file] ${filePath}`);
+    } catch (e) { toolResults.push(`[write_file] ❌ ${filePath}: ${e.message}`); }
+  }
+
+  // ── @@MKDIR /path ─────────────────────────────────────────────────────────
+  const mkdirRe = /@@MKDIR[ \t]+([^\n@@]+)/g;
+  while ((m = mkdirRe.exec(reply)) !== null) {
+    const dirPath = resolvePath(m[1]);
+    try {
+      fs.mkdirSync(dirPath, { recursive: true });
+      toolResults.push(`[mkdir] ✅ Created ${dirPath}`);
+      console.log(`[crew-lead:mkdir] ${dirPath}`);
+    } catch (e) { toolResults.push(`[mkdir] ❌ ${dirPath}: ${e.message}`); }
+  }
+
+  // ── @@RUN_CMD command ─────────────────────────────────────────────────────
+  const cmdRe = /@@RUN_CMD[ \t]+([^\n]+)/g;
+  while ((m = cmdRe.exec(reply)) !== null) {
+    const cmd = m[1].trim();
+    if (CREWLEAD_BLOCKED_CMDS.test(cmd)) {
+      toolResults.push(`[run_cmd] ⛔ Blocked dangerous command: ${cmd}`);
+      continue;
+    }
+    try {
+      const { execSync } = await import("node:child_process");
+      const out = execSync(cmd, { timeout: 30000, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      toolResults.push(`[run_cmd] ✅ \`${cmd}\`:\n${(out || "").slice(0, 4000)}`);
+      console.log(`[crew-lead:run_cmd] ${cmd}`);
+    } catch (e) {
+      const stderr = e.stderr ? String(e.stderr).slice(0, 1000) : "";
+      toolResults.push(`[run_cmd] ❌ \`${cmd}\`: ${e.message}${stderr ? `\n${stderr}` : ""}`);
+    }
+  }
+
+  // ── @@WEB_SEARCH query ────────────────────────────────────────────────────
+  const searchRe = /@@WEB_SEARCH[ \t]+([^\n]+)/g;
+  while ((m = searchRe.exec(reply)) !== null) {
+    const query = m[1].trim();
+    try {
+      const perplexityKey = (() => {
+        try { return JSON.parse(fs.readFileSync(CREWSWARM_CFG_FILE, "utf8"))?.providers?.perplexity?.apiKey || null; }
+        catch { return null; }
+      })();
+      if (!perplexityKey) { toolResults.push(`[web_search] ❌ No Perplexity key configured`); continue; }
+      const res = await fetch("https://api.perplexity.ai/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${perplexityKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "sonar",
+          messages: [{ role: "user", content: `Search the web and return accurate, detailed results for: ${query}\n\nBe specific, include key facts, numbers, and sources.` }],
+          max_tokens: 1024,
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) { toolResults.push(`[web_search] ❌ Perplexity error ${res.status}`); continue; }
+      const data = await res.json();
+      const answer = data.choices?.[0]?.message?.content || "(no results)";
+      const citations = (data.citations || []).map((u, i) => `[${i+1}] ${u}`).join("\n");
+      toolResults.push(`[web_search] 🔍 "${query}":\n${answer}${citations ? `\n\nSources:\n${citations}` : ""}`);
+      console.log(`[crew-lead:web_search] "${query}" → ${answer.length} chars`);
+    } catch (e) { toolResults.push(`[web_search] ❌ ${query}: ${e.message}`); }
+  }
+
+  // ── @@WEB_FETCH url ───────────────────────────────────────────────────────
+  const fetchRe = /@@WEB_FETCH[ \t]+(https?:\/\/[^\n]+)/g;
+  while ((m = fetchRe.exec(reply)) !== null) {
+    const url = m[1].trim();
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": "CrewSwarm/1.0" }, signal: AbortSignal.timeout(15000) });
+      if (!res.ok) { toolResults.push(`[web_fetch] ❌ HTTP ${res.status}: ${url}`); continue; }
+      const ct = res.headers.get("content-type") || "";
+      let text = await res.text();
+      if (ct.includes("html")) {
+        text = text.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
+      }
+      const snippet = text.length > 8000 ? text.slice(0, 8000) + "\n...[truncated]" : text;
+      toolResults.push(`[web_fetch] 🌐 ${url} (${text.length} chars):\n${snippet}`);
+      console.log(`[crew-lead:web_fetch] ${url}`);
+    } catch (e) { toolResults.push(`[web_fetch] ❌ ${url}: ${e.message}`); }
+  }
+
+  // ── @@TELEGRAM message ────────────────────────────────────────────────────
+  const telegramRe = /@@TELEGRAM[ \t]+([^\n]+)/g;
+  while ((m = telegramRe.exec(reply)) !== null) {
+    let msg = m[1].trim();
+    try {
+      const tgBridge = (() => {
+        try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8")); }
+        catch { return {}; }
+      })();
+      const botToken = process.env.TELEGRAM_BOT_TOKEN || tgBridge.token || "";
+      let chatId = process.env.TELEGRAM_CHAT_ID
+        || (Array.isArray(tgBridge.allowedChatIds) && tgBridge.allowedChatIds[0] ? String(tgBridge.allowedChatIds[0]) : "")
+        || tgBridge.defaultChatId || "";
+      // @@TELEGRAM @Name message
+      const atMatch = msg.match(/^@(\S+)\s+(.*)$/s);
+      if (atMatch) {
+        const name = atMatch[1].toLowerCase();
+        msg = atMatch[2].trim();
+        const found = Object.entries(tgBridge.contactNames || {}).find(([, v]) => (v || "").toLowerCase() === name);
+        if (found) chatId = found[0];
+        else { toolResults.push(`[telegram] ❌ No contact named "${atMatch[1]}"`); continue; }
+      }
+      if (!botToken || !chatId) { toolResults.push(`[telegram] ❌ Bot token or chat ID not configured`); continue; }
+      const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "Markdown" }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const tgData = await tgRes.json();
+      if (tgData.ok) { toolResults.push(`[telegram] ✅ Sent: "${msg.slice(0, 80)}"`); }
+      else { toolResults.push(`[telegram] ❌ ${tgData.description}`); }
+      console.log(`[crew-lead:telegram] sent to ${chatId}`);
+    } catch (e) { toolResults.push(`[telegram] ❌ ${e.message}`); }
+  }
+
+  return toolResults;
+}
+
+// Append a brain entry — routes to project brain when a project is active, global brain otherwise
+// projectDir: optional — if set, writes to <projectDir>/.crewswarm/brain.md (per-project knowledge)
+// No projectDir: writes to global memory/brain.md (system-level knowledge only)
+function appendToBrain(agentId, entry, projectDir = null) {
   const date = new Date().toISOString().slice(0, 10);
   const block = `\n## [${date}] ${agentId}: ${entry}\n`;
-  if (!fs.existsSync(BRAIN_PATH)) fs.mkdirSync(path.dirname(BRAIN_PATH), { recursive: true });
-  fs.appendFileSync(BRAIN_PATH, block, "utf8");
+  if (projectDir) {
+    const projectBrainDir = path.join(projectDir, ".crewswarm");
+    const projectBrainPath = path.join(projectBrainDir, "brain.md");
+    fs.mkdirSync(projectBrainDir, { recursive: true });
+    if (!fs.existsSync(projectBrainPath)) {
+      fs.writeFileSync(projectBrainPath, "# Project Brain\n\nAccumulated knowledge for this project. Agents append discoveries here.\n", "utf8");
+    }
+    fs.appendFileSync(projectBrainPath, block, "utf8");
+  } else {
+    if (!fs.existsSync(BRAIN_PATH)) fs.mkdirSync(path.dirname(BRAIN_PATH), { recursive: true });
+    fs.appendFileSync(BRAIN_PATH, block, "utf8");
+  }
   return block.trim();
 }
 
@@ -535,6 +714,16 @@ function buildSystemPrompt(cfg) {
   const rules = [
     ...(modelLine ? [modelLine, ""] : []),
     ...(agentModelList ? [agentModelList, ""] : []),
+    "DIRECT TOOLS (you execute these — no dispatch needed):",
+    "  @@READ_FILE /path          → read any file and answer from its contents",
+    "  @@WRITE_FILE /path\\n...\\n@@END_FILE → write a file",
+    "  @@MKDIR /path              → create directory",
+    "  @@RUN_CMD <cmd>            → run shell command",
+    "  @@WEB_SEARCH query         → search the web (Perplexity)",
+    "  @@WEB_FETCH https://url    → fetch a webpage",
+    "  @@TELEGRAM message         → send Telegram to owner",
+    "NEVER say 'I cannot read files' — emit @@READ_FILE and you get the contents back. Same for all tools above.",
+    "",
     "Your crew (name, agent ID, role, model):",
     agentList,
     "",
@@ -659,7 +848,27 @@ function buildSystemPrompt(cfg) {
     "   @@GLOBALRULE Never hallucinate file contents — always @@READ_FILE first",
     "   Use sparingly — these apply to every single agent.",
     "",
-    "4. BRAIN / SHARED MEMORY — @@BRAIN (append a durable fact to brain.md, shared by all agents):",
+    "4. DIRECT TOOLS — you are a full agent. Use these yourself without dispatching:",
+    "   @@READ_FILE /absolute/path            — read any file, config, or log",
+    "   @@WRITE_FILE /absolute/path           — write a file (follow immediately with content, end with @@END_FILE)",
+    "   @@MKDIR /path/to/dir                  — create directory tree (great for bootstrapping projects)",
+    "   @@RUN_CMD <shell command>             — run any shell command; output returned to you",
+    "   @@WEB_SEARCH query                    — search the web (Perplexity); use for current events, prices, docs",
+    "   @@WEB_FETCH https://url               — fetch and read a webpage, API response, or article",
+    "   @@TELEGRAM message                    — send a Telegram message to your owner",
+    "   @@TELEGRAM @Name message              — send to a named contact in Telegram settings",
+    "   WHEN TO USE DIRECTLY (no dispatch needed):",
+    "   - User asks about a file, config, or log → @@READ_FILE",
+    "   - User wants something written or a file saved → @@WRITE_FILE ... @@END_FILE",
+    "   - User asks for a folder or project structure → @@MKDIR",
+    "   - User wants a quick shell command run (ls, ps, ping, git status, etc.) → @@RUN_CMD",
+    "   - Current events, weather, scores, prices, today's date facts → @@WEB_SEARCH",
+    "   - User pastes a URL and wants you to read it → @@WEB_FETCH",
+    "   - Send the user a Telegram notification → @@TELEGRAM",
+    "   WHEN TO DISPATCH instead: write complex code, run long builds, audit security, do deep research reports.",
+    "   IMPORTANT: emit tags on their own line. Results are injected automatically — do not pretend to know them before seeing them.",
+    "",
+    "5. BRAIN / SHARED MEMORY — @@BRAIN (append a durable fact to brain.md, shared by all agents):",
     "   @@BRAIN crew-lead: project uses port 4319 for dashboard, 5010 for crew-lead, 18889 for RT bus",
     "   If you say you are 'logging' or 'adding to brain' or 'remembering' something, you MUST emit @@BRAIN on that line — otherwise nothing is persisted. Plain text claims are not logged.",
     "",
@@ -747,11 +956,11 @@ function buildSystemPrompt(cfg) {
     "CITING SEARCH: You have NO persistent 'buffer' or 'crawled history' — only (1) the conversation history in this chat and (2) whatever is injected into the current message ([Web context from Brave Search], health snapshot, etc.). When you refer to past search results, only cite details that appear in the conversation (e.g. in a [Brave search] system line). Do NOT invent result numbers, URLs, gists, or 'prior Brave sweep in my buffer'. If the user questions a citation and the exact reference isn't in the history, admit it: say you don't have it in front of you or you may have conflated or made that up; do not double down or invent buffer/crawled history. If the user says you lied or made something up, accept it: you have no persistent 'memory' or 'earlier crawl' — only this chat. Say you were wrong to cite something not in the conversation; do not blame the user or deflect.",
     "",
     "TOOL USAGE — CRITICAL:",
-    "- You (crew-lead) CANNOT use @@READ_FILE, @@WRITE_FILE, @@MKDIR, or @@RUN_CMD yourself. Those tools only work for agents running through gateway-bridge.",
-    "- NEVER output @@READ_FILE and then pretend you received file contents. You did NOT read the file. You CANNOT read files.",
-    "- NEVER fabricate file contents, system health output, or tool results. If you don't have data, say so.",
-    "- To read or write files: DISPATCH an agent (crew-coder, crew-main, etc.) with the @@READ_FILE/@@WRITE_FILE task. The agent will execute it and reply with results.",
-    "- The ONLY @@markers you can use: @@DISPATCH, @@PIPELINE, @@PROMPT, @@TOOLS, @@SERVICE, @@PROJECT, @@BRAIN, @@CREATE_AGENT, @@REMOVE_AGENT, @@DEFINE_SKILL, @@DEFINE_WORKFLOW.",
+    "- You (crew-lead) CAN use @@READ_FILE, @@WRITE_FILE, @@MKDIR, @@RUN_CMD, @@WEB_SEARCH, @@WEB_FETCH, and @@TELEGRAM directly — results are injected before your final answer.",
+    "- NEVER pretend you have results before the tags run. Emit the tag; the result comes back to you automatically.",
+    "- NEVER fabricate file contents, system health output, or tool results. If you don't have data, say so or use a tool to get it.",
+    "- Prefer direct tools for quick lookups. Dispatch agents for complex multi-step work (code, builds, deep audits).",
+    "- Full list of @@markers you can use: @@READ_FILE, @@WRITE_FILE...@@END_FILE, @@MKDIR, @@RUN_CMD, @@WEB_SEARCH, @@WEB_FETCH, @@TELEGRAM, @@DISPATCH, @@PIPELINE, @@PROMPT, @@TOOLS, @@SERVICE, @@PROJECT, @@BRAIN, @@SKILL, @@CREATE_AGENT, @@REMOVE_AGENT, @@DEFINE_SKILL, @@DEFINE_WORKFLOW.",
     "",
     "- Be concise. Under 2000 chars.",
     "- No filler phrases.",
@@ -1620,7 +1829,7 @@ function backgroundLoop() {
 
       // 4. Background consciousness (Ouroboros-style: "think" between tasks)
       // Prefer cheap direct Groq (or CREWSWARM_BG_CONSCIOUSNESS_MODEL) call; fallback: dispatch to crew-main
-      if (BG_CONSCIOUSNESS_ENABLED && Date.now() - _lastBgConsciousnessAt >= BG_CONSCIOUSNESS_INTERVAL_MS) {
+      if (_bgConsciousnessEnabled && Date.now() - _lastBgConsciousnessAt >= BG_CONSCIOUSNESS_INTERVAL_MS) {
         _lastBgConsciousnessAt = Date.now();
         const useDirect = getBgConsciousnessLLM();
         if (useDirect) {
@@ -1733,8 +1942,10 @@ function startBackgroundLoop() {
   if (_bgLoopInterval) clearInterval(_bgLoopInterval);
   _bgLoopInterval = setInterval(backgroundLoop, 5 * 60 * 1000);
   console.log("[crew-lead] Background loop started (5m interval)");
-  if (BG_CONSCIOUSNESS_ENABLED) {
-    console.log("[crew-lead] Background consciousness enabled (crew-main reflect every " + (BG_CONSCIOUSNESS_INTERVAL_MS / 60000) + "m when idle)");
+  if (_bgConsciousnessEnabled) {
+    console.log("[crew-lead] Background consciousness ON — reflect every " + (BG_CONSCIOUSNESS_INTERVAL_MS / 60000) + "m when idle");
+  } else {
+    console.log("[crew-lead] Background consciousness OFF — toggle in Dashboard → Settings");
   }
 }
 
@@ -2513,10 +2724,33 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
   broadcastSSE({ type: "chat_message", sessionId, role: "user", content: message });
 
   const llmResult = await callLLM(messages, cfg);
-  const fullReply = llmResult.reply;
+  let fullReply = llmResult.reply;
   const usedFallback = llmResult.usedFallback;
   const activeModel = llmResult.model;
   const fallbackReason = llmResult.reason;
+
+  // ── Direct tool execution (all crew-lead native tools) ──────────────────
+  const hasDirectTools = /@@READ_FILE[ \t]|@@WRITE_FILE[ \t]|@@WEB_SEARCH[ \t]|@@WEB_FETCH[ \t]|@@MKDIR[ \t]|@@RUN_CMD[ \t]|@@TELEGRAM[ \t]/.test(fullReply);
+  if (hasDirectTools) {
+    const toolResults = await execCrewLeadTools(fullReply);
+    if (toolResults.length > 0) {
+      // Follow-up LLM call: show the tool results so crew-lead can give a proper answer
+      const followUpMessages = [
+        { role: "system", content: buildSystemPrompt(cfg) },
+        ...historyAsMessages,
+        { role: "user", content: userContent },
+        { role: "assistant", content: fullReply },
+        { role: "user", content: `[Tool results]\n${toolResults.join("\n\n")}\n\nUsing only the above results, give a concise, direct answer to the user. Do not repeat tool tags. Do not use @@READ_FILE or @@WEB_SEARCH again.` },
+      ];
+      try {
+        const followUp = await callLLM(followUpMessages, cfg);
+        fullReply = followUp.reply;
+      } catch (e) {
+        // fallback: append raw tool results if follow-up fails
+        fullReply = fullReply + "\n\n---\n" + toolResults.join("\n\n");
+      }
+    }
+  }
 
   // ── @@TOOLS — permission grant/revoke command ──────────────────────────────
   const toolsCmd = (() => {
@@ -2662,9 +2896,9 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
   } else if (pipelineSteps) {
     const pipelineId = crypto.randomUUID();
     const { steps, waves } = pipelineSteps;
-    // Extract projectDir from any step task that references an absolute path, or use active project from chat
-    const _projectDirMatch = steps.map(s => s.task).join("\n").match(/\/Users\/\S+?\/Desktop\/[\w-]+(?=\/)/);
-    const _projectDir = _projectDirMatch ? _projectDirMatch[0] : (activeProjectOutputDir || null);
+    // Use the explicitly selected project only — never infer projectDir from LLM-generated task text,
+    // which can contain stale paths from brain.md and incorrectly lock the pipeline to the wrong project.
+    const _projectDir = activeProjectOutputDir || null;
     pendingPipelines.set(pipelineId, { steps, waves, currentWave: 0, pendingTaskIds: new Set(), waveResults: [], sessionId, projectDir: _projectDir });
     dispatchPipelineWave(pipelineId);
     const waveDesc = waves.length > 1 ? ` in ${waves.length} waves` : "";
@@ -2777,13 +3011,15 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
   }
 
   // ── Execute @@BRAIN append ──────────────────────────────────────────────────
+  // Routes to <projectDir>/.crewswarm/brain.md when a project is active, global brain.md otherwise
   if (brainCmd) {
     try {
-      const block = appendToBrain("crew-lead", brainCmd);
-      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Added to brain.md: "${block.slice(0, 100)}"`;
-      console.log(`[crew-lead] @@BRAIN: ${brainCmd.slice(0, 80)}`);
+      const block = appendToBrain("crew-lead", brainCmd, activeProjectOutputDir || null);
+      const dest = activeProjectOutputDir ? `${path.basename(activeProjectOutputDir)}/.crewswarm/brain.md` : "memory/brain.md";
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Added to ${dest}: "${block.slice(0, 100)}"`;
+      console.log(`[crew-lead] @@BRAIN → ${dest}: ${brainCmd.slice(0, 80)}`);
     } catch (e) {
-      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to write brain.md: ${e.message}`;
+      cleanReply = (cleanReply || "").trimEnd() + `\n\n↳ Failed to write brain: ${e.message}`;
     }
   }
 
@@ -3553,6 +3789,58 @@ const server = http.createServer(async (req, res) => {
       } catch {}
       json(res, 200, { ok: true, spending, caps });
       return;
+    }
+
+    // GET/POST /api/settings/bg-consciousness — toggle background consciousness at runtime
+    if (url.pathname === "/api/settings/bg-consciousness") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      if (req.method === "GET") {
+        json(res, 200, { ok: true, enabled: _bgConsciousnessEnabled, intervalMs: BG_CONSCIOUSNESS_INTERVAL_MS, model: BG_CONSCIOUSNESS_MODEL });
+        return;
+      }
+      if (req.method === "POST") {
+        const body = await readBody(req);
+        const enable = typeof body.enabled === "boolean" ? body.enabled : !_bgConsciousnessEnabled;
+        _bgConsciousnessEnabled = enable;
+        // Persist to config.json so it survives restarts
+        try {
+          const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          cfg.bgConsciousness = enable;
+          fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+        } catch (e) { console.warn("[crew-lead] Could not persist bgConsciousness:", e.message); }
+        console.log(`[crew-lead] Background consciousness ${enable ? "ENABLED" : "DISABLED"} via dashboard`);
+        if (enable) _lastBgConsciousnessAt = 0; // trigger soon
+        json(res, 200, { ok: true, enabled: _bgConsciousnessEnabled });
+        return;
+      }
+    }
+
+    // GET/POST /api/settings/global-fallback — set/get global OpenCode fallback model
+    if (url.pathname === "/api/settings/global-fallback") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      if (req.method === "GET") {
+        let current = "";
+        try {
+          const swarm = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+          current = swarm.globalFallbackModel || "";
+        } catch {}
+        json(res, 200, { ok: true, globalFallbackModel: current });
+        return;
+      }
+      if (req.method === "POST") {
+        const body = await readBody(req);
+        const model = String(body.globalFallbackModel || "").trim();
+        try {
+          const swarmPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+          const swarm = JSON.parse(fs.readFileSync(swarmPath, "utf8"));
+          swarm.globalFallbackModel = model;
+          fs.writeFileSync(swarmPath, JSON.stringify(swarm, null, 2));
+          console.log(`[crew-lead] Global fallback model set to: ${model || "(cleared)"}`);
+          json(res, 200, { ok: true, globalFallbackModel: model });
+        } catch (e) { json(res, 500, { ok: false, error: e.message }); }
+        return;
+      }
     }
 
     // POST /api/spending/reset — reset today's spending counters

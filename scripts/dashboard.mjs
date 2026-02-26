@@ -380,6 +380,8 @@ const html = `<!doctype html>
     .btn-ghost  { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
     .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
     .btn-green  { background: var(--green); color: #000; }
+    .btn-sky    { background: #0ea5e9; color: #000; border: 1px solid #0ea5e9; }
+    .btn-sky:hover { background: #38bdf8; }
     .btn-red    { background: var(--red); color: #fff; }
     .btn-yellow { background: var(--yellow); color: #000; }
     .btn-purple { background: var(--accent2); color: #fff; }
@@ -832,6 +834,13 @@ const html = `<!doctype html>
         </div>
       </div>
 
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0 4px; border-bottom:1px solid var(--border); margin-bottom:12px;">
+        <span style="font-size:11px; font-weight:600; color:var(--text-3); margin-right:4px;">BULK SET CODING AGENTS →</span>
+        <button onclick="bulkSetRoute('direct')" class="btn-ghost" style="font-size:11px; padding:4px 10px;">💬 Direct API</button>
+        <button onclick="bulkSetRoute('opencode')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#22c55e; border-color:rgba(34,197,94,0.3);">⚡ OpenCode</button>
+        <button onclick="bulkSetRoute('cursor','sonnet-4.6')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.6</button>
+        <button onclick="bulkSetRoute('cursor','opus-4.6-thinking')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
+      </div>
       <div id="agentsList" style="display:grid; gap:12px;"></div>
     </div>
 
@@ -1053,6 +1062,36 @@ const html = `<!doctype html>
             <button onclick="saveOpencodeSettings()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
           </div>
           <div id="opencodeFallbackStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🌐 Global Fallback Model</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">Applied to any agent that has no per-agent fallback set. Prevents jobs dying on rate limits or hangs.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <input id="globalFallbackInput" placeholder="e.g. groq/llama-3.3-70b-versatile" style="flex:1;font-size:13px;font-family:monospace;" />
+            <button onclick="saveGlobalFallback()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="globalFallbackStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🧠 Background Consciousness</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                When idle, crew-lead reflects on system state, surfaces blockers, and dispatches follow-ups automatically.
+                Uses a cheap Groq model (llama-3.1-8b) — runs every 15 min when no pipelines are active.
+              </div>
+            </div>
+            <button id="bgConsciousnessBtn" onclick="toggleBgConsciousness()" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="bgConsciousnessStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
         </div>
       </div>
 
@@ -1276,9 +1315,23 @@ const html = `<!doctype html>
 <script>
 let selected = null;
 let agents = [];
+const AGENT_RANK = {
+  'crew-lead': 0,
+  'orchestrator': 1, 'crew-main': 2,
+  'crew-pm': 3, 'crew-architect': 4,
+  'crew-coder': 5, 'crew-coder-back': 6, 'crew-coder-front': 7, 'crew-frontend': 8,
+  'crew-ml': 9, 'crew-fixer': 10,
+  'crew-qa': 11, 'crew-security': 12,
+  'crew-researcher': 13, 'crew-copywriter': 14, 'crew-seo': 15,
+  'crew-github': 16, 'crew-db-migrator': 17,
+  'crew-telegram': 18, 'crew-mega': 19,
+};
+function sortAgents(arr) {
+  return (arr || []).sort((a, b) => (AGENT_RANK[a.id] ?? 50) - (AGENT_RANK[b.id] ?? 50));
+}
 async function loadAgents() {
   try {
-    agents = await getJSON('/api/agents');
+    agents = sortAgents(await getJSON('/api/agents'));
   } catch (e) { console.error('Failed to load agents:', e); }
 }
 async function getJSON(p){ const r = await fetch(p); if(!r.ok) throw new Error(await r.text()); return r.json(); }
@@ -3024,6 +3077,54 @@ async function saveOpencodeSettings(){
     loadOpencodeProject();
   } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
 }
+async function loadBgConsciousness() {
+  const btn = document.getElementById('bgConsciousnessBtn');
+  const status = document.getElementById('bgConsciousnessStatus');
+  try {
+    const d = await getJSON('/api/settings/bg-consciousness');
+    const on = d.enabled;
+    if (btn) {
+      btn.textContent = on ? '🟢 ON' : '⚫ OFF';
+      btn.style.background = on ? 'rgba(34,197,94,0.15)' : 'var(--surface-2)';
+      btn.style.borderColor = on ? '#22c55e' : 'var(--border)';
+      btn.style.color = on ? '#22c55e' : 'var(--text-2)';
+    }
+    if (status) status.textContent = on
+      ? 'Active — crew-lead reflects every ' + Math.round(d.intervalMs / 60000) + 'min when idle. Model: ' + d.model
+      : 'Off — crew-lead will not self-reflect between tasks.';
+  } catch(e) {
+    if (btn) btn.textContent = 'Error';
+    if (status) status.textContent = 'Could not load: ' + e.message;
+  }
+}
+async function toggleBgConsciousness() {
+  const btn = document.getElementById('bgConsciousnessBtn');
+  try {
+    const current = await getJSON('/api/settings/bg-consciousness');
+    const d = await postJSON('/api/settings/bg-consciousness', { enabled: !current.enabled });
+    showNotification('Background consciousness ' + (d.enabled ? 'ENABLED' : 'DISABLED'));
+    loadBgConsciousness();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
+async function loadGlobalFallback() {
+  try {
+    const d = await getJSON('/api/settings/global-fallback');
+    const el = document.getElementById('globalFallbackInput');
+    if (el) el.value = d.globalFallbackModel || '';
+    const status = document.getElementById('globalFallbackStatus');
+    if (status) status.textContent = d.globalFallbackModel
+      ? 'Active: any agent without a per-agent fallback will use ' + d.globalFallbackModel
+      : 'Not set — agents without fallback will use the built-in default (groq/llama-3.3-70b-versatile).';
+  } catch(e) { console.warn('loadGlobalFallback:', e.message); }
+}
+async function saveGlobalFallback() {
+  const model = (document.getElementById('globalFallbackInput')?.value || '').trim();
+  try {
+    await postJSON('/api/settings/global-fallback', { globalFallbackModel: model });
+    showNotification(model ? 'Global fallback → ' + model : 'Global fallback cleared');
+    loadGlobalFallback();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
 function showSettings(){
   hideAllViews();
   document.getElementById('settingsView').classList.add('active');
@@ -3040,7 +3141,7 @@ function showSettingsTab(tab){
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
   if (tab === 'security') { loadCmdAllowlist(); }
-  if (tab === 'system')   { loadOpencodeProject(); }
+  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); }
   if (tab === 'telegram') { loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
 }
 
@@ -3665,7 +3766,7 @@ async function loadAgents_cfg(){
     const data = await getJSON('/api/agents-config');
     _allModels = data.allModels || [];
     _modelsByProvider = data.modelsByProvider || {};
-    const agents = data.agents || [];
+    const agents = sortAgents(data.agents || []);
     if (!agents.length){ list.innerHTML = '<div class="meta" style="padding:20px;">No agents found in config. Check ~/.crewswarm/crewswarm.json</div>'; return; }
     list.innerHTML = '';
     agents.forEach(a => {
@@ -3686,34 +3787,46 @@ async function loadAgents_cfg(){
           <div class="agent-avatar" id="avatar-\${a.id}" style="position:relative;">\${a.emoji}</div>
           <div class="agent-meta">
             <div class="agent-id" style="display:flex;align-items:center;">\${liveDot}\${a.id} <span class="meta" style="font-weight:400;margin-left:4px;">· \${a.name}</span>
+              \${MODEL_ROLE[a.id] ? '<span style="font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 6px;border-radius:4px;margin-left:8px;' + (ROLE_STYLE[MODEL_ROLE[a.id]]||'') + '">' + MODEL_ROLE[a.id] + '</span>' : ''}
               <span id="coding-dot-\${a.id}" style="display:none;margin-left:8px;align-items:center;gap:4px;font-size:11px;color:var(--accent);">
                 <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1s ease-in-out infinite;"></span>coding
               </span>
             </div>
-            <div class="agent-model" id="cur-model-\${a.id}">\${a.model}</div>
+            <div id="cur-model-\${a.id}" style="margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+              <span style="font-size:11px;font-family:'SF Mono',monospace;color:\${BROKEN_MODELS.has(a.model)?'#ef4444':'var(--text-2)'};" title="Conversation model — used for direct replies and chat">
+                \${BROKEN_MODELS.has(a.model) ? '⚠ ' : '💬 '}\${a.model || '(none)'}
+              </span>
+              \${a.opencodeModel ? '<span style="font-size:11px;font-family:monospace;color:' + (BROKEN_MODELS.has(a.opencodeModel)?'#ef4444':'#4ade80') + ';" title="OpenCode model — used when routing tasks through OpenCode CLI">⚡ ' + a.opencodeModel + '</span>' : ''}
+              \${BROKEN_MODELS.has(a.model) ? '<span style="font-size:10px;font-weight:600;color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>' : ''}
+            </div>
           </div>
           <button class="btn-ghost" style="font-size:11px; padding:4px 10px;" onclick="toggleAgentBody('\${a.id}')">Edit ▾</button>
           <button class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--red); border-color:rgba(248,113,113,0.3);" onclick="deleteAgent('\${a.id}')">✕</button>
         </div>
         <div class="agent-body" id="body-\${a.id}" style="display:none;">
           <div>
-            <div class="field-label">Model</div>
+            <div class="field-label" style="display:flex;align-items:center;gap:8px;">
+              <span>💬 Conversation Model</span>
+              <span style="font-size:10px;font-weight:400;color:var(--text-3);">Used for direct replies, planning, and chat. <strong style="color:var(--text-2);">Not used when OpenCode is enabled.</strong></span>
+            </div>
+            \${BROKEN_MODELS.has(a.model) ? '<div style="font-size:11px;color:#ef4444;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:5px;padding:6px 10px;margin-bottom:8px;">⚠ Current model <code>' + a.model + '</code> is broken (returns empty responses). Please reassign.</div>' : ''}
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
               <select id="model-\${a.id}" style="flex:1; min-width:200px;" onchange="syncModelText('\${a.id}')">\${customOpt}\${modelOpts}</select>
-              <input id="modeltext-\${a.id}" type="text" placeholder="or type any model…" value="\${a.model || ''}" style="flex:1; min-width:160px; font-size:12px;" oninput="syncModelSelect('\${a.id}')" />
-              <button onclick="saveAgentModel('\${a.id}')" class="btn-green" style="white-space:nowrap;">Save model</button>
+              <input id="modeltext-\${a.id}" type="text" placeholder="or type provider/model…" value="\${a.model || ''}" style="flex:1; min-width:160px; font-size:12px;" oninput="syncModelSelect('\${a.id}')" />
+              <button onclick="saveAgentModel('\${a.id}')" class="btn-green" style="white-space:nowrap;">Save</button>
             </div>
             <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">↩ Fallback:</span>
               \${(() => {
                 const fbCustomOpt = (a.fallbackModel && !_allModels.includes(a.fallbackModel)) ? \`<option value="\${a.fallbackModel}" selected>\${a.fallbackModel} (custom)</option>\` : '';
                 const fbOpts = _allModels.map(m => \`<option value="\${m}" \${m === a.fallbackModel ? 'selected' : ''}>\${m}</option>\`).join('');
-                return \`<select id="fmodel-\${a.id}" style="flex:1;min-width:180px;font-size:11px;" onchange="syncFallbackText('\${a.id}')"><option value="">— Fallback model (optional) —</option>\${fbCustomOpt}\${fbOpts}</select>\`;
+                return \`<select id="fmodel-\${a.id}" style="flex:1;min-width:180px;font-size:11px;" onchange="syncFallbackText('\${a.id}')"><option value="">— none —</option>\${fbCustomOpt}\${fbOpts}</select>\`;
               })()}
               <input id="fallback-\${a.id}" type="text" placeholder="or type any model…"
                 value="\${a.fallbackModel || ''}"
                 style="flex:1; min-width:140px; font-size:11px; color:var(--text-2);"
                 oninput="syncFallbackSelect('\${a.id}')" />
-              <button onclick="saveAgentFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:11px;">Save fallback</button>
+              <button onclick="saveAgentFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:11px;">Save</button>
             </div>
           </div>
           <div>
@@ -3778,27 +3891,39 @@ async function loadAgents_cfg(){
             <div class="meta">Workspace: <code style="font-size:11px;">\${a.workspace}</code></div>
           </div>
           <div style="border-top:1px solid var(--border); padding-top:10px;">
-            <div class="field-label" style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-              <span>OpenCode Integration</span>
-              <span style="font-size:10px; font-weight:600; color:#22c55e; padding:2px 6px; border-radius:4px; background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25);">coding engine</span>
+            <div class="field-label" style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span>⚡ Execution Route</span>
+              <span style="font-size:10px; font-weight:600; color:var(--text-3); padding:2px 6px; border-radius:4px; background:var(--surface-2);">pick one — mutually exclusive</span>
             </div>
-            <div class="meta" style="margin-bottom:10px; font-size:11px;">When enabled, tasks are routed through OpenCode CLI for agentic file access, tool use, and multi-step coding. The OpenCode model is used instead of the agent's own model.</div>
-            <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
-              <label style="display:flex; align-items:center; gap:7px; font-size:12px; color:var(--text-1); cursor:pointer;">
-                <input type="checkbox" id="oc-toggle-\${a.id}" \${a.useOpenCode ? 'checked' : ''} onchange="toggleOpenCodeUI('\${a.id}')" style="accent-color:#22c55e;" />
-                Route tasks through OpenCode
-              </label>
+            <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
+              <button id="route-direct-\${a.id}" onclick="setRoute('\${a.id}','direct')"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${!a.useOpenCode && !a.useCursorCli ? 'var(--accent)' : 'var(--border)'}; background:\${!a.useOpenCode && !a.useCursorCli ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)'}; color:\${!a.useOpenCode && !a.useCursorCli ? 'var(--accent)' : 'var(--text-2)'};">
+                💬 Direct API
+              </button>
+              <button id="route-opencode-\${a.id}" onclick="setRoute('\${a.id}','opencode')"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${a.useOpenCode && !a.useCursorCli ? '#22c55e' : 'var(--border)'}; background:\${a.useOpenCode && !a.useCursorCli ? 'rgba(34,197,94,0.12)' : 'var(--surface-2)'}; color:\${a.useOpenCode && !a.useCursorCli ? '#22c55e' : 'var(--text-2)'};">
+                ⚡ OpenCode
+              </button>
+              <button id="route-cursor-\${a.id}" onclick="setRoute('\${a.id}','cursor')"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${a.useCursorCli ? '#38bdf8' : 'var(--border)'}; background:\${a.useCursorCli ? 'rgba(56,189,248,0.12)' : 'var(--surface-2)'}; color:\${a.useCursorCli ? '#38bdf8' : 'var(--text-2)'};">
+                🖱 Cursor CLI <span style="font-size:10px; font-weight:400; opacity:0.7;">(free · sub)</span>
+              </button>
             </div>
-            <div id="oc-model-row-\${a.id}" style="display:\${a.useOpenCode ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+            <div id="oc-model-row-\${a.id}" style="display:\${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
               <select id="oc-model-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcModelText('\${a.id}')"></select>
-              <input id="oc-modeltext-\${a.id}" type="text" placeholder="or type provider/model…" value="\${a.opencodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
-              <button onclick="saveOpenCodeConfig('\${a.id}')" class="btn-green" style="white-space:nowrap; font-size:12px;">Save OpenCode</button>
+              <input id="oc-modeltext-\${a.id}" type="text" placeholder="opencode/model…" value="\${a.opencodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button onclick="saveOpenCodeConfig('\${a.id}')" class="btn-green" style="white-space:nowrap; font-size:12px;">Save</button>
             </div>
-            <div id="oc-fallback-row-\${a.id}" style="display:\${a.useOpenCode ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
-              <span style="font-size:11px; color:var(--text-3); white-space:nowrap;">⚡ OC Fallback:</span>
+            <div id="oc-fallback-row-\${a.id}" style="display:\${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <span style="font-size:11px; color:var(--text-3); white-space:nowrap;">↩ Fallback:</span>
               <select id="oc-fallback-sel-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcFallbackText('\${a.id}')"></select>
               <input id="oc-fallback-\${a.id}" type="text" placeholder="opencode/model or leave blank" value="\${a.opencodeFallbackModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
-              <button onclick="saveOpenCodeFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:12px;">Save fallback</button>
+              <button onclick="saveOpenCodeFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:12px;">Save</button>
+            </div>
+            <div id="cursor-model-row-\${a.id}" style="display:\${a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <select id="cursor-model-sel-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncCursorModelText('\${a.id}')"></select>
+              <input id="cursor-model-txt-\${a.id}" type="text" placeholder="sonnet-4.6 or leave blank for auto" value="\${a.cursorCliModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button onclick="saveCursorCliConfig('\${a.id}')" class="btn-sky" style="white-space:nowrap; font-size:12px;">Save</button>
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
@@ -3821,6 +3946,7 @@ async function loadAgents_cfg(){
       agents.forEach(a => {
         populateOcModelDropdown('oc-model-' + a.id, a.opencodeModel || '');
         populateOcModelDropdown('oc-fallback-sel-' + a.id, a.opencodeFallbackModel || '');
+        populateCursorModelDropdown('cursor-model-sel-' + a.id, a.cursorCliModel || '');
       });
     });
   } catch(e){ list.innerHTML = '<div class="meta" style="padding:20px; color:var(--red);">Error: ' + e.message + '</div>'; }
@@ -3899,14 +4025,30 @@ async function resetAgentSession(agentId){
   }
 }
 
+function refreshModelHeader(agentId, model, opencodeModel) {
+  const el = document.getElementById('cur-model-' + agentId);
+  if (!el) return;
+  const chatBroken = BROKEN_MODELS.has(model);
+  const ocBroken   = opencodeModel && BROKEN_MODELS.has(opencodeModel);
+  el.innerHTML =
+    \`<span style="font-size:11px;font-family:'SF Mono',monospace;color:\${chatBroken?'#ef4444':'var(--text-2)'};" title="Conversation model">\${chatBroken?'⚠ ':'💬 '}\${model||'(none)'}</span>\` +
+    (opencodeModel ? \`<span style="font-size:11px;font-family:'SF Mono',monospace;color:\${ocBroken?'#ef4444':'#4ade80'};" title="OpenCode model">⚡ \${opencodeModel}</span>\` : '') +
+    (chatBroken ? \`<span style="font-size:10px;font-weight:600;color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>\` : '');
+}
+
 async function saveAgentModel(agentId){
   const txt = document.getElementById('modeltext-' + agentId);
   const sel = document.getElementById('model-' + agentId);
   const model = (txt && txt.value.trim()) || (sel && sel.value) || '';
   if (!model){ showNotification('Select or type a model', true); return; }
+  if (BROKEN_MODELS.has(model)) {
+    showNotification('⚠ That model returns empty responses — choose another', true);
+    return;
+  }
   try {
     await postJSON('/api/agents-config/update', { agentId, model });
-    document.getElementById('cur-model-' + agentId).textContent = model;
+    const ocModel = document.getElementById('oc-modeltext-' + agentId)?.value.trim() || '';
+    refreshModelHeader(agentId, model, ocModel);
     showNotification(\`\${agentId} → \${model}\`);
   } catch(e){ showNotification('Failed: ' + e.message, true); }
 }
@@ -4012,11 +4154,83 @@ function populateOcModelDropdown(selectId, currentVal) {
   }
 }
 
+// Cursor CLI subscription models (populated from agent models command)
+const CURSOR_CLI_MODELS = [
+  { id: '', label: '— auto (subscription default) —' },
+  { id: 'opus-4.6-thinking', label: 'Claude 4.6 Opus (Thinking) — best reasoning' },
+  { id: 'opus-4.6', label: 'Claude 4.6 Opus' },
+  { id: 'sonnet-4.6-thinking', label: 'Claude 4.6 Sonnet (Thinking)' },
+  { id: 'sonnet-4.6', label: 'Claude 4.6 Sonnet — best coding' },
+  { id: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
+  { id: 'gpt-5.3-codex-xhigh', label: 'GPT-5.3 Codex XHigh' },
+  { id: 'gpt-5.3-codex-high', label: 'GPT-5.3 Codex High' },
+  { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+  { id: 'gpt-5.3-codex-fast', label: 'GPT-5.3 Codex Fast' },
+  { id: 'gpt-5.2', label: 'GPT-5.2' },
+  { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
+  { id: 'gemini-3-flash', label: 'Gemini 3 Flash' },
+  { id: 'grok', label: 'Grok' },
+  { id: 'kimi-k2.5', label: 'Kimi K2.5' },
+];
+
+function populateCursorModelDropdown(selId, currentVal) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  sel.innerHTML = CURSOR_CLI_MODELS.map(m =>
+    '<option value="' + m.id + '"' + (m.id === (currentVal||'') ? ' selected' : '') + '>' + m.label + '</option>'
+  ).join('');
+}
+
+function syncCursorModelText(agentId) {
+  const sel = document.getElementById('cursor-model-sel-' + agentId);
+  const txt = document.getElementById('cursor-model-txt-' + agentId);
+  if (sel && txt) txt.value = sel.value;
+}
+
+// 3-way route toggle — mutually exclusive
+async function setRoute(agentId, route) {
+  const useOpenCode = route === 'opencode';
+  const useCursorCli = route === 'cursor';
+  // Update button styles
+  const styles = {
+    direct:   { border: 'var(--accent)', bg: 'rgba(99,102,241,0.15)', color: 'var(--accent)' },
+    opencode: { border: '#22c55e',       bg: 'rgba(34,197,94,0.12)',  color: '#22c55e' },
+    cursor:   { border: '#38bdf8',       bg: 'rgba(56,189,248,0.12)', color: '#38bdf8' },
+    inactive: { border: 'var(--border)', bg: 'var(--surface-2)',      color: 'var(--text-2)' },
+  };
+  ['direct','opencode','cursor'].forEach(r => {
+    const btn = document.getElementById('route-' + r + '-' + agentId);
+    if (!btn) return;
+    const s = r === route ? styles[r] : styles.inactive;
+    btn.style.borderColor = s.border; btn.style.background = s.bg; btn.style.color = s.color;
+  });
+  // Show/hide model rows
+  const ocRow = document.getElementById('oc-model-row-' + agentId);
+  const ocFbRow = document.getElementById('oc-fallback-row-' + agentId);
+  const cursorRow = document.getElementById('cursor-model-row-' + agentId);
+  if (ocRow) ocRow.style.display = useOpenCode ? 'flex' : 'none';
+  if (ocFbRow) ocFbRow.style.display = useOpenCode ? 'flex' : 'none';
+  if (cursorRow) cursorRow.style.display = useCursorCli ? 'flex' : 'none';
+  // Save
+  try {
+    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli });
+    const label = route === 'direct' ? 'Direct API' : route === 'opencode' ? 'OpenCode' : 'Cursor CLI';
+    showNotification(agentId + ' → ' + label);
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+
+async function saveCursorCliConfig(agentId) {
+  const cursorCliModel = (document.getElementById('cursor-model-txt-' + agentId)?.value || '').trim();
+  try {
+    await postJSON('/api/agents-config/update', { agentId, cursorCliModel });
+    showNotification(agentId + ' Cursor model → ' + (cursorCliModel || 'auto'));
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+
 function toggleOpenCodeUI(agentId) {
-  const checked = document.getElementById('oc-toggle-' + agentId).checked;
-  const row = document.getElementById('oc-model-row-' + agentId);
-  if (row) row.style.display = checked ? 'flex' : 'none';
-  saveOpenCodeConfig(agentId);
+  // Legacy — kept for any stale references; use setRoute instead
+  const checked = document.getElementById('oc-toggle-' + agentId)?.checked;
+  if (checked !== undefined) setRoute(agentId, checked ? 'opencode' : 'direct');
 }
 
 function syncOcModelText(agentId) {
@@ -4040,12 +4254,41 @@ async function saveOpenCodeFallback(agentId) {
 }
 
 async function saveOpenCodeConfig(agentId) {
-  const useOpenCode = document.getElementById('oc-toggle-' + agentId)?.checked || false;
-  const opencodeModel = document.getElementById('oc-modeltext-' + agentId)?.value.trim() || '';
+  // Only saves the opencodeModel — route (useOpenCode flag) is set by the route buttons via setRoute().
+  // Reading the old oc-toggle checkbox here was a bug: the checkbox no longer exists, causing it
+  // to always send useOpenCode:false and toast "→ direct LLM" even when OpenCode route was active.
+  const opencodeModel = (document.getElementById('oc-modeltext-' + agentId)?.value || '').trim();
   try {
-    await postJSON('/api/agents-config/update', { agentId, useOpenCode, opencodeModel });
-    showNotification(useOpenCode ? agentId + ' → OpenCode (' + (opencodeModel || 'default model') + ')' : agentId + ' → direct LLM');
+    await postJSON('/api/agents-config/update', { agentId, opencodeModel });
+    const chatModel = document.getElementById('modeltext-' + agentId)?.value.trim() || '';
+    refreshModelHeader(agentId, chatModel, opencodeModel);
+    showNotification(agentId + ' OC model → ' + (opencodeModel || 'default'));
   } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+
+async function saveCursorCliToggle(agentId) {
+  // Legacy shim — delegates to setRoute
+  const useCursorCli = document.getElementById('cursor-cli-toggle-' + agentId)?.checked || false;
+  await setRoute(agentId, useCursorCli ? 'cursor' : 'direct');
+}
+
+// Bulk route setter — apply a route to all coding agents at once
+async function bulkSetRoute(route, model) {
+  const CODING_AGENTS = ['crew-coder','crew-coder-front','crew-coder-back','crew-frontend','crew-fixer','crew-architect','crew-ml'];
+  const label = route === 'cursor' ? 'Cursor CLI' : route === 'opencode' ? 'OpenCode' : 'Direct API';
+  showNotification('Applying ' + label + ' to all coding agents…');
+  for (const agentId of CODING_AGENTS) {
+    const useOpenCode = route === 'opencode';
+    const useCursorCli = route === 'cursor';
+    try {
+      const payload = { agentId, useOpenCode, useCursorCli };
+      if (model && route === 'cursor') payload.cursorCliModel = model;
+      if (model && route === 'opencode') payload.opencodeModel = model;
+      await postJSON('/api/agents-config/update', payload);
+    } catch(e) { console.error('bulkSetRoute failed for', agentId, e.message); }
+  }
+  showNotification('Done — ' + CODING_AGENTS.length + ' agents set to ' + label + (model ? ' (' + model + ')' : ''));
+  loadAgents();
 }
 
 const AGENT_EMOJIS = ['🤖','🧠','⚡','🔥','🎯','🛡️','🔧','🐛','🔬','📋','✍️','🐙','🎨','🖥️','📱','🔒','📊','🚀','💡','🌐','⚙️','🦊','🦾','💻','🏗️','🔍','📝','💬','🧪','🎭'];
@@ -4584,6 +4827,29 @@ window.applyPromptPreset = function() {
   }
 };
 
+// Models confirmed broken via API testing — return empty strings
+const BROKEN_MODELS = new Set([
+  'groq/openai/gpt-oss-120b',
+  'groq/openai/gpt-oss-20b',
+]);
+
+// Role classification for badge display
+const MODEL_ROLE = {
+  'crew-pm': 'THINKER', 'crew-architect': 'THINKER', 'crew-ml': 'THINKER',
+  'crew-coder': 'EXECUTOR', 'crew-coder-back': 'EXECUTOR', 'crew-coder-front': 'EXECUTOR',
+  'crew-frontend': 'EXECUTOR', 'crew-fixer': 'EXECUTOR',
+  'crew-lead': 'COORDINATOR', 'crew-main': 'COORDINATOR', 'orchestrator': 'COORDINATOR',
+  'crew-qa': 'ANALYST', 'crew-security': 'ANALYST', 'crew-mega': 'ANALYST',
+  'crew-researcher': 'RESEARCHER',
+};
+const ROLE_STYLE = {
+  THINKER:    'background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.35);color:#a78bfa;',
+  EXECUTOR:   'background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.30);color:#4ade80;',
+  COORDINATOR:'background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.30);color:#38bdf8;',
+  ANALYST:    'background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);color:#fbbf24;',
+  RESEARCHER: 'background:rgba(249,115,22,0.10);border:1px solid rgba(249,115,22,0.30);color:#fb923c;',
+};
+
 function populateModelDropdown(selectId, currentVal) {
   const sel = document.getElementById(selectId);
   sel.innerHTML = '<option value="">— select a model —</option>';
@@ -4594,9 +4860,11 @@ function populateModelDropdown(selectId, currentVal) {
       grp.label = provider.toUpperCase();
       models.forEach(({ id, name }) => {
         const full = provider + '/' + id;
+        const broken = BROKEN_MODELS.has(full);
         const opt = document.createElement('option');
         opt.value = full;
-        opt.textContent = name ? (name + '  (' + id + ')') : full;
+        opt.textContent = (broken ? '⚠ BROKEN — ' : '') + (name ? (name + '  (' + id + ')') : full);
+        if (broken) opt.style.color = '#ef4444';
         if (full === currentVal) opt.selected = true;
         grp.appendChild(opt);
       });
@@ -4604,8 +4872,11 @@ function populateModelDropdown(selectId, currentVal) {
     }
   } else {
     _allModels.forEach(m => {
+      const broken = BROKEN_MODELS.has(m);
       const opt = document.createElement('option');
-      opt.value = m; opt.textContent = m;
+      opt.value = m;
+      opt.textContent = (broken ? '⚠ BROKEN — ' : '') + m;
+      if (broken) opt.style.color = '#ef4444';
       if (m === currentVal) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -6243,6 +6514,40 @@ const server = http.createServer(async (req, res) => {
       } catch(e) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ ok:false, error:e.message })); }
       return;
     }
+    // ── Proxy /api/settings/bg-consciousness → crew-lead:5010 ────────────────
+    if (url.pathname === "/api/settings/bg-consciousness") {
+      try {
+        const rawBody = req.method === "POST" ? (await (async () => { let b = ""; for await (const c of req) b += c; return b; })()) : null;
+        const token = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch { return ""; } })();
+        const r = await fetch("http://127.0.0.1:5010/api/settings/bg-consciousness", {
+          method: req.method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          ...(rawBody ? { body: rawBody } : {}), signal: AbortSignal.timeout(8000),
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(await r.text());
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "crew-lead unreachable: " + e.message }));
+      }
+      return;
+    }
+    // ── Proxy /api/settings/global-fallback → crew-lead:5010 ─────────────────
+    if (url.pathname === "/api/settings/global-fallback") {
+      try {
+        const rawBody = req.method === "POST" ? (await (async () => { let b = ""; for await (const c of req) b += c; return b; })()) : null;
+        const token = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch { return ""; } })();
+        const r = await fetch("http://127.0.0.1:5010/api/settings/global-fallback", {
+          method: req.method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          ...(rawBody ? { body: rawBody } : {}), signal: AbortSignal.timeout(8000),
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(await r.text());
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "crew-lead unreachable: " + e.message }));
+      }
+      return;
+    }
     if (url.pathname === "/api/settings/openclaw-status" && req.method === "GET") {
       const deviceJson = path.join(os.homedir(), ".openclaw", "devices", "paired.json");
       const deviceJsonAlt = path.join(os.homedir(), ".openclaw", "device.json");
@@ -6744,7 +7049,8 @@ WHERE json_extract(p.data,'$.type') = 'step-finish'
 GROUP BY day, model
 ORDER BY day DESC, cost DESC;`;
         const rows = await new Promise((resolve, reject) => {
-          execFile("sqlite3", [dbPath, "-separator", "\t", query], { timeout: 8000 }, (err, stdout) => {
+          // -readonly avoids competing with the opencode server write lock; 30s timeout for large DBs
+          execFile("sqlite3", [dbPath, "-readonly", "-separator", "\t", query], { timeout: 30000 }, (err, stdout) => {
             if (err) return reject(err);
             const result = [];
             for (const line of stdout.trim().split("\n").filter(Boolean)) {
@@ -6957,7 +7263,7 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -6997,6 +7303,8 @@ ORDER BY day DESC, cost DESC;`;
       if (useOpenCode !== undefined) agent.useOpenCode = useOpenCode;
       if (opencodeModel !== undefined) agent.opencodeModel = opencodeModel || undefined;
       if (opencodeFallbackModel !== undefined) agent.opencodeFallbackModel = opencodeFallbackModel || undefined;
+      if (useCursorCli !== undefined) agent.useCursorCli = useCursorCli;
+      if (cursorCliModel !== undefined) agent.cursorCliModel = cursorCliModel || undefined;
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
       // System prompts live in agent-prompts.json, not crewswarm.json
       if (systemPrompt !== undefined) {

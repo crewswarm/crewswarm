@@ -18,7 +18,7 @@
 ### Re-implementation tasks (CrewSwarm repo / `~/.crewswarm/` only)
 
 - [ ] **Phase 1** — crew-main: Update `~/.crewswarm/agent-prompts.json` → `crew-mega` key with full prompt. Acceptance: crew-mega shows new prompt after bridge restart.
-- [ ] **Phase 2** — crew-coder: Create `~/.crewswarm/skills/polymarket-strategy.json` (skill plugin for Polymarket context). Acceptance: skill appears in `/api/skills`.
+- [x] **Phase 2** — crew-coder: Create `~/.crewswarm/skills/polymarket-strategy.json` (skill plugin for Polymarket context). Acceptance: skill appears in `/api/skills`.
 - [ ] **Phase 4** — crew-main: In `~/.crewswarm/crewswarm.json` set crew-mega `fallbackModel` to `deepseek/deepseek-reasoner`. Acceptance: fallback used when primary fails.
 - [ ] **Phase 5** — crew-main: Add crew-mega / Polymarket strategy tips entry to `memory/brain.md`. Acceptance: entry present and loaded in prompts.
 

@@ -20,26 +20,37 @@ const STATE_FILE      = new URL("../memory/current-state.md", import.meta.url).p
 
 // Role descriptions — extend this as you add new agents
 const ROLE_META = {
-  "main":         { emoji: "🦊", label: "Coordination (Quill)",   best: "Chat, triage, fallback, dispatch" },
-  "pm":           { emoji: "📋", label: "Planning",                best: "Break requirements into phased tasks" },
-  "coder":        { emoji: "⚡", label: "Implementation",          best: "General code, files, shell commands" },
-  "coder-front":  { emoji: "🎨", label: "Frontend specialist",     best: "HTML, CSS, JS, UI, design system" },
-  "coder-back":   { emoji: "🔧", label: "Backend specialist",      best: "APIs, DBs, server-side logic" },
-  "copywriter":   { emoji: "✍️", label: "Copywriting",             best: "Headlines, CTAs, product copy" },
-  "qa":           { emoji: "🔬", label: "Quality assurance",       best: "Tests, validation, audits" },
-  "fixer":        { emoji: "🐛", label: "Bug fixing",              best: "Debug failures, patch QA issues" },
-  "github":       { emoji: "🐙", label: "Git operations",          best: "Commits, PRs, branches, push" },
-  "frontend":     { emoji: "🖥️", label: "Frontend (alt)",          best: "UI implementation" },
-  "security":     { emoji: "🛡️", label: "Security review",         best: "Vulnerability audits, hardening" },
+  "main":         { emoji: "🦊", label: "Coordination",            best: "Chat, triage, fallback, dispatch" },
+  "pm":           { emoji: "📋", label: "Planning",                 best: "Break requirements into phased tasks" },
+  "coder":        { emoji: "⚡", label: "Implementation",           best: "General code, files, shell commands" },
+  "coder-front":  { emoji: "🎨", label: "Frontend specialist",      best: "HTML, CSS, JS, UI, design system" },
+  "coder-back":   { emoji: "🔧", label: "Backend specialist",       best: "APIs, DBs, server-side logic" },
+  "copywriter":   { emoji: "✍️", label: "Copywriting",              best: "Headlines, CTAs, product copy" },
+  "qa":           { emoji: "🔬", label: "Quality assurance",        best: "Tests, validation, audits" },
+  "fixer":        { emoji: "🐛", label: "Bug fixing",               best: "Debug failures, patch QA issues" },
+  "github":       { emoji: "🐙", label: "Git operations",           best: "Commits, PRs, branches, push" },
+  "frontend":     { emoji: "🖥️", label: "Frontend (alt)",           best: "UI implementation" },
+  "security":     { emoji: "🛡️", label: "Security review",          best: "Vulnerability audits, hardening" },
+  "lead":         { emoji: "🧠", label: "Crew Lead",                best: "Top-level coordinator, user-facing chat" },
+  "orchestrator": { emoji: "🎯", label: "Orchestrator",             best: "Internal pipeline routing" },
+  "seo":          { emoji: "📈", label: "SEO specialist",           best: "Metadata, keywords, site structure" },
+  "ml":           { emoji: "🧮", label: "Machine learning",         best: "Models, data pipelines, training" },
+  "mega":         { emoji: "🔥", label: "Polymarket strategy",      best: "Prediction market AI, backtesting" },
+  "researcher":   { emoji: "🔍", label: "Research",                 best: "Web search, fact-finding, reports" },
+  "architect":    { emoji: "🏗️", label: "Architecture",             best: "System design, ADRs, tech decisions" },
+  "telegram":     { emoji: "💬", label: "Telegram",                 best: "Send messages via Telegram bridge" },
+  "db-migrator":  { emoji: "🗄️", label: "DB migrations",            best: "Schema changes, migrations, seeds" },
 };
 
+function normalizeId(id) {
+  // Strip crew- prefix to get the bare role key used in ROLE_META
+  return (id || "").replace(/^crew-/, "");
+}
+
 function getAgentName(id) {
-  // Agents without crew- prefix get it added for RT bus naming
-  const nativeIds = ["main", "pm", "qa", "fixer", "security", "github", "frontend", "copywriter"];
-  if (nativeIds.includes(id) || id.startsWith("coder")) {
-    return id === "security" ? "security" : `crew-${id}`;
-  }
-  return `crew-${id}`;
+  // IDs in crewswarm.json already carry the crew- prefix; preserve them as-is.
+  // Only add crew- prefix for legacy bare IDs that don't have it yet.
+  return (id || "").startsWith("crew-") ? id : `crew-${id}`;
 }
 
 async function loadAgents() {
@@ -53,7 +64,7 @@ async function loadAgents() {
         id:    a.id || "?",
         model: a.model || "unknown",
         name:  getAgentName(a.id || ""),
-        meta:  ROLE_META[a.id] || { emoji: "🤖", label: a.id, best: "General tasks" },
+        meta:  ROLE_META[normalizeId(a.id)] || { emoji: "🤖", label: a.id, best: "General tasks" },
       }));
     } catch {}
   }

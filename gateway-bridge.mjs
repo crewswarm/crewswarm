@@ -13,7 +13,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { getProjectDir } from "./lib/project-dir.mjs";
 import {
   BUILT_IN_RT_AGENTS,
@@ -161,6 +161,55 @@ const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "groq/moo
 const OPENCREW_OPENCODE_FALLBACK_DEFAULT = "groq/llama-3.3-70b-versatile";
 const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "300000");
 
+// ── Per-agent OpenCode session persistence ─────────────────────────────────
+// Each agent maintains a session ID so `opencode run -s <id>` continues from
+// where the last task left off, rather than starting cold every time.
+// Sessions are stored in ~/.crewswarm/sessions/<agentId>.session
+const OPENCODE_SESSION_DIR = path.join(os.homedir(), ".crewswarm", "sessions");
+
+function readAgentSessionId(agentId) {
+  if (!agentId) return null;
+  try {
+    const f = path.join(OPENCODE_SESSION_DIR, `${agentId}.session`);
+    if (fs.existsSync(f)) return fs.readFileSync(f, "utf8").trim() || null;
+  } catch {}
+  return null;
+}
+
+function writeAgentSessionId(agentId, sessionId) {
+  if (!agentId || !sessionId) return;
+  try {
+    fs.mkdirSync(OPENCODE_SESSION_DIR, { recursive: true });
+    fs.writeFileSync(path.join(OPENCODE_SESSION_DIR, `${agentId}.session`), sessionId, "utf8");
+  } catch {}
+}
+
+function clearAgentSessionId(agentId) {
+  if (!agentId) return;
+  try {
+    const f = path.join(OPENCODE_SESSION_DIR, `${agentId}.session`);
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+  } catch {}
+}
+
+// Parse the most-recent session ID from `opencode session list` stdout.
+// If agentPrefix is provided (e.g. "[crew-coder]"), only match sessions whose
+// title contains that prefix — prevents race conditions when multiple agents
+// finish simultaneously and each would otherwise grab the globally-first session.
+function parseMostRecentSessionId(listOutput, agentPrefix) {
+  for (const line of listOutput.split("\n")) {
+    const m = line.trim().match(/^(ses_[A-Za-z0-9]+)\s+(.*)/);
+    if (!m) continue;
+    if (agentPrefix) {
+      // Title is everything after the session ID; check it contains the agent tag
+      if (m[2].includes(agentPrefix)) return m[1];
+    } else {
+      return m[1];
+    }
+  }
+  return null;
+}
+
 // Free OpenCode model rotation chain — tried in order when primary hits rate limit.
 const OPENCODE_FREE_MODEL_CHAIN = [
   "groq/moonshotai/kimi-k2-instruct-0905",
@@ -181,6 +230,11 @@ function getOpencodeFallbackModel() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
     if (cfg.opencodeFallbackModel && String(cfg.opencodeFallbackModel).trim()) return String(cfg.opencodeFallbackModel).trim();
+  } catch {}
+  try {
+    // Also check crewswarm.json for globalFallbackModel — set from the dashboard
+    const swarm = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+    if (swarm.globalFallbackModel && String(swarm.globalFallbackModel).trim()) return String(swarm.globalFallbackModel).trim();
   } catch {}
   return OPENCREW_OPENCODE_FALLBACK_DEFAULT;
 }
@@ -729,49 +783,69 @@ function isCodingTask(incomingType, prompt, payload) {
   return codingKeywords.some(kw => text.includes(kw));
 }
 
+// ── Agent reply quality gate ───────────────────────────────────────────────
+// Catches hollow replies BEFORE they get returned to crew-lead, preventing
+// the "bad response → retry loop" that was burning tokens and cycling tasks.
+//
+// Design notes:
+// - OpenCode agents write files on disk and confirm; they do NOT show code blocks
+//   in their replies. So we NEVER check for ``` presence.
+// - Direct-API agents do show code — but we still don't require it; we just
+//   reject clearly hollow/broken patterns.
+// - Validation is intentionally lenient: only hard-fail on patterns that are
+//   definitively wrong. False negatives (letting a weak reply through) are
+//   much cheaper than false positives (rejecting a valid reply and retrying).
+
+const HOLLOW_REPLY_PATTERNS = [
+  // AI refusals
+  /^(sorry,?\s+)?(as an? (AI|language model|llm|assistant))[,.]?\s+i (can'?t|cannot|don'?t|am not able)/i,
+  /i('?m| am) not able to (access|read|write|execute|run|perform)/i,
+  /i don'?t have (access|permission|the ability) to/i,
+  // Naked stall / forwarding without content
+  /^(please|kindly)?\s*(wait|hold on|one moment|stand by)[.!]*$/i,
+  /^i'?ll? (get|check|look|fetch|read) (that|this|it) (for you\s*)?$/i,
+  // Pure error echo-back (realtime token noise should be filtered already, but belt+suspenders)
+  /^(•\s*)?realtime (daemon )?error:/i,
+  /invalid realtime token/i,
+  // OpenCode "I have no tools" bailout
+  /i (don'?t|do not) have (any )?(tools?|the ability|capabilities?) (to|for) (write|create|modify|execute|run)/i,
+];
+
+const WEASEL_ONLY_PATTERNS = [
+  // These alone (with no action) are hollow for coding tasks
+  /\b(i will|i would|i can|i could|i should|i might|i plan to|i recommend|i suggest)\b/i,
+];
+
+function validateAgentReply(reply, incomingType, prompt) {
+  const text = String(reply || "").trim();
+
+  // Empty reply is always bad
+  if (!text || text.length < 15) {
+    return { valid: false, reason: "reply too short or empty" };
+  }
+
+  // Hard-fail: hollow/broken patterns
+  for (const pat of HOLLOW_REPLY_PATTERNS) {
+    if (pat.test(text)) {
+      return { valid: false, reason: `hollow reply pattern: ${pat.toString().slice(0, 60)}` };
+    }
+  }
+
+  // For coding/writing tasks only: reject weasel-only replies that never act
+  const isCoding = /code|write|build|create|implement|fix|refactor|generate|edit|update|add|remove/i.test(String(prompt || ""));
+  if (isCoding && text.length < 300) {
+    const allWeasel = WEASEL_ONLY_PATTERNS.every(p => p.test(text));
+    const hasAction = /@@WRITE_FILE|@@RUN_CMD|@@READ_FILE|✅|wrote|created|updated|fixed|done|complete/i.test(text);
+    if (allWeasel && !hasAction) {
+      return { valid: false, reason: "short coding reply is all weasel words with no action evidence" };
+    }
+  }
+
+  return { valid: true, reason: "ok" };
+}
+
 function validateCodingArtifacts(reply, incomingType, prompt, payload) {
-  // TEMP DISABLED: Validation was rejecting valid responses
-  // TODO: Fix this properly - agents ARE creating files but validation thinks they're just chatting
-  return { valid: true, reason: "validation temporarily disabled" };
-  
-  // Original validation code below (commented out for now)
-  /*
-  if (!isCodingTask(incomingType, prompt, payload)) {
-    return { valid: true, reason: "not a coding task" };
-  }
-  
-  const text = String(reply || "").toLowerCase();
-  const replyLength = text.length;
-  
-  if (replyLength < 50) {
-    return { valid: false, reason: "reply too short for coding task (< 50 chars)" };
-  }
-  
-  if (replyLength < 200 && /memory|loading|processing|working/i.test(reply)) {
-    return { valid: true, reason: "status message, likely followed by file operations" };
-  }
-  
-  const hasFileChanges = /file[s]? (changed|modified|created|updated|edited)/i.test(reply);
-  const hasCodeBlocks = (reply.match(/```/g) || []).length >= 2;
-  const hasDiff = /diff|patch|\+\+\+|---|modified:/i.test(reply);
-  const hasToolCalls = /tool[_\s]call|function|invoke|execute/i.test(reply);
-  const hasNativeToolCalls = /<function\(|<invoke|<tool_call>/i.test(reply);
-  const hasWriteFile = /<function\(write\)|write_file|edit_file|search_replace/i.test(reply);
-  const hasSuccessMessage = /successfully (created|modified|updated|wrote)|completed|done creating/i.test(reply);
-  
-  const isPureChat = !hasFileChanges && !hasCodeBlocks && !hasDiff && !hasToolCalls && !hasNativeToolCalls && !hasWriteFile && !hasSuccessMessage;
-  const hasWeaselWords = /will|would|should|could|might|suggest|recommend|propose/i.test(text);
-  
-  if (isPureChat && replyLength < 500) {
-    return { valid: false, reason: "reply appears to be pure chat without code artifacts" };
-  }
-  
-  if (isPureChat && hasWeaselWords && replyLength < 1000) {
-    return { valid: false, reason: "reply contains suggestions but no concrete code changes" };
-  }
-  
-  return { valid: true, reason: "appears to contain code artifacts" };
-  */
+  return validateAgentReply(reply, incomingType, prompt);
 }
 
 function assertTaskPromptProtocol(prompt, source = "task") {
@@ -1849,15 +1923,27 @@ function getAgentOpenCodeConfig(agentId) {
   const cfg = agents.find(a => a.id === agentId);
   const fallback = cfg?.opencodeFallbackModel || getOpencodeFallbackModel();
   const loop = cfg?.opencodeLoop === true || process.env.OPENCREW_OPENCODE_LOOP === "1";
-  if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null, fallbackModel: fallback, loop: false };
-  if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null, fallbackModel: fallback, loop };
-  if (cfg.useOpenCode === false) return { enabled: false, model: null, fallbackModel: fallback, loop: false };
-  return { enabled: agentDefaultsToOpenCode(agentId), model: cfg.opencodeModel || null, fallbackModel: fallback, loop };
+  const cursorCliModel = cfg?.cursorCliModel || null; // separate model for Cursor CLI vs OpenCode
+  if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null, fallbackModel: fallback, loop: false, useCursorCli: false, cursorCliModel: null };
+  if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null, fallbackModel: fallback, loop, useCursorCli: cfg.useCursorCli === true, cursorCliModel };
+  if (cfg.useOpenCode === false) return { enabled: false, model: null, fallbackModel: fallback, loop: false, useCursorCli: cfg.useCursorCli === true, cursorCliModel };
+  return { enabled: agentDefaultsToOpenCode(agentId), model: cfg.opencodeModel || null, fallbackModel: fallback, loop, useCursorCli: cfg.useCursorCli === true, cursorCliModel };
+}
+
+function shouldUseCursorCli(payload, incomingType) {
+  if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
+  const runtime = String(payload?.runtime || payload?.executor || "").toLowerCase();
+  if (runtime === "cursor" || runtime === "cursor-cli") return true;
+  if (payload?.useCursorCli === true) return true;
+  const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  return getAgentOpenCodeConfig(agentId).useCursorCli === true;
 }
 
 function shouldUseOpenCode(payload, prompt, incomingType) {
   if (!OPENCREW_OPENCODE_ENABLED) return false;
   if (OPENCREW_OPENCODE_FORCE) return true;
+  // Cursor CLI takes precedence when configured — different execution backend
+  if (shouldUseCursorCli(payload, incomingType)) return false;
 
   if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
 
@@ -1891,6 +1977,182 @@ function createOpenCodeOnlyBridge() {
     chat: async (msg) => runOpenCodeTask(msg, {}),
     close: () => {},
   };
+}
+
+// ── Cursor CLI backend ─────────────────────────────────────────────────────
+// Uses `agent -p --force` (Cursor's headless CLI) instead of OpenCode.
+// Advantages: $0 marginal cost (Cursor subscription), full workspace index,
+//             semantic search, same models as Cursor GUI.
+// Session continuity: `agent --resume=<chatId>` mirrors OpenCode `-s`.
+// Session IDs stored in ~/.crewswarm/sessions/<agentId>.cursor-session
+
+// Cursor CLI installs to ~/.local/bin/agent on macOS via curl installer
+const CURSOR_CLI_BIN = process.env.CURSOR_CLI_BIN ||
+  (fs.existsSync(path.join(os.homedir(), ".local", "bin", "agent"))
+    ? path.join(os.homedir(), ".local", "bin", "agent")
+    : "agent");
+const CURSOR_SESSION_DIR = OPENCODE_SESSION_DIR; // same dir, different extension
+
+function readCursorSessionId(agentId) {
+  if (!agentId) return null;
+  try {
+    const f = path.join(CURSOR_SESSION_DIR, `${agentId}.cursor-session`);
+    if (fs.existsSync(f)) return fs.readFileSync(f, "utf8").trim() || null;
+  } catch {}
+  return null;
+}
+
+function writeCursorSessionId(agentId, chatId) {
+  if (!agentId || !chatId) return;
+  try {
+    fs.mkdirSync(CURSOR_SESSION_DIR, { recursive: true });
+    fs.writeFileSync(path.join(CURSOR_SESSION_DIR, `${agentId}.cursor-session`), chatId, "utf8");
+  } catch {}
+}
+
+function clearCursorSessionId(agentId) {
+  if (!agentId) return;
+  try {
+    const f = path.join(CURSOR_SESSION_DIR, `${agentId}.cursor-session`);
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+  } catch {}
+}
+
+// Parse chat ID from `agent ls` output — format: "<chatId>  <title>  <date>"
+function parseMostRecentCursorChatId(lsOutput, agentPrefix) {
+  for (const line of lsOutput.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("Chat") || trimmed.startsWith("─")) continue;
+    const parts = trimmed.split(/\s{2,}/);
+    const chatId = parts[0];
+    if (!chatId) continue;
+    if (agentPrefix) {
+      if ((parts[1] || "").includes(agentPrefix)) return chatId;
+    } else {
+      return chatId;
+    }
+  }
+  return null;
+}
+
+async function runCursorCliTask(prompt, payload = {}) {
+  // NOTE: Cursor CLI -p (print/headless) has a known bug where the process
+  // never exits after completing (reported: cursor.com forum, Feb 2026).
+  // Workaround: use --output-format stream-json, detect {"type":"result"}
+  // event as the completion signal, capture output, then kill the process.
+  return new Promise((resolve, reject) => {
+    const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
+    const configuredDir = getOpencodeProjectDir();
+    let projectDir = payload?.projectDir || configuredDir || process.cwd();
+    projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+
+    const agentPrefix = agentId ? `[${agentId}]` : "";
+    const titledPrompt = agentPrefix ? `${agentPrefix} ${String(prompt)}` : String(prompt);
+
+    // Use stream-json so we can detect completion via {"type":"result"} event
+    // and kill the process ourselves (workaround for the no-exit bug).
+    const args = ["-p", "--force", "--trust", "--output-format", "stream-json", titledPrompt];
+
+    // Model selection: cursorCliModel takes priority (separate from OpenCode model),
+    // then payload override, then subscription default (auto)
+    const agentCfg = getAgentOpenCodeConfig(agentId);
+    const model = payload?.cursorCliModel || agentCfg.cursorCliModel || payload?.model || null;
+    if (model) args.push("--model", model);
+
+    args.push("--workspace", projectDir);
+
+    // Session continuity
+    const existingChatId = readCursorSessionId(agentId);
+    if (existingChatId) {
+      args.push(`--resume=${existingChatId}`);
+      console.error(`[CursorCLI:${agentId}] Resuming chat ${existingChatId}`);
+    }
+
+    console.error(`[CursorCLI:${agentId}] Running: ${CURSOR_CLI_BIN} -p --force --output-format stream-json (workspace=${projectDir})`);
+
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast",
+      payload: { agent: agentId, model: model || "cursor/auto", ts: Date.now() } });
+
+    const child = spawn(CURSOR_CLI_BIN, args, {
+      cwd: projectDir,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let lineBuffer = "";
+    let accumulatedText = "";
+    let resultReceived = false;
+    let resultChatId = null;
+
+    const hardTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+      if (!resultReceived) reject(new Error(`CursorCLI timeout after ${OPENCREW_OPENCODE_TIMEOUT_MS}ms`));
+    }, OPENCREW_OPENCODE_TIMEOUT_MS);
+
+    function handleLine(line) {
+      line = line.trim();
+      if (!line) return;
+      try {
+        const ev = JSON.parse(line);
+        // Accumulate text from assistant messages
+        if (ev.type === "assistant") {
+          const content = ev.message?.content;
+          if (Array.isArray(content)) {
+            for (const c of content) {
+              if (c.type === "text" && c.text) accumulatedText += c.text;
+            }
+          } else if (typeof content === "string") {
+            accumulatedText += content;
+          }
+        }
+        // "result" event = task fully done — kill the process and resolve
+        if (ev.type === "result" && !resultReceived) {
+          resultReceived = true;
+          resultChatId = ev.chatId || null;
+          clearTimeout(hardTimer);
+          child.kill("SIGTERM");
+          const out = accumulatedText.trim() || "(cursor agent completed with no text output)";
+          console.log(`[CursorCLI:${agentId}] Done via stream-json result event — ${out.length} chars`);
+          _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast",
+            payload: { agent: agentId, ts: Date.now() } });
+          // Persist session ID
+          if (agentId && resultChatId) {
+            writeCursorSessionId(agentId, resultChatId);
+            console.error(`[CursorCLI:${agentId}] Chat session saved: ${resultChatId}`);
+          }
+          resolve(out);
+        }
+      } catch {
+        // Non-JSON line (Ink UI escape codes etc.) — ignore
+      }
+    }
+
+    child.stdout.on("data", (d) => {
+      lineBuffer += d.toString();
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop(); // keep incomplete last line in buffer
+      lines.forEach(handleLine);
+    });
+    child.stderr.on("data", (d) => {
+      // stderr is usually Ink rendering noise — only log for debugging
+      const s = d.toString().trim();
+      if (s && !s.startsWith("\x1b")) console.error(`[CursorCLI:${agentId}] stderr: ${s.slice(0, 120)}`);
+    });
+
+    child.on("error", (err) => {
+      clearTimeout(hardTimer);
+      if (!resultReceived) reject(err);
+    });
+
+    child.on("close", () => {
+      clearTimeout(hardTimer);
+      // If we already resolved via result event, nothing to do.
+      // If not (process died without result), reject.
+      if (!resultReceived) {
+        reject(new Error(`CursorCLI exited without a result event. Output so far: ${accumulatedText.slice(0, 300)}`));
+      }
+    });
+  });
 }
 
 function runOpenCodeTask(prompt, payload = {}) {
@@ -1933,6 +2195,13 @@ function runOpenCodeTask(prompt, payload = {}) {
     // cwd on the spawn call below sets the working directory equivalently.
     const args = ["run", titledPrompt, "--model", model];
     if (agent) args.push("--agent", agent);
+
+    // Session continuity: reuse the agent's last session so it remembers previous work
+    const existingSessionId = readAgentSessionId(agentId);
+    if (existingSessionId) {
+      args.push("--session", existingSessionId);
+      console.error(`[OpenCode] Continuing session ${existingSessionId} for ${agentId}`);
+    }
 
     console.error(`[OpenCode] Running: ${bin} run [prompt] --model ${model} (cwd=${projectDir})`);
 
@@ -1989,15 +2258,25 @@ function runOpenCodeTask(prompt, payload = {}) {
         console.log(`[OpenCode:${agentLabel}] ${line}`);
       }
     });
+    // Lines from OpenCode stderr that are known-harmless and must NOT be returned
+    // as task output or logged as errors — they would poison agent conversation history.
+    const OC_NOISE_PATTERNS = [
+      /realtime\s+daemon\s+error/i,
+      /invalid\s+realtime\s+token/i,
+      /realtime\s+error:/i,
+      /ExperimentalWarning/i,
+      /--experimental/i,
+    ];
+    const isOcNoise = (line) => OC_NOISE_PATTERNS.some(p => p.test(line));
+
     child.stderr.on("data", (d) => {
       const chunk = d.toString("utf8");
-      stderr += chunk;
       lastProgressAt = Date.now();
       const lines = chunk.split("\n").map(l => l.trim()).filter(Boolean);
       for (const line of lines) {
-        if (!line.includes("ExperimentalWarning") && !line.includes("--experimental")) {
-          console.log(`[OpenCode:${agentLabel}] ${line}`);
-        }
+        if (isOcNoise(line)) continue; // swallow — don't accumulate, don't log
+        stderr += line + "\n";
+        console.log(`[OpenCode:${agentLabel}] ${line}`);
       }
     });
     // Stall detector — kill and reject if no output for too long so fallback can kick in
@@ -2023,20 +2302,47 @@ function runOpenCodeTask(prompt, payload = {}) {
     child.on("close", (code) => {
       clearTimeout(timer);
       clearInterval(stallCheck);
+      // stdout is the actual task reply; stderr (already noise-filtered above) is diagnostics only.
+      // Never let stderr noise (realtime token errors etc.) become the returned output.
       const out = (stdout || stderr || "").trim();
       if (code !== 0) {
-        const bannerOnly = isOpencodeRateLimitBanner(out);
+        // If the only non-empty output is noise that slipped through, treat as unknown error
+        const cleanOut = out.replace(/• ?(realtime daemon error|invalid realtime token)[^\n]*/gi, "").trim();
+        const bannerOnly = isOpencodeRateLimitBanner(cleanOut || out);
         if (bannerOnly) {
           console.warn(`[OpenCode:${agentLabel}] Rate limit detected (banner-only exit null) — will rotate model`);
           reject(new Error(`OpenCode rate limited (banner-only): ${model}`));
         } else {
-          console.error(`[OpenCode:${agentLabel}] Failed (exit ${code}): ${out.slice(0, 300)}`);
-          reject(new Error(`OpenCode exited ${code}: ${out || "unknown error"}`));
+          const errMsg = cleanOut || "unknown error (possibly realtime token noise — task may have succeeded)";
+          console.error(`[OpenCode:${agentLabel}] Failed (exit ${code}): ${errMsg.slice(0, 300)}`);
+          reject(new Error(`OpenCode exited ${code}: ${errMsg}`));
         }
         return;
       }
       console.log(`[OpenCode:${agentLabel}] Done — ${out.length} chars output`);
       _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast", payload: { agent: agentLabel, ts: Date.now() } });
+
+      // Persist the session ID for this agent so the next task continues from here.
+      // Filter by agentPrefix (e.g. "[crew-coder]") so parallel agents don't steal
+      // each other's most-recent session when finishing at the same time.
+      if (agentId) {
+        try {
+          const listOut = execFileSync(bin, ["session", "list"], {
+            cwd: projectDir, env: cleanEnv, timeout: 8000, encoding: "utf8",
+          });
+          const prefix = agentId ? `[${agentId}]` : null;
+          const newSessionId = parseMostRecentSessionId(listOut, prefix);
+          if (newSessionId) {
+            writeAgentSessionId(agentId, newSessionId);
+            console.error(`[OpenCode:${agentLabel}] Session saved: ${newSessionId}`);
+          } else {
+            console.warn(`[OpenCode:${agentLabel}] No matching session found for prefix "${prefix}" — session not saved`);
+          }
+        } catch (sessErr) {
+          console.warn(`[OpenCode:${agentLabel}] Could not save session: ${sessErr.message}`);
+        }
+      }
+
       resolve(out || "(opencode completed with no output)");
     });
   });
@@ -2736,6 +3042,22 @@ function buildTaskPrompt(taskText, sourceLabel, agentId, options = {}) {
     }
   }
 
+  // Load per-project memory from <projectDir>/.crewswarm/context.md and brain.md
+  // context.md = static facts (GitHub, tech stack, danger zones) — human-authored
+  // brain.md   = accumulated knowledge — agents append via @@BRAIN when project selected
+  const projectMemorySections = [];
+  if (taskProjectDir) {
+    const projectMemoryDir = path.join(taskProjectDir, ".crewswarm");
+    for (const fname of ["context.md", "brain.md"]) {
+      const fpath = path.join(projectMemoryDir, fname);
+      try {
+        let content = fs.readFileSync(fpath, "utf8").trim();
+        if (content.length > 8000) content = content.slice(-8000);
+        if (content) projectMemorySections.push(`### Project ${fname} (${taskProjectDir})\n${content}`);
+      } catch { /* file doesn't exist — skip silently */ }
+    }
+  }
+
   const parts = [];
   if (identityHeader) parts.push(identityHeader);
   if (agentSystemPrompt) parts.push(agentSystemPrompt);
@@ -2744,6 +3066,7 @@ function buildTaskPrompt(taskText, sourceLabel, agentId, options = {}) {
   if (projectDiscoveryRule) parts.push(projectDiscoveryRule);
   if (sharedMemory.text) parts.push(sharedMemory.text);
   if (extraMemorySections.length > 0) parts.push(extraMemorySections.join("\n\n"));
+  if (projectMemorySections.length > 0) parts.push(projectMemorySections.join("\n\n"));
   parts.push(contextNote);
   parts.push(taskText);
 
@@ -3354,8 +3677,12 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     }
     assertTaskPromptProtocol(finalPrompt, "realtime");
 
+    const useCursorCli = shouldUseCursorCli(payload, incomingType);
     const useOpenCode = shouldUseOpenCode(payload, prompt, incomingType);
-    if (useOpenCode) {
+    if (useCursorCli) {
+      progress(`Routing realtime task to Cursor CLI (agent -p --force)...`);
+      telemetry("realtime_route_cursor_cli", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
+    } else if (useOpenCode) {
       const routeAgent = String(payload?.agent || OPENCREW_OPENCODE_AGENT || "default");
       const ocAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
       const routeModel = String(payload?.model || ocAgentCfg.model || OPENCREW_OPENCODE_MODEL);
@@ -3368,7 +3695,21 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     let reply;
     let ocAgentId = null;
     let agentSysPrompt = null;
-    if (useOpenCode) {
+    if (useCursorCli) {
+      // ── Cursor CLI backend ─────────────────────────────────────────────
+      let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
+      projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+      try {
+        reply = await runCursorCliTask(prompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+      } catch (e) {
+        const msg = e?.message ?? String(e);
+        progress(`Cursor CLI failed: ${msg.slice(0, 120)} — falling back to OpenCode`);
+        telemetry("cursor_cli_fallback", { taskId, error: msg });
+        // Fall back to OpenCode on failure
+        const ocPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
+        reply = await runOpenCodeTask(ocPrompt, payload);
+      }
+    } else if (useOpenCode) {
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || null;
       if (!projectDir || projectDir === process.cwd()) {
         const fromTask = extractProjectDirFromTask(prompt);
@@ -3535,6 +3876,34 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         incomingType,
         claimId: dispatchClaim.claimId,
       });
+    }
+
+    // Parse @@LESSON: tags — write to project brain (if projectDir) or global lessons.md
+    // This is how agents contribute durable knowledge without polluting system prompts
+    const lessonMatches = [...reply.matchAll(/@@LESSON:\s*([^\n]+)/g)];
+    if (lessonMatches.length > 0) {
+      const date = new Date().toISOString().slice(0, 10);
+      for (const m of lessonMatches) {
+        const entry = m[1].trim();
+        if (!entry) continue;
+        try {
+          if (projectDir) {
+            const projectMemDir = path.join(projectDir, ".crewswarm");
+            fs.mkdirSync(projectMemDir, { recursive: true });
+            const projectBrainPath = path.join(projectMemDir, "brain.md");
+            if (!fs.existsSync(projectBrainPath)) {
+              fs.writeFileSync(projectBrainPath, "# Project Brain\n\nAccumulated knowledge for this project.\n", "utf8");
+            }
+            fs.appendFileSync(projectBrainPath, `\n## [${date}] ${OPENCREW_RT_AGENT}: ${entry}\n`, "utf8");
+          } else {
+            const lessonsPath = path.join(SHARED_MEMORY_DIR, "lessons.md");
+            fs.appendFileSync(lessonsPath, `\n## [${date}] ${OPENCREW_RT_AGENT}: ${entry}\n`, "utf8");
+          }
+          console.log(`[bridge:${OPENCREW_RT_AGENT}] @@LESSON → ${projectDir ? path.basename(projectDir) + "/.crewswarm/brain.md" : "lessons.md"}: ${entry.slice(0, 80)}`);
+        } catch (e) {
+          console.warn(`[bridge:${OPENCREW_RT_AGENT}] @@LESSON write failed: ${e.message}`);
+        }
+      }
     }
 
     // Parse and execute @@DISPATCH commands from coordinator agents only.
@@ -4011,6 +4380,20 @@ try {
     progress("Fetching channel status...");
     const res = await withRetry(() => bridge.send("channels.status", {}), { retries: 2, label: "channels.status" });
     console.log(JSON.stringify(res, null, 2));
+  } else if (args[0] === "--reset-session" && args[1]) {
+    // Clear both OpenCode and Cursor CLI session IDs for a specific agent.
+    // Called by the dashboard "Reset context window" button.
+    const targetAgent = args[1];
+    clearAgentSessionId(targetAgent);
+    clearCursorSessionId(targetAgent);
+    console.log(`OpenCode + Cursor CLI sessions cleared for ${targetAgent}. Next task will start a fresh session.`);
+  } else if (args.includes("--reset-session")) {
+    // No agent specified — list which sessions exist
+    try {
+      const files = fs.readdirSync(OPENCODE_SESSION_DIR);
+      if (files.length === 0) { console.log("No saved sessions."); }
+      else { console.log("Saved sessions:\n" + files.map(f => `  ${f.replace(".session","")}`).join("\n")); }
+    } catch { console.log("No session directory found."); }
   } else if (args.includes("--reset")) {
     progress("Resetting main session...");
     await withRetry(() => bridge.send("sessions.reset", { key: "main" }), { retries: 2, label: "sessions.reset" });

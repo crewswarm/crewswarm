@@ -18,19 +18,26 @@ POST http://localhost:5010/chat
 
 <!-- AGENT_TABLE_START -->
 | Agent | Role | Best for |
-|---|---|---|
-| `crew-main` | 🦊 Coordination | Triage, fallback, dispatch, planning |
-| `crew-coder` | ⚡ Coder | General code, scripts, shell |
-| `crew-coder-front` | 🎨 Frontend | HTML, CSS, vanilla JS, UI |
-| `crew-coder-back` | 🔧 Backend | APIs, Node.js, server logic |
-| `crew-pm` | 📋 PM | Break work into tasks, planning |
-| `crew-qa` | 🔬 QA | Read-only audits, test validation |
-| `crew-fixer` | 🐛 Fixer | Debug failures, patch issues |
-| `crew-security` | 🛡️ Security | Audits, hardening, vulnerability review |
-| `crew-github` | 🐙 Git | Commits, PRs, branches, push |
-| `crew-frontend` | 🖥️ Frontend alt | UI implementation |
-| `crew-copywriter` | ✍️ Copywriter | Copy, docs, marketing text |
-| `crew-telegram` | 💬 Telegram | Send notifications via Telegram |
+|-------|------|----------|
+| `crew-main` | 🦊 Coordination | Chat, triage, fallback, dispatch |
+| `crew-coder` | ⚡ Implementation | General code, files, shell commands |
+| `crew-pm` | 📋 Planning | Break requirements into phased tasks |
+| `crew-qa` | 🔬 Quality assurance | Tests, validation, audits |
+| `crew-fixer` | 🐛 Bug fixing | Debug failures, patch QA issues |
+| `crew-security` | 🛡️ Security review | Vulnerability audits, hardening |
+| `crew-coder-front` | 🎨 Frontend specialist | HTML, CSS, JS, UI, design system |
+| `crew-coder-back` | 🔧 Backend specialist | APIs, DBs, server-side logic |
+| `crew-github` | 🐙 Git operations | Commits, PRs, branches, push |
+| `crew-frontend` | 🖥️ Frontend (alt) | UI implementation |
+| `crew-copywriter` | ✍️ Copywriting | Headlines, CTAs, product copy |
+| `crew-telegram` | 💬 Telegram | Send messages via Telegram bridge |
+| `crew-lead` | 🧠 Crew Lead | Top-level coordinator, user-facing chat |
+| `crew-orchestrator` | 🎯 Orchestrator | Internal pipeline routing |
+| `crew-seo` | 📈 SEO specialist | Metadata, keywords, site structure |
+| `crew-ml` | 🧮 Machine learning | Models, data pipelines, training |
+| `crew-mega` | 🔥 Polymarket strategy | Prediction market AI, backtesting |
+| `crew-researcher` | 🔍 Research | Web search, fact-finding, reports |
+| `crew-architect` | 🏗️ Architecture | System design, ADRs, tech decisions |
 <!-- AGENT_TABLE_END -->
 
 ## Agent Tool Permissions
