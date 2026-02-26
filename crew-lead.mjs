@@ -1119,6 +1119,76 @@ function buildSystemPrompt(cfg) {
 
 // ── LLM call ─────────────────────────────────────────────────────────────────
 
+// ── Task complexity classifier ────────────────────────────────────────────────
+// Cheap pre-flight call (Groq llama-3.1-8b-instant, ~$0.00005/task) that rates
+// task complexity 1-5 and suggests which agents to involve.
+// Returns null if classification is skipped or fails — never blocks the main flow.
+const TASK_VERBS = /\b(build|create|write|add|fix|refactor|audit|review|test|deploy|implement|design|plan|make|update|change|convert|generate|analyze|set.?up|migrate|scaffold|integrate|optimize|debug|ship|launch|configure|set)\b/i;
+const QUESTION_START = /^(what|how|why|who|when|where|can you|do you|is it|are you|tell me|explain|show me|what is|what are|is there|does|did|will|would|should|could|have you|i('m| am) asking|no[,\s]|just |i mean)/i;
+
+async function classifyTask(message, cfg) {
+  const words = message.trim().split(/\s+/).length;
+  if (words < 6) return null;
+  if (QUESTION_START.test(message.trim())) return null;
+  if (!TASK_VERBS.test(message)) return null;
+
+  const providers = cfg.providers || {};
+  let baseUrl, apiKey, model;
+  if (providers.groq?.apiKey) {
+    baseUrl = providers.groq.baseUrl || "https://api.groq.com/openai/v1";
+    apiKey  = providers.groq.apiKey;
+    model   = "llama-3.1-8b-instant";
+  } else if (providers.cerebras?.apiKey) {
+    baseUrl = providers.cerebras.baseUrl || "https://api.cerebras.ai/v1";
+    apiKey  = providers.cerebras.apiKey;
+    model   = "llama-3.1-8b";
+  } else {
+    return null; // no cheap model available — skip
+  }
+
+  const agentList = (cfg.agents || [])
+    .map(a => `${a.id}(${a.identity?.theme || a._role || ""})`)
+    .join(", ")
+    .slice(0, 400);
+
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [{
+          role: "user",
+          content: `Rate this task for a multi-agent AI coding system.
+1-2=SIMPLE: one agent, one clear action (fix bug, add function, write doc).
+3=MODERATE: could go either way.
+4-5=COMPLEX: multiple specialists needed, or requires planning + multiple deliverables.
+
+Task: "${message.slice(0, 500)}"
+Agents available: ${agentList}
+
+Reply ONLY with valid JSON (no markdown, no explanation):
+{"score":<1-5>,"reason":"<10 words>","agents":["agent-id"],"breakdown":["step 1","step 2"]}`,
+        }],
+        max_tokens: 150,
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(3000),
+    });
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content?.trim() || "";
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      const result = JSON.parse(match[0]);
+      console.log(`[classifier] score=${result.score}/5 agents=${(result.agents||[]).join(",")} — "${message.slice(0,60)}"`);
+      return result;
+    }
+  } catch (e) {
+    console.log(`[classifier] skipped: ${e.message}`);
+  }
+  return null;
+}
+
 async function _callLLMOnce(baseUrl, apiKey, modelId, providerKey, messages) {
   const isAnthropic = providerKey === "anthropic" || baseUrl.includes("anthropic.com");
   const headers = { "content-type": "application/json" };
@@ -2795,6 +2865,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
   let codebaseResults = null;
   let healthData = null;
   let benchmarkCatalog = null;
+  let taskClassification = null;
   const fetchBenchmarkCatalog = async () => {
     const r = await fetch("https://api.zeroeval.com/leaderboard/benchmarks", { signal: AbortSignal.timeout(10000) });
     const arr = await r.json();
@@ -2810,7 +2881,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     return `[Benchmark catalog from ZeroEval — use benchmark_id in @@SKILL zeroeval.benchmark {"benchmark_id":"<id>"}]\n${rows.join("\n")}${suffix}`;
   };
   try {
-    const [b, c, h, bc] = await Promise.all([
+    const [b, c, h, bc, _tc] = await Promise.all([
     needsSearch ? searchWithBrave(message).catch(() => null) : null,
     needsSearch ? Promise.resolve(searchCodebase(message)).catch(() => null) : null,
     needsHealth ? (async () => {
@@ -2921,11 +2992,13 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
       } catch { return null; }
     })() : null,
     needsBenchmarkCatalog ? fetchBenchmarkCatalog().catch(() => null) : null,
+    classifyTask(message, cfg).catch(() => null),
   ]);
     braveResults = b;
     codebaseResults = c;
     healthData = h;
     benchmarkCatalog = bc;
+    taskClassification = _tc || null;
   } catch (e) {
     console.error("[crew-lead] context fetch failed:", e?.message || e);
   }
@@ -2948,6 +3021,25 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     ...historyAsMessages,
     { role: "user", content: userContent },
   ];
+
+  // ── Inject complexity classification hint ──────────────────────────────────
+  // Gives crew-lead data to decide between direct dispatch vs crew-main orchestration.
+  // Score 1-3: single agent. Score 4-5: crew-main coordinates multiple specialists.
+  if (taskClassification) {
+    const { score, reason, agents = [], breakdown = [] } = taskClassification;
+    if (score >= 4) {
+      messages.push({
+        role: "system",
+        content: `[Task Classifier — complexity ${score}/5] ${reason}. Suggested agents: ${agents.join(" → ")}. Breakdown: ${breakdown.join("; ")}. This is a COMPLEX multi-agent task. Dispatch to crew-main with the breakdown as context, or use @@PIPELINE. Do NOT dispatch to a single coding agent — this needs coordination.`,
+      });
+    } else if (score === 3) {
+      messages.push({
+        role: "system",
+        content: `[Task Classifier — complexity ${score}/5] ${reason}. Likely a single agent: ${agents[0] || "crew-coder"}. Dispatch directly unless the user wants full orchestration.`,
+      });
+    }
+    // Score 1-2: no hint needed, crew-lead handles or dispatches normally
+  }
 
   appendHistory(sessionId, "user", message);
   // Audit trail: record what Brave actually injected so later turns (and you) can verify — no "context #5" confabulation
