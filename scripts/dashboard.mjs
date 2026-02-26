@@ -5802,6 +5802,35 @@ if (params.get('focus') === '1') {
 }
 loadAgents();
 refreshAll();
+
+// Wrap every type="password" input in a <form display:contents> so Chrome
+// stops emitting "Password field is not contained in a form" warnings.
+// Works for both static inputs and dynamically rendered provider key fields.
+(function () {
+  function wrapOrphanPwd(inp) {
+    if (inp.closest('form')) return;
+    const form = document.createElement('form');
+    form.autocomplete = 'off';
+    form.onsubmit = () => false;
+    form.style.cssText = 'margin:0;padding:0;display:contents;';
+    inp.parentNode.insertBefore(form, inp);
+    form.appendChild(inp);
+  }
+  function scanAndWrap(root) {
+    (root || document).querySelectorAll('input[type="password"]').forEach(wrapOrphanPwd);
+  }
+  scanAndWrap();
+  const obs = new MutationObserver(mutations => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches && node.matches('input[type="password"]')) wrapOrphanPwd(node);
+        else scanAndWrap(node);
+      }
+    }
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+}());
 </script>
 </body>
 </html>`;
