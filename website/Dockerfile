@@ -21,6 +21,9 @@ RUN printf 'server {\n\
         try_files $uri $uri/ /index.html;\n\
         add_header Cache-Control "public, max-age=3600";\n\
     }\n\
+    location ~* \\.(css|js)$ {\n\
+        add_header Cache-Control "public, max-age=300, must-revalidate";\n\
+    }\n\
     location ~* \\.webp$ {\n\
         add_header Cache-Control "public, max-age=604800";\n\
         expires 7d;\n\
