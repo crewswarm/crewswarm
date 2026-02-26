@@ -77,6 +77,21 @@ const ALLOWED_JIDS = new Set(
 );
 const ALLOWLIST_ENABLED = ALLOWED_JIDS.size > 0;
 
+// Contact names — loaded from whatsapp-bridge.json (saved by dashboard)
+const WA_BRIDGE_CFG_PATH = join(homedir(), ".crewswarm", "whatsapp-bridge.json");
+function loadContactNames() {
+  try {
+    const c = JSON.parse(readFileSync(WA_BRIDGE_CFG_PATH, "utf8"));
+    return c.contactNames || {};
+  } catch { return {}; }
+}
+// Resolve a JID like "15551234567@s.whatsapp.net" → "Jeff" or "+15551234567"
+function resolveDisplayName(jid) {
+  const digits = jid.split("@")[0];
+  const names = loadContactNames();
+  return names[digits] || names[`+${digits}`] || `+${digits}`;
+}
+
 // ── Logging ────────────────────────────────────────────────────────────────────
 
 function log(level, msg, data = {}) {
@@ -544,9 +559,12 @@ async function main() {
 
       // History + persistence
       addToHistory(jid, "user", text);
-      persistTurn("user", text, jid.split("@")[0]);
+      persistTurn("user", text, resolveDisplayName(jid));
 
       const activeProj = activeProjectByJid.get(jid);
+
+      // Resolve display name from address book (falls back to +number)
+      const displayName = resolveDisplayName(jid);
 
       // Send to crew-lead
       fetch(`${CREW_LEAD_URL}/chat`, {
@@ -555,7 +573,7 @@ async function main() {
         body: JSON.stringify({
           message: text,
           sessionId: `whatsapp-${jid}`,
-          firstName: jid.split("@")[0],
+          firstName: displayName,
           projectId: activeProj?.id || undefined,
         }),
         signal: AbortSignal.timeout(65000),

@@ -1057,7 +1057,9 @@ const html = `<!doctype html>
             <div class="card" style="align-self:start;">
               <div class="card-title" style="margin-bottom:12px;">⚙️ Configuration</div>
               <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed phone numbers <span style="color:var(--text-3);font-weight:400;">(comma-separated, international format)</span></label>
-              <input id="waAllowedNumbers" placeholder="+15551234567, +15559876543" style="width:100%;margin-bottom:12px;" />
+              <input id="waAllowedNumbers" placeholder="+15551234567, +15559876543" style="width:100%;margin-bottom:4px;" oninput="renderWaContactRows()" />
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:10px;">Leave empty to accept messages from anyone.</div>
+              <div id="waContactNamesList" style="margin-bottom:12px;"></div>
               <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Target agent</label>
               <input id="waTargetAgent" placeholder="crew-lead" style="width:100%;margin-bottom:12px;" />
               <button onclick="saveWaConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
@@ -2649,13 +2651,46 @@ async function loadWaStatus(){
   } catch {}
 }
 
+let _waSavedContactNames = {};
+
+function renderWaContactRows(){
+  const listEl = document.getElementById('waContactNamesList');
+  if (!listEl) return;
+  const raw = (document.getElementById('waAllowedNumbers')?.value || '').trim();
+  const numbers = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  listEl.innerHTML = '';
+  if (!numbers.length) return;
+  const title = document.createElement('label');
+  title.style.cssText = 'display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);';
+  title.textContent = 'Contact names (address book)';
+  listEl.appendChild(title);
+  numbers.forEach(num => {
+    const key = num.replace(/\D/g, '');
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
+    const span = document.createElement('span');
+    span.style.cssText = 'font-size:12px;color:var(--text-3);min-width:120px;font-family:monospace;';
+    span.textContent = num;
+    const input = document.createElement('input');
+    input.id = 'waContact-' + key;
+    input.placeholder = 'e.g. Jeff';
+    input.value = _waSavedContactNames[key] || _waSavedContactNames[num] || '';
+    input.style.flex = '1';
+    row.appendChild(span);
+    row.appendChild(input);
+    listEl.appendChild(row);
+  });
+}
+
 async function loadWaConfig(){
   try {
     const d = await getJSON('/api/whatsapp/config');
     const n = document.getElementById('waAllowedNumbers');
     const t = document.getElementById('waTargetAgent');
+    _waSavedContactNames = d.contactNames || {};
     if (n) n.value = (d.allowedNumbers || []).join(', ');
     if (t) t.value = d.targetAgent || 'crew-lead';
+    renderWaContactRows();
   } catch {}
 }
 
@@ -2663,8 +2698,16 @@ async function saveWaConfig(){
   const numbersRaw = document.getElementById('waAllowedNumbers').value.trim();
   const allowedNumbers = numbersRaw ? numbersRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
   const targetAgent = (document.getElementById('waTargetAgent').value.trim()) || 'crew-lead';
-  await postJSON('/api/whatsapp/config', { allowedNumbers, targetAgent });
+  const contactNames = {};
+  allowedNumbers.forEach(num => {
+    const key = num.replace(/\D/g, '');
+    const el = document.getElementById('waContact-' + key);
+    if (el && el.value.trim()) contactNames[key] = el.value.trim();
+  });
+  _waSavedContactNames = contactNames;
+  await postJSON('/api/whatsapp/config', { allowedNumbers, targetAgent, contactNames });
   showNotification('WhatsApp config saved');
+  renderWaContactRows();
 }
 
 async function startWaBridge(){
@@ -7839,6 +7882,7 @@ ORDER BY day DESC, cost DESC;`;
       res.end(JSON.stringify({
         allowedNumbers: cfg.allowedNumbers || [],
         targetAgent: cfg.targetAgent || "crew-lead",
+        contactNames: cfg.contactNames || {},
       }));
       return;
     }
