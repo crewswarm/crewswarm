@@ -632,10 +632,16 @@ nav .btn:hover { background: rgba(255,255,255,0.1); }
   border-radius: 6px;
 }
 .control-surfaces {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
   margin-top: 1.25rem;
+}
+@media (max-width: 860px) {
+  .control-surfaces { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 540px) {
+  .control-surfaces { grid-template-columns: 1fr; }
 }
 .cs-group-label {
   font-size: 0.68rem;
@@ -646,9 +652,9 @@ nav .btn:hover { background: rgba(255,255,255,0.1); }
   margin-bottom: 0.5rem;
 }
 .cs-group-items {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
 }
 .cs-item {
   display: flex;
