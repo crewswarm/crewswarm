@@ -88,14 +88,14 @@ nav {
   justify-content: space-between;
   padding: 0 2rem;
   height: 60px;
-  background: rgba(6, 10, 16, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(6, 10, 16, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
-  /* Force nav onto its own compositing layer — fixes iOS Safari address bar jank */
+  /* translateZ(0) promotes nav to its own compositing layer without the
+     ongoing memory cost of will-change: transform */
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
-  will-change: transform;
 }
 
 .nav-logo {
@@ -198,6 +198,8 @@ nav .btn:hover { background: rgba(255,255,255,0.1); }
   position: relative;
   overflow: hidden;
   background: linear-gradient(135deg, #08021a 0%, #060b26 50%, #030710 100%);
+  /* Isolate hero repaints from the rest of the page */
+  contain: layout style;
 }
 
 /* Deep indigo/violet aurora top-left */
@@ -230,12 +232,20 @@ nav .btn:hover { background: rgba(255,255,255,0.1); }
   z-index: 0;
 }
 
+/* Wrapper holds the filter statically — Chrome must not recalculate
+   drop-shadow on every animation frame, which thrashes the GPU */
+.hero-mascot-wrap {
+  display: inline-block;
+  margin-bottom: 2rem;
+  filter: drop-shadow(0 0 28px rgba(37,99,235,0.45));
+  contain: layout style;
+}
 .hero-mascot {
   width: 160px;
   height: auto;
-  margin-bottom: 2rem;
-  filter: drop-shadow(0 0 32px rgba(37,99,235,0.5));
+  display: block;
   animation: mascot-float 4s ease-in-out infinite;
+  will-change: transform;
 }
 
 @keyframes mascot-float {
@@ -483,8 +493,6 @@ nav .btn:hover { background: rgba(255,255,255,0.1); }
   color: var(--text-3);
   font-family: "SF Mono", monospace;
 }
-
-@keyframes blink { 50% { opacity: 0; } }
 
 /* ─── Proof bar ──────────────────────────────────────────────────────────── */
 .proof-bar {

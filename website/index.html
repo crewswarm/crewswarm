@@ -48,7 +48,9 @@
   <!-- HERO -->
   <section id="hero" class="hero">
     <div class="hero-glow"></div>
-    <img src="mascot.png" alt="CrewSwarm mascot" class="hero-mascot" />
+    <div class="hero-mascot-wrap">
+      <img src="mascot.png" alt="CrewSwarm mascot" class="hero-mascot" />
+    </div>
     <h1>One requirement.<br/>One build.<br/><span class="gradient-text">One crew.</span></h1>
     <p class="hero-sub">The multi-agent orchestration layer for <strong>OpenCode</strong> and <strong>Cursor</strong>. Plan, dispatch, build, and verify — with real files on disk.</p>
     <div class="proof-bar visible">
@@ -111,8 +113,14 @@
         const container = document.getElementById('hero-terminal-content');
         if (!container) return;
         container.innerHTML = ''; heroLine = 0; heroLines = lines;
+        // Pause blink cursors while terminal is playing — resume when done
+        document.querySelectorAll('.lt-cursor-blink, .lt-cursor').forEach(el => { el.style.animationPlayState = 'paused'; });
         function showNext() {
-          if (heroLine >= heroLines.length) return;
+          if (heroLine >= heroLines.length) {
+            // Terminal done — re-enable blink only on the last visible cursor
+            document.querySelectorAll('.lt-cursor-blink, .lt-cursor').forEach(el => { el.style.animationPlayState = 'running'; });
+            return;
+          }
           const data = heroLines[heroLine];
           const el = document.createElement('div');
           el.className = 'lt-line';
@@ -121,6 +129,7 @@
           requestAnimationFrame(() => { el.classList.add('visible'); container.scrollTop = container.scrollHeight; });
           heroLine++;
           if (heroLine < heroLines.length) heroTimeout = setTimeout(showNext, heroLines[heroLine].delay || 800);
+          else heroTimeout = setTimeout(showNext, 100);
         }
         heroTimeout = setTimeout(showNext, 400);
       }
