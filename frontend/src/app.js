@@ -76,7 +76,7 @@ async function loadSessions(){
       div.innerHTML = '<div><strong>' + (s.title || s.slug || s.id) + '</strong></div><div class="meta">' + (s.directory || '-') + '</div>' + (assigned ? '<div class="meta" style="font-size:11px;color:var(--accent);">' + assigned + '</div>' : '');
       box.appendChild(div);
     });
-  } catch (e) { document.getElementById('sessions').innerHTML = '<div class="meta" style="padding:20px; color:#ef4444;">Error loading sessions.</div>'; }
+  } catch (e) { document.getElementById('sessions').innerHTML = '<div class="meta" style="padding:20px; color:var(--red-hi);">Error loading sessions.</div>'; }
 }
 async function loadMessages(){
   const box = document.getElementById('messages');
@@ -127,11 +127,11 @@ function _rtMatchesFilter(m) {
 
 // Phase → badge color + label
 const RT_PHASE_STYLE = {
-  'task.dispatched': { color: '#6366f1', label: 'dispatched' },
-  'task.started':    { color: '#f59e0b', label: 'started'    },
-  'task.completed':  { color: '#22c55e', label: 'completed'  },
-  'task.failed':     { color: '#ef4444', label: 'failed'     },
-  'task.cancelled':  { color: '#6b7280', label: 'cancelled'  },
+  'task.dispatched': { color: 'var(--purple)',   label: 'dispatched' },
+  'task.started':    { color: 'var(--amber)',    label: 'started'    },
+  'task.completed':  { color: 'var(--green-hi)', label: 'completed'  },
+  'task.failed':     { color: 'var(--red-hi)',   label: 'failed'     },
+  'task.cancelled':  { color: 'var(--text-3)',   label: 'cancelled'  },
 };
 
 function _rtBuildElement(m) {
@@ -496,12 +496,12 @@ function startAgentReplyListener() {
         row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:8px;background:var(--bg-2);font-size:12px;font-family:var(--font-mono,monospace);animation:fadeIn .25s ease;';
         const time = new Date(d.ts || Date.now()).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
         let icon = '⚙️', label = '';
-        if (d.kind === 'session_start') { icon = '▶'; row.style.borderLeft = '3px solid #22c55e'; var _sd = d.dir || ''; label = 'session started' + (_sd ? ' — ' + _sd.split('/').pop() : ''); }
+        if (d.kind === 'session_start') { icon = '▶'; row.style.borderLeft = '3px solid var(--green-hi)'; var _sd = d.dir || ''; label = 'session started' + (_sd ? ' — ' + _sd.split('/').pop() : ''); }
         else if (d.kind === 'session_end') { icon = '■'; row.style.borderLeft = '3px solid var(--text-3)'; label = 'session ended'; if (liveDot) liveDot.style.display = 'none'; }
-        else if (d.kind === 'file_edit') { icon = '✏️'; row.style.borderLeft = '3px solid #f59e0b'; label = (d.file || d.path || '') + (d.extra ? ' <span style="opacity:.5;">'+d.extra+'</span>' : ''); }
-        else if (d.kind === 'error') { icon = '✗'; row.style.borderLeft = '3px solid #ef4444'; row.style.color = '#ef4444'; label = d.message || 'error'; }
+        else if (d.kind === 'file_edit') { icon = '✏️'; row.style.borderLeft = '3px solid var(--amber)'; label = (d.file || d.path || '') + (d.extra ? ' <span style="opacity:.5;">'+d.extra+'</span>' : ''); }
+        else if (d.kind === 'error') { icon = '✗'; row.style.borderLeft = '3px solid var(--red-hi)'; row.style.color = 'var(--red-hi)'; label = d.message || 'error'; }
         else if (d.kind === 'tool') {
-          const toolColors = { read_file:'#60a5fa', write_file:'#f59e0b', bash:'#a78bfa', list_directory:'#6ee7b7', grep:'#6ee7b7' };
+          const toolColors = { read_file:'var(--accent)', write_file:'var(--amber)', bash:'var(--purple)', list_directory:'var(--green)', grep:'var(--green)' };
           const tc = toolColors[d.tool] || 'var(--text-2)';
           icon = d.phase === 'done' ? '✓' : '→';
           row.style.borderLeft = '3px solid ' + tc;
@@ -710,7 +710,7 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
 
   const reject = document.createElement('button');
   reject.textContent = '⛔ Deny';
-  reject.style.cssText = 'flex:1;padding:8px;border-radius:8px;border:none;background:var(--red,#ef4444);color:#fff;cursor:pointer;font-weight:600;font-size:13px;';
+  reject.style.cssText = 'flex:1;padding:8px;border-radius:8px;border:none;background:var(--red-hi);color:#fff;cursor:pointer;font-weight:600;font-size:13px;';
   reject.onclick = async () => {
     clearInterval(countdown);
     toast.remove();
@@ -963,7 +963,7 @@ async function loadTokenUsage() {
         '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">total tokens</div>' +
       '</div>' +
       '<div style="text-align:center;">' +
-        '<div style="font-size:20px;font-weight:700;color:var(--yellow,#fbbf24);">$' + cost.toFixed(4) + '</div>' +
+        '<div style="font-size:20px;font-weight:700;color:var(--yellow);">$' + cost.toFixed(4) + '</div>' +
         '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">est. cost (all-time)</div>' +
       '</div>' +
     '</div>';
@@ -986,7 +986,7 @@ async function loadTokenUsage() {
         '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:14px;overflow:hidden;">' +
           '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;"></div>' +
         '</div>' +
-        '<span style="width:52px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + dc.toFixed(4) + '</span>' +
+        '<span style="width:52px;text-align:right;color:var(--yellow);font-weight:600;">$' + dc.toFixed(4) + '</span>' +
         '<span style="width:44px;text-align:right;color:var(--text-3);">' + tok.toFixed(1) + 'k</span>' +
       '</div>';
     });
@@ -1035,7 +1035,7 @@ async function loadOcStats() {
     const maxCost   = Math.max(...sortedDays.map(function(d){ return byDay[d].cost; }), 0.0001);
 
     let html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">' +
-      '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--yellow,#fbbf24);">$' + totalCost.toFixed(4) + '</div><div style="font-size:11px;color:var(--text-3);">total cost</div></div>' +
+      '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--yellow);">$' + totalCost.toFixed(4) + '</div><div style="font-size:11px;color:var(--text-3);">total cost</div></div>' +
       '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--accent);">' + totalCalls.toLocaleString() + '</div><div style="font-size:11px;color:var(--text-3);">messages</div></div>' +
       '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--green);">' + (totalIn/1e6).toFixed(1) + 'M</div><div style="font-size:11px;color:var(--text-3);">input tokens</div></div>' +
       '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--green);">' + (totalOut/1e6).toFixed(2) + 'M</div><div style="font-size:11px;color:var(--text-3);">output tokens</div></div>' +
@@ -1054,7 +1054,7 @@ async function loadOcStats() {
         '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:16px;overflow:hidden;">' +
           '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;opacity:0.85;"></div>' +
         '</div>' +
-        '<span style="width:60px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + ds.cost.toFixed(4) + '</span>' +
+        '<span style="width:60px;text-align:right;color:var(--yellow);font-weight:600;">$' + ds.cost.toFixed(4) + '</span>' +
         '<span style="width:50px;text-align:right;color:var(--text-3);">' + tok.toFixed(2) + 'M</span>' +
         '<span style="width:36px;text-align:right;color:var(--text-3);">' + ds.calls + '</span>' +
       '</div>';
@@ -1082,7 +1082,7 @@ async function loadOcStats() {
         html += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">' +
           '<code style="color:var(--accent);">' + m + '</code>' +
           '<span style="color:var(--text-2);">' + tok.toFixed(2) + 'M tok · ' + s.calls + ' calls · ' +
-            '<span style="color:var(--yellow,#fbbf24);font-weight:600;">$' + s.cost.toFixed(4) + '</span>' +
+            '<span style="color:var(--yellow);font-weight:600;">$' + s.cost.toFixed(4) + '</span>' +
           '</span>' +
         '</div>';
       });
@@ -1215,7 +1215,7 @@ function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
 
   const header = document.createElement('div');
   header.style.cssText = 'background:#0d1f3c;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1e3a6e;';
-  header.innerHTML = '<div><div style="font-size:13px;font-weight:600;color:#60a5fa;">🚀 ' + name + '</div><div style="font-size:11px;color:#4a7ab5;margin-top:2px;">' + outputDir + '</div></div>' +
+  header.innerHTML = '<div><div style="font-size:13px;font-weight:600;color:#60a5fa;">🚀 ' + name + '</div><div style="font-size:11px;color:var(--blue);margin-top:2px;">' + outputDir + '</div></div>' +
     '<span style="font-size:10px;color:#4a5568;padding:2px 7px;background:#111827;border-radius:10px;" class="task-count">' + countTasks(roadmapMd) + ' tasks</span>';
 
   const ta = document.createElement('textarea');
@@ -1233,13 +1233,13 @@ function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
 
   const startBtn = document.createElement('button');
   startBtn.textContent = '▶ Start Building';
-  startBtn.style.cssText = 'background:#22c55e;color:#000;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;';
+  startBtn.style.cssText = 'background:var(--green-hi);color:#000;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;';
   startBtn.onclick = async () => {
     startBtn.disabled = true; startBtn.textContent = '⏳ Launching…';
     try {
       const r = await postJSON('/api/crew-lead/confirm-project', { draftId, roadmapMd: ta.value });
       if (r.ok) {
-        card.innerHTML = '<div style="padding:14px;color:#22c55e;font-size:13px;font-weight:600;">✅ ' + name + ' — project created, PM loop running!<br><span style="color:#4a7ab5;font-size:11px;font-weight:400">' + (r.outputDir || outputDir) + '</span></div>';
+        card.innerHTML = '<div style="padding:14px;color:var(--green-hi);font-size:13px;font-weight:600;">✅ ' + name + ' — project created, PM loop running!<br><span style="color:var(--blue);font-size:11px;font-weight:400">' + (r.outputDir || outputDir) + '</span></div>';
         appendChatBubble('assistant', '🚀 ' + name + ' is building. Check the Projects tab to watch progress.');
       } else {
         startBtn.disabled = false; startBtn.textContent = '▶ Start Building';
@@ -1257,7 +1257,7 @@ function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
   };
 
   const status = document.createElement('span');
-  status.style.cssText = 'font-size:11px;color:#4a7ab5;margin-left:auto;';
+  status.style.cssText = 'font-size:11px;color:var(--blue);margin-left:auto;';
   status.textContent = 'Edit above, then confirm';
 
   actions.appendChild(startBtn); actions.appendChild(discardBtn); actions.appendChild(status);
@@ -1567,7 +1567,7 @@ async function loadServices(){
     grid.innerHTML = services.map(svc => {
       const up = svc.running;
       const canRestart = svc.canRestart;
-      const statusColor = up ? '#22c55e' : '#ef4444';
+      const statusColor = up ? 'var(--green-hi)' : 'var(--red-hi)';
       const statusText  = up ? (svc.pid ? '● running  pid ' + svc.pid : '● running') : '● stopped';
       const uptime = svc.uptimeSec ? formatUptime(svc.uptimeSec) : '';
       return '<div class="card" style="display:flex;flex-direction:column;gap:10px;">' +
@@ -1589,7 +1589,7 @@ async function loadServices(){
       '</div>';
     }).join('');
   } catch(e) {
-    grid.innerHTML = '<div class="meta" style="padding:20px;color:#ef4444;">Error loading services: ' + e.message + '</div>';
+    grid.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Error loading services: ' + e.message + '</div>';
   }
 }
 
@@ -1641,7 +1641,7 @@ async function loadTgMessages(){
         '</div>';
     }).join('');
   } catch(e) {
-    feed.innerHTML = '<div class="meta" style="padding:20px;color:#ef4444;">Error loading messages</div>';
+    feed.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Error loading messages</div>';
   }
 }
 async function loadFiles(forceRefresh) {
@@ -1758,7 +1758,7 @@ async function loadSearchTools(){
   list.innerHTML = SEARCH_TOOLS.map(p => {
     const hasKey = !!saved[p.id];
     const badge = hasKey
-      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">set ✓</span>`
+      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">set ✓</span>`
       : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
     return `<div class="card" style="margin-bottom:8px;">
       <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".st-body">
@@ -1800,9 +1800,9 @@ async function testSearchTool(toolId){
   statusEl.textContent = 'Testing…';
   try {
     const r = await postJSON('/api/search-tools/test', { toolId });
-    statusEl.style.color = r.ok ? '#34d399' : '#f87171';
+    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
     statusEl.textContent = r.ok ? '✓ ' + (r.message || 'Connected') : '✗ ' + (r.error || 'Failed');
-  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
+  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
 }
 
 async function loadBuiltinProviders(){
@@ -1817,7 +1817,7 @@ async function loadBuiltinProviders(){
     const isOllama = p.id === 'ollama';
     const isOpenAiLocal = p.id === 'openai-local';
     const badge = hasKey || isOllama || isOpenAiLocal
-      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">${(isOllama || isOpenAiLocal) && !hasKey ? 'local' : 'set ✓'}</span>`
+      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">${(isOllama || isOpenAiLocal) && !hasKey ? 'local' : 'set ✓'}</span>`
       : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
     return `<div class="card" style="margin-bottom:8px;">
       <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".bp-body">
@@ -1837,7 +1837,7 @@ async function loadBuiltinProviders(){
             ? `<button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost" style="flex:1;">Test Connection</button>`
             : `<button data-action="saveBuiltinKey" data-arg="${p.id}" class="btn-purple">Save</button>
                <button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost">Test</button>
-               <button data-action="fetchBuiltinModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
+               <button data-action="fetchBuiltinModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>
                <a href="${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>`}
         </div>
         <div id="bp_status_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
@@ -1859,7 +1859,7 @@ async function loadBuiltinProviders(){
         const icon = PROVIDER_ICONS[p.id] || '🔌';
         const hasKey = p.hasKey;
         const badge = hasKey
-          ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">key set ✓</span>`
+          ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">key set ✓</span>`
           : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
         const modelCount = p.models?.length || 0;
         return `<div class="card" style="margin-bottom:8px;">
@@ -1877,7 +1877,7 @@ async function loadBuiltinProviders(){
               <input id="key_${p.id}" type="password" autocomplete="new-password" placeholder="${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />
               <button data-action="saveKey" data-arg="${p.id}" class="btn-purple">Save</button>
               <button data-action="testKey" data-arg="${p.id}" class="btn-ghost">Test</button>
-              <button data-action="fetchModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
+              <button data-action="fetchModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>
             </div>
             <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Base URL: <code style="font-size:10px;">${p.baseUrl}</code></div>
             <div id="test_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
@@ -1914,7 +1914,7 @@ async function saveBuiltinKey(providerId){
       if (tags)   tags.innerHTML = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
       if (count)  count.textContent = r.models.length;
       if (wrap)   wrap.style.display = 'block';
-      if (status) { status.style.color = '#34d399'; status.textContent = '✓ ' + r.models.length + ' models'; }
+      if (status) { status.style.color = 'var(--green)'; status.textContent = '✓ ' + r.models.length + ' models'; }
       showNotification('Key saved for ' + providerId + ' — ' + r.models.length + ' models ready');
       loadAgents(); // refresh model dropdowns on the Agents tab
     } else {
@@ -1930,9 +1930,9 @@ async function testBuiltinProvider(providerId){
   statusEl.textContent = 'Testing…';
   try {
     const r = await postJSON('/api/providers/builtin/test', { providerId });
-    statusEl.style.color = r.ok ? '#34d399' : '#f87171';
+    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
     statusEl.textContent = r.ok ? '✓ Connected — ' + (r.model || 'OK') : '✗ ' + (r.error || 'Failed');
-  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
+  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
 }
 
 async function fetchBuiltinModels(providerId, btn){
@@ -1950,14 +1950,14 @@ async function fetchBuiltinModels(providerId, btn){
       if (tags)  tags.innerHTML  = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
       if (count) count.textContent = r.models.length;
       if (wrap)  wrap.style.display = 'block';
-      statusEl.style.color = '#34d399';
+      statusEl.style.color = 'var(--green)';
       statusEl.textContent = '✓ ' + r.models.length + ' models fetched' + (r.note ? ' — ' + r.note : '');
       loadAgents();
     } else {
-      statusEl.style.color = '#f87171';
+      statusEl.style.color = 'var(--red)';
       statusEl.textContent = '✗ ' + (r.error || 'Failed');
     }
-  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
+  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
@@ -1968,7 +1968,7 @@ async function loadOpenClawStatus(){
     if (d.installed) {
       badge.textContent = '● installed';
       badge.style.background = 'rgba(52,211,153,0.15)';
-      badge.style.color = '#34d399';
+      badge.style.color = 'var(--green)';
       badge.style.borderColor = 'rgba(52,211,153,0.3)';
     } else {
       badge.textContent = '○ not detected';
@@ -1986,13 +1986,13 @@ async function loadRTToken(){
     if (d.token) {
       badge.textContent = 'set ✓';
       badge.style.background = 'rgba(52,211,153,0.15)';
-      badge.style.color = '#34d399';
+      badge.style.color = 'var(--green)';
       badge.style.borderColor = 'rgba(52,211,153,0.3)';
       inp.placeholder = '••••••••••••••••••••••• (saved)';
     } else {
       badge.textContent = 'not set';
       badge.style.background = 'rgba(251,191,36,0.15)';
-      badge.style.color = '#fbbf24';
+      badge.style.color = 'var(--yellow)';
       badge.style.borderColor = 'rgba(251,191,36,0.3)';
     }
   } catch {}
@@ -2045,8 +2045,8 @@ async function loadBgConsciousness() {
     if (btn) {
       btn.textContent = on ? '🟢 ON' : '⚫ OFF';
       btn.style.background = on ? 'rgba(34,197,94,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? '#22c55e' : 'var(--border)';
-      btn.style.color = on ? '#22c55e' : 'var(--text-2)';
+      btn.style.borderColor = on ? 'var(--green-hi)' : 'var(--border)';
+      btn.style.color = on ? 'var(--green-hi)' : 'var(--text-2)';
     }
     if (status) status.textContent = on
       ? 'Active — crew-lead reflects every ' + Math.round(d.intervalMs / 60000) + 'min when idle. Model: ' + d.model
@@ -2102,13 +2102,13 @@ async function loadClaudeCode() {
     if (btn) {
       btn.textContent = on ? '🤖 ON' : '⚫ OFF';
       btn.style.background = on ? 'rgba(245,158,11,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? '#f59e0b' : 'var(--border)';
-      btn.style.color = on ? '#fbbf24' : 'var(--text-2)';
+      btn.style.borderColor = on ? 'var(--amber)' : 'var(--border)';
+      btn.style.color = on ? 'var(--yellow)' : 'var(--text-2)';
     }
     if (status) {
       if (!d.hasKey) {
         status.textContent = '⚠️ ANTHROPIC_API_KEY not set — add it to ~/.crewswarm/crewswarm.json under providers.anthropic.apiKey or set the env var.';
-        status.style.color = '#f59e0b';
+        status.style.color = 'var(--amber)';
       } else {
         status.textContent = on
           ? 'Active — tasks route through Claude Code CLI. Per-agent override: set useClaudeCode: true in crewswarm.json.'
@@ -2378,7 +2378,7 @@ async function loadToolMatrix(){
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) {
       const msg = d.error || (res.status === 401 ? 'Unauthorized' : res.statusText || 'Request failed');
-      el.innerHTML = '<div class="card" style="padding:16px;"><div style="color:var(--yellow,#fbbf24);font-size:13px;font-weight:600;">Health check failed</div>' +
+      el.innerHTML = '<div class="card" style="padding:16px;"><div style="color:var(--yellow);font-size:13px;font-weight:600;">Health check failed</div>' +
         '<div style="color:var(--text-2);font-size:12px;margin-top:8px;">' + (res.status === 401 ? 'RT token missing or invalid. Set it in Settings → System (RT token) or in ~/.crewswarm/config.json (rt.authToken).' : msg) + '</div>' +
         '<div style="color:var(--text-3);font-size:11px;margin-top:8px;">Ensure crew-lead is running on :5010 (Services tab).</div></div>';
       return;
@@ -2445,7 +2445,7 @@ function renderSkillsList(skills){
   const el = document.getElementById('skillsList');
   if (!skills.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0;">No skills match. Add one above or copy JSONs to ~/.crewswarm/skills/</div>'; return; }
   el.innerHTML = skills.map(s => {
-    const approvalBadge = s.requiresApproval ? '<span style="margin-left:8px;font-size:10px;background:rgba(251,191,36,0.15);color:#fbbf24;padding:2px 6px;border-radius:4px;">⚠️ approval</span>' : '';
+    const approvalBadge = s.requiresApproval ? '<span style="margin-left:8px;font-size:10px;background:rgba(251,191,36,0.15);color:var(--yellow);padding:2px 6px;border-radius:4px;">⚠️ approval</span>' : '';
     const urlNote = s.url ? ' · <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">' + (s.method||'POST') + ' ' + (s.url||'').slice(0,60) + '</code>' : '';
     return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border);">'
          + '<div><span style="font-weight:600;font-size:13px;">' + s.name + '</span>' + approvalBadge
@@ -2617,10 +2617,10 @@ async function loadSpending(){
       let out = '<div style="margin-bottom:10px;">'
               + '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em;">Global &middot; ' + (spending.date||'today') + '</div>'
               + '<div style="display:flex;gap:20px;"><span>' + gTokens.toLocaleString() + ' tokens' + (gCapTok ? ' / ' + Number(gCapTok).toLocaleString() : '') + '</span>'
-              + '<span style="color:var(--yellow,#fbbf24);font-weight:600;">$' + gCost.toFixed(4) + '</span>' + (gCapCost ? '<span> / $' + gCapCost + '</span>' : '') + '</div>';
+              + '<span style="color:var(--yellow);font-weight:600;">$' + gCost.toFixed(4) + '</span>' + (gCapCost ? '<span> / $' + gCapCost + '</span>' : '') + '</div>';
       if (gCapTok) {
         const pct = Math.min(100, (gTokens/gCapTok)*100);
-        const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? '#fbbf24' : 'var(--green)';
+        const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--yellow)' : 'var(--green)';
         out += '<div style="margin-top:4px;height:4px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;transition:width .3s;"></div></div>';
       }
       out += '</div>';
@@ -2636,7 +2636,7 @@ async function loadSpending(){
           const pct    = capTok ? Math.min(100, (toks/capTok)*100) : null;
           let row = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
                   + '<span style="min-width:140px;font-size:12px;">' + id + '</span>'
-                  + '<span style="font-size:12px;">' + toks.toLocaleString() + ' tok' + (capTok ? ' / ' + Number(capTok).toLocaleString() : '') + ' &middot; <span style="color:var(--yellow,#fbbf24);">$' + cost + '</span></span>';
+                  + '<span style="font-size:12px;">' + toks.toLocaleString() + ' tok' + (capTok ? ' / ' + Number(capTok).toLocaleString() : '') + ' &middot; <span style="color:var(--yellow);">$' + cost + '</span></span>';
           if (pct !== null) {
             const barColor = pct > 80 ? 'var(--red)' : 'var(--accent)';
             row += '<div style="flex:1;height:3px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;"></div></div>';
@@ -2677,7 +2677,7 @@ async function loadSpending(){
       totalCost = estimateCost(aggByModel);
       let out = '<div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
               + '<span style="font-size:12px;color:var(--text-3);">Last ' + days + ' days &middot; ' + filteredDays.length + ' days of data</span>'
-              + '<span style="font-size:16px;font-weight:700;color:var(--yellow,#fbbf24);">$' + totalCost.toFixed(4) + '</span>'
+              + '<span style="font-size:16px;font-weight:700;color:var(--yellow);">$' + totalCost.toFixed(4) + '</span>'
               + '</div>';
       // Daily breakdown bar chart
       const maxDayCost = Math.max(...filteredDays.map(function(d){ return estimateCost(byDay[d].byModel||{}); }), 0.0001);
@@ -2693,7 +2693,7 @@ async function loadSpending(){
              + '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:12px;overflow:hidden;">'
              +   '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;opacity:.8;"></div>'
              + '</div>'
-             + '<span style="width:58px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + dc.toFixed(4) + '</span>'
+             + '<span style="width:58px;text-align:right;color:var(--yellow);font-weight:600;">$' + dc.toFixed(4) + '</span>'
              + '<span style="width:40px;text-align:right;color:var(--text-3);">' + tok.toFixed(0) + 'k</span>'
              + '</div>';
       });
@@ -2710,7 +2710,7 @@ async function loadSpending(){
           const tok = ((s.prompt||0)+(s.completion||0))/1000;
           out += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;border-bottom:1px solid var(--border);">'
                + '<code style="color:var(--accent);">' + m + '</code>'
-               + '<span style="color:var(--text-2);">' + tok.toFixed(1) + 'k tok &middot; <span style="color:var(--yellow,#fbbf24);">$' + mc.toFixed(4) + '</span></span>'
+               + '<span style="color:var(--text-2);">' + tok.toFixed(1) + 'k tok &middot; <span style="color:var(--yellow);">$' + mc.toFixed(4) + '</span></span>'
                + '</div>';
         });
       }
@@ -2843,7 +2843,7 @@ async function loadAgents_cfg(){
         : a.liveness === 'stale'
         ? '<span title="● stale — last seen >' + (a.ageSec||'?') + 's ago" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:4px;flex-shrink:0;"></span>'
         : a.liveness === 'offline'
-        ? '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red,#ef4444);margin-right:4px;flex-shrink:0;"></span>'
+        ? '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red-hi);margin-right:4px;flex-shrink:0;"></span>'
         : '<span title="● unknown — never seen" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:4px;flex-shrink:0;"></span>';
       card.innerHTML = `
         <div class="agent-card-header">
@@ -2856,11 +2856,11 @@ async function loadAgents_cfg(){
               </span>
             </div>
             <div id="cur-model-${a.id}" style="margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
-              <span style="font-size:11px;font-family:'SF Mono',monospace;color:${BROKEN_MODELS.has(a.model)?'#ef4444':'var(--text-2)'};" title="Conversation model — used for direct replies and chat">
+              <span style="font-size:11px;font-family:'SF Mono',monospace;color:${BROKEN_MODELS.has(a.model)?'var(--red-hi)':'var(--text-2)'};" title="Conversation model — used for direct replies and chat">
                 ${BROKEN_MODELS.has(a.model) ? '⚠ ' : '💬 '}${a.model || '(none)'}
               </span>
-              ${a.opencodeModel ? '<span style="font-size:11px;font-family:monospace;color:' + (BROKEN_MODELS.has(a.opencodeModel)?'#ef4444':'#4ade80') + ';" title="OpenCode model — used when routing tasks through OpenCode CLI">⚡ ' + a.opencodeModel + '</span>' : ''}
-              ${BROKEN_MODELS.has(a.model) ? '<span style="font-size:10px;font-weight:600;color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>' : ''}
+              ${a.opencodeModel ? '<span style="font-size:11px;font-family:monospace;color:' + (BROKEN_MODELS.has(a.opencodeModel)?'var(--red-hi)':'var(--green-hi)') + ';" title="OpenCode model — used when routing tasks through OpenCode CLI">⚡ ' + a.opencodeModel + '</span>' : ''}
+              ${BROKEN_MODELS.has(a.model) ? '<span style="font-size:10px;font-weight:600;color:var(--red-hi);background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>' : ''}
             </div>
           </div>
           <button class="btn-ghost" style="font-size:11px; padding:4px 10px;" data-action="toggleAgentBody" data-arg="${a.id}">Edit ▾</button>
@@ -2872,7 +2872,7 @@ async function loadAgents_cfg(){
               <span>💬 Conversation Model</span>
               <span style="font-size:10px;font-weight:400;color:var(--text-3);">Used for direct replies, planning, and chat. <strong style="color:var(--text-2);">Not used when OpenCode is enabled.</strong></span>
             </div>
-            ${BROKEN_MODELS.has(a.model) ? '<div style="font-size:11px;color:#ef4444;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:5px;padding:6px 10px;margin-bottom:8px;">⚠ Current model <code>' + a.model + '</code> is broken (returns empty responses). Please reassign.</div>' : ''}
+            ${BROKEN_MODELS.has(a.model) ? '<div style="font-size:11px;color:var(--red-hi);background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:5px;padding:6px 10px;margin-bottom:8px;">⚠ Current model <code>' + a.model + '</code> is broken (returns empty responses). Please reassign.</div>' : ''}
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
               <select id="model-${a.id}" style="flex:1; min-width:200px;" onchange="syncModelText('${a.id}')">${customOpt}${modelOpts}</select>
               <input id="modeltext-${a.id}" type="text" placeholder="or type provider/model…" value="${a.model || ''}" style="flex:1; min-width:160px; font-size:12px;" oninput="syncModelSelect('${a.id}')" />
@@ -2964,11 +2964,11 @@ async function loadAgents_cfg(){
                 💬 Direct API
               </button>
               <button id="route-opencode-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="opencode"
-                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useOpenCode && !a.useCursorCli ? '#22c55e' : 'var(--border)'}; background:${a.useOpenCode && !a.useCursorCli ? 'rgba(34,197,94,0.12)' : 'var(--surface-2)'}; color:${a.useOpenCode && !a.useCursorCli ? '#22c55e' : 'var(--text-2)'};">
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useOpenCode && !a.useCursorCli ? 'var(--green-hi)' : 'var(--border)'}; background:${a.useOpenCode && !a.useCursorCli ? 'rgba(34,197,94,0.12)' : 'var(--surface-2)'}; color:${a.useOpenCode && !a.useCursorCli ? 'var(--green-hi)' : 'var(--text-2)'};">
                 ⚡ OpenCode
               </button>
               <button id="route-cursor-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="cursor"
-                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useCursorCli ? '#38bdf8' : 'var(--border)'}; background:${a.useCursorCli ? 'rgba(56,189,248,0.12)' : 'var(--surface-2)'}; color:${a.useCursorCli ? '#38bdf8' : 'var(--text-2)'};">
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useCursorCli ? 'var(--accent)' : 'var(--border)'}; background:${a.useCursorCli ? 'rgba(56,189,248,0.12)' : 'var(--surface-2)'}; color:${a.useCursorCli ? 'var(--accent)' : 'var(--text-2)'};">
                 🖱 Cursor CLI <span style="font-size:10px; font-weight:400; opacity:0.7;">(free · sub)</span>
               </button>
             </div>
@@ -2993,7 +2993,7 @@ async function loadAgents_cfg(){
             <div style="font-size:11px; color:var(--text-3);">
               Session context accumulates over time. Reset clears the conversation history and re-injects shared memory.
             </div>
-            <button data-action="resetAgentSession" data-arg="${a.id}" class="btn-ghost" style="font-size:12px; white-space:nowrap; color:#f59e0b; border-color:rgba(245,158,11,0.3);">↺ Reset session</button>
+            <button data-action="resetAgentSession" data-arg="${a.id}" class="btn-ghost" style="font-size:12px; white-space:nowrap; color:var(--amber); border-color:rgba(245,158,11,0.3);">↺ Reset session</button>
           </div>
         </div>
       `;
@@ -3094,9 +3094,9 @@ function refreshModelHeader(agentId, model, opencodeModel) {
   const chatBroken = BROKEN_MODELS.has(model);
   const ocBroken   = opencodeModel && BROKEN_MODELS.has(opencodeModel);
   el.innerHTML =
-    `<span style="font-size:11px;font-family:'SF Mono',monospace;color:${chatBroken?'#ef4444':'var(--text-2)'};" title="Conversation model">${chatBroken?'⚠ ':'💬 '}${model||'(none)'}</span>` +
-    (opencodeModel ? `<span style="font-size:11px;font-family:'SF Mono',monospace;color:${ocBroken?'#ef4444':'#4ade80'};" title="OpenCode model">⚡ ${opencodeModel}</span>` : '') +
-    (chatBroken ? `<span style="font-size:10px;font-weight:600;color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>` : '');
+    `<span style="font-size:11px;font-family:'SF Mono',monospace;color:${chatBroken?'var(--red-hi)':'var(--text-2)'};" title="Conversation model">${chatBroken?'⚠ ':'💬 '}${model||'(none)'}</span>` +
+    (opencodeModel ? `<span style="font-size:11px;font-family:'SF Mono',monospace;color:${ocBroken?'var(--red-hi)':'var(--green-hi)'};" title="OpenCode model">⚡ ${opencodeModel}</span>` : '') +
+    (chatBroken ? `<span style="font-size:10px;font-weight:600;color:var(--red-hi);background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>` : '');
 }
 
 async function saveAgentModel(agentId){
@@ -3257,8 +3257,8 @@ async function setRoute(agentId, route) {
   // Update button styles
   const styles = {
     direct:   { border: 'var(--accent)', bg: 'rgba(99,102,241,0.15)', color: 'var(--accent)' },
-    opencode: { border: '#22c55e',       bg: 'rgba(34,197,94,0.12)',  color: '#22c55e' },
-    cursor:   { border: '#38bdf8',       bg: 'rgba(56,189,248,0.12)', color: '#38bdf8' },
+    opencode: { border: 'var(--green-hi)',       bg: 'rgba(34,197,94,0.12)',  color: 'var(--green-hi)' },
+    cursor:   { border: 'var(--accent)',       bg: 'rgba(56,189,248,0.12)', color: 'var(--accent)' },
     inactive: { border: 'var(--border)', bg: 'var(--surface-2)',      color: 'var(--text-2)' },
   };
   ['direct','opencode','cursor'].forEach(r => {
@@ -3907,9 +3907,9 @@ const MODEL_ROLE = {
 };
 const ROLE_STYLE = {
   THINKER:    'background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.35);color:#a78bfa;',
-  EXECUTOR:   'background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.30);color:#4ade80;',
+  EXECUTOR:   'background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.30);color:var(--green-hi);',
   COORDINATOR:'background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.30);color:#38bdf8;',
-  ANALYST:    'background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);color:#fbbf24;',
+  ANALYST:    'background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);color:var(--yellow);',
   RESEARCHER: 'background:rgba(249,115,22,0.10);border:1px solid rgba(249,115,22,0.30);color:#fb923c;',
 };
 
@@ -3927,7 +3927,7 @@ function populateModelDropdown(selectId, currentVal) {
         const opt = document.createElement('option');
         opt.value = full;
         opt.textContent = (broken ? '⚠ BROKEN — ' : '') + (name ? (name + '  (' + id + ')') : full);
-        if (broken) opt.style.color = '#ef4444';
+        if (broken) opt.style.color = 'var(--red-hi)';
         if (full === currentVal) opt.selected = true;
         grp.appendChild(opt);
       });
@@ -3939,7 +3939,7 @@ function populateModelDropdown(selectId, currentVal) {
       const opt = document.createElement('option');
       opt.value = m;
       opt.textContent = (broken ? '⚠ BROKEN — ' : '') + m;
-      if (broken) opt.style.color = '#ef4444';
+      if (broken) opt.style.color = 'var(--red-hi)';
       if (m === currentVal) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -4005,7 +4005,7 @@ async function loadProviders(){
     providers.forEach(p => {
       const icon = PROVIDER_ICONS[p.id] || '🔌';
       const hasKey = p.hasKey;
-      const badgeColor = hasKey ? '#10b981' : '#ef4444';
+      const badgeColor = hasKey ? '#10b981' : 'var(--red-hi)';
       const badgeText = hasKey ? '✓ key set' : '✗ no key';
       const card = document.createElement('div');
       card.className = 'provider-card';
@@ -4031,12 +4031,12 @@ async function loadProviders(){
           </div>
           <div style="margin-bottom:8px;"><span class="meta">Base URL: </span><code style="font-size:11px; color:#94a3b8;">${p.baseUrl}</code></div>
           <div><span class="meta" style="display:block; margin-bottom:6px;">Models (<span id="mcount_${p.id}">${p.models.length}</span>):</span><span id="mtags_${p.id}">${p.models.map(m => '<span class="model-tag">' + m.id + '</span>').join('')}</span></div>
-          ${p.models.length === 0 ? '<div class="meta" style="margin-top:8px; color:#f59e0b;" id="mnone_${p.id}">No models yet — click ↻ Fetch models</div>' : ''}
+          ${p.models.length === 0 ? '<div class="meta" style="margin-top:8px; color:var(--amber);" id="mnone_${p.id}">No models yet — click ↻ Fetch models</div>' : ''}
         </div>
       `;
       list.appendChild(card);
     });
-  } catch(e){ list.innerHTML = '<div class="meta" style="padding:20px; color:#ef4444;">Error: ' + e.message + '</div>'; }
+  } catch(e){ list.innerHTML = '<div class="meta" style="padding:20px; color:var(--red-hi);">Error: ' + e.message + '</div>'; }
 }
 function toggleKeyVis(inputId, btn){
   const inp = document.getElementById(inputId);
@@ -4162,7 +4162,7 @@ async function loadProjects(){
         +   '<div>'
         +     '<strong style="font-size:15px;">' + escHtml(p.name) + '</strong>'
         +     '<span style="margin-left:10px;font-size:11px;padding:2px 8px;border-radius:999px;background:' + statusBg + ';color:' + statusColor + ';border:1px solid ' + statusColor + '40;">' + escHtml(p.status) + '</span>'
-        +     (p.running ? '<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">▶ running</span>' : '')
+        +     (p.running ? '<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:var(--purple);border:1px solid rgba(99,102,241,0.3);">▶ running</span>' : '')
         +     (p.description ? '<div class="meta" style="margin-top:4px;">' + escHtml(p.description) + '</div>' : '')
         +   '</div>'
         +   '<div class="meta">' + new Date(p.created).toLocaleDateString() + '</div>'
@@ -4214,7 +4214,7 @@ async function loadProjects(){
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') addRoadmapItem(inp.dataset.rmAddId); });
     });
 
-  } catch(e) { list.innerHTML = '<div class="meta" style="padding:20px;color:#ef4444;">Failed to load projects: ' + escHtml(e.message) + '</div>'; }
+  } catch(e) { list.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Failed to load projects: ' + escHtml(e.message) + '</div>'; }
 }
 
 // Single delegated click handler — replaces ALL onclick strings in project cards
@@ -4418,11 +4418,11 @@ function onBuildProjectChange() {
       'Output: ' + proj.outputDir + '<br>' +
       'Roadmap: ' + proj.roadmapFile + '<br>' +
       'Tasks: ' + proj.roadmap.done + ' done · ' + proj.roadmap.pending + ' pending · ' + proj.roadmap.failed + ' failed' +
-      (proj.running ? '<br><span style="color:#818cf8;">▶ PM Loop is running</span>' : '');
+      (proj.running ? '<br><span style="color:var(--purple);">▶ PM Loop is running</span>' : '');
     if (label) label.innerHTML =
       '<b style="color:var(--accent);">▶ ' + proj.name + '</b>' +
       ' &nbsp;·&nbsp; ' + proj.roadmap.done + ' done · ' + proj.roadmap.pending + ' pending' +
-      (proj.running ? ' &nbsp;<span style="color:#4ade80; font-weight:600;">● running</span>' : '');
+      (proj.running ? ' &nbsp;<span style="color:var(--green-hi); font-weight:600;">● running</span>' : '');
   } else {
     info.style.display = 'none';
     if (label) label.innerHTML = '← Select a project above';
