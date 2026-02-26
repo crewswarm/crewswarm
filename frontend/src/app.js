@@ -125,57 +125,113 @@ function _rtMatchesFilter(m) {
   return true;
 }
 
+// Phase → badge color + label
+const RT_PHASE_STYLE = {
+  'task.dispatched': { color: '#6366f1', label: 'dispatched' },
+  'task.started':    { color: '#f59e0b', label: 'started'    },
+  'task.completed':  { color: '#22c55e', label: 'completed'  },
+  'task.failed':     { color: '#ef4444', label: 'failed'     },
+  'task.cancelled':  { color: '#6b7280', label: 'cancelled'  },
+};
+
 function _rtBuildElement(m) {
-  const payload = m.payload || {};
-  const messageText = payload.reply || payload.prompt || payload.message || payload.content || '';
-  const isTask = RT_TASK_TYPES.has(m.type);
-  const isUser = m.from && (m.from === 'orchestrator' || m.from === 'PM Loop' || m.from === 'crew-lead' || (m.from || '').includes('main'));
+  const payload    = m.payload || {};
+  const fullText   = payload.reply || payload.prompt || payload.message || payload.content || '';
+  const type       = m.type || '';
+  const phase      = RT_PHASE_STYLE[type];
+  const timeStr    = m.ts ? new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  // First non-empty line as summary
+  const firstLine  = fullText.split('\n').map(l => l.trim()).find(l => l.length > 2) || fullText;
+  const summary    = firstLine.length > 90 ? firstLine.slice(0, 90) + '…' : firstLine;
+  const hasMore    = fullText.length > summary.length || fullText.split('\n').length > 1;
 
-  const div = document.createElement('div');
-  div.className = 'msg ' + (isUser ? 'u' : 'a');
-  if (isTask) div.style.cssText = 'border-left:2px solid var(--accent);padding-left:8px;';
+  const row = document.createElement('div');
+  row.style.cssText = [
+    'display:grid',
+    'grid-template-columns:auto auto 1fr auto',
+    'align-items:center',
+    'gap:10px',
+    'padding:7px 10px',
+    'border-radius:6px',
+    'cursor:' + (hasMore ? 'pointer' : 'default'),
+    'transition:background .12s',
+    'border-bottom:1px solid var(--border)',
+  ].join(';');
+  row.onmouseenter = () => { row.style.background = 'var(--bg-2)'; };
+  row.onmouseleave = () => { row.style.background = ''; };
 
-  const meta = document.createElement('div');
-  meta.className = 'meta';
-  const fromEl = document.createElement('strong');
-  fromEl.textContent = m.from || '?';
-  const toEl = document.createElement('strong');
-  toEl.textContent = m.to || '?';
-  meta.appendChild(fromEl);
-  meta.appendChild(document.createTextNode(' → '));
-  meta.appendChild(toEl);
-  const badge = document.createElement('span');
-  badge.style.cssText = 'margin-left:8px;font-size:10px;opacity:.6;';
-  badge.textContent = (m.type || '') + (m.ts ? ' · ' + new Date(m.ts).toLocaleTimeString() : '');
-  meta.appendChild(badge);
-
-  const COLLAPSE_LINES = 20;
-  const lines = messageText.split('\n');
-  const isLong = lines.length > COLLAPSE_LINES;
-  const body = document.createElement('div');
-  body.className = 't';
-  body.style.whiteSpace = 'pre-wrap';
-  if (!isLong) {
-    body.textContent = messageText;
-  } else {
-    const preview = lines.slice(0, COLLAPSE_LINES).join('\n');
-    let expanded = false;
-    const textNode = document.createTextNode(preview);
-    body.appendChild(textNode);
-    const toggle = document.createElement('button');
-    toggle.style.cssText = 'display:block;margin-top:6px;background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--accent);cursor:pointer;opacity:.8;';
-    toggle.textContent = '▼ +' + (lines.length - COLLAPSE_LINES) + ' lines';
-    toggle.onclick = () => {
-      expanded = !expanded;
-      textNode.textContent = expanded ? messageText : preview;
-      toggle.textContent = expanded ? '▲ Collapse' : '▼ +' + (lines.length - COLLAPSE_LINES) + ' lines';
-    };
-    body.appendChild(toggle);
+  // Agent pill: from → to
+  const agents = document.createElement('div');
+  agents.style.cssText = 'display:flex;align-items:center;gap:5px;white-space:nowrap;min-width:0;';
+  const fromPill = document.createElement('span');
+  fromPill.style.cssText = 'font-size:11px;font-weight:600;color:var(--text-1);max-width:110px;overflow:hidden;text-overflow:ellipsis;';
+  fromPill.textContent = (m.from || '?').replace('crew-', '');
+  fromPill.title = m.from || '';
+  agents.appendChild(fromPill);
+  if (m.to && m.to !== m.from) {
+    const arrow = document.createElement('span');
+    arrow.style.cssText = 'font-size:10px;color:var(--text-3);flex-shrink:0;';
+    arrow.textContent = '→';
+    const toPill = document.createElement('span');
+    toPill.style.cssText = 'font-size:11px;color:var(--text-2);max-width:110px;overflow:hidden;text-overflow:ellipsis;';
+    toPill.textContent = (m.to || '').replace('crew-', '');
+    toPill.title = m.to || '';
+    agents.appendChild(arrow);
+    agents.appendChild(toPill);
   }
 
-  div.appendChild(meta);
-  div.appendChild(body);
-  return div;
+  // Phase badge
+  const badge = document.createElement('span');
+  const ps = phase || { color: 'var(--text-3)', label: type.split('.').pop() || type };
+  badge.style.cssText = 'font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;color:#fff;background:' + ps.color + ';letter-spacing:.03em;';
+  badge.textContent = ps.label;
+
+  // Summary text
+  const preview = document.createElement('span');
+  preview.style.cssText = 'font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;';
+  preview.textContent = summary;
+
+  // Time + expand hint
+  const right = document.createElement('div');
+  right.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;';
+  const timeEl = document.createElement('span');
+  timeEl.style.cssText = 'font-size:10px;color:var(--text-3);white-space:nowrap;';
+  timeEl.textContent = timeStr;
+  right.appendChild(timeEl);
+  if (hasMore) {
+    const hint = document.createElement('span');
+    hint.style.cssText = 'font-size:10px;color:var(--text-3);';
+    hint.textContent = '▸';
+    right.appendChild(hint);
+  }
+
+  row.appendChild(agents);
+  row.appendChild(badge);
+  row.appendChild(preview);
+  row.appendChild(right);
+
+  // Expand panel — shown on click
+  if (hasMore) {
+    const detail = document.createElement('div');
+    detail.style.cssText = 'display:none;grid-column:1/-1;padding:8px 6px 4px;font-size:12px;color:var(--text-2);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;border-top:1px solid var(--border);margin-top:4px;font-family:monospace;';
+    detail.textContent = fullText;
+    // Wrap row + detail in a container
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:grid;grid-template-columns:1fr;border-radius:6px;overflow:hidden;border-bottom:1px solid var(--border);';
+    row.style.borderBottom = 'none'; // remove double border when wrapped
+    let open = false;
+    row.onclick = () => {
+      open = !open;
+      detail.style.display = open ? 'block' : 'none';
+      const hint = right.querySelector('span:last-child');
+      if (hint) hint.textContent = open ? '▾' : '▸';
+    };
+    wrap.appendChild(row);
+    wrap.appendChild(detail);
+    return wrap;
+  }
+
+  return row;
 }
 
 async function loadRTMessages(){
@@ -200,8 +256,15 @@ async function loadRTMessages(){
   _rtSeenIds = newIds;
   box.innerHTML = '';
   if (!filtered.length) {
-    box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;opacity:.6;">No messages match the current filter.</div>';
+    box.innerHTML = '<div style="padding:24px;text-align:center;font-size:12px;color:var(--text-3);">No events match the current filter.</div>';
   } else {
+    // Subtle column header
+    const header = document.createElement('div');
+    header.style.cssText = 'display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;padding:4px 10px 6px;font-size:10px;font-weight:600;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;border-bottom:2px solid var(--border);margin-bottom:2px;';
+    ['Agent', 'Phase', 'Summary', 'Time'].forEach(label => {
+      const th = document.createElement('span'); th.textContent = label; header.appendChild(th);
+    });
+    box.appendChild(header);
     filtered.forEach(m => box.appendChild(_rtBuildElement(m)));
   }
 
