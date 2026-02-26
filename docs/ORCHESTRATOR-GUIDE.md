@@ -1,324 +1,148 @@
-# 🚀 Orchestrator Guide
+# Orchestrator Guide
 
 **Last Updated:** 2026-02-26
 
-> **Preferred approach:** Use the **Chat tab** in the dashboard — type naturally, crew-lead dispatches to crew-pm and the right agents automatically. The CLI orchestrators below are for programmatic/scripted use.
+> **Primary interface:** The **Chat tab** in the dashboard (`http://127.0.0.1:4319`). Type naturally — crew-lead dispatches to crew-pm and the right agents automatically. The CLI approach below is for scripted or programmatic use.
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues.
 
-## What This Does
+---
 
-You give a requirement → PM plans → agents execute in parallel waves → verification → files on disk.
+## How orchestration works
+
+You give a requirement → crew-pm plans → agents execute in parallel waves → files on disk.
 
 ```
 YOU: "Build user authentication"
   ↓
-crew-pm: plans tasks
+crew-pm: breaks into subtasks, identifies dependencies
   ↓
-├─→ crew-coder:    implements auth (wave 1)
-├─→ crew-qa:       audits output  (wave 2)
-└─→ crew-github:   commits to git (wave 3)
+wave 1 (parallel)
+├─→ crew-coder:    implements auth files
+├─→ crew-qa:       writes tests (after wave 1)
+└─→ crew-security: audits code (after wave 1)
 
-Result: Files written to disk ✓
+Result: files written to project output dir ✓
 ```
 
-## How to Use
+---
 
-### Basic Usage
+## Dashboard (recommended)
+
+1. Open `http://127.0.0.1:4319` → **Chat tab**
+2. Type your requirement: `"Build JWT auth with login and register"`
+3. crew-lead proposes a multi-agent plan and dispatches when you confirm
+4. Watch the **Events** tab for live task progress
+
+Or use the **Build tab** for a project-scoped build loop against a `ROADMAP.md`.
+
+---
+
+## CLI (scripted / power users)
+
 ```bash
+# Simple way — wraps unified-orchestrator.mjs
+node scripts/run.mjs "Build JWT-based user authentication with login, register, and password reset"
+
+# Direct
 node unified-orchestrator.mjs "Your requirement here"
-# or
-node scripts/run.mjs "Your requirement here"
 ```
 
-### Examples
+### CLI examples
 
-**Authentication System:**
 ```bash
-node unified-orchestrator.mjs "Build JWT-based user authentication with login, register, and password reset"
+# API feature
+node scripts/run.mjs "Create rate limiting middleware that blocks after 100 requests per minute"
+
+# UI component
+node scripts/run.mjs "Add dark mode toggle to dashboard with smooth CSS transitions and localStorage persistence"
+
+# Background job system
+node scripts/run.mjs "Build background job queue using BullMQ with Redis, retries, and a monitoring UI"
 ```
 
-**API Features:**
-```bash
-node unified-orchestrator.mjs "Create rate limiting middleware that blocks after 100 requests per minute"
-```
+---
 
-**UI Components:**
-```bash
-node unified-orchestrator.mjs "Add dark mode toggle to dashboard with smooth transitions"
-```
+## What happens behind the scenes
 
-**Full Features:**
-```bash
-node unified-orchestrator.mjs "Build a notification system with email, SMS, and in-app alerts"
-```
+### 1. PM receives the task
+- Analyzes the requirement
+- Breaks it into subtasks with dependencies
+- Assigns each subtask to the right agent
 
-## What Happens (Behind the Scenes)
+### 2. Agents execute in parallel waves
 
-### 1. PM Receives Master Task
-- PM analyzes your requirement
-- Breaks it into subtasks
-- Identifies dependencies
+| Wave | Agents | What happens |
+|------|--------|-------------|
+| 1 | crew-coder | Implements the code |
+| 2 | crew-qa, crew-security | Tests + security audit (parallel, after wave 1) |
+| 3 | crew-github | Commits when review passes |
 
-### 2. PM Dispatches to Agents (Parallel)
-```
-PM → Codex:    "Implement these 5 files"
-PM → Tester:   "Write tests when Codex is done"
-PM → Security: "Audit when Codex is done"
-PM → PM:       "Research best practices now"
-```
+### 3. PM reports final status
 
-### 3. Agents Coordinate via RT Channels
 ```
-Codex → Tester:   "Files ready: login.ts, register.ts"
-Codex → Security: "Audit these files"
-Tester → PM:      "38 tests pass, 94% coverage"
-Security → PM:    "Security approved, 0 issues"
-```
-
-### 4. PM Reports Final Status
-```
-🎉 REQUIREMENT COMPLETE
-
-✅ Research: JWT + bcrypt recommended
 ✅ Implementation: 5 files created
-✅ Testing: 38 tests, 94% coverage
-✅ Security: Audit passed
-✅ Documentation: README + API docs
-✅ UI/UX: Polished forms
-
-Status: PRODUCTION READY ✓
+✅ Tests: 38 tests, 94% coverage
+✅ Security: 0 issues found
+✅ Committed to git
 ```
 
-## Output
+---
 
-### Files Created
-All implemented files in your project:
-- TypeScript with strict types
-- JSDoc comments
-- Proper error handling
-- Production-ready
+## Writing good requirements
 
-### Tests
-Comprehensive test suite:
-- Unit tests
-- Integration tests
-- Edge cases
-- >90% coverage
+**Be specific and include context:**
 
-### Documentation
-Complete docs:
-- README.md (setup + usage)
-- API.md (endpoints + examples)
-- SECURITY.md (considerations)
+| Bad | Good |
+|-----|------|
+| `"Build auth"` | `"Build JWT auth with login, register, logout endpoints"` |
+| `"Add dark mode"` | `"Add dark mode toggle to dashboard, persist in localStorage"` |
+| `"Create API"` | `"Create REST API at /api/users with CRUD, auth middleware"` |
 
-### Security
-Full audit report:
-- Vulnerability scan
-- Dependency check (npm audit)
-- Code review
-- Approval status
+---
 
-## Pipeline Stages (Automatic)
+## Pipeline DSL (advanced)
 
-| Stage | Agent | What Happens | Duration |
-|-------|-------|--------------|----------|
-| Research | PM | Searches best practices | 30s |
-| Architecture | PM | Designs solution | 45s |
-| Implementation | Codex | Writes code | 2-5min |
-| Testing | Tester | Writes tests, runs them | 2-3min |
-| Security | Guardian | Audits for vulnerabilities | 1-2min |
-| Documentation | PM | Writes README, API docs | 1min |
-| UI/UX | Codex | Polishes interface | 1-2min |
-| Final Review | PM | Verifies everything | 30s |
+Send a pipeline directly from the Chat tab or API:
 
-**Total Time: 8-15 minutes** for a complete feature
-
-## Monitoring Progress
-
-The orchestrator shows live updates:
 ```
-⏳ Monitoring swarm progress...
-
-  ✓ Research complete
-  ✓ Implementation complete
-  ✓ Testing complete
-  ✓ Security audit complete
-  ✓ Documentation complete
-  ✓ UI/UX complete
-
-✅ PM reports: COMPLETE
+@@PIPELINE [
+  {"wave":1, "agent":"crew-coder",    "task":"Write /src/auth.ts — JWT login"},
+  {"wave":2, "agent":"crew-qa",       "task":"Test the auth endpoint"},
+  {"wave":3, "agent":"crew-github",   "task":"Commit and open a PR"}
+]
 ```
+
+Tasks in the same `wave` run in parallel. Higher waves wait for lower waves.
+
+---
 
 ## Troubleshooting
 
-### "Timeout: Swarm did not complete"
-**Cause:** Pipeline took >10 minutes (usually means an agent got stuck)
+**Agents not responding:**
+```bash
+npm run health          # check all services
+npm run restart-all     # restart everything
+```
 
-**Fix:**
+**Pipeline timeout:**
 ```bash
 # Check which agent is stuck
-bash scripts/openswitchctl status   # or ~/bin/openswitchctl if installed
+tail -f /tmp/bridge-crew-coder.log
 
-# Check errors (default path; overridden by SHARED_MEMORY_DIR)
-tail -50 ~/.crewswarm/workspace/shared-memory/claw-swarm/opencrew-rt/channels/issues.jsonl
-
-# Restart stuck agent
-bash scripts/openswitchctl restart-agent crew-coder
+# Restart a specific bridge
+node scripts/start-crew.mjs --restart crew-coder
 ```
 
-### "PM not dispatching tasks"
-**Cause:** PM is waiting for instructions instead of acting autonomously
+**Token / auth errors:**
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — "Token alignment" section.
 
-**Fix:**
-Handled by external unified orchestrator (`unified-orchestrator.mjs`)
+---
 
-### "Agents not communicating"
-**Cause:** RT channels not working or agents not using correct message format
+## Stopping a run
 
-**Fix:**
-```bash
-# Check crew-lead (port 5010)
-curl http://127.0.0.1:5010/health
-
-# Check agent status
-npm run health
-```
-
-### "Code quality is poor"
-**Cause:** Validation is disabled or agents using wrong model
-
-**Fix:**
-```bash
-# Check agent models
-grep '"model":' ~/.crewswarm/crewswarm.json | head -7
-
-# Should all be: groq/llama-3.3-70b-versatile
-```
-
-## Advanced Usage
-
-### Custom Pipeline Stages
-Edit `unified-orchestrator.mjs` and modify the PM/parser prompts to add your own stages:
-```javascript
-- @custom-agent: Custom task description
-```
-
-### Parallel vs Sequential
-By default, tasks run in parallel where possible:
-- Research + Architecture run first (parallel)
-- Implementation starts after architecture
-- Testing + Security + UI/UX run in parallel after implementation
-- Documentation runs after testing + security
-- Final review runs last
-
-### Adjust Timeout
-Default timeout is 10 minutes. To increase:
-```javascript
-// In unified-orchestrator.mjs (adjust timeout in gateway-bridge runSendToAgent if needed)
-const finalReport = await monitorProgress(response.taskId, 900000); // 15 min
-```
-
-## Best Practices
-
-### 1. Be Specific
-❌ Bad: "Build auth"  
-✅ Good: "Build JWT-based authentication with login, register, logout, and password reset endpoints"
-
-### 2. Include Context
-❌ Bad: "Add dark mode"  
-✅ Good: "Add dark mode toggle to dashboard with smooth CSS transitions and persistent localStorage"
-
-### 3. Mention File Paths
-❌ Bad: "Create API"  
-✅ Good: "Create REST API in /api/users/ with CRUD endpoints"
-
-### 4. Specify Tech Stack
-❌ Bad: "Build form"  
-✅ Good: "Build React form with Zod validation and TypeScript types"
-
-## Real-World Examples
-
-### E-commerce Feature
-```bash
-node unified-orchestrator.mjs "Build shopping cart with add/remove items, calculate total with tax, persist to localStorage, and show item count badge in navbar"
-```
-
-**Output:**
-- `components/ShoppingCart.tsx` (cart UI)
-- `lib/cart.ts` (cart logic)
-- `hooks/useCart.ts` (React hook)
-- `tests/cart.test.ts` (28 tests)
-- Security audit (XSS prevention)
-- README with usage examples
-
-### Dashboard Widget
-```bash
-node unified-orchestrator.mjs "Create analytics dashboard widget showing user signups over last 7 days with line chart using Recharts"
-```
-
-**Output:**
-- `components/SignupChart.tsx` (chart component)
-- `lib/analytics.ts` (data fetching)
-- `api/analytics/signups.ts` (API endpoint)
-- `tests/analytics.test.ts` (15 tests)
-- Responsive design (mobile-friendly)
-- Documentation with screenshots
-
-### Background Job System
-```bash
-node unified-orchestrator.mjs "Build background job queue using BullMQ with Redis, support retries, job scheduling, and web UI to monitor jobs"
-```
-
-**Output:**
-- `lib/queue/index.ts` (queue setup)
-- `lib/queue/jobs/*.ts` (job definitions)
-- `api/jobs/route.ts` (monitoring API)
-- `components/JobMonitor.tsx` (UI)
-- `tests/queue.test.ts` (32 tests)
-- Security audit (Redis auth)
-- Deployment guide
-
-## Comparison: Before vs After
-
-### Before (Manual Assignment)
-```
-You: "Build auth"
-You: "Use JWT"
-You: "Add bcrypt for passwords"
-You: "Create login endpoint"
-You: "Create register endpoint"
-You: "Add validation"
-You: "Write tests"
-You: "Check for SQL injection"
-You: "Write docs"
-You: "Make the form pretty"
-You: "Why isn't this working?"
-
-Time: 2 hours of micromanaging
-Quality: Inconsistent
-```
-
-### After (Autonomous Orchestrator)
-```
-You: "Build JWT auth with login/register"
-
-[Wait 10 minutes]
-
-PM: "Done. 8 files. 42 tests. 0 vulnerabilities. Production ready."
-
-Time: 10 minutes, zero micromanaging
-Quality: Perfect, tested, documented, secure
-```
-
-## That's It!
-
-**Now you can bark orders and get perfect code.** 🚀
-
-Test it:
-```bash
-node unified-orchestrator.mjs "Create a simple todo list API with CRUD operations"
-```
-
-Watch the swarm work its magic!
-
+| Command | Effect |
+|---------|--------|
+| `@@STOP` in chat | Graceful — cancel queued pipeline waves, stop PM loop |
+| `@@KILL` in chat | Hard — all of the above + kills agent bridge processes |
+| Dashboard → Build tab → Stop | Stops the active phased/continuous build |
