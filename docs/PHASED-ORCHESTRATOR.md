@@ -1,87 +1,85 @@
 # Phased Orchestrator
 
-**Context:** This repo is the OpenCrew plugin (folder may still be named OpenClaw). The dashboard you use for **OpenCrew RT Messages** is usually at http://127.0.0.1:4318 (served by `~/.openclaw/workspace/skills/swarm_mcp/dashboard.mjs`).
+**Last Updated:** 2026-02-26
 
-**Problem:** Large tasks cause PM timeouts. The unified orchestrator asks for one big plan → PM takes too long → 120s timeout.
+---
 
-**Solution:** `phased-orchestrator.mjs` breaks work into phases (PDD-style: MVP → Phase 1 → Phase 2). Each phase = 3–5 small tasks. Shorter PM prompts = faster response = no timeout.
+## What it does
+
+The phased orchestrator breaks large requirements into sequential phases (MVP → Phase 1 → Phase 2), dispatching each phase as a small set of 3–5 focused tasks. This avoids PM timeouts on complex requirements and produces cleaner, auditable builds.
 
 ## Usage
 
-```bash
-# MVP only (3–5 small tasks)
-node phased-orchestrator.mjs "Build a marketing website for CrewSwarm in website/"
+### From the dashboard Chat tab
 
-# All phases (MVP + Phase 1 + Phase 2)
-node phased-orchestrator.mjs --all "Build a marketing website for CrewSwarm in website/"
+```
+Build a SaaS dashboard with auth, billing, and reports — phase it out
 ```
 
-## Flow
+crew-lead + crew-pm will plan phases automatically. Each phase runs as a `@@PIPELINE` wave.
 
-1. **PDD step** – PM breaks requirement into MVP tasks (short prompt, ~30s)
-2. **Execute MVP** – Run 3–5 small tasks sequentially
-3. **Phase 1** (with `--all`) – PM lists Phase 1 tasks, execute
-4. **Phase 2** (with `--all`) – PM lists Phase 2 tasks, execute
-
-Each task = ONE action (~60s), so no timeout.
-
-**On failure:** If a task fails (timeout or error), the orchestrator asks the PM to break it into 2–4 smaller subtasks, then runs those. Only one level of breakdown (subtasks are not broken down again).
-
-## Dashboard Build UI
-
-- **OpenCrew RT Messages** (the dashboard you use) is at **http://127.0.0.1:4318**. That server is `~/.openclaw/workspace/skills/swarm_mcp/dashboard.mjs`; it already has the Build button in the code. **To see Build on 4318:** restart that dashboard (kill the process on 4318, then run `node ~/.openclaw/workspace/skills/swarm_mcp/dashboard.mjs`).
-- **Or** run the dashboard from this repo (recommended for Build: uses 3 min timeout + breakdown); it defaults to port **4319** so it doesn’t steal 4318:
+### From the PM Loop (autonomous mode)
 
 ```bash
-cd /path/to/OpenClaw   # or: cd ~/Desktop/OpenClaw
-node scripts/dashboard.mjs
-# Open http://127.0.0.1:4319  (Build is in the header)
+# Start PM loop — reads ROADMAP.md, dispatches tasks until done
+PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
 ```
 
-In either dashboard, click **Build** to:
+### Via API
 
-1. Type your requirement in the textarea (or use **Enhance prompt** to turn a rough idea into a clear requirement via Groq).
-2. Click **Run Build**
-3. Phased orchestrator runs with `--all`
-4. Watch RT Messages for progress
+```bash
+TOKEN=$(cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])")
 
-**No reboot needed:** After code changes (timeouts, breakdown logic), just run the build again. Restart the dashboard only if you want UI changes to apply.
+curl -X POST http://127.0.0.1:5010/api/dispatch \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"crew-pm","task":"Phase this requirement into MVP + Phase 1 + Phase 2: Build a user auth API with tests"}'
+```
 
-**Good prompts:** One or two clear sentences work best. Examples:
-- *"Build a marketing website for OpenCrew in website/ with hero, feature list, and CTA."*
-- *"Add a README to the OpenClaw repo describing the phased orchestrator and how to run a build from the dashboard."*
+---
 
-**Enhance prompt:** The Build tab has an **Enhance prompt** button that uses Groq (env `GROQ_API_KEY`) to rewrite your idea into a single, concrete requirement. Set `GROQ_API_KEY` in your environment or in the shell that starts the dashboard.
+## Pipeline DSL (@@PIPELINE)
 
-**Do agents know about this plugin?** They only see the task text and shared memory (e.g. handoff context). To have them use this repo or its features, say so in the requirement (e.g. *"In the OpenClaw plugin repo at ... add ..."*) or add a memory/skill that describes the plugin layout and capabilities.
+crew-lead (or any agent) can emit a pipeline directly:
 
-## Logs
+```
+@@PIPELINE [
+  {"wave":1, "agent":"crew-coder", "task":"Write /src/auth.ts — JWT login endpoint"},
+  {"wave":1, "agent":"crew-coder", "task":"Write /src/auth.test.ts — unit tests"},
+  {"wave":2, "agent":"crew-qa",    "task":"Audit /src/auth.ts for security issues"},
+  {"wave":2, "agent":"crew-fixer", "task":"Apply any fixes from QA report"}
+]
+```
 
-- `orchestrator-logs/phased-dispatch.jsonl` – Per-task status (MVP, Phase 1, Phase 2). Status values: `completed`, `failed`, `subtask_completed`, `subtask_failed`. Failed tasks that were broken down include `breakdown_of` (original task text).
+Tasks in the same `wave` run in parallel. Higher waves wait for all lower waves to complete. Pipeline state is saved and auto-resumed if crew-lead restarts.
 
-## Timeouts and output
+---
 
-- **Per-task timeout:** 5 minutes (300s) by default so “features section” / “agents table” tasks can finish. Override with `PHASED_TASK_TIMEOUT_MS`. PM is instructed to split so each task = one small deliverable (e.g. one subsection), not multiple in one task.
-- **Bridge wait:** `gateway-bridge.mjs --send` waits up to `OPENCREW_RT_SEND_TIMEOUT_MS` (default 120s). The phased orchestrator sets this to the same value as its task timeout so the bridge doesn’t give up before the orchestrator.
-- **Output:** By default all build output is directed to `OPENCLAW_DIR/website/` (e.g. `~/Desktop/OpenClaw/website/`). The PM is told to put this path in every coding task. Override with `OPENCREW_OUTPUT_DIR`. If the agent’s runtime uses a different cwd (e.g. workspace), set `OPENCREW_OUTPUT_DIR` to a path that runtime can write to (e.g. absolute path under the repo or workspace).
+## Stop / cancel
 
-## "Permission requested: external_directory … auto-rejecting"
+| Command | Effect |
+|---|---|
+| `"stop everything"` in chat | Graceful stop — cancels pending waves, signals PM loops to finish current task |
+| `"kill everything"` in chat | Hard stop — cancels waves + SIGTERMs all agent bridges immediately |
 
-**Symptom:** crew-coder fails with `permission requested: external_directory (/Users/jeffhobbs/Desktop/OpenClaw/website/*); auto-rejecting` when creating or writing files in the output path.
+---
 
-**Cause:** The OpenClaw Gateway (or app) that runs the agents uses a sandbox that only allows writes inside its configured “project” or allowlist. The OpenClaw *plugin* repo path is treated as external and blocked.
+## Output
 
-**Fix (pick one):**
+By default agents write to the path specified in each task. Override the base output path with `OPENCREW_OUTPUT_DIR`:
 
-1. **Allow the plugin repo in OpenClaw**  
-   In the OpenClaw app that runs the gateway/agents, add the plugin repo (or the `website` directory) to the allowed paths for tool writes. Where that is depends on your OpenClaw version (e.g. project settings, `openclaw.json`, or “allowed directories” / “external_directory” allowlist). Once the path is allowed, crew-coder can write to `…/OpenClaw/website/`.
+```bash
+OPENCREW_OUTPUT_DIR=/tmp/my-build npm run restart-all
+```
 
-2. **Use the workspace as output**  
-   If the agent’s allowed project is `~/.openclaw/workspace`, send build output there instead:
-   ```bash
-   OPENCREW_OUTPUT_DIR="/Users/jeffhobbs/.openclaw/workspace/website" node phased-orchestrator.mjs --all "Build marketing site..."
-   ```
-   Then check `~/.openclaw/workspace/website/` for generated files. Copy into the plugin repo if needed.
+---
 
-3. **Create `website/` in the repo**  
-   Ensure `website/` exists in the plugin repo (e.g. `mkdir -p ~/Desktop/OpenClaw/website`). Some sandboxes only allow writes into existing directories; creating the dir first can help. You still need the path to be allowed (fix 1) for the agent to write into it.
+## Troubleshooting
+
+**PM timeouts** — if crew-pm times out on large requirements, break the requirement into phases yourself and dispatch each phase separately.
+
+**Agent not picking up tasks** — run `npm run health` to check all bridges are connected. Use `@@SERVICE restart agents` in chat to respawn bridges.
+
+**Pipeline stuck at wave N** — if an agent in the current wave is offline, the wave never completes. Restart the missing agent from the Services tab or say `@@SERVICE restart <agent-id>` in chat.
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more.

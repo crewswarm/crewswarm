@@ -1,12 +1,23 @@
 # 🔧 How to Keep Your Agents Working Reliably
 
-**Last Updated:** 2026-02-21
+**Last Updated:** 2026-02-26
 
 ## ✅ Health checks (what we use now)
 
-CrewSwarm does **not** ship a separate `health-check.sh`. Use these instead:
+### 1. **Full health check — fastest all-in-one**
+```bash
+node scripts/health-check.mjs
+# or:
+npm run health
+```
+**What it checks:** Every service (crew-lead, RT bus, dashboard, MCP server, Code Engine), all configured agents, API provider keys, and MCP protocol handshake. Completes in under 10 seconds.
 
-### 1. **Quick status**
+```bash
+node scripts/health-check.mjs --quiet   # only print failures
+node scripts/health-check.mjs --json    # machine-readable output
+```
+
+### 2. **Quick process status**
 ```bash
 bash scripts/openswitchctl status
 # or, if installed to ~/bin:
@@ -14,17 +25,12 @@ bash ~/bin/openswitchctl status
 ```
 **Expected:** `running (rt:up, agents:N/N)` with all agents listed and `:up`.
 
-### 2. **Full system test**
+### 3. **Full end-to-end smoke tests**
 ```bash
-node scripts/crewswarm-test.mjs --quick
+npm run smoke:dispatch   # dispatch to crew-coder + crew-main, verify replies
+npm run smoke:e2e        # full flow: coder writes file, qa audits it
+npm run smoke            # both
 ```
-**What it checks:** Config, RT token, agents, prompts, providers, processes, ports, RT daemon, dashboard, crew-lead. Run without `--quick` to include a live crew-pm round-trip.
-
-### 3. **Optional: test without any OpenClaw config**
-```bash
-bash scripts/test-no-openclaw.sh
-```
-Temporarily moves `~/.openclaw` aside and runs the checks above to confirm everything works from `~/.crewswarm` only.
 
 ---
 
@@ -43,9 +49,10 @@ bash scripts/openswitchctl restart-agent crew-coder
 
 ### Weekly check (~2 minutes)
 ```bash
-node scripts/crewswarm-test.mjs --quick
-tail -50 ~/.crewswarm/logs/*.log   # if you have logs there
-# RT events (if using default path):
+npm run health                     # all-systems diagnostic
+npm run smoke                      # live dispatch test
+tail -50 /tmp/bridge-*.log         # agent bridge logs
+# RT events:
 tail -100 ~/.crewswarm/workspace/shared-memory/claw-swarm/opencrew-rt/events.jsonl
 ```
 
@@ -91,9 +98,12 @@ bash scripts/openswitchctl send crew-coder "Create /tmp/hello-crewswarm.txt with
 
 ### Full test suite
 ```bash
-node scripts/crewswarm-test.mjs
+npm run health          # all-systems diagnostic (< 10 seconds)
+npm run smoke           # live dispatch + end-to-end flow test
+npm run test:mcp        # MCP protocol tests (requires mcp server running)
+npm run test:all        # everything above combined
 ```
-**Expected:** All sections pass (config, agents, prompts, providers, RT, dashboard, crew-lead chat, agent round-trip).
+**Expected:** All checks pass.
 
 ---
 

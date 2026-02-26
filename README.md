@@ -72,7 +72,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/CrewSwarm/CrewSwarm/main/ins
 The installer:
 - Checks Node.js 20+ (tells you how to get it if missing)
 - Runs `npm install`
-- Creates `~/.crewswarm/` and `~/.openclaw/` with correct structure
+- Creates `~/.crewswarm/` with correct structure
 - Writes default config with a random RT auth token
 - Bootstraps all 10 agents defaulted to Groq Llama 3.3 70B
 - Pre-approves `npm *`, `node *`, `npx *` in the command allowlist
@@ -165,31 +165,36 @@ PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  Control Surfaces                   │
-│  crew-cli  │  Dashboard (4319)  │  SwiftBar │  TG  │
-└────────────────────────┬────────────────────────────┘
-                         │ HTTP (5010)
-                    crew-lead.mjs
-                 (chat · dispatch · pipelines)
-                         │ WebSocket pub/sub
-              ┌──────────┴──────────┐
-              │  RT Bus (18889)     │  ← opencrew-rt-daemon.mjs
-              └──────────┬──────────┘
-                         │ task.assigned / command.run_task
-         ┌───────┬───────┼───────┬────────┐
-       crew-pm  crew-coder  crew-qa  crew-fixer  …
-         │       │
-         │    gateway-bridge.mjs (per-agent daemon)
-         │       ├── loads shared memory (brain.md, etc.)
-         │       ├── calls LLM directly (per-provider API)
-         │       ├── executes @@WRITE_FILE / @@READ_FILE / @@MKDIR / @@RUN_CMD
-         │       ├── approval gate for @@RUN_CMD
-         │       └── retry → escalate to crew-fixer → DLQ
-         │
-      memory/           ← shared agent context (markdown)
-      crew-scribe.mjs   ← polls done.jsonl, writes brain.md + session-log.md
-      DLQ               ← failed task replay queue
+┌──────────────────────────────────────────────────────────────────┐
+│                       Control Surfaces                           │
+│  Dashboard (4319)  │  SwiftBar  │  Telegram  │  WhatsApp  │  CLI │
+└────────────────────────────┬─────────────────────────────────────┘
+                              │ HTTP (5010)
+                         crew-lead.mjs
+                   (chat · dispatch · pipelines · @@STOP/@@KILL)
+                              │ WebSocket pub/sub
+                 ┌────────────┴────────────┐
+                 │  RT Bus (18889)          │  ← opencrew-rt-daemon.mjs
+                 └────────────┬────────────┘
+                              │ task.assigned / command.run_task
+        ┌───────┬─────────────┼───────┬──────────┐
+      crew-pm  crew-coder  crew-qa  crew-fixer  crew-github  …
+                 │
+              gateway-bridge.mjs (per-agent daemon)
+                 ├── loads shared memory (brain.md, etc.)
+                 ├── calls LLM directly (per-provider API)
+                 ├── executes @@WRITE_FILE / @@READ_FILE / @@RUN_CMD
+                 ├── approval gate for @@RUN_CMD
+                 ├── Code Engine :4096 (OpenCode / Claude Code / Cursor)
+                 └── retry → escalate to crew-fixer → DLQ
+
+  MCP + OpenAI API (5020)  ← mcp-server.mjs (optional)
+     ├── Cursor MCP · Claude Code MCP
+     └── Open WebUI · LM Studio · Aider (/v1/chat/completions)
+
+  memory/           ← shared agent context (markdown)
+  crew-scribe.mjs   ← polls done.jsonl, writes brain.md + session-log.md
+  DLQ               ← failed task replay queue
 ```
 
 ---
@@ -246,7 +251,7 @@ Managed through the dashboard **Providers** tab → saved to `~/.crewswarm/confi
 
 ### Agent models
 
-Set in the dashboard **Agents** tab or directly in `~/.openclaw/openclaw.json`:
+Set in the dashboard **Agents** tab or directly in `~/.crewswarm/crewswarm.json`:
 
 ```json
 {
