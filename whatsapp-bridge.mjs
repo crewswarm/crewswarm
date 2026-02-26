@@ -459,9 +459,19 @@ async function main() {
     const chunks = splitMessage(text);
     for (const chunk of chunks) {
       try {
-        await sock.sendMessage(jid, { text: chunk });
+        // Baileys sock.sendMessage has no built-in timeout — race against a timer
+        // so a stale-but-connected socket never freezes the reply path.
+        await Promise.race([
+          sock.sendMessage(jid, { text: chunk }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("sendMessage timeout (15s)")), 15000)),
+        ]);
       } catch (e) {
         log("error", "sendMessage failed", { jid, error: e.message });
+        // If socket appears stale, trigger reconnect so next message works
+        if (e.message.includes("timeout") || e.message.includes("Connection Closed")) {
+          log("warn", "Socket stale — reconnecting", { jid });
+          try { await sock.end(new Error("stale socket")); } catch {}
+        }
       }
     }
   }
