@@ -4,9 +4,9 @@
  * Run from CrewSwarm repo so the Build button is included.
  *
  *   node scripts/dashboard.mjs
- *   → http://127.0.0.1:4318
+ *   → http://127.0.0.1:4319
  *
- * If port 4318 is in use, set SWARM_DASH_PORT=4319
+ * Override port: SWARM_DASH_PORT=4320 node scripts/dashboard.mjs
  */
 import http from "node:http";
 import path from "node:path";

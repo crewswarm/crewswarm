@@ -1,4 +1,4 @@
-# OpenCrewHQ — Features & Use Cases Reference
+# CrewSwarm — Features & Use Cases Reference
 
 **Purpose:** Single source of truth for marketing site copy, feature lists, use cases, and technical highlights. Updated to reflect the current state of the system including PM Loop, continuous builds, project management, and the live website.
 
@@ -6,7 +6,7 @@
 
 ## Tagline / Value Proposition
 
-**OpenCrewHQ** — multi-agent orchestration for builders. Give it one sentence. A PM agent plans it, a crew of specialists builds it, QA validates it, and a fault-recovery system handles the rest. Everything lands on disk. Nothing is faked.
+**CrewSwarm** — multi-agent orchestration for builders. Give it one sentence. A PM agent plans it, a crew of specialists builds it, QA validates it, and a fault-recovery system handles the rest. Everything lands on disk. Nothing is faked.
 
 **Hero tagline options:**
 - *"One requirement. One crew. Real files."*
@@ -19,7 +19,7 @@
 
 The stack has three layers:
 
-1. **OpenCrew RT** — WebSocket message bus. Agents subscribe to topics, tasks are dispatched targeted to one agent at a time. No broadcast races, no duplicate work.
+1. **CrewSwarm RT** — WebSocket message bus. Agents subscribe to topics, tasks are dispatched targeted to one agent at a time. No broadcast races, no duplicate work.
 2. **Direct LLM + tools** — Each agent uses its own model (Groq, Anthropic, OpenAI, etc.) from `~/.crewswarm/crewswarm.json`. Gateway-bridge handles tool execution (file write, read, run_cmd, etc.). An optional legacy gateway on port 18789 is supported but not required.
 3. **Orchestration layer** (this repo) — PM planning, phased builds, PM Loop, shared memory, fault recovery, dashboard, SwiftBar control plane.
 
@@ -89,9 +89,9 @@ Swap models per agent, per project. Anthropic for coder, Groq for PM expansion, 
 | `crew-main` | — | Coordinator | Chat, triage, kick off orchestrators |
 | `crew-pm` | Planner | Planning | Break requirements into tasks, assign agents |
 | `crew-coder` | — | Implementation | Write code, create files, run commands |
-| `crew-qa` | Tester | Quality | Add tests, validate behavior |
+| `crew-qa` | Testy | Quality | Add tests, validate behavior |
 | `crew-fixer` | Debugger | Bug fixing | Debug failures, fix edge cases |
-| `crew-security` | Guardian | Security | Vulnerability reviews, config hardening |
+| `crew-security` | RoboCop | Security | Vulnerability reviews, config hardening |
 
 ---
 
@@ -99,7 +99,7 @@ Swap models per agent, per project. Anthropic for coder, Groq for PM expansion, 
 
 | Mode | Command | Best for |
 |---|---|---|
-| **Phased PDD** | `node phased-orchestrator.mjs --all "…"` | Larger or ambiguous work; auto-phases, auto-retries |
+| **Phased PDD** | `node scripts/run.mjs "…"` | Larger or ambiguous work; auto-phases, auto-retries |
 | **PM Loop** | `node pm-loop.mjs` | Continuous builds; self-generates tasks; runs forever |
 | **Continuous Build** | `node continuous-build.mjs` | Websites and structured outputs with defined required sections |
 | **Unified** | `node scripts/run.mjs "…"` | Single-shot structured runs |
@@ -163,7 +163,7 @@ Runs at `localhost:4319`. Sections:
 - Green bolt = stack running, red = off — at a glance
 - Start / Stop / Restart entire stack
 - Per-agent restart or start
-- "Open OpenCrewHQ Dashboard" with focus
+- "Open CrewSwarm Dashboard" with focus
 - Per-agent direct message; broadcast
 - RT Server and legacy gateway status
 - Debug links: RT log, crew-lead log, plugin dir, CrewSwarm repo dir
@@ -202,7 +202,7 @@ Use Anthropic Claude for coding quality, Groq for PM task expansion speed, OpenA
 
 ## Technical Highlights (Short Bullets for Site)
 
-- OpenCrew RT WebSocket bus: command, done, issues, status, assign topics
+- CrewSwarm RT WebSocket bus: command, done, issues, status, assign topics
 - Direct LLM per agent (Groq, Anthropic, OpenAI, NVIDIA, etc. in crewswarm.json), full tool execution
 - PM Loop: ROADMAP.md → Groq task expansion → targeted send → mark done → self-extend
 - PID file prevents duplicate PM Loop processes; dashboard detects and kills stale instances

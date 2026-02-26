@@ -328,7 +328,7 @@ CrewSwarm/
 - [System Architecture](docs/SYSTEM-ARCHITECTURE.md)
 - [Orchestrator Guide](docs/ORCHESTRATOR-GUIDE.md)
 - [Phased Builds (PDD)](docs/PHASED-ORCHESTRATOR.md)
-- [Agent Setup](docs/OPENCLAW-AGENTS-SETUP.md)
+- [Agent Setup](docs/SETUP-NEW-AGENTS.md)
 - [Model Recommendations](docs/MODEL-RECOMMENDATIONS.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Go Public Roadmap](docs/GO-PUBLIC-ROADMAP.md)

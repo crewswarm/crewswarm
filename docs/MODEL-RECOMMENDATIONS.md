@@ -8,12 +8,12 @@ All providers below are pre-configured in `~/.crewswarm/crewswarm.json`. To swap
 
 | Agent | Current Model | Provider |
 |---|---|---|
-| `crew-main` (Quill) | `openai/gpt-5.1-codex` | OpenCode |
-| `crew-coder` (Codex) | `groq/llama-3.3-70b-versatile` | Groq |
-| `crew-pm` (Planner) | `groq/llama-3.3-70b-versatile` | Groq |
-| `crew-qa` (Tester) | `groq/llama-3.3-70b-versatile` | Groq |
-| `crew-fixer` (Debugger) | `groq/llama-3.3-70b-versatile` | Groq |
-| `security` (Guardian) | `groq/llama-3.3-70b-versatile` | Groq |
+| `crew-main` (Quill) | `xai/grok-3-mini` | xAI |
+| `crew-coder` (Fuller) | `groq/moonshotai/kimi-k2-instruct-0905` | Groq |
+| `crew-pm` (Planx) | `deepseek/deepseek-reasoner` | DeepSeek |
+| `crew-qa` (Testy) | `deepseek/deepseek-chat` | DeepSeek |
+| `crew-fixer` (The Fixer) | `groq/moonshotai/kimi-k2-instruct-0905` | Groq |
+| `crew-security` (RoboCop) | `deepseek/deepseek-chat` | DeepSeek |
 | **Default primary** | `opencode/big-pickle` | OpenCode |
 | **Default fallbacks** | `anthropic/claude-haiku-4-5` → `anthropic/claude-sonnet-4-20250514` | Anthropic |
 
