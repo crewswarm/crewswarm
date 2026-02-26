@@ -855,8 +855,9 @@ const html = `<!doctype html>
         <button class="stab active" id="stab-usage"    onclick="showSettingsTab('usage')">💰 Usage</button>
         <button class="stab"        id="stab-security" onclick="showSettingsTab('security')">🔐 Security</button>
         <button class="stab"        id="stab-webhooks" onclick="showSettingsTab('webhooks')">🌐 Webhooks</button>
-        <button class="stab"        id="stab-telegram" onclick="showSettingsTab('telegram')">📡 Telegram</button>
-        <button class="stab"        id="stab-system"   onclick="showSettingsTab('system')">🛠 System</button>
+        <button class="stab"        id="stab-telegram"  onclick="showSettingsTab('telegram')">📡 Telegram</button>
+        <button class="stab"        id="stab-whatsapp"  onclick="showSettingsTab('whatsapp')">💬 WhatsApp</button>
+        <button class="stab"        id="stab-system"    onclick="showSettingsTab('system')">🛠 System</button>
       </div>
 
       <!-- Usage: Token stats + Spending caps -->
@@ -1033,6 +1034,55 @@ const html = `<!doctype html>
                 <button onclick="loadTgMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
               </div>
               <div id="tgMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 400px);overflow-y:auto;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WhatsApp -->
+      <div id="stab-panel-whatsapp" style="display:none;padding:16px;max-width:900px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div>
+            <div style="font-size:16px;font-weight:700;">💬 WhatsApp</div>
+            <div style="font-size:12px;color:var(--text-3);">Personal bot via Baileys — your phone number as a linked device</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="waStatusBadge" class="status-badge status-stopped">● stopped</span>
+            <button onclick="startWaBridge()" class="btn-green" id="waStartBtn">▶ Start</button>
+            <button onclick="stopWaBridge()" class="btn-red" id="waStopBtn">⏹ Stop</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:12px;">⚙️ Configuration</div>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed phone numbers <span style="color:var(--text-3);font-weight:400;">(comma-separated, international format)</span></label>
+              <input id="waAllowedNumbers" placeholder="+15551234567, +15559876543" style="width:100%;margin-bottom:12px;" />
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Target agent</label>
+              <input id="waTargetAgent" placeholder="crew-lead" style="width:100%;margin-bottom:12px;" />
+              <button onclick="saveWaConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.6;margin-top:4px;">
+                Leave <em>Allowed numbers</em> empty to accept messages from anyone.<br/>
+                Auth persists in <code>~/.crewswarm/whatsapp-auth/</code> — QR scan is only needed once.<br/>
+                Start the bridge from the terminal to scan the QR code the first time:<br/>
+                <code style="font-size:10px;">npm run whatsapp</code>
+              </div>
+            </div>
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:8px;">📋 Auth status</div>
+              <div id="waAuthStatus" style="font-size:12px;color:var(--text-3);">Checking...</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">Recent messages</div>
+                  <div style="font-size:11px;color:var(--text-3);">Inbound and outbound WhatsApp messages</div>
+                </div>
+                <button onclick="loadWaMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="waMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 380px);overflow-y:auto;"></div>
             </div>
           </div>
         </div>
@@ -2578,6 +2628,86 @@ async function stopTgBridge(){
   setTimeout(loadTgStatus, 1000);
 }
 
+// ── WhatsApp settings ──────────────────────────────────────────────────────────
+
+async function loadWaStatus(){
+  try {
+    const d = await getJSON('/api/whatsapp/status');
+    const badge = document.getElementById('waStatusBadge');
+    if (!badge) return;
+    if (d.running) {
+      badge.textContent = d.number ? '● +' + d.number : '● running';
+      badge.className = 'status-badge status-active';
+    } else {
+      badge.textContent = '● stopped';
+      badge.className = 'status-badge status-stopped';
+    }
+    const authEl = document.getElementById('waAuthStatus');
+    if (authEl) authEl.textContent = d.authSaved
+      ? '✅ Auth saved — no QR scan needed on restart'
+      : '⚠️ No auth saved — run npm run whatsapp in terminal to scan QR';
+  } catch {}
+}
+
+async function loadWaConfig(){
+  try {
+    const d = await getJSON('/api/whatsapp/config');
+    const n = document.getElementById('waAllowedNumbers');
+    const t = document.getElementById('waTargetAgent');
+    if (n) n.value = (d.allowedNumbers || []).join(', ');
+    if (t) t.value = d.targetAgent || 'crew-lead';
+  } catch {}
+}
+
+async function saveWaConfig(){
+  const numbersRaw = document.getElementById('waAllowedNumbers').value.trim();
+  const allowedNumbers = numbersRaw ? numbersRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const targetAgent = (document.getElementById('waTargetAgent').value.trim()) || 'crew-lead';
+  await postJSON('/api/whatsapp/config', { allowedNumbers, targetAgent });
+  showNotification('WhatsApp config saved');
+}
+
+async function startWaBridge(){
+  const r = await postJSON('/api/whatsapp/start', {});
+  if (r && r.error) { showNotification(r.error, true); return; }
+  showNotification(r && r.message === 'Already running' ? 'Already running' : 'WhatsApp bridge starting…');
+  setTimeout(loadWaStatus, 2000);
+}
+
+async function stopWaBridge(){
+  await postJSON('/api/whatsapp/stop', {});
+  showNotification('WhatsApp bridge stopped');
+  setTimeout(loadWaStatus, 1000);
+}
+
+async function loadWaMessages(){
+  const feed = document.getElementById('waMessageFeed');
+  if (!feed) return;
+  try {
+    const msgs = await getJSON('/api/whatsapp/messages');
+    if (!msgs.length) {
+      feed.innerHTML = '<div class="meta" style="padding:20px;text-align:center;">No messages yet. Send a WhatsApp message to your linked number.</div>';
+      return;
+    }
+    feed.innerHTML = msgs.slice(-50).reverse().map(m => {
+      const isIn = m.direction === 'inbound';
+      const time = m.ts ? new Date(m.ts).toLocaleTimeString() : '';
+      const number = (m.jid || '').split('@')[0] || '';
+      return '<div style="display:flex;gap:10px;padding:8px;background:var(--bg-2);border-radius:6px;align-items:flex-start;">' +
+        '<span style="font-size:18px;">' + (isIn ? '📲' : '🤖') + '</span>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:11px;color:var(--text-3);margin-bottom:2px;">' +
+            escHtml(isIn ? ('+' + number) : 'CrewSwarm') + (time ? ' · ' + time : '') +
+          '</div>' +
+          '<div style="font-size:13px;word-break:break-word;">' + escHtml((m.text||'').slice(0,300)) + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    feed.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px;">Could not load messages.</div>';
+  }
+}
+
 let _servicesPollTimer = null;
 function showServices(){
   hideAllViews();
@@ -3143,6 +3273,7 @@ function showSettingsTab(tab){
   if (tab === 'security') { loadCmdAllowlist(); }
   if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); }
   if (tab === 'telegram') { loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
+  if (tab === 'whatsapp') { loadWaStatus(); loadWaConfig(); loadWaMessages(); }
 }
 
 function showSkills(){
@@ -7661,6 +7792,110 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/telegram/messages") {
       try {
         const raw = fs.readFileSync(TG_MSG_PATH, "utf8");
+        const msgs = raw.trim().split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(msgs.slice(-100)));
+      } catch {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end("[]");
+      }
+      return;
+    }
+
+    // ── WhatsApp API ──────────────────────────────────────────────────────────
+    const WA_CONFIG_PATH = path.join(os.homedir(), ".crewswarm", "whatsapp-bridge.json");
+    const WA_PID_PATH    = path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid");
+    const WA_MSG_PATH    = path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-messages.jsonl");
+    const WA_AUTH_DIR    = path.join(os.homedir(), ".crewswarm", "whatsapp-auth");
+
+    function loadWaCfg() {
+      try { return JSON.parse(fs.readFileSync(WA_CONFIG_PATH, "utf8")); } catch { return {}; }
+    }
+    function isWaRunning() {
+      try {
+        const pid = parseInt(fs.readFileSync(WA_PID_PATH, "utf8").trim(), 10);
+        if (!pid) return false;
+        process.kill(pid, 0);
+        return true;
+      } catch { return false; }
+    }
+
+    if (url.pathname === "/api/whatsapp/status") {
+      const running = isWaRunning();
+      const authSaved = fs.existsSync(path.join(WA_AUTH_DIR, "creds.json"));
+      const cfg = loadWaCfg();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ running, authSaved, number: cfg.number || "" }));
+      return;
+    }
+
+    if (url.pathname === "/api/whatsapp/config" && req.method === "GET") {
+      const cfg = loadWaCfg();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        allowedNumbers: cfg.allowedNumbers || [],
+        targetAgent: cfg.targetAgent || "crew-lead",
+      }));
+      return;
+    }
+
+    if (url.pathname === "/api/whatsapp/config" && req.method === "POST") {
+      let raw = ""; for await (const chunk of req) raw += chunk;
+      const body = JSON.parse(raw || "{}");
+      const existing = loadWaCfg();
+      fs.writeFileSync(WA_CONFIG_PATH, JSON.stringify({ ...existing, ...body }, null, 2));
+      // Also write WA_ALLOWED_NUMBERS into crewswarm.json env block so the bridge picks it up
+      try {
+        const swarmPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+        const swarm = JSON.parse(fs.readFileSync(swarmPath, "utf8"));
+        swarm.env = swarm.env || {};
+        if (body.allowedNumbers !== undefined) {
+          swarm.env.WA_ALLOWED_NUMBERS = (body.allowedNumbers || []).join(",");
+        }
+        if (body.targetAgent) swarm.env.WA_TARGET_AGENT = body.targetAgent;
+        fs.writeFileSync(swarmPath, JSON.stringify(swarm, null, 2));
+      } catch {}
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (url.pathname === "/api/whatsapp/start" && req.method === "POST") {
+      if (isWaRunning()) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, message: "Already running" }));
+        return;
+      }
+      const cfg = loadWaCfg();
+      const swarm = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8")); } catch { return {}; } })();
+      const waEnv = swarm.env || {};
+      const { spawn: spawnBridge } = await import("node:child_process");
+      const bridgePath = path.join(OPENCLAW_DIR, "whatsapp-bridge.mjs");
+      const env = {
+        ...process.env,
+        ...(waEnv.WA_ALLOWED_NUMBERS ? { WA_ALLOWED_NUMBERS: waEnv.WA_ALLOWED_NUMBERS } : {}),
+        ...(waEnv.WA_TARGET_AGENT   ? { WA_TARGET_AGENT:    waEnv.WA_TARGET_AGENT }    : {}),
+      };
+      const proc = spawnBridge("node", [bridgePath], { env, detached: true, stdio: "ignore", cwd: OPENCLAW_DIR });
+      proc.unref();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, pid: proc.pid }));
+      return;
+    }
+
+    if (url.pathname === "/api/whatsapp/stop" && req.method === "POST") {
+      try {
+        const pid = parseInt(fs.readFileSync(WA_PID_PATH, "utf8").trim(), 10);
+        if (pid) process.kill(pid, "SIGTERM");
+      } catch {}
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (url.pathname === "/api/whatsapp/messages") {
+      try {
+        const raw = fs.readFileSync(WA_MSG_PATH, "utf8");
         const msgs = raw.trim().split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(msgs.slice(-100)));
