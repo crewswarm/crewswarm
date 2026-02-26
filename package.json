@@ -22,7 +22,12 @@
     "smoke": "npm run smoke:dispatch && npm run smoke:e2e",
     "improvement:baseline": "node scripts/improvement-baseline-test.mjs",
     "mcp": "node scripts/mcp-server.mjs",
-    "mcp:stdio": "node scripts/mcp-server.mjs --stdio"
+    "mcp:stdio": "node scripts/mcp-server.mjs --stdio",
+    "health": "node scripts/health-check.mjs",
+    "test:mcp": "node scripts/test-mcp.mjs --start",
+    "test:classifier": "node scripts/test-classifier.mjs",
+    "test:classifier:e2e": "node scripts/test-classifier.mjs --e2e",
+    "test:all": "npm run health && npm run smoke && npm run test:mcp && npm run test:classifier"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
