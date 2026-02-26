@@ -149,6 +149,13 @@ const OPENCREW_RT_DISPATCH_MAX_RETRIES = Number(process.env.OPENCREW_RT_DISPATCH
 const OPENCREW_RT_DISPATCH_MAX_RETRIES_CODING = Number(process.env.OPENCREW_RT_DISPATCH_MAX_RETRIES_CODING || "3");
 const OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS = Number(process.env.OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS || "2000");
 const OPENCREW_OPENCODE_ENABLED = (process.env.OPENCREW_OPENCODE_ENABLED || "1") !== "0";  // ON by default
+// CREWSWARM_CURSOR_WAVES=1 — route multi-agent waves through Cursor subagents
+// instead of dispatching each agent independently. The crew-orchestrator subagent
+// fans all tasks in a wave out to /crew-* subagents in parallel.
+const CREWSWARM_CURSOR_WAVES = process.env.CREWSWARM_CURSOR_WAVES === "1";
+// CREWSWARM_CLAUDE_CODE=1 — route tasks through Claude Code CLI (`claude -p`)
+// Uses ANTHROPIC_API_KEY. Per-agent opt-in via useClaudeCode:true in crewswarm.json.
+const CREWSWARM_CLAUDE_CODE = process.env.CREWSWARM_CLAUDE_CODE === "1";
 const OPENCREW_OPENCODE_FORCE = process.env.OPENCREW_OPENCODE_FORCE === "1";
 const OPENCREW_OPENCODE_BIN = process.env.OPENCREW_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
 function getOpencodeProjectDir() {
@@ -1089,7 +1096,7 @@ const AGENT_TOOL_ROLE_DEFAULTS = {
   'crew-security':    new Set(['read_file','run_cmd']),
   'crew-copywriter':  new Set(['write_file','read_file','skill']),
   'crew-telegram':    new Set(['telegram','read_file']),
-  'crew-lead':        new Set(['dispatch','skill']),
+  'crew-lead':        new Set(['read_file','write_file','mkdir','run_cmd','web_search','web_fetch','skill','define_skill','dispatch','telegram','whatsapp']),
 };
 
 // CrewSwarm @@TOOL permission names — distinct from legacy gateway tool names
@@ -2036,7 +2043,25 @@ function shouldUseCursorCli(payload, incomingType) {
   if (runtime === "cursor" || runtime === "cursor-cli") return true;
   if (payload?.useCursorCli === true) return true;
   const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  // crew-orchestrator always runs through Cursor CLI — it IS a Cursor subagent orchestrator
+  if (agentId === "crew-orchestrator" || agentId === "orchestrator") return CREWSWARM_CURSOR_WAVES;
   return getAgentOpenCodeConfig(agentId).useCursorCli === true;
+}
+
+function shouldUseClaudeCode(payload, incomingType) {
+  if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
+  // Cursor CLI always takes priority over Claude Code
+  if (shouldUseCursorCli(payload, incomingType)) return false;
+  const runtime = String(payload?.runtime || payload?.executor || "").toLowerCase();
+  if (runtime === "claude" || runtime === "claude-code") return true;
+  if (payload?.useClaudeCode === true) return true;
+  const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  try {
+    const agents = loadAgentList();
+    const cfg = agents.find(a => a.id === agentId || a.id === `crew-${agentId}`);
+    if (cfg?.useClaudeCode === true) return true;
+  } catch {}
+  return CREWSWARM_CLAUDE_CODE;
 }
 
 function shouldUseOpenCode(payload, prompt, incomingType) {
@@ -2252,6 +2277,207 @@ async function runCursorCliTask(prompt, payload = {}) {
         reject(new Error(`CursorCLI exited without a result event. Output so far: ${accumulatedText.slice(0, 300)}`));
       }
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Claude Code backend
+// Uses `claude -p --dangerously-skip-permissions --output-format stream-json`
+// Requires ANTHROPIC_API_KEY. Session continuity via --resume <sessionId>.
+// Subagents defined in .claude/agents/*.md (same YAML format as .cursor/agents/).
+// ---------------------------------------------------------------------------
+
+const CLAUDE_CODE_BIN = process.env.CLAUDE_CODE_BIN || "claude";
+const CLAUDE_SESSION_DIR = OPENCODE_SESSION_DIR; // ~/.crewswarm/sessions/
+
+function readClaudeSessionId(agentId) {
+  if (!agentId) return null;
+  try {
+    const f = path.join(CLAUDE_SESSION_DIR, `${agentId}.claude-session`);
+    if (fs.existsSync(f)) return fs.readFileSync(f, "utf8").trim() || null;
+  } catch {}
+  return null;
+}
+
+function writeClaudeSessionId(agentId, sessionId) {
+  if (!agentId || !sessionId) return;
+  try {
+    fs.mkdirSync(CLAUDE_SESSION_DIR, { recursive: true });
+    fs.writeFileSync(path.join(CLAUDE_SESSION_DIR, `${agentId}.claude-session`), sessionId, "utf8");
+  } catch {}
+}
+
+function clearClaudeSessionId(agentId) {
+  if (!agentId) return;
+  try {
+    const f = path.join(CLAUDE_SESSION_DIR, `${agentId}.claude-session`);
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+  } catch {}
+}
+
+async function runClaudeCodeTask(prompt, payload = {}) {
+  // Claude Code CLI: `claude -p --dangerously-skip-permissions --output-format stream-json`
+  // stream-json emits newline-delimited events; we accumulate text from content_block_delta
+  // events and resolve on the {"type":"result"} event (same pattern as runCursorCliTask).
+  return new Promise((resolve, reject) => {
+    const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
+    const configuredDir = getOpencodeProjectDir();
+    let projectDir = payload?.projectDir || configuredDir || process.cwd();
+    projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+
+    // Prefix prompt with agent identity so Claude knows its role in the crew
+    const agentPrefix = agentId ? `[${agentId}]` : "";
+    const titledPrompt = agentPrefix ? `${agentPrefix} ${String(prompt)}` : String(prompt);
+
+    const args = [
+      "-p",
+      "--dangerously-skip-permissions",
+      "--output-format", "stream-json",
+    ];
+
+    // Model override (claude-code supports --model claude-opus-4-5 etc.)
+    const agentCfg = getAgentOpenCodeConfig(agentId);
+    const model = payload?.claudeCodeModel || agentCfg.claudeCodeModel || payload?.model || null;
+    if (model && !model.includes("/")) {
+      // Only pass bare model names (e.g. claude-sonnet-4-5), not provider/model strings
+      args.push("--model", model);
+    }
+
+    // Session continuity: resume previous session for this agent
+    const existingSession = readClaudeSessionId(agentId);
+    if (existingSession) {
+      args.push("--resume", existingSession);
+      console.error(`[ClaudeCode:${agentId}] Resuming session ${existingSession}`);
+    }
+
+    args.push(titledPrompt);
+
+    console.error(`[ClaudeCode:${agentId}] Running: ${CLAUDE_CODE_BIN} -p --dangerously-skip-permissions (cwd=${projectDir})`);
+
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast",
+      payload: { agent: agentId, model: model || "claude/auto", ts: Date.now() } });
+
+    const child = spawn(CLAUDE_CODE_BIN, args, {
+      cwd: projectDir,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let lineBuffer = "";
+    let accumulatedText = "";
+    let resultReceived = false;
+    let resultSessionId = null;
+
+    const hardTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+      if (!resultReceived) reject(new Error(`ClaudeCode timeout after ${OPENCREW_OPENCODE_TIMEOUT_MS}ms`));
+    }, OPENCREW_OPENCODE_TIMEOUT_MS);
+
+    function handleLine(line) {
+      line = line.trim();
+      if (!line) return;
+      try {
+        const ev = JSON.parse(line);
+
+        // stream-json text delta: {"type":"stream_event","event":{"type":"content_block_delta",...}}
+        if (ev.type === "stream_event") {
+          const inner = ev.event;
+          if (inner?.type === "content_block_delta" && inner?.delta?.type === "text_delta") {
+            accumulatedText += inner.delta.text || "";
+          }
+        }
+
+        // assistant message (non-streaming path)
+        if (ev.type === "assistant") {
+          const content = ev.message?.content;
+          if (Array.isArray(content)) {
+            for (const c of content) {
+              if (c.type === "text" && c.text) accumulatedText += c.text;
+            }
+          } else if (typeof content === "string") {
+            accumulatedText += content;
+          }
+        }
+
+        // {"type":"result"} — task done
+        if (ev.type === "result" && !resultReceived) {
+          resultReceived = true;
+          // Claude Code returns session_id in the result event
+          resultSessionId = ev.session_id || ev.sessionId || ev.chatId || null;
+          clearTimeout(hardTimer);
+          child.kill("SIGTERM");
+          // Prefer ev.result (plain text summary) over accumulated streaming text
+          const out = (ev.result || accumulatedText).trim() || "(claude code completed with no text output)";
+          console.log(`[ClaudeCode:${agentId}] Done — ${out.length} chars`);
+          _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast",
+            payload: { agent: agentId, ts: Date.now() } });
+          if (agentId && resultSessionId) {
+            writeClaudeSessionId(agentId, resultSessionId);
+            console.error(`[ClaudeCode:${agentId}] Session saved: ${resultSessionId}`);
+          }
+          resolve(out);
+        }
+      } catch {
+        // Non-JSON stderr noise — ignore
+      }
+    }
+
+    child.stdout.on("data", (d) => {
+      lineBuffer += d.toString();
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop();
+      lines.forEach(handleLine);
+    });
+    child.stderr.on("data", (d) => {
+      const s = d.toString().trim();
+      if (s && !s.startsWith("\x1b")) console.error(`[ClaudeCode:${agentId}] stderr: ${s.slice(0, 160)}`);
+    });
+    child.on("error", (err) => {
+      clearTimeout(hardTimer);
+      if (!resultReceived) reject(err);
+    });
+    child.on("close", () => {
+      clearTimeout(hardTimer);
+      if (!resultReceived) {
+        reject(new Error(`ClaudeCode exited without a result event. Output so far: ${accumulatedText.slice(0, 300)}`));
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// runCursorWaveTask — dispatch a full wave of tasks to Cursor subagents in
+// parallel via the crew-orchestrator subagent. The orchestrator receives the
+// wave manifest as JSON and fans out to /crew-* subagents simultaneously,
+// returning a combined === WAVE [n] RESULTS === report.
+// ---------------------------------------------------------------------------
+async function runCursorWaveTask(waveIndex, tasks, payload = {}) {
+  const projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
+  const context = payload?.priorWaveContext || "";
+
+  const manifest = {
+    wave: waveIndex + 1,
+    projectDir,
+    context: context ? context.slice(0, 2000) : undefined,
+    tasks: tasks.map(t => ({ agent: t.agent, task: t.task })),
+  };
+
+  // Build the orchestrator prompt: instruct it to dispatch all tasks in parallel
+  const orchestratorPrompt = [
+    `[crew-orchestrator] Execute this wave manifest — dispatch ALL tasks to subagents in parallel:`,
+    "```json",
+    JSON.stringify(manifest, null, 2),
+    "```",
+    `Dispatch all ${tasks.length} task(s) simultaneously using the Task tool. Return combined results.`,
+  ].join("\n");
+
+  console.error(`[CursorWave] Wave ${waveIndex + 1}: dispatching ${tasks.length} tasks via crew-orchestrator in parallel`);
+  tasks.forEach(t => console.error(`  → ${t.agent}: ${String(t.task).slice(0, 80)}`));
+
+  return runCursorCliTask(orchestratorPrompt, {
+    ...payload,
+    agentId: "crew-orchestrator",
+    projectDir,
   });
 }
 
@@ -3778,10 +4004,14 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     assertTaskPromptProtocol(finalPrompt, "realtime");
 
     const useCursorCli = shouldUseCursorCli(payload, incomingType);
+    const useClaudeCode = shouldUseClaudeCode(payload, incomingType);
     const useOpenCode = shouldUseOpenCode(payload, prompt, incomingType);
     if (useCursorCli) {
       progress(`Routing realtime task to Cursor CLI (agent -p --force)...`);
       telemetry("realtime_route_cursor_cli", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
+    } else if (useClaudeCode) {
+      progress(`Routing realtime task to Claude Code (claude -p)...`);
+      telemetry("realtime_route_claude_code", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
     } else if (useOpenCode) {
       const routeAgent = String(payload?.agent || OPENCREW_OPENCODE_AGENT || "default");
       const ocAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
@@ -3805,9 +4035,21 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         const msg = e?.message ?? String(e);
         progress(`Cursor CLI failed: ${msg.slice(0, 120)} — falling back to OpenCode`);
         telemetry("cursor_cli_fallback", { taskId, error: msg });
-        // Fall back to OpenCode on failure
         const ocPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
         reply = await runOpenCodeTask(ocPrompt, payload);
+      }
+    } else if (useClaudeCode) {
+      // ── Claude Code backend ────────────────────────────────────────────
+      let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
+      projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+      try {
+        reply = await runClaudeCodeTask(prompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+      } catch (e) {
+        const msg = e?.message ?? String(e);
+        progress(`Claude Code failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
+        telemetry("claude_code_fallback", { taskId, error: msg });
+        // Fall back to direct LLM via standard OpenAI-compat call
+        reply = await callLLMDirect(finalPrompt, OPENCREW_RT_AGENT, null);
       }
     } else if (useOpenCode) {
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || null;

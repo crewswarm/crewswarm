@@ -4,16 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CrewSwarm — Multi-Agent Orchestrator for OpenCode &amp; Cursor</title>
-  <meta name="description" content="CrewSwarm is the multi-agent orchestration layer for OpenCode and Cursor. A crew of specialist AI agents — PM, coder, QA, fixer — collaborate over a realtime bus. Route each agent through OpenCode, Cursor CLI, or direct API. Bring your own LLM." />
+  <meta name="description" content="CrewSwarm is the multi-agent orchestration layer for OpenCode and Cursor. Led by Stinki — the AI captain who orchestrates, roasts, and ships. PM, coder, QA, fixer and more collaborate over a realtime bus. Bring your own LLM." />
   <meta property="og:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode &amp; Cursor" />
   <meta property="og:description" content="The orchestration layer for OpenCode and Cursor. PM-led builds, realtime dispatch, fault recovery. One requirement, one crew, real files on disk." />
   <meta property="og:url" content="https://crewswarm.ai" />
   <meta property="og:type" content="website" />
-  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:image" content="https://crewswarm.fly.dev/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode &amp; Cursor" />
   <meta name="twitter:description" content="Route each agent through OpenCode, Cursor CLI, or direct API. PM-led builds, realtime dispatch, real files on disk. Free &amp; open source." />
-  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <meta name="twitter:image" content="https://crewswarm.fly.dev/og-image.png" />
   <link rel="canonical" href="https://crewswarm.ai/" />
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="apple-touch-icon" href="favicon.png" />
@@ -49,7 +51,10 @@
   <section id="hero" class="hero">
     <div class="hero-glow"></div>
     <div class="hero-mascot-wrap">
-      <img src="mascot.png" alt="CrewSwarm mascot" class="hero-mascot" />
+      <picture>
+        <source srcset="stinky.webp" type="image/webp" />
+        <img src="stinky.png" alt="Stinki — CrewSwarm mascot" class="hero-mascot" width="512" height="512" />
+      </picture>
     </div>
     <h1>One requirement.<br/>One build.<br/><span class="gradient-text">One crew.</span></h1>
     <p class="hero-sub">The multi-agent orchestration layer for <strong>OpenCode</strong> and <strong>Cursor</strong>. Plan, dispatch, build, and verify — with real files on disk.</p>
@@ -627,17 +632,42 @@
       <div class="section-header">
         <div class="eyebrow">The crew</div>
         <h2>Specialized agents,<br/>targeted tasks</h2>
-        <p class="section-desc">crew-lead plus a growing roster of specialized agents — each with a role, a model, and a set of tools. The PM decides who gets what — no broadcast racing.</p>
+        <p class="section-desc">A crew of specialists, each with a role, a model, and a set of tools. The PM decides who gets what — no broadcast racing.</p>
       </div>
-      <div class="agents-grid">
-        <div class="agent-card">
-          <div class="agent-avatar" style="background:rgba(168,85,247,0.2); color:#c084fc;">L</div>
-          <div class="agent-info">
-            <div class="agent-name">crew-lead</div>
-            <div class="agent-role">Chat commander</div>
-            <p>Conversational UI: talk in the dashboard, CrewChat, or Telegram. Drafts roadmaps, dispatches to the crew, answers questions with Brave Search and codebase lookup when you ask.</p>
+
+      <!-- ── Stinki featured bio ── -->
+      <div class="stinki-bio-card">
+        <div class="stinki-bio-left">
+          <picture>
+            <source srcset="stinki-avatar.webp" type="image/webp" />
+            <img src="stinki-avatar.png" alt="Stinki — Chat Commander" class="stinki-avatar" width="300" height="300" />
+          </picture>
+        </div>
+        <div class="stinki-bio-right">
+          <div class="stinki-eyebrow">crew-lead · Chat Commander</div>
+          <h3 class="stinki-name">🧠 Stinki ☠️</h3>
+          <p class="stinki-desc">The pirate captain of this AI swarm. Stinki orchestrates dispatches, drafts roadmaps, and answers your questions with web search or codebase dives. Talk to him from the dashboard, Telegram, or WhatsApp. If you're talking shit, he'll roast back — while keeping the ship afloat. No prisoners. Just results.</p>
+          <div class="stinki-traits">
+            <span class="stinki-trait">🔥 Talks back</span>
+            <span class="stinki-trait">🗺️ Roadmaps on demand</span>
+            <span class="stinki-trait">🌐 Web search</span>
+            <span class="stinki-trait">⚡ Dispatches the crew</span>
+            <span class="stinki-trait">📱 Telegram + WhatsApp</span>
+          </div>
+          <div class="stinki-prompt-wrap">
+            <div class="stinki-prompt-label">Try it</div>
+            <div class="stinki-prompt-examples">
+              <div class="stinki-prompt">"build me a SaaS landing page with a waitlist"</div>
+              <div class="stinki-prompt">"have crew-qa audit the last PR"</div>
+              <div class="stinki-prompt">"what's the fastest free model right now?"</div>
+              <div class="stinki-prompt">"kick off the pipeline for my React app"</div>
+            </div>
           </div>
         </div>
+      </div>
+
+      <div class="agents-grid" style="margin-top:32px;">
+        <div class="agent-card" style="display:none;"><!-- crew-lead is featured above --></div>
         <div class="agent-card">
           <div class="agent-avatar" style="background:rgba(56,189,248,0.15); color:#38bdf8;">Q</div>
           <div class="agent-info">

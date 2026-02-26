@@ -1147,6 +1147,22 @@ const html = `<!doctype html>
           </div>
           <div id="bgConsciousnessStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
         </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">⚡ Cursor Parallel Waves</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                Route pipeline waves through Cursor's native subagent system. All agents in a wave run simultaneously in isolated context windows via the <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">crew-orchestrator</code> subagent — no queuing, no collisions.
+                Requires Cursor CLI installed (<code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">~/.local/bin/agent</code>). Single-task waves always bypass the orchestrator.
+              </div>
+            </div>
+            <button id="cursorWavesBtn" onclick="toggleCursorWaves()" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="cursorWavesStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
       </div>
 
     </div>
@@ -3286,6 +3302,34 @@ async function toggleBgConsciousness() {
     loadBgConsciousness();
   } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
+async function loadCursorWaves() {
+  const btn = document.getElementById('cursorWavesBtn');
+  const status = document.getElementById('cursorWavesStatus');
+  try {
+    const d = await getJSON('/api/settings/cursor-waves');
+    const on = d.enabled;
+    if (btn) {
+      btn.textContent = on ? '⚡ ON' : '⚫ OFF';
+      btn.style.background = on ? 'rgba(168,85,247,0.15)' : 'var(--surface-2)';
+      btn.style.borderColor = on ? '#a855f7' : 'var(--border)';
+      btn.style.color = on ? '#c084fc' : 'var(--text-2)';
+    }
+    if (status) status.textContent = on
+      ? 'Active — multi-agent waves fan out to Cursor subagents in parallel. crew-orchestrator coordinates each wave.'
+      : 'Off — each agent in a wave dispatches independently through the standard gateway.';
+  } catch(e) {
+    if (btn) btn.textContent = 'Error';
+    if (status) status.textContent = 'Could not load: ' + e.message;
+  }
+}
+async function toggleCursorWaves() {
+  try {
+    const current = await getJSON('/api/settings/cursor-waves');
+    const d = await postJSON('/api/settings/cursor-waves', { enabled: !current.enabled });
+    showNotification('Cursor Parallel Waves ' + (d.enabled ? 'ENABLED ⚡' : 'DISABLED'));
+    loadCursorWaves();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
 async function loadGlobalFallback() {
   try {
     const d = await getJSON('/api/settings/global-fallback');
@@ -3321,7 +3365,7 @@ function showSettingsTab(tab){
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
   if (tab === 'security') { loadCmdAllowlist(); }
-  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); }
+  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); }
   if (tab === 'telegram') { loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
   if (tab === 'whatsapp') { loadWaStatus(); loadWaConfig(); loadWaMessages(); }
 }
@@ -6048,7 +6092,7 @@ function serveStatic(res, filePath) {
     const ext  = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       "content-type": STATIC_MIME[ext] || "application/octet-stream",
-      "cache-control": ext === ".html" ? "no-store" : "public, max-age=3600",
+      "cache-control": "no-store",
     });
     res.end(data);
     return true;
@@ -6788,6 +6832,40 @@ const server = http.createServer(async (req, res) => {
         const rawBody = req.method === "POST" ? (await (async () => { let b = ""; for await (const c of req) b += c; return b; })()) : null;
         const token = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch { return ""; } })();
         const r = await fetch("http://127.0.0.1:5010/api/settings/bg-consciousness", {
+          method: req.method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          ...(rawBody ? { body: rawBody } : {}), signal: AbortSignal.timeout(8000),
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(await r.text());
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "crew-lead unreachable: " + e.message }));
+      }
+      return;
+    }
+    // ── Proxy /api/settings/cursor-waves → crew-lead:5010 ───────────────────
+    if (url.pathname === "/api/settings/cursor-waves") {
+      try {
+        const rawBody = req.method === "POST" ? (await (async () => { let b = ""; for await (const c of req) b += c; return b; })()) : null;
+        const token = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch { return ""; } })();
+        const r = await fetch("http://127.0.0.1:5010/api/settings/cursor-waves", {
+          method: req.method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          ...(rawBody ? { body: rawBody } : {}), signal: AbortSignal.timeout(8000),
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(await r.text());
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "crew-lead unreachable: " + e.message }));
+      }
+      return;
+    }
+    // ── Proxy /api/settings/claude-code → crew-lead:5010 ────────────────────
+    if (url.pathname === "/api/settings/claude-code") {
+      try {
+        const rawBody = req.method === "POST" ? (await (async () => { let b = ""; for await (const c of req) b += c; return b; })()) : null;
+        const token = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch { return ""; } })();
+        const r = await fetch("http://127.0.0.1:5010/api/settings/claude-code", {
           method: req.method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
           ...(rawBody ? { body: rawBody } : {}), signal: AbortSignal.timeout(8000),
         });

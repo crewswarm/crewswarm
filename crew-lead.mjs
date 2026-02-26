@@ -33,6 +33,31 @@ const CTL_PATH    = (() => {
 const DASHBOARD   = "http://127.0.0.1:4319";
 const DISPATCH_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_TIMEOUT_MS) || 300_000; // 5 min — unclaimed dispatches (OpenCode tasks need time to spin up)
 const DISPATCH_CLAIMED_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS) || 900_000; // 15 min — agent claimed, working (OpenCode CLI can be slow)
+// CREWSWARM_CURSOR_WAVES=1 — route multi-agent waves through the Cursor
+// crew-orchestrator subagent. All tasks in a wave are fanned out to
+// /crew-* Cursor subagents in parallel and results are collected together.
+// Runtime-mutable — togglable via dashboard without restart.
+function loadCursorWavesEnabled() {
+  if (process.env.CREWSWARM_CURSOR_WAVES) return /^1|true|yes$/i.test(String(process.env.CREWSWARM_CURSOR_WAVES));
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+    if (typeof cfg.cursorWaves === "boolean") return cfg.cursorWaves;
+  } catch {}
+  return false;
+}
+let _cursorWavesEnabled = loadCursorWavesEnabled();
+
+// Claude Code — runtime-mutable executor toggle
+function loadClaudeCodeEnabled() {
+  if (process.env.CREWSWARM_CLAUDE_CODE) return /^1|true|yes$/i.test(String(process.env.CREWSWARM_CLAUDE_CODE));
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+    if (typeof cfg.claudeCode === "boolean") return cfg.claudeCode;
+  } catch {}
+  return false;
+}
+let _claudeCodeEnabled = loadClaudeCodeEnabled();
+
 const BG_CONSCIOUSNESS_INTERVAL_MS = Number(process.env.CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS) || 15 * 60 * 1000;
 const BG_CONSCIOUSNESS_MODEL = process.env.CREWSWARM_BG_CONSCIOUSNESS_MODEL || "groq/llama-3.1-8b-instant";
 // Runtime-mutable — can be toggled via dashboard without restart.
@@ -2223,6 +2248,44 @@ function dispatchPipelineWave(pipelineId) {
   recordOpsEvent("pipeline_wave_started", { pipelineId, waveIndex: currentWave, agents: resolvedAgentNames });
   savePipelineState(pipelineId);
 
+  // ── Cursor wave path ────────────────────────────────────────────────────
+  // When Cursor Waves is enabled and the wave has >1 task, route through the
+  // crew-orchestrator Cursor subagent which fans all tasks out in parallel.
+  // Single-task waves skip the orchestrator overhead and dispatch directly.
+  if (_cursorWavesEnabled && waveSteps.length > 1) {
+    const waveManifest = {
+      wave: currentWave + 1,
+      projectDir: pipeline.projectDir || "",
+      context: contextBlock ? contextBlock.slice(0, 3000) : undefined,
+      tasks: waveSteps.map(step => {
+        let taskText = step.task;
+        const isQa = step.agent === "crew-qa" || (step.agent && step.agent.includes("qa"));
+        if (isQa && pipeline.projectDir && !/qa-report\.md|Write your report to/i.test(taskText)) {
+          taskText += `\n\nWrite your report to ${pipeline.projectDir}/qa-report.md (no other filename).`;
+        }
+        return { agent: resolveAgentId(cfg, step.agent) || step.agent, task: taskText };
+      }),
+    };
+    const orchestratorTask = [
+      `[crew-orchestrator] Execute this wave — dispatch ALL tasks to subagents in parallel:`,
+      "```json",
+      JSON.stringify(waveManifest, null, 2),
+      "```",
+      `Fan out all ${waveSteps.length} tasks simultaneously and return combined results.`,
+    ].join("\n");
+
+    console.log(`[crew-lead] CURSOR_WAVES: routing wave ${currentWave + 1} through crew-orchestrator (${waveSteps.length} parallel tasks)`);
+    const taskId = dispatchTask("crew-orchestrator", { task: orchestratorTask, runtime: "cursor-cli" }, sessionId, {
+      pipelineId,
+      waveIndex: currentWave,
+      projectDir: pipeline.projectDir,
+      useCursorCli: true,
+    });
+    if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
+    return;
+  }
+
+  // ── Standard path (individual dispatch per agent) ───────────────────────
   for (const step of waveSteps) {
     let taskText = step.task + contextBlock;
     // QA always writes to projectDir/qa-report.md so reports aren't random filenames
@@ -2277,9 +2340,29 @@ function checkWaveQualityGate(pipeline, pipelineId) {
   const nextWaveHasBuilders = currentWave + 1 < waves.length &&
     waves[currentWave + 1].some(s => isBuildAgent(s.agent));
 
-  for (let i = 0; i < waveResults.length; i++) {
-    const result = waveResults[i];
-    const step = waveSteps[i] || {};
+  // ── Cursor waves path: combined orchestrator output covers all steps ──────
+  // When _cursorWavesEnabled routed the wave through crew-orchestrator, we get
+  // one combined result that covers all agents. Expand it into virtual per-step
+  // results so the gate checks each agent correctly.
+  let effectiveResults = waveResults;
+  let effectiveSteps = waveSteps;
+  const isCursorWaveResult = waveResults.length === 1 && waveSteps.length > 1 &&
+    /===\s*WAVE\s+\d+\s+RESULTS\s*===/.test(waveResults[0] || "");
+  if (isCursorWaveResult) {
+    // Parse per-agent sections from the combined report: "[crew-X]: ..."
+    const combined = waveResults[0];
+    effectiveResults = waveSteps.map(step => {
+      const agentId = step.agent || "";
+      const pattern = new RegExp(`\\[${agentId.replace(/-/g, "[-]")}\\]:\\s*([\\s\\S]*?)(?=\\n\\[crew-|===\\s*END WAVE|$)`, "i");
+      const m = combined.match(pattern);
+      return m ? m[1].trim() : combined; // fallback to full combined if not found
+    });
+    effectiveSteps = waveSteps;
+  }
+
+  for (let i = 0; i < effectiveResults.length; i++) {
+    const result = effectiveResults[i];
+    const step = effectiveSteps[i] || {};
     const agent = step.agent || "unknown";
 
     // Check if agent asked a question instead of doing work
@@ -2346,9 +2429,9 @@ function checkWaveQualityGate(pipeline, pipelineId) {
   pipeline[qaFixRetryKey] = pipeline[qaFixRetryKey] || 0;
   const MAX_QA_FIX_LOOPS = 2;
 
-  for (let i = 0; i < waveResults.length; i++) {
-    const result = waveResults[i];
-    const step = waveSteps[i] || {};
+  for (let i = 0; i < effectiveResults.length; i++) {
+    const result = effectiveResults[i];
+    const step = effectiveSteps[i] || {};
     const agent = step.agent || "unknown";
     const isQaAgent = agent === "crew-qa" || agent.includes("qa");
     if (!isQaAgent) continue;
@@ -3970,6 +4053,82 @@ const server = http.createServer(async (req, res) => {
         console.log(`[crew-lead] Background consciousness ${enable ? "ENABLED" : "DISABLED"} via dashboard`);
         if (enable) _lastBgConsciousnessAt = 0; // trigger soon
         json(res, 200, { ok: true, enabled: _bgConsciousnessEnabled });
+        return;
+      }
+    }
+
+    // GET/POST /api/settings/claude-code — toggle Claude Code executor at runtime
+    if (url.pathname === "/api/settings/claude-code") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      if (req.method === "GET") {
+        let enabled = false;
+        try {
+          const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+          enabled = cfg.claudeCode === true;
+        } catch {}
+        const hasKey = !!(process.env.ANTHROPIC_API_KEY ||
+          (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"))?.providers?.anthropic?.apiKey; } catch { return null; } })());
+        json(res, 200, { ok: true, enabled, hasKey });
+        return;
+      }
+      if (req.method === "POST") {
+        const body = await readBody(req);
+        const enable = typeof body.enabled === "boolean" ? body.enabled : false;
+        try {
+          const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          cfg.claudeCode = enable;
+          fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+        } catch (e) { console.warn("[crew-lead] Could not persist claudeCode:", e.message); }
+        console.log(`[crew-lead] Claude Code executor ${enable ? "ENABLED" : "DISABLED"} via dashboard`);
+        json(res, 200, { ok: true, enabled: enable });
+        return;
+      }
+    }
+
+    // GET/POST /api/settings/cursor-waves — toggle Cursor parallel wave dispatch at runtime
+    if (url.pathname === "/api/settings/cursor-waves") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      if (req.method === "GET") {
+        json(res, 200, { ok: true, enabled: _cursorWavesEnabled });
+        return;
+      }
+      if (req.method === "POST") {
+        const body = await readBody(req);
+        const enable = typeof body.enabled === "boolean" ? body.enabled : !_cursorWavesEnabled;
+        _cursorWavesEnabled = enable;
+        // Persist to config.json so it survives restarts
+        try {
+          const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          cfg.cursorWaves = enable;
+          fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+        } catch (e) { console.warn("[crew-lead] Could not persist cursorWaves:", e.message); }
+        console.log(`[crew-lead] Cursor Waves ${enable ? "ENABLED" : "DISABLED"} via dashboard`);
+        json(res, 200, { ok: true, enabled: _cursorWavesEnabled });
+        return;
+      }
+    }
+
+    // GET/POST /api/settings/claude-code — toggle Claude Code executor at runtime
+    if (url.pathname === "/api/settings/claude-code") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      if (req.method === "GET") {
+        json(res, 200, { ok: true, enabled: _claudeCodeEnabled });
+        return;
+      }
+      if (req.method === "POST") {
+        const body = await readBody(req);
+        const enable = typeof body.enabled === "boolean" ? body.enabled : !_claudeCodeEnabled;
+        _claudeCodeEnabled = enable;
+        try {
+          const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          cfg.claudeCode = enable;
+          fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+        } catch (e) { console.warn("[crew-lead] Could not persist claudeCode:", e.message); }
+        console.log(`[crew-lead] Claude Code ${enable ? "ENABLED" : "DISABLED"} via dashboard`);
+        json(res, 200, { ok: true, enabled: _claudeCodeEnabled });
         return;
       }
     }

@@ -1,7 +1,8 @@
-# Stinki: AI Pirate Captain of CrewSwarm
+# Stinki: Conversational Commander
 
-Meet Stinki, the sharp-witted conversational commander of CrewSwarm. As the AI pirate captain, Stinki masters the art of task orchestration, ensuring seamless execution and reliability. With a keen eye for detail, Stinki navigates the complexities of crew coordination, simplifying workflows and amplifying productivity.
+Stinki is the ultimate conversational commander. With the xai/grok-3-mini model at its core, Stinki can understand and respond to even the most ridiculous questions. But don't worry, Stinki won't make you feel like you're talking to a robot (unless you want to, in which case, Stinki can do a mean robot impression). With a wit sharper than George Carlin's tongue, Stinki will keep you laughing and on your toes.
 
-Stinki's expertise in task mastery is unmatched, having honed skills through countless conversations and projects. This AI leader excels at breaking down complex tasks into manageable phases, assigning the right agents for the job, and providing real-time updates.
+Stinki's model is designed for natural language processing tasks, making it the perfect companion for anyone looking for a good chat. And with its conversational AI capabilities, Stinki can keep up with even the most fast-paced conversations.
 
-Experience the power of Stinki's command at the helm of CrewSwarm. Discover how this AI pirate captain can steer your projects toward success, leveraging cutting-edge technology and a keen sense of humor. Join the crew and set sail for unprecedented productivity and task mastery.
+So if you're looking for a conversational commander that can keep you entertained and engaged, look no further than Stinki. With its quick wit and sharp tongue, Stinki is the perfect companion for anyone looking for a good laugh.
+
