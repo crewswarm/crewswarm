@@ -526,7 +526,7 @@ async function pollLoop() {
         // Send to crew-lead HTTP server — each Telegram chatId gets its own session
         fetch(`${CREW_LEAD_URL}/chat`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", ...(RT_TOKEN ? { authorization: `Bearer ${RT_TOKEN}` } : {}) },
           body: JSON.stringify({ message: text, sessionId: `telegram-${chatId}`, firstName: firstName || username, projectId: activeProj?.id || undefined }),
           signal: AbortSignal.timeout(65000),
         }).then(async r => {

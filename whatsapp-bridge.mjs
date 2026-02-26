@@ -590,7 +590,7 @@ async function main() {
       // Send to crew-lead
       fetch(`${CREW_LEAD_URL}/chat`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...(RT_TOKEN ? { authorization: `Bearer ${RT_TOKEN}` } : {}) },
         body: JSON.stringify({
           message: text,
           sessionId: `whatsapp-${jid}`,
