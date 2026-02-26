@@ -3815,7 +3815,9 @@ const server = http.createServer(async (req, res) => {
       });
       res.write("retry: 3000\n\n");
       sseClients.add(res);
-      req.on("close", () => sseClients.delete(res));
+      // Keepalive comment every 30s — prevents TG/WA bridge AbortSignal timeouts
+      const ka = setInterval(() => { try { res.write(": ka\n\n"); } catch { clearInterval(ka); } }, 30000);
+      req.on("close", () => { sseClients.delete(res); clearInterval(ka); });
       return;
     }
 

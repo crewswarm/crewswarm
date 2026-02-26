@@ -2156,7 +2156,10 @@ function showSettings(){
   hideAllViews();
   document.getElementById('settingsView').classList.add('active');
   setNavActive('navSettings');
-  showSettingsTab('usage');
+  // Restore last active sub-tab from hash (e.g. #settings/telegram → telegram)
+  const hashSubtab = (location.hash || '').replace('#settings/', '');
+  const knownTabs = ['usage','security','webhooks','telegram','whatsapp','system'];
+  showSettingsTab(knownTabs.includes(hashSubtab) ? hashSubtab : 'usage');
 }
 function showSettingsTab(tab){
   ['usage','security','webhooks','telegram','whatsapp','system'].forEach(t => {
@@ -2169,8 +2172,12 @@ function showSettingsTab(tab){
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
   if (tab === 'security') { loadCmdAllowlist(); }
   if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); }
-  if (tab === 'telegram') { loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
+  if (tab === 'telegram') { loadTgStatus(); loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
   if (tab === 'whatsapp') { loadWaStatus(); loadWaConfig(); loadWaMessages(); }
+  // Update URL hash for deep linking — e.g. #settings/telegram
+  if (document.getElementById('settingsView')?.classList.contains('active')) {
+    history.replaceState(null, '', '#settings/' + tab);
+  }
 }
 
 function showSkills(){
@@ -4898,12 +4905,17 @@ function navigateTo(view) {
 }
 
 // On load: restore from hash or default to chat
-const startView = (location.hash || '#chat').slice(1);
+// Supports top-level (#chat, #services) and sub-tab deep links (#settings/telegram)
+const startHash = (location.hash || '#chat').slice(1);
+const [startView, startSubtab] = startHash.split('/');
 const params = new URLSearchParams(window.location.search);
 if (params.get('focus') === '1') {
   setTimeout(() => { const ci = document.getElementById('chatInput'); if (ci) { navigateTo('chat'); ci.focus(); } }, 500);
 } else {
-  navigateTo(startView);
+  navigateTo(startView || 'chat');
+  if (startView === 'settings' && startSubtab) {
+    showSettingsTab(startSubtab);
+  }
 }
 // Resolve server-side env vars (HOME, cwd) once on boot
 fetch('/api/env').then(r => r.json()).then(env => {
