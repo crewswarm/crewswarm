@@ -113,6 +113,8 @@ if (args.includes("--stop")) {
   try { execSync("pkill -9 -f 'gateway-bridge.mjs --rt-daemon'", { stdio: "ignore" }); } catch {}
   // Also stop the CrewSwarm-owned opencode serve (port 4097) if running.
   try { execSync("pkill -9 -f 'opencode serve --port 4097'", { stdio: "ignore" }); } catch {}
+  // Stop MCP server
+  try { execSync("pkill -9 -f 'mcp-server.mjs'", { stdio: "ignore" }); } catch {}
   console.log("✓ Done");
   process.exit(0);
 }
@@ -230,5 +232,21 @@ if (!scribeRunning && fs.existsSync(SCRIBE_SCRIPT)) {
   console.log(`  ✓ Spawned crew-scribe (pid ${proc.pid})`);
 }
 
+// mcp-server — MCP endpoint for Cursor / Claude Code / OpenCode
+const MCP_SCRIPT = path.join(CREWSWARM_DIR, "scripts", "mcp-server.mjs");
+const mcpRunning = (() => {
+  try { execSync("pgrep -f 'mcp-server.mjs'", { encoding: "utf8", timeout: 2000, stdio: "pipe" }); return true; } catch { return false; }
+})();
+if (!mcpRunning && fs.existsSync(MCP_SCRIPT)) {
+  const logFd = fs.openSync(path.join(os.tmpdir(), "crewswarm-mcp.log"), "a");
+  const proc = spawn("node", [MCP_SCRIPT], {
+    cwd: CREWSWARM_DIR, stdio: ["ignore", logFd, logFd], detached: true,
+    env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: rtToken },
+  });
+  proc.unref();
+  console.log(`  ✓ Spawned mcp-server on :5020 (pid ${proc.pid})`);
+}
+
 console.log(`\n✓ Crew started — ${allRtIds.size} agents online`);
 console.log(`  Run 'node scripts/start-crew.mjs --status' to verify`);
+console.log(`  MCP endpoint: http://127.0.0.1:5020/mcp`);

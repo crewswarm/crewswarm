@@ -77,5 +77,6 @@ Thumbs.db
 .idea/
 .vscode/
 .cursor/
+!.cursor/mcp.json
 *.swp
 *.swo

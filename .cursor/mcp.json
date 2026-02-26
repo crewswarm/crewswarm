@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "crewswarm": {
+      "url": "http://127.0.0.1:5020/mcp",
+      "description": "CrewSwarm multi-agent fleet — dispatch to any agent or skill"
+    }
+  }
+}
