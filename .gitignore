@@ -58,12 +58,12 @@ task-done.md
 
 # Leaked paths / junk dirs agents accidentally create
 desktop/
-src/
+/src/
 homepage/
 newfeature/
 
-# Vite build output (production build is committed, but ignore local rebuilds)
-frontend/dist/
+# Vite build output (committed to repo — do not ignore)
+# frontend/dist/
 
 # Secrets
 .env

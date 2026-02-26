@@ -1,0 +1,906 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CrewSwarm Dashboard</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="/assets/index-2fkIgX6n.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CrbZb7ep.css">
+</head>
+<body>
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <img class="brand-icon" src="/favicon.png" alt="CrewSwarm" />
+      <span class="brand-name">Crew<span>Swarm</span></span>
+    </div>
+    <div class="sidebar-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="status">loading...</span>
+      <button id="refreshBtn" class="btn-ghost" style="margin-left:auto; padding:3px 8px; font-size:11px;">↻</button>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Control</div>
+      <button class="nav-item active" id="navChat" data-view="chat">
+        <span class="nav-icon">🧠</span> Chat
+        <span class="nav-badge hidden" id="chatBadge">●</span>
+      </button>
+      <button class="nav-item" id="navSwarm" data-view="swarm">
+        <span class="nav-icon">💬</span> Sessions
+      </button>
+      <button class="nav-item" id="navRT" data-view="rt">
+        <span class="nav-icon">📡</span> RT Messages
+      </button>
+      <button class="nav-item" id="navBuild" data-view="build">
+        <span class="nav-icon">🔨</span> Build
+      </button>
+      <button class="nav-item" id="navFiles" data-view="files">
+        <span class="nav-icon">📂</span> Files
+      </button>
+      <button class="nav-item" id="navDLQ" data-view="dlq">
+        <span class="nav-icon">⚠️</span> DLQ
+        <span class="nav-badge hidden" id="dlqBadge">0</span>
+      </button>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Workspace</div>
+      <button class="nav-item" id="navProjects" data-view="projects">
+        <span class="nav-icon">📁</span> Projects
+      </button>
+      <button class="nav-item" id="navAgents" data-view="agents">
+        <span class="nav-icon">🤖</span> Agents
+      </button>
+      <button class="nav-item" id="navModels" data-view="models">
+        <span class="nav-icon">⚙️</span> Models
+      </button>
+      <button class="nav-item" id="navSkills" data-view="skills">
+        <span class="nav-icon">🔌</span> Skills
+      </button>
+      <button class="nav-item" id="navRunSkills" data-view="run-skills">
+        <span class="nav-icon">⚡</span> Run skills
+      </button>
+      <button class="nav-item" id="navBenchmarks" data-view="benchmarks">
+        <span class="nav-icon">📊</span> Benchmarks
+      </button>
+      <button class="nav-item" id="navToolMatrix" data-view="tool-matrix">
+        <span class="nav-icon">📋</span> Tool Matrix
+      </button>
+      <button class="nav-item" id="navServices" data-view="services">
+        <span class="nav-icon">🔧</span> Services
+        <span class="nav-badge hidden" id="servicesBadge">!</span>
+      </button>
+      <button class="nav-item" id="navSettings" data-view="settings">
+        <span class="nav-icon">🛠</span> Settings
+      </button>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="meta" style="padding:4px 2px;">v1.0 · <a href="http://localhost:4319" style="color:var(--accent); text-decoration:none;">localhost:4319</a></div>
+    </div>
+  </nav>
+
+  <!-- ── Main content ── -->
+  <div class="main-wrap">
+
+    <!-- Sessions view -->
+    <div class="view-sessions" id="sessionsView">
+      <section id="sessions"></section>
+      <section id="messages"></section>
+    </div>
+
+    <!-- RT Messages -->
+    <div class="view" id="rtView">
+      <div class="page-header">
+        <div><div class="page-title">RT Messages</div><div class="page-sub">Live feed from CrewSwarm RT message bus</div></div>
+        <button id="rtScrollBtn" data-action="scrollRTToBottom" style="display:none;position:fixed;bottom:32px;right:32px;z-index:999;background:var(--accent);color:#fff;border:none;border-radius:50px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity .2s;">⬇ Latest</button>
+      </div>
+      <!-- OpenCode live feed -->
+      <div id="ocFeedWrap" style="margin:0 0 18px 0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:.04em;text-transform:uppercase;">OpenCode Activity</span>
+          <span id="ocFeedDot" style="display:none;width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;" title="Live"></span>
+        </div>
+        <div id="ocFeed" style="display:flex;flex-direction:column;gap:4px;min-height:32px;"></div>
+      </div>
+      <div id="rtMessages"></div>
+    </div>
+
+    <!-- DLQ -->
+    <div class="view" id="dlqView">
+      <div class="page-header">
+        <div><div class="page-title">Dead Letter Queue</div><div class="page-sub">Failed tasks after max retries — replay to retry</div></div>
+      </div>
+      <div id="dlqMessages"></div>
+    </div>
+
+    <!-- Files -->
+    <div class="view" id="filesView">
+      <div class="page-header">
+        <div><div class="page-title">Files</div><div class="page-sub">Files written by the crew — click to open in Cursor or OpenCode</div></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="filesDir" placeholder="/path/to/project" style="width:240px;" value="" />
+          <button type="button" class="btn-ghost" style="font-size:13px;padding:6px 10px;" data-action="pickFolder" data-arg="filesDir">📂</button>
+          <button data-action="loadFiles" class="btn-green">Scan</button>
+          <button data-action="loadFiles" data-arg="true" class="btn-ghost" style="font-size:12px;">↻</button>
+        </div>
+      </div>
+      <div id="filesContent"></div>
+    </div>
+
+    <!-- Chat with crew-lead -->
+    <div class="view active" id="chatView">
+      <div class="page-header">
+        <div>
+          <div class="page-title" id="chatAgentTitle">🧠 Crew Lead</div>
+          <div class="page-sub" id="chatAgentSub">Conversational commander — chat naturally, dispatch tasks to the crew</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="crewLeadBadge" class="status-badge status-stopped">● offline</span>
+          <button data-action="clearChatHistory" class="btn-ghost" style="font-size:12px;">🗑 Clear</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
+        <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
+          <div style="flex:1;position:relative;min-width:0;overflow:visible;">
+            <textarea id="chatInput" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
+              style="width:100%;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;min-width:0;box-sizing:border-box;"
+              id-chatinput-keydown="" ></textarea>
+            <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
+            <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
+          </div>
+          <button data-action="sendChat" class="btn-green" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+          <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">Project context:</span>
+          <select id="chatProjectSelect" style="width:200px;max-width:200px;font-size:12px;padding:6px 8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" data-onchange="onChatProjectChange" title="Active project for dispatch context">
+            <option value="">— none —</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Services -->
+    <div class="view" id="servicesView">
+      <div class="page-header">
+        <div><div class="page-title">Services</div><div class="page-sub">Live status of all CrewSwarm processes — restart any service without leaving the dashboard</div></div>
+        <button data-action="loadServices" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div id="servicesGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;padding:16px;"></div>
+    </div>
+
+    <!-- Projects -->
+    <div class="view" id="projectsView">
+      <div class="page-header">
+        <div><div class="page-title">Projects</div><div class="page-sub">Each project has its own roadmap, output dir, and PM Loop.</div></div>
+        <button id="newProjectBtn" class="btn-yellow">+ New Project</button>
+      </div>
+      <div id="newProjectForm" style="display:none;" class="card" style="border-color:var(--yellow);">
+        <h3>New Project</h3>
+        <div style="display:grid; gap:10px; margin-top:12px;">
+          <input id="npName"        placeholder="Project name (e.g. CrewSwarm Docs)" />
+          <input id="npDesc"        placeholder="Description (optional)" />
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input id="npOutputDir" placeholder="Project folder — anywhere on disk (e.g. ~/Desktop/MyApp). Agents write files here." style="flex:1;" />
+            <button type="button" class="btn-ghost" style="white-space:nowrap;font-size:13px;padding:6px 10px;" data-action="pickFolder" data-arg="npOutputDir">📂 Browse</button>
+          </div>
+          <input id="npFeaturesDoc" placeholder="Features doc path (optional)" />
+          <div style="display:flex; gap:8px;">
+            <button id="npCreateBtn" class="send-btn">Create Project</button>
+            <button id="npCancelBtn" class="btn-ghost">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div id="projectsList" style="display:grid; gap:14px;"></div>
+    </div>
+
+    <!-- Providers -->
+    <div class="view" id="modelsView">
+      <div class="page-header">
+        <div><div class="page-title">Models &amp; API Keys</div><div class="page-sub">Keys saved to <code style="font-size:11px; color:var(--text-2);">~/.crewswarm/config.json</code></div></div>
+        <div style="display:flex; gap:8px;">
+          <button id="addProviderBtn" class="btn-purple">+ Add Provider</button>
+          <button id="refreshProvidersBtn" class="btn-ghost">↻ Refresh</button>
+        </div>
+      </div>
+
+      <!-- RT Bus auth token -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-size:18px;">⚡</span>
+          <div>
+            <div style="font-weight:600; font-size:14px;">RT Bus Auth Token</div>
+            <div style="font-size:12px; color:var(--text-2);">Auto-generated during install and saved to <code style="font-size:11px;">~/.crewswarm/config.json</code>. All services read it from there — you never need to copy it manually. Only change this if you want to rotate the secret or run the RT bus on a shared machine.</div>
+          </div>
+          <span id="rtTokenBadge" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">not set</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <input id="rtTokenInput" type="password" autocomplete="new-password" placeholder="Leave blank to auto-use the token from config.json" style="flex:1;" />
+          <button data-action="saveRTToken" class="btn-purple">Save</button>
+          <button data-action="toggleRTTokenVis" class="btn-ghost" title="Show/hide">👁</button>
+        </div>
+      </div>
+
+      <!-- LLM Providers (built-ins + any custom providers appended below) -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; padding:0 2px;">LLM Providers</div>
+      <div id="builtinProvidersList"></div>
+
+      <!-- Add custom provider form (shown by "+ Add Provider" button in page header) -->
+      <div id="addProviderForm" style="display:none; margin-bottom:10px;" class="card">
+        <h3 style="margin-bottom:12px;">Add Custom Provider</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <input id="apId"      placeholder="Provider ID (e.g. together)" />
+          <input id="apBaseUrl" placeholder="Base URL (e.g. https://api.together.xyz/v1)" />
+          <input id="apKey"     placeholder="API Key" type="password" autocomplete="new-password" />
+          <select id="apApi">
+            <option value="openai-completions">openai-completions</option>
+            <option value="openai-responses">openai-responses</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button id="apSaveBtn" class="btn-purple">Save Provider</button>
+          <button id="apCancelBtn" class="btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Search & Research Tools -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Search &amp; Research Tools</div>
+      <div id="searchToolsList"></div>
+    </div>
+
+    <!-- Agents -->
+    <div class="view" id="agentsView">
+      <div class="page-header">
+        <div><div class="page-title">Agents</div><div class="page-sub">Assign models, edit system prompts, configure per-agent tool permissions. Tool permissions are enforced by gateway-bridge on every task.</div></div>
+        <div style="display:flex; gap:8px;">
+          <button id="newAgentBtn" class="btn-green">+ New Agent</button>
+          <button id="refreshAgentsBtn" class="btn-ghost">↻ Refresh</button>
+          <button data-action="startCrew" class="btn-ghost" style="color:var(--green); border-color:rgba(52,211,153,0.3);">⚡ Start Bridges</button>
+        </div>
+      </div>
+
+      <!-- New agent form -->
+      <div id="newAgentForm" style="display:none; margin-bottom:16px;" class="card">
+        <h3 style="margin-bottom:14px;">New Agent</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+          <div>
+            <div class="field-label">Agent ID <span class="meta" style="text-transform:none;">(used as RT bus name)</span></div>
+            <input id="naId" placeholder="e.g. crew-coder-3" />
+          </div>
+          <div>
+            <div class="field-label">Model</div>
+            <select id="naModel" style="width:100%;"><option value="">— select a model —</option></select>
+          </div>
+          <div>
+            <div class="field-label">Display Name</div>
+            <input id="naName" placeholder="e.g. Blaze" />
+          </div>
+          <div style="display:flex; gap:8px; align-items:flex-end;">
+            <div style="flex:0 0 auto;">
+              <div class="field-label">Emoji</div>
+              <div class="emoji-picker-wrap">
+                <button type="button" class="emoji-btn" id="naEmoji-btn" data-action="toggleEmojiPicker" data-arg="__new__" title="Pick emoji">🔥</button>
+                <input type="hidden" id="naEmoji" value="🔥" />
+                <div class="emoji-picker-panel" id="aemoji-panel-__new__">
+                  <div class="emoji-grid" id="aemoji-grid-__new__"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="grid-column:1/-1;">
+            <div class="field-label">Role / Theme <span class="meta" style="text-transform:none; font-weight:400;">— used by PM router to assign tasks (auto-filled by preset)</span></div>
+            <input id="naTheme" placeholder="e.g. iOS / Swift developer (SwiftUI, UIKit)" style="width:100%;" />
+          </div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+            <div class="field-label" style="margin:0;">System Prompt</div>
+            <select id="naPromptPreset" style="font-size:12px; padding:3px 8px;" data-onchange="applyPromptPreset">
+              \${buildPresetOptions('— quick presets —')}
+            </select>
+          </div>
+          <textarea id="naPrompt" rows="5" placeholder="Describe what this agent specialises in. It will be shown at the top of every task."></textarea>
+        </div>
+        <div style="margin-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+            <div class="field-label" style="margin:0;">Agent Tools <span class="meta" style="text-transform:none; font-weight:400;">— what gateway-bridge lets this agent do</span></div>
+            <select id="naToolPreset" style="font-size:12px; padding:3px 8px;" data-onchange="applyNewAgentToolPreset">
+              <option value="">— tool presets —</option>
+              <option value="coder">🔨 Coder (write + run) — frontend, backend, iOS, data, AI/ML…</option>
+              <option value="writer">✍️ Writer (write + read) — copywriter, docs, designer</option>
+              <option value="reviewer">🔍 Reviewer (read only) — QA, audit</option>
+              <option value="security">🛡️ Security (read + run, no write) — scanner, auditor</option>
+              <option value="orchestrator">📋 PM / Planner (read + dispatch) — product manager, planner</option>
+              <option value="coordinator">🦊 Coordinator (full access) — main agent, team lead</option>
+              <option value="devops">⚙️ DevOps (run + git) — infrastructure, GitHub ops</option>
+              <option value="comms">💬 Comms (telegram) — notification agent</option>
+            </select>
+          </div>
+          <div id="naToolsGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;">
+            ${(typeof CREWSWARM_TOOLS !== "undefined" ? CREWSWARM_TOOLS : []).map(t => `
+              <label style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text-2); cursor:pointer; padding:6px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-card2);">
+                <input type="checkbox" class="naToolCheck" data-tool="${t.id}" style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
+                <div>
+                  <code style="font-size:11px; color:var(--text-1);">${t.id}</code>
+                  <div style="font-size:10px; color:var(--text-3); margin-top:2px; line-height:1.3;">${t.desc}</div>
+                </div>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button id="naCreateBtn" class="btn-green">Create Agent</button>
+          <button id="naCancelBtn" class="btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0 4px; border-bottom:1px solid var(--border); margin-bottom:12px;">
+        <span style="font-size:11px; font-weight:600; color:var(--text-3); margin-right:4px;">BULK SET CODING AGENTS →</span>
+        <button data-action="bulkSetRoute" data-arg="direct" class="btn-ghost" style="font-size:11px; padding:4px 10px;">💬 Direct API</button>
+        <button data-action="bulkSetRoute" data-arg="opencode" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#22c55e; border-color:rgba(34,197,94,0.3);">⚡ OpenCode</button>
+        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="sonnet-4.6" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.6</button>
+        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="opus-4.6-thinking" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
+      </div>
+      <div id="agentsList" style="display:grid; gap:12px;"></div>
+    </div>
+
+    <!-- Settings -->
+    <div class="view" id="settingsView">
+      <div class="page-header">
+        <div><div class="page-title">Settings</div><div class="page-sub">Usage, spending, security, and system configuration</div></div>
+      </div>
+
+      <!-- Settings sub-tabs -->
+      <div style="display:flex;gap:4px;padding:0 16px 0;border-bottom:1px solid var(--border);margin-bottom:0;">
+        <button class="stab active" id="stab-usage"    data-stab="usage">💰 Usage</button>
+        <button class="stab"        id="stab-security" data-stab="security">🔐 Security</button>
+        <button class="stab"        id="stab-webhooks" data-stab="webhooks">🌐 Webhooks</button>
+        <button class="stab"        id="stab-telegram"  data-stab="telegram">📡 Telegram</button>
+        <button class="stab"        id="stab-whatsapp"  data-stab="whatsapp">💬 WhatsApp</button>
+        <button class="stab"        id="stab-system"    data-stab="system">🛠 System</button>
+      </div>
+
+      <!-- Usage: Token stats + Spending caps -->
+      <div id="stab-panel-usage" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1100px;">
+
+        <!-- Grand Total Banner -->
+        <div class="card" style="grid-column:1/-1;background:linear-gradient(135deg,var(--bg-1) 0%,var(--bg-0) 100%);border:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:14px;font-weight:700;color:var(--text-1);">&#x1F4CA; Total Spend</span>
+              <select id="grandTotalDays" style="font-size:11px;padding:3px 6px;" data-onchange="loadAllUsage">
+                <option value="1">Today</option>
+                <option value="7">Last 7 days</option>
+                <option value="14" selected>Last 14 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:24px;flex-wrap:wrap;" id="grandTotalWidget">
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">Agents (direct)</div><div style="font-size:20px;font-weight:700;color:var(--accent);" id="gtAgentCost">—</div></div>
+              <div style="text-align:center;font-size:20px;color:var(--text-3);line-height:2;">+</div>
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">OpenCode</div><div style="font-size:20px;font-weight:700;color:var(--green);" id="gtOcCost">—</div></div>
+              <div style="text-align:center;font-size:20px;color:var(--text-3);line-height:2;">=</div>
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">Grand Total</div><div style="font-size:22px;font-weight:800;color:var(--yellow,#fbbf24);" id="gtTotal">—</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Token Usage (all-time breakdown) -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:16px;">&#x1F4B0; Token Usage <span style="font-size:11px;font-weight:400;color:var(--text-3);">(direct LLM calls)</span></div>
+          <div id="tokenUsageWidget"><div style="color:var(--text-3);font-size:12px;">Loading&#x2026;</div></div>
+        </div>
+
+        <!-- Agent Spending with time range -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div class="card-title" style="margin:0;">&#x1F4B8; Agent Spending</div>
+            <select id="spendingDays" style="font-size:11px;padding:3px 6px;" data-onchange="loadSpending">
+              <option value="1" selected>Today</option>
+              <option value="7">Last 7 days</option>
+              <option value="14">Last 14 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </div>
+          <div id="spendingWidget" style="font-size:12px;">Loading&#x2026;</div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button data-action="loadSpending" class="btn-ghost" style="font-size:11px;">&#x21BB; Refresh</button>
+            <button data-action="resetSpending" class="btn-ghost" style="font-size:11px;color:var(--red);">Reset Today</button>
+          </div>
+          <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;">Global Daily Caps</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:3px;">Token limit</label>
+                <input id="gcapTokens" type="number" placeholder="e.g. 500000" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:3px;">Cost limit (USD)</label>
+                <input id="gcapCost" type="number" step="0.01" placeholder="e.g. 5.00" />
+              </div>
+            </div>
+            <button data-action="saveGlobalCaps" class="btn-green" style="font-size:12px;">Save Caps</button>
+          </div>
+        </div>
+
+        <!-- OpenCode Usage full width -->
+        <div class="card" style="grid-column:1/-1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div class="card-title" style="margin:0;">&#x1F680; OpenCode Usage <span style="font-size:11px;font-weight:400;color:var(--text-3);">(OpenCode DB &#x2014; all agents + Cursor sessions)</span></div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select id="ocStatsDays" style="font-size:11px;padding:3px 6px;" data-onchange="loadOcStats">
+                <option value="7">Last 7 days</option>
+                <option value="14" selected>Last 14 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
+              <button data-action="loadOcStats" class="btn-ghost" style="font-size:11px;">&#x21BB; Refresh</button>
+            </div>
+          </div>
+          <div id="ocStatsWidget"><div style="color:var(--text-3);font-size:12px;">Loading&#x2026;</div></div>
+        </div>
+      </div>
+
+      <!-- Security: Command allowlist -->
+      <div id="stab-panel-security" style="display:none;padding:16px;max-width:800px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:6px;">🔐 Command Allowlist</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            Patterns here auto-approve agent <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@RUN_CMD</code> calls — no toast, no wait.
+            Dangerous commands (<code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">rm -rf</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">sudo</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">curl|bash</code>) are always blocked.
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Quick presets</div>
+          <div id="cmdPresets" style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;"></div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Active patterns</div>
+          <div id="cmdAllowlistItems" style="min-height:24px;margin-bottom:12px;"></div>
+          <div style="display:flex;gap:6px;">
+            <input id="cmdAllowlistInput" placeholder="Custom pattern, e.g. make *" style="flex:1;font-size:12px;" />
+            <button data-action="addAllowlistPattern" class="btn-green" style="font-size:12px;padding:7px 12px;">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Webhooks: Inbound webhooks -->
+      <div id="stab-panel-webhooks" style="display:none;padding:16px;max-width:800px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:10px;">🌐 Inbound Webhooks</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            External services can push events to the RT bus via:<br>
+            <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">POST http://127.0.0.1:5010/webhook/{channel}</code><br>
+            Any JSON payload is accepted and published to <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">webhook.{channel}</code> on the RT bus and broadcasts to the dashboard.
+          </div>
+          <div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Test webhook</div>
+            <div style="display:flex;gap:8px;margin-bottom:8px;">
+              <input id="webhookChannel" placeholder="channel name (e.g. n8n)" style="flex:1;" />
+              <input id="webhookPayload" placeholder='{"event":"test"}' style="flex:2;" />
+            </div>
+            <button data-action="sendTestWebhook" class="btn-ghost" style="font-size:12px;">Send</button>
+            <div id="webhookTestResult" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Recent events</div>
+            <div id="webhookEvents" style="font-size:12px;color:var(--text-3);max-height:200px;overflow:auto;">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Telegram -->
+      <div id="stab-panel-telegram" style="display:none;padding:16px;max-width:900px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div>
+            <div style="font-size:16px;font-weight:700;">📡 Telegram</div>
+            <div style="font-size:12px;color:var(--text-3);">Telegram sessions, bot config, and live RT feed</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="tgStatusBadge" class="status-badge status-stopped">● stopped</span>
+            <button data-action="startTgBridge" class="btn-green" id="tgStartBtn">▶ Start</button>
+            <button data-action="stopTgBridge" class="btn-red" id="tgStopBtn">⏹ Stop</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:12px;">⚙️ Bot Configuration</div>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Telegram Bot Token</label>
+              <input id="tgTokenInput" type="password" autocomplete="new-password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed chat IDs <span style="color:var(--text-3);font-weight:400;">(comma-separated)</span></label>
+              <input id="tgAllowedIds" placeholder="1693963111, 987654321" style="width:100%;margin-bottom:12px;" />
+              <div id="tgContactNamesList" style="margin-bottom:12px;"></div>
+              <button data-action="saveTgConfig" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;margin-top:4px;">
+                Each Telegram chat gets its own isolated session in crew-lead.<br/>
+                Add contact names below so the crew can message by name (e.g. TELEGRAM at-Jeff hello).<br/>
+                Get a token from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent);">@BotFather</a>.
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">Telegram Conversations</div>
+                  <div style="font-size:11px;color:var(--text-3);">Each chat ID gets an isolated session with crew-lead</div>
+                </div>
+                <button data-action="loadTelegramSessions" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="tgSessionsList" style="max-height:300px;overflow-y:auto;"></div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">RT Bus Activity</div>
+                  <div style="font-size:11px;color:var(--text-3);">Read-only — watch agents work in real time</div>
+                </div>
+                <button data-action="loadTgMessages" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="tgMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 400px);overflow-y:auto;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WhatsApp -->
+      <div id="stab-panel-whatsapp" style="display:none;padding:16px;max-width:900px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div>
+            <div style="font-size:16px;font-weight:700;">💬 WhatsApp</div>
+            <div style="font-size:12px;color:var(--text-3);">Personal bot via Baileys — your phone number as a linked device</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="waStatusBadge" class="status-badge status-stopped">● stopped</span>
+            <button data-action="startWaBridge" class="btn-green" id="waStartBtn">▶ Start</button>
+            <button data-action="stopWaBridge" class="btn-red" id="waStopBtn">⏹ Stop</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:12px;">⚙️ Configuration</div>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed phone numbers <span style="color:var(--text-3);font-weight:400;">(comma-separated, international format)</span></label>
+              <input id="waAllowedNumbers" placeholder="+15551234567, +15559876543" style="width:100%;margin-bottom:4px;" />
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:10px;">Leave empty to accept messages from anyone.</div>
+              <div id="waContactNamesList" style="margin-bottom:12px;"></div>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Target agent</label>
+              <input id="waTargetAgent" placeholder="crew-lead" style="width:100%;margin-bottom:12px;" />
+              <button data-action="saveWaConfig" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.6;margin-top:4px;">
+                Leave <em>Allowed numbers</em> empty to accept messages from anyone.<br/>
+                Auth persists in <code>~/.crewswarm/whatsapp-auth/</code> — QR scan is only needed once.<br/>
+                Start the bridge from the terminal to scan the QR code the first time:<br/>
+                <code style="font-size:10px;">npm run whatsapp</code>
+              </div>
+            </div>
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:8px;">📋 Auth status</div>
+              <div id="waAuthStatus" style="font-size:12px;color:var(--text-3);">Checking...</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">Recent messages</div>
+                  <div style="font-size:11px;color:var(--text-3);">Inbound and outbound WhatsApp messages</div>
+                </div>
+                <button data-action="loadWaMessages" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="waMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 380px);overflow-y:auto;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- System: OpenCode dir + fallback -->
+      <div id="stab-panel-system" style="display:none;padding:16px;max-width:800px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:6px;">📂 OpenCode Project Directory</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            Agents that use OpenCode will write files here. Set this to your project folder so agents don't hit external-directory permission errors.
+            Leave blank to use the CrewSwarm repo directory (default).
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input id="opencodeProjInput" placeholder="e.g. /Users/you/Desktop/myproject" style="flex:1;font-size:13px;font-family:monospace;" />
+            <button data-action="saveOpencodeSettings" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="opencodeProjStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+        <div class="card" style="margin-top:16px;">
+          <div class="card-title" style="margin-bottom:6px;">⚡ OpenCode Fallback Model</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            When the primary model hits rate limits, OpenCode retries with this model. Use a different provider (e.g. groq) to avoid the same limit.
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <select id="opencodeFallbackSelect" style="flex:1;min-width:280px;font-size:13px;font-family:monospace;"></select>
+            <button data-action="saveOpencodeSettings" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="opencodeFallbackStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🌐 Global Fallback Model</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">Applied to any agent that has no per-agent fallback set. Prevents jobs dying on rate limits or hangs.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <input id="globalFallbackInput" placeholder="e.g. groq/llama-3.3-70b-versatile" style="flex:1;font-size:13px;font-family:monospace;" />
+            <button data-action="saveGlobalFallback" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="globalFallbackStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🧠 Background Consciousness</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                When idle, crew-lead reflects on system state, surfaces blockers, and dispatches follow-ups automatically.
+                Uses a cheap Groq model (llama-3.1-8b) — runs every 15 min when no pipelines are active.
+              </div>
+            </div>
+            <button id="bgConsciousnessBtn" data-action="toggleBgConsciousness" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="bgConsciousnessStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">⚡ Cursor Parallel Waves</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                Route pipeline waves through Cursor's native subagent system. All agents in a wave run simultaneously in isolated context windows via the <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">crew-orchestrator</code> subagent — no queuing, no collisions.
+                Requires Cursor CLI installed (<code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">~/.local/bin/agent</code>). Single-task waves always bypass the orchestrator.
+              </div>
+            </div>
+            <button id="cursorWavesBtn" data-action="toggleCursorWaves" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="cursorWavesStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🤖 Claude Code Executor</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                Route tasks through Claude Code CLI (<code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">claude -p</code>) instead of direct LLM. Full workspace context, native tool use, session continuity per agent. Requires <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">ANTHROPIC_API_KEY</code> and Claude Code installed. Per-agent override: <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">useClaudeCode: true</code> in crewswarm.json.
+              </div>
+            </div>
+            <button id="claudeCodeBtn" data-action="toggleClaudeCode" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="claudeCodeStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Integrations -->
+    <div class="view" id="skillsView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Skills</div>
+          <div class="page-sub">API skill definitions agents can call with @@SKILL</div>
+        </div>
+        <button data-action="showSkills" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1100px;">
+
+        <!-- Skills -->
+        <div class="card" style="grid-column:1/-1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title">🔌 Skills</div>
+            <button data-action="toggleAddSkill" class="btn-purple" style="font-size:12px;">+ Add Skill</button>
+          </div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5;">
+            Skills let agents call external APIs with <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@SKILL skillname {params}</code>.
+            Store skill definitions in <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">~/.crewswarm/skills/</code>.
+          </div>
+
+          <!-- Search -->
+          <input id="skillSearch" placeholder="Search skills…" style="width:100%;margin-bottom:14px;font-size:13px;" />
+
+          <!-- Add / Edit skill form -->
+          <div id="addSkillForm" style="display:none;border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;background:var(--bg-2);">
+            <input type="hidden" id="skEditName" value="" />
+            <div class="card-title" style="font-size:13px;margin-bottom:10px;" id="addSkillFormTitle">New Skill</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Skill Name</label>
+                <input id="skName" placeholder="e.g. twitter.post" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Description</label>
+                <input id="skDesc" placeholder="What this skill does" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">URL</label>
+                <input id="skUrl" placeholder="https://api.example.com/endpoint/{param}" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Method</label>
+                <select id="skMethod"><option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Auth Type</label>
+                <select id="skAuthType" data-onchange="updateSkillAuthFields"><option value="">None</option><option value="bearer">Bearer token</option><option value="header">Custom header</option></select>
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">API Key (or config path)</label>
+                <input id="skAuthKey" placeholder="sk-... or providers.groq.apiKey" />
+              </div>
+              <div id="skAuthHeaderWrap" style="display:none;">
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Header Name</label>
+                <input id="skAuthHeader" placeholder="X-API-Key" />
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Default Params (JSON)</label>
+              <textarea id="skDefaults" rows="2" placeholder='{"model":"gpt-4o"}'></textarea>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                <input type="checkbox" id="skRequiresApproval" /> Requires human approval before executing
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button data-action="saveSkill" class="btn-green" id="saveSkillBtn">Save Skill</button>
+              <button data-action="cancelSkillForm" class="btn-ghost">Cancel</button>
+            </div>
+          </div>
+
+          <div id="skillsList" style="display:grid;gap:8px;"></div>
+        </div>
+
+        <!-- Pending approvals -->
+        <div class="card" style="grid-column:1/-1;" id="pendingApprovalsCard">
+          <div class="card-title" style="margin-bottom:10px;">🔔 Pending Skill Approvals</div>
+          <div id="pendingApprovals" style="font-size:12px;color:var(--text-3);">No pending approvals.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Run skills — from health snapshot; fire via /api/skills/:name/run -->
+    <div class="view" id="runSkillsView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Run skills</div>
+          <div class="page-sub">Installed skills from the health snapshot. Enter params and run on demand (same API agents use with @@SKILL).</div>
+        </div>
+        <button data-action="loadRunSkills" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div id="runSkillsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;padding:16px;"></div>
+    </div>
+
+    <!-- Benchmarks — ZeroEval / llm-stats leaderboards -->
+    <div class="view" id="benchmarksView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Benchmarks</div>
+          <div class="page-sub">LLM leaderboard data from <a href="https://llm-stats.com" target="_blank" rel="noopener" style="color:var(--accent);">llm-stats.com</a> — compare models on SWE-Bench Verified, LiveCodeBench, and more</div>
+        </div>
+        <button data-action="loadBenchmarks" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:16px;">
+        <div class="card" style="max-width:400px;">
+          <label style="font-weight:600;font-size:13px;">Benchmark</label>
+          <select id="benchmarkSelect" data-onchange="loadBenchmarkLeaderboard" data-onchange-arg="this.value" style="width:100%;margin-top:6px;padding:8px 12px;">
+            <option value="">— Pick benchmark —</option>
+          </select>
+        </div>
+        <div id="benchmarkMeta" style="font-size:12px;color:var(--text-2);display:none;"></div>
+        <div id="benchmarkTable" class="card" style="overflow:auto;"></div>
+      </div>
+    </div>
+
+    <!-- Tool Matrix — agents × tools from health + quick restart -->
+    <div class="view" id="toolMatrixView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Tool Matrix</div>
+          <div class="page-sub">Who can read/write/run at a glance. Restart a bridge from here when it misbehaves.</div>
+        </div>
+        <button data-action="loadToolMatrix" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div id="taskLifecycleContainer" style="padding:0 16px 12px;"></div>
+      <div id="toolMatrixContainer" style="padding:16px;"></div>
+    </div>
+
+    <!-- Build -->
+    <div class="view" id="buildView">
+      <div style="max-width:800px; margin:0 auto;">
+        <div class="page-header">
+          <div><div class="page-title">Build</div><div class="page-sub">Select a project, describe what to build, and kick off the crew</div></div>
+        </div>
+
+        <!-- Project picker -->
+        <div class="card" style="margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <label style="font-weight:600;font-size:13px;white-space:nowrap;">Project</label>
+            <select id="buildProjectPicker" style="flex:1;min-width:180px;" data-onchange="onBuildProjectChange">
+              <option value="">— No project (use defaults) —</option>
+            </select>
+            <a href="#" data-action="showProjects" style="font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap;">+ New project</a>
+            <button data-action="loadBuildProjectPicker" class="btn-ghost" style="font-size:12px;padding:4px 8px;">↻</button>
+          </div>
+          <div id="buildProjectInfo" style="display:none;margin-top:10px;font-size:12px;color:var(--text-2);background:var(--bg-card2);border-radius:6px;padding:8px 12px;font-family:monospace;line-height:1.6;"></div>
+        </div>
+
+        <!-- Requirement + run buttons -->
+        <div class="card">
+          <h3 style="margin-bottom:10px;">Requirement</h3>
+          <textarea id="buildRequirement" rows="4" placeholder="One sentence or full spec. e.g. Build a REST API with auth, CRUD endpoints, and tests. The PM will plan it and dispatch to the crew."></textarea>
+          <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button id="runBuildBtn" class="send-btn" title="Run one full phased build (MVP → Phase 1 → Phase 2)">▶ Run Build</button>
+            <button id="stopBuildBtn" class="btn-red" style="display:none;" title="Stop the running build">⏹ Stop Build</button>
+            <button id="continuousBuildBtn" style="background:var(--accent); color:#000;" title="Keep building until the roadmap is empty">🔁 Build Until Done</button>
+            <button id="stopContinuousBtn" class="btn-red" style="display:none;" title="Stop continuous build">⏹ Stop</button>
+            <button id="enhancePromptBtn" class="btn-purple" title="AI-enhance your requirement">✨ Enhance</button>
+            <span class="meta" id="buildStatus"></span>
+          </div>
+          <div id="buildLiveLog" style="display:none; margin-top:14px;" class="log-block"></div>
+          <div style="margin-top:10px;font-size:11px;color:var(--text-3);">
+            <b>▶ Run Build</b> — one phased build (MVP→Ph1→Ph2), runs in background.
+            <b>🔁 Build Until Done</b> — loops continuously until roadmap exhausted.
+            <b>PM Loop ▶</b> — reads ROADMAP.md and dispatches each item one at a time.
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
+            <h3 style="margin:0;">Phased Progress</h3>
+            <span id="phasedProgressLabel" style="font-size:11px;color:var(--text-3);"></span>
+          </div>
+          <p class="meta" style="margin-bottom:10px;">Task dispatch log — filtered to the selected project when one is chosen</p>
+          <div id="phasedProgress" class="log-block mono" style="max-height:180px;"></div>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+            <h3 style="margin:0;">PM Loop</h3>
+            <span class="pm-badge" id="pmLoopBadge">idle</span>
+          </div>
+          <div id="pmLoopProjectLabel" style="font-size:12px; color:var(--text-2); margin-bottom:8px; padding:6px 10px; background:var(--bg-card2); border-radius:6px; border-left:3px solid var(--accent);">
+            ← Select a project above
+          </div>
+          <p class="meta" style="margin-bottom:14px;">Reads the selected project's ROADMAP.md, dispatches one task at a time, self-extends when the roadmap empties.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+            <button id="pmStartBtn" class="btn-green">▶ Start</button>
+            <button id="pmStopBtn" class="btn-red">⏹ Stop</button>
+            <button id="pmDryRunBtn" class="btn-muted">🔍 Dry run</button>
+            <button id="pmRoadmapBtn" class="btn-ghost">📋 Roadmap</button>
+            <span class="meta" id="pmStatus" style="align-self:center;"></span>
+          </div>
+          <div id="pmRoadmapPanel" style="display:none; margin-bottom:12px;" class="log-block mono" style="max-height:220px;"></div>
+          <div id="pmLiveLog" style="display:none;" class="log-block green"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Message bar — redirects to crew-lead chat ── -->
+    <div class="msg-bar" style="justify-content:center;gap:12px;">
+      <span style="font-size:13px;color:var(--text-2);">Talk to the crew via</span>
+      <button data-action="showChat" class="btn-green" style="font-size:13px;padding:8px 18px;">🧠 Chat with crew-lead</button>
+    </div>
+  </div>
+</body>
+</html>
