@@ -398,6 +398,7 @@ async function main() {
   log("info", `Loaded ${persistedTurns.length} persisted conversation turns`);
 
   // Dynamic import of Baileys (ESM-only package)
+  const qrTerminal = require("qrcode-terminal");
   const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -415,7 +416,7 @@ async function main() {
     auth: state,
     // Show as "Chrome (Mac)" — least suspicious to WA servers
     browser: Browsers.macOS("Chrome"),
-    printQRInTerminal: true,
+    printQRInTerminal: false,
     // Reduce unnecessary reconnects and noise
     syncFullHistory: false,
     markOnlineOnConnect: false,
@@ -454,8 +455,10 @@ async function main() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log("\n🟢 Scan the QR code above with WhatsApp on your phone.");
+      console.log("\n🟢 Scan this QR code with WhatsApp on your phone:");
       console.log("   WhatsApp → Linked Devices → Link a Device\n");
+      qrTerminal.generate(qr, { small: true });
+      console.log("\n   (QR code expires in ~60s — restart if it times out)\n");
     }
 
     if (connection === "close") {
