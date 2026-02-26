@@ -7,10 +7,19 @@
 
 ## What is CrewSwarm?
 
-A local multi-agent AI orchestration system. A crew of specialist AI agents
-(coder, QA, PM, fixer, security, copywriter, etc.) that collaborate on tasks
-via a real-time WebSocket bus. You interact through a web dashboard, Telegram,
-or by chatting directly with crew-lead.
+**The multi-agent orchestration layer for OpenCode and Cursor.** CrewSwarm runs a crew of specialist AI agents (coder, QA, PM, fixer, security, copywriter, etc.) that collaborate on tasks via a real-time WebSocket bus. Each agent can be routed through **OpenCode CLI**, **Cursor CLI**, or a direct LLM API call — you pick per agent from the dashboard.
+
+You interact through a web dashboard, Telegram, or by chatting directly with crew-lead.
+
+### Execution modes (per agent)
+
+| Mode | How it works | Best for |
+|---|---|---|
+| **OpenCode** | Agent tasks run inside `opencode run` — full file editing, bash, session memory | Coding agents (crew-coder, crew-coder-back, crew-coder-front, crew-fixer) |
+| **Cursor CLI** | Agent tasks run via `cursor --model <model> --execute` | Complex reasoning tasks, architect, crew-main |
+| **Direct API** | Agent calls the LLM provider directly, parses `@@TOOL` markers | Fast/cheap agents, crew-pm, crew-qa, crew-copywriter |
+
+Switch modes from the **Settings → Agents** tab with the bulk setter buttons, or configure per-agent in `~/.crewswarm/crewswarm.json`.
 
 **Ports when running:**
 | Service | Port |
