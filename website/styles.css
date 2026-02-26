@@ -633,15 +633,9 @@ nav .btn:hover { background: rgba(255,255,255,0.1); }
 }
 .control-surfaces {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1.25rem;
   margin-top: 1.25rem;
-}
-@media (max-width: 860px) {
-  .control-surfaces { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 540px) {
-  .control-surfaces { grid-template-columns: 1fr; }
 }
 .cs-group-label {
   font-size: 0.68rem;
@@ -680,12 +674,9 @@ nav .btn:hover { background: rgba(255,255,255,0.1); }
 /* ─── Execution engines grid ─────────────────────────────────────────────── */
 .engines-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
   margin-top: 1.25rem;
-}
-@media (max-width: 720px) {
-  .engines-grid { grid-template-columns: 1fr; }
 }
 .engine-card {
   display: flex;
