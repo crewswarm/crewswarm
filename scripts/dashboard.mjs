@@ -5813,6 +5813,13 @@ refreshAll();
     form.autocomplete = 'off';
     form.onsubmit = () => false;
     form.style.cssText = 'margin:0;padding:0;display:contents;';
+    // Hidden username field — satisfies Chrome's "password forms need a username" check
+    const u = document.createElement('input');
+    u.type = 'text';
+    u.autocomplete = 'username';
+    u.setAttribute('aria-hidden', 'true');
+    u.style.cssText = 'display:none;position:absolute;width:0;height:0;opacity:0;';
+    form.appendChild(u);
     inp.parentNode.insertBefore(form, inp);
     form.appendChild(inp);
   }
