@@ -81,16 +81,16 @@ function runningBridges() {
       } catch { /* unreadable, skip */ }
     }
   } catch { /* PID_DIR unreadable, fall through */ }
-  // Fallback: ps-based detection (works if env vars visible, e.g. Linux)
+  // Fallback: pgrep-based detection (fast, no ps aux hang risk)
   if (agents.size === 0) {
     try {
-      const out = execSync("ps aux", { encoding: "utf8" });
-      const lines = out.split("\n").filter(l => l.includes("gateway-bridge.mjs --rt-daemon"));
-      for (const line of lines) {
-        const m = line.match(/OPENCREW_RT_AGENT=["']?([^\s"']+)/);
-        if (m) agents.add(m[1]);
+      const pids = execSync("pgrep -f 'gateway-bridge.mjs --rt-daemon'", { encoding: "utf8", timeout: 2000 }).trim();
+      if (pids) {
+        // pids found but we can't recover agent names without env — mark as "unknown"
+        // so we don't try to re-spawn. Caller will see size > 0 and skip.
+        for (const pid of pids.split("\n").filter(Boolean)) agents.add(`pid-${pid.trim()}`);
       }
-    } catch { /* ignore */ }
+    } catch { /* no matches or pgrep unavailable */ }
   }
   return agents;
 }
@@ -171,8 +171,8 @@ console.log();
 const CREW_LEAD_SCRIPT = path.join(CREWSWARM_DIR, "crew-lead.mjs");
 const crewLeadRunning = (() => {
   try {
-    const out = execSync("ps aux", { encoding: "utf8" });
-    return out.includes("crew-lead.mjs");
+    execSync("pgrep -f 'crew-lead.mjs'", { encoding: "utf8", timeout: 2000, stdio: "pipe" });
+    return true;
   } catch { return false; }
 })();
 
@@ -218,7 +218,7 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
 // crew-scribe — memory maintenance daemon (watches done.jsonl, writes brain.md + session-log.md)
 const SCRIBE_SCRIPT = path.join(CREWSWARM_DIR, "scripts", "crew-scribe.mjs");
 const scribeRunning = (() => {
-  try { return execSync("ps aux", { encoding: "utf8" }).includes("crew-scribe.mjs"); } catch { return false; }
+  try { execSync("pgrep -f 'crew-scribe.mjs'", { encoding: "utf8", timeout: 2000, stdio: "pipe" }); return true; } catch { return false; }
 })();
 if (!scribeRunning && fs.existsSync(SCRIBE_SCRIPT)) {
   const logFd = fs.openSync(path.join(os.tmpdir(), "crew-scribe.log"), "a");
