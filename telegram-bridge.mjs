@@ -87,10 +87,16 @@ process.on("exit", () => { try { writeFileSync(PID_PATH, ""); } catch {} });
 const TG_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 async function tgRequest(method, body = {}) {
+  // getUpdates uses a server-side long-poll timeout (POLL_TIMEOUT seconds) so give it
+  // a generous client-side timeout; all other calls (sendMessage etc.) cap at 15s.
+  const clientTimeoutMs = method === "getUpdates"
+    ? (POLL_TIMEOUT + 15) * 1000  // server timeout + 15s buffer
+    : 15000;
   const res = await fetch(`${TG_BASE}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(clientTimeoutMs),
   });
   const json = await res.json();
   if (!json.ok) throw new Error(`Telegram ${method} failed: ${json.description}`);
