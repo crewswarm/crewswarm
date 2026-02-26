@@ -403,15 +403,12 @@ async function main() {
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
-    makeInMemoryStore,
     Browsers,
   } = await import("@whiskeysockets/baileys");
 
   const { state, saveCreds } = await useMultiFileAuthState(WA_AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
   log("info", `Baileys version: ${version.join(".")}`);
-
-  const store = makeInMemoryStore({});
 
   const sock = makeWASocket({
     version,
@@ -432,8 +429,6 @@ async function main() {
       child: () => ({ trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, fatal: () => {} }),
     },
   });
-
-  store.bind(sock.ev);
 
   // ── Send helper ─────────────────────────────────────────────────────────────
 
