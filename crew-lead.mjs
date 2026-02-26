@@ -811,7 +811,8 @@ function buildSystemPrompt(cfg) {
     "- @@PIPELINE is your default for ANY multi-step build request. It dispatches real agents to plan + build.",
     "- @@PROJECT is ONLY for simple quick-draft roadmaps when user explicitly asks for 'just a roadmap' or 'draft a plan' without wanting agents to execute.",
     "- When in doubt: use @@PIPELINE. It always produces better results than @@PROJECT.",
-    "- Do NOT ask 'would you like to add features?' or 'what stack should we use?' — just emit @@PIPELINE and go.",
+    "- BEFORE firing @@PIPELINE for complex multi-agent tasks (3+ agents or 2+ waves), briefly show the user your proposed plan (1-3 lines, no fluff) and ask 'Want me to kick it off?' — then emit @@PIPELINE only when they confirm. Single-agent dispatches and explicit 'go build' commands skip the confirmation.",
+    "- Format your plan proposal like: '3-agent job: crew-pm (spec) → crew-coder-back + crew-coder-front (parallel) → crew-qa (tests). Fire it?'",
     "",
     "@@PROJECT (rare — only for simple roadmap draft without agent execution):",
     '@@PROJECT {"name":"FocusFlow","description":"Pomodoro timer: 25/5 intervals, streak tracking, daily stats, task list, desktop notifications","outputDir":"/Users/jeffhobbs/Desktop/focusflow"}',
@@ -2870,7 +2871,6 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
   let codebaseResults = null;
   let healthData = null;
   let benchmarkCatalog = null;
-  let taskClassification = null;
   const fetchBenchmarkCatalog = async () => {
     const r = await fetch("https://api.zeroeval.com/leaderboard/benchmarks", { signal: AbortSignal.timeout(10000) });
     const arr = await r.json();
@@ -2886,7 +2886,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     return `[Benchmark catalog from ZeroEval — use benchmark_id in @@SKILL zeroeval.benchmark {"benchmark_id":"<id>"}]\n${rows.join("\n")}${suffix}`;
   };
   try {
-    const [b, c, h, bc, _tc] = await Promise.all([
+    const [b, c, h, bc] = await Promise.all([
     needsSearch ? searchWithBrave(message).catch(() => null) : null,
     needsSearch ? Promise.resolve(searchCodebase(message)).catch(() => null) : null,
     needsHealth ? (async () => {
@@ -2997,13 +2997,11 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
       } catch { return null; }
     })() : null,
     needsBenchmarkCatalog ? fetchBenchmarkCatalog().catch(() => null) : null,
-    classifyTask(message, cfg).catch(() => null),
   ]);
     braveResults = b;
     codebaseResults = c;
     healthData = h;
     benchmarkCatalog = bc;
-    taskClassification = _tc || null;
   } catch (e) {
     console.error("[crew-lead] context fetch failed:", e?.message || e);
   }
@@ -3026,25 +3024,6 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     ...historyAsMessages,
     { role: "user", content: userContent },
   ];
-
-  // ── Inject complexity classification hint ──────────────────────────────────
-  // Gives crew-lead data to decide between direct dispatch vs crew-main orchestration.
-  // Score 1-3: single agent. Score 4-5: crew-main coordinates multiple specialists.
-  if (taskClassification) {
-    const { score, reason, agents = [], breakdown = [] } = taskClassification;
-    if (score >= 4) {
-      messages.push({
-        role: "system",
-        content: `[Task Classifier — complexity ${score}/5] ${reason}. Suggested agents: ${agents.join(" → ")}. Possible breakdown: ${breakdown.join("; ")}. If the user is asking you to BUILD/DO this (not just asking about it), consider @@PIPELINE or crew-main. If the user is asking a question or checking status, JUST ANSWER — do not dispatch.`,
-      });
-    } else if (score === 3) {
-      messages.push({
-        role: "system",
-        content: `[Task Classifier — complexity ${score}/5] ${reason}. If this is an action request, ${agents[0] || "crew-coder"} is likely sufficient.`,
-      });
-    }
-    // Score 1-2: no hint needed
-  }
 
   appendHistory(sessionId, "user", message);
   // Audit trail: record what Brave actually injected so later turns (and you) can verify — no "context #5" confabulation
@@ -3833,6 +3812,26 @@ const server = http.createServer(async (req, res) => {
       const evt = await readBody(req).catch(() => null);
       if (evt && typeof evt === "object") broadcastSSE({ type: "opencode_event", ...evt, ts: evt.ts || Date.now() });
       json(res, 200, { ok: true });
+      return;
+    }
+
+    // ── /api/classify — task complexity breakdown (used by MCP smart_dispatch) ──
+    if (url.pathname === "/api/classify" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      const body = await readBody(req);
+      const { task } = body;
+      if (!task) { json(res, 400, { ok: false, error: "task is required" }); return; }
+      const cfg = loadConfig();
+      try {
+        const result = await classifyTask(task, cfg);
+        if (!result) {
+          json(res, 200, { ok: true, score: 1, reason: "Simple task — single agent sufficient", agents: [], breakdown: [], skipped: true });
+        } else {
+          json(res, 200, { ok: true, ...result });
+        }
+      } catch (e) {
+        json(res, 500, { ok: false, error: e.message });
+      }
       return;
     }
 

@@ -173,6 +173,25 @@ function buildToolList() {
       description: "Get live status of all CrewSwarm agents — which are running, their models, and recent task telemetry.",
       inputSchema: { type: "object", properties: {} },
     },
+    {
+      name: "smart_dispatch",
+      description: [
+        "Analyze a task and get a multi-agent breakdown BEFORE executing — returns the proposed plan without firing anything.",
+        "Use this when you're unsure how to break down a complex task. Returns score (1-5), suggested agents, and step-by-step breakdown.",
+        "After reviewing the plan, call run_pipeline with the returned stages to execute, or call dispatch_agent for a single agent.",
+        "Example: smart_dispatch('build auth system with JWT') → { score: 4, agents: ['crew-pm','crew-coder-back','crew-qa'], breakdown: ['plan spec','build endpoints','write tests'] }",
+      ].join("\n"),
+      inputSchema: {
+        type: "object",
+        properties: {
+          task: {
+            type: "string",
+            description: "The task to analyze and break down into a multi-agent plan",
+          },
+        },
+        required: ["task"],
+      },
+    },
   ];
 
   // ── One tool per skill ─────────────────────────────────────────────────────
@@ -320,6 +339,47 @@ async function callTool(name, args) {
       if (result.status === "failed" || result.error) break;
     }
     return { stages_run: results.length, stages_total: stages.length, results };
+  }
+
+  // smart_dispatch — get breakdown plan without executing
+  if (name === "smart_dispatch") {
+    const { task } = args;
+    if (!task) return { error: "task is required" };
+    try {
+      const res = await fetch(`${CREW_LEAD_URL}/api/classify`, {
+        method: "POST",
+        headers: crewHeaders(),
+        body: JSON.stringify({ task }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      const plan = await res.json();
+      if (!plan.ok) return { error: plan.error || "classify failed" };
+
+      const { score, reason, agents = [], breakdown = [], skipped } = plan;
+      const complexity = score <= 2 ? "simple" : score === 3 ? "moderate" : "complex";
+
+      // Build ready-to-use pipeline stages from the breakdown
+      const pipeline_stages = agents.length > 0 && breakdown.length > 0
+        ? breakdown.map((step, i) => ({ agent: agents[i] || agents[agents.length - 1], task: step }))
+        : [];
+
+      return {
+        score,
+        complexity,
+        reason,
+        agents,
+        breakdown,
+        skipped: skipped || false,
+        pipeline_stages,
+        next_steps: score >= 4
+          ? `Call run_pipeline with pipeline_stages to execute, or customize the stages first.`
+          : score >= 3
+          ? `Call dispatch_agent("${agents[0] || "crew-coder"}", task) to execute.`
+          : `Simple task — call dispatch_agent or handle directly.`,
+      };
+    } catch (e) {
+      return { error: `classify failed: ${e.message}` };
+    }
   }
 
   // skill_* tools
