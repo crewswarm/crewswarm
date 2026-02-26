@@ -44,8 +44,26 @@ src/api/
 tests/
 __tests__/
 .ai-pm-notes.md
-qa-report.md
 security-considerations-*.md
+
+# Python tooling
+.pytest_cache/
+.ruff_cache/
+venv/
+
+# Agent output reports (move to docs/reports/ if worth keeping)
+*-report.md
+*-output.md
+task-done.md
+
+# Leaked paths / junk dirs agents accidentally create
+desktop/
+src/
+homepage/
+newfeature/
+
+# Vite build output (production build is committed, but ignore local rebuilds)
+frontend/dist/
 
 # Secrets
 .env

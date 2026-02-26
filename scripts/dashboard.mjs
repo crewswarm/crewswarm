@@ -6027,10 +6027,51 @@ refreshAll();
 </body>
 </html>`;
 
+// ── Static frontend (Vite dist) ───────────────────────────────────────────────
+const FRONTEND_DIST = path.resolve(__dirname, "../frontend/dist");
+const FRONTEND_SRC  = path.resolve(__dirname, "../frontend");
+const STATIC_MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js":   "application/javascript",
+  ".css":  "text/css",
+  ".png":  "image/png",
+  ".svg":  "image/svg+xml",
+  ".ico":  "image/x-icon",
+  ".json": "application/json",
+  ".woff2":"font/woff2",
+  ".woff": "font/woff",
+};
+
+function serveStatic(res, filePath) {
+  try {
+    const data = fs.readFileSync(filePath);
+    const ext  = path.extname(filePath).toLowerCase();
+    res.writeHead(200, {
+      "content-type": STATIC_MIME[ext] || "application/octet-stream",
+      "cache-control": ext === ".html" ? "no-store" : "public, max-age=3600",
+    });
+    res.end(data);
+    return true;
+  } catch { return false; }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://localhost:${listenPort}`);
   try {
+    // Serve frontend static assets (Vite dist in prod, src in dev fallback)
+    if (!url.pathname.startsWith("/api/") && !url.pathname.startsWith("/events")) {
+      const distFile = path.join(FRONTEND_DIST, url.pathname === "/" ? "index.html" : url.pathname);
+      if (serveStatic(res, distFile)) return;
+      // Dev fallback: serve from frontend/src or frontend/index.html directly
+      if (url.pathname === "/") {
+        const devIndex = path.join(FRONTEND_SRC, "index.html");
+        if (serveStatic(res, devIndex)) return;
+      }
+      const srcFile = path.join(FRONTEND_SRC, url.pathname);
+      if (serveStatic(res, srcFile)) return;
+    }
     if (url.pathname === "/") {
+      // Final fallback — serve legacy inline HTML if frontend not built yet
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store, no-cache, must-revalidate",
@@ -6133,6 +6174,12 @@ const server = http.createServer(async (req, res) => {
       } catch {}
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(sessions));
+      return;
+    }
+
+    if (url.pathname === "/api/env") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ HOME: os.homedir(), cwd: process.cwd() }));
       return;
     }
 
