@@ -7930,7 +7930,7 @@ ORDER BY day DESC, cost DESC;`;
         } catch {}
         await new Promise(r => setTimeout(r, 800));
         // WhatsApp bridge uses auth files — no token needed, just spawn it
-        const waCfg = (() => { try { return JSON.parse(fs.readFileSync(CREW_CFG_PATH, "utf8")); } catch { return {}; } })();
+        const waCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8")); } catch { return {}; } })();
         const waEnv = waCfg.env || {};
         spawnProc("node", [path.join(OPENCLAW_DIR, "whatsapp-bridge.mjs")], {
           cwd: OPENCLAW_DIR,
