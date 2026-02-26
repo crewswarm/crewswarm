@@ -69,7 +69,8 @@ function assert(condition, message) {
 
 async function run() {
   const runId = Date.now().toString(36);
-  const outDir = path.join(process.cwd(), "test-output", "smoke-dispatch");
+  const projectRoot = path.join(path.dirname(process.argv[1]), "..");
+const outDir = path.join(projectRoot, "test-output", "smoke-dispatch");
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(`[smoke-dispatch] runId=${runId}`);

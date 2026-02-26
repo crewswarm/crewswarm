@@ -1738,7 +1738,18 @@ function startAgentReplyListener() {
       }
     } catch {}
   };
-  agentReplySSE.onerror = () => { agentReplySSE = null; };
+  agentReplySSE.onopen = () => { window._sseReconnectDelay = 2000; };
+  agentReplySSE.onerror = () => {
+    agentReplySSE.close();
+    agentReplySSE = null;
+    // Reconnect with exponential backoff (2s → 4s → 8s → 30s max)
+    if (window._sseReconnectTimer) clearTimeout(window._sseReconnectTimer);
+    window._sseReconnectTimer = setTimeout(() => {
+      window._sseReconnectTimer = null;
+      window._sseReconnectDelay = Math.min((window._sseReconnectDelay || 2000) * 2, 30000);
+      startAgentReplyListener();
+    }, window._sseReconnectDelay || 2000);
+  };
 }
 
 // ── Command approval toast ────────────────────────────────────────────────────
