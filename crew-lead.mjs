@@ -193,13 +193,11 @@ function writeAgentTools(agentId, tools) {
 
 function getSearchToolsConfig() {
   return tryRead(path.join(os.homedir(), ".crewswarm", "search-tools.json"))
-      || tryRead(path.join(os.homedir(), ".openclaw",  "search-tools.json"))
       || {};
 }
 
 function getAgentPrompts() {
   return tryRead(path.join(os.homedir(), ".crewswarm", "agent-prompts.json"))
-      || tryRead(path.join(os.homedir(), ".openclaw",  "agent-prompts.json"))
       || {};
 }
 
@@ -4541,7 +4539,6 @@ const RT_TOKEN = process.env.OPENCREW_RT_AUTH_TOKEN || (() => {
     if (cs?.rt?.authToken) return cs.rt.authToken;
   } catch {}
   try {
-    return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".openclaw", "openclaw.json"), "utf8"))?.env?.OPENCREW_RT_AUTH_TOKEN || "";  // legacy fallback
   } catch { return ""; }
 })();
 

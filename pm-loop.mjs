@@ -67,7 +67,6 @@ const GROQ_API_KEY   = process.env.GROQ_API_KEY || ""; // kept for backwards com
 function getSearchToolsConfig() {
   const candidates = [
     homedir() + "/.crewswarm/search-tools.json",
-    homedir() + "/.openclaw/search-tools.json",
   ];
   for (const p of candidates) {
     try { return JSON.parse(readFileSync(p, "utf8")); } catch {}
@@ -97,7 +96,6 @@ function getOCConfig() {
   if (_ocCfg) return _ocCfg;
   const candidates = [
     homedir() + "/.crewswarm/crewswarm.json",
-    homedir() + "/.openclaw/openclaw.json",
   ];
   for (const p of candidates) {
     try {
@@ -354,7 +352,7 @@ async function runCopywriterPass(itemText, task) {
   if (!mistral?.apiKey) return task; // no key — skip
 
   const agentPrompts = (() => {
-    for (const p of [homedir() + "/.crewswarm/agent-prompts.json", homedir() + "/.openclaw/agent-prompts.json"]) {
+    for (const p of [homedir() + "/.crewswarm/agent-prompts.json"]) {
       try { return JSON.parse(readFileSync(p, "utf8")); } catch {}
     }
     return {};

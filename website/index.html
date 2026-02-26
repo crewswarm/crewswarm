@@ -9,13 +9,13 @@
   <meta property="og:description" content="Orchestrate specialist AI agents across OpenCode, Cursor CLI, and Claude Code. PM-led builds, realtime dispatch, fault recovery. One requirement, one crew, real files on disk." />
   <meta property="og:url" content="https://crewswarm.ai" />
   <meta property="og:type" content="website" />
-  <meta property="og:image" content="https://crewswarm.fly.dev/og-image.png" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode, Cursor &amp; Claude Code" />
   <meta name="twitter:description" content="Route each agent through OpenCode, Cursor CLI, Claude Code, or direct API. PM-led builds, realtime dispatch, real files on disk. Free &amp; open source." />
-  <meta name="twitter:image" content="https://crewswarm.fly.dev/og-image.png" />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <link rel="canonical" href="https://crewswarm.ai/" />
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="apple-touch-icon" href="favicon.png" />
@@ -1030,7 +1030,7 @@
           </div>
           <div class="orch-code">
             <div class="orch-code-label">Example</div>
-            <code>node phased-orchestrator.mjs --all "Build a todo API with CRUD and tests"</code>
+            <code>node scripts/run.mjs "Build a todo API with CRUD and tests"</code>
           </div>
         </div>
         <div class="orch-card">
@@ -1047,7 +1047,7 @@
           </div>
           <div class="orch-code">
             <div class="orch-code-label">Example</div>
-            <code>node unified-orchestrator.mjs "Fix auth.js bug and add tests"</code>
+            <code>node scripts/run.mjs "Fix auth.js bug and add tests"</code>
           </div>
         </div>
         <div class="orch-card">
@@ -1290,9 +1290,9 @@
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-8" role="region" aria-labelledby="faq-heading-8">
-              <div class="faq-answer-inner"><p>Use the phased orchestrator:</p>
-              <pre><code>$ node phased-orchestrator.mjs --all "Build a todo API"</code></pre>
-              <p>That single command triggers PM planning plus all subsequent coding, QA, and fixing.</p></div>
+              <div class="faq-answer-inner"><p>From the dashboard Chat tab, just type your requirement. From the CLI:</p>
+              <pre><code>$ node scripts/run.mjs "Build a todo API"</code></pre>
+              <p>That single command triggers PM planning plus all subsequent coding, QA, and fixing phases.</p></div>
             </div>
           </div>
           <div class="faq-item" data-question="targeted send example crew coder command">
@@ -1348,7 +1348,7 @@
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-14" role="region" aria-labelledby="faq-heading-14">
-              <div class="faq-answer-inner"><p>A JSONL feed at <code>~/.openclaw/logs/events.jsonl</code> stores bootstrap events, memory load failures, protocol violations, retries, and RT events for later auditing.</p></div>
+              <div class="faq-answer-inner"><p>A JSONL feed at <code>~/.crewswarm/logs/events.jsonl</code> stores bootstrap events, memory load failures, protocol violations, retries, and RT events for later auditing.</p></div>
             </div>
           </div>
           <div class="faq-item" data-question="agent roster roles crew main pm coder qa fixer security">
@@ -1504,8 +1504,8 @@
             <div class="gs-step">
               <div class="gs-step-num">03</div>
               <div class="gs-step-content">
-                <div class="gs-step-label">Ship a build</div>
-                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node phased-orchestrator.mjs <span class="code-str">--all "Build a todo API"</span></span></div>
+                <div class="gs-step-label">Start building</div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> <span class="code-str">open http://127.0.0.1:4319 — or —</span> node scripts/run.mjs <span class="code-str">"Build a todo API"</span></span></div>
               </div>
             </div>
             <div class="gs-step-divider"></div>

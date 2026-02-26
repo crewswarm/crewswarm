@@ -667,9 +667,6 @@ nav .btn:hover { background: rgba(255,255,255,0.1); }
 .cs-item.cs-messenger { border-color: rgba(37,211,102,0.25); background: rgba(37,211,102,0.05); }
 .cs-item.cs-messenger strong { color: #25D366; }
 .cs-messenger-icons { display: flex; gap: 5px; align-items: center; margin-bottom: 0.2rem; }
-.cs-item.cs-openclaw { border-color: rgba(255,77,77,0.25); background: rgba(255,77,77,0.05); }
-.cs-item.cs-openclaw strong { color: #ff4d4d; }
-.cs-openclaw-logo { margin-bottom: 0.2rem; }
 
 /* ─── Execution engines grid ─────────────────────────────────────────────── */
 .engines-grid {
