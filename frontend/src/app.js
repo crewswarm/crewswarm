@@ -2343,8 +2343,39 @@ function editSkill(name){
 
 function toggleAddSkill(){
   cancelSkillForm();
+  document.getElementById('importSkillForm').style.display = 'none';
   const f = document.getElementById('addSkillForm');
   f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleImportSkill(){
+  cancelSkillForm();
+  const f = document.getElementById('importSkillForm');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  if (f.style.display !== 'none') setTimeout(() => document.getElementById('importSkillUrl').focus(), 50);
+}
+
+async function importSkillFromUrl(){
+  const urlInput = document.getElementById('importSkillUrl');
+  const status   = document.getElementById('importSkillStatus');
+  const btn      = document.getElementById('importSkillBtn');
+  const skillUrl = urlInput.value.trim();
+  if (!skillUrl) { status.style.color = 'var(--red)'; status.textContent = 'Paste a URL first.'; return; }
+  btn.disabled = true; btn.textContent = 'Importing…';
+  status.style.color = 'var(--text-3)'; status.textContent = 'Fetching…';
+  try {
+    const r = await fetch('/api/skills/import', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ url: skillUrl }) });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'Import failed');
+    status.style.color = 'var(--green)';
+    status.textContent = 'Imported as "' + d.name + '" ✓';
+    urlInput.value = '';
+    await loadSkills();
+    setTimeout(() => { document.getElementById('importSkillForm').style.display = 'none'; status.textContent = ''; }, 2000);
+  } catch(e) {
+    status.style.color = 'var(--red)';
+    status.textContent = 'Error: ' + e.message;
+  } finally { btn.disabled = false; btn.textContent = 'Import'; }
 }
 
 function cancelSkillForm(){
@@ -4814,6 +4845,8 @@ const ACTION_REGISTRY = {
   toggleCursorWaves,
   toggleClaudeCode,
   toggleAddSkill,
+  toggleImportSkill,
+  importSkillFromUrl,
   showSkills,
   saveSkill,
   cancelSkillForm,
