@@ -1336,7 +1336,7 @@ Object.assign(window, {
   startCrew, startTgBridge, startWaBridge, stopTgBridge, stopWaBridge,
   toggleAddSkill, toggleBgConsciousness, toggleCursorWaves, toggleClaudeCode, toggleEmojiPicker,
   updateSkillAuthFields, navigateTo,
-  renderStatusBadge, renderAgentCard, renderProviderCard,
+  renderStatusBadge,
   showLoading, showEmpty, showError,
   // ── Dynamic HTML handlers (innerHTML-rendered) ──
   applyToolPreset, closePreviewPane, deleteAgent, deleteSkill, editSkill,
