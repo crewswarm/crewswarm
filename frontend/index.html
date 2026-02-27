@@ -791,6 +791,40 @@
           <div id="codexStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
         </div>
 
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🔵 Gemini CLI Executor</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                Route tasks through Gemini CLI (<code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">gemini -p</code>) instead of direct LLM. Free tier: 60 req/min · 1,000 req/day via Google OAuth — no API key needed.
+                Per-agent override: <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">useGeminiCli: true</code> in crewswarm.json.
+                Install: <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">npm install -g @google/gemini-cli</code> then run <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">gemini auth login</code>.
+              </div>
+            </div>
+            <button id="geminiCliBtn" data-action="toggleGeminiCliExecutor" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="geminiCliStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🌀 Antigravity Executor</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                Route tasks through Antigravity via OpenCode (<code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">opencode run --model=google/antigravity-*</code>). Free Google OAuth quota — access Gemini 3 Pro and Claude Opus 4.6 Thinking with no API key.
+                Per-agent override: <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">useAntigravity: true</code> in crewswarm.json.
+                Setup: install <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">opencode-antigravity-auth</code> plugin then run <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">opencode auth login</code>. See Engines tab for full steps.
+              </div>
+            </div>
+            <button id="antigravityBtn" data-action="toggleAntigravityExecutor" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="antigravityStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
       </div>
 
     </div>

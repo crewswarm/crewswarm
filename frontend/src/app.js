@@ -106,6 +106,10 @@ import {
   toggleClaudeCode,
   loadCodexExecutor,
   toggleCodexExecutor,
+  loadGeminiCliExecutor,
+  toggleGeminiCliExecutor,
+  loadAntigravityExecutor,
+  toggleAntigravityExecutor,
   loadGlobalFallback,
   saveGlobalFallback,
   loadGlobalOcLoop,
@@ -882,7 +886,7 @@ function showSettingsTab(tab){
     btn.classList.toggle('active', t === tab);
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
-  if (tab === 'engines')  { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadCodexExecutor(); loadGlobalOcLoop(); loadLoopBrain(); loadPassthroughNotify(); }
+  if (tab === 'engines')  { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadCodexExecutor(); loadGeminiCliExecutor(); loadAntigravityExecutor(); loadGlobalOcLoop(); loadLoopBrain(); loadPassthroughNotify(); }
   if (tab === 'comms')    { loadCommsTabData(); }
   if (tab === 'security') { loadCmdAllowlist(); loadEnvAdvanced(); }
   if (tab === 'webhooks') { /* static */ }
@@ -1153,6 +1157,8 @@ const ACTION_REGISTRY = {
   toggleCursorWaves,
   toggleClaudeCode,
   toggleCodexExecutor,
+  toggleGeminiCliExecutor,
+  toggleAntigravityExecutor,
   saveGlobalOcLoop,
   saveGlobalOcLoopRounds,
   savePassthroughNotify,

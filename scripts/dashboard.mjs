@@ -1282,6 +1282,64 @@ const server = http.createServer(async (req, res) => {
         return;
       }
     }
+    // ── Gemini CLI executor toggle ─────────────────────────────────────────────
+    if (url.pathname === "/api/settings/gemini-cli") {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+          const enabled = cfg.geminiCli === true || process.env.CREWSWARM_GEMINI_CLI_ENABLED === "1";
+          const installed = (() => { try { execSync("which gemini", { stdio: "ignore" }); return true; } catch { return false; } })();
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled, installed }));
+        } catch {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled: false, installed: false }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = ""; for await (const chunk of req) body += chunk;
+        const { enabled } = JSON.parse(body || "{}");
+        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+        cfg.geminiCli = enabled === true;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        process.env.CREWSWARM_GEMINI_CLI_ENABLED = enabled ? "1" : "0";
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, enabled: cfg.geminiCli }));
+        return;
+      }
+    }
+    // ── Antigravity executor toggle ────────────────────────────────────────────
+    if (url.pathname === "/api/settings/antigravity") {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+          const enabled = cfg.antigravity === true || process.env.CREWSWARM_ANTIGRAVITY_ENABLED === "1";
+          const installed = (() => { try { execSync("which opencode", { stdio: "ignore" }); return true; } catch { return false; } })();
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled, installed }));
+        } catch {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled: false, installed: false }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = ""; for await (const chunk of req) body += chunk;
+        const { enabled } = JSON.parse(body || "{}");
+        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+        cfg.antigravity = enabled === true;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        process.env.CREWSWARM_ANTIGRAVITY_ENABLED = enabled ? "1" : "0";
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, enabled: cfg.antigravity }));
+        return;
+      }
+    }
     // ── Global OpenCode loop (Ouroboros) ───────────────────────────────────────
     if (url.pathname === "/api/settings/global-oc-loop") {
       const { readFile, writeFile } = await import("node:fs/promises");
