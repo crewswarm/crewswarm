@@ -928,7 +928,7 @@ const html = `<!doctype html>
             <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;">OpenCode Loop (Ouroboros)</div>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px;">
               <input type="checkbox" id="globalOcLoop" onchange="saveGlobalOcLoop()" style="accent-color:var(--accent);" />
-              Enable loop for all agents (CREWSWARM_OPENCODE_LOOP)
+              Enable loop for all agents (CREWSWARM_ENGINE_LOOP)
             </label>
             <div style="display:flex;align-items:center;gap:8px;">
               <label style="font-size:12px;color:var(--text-3);">Max rounds:</label>

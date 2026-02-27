@@ -512,7 +512,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/env-advanced" && req.method === "GET") {
       const vars = [
         "CREWSWARM_OPENCODE_TIMEOUT_MS",
-        "CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS",
+        "CREWSWARM_ENGINE_LOOP_MAX_ROUNDS",
         "CREWSWARM_DISPATCH_TIMEOUT",
         "CREW_LEAD_PORT",
         "SWARM_DASH_PORT",
@@ -525,7 +525,7 @@ const server = http.createServer(async (req, res) => {
         "CREWSWARM_OPENCODE_MODEL",
         "CREWSWARM_OPENCODE_AGENT",
         "CREWSWARM_OPENCODE_ENABLED",
-        "CREWSWARM_OPENCODE_LOOP",
+        "CREWSWARM_ENGINE_LOOP",
         "CREWSWARM_CLAUDE_CODE_MODEL",
         "CREWSWARM_CURSOR_MODEL",
         "CREWSWARM_DOCKER_SANDBOX",

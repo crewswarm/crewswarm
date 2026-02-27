@@ -2473,8 +2473,8 @@ const ENV_GROUPS = [
   {
     label: 'Engine Loop & Dispatch',
     vars: [
-      { key: 'CREWSWARM_OPENCODE_LOOP',            hint: 'Enable Ouroboros engine loop for all agents (LLM ↔ engine until DONE)', default: 'off' },
-      { key: 'CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS', hint: 'Max STEP iterations per loop run',                          default: '10' },
+      { key: 'CREWSWARM_ENGINE_LOOP',            hint: 'Enable Ouroboros engine loop for all agents (LLM ↔ engine until DONE)', default: 'off' },
+      { key: 'CREWSWARM_ENGINE_LOOP_MAX_ROUNDS', hint: 'Max STEP iterations per loop run',                          default: '10' },
       { key: 'CREWSWARM_DISPATCH_TIMEOUT',         hint: 'ms before a dispatched task times out',                     default: '120000' },
       { key: 'CREWSWARM_RT_AGENT',                 hint: 'Agent ID used for the RT bus',                              default: 'crew-coder' },
     ],

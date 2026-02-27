@@ -2108,7 +2108,7 @@ function getAgentOpenCodeConfig(agentId) {
   const agents = loadAgentList();
   const cfg = agents.find(a => a.id === agentId);
   const fallback = cfg?.opencodeFallbackModel || getOpencodeFallbackModel();
-  const loop = cfg?.opencodeLoop === true || process.env.CREWSWARM_OPENCODE_LOOP === "1";
+  const loop = cfg?.opencodeLoop === true || process.env.CREWSWARM_ENGINE_LOOP === "1";
   const cursorCliModel = cfg?.cursorCliModel || null; // separate model for Cursor CLI vs OpenCode
   if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null, fallbackModel: fallback, loop: false, useCursorCli: false, cursorCliModel: null };
   if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null, fallbackModel: fallback, loop, useCursorCli: cfg.useCursorCli === true, cursorCliModel };
@@ -3663,7 +3663,7 @@ async function runOuroborosStyleLoop(originalTask, agentId, projectDir, payload,
   const agentCfg = loadAgentList().find(a => a.id === agentId) || {};
   const maxRounds = Math.min(20, Math.max(1,
     agentCfg.opencodeLoopMaxRounds ||
-    parseInt(process.env.CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS || "10", 10)
+    parseInt(process.env.CREWSWARM_ENGINE_LOOP_MAX_ROUNDS || "10", 10)
   ));
 
   // Central loop brain: one fast model controls all STEP/DONE decisions.

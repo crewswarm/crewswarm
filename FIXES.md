@@ -42,7 +42,7 @@
 **Files:** `scripts/dashboard.mjs`, `pm-loop.mjs` (pass as env to spawned process)
 
 ### H5 — No global OpenCode loop toggle
-**What:** `CREWSWARM_OPENCODE_LOOP=1` enables the Ouroboros loop for ALL agents. Per-agent `opencodeLoop` checkbox exists but there's no global toggle or `CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS` input.  
+**What:** `CREWSWARM_ENGINE_LOOP=1` enables the Ouroboros loop for ALL agents. Per-agent `opencodeLoop` checkbox exists but there's no global toggle or `CREWSWARM_ENGINE_LOOP_MAX_ROUNDS` input.  
 **Fix:** Add global OpenCode loop toggle + max rounds input to Settings → Execution tab.  
 **Files:** `scripts/dashboard.mjs`
 
