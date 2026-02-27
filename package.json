@@ -28,9 +28,9 @@
     "test:mcp": "node scripts/test-mcp.mjs --start",
     "test:classifier": "node scripts/test-classifier.mjs",
     "test:classifier:e2e": "node scripts/test-classifier.mjs --e2e",
-    "test:unit": "node --test 'test/unit/*.test.mjs'",
-    "test:integration": "node --test 'test/integration/*.test.mjs'",
-    "test": "node --test 'test/unit/*.test.mjs' 'test/integration/*.test.mjs'",
+    "test:unit": "node --test test/unit/*.test.mjs",
+    "test:integration": "node --test test/integration/*.test.mjs",
+    "test": "node --test test/unit/*.test.mjs test/integration/*.test.mjs",
     "test:all": "npm run health && npm run smoke && npm run test:mcp && npm run test:classifier"
   },
   "dependencies": {
