@@ -3206,6 +3206,93 @@ ORDER BY day DESC, cost DESC;`;
       return;
     }
 
+    // ── Benchmark runner — fetch SWE-Bench / LiveCodeBench tasks and run on a local engine ──
+    // GET  /api/benchmark-tasks?benchmark=swe-bench-verified&offset=0&length=20
+    //   → proxies HuggingFace dataset rows for SWE-Bench Verified
+    // POST /api/benchmark-run
+    //   body: { instanceId, problemStatement, repo, engine, model, projectDir }
+    //   → builds a structured prompt and streams it through engine-passthrough SSE
+    if (url.pathname === "/api/benchmark-tasks" && req.method === "GET") {
+      const offset = parseInt(url.searchParams.get("offset") || "0", 10);
+      const length = Math.min(parseInt(url.searchParams.get("length") || "20", 10), 50);
+      const benchmark = url.searchParams.get("benchmark") || "swe-bench-verified";
+      let hfUrl;
+      if (benchmark === "swe-bench-verified" || benchmark === "swe-bench") {
+        hfUrl = `https://datasets-server.huggingface.co/rows?dataset=princeton-nlp%2FSWE-bench_Verified&config=default&split=test&offset=${offset}&length=${length}`;
+      } else if (benchmark === "livecodebench") {
+        hfUrl = `https://datasets-server.huggingface.co/rows?dataset=livecodebench%2Flivecodebench&config=default&split=test&offset=${offset}&length=${length}`;
+      } else {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Unsupported benchmark for task runner. Supported: swe-bench-verified, livecodebench" }));
+        return;
+      }
+      try {
+        const r = await fetch(hfUrl, { signal: AbortSignal.timeout(15000) });
+        const text = await r.text();
+        res.writeHead(r.status, { "content-type": "application/json" });
+        res.end(text);
+      } catch (err) {
+        res.writeHead(502, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "HuggingFace dataset unreachable", detail: String(err?.message || err) }));
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/benchmark-run" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { instanceId, problemStatement, repo, hints, engine = "claude", model, projectDir } = JSON.parse(body || "{}");
+      if (!instanceId || !problemStatement) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "instanceId and problemStatement required" }));
+        return;
+      }
+      const prompt = [
+        `# SWE-Bench Task: ${instanceId}`,
+        repo ? `Repository: ${repo}` : "",
+        "",
+        "## Problem Statement",
+        problemStatement.trim(),
+        hints ? `\n## Hints\n${hints.trim()}` : "",
+        "",
+        "## Your Task",
+        "Analyze the problem statement above. Identify the root cause of the bug or missing feature.",
+        "Write a minimal, correct patch that fixes the issue. Output the patch in unified diff format.",
+        "Do not modify tests. Do not add unrelated changes.",
+      ].filter(Boolean).join("\n");
+
+      const token = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch { return ""; } })();
+      try {
+        const upstream = await fetch("http://127.0.0.1:5010/api/engine-passthrough", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ engine, message: prompt, projectDir: projectDir || process.cwd(), ...(model ? { model } : {}) }),
+        });
+        res.writeHead(upstream.status, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+        });
+        const reader = upstream.body.getReader();
+        const pump = async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) { try { res.end(); } catch {} break; }
+              try { res.write(value); } catch { reader.cancel(); break; }
+            }
+          } catch {}
+        };
+        pump();
+        req.on("close", () => { try { reader.cancel(); } catch {} });
+      } catch (e) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ type: "done", exitCode: 1, error: e.message })}\n\n`);
+        res.end();
+      }
+      return;
+    }
+
     // Proxy test webhook through dashboard (avoids browser needing token)
     const webhookProxyMatch = url.pathname.match(/^\/proxy-webhook\/([a-zA-Z0-9_\-]+)$/);
     if (webhookProxyMatch && req.method === "POST") {
