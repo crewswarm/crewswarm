@@ -167,6 +167,65 @@ import {
   continuousBuildRun,
 } from './tabs/projects-tab.js';
 
+// ── UI helper functions ───────────────────────────────────────────────────────
+
+function renderStatusBadge(liveness) {
+  if (liveness === 'online')
+    return '<span title="● online — heartbeat <90s" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);margin-right:4px;flex-shrink:0;"></span>';
+  if (liveness === 'stale')
+    return '<span title="● stale" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:4px;flex-shrink:0;"></span>';
+  if (liveness === 'offline')
+    return '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red-hi);margin-right:4px;flex-shrink:0;"></span>';
+  return '<span title="● unknown — never seen" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:4px;flex-shrink:0;"></span>';
+}
+
+function renderAgentCard(a) {
+  const badge = renderStatusBadge(a.liveness);
+  return `<div class="agent-card" id="agent-card-${a.id}">
+    <div class="agent-card-header">
+      <div class="agent-avatar" style="position:relative;">${a.emoji || '🤖'}</div>
+      <div class="agent-meta">
+        <div class="agent-id" style="display:flex;align-items:center;">${badge}${a.id}
+          <span class="meta" style="font-weight:400;margin-left:4px;">· ${a.name || ''}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-2);margin-top:2px;">${a.model || '(no model)'}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderProviderCard(p) {
+  const icon = p.icon || '🔌';
+  const hasKey = !!p.hasKey;
+  const badge = hasKey
+    ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">key set ✓</span>`
+    : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
+  return `<div class="card" style="margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:18px;width:24px;text-align:center;">${icon}</span>
+      <div style="flex:1;">
+        <div style="font-weight:600;font-size:13px;">${p.id || p.label || ''}</div>
+        <div style="font-size:11px;color:var(--text-2);">${p.hint || p.baseUrl || ''}</div>
+      </div>
+      ${badge}
+    </div>
+  </div>`;
+}
+
+function showLoading(el, msg) {
+  if (el) el.innerHTML = '<div class="meta" style="padding:20px;">' + (msg || 'Loading\u2026') + '</div>';
+}
+
+function showEmpty(el, msg) {
+  if (el) el.innerHTML = '<div class="meta" style="padding:20px;">' + (msg || 'No items found.') + '</div>';
+}
+
+function showError(el, msg) {
+  if (el) el.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">' + (msg || 'An error occurred.') + '</div>';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 let selected = null;
 let agents = [];
 async function loadAgents() {
@@ -820,11 +879,11 @@ async function loadOcStats() {
   if (!box) return;
   const days = document.getElementById('ocStatsDays')?.value || '14';
   _ocTotalCost = null;
-  box.innerHTML = '<div style="color:var(--text-3);font-size:12px;">Loading&#x2026;</div>';
+  showLoading(box);
   try {
     const d = await getJSON('/api/opencode-stats?days=' + days);
     if (!d.ok || !Object.keys(d.byDay||{}).length) {
-      box.innerHTML = '<div style="color:var(--text-3);font-size:12px;">' + (d.error || 'No OpenCode data found') + '</div>';
+      showEmpty(box, d.error || 'No OpenCode data found');
       return;
     }
     const byDay = d.byDay;
@@ -892,7 +951,7 @@ async function loadOcStats() {
     updateGrandTotal();
     box.innerHTML = html;
   } catch(e) {
-    box.innerHTML = '<div style="color:var(--red);font-size:12px;">Error: ' + e.message + '</div>';
+    showError(box, 'Error: ' + e.message);
   }
 }
 
@@ -1009,11 +1068,11 @@ const {
 async function loadFiles(forceRefresh) {
   const el = document.getElementById('filesContent');
   const dir = document.getElementById('filesDir').value.trim() || window._crewCwd || (window._crewHome ? window._crewHome + '/Desktop/CrewSwarm' : '');
-  el.innerHTML = '<div class="meta" style="padding:20px;">Scanning ' + dir + '...</div>';
+  showLoading(el, 'Scanning ' + dir + '...');
   try {
     const data = await getJSON('/api/files?dir=' + encodeURIComponent(dir));
     if (!data.files || !data.files.length) {
-      el.innerHTML = '<div class="meta" style="padding:20px;">No files found in ' + dir + '</div>';
+      showEmpty(el, 'No files found in ' + dir);
       return;
     }
     const grouped = {};
@@ -1048,7 +1107,7 @@ async function loadFiles(forceRefresh) {
     html += '<div id="file-preview-pane" style="display:none;margin-top:1rem;background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden;"><div id="file-preview-bar" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0d1420;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-2);"><span id="file-preview-name"></span><button data-action="closePreviewPane" style="margin-left:auto;background:none;border:none;color:var(--text-2);cursor:pointer;">✕</button></div><pre id="file-preview-content" style="margin:0;padding:1rem;font-size:0.75rem;overflow:auto;max-height:400px;"></pre></div>';
     el.innerHTML = html;
   } catch(e) {
-    el.innerHTML = '<div class="meta" style="padding:20px;color:var(--red);">Error: ' + e.message + '</div>';
+    showError(el, 'Error: ' + e.message);
   }
 }
 async function previewFile(filePath, btn) {
@@ -1214,7 +1273,7 @@ async function loadToolMatrix(){
     html += '</tbody></table></div>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<div style="color:var(--red);font-size:12px;">Error loading health: ' + (e.message || '') + '</div>';
+    showError(el, 'Error loading health: ' + (e.message || ''));
   }
 }
 
@@ -1373,7 +1432,7 @@ async function loadSpending(){
       updateGrandTotal();
       el.innerHTML = out;
     }
-  } catch(e) { el.innerHTML = '<div style="color:var(--text-3);">Error: ' + e.message + '</div>'; }
+  } catch(e) { showError(el, 'Error: ' + e.message); }
 }
 async function resetSpending(){
   if (!confirm("Reset today's spending counters?")) return;
@@ -1955,6 +2014,8 @@ Object.assign(window, {
   startCrew, startTgBridge, startWaBridge, stopTgBridge, stopWaBridge,
   toggleAddSkill, toggleBgConsciousness, toggleCursorWaves, toggleClaudeCode, toggleEmojiPicker,
   updateSkillAuthFields, navigateTo,
+  renderStatusBadge, renderAgentCard, renderProviderCard,
+  showLoading, showEmpty, showError,
   // ── Dynamic HTML handlers (innerHTML-rendered) ──
   applyToolPreset, closePreviewPane, deleteAgent, deleteSkill, editSkill,
   fetchBuiltinModels, fetchModels, previewFile, resetAgentSession,

@@ -962,6 +962,53 @@
         </div>
         <div id="benchmarkMeta" style="font-size:12px;color:var(--text-2);display:none;"></div>
         <div id="benchmarkTable" class="card" style="overflow:auto;"></div>
+
+        <!-- Custom runner panel -->
+        <div class="card" id="benchmarkRunnerPanel" style="display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-weight:600;font-size:13px;">Run on Your Engine</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:2px;">Pick a real task from SWE-Bench Verified and run it through Claude Code, OpenCode, Cursor, or Codex — stream the output live.</div>
+            </div>
+            <button data-action="loadBenchmarkTasks" class="btn-ghost" style="font-size:12px;">↻ Load Tasks</button>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);">TASK</label>
+              <select id="benchmarkTaskSelect" style="width:100%;margin-top:4px;padding:7px 10px;font-size:12px;">
+                <option value="">— Load tasks first —</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);">ENGINE</label>
+              <select id="benchmarkRunEngine" style="width:100%;margin-top:4px;padding:7px 10px;font-size:12px;">
+                <option value="claude">Claude Code</option>
+                <option value="opencode">OpenCode</option>
+                <option value="cursor">Cursor CLI</option>
+                <option value="codex">Codex CLI</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:flex-end;">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--text-2);">MODEL OVERRIDE <span style="font-weight:400;">(optional — leave blank to use engine default)</span></label>
+              <input id="benchmarkRunModel" type="text" placeholder="e.g. anthropic/claude-sonnet-4-5" style="width:100%;margin-top:4px;padding:7px 10px;font-size:12px;box-sizing:border-box;" />
+            </div>
+            <button id="benchmarkRunBtn" data-action="runBenchmarkTask" class="btn" style="padding:8px 18px;font-size:13px;white-space:nowrap;">▶ Run</button>
+          </div>
+
+          <div id="benchmarkTaskPreview" style="display:none;background:var(--bg-2);border-radius:6px;padding:12px;font-size:11px;line-height:1.6;max-height:140px;overflow:auto;white-space:pre-wrap;color:var(--text-2);"></div>
+
+          <div id="benchmarkRunOutput" style="display:none;flex-direction:column;gap:6px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span id="benchmarkRunStatus" style="font-size:11px;font-weight:600;color:var(--accent);"></span>
+              <button id="benchmarkRunStop" data-action="stopBenchmarkRun" class="btn-ghost" style="font-size:11px;display:none;">⏹ Stop</button>
+            </div>
+            <pre id="benchmarkRunStream" style="background:var(--bg-2);border-radius:6px;padding:12px;font-size:11px;line-height:1.5;max-height:400px;overflow:auto;white-space:pre-wrap;margin:0;"></pre>
+          </div>
+        </div>
       </div>
     </div>
 

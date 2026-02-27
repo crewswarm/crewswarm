@@ -1,5 +1,9 @@
 import { escHtml } from '../core/dom.js';
 
+// ── Benchmark task runner state ──────────────────────────────────────────────
+let _runnerTasks = [];        // cached task rows from HuggingFace
+let _runnerAbort = null;      // AbortController for active SSE stream
+
 export function showBenchmarks({ hideAllViews, setNavActive } = {}) {
   if (typeof hideAllViews === 'function') hideAllViews();
   const view = document.getElementById('benchmarksView');
