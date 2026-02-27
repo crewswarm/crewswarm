@@ -305,15 +305,15 @@
         <h3 style="margin-bottom:14px;">New Agent</h3>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
           <div>
-            <div class="field-label">Agent ID <span class="meta" style="text-transform:none;">(used as RT bus name)</span></div>
+            <label for="naId" class="field-label">Agent ID <span class="meta" style="text-transform:none;">(used as RT bus name)</span></label>
             <input id="naId" placeholder="e.g. crew-coder-3" />
           </div>
           <div>
-            <div class="field-label">Model</div>
+            <label for="naModel" class="field-label">Model</label>
             <select id="naModel" style="width:100%;"><option value="">— select a model —</option></select>
           </div>
           <div>
-            <div class="field-label">Display Name</div>
+            <label for="naName" class="field-label">Display Name</label>
             <input id="naName" placeholder="e.g. Blaze" />
           </div>
           <div style="display:flex; gap:8px; align-items:flex-end;">
@@ -329,14 +329,14 @@
             </div>
           </div>
           <div style="grid-column:1/-1;">
-            <div class="field-label">Role / Theme <span class="meta" style="text-transform:none; font-weight:400;">— used by PM router to assign tasks (auto-filled by preset)</span></div>
+            <label for="naTheme" class="field-label">Role / Theme <span class="meta" style="text-transform:none; font-weight:400;">— used by PM router to assign tasks (auto-filled by preset)</span></label>
             <input id="naTheme" placeholder="e.g. iOS / Swift developer (SwiftUI, UIKit)" style="width:100%;" />
           </div>
         </div>
         <div style="margin-bottom:10px;">
           <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-            <div class="field-label" style="margin:0;">System Prompt</div>
-            <select id="naPromptPreset" style="font-size:12px; padding:3px 8px;" data-onchange="applyPromptPreset">
+            <label for="naPrompt" class="field-label" style="margin:0;">System Prompt</label>
+            <select id="naPromptPreset" aria-label="System prompt preset" style="font-size:12px; padding:3px 8px;" data-onchange="applyPromptPreset">
               \${buildPresetOptions('— quick presets —')}
             </select>
           </div>

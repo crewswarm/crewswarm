@@ -146,6 +146,18 @@
 
 ---
 
+## Fixed in Session 6 (2026-02-27) ✅
+
+- **God-file final round** — `crew-lead.mjs` 3560 → 2411 (−33%), `gateway-bridge.mjs` 2561 → 2251 (−12%), `frontend/src/app.js` 1977 → 1350 (−32%) — 5 new modules: `lib/crew-lead/http-server.mjs`, `lib/engines/llm-direct.mjs`, `lib/engines/opencode.mjs`, `frontend/src/tabs/usage-tab.js`, `frontend/src/tabs/spending-tab.js`, `frontend/src/tabs/pm-loop-tab.js`
+- **L4** — `<label for>` associations added to all remaining New Agent form inputs (`#naId`, `#naModel`, `#naName`, `#naTheme`, `#naPrompt`); `aria-label` on prompt preset select; `role="alert"` + `aria-live` confirmed present on notification toasts (already in `core/dom.js`)
+- **C1** — Confirmed already fixed: `dashboard.mjs`, `dlq-replay.mjs`, `gateway-bridge.mjs` all resolve to the same DLQ path (`~/.crewswarm/workspace/shared-memory/claw-swarm/opencrew-rt/dlq`)
+- **M9** — Confirmed already fixed: `--purple: #818cf8` and `--warning: #f59e0b` present in `frontend/src/styles.css :root`
+- **H4** — Confirmed already fixed: PM Loop ⚙ Options panel with QA, Security, specialists, maxItems, timeout, extend-N, pause, maxRetries, coder agent — all present in `frontend/index.html`
+- **Runtime bugs** — Fixed `_rtClientForApprovals not defined` ReferenceError crashing all agent bridges + flooding RT bus; fixed RT Messages tab stuck on "Loading…" (type mismatch `task.done` not in RT_TASK_TYPES + early-return bug); fixed `applyNewAgentToolPreset`/`applyPromptPreset` not exported — crashed all dashboard onclick handlers
+- **Vite bundle** — Rebuilt with 21 modules (up from 18)
+
+---
+
 ## Fixed in Session 5 (2026-02-27) ✅
 
 - **God-file splits** — `gateway-bridge.mjs` 5408 → 3954 lines (−27%), `crew-lead.mjs` 5458 → 5169 lines (−5%)
