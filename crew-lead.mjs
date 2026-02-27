@@ -17,6 +17,10 @@ import http from "node:http";
 import { execSync, spawnSync } from "node:child_process";
 import WebSocket from "ws";
 
+// ── Global state (declared early — referenced throughout) ────────────────────
+const sseClients = new Set();
+const activeOpenCodeAgents = new Map(); // agentId → { model, since }
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const PORT        = Number(process.env.CREW_LEAD_PORT || 5010);
@@ -5130,11 +5134,7 @@ const RT_TOKEN = process.env.CREWSWARM_RT_AUTH_TOKEN || (() => {
   } catch { return ""; }
 })();
 
-// SSE clients listening for agent replies
-const sseClients = new Set();
-
-// Live registry of agents currently in an OpenCode session
-const activeOpenCodeAgents = new Map(); // agentId → { model, since }
+// sseClients and activeOpenCodeAgents declared at top of file
 
 
 function broadcastSSE(payload) {
