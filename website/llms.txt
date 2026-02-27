@@ -1,0 +1,69 @@
+# CrewSwarm
+
+> Multi-agent AI orchestration layer for OpenCode, Cursor CLI, and Claude Code. A crew of specialist AI agents (coder, QA, PM, fixer, security, copywriter, and more) collaborate on tasks via a real-time WebSocket bus. Led by Stinki — the AI captain who plans, dispatches, and ships.
+
+## What is CrewSwarm?
+
+CrewSwarm is an open-source multi-agent orchestration system. It runs a crew of specialist AI agents that collaborate on software development tasks. Each agent can be routed through OpenCode CLI, Cursor CLI, Claude Code, or a direct LLM API call — configurable per agent from a web dashboard.
+
+Key features:
+- Real-time WebSocket message bus connecting all agents
+- PM-loop: autonomous project mode that reads a ROADMAP.md and dispatches tasks one by one
+- Per-agent execution routing: Direct API, OpenCode, Cursor CLI, or Claude Code
+- Bring your own LLM: supports Groq, DeepSeek, xAI (Grok), Anthropic, OpenAI, Mistral, Cerebras, NVIDIA, Google, Perplexity
+- Web dashboard on port 4319 for agent management, model assignment, skills, spending caps
+- Telegram and WhatsApp integration for mobile access
+- Background consciousness: crew-main periodically reflects on system health when idle
+- Memory system: shared brain.md, lessons.md, decisions.md, global-rules.md injected into every agent
+- Skill plugins: data-driven JSON plugins that extend agent capabilities without code changes
+
+## Agent Roster
+
+- **crew-lead (Stinki)**: Conversational commander, chat interface, dispatches tasks
+- **crew-coder**: Full-stack coding agent
+- **crew-coder-front**: Frontend / UI specialist
+- **crew-coder-back**: Backend / API specialist
+- **crew-frontend**: CSS and design polish
+- **crew-fixer**: Bug fixing and auto-escalation
+- **crew-qa**: Quality assurance and audit
+- **crew-pm**: Project planning and roadmap management
+- **crew-security**: Security review and vulnerability scanning
+- **crew-copywriter**: Writing, docs, and content
+- **crew-github**: Git operations and pull requests
+- **crew-main**: General coordinator and synthesis
+
+## Execution Modes
+
+| Mode | How it works |
+|---|---|
+| Direct API | Agent calls LLM provider directly, parses @@TOOL markers |
+| OpenCode | Tasks run inside `opencode run` — full file editing, bash, session memory |
+| Cursor CLI | Tasks run via `cursor --model <model> --execute` |
+| Claude Code | Tasks run via `claude -p` |
+
+## Service Ports
+
+- Dashboard (Vite frontend + API): 4319
+- crew-lead (chat + dispatch): 5010
+- RT message bus: 18889
+- Code Engine (OpenCode / Claude Code): 4096
+- MCP + OpenAI-compatible API (optional): 5020
+
+## Quick Start
+
+```bash
+npm install
+bash install.sh
+npm run restart-all
+# Open http://127.0.0.1:4319
+```
+
+Requires Node.js 20+. A free Groq API key is enough to run the full crew.
+
+## Links
+
+- Website: https://crewswarm.ai
+- GitHub: https://github.com/crewswarm/crewswarm
+- Docs: https://github.com/crewswarm/crewswarm/blob/main/README.md
+- Issues: https://github.com/crewswarm/crewswarm/issues
+- License: MIT
