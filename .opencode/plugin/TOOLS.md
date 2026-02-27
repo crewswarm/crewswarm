@@ -70,7 +70,7 @@ Read persisted protocol messages from shared-memory channel logs.
 
 Store an acknowledgement status for a message (`received`, `in_progress`, `done`, `failed`, etc.).
 
-See `OPENCREW_RT_SPEC.md` for envelope schema and workflow.
+See `CREWSWARM_RT_SPEC.md` for envelope schema and workflow.
 
 ---
 
@@ -640,20 +640,20 @@ const item = await tools.memory_queue_pop({
 | `OPENCLAW_ALLOW_MISSING_CONTEXT` | Skip context validation | `"0"` (off) |
 | `OPENCLAW_ALLOWED_MESSAGE_TARGETS` | Comma-separated allowlist for `openclaw_message` targets | (empty = all messaging blocked) |
 | `OPENCLAW_ALLOW_UNRESTRICTED_MESSAGING` | Bypass target allowlist for messaging | `"0"` (off) |
-| `OPENCREW_RT_HOST` | OpenCrew RT bind host | `127.0.0.1` |
-| `OPENCREW_RT_PORT` | OpenCrew RT bind port | `18889` |
-| `OPENCREW_RT_REQUIRE_TOKEN` | Require hello token auth for socket clients | `"1"` |
-| `OPENCREW_RT_AUTH_TOKEN` | Socket auth token when token auth is enabled | (none) |
-| `OPENCREW_RT_REQUIRE_AGENT_TOKEN` | Require per-agent socket tokens | `"0"` |
-| `OPENCREW_RT_AGENT_TOKENS` | Per-agent token map (`agent:token;agent:token`) | (none) |
-| `OPENCREW_RT_ALLOWED_ORIGINS` | Origin allowlist for WS upgrade | (none) |
-| `OPENCREW_RT_MAX_MESSAGE_BYTES` | Max inbound frame size in bytes | `65536` |
-| `OPENCREW_RT_RATE_LIMIT_PER_MIN` | Max socket messages per minute per client | `300` |
-| `OPENCREW_RT_CHANNELS` | Subscribed channels for OpenClaw realtime daemon | `command,assign,handoff,reassign,events` |
-| `OPENCREW_RT_TLS_KEY_PATH` | TLS key path for WSS | (none) |
-| `OPENCREW_RT_TLS_CERT_PATH` | TLS cert path for WSS | (none) |
-| `OPENCREW_RT_AUTO_START` | Autostart realtime server when plugin loads | `"1"` |
-| `OPENCREW_RT_BOOTSTRAP_CHANNELS` | Precreate standard protocol channel logs | `"1"` |
+| `CREWSWARM_RT_HOST` | OpenCrew RT bind host | `127.0.0.1` |
+| `CREWSWARM_RT_PORT` | OpenCrew RT bind port | `18889` |
+| `CREWSWARM_RT_REQUIRE_TOKEN` | Require hello token auth for socket clients | `"1"` |
+| `CREWSWARM_RT_AUTH_TOKEN` | Socket auth token when token auth is enabled | (none) |
+| `CREWSWARM_RT_REQUIRE_AGENT_TOKEN` | Require per-agent socket tokens | `"0"` |
+| `CREWSWARM_RT_AGENT_TOKENS` | Per-agent token map (`agent:token;agent:token`) | (none) |
+| `CREWSWARM_RT_ALLOWED_ORIGINS` | Origin allowlist for WS upgrade | (none) |
+| `CREWSWARM_RT_MAX_MESSAGE_BYTES` | Max inbound frame size in bytes | `65536` |
+| `CREWSWARM_RT_RATE_LIMIT_PER_MIN` | Max socket messages per minute per client | `300` |
+| `CREWSWARM_RT_CHANNELS` | Subscribed channels for OpenClaw realtime daemon | `command,assign,handoff,reassign,events` |
+| `CREWSWARM_RT_TLS_KEY_PATH` | TLS key path for WSS | (none) |
+| `CREWSWARM_RT_TLS_CERT_PATH` | TLS cert path for WSS | (none) |
+| `CREWSWARM_RT_AUTO_START` | Autostart realtime server when plugin loads | `"1"` |
+| `CREWSWARM_RT_BOOTSTRAP_CHANNELS` | Precreate standard protocol channel logs | `"1"` |
 | `SHARED_MEMORY_DIR` | Base directory for shared memory | `~/.openclaw/workspace/shared-memory` |
 | `SHARED_MEMORY_NAMESPACE` | Namespace for memory keys | `claw-swarm` |
 

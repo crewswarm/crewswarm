@@ -8,7 +8,7 @@ function usage() {
 
 function parseArgs(argv) {
   const out = {
-    from: process.env.OPENCREW_RT_SENDER || "orchestrator",
+    from: process.env.CREWSWARM_RT_SENDER || "orchestrator",
     channel: "command",
     type: "command.run_task",
     priority: "high",
@@ -37,8 +37,8 @@ if (!args.to || !args.prompt) {
   process.exit(1);
 }
 
-const url = process.env.OPENCREW_RT_URL || "ws://127.0.0.1:18889";
-const token = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+const url = process.env.CREWSWARM_RT_URL || "ws://127.0.0.1:18889";
+const token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
 
 const ws = new WebSocket(url);
 let sent = false;

@@ -7,10 +7,10 @@ import { startServer, runtimeStatus } from './dist/opencrew-rt.js'
 const action = process.argv[2] || 'start'
 
 if (action === 'start') {
-  const port = Number(process.env.OPENCREW_RT_PORT || '18889')
-  const host = process.env.OPENCREW_RT_HOST || '127.0.0.1'
-  const requireToken = process.env.OPENCREW_RT_REQUIRE_TOKEN !== '0'
-  const token = process.env.OPENCREW_RT_AUTH_TOKEN || ''
+  const port = Number(process.env.CREWSWARM_RT_PORT || '18889')
+  const host = process.env.CREWSWARM_RT_HOST || '127.0.0.1'
+  const requireToken = process.env.CREWSWARM_RT_REQUIRE_TOKEN !== '0'
+  const token = process.env.CREWSWARM_RT_AUTH_TOKEN || ''
   
   console.log(`[opencrew-rt] Starting server on ${host}:${port}...`)
   startServer({

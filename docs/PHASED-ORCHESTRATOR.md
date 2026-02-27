@@ -22,7 +22,7 @@ crew-lead + crew-pm will plan phases automatically. Each phase runs as a `@@PIPE
 
 ```bash
 # Start PM loop — reads ROADMAP.md, dispatches tasks until done
-PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
+PM_ROADMAP_FILE=./ROADMAP.md CREWSWARM_OUTPUT_DIR=./output node pm-loop.mjs
 ```
 
 ### Via API
@@ -66,10 +66,10 @@ Tasks in the same `wave` run in parallel. Higher waves wait for all lower waves 
 
 ## Output
 
-By default agents write to the path specified in each task. Override the base output path with `OPENCREW_OUTPUT_DIR`:
+By default agents write to the path specified in each task. Override the base output path with `CREWSWARM_OUTPUT_DIR`:
 
 ```bash
-OPENCREW_OUTPUT_DIR=/tmp/my-build npm run restart-all
+CREWSWARM_OUTPUT_DIR=/tmp/my-build npm run restart-all
 ```
 
 ---

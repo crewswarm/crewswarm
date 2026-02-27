@@ -491,8 +491,8 @@ test('opencrew-rt.ts source exists', () => {
     if (!content.includes(name)) throw new Error(`Tool "${name}" not found in opencrew-rt.ts`);
   }
 
-  if (!content.includes('OPENCREW_RT_AUTO_START')) throw new Error('Autostart flag missing');
-  if (!content.includes('OPENCREW_RT_AUTH_TOKEN')) throw new Error('Realtime token config missing');
+  if (!content.includes('CREWSWARM_RT_AUTO_START')) throw new Error('Autostart flag missing');
+  if (!content.includes('CREWSWARM_RT_AUTH_TOKEN')) throw new Error('Realtime token config missing');
   return 'OpenCrew realtime tools and autostart config found';
 });
 
@@ -508,9 +508,9 @@ test('opencrew-suite.ts entrypoint exists', () => {
 });
 
 // 33. Check protocol spec file exists
-test('OPENCREW_RT_SPEC.md exists', () => {
-  const filePath = path.join(__dirname, 'OPENCREW_RT_SPEC.md');
-  if (!fs.existsSync(filePath)) throw new Error('OPENCREW_RT_SPEC.md not found');
+test('CREWSWARM_RT_SPEC.md exists', () => {
+  const filePath = path.join(__dirname, 'CREWSWARM_RT_SPEC.md');
+  if (!fs.existsSync(filePath)) throw new Error('CREWSWARM_RT_SPEC.md not found');
   const content = fs.readFileSync(filePath, 'utf-8');
   if (!content.includes('opencrew-rt/1')) throw new Error('Protocol version missing in spec');
   if (!content.includes('Boot Integration')) throw new Error('Boot integration section missing in spec');

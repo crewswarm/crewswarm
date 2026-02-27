@@ -41,7 +41,7 @@ function loadConfig() {
     if (!fs.existsSync(p)) continue;
     try {
       const c = JSON.parse(fs.readFileSync(p, "utf8"));
-      rtToken = c?.rt?.authToken || c?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+      rtToken = c?.rt?.authToken || c?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
       if (rtToken) break;
     } catch {}
   }
@@ -185,7 +185,7 @@ if (toStart.includes("crew-lead") && !crewLeadRunning && fs.existsSync(CREW_LEAD
     cwd: CREWSWARM_DIR,
     stdio: ["ignore", logFd, logFd],
     detached: true,
-    env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: rtToken },
+    env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: rtToken },
   });
   proc.unref();
   console.log(`  ✓ Spawned crew-lead (pid ${proc.pid})`);
@@ -194,12 +194,12 @@ if (toStart.includes("crew-lead") && !crewLeadRunning && fs.existsSync(CREW_LEAD
 for (const rtId of toStart.filter(id => id !== "crew-lead")) {
   const env = {
     ...process.env,
-    OPENCREW_RT_AGENT: rtId,
-    OPENCREW_RT_AUTH_TOKEN: rtToken,
-    OPENCREW_RT_CHANNELS: process.env.OPENCREW_RT_CHANNELS || "command,assign,handoff,reassign,events",
-    OPENCREW_OPENCODE_ENABLED: process.env.OPENCREW_OPENCODE_ENABLED ?? "1",
-    OPENCREW_OPENCODE_MODEL: process.env.OPENCREW_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905",
-    OPENCREW_OPENCODE_PROJECT: process.env.OPENCREW_OPENCODE_PROJECT || CREWSWARM_DIR,
+    CREWSWARM_RT_AGENT: rtId,
+    CREWSWARM_RT_AUTH_TOKEN: rtToken,
+    CREWSWARM_RT_CHANNELS: process.env.CREWSWARM_RT_CHANNELS || "command,assign,handoff,reassign,events",
+    CREWSWARM_OPENCODE_ENABLED: process.env.CREWSWARM_OPENCODE_ENABLED ?? "1",
+    CREWSWARM_OPENCODE_MODEL: process.env.CREWSWARM_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905",
+    CREWSWARM_OPENCODE_PROJECT: process.env.CREWSWARM_OPENCODE_PROJECT || CREWSWARM_DIR,
     CREWSWARM_DIR,
   };
 
@@ -226,7 +226,7 @@ if (!scribeRunning && fs.existsSync(SCRIBE_SCRIPT)) {
   const logFd = fs.openSync(path.join(os.tmpdir(), "crew-scribe.log"), "a");
   const proc = spawn("node", [SCRIBE_SCRIPT], {
     cwd: CREWSWARM_DIR, stdio: ["ignore", logFd, logFd], detached: true,
-    env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: rtToken },
+    env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: rtToken },
   });
   proc.unref();
   console.log(`  ✓ Spawned crew-scribe (pid ${proc.pid})`);
@@ -241,7 +241,7 @@ if (!mcpRunning && fs.existsSync(MCP_SCRIPT)) {
   const logFd = fs.openSync(path.join(os.tmpdir(), "crewswarm-mcp.log"), "a");
   const proc = spawn("node", [MCP_SCRIPT], {
     cwd: CREWSWARM_DIR, stdio: ["ignore", logFd, logFd], detached: true,
-    env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: rtToken },
+    env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: rtToken },
   });
   proc.unref();
   console.log(`  ✓ Spawned mcp-server on :5020 (pid ${proc.pid})`);

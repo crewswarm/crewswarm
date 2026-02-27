@@ -110,7 +110,7 @@ Explain your plan naturally. For example:
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        OPENCREW_RT_AGENT: 'crew-pm',
+        CREWSWARM_RT_AGENT: 'crew-pm',
       },
     });
     
@@ -167,7 +167,7 @@ async function dispatchTask(agent, task) {
     const proc = spawn('node', [GATEWAY_BRIDGE_PATH, task], {
       cwd: CREWSWARM_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, OPENCREW_RT_AGENT: agent },
+      env: { ...process.env, CREWSWARM_RT_AGENT: agent },
     });
     let stdout = '';
     let stderr = '';

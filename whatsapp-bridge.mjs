@@ -60,8 +60,8 @@ function loadCfg() {
 const cfg = loadCfg();
 const env = cfg.env || {};
 
-const RT_URL        = process.env.OPENCREW_RT_URL        || env.OPENCREW_RT_URL        || "ws://127.0.0.1:18889";
-const RT_TOKEN      = process.env.OPENCREW_RT_AUTH_TOKEN || env.OPENCREW_RT_AUTH_TOKEN || "";
+const RT_URL        = process.env.CREWSWARM_RT_URL        || env.CREWSWARM_RT_URL        || "ws://127.0.0.1:18889";
+const RT_TOKEN      = process.env.CREWSWARM_RT_AUTH_TOKEN || env.CREWSWARM_RT_AUTH_TOKEN || "";
 const CREW_LEAD_URL = process.env.CREW_LEAD_URL          || "http://127.0.0.1:5010";
 const DASHBOARD_URL = process.env.DASHBOARD_URL          || "http://127.0.0.1:4319";
 const AGENT_NAME    = "crew-whatsapp";

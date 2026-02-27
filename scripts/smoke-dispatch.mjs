@@ -11,7 +11,7 @@ const pollMs = Number(process.env.CREWSWARM_SMOKE_POLL_MS || "1500");
 function getToken() {
   try {
     const c = JSON.parse(fs.readFileSync(CFG, "utf8"));
-    return c.rt?.authToken || c.env?.OPENCREW_RT_AUTH_TOKEN || "";
+    return c.rt?.authToken || c.env?.CREWSWARM_RT_AUTH_TOKEN || "";
   } catch {
     return "";
   }

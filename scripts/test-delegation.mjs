@@ -70,7 +70,7 @@ async function main() {
   if (usedSend) {
     console.log('\n✅ Agents picked it up (RT --send worked).');
   } else if (usedFallback) {
-    console.log('\n⚠️  One-off process did the work (RT token invalid; set valid OPENCREW_RT_AUTH_TOKEN for agent pickup).');
+    console.log('\n⚠️  One-off process did the work (RT token invalid; set valid CREWSWARM_RT_AUTH_TOKEN for agent pickup).');
   }
   console.log('');
   process.exit(0);

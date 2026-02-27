@@ -98,8 +98,8 @@ function sendToAgent(agentId, message, timeoutMs=90000) {
     ]) {
       try {
         const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-        const t = cfg?.rt?.authToken || cfg?.env?.OPENCREW_RT_AUTH_TOKEN || "";
-        if (t) { env.OPENCREW_RT_AUTH_TOKEN = t; break; }
+        const t = cfg?.rt?.authToken || cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
+        if (t) { env.CREWSWARM_RT_AUTH_TOKEN = t; break; }
       } catch {}
     }
     const child = execFile(process.execPath,[bridgePath,"--send",agentId,message],

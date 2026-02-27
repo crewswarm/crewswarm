@@ -64,7 +64,7 @@ async function checkCompletion() {
 function callAgent(agentId, message) {
   const env = {
     ...process.env,
-    OPENCREW_RT_SEND_TIMEOUT_MS: String(TASK_TIMEOUT_MS),
+    CREWSWARM_RT_SEND_TIMEOUT_MS: String(TASK_TIMEOUT_MS),
     PHASED_TASK_TIMEOUT_MS: String(TASK_TIMEOUT_MS),
   };
   return new Promise((resolve, reject) => {

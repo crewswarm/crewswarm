@@ -5,10 +5,10 @@
  */
 import WebSocket from 'ws';
 
-const HOST = process.env.OPENCREW_RT_HOST || '127.0.0.1';
-const PORT = Number(process.env.OPENCREW_RT_PORT || '18889');
-const AGENT_ID = process.env.OPENCREW_AGENT_ID || 'qa-engineer-test';
-const TOKEN = process.env.OPENCREW_RT_AUTH_TOKEN || '';
+const HOST = process.env.CREWSWARM_RT_HOST || '127.0.0.1';
+const PORT = Number(process.env.CREWSWARM_RT_PORT || '18889');
+const AGENT_ID = process.env.CREWSWARM_AGENT_ID || 'qa-engineer-test';
+const TOKEN = process.env.CREWSWARM_RT_AUTH_TOKEN || '';
 
 const ws = new WebSocket(`ws://${HOST}:${PORT}`);
 

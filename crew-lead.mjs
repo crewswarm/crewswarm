@@ -281,7 +281,7 @@ function createAgent({ id, role, displayName, prompt, description, model }) {
   const defaultOcModel = (() => {
     const existingCoder = swarm.agents.find(a => a.opencodeModel && a.useOpenCode);
     if (existingCoder) return existingCoder.opencodeModel;
-    return process.env.OPENCREW_OPENCODE_MODEL || "openai/gpt-5.3-codex";
+    return process.env.CREWSWARM_OPENCODE_MODEL || "openai/gpt-5.3-codex";
   })();
 
   const agentEntry = {
@@ -3774,7 +3774,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
         const { execSync: exec2 } = await import("node:child_process");
         exec2(`node ${startScript} --agent ${result.id}`, {
           timeout: 10000,
-          env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: RT_TOKEN },
+          env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: RT_TOKEN },
           stdio: "pipe",
         });
         // Verify bridge is running
@@ -4728,8 +4728,8 @@ const server = http.createServer(async (req, res) => {
         if (continueSession) args.push("--continue");
         args.push(finalMessage, "--workspace", projectDir);
       } else if (engine === "opencode") {
-        bin = process.env.OPENCREW_OPENCODE_BIN || "opencode";
-        const ocModel = process.env.OPENCREW_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+        bin = process.env.CREWSWARM_OPENCODE_BIN || "opencode";
+        const ocModel = process.env.CREWSWARM_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
         args = ["run", finalMessage, "--model", ocModel];
         if (continueSession) args.push("--continue");
       } else if (engine === "codex") {
@@ -4966,7 +4966,7 @@ const server = http.createServer(async (req, res) => {
       const swarmRaw  = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
 
       // OpenCode project dir
-      const opencodeProject = cfgRaw.opencodeProject || process.env.OPENCREW_OPENCODE_PROJECT || "";
+      const opencodeProject = cfgRaw.opencodeProject || process.env.CREWSWARM_OPENCODE_PROJECT || "";
 
       // Agents with tools + model
       const agentRows = cfg.agentRoster.map(a => {
@@ -5040,7 +5040,7 @@ const server = http.createServer(async (req, res) => {
             exec2(`node ${path.join(process.cwd(), "scripts", "start-crew.mjs")} --agent ${agentId}`, {
               shell: true,
               timeout: 10000,
-              env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: RT_TOKEN },
+              env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: RT_TOKEN },
             });
             console.log(`[crew-lead] bridge respawned for ${agentId}`);
           } catch (e2) {
@@ -5106,8 +5106,8 @@ process.on("uncaughtException", (err) => {
 
 // ── RT Bus listener — receives replies from agents ────────────────────────────
 
-const RT_URL   = process.env.OPENCREW_RT_URL   || "ws://127.0.0.1:18889";
-const RT_TOKEN = process.env.OPENCREW_RT_AUTH_TOKEN || (() => {
+const RT_URL   = process.env.CREWSWARM_RT_URL   || "ws://127.0.0.1:18889";
+const RT_TOKEN = process.env.CREWSWARM_RT_AUTH_TOKEN || (() => {
   try {
     const cs = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
     if (cs?.rt?.authToken) return cs.rt.authToken;

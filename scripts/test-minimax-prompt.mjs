@@ -118,7 +118,7 @@ function runOpenCodeWithPrompt(prompt, model, projectDir, timeoutMs = 120_000) {
 }
 
 async function main() {
-  const projectDir = process.env.OPENCREW_OPENCODE_PROJECT || REPO_ROOT;
+  const projectDir = process.env.CREWSWARM_OPENCODE_PROJECT || REPO_ROOT;
   const minimalTest = process.argv.includes("--hi");
 
   const prompt = minimalTest

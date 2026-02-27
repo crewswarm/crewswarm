@@ -22,16 +22,16 @@ try {
 }
 const { runtimeStatus, startServer } = mod;
 
-const host = process.env.OPENCREW_RT_HOST || "127.0.0.1"
-const port = Number(process.env.OPENCREW_RT_PORT || "18889")
-const secure = (process.env.OPENCREW_RT_SECURE || "0") === "1"
-const requireToken = (process.env.OPENCREW_RT_REQUIRE_TOKEN || "1") !== "0"
-const token = process.env.OPENCREW_RT_AUTH_TOKEN || ""
-const tlsKeyPath = process.env.OPENCREW_RT_TLS_KEY_PATH
-const tlsCertPath = process.env.OPENCREW_RT_TLS_CERT_PATH
+const host = process.env.CREWSWARM_RT_HOST || "127.0.0.1"
+const port = Number(process.env.CREWSWARM_RT_PORT || "18889")
+const secure = (process.env.CREWSWARM_RT_SECURE || "0") === "1"
+const requireToken = (process.env.CREWSWARM_RT_REQUIRE_TOKEN || "1") !== "0"
+const token = process.env.CREWSWARM_RT_AUTH_TOKEN || ""
+const tlsKeyPath = process.env.CREWSWARM_RT_TLS_KEY_PATH
+const tlsCertPath = process.env.CREWSWARM_RT_TLS_CERT_PATH
 
 if (requireToken && !token) {
-  console.error("OPENCREW_RT_AUTH_TOKEN is required when OPENCREW_RT_REQUIRE_TOKEN=1")
+  console.error("CREWSWARM_RT_AUTH_TOKEN is required when CREWSWARM_RT_REQUIRE_TOKEN=1")
   process.exit(1)
 }
 

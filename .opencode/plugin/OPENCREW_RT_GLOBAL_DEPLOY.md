@@ -9,17 +9,17 @@ This setup links agents across the internet with hardened security.
 - Recommended env:
 
 ```bash
-export OPENCREW_RT_HOST=0.0.0.0
-export OPENCREW_RT_PORT=18889
-export OPENCREW_RT_REQUIRE_TOKEN=1
-export OPENCREW_RT_REQUIRE_AGENT_TOKEN=1
-export OPENCREW_RT_AUTH_TOKEN="fallback-global-token"
-export OPENCREW_RT_AGENT_TOKENS="openclaw-main:<token1>;opencode-pm:<token2>;opencode-qa:<token3>;opencode-fixer:<token4>;orchestrator:<token5>"
-export OPENCREW_RT_ALLOWED_ORIGINS="https://ops.yourdomain.com"
-export OPENCREW_RT_MAX_MESSAGE_BYTES=65536
-export OPENCREW_RT_RATE_LIMIT_PER_MIN=300
-export OPENCREW_RT_TLS_KEY_PATH="/etc/ssl/private/opencrew.key"
-export OPENCREW_RT_TLS_CERT_PATH="/etc/ssl/certs/opencrew.crt"
+export CREWSWARM_RT_HOST=0.0.0.0
+export CREWSWARM_RT_PORT=18889
+export CREWSWARM_RT_REQUIRE_TOKEN=1
+export CREWSWARM_RT_REQUIRE_AGENT_TOKEN=1
+export CREWSWARM_RT_AUTH_TOKEN="fallback-global-token"
+export CREWSWARM_RT_AGENT_TOKENS="openclaw-main:<token1>;opencode-pm:<token2>;opencode-qa:<token3>;opencode-fixer:<token4>;orchestrator:<token5>"
+export CREWSWARM_RT_ALLOWED_ORIGINS="https://ops.yourdomain.com"
+export CREWSWARM_RT_MAX_MESSAGE_BYTES=65536
+export CREWSWARM_RT_RATE_LIMIT_PER_MIN=300
+export CREWSWARM_RT_TLS_KEY_PATH="/etc/ssl/private/opencrew.key"
+export CREWSWARM_RT_TLS_CERT_PATH="/etc/ssl/certs/opencrew.crt"
 ```
 
 ## 2) Client Agents (Anywhere)
@@ -27,10 +27,10 @@ export OPENCREW_RT_TLS_CERT_PATH="/etc/ssl/certs/opencrew.crt"
 Each remote agent should use:
 
 ```bash
-export OPENCREW_RT_URL="wss://rt.yourdomain.com"
-export OPENCREW_RT_AUTH_TOKEN="<agent-specific-token>"
-export OPENCREW_RT_AGENT="openclaw-main" # or opencode-pm/opencode-qa/etc
-export OPENCREW_RT_CHANNELS="command,assign,handoff,reassign,events"
+export CREWSWARM_RT_URL="wss://rt.yourdomain.com"
+export CREWSWARM_RT_AUTH_TOKEN="<agent-specific-token>"
+export CREWSWARM_RT_AGENT="openclaw-main" # or opencode-pm/opencode-qa/etc
+export CREWSWARM_RT_CHANNELS="command,assign,handoff,reassign,events"
 ```
 
 ## 3) Network Controls

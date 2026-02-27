@@ -11,13 +11,13 @@
 ### Recommended: one token, one place
 
 - **Use `~/.crewswarm/config.json` as the single source of truth** for the RT token (`rt.authToken`). The install script, openswitchctl, dashboard (when starting the PM loop), and docs all expect it there.
-- If you also have `env.OPENCREW_RT_AUTH_TOKEN` in `~/.crewswarm/crewswarm.json`, it must be the **same** value as `config.json`’s `rt.authToken`, or remove it so only config.json is used. Two different values in two files cause "invalid realtime token" when one component reads one file and another (or the RT daemon) uses the other.
+- If you also have `env.CREWSWARM_RT_AUTH_TOKEN` in `~/.crewswarm/crewswarm.json`, it must be the **same** value as `config.json`’s `rt.authToken`, or remove it so only config.json is used. Two different values in two files cause "invalid realtime token" when one component reads one file and another (or the RT daemon) uses the other.
 - Start the RT daemon with that same token (e.g. `openswitchctl start` reads config.json), so the daemon and all clients agree.
 
 ### Why "direct send" works but the PM loop fails
 
-- **Direct send** (e.g. `openswitchctl send crew-coder "task"` from a terminal): You (or the script) put the token in the environment (e.g. `export OPENCREW_RT_AUTH_TOKEN=...` or openswitchctl reads config and passes it). The `gateway-bridge.mjs --send` process inherits that env, so the RT daemon accepts the request.
-- **PM loop**: The dashboard spawns the PM loop as a child process. The PM loop then spawns `gateway-bridge.mjs --send` for each task. If the dashboard does **not** inject `OPENCREW_RT_AUTH_TOKEN` into the PM loop’s spawn environment, the bridge runs with no token and every dispatch fails with "invalid realtime token". The dashboard is coded to load the token from `config.json` (and fallbacks) and inject it when starting the PM loop; restart the dashboard after that code is in place, then start the PM loop again.
+- **Direct send** (e.g. `openswitchctl send crew-coder "task"` from a terminal): You (or the script) put the token in the environment (e.g. `export CREWSWARM_RT_AUTH_TOKEN=...` or openswitchctl reads config and passes it). The `gateway-bridge.mjs --send` process inherits that env, so the RT daemon accepts the request.
+- **PM loop**: The dashboard spawns the PM loop as a child process. The PM loop then spawns `gateway-bridge.mjs --send` for each task. If the dashboard does **not** inject `CREWSWARM_RT_AUTH_TOKEN` into the PM loop’s spawn environment, the bridge runs with no token and every dispatch fails with "invalid realtime token". The dashboard is coded to load the token from `config.json` (and fallbacks) and inject it when starting the PM loop; restart the dashboard after that code is in place, then start the PM loop again.
 
 So: same token everywhere; direct send works because the token is in env; PM loop works only when the dashboard passes that token into the loop’s env.
 
@@ -36,7 +36,7 @@ So: same token everywhere; direct send works because the token is in env; PM loo
    ```
 
 
-3. If you use `env.OPENCREW_RT_AUTH_TOKEN` in `~/.crewswarm/crewswarm.json`, set it to the same value as `config.json`’s `rt.authToken`, or delete it to avoid two sources.
+3. If you use `env.CREWSWARM_RT_AUTH_TOKEN` in `~/.crewswarm/crewswarm.json`, set it to the same value as `config.json`’s `rt.authToken`, or delete it to avoid two sources.
 
 4. Restart RT and agents so they reload config:
    ```bash

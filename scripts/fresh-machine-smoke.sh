@@ -160,10 +160,10 @@ fi
 
 # ── 6. Start the stack ──────────────────────────────────────────────────────
 step "6 · Start stack"
-export OPENCREW_RT_AUTH_TOKEN="$RT_TOKEN"
-export OPENCREW_RT_REQUIRE_TOKEN=1
-export OPENCREW_RT_URL="ws://127.0.0.1:18889"
-export OPENCREW_OPENCODE_ENABLED=0
+export CREWSWARM_RT_AUTH_TOKEN="$RT_TOKEN"
+export CREWSWARM_RT_REQUIRE_TOKEN=1
+export CREWSWARM_RT_URL="ws://127.0.0.1:18889"
+export CREWSWARM_OPENCODE_ENABLED=0
 export CREW_LEAD_URL="http://127.0.0.1:5010"
 
 "$NODE" "$CLONE_DIR/scripts/opencrew-rt-daemon.mjs" >> /tmp/fresh-smoke-rt.log 2>&1 &

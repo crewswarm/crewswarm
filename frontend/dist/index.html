@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="/assets/index-w0FiR8CS.js"></script>
+  <script type="module" crossorigin src="/assets/index-DMA2wVQ-.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-DT_vadY2.css">
 </head>
 <body>
@@ -58,6 +58,9 @@
       </button>
       <button class="nav-item" id="navModels" data-view="models">
         <span class="nav-icon">⚙️</span> Models
+      </button>
+      <button class="nav-item" id="navEngines" data-view="engines">
+        <span class="nav-icon">⚡</span> Engines
       </button>
       <button class="nav-item" id="navSkills" data-view="skills">
         <span class="nav-icon">🔌</span> Skills
@@ -790,6 +793,38 @@
 
       </div>
 
+    </div>
+
+    <!-- Engines -->
+    <div class="view" id="enginesView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Engines</div>
+          <div class="page-sub">Execution engines agents can run through. Install, manage, and import custom engines.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button data-action="toggleImportEngine" class="btn-ghost" style="font-size:12px;">+ Import URL</button>
+          <button data-action="loadEngines" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+        </div>
+      </div>
+
+      <!-- Import from URL -->
+      <div id="importEngineForm" style="display:none;padding:0 16px 16px;">
+        <div class="card" style="max-width:600px;">
+          <div class="card-title" style="margin-bottom:8px;">Import engine from URL</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;line-height:1.5;">
+            Paste a raw URL to an engine JSON descriptor. GitHub blob URLs are auto-converted to raw.<br/>
+            Format: <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">{ "id", "label", "bin", "installCmd", "traits", ... }</code>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="importEngineUrl" placeholder="https://github.com/you/engines/blob/main/myengine.json" style="flex:1;font-size:12px;" />
+            <button data-action="importEngineFromUrl" class="btn-green" style="font-size:12px;padding:7px 14px;">Import</button>
+          </div>
+          <div id="importEngineStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+      </div>
+
+      <div id="enginesGrid" style="padding:0 16px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;"></div>
     </div>
 
     <!-- Integrations -->

@@ -140,7 +140,7 @@ See [docs/FRESH-MACHINE-VERIFY.md](docs/FRESH-MACHINE-VERIFY.md) for the expecte
 node scripts/run.mjs "Build a SaaS MVP with auth, billing, and a dashboard"
 
 # Start the loop — runs until every roadmap item is complete
-PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
+PM_ROADMAP_FILE=./ROADMAP.md CREWSWARM_OUTPUT_DIR=./output node pm-loop.mjs
 ```
 
 ---
@@ -272,9 +272,9 @@ Pre-approve shell commands in **Settings → Command Allowlist** so agents don't
 
 | Variable | Description |
 |---|---|
-| `OPENCREW_RT_AUTH_TOKEN` | Auth token for the RT message bus |
-| `OPENCREW_OUTPUT_DIR` | Where agents write files |
-| `OPENCREW_RT_URL` | RT bus URL (default: `ws://127.0.0.1:18889`) |
+| `CREWSWARM_RT_AUTH_TOKEN` | Auth token for the RT message bus |
+| `CREWSWARM_OUTPUT_DIR` | Where agents write files |
+| `CREWSWARM_RT_URL` | RT bus URL (default: `ws://127.0.0.1:18889`) |
 | `CREW_LEAD_PORT` | crew-lead HTTP port (default: 5010) |
 
 ---

@@ -75,7 +75,7 @@ function rtToken() {
   ]) {
     try {
       const c = JSON.parse(readFileSync(p, "utf8"));
-      const t = c?.rt?.authToken || c?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+      const t = c?.rt?.authToken || c?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
       if (t) return t;
     } catch {}
   }
@@ -236,7 +236,7 @@ if (QUICK) {
 } else {
   const token = rtToken();
   const bridgePath = join(REPO, "gateway-bridge.mjs");
-  const env = { ...process.env, OPENCREW_RT_AUTH_TOKEN: token, OPENCLAW_DIR: REPO };
+  const env = { ...process.env, CREWSWARM_RT_AUTH_TOKEN: token, OPENCLAW_DIR: REPO };
 
   console.log(D(`   Sending test task to ${TEST_AGENT}...`));
   const result = spawnSync(

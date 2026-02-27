@@ -1,0 +1,28 @@
+{
+  "id": "cursor",
+  "label": "Cursor CLI",
+  "description": "Route agent tasks through Cursor's native subagent system. Parallel waves, isolated context windows per agent, no queuing. Best for complex reasoning and architectural work.",
+  "bin": "cursor",
+  "binAlternate": "~/.local/bin/agent",
+  "installCmd": "# Install Cursor from https://cursor.sh then enable CLI from Command Palette → Install cursor command",
+  "installUrl": "https://cursor.sh",
+  "docsUrl": "https://docs.cursor.com/advanced/cli",
+  "color": "#818cf8",
+  "icon": "cursor",
+  "agentConfigKey": "useCursor",
+  "envToggle": "CREWSWARM_CURSOR_ENABLED",
+  "authNote": "Uses your Cursor IDE login — no separate API key needed.",
+  "modelEnvVar": "CREWSWARM_CURSOR_MODEL",
+  "modelFlag": "--model",
+  "bestFor": ["crew-main", "crew-architect", "crew-orchestrator"],
+  "traits": [
+    "Parallel waves via crew-orchestrator subagent",
+    "Isolated context windows — no cross-agent bleed",
+    "Access to Cursor's reasoning models",
+    "Requires Cursor IDE installed"
+  ],
+  "args": {
+    "run": ["--model", "{model}", "--execute", "{prompt}"]
+  },
+  "outputMode": "streaming"
+}

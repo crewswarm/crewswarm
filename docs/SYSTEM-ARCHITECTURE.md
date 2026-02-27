@@ -304,7 +304,7 @@ User types in dashboard Chat tab
 | `scripts/dashboard.mjs` | 4319 (HTTP) | `~/.crewswarm/`; serves `frontend/dist` Vite build |
 | `scripts/mcp-server.mjs` | 5020 (HTTP) | optional; reads crew-lead :5010 dynamically |
 | Code Engine (`opencode serve`) | 4096 (HTTP) | optional; used when agents run in OpenCode mode |
-| `gateway-bridge.mjs` × N | — (outbound only) | `OPENCREW_RT_AGENT` env var per process |
+| `gateway-bridge.mjs` × N | — (outbound only) | `CREWSWARM_RT_AGENT` env var per process |
 | `telegram-bridge.mjs` | — (outbound only) | `TELEGRAM_BOT_TOKEN` env var |
 | `whatsapp-bridge.mjs` | — (outbound only) | Baileys auth in `~/.crewswarm/whatsapp-auth/` |
 | `scripts/crew-scribe.mjs` | — (no port) | reads `done.jsonl`, writes `memory/` |

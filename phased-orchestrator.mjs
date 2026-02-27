@@ -47,7 +47,7 @@ const AGENT_MAP = {
 const DEFAULT_TASK_TIMEOUT_MS = Number(process.env.PHASED_TASK_TIMEOUT_MS || "300000");
 
 function callAgent(agentId, message, timeoutMs = DEFAULT_TASK_TIMEOUT_MS) {
-  const env = { ...process.env, OPENCREW_RT_SEND_TIMEOUT_MS: String(timeoutMs) };
+  const env = { ...process.env, CREWSWARM_RT_SEND_TIMEOUT_MS: String(timeoutMs) };
   return new Promise((resolve, reject) => {
     const proc = spawn(
       "node",

@@ -31,13 +31,13 @@ This spec defines the realtime agent communication protocol used by orchestrator
   - `OPENCLAW_API_KEY`
   - `OPENCLAW_ALLOWED_AGENTS`
 - Socket-level auth uses hello token (default on):
-  - `OPENCREW_RT_REQUIRE_TOKEN=1`
-  - `OPENCREW_RT_AUTH_TOKEN=<secret>`
+  - `CREWSWARM_RT_REQUIRE_TOKEN=1`
+  - `CREWSWARM_RT_AUTH_TOKEN=<secret>`
 - Optional per-agent tokens (recommended for internet exposure):
-  - `OPENCREW_RT_REQUIRE_AGENT_TOKEN=1`
-  - `OPENCREW_RT_AGENT_TOKENS="openclaw-main:tokenA;opencode-pm:tokenB;opencode-qa:tokenC"`
+  - `CREWSWARM_RT_REQUIRE_AGENT_TOKEN=1`
+  - `CREWSWARM_RT_AGENT_TOKENS="openclaw-main:tokenA;opencode-pm:tokenB;opencode-qa:tokenC"`
 - Optional origin restrictions:
-  - `OPENCREW_RT_ALLOWED_ORIGINS="https://ops.example.com,https://crew.example.com"`
+  - `CREWSWARM_RT_ALLOWED_ORIGINS="https://ops.example.com,https://crew.example.com"`
 
 ## Envelope Schema
 
@@ -146,19 +146,19 @@ Use unique identities per role to avoid routing ambiguity.
 
 ## Environment Variables
 
-- `OPENCREW_RT_HOST` (default `127.0.0.1`)
-- `OPENCREW_RT_PORT` (default `18889`)
-- `OPENCREW_RT_REQUIRE_TOKEN` (default `1`)
-- `OPENCREW_RT_AUTH_TOKEN` (required when token auth enabled)
-- `OPENCREW_RT_TLS_KEY_PATH` (optional for WSS)
-- `OPENCREW_RT_TLS_CERT_PATH` (optional for WSS)
-- `OPENCREW_RT_AUTO_START` (default `1`)
-- `OPENCREW_RT_BOOTSTRAP_CHANNELS` (default `1`)
-- `OPENCREW_RT_REQUIRE_AGENT_TOKEN` (default `0`)
-- `OPENCREW_RT_AGENT_TOKENS` (optional `agent:token;agent:token` map)
-- `OPENCREW_RT_ALLOWED_ORIGINS` (optional comma-separated allowlist)
-- `OPENCREW_RT_MAX_MESSAGE_BYTES` (default `65536`)
-- `OPENCREW_RT_RATE_LIMIT_PER_MIN` (default `300`)
+- `CREWSWARM_RT_HOST` (default `127.0.0.1`)
+- `CREWSWARM_RT_PORT` (default `18889`)
+- `CREWSWARM_RT_REQUIRE_TOKEN` (default `1`)
+- `CREWSWARM_RT_AUTH_TOKEN` (required when token auth enabled)
+- `CREWSWARM_RT_TLS_KEY_PATH` (optional for WSS)
+- `CREWSWARM_RT_TLS_CERT_PATH` (optional for WSS)
+- `CREWSWARM_RT_AUTO_START` (default `1`)
+- `CREWSWARM_RT_BOOTSTRAP_CHANNELS` (default `1`)
+- `CREWSWARM_RT_REQUIRE_AGENT_TOKEN` (default `0`)
+- `CREWSWARM_RT_AGENT_TOKENS` (optional `agent:token;agent:token` map)
+- `CREWSWARM_RT_ALLOWED_ORIGINS` (optional comma-separated allowlist)
+- `CREWSWARM_RT_MAX_MESSAGE_BYTES` (default `65536`)
+- `CREWSWARM_RT_RATE_LIMIT_PER_MIN` (default `300`)
 
 ## Boot Integration
 
@@ -176,11 +176,11 @@ Use unique identities per role to avoid routing ambiguity.
 
 Relevant environment:
 
-- `OPENCREW_RT_URL` (example `wss://127.0.0.1:18889`)
-- `OPENCREW_RT_AUTH_TOKEN`
-- `OPENCREW_RT_AGENT` (recommended `openclaw-main`)
-- `OPENCREW_RT_CHANNELS` (default `command,assign,handoff,reassign,events`)
-- `OPENCREW_RT_TLS_INSECURE=1` (optional for self-signed local WSS)
+- `CREWSWARM_RT_URL` (example `wss://127.0.0.1:18889`)
+- `CREWSWARM_RT_AUTH_TOKEN`
+- `CREWSWARM_RT_AGENT` (recommended `openclaw-main`)
+- `CREWSWARM_RT_CHANNELS` (default `command,assign,handoff,reassign,events`)
+- `CREWSWARM_RT_TLS_INSECURE=1` (optional for self-signed local WSS)
 
 ## Safety Rules
 

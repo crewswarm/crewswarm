@@ -41,8 +41,8 @@ const cfg = loadCfg();
 const env = cfg.env || {};
 
 const BOT_TOKEN   = process.env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN || "";
-const RT_URL      = process.env.OPENCREW_RT_URL    || env.OPENCREW_RT_URL    || "ws://127.0.0.1:18889";
-const RT_TOKEN    = process.env.OPENCREW_RT_AUTH_TOKEN || env.OPENCREW_RT_AUTH_TOKEN || "";
+const RT_URL      = process.env.CREWSWARM_RT_URL    || env.CREWSWARM_RT_URL    || "ws://127.0.0.1:18889";
+const RT_TOKEN    = process.env.CREWSWARM_RT_AUTH_TOKEN || env.CREWSWARM_RT_AUTH_TOKEN || "";
 const AGENT_NAME  = "crew-telegram";
 const TELEGRAM_CONTEXT_PATH = process.env.TELEGRAM_CONTEXT_PATH || join(homedir(), "Desktop", "CrewSwarm", "memory", "telegram-context.md");
 const TARGET      = process.env.TELEGRAM_TARGET_AGENT || env.TELEGRAM_TARGET_AGENT || "crew-lead";

@@ -15475,19 +15475,19 @@ var PROTOCOL_DIR = join(MEMORY_BASE_DIR, MEMORY_NAMESPACE, "opencrew-rt");
 var CHANNEL_DIR = join(PROTOCOL_DIR, "channels");
 var EVENT_LOG = join(PROTOCOL_DIR, "events.jsonl");
 var ACK_LOG = join(PROTOCOL_DIR, "acks.jsonl");
-var DEFAULT_HOST = process.env.OPENCREW_RT_HOST || "127.0.0.1";
-var DEFAULT_PORT = Number(process.env.OPENCREW_RT_PORT || "18889");
-var DEFAULT_REQUIRE_TOKEN = (process.env.OPENCREW_RT_REQUIRE_TOKEN || "1") !== "0";
-var DEFAULT_AUTH_TOKEN = process.env.OPENCREW_RT_AUTH_TOKEN || "";
-var DEFAULT_TLS_KEY = process.env.OPENCREW_RT_TLS_KEY_PATH;
-var DEFAULT_TLS_CERT = process.env.OPENCREW_RT_TLS_CERT_PATH;
-var DEFAULT_AUTO_START = (process.env.OPENCREW_RT_AUTO_START || "1") !== "0";
-var DEFAULT_BOOTSTRAP_CHANNELS = (process.env.OPENCREW_RT_BOOTSTRAP_CHANNELS || "1") !== "0";
+var DEFAULT_HOST = process.env.CREWSWARM_RT_HOST || "127.0.0.1";
+var DEFAULT_PORT = Number(process.env.CREWSWARM_RT_PORT || "18889");
+var DEFAULT_REQUIRE_TOKEN = (process.env.CREWSWARM_RT_REQUIRE_TOKEN || "1") !== "0";
+var DEFAULT_AUTH_TOKEN = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
+var DEFAULT_TLS_KEY = process.env.CREWSWARM_RT_TLS_KEY_PATH;
+var DEFAULT_TLS_CERT = process.env.CREWSWARM_RT_TLS_CERT_PATH;
+var DEFAULT_AUTO_START = (process.env.CREWSWARM_RT_AUTO_START || "1") !== "0";
+var DEFAULT_BOOTSTRAP_CHANNELS = (process.env.CREWSWARM_RT_BOOTSTRAP_CHANNELS || "1") !== "0";
 var STANDARD_CHANNELS = ["command", "assign", "status", "issues", "handoff", "done", "reassign", "events", "dlq"];
-var MAX_MESSAGE_BYTES = Number(process.env.OPENCREW_RT_MAX_MESSAGE_BYTES || "65536");
-var RATE_LIMIT_PER_MIN = Number(process.env.OPENCREW_RT_RATE_LIMIT_PER_MIN || "300");
-var REQUIRE_AGENT_TOKEN = (process.env.OPENCREW_RT_REQUIRE_AGENT_TOKEN || "0") === "1";
-var ALLOWED_ORIGINS = (process.env.OPENCREW_RT_ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+var MAX_MESSAGE_BYTES = Number(process.env.CREWSWARM_RT_MAX_MESSAGE_BYTES || "65536");
+var RATE_LIMIT_PER_MIN = Number(process.env.CREWSWARM_RT_RATE_LIMIT_PER_MIN || "300");
+var REQUIRE_AGENT_TOKEN = (process.env.CREWSWARM_RT_REQUIRE_AGENT_TOKEN || "0") === "1";
+var ALLOWED_ORIGINS = (process.env.CREWSWARM_RT_ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
 var COMMAND_TYPES = new Set([
   "command.spawn_agent",
   "command.run_task",
@@ -15496,7 +15496,7 @@ var COMMAND_TYPES = new Set([
   "command.collect_status"
 ]);
 var BOOT_STATUS_FILE = join(PROTOCOL_DIR, "boot-status.json");
-var AGENT_TOKENS = new Map((process.env.OPENCREW_RT_AGENT_TOKENS || "").split(";").map((s) => s.trim()).filter(Boolean).map((pair) => {
+var AGENT_TOKENS = new Map((process.env.CREWSWARM_RT_AGENT_TOKENS || "").split(";").map((s) => s.trim()).filter(Boolean).map((pair) => {
   const idx = pair.indexOf(":");
   if (idx <= 0)
     return ["", ""];
@@ -15923,7 +15923,7 @@ var OpenCrewRealtimePlugin = async () => {
     try {
       const config2 = buildRuntimeConfig();
       if (config2.requireToken && !config2.token) {
-        throw new Error("OPENCREW_RT_AUTH_TOKEN is required when OPENCREW_RT_REQUIRE_TOKEN=1");
+        throw new Error("CREWSWARM_RT_AUTH_TOKEN is required when CREWSWARM_RT_REQUIRE_TOKEN=1");
       }
       await startServer(config2);
       await createAndPublishEnvelope({
@@ -15961,8 +15961,8 @@ var OpenCrewRealtimePlugin = async () => {
         description: "Start/stop/status for the OpenCrew realtime WS/WSS control plane",
         args: {
           action: tool.schema.enum(["start", "stop", "status"]).describe("Server action"),
-          host: tool.schema.string().optional().describe("Bind host (default from OPENCREW_RT_HOST or 127.0.0.1)"),
-          port: tool.schema.number().int().optional().describe("Bind port (default OPENCREW_RT_PORT or 18889)"),
+          host: tool.schema.string().optional().describe("Bind host (default from CREWSWARM_RT_HOST or 127.0.0.1)"),
+          port: tool.schema.number().int().optional().describe("Bind port (default CREWSWARM_RT_PORT or 18889)"),
           secure: tool.schema.boolean().optional().describe("Enable WSS (TLS)"),
           requireToken: tool.schema.boolean().optional().describe("Require hello token auth for socket clients"),
           authToken: tool.schema.string().optional().describe("Realtime token override for this process"),
@@ -15994,7 +15994,7 @@ var OpenCrewRealtimePlugin = async () => {
               tlsCertPath: args.tlsCertPath
             });
             if (config2.requireToken && !config2.token) {
-              throw new Error("[opencrew-rt] OPENCREW_RT_AUTH_TOKEN is required when token auth is enabled");
+              throw new Error("[opencrew-rt] CREWSWARM_RT_AUTH_TOKEN is required when token auth is enabled");
             }
             await startServer(config2);
             await writeBootStatus({
@@ -16210,10 +16210,10 @@ if (isMain) {
   const args = process.argv.slice(2);
   const action = args[0] || "start";
   if (action === "start") {
-    const port = Number(process.env.OPENCREW_RT_PORT || "18889");
-    const host = process.env.OPENCREW_RT_HOST || "127.0.0.1";
-    const requireToken = process.env.OPENCREW_RT_REQUIRE_TOKEN !== "0";
-    const token = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+    const port = Number(process.env.CREWSWARM_RT_PORT || "18889");
+    const host = process.env.CREWSWARM_RT_HOST || "127.0.0.1";
+    const requireToken = process.env.CREWSWARM_RT_REQUIRE_TOKEN !== "0";
+    const token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
     console.log(`[opencrew-rt] Starting server on ${host}:${port}...`);
     startServer({
       host,

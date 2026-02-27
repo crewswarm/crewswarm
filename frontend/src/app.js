@@ -2444,16 +2444,29 @@ async function loadLoopBrain() {
 
 const ENV_GROUPS = [
   {
-    label: 'Engine & Timeouts',
+    label: 'Engine — OpenCode',
     vars: [
-      { key: 'OPENCREW_OPENCODE_TIMEOUT_MS',      hint: 'ms before an OpenCode task is killed (default: 300000)' },
-      { key: 'OPENCREW_OPENCODE_LOOP_MAX_ROUNDS',  hint: 'Max STEP iterations in the engine loop (default: 10)' },
+      { key: 'CREWSWARM_OPENCODE_ENABLED',          hint: '1 to route coding agents through OpenCode globally' },
+      { key: 'CREWSWARM_OPENCODE_MODEL',            hint: 'Model passed to OpenCode (e.g. anthropic/claude-sonnet-4-5). Leave blank to use each agent\'s own model.' },
+      { key: 'CREWSWARM_OPENCODE_TIMEOUT_MS',       hint: 'ms before an OpenCode task is killed (default: 300000 = 5 min)' },
+      { key: 'CREWSWARM_OPENCODE_AGENT',            hint: 'Override agent name passed to OpenCode' },
+    ],
+  },
+  {
+    label: 'Engine — Claude Code & Cursor',
+    note: 'Both use OAuth login (run claude or cursor once). No API key required. Model overrides are optional.',
+    vars: [
+      { key: 'CREWSWARM_CLAUDE_CODE_MODEL',        hint: 'Model flag passed to claude -p (e.g. claude-opus-4-5). Leave blank to use Claude Code\'s default.' },
+      { key: 'CREWSWARM_CURSOR_MODEL',             hint: 'Model flag passed to cursor --execute (e.g. claude-sonnet-4-5). Leave blank to use Cursor\'s default.' },
+    ],
+  },
+  {
+    label: 'Engine Loop & Dispatch',
+    vars: [
+      { key: 'CREWSWARM_OPENCODE_LOOP',             hint: '1 to enable engine loop (Ouroboros) for all agents' },
+      { key: 'CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS',  hint: 'Max STEP iterations in the engine loop (default: 10)' },
       { key: 'CREWSWARM_DISPATCH_TIMEOUT',         hint: 'ms before a dispatched task times out' },
-      { key: 'OPENCREW_OPENCODE_MODEL',            hint: 'Default model used by OpenCode (e.g. anthropic/claude-sonnet-4-5)' },
-      { key: 'OPENCREW_OPENCODE_AGENT',            hint: 'Override agent name passed to OpenCode' },
-      { key: 'OPENCREW_OPENCODE_ENABLED',          hint: '1 to route coding agents through OpenCode globally' },
-      { key: 'OPENCREW_OPENCODE_LOOP',             hint: '1 to enable engine loop (Ouroboros) for all agents' },
-      { key: 'OPENCREW_RT_AGENT',                  hint: 'Agent ID to use for the RT bus' },
+      { key: 'CREWSWARM_RT_AGENT',                  hint: 'Agent ID to use for the RT bus' },
     ],
   },
   {
@@ -2546,7 +2559,8 @@ async function loadEnvAdvanced() {
     for (const group of ENV_GROUPS) {
       const section = document.createElement('div');
       section.style.cssText = 'margin-bottom:18px;';
-      section.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">${escHtml(group.label)}</div>`;
+      section.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:${group.note ? '4px' : '8px'};">${escHtml(group.label)}</div>`
+        + (group.note ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px;line-height:1.4;">${escHtml(group.note)}</div>` : '');
 
       for (const { key, hint } of group.vars) {
         const current = env[key] ?? '';
@@ -2615,6 +2629,115 @@ function showSettingsTab(tab){
   // Update URL hash for deep linking — e.g. #settings/telegram
   if (document.getElementById('settingsView')?.classList.contains('active')) {
     history.replaceState(null, '', '#settings/' + tab);
+  }
+}
+
+// ── Engines ──────────────────────────────────────────────────────────────────
+const ENGINE_ICONS = {
+  opencode: `<svg viewBox="0 0 24 30" width="20" height="24" fill="#38bdf8"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`,
+  cursor:   `<svg viewBox="0 0 24 24" width="20" height="20" fill="#818cf8"><path d="M4 4l8 16 3-7 7-3L4 4z"/></svg>`,
+  claude:   `<svg viewBox="0 0 24 24" width="20" height="20" fill="#d4a853"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>`,
+  codex:    `<svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="12" cy="12" r="10" stroke="#a78bfa" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+
+function showEngines(){
+  hideAllViews();
+  document.getElementById('enginesView').classList.add('active');
+  setNavActive('navEngines');
+  loadEngines();
+}
+
+function toggleImportEngine(){
+  const f = document.getElementById('importEngineForm');
+  if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+async function importEngineFromUrl(){
+  const inp = document.getElementById('importEngineUrl');
+  const status = document.getElementById('importEngineStatus');
+  const url = inp?.value?.trim();
+  if (!url || !status) return;
+  status.textContent = 'Importing…'; status.style.color = 'var(--text-3)';
+  try {
+    const d = await postJSON('/api/engines/import', { url });
+    if (d.ok) {
+      status.textContent = `✓ Imported ${d.label}`; status.style.color = 'var(--green)';
+      inp.value = '';
+      loadEngines();
+    } else {
+      status.textContent = 'Error: ' + (d.error || 'unknown'); status.style.color = 'var(--red,#f87171)';
+    }
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message; status.style.color = 'var(--red,#f87171)';
+  }
+}
+
+async function deleteEngine(id){
+  if (!confirm(`Remove engine "${id}"?`)) return;
+  await fetch(`/api/engines/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  loadEngines();
+}
+
+async function loadEngines(){
+  const grid = document.getElementById('enginesGrid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px;">Loading…</div>';
+  try {
+    const { engines = [] } = await getJSON('/api/engines');
+    if (!engines.length) {
+      grid.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px;">No engines found.</div>';
+      return;
+    }
+    grid.innerHTML = '';
+    for (const eng of engines) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
+      const iconHtml = ENGINE_ICONS[eng.icon || eng.id] || `<span style="font-size:20px;">⚙️</span>`;
+      const statusDot = eng.ready ? '🟢' : eng.installed ? '🟡' : '⚫';
+      const statusLabel = eng.ready ? 'Ready' : eng.installed ? 'Installed — missing env vars' : 'Not installed';
+      const statusColor = eng.ready ? 'var(--green)' : eng.installed ? 'var(--yellow,#fbbf24)' : 'var(--text-3)';
+      const traitsHtml = (eng.traits || []).map(t =>
+        `<li style="font-size:11px;color:var(--text-3);list-style:none;padding:2px 0;">▸ ${escHtml(t)}</li>`
+      ).join('');
+      const missingHtml = eng.missingEnv?.length
+        ? `<div style="font-size:11px;color:var(--yellow,#fbbf24);margin-top:4px;">Missing env: ${eng.missingEnv.map(e => `<code style="background:var(--bg-1);padding:1px 3px;border-radius:3px;">${escHtml(e)}</code>`).join(', ')}</div>`
+        : '';
+      const installHtml = !eng.installed
+        ? `<div style="margin-top:6px;"><div style="font-size:11px;color:var(--text-3);margin-bottom:4px;">Install:</div>
+           <code style="font-size:11px;background:var(--bg-1);padding:4px 8px;border-radius:4px;display:block;word-break:break-all;">${escHtml(eng.installCmd || '')}</code>
+           ${eng.installUrl ? `<a href="${escHtml(eng.installUrl)}" target="_blank" style="font-size:11px;color:var(--accent);margin-top:4px;display:inline-block;">↗ Install guide</a>` : ''}
+          </div>` : '';
+      const bestForHtml = eng.bestFor?.length
+        ? `<div style="font-size:11px;color:var(--text-3);">Best for: ${eng.bestFor.map(a => `<code style="background:var(--bg-1);padding:1px 3px;border-radius:3px;">${escHtml(a)}</code>`).join(' ')}</div>`
+        : '';
+      const deleteBtn = eng.source === 'user'
+        ? `<button onclick="deleteEngine('${escHtml(eng.id)}')" style="font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-3);">Remove</button>`
+        : '';
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            ${iconHtml}
+            <div>
+              <div style="font-weight:700;font-size:14px;">${escHtml(eng.label)}</div>
+              <div style="font-size:11px;color:${statusColor};">${statusDot} ${escHtml(statusLabel)}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${eng.docsUrl ? `<a href="${escHtml(eng.docsUrl)}" target="_blank" class="btn-ghost" style="font-size:11px;padding:4px 8px;text-decoration:none;">Docs ↗</a>` : ''}
+            ${deleteBtn}
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-2);line-height:1.5;">${escHtml(eng.description || '')}</div>
+        ${missingHtml}
+        ${installHtml}
+        <ul style="margin:0;padding:0;">${traitsHtml}</ul>
+        ${bestForHtml}
+      `;
+      grid.appendChild(card);
+    }
+  } catch(e) {
+    grid.innerHTML = `<div style="color:var(--red,#f87171);font-size:13px;">Error: ${escHtml(e.message)}</div>`;
   }
 }
 
@@ -5453,6 +5576,7 @@ const VIEW_MAP = {
   'agents':      showAgents,
   'models':      showModels,
   'settings':    showSettings,
+  'engines':     showEngines,
   'skills':      showSkills,
   'run-skills':  showRunSkills,
   'benchmarks':  showBenchmarks,
@@ -5547,7 +5671,7 @@ refreshAll();
 const ACTION_REGISTRY = {
   // Nav views
   showChat, showSwarm, showRT, showBuild, showFiles, showDLQ,
-  showProjects, showAgents, showModels, showSkills, showRunSkills,
+  showProjects, showAgents, showModels, showEngines, showSkills, showRunSkills,
   showBenchmarks, showToolMatrix, showServices, showSettings,
   // Static HTML actions (previously onclick="window.fn()")
   pickFolder:          (id) => pickFolder(id),
@@ -5594,6 +5718,10 @@ const ACTION_REGISTRY = {
   loadRunSkills,
   loadBenchmarks,
   loadBenchmarkLeaderboard,
+  loadEngines,
+  toggleImportEngine,
+  importEngineFromUrl,
+  deleteEngine: (id) => deleteEngine(id),
   loadToolMatrix,
   loadBuildProjectPicker,
   // RT scroll button
@@ -5715,7 +5843,7 @@ document.addEventListener('DOMContentLoaded', () => {
 const NAV_VIEW_MAP = {
   chat: showChat, swarm: showSwarm, rt: showRT, build: showBuild,
   files: showFiles, dlq: showDLQ, projects: showProjects, agents: showAgents,
-  models: showModels, skills: showSkills, 'run-skills': showRunSkills,
+  models: showModels, engines: showEngines, skills: showSkills, 'run-skills': showRunSkills,
   benchmarks: showBenchmarks, 'tool-matrix': showToolMatrix,
   services: showServices, settings: showSettings,
 };

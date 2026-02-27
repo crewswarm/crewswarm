@@ -28,7 +28,7 @@ node gateway-bridge.mjs --send crew-pm "Break down: Build a TODO API with CRUD a
 
 `natural-pm-orchestrator.mjs` now dispatches worker tasks with `--send`:
 
-- Asks PM for a plan (still via `OPENCREW_RT_AGENT=crew-pm` + gateway-bridge).
+- Asks PM for a plan (still via `CREWSWARM_RT_AGENT=crew-pm` + gateway-bridge).
 - Parses the plan into `(agent, task)` pairs (regex + fallback to single crew-coder task).
 - For each pair runs: `node gateway-bridge.mjs --send <agent> "<task>"`.
 
@@ -49,7 +49,7 @@ So both orchestrators now do **delegation**, not broadcast racing.
 
 | Step | Who | How |
 |------|-----|-----|
-| 1. Plan | crew-pm | Orchestrator runs gateway-bridge with `OPENCREW_RT_AGENT=crew-pm` (or could use `--send crew-pm "plan: ..."`). |
+| 1. Plan | crew-pm | Orchestrator runs gateway-bridge with `CREWSWARM_RT_AGENT=crew-pm` (or could use `--send crew-pm "plan: ..."`). |
 | 2. Parse | Orchestrator | Regex on PM reply (natural-pm) or “parser” prompt → JSON (unified). |
 | 3. Execute | crew-coder, crew-qa, etc. | `gateway-bridge.mjs --send <agent> "<task>"` so only that agent gets the task. |
 | 4. Verify | Orchestrator | e.g. check files exist (unified). |

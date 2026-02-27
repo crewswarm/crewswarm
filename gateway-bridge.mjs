@@ -117,38 +117,38 @@ const SHARED_MEMORY_PROTOCOL = [
 ].join("\n");
 const MEMORY_PROTOCOL_MARKER = "Mandatory memory protocol (apply for this task):";
 const GATEWAY_URL = "ws://127.0.0.1:18789";
-const OPENCREW_RT_URL = process.env.OPENCREW_RT_URL || "ws://127.0.0.1:18889";
-const OPENCREW_RT_AGENT = process.env.OPENCREW_RT_AGENT || "crew-main";
+const CREWSWARM_RT_URL = process.env.CREWSWARM_RT_URL || "ws://127.0.0.1:18889";
+const CREWSWARM_RT_AGENT = process.env.CREWSWARM_RT_AGENT || "crew-main";
 function getRTToken() {
-  let token = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+  let token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
   if (!token) {
     try {
       const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
-      token = cfg?.rt?.authToken || cfg?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+      token = cfg?.rt?.authToken || cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
     } catch {}
   }
   if (!token) {
     try {
       const cfg = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "openclaw.json"), "utf8"));
-      token = cfg?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+      token = cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
     } catch {}
   }
   return typeof token === "string" ? token.trim() : "";
 }
-const OPENCREW_RT_TOKEN = getRTToken();
-const OPENCREW_RT_CHANNELS = (process.env.OPENCREW_RT_CHANNELS || "command,assign,handoff,reassign,events")
+const CREWSWARM_RT_TOKEN = getRTToken();
+const CREWSWARM_RT_CHANNELS = (process.env.CREWSWARM_RT_CHANNELS || "command,assign,handoff,reassign,events")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-const OPENCREW_RT_TLS_INSECURE = process.env.OPENCREW_RT_TLS_INSECURE === "1";
-const OPENCREW_RT_RECONNECT_MS = Number(process.env.OPENCREW_RT_RECONNECT_MS || "1500");
-const OPENCREW_RT_DISPATCH_ENABLED = (process.env.OPENCREW_RT_DISPATCH_ENABLED || "1") !== "0";
-const OPENCREW_RT_DISPATCH_LEASE_MS = Number(process.env.OPENCREW_RT_DISPATCH_LEASE_MS || "45000");
-const OPENCREW_RT_DISPATCH_HEARTBEAT_MS = Number(process.env.OPENCREW_RT_DISPATCH_HEARTBEAT_MS || "10000");
-const OPENCREW_RT_DISPATCH_MAX_RETRIES = Number(process.env.OPENCREW_RT_DISPATCH_MAX_RETRIES || "2");
-const OPENCREW_RT_DISPATCH_MAX_RETRIES_CODING = Number(process.env.OPENCREW_RT_DISPATCH_MAX_RETRIES_CODING || "3");
-const OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS = Number(process.env.OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS || "2000");
-const OPENCREW_OPENCODE_ENABLED = (process.env.OPENCREW_OPENCODE_ENABLED || "1") !== "0";  // ON by default
+const CREWSWARM_RT_TLS_INSECURE = process.env.CREWSWARM_RT_TLS_INSECURE === "1";
+const CREWSWARM_RT_RECONNECT_MS = Number(process.env.CREWSWARM_RT_RECONNECT_MS || "1500");
+const CREWSWARM_RT_DISPATCH_ENABLED = (process.env.CREWSWARM_RT_DISPATCH_ENABLED || "1") !== "0";
+const CREWSWARM_RT_DISPATCH_LEASE_MS = Number(process.env.CREWSWARM_RT_DISPATCH_LEASE_MS || "45000");
+const CREWSWARM_RT_DISPATCH_HEARTBEAT_MS = Number(process.env.CREWSWARM_RT_DISPATCH_HEARTBEAT_MS || "10000");
+const CREWSWARM_RT_DISPATCH_MAX_RETRIES = Number(process.env.CREWSWARM_RT_DISPATCH_MAX_RETRIES || "2");
+const CREWSWARM_RT_DISPATCH_MAX_RETRIES_CODING = Number(process.env.CREWSWARM_RT_DISPATCH_MAX_RETRIES_CODING || "3");
+const CREWSWARM_RT_DISPATCH_RETRY_BACKOFF_MS = Number(process.env.CREWSWARM_RT_DISPATCH_RETRY_BACKOFF_MS || "2000");
+const CREWSWARM_OPENCODE_ENABLED = (process.env.CREWSWARM_OPENCODE_ENABLED || "1") !== "0";  // ON by default
 // CREWSWARM_CURSOR_WAVES=1 — route multi-agent waves through Cursor subagents
 // instead of dispatching each agent independently. The crew-orchestrator subagent
 // fans all tasks in a wave out to /crew-* subagents in parallel.
@@ -156,17 +156,17 @@ const CREWSWARM_CURSOR_WAVES = process.env.CREWSWARM_CURSOR_WAVES === "1";
 // CREWSWARM_CLAUDE_CODE=1 — route tasks through Claude Code CLI (`claude -p`)
 // Uses ANTHROPIC_API_KEY. Per-agent opt-in via useClaudeCode:true in crewswarm.json.
 const CREWSWARM_CLAUDE_CODE = process.env.CREWSWARM_CLAUDE_CODE === "1";
-const OPENCREW_OPENCODE_FORCE = process.env.OPENCREW_OPENCODE_FORCE === "1";
-const OPENCREW_OPENCODE_BIN = process.env.OPENCREW_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
+const CREWSWARM_OPENCODE_FORCE = process.env.CREWSWARM_OPENCODE_FORCE === "1";
+const CREWSWARM_OPENCODE_BIN = process.env.CREWSWARM_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
 function getOpencodeProjectDir() {
   return getProjectDir("") || "";
 }
-const OPENCREW_OPENCODE_AGENT = process.env.OPENCREW_OPENCODE_AGENT || "admin";
+const CREWSWARM_OPENCODE_AGENT = process.env.CREWSWARM_OPENCODE_AGENT || "admin";
 // Primary OpenCode model: kimi-k2 is reliable at exact file edits on Groq (free tier).
 // openai/gpt-5.x-codex models are rate-limited and fall back to imprecise smaller models.
-const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
-const OPENCREW_OPENCODE_FALLBACK_DEFAULT = "groq/llama-3.3-70b-versatile";
-const OPENCREW_OPENCODE_TIMEOUT_MS = Number(process.env.OPENCREW_OPENCODE_TIMEOUT_MS || "300000");
+const CREWSWARM_OPENCODE_MODEL = process.env.CREWSWARM_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+const CREWSWARM_OPENCODE_FALLBACK_DEFAULT = "groq/llama-3.3-70b-versatile";
+const CREWSWARM_OPENCODE_TIMEOUT_MS = Number(process.env.CREWSWARM_OPENCODE_TIMEOUT_MS || "300000");
 
 // ── Per-agent OpenCode session persistence ─────────────────────────────────
 // Each agent maintains a session ID so `opencode run -s <id>` continues from
@@ -233,7 +233,7 @@ function isOpencodeRateLimitBanner(output) {
 }
 
 function getOpencodeFallbackModel() {
-  if (process.env.OPENCREW_OPENCODE_FALLBACK_MODEL) return process.env.OPENCREW_OPENCODE_FALLBACK_MODEL;
+  if (process.env.CREWSWARM_OPENCODE_FALLBACK_MODEL) return process.env.CREWSWARM_OPENCODE_FALLBACK_MODEL;
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
     if (cfg.opencodeFallbackModel && String(cfg.opencodeFallbackModel).trim()) return String(cfg.opencodeFallbackModel).trim();
@@ -243,16 +243,16 @@ function getOpencodeFallbackModel() {
     const swarm = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
     if (swarm.globalFallbackModel && String(swarm.globalFallbackModel).trim()) return String(swarm.globalFallbackModel).trim();
   } catch {}
-  return OPENCREW_OPENCODE_FALLBACK_DEFAULT;
+  return CREWSWARM_OPENCODE_FALLBACK_DEFAULT;
 }
 // ── Auto-load agents from crewswarm.json / openclaw.json (legacy) so new agents added via the dashboard
 //    are immediately available without editing this file.
 function buildAgentMapsFromConfig() {
   const BUILT_IN_MAP = { ...REGISTRY_RT_TO_GATEWAY_AGENT_MAP };
 
-  if (process.env.OPENCREW_RT_SWARM_AGENTS) {
+  if (process.env.CREWSWARM_RT_SWARM_AGENTS) {
     // Fully overridden by env — build map from env list, fall back to built-in map values
-    const list = process.env.OPENCREW_RT_SWARM_AGENTS.split(",").map(s => s.trim()).filter(Boolean);
+    const list = process.env.CREWSWARM_RT_SWARM_AGENTS.split(",").map(s => s.trim()).filter(Boolean);
     const map = {};
     for (const a of list) map[a] = BUILT_IN_MAP[a] || a.replace(/^crew-/, "");
     return { list, map };
@@ -286,8 +286,8 @@ function buildAgentMapsFromConfig() {
   return { list: [...listSet], map };
 }
 
-const { list: OPENCREW_RT_SWARM_AGENTS, map: RT_TO_GATEWAY_AGENT_MAP } = buildAgentMapsFromConfig();
-console.log(`[bridge] Registered ${OPENCREW_RT_SWARM_AGENTS.length} RT agents: ${OPENCREW_RT_SWARM_AGENTS.join(", ")}`);
+const { list: CREWSWARM_RT_SWARM_AGENTS, map: RT_TO_GATEWAY_AGENT_MAP } = buildAgentMapsFromConfig();
+console.log(`[bridge] Registered ${CREWSWARM_RT_SWARM_AGENTS.length} RT agents: ${CREWSWARM_RT_SWARM_AGENTS.join(", ")}`);
 
 // ── Direct LLM call — bypasses legacy gateway, uses agent's configured model directly ──
 
@@ -508,15 +508,15 @@ const SHARED_MEMORY_NAMESPACE = process.env.SHARED_MEMORY_NAMESPACE || "claw-swa
 const SWARM_STATUS_LOG = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "channels", "status.jsonl");
 const SWARM_DISPATCH_DIR = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "dispatch");
 const SWARM_DLQ_DIR = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "dlq");
-const SWARM_HEARTBEAT_WINDOW_SEC = Number(process.env.OPENCREW_RT_HEARTBEAT_WINDOW_SEC || "90");
-const OPENCREW_RT_TASK_LEASE_MS = Number(process.env.OPENCREW_RT_TASK_LEASE_MS || "120000");
-const OPENCREW_RT_TASK_HEARTBEAT_MS = Number(process.env.OPENCREW_RT_TASK_HEARTBEAT_MS || "15000");
-const OPENCREW_RT_TASK_RETRY_MAX = Number(process.env.OPENCREW_RT_TASK_RETRY_MAX || "2");
-const OPENCREW_RT_TASK_STATE_TTL_MS = Number(process.env.OPENCREW_RT_TASK_STATE_TTL_MS || "21600000");
+const SWARM_HEARTBEAT_WINDOW_SEC = Number(process.env.CREWSWARM_RT_HEARTBEAT_WINDOW_SEC || "90");
+const CREWSWARM_RT_TASK_LEASE_MS = Number(process.env.CREWSWARM_RT_TASK_LEASE_MS || "120000");
+const CREWSWARM_RT_TASK_HEARTBEAT_MS = Number(process.env.CREWSWARM_RT_TASK_HEARTBEAT_MS || "15000");
+const CREWSWARM_RT_TASK_RETRY_MAX = Number(process.env.CREWSWARM_RT_TASK_RETRY_MAX || "2");
+const CREWSWARM_RT_TASK_STATE_TTL_MS = Number(process.env.CREWSWARM_RT_TASK_STATE_TTL_MS || "21600000");
 const SWARM_RUNTIME_DIR = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "runtime");
 const SWARM_TASK_LEASE_DIR = path.join(SWARM_RUNTIME_DIR, "task-leases");
 const SWARM_TASK_STATE_DIR = path.join(SWARM_RUNTIME_DIR, "task-state");
-const OPENCREW_RT_COMMAND_TYPES = new Set([
+const CREWSWARM_RT_COMMAND_TYPES = new Set([
   "command.spawn_agent",
   "command.run_task",
   "command.cancel_task",
@@ -655,7 +655,7 @@ function isDoneRecordFresh(record) {
   if (!record?.doneAt) return false;
   const doneAtMs = Date.parse(record.doneAt);
   if (!Number.isFinite(doneAtMs)) return false;
-  return (Date.now() - doneAtMs) <= OPENCREW_RT_TASK_STATE_TTL_MS;
+  return (Date.now() - doneAtMs) <= CREWSWARM_RT_TASK_STATE_TTL_MS;
 }
 
 function readLeaseRecord(leaseDir) {
@@ -680,11 +680,11 @@ function acquireTaskLease({ key, source, incomingType, from, leaseMs }) {
   }
 
   const now = Date.now();
-  const claimId = `${OPENCREW_RT_AGENT}-${process.pid}-${crypto.randomUUID()}`;
+  const claimId = `${CREWSWARM_RT_AGENT}-${process.pid}-${crypto.randomUUID()}`;
   const leaseRecord = {
     key,
     claimId,
-    agent: OPENCREW_RT_AGENT,
+    agent: CREWSWARM_RT_AGENT,
     source,
     from,
     incomingType,
@@ -733,7 +733,7 @@ function acquireTaskLease({ key, source, incomingType, from, leaseMs }) {
 function renewTaskLease({ key, claimId, leaseMs }) {
   const leaseDir = leasePathForKey(key);
   const current = readLeaseRecord(leaseDir);
-  if (!current || current.claimId !== claimId || current.agent !== OPENCREW_RT_AGENT) return false;
+  if (!current || current.claimId !== claimId || current.agent !== CREWSWARM_RT_AGENT) return false;
   const now = Date.now();
   current.updatedAt = isoNow();
   current.leaseMs = leaseMs;
@@ -746,7 +746,7 @@ function releaseTaskLease({ key, claimId }) {
   const leaseDir = leasePathForKey(key);
   try {
     const current = readLeaseRecord(leaseDir);
-    if (!current || current.claimId !== claimId || current.agent !== OPENCREW_RT_AGENT) return false;
+    if (!current || current.claimId !== claimId || current.agent !== CREWSWARM_RT_AGENT) return false;
     fs.rmSync(leaseDir, { recursive: true, force: true });
     return true;
   } catch {
@@ -764,7 +764,7 @@ function markTaskDone({ key, claimId, taskId, incomingType, from, attempt, idemp
     from,
     claimId,
     idempotencyKey,
-    agent: OPENCREW_RT_AGENT,
+    agent: CREWSWARM_RT_AGENT,
     attempt,
     reply: replyText.slice(0, 24000),
     replyHash: crypto.createHash("sha256").update(replyText, "utf8").digest("hex"),
@@ -774,7 +774,7 @@ function markTaskDone({ key, claimId, taskId, incomingType, from, attempt, idemp
 }
 
 function shouldUseDispatchGuard(incomingType) {
-  if (!OPENCREW_RT_DISPATCH_ENABLED) return false;
+  if (!CREWSWARM_RT_DISPATCH_ENABLED) return false;
   return incomingType === "command.run_task" || incomingType === "task.assigned" || incomingType === "task.reassigned";
 }
 
@@ -2108,7 +2108,7 @@ function getAgentOpenCodeConfig(agentId) {
   const agents = loadAgentList();
   const cfg = agents.find(a => a.id === agentId);
   const fallback = cfg?.opencodeFallbackModel || getOpencodeFallbackModel();
-  const loop = cfg?.opencodeLoop === true || process.env.OPENCREW_OPENCODE_LOOP === "1";
+  const loop = cfg?.opencodeLoop === true || process.env.CREWSWARM_OPENCODE_LOOP === "1";
   const cursorCliModel = cfg?.cursorCliModel || null; // separate model for Cursor CLI vs OpenCode
   if (!cfg) return { enabled: agentDefaultsToOpenCode(agentId), model: null, fallbackModel: fallback, loop: false, useCursorCli: false, cursorCliModel: null };
   if (cfg.useOpenCode === true) return { enabled: true, model: cfg.opencodeModel || null, fallbackModel: fallback, loop, useCursorCli: cfg.useCursorCli === true, cursorCliModel };
@@ -2121,7 +2121,7 @@ function shouldUseCursorCli(payload, incomingType) {
   const runtime = String(payload?.runtime || payload?.executor || "").toLowerCase();
   if (runtime === "cursor" || runtime === "cursor-cli") return true;
   if (payload?.useCursorCli === true) return true;
-  const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "").toLowerCase();
   // crew-orchestrator: respect dashboard config first; fall back to CREWSWARM_CURSOR_WAVES (wave mode)
   if (agentId === "crew-orchestrator" || agentId === "orchestrator") {
     const ocCfg = getAgentOpenCodeConfig(agentId);
@@ -2138,7 +2138,7 @@ function shouldUseClaudeCode(payload, incomingType) {
   const runtime = String(payload?.runtime || payload?.executor || "").toLowerCase();
   if (runtime === "claude" || runtime === "claude-code") return true;
   if (payload?.useClaudeCode === true) return true;
-  const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "").toLowerCase();
   try {
     const agents = loadAgentList();
     const cfg = agents.find(a => a.id === agentId || a.id === `crew-${agentId}`);
@@ -2148,8 +2148,8 @@ function shouldUseClaudeCode(payload, incomingType) {
 }
 
 function shouldUseOpenCode(payload, prompt, incomingType) {
-  if (!OPENCREW_OPENCODE_ENABLED) return false;
-  if (OPENCREW_OPENCODE_FORCE) return true;
+  if (!CREWSWARM_OPENCODE_ENABLED) return false;
+  if (CREWSWARM_OPENCODE_FORCE) return true;
   // Cursor CLI takes precedence when configured — different execution backend
   if (shouldUseCursorCli(payload, incomingType)) return false;
 
@@ -2161,7 +2161,7 @@ function shouldUseOpenCode(payload, prompt, incomingType) {
   if (payload?.useOpenCode === true) return true;
 
   // Config-driven: check crewswarm.json useOpenCode field (or role-based default)
-  const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "").toLowerCase();
   const ocCfg = getAgentOpenCodeConfig(agentId);
   return ocCfg.enabled;
 }
@@ -2181,7 +2181,7 @@ function shouldUseCodex(payload, incomingType) {
   const runtime = String(payload?.runtime || payload?.executor || payload?.engine || "").toLowerCase();
   if (runtime === "codex" || runtime === "codex-cli") return true;
   if (payload?.useCodex === true) return true;
-  const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "").toLowerCase();
   try {
     const agents = loadAgentList();
     const cfg = agents.find(a => a.id === agentId || a.id === `crew-${agentId}`);
@@ -2191,13 +2191,13 @@ function shouldUseCodex(payload, incomingType) {
 }
 
 function shouldConnectGateway(args) {
-  if (process.env.OPENCREW_FORCE_GATEWAY === "1") return true;
+  if (process.env.CREWSWARM_FORCE_GATEWAY === "1") return true;
   if (args.includes("--broadcast")) return false;
   if (args[0] === "--send") return false;
   // In RT-daemon mode: skip legacy gateway unless explicitly forced.
   // Agents use direct LLM calls; legacy gateway is optional.
   if (args.includes("--rt-daemon")) {
-    if (process.env.OPENCREW_GATEWAY_ENABLED === "1") return true;
+    if (process.env.CREWSWARM_GATEWAY_ENABLED === "1") return true;
     return false;
   }
   return true;
@@ -2273,7 +2273,7 @@ async function runCursorCliTask(prompt, payload = {}) {
   // Workaround: use --output-format stream-json, detect {"type":"result"}
   // event as the completion signal, capture output, then kill the process.
   return new Promise((resolve, reject) => {
-    const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
+    const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "");
     const configuredDir = getOpencodeProjectDir();
     let projectDir = payload?.projectDir || configuredDir || process.cwd();
     projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
@@ -2318,8 +2318,8 @@ async function runCursorCliTask(prompt, payload = {}) {
 
     const hardTimer = setTimeout(() => {
       child.kill("SIGKILL");
-      if (!resultReceived) reject(new Error(`CursorCLI timeout after ${OPENCREW_OPENCODE_TIMEOUT_MS}ms`));
-    }, OPENCREW_OPENCODE_TIMEOUT_MS);
+      if (!resultReceived) reject(new Error(`CursorCLI timeout after ${CREWSWARM_OPENCODE_TIMEOUT_MS}ms`));
+    }, CREWSWARM_OPENCODE_TIMEOUT_MS);
 
     function handleLine(line) {
       line = line.trim();
@@ -2427,7 +2427,7 @@ async function runCodexTask(prompt, payload = {}) {
   // JSON events: { type:"item.completed", item:{ type:"agent_message", text:"..." } }
   //              { type:"turn.completed" }
   return new Promise((resolve, reject) => {
-    const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
+    const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "");
     const configuredDir = getOpencodeProjectDir();
     let projectDir = payload?.projectDir || configuredDir || process.cwd();
     projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
@@ -2505,7 +2505,7 @@ async function runClaudeCodeTask(prompt, payload = {}) {
   // stream-json emits newline-delimited events; we accumulate text from content_block_delta
   // events and resolve on the {"type":"result"} event (same pattern as runCursorCliTask).
   return new Promise((resolve, reject) => {
-    const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
+    const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "");
     const configuredDir = getOpencodeProjectDir();
     let projectDir = payload?.projectDir || configuredDir || process.cwd();
     projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
@@ -2555,8 +2555,8 @@ async function runClaudeCodeTask(prompt, payload = {}) {
 
     const hardTimer = setTimeout(() => {
       child.kill("SIGKILL");
-      if (!resultReceived) reject(new Error(`ClaudeCode timeout after ${OPENCREW_OPENCODE_TIMEOUT_MS}ms`));
-    }, OPENCREW_OPENCODE_TIMEOUT_MS);
+      if (!resultReceived) reject(new Error(`ClaudeCode timeout after ${CREWSWARM_OPENCODE_TIMEOUT_MS}ms`));
+    }, CREWSWARM_OPENCODE_TIMEOUT_MS);
 
     function handleLine(line) {
       line = line.trim();
@@ -2709,11 +2709,11 @@ async function runCursorWaveTask(waveIndex, tasks, payload = {}) {
 
 function runOpenCodeTask(prompt, payload = {}) {
   return new Promise((resolve, reject) => {
-    const bin = fs.existsSync(OPENCREW_OPENCODE_BIN) ? OPENCREW_OPENCODE_BIN : "opencode";
+    const bin = fs.existsSync(CREWSWARM_OPENCODE_BIN) ? CREWSWARM_OPENCODE_BIN : "opencode";
     // Model priority: explicit payload > per-agent opencodeModel > global default
-    const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
+    const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "");
     const agentOcCfg = getAgentOpenCodeConfig(agentId);
-    const model = String(payload?.model || agentOcCfg.model || OPENCREW_OPENCODE_MODEL);
+    const model = String(payload?.model || agentOcCfg.model || CREWSWARM_OPENCODE_MODEL);
     const OC_AGENT_MAP = {
       "crew-coder":         "coder",
       "crew-coder-front":   "coder-front",
@@ -2729,7 +2729,7 @@ function runOpenCodeTask(prompt, payload = {}) {
       "crew-orchestrator":  "orchestrator",
       "orchestrator":       "orchestrator",
     };
-    const ocAgentName = OC_AGENT_MAP[agentId] || agentId.replace(/^crew-/, "") || payload?.agent || OPENCREW_OPENCODE_AGENT || "admin";
+    const ocAgentName = OC_AGENT_MAP[agentId] || agentId.replace(/^crew-/, "") || payload?.agent || CREWSWARM_OPENCODE_AGENT || "admin";
     const agent = String(ocAgentName).trim();
     const configuredDir = getOpencodeProjectDir();
     let projectDir = payload?.projectDir || configuredDir || null;
@@ -2795,15 +2795,15 @@ function runOpenCodeTask(prompt, payload = {}) {
     let stdout = "";
     let stderr = "";
     let lastProgressAt = Date.now();
-    const agentLabel = agentId || OPENCREW_RT_AGENT || "opencode";
+    const agentLabel = agentId || CREWSWARM_RT_AGENT || "opencode";
 
     // Emit agent_working event so dashboard + SwiftBar can show live indicator
     _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast", payload: { agent: agentLabel, model, ts: Date.now() } });
 
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
-      reject(new Error(`OpenCode timeout after ${OPENCREW_OPENCODE_TIMEOUT_MS}ms`));
-    }, OPENCREW_OPENCODE_TIMEOUT_MS);
+      reject(new Error(`OpenCode timeout after ${CREWSWARM_OPENCODE_TIMEOUT_MS}ms`));
+    }, CREWSWARM_OPENCODE_TIMEOUT_MS);
 
     // Stream progress to log and RT bus so you can watch it live
     child.stdout.on("data", (d) => {
@@ -2955,7 +2955,7 @@ function lockPath(taskKey) {
 async function withTaskLock(taskKey, fn) {
   ensureSwarmRuntimeDirs();
   const file = lockPath(taskKey);
-  const deadline = Date.now() + Math.max(200, OPENCREW_RT_DISPATCH_HEARTBEAT_MS);
+  const deadline = Date.now() + Math.max(200, CREWSWARM_RT_DISPATCH_HEARTBEAT_MS);
   let lastErr;
   while (Date.now() < deadline) {
     try {
@@ -2986,7 +2986,7 @@ function clearStaleTaskState() {
       if (!row) continue;
       const ts = Date.parse(String(row.completedAt || row.updatedAt || ""));
       if (!Number.isFinite(ts)) continue;
-      if (now - ts > OPENCREW_RT_TASK_STATE_TTL_MS) {
+      if (now - ts > CREWSWARM_RT_TASK_STATE_TTL_MS) {
         try { fs.unlinkSync(fullPath); } catch {}
       }
     }
@@ -3011,7 +3011,7 @@ async function claimTaskLease({ taskKey, identity, incomingType, envelope, paylo
     const existingLease = parseTaskState(leaseFile) || {};
     const leaseExpiresAtMs = Date.parse(String(existingLease.leaseExpiresAt || ""));
     const leaseActive = Number.isFinite(leaseExpiresAtMs) && leaseExpiresAtMs > nowMs;
-    if (leaseActive && existingLease.owner && existingLease.owner !== OPENCREW_RT_AGENT) {
+    if (leaseActive && existingLease.owner && existingLease.owner !== CREWSWARM_RT_AGENT) {
       return {
         status: "claimed_by_other",
         owner: existingLease.owner,
@@ -3020,7 +3020,7 @@ async function claimTaskLease({ taskKey, identity, incomingType, envelope, paylo
     }
 
     const previousAttempts = Number(existingLease.attempt || payload?.retryCount || 0);
-    const attempt = leaseActive && existingLease.owner === OPENCREW_RT_AGENT
+    const attempt = leaseActive && existingLease.owner === CREWSWARM_RT_AGENT
       ? Math.max(1, previousAttempts)
       : previousAttempts + 1;
 
@@ -3028,14 +3028,14 @@ async function claimTaskLease({ taskKey, identity, incomingType, envelope, paylo
       taskKey,
       identity,
       incomingType,
-      owner: OPENCREW_RT_AGENT,
+      owner: CREWSWARM_RT_AGENT,
       source: envelope?.from || "unknown",
       attempt,
       taskId: envelope?.taskId || "",
       messageId: envelope?.id || "",
       claimedAt: nowIso,
       heartbeatAt: nowIso,
-      leaseExpiresAt: new Date(nowMs + OPENCREW_RT_DISPATCH_LEASE_MS).toISOString(),
+      leaseExpiresAt: new Date(nowMs + CREWSWARM_RT_DISPATCH_LEASE_MS).toISOString(),
     };
     fs.writeFileSync(leaseFile, `${JSON.stringify(leaseRecord, null, 2)}\n`, "utf8");
     telemetry("realtime_task_claimed", {
@@ -3043,7 +3043,7 @@ async function claimTaskLease({ taskKey, identity, incomingType, envelope, paylo
       identity,
       attempt,
       incomingType,
-      owner: OPENCREW_RT_AGENT,
+      owner: CREWSWARM_RT_AGENT,
     });
     return {
       status: "claimed",
@@ -3059,16 +3059,16 @@ function startTaskLeaseHeartbeat(taskKey) {
       await withTaskLock(taskKey, async () => {
         const leaseFile = leasePath(taskKey);
         const existingLease = parseTaskState(leaseFile);
-        if (!existingLease || existingLease.owner !== OPENCREW_RT_AGENT) return;
+        if (!existingLease || existingLease.owner !== CREWSWARM_RT_AGENT) return;
         const nowMs = Date.now();
         existingLease.heartbeatAt = new Date(nowMs).toISOString();
-        existingLease.leaseExpiresAt = new Date(nowMs + OPENCREW_RT_DISPATCH_LEASE_MS).toISOString();
+        existingLease.leaseExpiresAt = new Date(nowMs + CREWSWARM_RT_DISPATCH_LEASE_MS).toISOString();
         fs.writeFileSync(leaseFile, `${JSON.stringify(existingLease, null, 2)}\n`, "utf8");
       });
     } catch (err) {
       telemetry("realtime_task_heartbeat_error", { taskKey, message: err?.message ?? String(err) });
     }
-  }, Math.max(1000, OPENCREW_RT_DISPATCH_HEARTBEAT_MS));
+  }, Math.max(1000, CREWSWARM_RT_DISPATCH_HEARTBEAT_MS));
 }
 
 async function finalizeTaskState({ taskKey, identity, status, attempt, error = "", note = "" }) {
@@ -3080,7 +3080,7 @@ async function finalizeTaskState({ taskKey, identity, status, attempt, error = "
       taskKey,
       identity,
       status,
-      owner: OPENCREW_RT_AGENT,
+      owner: CREWSWARM_RT_AGENT,
       attempt,
       error,
       note,
@@ -3096,7 +3096,7 @@ async function releaseRuntimeTaskLease(taskKey) {
   await withTaskLock(taskKey, async () => {
     const leaseFile = leasePath(taskKey);
     const lease = parseTaskState(leaseFile);
-    if (!lease || lease.owner !== OPENCREW_RT_AGENT) return;
+    if (!lease || lease.owner !== CREWSWARM_RT_AGENT) return;
     lease.leaseExpiresAt = new Date(Date.now() - 1).toISOString();
     lease.releasedAt = new Date().toISOString();
     fs.writeFileSync(leaseFile, `${JSON.stringify(lease, null, 2)}\n`, "utf8");
@@ -3177,8 +3177,8 @@ function spawnAgentDaemon(agent) {
     stdio: ["ignore", out, out],
     env: {
       ...process.env,
-      OPENCREW_RT_AGENT: agent,
-      OPENCREW_RT_CHANNELS,
+      CREWSWARM_RT_AGENT: agent,
+      CREWSWARM_RT_CHANNELS,
     },
   });
   child.unref();
@@ -3187,7 +3187,7 @@ function spawnAgentDaemon(agent) {
 }
 
 function resolveSpawnTargets(payload) {
-  const all = [...new Set(OPENCREW_RT_SWARM_AGENTS)];
+  const all = [...new Set(CREWSWARM_RT_SWARM_AGENTS)];
   if (Array.isArray(payload?.agents)) {
     const agents = payload.agents.map((a) => String(a).trim()).filter(Boolean);
     return agents.length ? agents : all;
@@ -3203,9 +3203,9 @@ function resolveSpawnTargets(payload) {
   return all;
 }
 
-function createRealtimeClient({ onEnvelope, agentName = OPENCREW_RT_AGENT, token = OPENCREW_RT_TOKEN, channels = OPENCREW_RT_CHANNELS }) {
+function createRealtimeClient({ onEnvelope, agentName = CREWSWARM_RT_AGENT, token = CREWSWARM_RT_TOKEN, channels = CREWSWARM_RT_CHANNELS }) {
   return new Promise((resolveConnect, rejectConnect) => {
-    const ws = new WebSocket(OPENCREW_RT_URL, OPENCREW_RT_URL.startsWith("wss://") && OPENCREW_RT_TLS_INSECURE
+    const ws = new WebSocket(CREWSWARM_RT_URL, CREWSWARM_RT_URL.startsWith("wss://") && CREWSWARM_RT_TLS_INSECURE
       ? { rejectUnauthorized: false }
       : undefined);
     let ready = false;
@@ -3243,7 +3243,7 @@ function createRealtimeClient({ onEnvelope, agentName = OPENCREW_RT_AGENT, token
     };
 
     ws.on("open", () => {
-      telemetry("realtime_open", { url: OPENCREW_RT_URL, agent: agentName });
+      telemetry("realtime_open", { url: CREWSWARM_RT_URL, agent: agentName });
     });
 
     ws.on("message", async (d) => {
@@ -3287,7 +3287,7 @@ function createRealtimeClient({ onEnvelope, agentName = OPENCREW_RT_AGENT, token
 
     ws.on("close", () => {
       ready = false;
-      telemetry("realtime_closed", { url: OPENCREW_RT_URL });
+      telemetry("realtime_closed", { url: CREWSWARM_RT_URL });
       if (!settled) {
         settled = true;
         rejectConnect(new Error("realtime connection closed before ready"));
@@ -3534,7 +3534,7 @@ async function runOuroborosStyleLoop(originalTask, agentId, projectDir, payload,
   const agentCfg = loadAgentList().find(a => a.id === agentId) || {};
   const maxRounds = Math.min(20, Math.max(1,
     agentCfg.opencodeLoopMaxRounds ||
-    parseInt(process.env.OPENCREW_OPENCODE_LOOP_MAX_ROUNDS || "10", 10)
+    parseInt(process.env.CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS || "10", 10)
   ));
 
   // Central loop brain: one fast model controls all STEP/DONE decisions.
@@ -3860,7 +3860,7 @@ function createBridge({ dev, authToken }) {
         settled = true;
         resolveConnect({
           send, ws,
-          chat: (msg, sessionKey = OPENCREW_RT_AGENT || "main", options = {}) => {
+          chat: (msg, sessionKey = CREWSWARM_RT_AGENT || "main", options = {}) => {
             reply = ""; replyDone = false;
             return new Promise((res, rej) => {
               onDone = (text) => res(text);
@@ -3948,22 +3948,22 @@ function printStatusSummary(res) {
 }
 
 async function runRealtimeStatusCheck() {
-  progress(`Connecting to OpenCrew RT ${OPENCREW_RT_URL}...`);
+  progress(`Connecting to OpenCrew RT ${CREWSWARM_RT_URL}...`);
   const rt = await withRetry(() => createRealtimeClient({ onEnvelope: null }), {
     retries: 2,
     baseDelayMs: 300,
     label: "realtime connect",
   });
-  console.log(`OpenCrew RT connected as ${OPENCREW_RT_AGENT}`);
-  console.log(`- URL: ${OPENCREW_RT_URL}`);
-  console.log(`- Channels: ${OPENCREW_RT_CHANNELS.join(", ")}`);
-  console.log(`- Token configured: ${OPENCREW_RT_TOKEN ? "yes" : "no"}`);
+  console.log(`OpenCrew RT connected as ${CREWSWARM_RT_AGENT}`);
+  console.log(`- URL: ${CREWSWARM_RT_URL}`);
+  console.log(`- Channels: ${CREWSWARM_RT_CHANNELS.join(", ")}`);
+  console.log(`- Token configured: ${CREWSWARM_RT_TOKEN ? "yes" : "no"}`);
   rt.close();
 }
 
 async function runBroadcastTask(message, { timeoutMs = 25000 } = {}) {
   const taskId = `broadcast-${Date.now()}`;
-  const sender = process.env.OPENCREW_RT_BROADCAST_SENDER || "orchestrator";
+  const sender = process.env.CREWSWARM_RT_BROADCAST_SENDER || "orchestrator";
   const replies = [];
   let deliveredExpected = 0;
 
@@ -4039,10 +4039,10 @@ async function runBroadcastTask(message, { timeoutMs = 25000 } = {}) {
  * When agentId is crew-main and task is synthesis, the crew-main daemon routes to OpenCode
  * (OPENCODE_AGENTS); pass projectDir so OpenCode runs in the PM output dir.
  */
-async function runSendToAgent(agentId, message, { timeoutMs = Number(process.env.OPENCREW_RT_SEND_TIMEOUT_MS || "120000"), projectDir } = {}) {
+async function runSendToAgent(agentId, message, { timeoutMs = Number(process.env.CREWSWARM_RT_SEND_TIMEOUT_MS || "120000"), projectDir } = {}) {
   const taskId = `send-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const correlationId = crypto.randomUUID();
-  const sender = process.env.OPENCREW_RT_SEND_SENDER || "orchestrator";
+  const sender = process.env.CREWSWARM_RT_SEND_SENDER || "orchestrator";
   let reply = null;
   let done = false;
 
@@ -4110,12 +4110,12 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
   const correlationId = envelope?.id || undefined;
 
   // Per-agent routing: skip tasks not addressed to us (unless broadcast)
-  if (to !== "broadcast" && to !== OPENCREW_RT_AGENT) {
-    client.ack({ messageId: envelope.id, status: "skipped", note: `not for us (to=${to}, we=${OPENCREW_RT_AGENT})` });
+  if (to !== "broadcast" && to !== CREWSWARM_RT_AGENT) {
+    client.ack({ messageId: envelope.id, status: "skipped", note: `not for us (to=${to}, we=${CREWSWARM_RT_AGENT})` });
     return;
   }
 
-  if (!OPENCREW_RT_COMMAND_TYPES.has(incomingType)) {
+  if (!CREWSWARM_RT_COMMAND_TYPES.has(incomingType)) {
     client.ack({ messageId: envelope.id, status: "skipped", note: `unsupported type ${incomingType}` });
     return;
   }
@@ -4128,7 +4128,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       clearTimeout(pending.timer);
       pendingCmdApprovals.delete(approvalId);
       pending.resolve(incomingType === "cmd.approved");
-      console.log(`[${OPENCREW_RT_AGENT}] cmd ${incomingType === "cmd.approved" ? "✅ approved" : "⛔ rejected"}: ${approvalId}`);
+      console.log(`[${CREWSWARM_RT_AGENT}] cmd ${incomingType === "cmd.approved" ? "✅ approved" : "⛔ rejected"}: ${approvalId}`);
     }
     try { client.ack({ messageId: envelope.id, status: "done", note: `cmd ${incomingType}` }); } catch {}
     return;
@@ -4146,7 +4146,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       correlationId,
       priority: "high",
       payload: {
-        source: OPENCREW_RT_AGENT,
+        source: CREWSWARM_RT_AGENT,
         incomingType,
         action: "spawn_agent",
         results,
@@ -4167,7 +4167,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       correlationId,
       priority: "medium",
       payload: {
-        source: OPENCREW_RT_AGENT,
+        source: CREWSWARM_RT_AGENT,
         incomingType,
         action: "collect_status",
         status,
@@ -4186,7 +4186,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       correlationId,
       priority: "medium",
       payload: {
-        source: OPENCREW_RT_AGENT,
+        source: CREWSWARM_RT_AGENT,
         action,
         note: "Legacy bridge supports run_task and collect_status command actions",
       },
@@ -4219,7 +4219,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         source: incomingType,
         incomingType,
         from,
-        leaseMs: OPENCREW_RT_DISPATCH_LEASE_MS,
+        leaseMs: CREWSWARM_RT_DISPATCH_LEASE_MS,
       });
     } catch (err) {
       telemetry("dispatch_claim_error", {
@@ -4253,7 +4253,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
           correlationId,
           priority: "medium",
           payload: {
-            source: OPENCREW_RT_AGENT,
+            source: CREWSWARM_RT_AGENT,
             incomingType,
             reply: dispatchClaim.doneRecord.reply,
             duplicate: true,
@@ -4271,7 +4271,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       const renewed = renewTaskLease({
         key: dispatchKey,
         claimId: dispatchClaim.claimId,
-        leaseMs: OPENCREW_RT_DISPATCH_LEASE_MS,
+        leaseMs: CREWSWARM_RT_DISPATCH_LEASE_MS,
       });
       if (!renewed) {
         telemetry("dispatch_lease_lost", {
@@ -4281,7 +4281,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
           claimId: dispatchClaim?.claimId,
         });
       }
-    }, OPENCREW_RT_DISPATCH_HEARTBEAT_MS);
+    }, CREWSWARM_RT_DISPATCH_HEARTBEAT_MS);
 
     telemetry("dispatch_claim_acquired", {
       key: dispatchKey,
@@ -4301,7 +4301,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     correlationId,
     priority: "high",
     payload: {
-      source: OPENCREW_RT_AGENT,
+      source: CREWSWARM_RT_AGENT,
       note: `Processing ${incomingType}`,
       action,
       idempotencyKey: dispatchKey,
@@ -4311,7 +4311,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
 
   try {
     const taskProjectDir = payload?.projectDir || getOpencodeProjectDir() || null;
-    const { finalPrompt, sharedMemory } = buildTaskPrompt(prompt, `Realtime task from ${from} (${incomingType})`, OPENCREW_RT_AGENT, { projectDir: taskProjectDir });
+    const { finalPrompt, sharedMemory } = buildTaskPrompt(prompt, `Realtime task from ${from} (${incomingType})`, CREWSWARM_RT_AGENT, { projectDir: taskProjectDir });
     if (sharedMemory.loadFailed || finalPrompt === "MEMORY_LOAD_FAILED") {
       throw new Error("MEMORY_LOAD_FAILED");
     }
@@ -4323,22 +4323,22 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     const useOpenCode = !useCodex && shouldUseOpenCode(payload, prompt, incomingType);
     if (useCursorCli) {
       progress(`Routing realtime task to Cursor CLI (agent -p --force)...`);
-      telemetry("realtime_route_cursor_cli", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
+      telemetry("realtime_route_cursor_cli", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT });
     } else if (useClaudeCode) {
       progress(`Routing realtime task to Claude Code (claude -p)...`);
-      telemetry("realtime_route_claude_code", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
+      telemetry("realtime_route_claude_code", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT });
     } else if (useCodex) {
       progress(`Routing realtime task to Codex CLI (codex exec)...`);
-      telemetry("realtime_route_codex", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
+      telemetry("realtime_route_codex", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT });
     } else if (useOpenCode) {
-      const routeAgent = String(payload?.agent || OPENCREW_OPENCODE_AGENT || "default");
-      const ocAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
-      const routeModel = String(payload?.model || ocAgentCfg.model || OPENCREW_OPENCODE_MODEL);
+      const routeAgent = String(payload?.agent || CREWSWARM_OPENCODE_AGENT || "default");
+      const ocAgentCfg = getAgentOpenCodeConfig(CREWSWARM_RT_AGENT);
+      const routeModel = String(payload?.model || ocAgentCfg.model || CREWSWARM_OPENCODE_MODEL);
       progress(`Routing realtime task to OpenCode (${routeAgent}/${routeModel})...`);
       telemetry("realtime_route_opencode", { taskId, incomingType, from, model: routeModel, agent: routeAgent });
     }
     // Emit working indicator for ALL tasks (not just OpenCode)
-    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast", payload: { agent: OPENCREW_RT_AGENT, ts: Date.now() } });
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast", payload: { agent: CREWSWARM_RT_AGENT, ts: Date.now() } });
 
     let reply;
     let ocAgentId = null;
@@ -4347,19 +4347,19 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       // ── Cursor CLI backend ─────────────────────────────────────────────
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
       projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
-      const cursorPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
-      const cursorAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
+      const cursorPrompt = buildMiniTaskForOpenCode(prompt, CREWSWARM_RT_AGENT, projectDir);
+      const cursorAgentCfg = getAgentOpenCodeConfig(CREWSWARM_RT_AGENT);
       if (cursorAgentCfg.loop) {
         progress("Cursor CLI loop mode: LLM ↔ Cursor until DONE…");
         try {
-          reply = await runOuroborosStyleLoop(prompt, OPENCREW_RT_AGENT, projectDir, payload, progress, "cursor");
+          reply = await runOuroborosStyleLoop(prompt, CREWSWARM_RT_AGENT, projectDir, payload, progress, "cursor");
         } catch (e) {
           progress(`Cursor loop failed: ${e?.message?.slice(0, 80)} — falling back to single shot`);
-          reply = await runCursorCliTask(cursorPrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+          reply = await runCursorCliTask(cursorPrompt, { ...payload, agentId: CREWSWARM_RT_AGENT, projectDir });
         }
       } else {
         try {
-          reply = await runCursorCliTask(cursorPrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+          reply = await runCursorCliTask(cursorPrompt, { ...payload, agentId: CREWSWARM_RT_AGENT, projectDir });
         } catch (e) {
           const msg = e?.message ?? String(e);
           progress(`Cursor CLI failed: ${msg.slice(0, 120)} — falling back to OpenCode`);
@@ -4371,38 +4371,38 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       // ── Claude Code backend ────────────────────────────────────────────
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
       projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
-      const claudePrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
-      const claudeAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
+      const claudePrompt = buildMiniTaskForOpenCode(prompt, CREWSWARM_RT_AGENT, projectDir);
+      const claudeAgentCfg = getAgentOpenCodeConfig(CREWSWARM_RT_AGENT);
       if (claudeAgentCfg.loop) {
         progress("Claude Code loop mode: LLM ↔ Claude until DONE…");
         try {
-          reply = await runOuroborosStyleLoop(prompt, OPENCREW_RT_AGENT, projectDir, payload, progress, "claude");
+          reply = await runOuroborosStyleLoop(prompt, CREWSWARM_RT_AGENT, projectDir, payload, progress, "claude");
         } catch (e) {
           progress(`Claude loop failed: ${e?.message?.slice(0, 80)} — falling back to single shot`);
-          reply = await runClaudeCodeTask(claudePrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+          reply = await runClaudeCodeTask(claudePrompt, { ...payload, agentId: CREWSWARM_RT_AGENT, projectDir });
         }
       } else {
         try {
-          reply = await runClaudeCodeTask(claudePrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+          reply = await runClaudeCodeTask(claudePrompt, { ...payload, agentId: CREWSWARM_RT_AGENT, projectDir });
         } catch (e) {
           const msg = e?.message ?? String(e);
           progress(`Claude Code failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
           telemetry("claude_code_fallback", { taskId, error: msg });
-          reply = await callLLMDirect(finalPrompt, OPENCREW_RT_AGENT, null);
+          reply = await callLLMDirect(finalPrompt, CREWSWARM_RT_AGENT, null);
         }
       }
     } else if (useCodex) {
       // ── Codex CLI backend ──────────────────────────────────────────────
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
       projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
-      const codexPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
+      const codexPrompt = buildMiniTaskForOpenCode(prompt, CREWSWARM_RT_AGENT, projectDir);
       try {
-        reply = await runCodexTask(codexPrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+        reply = await runCodexTask(codexPrompt, { ...payload, agentId: CREWSWARM_RT_AGENT, projectDir });
       } catch (e) {
         const msg = e?.message ?? String(e);
         progress(`Codex CLI failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
         telemetry("codex_fallback", { taskId, error: msg });
-        reply = await callLLMDirect(finalPrompt, OPENCREW_RT_AGENT, null);
+        reply = await callLLMDirect(finalPrompt, CREWSWARM_RT_AGENT, null);
       }
     } else if (useOpenCode) {
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || null;
@@ -4411,23 +4411,23 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         if (fromTask) projectDir = fromTask;
       }
       projectDir = projectDir || process.cwd();
-      const ocAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
+      const ocAgentCfg = getAgentOpenCodeConfig(CREWSWARM_RT_AGENT);
       let opencodeErr;
 
       if (ocAgentCfg.loop) {
         // Ouroboros-style: LLM decomposes → OpenCode executes each step → repeat until DONE
         progress("OpenCode loop mode: LLM ↔ OpenCode until DONE...");
         try {
-          reply = await runOuroborosStyleLoop(prompt, OPENCREW_RT_AGENT, projectDir, payload, progress, "opencode");
+          reply = await runOuroborosStyleLoop(prompt, CREWSWARM_RT_AGENT, projectDir, payload, progress, "opencode");
         } catch (e) {
           opencodeErr = e;
           progress(`OpenCode loop failed: ${e?.message?.slice(0, 80)} — falling back to single shot`);
-          const ocPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
+          const ocPrompt = buildMiniTaskForOpenCode(prompt, CREWSWARM_RT_AGENT, projectDir);
           reply = await runOpenCodeTask(ocPrompt, payload);
         }
       } else {
         // Single-shot: mini task only (no shared memory / tool doc — OpenCode reads files)
-        const ocPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
+        const ocPrompt = buildMiniTaskForOpenCode(prompt, CREWSWARM_RT_AGENT, projectDir);
         try {
           reply = await runOpenCodeTask(ocPrompt, payload);
         } catch (e) {
@@ -4438,8 +4438,8 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         if (isRateLimit || isTimeout) {
           // Build rotation chain: free models first, then configured fallback, deduplicated
           // Track ALL tried models (primary + each fallback attempt) to avoid re-trying failed ones
-          const primaryModel = String(payload?.model || OPENCREW_OPENCODE_MODEL);
-          const configFallback = getAgentOpenCodeConfig(OPENCREW_RT_AGENT).fallbackModel;
+          const primaryModel = String(payload?.model || CREWSWARM_OPENCODE_MODEL);
+          const configFallback = getAgentOpenCodeConfig(CREWSWARM_RT_AGENT).fallbackModel;
           const triedModels = new Set([primaryModel]);
           // Per-agent opencodeFallbackModel goes FIRST, then global free chain as safety net
           const chain = [...(configFallback ? [configFallback] : []), ...OPENCODE_FREE_MODEL_CHAIN]
@@ -4465,7 +4465,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         if (!reply && bridge?.kind === "gateway") {
           telemetry("realtime_opencode_fallback", { taskId, incomingType, error: opencodeErr?.message || msg });
           progress(`OpenCode failed, falling back to legacy gateway: ${(opencodeErr?.message || msg).slice(0, 120)}`);
-          const gatewayAgentId = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
+          const gatewayAgentId = RT_TO_GATEWAY_AGENT_MAP[CREWSWARM_RT_AGENT] || "main";
           reply = await bridge.chat(finalPrompt, gatewayAgentId, { idempotencyKey: dispatchKey });
         } else if (!reply) {
           throw opencodeErr;
@@ -4474,9 +4474,9 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       }
     } else {
       // Try direct LLM call first (uses agent's configured model/provider from crewswarm.json)
-      ocAgentId = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
+      ocAgentId = RT_TO_GATEWAY_AGENT_MAP[CREWSWARM_RT_AGENT] || "main";
       agentSysPrompt = loadAgentPrompts()[ocAgentId] || null;
-      progress(`Trying direct LLM for ${OPENCREW_RT_AGENT} (mapped: ${ocAgentId})...`);
+      progress(`Trying direct LLM for ${CREWSWARM_RT_AGENT} (mapped: ${ocAgentId})...`);
       reply = await callLLMDirect(finalPrompt, ocAgentId, agentSysPrompt);
 
       if (!reply) {
@@ -4493,10 +4493,10 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     reply = stripThink(reply);
 
     // Execute any tool calls — suppress @@WRITE_FILE if searches are pending in the same reply
-    const toolResults = await executeToolCalls(reply, OPENCREW_RT_AGENT, { suppressWriteIfSearchPending: true });
+    const toolResults = await executeToolCalls(reply, CREWSWARM_RT_AGENT, { suppressWriteIfSearchPending: true });
     if (toolResults.length > 0) {
       reply = reply + "\n\n---\n**Tool execution results:**\n" + toolResults.join("\n");
-      telemetry("agent_tools_executed", { taskId, agent: OPENCREW_RT_AGENT, count: toolResults.length });
+      telemetry("agent_tools_executed", { taskId, agent: CREWSWARM_RT_AGENT, count: toolResults.length });
 
       // Do a follow-up LLM call whenever:
       // (a) searches ran (agent needs to see results before writing), OR
@@ -4513,7 +4513,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
             : null;
           if (!followUpReply) followUpReply = await bridge.chat(followUpPrompt, ocAgentId || "main", { idempotencyKey: dispatchKey + "-followup" });
           followUpReply = stripThink(followUpReply);
-          const followUpTools = await executeToolCalls(followUpReply, OPENCREW_RT_AGENT);
+          const followUpTools = await executeToolCalls(followUpReply, CREWSWARM_RT_AGENT);
           reply = reply + "\n\n" + followUpReply;
           if (followUpTools.length > 0) {
             reply = reply + "\n\n---\n**Follow-up tool results:**\n" + followUpTools.join("\n");
@@ -4538,7 +4538,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       client.publish({
         channel: "issues",
         type: "task.artifact_missing",
-        to: OPENCREW_RT_AGENT, // Send feedback to self for learning
+        to: CREWSWARM_RT_AGENT, // Send feedback to self for learning
         taskId,
         correlationId,
         priority: "high",
@@ -4589,14 +4589,14 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
             if (!fs.existsSync(projectBrainPath)) {
               fs.writeFileSync(projectBrainPath, "# Project Brain\n\nAccumulated knowledge for this project.\n", "utf8");
             }
-            fs.appendFileSync(projectBrainPath, `\n## [${date}] ${OPENCREW_RT_AGENT}: ${entry}\n`, "utf8");
+            fs.appendFileSync(projectBrainPath, `\n## [${date}] ${CREWSWARM_RT_AGENT}: ${entry}\n`, "utf8");
           } else {
             const lessonsPath = path.join(SHARED_MEMORY_DIR, "lessons.md");
-            fs.appendFileSync(lessonsPath, `\n## [${date}] ${OPENCREW_RT_AGENT}: ${entry}\n`, "utf8");
+            fs.appendFileSync(lessonsPath, `\n## [${date}] ${CREWSWARM_RT_AGENT}: ${entry}\n`, "utf8");
           }
-          console.log(`[bridge:${OPENCREW_RT_AGENT}] @@LESSON → ${projectDir ? path.basename(projectDir) + "/.crewswarm/brain.md" : "lessons.md"}: ${entry.slice(0, 80)}`);
+          console.log(`[bridge:${CREWSWARM_RT_AGENT}] @@LESSON → ${projectDir ? path.basename(projectDir) + "/.crewswarm/brain.md" : "lessons.md"}: ${entry.slice(0, 80)}`);
         } catch (e) {
-          console.warn(`[bridge:${OPENCREW_RT_AGENT}] @@LESSON write failed: ${e.message}`);
+          console.warn(`[bridge:${CREWSWARM_RT_AGENT}] @@LESSON write failed: ${e.message}`);
         }
       }
     }
@@ -4606,7 +4606,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     // Legacy format also supported: @@DISPATCH:agent-id|task description
     // Non-coordinator agents are blocked from dispatching to prevent loops.
     const COORDINATOR_AGENTS = new Set(COORDINATOR_AGENT_IDS);
-    const rawDispatches = COORDINATOR_AGENTS.has(OPENCREW_RT_AGENT)
+    const rawDispatches = COORDINATOR_AGENTS.has(CREWSWARM_RT_AGENT)
       ? (() => {
           const results = [];
           // Canonical JSON format
@@ -4626,7 +4626,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     if (rawDispatches.length > 0) {
       for (const { targetAgent, taskText } of rawDispatches) {
         // Block self-dispatch and empty targets
-        if (!targetAgent || !taskText || targetAgent === OPENCREW_RT_AGENT) continue;
+        if (!targetAgent || !taskText || targetAgent === CREWSWARM_RT_AGENT) continue;
         try {
           // For audit/QA tasks, inject file contents so the agent can actually read them
           let enrichedTask = taskText;
@@ -4659,11 +4659,11 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
             payload: {
               action: "run_task",
               prompt: enrichedTask,
-              dispatchedBy: OPENCREW_RT_AGENT,
+              dispatchedBy: CREWSWARM_RT_AGENT,
               parentTaskId: taskId,
             },
           });
-          telemetry("crew_dispatch_forwarded", { from: OPENCREW_RT_AGENT, to: targetAgent, taskId: dispatchTaskId });
+          telemetry("crew_dispatch_forwarded", { from: CREWSWARM_RT_AGENT, to: targetAgent, taskId: dispatchTaskId });
           progress(`Dispatched task to ${targetAgent}: ${taskText.slice(0, 60)}`);
         } catch (dispErr) {
           console.error(`[bridge] CREW_DISPATCH to ${targetAgent} failed:`, dispErr?.message);
@@ -4679,18 +4679,18 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       correlationId,
       priority: "high",
       payload: {
-        source: OPENCREW_RT_AGENT,
+        source: CREWSWARM_RT_AGENT,
         reply,
         incomingType,
         idempotencyKey: dispatchKey,
       },
     });
-    _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast", payload: { agent: OPENCREW_RT_AGENT, ts: Date.now() } });
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast", payload: { agent: CREWSWARM_RT_AGENT, ts: Date.now() } });
     client.ack({ messageId: envelope.id, status: "done", note: "task completed" });
   } catch (err) {
     const message = err?.message ?? String(err);
     const isCoding = isCodingTask(incomingType, prompt, payload);
-    const maxRetries = isCoding ? OPENCREW_RT_DISPATCH_MAX_RETRIES_CODING : OPENCREW_RT_DISPATCH_MAX_RETRIES;
+    const maxRetries = isCoding ? CREWSWARM_RT_DISPATCH_MAX_RETRIES_CODING : CREWSWARM_RT_DISPATCH_MAX_RETRIES;
     const shouldRetry = dispatchGuardEnabled
       && dispatchClaim?.acquired
       && shouldRetryTaskFailure(err)
@@ -4698,7 +4698,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
 
     if (shouldRetry) {
       const retryAttempt = dispatchAttempt + 1;
-      const retryAfterMs = OPENCREW_RT_DISPATCH_RETRY_BACKOFF_MS * (2 ** dispatchAttempt);
+      const retryAfterMs = CREWSWARM_RT_DISPATCH_RETRY_BACKOFF_MS * (2 ** dispatchAttempt);
       telemetry("dispatch_retry_scheduled", {
         key: dispatchKey,
         taskId,
@@ -4715,7 +4715,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         correlationId,
         priority: "high",
         payload: {
-          source: OPENCREW_RT_AGENT,
+          source: CREWSWARM_RT_AGENT,
           incomingType,
           attempt: retryAttempt,
           retryAfterMs,
@@ -4729,7 +4729,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
           client.publish({
             channel: "command",
             type: incomingType,
-            to: OPENCREW_RT_AGENT,  // Retry to SELF, not broadcast (prevents 7x amplification)
+            to: CREWSWARM_RT_AGENT,  // Retry to SELF, not broadcast (prevents 7x amplification)
             taskId,
             priority: "high",
             payload: {
@@ -4762,7 +4762,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         taskId,
         incomingType,
         from,
-        agent: OPENCREW_RT_AGENT,
+        agent: CREWSWARM_RT_AGENT,
         attempt: dispatchAttempt,
         error: message,
         prompt: String(prompt).slice(0, 2000),
@@ -4781,11 +4781,11 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       const ESCALATABLE_AGENTS = new Set([
         "crew-coder", "crew-coder-front", "crew-coder-back", "crew-frontend", "crew-copywriter",
       ]);
-      const isSelf = OPENCREW_RT_AGENT === "crew-fixer"; // prevent fixer→fixer loop
-      if (ESCALATABLE_AGENTS.has(OPENCREW_RT_AGENT) && !isSelf) {
+      const isSelf = CREWSWARM_RT_AGENT === "crew-fixer"; // prevent fixer→fixer loop
+      if (ESCALATABLE_AGENTS.has(CREWSWARM_RT_AGENT) && !isSelf) {
         const fixerTaskId = `fixer-escalation-${Date.now()}`;
         const fixerPrompt =
-          `⚠️ Auto-escalation from ${OPENCREW_RT_AGENT} (failed after ${dispatchAttempt + 1} attempts).\n\n` +
+          `⚠️ Auto-escalation from ${CREWSWARM_RT_AGENT} (failed after ${dispatchAttempt + 1} attempts).\n\n` +
           `**Original task:**\n${String(prompt).slice(0, 1500)}\n\n` +
           `**Error:**\n${message.slice(0, 500)}\n\n` +
           `Use @@READ_FILE to inspect any relevant files, identify the root cause, and fix it.`;
@@ -4796,12 +4796,12 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
             to: "crew-fixer",
             taskId: fixerTaskId,
             priority: "high",
-            payload: { action: "run_task", prompt: fixerPrompt, escalatedFrom: OPENCREW_RT_AGENT, parentTaskId: taskId },
+            payload: { action: "run_task", prompt: fixerPrompt, escalatedFrom: CREWSWARM_RT_AGENT, parentTaskId: taskId },
           });
-          telemetry("task_escalated_to_fixer", { fromAgent: OPENCREW_RT_AGENT, taskId, fixerTaskId });
-          console.log(`[${OPENCREW_RT_AGENT}] ⬆️ Escalated failed task to crew-fixer (${fixerTaskId})`);
+          telemetry("task_escalated_to_fixer", { fromAgent: CREWSWARM_RT_AGENT, taskId, fixerTaskId });
+          console.log(`[${CREWSWARM_RT_AGENT}] ⬆️ Escalated failed task to crew-fixer (${fixerTaskId})`);
         } catch (escErr) {
-          console.error(`[${OPENCREW_RT_AGENT}] Escalation to crew-fixer failed:`, escErr?.message);
+          console.error(`[${CREWSWARM_RT_AGENT}] Escalation to crew-fixer failed:`, escErr?.message);
         }
       }
       // ─────────────────────────────────────────────────────────────────────────
@@ -4815,7 +4815,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       correlationId,
       priority: "high",
       payload: {
-        source: OPENCREW_RT_AGENT,
+        source: CREWSWARM_RT_AGENT,
         error: message,
         idempotencyKey: dispatchKey,
         attempt: dispatchAttempt,
@@ -4940,7 +4940,7 @@ function syncOpenCodePermissions() {
 
 async function runRealtimeDaemon(bridge) {
   syncOpenCodePermissions();
-  progress(`Starting OpenCrew realtime daemon via ${OPENCREW_RT_URL}...`);
+  progress(`Starting OpenCrew realtime daemon via ${CREWSWARM_RT_URL}...`);
   let stopRequested = false;
   let currentClient = null;
   let heartbeat = null;
@@ -4952,7 +4952,7 @@ async function runRealtimeDaemon(bridge) {
       heartbeat = null;
     }
     try {
-      currentClient?.publish({ channel: "events", type: "agent.offline", payload: { agent: OPENCREW_RT_AGENT } });
+      currentClient?.publish({ channel: "events", type: "agent.offline", payload: { agent: CREWSWARM_RT_AGENT } });
     } catch {}
     try {
       currentClient?.close();
@@ -4976,16 +4976,16 @@ async function runRealtimeDaemon(bridge) {
         to: "broadcast",
         priority: "high",
         payload: {
-          agent: OPENCREW_RT_AGENT,
+          agent: CREWSWARM_RT_AGENT,
           gateway: GATEWAY_URL,
           mode: "daemon",
         },
       });
 
-      console.log(`OpenCrew daemon online: ${OPENCREW_RT_AGENT}`);
+      console.log(`OpenCrew daemon online: ${CREWSWARM_RT_AGENT}`);
       console.log(`- gateway: ${GATEWAY_URL}`);
-      console.log(`- realtime: ${OPENCREW_RT_URL}`);
-      console.log(`- subscribed: ${OPENCREW_RT_CHANNELS.join(", ")}`);
+      console.log(`- realtime: ${CREWSWARM_RT_URL}`);
+      console.log(`- subscribed: ${CREWSWARM_RT_CHANNELS.join(", ")}`);
 
       heartbeat = setInterval(() => {
         try {
@@ -4993,7 +4993,7 @@ async function runRealtimeDaemon(bridge) {
             channel: "status",
             type: "agent.heartbeat",
             to: "broadcast",
-            payload: { agent: OPENCREW_RT_AGENT, ts: new Date().toISOString() },
+            payload: { agent: CREWSWARM_RT_AGENT, ts: new Date().toISOString() },
           });
         } catch {}
       }, 30000);
@@ -5014,13 +5014,13 @@ async function runRealtimeDaemon(bridge) {
       try { rt.close(); } catch {}
       currentClient = null;
       if (!stopRequested) {
-        progress(`Realtime disconnected. Reconnecting in ${OPENCREW_RT_RECONNECT_MS}ms...`);
-        await sleep(OPENCREW_RT_RECONNECT_MS);
+        progress(`Realtime disconnected. Reconnecting in ${CREWSWARM_RT_RECONNECT_MS}ms...`);
+        await sleep(CREWSWARM_RT_RECONNECT_MS);
       }
     } catch (err) {
       telemetry("realtime_daemon_error", { message: err?.message ?? String(err) });
       progress(`Realtime daemon error: ${err?.message ?? String(err)}`);
-      if (!stopRequested) await sleep(OPENCREW_RT_RECONNECT_MS);
+      if (!stopRequested) await sleep(CREWSWARM_RT_RECONNECT_MS);
     }
   }
 }
@@ -5063,7 +5063,7 @@ try {
   } else {
     progress("Starting in OpenCode-only worker mode (no gateway chat bridge)...");
     bridge = createOpenCodeOnlyBridge();
-    telemetry("connect_skipped", { mode: "opencode_only", agent: OPENCREW_RT_AGENT });
+    telemetry("connect_skipped", { mode: "opencode_only", agent: CREWSWARM_RT_AGENT });
     process.stderr.write("✅ OpenCode-only worker mode enabled\n");
   }
 
@@ -5128,8 +5128,8 @@ try {
       console.error("Example: node gateway-bridge.mjs --send crew-coder \"Create server.js with Express\"");
       process.exit(1);
     }
-    if (!OPENCREW_RT_SWARM_AGENTS.includes(agentId)) {
-      console.error(`Unknown agent: ${agentId}. Known: ${OPENCREW_RT_SWARM_AGENTS.join(", ")}`);
+    if (!CREWSWARM_RT_SWARM_AGENTS.includes(agentId)) {
+      console.error(`Unknown agent: ${agentId}. Known: ${CREWSWARM_RT_SWARM_AGENTS.join(", ")}`);
       process.exit(1);
     }
     process.stderr.write(`📤 Sending to ${agentId} only (no broadcast)...\n`);
@@ -5165,9 +5165,9 @@ try {
     if (shouldUseOpenCode({}, finalPrompt, null)) {
       console.error("[OpenCode] Routing to OpenCode CLI...");
       // Pass raw message to OpenCode (no memory wrapper)
-      const reply = await runOpenCodeTask(message, { model: OPENCREW_OPENCODE_MODEL });
+      const reply = await runOpenCodeTask(message, { model: CREWSWARM_OPENCODE_MODEL });
       console.log(reply);
-      telemetry("chat_done_opencode", { sessionKey: OPENCREW_RT_AGENT, replyChars: reply.length });
+      telemetry("chat_done_opencode", { sessionKey: CREWSWARM_RT_AGENT, replyChars: reply.length });
       process.exit(0);
     }
     
@@ -5178,12 +5178,12 @@ try {
       sharedMemoryBytes: sharedMemory.bytes,
       sharedMemoryMissing: sharedMemory.missing,
     });
-    process.stderr.write(`📤 ${OPENCREW_RT_AGENT || "main"} ${message.slice(0, 80)}\n`);
+    process.stderr.write(`📤 ${CREWSWARM_RT_AGENT || "main"} ${message.slice(0, 80)}\n`);
     process.stderr.write("⏳ Waiting for assistant reply...\n");
-    const targetAgent = RT_TO_GATEWAY_AGENT_MAP[OPENCREW_RT_AGENT] || "main";
+    const targetAgent = RT_TO_GATEWAY_AGENT_MAP[CREWSWARM_RT_AGENT] || "main";
     
     // For RT swarm agents, poll done.jsonl instead of WebSocket
-    const isRTAgent = OPENCREW_RT_SWARM_AGENTS.includes(OPENCREW_RT_AGENT);
+    const isRTAgent = CREWSWARM_RT_SWARM_AGENTS.includes(CREWSWARM_RT_AGENT);
     let reply;
     
     if (isRTAgent) {
@@ -5214,7 +5214,7 @@ try {
             const msg = JSON.parse(line);
             
             // Match by agent ID and recent timestamp
-            if (msg.from === OPENCREW_RT_AGENT && 
+            if (msg.from === CREWSWARM_RT_AGENT && 
                 new Date(msg.ts).getTime() > startTime - 2000 &&
                 msg.payload?.reply) {
               reply = msg.payload.reply;

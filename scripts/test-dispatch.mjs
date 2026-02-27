@@ -16,7 +16,7 @@ const CFG = path.join(os.homedir(), ".crewswarm", "config.json");
 function getToken() {
   try {
     const c = JSON.parse(fs.readFileSync(CFG, "utf8"));
-    return c.rt?.authToken || c.env?.OPENCREW_RT_AUTH_TOKEN || "";
+    return c.rt?.authToken || c.env?.CREWSWARM_RT_AUTH_TOKEN || "";
   } catch {
     return "";
   }

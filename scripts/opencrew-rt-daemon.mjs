@@ -16,7 +16,7 @@ import { BUILT_IN_RT_AGENTS, RT_TO_GATEWAY_AGENT_MAP } from "../lib/agent-regist
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
-const MAX_CLIENTS = Number(process.env.OPENCREW_RT_MAX_CLIENTS || "200");
+const MAX_CLIENTS = Number(process.env.CREWSWARM_RT_MAX_CLIENTS || "200");
 
 const LEGACY_COMPAT_ALLOWED_AGENTS = new Set([
   "main", "admin", "build", "coder", "researcher", "architect", "reviewer", "qa", "fixer", "pm",
@@ -56,10 +56,10 @@ const EVENT_LOG = join(PROTOCOL_DIR, "events.jsonl");
 const ACK_LOG = join(PROTOCOL_DIR, "acks.jsonl");
 
 const STANDARD_CHANNELS = ["command", "assign", "status", "issues", "handoff", "done", "reassign", "events", "dlq"];
-const MAX_MESSAGE_BYTES = Number(process.env.OPENCREW_RT_MAX_MESSAGE_BYTES || "65536");
-const RATE_LIMIT_PER_MIN = Number(process.env.OPENCREW_RT_RATE_LIMIT_PER_MIN || "300");
-const REQUIRE_AGENT_TOKEN = (process.env.OPENCREW_RT_REQUIRE_AGENT_TOKEN || "0") === "1";
-const ALLOWED_ORIGINS = (process.env.OPENCREW_RT_ALLOWED_ORIGINS || "")
+const MAX_MESSAGE_BYTES = Number(process.env.CREWSWARM_RT_MAX_MESSAGE_BYTES || "65536");
+const RATE_LIMIT_PER_MIN = Number(process.env.CREWSWARM_RT_RATE_LIMIT_PER_MIN || "300");
+const REQUIRE_AGENT_TOKEN = (process.env.CREWSWARM_RT_REQUIRE_AGENT_TOKEN || "0") === "1";
+const ALLOWED_ORIGINS = (process.env.CREWSWARM_RT_ALLOWED_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -72,7 +72,7 @@ const COMMAND_TYPES = new Set([
 ]);
 const BOOT_STATUS_FILE = join(PROTOCOL_DIR, "boot-status.json");
 const AGENT_TOKENS = new Map(
-  (process.env.OPENCREW_RT_AGENT_TOKENS || "")
+  (process.env.CREWSWARM_RT_AGENT_TOKENS || "")
     .split(";")
     .map((s) => s.trim())
     .filter(Boolean)
@@ -491,26 +491,26 @@ const scriptPath = fileURLToPath(import.meta.url);
 const isMain = process.argv[1] && (process.argv[1] === scriptPath || process.argv[1].endsWith("opencrew-rt-daemon.mjs"));
 
 if (isMain) {
-  const host = process.env.OPENCREW_RT_HOST || "127.0.0.1";
-  const port = Number(process.env.OPENCREW_RT_PORT || "18889");
-  const requireTokenEnv = process.env.OPENCREW_RT_REQUIRE_TOKEN;
+  const host = process.env.CREWSWARM_RT_HOST || "127.0.0.1";
+  const port = Number(process.env.CREWSWARM_RT_PORT || "18889");
+  const requireTokenEnv = process.env.CREWSWARM_RT_REQUIRE_TOKEN;
   // Token: env first, then config JSON (dashboard saves to ~/.crewswarm or ~/.openclaw)
-  let token = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+  let token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
   if (!token) {
     const home = process.env.HOME || process.env.USERPROFILE || "";
     for (const p of [join(home, ".crewswarm", "config.json"), join(home, ".openclaw", "openclaw.json")]) {
       try {
         const cfg = JSON.parse(readFileSync(p, "utf8"));
-        token = cfg?.rt?.authToken || cfg?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+        token = cfg?.rt?.authToken || cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
         if (token) break;
       } catch {}
     }
   }
-  // No token anywhere: auth is optional (local use). Set OPENCREW_RT_REQUIRE_TOKEN=1 to require a token.
+  // No token anywhere: auth is optional (local use). Set CREWSWARM_RT_REQUIRE_TOKEN=1 to require a token.
   const requireToken = requireTokenEnv === "1" || (requireTokenEnv !== "0" && token !== "");
 
   if (requireToken && !token) {
-    console.error("OPENCREW_RT_AUTH_TOKEN is required when OPENCREW_RT_REQUIRE_TOKEN=1. Set it in ~/.crewswarm/config.json (rt.authToken) or ~/.openclaw/openclaw.json (env.OPENCREW_RT_AUTH_TOKEN).");
+    console.error("CREWSWARM_RT_AUTH_TOKEN is required when CREWSWARM_RT_REQUIRE_TOKEN=1. Set it in ~/.crewswarm/config.json (rt.authToken) or ~/.openclaw/openclaw.json (env.CREWSWARM_RT_AUTH_TOKEN).");
     process.exit(1);
   }
 

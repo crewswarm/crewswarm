@@ -24,9 +24,9 @@ opencode run "Build a stunning homepage" --model opencode/gpt-5-codex
 **Test Command:**
 ```bash
 cd ~/Desktop/OpenClaw
-OPENCREW_OPENCODE_ENABLED=1 \
-OPENCREW_OPENCODE_MODEL=opencode/gpt-5-codex \
-OPENCREW_RT_AGENT=crew-coder \
+CREWSWARM_OPENCODE_ENABLED=1 \
+CREWSWARM_OPENCODE_MODEL=opencode/gpt-5-codex \
+CREWSWARM_RT_AGENT=crew-coder \
 node gateway-bridge.mjs "Create /tmp/test.txt"
 ```
 - ✅ Routes to OpenCode CLI correctly
@@ -66,7 +66,7 @@ https://opencode.ai/workspace/wrk_01KHST762T0QMCJCAQHZGYNWPT/billing
 
 ### **Default Model** (in `gateway-bridge.mjs`)
 ```javascript
-const OPENCREW_OPENCODE_MODEL = process.env.OPENCREW_OPENCODE_MODEL || "opencode/kimi-k2.5";
+const CREWSWARM_OPENCODE_MODEL = process.env.CREWSWARM_OPENCODE_MODEL || "opencode/kimi-k2.5";
 ```
 - User manually reverted from `gpt-5-codex` to `kimi-k2.5`
 - This is the fallback model for all OpenCode tasks
@@ -112,9 +112,9 @@ opencode models
 
 # Test a free model
 cd ~/Desktop/OpenClaw
-OPENCREW_OPENCODE_ENABLED=1 \
-OPENCREW_OPENCODE_MODEL=opencode/some-free-model \
-OPENCREW_RT_AGENT=crew-coder \
+CREWSWARM_OPENCODE_ENABLED=1 \
+CREWSWARM_OPENCODE_MODEL=opencode/some-free-model \
+CREWSWARM_RT_AGENT=crew-coder \
 node gateway-bridge.mjs "Create /tmp/test.txt"
 ```
 

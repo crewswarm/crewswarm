@@ -26,6 +26,22 @@ const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
 // Config filename within CFG_DIR — crewswarm.json for new installs, openclaw.json for legacy
 const CFG_FILE = path.join(CFG_DIR,
   fs.existsSync(path.join(CFG_DIR, "crewswarm.json")) ? "crewswarm.json" : "openclaw.json");
+// Load crewswarm.json env block into process.env on startup (so dashboard reads them)
+// Credentials are excluded — only operational config vars are applied this way.
+const ENV_CREDENTIAL_KEYS = new Set([
+  "CREWSWARM_RT_AUTH_TOKEN", "CREWSWARM_RT_URL",
+  "TELEGRAM_BOT_TOKEN", "TELEGRAM_TARGET_AGENT",
+  "WA_TARGET_AGENT", "CREWSWARM_TOKEN",
+]);
+try {
+  const _startupCfg = JSON.parse(fs.readFileSync(CFG_FILE, "utf8"));
+  for (const [k, v] of Object.entries(_startupCfg.env || {})) {
+    if (!ENV_CREDENTIAL_KEYS.has(k) && v && !process.env[k]) {
+      process.env[k] = String(v);
+    }
+  }
+} catch {}
+
 // Default 4319 so we don't conflict with CrewSwarm RT Messages dashboard on 4318
 const listenPort = Number(process.env.SWARM_DASH_PORT || 4319);
 const opencodeBase = process.env.OPENCODE_URL || "http://127.0.0.1:4096";
@@ -495,8 +511,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/api/env-advanced" && req.method === "GET") {
       const vars = [
-        "OPENCREW_OPENCODE_TIMEOUT_MS",
-        "OPENCREW_OPENCODE_LOOP_MAX_ROUNDS",
+        "CREWSWARM_OPENCODE_TIMEOUT_MS",
+        "CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS",
         "CREWSWARM_DISPATCH_TIMEOUT",
         "CREW_LEAD_PORT",
         "SWARM_DASH_PORT",
@@ -505,11 +521,13 @@ const server = http.createServer(async (req, res) => {
         "CREWSWARM_BG_CONSCIOUSNESS_MODEL",
         "SHARED_MEMORY_NAMESPACE",
         "SHARED_MEMORY_DIR",
-        "OPENCREW_RT_AGENT",
-        "OPENCREW_OPENCODE_MODEL",
-        "OPENCREW_OPENCODE_AGENT",
-        "OPENCREW_OPENCODE_ENABLED",
-        "OPENCREW_OPENCODE_LOOP",
+        "CREWSWARM_RT_AGENT",
+        "CREWSWARM_OPENCODE_MODEL",
+        "CREWSWARM_OPENCODE_AGENT",
+        "CREWSWARM_OPENCODE_ENABLED",
+        "CREWSWARM_OPENCODE_LOOP",
+        "CREWSWARM_CLAUDE_CODE_MODEL",
+        "CREWSWARM_CURSOR_MODEL",
         "WA_HTTP_PORT",
         "WA_ALLOWED_NUMBERS",
         "TELEGRAM_ALLOWED_USERNAMES",
@@ -517,9 +535,14 @@ const server = http.createServer(async (req, res) => {
         "PM_USE_QA",
         "PM_USE_SECURITY",
       ];
+      // Read from crewswarm.json env block first, fall back to process.env
+      // Credential keys are never exposed here
+      let cfgEnv = {};
+      try { cfgEnv = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")).env || {}; } catch {}
       const result = {};
       for (const v of vars) {
-        result[v] = process.env[v] ?? null;
+        if (ENV_CREDENTIAL_KEYS.has(v)) continue;
+        result[v] = cfgEnv[v] ?? process.env[v] ?? null;
       }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ env: result }));
@@ -610,7 +633,7 @@ const server = http.createServer(async (req, res) => {
           const proj = reg[projectId];
           if (proj) {
             projectEnv = {
-              OPENCREW_OUTPUT_DIR: proj.outputDir,
+              CREWSWARM_OUTPUT_DIR: proj.outputDir,
               PM_ROADMAP_FILE: proj.roadmapFile,
               PM_PROJECT_ID: projectId,
               ...(proj.featuresDoc ? { PM_FEATURES_DOC: proj.featuresDoc } : {}),
@@ -627,7 +650,7 @@ const server = http.createServer(async (req, res) => {
         detached: true,
         env: { ...process.env, OPENCLAW_DIR, ...projectEnv,
           PHASED_TASK_TIMEOUT_MS: process.env.PHASED_TASK_TIMEOUT_MS || "300000",
-          OPENCREW_RT_SEND_TIMEOUT_MS: process.env.OPENCREW_RT_SEND_TIMEOUT_MS || "300000",
+          CREWSWARM_RT_SEND_TIMEOUT_MS: process.env.CREWSWARM_RT_SEND_TIMEOUT_MS || "300000",
         },
       });
       proc.unref();
@@ -671,7 +694,7 @@ const server = http.createServer(async (req, res) => {
           const proj = reg[projectId];
           if (proj) {
             projectEnv = {
-              OPENCREW_OUTPUT_DIR: proj.outputDir,
+              CREWSWARM_OUTPUT_DIR: proj.outputDir,
               PM_ROADMAP_FILE: proj.roadmapFile,
               PM_PROJECT_ID: projectId,
               ...(proj.featuresDoc ? { PM_FEATURES_DOC: proj.featuresDoc } : {}),
@@ -688,7 +711,7 @@ const server = http.createServer(async (req, res) => {
         detached: true,
         env: { ...process.env, OPENCLAW_DIR, ...projectEnv,
           PHASED_TASK_TIMEOUT_MS: process.env.PHASED_TASK_TIMEOUT_MS || "300000",
-          OPENCREW_RT_SEND_TIMEOUT_MS: process.env.OPENCREW_RT_SEND_TIMEOUT_MS || "300000",
+          CREWSWARM_RT_SEND_TIMEOUT_MS: process.env.CREWSWARM_RT_SEND_TIMEOUT_MS || "300000",
         },
       });
       proc.unref();
@@ -885,7 +908,7 @@ const server = http.createServer(async (req, res) => {
       const logsDir = path.join(OPENCLAW_DIR, "orchestrator-logs");
       if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
       // Load RT token so pm-loop and its child gateway-bridge --send can authenticate with the RT daemon
-      let rtToken = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+      let rtToken = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
       if (!rtToken) {
         const home = os.homedir();
         for (const p of [
@@ -897,25 +920,25 @@ const server = http.createServer(async (req, res) => {
         ]) {
           try {
             const c = JSON.parse(await rf(p, "utf8"));
-            rtToken = c?.rt?.authToken || c?.env?.OPENCREW_RT_AUTH_TOKEN || "";
+            rtToken = c?.rt?.authToken || c?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
             if (rtToken) break;
           } catch {}
         }
       }
       if (!rtToken) {
-        console.warn("[pm-loop/start] No OPENCREW_RT_AUTH_TOKEN found in env or ~/.crewswarm/config.json (rt.authToken) — dispatches will fail with 'invalid realtime token'.");
+        console.warn("[pm-loop/start] No CREWSWARM_RT_AUTH_TOKEN found in env or ~/.crewswarm/config.json (rt.authToken) — dispatches will fail with 'invalid realtime token'.");
       }
       const spawnArgs = [pmLoop, ...(dryRun ? ["--dry-run"] : []), ...(projectDir ? ["--project-dir", projectDir] : [])];
       const spawnEnv = {
         ...process.env,
         OPENCLAW_DIR,
-        ...(rtToken ? { OPENCREW_RT_AUTH_TOKEN: rtToken } : {}),
+        ...(rtToken ? { CREWSWARM_RT_AUTH_TOKEN: rtToken } : {}),
         PHASED_TASK_TIMEOUT_MS: process.env.PHASED_TASK_TIMEOUT_MS || "300000",
-        OPENCREW_RT_SEND_TIMEOUT_MS: process.env.OPENCREW_RT_SEND_TIMEOUT_MS || "300000",
-        OPENCREW_RT_SEND_SENDER: "PM Loop",
-        OPENCREW_RT_BROADCAST_SENDER: "PM Loop",
+        CREWSWARM_RT_SEND_TIMEOUT_MS: process.env.CREWSWARM_RT_SEND_TIMEOUT_MS || "300000",
+        CREWSWARM_RT_SEND_SENDER: "PM Loop",
+        CREWSWARM_RT_BROADCAST_SENDER: "PM Loop",
         ...(projectId     ? { PM_PROJECT_ID: projectId }              : {}),
-        ...(projectDir    ? { OPENCREW_OUTPUT_DIR: projectDir }        : {}),
+        ...(projectDir    ? { CREWSWARM_OUTPUT_DIR: projectDir }        : {}),
         ...(projectRoadmap    ? { PM_ROADMAP_FILE: projectRoadmap }    : {}),
         ...(projectFeaturesDoc ? { PM_FEATURES_DOC: projectFeaturesDoc } : {}),
         ...(pmOptions.useQA          === false ? { PM_USE_QA: "0" }          : {}),
@@ -1004,7 +1027,7 @@ const server = http.createServer(async (req, res) => {
       const csConfigPath = path.join(os.homedir(), ".crewswarm", "config.json");
       let token = "";
       try { token = JSON.parse(fs.readFileSync(csConfigPath, "utf8"))?.rt?.authToken || ""; } catch {}
-      if (!token) token = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+      if (!token) token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ token: token ? "SET" : "" }));
       return;
@@ -1027,8 +1050,8 @@ const server = http.createServer(async (req, res) => {
     // ── Settings: OpenCode project dir + fallback model ─────────────────────
     if (url.pathname === "/api/settings/opencode-project" && req.method === "GET") {
       const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
-      let dir = process.env.OPENCREW_OPENCODE_PROJECT || "";
-      let fallbackModel = process.env.OPENCREW_OPENCODE_FALLBACK_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+      let dir = process.env.CREWSWARM_OPENCODE_PROJECT || "";
+      let fallbackModel = process.env.CREWSWARM_OPENCODE_FALLBACK_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
       try {
         const c = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
         if (c.opencodeProject) dir = c.opencodeProject;
@@ -1056,7 +1079,7 @@ const server = http.createServer(async (req, res) => {
       fs.mkdirSync(cfgDir, { recursive: true });
       let cfg = {};
       try { cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8")); } catch {}
-      if (dir !== undefined) { if (dir) cfg.opencodeProject = dir; else delete cfg.opencodeProject; process.env.OPENCREW_OPENCODE_PROJECT = dir || ""; }
+      if (dir !== undefined) { if (dir) cfg.opencodeProject = dir; else delete cfg.opencodeProject; process.env.CREWSWARM_OPENCODE_PROJECT = dir || ""; }
       if (fallbackModel !== undefined) { if (fallbackModel && String(fallbackModel).trim()) cfg.opencodeFallbackModel = String(fallbackModel).trim(); else delete cfg.opencodeFallbackModel; }
       fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
@@ -1544,7 +1567,7 @@ const server = http.createServer(async (req, res) => {
       let body = ""; for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
       // Forward RT auth token so crew-lead's /chat Bearer check passes
-      let clAuthToken = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+      let clAuthToken = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
       if (!clAuthToken) {
         try { clAuthToken = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch {}
       }
@@ -1570,7 +1593,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/crew-lead/clear" && req.method === "POST") {
       let body = ""; for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
-      let clAuthToken2 = process.env.OPENCREW_RT_AUTH_TOKEN || "";
+      let clAuthToken2 = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
       if (!clAuthToken2) { try { clAuthToken2 = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch {} }
       const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/clear`, {
         method: "POST", headers: { "content-type": "application/json", ...(clAuthToken2 ? { "authorization": `Bearer ${clAuthToken2}` } : {}) }, body,
@@ -2943,8 +2966,8 @@ ORDER BY day DESC, cost DESC;`;
         const home = os.homedir();
         for (const [p, key] of [
           [path.join(home, ".crewswarm", "config.json"), "rt.authToken"],
-          [path.join(home, ".crewswarm", "crewswarm.json"), "env.OPENCREW_RT_AUTH_TOKEN"],
-          [path.join(home, ".openclaw", "openclaw.json"), "env.OPENCREW_RT_AUTH_TOKEN"],
+          [path.join(home, ".crewswarm", "crewswarm.json"), "env.CREWSWARM_RT_AUTH_TOKEN"],
+          [path.join(home, ".openclaw", "openclaw.json"), "env.CREWSWARM_RT_AUTH_TOKEN"],
         ]) {
           try {
             const c = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -2983,7 +3006,7 @@ ORDER BY day DESC, cost DESC;`;
           ? path.join(OPENCLAW_DIR, "scripts", "opencrew-rt-daemon.mjs")
           : path.join(os.homedir(), "swarm", ".opencode", "plugin", "opencrew-rt-daemon.mjs");
         spawnProc("node", [rtDaemon], {
-          env: { ...process.env, OPENCREW_RT_AUTH_TOKEN: RT_TOKEN, OPENCLAW_ALLOWED_AGENTS: CREW_AGENTS },
+          env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: RT_TOKEN, OPENCLAW_ALLOWED_AGENTS: CREW_AGENTS },
           detached: true, stdio: "ignore",
         }).unref();
       } else if (id === "agents") {
@@ -3202,6 +3225,83 @@ ORDER BY day DESC, cost DESC;`;
       const { status, body: rb } = await proxyToCL("POST", url.pathname, body || undefined);
       res.writeHead(status, { "content-type": "application/json" });
       res.end(rb);
+      return;
+    }
+
+    // ── Engines API ─────────────────────────────────────────────────────────────
+    if (url.pathname === "/api/engines" && req.method === "GET") {
+      try {
+        const { execSync } = await import("node:child_process");
+        const bundledDir = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "engines");
+        const userDir = path.join(os.homedir(), ".crewswarm", "engines");
+        const enginesMap = {};
+        for (const dir of [bundledDir, userDir]) {
+          if (!fs.existsSync(dir)) continue;
+          for (const f of fs.readdirSync(dir).filter(f => f.endsWith(".json"))) {
+            try {
+              const eng = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+              if (eng.id) enginesMap[eng.id] = { ...eng, source: dir === userDir ? "user" : "bundled" };
+            } catch {}
+          }
+        }
+        const engines = Object.values(enginesMap).map(eng => {
+          let installed = false;
+          try {
+            const bin = eng.bin || eng.id;
+            execSync(`which ${bin}`, { stdio: "ignore" });
+            installed = true;
+          } catch {
+            if (eng.binAlternate) {
+              const alt = eng.binAlternate.replace(/^~/, os.homedir());
+              installed = fs.existsSync(alt);
+            }
+          }
+          const missingEnv = (eng.requiresEnv || []).filter(k => !process.env[k]);
+          return { ...eng, installed, missingEnv, ready: installed && missingEnv.length === 0 };
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ engines }));
+      } catch (err) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/engines/import" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      try {
+        const { url: engineUrl } = JSON.parse(body || "{}");
+        if (!engineUrl) throw new Error("url required");
+        const rawUrl = engineUrl
+          .replace("github.com", "raw.githubusercontent.com")
+          .replace("/blob/", "/");
+        const resp = await fetch(rawUrl, { signal: AbortSignal.timeout(10000) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const eng = await resp.json();
+        if (!eng.id || !eng.label) throw new Error("Engine descriptor must have id and label");
+        const engDir = path.join(os.homedir(), ".crewswarm", "engines");
+        if (!fs.existsSync(engDir)) fs.mkdirSync(engDir, { recursive: true });
+        const outPath = path.join(engDir, `${eng.id}.json`);
+        if (!outPath.startsWith(engDir)) throw new Error("Invalid engine id");
+        fs.writeFileSync(outPath, JSON.stringify(eng, null, 2), "utf8");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, id: eng.id, label: eng.label }));
+      } catch (err) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/engines/") && req.method === "DELETE") {
+      const id = url.pathname.split("/").pop();
+      const engDir = path.join(os.homedir(), ".crewswarm", "engines");
+      const target = path.join(engDir, `${id}.json`);
+      if (!target.startsWith(engDir)) { res.writeHead(400); res.end("{}"); return; }
+      try { fs.unlinkSync(target); } catch {}
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
 

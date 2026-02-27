@@ -925,10 +925,10 @@ function _callAgentRaw(agentId, message, { timeout } = {}) {
   const agentTimeout = timeout || (timeoutNonDoers.has(agentId) ? TASK_TIMEOUT * 2 : TASK_TIMEOUT);
   const env = {
     ...process.env,
-    OPENCREW_RT_SEND_TIMEOUT_MS: String(agentTimeout),
+    CREWSWARM_RT_SEND_TIMEOUT_MS: String(agentTimeout),
   };
   // All coding agents get the project dir so OpenCode runs in the right directory
-  env.OPENCREW_OPENCODE_PROJECT = OUTPUT_DIR;
+  env.CREWSWARM_OPENCODE_PROJECT = OUTPUT_DIR;
   return new Promise((resolve, reject) => {
     const proc = spawn("node", [BRIDGE_PATH, "--send", agentId, message], {
       stdio: ["inherit", "pipe", "pipe"],

@@ -3,7 +3,7 @@
  * Test OpenCode with a simple task.
  * Usage:
  *   node scripts/test-opencode.mjs
- *   OPENCREW_OPENCODE_MODEL=groq/moonshotai/kimi-k2-instruct-0905 node scripts/test-opencode.mjs
+ *   CREWSWARM_OPENCODE_MODEL=groq/moonshotai/kimi-k2-instruct-0905 node scripts/test-opencode.mjs
  */
 import { spawn } from "child_process";
 import { mkdtempSync } from "fs";
@@ -11,11 +11,11 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 const model =
-  process.env.OPENCREW_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+  process.env.CREWSWARM_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
 const prompt =
   "Create a file test-hello.txt in the project directory with the single line: Hello from OpenCode";
 const projectDir =
-  process.env.OPENCREW_OPENCODE_PROJECT ||
+  process.env.CREWSWARM_OPENCODE_PROJECT ||
   mkdtempSync(join(tmpdir(), "opencode-test-"));
 
 console.log("[test-opencode] Model:", model);

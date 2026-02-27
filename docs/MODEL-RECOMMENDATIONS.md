@@ -1,6 +1,6 @@
 # Model Recommendations
 
-All providers below are pre-configured in `~/.crewswarm/crewswarm.json`. To swap a model for any agent, change its `"model"` field — no code changes required. The `OPENCREW_OPENCODE_MODEL` env var overrides the model used by OpenCode (the primary coding executor).
+All providers below are pre-configured in `~/.crewswarm/crewswarm.json`. To swap a model for any agent, change its `"model"` field — no code changes required. The `CREWSWARM_OPENCODE_MODEL` env var overrides the model used by OpenCode (the primary coding executor).
 
 ---
 
@@ -30,7 +30,7 @@ OpenCode's proprietary model pool — accessed via `https://opencode.ai/zen/v1` 
 | `opencode/gpt-5.2-codex` | — | 200K | Flagship coding model |
 | `opencode/gpt-5.1-codex-mini` | — | 200K | Lighter/faster Codex |
 | `opencode/claude-opus-4-6` | — | 200K | Claude Opus via OpenCode |
-| `opencode/glm-5-free` | — | — | **Free tier** — current `OPENCREW_OPENCODE_MODEL` default; low quality |
+| `opencode/glm-5-free` | — | — | **Free tier** — current `CREWSWARM_OPENCODE_MODEL` default; low quality |
 
 **Pricing:** Covered by your Zen subscription. No per-token billing.
 
@@ -126,9 +126,9 @@ European AI lab (French). Strong on instruction following, great European data p
 **Standout:** `devstral-small-latest` — specifically trained for agentic software engineering tasks. Uses tools, reads files, writes patches. Worth testing against Codex for the website build.
 
 ```bash
-OPENCREW_OPENCODE_MODEL=mistral/codestral-latest node pm-loop.mjs
+CREWSWARM_OPENCODE_MODEL=mistral/codestral-latest node pm-loop.mjs
 # or agentic variant:
-OPENCREW_OPENCODE_MODEL=mistral/devstral-small-latest node pm-loop.mjs
+CREWSWARM_OPENCODE_MODEL=mistral/devstral-small-latest node pm-loop.mjs
 ```
 
 ---
@@ -147,7 +147,7 @@ Cerebras runs on custom silicon (WSE chips) — not GPUs. The result is inferenc
 
 **To swap from Groq → Cerebras** (same model, much faster):
 ```bash
-OPENCREW_OPENCODE_MODEL=cerebras/llama-3.3-70b node pm-loop.mjs
+CREWSWARM_OPENCODE_MODEL=cerebras/llama-3.3-70b node pm-loop.mjs
 ```
 
 ---
@@ -204,7 +204,7 @@ Then add to `~/.crewswarm/crewswarm.json` under `models.providers.ollama.models`
 
 And use with:
 ```bash
-OPENCREW_OPENCODE_MODEL=ollama/qwen2.5-coder:7b node pm-loop.mjs
+CREWSWARM_OPENCODE_MODEL=ollama/qwen2.5-coder:7b node pm-loop.mjs
 ```
 
 ---
@@ -325,7 +325,7 @@ These use the same OpenAI-compatible API format. Add to `~/.crewswarm/crewswarm.
 }
 ```
 ```bash
-OPENCREW_OPENCODE_MODEL=openai/codex-mini-latest node pm-loop.mjs
+CREWSWARM_OPENCODE_MODEL=openai/codex-mini-latest node pm-loop.mjs
 ```
 
 ### Best value (DeepSeek does the heavy lifting)
@@ -340,7 +340,7 @@ OPENCREW_OPENCODE_MODEL=openai/codex-mini-latest node pm-loop.mjs
 }
 ```
 ```bash
-OPENCREW_OPENCODE_MODEL=deepseek/deepseek-chat node pm-loop.mjs
+CREWSWARM_OPENCODE_MODEL=deepseek/deepseek-chat node pm-loop.mjs
 ```
 
 ### All-free (Gemini + Groq — zero cost, solid quality)
@@ -356,7 +356,7 @@ OPENCREW_OPENCODE_MODEL=deepseek/deepseek-chat node pm-loop.mjs
 ```
 
 ```bash
-OPENCREW_OPENCODE_MODEL=google/gemini-2.0-flash node pm-loop.mjs
+CREWSWARM_OPENCODE_MODEL=google/gemini-2.0-flash node pm-loop.mjs
 ```
 
 ### Maximum quality (current Zen subscription)
@@ -419,10 +419,10 @@ OPENCREW_OPENCODE_MODEL=google/gemini-2.0-flash node pm-loop.mjs
 
 **For PM Loop / OpenCode executor (env var):**
 ```bash
-OPENCREW_OPENCODE_MODEL=anthropic/claude-sonnet-4-20250514 node pm-loop.mjs
+CREWSWARM_OPENCODE_MODEL=anthropic/claude-sonnet-4-20250514 node pm-loop.mjs
 ```
 
-**Per-run (dashboard):** Set `OPENCREW_OPENCODE_MODEL` in your shell before starting the dashboard.
+**Per-run (dashboard):** Set `CREWSWARM_OPENCODE_MODEL` in your shell before starting the dashboard.
 
 **Check what's running:**
 ```bash

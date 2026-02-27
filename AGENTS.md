@@ -231,12 +231,12 @@ See `~/.crewswarm/crewswarm.json` → `agents[].tools.crewswarmAllow` to overrid
 ### PM-loop synthesis → OpenCode
 
 - After the swarm completes roadmap tasks, PM-loop calls **crew-main** for final synthesis (audit + assembly).
-- The crew-main daemon is in `OPENCODE_AGENTS` in `gateway-bridge.mjs`, so it routes those tasks to **OpenCode** when `OPENCREW_OPENCODE_ENABLED` is on.
-- PM-loop sets `OPENCREW_OPENCODE_PROJECT` to the PM output dir when invoking crew-main; the bridge passes it as `payload.projectDir` so OpenCode runs in the build output directory.
+- The crew-main daemon is in `OPENCODE_AGENTS` in `gateway-bridge.mjs`, so it routes those tasks to **OpenCode** when `CREWSWARM_OPENCODE_ENABLED` is on.
+- PM-loop sets `CREWSWARM_OPENCODE_PROJECT` to the PM output dir when invoking crew-main; the bridge passes it as `payload.projectDir` so OpenCode runs in the build output directory.
 
 ### Ouroboros-style LLM ↔ Engine loop
 
-- When an agent has **Engine loop** enabled (`opencodeLoop: true` in `crewswarm.json` or `OPENCREW_OPENCODE_LOOP=1`), the gateway runs a multi-step loop instead of a single engine call: the **role’s LLM** is asked for “STEP: &lt;instruction&gt; or DONE”; each STEP is sent to the agent's active engine (OpenCode, Cursor CLI, Claude Code, or Codex) as a mini task; results are fed back until the LLM says DONE or `OPENCREW_OPENCODE_LOOP_MAX_ROUNDS` (default 10) is reached. Same idea as [Ouroboros](https://github.com/joi-lab/ouroboros) tool loop, adapted for multi-agent: each agent can run this loop when handling a task.
+- When an agent has **Engine loop** enabled (`opencodeLoop: true` in `crewswarm.json` or `CREWSWARM_OPENCODE_LOOP=1`), the gateway runs a multi-step loop instead of a single engine call: the **role’s LLM** is asked for “STEP: &lt;instruction&gt; or DONE”; each STEP is sent to the agent's active engine (OpenCode, Cursor CLI, Claude Code, or Codex) as a mini task; results are fed back until the LLM says DONE or `CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS` (default 10) is reached. Same idea as [Ouroboros](https://github.com/joi-lab/ouroboros) tool loop, adapted for multi-agent: each agent can run this loop when handling a task.
 
 ---
 
@@ -410,7 +410,7 @@ Edit `~/.crewswarm/crewswarm.json`:
 
 Format is always `provider/model-id`. Provider must have an API key in the `providers` block of the same file.
 
-To enable the **Ouroboros-style LLM ↔ OpenCode loop** for an agent (LLM decomposes task into steps, each step run by OpenCode, until DONE), set `opencodeLoop: true` for that agent in `crewswarm.json`, or set env `OPENCREW_OPENCODE_LOOP=1` for all. Optional: `OPENCREW_OPENCODE_LOOP_MAX_ROUNDS` (default 10).
+To enable the **Ouroboros-style LLM ↔ OpenCode loop** for an agent (LLM decomposes task into steps, each step run by OpenCode, until DONE), set `opencodeLoop: true` for that agent in `crewswarm.json`, or set env `CREWSWARM_OPENCODE_LOOP=1` for all. Optional: `CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS` (default 10).
 
 ### Change an agent's system prompt
 

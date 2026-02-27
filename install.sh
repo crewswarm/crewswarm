@@ -136,6 +136,18 @@ if [[ -d "$REPO_DIR/skills" ]]; then
   success "Skills synced to ~/.crewswarm/skills/"
 fi
 
+# Bootstrap engines directory with bundled engine descriptors
+ENGINES_DIR="$CREWSWARM_DIR/engines"
+mkdir -p "$ENGINES_DIR"
+if [[ -d "$REPO_DIR/engines" ]]; then
+  for f in "$REPO_DIR/engines"/*.json; do
+    [[ -f "$f" ]] || continue
+    dest="$ENGINES_DIR/$(basename "$f")"
+    cp "$f" "$dest"
+  done
+  success "Engines synced to ~/.crewswarm/engines/"
+fi
+
 # Bootstrap agent prompts if not present (try repo config/prompts/ dir, or empty default)
 PROMPTS_FILE="$CREWSWARM_DIR/agent-prompts.json"
 if [[ ! -f "$PROMPTS_FILE" ]]; then
