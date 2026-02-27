@@ -1,3 +1,25 @@
+export function renderStatusBadge(liveness, ageSec) {
+  if (liveness === 'online')
+    return '<span title="● online — heartbeat <90s" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);margin-right:4px;flex-shrink:0;"></span>';
+  if (liveness === 'stale')
+    return '<span title="● stale — last seen >' + (ageSec || '?') + 's ago" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:4px;flex-shrink:0;"></span>';
+  if (liveness === 'offline')
+    return '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red-hi);margin-right:4px;flex-shrink:0;"></span>';
+  return '<span title="● unknown — never seen" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:4px;flex-shrink:0;"></span>';
+}
+
+export function showLoading(el, msg) {
+  if (el) el.innerHTML = '<div class="meta" style="padding:20px;">' + (msg || 'Loading\u2026') + '</div>';
+}
+
+export function showEmpty(el, msg) {
+  if (el) el.innerHTML = '<div class="meta" style="padding:20px;">' + (msg || 'No items found.') + '</div>';
+}
+
+export function showError(el, msg) {
+  if (el) el.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">' + (msg || 'An error occurred.') + '</div>';
+}
+
 export function escHtml(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

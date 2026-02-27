@@ -1,7 +1,7 @@
 import { getJSON, postJSON } from './core/api.js';
-import { escHtml, showNotification, fmt, createdAt, appendChatBubble } from './core/dom.js';
+import { escHtml, showNotification, fmt, createdAt, appendChatBubble, showLoading, showEmpty, showError, renderStatusBadge } from './core/dom.js';
 import { sortAgents, state } from './core/state.js';
-import { showBenchmarks as showBenchmarksTab, loadBenchmarks, loadBenchmarkLeaderboard } from './tabs/benchmarks-tab.js';
+import { showBenchmarks as showBenchmarksTab, loadBenchmarks, loadBenchmarkLeaderboard, loadBenchmarkTasks, onBenchmarkTaskSelect, runBenchmarkTask, stopBenchmarkRun } from './tabs/benchmarks-tab.js';
 import {
   initServicesTab,
   showServices,
@@ -167,64 +167,6 @@ import {
   continuousBuildRun,
 } from './tabs/projects-tab.js';
 
-// ── UI helper functions ───────────────────────────────────────────────────────
-
-function renderStatusBadge(liveness) {
-  if (liveness === 'online')
-    return '<span title="● online — heartbeat <90s" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);margin-right:4px;flex-shrink:0;"></span>';
-  if (liveness === 'stale')
-    return '<span title="● stale" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:4px;flex-shrink:0;"></span>';
-  if (liveness === 'offline')
-    return '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red-hi);margin-right:4px;flex-shrink:0;"></span>';
-  return '<span title="● unknown — never seen" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:4px;flex-shrink:0;"></span>';
-}
-
-function renderAgentCard(a) {
-  const badge = renderStatusBadge(a.liveness);
-  return `<div class="agent-card" id="agent-card-${a.id}">
-    <div class="agent-card-header">
-      <div class="agent-avatar" style="position:relative;">${a.emoji || '🤖'}</div>
-      <div class="agent-meta">
-        <div class="agent-id" style="display:flex;align-items:center;">${badge}${a.id}
-          <span class="meta" style="font-weight:400;margin-left:4px;">· ${a.name || ''}</span>
-        </div>
-        <div style="font-size:11px;color:var(--text-2);margin-top:2px;">${a.model || '(no model)'}</div>
-      </div>
-    </div>
-  </div>`;
-}
-
-function renderProviderCard(p) {
-  const icon = p.icon || '🔌';
-  const hasKey = !!p.hasKey;
-  const badge = hasKey
-    ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">key set ✓</span>`
-    : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
-  return `<div class="card" style="margin-bottom:8px;">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <span style="font-size:18px;width:24px;text-align:center;">${icon}</span>
-      <div style="flex:1;">
-        <div style="font-weight:600;font-size:13px;">${p.id || p.label || ''}</div>
-        <div style="font-size:11px;color:var(--text-2);">${p.hint || p.baseUrl || ''}</div>
-      </div>
-      ${badge}
-    </div>
-  </div>`;
-}
-
-function showLoading(el, msg) {
-  if (el) el.innerHTML = '<div class="meta" style="padding:20px;">' + (msg || 'Loading\u2026') + '</div>';
-}
-
-function showEmpty(el, msg) {
-  if (el) el.innerHTML = '<div class="meta" style="padding:20px;">' + (msg || 'No items found.') + '</div>';
-}
-
-function showError(el, msg) {
-  if (el) el.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">' + (msg || 'An error occurred.') + '</div>';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 let selected = null;
 let agents = [];
@@ -1848,6 +1790,10 @@ const ACTION_REGISTRY = {
   loadRunSkills,
   loadBenchmarks,
   loadBenchmarkLeaderboard,
+  loadBenchmarkTasks,
+  onBenchmarkTaskSelect,
+  runBenchmarkTask,
+  stopBenchmarkRun,
   loadEngines,
   toggleImportEngine,
   importEngineFromUrl,
@@ -2002,7 +1948,8 @@ Object.assign(window, {
   addAllowlistPattern, applyNewAgentToolPreset, applyPromptPreset,
   bulkSetRoute, cancelSkillForm, chatAtAtInput, chatKeydown,
   clearChatHistory, filterSkills, loadAllUsage, loadBenchmarkLeaderboard,
-  loadBenchmarks, loadBuildProjectPicker, loadFiles, loadOcStats,
+  loadBenchmarks, loadBenchmarkTasks, onBenchmarkTaskSelect, runBenchmarkTask, stopBenchmarkRun,
+  loadBuildProjectPicker, loadFiles, loadOcStats,
   loadRunSkills, loadServices, loadSpending, loadTelegramSessions,
   loadTgMessages, loadToolMatrix, loadWaMessages, onBuildProjectChange,
   onChatProjectChange, pickFolder, renderWaContactRows, resetSpending,

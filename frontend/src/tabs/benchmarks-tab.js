@@ -94,3 +94,136 @@ export async function loadBenchmarkLeaderboard(benchmarkId) {
     tableEl.innerHTML = '<div style="color:var(--red);padding:20px;">Error: ' + escHtml(e.message) + '</div>';
   }
 }
+
+// ── Custom runner — load SWE-Bench tasks into the task picker ────────────────
+export async function loadBenchmarkTasks() {
+  const sel = document.getElementById('benchmarkTaskSelect');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Loading tasks… —</option>';
+  try {
+    const r = await fetch('/api/benchmark-tasks?benchmark=swe-bench-verified&offset=0&length=50');
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed to load tasks');
+    const rows = data.rows || [];
+    _runnerTasks = rows.map(r => r.row || r);
+    sel.innerHTML = '<option value="">— Pick a task —</option>';
+    _runnerTasks.forEach((task, i) => {
+      const id = task.instance_id || task.id || `task-${i}`;
+      const repo = task.repo || '';
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = id + (repo ? ` (${repo})` : '');
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    sel.innerHTML = '<option value="">— Failed: ' + escHtml(e.message) + ' —</option>';
+  }
+}
+
+// Show problem statement preview when a task is selected
+export function onBenchmarkTaskSelect(idx) {
+  const preview = document.getElementById('benchmarkTaskPreview');
+  if (!preview) return;
+  if (idx === '' || idx == null || !_runnerTasks[idx]) { preview.style.display = 'none'; return; }
+  const task = _runnerTasks[idx];
+  const ps = task.problem_statement || task.description || '(no problem statement)';
+  preview.textContent = ps.slice(0, 800) + (ps.length > 800 ? '\n…' : '');
+  preview.style.display = 'block';
+}
+
+// ── Stream a benchmark task through an engine ────────────────────────────────
+export async function runBenchmarkTask() {
+  const sel = document.getElementById('benchmarkTaskSelect');
+  const engineSel = document.getElementById('benchmarkRunEngine');
+  const modelInput = document.getElementById('benchmarkRunModel');
+  const outputEl = document.getElementById('benchmarkRunOutput');
+  const streamEl = document.getElementById('benchmarkRunStream');
+  const statusEl = document.getElementById('benchmarkRunStatus');
+  const stopBtn = document.getElementById('benchmarkRunStop');
+  const runBtn = document.getElementById('benchmarkRunBtn');
+  if (!sel || !engineSel || !outputEl || !streamEl) return;
+
+  const idx = sel.value;
+  if (idx === '' || idx == null || !_runnerTasks[idx]) {
+    alert('Pick a task first — click "↻ Load Tasks" if the list is empty.');
+    return;
+  }
+  const task = _runnerTasks[idx];
+  const engine = engineSel.value;
+  const model = (modelInput?.value || '').trim() || undefined;
+
+  // Cancel any existing run
+  if (_runnerAbort) { try { _runnerAbort.abort(); } catch {} }
+  _runnerAbort = new AbortController();
+
+  outputEl.style.display = 'flex';
+  streamEl.textContent = '';
+  statusEl.textContent = `Running on ${engine}…`;
+  if (stopBtn) stopBtn.style.display = 'inline-block';
+  if (runBtn) runBtn.disabled = true;
+
+  try {
+    const resp = await fetch('/api/benchmark-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        instanceId: task.instance_id || task.id,
+        problemStatement: task.problem_statement || task.description || '',
+        repo: task.repo || '',
+        hints: task.hints_text || '',
+        engine,
+        ...(model ? { model } : {}),
+      }),
+      signal: _runnerAbort.signal,
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.replace(/^data:\s*/, '');
+        if (!line) continue;
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === 'chunk' && ev.text) {
+            streamEl.textContent += ev.text;
+            streamEl.scrollTop = streamEl.scrollHeight;
+          } else if (ev.type === 'done') {
+            const ok = ev.exitCode === 0 || ev.exitCode == null;
+            statusEl.textContent = ok ? '✓ Done' : `✗ Exit ${ev.exitCode}`;
+            statusEl.style.color = ok ? 'var(--green)' : 'var(--red)';
+          } else if (ev.type === 'error' || ev.error) {
+            streamEl.textContent += '\n[error] ' + (ev.error || ev.message || JSON.stringify(ev));
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      streamEl.textContent += '\n[stream error] ' + e.message;
+      statusEl.textContent = '✗ Error';
+      statusEl.style.color = 'var(--red)';
+    } else {
+      statusEl.textContent = '⏹ Stopped';
+      statusEl.style.color = 'var(--text-2)';
+    }
+  } finally {
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (runBtn) runBtn.disabled = false;
+    _runnerAbort = null;
+  }
+}
+
+export function stopBenchmarkRun() {
+  if (_runnerAbort) {
+    try { _runnerAbort.abort(); } catch {}
+    _runnerAbort = null;
+  }
+}

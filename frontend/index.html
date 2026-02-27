@@ -976,7 +976,7 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-2);">TASK</label>
-              <select id="benchmarkTaskSelect" style="width:100%;margin-top:4px;padding:7px 10px;font-size:12px;">
+              <select id="benchmarkTaskSelect" data-onchange="onBenchmarkTaskSelect" data-onchange-arg="this.value" style="width:100%;margin-top:4px;padding:7px 10px;font-size:12px;">
                 <option value="">— Load tasks first —</option>
               </select>
             </div>

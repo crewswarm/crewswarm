@@ -5,7 +5,7 @@
  */
 
 import { getJSON, postJSON } from '../core/api.js';
-import { showNotification } from '../core/dom.js';
+import { showNotification, showLoading, showError } from '../core/dom.js';
 
 let _hideAllViews = () => {};
 let _setNavActive = () => {};
@@ -296,11 +296,11 @@ export async function fetchBuiltinModels(providerId, btn) {
 export async function loadProviders() {
   const list = document.getElementById('providersList');
   if (!list) return;
-  list.innerHTML = '<div class="meta" style="padding:20px;">Loading providers...</div>';
+  showLoading(list, 'Loading providers...');
   try {
     const data = await getJSON('/api/providers');
     const providers = data.providers || [];
-    if (!providers.length) { list.innerHTML = '<div class="meta" style="padding:20px;">No providers found. Check ~/.crewswarm/crewswarm.json</div>'; return; }
+    if (!providers.length) { showEmpty(list, 'No providers found. Check ~/.crewswarm/crewswarm.json'); return; }
     list.innerHTML = '';
     providers.forEach(p => {
       const icon = PROVIDER_ICONS[p.id] || '🔌';
@@ -336,7 +336,7 @@ export async function loadProviders() {
       `;
       list.appendChild(card);
     });
-  } catch(e) { list.innerHTML = '<div class="meta" style="padding:20px; color:var(--red-hi);">Error: ' + e.message + '</div>'; }
+  } catch(e) { showError(list, 'Error: ' + e.message); }
 }
 
 export function toggleKeyVis(inputId, btn) {

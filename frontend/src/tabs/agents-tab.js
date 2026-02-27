@@ -1,5 +1,5 @@
 import { getJSON, postJSON } from '../core/api.js';
-import { showNotification } from '../core/dom.js';
+import { showNotification, renderStatusBadge } from '../core/dom.js';
 import { sortAgents } from '../core/state.js';
 
 let hideAllViews = () => {};
@@ -89,13 +89,7 @@ async function loadAgents_cfg(){
       card.id = 'agent-card-' + a.id;
       const modelOpts = _allModels.map(m => `<option value="${m}" ${m === a.model ? 'selected' : ''}>${m}</option>`).join('');
       const customOpt = (!a.model || _allModels.includes(a.model)) ? '' : `<option value="${a.model}" selected>${a.model} (custom)</option>`;
-      const liveDot = a.liveness === 'online'
-        ? '<span title="● online — heartbeat <90s" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);margin-right:4px;flex-shrink:0;"></span>'
-        : a.liveness === 'stale'
-        ? '<span title="● stale — last seen >' + (a.ageSec||'?') + 's ago" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:4px;flex-shrink:0;"></span>'
-        : a.liveness === 'offline'
-        ? '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red-hi);margin-right:4px;flex-shrink:0;"></span>'
-        : '<span title="● unknown — never seen" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:4px;flex-shrink:0;"></span>';
+      const liveDot = renderStatusBadge(a.liveness, a.ageSec);
       card.innerHTML = `
         <div class="agent-card-header">
           <div class="agent-avatar" id="avatar-${a.id}" style="position:relative;">${a.emoji}</div>
