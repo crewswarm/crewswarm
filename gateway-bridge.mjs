@@ -22,6 +22,7 @@ import {
   loadAgentList,
   loadAgentLLMConfig,
   loadLoopBrainConfig,
+  loadProviderMap,
   CREWSWARM_RT_SWARM_AGENTS,
   RT_TO_GATEWAY_AGENT_MAP,
 } from "./lib/agents/registry.mjs";
