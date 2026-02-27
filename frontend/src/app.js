@@ -31,6 +31,8 @@ import {
   bulkSetRoute,
   startCrew,
   populateModelDropdown,
+  applyNewAgentToolPreset,
+  applyPromptPreset,
 } from './tabs/agents-tab.js';
 import {
   showSkills,

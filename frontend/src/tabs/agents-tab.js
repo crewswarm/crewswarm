@@ -755,7 +755,7 @@ const NEW_AGENT_TOOL_PRESETS = {
   comms:        ['telegram','read_file'],                       // telegram notification agent
 };
 
-function applyNewAgentToolPreset() {
+export function applyNewAgentToolPreset() {
   const preset = document.getElementById('naToolPreset').value;
   if (!preset || !NEW_AGENT_TOOL_PRESETS[preset]) return;
   const allowed = NEW_AGENT_TOOL_PRESETS[preset];
@@ -1185,7 +1185,7 @@ const PRESET_META = {
   main:        { id: 'crew-main',       name: 'Main Agent',        emoji: '⚡' },
 };
 
-window.applyPromptPreset = function() {
+export function applyPromptPreset() {
   const val = document.getElementById('naPromptPreset').value;
   if (!val || !PROMPT_PRESETS[val]) return;
   document.getElementById('naPrompt').value = PROMPT_PRESETS[val];
@@ -1204,7 +1204,7 @@ window.applyPromptPreset = function() {
     const opt = PRESET_OPTIONS.find(p => p.value === val);
     if (opt) themeEl.value = opt.label.replace(/^[\u{1F000}-\u{1FFFF}\u2600-\u27BF\uFE0F\u20D0-\u20FF\s]+/u, '').trim();
   }
-};
+}
 
 // Models confirmed broken via API testing — return empty strings
 const BROKEN_MODELS = new Set([
