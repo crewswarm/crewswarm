@@ -1,29 +1,15 @@
+import { getJSON, postJSON } from './core/api.js';
+import { escHtml, showNotification, fmt, createdAt, appendChatBubble } from './core/dom.js';
+import { AGENT_RANK, sortAgents } from './core/state.js';
+import { loadBenchmarkOptions, loadBenchmarks, loadBenchmarkLeaderboard } from './tabs/benchmarks-tab.js';
+
 let selected = null;
 let agents = [];
-const AGENT_RANK = {
-  'crew-lead': 0,
-  'orchestrator': 1, 'crew-main': 2,
-  'crew-pm': 3, 'crew-architect': 4,
-  'crew-coder': 5, 'crew-coder-back': 6, 'crew-coder-front': 7, 'crew-frontend': 8,
-  'crew-ml': 9, 'crew-fixer': 10,
-  'crew-qa': 11, 'crew-security': 12,
-  'crew-researcher': 13, 'crew-copywriter': 14, 'crew-seo': 15,
-  'crew-github': 16, 'crew-db-migrator': 17,
-  'crew-telegram': 18, 'crew-mega': 19,
-};
-function sortAgents(arr) {
-  return (arr || []).sort((a, b) => (AGENT_RANK[a.id] ?? 50) - (AGENT_RANK[b.id] ?? 50));
-}
 async function loadAgents() {
   try {
     agents = sortAgents(await getJSON('/api/agents'));
   } catch (e) { console.error('Failed to load agents:', e); }
 }
-async function getJSON(p){ const r = await fetch(p); if(!r.ok) throw new Error(await r.text()); return r.json(); }
-async function postJSON(p, body){ const r = await fetch(p, { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body) }); const txt = await r.text(); if(!r.ok) throw new Error(txt.slice(0,120)); try { return JSON.parse(txt); } catch { throw new Error('Bad response: ' + txt.slice(0,80)); } }
-function showNotification(msg, type){ const d = document.createElement('div'); d.className = 'notification' + (type === 'error' || type === true ? ' error' : type === 'warning' ? ' warning' : ''); d.setAttribute('role','alert'); d.setAttribute('aria-live','polite'); d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 4500); }
-function fmt(ts){ try { return new Date(ts).toLocaleTimeString(); } catch { return String(ts); } }
-function createdAt(info){ return (info && info.time && info.time.created) || ''; }
 async function loadSessions(){
   const box = document.getElementById('sessions');
   if (box) box.innerHTML = '<div style="padding:20px;">Loading…</div>';
@@ -1219,38 +1205,6 @@ function chatKeydown(e) {
   if (menu && menu.style.display === 'block' && (e.key === 'Escape' || e.key === 'Tab')) { menu.style.display = 'none'; }
 }
 
-function appendChatBubble(role, text, fallbackModel, fallbackReason) {
-  const box = document.getElementById('chatMessages');
-  if (!box) return;
-  const isUser = role === 'user';
-  if (!isUser) {
-    const last = box.lastElementChild;
-    if (last && last.children.length >= 2) {
-      const lastBubbleText = last.children[1].textContent;
-      if (lastBubbleText.trim() === String(text).trim()) return;
-    }
-  }
-  const div = document.createElement('div');
-  div.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isUser ? 'flex-end' : 'flex-start') + ';gap:4px;';
-  const labelEl = document.createElement('div');
-  labelEl.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;display:flex;align-items:center;gap:6px;';
-  const cl = window._crewLeadInfo || { emoji: '🧠', name: 'crew-lead' };
-  const displayName = isUser ? 'You' : (role === 'assistant' ? (cl.emoji + ' ' + cl.name) : role);
-  labelEl.textContent = displayName;
-  if (!isUser && fallbackModel) {
-    const badge = document.createElement('span');
-    badge.title = 'Primary failed (' + (fallbackReason || 'error') + ') — running on fallback';
-    badge.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:default;';
-    badge.textContent = '⚡ fallback: ' + fallbackModel;
-    labelEl.appendChild(badge);
-  }
-  const bubble = document.createElement('div');
-  bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:' + (isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px') + ';background:' + (isUser ? 'var(--purple)' : 'var(--bg-2)') + ';color:' + (isUser ? '#fff' : 'var(--text-1)') + ';font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;border:1px solid var(--border);';
-  bubble.textContent = text;
-  div.appendChild(labelEl); div.appendChild(bubble);
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
-}
 
 function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
   function countTasks(md) { return (md.match(/^- \[ \]/gm) || []).length; }
@@ -2790,88 +2744,6 @@ function showToolMatrix(){
 
 // keep old name working for any legacy calls
 function showIntegrations(){ showSkills(); }
-
-// ── Benchmarks (ZeroEval / llm-stats) ───────────────────────────────────────────
-async function loadBenchmarkOptions() {
-  const sel = document.getElementById('benchmarkSelect');
-  if (!sel) return;
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">— Loading… —</option>';
-  try {
-    const r = await fetch('/api/zeroeval/benchmarks');
-    const arr = await r.json();
-    if (!Array.isArray(arr)) throw new Error('Expected array');
-    sel.innerHTML = '<option value="">— Pick benchmark —</option>';
-    arr.forEach(b => {
-      const id = typeof b === 'object' ? (b.benchmark_id || b.id) : b;
-      const name = typeof b === 'object' ? (b.name || id) : id;
-      const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = name;
-      sel.appendChild(opt);
-    });
-    if (cur && arr.some(b => (typeof b === 'object' ? b.benchmark_id : b) === cur)) {
-      sel.value = cur;
-    } else {
-      const DEFAULT_BENCHMARK = 'swe-bench-verified';
-      if (arr.some(b => (typeof b === 'object' ? b.benchmark_id : b) === DEFAULT_BENCHMARK)) {
-        sel.value = DEFAULT_BENCHMARK;
-      }
-    }
-    return sel.value;
-  } catch (e) {
-    sel.innerHTML = '<option value="">— Failed to load —</option>';
-  }
-}
-
-async function loadBenchmarks() {
-  await loadBenchmarkOptions();
-  const sel = document.getElementById('benchmarkSelect');
-  if (sel && sel.value) loadBenchmarkLeaderboard(sel.value);
-}
-
-async function loadBenchmarkLeaderboard(benchmarkId) {
-  const tableEl = document.getElementById('benchmarkTable');
-  const metaEl = document.getElementById('benchmarkMeta');
-  if (!tableEl || !metaEl) return;
-  if (!benchmarkId) {
-    tableEl.innerHTML = '';
-    metaEl.style.display = 'none';
-    return;
-  }
-  tableEl.innerHTML = '<div class="meta" style="padding:20px;">Loading…</div>';
-  metaEl.style.display = 'none';
-  try {
-    const r = await fetch('/api/zeroeval/benchmarks/' + encodeURIComponent(benchmarkId));
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || data.detail || 'Failed to load');
-    // Support both old shape (models/statistics) and new shape (entries/total_models at root)
-    const models = data.entries || data.models || [];
-    const totalModels = data.total_models ?? data.statistics?.total_models ?? models.length;
-    const avgScore = data.statistics?.average_score ?? (models.length ? models.reduce((s,m)=>(s+(m.normalized_score??m.benchmark_score??m.score??0)),0)/models.length : 0);
-    const displayName = data.benchmark_name || data.name || benchmarkId;
-    const displayDesc = data.benchmark_description || data.description || '';
-    metaEl.innerHTML = '<b>' + escHtml(displayName) + '</b>' + (displayDesc ? ': ' + escHtml(displayDesc.slice(0, 200)) : '') + ' | ' + totalModels + ' models, avg ' + (avgScore * 100).toFixed(1) + '%';
-    metaEl.style.display = 'block';
-    if (!models.length) {
-      tableEl.innerHTML = '<div class="meta" style="padding:20px;">No model scores for this benchmark.</div>';
-      return;
-    }
-    const rows = models.slice(0, 100).map(m => {
-      const score = (m.normalized_score != null ? m.normalized_score : (m.benchmark_score != null ? m.benchmark_score : m.score)) ?? 0;
-      const pct = (score * 100).toFixed(1);
-      const inp = m.input_cost_per_million != null ? Math.round(m.input_cost_per_million * 100) + '¢' : '—';
-      const out = m.output_cost_per_million != null ? Math.round(m.output_cost_per_million * 100) + '¢' : '—';
-      const inC = m.input_cost_per_million ?? 0;
-      const outC = m.output_cost_per_million ?? 0;
-      const centsPerPt = (inC + outC) > 0 && score > 0 ? ((inC + outC) * 100 / (score * 100)).toFixed(1) + '¢/pt' : '—';
-      return '<tr><td style="padding:6px 10px;">' + (m.rank || '-') + '</td><td style="padding:6px 10px;">' + escHtml(m.model_name || m.model_id) + '</td><td style="padding:6px 10px;">' + escHtml(m.organization_name || '') + '</td><td style="padding:6px 10px;font-weight:600;">' + pct + '%</td><td style="padding:6px 10px;font-size:11px;" title="¢ per 1M input tokens">' + inp + '</td><td style="padding:6px 10px;font-size:11px;" title="¢ per 1M output tokens">' + out + '</td><td style="padding:6px 10px;font-size:11px;" title="¢ per score point (1M in+out / score%)">' + centsPerPt + '</td><td style="padding:6px 10px;font-size:11px;">' + (m.analysis_method || '-').slice(0, 40) + '</td></tr>';
-    }).join('');
-    tableEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Rank</th><th style="text-align:left;padding:6px 10px;">Model</th><th style="text-align:left;padding:6px 10px;">Org</th><th style="text-align:left;padding:6px 10px;">Score</th><th style="text-align:left;padding:6px 10px;" title="¢ per 1M input">in ¢</th><th style="text-align:left;padding:6px 10px;" title="¢ per 1M output">out ¢</th><th style="text-align:left;padding:6px 10px;" title="¢ per score point">¢/pt</th><th style="text-align:left;padding:6px 10px;">Method</th></tr></thead><tbody>' + rows + '</tbody></table>';
-  } catch (e) {
-    tableEl.innerHTML = '<div style="color:var(--red);padding:20px;">Error: ' + escHtml(e.message) + '</div>';
-  }
-}
 
 // ── Run skills (from health snapshot) ───────────────────────────────────────────
 async function loadRunSkills(){
@@ -4798,11 +4670,6 @@ function showProjects(){
   setNavActive('navProjects');
   loadProjects();
 }
-// Safe HTML escaper — never put raw user data into innerHTML without this
-function escHtml(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-
 // Project registry cache — populated by loadProjects, used by delegated handler
 let _projectsData = {};
 
