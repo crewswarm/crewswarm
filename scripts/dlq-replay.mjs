@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
-  || process.env.OPENCREWHQ_CONFIG_DIR   // legacy env alias
+  || process.env.CREWSWARM_CONFIG_DIR   // legacy env alias
   || path.join(os.homedir(), ".crewswarm");
 const SHARED_MEMORY_BASE = process.env.SHARED_MEMORY_DIR || path.join(os.homedir(), ".crewswarm", "workspace", "shared-memory");
 const SHARED_MEMORY_NAMESPACE = process.env.SHARED_MEMORY_NAMESPACE || "claw-swarm";

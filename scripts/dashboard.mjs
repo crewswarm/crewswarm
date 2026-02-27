@@ -19,7 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPENCLAW_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
 // Config dir: ~/.crewswarm is canonical; falls back to ~/.openclaw for legacy installs (not repo root)
 const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
-  || process.env.OPENCREWHQ_CONFIG_DIR
+  || process.env.CREWSWARM_CONFIG_DIR
   || (fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
       ? path.join(os.homedir(), ".crewswarm")
       : path.join(os.homedir(), ".openclaw"));

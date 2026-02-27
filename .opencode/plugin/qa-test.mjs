@@ -276,7 +276,7 @@ const bridgePlugin = await OpenClawBridgePlugin();
 const bridgeTools = bridgePlugin.tool;
 
 // ========================================
-// OPENCREW REALTIME TESTS
+// CREWSWARM REALTIME TESTS
 // ========================================
 console.log('\n--- OpenCrew Realtime Tests ---\n');
 
