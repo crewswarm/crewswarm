@@ -1,10 +1,29 @@
 import AppKit
 import Foundation
 
-// ── Config ────────────────────────────────────────────────────────────────────
-let API_BASE  = "http://127.0.0.1:4319"
-let SESSION   = "owner"
-let FIRSTNAME = "Jeff"
+// ── Config — read from ~/.crewswarm at runtime ────────────────────────────────
+func loadCrewConfig() -> [String: Any] {
+    let path = (NSHomeDirectory() as NSString).appendingPathComponent(".crewswarm/config.json")
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+          let obj  = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+    return obj
+}
+func loadCrewSwarmJson() -> [String: Any] {
+    let path = (NSHomeDirectory() as NSString).appendingPathComponent(".crewswarm/crewswarm.json")
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+          let obj  = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+    return obj
+}
+
+private let _cfg  = loadCrewConfig()
+private let _csj  = loadCrewSwarmJson()
+let DASH_PORT     = _cfg["dashPort"] as? Int ?? _csj["dashPort"] as? Int ?? 4319
+let API_BASE      = "http://127.0.0.1:\(DASH_PORT)"
+let SESSION       = "owner"
+let FIRSTNAME     = _csj["firstName"] as? String
+                 ?? _cfg["firstName"] as? String
+                 ?? NSFullUserName().components(separatedBy: " ").first
+                 ?? "there"
 
 // ── Colors — matched exactly to dashboard CSS variables ───────────────────────
 // --bg:#060a10  --bg-card:#0d1420  --accent:#38bdf8  --green:#34d399
@@ -44,6 +63,36 @@ func apiGet(_ path: String) async -> [String:Any] {
     } catch { return [:] }
 }
 
+// ── SSE streaming delegate ────────────────────────────────────────────────────
+// URLSessionDataTask completion handler fires ONCE when connection closes — useless for SSE.
+// Instead we use URLSessionDataDelegate so didReceive fires as each chunk arrives.
+class SSEDelegate: NSObject, URLSessionDataDelegate {
+    var onEvent: (([String: Any]) -> Void)?
+    private var buffer = ""
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard let chunk = String(data: data, encoding: .utf8) else { return }
+        buffer += chunk
+        // Process complete SSE lines (terminated by \n\n)
+        while let range = buffer.range(of: "\n\n") {
+            let block = String(buffer[buffer.startIndex..<range.lowerBound])
+            buffer = String(buffer[range.upperBound...])
+            for line in block.components(separatedBy: "\n") {
+                guard line.hasPrefix("data:") else { continue }
+                let raw = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                guard !raw.isEmpty,
+                      let d = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
+                else { continue }
+                DispatchQueue.main.async { self.onEvent?(d) }
+            }
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        // Connection dropped — will be restarted by AppDelegate
+    }
+}
+
 // ── Floating window app (no menu bar icon — launched via SwiftBar) ────────────
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
 
@@ -53,6 +102,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     var inputField: NSTextField!
     var sendBtn: NSButton!
     var sseTask: URLSessionDataTask?
+    var sseSession: URLSession?
+    var sseDelegate = SSEDelegate()
     var headerAgentLbl: NSTextField!
     var headerSubLbl: NSTextField!
     var headerDot: NSView!
@@ -604,57 +655,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
         }
     }
 
-    // ── SSE ───────────────────────────────────────────────────────────────────
+    // ── SSE — streaming via URLSessionDataDelegate ────────────────────────────
+    // Note: URLSessionDataTask completion handler fires ONCE on close — wrong for SSE.
+    // URLSessionDataDelegate.urlSession(_:dataTask:didReceive:) fires per chunk — correct.
     func startSSE() {
         guard let url = URL(string: "\(API_BASE)/api/crew-lead/events") else { return }
+        sseTask?.cancel()
+        sseSession?.invalidateAndCancel()
+
+        sseDelegate.onEvent = { [weak self] d in self?.handleSSEEvent(d) }
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 3600
+        config.timeoutIntervalForResource = 86400
+        sseSession = URLSession(configuration: config, delegate: sseDelegate, delegateQueue: .main)
         var req = URLRequest(url: url)
-        req.timeoutInterval = 3600
-        sseTask = URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
-            guard let self = self, let data = data,
-                  let text = String(data: data, encoding: .utf8) else { return }
-            for line in text.components(separatedBy: "\n") {
-                guard line.hasPrefix("data:") else { continue }
-                let raw = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                guard let d = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String:Any] else { continue }
-                DispatchQueue.main.async {
-                    if let type_ = d["type"] as? String {
-                        if type_ == "chat_message", let sessionId = d["sessionId"] as? String, sessionId == SESSION {
-                            let role = d["role"] as? String
-                            let content = d["content"] as? String ?? ""
-                            if role == "user" {
-                                if content != self.lastAppendedUserContent {
-                                    self.addBubble(content, isUser: true, from: "You")
-                                    self.lastAppendedUserContent = content
-                                }
-                            } else if role == "assistant" {
-                                if content != self.lastAppendedAssistantContent {
-                                    self.addBubble(content, isUser: false, from: "🧠 crew-lead")
-                                    self.lastAppendedAssistantContent = content
-                                }
-                            }
-                            self.scrollToBottom()
-                        } else if type_ == "pending_project", let sessionId = d["sessionId"] as? String, sessionId == SESSION, let p = d["pendingProject"] as? [String:Any] {
-                            self.addRoadmapCard(p)
-                            self.scrollToBottom()
-                        } else if type_ == "project_launched",
-                           let proj = d["project"] as? [String:Any], let name = proj["name"] as? String {
-                            let newId = proj["projectId"] as? String ?? proj["id"] as? String
-                            self.addNote("🚀 \(name) launched — crew is building!", color: .crewBlue)
-                            self.loadProjects(autoSelectId: newId)
-                        } else if type_ == "draft_discarded", let id = d["draftId"] as? String, id == self.pendingDraftId {
-                            if let card = self.pendingCardView { card.removeFromSuperview(); self.pendingCardView = nil }
-                            self.pendingDraftId = nil
-                            self.pendingProjectName = nil
-                            self.addNote("Discarded (synced)", color: .crewMuted)
-                        }
-                    } else if let from = d["from"] as? String, let content = d["content"] as? String {
-                        let preview = content.count > 200 ? String(content.prefix(200)) + "…" : content
-                        self.addBubble("✅ \(from): \(preview)", isUser: false, from: "agent reply")
-                    }
-                }
-            }
-        }
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        sseTask = sseSession!.dataTask(with: req)
         sseTask?.resume()
+    }
+
+    func handleSSEEvent(_ d: [String: Any]) {
+        if let type_ = d["type"] as? String {
+            if type_ == "chat_message",
+               let sessionId = d["sessionId"] as? String, sessionId == SESSION {
+                let role    = d["role"]    as? String ?? ""
+                let content = d["content"] as? String ?? ""
+                if role == "user", content != lastAppendedUserContent {
+                    addBubble(content, isUser: true, from: "You")
+                    lastAppendedUserContent = content
+                } else if role == "assistant", content != lastAppendedAssistantContent {
+                    addBubble(content, isUser: false, from: "🧠 crew-lead")
+                    lastAppendedAssistantContent = content
+                }
+                scrollToBottom()
+            } else if type_ == "pending_project",
+                      let sessionId = d["sessionId"] as? String, sessionId == SESSION,
+                      let p = d["pendingProject"] as? [String: Any] {
+                addRoadmapCard(p)
+                scrollToBottom()
+            } else if type_ == "project_launched",
+                      let proj = d["project"] as? [String: Any],
+                      let name = proj["name"] as? String {
+                let newId = proj["projectId"] as? String ?? proj["id"] as? String
+                addNote("🚀 \(name) launched — crew is building!", color: .crewBlue)
+                loadProjects(autoSelectId: newId)
+            } else if type_ == "draft_discarded",
+                      let id = d["draftId"] as? String, id == pendingDraftId {
+                pendingCardView?.removeFromSuperview(); pendingCardView = nil
+                pendingDraftId = nil; pendingProjectName = nil
+                addNote("Discarded (synced)", color: .crewMuted)
+            }
+        } else if let from = d["from"] as? String, let content = d["content"] as? String {
+            let preview = content.count > 200 ? String(content.prefix(200)) + "…" : content
+            addBubble("✅ \(from): \(preview)", isUser: false, from: "agent reply")
+        }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
