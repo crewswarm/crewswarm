@@ -39,10 +39,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ── Args (parsed early so config can reference them) ──────────────────────
 const args           = process.argv.slice(2);
 const DRY_RUN        = args.includes("--dry-run");
-const SELF_EXTEND    = !args.includes("--no-extend");
+const SELF_EXTEND    = process.env.PM_SELF_EXTEND === "0" ? false : !args.includes("--no-extend");
 const EXTEND_EVERY_N = Number(process.env.PM_EXTEND_EVERY || "5");
 const maxIdx         = args.indexOf("--max-items");
-const MAX_ITEMS      = maxIdx >= 0 ? Number(args[maxIdx + 1]) : 200;
+const MAX_ITEMS      = maxIdx >= 0 ? Number(args[maxIdx + 1]) : Number(process.env.PM_MAX_ITEMS || "200");
 const projDirIdx     = args.indexOf("--project-dir");
 
 // ── Config ────────────────────────────────────────────────────────────────

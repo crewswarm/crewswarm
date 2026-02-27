@@ -1459,7 +1459,45 @@ const html = `<!doctype html>
             <button id="pmStopBtn" class="btn-red">⏹ Stop</button>
             <button id="pmDryRunBtn" class="btn-muted">🔍 Dry run</button>
             <button id="pmRoadmapBtn" class="btn-ghost">📋 Roadmap</button>
+            <button onclick="document.getElementById('pmAdvanced').style.display=document.getElementById('pmAdvanced').style.display==='none'?'block':'none'" class="btn-ghost" style="font-size:12px;">⚙ Options</button>
             <span class="meta" id="pmStatus" style="align-self:center;"></span>
+          </div>
+          <div id="pmAdvanced" style="display:none;background:var(--bg-card2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;">Advanced Options</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:10px;">
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptQA" checked style="accent-color:var(--accent);"> QA review per task
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSecurity" checked style="accent-color:var(--accent);"> Security review
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSpecialists" checked style="accent-color:var(--accent);"> Use specialists (front/back/github)
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSelfExtend" checked style="accent-color:var(--accent);"> Self-extend roadmap when empty
+              </label>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;">
+              <label style="font-size:12px;color:var(--text-3);">Max items<br>
+                <input type="number" id="pmOptMaxItems" value="200" min="1" max="1000" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Task timeout (min)<br>
+                <input type="number" id="pmOptTimeout" value="10" min="1" max="120" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Self-extend every N tasks<br>
+                <input type="number" id="pmOptExtendN" value="5" min="1" max="50" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Pause between tasks (sec)<br>
+                <input type="number" id="pmOptPause" value="5" min="0" max="300" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Max retries per task<br>
+                <input type="number" id="pmOptMaxRetries" value="2" min="0" max="10" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Default coder agent<br>
+                <input type="text" id="pmOptCoder" value="crew-coder" placeholder="crew-coder" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+            </div>
           </div>
           <div id="pmRoadmapPanel" style="display:none; margin-bottom:12px;" class="log-block mono" style="max-height:220px;"></div>
           <div id="pmLiveLog" style="display:none;" class="log-block green"></div>
@@ -6322,7 +6360,21 @@ async function startPmLoop(dryRun = false) {
     const resp = await fetch('/api/pm-loop/start', {
       method: 'POST',
       headers: {'content-type':'application/json'},
-      body: JSON.stringify({ dryRun, projectId })
+      body: JSON.stringify({
+        dryRun, projectId,
+        pmOptions: {
+          useQA:          document.getElementById('pmOptQA')?.checked ?? true,
+          useSecurity:    document.getElementById('pmOptSecurity')?.checked ?? true,
+          useSpecialists: document.getElementById('pmOptSpecialists')?.checked ?? true,
+          selfExtend:     document.getElementById('pmOptSelfExtend')?.checked ?? true,
+          maxItems:       parseInt(document.getElementById('pmOptMaxItems')?.value || '200'),
+          taskTimeoutMin: parseInt(document.getElementById('pmOptTimeout')?.value || '10'),
+          extendEveryN:   parseInt(document.getElementById('pmOptExtendN')?.value || '5'),
+          pauseSec:       parseInt(document.getElementById('pmOptPause')?.value || '5'),
+          maxRetries:     parseInt(document.getElementById('pmOptMaxRetries')?.value || '2'),
+          coderAgent:     document.getElementById('pmOptCoder')?.value.trim() || 'crew-coder',
+        }
+      })
     });
     const r = await resp.json();
     if (resp.status === 409 || r.alreadyRunning) {
@@ -6904,7 +6956,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/pm-loop/start" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { dryRun, projectId } = JSON.parse(body || "{}");
+      const { dryRun, projectId, pmOptions = {} } = JSON.parse(body || "{}");
       const { spawn } = await import("node:child_process");
       const { existsSync, mkdirSync, unlinkSync } = await import("node:fs");
       const { readFile: rf } = await import("node:fs/promises");
@@ -6973,6 +7025,16 @@ const server = http.createServer(async (req, res) => {
         ...(projectDir    ? { OPENCREW_OUTPUT_DIR: projectDir }        : {}),
         ...(projectRoadmap    ? { PM_ROADMAP_FILE: projectRoadmap }    : {}),
         ...(projectFeaturesDoc ? { PM_FEATURES_DOC: projectFeaturesDoc } : {}),
+        ...(pmOptions.useQA          === false ? { PM_USE_QA: "0" }          : {}),
+        ...(pmOptions.useSecurity    === false ? { PM_USE_SECURITY: "0" }    : {}),
+        ...(pmOptions.useSpecialists === false ? { PM_USE_SPECIALISTS: "0" } : {}),
+        ...(pmOptions.selfExtend     === false ? { PM_SELF_EXTEND: "0" }     : {}),
+        ...(pmOptions.maxItems       ? { PM_MAX_ITEMS: String(pmOptions.maxItems) }                    : {}),
+        ...(pmOptions.taskTimeoutMin ? { PHASED_TASK_TIMEOUT_MS: String(pmOptions.taskTimeoutMin * 60000) } : {}),
+        ...(pmOptions.extendEveryN   ? { PM_EXTEND_EVERY: String(pmOptions.extendEveryN) }             : {}),
+        ...(pmOptions.pauseSec       !== undefined ? { PM_PAUSE_MS: String(pmOptions.pauseSec * 1000) }: {}),
+        ...(pmOptions.maxRetries     !== undefined ? { PM_MAX_RETRIES: String(pmOptions.maxRetries) }  : {}),
+        ...(pmOptions.coderAgent     ? { PM_CODER_AGENT: pmOptions.coderAgent }                        : {}),
       };
       const proc = spawn("node", spawnArgs, {
         cwd: OPENCLAW_DIR,
