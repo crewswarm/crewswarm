@@ -1,6 +1,6 @@
 # CrewSwarm CI
-# Job 1 (static): syntax + build + dashboard check — no secrets, always runs, ~2 min
-# Job 2 (integration): full stack smoke with LLM dispatch — needs GROQ_API_KEY, push only
+# Job 1 (static): syntax + build + dashboard check - no secrets, always runs, ~2 min
+# Job 2 (integration): full stack smoke with LLM dispatch - needs GROQ_API_KEY, push only
 #
 # Secrets required for integration job:
 #   CREWSWARM_RT_TOKEN  - any random string for the RT bus auth token
