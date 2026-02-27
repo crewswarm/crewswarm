@@ -25,6 +25,18 @@ test-output/
 # Private roadmap (internal only)
 docs/ROADMAP-PRIVATE.md
 
+# Personal / workspace scratchpad files — never commit these
+black_bio.txt
+hobbsistheman.html
+stinky.html
+stinki-bio.md
+stinky-favicon.png
+llm-trading-recommendations.md
+polymarket_research.txt
+research_findings.txt
+openai-codex-oauth.json
+openai-oauth-vs-api.json
+
 # Agent-written garbage (Python project files that don't belong here)
 *.pyc
 __pycache__/

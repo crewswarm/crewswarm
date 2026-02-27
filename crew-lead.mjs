@@ -1491,9 +1491,10 @@ function parseDispatch(text, userMessage = "") {
   }
 
   // Fallback: LLM described a dispatch in natural language without using @@DISPATCH
-  // Only match strong dispatch verbs — avoid false positives from conversational text
+  // Only match present/future action phrases — never past tense ("dispatched") which is
+  // just description of history and would cause infinite re-dispatch loops.
   const nlMatch = cleanText.match(
-    /(?:dispatch(?:ed|ing)|tasked|sicced|fired off|forwarded? to)\b[^.]*?\b(crew-[a-z0-9-]+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i
+    /(?:dispatching now|I(?:'ll| will| am) dispatch(?:ing)?|sending(?: this)? to|routing to|forwarding to|siccing)\b[^.]*?\b(crew-[a-z0-9-]+)/i
   );
   if (nlMatch) {
     let agent = nlMatch[1].trim();
@@ -4530,11 +4531,12 @@ const server = http.createServer(async (req, res) => {
         bin = cursorBin;
         args = ["-p", "--force", "--trust", "--output-format", "stream-json", message, "--workspace", projectDir];
       } else if (engine === "opencode") {
-        bin = "opencode";
-        args = ["run", "--print", message];
+        bin = process.env.OPENCREW_OPENCODE_BIN || "opencode";
+        const ocModel = process.env.OPENCREW_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+        args = ["run", message, "--model", ocModel];
       } else {
         bin = process.env.CLAUDE_CODE_BIN || "claude";
-        args = ["-p", "--dangerously-skip-permissions", "--output-format", "stream-json", message];
+        args = ["-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", message];
       }
 
       send({ type: "start", engine, message: message.slice(0, 80) });

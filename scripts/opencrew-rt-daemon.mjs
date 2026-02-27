@@ -16,7 +16,7 @@ import { BUILT_IN_RT_AGENTS, RT_TO_GATEWAY_AGENT_MAP } from "../lib/agent-regist
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
-const MAX_CLIENTS = Number(process.env.OPENCREW_RT_MAX_CLIENTS || "50");
+const MAX_CLIENTS = Number(process.env.OPENCREW_RT_MAX_CLIENTS || "200");
 
 const LEGACY_COMPAT_ALLOWED_AGENTS = new Set([
   "main", "admin", "build", "coder", "researcher", "architect", "reviewer", "qa", "fixer", "pm",
