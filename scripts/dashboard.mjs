@@ -3634,6 +3634,21 @@ function showToolMatrix(){
 function showIntegrations(){ showSkills(); }
 
 // ── Benchmarks (ZeroEval / llm-stats) ───────────────────────────────────────────
+const BENCHMARK_PINNED = [
+  { id: 'swe-bench-verified',     label: '⭐ SWE-Bench Verified' },
+  { id: 'livecodebench',          label: '⭐ LiveCodeBench' },
+  { id: 'livecodebench-v6',       label: '⭐ LiveCodeBench v6' },
+  { id: 'humaneval',              label: '⭐ HumanEval' },
+  { id: 'humaneval+',             label: '⭐ HumanEval+' },
+  { id: 'mmlu',                   label: '⭐ MMLU' },
+  { id: 'mmlu-pro',               label: '⭐ MMLU-Pro' },
+  { id: 'gpqa',                   label: '⭐ GPQA' },
+  { id: 'math-500',               label: '⭐ MATH-500' },
+  { id: 'aime-2025',              label: '⭐ AIME 2025' },
+  { id: 'arc-agi-v2',             label: '⭐ ARC-AGI v2' },
+  { id: 'gsm8k',                  label: '⭐ GSM8k' },
+];
+
 async function loadBenchmarkOptions() {
   const sel = document.getElementById('benchmarkSelect');
   if (!sel) return;
@@ -3643,16 +3658,34 @@ async function loadBenchmarkOptions() {
     const r = await fetch('/api/zeroeval/benchmarks');
     const arr = await r.json();
     if (!Array.isArray(arr)) throw new Error('Expected array');
-    sel.innerHTML = '<option value="">— Pick benchmark —</option>';
+    const allIds = new Set(arr.map(b => typeof b === 'object' ? (b.benchmark_id || b.id) : b));
+    sel.innerHTML = '';
+    // Pinned popular benchmarks at top
+    const pinnedGroup = document.createElement('optgroup');
+    pinnedGroup.label = '★ Popular';
+    BENCHMARK_PINNED.forEach(({ id, label }) => {
+      if (!allIds.has(id)) return;
+      const opt = document.createElement('option');
+      opt.value = id; opt.textContent = label;
+      pinnedGroup.appendChild(opt);
+    });
+    if (pinnedGroup.children.length) sel.appendChild(pinnedGroup);
+    // Separator + all others
+    const allGroup = document.createElement('optgroup');
+    allGroup.label = 'All benchmarks (' + arr.length + ')';
+    const pinnedSet = new Set(BENCHMARK_PINNED.map(p => p.id));
     arr.forEach(b => {
       const id = typeof b === 'object' ? (b.benchmark_id || b.id) : b;
+      if (pinnedSet.has(id)) return;
       const name = typeof b === 'object' ? (b.name || id) : id;
       const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = name;
-      sel.appendChild(opt);
+      opt.value = id; opt.textContent = name;
+      allGroup.appendChild(opt);
     });
-    if (cur && arr.some(b => (typeof b === 'object' ? b.benchmark_id : b) === cur)) sel.value = cur;
+    sel.appendChild(allGroup);
+    // Restore selection or default to swe-bench-verified
+    if (cur && allIds.has(cur)) sel.value = cur;
+    else sel.value = 'swe-bench-verified';
   } catch (e) {
     sel.innerHTML = '<option value="">— Failed to load —</option>';
   }
