@@ -4,6 +4,78 @@
 
 ---
 
+## Road to 9/10 — Pre-Beta Checklist
+
+**Goal:** clean, contributor-friendly, regression-protected codebase ready for public beta (`0.1.0-beta`).
+**Current state:** 7.5/10 — all features working, naming consistent, Docker ready. Blocked on structure + CI.
+
+### Phase 1 — God-file split
+
+Extract module boundaries from the three large files. No behavior changes — only move code. Keep entrypoint APIs stable throughout.
+
+**Target files:** `crew-lead.mjs` (5.4k LOC), `gateway-bridge.mjs` (5.4k LOC), `frontend/src/app.js` (5.9k LOC)
+
+**Module boundaries:**
+
+| Module | Path | Extracted from |
+|---|---|---|
+| HTTP routes + handlers | `lib/http/` | `crew-lead.mjs` |
+| Pipeline engine + orchestration | `lib/pipeline/` | `crew-lead.mjs` |
+| Skill loader + runner | `lib/skills/` | `crew-lead.mjs` |
+| Agent registry + dispatch | `lib/agents/` | `gateway-bridge.mjs` |
+| Engine adapters (one file per engine) | `lib/engines/` | `gateway-bridge.mjs` |
+| Tool executor + permissions | `lib/tools/` | `gateway-bridge.mjs` |
+| Config + env bootstrap | `lib/runtime/` | both |
+| Dashboard tab modules | `frontend/src/tabs/` | `frontend/src/app.js` |
+
+**Process per slice:**
+- [ ] Create module file with extracted code
+- [ ] Update entrypoint to import from new module
+- [ ] Verify smoke tests still pass
+- [ ] Commit
+
+**Acceptance criteria:**
+- `crew-lead.mjs` and `gateway-bridge.mjs` are orchestration-only shells
+- `app.js` imports from tab modules — no tab logic inline
+- Each module has one clear responsibility, testable in isolation
+- All smoke tests pass unchanged
+
+---
+
+### Phase 2 — Smoke-test CI
+
+- [ ] Add `scripts/smoke.sh` — single script capturing current manual smoke commands
+- [ ] Add `.github/workflows/smoke.yml`:
+  - `npm ci`
+  - `cd frontend && npm run build`
+  - `node scripts/health-check.mjs --no-services`
+  - `node scripts/check-dashboard.mjs --source-only`
+  - `bash install.sh --non-interactive`
+- [ ] Trigger on PR + push to `main`
+- [ ] Verify CI green on clean clone
+
+**Acceptance criteria:**
+- CI passes on every push
+- Fails fast on runtime regressions (syntax errors, missing deps, broken build)
+- Logs useful for debugging failures
+
+---
+
+### Phase 3 — Beta gate
+
+Do not cut `0.1.0-beta` until all boxes below are checked:
+
+- [ ] God-file split complete (Phase 1 done)
+- [ ] CI smoke green for 5+ consecutive merges
+- [ ] No P0/P1 regressions from `node scripts/health-check.mjs`
+- [ ] `install.sh --non-interactive` succeeds on a clean machine
+- [ ] `README.md` first-run section verified accurate
+- [ ] `docs/docker.md` tested end-to-end
+
+**When all boxes checked → bump to `0.1.0-beta` and open repo.**
+
+---
+
 ## crew-mega Upgrade (user requested 10x improvement)
 
 **Status:** FAILED (QA audit 2026-02-25) — plan was written into wrong project (polymarket ROADMAP); re-implementation belongs here.
