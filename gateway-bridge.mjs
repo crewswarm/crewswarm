@@ -1269,26 +1269,26 @@ async function runGeminiCliTask(prompt, payload = {}) {
       if (!line) return;
       try {
         const ev = JSON.parse(line);
-        // message event — text chunks from assistant
-        if (ev.type === "message") {
-          const parts = ev.message?.parts || ev.parts || [];
-          for (const p of parts) {
-            if (typeof p === "string") accumulatedText += p;
-            else if (p?.text) accumulatedText += p.text;
-          }
+        // Real stream-json schema (from @google/gemini-cli nonInteractiveCli.js):
+        //   init:        { type:"init", timestamp, session_id, model }
+        //   message:     { type:"message", timestamp, role:"assistant"|"user", content:"text", delta:true }
+        //   tool_use:    { type:"tool_use", timestamp, tool_name, tool_id, parameters }
+        //   tool_result: { type:"tool_result", timestamp, tool_id, status, output, error }
+        //   result:      { type:"result", timestamp, status:"success", stats:{...} }  — NO response field
+        //   error:       { type:"error", timestamp, severity, message }
+        if (ev.type === "message" && ev.role === "assistant" && ev.content) {
+          accumulatedText += ev.content;
         }
-        // result event — final outcome
         if (ev.type === "result" && !resultReceived) {
           resultReceived = true;
           clearTimeout(hardTimer);
           child.kill("SIGTERM");
-          const out = (ev.response || accumulatedText).trim() || "(gemini cli completed with no text output)";
+          const out = accumulatedText.trim() || "(gemini cli completed with no text output)";
           console.log(`[GeminiCli:${agentId}] Done — ${out.length} chars`);
           resolve(out);
         }
-        // error event
         if (ev.type === "error") {
-          console.error(`[GeminiCli:${agentId}] Error event:`, ev.error?.message || JSON.stringify(ev));
+          console.error(`[GeminiCli:${agentId}] Error event (${ev.severity}):`, ev.message || JSON.stringify(ev));
         }
       } catch {}
     }

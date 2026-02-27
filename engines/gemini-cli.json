@@ -35,11 +35,12 @@
   },
   "outputMode": "stream-json",
   "streamJsonEvents": {
-    "text_chunk": { "path": "message.parts[].text", "eventType": "message" },
-    "tool_use":   { "eventType": "tool_use" },
-    "tool_result":{ "eventType": "tool_result" },
-    "done":       { "eventType": "result", "exitCodePath": "result.exitCode" },
-    "error":      { "eventType": "error", "messagePath": "error.message" }
+    "init":        { "eventType": "init",        "fields": ["session_id", "model", "timestamp"] },
+    "text_chunk":  { "eventType": "message",     "path": "content", "filter": "role === 'assistant' && delta === true" },
+    "tool_use":    { "eventType": "tool_use",    "fields": ["tool_name", "tool_id", "parameters"] },
+    "tool_result": { "eventType": "tool_result", "fields": ["tool_id", "status", "output", "error"] },
+    "done":        { "eventType": "result",      "fields": ["status", "stats"] },
+    "error":       { "eventType": "error",       "fields": ["severity", "message"] }
   },
   "exitCodes": {
     "0":  "Success",

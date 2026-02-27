@@ -4502,22 +4502,21 @@ const server = http.createServer(async (req, res) => {
             const ev = JSON.parse(line);
             // Gemini CLI stream-json events:
             //   { type: "init", sessionId, model }
-            //   { type: "message", message: { parts: [{text:"..."}] } }
-            //   { type: "tool_use", ... }  { type: "tool_result", ... }
-            //   { type: "result", response: "...", exitCode: 0 }
-            //   { type: "error", error: { message: "..." } }
+            // Real stream-json schema (from @google/gemini-cli nonInteractiveCli.js):
+            //   init:        { type:"init", timestamp, session_id, model }
+            //   message:     { type:"message", role:"assistant"|"user", content:"text", delta:true }
+            //   tool_use:    { type:"tool_use", tool_name, tool_id, parameters }
+            //   tool_result: { type:"tool_result", tool_id, status, output, error }
+            //   result:      { type:"result", status:"success", stats:{...} }  — NO response field
+            //   error:       { type:"error", severity, message }
             if (engine === "gemini" || engine === "gemini-cli") {
-              if (ev.type === "message") {
-                const parts = ev.message?.parts || ev.parts || [];
-                for (const p of parts) {
-                  const t = typeof p === "string" ? p : (p?.text || "");
-                  if (t) { send({ type: "chunk", text: t }); fullOutput += t; }
-                }
+              if (ev.type === "message" && ev.role === "assistant" && ev.content) {
+                send({ type: "chunk", text: ev.content });
+                fullOutput += ev.content;
               } else if (ev.type === "result") {
-                if (!fullOutput && ev.response) { send({ type: "chunk", text: ev.response }); fullOutput += ev.response; }
                 proc.kill("SIGTERM");
               } else if (ev.type === "error") {
-                send({ type: "stderr", text: ev.error?.message || JSON.stringify(ev) });
+                send({ type: "stderr", text: ev.message || JSON.stringify(ev) });
               }
               continue;
             }
