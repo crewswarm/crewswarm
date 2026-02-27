@@ -110,7 +110,7 @@ let _rtFilter  = 'tasks';
 let _rtSearch  = '';
 let _rtSeenIds = new Set();
 const RT_SKIP       = new Set(['agent.heartbeat','agent.online','agent.offline']);
-const RT_TASK_TYPES = new Set(['task.dispatched','task.completed','task.failed','task.cancelled','task.started']);
+const RT_TASK_TYPES = new Set(['task.dispatched','task.done','task.completed','task.failed','task.cancelled','task.started','task.reply']);
 
 function _rtMatchesFilter(m) {
   if (RT_SKIP.has(m.type)) return false;
@@ -134,7 +134,9 @@ function _rtMatchesFilter(m) {
 const RT_PHASE_STYLE = {
   'task.dispatched': { color: 'var(--purple)',   label: 'dispatched' },
   'task.started':    { color: 'var(--amber)',    label: 'started'    },
+  'task.done':       { color: 'var(--green-hi)', label: 'done'       },
   'task.completed':  { color: 'var(--green-hi)', label: 'completed'  },
+  'task.reply':      { color: 'var(--accent)',   label: 'reply'      },
   'task.failed':     { color: 'var(--red-hi)',   label: 'failed'     },
   'task.cancelled':  { color: 'var(--text-3)',   label: 'cancelled'  },
 };
@@ -226,13 +228,14 @@ export async function loadRTMessages() {
   const box    = document.getElementById('rtMessages');
   const rtView = document.getElementById('rtView');
   if (!box || !rtView) return;
-  box.innerHTML = '<div style="padding:20px;">Loading…</div>';
+  const firstLoad = box.innerHTML.includes('Loading') || box.innerHTML === '';
+  if (firstLoad) box.innerHTML = '<div style="padding:20px;">Loading…</div>';
 
   const data     = await getJSON('/api/rt-messages');
   const filtered = data.filter(_rtMatchesFilter);
   const newIds   = new Set(filtered.map(m => (m.type||'') + '|' + (m.ts||'') + '|' + (m.from||'')));
   const changed  = newIds.size !== _rtSeenIds.size || [...newIds].some(id => !_rtSeenIds.has(id));
-  if (!changed) return;
+  if (!changed && !firstLoad) return;
 
   const rtAtBottom = () => rtView.scrollHeight - rtView.scrollTop - rtView.clientHeight < 100;
   const wasAtBottom = rtAtBottom();
