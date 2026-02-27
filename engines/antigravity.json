@@ -1,0 +1,49 @@
+{
+  "id": "antigravity",
+  "label": "Antigravity",
+  "description": "Google's IDE coding engine via opencode-antigravity-auth. Access Gemini 3 Pro, Gemini 3 Flash, Claude Opus 4.6 Thinking, and Claude Sonnet 4.6 using your Google OAuth credentials — free quota, no API key needed. Runs as an OpenCode provider variant.",
+  "bin": "opencode",
+  "installCmd": "npm install -g opencode-ai && npx opencode-antigravity-auth@latest install",
+  "installUrl": "https://github.com/NoeFabris/opencode-antigravity-auth",
+  "docsUrl": "https://github.com/NoeFabris/opencode-antigravity-auth#readme",
+  "color": "#4285f4",
+  "icon": "antigravity",
+  "agentConfigKey": "useAntigravity",
+  "envToggle": "CREWSWARM_ANTIGRAVITY_ENABLED",
+  "authNote": "Requires opencode-antigravity-auth plugin. Run `opencode auth login` once to authenticate with Google OAuth. No API key needed — uses Antigravity free quota (Gemini 3 Pro, Claude Opus 4.6).",
+  "modelEnvVar": "CREWSWARM_ANTIGRAVITY_MODEL",
+  "modelFlag": "--model",
+  "bestFor": ["crew-coder", "crew-researcher", "crew-main", "crew-architect"],
+  "traits": [
+    "Free quota via Google OAuth — no API key required",
+    "Gemini 3 Pro (1M context) + Claude Opus 4.6 Thinking",
+    "Dual quota pool: Antigravity + Gemini CLI (auto-rotates)",
+    "Multi-account support — add accounts for higher combined limits",
+    "Runs via opencode run --model=google/antigravity-*"
+  ],
+  "defaultModel": "google/antigravity-gemini-3-pro",
+  "modelSuggestions": [
+    "google/antigravity-gemini-3-pro",
+    "google/antigravity-gemini-3-flash",
+    "google/antigravity-claude-opus-4-6-thinking",
+    "google/antigravity-claude-sonnet-4-6",
+    "google/gemini-3-pro-preview",
+    "google/gemini-3-flash-preview"
+  ],
+  "setupSteps": [
+    "Install opencode: npm install -g opencode-ai",
+    "Add plugin to ~/.config/opencode/opencode.json: { \"plugin\": [\"opencode-antigravity-auth@latest\"] }",
+    "Authenticate: opencode auth login → choose Login with Google",
+    "Verify: opencode run \"Hello\" --model=google/antigravity-gemini-3-pro"
+  ],
+  "mcpSetup": {
+    "configFile": "~/.config/opencode/opencode.json",
+    "pluginKey": "plugin",
+    "pluginValue": "opencode-antigravity-auth@latest"
+  },
+  "args": {
+    "run": ["run", "{prompt}", "--model", "{model}"],
+    "continue": ["run", "{prompt}", "--continue", "--model", "{model}"]
+  },
+  "outputMode": "streaming"
+}

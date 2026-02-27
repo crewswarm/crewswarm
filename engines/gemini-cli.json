@@ -1,0 +1,50 @@
+{
+  "id": "gemini-cli",
+  "label": "Gemini CLI",
+  "description": "Google's open-source terminal AI agent powered by Gemini 3. Free tier: 60 req/min and 1,000 req/day with a personal Google account. Runs non-interactively with -p flag. Full workspace context, built-in Google Search grounding, file operations, and shell commands.",
+  "bin": "gemini",
+  "installCmd": "npm install -g @google/gemini-cli",
+  "installUrl": "https://github.com/google-gemini/gemini-cli",
+  "docsUrl": "https://geminicli.com/docs/",
+  "color": "#4285f4",
+  "icon": "gemini",
+  "agentConfigKey": "useGeminiCli",
+  "envToggle": "CREWSWARM_GEMINI_CLI_ENABLED",
+  "authNote": "Free tier via Google OAuth — run `gemini` once to authenticate. Or set GEMINI_API_KEY for API-key mode. Or set GOOGLE_CLOUD_PROJECT for Vertex AI enterprise mode.",
+  "modelEnvVar": "CREWSWARM_GEMINI_CLI_MODEL",
+  "modelFlag": "-m",
+  "bestFor": ["crew-coder", "crew-researcher", "crew-main"],
+  "traits": [
+    "Free tier: 60 req/min and 1,000 req/day with personal Google account",
+    "Gemini 3 models with 1M token context window",
+    "Built-in Google Search grounding for real-time info",
+    "Non-interactive headless mode: gemini -p \"task\" --output-format stream-json",
+    "Open source Apache 2.0 — 95k+ GitHub stars"
+  ],
+  "defaultModel": "gemini-2.5-pro",
+  "modelSuggestions": [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview"
+  ],
+  "args": {
+    "run": ["-p", "{prompt}", "--output-format", "stream-json"],
+    "run_with_model": ["-p", "{prompt}", "-m", "{model}", "--output-format", "stream-json"],
+    "run_yolo": ["-p", "{prompt}", "--output-format", "stream-json", "--yolo"]
+  },
+  "outputMode": "stream-json",
+  "streamJsonEvents": {
+    "text_chunk": { "path": "message.parts[].text", "eventType": "message" },
+    "tool_use":   { "eventType": "tool_use" },
+    "tool_result":{ "eventType": "tool_result" },
+    "done":       { "eventType": "result", "exitCodePath": "result.exitCode" },
+    "error":      { "eventType": "error", "messagePath": "error.message" }
+  },
+  "exitCodes": {
+    "0":  "Success",
+    "1":  "General error or API failure",
+    "42": "Input error (invalid prompt or arguments)",
+    "53": "Turn limit exceeded"
+  }
+}

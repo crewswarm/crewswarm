@@ -1210,6 +1210,147 @@ function shouldUseCodex(payload, incomingType) {
   return CREWSWARM_CODEX;
 }
 
+// ── Gemini CLI routing ─────────────────────────────────────────────────────
+const GEMINI_CLI_BIN = process.env.GEMINI_CLI_BIN || "gemini";
+const GEMINI_CLI_TIMEOUT_MS = Number(process.env.GEMINI_CLI_TIMEOUT_MS || "300000");
+
+function shouldUseGeminiCli(payload, incomingType) {
+  if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
+  const runtime = String(payload?.runtime || payload?.executor || payload?.engine || "").toLowerCase();
+  if (runtime === "gemini" || runtime === "gemini-cli") return true;
+  if (payload?.useGeminiCli === true) return true;
+  const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "").toLowerCase();
+  try {
+    const agents = loadAgentList();
+    const cfg = agents.find(a => a.id === agentId || a.id === `crew-${agentId}`);
+    if (cfg?.useGeminiCli === true) return true;
+  } catch {}
+  return process.env.CREWSWARM_GEMINI_CLI_ENABLED === "1";
+}
+
+async function runGeminiCliTask(prompt, payload = {}) {
+  // Gemini CLI headless: `gemini -p "<prompt>" --output-format stream-json`
+  // stream-json emits JSONL events: init, message (text chunks), tool_use, tool_result, result, error
+  return new Promise((resolve, reject) => {
+    const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "");
+    const configuredDir = getOpencodeProjectDir();
+    let projectDir = payload?.projectDir || configuredDir || process.cwd();
+    projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+
+    const agentPrefix = agentId ? `[${agentId}]` : "";
+    const titledPrompt = agentPrefix ? `${agentPrefix} ${String(prompt)}` : String(prompt);
+
+    const model = payload?.geminiCliModel || payload?.model || process.env.CREWSWARM_GEMINI_CLI_MODEL || null;
+    const args = ["-p", titledPrompt, "--output-format", "stream-json"];
+    if (model) args.push("-m", model);
+
+    console.error(`[GeminiCli:${agentId}] Running: ${GEMINI_CLI_BIN} -p ... (model=${model || "default"}, cwd=${projectDir})`);
+
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast",
+      payload: { agent: agentId, model: model || "gemini/auto", ts: Date.now() } });
+
+    const child = spawn(GEMINI_CLI_BIN, args, {
+      cwd: projectDir,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let lineBuffer = "";
+    let accumulatedText = "";
+    let resultReceived = false;
+
+    const hardTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+      if (!resultReceived) reject(new Error(`GeminiCli timeout after ${GEMINI_CLI_TIMEOUT_MS}ms`));
+    }, GEMINI_CLI_TIMEOUT_MS);
+
+    function handleLine(line) {
+      line = line.trim();
+      if (!line) return;
+      try {
+        const ev = JSON.parse(line);
+        // message event — text chunks from assistant
+        if (ev.type === "message") {
+          const parts = ev.message?.parts || ev.parts || [];
+          for (const p of parts) {
+            if (typeof p === "string") accumulatedText += p;
+            else if (p?.text) accumulatedText += p.text;
+          }
+        }
+        // result event — final outcome
+        if (ev.type === "result" && !resultReceived) {
+          resultReceived = true;
+          clearTimeout(hardTimer);
+          child.kill("SIGTERM");
+          const out = (ev.response || accumulatedText).trim() || "(gemini cli completed with no text output)";
+          console.log(`[GeminiCli:${agentId}] Done — ${out.length} chars`);
+          resolve(out);
+        }
+        // error event
+        if (ev.type === "error") {
+          console.error(`[GeminiCli:${agentId}] Error event:`, ev.error?.message || JSON.stringify(ev));
+        }
+      } catch {}
+    }
+
+    child.stdout.on("data", (chunk) => {
+      lineBuffer += chunk.toString();
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop();
+      for (const l of lines) handleLine(l);
+    });
+    child.stderr.on("data", (chunk) => {
+      const txt = chunk.toString();
+      console.error(`[GeminiCli:${agentId}] stderr: ${txt.slice(0, 200)}`);
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(hardTimer);
+      if (lineBuffer.trim()) handleLine(lineBuffer);
+      if (!resultReceived) {
+        resultReceived = true;
+        if (accumulatedText.trim()) resolve(accumulatedText.trim());
+        else reject(new Error(`GeminiCli exited with code ${code} and no output`));
+      }
+    });
+
+    child.on("error", (e) => {
+      clearTimeout(hardTimer);
+      if (!resultReceived) { resultReceived = true; reject(e); }
+    });
+  });
+}
+
+// ── Antigravity routing (OpenCode + opencode-antigravity-auth plugin) ─────────
+// Antigravity = Google's IDE. Access via opencode run --model=google/antigravity-*
+// Requires opencode-antigravity-auth plugin installed in ~/.config/opencode/opencode.json
+const CREWSWARM_ANTIGRAVITY_ENABLED = process.env.CREWSWARM_ANTIGRAVITY_ENABLED === "1";
+const CREWSWARM_ANTIGRAVITY_MODEL = process.env.CREWSWARM_ANTIGRAVITY_MODEL || "google/antigravity-gemini-3-pro";
+
+function shouldUseAntigravity(payload, incomingType) {
+  if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
+  const runtime = String(payload?.runtime || payload?.executor || payload?.engine || "").toLowerCase();
+  if (runtime === "antigravity") return true;
+  if (payload?.useAntigravity === true) return true;
+  const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "").toLowerCase();
+  try {
+    const agents = loadAgentList();
+    const cfg = agents.find(a => a.id === agentId || a.id === `crew-${agentId}`);
+    if (cfg?.useAntigravity === true) return true;
+  } catch {}
+  return CREWSWARM_ANTIGRAVITY_ENABLED;
+}
+
+async function runAntigravityTask(prompt, payload = {}) {
+  // Antigravity runs through OpenCode with a google/antigravity-* model.
+  // Same spawn pattern as runOpenCodeTask but forces the Antigravity model prefix.
+  const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "");
+  const model = payload?.antigravityModel || payload?.model || CREWSWARM_ANTIGRAVITY_MODEL;
+  // Ensure model has the google/ prefix expected by opencode-antigravity-auth
+  const resolvedModel = model.startsWith("google/") ? model : `google/${model}`;
+  return runOpenCodeTask(prompt, { ...payload, agentId, model: resolvedModel });
+}
+
 function shouldConnectGateway(args) {
   if (process.env.CREWSWARM_FORCE_GATEWAY === "1") return true;
   if (args.includes("--broadcast")) return false;
@@ -3004,7 +3145,9 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     const useClaudeCode = shouldUseClaudeCode(payload, incomingType);
     const useCodex = shouldUseCodex(payload, incomingType);
     const useDockerSandbox = shouldUseDockerSandbox(payload, incomingType);
-    const useOpenCode = !useCodex && !useDockerSandbox && shouldUseOpenCode(payload, prompt, incomingType);
+    const useGeminiCli = !useCursorCli && !useClaudeCode && !useCodex && !useDockerSandbox && shouldUseGeminiCli(payload, incomingType);
+    const useAntigravity = !useCursorCli && !useClaudeCode && !useCodex && !useDockerSandbox && !useGeminiCli && shouldUseAntigravity(payload, incomingType);
+    const useOpenCode = !useCodex && !useDockerSandbox && !useGeminiCli && !useAntigravity && shouldUseOpenCode(payload, prompt, incomingType);
     if (useCursorCli) {
       progress(`Routing realtime task to Cursor CLI (agent -p --force)...`);
       telemetry("realtime_route_cursor_cli", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT });
@@ -3019,6 +3162,14 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       const sandboxName = process.env.CREWSWARM_DOCKER_SANDBOX_NAME || "crewswarm";
       progress(`Routing realtime task to Docker Sandbox "${sandboxName}" (inner: ${innerEngine})...`);
       telemetry("realtime_route_docker_sandbox", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT, sandboxName, innerEngine });
+    } else if (useGeminiCli) {
+      const gModel = payload?.geminiCliModel || payload?.model || process.env.CREWSWARM_GEMINI_CLI_MODEL || "default";
+      progress(`Routing realtime task to Gemini CLI (gemini -p, model=${gModel})...`);
+      telemetry("realtime_route_gemini_cli", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT, model: gModel });
+    } else if (useAntigravity) {
+      const agModel = payload?.antigravityModel || payload?.model || CREWSWARM_ANTIGRAVITY_MODEL;
+      progress(`Routing realtime task to Antigravity (opencode --model=${agModel})...`);
+      telemetry("realtime_route_antigravity", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT, model: agModel });
     } else if (useOpenCode) {
       const routeAgent = String(payload?.agent || CREWSWARM_OPENCODE_AGENT || "default");
       const ocAgentCfg = getAgentOpenCodeConfig(CREWSWARM_RT_AGENT);
@@ -3104,6 +3255,32 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         const msg = e?.message ?? String(e);
         progress(`Docker Sandbox failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
         telemetry("docker_sandbox_fallback", { taskId, error: msg });
+        reply = await callLLMDirect(finalPrompt, CREWSWARM_RT_AGENT, null);
+      }
+    } else if (useGeminiCli) {
+      // ── Gemini CLI backend ─────────────────────────────────────────────────
+      let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
+      projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+      const geminiPrompt = buildMiniTaskForOpenCode(prompt, CREWSWARM_RT_AGENT, projectDir);
+      try {
+        reply = await runGeminiCliTask(geminiPrompt, { ...payload, agentId: CREWSWARM_RT_AGENT, projectDir });
+      } catch (e) {
+        const msg = e?.message ?? String(e);
+        progress(`Gemini CLI failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
+        telemetry("gemini_cli_fallback", { taskId, error: msg });
+        reply = await callLLMDirect(finalPrompt, CREWSWARM_RT_AGENT, null);
+      }
+    } else if (useAntigravity) {
+      // ── Antigravity backend (OpenCode + opencode-antigravity-auth) ─────────
+      let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
+      projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+      const agPrompt = buildMiniTaskForOpenCode(prompt, CREWSWARM_RT_AGENT, projectDir);
+      try {
+        reply = await runAntigravityTask(agPrompt, { ...payload, agentId: CREWSWARM_RT_AGENT, projectDir });
+      } catch (e) {
+        const msg = e?.message ?? String(e);
+        progress(`Antigravity failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
+        telemetry("antigravity_fallback", { taskId, error: msg });
         reply = await callLLMDirect(finalPrompt, CREWSWARM_RT_AGENT, null);
       }
     } else if (useOpenCode) {

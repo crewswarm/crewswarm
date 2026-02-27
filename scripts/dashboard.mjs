@@ -2215,6 +2215,10 @@ ORDER BY day DESC, cost DESC;`;
           useClaudeCode: a.useClaudeCode || false,
           claudeCodeModel: a.claudeCodeModel || "",
           useCodex: a.useCodex || false,
+          useGeminiCli: a.useGeminiCli || false,
+          geminiCliModel: a.geminiCliModel || "",
+          useAntigravity: a.useAntigravity || false,
+          antigravityModel: a.antigravityModel || "",
           role: a._role || "",
           opencodeLoop: a.opencodeLoop || false,
           opencodeLoopMaxRounds: a.opencodeLoopMaxRounds || 10,
@@ -2297,7 +2301,7 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, useCodex, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, useCodex, useGeminiCli, geminiCliModel, useAntigravity, antigravityModel, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -2342,6 +2346,10 @@ ORDER BY day DESC, cost DESC;`;
       if (useClaudeCode !== undefined) agent.useClaudeCode = useClaudeCode;
       if (claudeCodeModel !== undefined) agent.claudeCodeModel = claudeCodeModel || undefined;
       if (useCodex !== undefined) agent.useCodex = useCodex;
+      if (useGeminiCli !== undefined) agent.useGeminiCli = useGeminiCli;
+      if (geminiCliModel !== undefined) agent.geminiCliModel = geminiCliModel || undefined;
+      if (useAntigravity !== undefined) agent.useAntigravity = useAntigravity;
+      if (antigravityModel !== undefined) agent.antigravityModel = antigravityModel || undefined;
       if (role !== undefined) agent._role = role || undefined;
       if (opencodeLoop !== undefined) agent.opencodeLoop = opencodeLoop || undefined;
       if (opencodeLoopMaxRounds !== undefined) agent.opencodeLoopMaxRounds = opencodeLoopMaxRounds > 0 ? opencodeLoopMaxRounds : undefined;

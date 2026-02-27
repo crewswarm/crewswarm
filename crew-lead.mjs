@@ -4450,6 +4450,16 @@ const server = http.createServer(async (req, res) => {
       } else if (engine === "codex") {
         bin = process.env.CODEX_CLI_BIN || "codex";
         args = ["exec", "--sandbox", "workspace-write", "--json", finalMessage];
+      } else if (engine === "gemini" || engine === "gemini-cli") {
+        bin = process.env.GEMINI_CLI_BIN || "gemini";
+        const geminiModel = process.env.CREWSWARM_GEMINI_CLI_MODEL || null;
+        args = ["-p", finalMessage, "--output-format", "stream-json"];
+        if (geminiModel) args.push("-m", geminiModel);
+      } else if (engine === "antigravity") {
+        bin = process.env.CREWSWARM_OPENCODE_BIN || "opencode";
+        const agModel = process.env.CREWSWARM_ANTIGRAVITY_MODEL || "google/antigravity-gemini-3-pro";
+        args = ["run", finalMessage, "--model", agModel];
+        if (continueSession) args.push("--continue");
       } else if (engine === "docker-sandbox") {
         bin = "docker";
         const sandboxName = process.env.CREWSWARM_DOCKER_SANDBOX_NAME || "crewswarm";
@@ -4483,13 +4493,34 @@ const server = http.createServer(async (req, res) => {
         lineBuffer = lines.pop() || "";
         for (const line of lines) {
           if (!line.trim()) continue;
-          if (engine === "opencode") {
+          if (engine === "opencode" || engine === "antigravity") {
             send({ type: "chunk", text: line + "\n" });
             fullOutput += line + "\n";
             continue;
           }
           try {
             const ev = JSON.parse(line);
+            // Gemini CLI stream-json events:
+            //   { type: "init", sessionId, model }
+            //   { type: "message", message: { parts: [{text:"..."}] } }
+            //   { type: "tool_use", ... }  { type: "tool_result", ... }
+            //   { type: "result", response: "...", exitCode: 0 }
+            //   { type: "error", error: { message: "..." } }
+            if (engine === "gemini" || engine === "gemini-cli") {
+              if (ev.type === "message") {
+                const parts = ev.message?.parts || ev.parts || [];
+                for (const p of parts) {
+                  const t = typeof p === "string" ? p : (p?.text || "");
+                  if (t) { send({ type: "chunk", text: t }); fullOutput += t; }
+                }
+              } else if (ev.type === "result") {
+                if (!fullOutput && ev.response) { send({ type: "chunk", text: ev.response }); fullOutput += ev.response; }
+                proc.kill("SIGTERM");
+              } else if (ev.type === "error") {
+                send({ type: "stderr", text: ev.error?.message || JSON.stringify(ev) });
+              }
+              continue;
+            }
             // Codex CLI --json events (actual format):
             //   { type: "thread.started", thread_id: "..." }
             //   { type: "turn.started" }
@@ -4532,7 +4563,7 @@ const server = http.createServer(async (req, res) => {
 
         // ── Notify Telegram/WA on completion (dashboard already saw it stream live) ──
         const summary = fullOutput.trim().slice(0, 3000) || "(no output)";
-        const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : engine === "codex" ? "Codex CLI" : engine === "docker-sandbox" ? "Docker Sandbox" : "OpenCode";
+        const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : engine === "codex" ? "Codex CLI" : engine === "docker-sandbox" ? "Docker Sandbox" : (engine === "gemini" || engine === "gemini-cli") ? "Gemini CLI" : engine === "antigravity" ? "Antigravity" : "OpenCode";
         const broadcastContent = `⚡ ${engineLabel}: ${summary}`;
 
         // PASSTHROUGH_NOTIFY: "tg" | "wa" | "both" | "none" (default: "both")
