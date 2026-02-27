@@ -10,7 +10,25 @@
   "icon": "gemini",
   "agentConfigKey": "useGeminiCli",
   "envToggle": "CREWSWARM_GEMINI_CLI_ENABLED",
-  "authNote": "Free tier via Google OAuth — run `gemini` once to authenticate. Or set GEMINI_API_KEY for API-key mode. Or set GOOGLE_CLOUD_PROJECT for Vertex AI enterprise mode.",
+  "authNote": "No API key needed for free tier. Three auth options below — pick one.",
+  "requiresAuth": true,
+  "authMethods": [
+    {
+      "label": "Option 1 — Google OAuth (free, recommended)",
+      "cmd": "gemini auth login",
+      "note": "Opens your browser. Free quota: 60 req/min · 1,000 req/day with any personal Google account."
+    },
+    {
+      "label": "Option 2 — Gemini API key",
+      "cmd": "export GEMINI_API_KEY=your_key_here",
+      "note": "Get a key at aistudio.google.com/apikey — paste it in your shell profile or set it in Dashboard → Providers."
+    },
+    {
+      "label": "Option 3 — Vertex AI (enterprise / GCP)",
+      "cmd": "export GOOGLE_CLOUD_PROJECT=your_project_id && gcloud auth application-default login",
+      "note": "For Google Cloud users — uses your GCP project quota."
+    }
+  ],
   "modelEnvVar": "CREWSWARM_GEMINI_CLI_MODEL",
   "modelFlag": "-m",
   "bestFor": ["crew-coder", "crew-researcher", "crew-main"],

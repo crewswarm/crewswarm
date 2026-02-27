@@ -10,7 +10,25 @@
   "icon": "antigravity",
   "agentConfigKey": "useAntigravity",
   "envToggle": "CREWSWARM_ANTIGRAVITY_ENABLED",
-  "authNote": "Requires opencode-antigravity-auth plugin. Run `opencode auth login` once to authenticate with Google OAuth. No API key needed — uses Antigravity free quota (Gemini 3 Pro, Claude Opus 4.6).",
+  "authNote": "No API key needed — uses Google OAuth via the opencode CLI.",
+  "requiresAuth": true,
+  "authMethods": [
+    {
+      "label": "Step 1 — Install opencode + plugin",
+      "cmd": "npm install -g opencode-ai && npx opencode-antigravity-auth@latest install",
+      "note": "Installs the opencode CLI and the Antigravity auth plugin."
+    },
+    {
+      "label": "Step 2 — Log in with Google",
+      "cmd": "opencode auth login",
+      "note": "Opens browser. Choose \"Login with Google\". No API key needed — free quota via Antigravity."
+    },
+    {
+      "label": "Step 3 — Verify it works",
+      "cmd": "opencode run \"Hello\" --model=google/antigravity-gemini-3-pro",
+      "note": "Should print a reply. If it works, Antigravity is ready in CrewSwarm."
+    }
+  ],
   "modelEnvVar": "CREWSWARM_ANTIGRAVITY_MODEL",
   "modelFlag": "--model",
   "bestFor": ["crew-coder", "crew-researcher", "crew-main", "crew-architect"],

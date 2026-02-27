@@ -68,9 +68,13 @@ export async function loadEngines() {
       card.className = 'card';
       card.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
       const iconHtml = ENGINE_ICONS[eng.icon || eng.id] || `<span style="font-size:20px;">⚙️</span>`;
-      const statusDot = eng.ready ? '🟢' : eng.installed ? '🟡' : '⚫';
-      const statusLabel = eng.ready ? 'Ready' : eng.installed ? 'Installed — missing env vars' : 'Not installed';
-      const statusColor = eng.ready ? 'var(--green)' : eng.installed ? 'var(--yellow,#fbbf24)' : 'var(--text-3)';
+      const needsAuth = eng.requiresAuth && eng.installed;
+      const statusDot = eng.ready && !needsAuth ? '🟢' : eng.installed ? '🟡' : '⚫';
+      const statusLabel = eng.ready && !needsAuth ? 'Ready'
+        : eng.installed && eng.requiresAuth ? 'Installed — run auth to activate'
+        : eng.installed ? 'Installed — missing env vars'
+        : 'Not installed';
+      const statusColor = eng.ready && !needsAuth ? 'var(--green)' : eng.installed ? 'var(--yellow,#fbbf24)' : 'var(--text-3)';
       const traitsHtml = (eng.traits || []).map(t =>
         `<li style="font-size:11px;color:var(--text-3);list-style:none;padding:2px 0;">▸ ${escHtml(t)}</li>`
       ).join('');
@@ -82,6 +86,24 @@ export async function loadEngines() {
            <code style="font-size:11px;background:var(--bg-1);padding:4px 8px;border-radius:4px;display:block;word-break:break-all;">${escHtml(eng.installCmd || '')}</code>
            ${eng.installUrl ? `<a href="${escHtml(eng.installUrl)}" target="_blank" style="font-size:11px;color:var(--accent);margin-top:4px;display:inline-block;">↗ Install guide</a>` : ''}
           </div>` : '';
+      const authHtml = eng.authMethods?.length
+        ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+              <span style="font-size:13px;">🔑</span> Auth setup
+              ${eng.authNote ? `<span style="font-weight:400;color:var(--text-3);">— ${escHtml(eng.authNote)}</span>` : ''}
+            </div>
+            ${eng.authMethods.map((m, i) => `
+              <div style="margin-bottom:10px;">
+                <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px;">${escHtml(m.label)}</div>
+                <div style="position:relative;display:flex;align-items:stretch;gap:0;">
+                  <code style="flex:1;font-size:11px;background:var(--bg-1);padding:6px 8px;border-radius:4px 0 0 4px;display:block;word-break:break-all;border:1px solid var(--border);border-right:none;">${escHtml(m.cmd)}</code>
+                  <button onclick="navigator.clipboard.writeText(${JSON.stringify(m.cmd)}).then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='Copy',1200)})" style="font-size:10px;padding:0 8px;border-radius:0 4px 4px 0;border:1px solid var(--border);background:var(--bg-card2);color:var(--text-2);cursor:pointer;white-space:nowrap;flex-shrink:0;">Copy</button>
+                </div>
+                ${m.note ? `<div style="font-size:10px;color:var(--text-3);margin-top:3px;">${escHtml(m.note)}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>`
+        : (eng.authNote ? `<div style="font-size:11px;color:var(--text-3);margin-top:6px;">🔑 ${escHtml(eng.authNote)}</div>` : '');
       const bestForHtml = eng.bestFor?.length
         ? `<div style="font-size:11px;color:var(--text-3);">Best for: ${eng.bestFor.map(a => `<code style="background:var(--bg-1);padding:1px 3px;border-radius:3px;">${escHtml(a)}</code>`).join(' ')}</div>`
         : '';
@@ -107,6 +129,7 @@ export async function loadEngines() {
         ${installHtml}
         <ul style="margin:0;padding:0;">${traitsHtml}</ul>
         ${bestForHtml}
+        ${authHtml}
       `;
       grid.appendChild(card);
     }
