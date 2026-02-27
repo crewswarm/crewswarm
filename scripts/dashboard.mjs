@@ -311,6 +311,8 @@ const html = `<!doctype html>
       --green:    #34d399;
       --red:      #f87171;
       --yellow:   #fbbf24;
+      --purple:   #a855f7;
+      --warning:  #f59e0b;
       --radius:   10px;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -507,6 +509,29 @@ const html = `<!doctype html>
   </style>
 </head>
 <body>
+  <!-- Shared datalist for role/theme suggestions across all agent forms -->
+  <datalist id="themePresets">
+    <option value="iOS / Swift Developer (SwiftUI, UIKit)">
+    <option value="macOS Developer (AppKit, SwiftUI)">
+    <option value="Android Developer (Kotlin, Jetpack Compose)">
+    <option value="Mobile Developer (React Native, Flutter)">
+    <option value="Frontend Developer (React, Vue, CSS)">
+    <option value="Backend Developer (Node.js, Python, APIs)">
+    <option value="Full-Stack Developer">
+    <option value="Data Engineer / ML Engineer">
+    <option value="DevOps / Infrastructure Engineer">
+    <option value="Security Researcher / Auditor">
+    <option value="QA / Test Engineer">
+    <option value="Technical Writer / Docs">
+    <option value="Product Manager / Planner">
+    <option value="Project Coordinator / Orchestrator">
+    <option value="AI / Prompt Engineer">
+    <option value="Database Engineer (SQL, Postgres, Redis)">
+    <option value="Blockchain / Web3 Developer">
+    <option value="Game Developer (Unity, Unreal)">
+    <option value="Copywriter / Content Creator">
+    <option value="Data Analyst / BI Engineer">
+  </datalist>
   <!-- ── Sidebar ── -->
   <nav class="sidebar">
     <div class="sidebar-brand">
@@ -576,7 +601,7 @@ const html = `<!doctype html>
     </div>
 
     <div class="sidebar-bottom">
-      <div class="meta" style="padding:4px 2px;">v1.0 · <a href="http://localhost:4319" style="color:var(--accent); text-decoration:none;">localhost:4319</a></div>
+      <div class="meta" style="padding:4px 2px;">v1.0 · <a href="http://127.0.0.1:${listenPort}" style="color:var(--accent); text-decoration:none;">127.0.0.1:${listenPort}</a></div>
     </div>
   </nav>
 
@@ -591,6 +616,9 @@ const html = `<!doctype html>
 
     <!-- RT Messages -->
     <div class="view" id="rtView">
+      <div style="padding:8px 12px;border-bottom:1px solid var(--border);">
+        <input id="rtFilter" type="text" placeholder="Filter by agent or content…" oninput="filterRTMessages()" style="width:100%;font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card2);color:var(--text-1);" />
+      </div>
       <div class="page-header">
         <div><div class="page-title">RT Messages</div><div class="page-sub">Live feed from CrewSwarm RT message bus</div></div>
         <button id="rtScrollBtn" onclick="document.getElementById('rtView').scrollTop=document.getElementById('rtView').scrollHeight" style="display:none;position:fixed;bottom:32px;right:32px;z-index:999;background:var(--accent);color:#fff;border:none;border-radius:50px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity .2s;">⬇ Latest</button>
@@ -650,6 +678,8 @@ const html = `<!doctype html>
             <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
             <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
           </div>
+          <button onclick="stopAll()" title="Stop all pipelines" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;">⏹</button>
+          <button onclick="killAll()" title="Kill all agents" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--red,#ef4444);cursor:pointer;">☠️</button>
           <button onclick="sendChat()" class="btn-green" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
@@ -791,7 +821,7 @@ const html = `<!doctype html>
           </div>
           <div style="grid-column:1/-1;">
             <div class="field-label">Role / Theme <span class="meta" style="text-transform:none; font-weight:400;">— used by PM router to assign tasks (auto-filled by preset)</span></div>
-            <input id="naTheme" placeholder="e.g. iOS / Swift developer (SwiftUI, UIKit)" style="width:100%;" />
+            <input id="naTheme" list="themePresets" placeholder="e.g. iOS / Swift developer (SwiftUI, UIKit)" style="width:100%;" />
           </div>
         </div>
         <div style="margin-bottom:10px;">
@@ -819,15 +849,15 @@ const html = `<!doctype html>
             </select>
           </div>
           <div id="naToolsGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;">
-            ${(typeof CREWSWARM_TOOLS !== "undefined" ? CREWSWARM_TOOLS : []).map(t => `
-              <label style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text-2); cursor:pointer; padding:6px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-card2);">
-                <input type="checkbox" class="naToolCheck" data-tool="${t.id}" style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
-                <div>
-                  <code style="font-size:11px; color:var(--text-1);">${t.id}</code>
-                  <div style="font-size:10px; color:var(--text-3); margin-top:2px; line-height:1.3;">${t.desc}</div>
-                </div>
-              </label>
-            `).join('')}
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="write_file" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">write_file</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Write files to disk (@@WRITE_FILE)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="read_file" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">read_file</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Read files from disk (@@READ_FILE)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="mkdir" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">mkdir</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Create directories (@@MKDIR)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="run_cmd" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">run_cmd</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Run whitelisted shell commands (@@RUN_CMD)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="git" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">git</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Git &amp; GitHub CLI operations</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="web_search" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">web_search</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Web search (@@WEB_SEARCH)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="web_fetch" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">web_fetch</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Fetch URLs (@@WEB_FETCH)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="dispatch" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">dispatch</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Dispatch tasks to other agents</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="telegram" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">telegram</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Send Telegram messages (@@TELEGRAM)</div></div></label>
           </div>
         </div>
         <div style="display:flex; gap:8px;">
@@ -844,6 +874,16 @@ const html = `<!doctype html>
         <button onclick="bulkSetRoute('cursor','opus-4.6-thinking')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
         <button onclick="bulkSetRoute('claudecode','claude-sonnet-4-5')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">🤖 Claude Code · sonnet</button>
         <button onclick="bulkSetRoute('claudecode','claude-opus-4-5')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#f97316; border-color:rgba(249,115,22,0.3);">🤖 Claude Code · opus</button>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">🎭 Custom Roles</div>
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:10px;">Define tool sets for custom agent roles. Agents with a matching <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">_role</code> inherit these permissions.</div>
+        <div id="customRolesList" style="margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input id="newRoleName" type="text" placeholder="role name (e.g. analyst)" style="width:140px;font-size:12px;padding:6px 10px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);">
+          <input id="newRoleTools" type="text" placeholder="read_file,web_search,skill" style="flex:1;min-width:200px;font-size:12px;padding:6px 10px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);">
+          <button onclick="addCustomRole()" class="btn-green" style="font-size:12px;">Add Role</button>
+        </div>
       </div>
       <div id="agentsList" style="display:grid; gap:12px;"></div>
     </div>
@@ -912,18 +952,21 @@ const html = `<!doctype html>
             <button onclick="resetSpending()" class="btn-ghost" style="font-size:11px;color:var(--red);">Reset Today</button>
           </div>
           <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
-            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;">Global Daily Caps</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div class="card-title" style="margin-bottom:8px;">⚙️ Daily Spending Caps</div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;">
               <div>
-                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:3px;">Token limit</label>
-                <input id="gcapTokens" type="number" placeholder="e.g. 500000" />
+                <label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px;">Token limit (global/day)</label>
+                <input id="capTokenInput" type="number" min="0" placeholder="no limit" style="width:160px;font-size:12px;padding:6px 10px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);">
               </div>
               <div>
-                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:3px;">Cost limit (USD)</label>
-                <input id="gcapCost" type="number" step="0.01" placeholder="e.g. 5.00" />
+                <label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px;">Cost limit (global/day USD)</label>
+                <input id="capCostInput" type="number" min="0" step="0.01" placeholder="no limit" style="width:160px;font-size:12px;padding:6px 10px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);">
+              </div>
+              <div style="align-self:flex-end;">
+                <button onclick="saveSpendingCaps()" class="btn-primary" style="font-size:12px;">Save Caps</button>
               </div>
             </div>
-            <button onclick="saveGlobalCaps()" class="btn-green" style="font-size:12px;">Save Caps</button>
+            <div id="capsStatus" style="font-size:11px;color:var(--text-3);margin-top:6px;"></div>
           </div>
         </div>
 
@@ -1148,8 +1191,39 @@ const html = `<!doctype html>
             </button>
           </div>
           <div id="bgConsciousnessStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+          <div id="bgConsciousnessConfig" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <label style="font-size:11px;color:var(--text-3);">Interval (min)</label>
+            <input id="bgConsciousnessInterval" type="number" min="1" max="1440" value="15" style="width:70px;font-size:12px;padding:4px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;color:var(--text-1);">
+            <label style="font-size:11px;color:var(--text-3);">Model</label>
+            <input id="bgConsciousnessModel" type="text" placeholder="groq/llama-3.1-8b-instant" style="flex:1;min-width:180px;font-size:12px;padding:4px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;color:var(--text-1);">
+            <button onclick="saveBgConsciousnessConfig()" style="font-size:11px;padding:4px 12px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);">Save</button>
+          </div>
         </div>
 
+        <div class="card" style="margin-top:16px;">
+          <div class="card-title">📋 Global Rules</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:10px;">Injected into every agent on every task. Plain markdown. Changes take effect immediately — no restart needed.</div>
+          <textarea id="globalRulesEditor" rows="8" style="width:100%;font-size:12px;font-family:monospace;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;padding:10px;color:var(--text-1);resize:vertical;" placeholder="# Global Rules\n- Always report full file paths\n- Never break existing tests..."></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button onclick="saveGlobalRules()" class="btn-primary" style="font-size:12px;">Save Rules</button>
+            <span id="globalRulesStatus" style="font-size:11px;color:var(--text-3);align-self:center;"></span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="margin-top:16px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;">OpenCode Loop (Ouroboros)</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px;">
+              <input type="checkbox" id="globalOcLoop" onchange="saveGlobalOcLoop()" style="accent-color:var(--accent);" />
+              Enable loop for all agents (OPENCREW_OPENCODE_LOOP)
+            </label>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="font-size:12px;color:var(--text-3);">Max rounds:</label>
+              <input type="number" id="globalOcLoopRounds" min="1" max="50" value="10" style="width:70px;font-size:12px;" />
+              <button onclick="saveGlobalOcLoopRounds()" class="btn-ghost" style="font-size:12px;">Save</button>
+            </div>
+          </div>
+        </div>
         <div class="card" style="margin-top:16px;">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
             <div>
@@ -1427,6 +1501,8 @@ function showNotification(msg, type){ const d = document.createElement('div'); d
 function fmt(ts){ try { return new Date(ts).toLocaleTimeString(); } catch { return String(ts); } }
 function createdAt(info){ return (info && info.time && info.time.created) || ''; }
 async function loadSessions(){
+  const box = document.getElementById('sessions');
+  if (box) box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:13px;">Loading sessions…</div>';
   try {
     const data = await getJSON('/api/sessions');
     const box = document.getElementById('sessions');
@@ -1491,6 +1567,7 @@ async function loadMessages(){
 async function loadRTMessages(){
   const box = document.getElementById('rtMessages');
   const rtView = document.getElementById('rtView');
+  box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:13px;">Loading messages…</div>';
   // Preserve scroll intent: if user scrolled up, remember their offset from the bottom
   const prevScrollFromBottom = rtView._userScrolledUp
     ? (rtView.scrollHeight - rtView.scrollTop)
@@ -1506,7 +1583,7 @@ async function loadRTMessages(){
 
     const isUser = m.from && (m.from === 'orchestrator' || m.from === 'PM Loop' || m.from === 'crew-lead' || m.from?.includes('main'));
     const div = document.createElement('div');
-    div.className = 'msg ' + (isUser ? 'u' : 'a');
+    div.className = 'msg rt-msg-row ' + (isUser ? 'u' : 'a');
 
     // Safe meta header using DOM (avoids XSS from injected HTML in from/to)
     const meta = document.createElement('div');
@@ -1575,16 +1652,32 @@ async function loadRTMessages(){
   }
 }
 async function loadDLQ(){
+  const box = document.getElementById('dlqMessages');
+  if (box) box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:13px;">Loading DLQ…</div>';
   const data = await getJSON('/api/dlq');
   const dlqBadgeEl = document.getElementById('dlqBadge');
   if (dlqBadgeEl) { dlqBadgeEl.textContent = data.length; dlqBadgeEl.classList.toggle('hidden', !data.length); }
-  const box = document.getElementById('dlqMessages');
+  if (!box) return;
   box.innerHTML = data.length ? data.map(entry => {
     const key = entry.key || (entry.filename || '').replace('.json', '') || '?';
-    return '<div class="msg dlq-item"><div class="meta"><strong>⚠️ Failed</strong> | ' + (entry.agent || '?') + ' | ' + (entry.failedAt ? new Date(entry.failedAt).toLocaleString() : '') + ' <button class="replay-btn" onclick="replayDLQ(&quot;' + key + '&quot;)">Replay</button></div><div class="t">' + (entry.error || '') + '</div></div>';
+    return '<div class="msg dlq-item"><div class="meta"><strong>⚠️ Failed</strong> | ' + (entry.agent || '?') + ' | ' + (entry.failedAt ? new Date(entry.failedAt).toLocaleString() : '') + ' <button class="replay-btn" data-action="replay-dlq" data-key="' + escHtml(key) + '">Replay</button> <button data-action="delete-dlq" data-key="' + escHtml(key) + '" style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--red,#ef4444);background:transparent;color:var(--red,#ef4444);cursor:pointer;">Delete</button></div><div class="t">' + (entry.error || '') + '</div></div>';
   }).join('') : '<div class="meta" style="padding:20px; text-align:center;">✓ DLQ empty</div>';
 }
+function filterRTMessages() {
+  const q = (document.getElementById('rtFilter')?.value || '').toLowerCase();
+  document.querySelectorAll('#rtMessages .rt-msg-row').forEach(row => {
+    row.style.display = !q || row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
 window.replayDLQ = async function(key){ if(!confirm('Replay?')) return; await postJSON('/api/dlq/replay', { key }); showNotification('Replayed'); loadDLQ(); };
+window.deleteDLQ = async function(key) {
+  if (!confirm('Delete this DLQ entry?')) return;
+  try {
+    await fetch('/api/dlq/' + encodeURIComponent(key), { method: 'DELETE' });
+    showNotification('DLQ entry deleted');
+    loadDLQ();
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+};
 async function refreshAll(){
   try {
     const dot = document.getElementById('statusDot');
@@ -1684,6 +1777,12 @@ function showDLQ(){
   setNavActive('navDLQ');
   loadDLQ();
 }
+document.getElementById('dlqView')?.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="replay-dlq"], [data-action="delete-dlq"]');
+  if (!btn || !btn.dataset.key) return;
+  if (btn.dataset.action === 'replay-dlq') window.replayDLQ(btn.dataset.key);
+  else if (btn.dataset.action === 'delete-dlq') window.deleteDLQ(btn.dataset.key);
+});
 function showFiles(){
   hideAllViews();
   document.getElementById('filesView').classList.add('active');
@@ -1958,7 +2057,7 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
       await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: suggestedPattern }) });
       showNotification('Allowlisted: ' + suggestedPattern);
     }
-    await fetch('http://127.0.0.1:5010/approve-cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalId }) });
+    await fetch('/api/cmd-approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalId }) }).catch(e => showNotification('Approve failed: ' + e.message, true));
     if (!alwaysChk.checked) showNotification(agent + ': command approved');
   };
 
@@ -1968,7 +2067,7 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
   reject.onclick = async () => {
     clearInterval(countdown);
     toast.remove();
-    await fetch('http://127.0.0.1:5010/reject-cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalId }) });
+    await fetch('/api/cmd-reject', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalId }) }).catch(e => showNotification('Reject failed: ' + e.message, true));
     showNotification(agent + ': command denied');
   };
 
@@ -2021,9 +2120,9 @@ async function loadCmdAllowlist() {
       chk.style.cssText = 'width:14px;height:14px;cursor:pointer;accent-color:var(--green);flex-shrink:0;';
       chk.onchange = async function() {
         if (chk.checked) {
-          await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) });
+          await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) }).catch(e => showNotification('Failed: ' + e.message, true));
         } else {
-          await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) });
+          await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) }).catch(e => showNotification('Failed: ' + e.message, true));
         }
         loadCmdAllowlist();
       };
@@ -2063,7 +2162,7 @@ async function loadCmdAllowlist() {
     del.style.cssText = 'border:none;background:transparent;color:var(--text-3);cursor:pointer;font-size:14px;padding:0 4px;';
     del.title = 'Remove';
     del.onclick = async function() {
-      await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) });
+      await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) }).catch(e => showNotification('Failed: ' + e.message, true));
       loadCmdAllowlist();
     };
     row.appendChild(code);
@@ -2076,7 +2175,7 @@ async function addAllowlistPattern() {
   const inp = document.getElementById('cmdAllowlistInput');
   const pattern = inp ? inp.value.trim() : '';
   if (!pattern) return;
-  await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) });
+  await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) }).catch(e => showNotification('Failed: ' + e.message, true));
   inp.value = '';
   loadCmdAllowlist();
 }
@@ -2465,17 +2564,17 @@ function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
   lbl.textContent = '🗺️ Roadmap draft — review before building';
 
   const card = document.createElement('div');
-  card.style.cssText = 'width:100%;border:1px solid #1e3a6e;border-radius:12px;overflow:hidden;background:#0a0a12;';
+  card.style.cssText = 'width:100%;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg-card);';
 
   const header = document.createElement('div');
-  header.style.cssText = 'background:#0d1f3c;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1e3a6e;';
+  header.style.cssText = 'background:var(--bg-card2);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);';
   header.innerHTML = '<div><div style="font-size:13px;font-weight:600;color:#60a5fa;">🚀 ' + name + '</div><div style="font-size:11px;color:#4a7ab5;margin-top:2px;">' + outputDir + '</div></div>' +
     '<span style="font-size:10px;color:#4a5568;padding:2px 7px;background:#111827;border-radius:10px;" class="task-count">' + countTasks(roadmapMd) + ' tasks</span>';
 
   const ta = document.createElement('textarea');
   ta.value = roadmapMd;
   ta.spellcheck = false;
-  ta.style.cssText = 'width:100%;background:#0a0a12;border:none;outline:none;color:#c7d4e8;font-size:11.5px;font-family:SF Mono,Monaco,Menlo,monospace;line-height:1.6;padding:12px 14px;resize:none;min-height:160px;max-height:320px;display:block;';
+  ta.style.cssText = 'width:100%;background:var(--bg-card);border:none;outline:none;color:var(--text-1);font-size:11.5px;font-family:SF Mono,Monaco,Menlo,monospace;line-height:1.6;padding:12px 14px;resize:none;min-height:160px;max-height:320px;display:block;';
   setTimeout(() => { ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 320) + 'px'; }, 50);
   ta.addEventListener('input', () => {
     ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 320) + 'px';
@@ -2529,6 +2628,9 @@ async function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
+  const sendBtn = document.querySelector('.btn-green[onclick="sendChat()"]') || document.querySelector('button[onclick*="sendChat"]');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
+  input.disabled = true;
   appendChatBubble('user', text);
   lastAppendedUserContent = text;
   lastSentContent = text;
@@ -2575,9 +2677,27 @@ async function sendChat() {
     appendChatBubble('assistant', '⚠️ Error: ' + errMsg);
     lastAppendedAssistantContent = '';
     box.scrollTop = box.scrollHeight;
+  } finally {
+    input.disabled = false;
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
+    input.focus();
   }
 }
 
+async function stopAll() {
+  if (!confirm('Stop all running pipelines?')) return;
+  try {
+    await postJSON('/api/crew-lead/chat', { message: '@@STOP', sessionId: chatSessionId });
+    showNotification('⏹ Stop signal sent');
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+async function killAll() {
+  if (!confirm('Kill all agents? Bridges must be restarted after.')) return;
+  try {
+    await postJSON('/api/crew-lead/chat', { message: '@@KILL', sessionId: chatSessionId });
+    showNotification('☠️ Kill signal sent');
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
 async function clearChatHistory() {
   if (!confirm('Clear chat history for this session?')) return;
   document.getElementById('chatMessages').innerHTML = '';
@@ -2810,7 +2930,8 @@ async function loadServices(){
   grid.innerHTML = '<div class="meta" style="padding:20px;">Checking services...</div>';
   try {
     const services = await getJSON('/api/services/status');
-    const downCount = services.filter(s => !s.running).length;
+    // Only count critical services in the badge — not optional ones like openclaw-gateway
+    const downCount = services.filter(s => !s.running && s.id !== 'openclaw-gateway').length;
     const badge = document.getElementById('servicesBadge');
     if (downCount > 0) {
       badge.textContent = downCount;
@@ -3291,9 +3412,34 @@ async function saveOpencodeSettings(){
     loadOpencodeProject();
   } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
 }
+async function saveGlobalOcLoop() {
+  const enabled = document.getElementById('globalOcLoop')?.checked;
+  try {
+    await postJSON('/api/settings/global-oc-loop', { enabled });
+    showNotification('Global OC loop ' + (enabled ? 'enabled' : 'disabled'));
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+async function saveGlobalOcLoopRounds() {
+  const rounds = parseInt(document.getElementById('globalOcLoopRounds')?.value) || 10;
+  try {
+    await postJSON('/api/settings/global-oc-loop', { maxRounds: rounds });
+    showNotification('Max rounds set to ' + rounds);
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+async function loadGlobalOcLoop() {
+  try {
+    const d = await getJSON('/api/settings/global-oc-loop');
+    const chk = document.getElementById('globalOcLoop');
+    const inp = document.getElementById('globalOcLoopRounds');
+    if (chk) chk.checked = d.enabled || false;
+    if (inp) inp.value = d.maxRounds ?? 10;
+  } catch(e) {}
+}
 async function loadBgConsciousness() {
   const btn = document.getElementById('bgConsciousnessBtn');
   const status = document.getElementById('bgConsciousnessStatus');
+  const intervalEl = document.getElementById('bgConsciousnessInterval');
+  const modelEl = document.getElementById('bgConsciousnessModel');
   try {
     const d = await getJSON('/api/settings/bg-consciousness');
     const on = d.enabled;
@@ -3306,10 +3452,21 @@ async function loadBgConsciousness() {
     if (status) status.textContent = on
       ? 'Active — crew-lead reflects every ' + Math.round(d.intervalMs / 60000) + 'min when idle. Model: ' + d.model
       : 'Off — crew-lead will not self-reflect between tasks.';
+    if (intervalEl) intervalEl.value = Math.round((d.intervalMs || 900000) / 60000);
+    if (modelEl) modelEl.value = d.model || '';
   } catch(e) {
     if (btn) btn.textContent = 'Error';
     if (status) status.textContent = 'Could not load: ' + e.message;
   }
+}
+async function saveBgConsciousnessConfig() {
+  const intervalMin = parseInt(document.getElementById('bgConsciousnessInterval')?.value || '15');
+  const model = (document.getElementById('bgConsciousnessModel')?.value || '').trim();
+  try {
+    await postJSON('/api/settings/bg-consciousness', { intervalMs: intervalMin * 60000, model: model || undefined });
+    showNotification('Background consciousness settings saved');
+    loadBgConsciousness();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 async function toggleBgConsciousness() {
   const btn = document.getElementById('bgConsciousnessBtn');
@@ -3348,6 +3505,21 @@ async function toggleCursorWaves() {
     loadCursorWaves();
   } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
+async function loadGlobalRules() {
+  try {
+    const d = await getJSON('/api/settings/global-rules');
+    const el = document.getElementById('globalRulesEditor');
+    if (el) el.value = d.content || '';
+  } catch(e) {}
+}
+async function saveGlobalRules() {
+  const content = document.getElementById('globalRulesEditor')?.value || '';
+  try {
+    await postJSON('/api/settings/global-rules', { content });
+    const st = document.getElementById('globalRulesStatus');
+    if (st) { st.textContent = '✅ Saved'; setTimeout(() => st.textContent = '', 3000); }
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
 async function loadGlobalFallback() {
   try {
     const d = await getJSON('/api/settings/global-fallback');
@@ -3383,7 +3555,7 @@ function showSettingsTab(tab){
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
   if (tab === 'security') { loadCmdAllowlist(); }
-  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); }
+  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadGlobalRules(); loadGlobalOcLoop(); }
   if (tab === 'telegram') { loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
   if (tab === 'whatsapp') { loadWaStatus(); loadWaConfig(); loadWaMessages(); }
 }
@@ -3864,8 +4036,10 @@ async function loadSpending(){
           return row + '</div>';
         }).join('');
       } else { out += '<div style="color:var(--text-3);">No per-agent data yet for today.</div>'; }
-      if (gCapTok) document.getElementById('gcapTokens').value = gCapTok;
-      if (gCapCost) document.getElementById('gcapCost').value = gCapCost;
+      const capTokEl = document.getElementById('capTokenInput');
+      const capCostEl = document.getElementById('capCostInput');
+      if (capTokEl) capTokEl.value = gCapTok || '';
+      if (capCostEl) capCostEl.value = gCapCost || '';
       _agentTotalCost = gCost;
       updateGrandTotal();
       el.innerHTML = out;
@@ -3937,18 +4111,31 @@ async function loadSpending(){
       _agentTotalCost = totalCost;
       updateGrandTotal();
       el.innerHTML = out;
+      // Multi-day view: load caps from config
+      try {
+        const capsData = await getJSON('/api/settings/spending-caps').catch(() => ({}));
+        const capTokEl = document.getElementById('capTokenInput');
+        const capCostEl = document.getElementById('capCostInput');
+        if (capTokEl) capTokEl.value = capsData.dailyTokenLimit ?? '';
+        if (capCostEl) capCostEl.value = capsData.dailyCostLimitUSD ?? '';
+      } catch (_) {}
     }
   } catch(e) { el.innerHTML = '<div style="color:var(--text-3);">Error: ' + e.message + '</div>'; }
 }
 async function resetSpending(){
   if (!confirm("Reset today's spending counters?")) return;
   try { await fetch('/api/spending/reset', { method: 'POST', headers:{'content-type':'application/json'}, body: '{}' }); loadSpending(); showNotification('Spending reset'); }
-  catch(e) { showNotification('Reset failed', 'error'); }
+  catch(e) { showNotification('Reset failed: ' + e.message, true); }
 }
-async function saveGlobalCaps(){
-  const tokens = parseInt(document.getElementById('gcapTokens').value) || null;
-  const cost   = parseFloat(document.getElementById('gcapCost').value) || null;
-  showNotification('Add to ~/.crewswarm/crewswarm.json: "globalSpendingCaps": {"dailyTokenLimit":' + (tokens||'null') + ',"dailyCostLimitUSD":' + (cost||'null') + '}', 'warning');
+async function saveSpendingCaps() {
+  const tokens = parseInt(document.getElementById('capTokenInput')?.value || '0') || null;
+  const cost = parseFloat(document.getElementById('capCostInput')?.value || '0') || null;
+  try {
+    await postJSON('/api/settings/spending-caps', { dailyTokenLimit: tokens, dailyCostLimitUSD: cost });
+    const st = document.getElementById('capsStatus');
+    if (st) { st.textContent = '✅ Caps saved — resets at midnight'; setTimeout(() => st.textContent = '', 4000); }
+    loadSpending();
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
@@ -3986,11 +4173,59 @@ function showAgents(){
   document.getElementById('agentsView').classList.add('active');
   setNavActive('navAgents');
   loadAgents_cfg();
+  loadCustomRoles();
+}
+
+// ── Custom Roles ───────────────────────────────────────────────────────────
+async function loadCustomRoles() {
+  try {
+    const d = await getJSON('/api/settings/role-defaults');
+    const roles = d.roles || {};
+    const el = document.getElementById('customRolesList');
+    if (!el) return;
+    const BUILTIN = ['coder','researcher','writer','auditor','ops','generalist'];
+    const custom = Object.entries(roles).filter(([k]) => !BUILTIN.includes(k));
+    if (!custom.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text-3);">No custom roles yet. Built-in: coder, researcher, writer, auditor, ops, generalist.</div>'; return; }
+    el.innerHTML = custom.map(([name, tools]) =>
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+      '<code style="min-width:120px;font-size:12px;">' + name + '</code>' +
+      '<span style="font-size:12px;color:var(--text-3);">' + (Array.isArray(tools) ? tools.join(', ') : tools) + '</span>' +
+      '<button data-role-name="' + String(name).replace(/"/g, '&quot;') + '" onclick="deleteCustomRole(this.dataset.roleName)" style="font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--red,#ef4444);">✕</button>' +
+      '</div>'
+    ).join('');
+  } catch(e) {}
+}
+async function addCustomRole() {
+  const name = (document.getElementById('newRoleName')?.value || '').trim().toLowerCase();
+  const toolsStr = (document.getElementById('newRoleTools')?.value || '').trim();
+  if (!name || !toolsStr) { showNotification('Role name and tools required', 'error'); return; }
+  const tools = toolsStr.split(',').map(t => t.trim()).filter(Boolean);
+  try {
+    const d = await getJSON('/api/settings/role-defaults');
+    const roles = d.roles || {};
+    roles[name] = tools;
+    await postJSON('/api/settings/role-defaults', { roles });
+    document.getElementById('newRoleName').value = '';
+    document.getElementById('newRoleTools').value = '';
+    showNotification('Role "' + name + '" added');
+    loadCustomRoles();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
+async function deleteCustomRole(name) {
+  try {
+    const d = await getJSON('/api/settings/role-defaults');
+    const roles = d.roles || {};
+    delete roles[name];
+    await postJSON('/api/settings/role-defaults', { roles });
+    showNotification('Role "' + name + '" removed');
+    loadCustomRoles();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 
 // ── Agents UI ──────────────────────────────────────────────────────────────
 let _allModels = [];
 let _modelsByProvider = {};  // { "cerebras": ["llama3.1-8b", ...], ... }
+let _roleToolDefaults = {};
 
 // CrewSwarm gateway-bridge tool definitions
 const CREWSWARM_TOOLS = [
@@ -4049,6 +4284,7 @@ async function loadAgents_cfg(){
     const data = await getJSON('/api/agents-config');
     _allModels = data.allModels || [];
     _modelsByProvider = data.modelsByProvider || {};
+    _roleToolDefaults = data.roleToolDefaults || {};
     const agents = sortAgents(data.agents || []);
     if (!agents.length){ list.innerHTML = '<div class="meta" style="padding:20px;">No agents found in config. Check ~/.crewswarm/crewswarm.json</div>'; return; }
     list.innerHTML = '';
@@ -4127,7 +4363,7 @@ async function loadAgents_cfg(){
             </div>
             <div style="margin-top:8px;">
               <div class="field-label" style="margin-bottom:4px;">Role / Theme <span style="font-weight:400; color:var(--text-3); font-size:11px;">— used by PM router to assign tasks (e.g. "iOS/Swift developer (SwiftUI, UIKit)")</span></div>
-              <input id="atheme-\${a.id}" type="text" value="\${a.theme||''}" placeholder="Describe what this agent specialises in..." style="width:100%;" />
+              <input id="atheme-\${a.id}" type="text" list="themePresets" value="\${a.theme||''}" placeholder="Describe what this agent specialises in..." style="width:100%;" />
             </div>
           </div>
           <div>
@@ -4191,6 +4427,10 @@ async function loadAgents_cfg(){
                 style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${a.useCursorCli ? '#38bdf8' : 'var(--border)'}; background:\${a.useCursorCli ? 'rgba(56,189,248,0.12)' : 'var(--surface-2)'}; color:\${a.useCursorCli ? '#38bdf8' : 'var(--text-2)'};">
                 🖱 Cursor CLI <span style="font-size:10px; font-weight:400; opacity:0.7;">(free · sub)</span>
               </button>
+              <button id="route-claudecode-\${a.id}" onclick="setRoute('\${a.id}','claudecode')"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${a.useClaudeCode ? '#a855f7' : 'var(--border)'}; background:\${a.useClaudeCode ? 'rgba(168,85,247,0.12)' : 'var(--surface-2)'}; color:\${a.useClaudeCode ? '#a855f7' : 'var(--text-2)'};">
+                ⚡ Claude Code
+              </button>
             </div>
             <div id="oc-model-row-\${a.id}" style="display:\${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
               <select id="oc-model-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcModelText('\${a.id}')"></select>
@@ -4207,6 +4447,27 @@ async function loadAgents_cfg(){
               <select id="cursor-model-sel-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncCursorModelText('\${a.id}')"></select>
               <input id="cursor-model-txt-\${a.id}" type="text" placeholder="sonnet-4.6 or leave blank for auto" value="\${a.cursorCliModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
               <button onclick="saveCursorCliConfig('\${a.id}')" class="btn-sky" style="white-space:nowrap; font-size:12px;">Save</button>
+            </div>
+            <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label style="font-size:11px; color:var(--text-3); white-space:nowrap;">_role</label>
+                <select id="agent-role-\${a.id}" style="font-size:12px; min-width:130px; padding:4px 8px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px; color:var(--text-1);">
+                  \${(() => {
+                    const builtin = ['','coder','researcher','writer','auditor','ops','generalist'];
+                    const custom = Object.keys(_roleToolDefaults || {}).filter(k => !builtin.includes(k));
+                    return builtin.concat(custom).map(r => '<option value="' + r + '"' + (r === (a.role || '') ? ' selected' : '') + '>' + (r === '' ? '(auto-detect)' : r) + '</option>').join('');
+                  })()}
+                </select>
+              </div>
+              <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); cursor:pointer;">
+                <input id="agent-ocloop-\${a.id}" type="checkbox" \${a.opencodeLoop ? 'checked' : ''} style="accent-color:var(--accent);" />
+                opencodeLoop
+              </label>
+              <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:200px;">
+                <label style="font-size:11px; color:var(--text-3); white-space:nowrap;">Workspace</label>
+                <input id="agent-workspace-\${a.id}" type="text" value="\${a.workspace || ''}" placeholder="path or empty" style="flex:1; font-size:12px; padding:4px 8px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px; color:var(--text-1);" />
+              </div>
+              <button onclick="saveAgentAdvanced('\${a.id}')" class="btn-primary" style="font-size:11px; padding:4px 12px;">Save Advanced</button>
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
@@ -4470,18 +4731,20 @@ function syncCursorModelText(agentId) {
   if (sel && txt) txt.value = sel.value;
 }
 
-// 3-way route toggle — mutually exclusive
+// 4-way route toggle — mutually exclusive
 async function setRoute(agentId, route) {
   const useOpenCode = route === 'opencode';
   const useCursorCli = route === 'cursor';
+  const useClaudeCode = route === 'claudecode';
   // Update button styles
   const styles = {
     direct:   { border: 'var(--accent)', bg: 'rgba(99,102,241,0.15)', color: 'var(--accent)' },
     opencode: { border: '#22c55e',       bg: 'rgba(34,197,94,0.12)',  color: '#22c55e' },
     cursor:   { border: '#38bdf8',       bg: 'rgba(56,189,248,0.12)', color: '#38bdf8' },
+    claudecode: { border: '#a855f7',     bg: 'rgba(168,85,247,0.12)', color: '#a855f7' },
     inactive: { border: 'var(--border)', bg: 'var(--surface-2)',      color: 'var(--text-2)' },
   };
-  ['direct','opencode','cursor'].forEach(r => {
+  ['direct','opencode','cursor','claudecode'].forEach(r => {
     const btn = document.getElementById('route-' + r + '-' + agentId);
     if (!btn) return;
     const s = r === route ? styles[r] : styles.inactive;
@@ -4496,8 +4759,9 @@ async function setRoute(agentId, route) {
   if (cursorRow) cursorRow.style.display = useCursorCli ? 'flex' : 'none';
   // Save
   try {
-    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli });
-    const label = route === 'direct' ? 'Direct API' : route === 'opencode' ? 'OpenCode' : 'Cursor CLI';
+    const payload = { agentId, useOpenCode: useOpenCode || false, useCursorCli: useCursorCli || false, useClaudeCode: useClaudeCode || false };
+    await postJSON('/api/agents-config/update', payload);
+    const label = route === 'direct' ? 'Direct API' : route === 'opencode' ? 'OpenCode' : route === 'cursor' ? 'Cursor CLI' : 'Claude Code';
     showNotification(agentId + ' → ' + label);
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
@@ -4508,6 +4772,16 @@ async function saveCursorCliConfig(agentId) {
     await postJSON('/api/agents-config/update', { agentId, cursorCliModel });
     showNotification(agentId + ' Cursor model → ' + (cursorCliModel || 'auto'));
   } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+
+async function saveAgentAdvanced(agentId) {
+  const role = document.getElementById('agent-role-' + agentId)?.value || '';
+  const opencodeLoop = document.getElementById('agent-ocloop-' + agentId)?.checked || false;
+  const workspace = document.getElementById('agent-workspace-' + agentId)?.value?.trim() || '';
+  try {
+    await postJSON('/api/agents-config/update', { agentId, role: role || undefined, opencodeLoop: opencodeLoop || undefined, workspace: workspace || undefined });
+    showNotification(agentId + ' advanced settings saved');
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 
 function toggleOpenCodeUI(agentId) {
@@ -5378,6 +5652,7 @@ async function loadProjects(){
         ? '<button data-action="retry-failed" data-id="' + id + '" style="background:rgba(248,113,113,0.15);color:var(--red);border:1px solid rgba(248,113,113,0.3);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px;font-weight:600;">↩ Retry ' + p.roadmap.failed + ' failed</button>'
         : '';
       return '<div class="card" id="proj-card-' + id + '" data-proj-id="' + id + '">'
+        + '<div id="proj-view-' + id + '">'
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">'
         +   '<div>'
         +     '<strong style="font-size:15px;">' + escHtml(p.name) + '</strong>'
@@ -5405,7 +5680,15 @@ async function loadProjects(){
         +     '<input type="checkbox" data-action="toggle-auto-advance" data-id="' + id + '" ' + (p.autoAdvance ? 'checked' : '') + ' style="accent-color:var(--green);width:14px;height:14px;cursor:pointer;">'
         +     '⚡ Auto-advance'
         +   '</label>'
+        +   '<button data-action="edit" data-id="' + id + '" style="background:transparent;color:var(--text-3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;" title="Edit project">✎ Edit</button>'
         +   '<button data-action="delete" data-id="' + id + '" style="background:transparent;color:var(--text-3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;" title="Remove from dashboard (files stay on disk)">🗑 Delete</button>'
+        + '</div>'
+        + '</div>'
+        + '<div id="proj-edit-' + id + '" style="display:none;padding:12px;border-top:1px solid var(--border);margin-top:12px;">'
+        +   '<div style="margin-bottom:8px;"><label style="font-size:11px;color:var(--text-3);">Name</label><input id="proj-name-' + id + '" type="text" value="' + escHtml(p.name) + '" style="margin-top:4px;" /></div>'
+        +   '<div style="margin-bottom:8px;"><label style="font-size:11px;color:var(--text-3);">Description</label><input id="proj-desc-' + id + '" type="text" value="' + escHtml(p.description || '') + '" style="margin-top:4px;" placeholder="Optional" /></div>'
+        +   '<div style="margin-bottom:8px;"><label style="font-size:11px;color:var(--text-3);">Output directory</label><input id="proj-dir-' + id + '" type="text" value="' + escHtml(p.outputDir || '') + '" style="margin-top:4px;" /></div>'
+        +   '<div style="display:flex;gap:8px;"><button data-action="save-project-edit" data-id="' + id + '" class="btn-green" style="font-size:12px;">Save</button><button data-action="cancel-project-edit" data-id="' + id + '" class="btn-ghost" style="font-size:12px;">Cancel</button></div>'
         + '</div>'
         + '<div id="proj-pm-status-' + id + '" style="display:none;margin-top:10px;font-size:12px;padding:8px 12px;background:rgba(99,102,241,0.08);border-radius:6px;border:1px solid rgba(99,102,241,0.2);color:#a5b4fc;"></div>'
         + '<div id="rm-editor-' + id + '" style="display:none;margin-top:14px;">'
@@ -5468,6 +5751,9 @@ document.getElementById('projectsList').addEventListener('click', e => {
         .catch(e => { showNotification('Failed: ' + e.message, true); btn.checked = !checked; });
       return; // don't prevent default on checkbox
     }
+    case 'edit':         toggleProjectEdit(id); break;
+    case 'save-project-edit': saveProjectEdit(id); break;
+    case 'cancel-project-edit': toggleProjectEdit(id); break;
     case 'add-item':     addRoadmapItem(id); break;
     case 'skip-next':    skipNextItem(id); break;
     case 'reset-failed': resetAllFailed(id); break;
@@ -5475,6 +5761,28 @@ document.getElementById('projectsList').addEventListener('click', e => {
     case 'close-editor': closeRoadmapEditor(id); break;
   }
 });
+
+function toggleProjectEdit(projectId) {
+  const viewEl = document.getElementById('proj-view-' + projectId);
+  const editEl = document.getElementById('proj-edit-' + projectId);
+  if (!viewEl || !editEl) return;
+  const isEditing = editEl.style.display !== 'none';
+  viewEl.style.display = isEditing ? '' : 'none';
+  editEl.style.display = isEditing ? 'none' : 'block';
+}
+
+window.saveProjectEdit = async function(projectId) {
+  const name = document.getElementById('proj-name-' + projectId)?.value?.trim();
+  const description = document.getElementById('proj-desc-' + projectId)?.value?.trim();
+  const outputDir = document.getElementById('proj-dir-' + projectId)?.value?.trim();
+  if (!name) { showNotification('Project name is required', true); return; }
+  try {
+    await postJSON('/api/projects/update', { projectId, name, description, outputDir });
+    showNotification('Project saved');
+    toggleProjectEdit(projectId);
+    loadProjects();
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+};
 
 // ── Chat project dropdown (next to input; persisted so it survives tab switch and reload) ───
 
@@ -6255,6 +6563,26 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    if (url.pathname === "/api/cmd-approve" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const CREW_LEAD_PORT = process.env.CREW_LEAD_PORT || "5010";
+      try {
+        const r = await fetch(`http://127.0.0.1:${CREW_LEAD_PORT}/approve-cmd`, { method: "POST", headers: { "content-type": "application/json" }, body, signal: AbortSignal.timeout(5000) });
+        const d = await r.json().catch(() => ({}));
+        res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(d));
+      } catch (e) { res.writeHead(502, { "content-type": "application/json" }); res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+    if (url.pathname === "/api/cmd-reject" && req.method === "POST") {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const CREW_LEAD_PORT = process.env.CREW_LEAD_PORT || "5010";
+      try {
+        const r = await fetch(`http://127.0.0.1:${CREW_LEAD_PORT}/reject-cmd`, { method: "POST", headers: { "content-type": "application/json" }, body, signal: AbortSignal.timeout(5000) });
+        const d = await r.json().catch(() => ({}));
+        res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(d));
+      } catch (e) { res.writeHead(502, { "content-type": "application/json" }); res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
 
     // ── Telegram sessions (reads crew-lead chat-history for telegram-* sessions) ──
     if (url.pathname === "/api/telegram-sessions") {
@@ -6537,7 +6865,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/projects/update" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { projectId, autoAdvance } = JSON.parse(body || "{}");
+      const { projectId, autoAdvance, name, description, outputDir } = JSON.parse(body || "{}");
       if (!projectId) throw new Error("projectId required");
       const registryFile = path.join(OPENCLAW_DIR, "orchestrator-logs", "projects.json");
       const { existsSync } = await import("node:fs");
@@ -6545,7 +6873,11 @@ const server = http.createServer(async (req, res) => {
       let projects = {};
       if (existsSync(registryFile)) projects = JSON.parse(await rf(registryFile, "utf8").catch(() => "{}"));
       if (!projects[projectId]) throw new Error("Project not found: " + projectId);
-      if (autoAdvance !== undefined) projects[projectId].autoAdvance = Boolean(autoAdvance);
+      const proj = projects[projectId];
+      if (autoAdvance !== undefined) proj.autoAdvance = Boolean(autoAdvance);
+      if (name) proj.name = name;
+      if (description !== undefined) proj.description = description;
+      if (outputDir) proj.outputDir = outputDir;
       await wf(registryFile, JSON.stringify(projects, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, project: projects[projectId] }));
@@ -6699,6 +7031,15 @@ const server = http.createServer(async (req, res) => {
       if (!key) throw new Error("missing key");
       const { execSync } = await import("node:child_process");
       execSync(`"${ctlPath}" dlq-replay "${key}"`, { encoding: "utf8", timeout: 10000 });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (url.pathname.startsWith("/api/dlq/") && req.method === "DELETE") {
+      const raw = url.pathname.replace("/api/dlq/", "");
+      const key = decodeURIComponent(raw).replace(/[^a-zA-Z0-9_.-]/g, "");
+      const file = path.join(dlqDir, key + ".json");
+      try { fs.unlinkSync(file); } catch {}
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -6930,6 +7271,135 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: "crew-lead unreachable: " + e.message }));
       }
       return;
+    }
+    // ── Global OpenCode loop (Ouroboros) ───────────────────────────────────────
+    if (url.pathname === "/api/settings/global-oc-loop") {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            enabled: cfg.opencodeLoop ?? false,
+            maxRounds: cfg.opencodeLoopMaxRounds ?? 10,
+          }));
+        } catch (e) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled: false, maxRounds: 10 }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = ""; for await (const chunk of req) body += chunk;
+        const { enabled, maxRounds } = JSON.parse(body || "{}");
+        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+        if (enabled !== undefined) cfg.opencodeLoop = enabled;
+        if (maxRounds !== undefined) cfg.opencodeLoopMaxRounds = maxRounds;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+    }
+    // ── Role defaults (dashboard-managed) ─────────────────────────────────────
+    if (url.pathname === "/api/settings/role-defaults") {
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          const roles = cfg.roleToolDefaults || {};
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ roles }));
+        } catch (e) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        try {
+          let body = ""; for await (const chunk of req) body += chunk;
+          const { roles } = JSON.parse(body || "{}");
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          cfg.roleToolDefaults = roles || {};
+          fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+      }
+    }
+    // ── Spending caps (dashboard-managed) ────────────────────────────────────
+    if (url.pathname === "/api/settings/spending-caps") {
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          const caps = cfg.globalSpendingCaps || {};
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            dailyTokenLimit: caps.dailyTokenLimit ?? null,
+            dailyCostLimitUSD: caps.dailyCostLimitUSD ?? null,
+          }));
+        } catch (e) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        try {
+          let body = ""; for await (const chunk of req) body += chunk;
+          const { dailyTokenLimit, dailyCostLimitUSD } = JSON.parse(body || "{}");
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          cfg.globalSpendingCaps = {
+            dailyTokenLimit: dailyTokenLimit ?? undefined,
+            dailyCostLimitUSD: dailyCostLimitUSD ?? undefined,
+          };
+          // Remove keys with undefined to keep JSON clean
+          if (cfg.globalSpendingCaps.dailyTokenLimit === undefined) delete cfg.globalSpendingCaps.dailyTokenLimit;
+          if (cfg.globalSpendingCaps.dailyCostLimitUSD === undefined) delete cfg.globalSpendingCaps.dailyCostLimitUSD;
+          fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+      }
+    }
+    // ── Global rules (dashboard-managed, not proxied) ────────────────────────
+    if (url.pathname === "/api/settings/global-rules") {
+      const rulesPath = path.join(CFG_DIR, "global-rules.md");
+      if (req.method === "GET") {
+        try {
+          const content = fs.existsSync(rulesPath) ? fs.readFileSync(rulesPath, "utf8") : "";
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ content }));
+        } catch (e) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        try {
+          let body = ""; for await (const chunk of req) body += chunk;
+          const { content } = JSON.parse(body || "{}");
+          fs.writeFileSync(rulesPath, content || "", "utf8");
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+      }
     }
     // ── Proxy /api/settings/global-fallback → crew-lead:5010 ─────────────────
     if (url.pathname === "/api/settings/global-fallback") {
@@ -7612,6 +8082,13 @@ ORDER BY day DESC, cost DESC;`;
           workspace: a.workspace || "",
           useOpenCode: a.useOpenCode,
           opencodeModel: a.opencodeModel || "",
+          useCursorCli: a.useCursorCli || false,
+          opencodeFallbackModel: a.opencodeFallbackModel || "",
+          cursorCliModel: a.cursorCliModel || "",
+          useClaudeCode: a.useClaudeCode || false,
+          claudeCodeModel: a.claudeCodeModel || "",
+          role: a._role || "",
+          opencodeLoop: a.opencodeLoop || false,
           liveness, lastSeen, ageSec,
         };
       });
@@ -7683,14 +8160,15 @@ ORDER BY day DESC, cost DESC;`;
       }
       const defaultModels = Object.keys(cfg.agents?.defaults?.models || {});
       for (const m of defaultModels) { if (!allModels.includes(m)) allModels.push(m); }
+      const roleToolDefaults = cfg.roleToolDefaults || {};
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, agents: agentList, allModels, modelsByProvider }));
+      res.end(JSON.stringify({ ok: true, agents: agentList, allModels, modelsByProvider, roleToolDefaults }));
       return;
     }
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, role, opencodeLoop, workspace } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -7732,6 +8210,11 @@ ORDER BY day DESC, cost DESC;`;
       if (opencodeFallbackModel !== undefined) agent.opencodeFallbackModel = opencodeFallbackModel || undefined;
       if (useCursorCli !== undefined) agent.useCursorCli = useCursorCli;
       if (cursorCliModel !== undefined) agent.cursorCliModel = cursorCliModel || undefined;
+      if (useClaudeCode !== undefined) agent.useClaudeCode = useClaudeCode;
+      if (claudeCodeModel !== undefined) agent.claudeCodeModel = claudeCodeModel || undefined;
+      if (role !== undefined) agent._role = role || undefined;
+      if (opencodeLoop !== undefined) agent.opencodeLoop = opencodeLoop || undefined;
+      if (workspace !== undefined) agent.workspace = workspace || undefined;
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
       // System prompts live in agent-prompts.json, not crewswarm.json
       if (systemPrompt !== undefined) {
@@ -8318,12 +8801,13 @@ ORDER BY day DESC, cost DESC;`;
         },
         {
           id: "openclaw-gateway",
-          label: "OpenClaw Gateway",
+          label: "OpenClaw Gateway (optional)",
           description: gwUp
-            ? (oclawPaired ? "App paired ✓ — plugin can communicate via port 18789" : "Listening on port 18789")
-            : "Port 18789. Start opens the OpenClaw app; if the gateway stays stopped, start it from within the app (status bar or Settings).",
+            ? (oclawPaired ? "App paired ✓ — legacy plugin communicating via port 18789" : "Listening on port 18789 — legacy only")
+            : "Optional legacy service (port 18789). Only needed if using the OpenClaw desktop app. CrewSwarm works fully without it.",
           port: 18789,
           running: gwUp,
+          optional: true,
           canRestart: true,
           pid: null,
         },
@@ -8337,7 +8821,7 @@ ORDER BY day DESC, cost DESC;`;
           { id: "telegram", label: "Telegram Bridge", description: "@CrewSwarm_bot", port: null, running: false, canRestart: true, pid: null },
           { id: "opencode", label: "Code Engine", description: "opencode serve — port 4096", port: 4096, running: false, canRestart: true, pid: null },
           { id: "dashboard", label: "Dashboard", description: "This dashboard", port: listenPort, running: true, canRestart: true, pid: process.pid },
-          { id: "openclaw-gateway", label: "OpenClaw Gateway", description: "Legacy gateway (port 18789) — only needed if pairing the OpenClaw desktop app", port: 18789, running: false, canRestart: true, pid: null },
+          { id: "openclaw-gateway", label: "OpenClaw Gateway (optional)", description: "Optional legacy service — only needed if using the OpenClaw desktop app", port: 18789, running: false, optional: true, canRestart: true, pid: null },
         ];
       }
 

@@ -13,7 +13,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
   || process.env.OPENCREWHQ_CONFIG_DIR   // legacy env alias
   || path.join(os.homedir(), ".crewswarm");
-const DLQ_DIR = path.join(CFG_DIR, "logs", "dlq");
+const SHARED_MEMORY_BASE = process.env.SHARED_MEMORY_DIR || path.join(os.homedir(), ".crewswarm", "workspace", "shared-memory");
+const SHARED_MEMORY_NAMESPACE = process.env.SHARED_MEMORY_NAMESPACE || "claw-swarm";
+const DLQ_DIR = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "dlq");
 const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
 
 const key = process.argv[2];
