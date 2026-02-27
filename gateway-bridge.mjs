@@ -226,6 +226,10 @@ function clearAgentSessionId(agentId) {
   } catch {}
 }
 
+// Cursor CLI is stateless per invocation; no persistent session file to clear.
+// This is a no-op kept for symmetry with clearAgentSessionId.
+function clearCursorSessionId(agentId) { void agentId; }
+
 // Parse the most-recent session ID from `opencode session list` stdout.
 // If agentPrefix is provided (e.g. "[crew-coder]"), only match sessions whose
 // title contains that prefix — prevents race conditions when multiple agents

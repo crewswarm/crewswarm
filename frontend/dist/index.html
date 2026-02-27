@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="/assets/index-CF_66R_9.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DT_vadY2.css">
+  <script type="module" crossorigin src="/assets/index-CFWSHC-t.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-2gogF7QG.css">
 </head>
 <body>
   <!-- ── Sidebar ── -->
@@ -166,7 +166,7 @@
           <div style="flex:1;position:relative;min-width:0;overflow:visible;">
             <textarea id="chatInput" aria-label="Chat message" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
               style="width:100%;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;min-width:0;box-sizing:border-box;"
-              id-chatinput-keydown="" ></textarea>
+              ></textarea>
             <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
             <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
           </div>
@@ -187,6 +187,7 @@
               <option value="cursor">Cursor CLI</option>
               <option value="opencode">OpenCode</option>
               <option value="codex">Codex CLI</option>
+              <option value="gemini">🔵 Gemini CLI</option>
               <option value="docker-sandbox">🐳 Docker Sandbox</option>
             </select>
             <label title="Inject recent Cursor agent chat history as context" style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-3);cursor:pointer;white-space:nowrap;">
@@ -213,7 +214,7 @@
         <div><div class="page-title">Projects</div><div class="page-sub">Each project has its own roadmap, output dir, and PM Loop.</div></div>
         <button id="newProjectBtn" class="btn-yellow">+ New Project</button>
       </div>
-      <div id="newProjectForm" style="display:none;" class="card" style="border-color:var(--yellow);">
+      <div id="newProjectForm" style="display:none; border-color:var(--yellow);" class="card">
         <h3>New Project</h3>
         <div style="display:grid; gap:10px; margin-top:12px;">
           <label for="npName" class="field-label">Project name</label>
@@ -338,7 +339,7 @@
           <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
             <label for="naPrompt" class="field-label" style="margin:0;">System Prompt</label>
             <select id="naPromptPreset" aria-label="System prompt preset" style="font-size:12px; padding:3px 8px;" data-onchange="applyPromptPreset">
-              \${buildPresetOptions('— quick presets —')}
+              <option value="">— quick presets —</option>
             </select>
           </div>
           <textarea id="naPrompt" rows="5" placeholder="Describe what this agent specialises in. It will be shown at the top of every task."></textarea>
@@ -359,15 +360,6 @@
             </select>
           </div>
           <div id="naToolsGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;">
-            ${(typeof CREWSWARM_TOOLS !== "undefined" ? CREWSWARM_TOOLS : []).map(t => `
-              <label style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text-2); cursor:pointer; padding:6px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-card2);">
-                <input type="checkbox" class="naToolCheck" data-tool="${t.id}" style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
-                <div>
-                  <code style="font-size:11px; color:var(--text-1);">${t.id}</code>
-                  <div style="font-size:10px; color:var(--text-3); margin-top:2px; line-height:1.3;">${t.desc}</div>
-                </div>
-              </label>
-            `).join('')}
           </div>
         </div>
         <div style="display:flex; gap:8px;">
@@ -809,23 +801,6 @@
           <div id="geminiCliStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
         </div>
 
-        <div class="card" style="margin-top:16px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-            <div>
-              <div class="card-title" style="margin-bottom:2px;">🌀 Antigravity Executor</div>
-              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
-                Route tasks through Antigravity via OpenCode (<code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">opencode run --model=google/antigravity-*</code>). Free Google OAuth quota — access Gemini 3 Pro and Claude Opus 4.6 Thinking with no API key.
-                Per-agent override: <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">useAntigravity: true</code> in crewswarm.json.
-                Setup: install <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">opencode-antigravity-auth</code> plugin then run <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">opencode auth login</code>. See Engines tab for full steps.
-              </div>
-            </div>
-            <button id="antigravityBtn" data-action="toggleAntigravityExecutor" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
-              Loading…
-            </button>
-          </div>
-          <div id="antigravityStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
-        </div>
-
       </div>
 
     </div>
@@ -1165,7 +1140,7 @@
               </label>
             </div>
           </div>
-          <div id="pmRoadmapPanel" style="display:none; margin-bottom:12px;" class="log-block mono" style="max-height:220px;"></div>
+          <div id="pmRoadmapPanel" style="display:none; margin-bottom:12px; max-height:220px;" class="log-block mono"></div>
           <div id="pmLiveLog" style="display:none;" class="log-block green"></div>
         </div>
       </div>

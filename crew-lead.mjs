@@ -149,6 +149,7 @@ function loadBgConsciousnessEnabled() {
   return false;
 }
 let _bgConsciousnessEnabled = loadBgConsciousnessEnabled();
+let _lastBgConsciousnessAt = 0;
 // Proxy so existing code using BG_CONSCIOUSNESS_ENABLED still works
 const BG_CONSCIOUSNESS_ENABLED_REF = { get enabled() { return _bgConsciousnessEnabled; } };
 
@@ -471,8 +472,7 @@ const RT_TOKEN = process.env.CREWSWARM_RT_AUTH_TOKEN || (() => {
     const cs = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
     if (cs?.rt?.authToken) return cs.rt.authToken;
   } catch {}
-  try {
-  } catch { return ""; }
+  return "";
 })();
 
 initWaveDispatcher({

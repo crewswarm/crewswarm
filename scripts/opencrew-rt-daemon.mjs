@@ -36,8 +36,9 @@ function isAgentAllowed(agentId) {
   const cfgPath = join(process.env.HOME || "", ".crewswarm", "crewswarm.json");
   try {
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
-    const agents = Array.isArray(cfg.agents) ? cfg.agents : [];
-    return agents.some(a => a.id === agentId);
+    const agentList = Array.isArray(cfg.agents) ? cfg.agents
+      : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
+    return agentList.some(a => a.id === agentId);
   } catch { return false; }
 }
 

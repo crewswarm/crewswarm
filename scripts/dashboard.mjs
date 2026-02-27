@@ -19,7 +19,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPENCLAW_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
 // Config dir: ~/.crewswarm is canonical; falls back to ~/.openclaw for legacy installs (not repo root)
 const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
-  || process.env.CREWSWARM_CONFIG_DIR
   || (fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
       ? path.join(os.homedir(), ".crewswarm")
       : path.join(os.homedir(), ".openclaw"));
@@ -404,8 +403,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/send" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { to, message } = JSON.parse(body);
-      if (!to || !message) throw new Error("missing to or message");
+      let parsed;
+      try { parsed = JSON.parse(body); } catch { res.writeHead(400, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "invalid JSON" })); return; }
+      const { to, message } = parsed;
+      if (!to || !message) { res.writeHead(400, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "missing to or message" })); return; }
       await sendCrewMessage(to, message);
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -1311,35 +1312,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
     }
-    // ── Antigravity executor toggle ────────────────────────────────────────────
-    if (url.pathname === "/api/settings/antigravity") {
-      const { readFile, writeFile } = await import("node:fs/promises");
-      const cfgPath = CFG_FILE;
-      if (req.method === "GET") {
-        try {
-          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
-          const enabled = cfg.antigravity === true || process.env.CREWSWARM_ANTIGRAVITY_ENABLED === "1";
-          const installed = (() => { try { execSync("which opencode", { stdio: "ignore" }); return true; } catch { return false; } })();
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ enabled, installed }));
-        } catch {
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ enabled: false, installed: false }));
-        }
-        return;
-      }
-      if (req.method === "POST") {
-        let body = ""; for await (const chunk of req) body += chunk;
-        const { enabled } = JSON.parse(body || "{}");
-        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
-        cfg.antigravity = enabled === true;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
-        process.env.CREWSWARM_ANTIGRAVITY_ENABLED = enabled ? "1" : "0";
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: true, enabled: cfg.antigravity }));
-        return;
-      }
-    }
     // ── Global OpenCode loop (Ouroboros) ───────────────────────────────────────
     if (url.pathname === "/api/settings/global-oc-loop") {
       const { readFile, writeFile } = await import("node:fs/promises");
@@ -1518,33 +1490,6 @@ const server = http.createServer(async (req, res) => {
         const cfg = JSON.parse(await readFile(CFG_FILE, "utf8"));
         if (loopBrain) cfg.loopBrain = loopBrain; else delete cfg.loopBrain;
         await writeFile(CFG_FILE, JSON.stringify(cfg, null, 4), "utf8");
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-        return;
-      }
-    }
-    // ── GET/POST /api/settings/loop-brain — central Ouroboros brain model ────────
-    if (url.pathname === "/api/settings/loop-brain") {
-      const { readFile, writeFile } = await import("node:fs/promises");
-      const cfgPath = CFG_FILE;
-      if (req.method === "GET") {
-        try {
-          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ loopBrain: cfg.loopBrain || null }));
-        } catch {
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ loopBrain: null }));
-        }
-        return;
-      }
-      if (req.method === "POST") {
-        let body = ""; for await (const chunk of req) body += chunk;
-        const { loopBrain } = JSON.parse(body || "{}");
-        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
-        if (loopBrain) cfg.loopBrain = loopBrain;
-        else delete cfg.loopBrain;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
         return;
@@ -2275,8 +2220,6 @@ ORDER BY day DESC, cost DESC;`;
           useCodex: a.useCodex || false,
           useGeminiCli: a.useGeminiCli || false,
           geminiCliModel: a.geminiCliModel || "",
-          useAntigravity: a.useAntigravity || false,
-          antigravityModel: a.antigravityModel || "",
           role: a._role || "",
           opencodeLoop: a.opencodeLoop || false,
           opencodeLoopMaxRounds: a.opencodeLoopMaxRounds || 10,
@@ -2359,7 +2302,7 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, useCodex, useGeminiCli, geminiCliModel, useAntigravity, antigravityModel, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, useCodex, useGeminiCli, geminiCliModel, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -2406,8 +2349,6 @@ ORDER BY day DESC, cost DESC;`;
       if (useCodex !== undefined) agent.useCodex = useCodex;
       if (useGeminiCli !== undefined) agent.useGeminiCli = useGeminiCli;
       if (geminiCliModel !== undefined) agent.geminiCliModel = geminiCliModel || undefined;
-      if (useAntigravity !== undefined) agent.useAntigravity = useAntigravity;
-      if (antigravityModel !== undefined) agent.antigravityModel = antigravityModel || undefined;
       if (role !== undefined) agent._role = role || undefined;
       if (opencodeLoop !== undefined) agent.opencodeLoop = opencodeLoop || undefined;
       if (opencodeLoopMaxRounds !== undefined) agent.opencodeLoopMaxRounds = opencodeLoopMaxRounds > 0 ? opencodeLoopMaxRounds : undefined;
@@ -3254,11 +3195,11 @@ ORDER BY day DESC, cost DESC;`;
 
     // ── ZeroEval / llm-stats benchmark API proxy ────────────────────────────────
     // Data from https://llm-stats.com (api.zeroeval.com) — SWE-Bench, LiveCodeBench, etc.
-    const zeroevalBenchMatch = url.pathname.match(/^\/api\/zeroeval\/benchmarks(?:\/([a-zA-Z0-9_\-]+))?$/);
+    const zeroevalBenchMatch = url.pathname.match(/^\/api\/zeroeval\/benchmarks(?:\/([a-zA-Z0-9_\-\(\)\.%]+))?$/);
     if (zeroevalBenchMatch && req.method === "GET") {
-      const benchmarkId = zeroevalBenchMatch[1];
+      const benchmarkId = zeroevalBenchMatch[1] ? decodeURIComponent(zeroevalBenchMatch[1]) : null;
       const zurl = benchmarkId
-        ? `https://api.zeroeval.com/leaderboard/benchmarks/${benchmarkId}`
+        ? `https://api.zeroeval.com/leaderboard/benchmarks/${encodeURIComponent(benchmarkId)}`
         : "https://api.zeroeval.com/leaderboard/benchmarks";
       try {
         const r = await fetch(zurl, { signal: AbortSignal.timeout(15000) });
@@ -3413,7 +3354,7 @@ ORDER BY day DESC, cost DESC;`;
               installed = fs.existsSync(alt);
             }
           }
-          const missingEnv = (eng.requiresEnv || []).filter(k => !process.env[k]);
+          const missingEnv = eng.requiresAuth ? [] : (eng.requiresEnv || []).filter(k => !process.env[k]);
           return { ...eng, installed, missingEnv, ready: installed && missingEnv.length === 0 };
         });
         res.writeHead(200, { "content-type": "application/json" });

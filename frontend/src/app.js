@@ -28,6 +28,7 @@ import {
   saveOpenCodeFallback,
   saveCursorCliConfig,
   saveClaudeCodeConfig,
+  saveGeminiCliConfig,
   bulkSetRoute,
   startCrew,
   populateModelDropdown,
@@ -108,8 +109,6 @@ import {
   toggleCodexExecutor,
   loadGeminiCliExecutor,
   toggleGeminiCliExecutor,
-  loadAntigravityExecutor,
-  toggleAntigravityExecutor,
   loadGlobalFallback,
   saveGlobalFallback,
   loadGlobalOcLoop,
@@ -178,6 +177,7 @@ import {
   loadToolMatrix,
   restartAgentFromUI,
   checkCrewLeadStatus,
+  renderTaskLifecycle,
 } from './tabs/usage-tab.js';
 import {
   loadAllUsage,
@@ -775,7 +775,7 @@ const {
   showNotification,
   state,
   getChatSessionId: () => chatSessionId,
-  getChatActiveProjectId: () => _chatActiveProjectId,
+  getChatActiveProjectId: () => state.chatActiveProjectId,
   getCrewLeadInfo: () => window._crewLeadInfo,
   appendRoadmapCard,
   getLastAppendedAssistantContent: () => lastAppendedAssistantContent,
@@ -886,7 +886,7 @@ function showSettingsTab(tab){
     btn.classList.toggle('active', t === tab);
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
-  if (tab === 'engines')  { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadCodexExecutor(); loadGeminiCliExecutor(); loadAntigravityExecutor(); loadGlobalOcLoop(); loadLoopBrain(); loadPassthroughNotify(); }
+  if (tab === 'engines')  { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadCodexExecutor(); loadGeminiCliExecutor(); loadGlobalOcLoop(); loadLoopBrain(); loadPassthroughNotify(); }
   if (tab === 'comms')    { loadCommsTabData(); }
   if (tab === 'security') { loadCmdAllowlist(); loadEnvAdvanced(); }
   if (tab === 'webhooks') { /* static */ }
@@ -1158,7 +1158,6 @@ const ACTION_REGISTRY = {
   toggleClaudeCode,
   toggleCodexExecutor,
   toggleGeminiCliExecutor,
-  toggleAntigravityExecutor,
   saveGlobalOcLoop,
   saveGlobalOcLoopRounds,
   savePassthroughNotify,
@@ -1238,11 +1237,13 @@ const ACTION_REGISTRY = {
   saveOpenCodeFallback: (id) => saveOpenCodeFallback(id),
   saveCursorCliConfig:  (id) => saveCursorCliConfig(id),
   saveClaudeCodeConfig: (id) => saveClaudeCodeConfig(id),
+  saveGeminiCliConfig:  (id) => saveGeminiCliConfig(id),
   // Settings tabs
   showSettingsTab: (tab) => showSettingsTab(tab),
 };
 
 document.addEventListener('click', (e) => {
+  if (!(e.target instanceof Element)) return;
   const el = e.target.closest('[data-action]');
   if (!el) return;
   e.stopPropagation();
@@ -1334,7 +1335,8 @@ Object.assign(window, {
   loadRunSkills, loadServices, loadSpending, loadTelegramSessions,
   loadTgMessages, loadToolMatrix, loadWaMessages, onBuildProjectChange,
   onChatProjectChange, pickFolder, renderWaContactRows, resetSpending,
-  saveGlobalCaps, saveGlobalFallback, saveOpencodeSettings, saveRTToken,
+  approveSkill, loadPendingApprovals, rejectSkill,
+  saveGlobalCaps, saveGlobalFallback, saveBgConsciousnessModel, saveOpencodeSettings, saveRTToken,
   saveSkill, saveTgConfig, saveWaConfig, sendChat, sendTestWebhook,
   showAgents, showBenchmarks, showBuild, showChat, showDLQ, showFiles,
   showModels, showProjects, showRT, showRunSkills, showServices,
@@ -1349,7 +1351,7 @@ Object.assign(window, {
   fetchBuiltinModels, fetchModels, previewFile, resetAgentSession,
   restartAgentFromUI, restartService, runSkillFromUI,
   saveAgentFallback, saveAgentIdentity, saveAgentModel, saveAgentPrompt,
-  saveAgentTools, saveBuiltinKey, saveCursorCliConfig, saveKey,
+  saveAgentTools, saveBuiltinKey, saveCursorCliConfig, saveClaudeCodeConfig, saveGeminiCliConfig, saveKey,
   saveOpenCodeConfig, saveOpenCodeFallback, saveSearchTool, setRoute,
   stopService, testBuiltinProvider, testKey, testSearchTool,
   toggleAgentBody, toggleKeyVis,

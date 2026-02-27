@@ -259,7 +259,7 @@ export async function checkCrewLeadStatus() {
 }
 
 // ── Task lifecycle (telemetry schema 1.1) ────────────────────────────────────────
-function renderTaskLifecycle(events) {
+export function renderTaskLifecycle(events) {
   const el = document.getElementById('taskLifecycleContainer');
   if (!el) return;
   events = events || [];
