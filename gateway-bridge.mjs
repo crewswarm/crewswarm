@@ -20,6 +20,25 @@ import {
   COORDINATOR_AGENT_IDS,
   RT_TO_GATEWAY_AGENT_MAP as REGISTRY_RT_TO_GATEWAY_AGENT_MAP,
 } from "./lib/agent-registry.mjs";
+import {
+  initSpending,
+  loadSpending,
+  saveSpending,
+  addAgentSpend,
+  checkSpendingCap,
+  notifyTelegramSpending,
+  tokenUsage,
+  recordTokenUsage,
+} from "./lib/runtime/spending.mjs";
+import {
+  initSkills,
+  resolveSkillAlias,
+  loadSkillDef,
+  loadPendingSkills,
+  savePendingSkills,
+  executeSkill,
+  notifyTelegramSkillApproval,
+} from "./lib/skills/index.mjs";
 
 const LEGACY_STATE_DIR = path.join(os.homedir(), ".openclaw");
 const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
@@ -73,6 +92,10 @@ function resolveProviderConfig(cfg, providerKey) {
     apiKey:  explicit?.apiKey  || cfg?.env?.[`${providerKey.toUpperCase()}_API_KEY`] || null,
   };
 }
+// Wire injected deps into extracted modules (after config fns are defined)
+initSpending({ resolveConfig, resolveTelegramBridgeConfig });
+initSkills({ resolveConfig, resolveTelegramBridgeConfig });
+
 const TELEMETRY_LOG = path.join(TELEMETRY_DIR, "events.log");
 const SHARED_MEMORY_DIR = path.resolve(process.cwd(), "memory");
 const SHARED_MEMORY_MAX_FILE_CHARS = 8000;
@@ -1335,356 +1358,6 @@ function isCommandAllowlisted(cmd) {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
     return new RegExp(`^${escaped}`, "i").test(cmd.trim());
   });
-}
-
-// ── Skills system ─────────────────────────────────────────────────────────────
-const SKILLS_DIR         = path.join(os.homedir(), ".crewswarm", "skills");
-const PENDING_SKILLS_FILE = path.join(os.homedir(), ".crewswarm", "pending-skills.json");
-
-// ── AgentSkills SKILL.md loader ───────────────────────────────────────────────
-// Supports ClawHub-compatible skills: drop a folder with a SKILL.md into
-// ~/.crewswarm/skills/<name>/SKILL.md and it works alongside JSON skills.
-// SKILL.md uses YAML frontmatter (name, description, aliases, url, method).
-// If the skill has a url in frontmatter → executes like a JSON skill.
-// If not → injects the SKILL.md content as the skill result (instruction card).
-
-function parseSkillMdFrontmatter(raw) {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return {};
-  const front = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const m = line.match(/^(\w[\w-]*):\s*(.+)$/);
-    if (!m) continue;
-    let val = m[2].trim();
-    // parse simple arrays: ["a","b"] or [a, b]
-    if (val.startsWith("[")) {
-      try { val = JSON.parse(val.replace(/'/g, '"')); } catch { val = val.slice(1,-1).split(",").map(s => s.trim().replace(/^['"]|['"]$/g,"")); }
-    }
-    front[m[1]] = val;
-  }
-  return front;
-}
-
-/** Run clawscan on a skill directory/file. Returns { safe, score, findings } */
-function clawscanSkill(skillPath) {
-  try {
-    const dir = skillPath.endsWith("SKILL.md") ? path.dirname(skillPath) : skillPath;
-    const { execSync } = require("child_process");
-    const out = execSync(`npx clawscan scan "${dir}" --json 2>/dev/null || npx clawscan scan "${dir}" 2>&1`, {
-      timeout: 15000, encoding: "utf8", stdio: ["pipe","pipe","pipe"],
-    });
-    // Try JSON output first
-    try {
-      const j = JSON.parse(out);
-      return { safe: (j.score || 0) < 40, score: j.score || 0, findings: j.findings || [] };
-    } catch {}
-    // Fallback: parse text output
-    const scoreMatch = out.match(/score:\s*(\d+)/i);
-    const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
-    const dangerous = /🔴|DANGEROUS|CRITICAL/i.test(out);
-    const warning   = /🟡|WARNING/i.test(out);
-    return { safe: !dangerous, score, findings: [], raw: out.slice(0, 500) };
-  } catch (e) {
-    // clawscan unavailable — skip scan, log warning
-    console.warn("[skill-scan] clawscan unavailable, skipping scan for", skillPath, e?.message?.slice(0,80));
-    return { safe: true, score: -1, skipped: true };
-  }
-}
-
-function loadSkillMd(skillName) {
-  // Try ~/.crewswarm/skills/<name>/SKILL.md  or  ~/.crewswarm/skills/<name>.md
-  const candidates = [
-    path.join(SKILLS_DIR, skillName, "SKILL.md"),
-    path.join(SKILLS_DIR, skillName + ".md"),
-  ];
-  for (const f of candidates) {
-    if (!fs.existsSync(f)) continue;
-    try {
-      const raw  = fs.readFileSync(f, "utf8");
-      const meta = parseSkillMdFrontmatter(raw);
-      const body = raw.replace(/^---[\s\S]*?---\r?\n/, "").trim();
-      // ── Security scan ──────────────────────────────────────────────────────
-      const scan = clawscanSkill(f);
-      if (!scan.safe && !scan.skipped) {
-        console.error(`[skill-scan] ⛔ BLOCKED skill "${skillName}" — clawscan score ${scan.score}/100. Remove from ~/.crewswarm/skills/ to suppress.`);
-        return null; // refuse to load
-      }
-      if (scan.score >= 20 && !scan.skipped) {
-        console.warn(`[skill-scan] ⚠️  Skill "${skillName}" scored ${scan.score}/100 — loaded with caution.`);
-      }
-      // ───────────────────────────────────────────────────────────────────────
-      return {
-        _type:       "skill-md",
-        name:        meta.name || skillName,
-        description: meta.description || "",
-        aliases:     Array.isArray(meta.aliases) ? meta.aliases : (meta.aliases ? [meta.aliases] : []),
-        url:         meta.url || null,
-        method:      meta.method || "GET",
-        defaultParams: meta.defaultParams ? (typeof meta.defaultParams === "string" ? JSON.parse(meta.defaultParams) : meta.defaultParams) : {},
-        _body:       body,
-        _file:       f,
-        _scanScore:  scan.score,
-      };
-    } catch { continue; }
-  }
-  // Also scan subdirs for aliases
-  try {
-    const entries = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
-    for (const ent of entries) {
-      if (!ent.isDirectory()) continue;
-      const f = path.join(SKILLS_DIR, ent.name, "SKILL.md");
-      if (!fs.existsSync(f)) continue;
-      try {
-        const raw  = fs.readFileSync(f, "utf8");
-        const meta = parseSkillMdFrontmatter(raw);
-        const aliases = Array.isArray(meta.aliases) ? meta.aliases : (meta.aliases ? [meta.aliases] : []);
-        if (aliases.includes(skillName) || (meta.name && meta.name === skillName)) {
-          const body = raw.replace(/^---[\s\S]*?---\r?\n/, "").trim();
-          return { _type:"skill-md", name: meta.name || ent.name, description: meta.description||"", aliases, url: meta.url||null, method: meta.method||"GET", defaultParams:{}, _body: body, _file: f };
-        }
-      } catch { continue; }
-    }
-  } catch {}
-  return null;
-}
-
-/** Resolve skill name alias to actual skill file name. E.g. "benchmark" → "zeroeval.benchmark". */
-function resolveSkillAlias(skillName) {
-  const exact = path.join(SKILLS_DIR, skillName + ".json");
-  if (fs.existsSync(exact)) return skillName;
-  try {
-    const files = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".json"));
-    for (const f of files) {
-      const real = f.replace(".json", "");
-      const def = JSON.parse(fs.readFileSync(path.join(SKILLS_DIR, f), "utf8"));
-      const aliases = def.aliases || [];
-      if (aliases.includes(skillName)) return real;
-    }
-  } catch {}
-  return skillName;
-}
-
-function loadSkillDef(skillName) {
-  const resolved = resolveSkillAlias(skillName);
-  const file = path.join(SKILLS_DIR, resolved + ".json");
-  if (fs.existsSync(file)) {
-    try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
-  }
-  // Fall back to SKILL.md format (AgentSkills / ClawHub)
-  return loadSkillMd(skillName);
-}
-
-function loadPendingSkills() {
-  try { return JSON.parse(fs.readFileSync(PENDING_SKILLS_FILE, "utf8")); } catch { return {}; }
-}
-function savePendingSkills(map) {
-  try {
-    fs.mkdirSync(path.dirname(PENDING_SKILLS_FILE), { recursive: true });
-    fs.writeFileSync(PENDING_SKILLS_FILE, JSON.stringify(map, null, 2));
-  } catch {}
-}
-
-async function executeSkill(skillDef, params) {
-  // AgentSkills / ClawHub SKILL.md — instruction card with no URL → return content
-  if (skillDef._type === "skill-md" && !skillDef.url) {
-    const paramStr = Object.keys(params).length ? `\nCalled with params: ${JSON.stringify(params)}` : "";
-    return `[Skill: ${skillDef.name}]\n${skillDef._body}${paramStr}`;
-  }
-  // SKILL.md with a url → treat exactly like a JSON skill (fall through)
-  const cfg = resolveConfig();
-  let url;
-  const merged = { ...(skillDef.defaultParams || {}), ...params };
-  const aliases = skillDef.paramAliases || {};
-  for (const [param, map] of Object.entries(aliases)) {
-    if (merged[param] != null && map[merged[param]] != null) merged[param] = map[merged[param]];
-  }
-  const urlParamEmpty = (skillDef.url || "").match(/\{(\w+)\}/);
-  const emptyKey = urlParamEmpty ? urlParamEmpty[1] : null;
-  const isParamEmpty = emptyKey && (merged[emptyKey] === undefined || merged[emptyKey] === null || String(merged[emptyKey] || "").trim() === "");
-  if (skillDef.listUrl && isParamEmpty) {
-    url = skillDef.listUrl;
-  } else {
-    url = skillDef.url;
-    for (const [k, v] of Object.entries(merged)) {
-      url = url.replace(`{${k}}`, encodeURIComponent(String(v)));
-    }
-  }
-  const headers = { "Content-Type": "application/json", ...(skillDef.headers || {}) };
-  // Auth resolution
-  if (skillDef.auth) {
-    const auth = skillDef.auth;
-    let token = auth.token || "";
-    if (auth.keyFrom) {
-      // e.g. "providers.elevenlabs.apiKey" → walk config
-      let val = cfg;
-      for (const part of auth.keyFrom.split(".")) { val = val?.[part]; }
-      if (val) token = String(val);
-    }
-    if (token) {
-      if (auth.type === "bearer" || !auth.type) headers["Authorization"] = `Bearer ${token}`;
-      else if (auth.type === "header") headers[auth.header || "X-API-Key"] = token;
-      else if (auth.type === "basic") headers["Authorization"] = `Basic ${Buffer.from(token).toString("base64")}`;
-    }
-  }
-  const method  = (skillDef.method || "POST").toUpperCase();
-  const timeout = skillDef.timeout || 30000;
-  const reqOpts = { method, headers, signal: AbortSignal.timeout(timeout) };
-  if (method !== "GET" && method !== "HEAD") reqOpts.body = JSON.stringify(merged);
-  console.log(`[gateway] skill fetch → ${method} ${url}`);
-  const res  = await fetch(url, reqOpts);
-  const text = await res.text();
-  console.log(`[gateway] skill fetch ← ${res.status} ${text.slice(0, 100).replace(/\n/g, " ")}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
-  try { return JSON.parse(text); } catch { return { response: text }; }
-}
-
-async function notifyTelegramSkillApproval(agentId, skillName, params, approvalId) {
-  const cfg = resolveConfig();
-  const tgBridge = resolveTelegramBridgeConfig();
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || tgBridge.token || "";
-  const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID
-    || (Array.isArray(tgBridge.allowedChatIds) && tgBridge.allowedChatIds.length ? String(tgBridge.allowedChatIds[0]) : "") || tgBridge.defaultChatId || "";
-  const chatIdVal = chatId.trim();
-  if (!botToken || !chatIdVal) return;
-  const msg = `🔔 *Skill approval needed*\n*${agentId}* → *${skillName}*\nParams: \`${JSON.stringify(params).slice(0, 200)}\`\n\nApprove: POST /api/skills/approve {"approvalId":"${approvalId}"}\nOr reply approve/${approvalId} here`;
-  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatIdVal, text: msg, parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[
-        { text: "✅ Approve", callback_data: `skill_approve:${approvalId}` },
-        { text: "❌ Reject",  callback_data: `skill_reject:${approvalId}`  },
-      ]]}
-    }),
-    signal: AbortSignal.timeout(8000),
-  }).catch(() => {});
-}
-
-// ── 2-level spending caps ─────────────────────────────────────────────────────
-const SPENDING_FILE = path.join(os.homedir(), ".crewswarm", "spending.json");
-// Approximate cost per 1M tokens per provider (USD)
-const COST_PER_1M = { groq:0.05, anthropic:3.00, openai:5.00, perplexity:1.00, mistral:0.70, google:0.15, xai:2.00, deepseek:0.27, nvidia:1.00, cerebras:0.10 };
-
-function loadSpending() {
-  const today = new Date().toISOString().slice(0, 10);
-  try {
-    const d = JSON.parse(fs.readFileSync(SPENDING_FILE, "utf8"));
-    if (d.date === today) return d;
-  } catch {}
-  return { date: today, global: { tokens: 0, costUSD: 0 }, agents: {} };
-}
-function saveSpending(s) {
-  try { fs.mkdirSync(path.dirname(SPENDING_FILE), { recursive: true }); fs.writeFileSync(SPENDING_FILE, JSON.stringify(s, null, 2)); } catch {}
-}
-function addAgentSpend(agentId, tokens, costUSD) {
-  const s = loadSpending();
-  s.global.tokens  += tokens;
-  s.global.costUSD += costUSD;
-  if (!s.agents[agentId]) s.agents[agentId] = { tokens: 0, costUSD: 0 };
-  s.agents[agentId].tokens  += tokens;
-  s.agents[agentId].costUSD += costUSD;
-  saveSpending(s);
-}
-function checkSpendingCap(agentId, providerKey) {
-  try {
-    const csw = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
-    const s   = loadSpending();
-    const gl  = csw.globalSpendingCaps || {};
-    // Global cap check
-    if (gl.dailyTokenLimit && s.global.tokens >= gl.dailyTokenLimit)
-      return { exceeded: true, action: "stop", message: `Global daily token limit ${gl.dailyTokenLimit.toLocaleString()} reached` };
-    if (gl.dailyCostLimitUSD && s.global.costUSD >= gl.dailyCostLimitUSD)
-      return { exceeded: true, action: "stop", message: `Global daily cost limit $${gl.dailyCostLimitUSD} reached` };
-    // Per-agent cap check
-    const agent    = (csw.agents || []).find(a => a.id === agentId);
-    const agentCap = agent?.spending;
-    if (agentCap) {
-      const used = s.agents[agentId] || { tokens: 0, costUSD: 0 };
-      if (agentCap.dailyTokenLimit && used.tokens >= agentCap.dailyTokenLimit)
-        return { exceeded: true, action: agentCap.onExceed || "notify", message: `${agentId} daily token limit ${agentCap.dailyTokenLimit.toLocaleString()} reached` };
-      if (agentCap.dailyCostLimitUSD && used.costUSD >= agentCap.dailyCostLimitUSD)
-        return { exceeded: true, action: agentCap.onExceed || "notify", message: `${agentId} daily cost limit $${agentCap.dailyCostLimitUSD} reached` };
-    }
-  } catch {}
-  return { exceeded: false };
-}
-async function notifyTelegramSpending(message) {
-  const cfg = resolveConfig();
-  const tgBridge = resolveTelegramBridgeConfig();
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || cfg?.env?.TELEGRAM_BOT_TOKEN || cfg?.TELEGRAM_BOT_TOKEN || tgBridge.token || "";
-  const chatId   = process.env.TELEGRAM_CHAT_ID   || cfg?.env?.TELEGRAM_CHAT_ID   || cfg?.TELEGRAM_CHAT_ID
-    || (Array.isArray(tgBridge.allowedChatIds) && tgBridge.allowedChatIds.length ? String(tgBridge.allowedChatIds[0]) : "") || tgBridge.defaultChatId || "";
-  const chatIdVal = chatId.trim();
-  if (!botToken || !chatIdVal) return;
-  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatIdVal, text: `💸 Spending alert: ${message}`, parse_mode: "Markdown" }),
-    signal: AbortSignal.timeout(5000),
-  }).catch(() => {});
-}
-
-// ── Token/cost accumulator ────────────────────────────────────────────────────
-const TOKEN_USAGE_FILE = path.join(os.homedir(), ".crewswarm", "token-usage.json");
-
-const tokenUsage = (() => {
-  try { return JSON.parse(fs.readFileSync(TOKEN_USAGE_FILE, "utf8")); } catch {}
-  return { calls: 0, prompt: 0, completion: 0, byModel: {}, sessionStart: new Date().toISOString() };
-})();
-
-function recordTokenUsage(modelId, usage, agentId) {
-  if (!usage) return;
-  const p = Number(usage.prompt_tokens || usage.input_tokens || 0);
-  const c = Number(usage.completion_tokens || usage.output_tokens || 0);
-  if (!p && !c) return;
-  // Cached token count — field name varies by provider
-  const cached = Number(
-    usage.prompt_tokens_details?.cached_tokens  // OpenAI / xAI / Groq
-    || usage.prompt_cache_hit_tokens            // DeepSeek
-    || usage.cache_read_input_tokens            // Anthropic
-    || 0
-  );
-  if (cached > 0) {
-    const pct = p > 0 ? Math.round(cached / p * 100) : 0;
-    console.log(`[bridge:${agentId || modelId}] cache hit: ${cached}/${p} tokens cached (${pct}%) — ${modelId}`);
-  }
-  const today = new Date().toISOString().slice(0, 10);
-  tokenUsage.calls++;
-  tokenUsage.prompt     += p;
-  tokenUsage.completion += c;
-  if (!tokenUsage.cached) tokenUsage.cached = 0;
-  tokenUsage.cached += cached;
-  if (!tokenUsage.byModel[modelId]) tokenUsage.byModel[modelId] = { calls: 0, prompt: 0, completion: 0, cached: 0 };
-  tokenUsage.byModel[modelId].calls++;
-  tokenUsage.byModel[modelId].prompt     += p;
-  tokenUsage.byModel[modelId].completion += c;
-  tokenUsage.byModel[modelId].cached     += cached;
-  // Daily rollup
-  if (!tokenUsage.byDay) tokenUsage.byDay = {};
-  if (!tokenUsage.byDay[today]) tokenUsage.byDay[today] = { calls: 0, prompt: 0, completion: 0, cached: 0, byModel: {} };
-  tokenUsage.byDay[today].calls++;
-  tokenUsage.byDay[today].prompt     += p;
-  tokenUsage.byDay[today].completion += c;
-  tokenUsage.byDay[today].cached     += cached;
-  if (!tokenUsage.byDay[today].byModel[modelId]) tokenUsage.byDay[today].byModel[modelId] = { calls: 0, prompt: 0, completion: 0, cached: 0 };
-  tokenUsage.byDay[today].byModel[modelId].calls++;
-  tokenUsage.byDay[today].byModel[modelId].prompt     += p;
-  tokenUsage.byDay[today].byModel[modelId].completion += c;
-  tokenUsage.byDay[today].byModel[modelId].cached     += cached;
-  // Flush to disk every 5 calls
-  if (tokenUsage.calls % 5 === 0) {
-    try {
-      fs.mkdirSync(path.dirname(TOKEN_USAGE_FILE), { recursive: true });
-      fs.writeFileSync(TOKEN_USAGE_FILE, JSON.stringify(tokenUsage, null, 2));
-    } catch {}
-  }
-  // Track per-agent spending for caps
-  if (agentId) {
-    const total = p + c;
-    const providerKey = modelId.split("/")[0] || "unknown";
-    const costPer1M   = COST_PER_1M[providerKey] || 1.0;
-    const costUSD     = (total / 1_000_000) * costPer1M;
-    addAgentSpend(agentId, total, costUSD);
-  }
 }
 
 // Sanitize paths from agent replies — strip markdown/hallucination (backticks, trailing punctuation)
