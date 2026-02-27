@@ -842,6 +842,8 @@ const html = `<!doctype html>
         <button onclick="bulkSetRoute('opencode')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#22c55e; border-color:rgba(34,197,94,0.3);">⚡ OpenCode</button>
         <button onclick="bulkSetRoute('cursor','sonnet-4.6')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.6</button>
         <button onclick="bulkSetRoute('cursor','opus-4.6-thinking')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
+        <button onclick="bulkSetRoute('claudecode','claude-sonnet-4-5')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">🤖 Claude Code · sonnet</button>
+        <button onclick="bulkSetRoute('claudecode','claude-opus-4-5')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#f97316; border-color:rgba(249,115,22,0.3);">🤖 Claude Code · opus</button>
       </div>
       <div id="agentsList" style="display:grid; gap:12px;"></div>
     </div>
@@ -3086,7 +3088,8 @@ async function loadBuiltinProviders(){
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           \${isOllama ? '' : \`<input id="bp_\${p.id}" type="password" autocomplete="new-password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />\`}
           \${isOllama
-            ? \`<button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost" style="flex:1;">Test Connection</button>\`
+            ? \`<button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost">Test Connection</button>
+               <button onclick="fetchBuiltinModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>\`
             : \`<button onclick="saveBuiltinKey('\${p.id}')" class="btn-purple">Save</button>
                <button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost">Test</button>
                <button onclick="fetchBuiltinModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
@@ -7141,8 +7144,28 @@ const server = http.createServer(async (req, res) => {
       const provider = cfg?.models?.providers?.[providerId] || cfg?.providers?.[providerId];
       if (!provider) throw new Error("Provider not found: " + providerId);
       const key = provider.apiKey;
-      if (!key) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "No API key set" })); return; }
       const baseUrl = (provider.baseUrl || "").replace(/\/$/, "");
+      // Ollama is keyless — fetch directly from /api/tags and return the model list
+      if (providerId === "ollama" || baseUrl.includes("11434")) {
+        try {
+          const r = await fetch("http://localhost:11434/api/tags", { signal: AbortSignal.timeout(5000) });
+          const d = await r.json();
+          const models = (d.models || []).map(m => ({ id: m.name, name: m.name }));
+          if (provider) {
+            if (cfg.models?.providers?.[providerId]) cfg.models.providers[providerId].models = models;
+            if (cfg.providers?.[providerId]) cfg.providers[providerId].models = models;
+            const { writeFile } = await import("node:fs/promises");
+            await writeFile(CFG_FILE, JSON.stringify(cfg, null, 4), "utf8").catch(() => {});
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, models: models.map(m => m.id), count: models.length }));
+        } catch(e) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Ollama not reachable: " + e.message }));
+        }
+        return;
+      }
+      if (!key) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "No API key set" })); return; }
       const isSlowProvider = providerId === "nvidia" || (provider.baseUrl || "").includes("nvidia.com");
       const isFetchAnthropic = providerId === "anthropic" || baseUrl.includes("anthropic.com");
       const isPerplexity = (providerId && providerId.toLowerCase() === "perplexity") || (baseUrl && baseUrl.toLowerCase().includes("perplexity"));

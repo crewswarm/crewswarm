@@ -66,10 +66,35 @@ done
 
 if [[ "$START_DASH" -eq 1 ]]; then
   echo "Starting dashboard (port 4319)..."
-  nohup "$NODE" scripts/dashboard.mjs >> /tmp/dashboard.log 2>&1 &
-  sleep 1
+  # If a LaunchAgent manages the dashboard, use launchctl so we don't race with KeepAlive.
+  # launchctl stop + start is idempotent and avoids the "two processes fight for port" problem.
+  if launchctl list com.crewswarm.dashboard >/dev/null 2>&1; then
+    launchctl stop com.crewswarm.dashboard 2>/dev/null; sleep 1
+    launchctl start com.crewswarm.dashboard 2>/dev/null
+    echo "  (via launchd — will be up in ~2s)"
+  else
+    nohup "$NODE" scripts/dashboard.mjs >> /tmp/dashboard.log 2>&1 &
+    sleep 1
+  fi
   echo ""
   echo "Dashboard: http://127.0.0.1:4319"
+fi
+
+START_BRIDGES=1
+for arg in "$@"; do
+  if [[ "$arg" == "--no-bridges" ]]; then START_BRIDGES=0; fi
+done
+
+if [[ "$START_BRIDGES" -eq 1 ]]; then
+  echo "Starting Telegram bridge..."
+  pkill -f "node telegram-bridge.mjs" 2>/dev/null; sleep 1
+  nohup "$NODE" telegram-bridge.mjs >> /tmp/telegram-bridge.log 2>&1 &
+  echo "  PID: $!"
+
+  echo "Starting WhatsApp bridge..."
+  pkill -f "node whatsapp-bridge.mjs" 2>/dev/null; sleep 1
+  nohup "$NODE" whatsapp-bridge.mjs >> /tmp/whatsapp-bridge.log 2>&1 &
+  echo "  PID: $!"
 fi
 
 echo "Starting MCP + OpenAI-compat server (port 5020)..."

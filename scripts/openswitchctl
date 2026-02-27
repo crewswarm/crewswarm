@@ -151,6 +151,25 @@ cmd_status() {
 }
 
 # ── start: RT daemon + gateway bridges ──
+# ── launchd-aware helper: stop/start a service if it has a LaunchAgent, else nohup ──
+_launchd_start() {
+  local label="$1"; local fallback_cmd="$2"
+  if launchctl list "$label" >/dev/null 2>&1; then
+    launchctl stop "$label" 2>/dev/null; sleep 1
+    launchctl start "$label" 2>/dev/null
+  else
+    eval "$fallback_cmd" &
+  fi
+}
+_launchd_stop() {
+  local label="$1"; local pkill_pat="$2"
+  if launchctl list "$label" >/dev/null 2>&1; then
+    launchctl stop "$label" 2>/dev/null
+  else
+    pkill -f "$pkill_pat" 2>/dev/null || true
+  fi
+}
+
 # ── start: full stack — RT daemon + bridges + crew-lead + dashboard ──
 cmd_start() {
   export OPENCREW_RT_AUTH_TOKEN=$(rt_token)
@@ -168,10 +187,14 @@ cmd_start() {
   pkill -f "crew-lead.mjs" 2>/dev/null || true
   sleep 1
   nohup "$NODE" "$CREWSWARM_DIR/crew-lead.mjs" >> /tmp/crew-lead.log 2>&1 &
-  # Dashboard
-  pkill -f "scripts/dashboard.mjs" 2>/dev/null || true
-  sleep 1
-  nohup "$NODE" "$CREWSWARM_DIR/scripts/dashboard.mjs" >> /tmp/dashboard.log 2>&1 &
+  # Dashboard — use launchctl if a LaunchAgent manages it (avoids port conflict)
+  _launchd_start com.crewswarm.dashboard \
+    "nohup '$NODE' '$CREWSWARM_DIR/scripts/dashboard.mjs' >> /tmp/dashboard.log 2>&1"
+  # TG / WA bridges — use launchctl if LaunchAgents exist
+  _launchd_start com.crewswarm.telegram \
+    "nohup '$NODE' '$CREWSWARM_DIR/telegram-bridge.mjs' >> /tmp/telegram-bridge.log 2>&1"
+  _launchd_start com.crewswarm.whatsapp \
+    "nohup '$NODE' '$CREWSWARM_DIR/whatsapp-bridge.mjs' >> /tmp/whatsapp-bridge.log 2>&1"
   echo "Stack started."
 }
 
@@ -180,8 +203,11 @@ cmd_stop() {
   pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null || true
   pkill -f "opencrew-rt-daemon" 2>/dev/null || true
   pkill -f "crew-lead.mjs" 2>/dev/null || true
-  pkill -f "scripts/dashboard.mjs" 2>/dev/null || true
   pkill -f "opencode serve" 2>/dev/null || true
+  # Stop launchd-managed services gracefully (KeepAlive will restart them unless fully unloaded)
+  _launchd_stop com.crewswarm.dashboard "scripts/dashboard.mjs"
+  _launchd_stop com.crewswarm.telegram  "telegram-bridge.mjs"
+  _launchd_stop com.crewswarm.whatsapp  "whatsapp-bridge.mjs"
   echo "Stopped."
 }
 

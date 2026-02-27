@@ -454,6 +454,18 @@ function startAgentReplyListener() {
         if (el) el.remove();
         return;
       }
+      if (d.type === 'context_warning' && d.sessionId === chatSessionId) {
+        const existing = document.getElementById('contextWarningBanner');
+        if (existing) existing.remove();
+        const banner = document.createElement('div');
+        banner.id = 'contextWarningBanner';
+        const isCritical = d.level === 'critical';
+        banner.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:8px;margin:6px 0;font-size:12px;background:${isCritical ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)'};border:1px solid ${isCritical ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'};color:${isCritical ? '#f87171' : '#f59e0b'};`;
+        banner.innerHTML = `<span style="flex:1;">${d.message}</span><button onclick="clearChatHistory()" style="padding:2px 8px;font-size:11px;border-radius:4px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;">Clear now</button><button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:inherit;font-size:14px;padding:0 2px;">✕</button>`;
+        const box = document.getElementById('chatMessages');
+        if (box) { box.appendChild(banner); box.scrollTop = box.scrollHeight; }
+        return;
+      }
       if (d.type === 'chat_message' && d.sessionId === chatSessionId) {
         if (d.role === 'user') {
           if (d.content !== lastAppendedUserContent) {
@@ -464,7 +476,7 @@ function startAgentReplyListener() {
         } else if (d.role === 'assistant') {
           document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
           if (d.content !== lastAppendedAssistantContent) {
-            appendChatBubble('assistant', d.content);
+            appendChatBubble('assistant', d.content, d.fallbackModel, d.fallbackReason);
             lastAppendedAssistantContent = d.content;
           }
         }
@@ -1173,7 +1185,7 @@ function chatKeydown(e) {
   if (menu && menu.style.display === 'block' && (e.key === 'Escape' || e.key === 'Tab')) { menu.style.display = 'none'; }
 }
 
-function appendChatBubble(role, text) {
+function appendChatBubble(role, text, fallbackModel, fallbackReason) {
   const box = document.getElementById('chatMessages');
   if (!box) return;
   const isUser = role === 'user';
@@ -1187,10 +1199,17 @@ function appendChatBubble(role, text) {
   const div = document.createElement('div');
   div.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isUser ? 'flex-end' : 'flex-start') + ';gap:4px;';
   const labelEl = document.createElement('div');
-  labelEl.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;';
+  labelEl.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;display:flex;align-items:center;gap:6px;';
   const cl = window._crewLeadInfo || { emoji: '🧠', name: 'crew-lead' };
   const displayName = isUser ? 'You' : (role === 'assistant' ? (cl.emoji + ' ' + cl.name) : role);
   labelEl.textContent = displayName;
+  if (!isUser && fallbackModel) {
+    const badge = document.createElement('span');
+    badge.title = 'Primary failed (' + (fallbackReason || 'error') + ') — running on fallback';
+    badge.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:default;';
+    badge.textContent = '⚡ fallback: ' + fallbackModel;
+    labelEl.appendChild(badge);
+  }
   const bubble = document.createElement('div');
   bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:' + (isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px') + ';background:' + (isUser ? 'var(--purple)' : 'var(--bg-2)') + ';color:' + (isUser ? '#fff' : 'var(--text-1)') + ';font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;border:1px solid var(--border);';
   bubble.textContent = text;
@@ -1834,7 +1853,8 @@ async function loadBuiltinProviders(){
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           ${isOllama ? '' : `<input id="bp_${p.id}" type="password" autocomplete="new-password" placeholder="${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />`}
           ${isOllama
-            ? `<button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost" style="flex:1;">Test Connection</button>`
+            ? `<button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost">Test Connection</button>
+               <button data-action="fetchBuiltinModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>`
             : `<button data-action="saveBuiltinKey" data-arg="${p.id}" class="btn-purple">Save</button>
                <button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost">Test</button>
                <button data-action="fetchBuiltinModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>
@@ -2988,6 +3008,10 @@ async function loadAgents_cfg(){
                 style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useCursorCli ? 'var(--accent)' : 'var(--border)'}; background:${a.useCursorCli ? 'rgba(56,189,248,0.12)' : 'var(--surface-2)'}; color:${a.useCursorCli ? 'var(--accent)' : 'var(--text-2)'};">
                 🖱 Cursor CLI <span style="font-size:10px; font-weight:400; opacity:0.7;">(free · sub)</span>
               </button>
+              <button id="route-claudecode-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="claudecode"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useClaudeCode ? '#f59e0b' : 'var(--border)'}; background:${a.useClaudeCode ? 'rgba(245,158,11,0.12)' : 'var(--surface-2)'}; color:${a.useClaudeCode ? '#f59e0b' : 'var(--text-2)'};">
+                🤖 Claude Code <span style="font-size:10px; font-weight:400; opacity:0.7;">(api key)</span>
+              </button>
             </div>
             <div id="oc-model-row-${a.id}" style="display:${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
               <select id="oc-model-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcModelText('${a.id}')"></select>
@@ -3004,6 +3028,16 @@ async function loadAgents_cfg(){
               <select id="cursor-model-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncCursorModelText('${a.id}')"></select>
               <input id="cursor-model-txt-${a.id}" type="text" placeholder="sonnet-4.6 or leave blank for auto" value="${a.cursorCliModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
               <button data-action="saveCursorCliConfig" data-arg="${a.id}" class="btn-sky" style="white-space:nowrap; font-size:12px;">Save</button>
+            </div>
+            <div id="claudecode-model-row-${a.id}" style="display:${a.useClaudeCode ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <select id="claudecode-model-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncClaudeCodeModelText('${a.id}')">
+                <option value="">— auto (claude-sonnet-4-5) —</option>
+                <option value="claude-opus-4-5" ${(a.claudeCodeModel||'') === 'claude-opus-4-5' ? 'selected' : ''}>claude-opus-4-5 — best reasoning</option>
+                <option value="claude-sonnet-4-5" ${(a.claudeCodeModel||'') === 'claude-sonnet-4-5' ? 'selected' : ''}>claude-sonnet-4-5 — best coding</option>
+                <option value="claude-haiku-4-5" ${(a.claudeCodeModel||'') === 'claude-haiku-4-5' ? 'selected' : ''}>claude-haiku-4-5 — fast &amp; cheap</option>
+              </select>
+              <input id="claudecode-model-txt-${a.id}" type="text" placeholder="claude-sonnet-4-5 or leave blank" value="${a.claudeCodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button data-action="saveClaudeCodeConfig" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">Save</button>
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
@@ -3077,7 +3111,6 @@ function syncModelSelect(agentId){
   const sel = document.getElementById('model-' + agentId);
   if (!sel) return;
   const typed = txt.value.trim();
-  // Try to match an existing option
   const match = [...sel.options].find(o => o.value === typed);
   sel.value = match ? typed : '';
 }
@@ -3094,6 +3127,11 @@ function syncFallbackSelect(agentId){
   const match = [...sel.options].find(o => o.value === typed);
   sel.value = match ? typed : '';
 }
+// Expose sync helpers globally — onchange="" attributes in dynamic HTML need window scope
+window.syncModelText    = syncModelText;
+window.syncModelSelect  = syncModelSelect;
+window.syncFallbackText = syncFallbackText;
+window.syncFallbackSelect = syncFallbackSelect;
 async function resetAgentSession(agentId){
   if (!confirm('Reset context window for ' + agentId + '?\\n\\nThis clears the agent\'s accumulated conversation history. Shared memory files will be re-injected on the next task.')) return;
   showNotification('Resetting ' + agentId + ' session...');
@@ -3266,35 +3304,40 @@ function syncCursorModelText(agentId) {
   const txt = document.getElementById('cursor-model-txt-' + agentId);
   if (sel && txt) txt.value = sel.value;
 }
+window.syncCursorModelText = syncCursorModelText;
 
-// 3-way route toggle — mutually exclusive
+// 4-way route toggle — mutually exclusive
 async function setRoute(agentId, route) {
-  const useOpenCode = route === 'opencode';
-  const useCursorCli = route === 'cursor';
+  const useOpenCode   = route === 'opencode';
+  const useCursorCli  = route === 'cursor';
+  const useClaudeCode = route === 'claudecode';
   // Update button styles
   const styles = {
-    direct:   { border: 'var(--accent)', bg: 'rgba(99,102,241,0.15)', color: 'var(--accent)' },
-    opencode: { border: 'var(--green-hi)',       bg: 'rgba(34,197,94,0.12)',  color: 'var(--green-hi)' },
-    cursor:   { border: 'var(--accent)',       bg: 'rgba(56,189,248,0.12)', color: 'var(--accent)' },
-    inactive: { border: 'var(--border)', bg: 'var(--surface-2)',      color: 'var(--text-2)' },
+    direct:      { border: 'var(--accent)',    bg: 'rgba(99,102,241,0.15)',  color: 'var(--accent)' },
+    opencode:    { border: 'var(--green-hi)',  bg: 'rgba(34,197,94,0.12)',   color: 'var(--green-hi)' },
+    cursor:      { border: 'var(--accent)',    bg: 'rgba(56,189,248,0.12)',  color: 'var(--accent)' },
+    claudecode:  { border: '#f59e0b',          bg: 'rgba(245,158,11,0.12)', color: '#f59e0b' },
+    inactive:    { border: 'var(--border)',    bg: 'var(--surface-2)',       color: 'var(--text-2)' },
   };
-  ['direct','opencode','cursor'].forEach(r => {
+  ['direct','opencode','cursor','claudecode'].forEach(r => {
     const btn = document.getElementById('route-' + r + '-' + agentId);
     if (!btn) return;
     const s = r === route ? styles[r] : styles.inactive;
     btn.style.borderColor = s.border; btn.style.background = s.bg; btn.style.color = s.color;
   });
   // Show/hide model rows
-  const ocRow = document.getElementById('oc-model-row-' + agentId);
-  const ocFbRow = document.getElementById('oc-fallback-row-' + agentId);
-  const cursorRow = document.getElementById('cursor-model-row-' + agentId);
-  if (ocRow) ocRow.style.display = useOpenCode ? 'flex' : 'none';
-  if (ocFbRow) ocFbRow.style.display = useOpenCode ? 'flex' : 'none';
-  if (cursorRow) cursorRow.style.display = useCursorCli ? 'flex' : 'none';
+  const ocRow        = document.getElementById('oc-model-row-' + agentId);
+  const ocFbRow      = document.getElementById('oc-fallback-row-' + agentId);
+  const cursorRow    = document.getElementById('cursor-model-row-' + agentId);
+  const ccRow        = document.getElementById('claudecode-model-row-' + agentId);
+  if (ocRow)     ocRow.style.display     = useOpenCode   ? 'flex' : 'none';
+  if (ocFbRow)   ocFbRow.style.display   = useOpenCode   ? 'flex' : 'none';
+  if (cursorRow) cursorRow.style.display = useCursorCli  ? 'flex' : 'none';
+  if (ccRow)     ccRow.style.display     = useClaudeCode ? 'flex' : 'none';
   // Save
   try {
-    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli });
-    const label = route === 'direct' ? 'Direct API' : route === 'opencode' ? 'OpenCode' : 'Cursor CLI';
+    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli, useClaudeCode });
+    const label = route === 'direct' ? 'Direct API' : route === 'opencode' ? 'OpenCode' : route === 'cursor' ? 'Cursor CLI' : 'Claude Code';
     showNotification(agentId + ' → ' + label);
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
@@ -3307,6 +3350,21 @@ async function saveCursorCliConfig(agentId) {
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 
+async function saveClaudeCodeConfig(agentId) {
+  const claudeCodeModel = (document.getElementById('claudecode-model-txt-' + agentId)?.value || '').trim();
+  try {
+    await postJSON('/api/agents-config/update', { agentId, claudeCodeModel });
+    showNotification(agentId + ' Claude Code model → ' + (claudeCodeModel || 'auto'));
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+
+function syncClaudeCodeModelText(agentId) {
+  const sel = document.getElementById('claudecode-model-sel-' + agentId);
+  const txt = document.getElementById('claudecode-model-txt-' + agentId);
+  if (sel && txt) txt.value = sel.value;
+}
+window.syncClaudeCodeModelText = syncClaudeCodeModelText;
+
 function toggleOpenCodeUI(agentId) {
   // Legacy — kept for any stale references; use setRoute instead
   const checked = document.getElementById('oc-toggle-' + agentId)?.checked;
@@ -3318,6 +3376,7 @@ function syncOcModelText(agentId) {
   const txt = document.getElementById('oc-modeltext-' + agentId);
   if (sel && txt && sel.value) txt.value = sel.value;
 }
+window.syncOcModelText = syncOcModelText;
 
 function syncOcFallbackText(agentId) {
   const sel = document.getElementById('oc-fallback-sel-' + agentId);
@@ -3355,15 +3414,17 @@ async function saveCursorCliToggle(agentId) {
 // Bulk route setter — apply a route to all coding agents at once
 async function bulkSetRoute(route, model) {
   const CODING_AGENTS = ['crew-coder','crew-coder-front','crew-coder-back','crew-frontend','crew-fixer','crew-architect','crew-ml'];
-  const label = route === 'cursor' ? 'Cursor CLI' : route === 'opencode' ? 'OpenCode' : 'Direct API';
+  const label = route === 'cursor' ? 'Cursor CLI' : route === 'opencode' ? 'OpenCode' : route === 'claudecode' ? 'Claude Code' : 'Direct API';
   showNotification('Applying ' + label + ' to all coding agents…');
   for (const agentId of CODING_AGENTS) {
-    const useOpenCode = route === 'opencode';
-    const useCursorCli = route === 'cursor';
+    const useOpenCode   = route === 'opencode';
+    const useCursorCli  = route === 'cursor';
+    const useClaudeCode = route === 'claudecode';
     try {
-      const payload = { agentId, useOpenCode, useCursorCli };
-      if (model && route === 'cursor') payload.cursorCliModel = model;
-      if (model && route === 'opencode') payload.opencodeModel = model;
+      const payload = { agentId, useOpenCode, useCursorCli, useClaudeCode };
+      if (model && route === 'cursor')      payload.cursorCliModel  = model;
+      if (model && route === 'opencode')    payload.opencodeModel   = model;
+      if (model && route === 'claudecode')  payload.claudeCodeModel = model;
       await postJSON('/api/agents-config/update', payload);
     } catch(e) { console.error('bulkSetRoute failed for', agentId, e.message); }
   }
@@ -5075,6 +5136,7 @@ const ACTION_REGISTRY = {
   saveOpenCodeConfig:   (id) => saveOpenCodeConfig(id),
   saveOpenCodeFallback: (id) => saveOpenCodeFallback(id),
   saveCursorCliConfig:  (id) => saveCursorCliConfig(id),
+  saveClaudeCodeConfig: (id) => saveClaudeCodeConfig(id),
   // Settings tabs
   showSettingsTab: (tab) => showSettingsTab(tab),
 };

@@ -3788,7 +3788,27 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (!message) { json(res, 400, { ok: false, error: "message required" }); return; }
+      // @@RESET — clear session history and confirm
+      if (/^@@RESET\b/i.test(message.trim()) || /^\/reset\b/i.test(message.trim())) {
+        clearHistory(sessionId || "default");
+        const reply = "Session cleared. Fresh context — DeepSeek primary is back in play.";
+        appendHistory(sessionId || "default", "assistant", reply);
+        broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: reply });
+        json(res, 200, { ok: true, reply });
+        return;
+      }
       console.log(`[crew-lead] /chat session=${sessionId} project=${projectId || 'none'} msg=${message.slice(0, 60)}`);
+      // Context fullness warning — warn at 75% (30/40) and 90% (36/40) of MAX_HISTORY
+      {
+        const histLen = loadHistory(sessionId || "default").length;
+        if (histLen >= 36) {
+          broadcastSSE({ type: "context_warning", sessionId, level: "critical", histLen, maxHistory: MAX_HISTORY,
+            message: `⚠️ Context nearly full (${histLen}/${MAX_HISTORY} messages). Type @@RESET or click New Chat to clear before DeepSeek hits its limit.` });
+        } else if (histLen === 30) {
+          broadcastSSE({ type: "context_warning", sessionId, level: "warn", histLen, maxHistory: MAX_HISTORY,
+            message: `⚡ Context at 75% (${histLen}/${MAX_HISTORY} messages). Consider @@RESET soon to avoid fallback to grok-3-mini.` });
+        }
+      }
       try {
         const result = await handleChat({ message, sessionId, firstName, projectId });
         json(res, 200, { ok: true, ...result });
