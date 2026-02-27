@@ -2446,75 +2446,75 @@ const ENV_GROUPS = [
   {
     label: 'Engine — OpenCode',
     vars: [
-      { key: 'CREWSWARM_OPENCODE_ENABLED',          hint: '1 to route coding agents through OpenCode globally' },
-      { key: 'CREWSWARM_OPENCODE_MODEL',            hint: 'Model passed to OpenCode (e.g. anthropic/claude-sonnet-4-5). Leave blank to use each agent\'s own model.' },
-      { key: 'CREWSWARM_OPENCODE_TIMEOUT_MS',       hint: 'ms before an OpenCode task is killed (default: 300000 = 5 min)' },
-      { key: 'CREWSWARM_OPENCODE_AGENT',            hint: 'Override agent name passed to OpenCode' },
+      { key: 'CREWSWARM_OPENCODE_ENABLED',          hint: 'Route coding agents through OpenCode globally',           default: 'off' },
+      { key: 'CREWSWARM_OPENCODE_MODEL',            hint: 'Model passed to OpenCode — leave blank to use per-agent model', default: 'per-agent' },
+      { key: 'CREWSWARM_OPENCODE_TIMEOUT_MS',       hint: 'ms before an OpenCode task is killed',                    default: '300000' },
+      { key: 'CREWSWARM_OPENCODE_AGENT',            hint: 'Override agent name passed to OpenCode',                  default: 'auto' },
     ],
   },
   {
     label: 'Engine — Claude Code & Cursor',
-    note: 'Both use OAuth login (run claude or cursor once). No API key required. Model overrides are optional.',
+    note: 'Both use OAuth login (run claude or cursor once). No API key required.',
     vars: [
-      { key: 'CREWSWARM_CLAUDE_CODE_MODEL',        hint: 'Model flag passed to claude -p (e.g. claude-opus-4-5). Leave blank to use Claude Code\'s default.' },
-      { key: 'CREWSWARM_CURSOR_MODEL',             hint: 'Model flag passed to cursor --execute (e.g. claude-sonnet-4-5). Leave blank to use Cursor\'s default.' },
+      { key: 'CREWSWARM_CLAUDE_CODE_MODEL', hint: 'Model passed to claude -p — leave blank for Claude Code default', default: 'claude default' },
+      { key: 'CREWSWARM_CURSOR_MODEL',      hint: 'Model passed to cursor --execute — leave blank for Cursor default', default: 'cursor default' },
     ],
   },
   {
     label: 'Engine — Docker Sandbox',
-    note: 'Runs any inner engine inside an isolated Docker microVM. API keys are injected by the network proxy and never exposed to the agent. Requires Docker Desktop with Sandboxes enabled.',
+    note: 'Runs any inner engine inside an isolated Docker microVM. API keys injected by network proxy — never exposed to the agent.',
     vars: [
-      { key: 'CREWSWARM_DOCKER_SANDBOX',              hint: '1 to route all coding agents through Docker Sandbox globally' },
-      { key: 'CREWSWARM_DOCKER_SANDBOX_NAME',         hint: 'Name of the pre-created sandbox (default: crewswarm). Create with: docker sandbox create --name crewswarm shell <dir>' },
-      { key: 'CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE', hint: 'Engine to run inside the sandbox: claude (default), opencode, or codex' },
-      { key: 'CREWSWARM_DOCKER_SANDBOX_TIMEOUT_MS',   hint: 'ms before a sandboxed task is killed (default: 300000)' },
+      { key: 'CREWSWARM_DOCKER_SANDBOX',              hint: 'Route all coding agents through Docker Sandbox globally', default: 'off' },
+      { key: 'CREWSWARM_DOCKER_SANDBOX_NAME',         hint: 'Pre-created sandbox name (docker sandbox create --name crewswarm shell <dir>)', default: 'crewswarm' },
+      { key: 'CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE', hint: 'Engine inside the sandbox: claude, opencode, or codex',  default: 'claude' },
+      { key: 'CREWSWARM_DOCKER_SANDBOX_TIMEOUT_MS',   hint: 'ms before a sandboxed task is killed',                   default: '300000' },
     ],
   },
   {
     label: 'Engine Loop & Dispatch',
     vars: [
-      { key: 'CREWSWARM_OPENCODE_LOOP',             hint: '1 to enable engine loop (Ouroboros) for all agents' },
-      { key: 'CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS',  hint: 'Max STEP iterations in the engine loop (default: 10)' },
-      { key: 'CREWSWARM_DISPATCH_TIMEOUT',         hint: 'ms before a dispatched task times out' },
-      { key: 'CREWSWARM_RT_AGENT',                  hint: 'Agent ID to use for the RT bus' },
+      { key: 'CREWSWARM_OPENCODE_LOOP',            hint: 'Enable Ouroboros engine loop for all agents (LLM ↔ engine until DONE)', default: 'off' },
+      { key: 'CREWSWARM_OPENCODE_LOOP_MAX_ROUNDS', hint: 'Max STEP iterations per loop run',                          default: '10' },
+      { key: 'CREWSWARM_DISPATCH_TIMEOUT',         hint: 'ms before a dispatched task times out',                     default: '120000' },
+      { key: 'CREWSWARM_RT_AGENT',                 hint: 'Agent ID used for the RT bus',                              default: 'crew-coder' },
     ],
   },
   {
     label: 'Ports',
     vars: [
-      { key: 'CREW_LEAD_PORT',  hint: 'Port for crew-lead HTTP server (default: 5010)' },
-      { key: 'SWARM_DASH_PORT', hint: 'Port for the dashboard (default: 4319)' },
-      { key: 'WA_HTTP_PORT',    hint: 'Port for WhatsApp bridge HTTP (default: 3000)' },
+      { key: 'CREW_LEAD_PORT',  hint: 'crew-lead HTTP server port',   default: '5010' },
+      { key: 'SWARM_DASH_PORT', hint: 'Dashboard port',               default: '4319' },
+      { key: 'WA_HTTP_PORT',    hint: 'WhatsApp bridge HTTP port',    default: '3000' },
     ],
   },
   {
     label: 'Background Consciousness',
     vars: [
-      { key: 'CREWSWARM_BG_CONSCIOUSNESS',              hint: '1 to enable idle reflection loop' },
-      { key: 'CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS',  hint: 'Reflection interval in ms (default: 900000 = 15 min)' },
-      { key: 'CREWSWARM_BG_CONSCIOUSNESS_MODEL',        hint: 'Model for background cycle (e.g. groq/llama-3.1-8b-instant)' },
+      { key: 'CREWSWARM_BG_CONSCIOUSNESS',             hint: 'Enable idle reflection loop (crew-main reflects between tasks)', default: 'off' },
+      { key: 'CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS', hint: 'Idle reflection interval in ms',                                 default: '900000' },
+      { key: 'CREWSWARM_BG_CONSCIOUSNESS_MODEL',       hint: 'Model for background cycle (e.g. groq/llama-3.1-8b-instant)',   default: 'groq/llama-3.1-8b-instant' },
     ],
   },
   {
     label: 'Messaging',
     vars: [
-      { key: 'TELEGRAM_ALLOWED_USERNAMES', hint: 'Comma-separated Telegram usernames allowed to message the bot' },
-      { key: 'WA_ALLOWED_NUMBERS',         hint: 'Comma-separated WhatsApp numbers in intl format (+1555…)' },
+      { key: 'TELEGRAM_ALLOWED_USERNAMES', hint: 'Comma-separated Telegram usernames allowed to message the bot', default: 'all allowed' },
+      { key: 'WA_ALLOWED_NUMBERS',         hint: 'Comma-separated WhatsApp numbers in intl format (+1555…)',     default: 'all allowed' },
     ],
   },
   {
     label: 'Memory',
     vars: [
-      { key: 'SHARED_MEMORY_NAMESPACE', hint: 'Namespace prefix for shared memory keys' },
-      { key: 'SHARED_MEMORY_DIR',       hint: 'Directory for shared memory files' },
+      { key: 'SHARED_MEMORY_NAMESPACE', hint: 'Namespace prefix for shared memory keys', default: 'crewswarm' },
+      { key: 'SHARED_MEMORY_DIR',       hint: 'Directory for shared memory files',       default: '~/.crewswarm/memory' },
     ],
   },
   {
     label: 'PM Loop',
     vars: [
-      { key: 'PM_MAX_ITEMS',    hint: 'Max roadmap items per PM loop run' },
-      { key: 'PM_USE_QA',       hint: '1 to include crew-qa in PM pipeline' },
-      { key: 'PM_USE_SECURITY', hint: '1 to include crew-security in PM pipeline' },
+      { key: 'PM_MAX_ITEMS',    hint: 'Max roadmap items per PM loop run',         default: '10' },
+      { key: 'PM_USE_QA',       hint: 'Include crew-qa in PM pipeline',            default: 'off' },
+      { key: 'PM_USE_SECURITY', hint: 'Include crew-security in PM pipeline',      default: 'off' },
     ],
   },
 ];
@@ -2572,16 +2572,20 @@ async function loadEnvAdvanced() {
       section.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:${group.note ? '4px' : '8px'};">${escHtml(group.label)}</div>`
         + (group.note ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px;line-height:1.4;">${escHtml(group.note)}</div>` : '');
 
-      for (const { key, hint } of group.vars) {
+      for (const { key, hint, default: def } of group.vars) {
         const current = env[key] ?? '';
+        const placeholder = def ? `default: ${def}` : 'not set';
         const row = document.createElement('div');
         row.style.cssText = 'margin-bottom:8px;';
         row.innerHTML = `
-          <div style="font-size:11px;font-family:monospace;color:var(--accent);margin-bottom:3px;">${escHtml(key)}</div>
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px;">
+            <span style="font-size:11px;font-family:monospace;color:var(--accent);">${escHtml(key)}</span>
+            ${!current && def ? `<span style="font-size:10px;color:var(--text-3);font-family:monospace;background:var(--bg-1);padding:1px 5px;border-radius:4px;border:1px solid var(--border);">${escHtml(def)}</span>` : ''}
+          </div>
           <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;">${escHtml(hint)}</div>
           <div style="display:flex;gap:6px;align-items:center;">
             <input data-env-key="${escHtml(key)}" type="text" value="${escHtml(current)}"
-              placeholder="not set"
+              placeholder="${escHtml(placeholder)}"
               style="flex:1;font-size:12px;font-family:monospace;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:${current ? 'var(--text-1)' : 'var(--text-3)'};" />
             <button data-env-save="${escHtml(key)}" style="font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;">Save</button>
             <span data-env-status="${escHtml(key)}" style="font-size:11px;min-width:50px;"></span>
