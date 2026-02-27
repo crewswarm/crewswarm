@@ -17,12 +17,23 @@ services:
       # This is the only persistent state — never baked into the image.
       - crewswarm-config:/root/.crewswarm
 
+      # ── Engine binaries ───────────────────────────────────────────────────
       # Mount host engine binaries so passthrough works inside the container.
-      # Comment out any you don't use.
+      # Comment out any you don't have installed.
       - /usr/local/bin/claude:/usr/local/bin/claude:ro
       - /usr/local/bin/cursor:/usr/local/bin/cursor:ro
       - /usr/local/bin/codex:/usr/local/bin/codex:ro
       - /usr/local/bin/opencode:/usr/local/bin/opencode:ro
+
+      # ── Engine auth tokens ────────────────────────────────────────────────
+      # OAuth tokens live on the host after running each CLI once.
+      # Authenticate on the host first (opens browser normally), then these
+      # mounts let the container reuse your tokens — no re-auth needed.
+      # Comment out any you don't use.
+      - ${HOME}/.claude:/root/.claude:ro         # Claude Code OAuth
+      - ${HOME}/.cursor:/root/.cursor:ro         # Cursor CLI auth
+      - ${HOME}/.codex:/root/.codex:ro           # Codex OAuth
+      - ${HOME}/.config/opencode:/root/.config/opencode:ro  # OpenCode config
 
     environment:
       # Node environment
