@@ -1,10 +1,10 @@
-# CrewSwarm CI — two jobs:
-#   static     → fast syntax + build + dashboard check (no secrets, always runs, ~2 min)
-#   integration → full stack smoke test with LLM dispatch (needs GROQ_API_KEY secret, ~5 min)
+# CrewSwarm CI
+# Job 1 (static): syntax + build + dashboard check — no secrets, always runs, ~2 min
+# Job 2 (integration): full stack smoke with LLM dispatch — needs GROQ_API_KEY, push only
 #
-# Required secrets for integration job:
-#   CREWSWARM_RT_TOKEN  — any random string used as the RT bus auth token in CI
-#   GROQ_API_KEY        — Groq API key (free at console.groq.com/keys)
+# Secrets required for integration job:
+#   CREWSWARM_RT_TOKEN  - any random string for the RT bus auth token
+#   GROQ_API_KEY        - Groq API key (free at console.groq.com/keys)
 
 name: Smoke
 
@@ -15,7 +15,6 @@ on:
     branches: [main, master]
 
 jobs:
-  # ── Static checks — no services, no secrets ─────────────────────────────────
   static:
     name: Static checks
     runs-on: ubuntu-latest
@@ -34,15 +33,14 @@ jobs:
       - name: Build frontend
         run: cd frontend && npm ci && npm run build
 
-      - name: Syntax check — main entrypoints
+      - name: Syntax check main entrypoints
         run: |
           node --check crew-lead.mjs
           node --check gateway-bridge.mjs
           node --check scripts/dashboard.mjs
 
-      - name: Syntax check — lib modules
-        run: |
-          find lib -name "*.mjs" | xargs -I{} node --check {}
+      - name: Syntax check lib modules
+        run: find lib -name "*.mjs" | xargs -I{} node --check {}
 
       - name: Check dashboard source
         run: node scripts/check-dashboard.mjs --source-only
@@ -55,16 +53,14 @@ jobs:
           echo '[]' > ~/.crewswarm/cmd-allowlist.json
           echo '{}' > ~/.crewswarm/agent-prompts.json
 
-      - name: Health check — static mode
+      - name: Health check static mode
         run: node scripts/health-check.mjs --no-services
 
-  # ── Integration — full stack + LLM dispatch ─────────────────────────────────
   integration:
     name: Integration smoke
     runs-on: ubuntu-latest
     needs: static
-    # Only run when the secret is available (skipped on forks without secrets)
-    if: ${{ secrets.GROQ_API_KEY != '' }}
+    if: ${{ github.event_name == 'push' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -86,14 +82,13 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           mkdir -p ~/.crewswarm
-          TOKEN=$(echo -n "${CREWSWARM_RT_TOKEN:-ci-test-token}" | tr -d '\n\r\t ')
+          TOKEN=$(echo -n "${CREWSWARM_RT_TOKEN:-ci-test-token}" | tr -d ' ')
           echo "{\"rt\":{\"authToken\":\"$TOKEN\"}}" > ~/.crewswarm/config.json
           node -e "
             const fs = require('fs');
             const path = require('path');
             const groqKey = (process.env.GROQ_API_KEY || '').trim();
             const cfg = {
-              _note: 'CI bootstrap',
               agents: [
                 { id: 'crew-main',  model: 'groq/llama-3.3-70b-versatile' },
                 { id: 'crew-coder', model: 'groq/llama-3.3-70b-versatile' },
@@ -101,14 +96,9 @@ jobs:
                 { id: 'crew-fixer', model: 'groq/llama-3.3-70b-versatile' },
                 { id: 'crew-pm',    model: 'groq/llama-3.3-70b-versatile' }
               ],
-              providers: {
-                groq: { apiKey: groqKey, baseUrl: 'https://api.groq.com/openai/v1' }
-              }
+              providers: { groq: { apiKey: groqKey, baseUrl: 'https://api.groq.com/openai/v1' } }
             };
-            fs.writeFileSync(
-              path.join(process.env.HOME, '.crewswarm', 'crewswarm.json'),
-              JSON.stringify(cfg, null, 2)
-            );
+            fs.writeFileSync(path.join(process.env.HOME, '.crewswarm', 'crewswarm.json'), JSON.stringify(cfg, null, 2));
           "
           echo '["npm *","node *","npx *"]' > ~/.crewswarm/cmd-allowlist.json
           echo '{}' > ~/.crewswarm/agent-prompts.json
@@ -177,5 +167,5 @@ jobs:
             exit 1
           }
 
-      - name: Run health check (full)
+      - name: Run health check full
         run: node scripts/health-check.mjs --quiet
