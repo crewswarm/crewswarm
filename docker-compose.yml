@@ -39,6 +39,12 @@ services:
       # Node environment
       - NODE_ENV=production
 
+      # Bind all services to 0.0.0.0 inside the container so Docker port
+      # mappings can route traffic in. Inter-service calls still use 127.0.0.1
+      # (works because all services share the same network namespace).
+      - CREWSWARM_BIND_HOST=0.0.0.0
+      - CREWSWARM_RT_HOST=0.0.0.0
+
       # All runtime config lives in ~/.crewswarm/crewswarm.json (mounted above).
       # Override specific vars here if needed — they take precedence over the JSON config.
 
@@ -52,10 +58,6 @@ services:
 
       # Background consciousness (uncomment to enable)
       # - CREWSWARM_BG_CONSCIOUSNESS=1
-
-    # Engine CLI tools need their auth state from the host.
-    # If running fully containerized (no host binary mounts), remove this.
-    network_mode: host
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4319/api/health"]

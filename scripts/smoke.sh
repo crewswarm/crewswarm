@@ -138,6 +138,15 @@ else
   fail "health-check --no-services (see above)"
 fi
 
+# ── 8. Unit + integration test suite ────────────────────────────────────────
+info "Test suite"
+if node --test test/unit/*.test.mjs test/integration/*.test.mjs 2>&1 | grep -q "fail 0"; then
+  ok "unit + integration tests"
+else
+  node --test test/unit/*.test.mjs test/integration/*.test.mjs 2>&1
+  fail "test suite (see above)"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "${B}━━━ Results ━━━${X}  ${G}${PASS} pass${X}  $([ "$FAIL" -gt 0 ] && echo "${R}" || echo "")${FAIL} fail${X}"

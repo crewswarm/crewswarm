@@ -56,6 +56,9 @@ jobs:
       - name: Health check static mode
         run: node scripts/health-check.mjs --no-services
 
+      - name: Run unit and integration tests
+        run: node --test 'test/unit/*.test.mjs' 'test/integration/*.test.mjs'
+
   integration:
     name: Integration smoke
     runs-on: ubuntu-latest

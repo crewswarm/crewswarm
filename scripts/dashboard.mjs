@@ -43,6 +43,7 @@ try {
 
 // Default 4319 so we don't conflict with CrewSwarm RT Messages dashboard on 4318
 const listenPort = Number(process.env.SWARM_DASH_PORT || 4319);
+const listenHost = process.env.CREWSWARM_BIND_HOST || "127.0.0.1";
 const opencodeBase = process.env.OPENCODE_URL || "http://127.0.0.1:4096";
 const phasedOrchestrator = path.join(OPENCLAW_DIR, "phased-orchestrator.mjs");
 const continuousBuild = path.join(OPENCLAW_DIR, "continuous-build.mjs");
@@ -3547,7 +3548,7 @@ server.on("error", (err) => {
       _dashPortRetries++;
       const wait = _dashPortRetries * 2000;
       console.error(`[dashboard] Port ${listenPort} in use — retry ${_dashPortRetries}/5 in ${wait/1000}s`);
-      setTimeout(() => server.listen(listenPort, "127.0.0.1"), wait);
+      setTimeout(() => server.listen(listenPort, listenHost), wait);
     } else {
       console.error(`[dashboard] Port ${listenPort} still in use after 5 retries — exiting`);
       process.exit(1);
@@ -3557,8 +3558,8 @@ server.on("error", (err) => {
     process.exit(1);
   }
 });
-server.listen(listenPort, "127.0.0.1", () => {
-  console.log(`CrewSwarm Dashboard (with Build) at http://127.0.0.1:${listenPort}`);
+server.listen(listenPort, listenHost, () => {
+  console.log(`CrewSwarm Dashboard (with Build) at http://${listenHost}:${listenPort}`);
 });
 }
 
