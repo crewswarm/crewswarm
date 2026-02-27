@@ -1,3 +1,1230 @@
+const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CrewSwarm Dashboard</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:       #060a10;
+      --bg-card:  #0d1420;
+      --bg-card2: #111827;
+      --bg-hover: #141e2e;
+      --border:   rgba(255,255,255,0.07);
+      --border-hi:rgba(56,189,248,0.35);
+      --text:     #f0f6ff;
+      --text-2:   #8b9db3;
+      --text-3:   #4a5568;
+      --accent:   #38bdf8;
+      --accent2:  #818cf8;
+      --green:    #34d399;
+      --red:      #f87171;
+      --yellow:   #fbbf24;
+      --purple:   #a855f7;
+      --warning:  #f59e0b;
+      --radius:   10px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; font-size: 14px; }
+
+    /* ── Sidebar ── */
+    .sidebar { width: 216px; min-width: 216px; background: var(--bg-card); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+    .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 18px 16px 14px; border-bottom: 1px solid var(--border); text-decoration: none; }
+    .brand-icon { width: 24px; height: 24px; object-fit: contain; display: block; }
+    .brand-name { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: 0.06em; text-transform: uppercase; }
+    .brand-name span { color: #38bdf8; }
+    .sidebar-status { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+    .status-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.error  { background: var(--red); }
+    #status { font-size: 12px; color: var(--text-2); }
+    .nav-section { padding: 12px 8px 4px; }
+    .nav-label { font-size: 10px; font-weight: 600; color: var(--text-3); letter-spacing: 0.08em; text-transform: uppercase; padding: 0 8px 6px; }
+    .nav-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border-radius: 7px; border: none; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 500; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s; font-family: inherit; }
+    .stab { padding: 7px 16px; border: none; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: inherit; transition: color 0.12s, border-color 0.12s; white-space: nowrap; }
+    .stab:hover { color: var(--text-1); }
+    .stab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .nav-item:hover { background: var(--bg-hover); color: var(--text); }
+    .nav-item.active { background: rgba(56,189,248,0.1); color: var(--accent); }
+    .nav-item .nav-icon { font-size: 15px; width: 18px; text-align: center; }
+    .nav-badge { margin-left: auto; background: var(--red); color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; min-width: 18px; text-align: center; }
+    .nav-badge.hidden { display: none; }
+    .sidebar-bottom { margin-top: auto; padding: 12px 8px; border-top: 1px solid var(--border); }
+
+    /* ── Main wrap ── */
+    .main-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .view { display: none; flex: 1; overflow-y: auto; padding: 24px; }
+    .view.active { display: block; }
+    .view-sessions { display: none; flex: 1; overflow: hidden; }
+    .view-sessions.active { display: grid; grid-template-columns: 34% 66%; }
+    .view-sessions > section { padding: 16px; overflow-y: auto; }
+    .view-sessions > section + section { border-left: 1px solid var(--border); }
+
+    /* ── Msg bar ── */
+    .msg-bar { padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg-card); display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+    /* ── Cards / content ── */
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .status-badge { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:4px 10px; border-radius:20px; letter-spacing:0.02em; }
+    .status-active  { background:rgba(34,197,94,0.15); color:#22c55e; border:1px solid rgba(34,197,94,0.3); }
+    .status-stopped { background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.25); }
+    .meta { font-size: 12px; color: var(--text-2); }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .page-title { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    .page-sub { font-size: 13px; color: var(--text-2); margin-top: 3px; }
+    h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+
+    /* ── Messages ── */
+    .msg { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; background: var(--bg-card); }
+    .msg.u { border-left: 3px solid var(--accent); background: rgba(56,189,248,0.07); margin-left: 40px; }
+    .msg.a { border-left: 3px solid var(--green);  background: rgba(52,211,153,0.04); }
+    .dlq-item { border-left: 3px solid var(--red) !important; }
+    .t { white-space: pre-wrap; font-size: 13px; line-height: 1.5; font-family: "SF Mono", "Fira Code", monospace; }
+    .row { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; cursor: pointer; background: var(--bg-card); transition: border-color 0.12s, background 0.12s; }
+    .row:hover { background: var(--bg-hover); }
+    .row.active { border-color: var(--accent); background: rgba(56,189,248,0.06); }
+
+    /* ── Buttons ── */
+    button { background: var(--accent); color: #000; border: none; border-radius: 7px; padding: 7px 14px; cursor: pointer; font-weight: 600; font-size: 13px; font-family: inherit; transition: opacity 0.12s; }
+    button:hover { opacity: 0.85; }
+    .btn-ghost  { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
+    .btn-green  { background: var(--green); color: #000; }
+    .btn-sky    { background: #0ea5e9; color: #000; border: 1px solid #0ea5e9; }
+    .btn-sky:hover { background: #38bdf8; }
+    .btn-red    { background: var(--red); color: #fff; }
+    .btn-yellow { background: var(--yellow); color: #000; }
+    .btn-purple { background: var(--accent2); color: #fff; }
+    .btn-muted  { background: var(--bg-card2); color: var(--text-2); border: 1px solid var(--border); }
+    .reply-btn  { font-size: 11px; padding: 3px 8px; background: var(--accent2); color: #fff; margin-left: 8px; }
+    .replay-btn { font-size: 11px; padding: 3px 8px; background: var(--yellow); color: #000; margin-left: 8px; }
+    .send-btn   { background: var(--green); color: #000; }
+    /* ── Emoji picker ── */
+    .emoji-btn { width:46px; height:46px; font-size:22px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); border-radius:var(--radius); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:border-color 0.15s, background 0.15s; color:inherit; }
+    .emoji-btn:hover { border-color:var(--accent); background:rgba(56,189,248,0.08); }
+    .emoji-picker-wrap { position:relative; flex-shrink:0; }
+    .emoji-picker-panel { display:none; position:absolute; top:50px; right:0; z-index:200; background:var(--bg-card); border:1px solid var(--border-hi); border-radius:var(--radius); padding:10px; box-shadow:0 8px 32px rgba(0,0,0,0.5); width:260px; }
+    .emoji-picker-panel.open { display:block; }
+    .emoji-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; }
+    .emoji-opt { font-size:22px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:6px; transition:background 0.1s; }
+    .emoji-opt:hover { background:rgba(56,189,248,0.15); }
+
+    /* Files view */
+    .file-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; transition: border-color 0.15s; }
+    .file-row:hover { border-color: var(--accent); }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { display: block; font-size: 13px; color: var(--text); font-family: "SF Mono","Fira Code",monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-meta { font-size: 11px; color: var(--text-2); }
+    .file-actions { display: flex; gap: 5px; flex-shrink: 0; }
+    .file-btn { font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-card2); color: var(--text-2); cursor: pointer; text-decoration: none; transition: all 0.15s; white-space: nowrap; }
+    .file-btn:hover { color: var(--text); border-color: var(--accent); }
+    .file-btn-cursor { border-color: rgba(99,102,241,0.4); color: #818cf8; }
+    .file-btn-cursor:hover { background: rgba(99,102,241,0.15); }
+    .file-btn-opencode { border-color: rgba(52,211,153,0.4); color: #34d399; }
+    .file-btn-opencode:hover { background: rgba(52,211,153,0.1); }
+
+    /* ── Form inputs ── */
+    select, input[type="text"], input[type="password"], input[type="number"], input[type="email"], input:not([type]), textarea {
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+      width: 100%;
+    }
+    select:focus, input:not([type]):focus, input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, input[type="email"]:focus, textarea:focus {
+      border-color: var(--accent);
+      background: rgba(56,189,248,0.04);
+      box-shadow: 0 0 0 3px rgba(56,189,248,0.08);
+    }
+    select { cursor: pointer; }
+    ::placeholder { color: var(--text-3); opacity: 1; }
+    input[type="text"] { flex: 1; }
+    textarea { resize: vertical; width: 100%; }
+    input, textarea, select { user-select: text; -webkit-user-select: text; cursor: text; }
+
+    /* ── Notification ── */
+    .notification { position: fixed; top: 20px; right: 20px; background: var(--green); color: #000; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); z-index: 1000; animation: slideIn 0.25s ease; font-weight: 600; font-size: 13px; }
+    .notification.error { background: var(--red); color: #fff; }
+    .notification.warning { background: #f59e0b; color: #000; }
+    @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes pulse { 0%,100% { opacity:.3; transform:scale(.85); } 50% { opacity:1; transform:scale(1.15); } }
+
+    /* ── Terminal / log blocks ── */
+    .log-block { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-family: "SF Mono","Fira Code",monospace; font-size: 12px; color: var(--accent); max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; }
+    .rm-textarea { width: 100%; font-family: "SF Mono","Fira Code",monospace; font-size: 12px; background: var(--bg); color: var(--text-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; line-height: 1.6; resize: vertical; box-sizing: border-box; }
+    .log-block.green { color: var(--green); border-color: rgba(52,211,153,0.2); }
+    .log-block.mono  { color: var(--text-2); }
+
+    /* ── Provider cards ── */
+    .provider-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 10px; }
+    .provider-header { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; user-select: none; transition: background 0.12s; }
+    .provider-header:hover { background: var(--bg-hover); }
+    .provider-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+    .provider-body { display: none; padding: 16px; border-top: 1px solid var(--border); background: var(--bg); }
+    .provider-body.open { display: block; }
+    .key-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .key-input { flex: 1; background: var(--bg-card2); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 8px 12px; font-size: 13px; font-family: "SF Mono","Fira Code",monospace; }
+    .model-tag { display: inline-block; background: var(--bg-card2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; font-size: 11px; margin: 2px; font-family: "SF Mono",monospace; color: var(--text-2); }
+    .test-ok  { color: var(--green); font-size: 12px; margin-left: 8px; font-weight: 600; }
+    .test-err { color: var(--red);   font-size: 12px; margin-left: 8px; }
+
+    /* ── PM badge ── */
+    .pm-badge { font-size: 11px; padding: 2px 10px; border-radius: 999px; font-weight: 600; margin-left: 10px; background: var(--bg-card2); color: var(--text-2); border: 1px solid var(--border); }
+    .pm-badge.running { background: rgba(52,211,153,0.1); color: var(--green); border-color: rgba(52,211,153,0.3); }
+
+    /* ── Progress bar ── */
+    .prog-bar { height: 4px; background: var(--bg-card2); border-radius: 2px; overflow: hidden; margin: 8px 0; }
+    .prog-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+
+    /* ── Divider ── */
+    .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+    /* ── Agent cards ── */
+    .agent-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .agent-card-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+    .agent-avatar { width: 38px; height: 38px; border-radius: 10px; background: var(--bg-card2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .agent-meta { flex: 1; min-width: 0; }
+    .agent-id { font-weight: 700; font-size: 14px; }
+    .agent-model { font-size: 12px; color: var(--text-2); font-family: "SF Mono",monospace; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .agent-body { border-top: 1px solid var(--border); padding: 14px 16px; background: var(--bg); display: grid; gap: 12px; }
+    .agent-row { display: grid; grid-template-columns: 110px 1fr auto auto; gap: 8px; align-items: center; }
+    .agent-row label { font-size: 12px; color: var(--text-2); font-weight: 500; }
+    .agent-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(56,189,248,0.1); color: var(--accent); border: 1px solid rgba(56,189,248,0.2); font-weight: 600; }
+    .agent-badge.online { background: rgba(52,211,153,0.1); color: var(--green); border-color: rgba(52,211,153,0.3); }
+    .field-label { font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .tool-profile-opt { cursor: pointer; }
+    .tool-profile-opt input[type=radio] { display: none; }
+    .tp-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; transition: border-color 0.12s, background 0.12s; }
+    .tool-profile-opt:hover .tp-card { border-color: var(--accent); background: var(--bg-hover); }
+    .tool-profile-opt input:checked + .tp-card { border-color: var(--accent); background: rgba(56,189,248,0.07); }
+    .tp-name { font-size: 13px; font-weight: 700; margin-bottom: 4px; color: var(--text); font-family: "SF Mono",monospace; }
+    .tp-desc { font-size: 11px; color: var(--text-2); line-height: 1.4; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    #rtView::-webkit-scrollbar { width: 8px; }
+    #rtView::-webkit-scrollbar-track { background: var(--bg-card); border-radius: 4px; }
+    #rtView::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; opacity: 0.7; }
+    #rtView::-webkit-scrollbar-thumb:hover { background: var(--accent); opacity: 1; }
+    #rtView { scrollbar-width: thin; scrollbar-color: var(--accent) var(--bg-card); }
+  </style>
+</head>
+<body>
+  <!-- Shared datalist for role/theme suggestions across all agent forms -->
+  <datalist id="themePresets">
+    <option value="iOS / Swift Developer (SwiftUI, UIKit)">
+    <option value="macOS Developer (AppKit, SwiftUI)">
+    <option value="Android Developer (Kotlin, Jetpack Compose)">
+    <option value="Mobile Developer (React Native, Flutter)">
+    <option value="Frontend Developer (React, Vue, CSS)">
+    <option value="Backend Developer (Node.js, Python, APIs)">
+    <option value="Full-Stack Developer">
+    <option value="Data Engineer / ML Engineer">
+    <option value="DevOps / Infrastructure Engineer">
+    <option value="Security Researcher / Auditor">
+    <option value="QA / Test Engineer">
+    <option value="Technical Writer / Docs">
+    <option value="Product Manager / Planner">
+    <option value="Project Coordinator / Orchestrator">
+    <option value="AI / Prompt Engineer">
+    <option value="Database Engineer (SQL, Postgres, Redis)">
+    <option value="Blockchain / Web3 Developer">
+    <option value="Game Developer (Unity, Unreal)">
+    <option value="Copywriter / Content Creator">
+    <option value="Data Analyst / BI Engineer">
+  </datalist>
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <img class="brand-icon" src="/favicon.png" alt="CrewSwarm" />
+      <span class="brand-name">Crew<span>Swarm</span></span>
+    </div>
+    <div class="sidebar-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="status">loading...</span>
+      <button id="refreshBtn" class="btn-ghost" style="margin-left:auto; padding:3px 8px; font-size:11px;">↻</button>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Control</div>
+      <button class="nav-item active" id="navChat" onclick="showChat()">
+        <span class="nav-icon">🧠</span> Chat
+        <span class="nav-badge hidden" id="chatBadge">●</span>
+      </button>
+      <button class="nav-item" id="navSwarm" onclick="showSwarm()">
+        <span class="nav-icon">💬</span> Sessions
+      </button>
+      <button class="nav-item" id="navRT" onclick="showRT()">
+        <span class="nav-icon">📡</span> RT Messages
+      </button>
+      <button class="nav-item" id="navBuild" onclick="showBuild()">
+        <span class="nav-icon">🔨</span> Build
+      </button>
+      <button class="nav-item" id="navFiles" onclick="showFiles()">
+        <span class="nav-icon">📂</span> Files
+      </button>
+      <button class="nav-item" id="navDLQ" onclick="showDLQ()">
+        <span class="nav-icon">⚠️</span> DLQ
+        <span class="nav-badge hidden" id="dlqBadge">0</span>
+      </button>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Workspace</div>
+      <button class="nav-item" id="navProjects" onclick="showProjects()">
+        <span class="nav-icon">📁</span> Projects
+      </button>
+      <button class="nav-item" id="navAgents" onclick="showAgents()">
+        <span class="nav-icon">🤖</span> Agents
+      </button>
+      <button class="nav-item" id="navModels" onclick="showModels()">
+        <span class="nav-icon">⚙️</span> Models
+      </button>
+      <button class="nav-item" id="navSkills" onclick="showSkills()">
+        <span class="nav-icon">🔌</span> Skills
+      </button>
+      <button class="nav-item" id="navRunSkills" onclick="showRunSkills()">
+        <span class="nav-icon">⚡</span> Run skills
+      </button>
+      <button class="nav-item" id="navBenchmarks" onclick="showBenchmarks()">
+        <span class="nav-icon">📊</span> Benchmarks
+      </button>
+      <button class="nav-item" id="navToolMatrix" onclick="showToolMatrix()">
+        <span class="nav-icon">📋</span> Tool Matrix
+      </button>
+      <button class="nav-item" id="navServices" onclick="showServices()">
+        <span class="nav-icon">🔧</span> Services
+        <span class="nav-badge hidden" id="servicesBadge">!</span>
+      </button>
+      <button class="nav-item" id="navSettings" onclick="showSettings()">
+        <span class="nav-icon">🛠</span> Settings
+      </button>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="meta" style="padding:4px 2px;">v1.0 · <a href="http://127.0.0.1:${listenPort}" style="color:var(--accent); text-decoration:none;">127.0.0.1:${listenPort}</a></div>
+    </div>
+  </nav>
+
+  <!-- ── Main content ── -->
+  <div class="main-wrap">
+
+    <!-- Sessions view -->
+    <div class="view-sessions" id="sessionsView">
+      <section id="sessions"></section>
+      <section id="messages"></section>
+    </div>
+
+    <!-- RT Messages -->
+    <div class="view" id="rtView">
+      <div style="padding:8px 12px;border-bottom:1px solid var(--border);">
+        <input id="rtFilter" type="text" placeholder="Filter by agent or content…" oninput="filterRTMessages()" style="width:100%;font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card2);color:var(--text-1);" />
+      </div>
+      <div class="page-header">
+        <div><div class="page-title">RT Messages</div><div class="page-sub">Live feed from CrewSwarm RT message bus</div></div>
+        <button id="rtScrollBtn" onclick="document.getElementById('rtView').scrollTop=document.getElementById('rtView').scrollHeight" style="display:none;position:fixed;bottom:32px;right:32px;z-index:999;background:var(--accent);color:#fff;border:none;border-radius:50px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity .2s;">⬇ Latest</button>
+      </div>
+      <!-- OpenCode live feed -->
+      <div id="ocFeedWrap" style="margin:0 0 18px 0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:.04em;text-transform:uppercase;">OpenCode Activity</span>
+          <span id="ocFeedDot" style="display:none;width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;" title="Live"></span>
+        </div>
+        <div id="ocFeed" style="display:flex;flex-direction:column;gap:4px;min-height:32px;"></div>
+      </div>
+      <div id="rtMessages"></div>
+    </div>
+
+    <!-- DLQ -->
+    <div class="view" id="dlqView">
+      <div class="page-header">
+        <div><div class="page-title">Dead Letter Queue</div><div class="page-sub">Failed tasks after max retries — replay to retry</div></div>
+      </div>
+      <div id="dlqMessages"></div>
+    </div>
+
+    <!-- Files -->
+    <div class="view" id="filesView">
+      <div class="page-header">
+        <div><div class="page-title">Files</div><div class="page-sub">Files written by the crew — click to open in Cursor or OpenCode</div></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="filesDir" placeholder="/path/to/project" style="width:240px;" value="${process.env.HOME}/Desktop/CrewSwarm" />
+          <button type="button" class="btn-ghost" style="font-size:13px;padding:6px 10px;" onclick="pickFolder('filesDir')">📂</button>
+          <button onclick="loadFiles()" class="btn-green">Scan</button>
+          <button onclick="loadFiles(true)" class="btn-ghost" style="font-size:12px;">↻</button>
+        </div>
+      </div>
+      <div id="filesContent"></div>
+    </div>
+
+    <!-- Chat with crew-lead -->
+    <div class="view active" id="chatView">
+      <div class="page-header">
+        <div>
+          <div class="page-title" id="chatAgentTitle">🧠 Crew Lead</div>
+          <div class="page-sub" id="chatAgentSub">Conversational commander — chat naturally, dispatch tasks to the crew</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="crewLeadBadge" class="status-badge status-stopped">● offline</span>
+          <button onclick="clearChatHistory()" class="btn-ghost" style="font-size:12px;">🗑 Clear</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
+        <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
+          <div style="flex:1;position:relative;min-width:0;overflow:visible;">
+            <textarea id="chatInput" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
+              style="width:100%;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;min-width:0;box-sizing:border-box;"
+              onkeydown="chatKeydown(event)" oninput="chatAtAtInput(event)"></textarea>
+            <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
+            <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
+          </div>
+          <button onclick="stopAll()" title="Stop all pipelines" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;">⏹</button>
+          <button onclick="killAll()" title="Kill all agents" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--red,#ef4444);cursor:pointer;">☠️</button>
+          <button onclick="sendChat()" class="btn-green" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+          <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">Project context:</span>
+          <select id="chatProjectSelect" style="width:200px;max-width:200px;font-size:12px;padding:6px 8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" onchange="onChatProjectChange()" title="Active project for dispatch context">
+            <option value="">— none —</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Services -->
+    <div class="view" id="servicesView">
+      <div class="page-header">
+        <div><div class="page-title">Services</div><div class="page-sub">Live status of all CrewSwarm processes — restart any service without leaving the dashboard</div></div>
+        <button onclick="loadServices()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div id="servicesGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;padding:16px;"></div>
+    </div>
+
+    <!-- Projects -->
+    <div class="view" id="projectsView">
+      <div class="page-header">
+        <div><div class="page-title">Projects</div><div class="page-sub">Each project has its own roadmap, output dir, and PM Loop.</div></div>
+        <button id="newProjectBtn" class="btn-yellow">+ New Project</button>
+      </div>
+      <div id="newProjectForm" style="display:none;" class="card" style="border-color:var(--yellow);">
+        <h3>New Project</h3>
+        <div style="display:grid; gap:10px; margin-top:12px;">
+          <input id="npName"        placeholder="Project name (e.g. CrewSwarm Docs)" />
+          <input id="npDesc"        placeholder="Description (optional)" />
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input id="npOutputDir" placeholder="Project folder — anywhere on disk (e.g. ~/Desktop/MyApp). Agents write files here." style="flex:1;" />
+            <button type="button" class="btn-ghost" style="white-space:nowrap;font-size:13px;padding:6px 10px;" onclick="pickFolder('npOutputDir')">📂 Browse</button>
+          </div>
+          <input id="npFeaturesDoc" placeholder="Features doc path (optional)" />
+          <div style="display:flex; gap:8px;">
+            <button id="npCreateBtn" class="send-btn">Create Project</button>
+            <button id="npCancelBtn" class="btn-ghost">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div id="projectsList" style="display:grid; gap:14px;"></div>
+    </div>
+
+    <!-- Providers -->
+    <div class="view" id="modelsView">
+      <div class="page-header">
+        <div><div class="page-title">Models &amp; API Keys</div><div class="page-sub">Keys saved to <code style="font-size:11px; color:var(--text-2);">~/.crewswarm/config.json</code></div></div>
+        <div style="display:flex; gap:8px;">
+          <button id="addProviderBtn" class="btn-purple">+ Add Provider</button>
+          <button id="refreshProvidersBtn" class="btn-ghost">↻ Refresh</button>
+        </div>
+      </div>
+
+      <!-- RT Bus auth token -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-size:18px;">⚡</span>
+          <div>
+            <div style="font-weight:600; font-size:14px;">RT Bus Auth Token</div>
+            <div style="font-size:12px; color:var(--text-2);">Auto-generated during install and saved to <code style="font-size:11px;">~/.crewswarm/config.json</code>. All services read it from there — you never need to copy it manually. Only change this if you want to rotate the secret or run the RT bus on a shared machine.</div>
+          </div>
+          <span id="rtTokenBadge" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">not set</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <input id="rtTokenInput" type="password" autocomplete="new-password" placeholder="Leave blank to auto-use the token from config.json" style="flex:1;" />
+          <button onclick="saveRTToken()" class="btn-purple">Save</button>
+          <button onclick="document.getElementById('rtTokenInput').type = document.getElementById('rtTokenInput').type === 'password' ? 'text' : 'password'" class="btn-ghost" title="Show/hide">👁</button>
+        </div>
+      </div>
+
+      <!-- LLM Providers (built-ins + any custom providers appended below) -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; padding:0 2px;">LLM Providers</div>
+      <div id="builtinProvidersList"></div>
+
+      <!-- Add custom provider form (shown by "+ Add Provider" button in page header) -->
+      <div id="addProviderForm" style="display:none; margin-bottom:10px;" class="card">
+        <h3 style="margin-bottom:12px;">Add Custom Provider</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <input id="apId"      placeholder="Provider ID (e.g. together)" />
+          <input id="apBaseUrl" placeholder="Base URL (e.g. https://api.together.xyz/v1)" />
+          <input id="apKey"     placeholder="API Key" type="password" autocomplete="new-password" />
+          <select id="apApi">
+            <option value="openai-completions">openai-completions</option>
+            <option value="openai-responses">openai-responses</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button id="apSaveBtn" class="btn-purple">Save Provider</button>
+          <button id="apCancelBtn" class="btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Search & Research Tools -->
+      <div style="font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.08em; margin:18px 0 10px; padding:0 2px;">Search &amp; Research Tools</div>
+      <div id="searchToolsList"></div>
+    </div>
+
+    <!-- Agents -->
+    <div class="view" id="agentsView">
+      <div class="page-header">
+        <div><div class="page-title">Agents</div><div class="page-sub">Assign models, edit system prompts, configure per-agent tool permissions. Tool permissions are enforced by gateway-bridge on every task.</div></div>
+        <div style="display:flex; gap:8px;">
+          <button id="newAgentBtn" class="btn-green">+ New Agent</button>
+          <button id="refreshAgentsBtn" class="btn-ghost">↻ Refresh</button>
+          <button onclick="startCrew()" class="btn-ghost" style="color:var(--green); border-color:rgba(52,211,153,0.3);">⚡ Start Bridges</button>
+        </div>
+      </div>
+
+      <!-- New agent form -->
+      <div id="newAgentForm" style="display:none; margin-bottom:16px;" class="card">
+        <h3 style="margin-bottom:14px;">New Agent</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+          <div>
+            <div class="field-label">Agent ID <span class="meta" style="text-transform:none;">(used as RT bus name)</span></div>
+            <input id="naId" placeholder="e.g. crew-coder-3" />
+          </div>
+          <div>
+            <div class="field-label">Model</div>
+            <select id="naModel" style="width:100%;"><option value="">— select a model —</option></select>
+          </div>
+          <div>
+            <div class="field-label">Display Name</div>
+            <input id="naName" placeholder="e.g. Blaze" />
+          </div>
+          <div style="display:flex; gap:8px; align-items:flex-end;">
+            <div style="flex:0 0 auto;">
+              <div class="field-label">Emoji</div>
+              <div class="emoji-picker-wrap">
+                <button type="button" class="emoji-btn" id="naEmoji-btn" onclick="toggleEmojiPicker('__new__')" title="Pick emoji">🔥</button>
+                <input type="hidden" id="naEmoji" value="🔥" />
+                <div class="emoji-picker-panel" id="aemoji-panel-__new__">
+                  <div class="emoji-grid" id="aemoji-grid-__new__"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="grid-column:1/-1;">
+            <div class="field-label">Role / Theme <span class="meta" style="text-transform:none; font-weight:400;">— used by PM router to assign tasks (auto-filled by preset)</span></div>
+            <input id="naTheme" list="themePresets" placeholder="e.g. iOS / Swift developer (SwiftUI, UIKit)" style="width:100%;" />
+          </div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+            <div class="field-label" style="margin:0;">System Prompt</div>
+            <select id="naPromptPreset" style="font-size:12px; padding:3px 8px;" onchange="applyPromptPreset()">
+              \${buildPresetOptions('— quick presets —')}
+            </select>
+          </div>
+          <textarea id="naPrompt" rows="5" placeholder="Describe what this agent specialises in. It will be shown at the top of every task."></textarea>
+        </div>
+        <div style="margin-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+            <div class="field-label" style="margin:0;">Agent Tools <span class="meta" style="text-transform:none; font-weight:400;">— what gateway-bridge lets this agent do</span></div>
+            <select id="naToolPreset" style="font-size:12px; padding:3px 8px;" onchange="applyNewAgentToolPreset()">
+              <option value="">— tool presets —</option>
+              <option value="coder">🔨 Coder (write + run) — frontend, backend, iOS, data, AI/ML…</option>
+              <option value="writer">✍️ Writer (write + read) — copywriter, docs, designer</option>
+              <option value="reviewer">🔍 Reviewer (read only) — QA, audit</option>
+              <option value="security">🛡️ Security (read + run, no write) — scanner, auditor</option>
+              <option value="orchestrator">📋 PM / Planner (read + dispatch) — product manager, planner</option>
+              <option value="coordinator">🦊 Coordinator (full access) — main agent, team lead</option>
+              <option value="devops">⚙️ DevOps (run + git) — infrastructure, GitHub ops</option>
+              <option value="comms">💬 Comms (telegram) — notification agent</option>
+            </select>
+          </div>
+          <div id="naToolsGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;">
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="write_file" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">write_file</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Write files to disk (@@WRITE_FILE)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="read_file" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">read_file</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Read files from disk (@@READ_FILE)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="mkdir" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">mkdir</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Create directories (@@MKDIR)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="run_cmd" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">run_cmd</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Run whitelisted shell commands (@@RUN_CMD)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="git" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">git</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Git &amp; GitHub CLI operations</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="web_search" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">web_search</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Web search (@@WEB_SEARCH)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="web_fetch" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">web_fetch</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Fetch URLs (@@WEB_FETCH)</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="dispatch" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">dispatch</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Dispatch tasks to other agents</div></div></label>
+            <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card2);"><input type="checkbox" class="naToolCheck" data-tool="telegram" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0;"><div><code style="font-size:11px;color:var(--text-1);">telegram</code><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Send Telegram messages (@@TELEGRAM)</div></div></label>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button id="naCreateBtn" class="btn-green">Create Agent</button>
+          <button id="naCancelBtn" class="btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0 4px; border-bottom:1px solid var(--border); margin-bottom:12px;">
+        <span style="font-size:11px; font-weight:600; color:var(--text-3); margin-right:4px;">BULK SET CODING AGENTS →</span>
+        <button onclick="bulkSetRoute('direct')" class="btn-ghost" style="font-size:11px; padding:4px 10px;">💬 Direct API</button>
+        <button onclick="bulkSetRoute('opencode')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#22c55e; border-color:rgba(34,197,94,0.3);">⚡ OpenCode</button>
+        <button onclick="bulkSetRoute('cursor','sonnet-4.6')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.6</button>
+        <button onclick="bulkSetRoute('cursor','opus-4.6-thinking')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
+        <button onclick="bulkSetRoute('claudecode','claude-sonnet-4-5')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">🤖 Claude Code · sonnet</button>
+        <button onclick="bulkSetRoute('claudecode','claude-opus-4-5')" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#f97316; border-color:rgba(249,115,22,0.3);">🤖 Claude Code · opus</button>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">🎭 Custom Roles</div>
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:10px;">Define tool sets for custom agent roles. Agents with a matching <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">_role</code> inherit these permissions.</div>
+        <div id="customRolesList" style="margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input id="newRoleName" type="text" placeholder="role name (e.g. analyst)" style="width:140px;font-size:12px;padding:6px 10px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);">
+          <input id="newRoleTools" type="text" placeholder="read_file,web_search,skill" style="flex:1;min-width:200px;font-size:12px;padding:6px 10px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);">
+          <button onclick="addCustomRole()" class="btn-green" style="font-size:12px;">Add Role</button>
+        </div>
+      </div>
+      <div id="agentsList" style="display:grid; gap:12px;"></div>
+    </div>
+
+    <!-- Settings -->
+    <div class="view" id="settingsView">
+      <div class="page-header">
+        <div><div class="page-title">Settings</div><div class="page-sub">Usage, spending, security, and system configuration</div></div>
+      </div>
+
+      <!-- Settings sub-tabs -->
+      <div style="display:flex;gap:4px;padding:0 16px 0;border-bottom:1px solid var(--border);margin-bottom:0;">
+        <button class="stab active" id="stab-usage"    onclick="showSettingsTab('usage')">💰 Usage</button>
+        <button class="stab"        id="stab-security" onclick="showSettingsTab('security')">🔐 Security</button>
+        <button class="stab"        id="stab-webhooks" onclick="showSettingsTab('webhooks')">🌐 Webhooks</button>
+        <button class="stab"        id="stab-telegram"  onclick="showSettingsTab('telegram')">📡 Telegram</button>
+        <button class="stab"        id="stab-whatsapp"  onclick="showSettingsTab('whatsapp')">💬 WhatsApp</button>
+        <button class="stab"        id="stab-system"    onclick="showSettingsTab('system')">🛠 System</button>
+      </div>
+
+      <!-- Usage: Token stats + Spending caps -->
+      <div id="stab-panel-usage" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1100px;">
+
+        <!-- Grand Total Banner -->
+        <div class="card" style="grid-column:1/-1;background:linear-gradient(135deg,var(--bg-1) 0%,var(--bg-0) 100%);border:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:14px;font-weight:700;color:var(--text-1);">&#x1F4CA; Total Spend</span>
+              <select id="grandTotalDays" style="font-size:11px;padding:3px 6px;" onchange="loadAllUsage()">
+                <option value="1">Today</option>
+                <option value="7">Last 7 days</option>
+                <option value="14" selected>Last 14 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:24px;flex-wrap:wrap;" id="grandTotalWidget">
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">Agents (direct)</div><div style="font-size:20px;font-weight:700;color:var(--accent);" id="gtAgentCost">—</div></div>
+              <div style="text-align:center;font-size:20px;color:var(--text-3);line-height:2;">+</div>
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">OpenCode</div><div style="font-size:20px;font-weight:700;color:var(--green);" id="gtOcCost">—</div></div>
+              <div style="text-align:center;font-size:20px;color:var(--text-3);line-height:2;">=</div>
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">Grand Total</div><div style="font-size:22px;font-weight:800;color:var(--yellow,#fbbf24);" id="gtTotal">—</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Token Usage (all-time breakdown) -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:16px;">&#x1F4B0; Token Usage <span style="font-size:11px;font-weight:400;color:var(--text-3);">(direct LLM calls)</span></div>
+          <div id="tokenUsageWidget"><div style="color:var(--text-3);font-size:12px;">Loading&#x2026;</div></div>
+        </div>
+
+        <!-- Agent Spending with time range -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div class="card-title" style="margin:0;">&#x1F4B8; Agent Spending</div>
+            <select id="spendingDays" style="font-size:11px;padding:3px 6px;" onchange="loadSpending()">
+              <option value="1" selected>Today</option>
+              <option value="7">Last 7 days</option>
+              <option value="14">Last 14 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </div>
+          <div id="spendingWidget" style="font-size:12px;">Loading&#x2026;</div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="loadSpending()" class="btn-ghost" style="font-size:11px;">&#x21BB; Refresh</button>
+            <button onclick="resetSpending()" class="btn-ghost" style="font-size:11px;color:var(--red);">Reset Today</button>
+          </div>
+          <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+            <div class="card-title" style="margin-bottom:8px;">⚙️ Daily Spending Caps</div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px;">Token limit (global/day)</label>
+                <input id="capTokenInput" type="number" min="0" placeholder="no limit" style="width:160px;font-size:12px;padding:6px 10px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);">
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px;">Cost limit (global/day USD)</label>
+                <input id="capCostInput" type="number" min="0" step="0.01" placeholder="no limit" style="width:160px;font-size:12px;padding:6px 10px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);">
+              </div>
+              <div style="align-self:flex-end;">
+                <button onclick="saveSpendingCaps()" class="btn-primary" style="font-size:12px;">Save Caps</button>
+              </div>
+            </div>
+            <div id="capsStatus" style="font-size:11px;color:var(--text-3);margin-top:6px;"></div>
+          </div>
+        </div>
+
+        <!-- OpenCode Usage full width -->
+        <div class="card" style="grid-column:1/-1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div class="card-title" style="margin:0;">&#x1F680; OpenCode Usage <span style="font-size:11px;font-weight:400;color:var(--text-3);">(OpenCode DB &#x2014; all agents + Cursor sessions)</span></div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select id="ocStatsDays" style="font-size:11px;padding:3px 6px;" onchange="loadOcStats()">
+                <option value="7">Last 7 days</option>
+                <option value="14" selected>Last 14 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
+              <button onclick="loadOcStats()" class="btn-ghost" style="font-size:11px;">&#x21BB; Refresh</button>
+            </div>
+          </div>
+          <div id="ocStatsWidget"><div style="color:var(--text-3);font-size:12px;">Loading&#x2026;</div></div>
+        </div>
+      </div>
+
+      <!-- Security: Command allowlist -->
+      <div id="stab-panel-security" style="display:none;padding:16px;max-width:800px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:6px;">🔐 Command Allowlist</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            Patterns here auto-approve agent <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@RUN_CMD</code> calls — no toast, no wait.
+            Dangerous commands (<code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">rm -rf</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">sudo</code>, <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">curl|bash</code>) are always blocked.
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Quick presets</div>
+          <div id="cmdPresets" style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;"></div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Active patterns</div>
+          <div id="cmdAllowlistItems" style="min-height:24px;margin-bottom:12px;"></div>
+          <div style="display:flex;gap:6px;">
+            <input id="cmdAllowlistInput" placeholder="Custom pattern, e.g. make *" style="flex:1;font-size:12px;" onkeydown="if(event.key==='Enter')addAllowlistPattern();" />
+            <button onclick="addAllowlistPattern()" class="btn-green" style="font-size:12px;padding:7px 12px;">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Webhooks: Inbound webhooks -->
+      <div id="stab-panel-webhooks" style="display:none;padding:16px;max-width:800px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:10px;">🌐 Inbound Webhooks</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            External services can push events to the RT bus via:<br>
+            <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">POST http://127.0.0.1:5010/webhook/{channel}</code><br>
+            Any JSON payload is accepted and published to <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">webhook.{channel}</code> on the RT bus and broadcasts to the dashboard.
+          </div>
+          <div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Test webhook</div>
+            <div style="display:flex;gap:8px;margin-bottom:8px;">
+              <input id="webhookChannel" placeholder="channel name (e.g. n8n)" style="flex:1;" />
+              <input id="webhookPayload" placeholder='{"event":"test"}' style="flex:2;" />
+            </div>
+            <button onclick="sendTestWebhook()" class="btn-ghost" style="font-size:12px;">Send</button>
+            <div id="webhookTestResult" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Recent events</div>
+            <div id="webhookEvents" style="font-size:12px;color:var(--text-3);max-height:200px;overflow:auto;">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Telegram -->
+      <div id="stab-panel-telegram" style="display:none;padding:16px;max-width:900px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div>
+            <div style="font-size:16px;font-weight:700;">📡 Telegram</div>
+            <div style="font-size:12px;color:var(--text-3);">Telegram sessions, bot config, and live RT feed</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="tgStatusBadge" class="status-badge status-stopped">● stopped</span>
+            <button onclick="startTgBridge()" class="btn-green" id="tgStartBtn">▶ Start</button>
+            <button onclick="stopTgBridge()" class="btn-red" id="tgStopBtn">⏹ Stop</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:12px;">⚙️ Bot Configuration</div>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Telegram Bot Token</label>
+              <input id="tgTokenInput" type="password" autocomplete="new-password" placeholder="123456:ABCdef..." style="width:100%;margin-bottom:12px;" />
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed chat IDs <span style="color:var(--text-3);font-weight:400;">(comma-separated)</span></label>
+              <input id="tgAllowedIds" placeholder="1693963111, 987654321" style="width:100%;margin-bottom:12px;" />
+              <div id="tgContactNamesList" style="margin-bottom:12px;"></div>
+              <button onclick="saveTgConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;margin-top:4px;">
+                Each Telegram chat gets its own isolated session in crew-lead.<br/>
+                Add contact names below so the crew can message by name (e.g. TELEGRAM at-Jeff hello).<br/>
+                Get a token from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent);">@BotFather</a>.
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">Telegram Conversations</div>
+                  <div style="font-size:11px;color:var(--text-3);">Each chat ID gets an isolated session with crew-lead</div>
+                </div>
+                <button onclick="loadTelegramSessions()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="tgSessionsList" style="max-height:300px;overflow-y:auto;"></div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">RT Bus Activity</div>
+                  <div style="font-size:11px;color:var(--text-3);">Read-only — watch agents work in real time</div>
+                </div>
+                <button onclick="loadTgMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="tgMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 400px);overflow-y:auto;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WhatsApp -->
+      <div id="stab-panel-whatsapp" style="display:none;padding:16px;max-width:900px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div>
+            <div style="font-size:16px;font-weight:700;">💬 WhatsApp</div>
+            <div style="font-size:12px;color:var(--text-3);">Personal bot via Baileys — your phone number as a linked device</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="waStatusBadge" class="status-badge status-stopped">● stopped</span>
+            <button onclick="startWaBridge()" class="btn-green" id="waStartBtn">▶ Start</button>
+            <button onclick="stopWaBridge()" class="btn-red" id="waStopBtn">⏹ Stop</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:12px;">⚙️ Configuration</div>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Allowed phone numbers <span style="color:var(--text-3);font-weight:400;">(comma-separated, international format)</span></label>
+              <input id="waAllowedNumbers" placeholder="+15551234567, +15559876543" style="width:100%;margin-bottom:4px;" oninput="renderWaContactRows()" />
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:10px;">Leave empty to accept messages from anyone.</div>
+              <div id="waContactNamesList" style="margin-bottom:12px;"></div>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);">Target agent</label>
+              <input id="waTargetAgent" placeholder="crew-lead" style="width:100%;margin-bottom:12px;" />
+              <button onclick="saveWaConfig()" class="btn-green" style="width:100%;margin-bottom:8px;">Save config</button>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.6;margin-top:4px;">
+                Leave <em>Allowed numbers</em> empty to accept messages from anyone.<br/>
+                Auth persists in <code>~/.crewswarm/whatsapp-auth/</code> — QR scan is only needed once.<br/>
+                Start the bridge from the terminal to scan the QR code the first time:<br/>
+                <code style="font-size:10px;">npm run whatsapp</code>
+              </div>
+            </div>
+            <div class="card" style="align-self:start;">
+              <div class="card-title" style="margin-bottom:8px;">📋 Auth status</div>
+              <div id="waAuthStatus" style="font-size:12px;color:var(--text-3);">Checking...</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:13px;font-weight:600;">Recent messages</div>
+                  <div style="font-size:11px;color:var(--text-3);">Inbound and outbound WhatsApp messages</div>
+                </div>
+                <button onclick="loadWaMessages()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+              </div>
+              <div id="waMessageFeed" style="display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 380px);overflow-y:auto;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- System: OpenCode dir + fallback -->
+      <div id="stab-panel-system" style="display:none;padding:16px;max-width:800px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:6px;">📂 OpenCode Project Directory</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            Agents that use OpenCode will write files here. Set this to your project folder so agents don't hit external-directory permission errors.
+            Leave blank to use the CrewSwarm repo directory (default).
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input id="opencodeProjInput" placeholder="e.g. /Users/you/Desktop/myproject" style="flex:1;font-size:13px;font-family:monospace;" />
+            <button onclick="saveOpencodeSettings()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="opencodeProjStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+        <div class="card" style="margin-top:16px;">
+          <div class="card-title" style="margin-bottom:6px;">⚡ OpenCode Fallback Model</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            When the primary model hits rate limits, OpenCode retries with this model. Use a different provider (e.g. groq) to avoid the same limit.
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <select id="opencodeFallbackSelect" style="flex:1;min-width:280px;font-size:13px;font-family:monospace;"></select>
+            <button onclick="saveOpencodeSettings()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="opencodeFallbackStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🌐 Global Fallback Model</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">Applied to any agent that has no per-agent fallback set. Prevents jobs dying on rate limits or hangs.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <input id="globalFallbackInput" placeholder="e.g. groq/llama-3.3-70b-versatile" style="flex:1;font-size:13px;font-family:monospace;" />
+            <button onclick="saveGlobalFallback()" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="globalFallbackStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">🧠 Background Consciousness</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                When idle, crew-lead reflects on system state, surfaces blockers, and dispatches follow-ups automatically.
+                Uses a cheap Groq model (llama-3.1-8b) — runs every 15 min when no pipelines are active.
+              </div>
+            </div>
+            <button id="bgConsciousnessBtn" onclick="toggleBgConsciousness()" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="bgConsciousnessStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+          <div id="bgConsciousnessConfig" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <label style="font-size:11px;color:var(--text-3);">Interval (min)</label>
+            <input id="bgConsciousnessInterval" type="number" min="1" max="1440" value="15" style="width:70px;font-size:12px;padding:4px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;color:var(--text-1);">
+            <label style="font-size:11px;color:var(--text-3);">Model</label>
+            <input id="bgConsciousnessModel" type="text" placeholder="groq/llama-3.1-8b-instant" style="flex:1;min-width:180px;font-size:12px;padding:4px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;color:var(--text-1);">
+            <button onclick="saveBgConsciousnessConfig()" style="font-size:11px;padding:4px 12px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);">Save</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div class="card-title">📋 Global Rules</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:10px;">Injected into every agent on every task. Plain markdown. Changes take effect immediately — no restart needed.</div>
+          <textarea id="globalRulesEditor" rows="8" style="width:100%;font-size:12px;font-family:monospace;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;padding:10px;color:var(--text-1);resize:vertical;" placeholder="# Global Rules\n- Always report full file paths\n- Never break existing tests..."></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button onclick="saveGlobalRules()" class="btn-primary" style="font-size:12px;">Save Rules</button>
+            <span id="globalRulesStatus" style="font-size:11px;color:var(--text-3);align-self:center;"></span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="margin-top:16px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;">OpenCode Loop (Ouroboros)</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px;">
+              <input type="checkbox" id="globalOcLoop" onchange="saveGlobalOcLoop()" style="accent-color:var(--accent);" />
+              Enable loop for all agents (OPENCREW_OPENCODE_LOOP)
+            </label>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="font-size:12px;color:var(--text-3);">Max rounds:</label>
+              <input type="number" id="globalOcLoopRounds" min="1" max="50" value="10" style="width:70px;font-size:12px;" />
+              <button onclick="saveGlobalOcLoopRounds()" class="btn-ghost" style="font-size:12px;">Save</button>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div class="card-title" style="margin-bottom:2px;">⚡ Cursor Parallel Waves</div>
+              <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
+                Route pipeline waves through Cursor's native subagent system. All agents in a wave run simultaneously in isolated context windows via the <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">crew-orchestrator</code> subagent — no queuing, no collisions.
+                Requires Cursor CLI installed (<code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">~/.local/bin/agent</code>). Single-task waves always bypass the orchestrator.
+              </div>
+            </div>
+            <button id="cursorWavesBtn" onclick="toggleCursorWaves()" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
+              Loading…
+            </button>
+          </div>
+          <div id="cursorWavesStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Integrations -->
+    <div class="view" id="skillsView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Skills</div>
+          <div class="page-sub">API skill definitions agents can call with @@SKILL</div>
+        </div>
+        <button onclick="showSkills()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1100px;">
+
+        <!-- Skills -->
+        <div class="card" style="grid-column:1/-1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title">🔌 Skills</div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="toggleImportSkill()" class="btn-ghost" style="font-size:12px;">⬇ Import URL</button>
+              <button onclick="toggleAddSkill()" class="btn-purple" style="font-size:12px;">+ Add Skill</button>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5;">
+            Skills let agents call external APIs with <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">@@SKILL skillname {params}</code>.
+            Store skill definitions in <code style="background:var(--bg-1);padding:1px 5px;border-radius:3px;">~/.crewswarm/skills/</code>.
+          </div>
+
+          <!-- Import from URL -->
+          <div id="importSkillForm" style="display:none;border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;background:var(--bg-2);">
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Import Skill from URL</div>
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Paste a raw URL to a <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">SKILL.md</code> or <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">.json</code> skill file. GitHub blob URLs are auto-converted to raw.</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input id="importSkillUrl" placeholder="https://github.com/…/SKILL.md or https://raw.githubusercontent.com/…" style="flex:1;font-size:12px;" />
+              <button onclick="importSkillFromUrl()" class="btn-green" style="font-size:12px;" id="importSkillBtn">Import</button>
+              <button onclick="toggleImportSkill()" class="btn-ghost" style="font-size:12px;">Cancel</button>
+            </div>
+            <div id="importSkillStatus" style="font-size:11px;margin-top:8px;color:var(--text-3);"></div>
+          </div>
+
+          <!-- Search -->
+          <input id="skillSearch" placeholder="Search skills…" oninput="filterSkills(this.value)" style="width:100%;margin-bottom:14px;font-size:13px;" />
+
+          <!-- Add / Edit skill form -->
+          <div id="addSkillForm" style="display:none;border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;background:var(--bg-2);">
+            <input type="hidden" id="skEditName" value="" />
+            <div class="card-title" style="font-size:13px;margin-bottom:10px;" id="addSkillFormTitle">New Skill</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Skill Name</label>
+                <input id="skName" placeholder="e.g. twitter.post" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Description</label>
+                <input id="skDesc" placeholder="What this skill does" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">URL</label>
+                <input id="skUrl" placeholder="https://api.example.com/endpoint/{param}" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Method</label>
+                <select id="skMethod"><option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Auth Type</label>
+                <select id="skAuthType" onchange="updateSkillAuthFields()"><option value="">None</option><option value="bearer">Bearer token</option><option value="header">Custom header</option></select>
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">API Key (or config path)</label>
+                <input id="skAuthKey" placeholder="sk-... or providers.groq.apiKey" />
+              </div>
+              <div id="skAuthHeaderWrap" style="display:none;">
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Header Name</label>
+                <input id="skAuthHeader" placeholder="X-API-Key" />
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Default Params (JSON)</label>
+              <textarea id="skDefaults" rows="2" placeholder='{"model":"gpt-4o"}'></textarea>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                <input type="checkbox" id="skRequiresApproval" /> Requires human approval before executing
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="saveSkill()" class="btn-green" id="saveSkillBtn">Save Skill</button>
+              <button onclick="cancelSkillForm()" class="btn-ghost">Cancel</button>
+            </div>
+          </div>
+
+          <div id="skillsList" style="display:grid;gap:8px;"></div>
+        </div>
+
+        <!-- Pending approvals -->
+        <div class="card" style="grid-column:1/-1;" id="pendingApprovalsCard">
+          <div class="card-title" style="margin-bottom:10px;">🔔 Pending Skill Approvals</div>
+          <div id="pendingApprovals" style="font-size:12px;color:var(--text-3);">No pending approvals.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Run skills — from health snapshot; fire via /api/skills/:name/run -->
+    <div class="view" id="runSkillsView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Run skills</div>
+          <div class="page-sub">Installed skills from the health snapshot. Enter params and run on demand (same API agents use with @@SKILL).</div>
+        </div>
+        <button onclick="loadRunSkills()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div id="runSkillsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;padding:16px;"></div>
+    </div>
+
+    <!-- Benchmarks — ZeroEval / llm-stats leaderboards -->
+    <div class="view" id="benchmarksView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Benchmarks</div>
+          <div class="page-sub">LLM leaderboard data from <a href="https://llm-stats.com" target="_blank" rel="noopener" style="color:var(--accent);">llm-stats.com</a> — compare models on SWE-Bench Verified, LiveCodeBench, and more</div>
+        </div>
+        <button onclick="loadBenchmarks()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:16px;">
+        <div class="card" style="max-width:400px;">
+          <label style="font-weight:600;font-size:13px;">Benchmark</label>
+          <select id="benchmarkSelect" onchange="loadBenchmarkLeaderboard(this.value)" style="width:100%;margin-top:6px;padding:8px 12px;">
+            <option value="">— Pick benchmark —</option>
+          </select>
+        </div>
+        <div id="benchmarkMeta" style="font-size:12px;color:var(--text-2);display:none;"></div>
+        <div id="benchmarkTable" class="card" style="overflow:auto;"></div>
+      </div>
+    </div>
+
+    <!-- Tool Matrix — agents × tools from health + quick restart -->
+    <div class="view" id="toolMatrixView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Tool Matrix</div>
+          <div class="page-sub">Who can read/write/run at a glance. Restart a bridge from here when it misbehaves.</div>
+        </div>
+        <button onclick="loadToolMatrix()" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div id="taskLifecycleContainer" style="padding:0 16px 12px;"></div>
+      <div id="toolMatrixContainer" style="padding:16px;"></div>
+    </div>
+
+    <!-- Build -->
+    <div class="view" id="buildView">
+      <div style="max-width:800px; margin:0 auto;">
+        <div class="page-header">
+          <div><div class="page-title">Build</div><div class="page-sub">Select a project, describe what to build, and kick off the crew</div></div>
+        </div>
+
+        <!-- Project picker -->
+        <div class="card" style="margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <label style="font-weight:600;font-size:13px;white-space:nowrap;">Project</label>
+            <select id="buildProjectPicker" style="flex:1;min-width:180px;" onchange="onBuildProjectChange()">
+              <option value="">— No project (use defaults) —</option>
+            </select>
+            <a href="#" onclick="showProjects(); return false;" style="font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap;">+ New project</a>
+            <button onclick="loadBuildProjectPicker()" class="btn-ghost" style="font-size:12px;padding:4px 8px;">↻</button>
+          </div>
+          <div id="buildProjectInfo" style="display:none;margin-top:10px;font-size:12px;color:var(--text-2);background:var(--bg-card2);border-radius:6px;padding:8px 12px;font-family:monospace;line-height:1.6;"></div>
+        </div>
+
+        <!-- Requirement + run buttons -->
+        <div class="card">
+          <h3 style="margin-bottom:10px;">Requirement</h3>
+          <textarea id="buildRequirement" rows="4" placeholder="One sentence or full spec. e.g. Build a REST API with auth, CRUD endpoints, and tests. The PM will plan it and dispatch to the crew."></textarea>
+          <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button id="runBuildBtn" class="send-btn" title="Run one full phased build (MVP → Phase 1 → Phase 2)">▶ Run Build</button>
+            <button id="stopBuildBtn" class="btn-red" style="display:none;" title="Stop the running build">⏹ Stop Build</button>
+            <button id="continuousBuildBtn" style="background:var(--accent); color:#000;" title="Keep building until the roadmap is empty">🔁 Build Until Done</button>
+            <button id="stopContinuousBtn" class="btn-red" style="display:none;" title="Stop continuous build">⏹ Stop</button>
+            <button id="enhancePromptBtn" class="btn-purple" title="AI-enhance your requirement">✨ Enhance</button>
+            <span class="meta" id="buildStatus"></span>
+          </div>
+          <div id="buildLiveLog" style="display:none; margin-top:14px;" class="log-block"></div>
+          <div style="margin-top:10px;font-size:11px;color:var(--text-3);">
+            <b>▶ Run Build</b> — one phased build (MVP→Ph1→Ph2), runs in background.
+            <b>🔁 Build Until Done</b> — loops continuously until roadmap exhausted.
+            <b>PM Loop ▶</b> — reads ROADMAP.md and dispatches each item one at a time.
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
+            <h3 style="margin:0;">Phased Progress</h3>
+            <span id="phasedProgressLabel" style="font-size:11px;color:var(--text-3);"></span>
+          </div>
+          <p class="meta" style="margin-bottom:10px;">Task dispatch log — filtered to the selected project when one is chosen</p>
+          <div id="phasedProgress" class="log-block mono" style="max-height:180px;"></div>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+            <h3 style="margin:0;">PM Loop</h3>
+            <span class="pm-badge" id="pmLoopBadge">idle</span>
+          </div>
+          <div id="pmLoopProjectLabel" style="font-size:12px; color:var(--text-2); margin-bottom:8px; padding:6px 10px; background:var(--bg-card2); border-radius:6px; border-left:3px solid var(--accent);">
+            ← Select a project above
+          </div>
+          <p class="meta" style="margin-bottom:14px;">Reads the selected project's ROADMAP.md, dispatches one task at a time, self-extends when the roadmap empties.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+            <button id="pmStartBtn" class="btn-green">▶ Start</button>
+            <button id="pmStopBtn" class="btn-red">⏹ Stop</button>
+            <button id="pmDryRunBtn" class="btn-muted">🔍 Dry run</button>
+            <button id="pmRoadmapBtn" class="btn-ghost">📋 Roadmap</button>
+            <button onclick="document.getElementById('pmAdvanced').style.display=document.getElementById('pmAdvanced').style.display==='none'?'block':'none'" class="btn-ghost" style="font-size:12px;">⚙ Options</button>
+            <span class="meta" id="pmStatus" style="align-self:center;"></span>
+          </div>
+          <div id="pmAdvanced" style="display:none;background:var(--bg-card2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;">Advanced Options</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:10px;">
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptQA" checked style="accent-color:var(--accent);"> QA review per task
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSecurity" checked style="accent-color:var(--accent);"> Security review
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSpecialists" checked style="accent-color:var(--accent);"> Use specialists (front/back/github)
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSelfExtend" checked style="accent-color:var(--accent);"> Self-extend roadmap when empty
+              </label>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;">
+              <label style="font-size:12px;color:var(--text-3);">Max items<br>
+                <input type="number" id="pmOptMaxItems" value="200" min="1" max="1000" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Task timeout (min)<br>
+                <input type="number" id="pmOptTimeout" value="10" min="1" max="120" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Self-extend every N tasks<br>
+                <input type="number" id="pmOptExtendN" value="5" min="1" max="50" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Pause between tasks (sec)<br>
+                <input type="number" id="pmOptPause" value="5" min="0" max="300" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Max retries per task<br>
+                <input type="number" id="pmOptMaxRetries" value="2" min="0" max="10" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Default coder agent<br>
+                <input type="text" id="pmOptCoder" value="crew-coder" placeholder="crew-coder" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+            </div>
+          </div>
+          <div id="pmRoadmapPanel" style="display:none; margin-bottom:12px;" class="log-block mono" style="max-height:220px;"></div>
+          <div id="pmLiveLog" style="display:none;" class="log-block green"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Message bar — redirects to crew-lead chat ── -->
+    <div class="msg-bar" style="justify-content:center;gap:12px;">
+      <span style="font-size:13px;color:var(--text-2);">Talk to the crew via</span>
+      <button onclick="showChat()" class="btn-green" style="font-size:13px;padding:8px 18px;">🧠 Chat with crew-lead</button>
+    </div>
+  </div>
+<script>
 let selected = null;
 let agents = [];
 const AGENT_RANK = {
@@ -21,27 +1248,17 @@ async function loadAgents() {
 }
 async function getJSON(p){ const r = await fetch(p); if(!r.ok) throw new Error(await r.text()); return r.json(); }
 async function postJSON(p, body){ const r = await fetch(p, { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body) }); const txt = await r.text(); if(!r.ok) throw new Error(txt.slice(0,120)); try { return JSON.parse(txt); } catch { throw new Error('Bad response: ' + txt.slice(0,80)); } }
-function showNotification(msg, type){ const d = document.createElement('div'); d.className = 'notification' + (type === 'error' || type === true ? ' error' : type === 'warning' ? ' warning' : ''); d.setAttribute('role','alert'); d.setAttribute('aria-live','polite'); d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 4500); }
+function showNotification(msg, type){ const d = document.createElement('div'); d.className = 'notification' + (type === 'error' || type === true ? ' error' : type === 'warning' ? ' warning' : ''); d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 4500); }
 function fmt(ts){ try { return new Date(ts).toLocaleTimeString(); } catch { return String(ts); } }
 function createdAt(info){ return (info && info.time && info.time.created) || ''; }
 async function loadSessions(){
   const box = document.getElementById('sessions');
-  if (box) box.innerHTML = '<div style="padding:20px;">Loading…</div>';
+  if (box) box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:13px;">Loading sessions…</div>';
   try {
     const data = await getJSON('/api/sessions');
     const box = document.getElementById('sessions');
     box.innerHTML = '';
-    if (!data.length) {
-      box.innerHTML = '<div style="padding:20px 16px;">'
-        + '<div style="font-size:13px;font-weight:600;margin-bottom:6px;">No OpenCode sessions</div>'
-        + '<div style="font-size:12px;color:var(--text-3);line-height:1.6;">'
-        + 'This tab shows sessions from the <strong>OpenCode</strong> execution engine (port 4096). '
-        + 'Start it from <strong>Services → Code Engine</strong>, then run a task to see sessions here.<br><br>'
-        + '<strong>Claude Code</strong> and <strong>Cursor CLI</strong> don\'t expose a session REST API, '
-        + 'so their runs aren\'t listed here — use the Chat tab\'s activity feed or the RT Messages tab to follow those tasks.'
-        + '</div></div>';
-      return;
-    }
+    if (!data.length) { box.innerHTML = '<div class="meta" style="padding:20px;">Sessions from OpenCode server (4096).</div>'; return; }
     if (!selected && data[0]) selected = data[0].id;
     // Crew agent from title: "[crew-fixer] ..." or "crew-fixer" (we prefix prompts with [agentId])
     function crewAgentFromTitle(title) {
@@ -78,7 +1295,7 @@ async function loadSessions(){
       div.innerHTML = '<div><strong>' + (s.title || s.slug || s.id) + '</strong></div><div class="meta">' + (s.directory || '-') + '</div>' + (assigned ? '<div class="meta" style="font-size:11px;color:var(--accent);">' + assigned + '</div>' : '');
       box.appendChild(div);
     });
-  } catch (e) { document.getElementById('sessions').innerHTML = '<div class="meta" style="padding:20px; color:var(--red-hi);">Error loading sessions.</div>'; }
+  } catch (e) { document.getElementById('sessions').innerHTML = '<div class="meta" style="padding:20px; color:#ef4444;">Error loading sessions.</div>'; }
 }
 async function loadMessages(){
   const box = document.getElementById('messages');
@@ -98,253 +1315,120 @@ async function loadMessages(){
     box.scrollTop = box.scrollHeight;
   } catch (e) { box.innerHTML = '<div class="meta">Error</div>'; }
 }
-// ── RT Messages state ─────────────────────────────────────────────────────────
-let _rtPaused = false;
-let _rtFilter = 'tasks'; // 'tasks' | 'replies' | 'all'
-let _rtSearch = '';
-let _rtSeenIds = new Set(); // track rendered message IDs to avoid re-render flicker
-const RT_SKIP = new Set(['agent.heartbeat','agent.online','agent.offline']);
-const RT_TASK_TYPES = new Set(['task.dispatched','task.completed','task.failed','task.cancelled','task.started']);
-
-function _rtMatchesFilter(m) {
-  if (RT_SKIP.has(m.type)) return false;
-  const payload = m.payload || {};
-  const text = payload.reply || payload.prompt || payload.message || payload.content || '';
-  if (!text || text === 'run_task') return false;
-  if (_rtFilter === 'tasks' && !RT_TASK_TYPES.has(m.type)) return false;
-  if (_rtFilter === 'replies') {
-    const hasReply = !!(payload.reply || payload.message || payload.content);
-    if (!hasReply) return false;
-  }
-  if (_rtSearch) {
-    const q = _rtSearch.toLowerCase();
-    const inFrom = (m.from || '').toLowerCase().includes(q);
-    const inTo   = (m.to   || '').toLowerCase().includes(q);
-    const inText = text.toLowerCase().includes(q);
-    const inType = (m.type || '').toLowerCase().includes(q);
-    if (!inFrom && !inTo && !inText && !inType) return false;
-  }
-  return true;
-}
-
-// Phase → badge color + label
-const RT_PHASE_STYLE = {
-  'task.dispatched': { color: 'var(--purple)',   label: 'dispatched' },
-  'task.started':    { color: 'var(--amber)',    label: 'started'    },
-  'task.completed':  { color: 'var(--green-hi)', label: 'completed'  },
-  'task.failed':     { color: 'var(--red-hi)',   label: 'failed'     },
-  'task.cancelled':  { color: 'var(--text-3)',   label: 'cancelled'  },
-};
-
-function _rtBuildElement(m) {
-  const payload    = m.payload || {};
-  const fullText   = payload.reply || payload.prompt || payload.message || payload.content || '';
-  const type       = m.type || '';
-  const phase      = RT_PHASE_STYLE[type];
-  const timeStr    = m.ts ? new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-  // First non-empty line as summary
-  const firstLine  = fullText.split('\n').map(l => l.trim()).find(l => l.length > 2) || fullText;
-  const summary    = firstLine.length > 90 ? firstLine.slice(0, 90) + '…' : firstLine;
-  const hasMore    = fullText.length > summary.length || fullText.split('\n').length > 1;
-
-  const row = document.createElement('div');
-  row.style.cssText = [
-    'display:grid',
-    'grid-template-columns:auto auto 1fr auto',
-    'align-items:center',
-    'gap:10px',
-    'padding:7px 10px',
-    'border-radius:6px',
-    'cursor:' + (hasMore ? 'pointer' : 'default'),
-    'transition:background .12s',
-    'border-bottom:1px solid var(--border)',
-  ].join(';');
-  row.onmouseenter = () => { row.style.background = 'var(--bg-2)'; };
-  row.onmouseleave = () => { row.style.background = ''; };
-
-  // Agent pill: from → to
-  const agents = document.createElement('div');
-  agents.style.cssText = 'display:flex;align-items:center;gap:5px;white-space:nowrap;min-width:0;';
-  const fromPill = document.createElement('span');
-  fromPill.style.cssText = 'font-size:11px;font-weight:600;color:var(--text-1);max-width:110px;overflow:hidden;text-overflow:ellipsis;';
-  fromPill.textContent = (m.from || '?').replace('crew-', '');
-  fromPill.title = m.from || '';
-  agents.appendChild(fromPill);
-  if (m.to && m.to !== m.from) {
-    const arrow = document.createElement('span');
-    arrow.style.cssText = 'font-size:10px;color:var(--text-3);flex-shrink:0;';
-    arrow.textContent = '→';
-    const toPill = document.createElement('span');
-    toPill.style.cssText = 'font-size:11px;color:var(--text-2);max-width:110px;overflow:hidden;text-overflow:ellipsis;';
-    toPill.textContent = (m.to || '').replace('crew-', '');
-    toPill.title = m.to || '';
-    agents.appendChild(arrow);
-    agents.appendChild(toPill);
-  }
-
-  // Phase badge
-  const badge = document.createElement('span');
-  const ps = phase || { color: 'var(--text-3)', label: type.split('.').pop() || type };
-  badge.style.cssText = 'font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;color:#fff;background:' + ps.color + ';letter-spacing:.03em;';
-  badge.textContent = ps.label;
-
-  // Summary text
-  const preview = document.createElement('span');
-  preview.style.cssText = 'font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;';
-  preview.textContent = summary;
-
-  // Time + expand hint
-  const right = document.createElement('div');
-  right.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;';
-  const timeEl = document.createElement('span');
-  timeEl.style.cssText = 'font-size:10px;color:var(--text-3);white-space:nowrap;';
-  timeEl.textContent = timeStr;
-  right.appendChild(timeEl);
-  if (hasMore) {
-    const hint = document.createElement('span');
-    hint.style.cssText = 'font-size:10px;color:var(--text-3);';
-    hint.textContent = '▸';
-    right.appendChild(hint);
-  }
-
-  row.appendChild(agents);
-  row.appendChild(badge);
-  row.appendChild(preview);
-  row.appendChild(right);
-
-  // Expand panel — shown on click
-  if (hasMore) {
-    const detail = document.createElement('div');
-    detail.style.cssText = 'display:none;grid-column:1/-1;padding:8px 6px 4px;font-size:12px;color:var(--text-2);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;border-top:1px solid var(--border);margin-top:4px;font-family:monospace;';
-    detail.textContent = fullText;
-    // Wrap row + detail in a container
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:grid;grid-template-columns:1fr;border-radius:6px;overflow:hidden;border-bottom:1px solid var(--border);';
-    row.style.borderBottom = 'none'; // remove double border when wrapped
-    let open = false;
-    row.onclick = () => {
-      open = !open;
-      detail.style.display = open ? 'block' : 'none';
-      const hint = right.querySelector('span:last-child');
-      if (hint) hint.textContent = open ? '▾' : '▸';
-    };
-    wrap.appendChild(row);
-    wrap.appendChild(detail);
-    return wrap;
-  }
-
-  return row;
-}
-
 async function loadRTMessages(){
-  if (_rtPaused) return;
-  const box    = document.getElementById('rtMessages');
+  const box = document.getElementById('rtMessages');
   const rtView = document.getElementById('rtView');
-  if (!box || !rtView) return;
-  box.innerHTML = '<div style="padding:20px;">Loading…</div>';
-
+  box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:13px;">Loading messages…</div>';
+  // Preserve scroll intent: if user scrolled up, remember their offset from the bottom
+  const prevScrollFromBottom = rtView._userScrolledUp
+    ? (rtView.scrollHeight - rtView.scrollTop)
+    : null;
   const data = await getJSON('/api/rt-messages');
-  const filtered = data.filter(_rtMatchesFilter);
-
-  // Check if the set of visible messages changed (by type+ts key)
-  const newIds = new Set(filtered.map(m => (m.type||'') + '|' + (m.ts||'') + '|' + (m.from||'')));
-  const changed = newIds.size !== _rtSeenIds.size || [...newIds].some(id => !_rtSeenIds.has(id));
-
-  if (!changed) return; // nothing new — don't repaint
-
-  // Record scroll position BEFORE touching the DOM
-  const rtAtBottom = () => rtView.scrollHeight - rtView.scrollTop - rtView.clientHeight < 100;
-  const wasAtBottom = rtAtBottom();
-
-  _rtSeenIds = newIds;
   box.innerHTML = '';
-  if (!filtered.length) {
-    box.innerHTML = '<div style="padding:24px;text-align:center;font-size:12px;color:var(--text-3);">No events match the current filter.</div>';
-  } else {
-    // Subtle column header
-    const header = document.createElement('div');
-    header.style.cssText = 'display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;padding:4px 10px 6px;font-size:10px;font-weight:600;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;border-bottom:2px solid var(--border);margin-bottom:2px;';
-    ['Agent', 'Phase', 'Summary', 'Time'].forEach(label => {
-      const th = document.createElement('span'); th.textContent = label; header.appendChild(th);
-    });
-    box.appendChild(header);
-    filtered.forEach(m => box.appendChild(_rtBuildElement(m)));
-  }
+  const SKIP = new Set(['agent.heartbeat','agent.online','agent.offline']);
+  data.forEach(m => {
+    if (SKIP.has(m.type)) return;
+    const payload = m.payload || {};
+    let messageText = payload.reply || payload.prompt || payload.message || payload.content || '';
+    if (!messageText || messageText === 'run_task') return;
 
-  // Only scroll to bottom if user was already at bottom before repaint
-  if (wasAtBottom) rtView.scrollTop = rtView.scrollHeight;
+    const isUser = m.from && (m.from === 'orchestrator' || m.from === 'PM Loop' || m.from === 'crew-lead' || m.from?.includes('main'));
+    const div = document.createElement('div');
+    div.className = 'msg rt-msg-row ' + (isUser ? 'u' : 'a');
 
+    // Safe meta header using DOM (avoids XSS from injected HTML in from/to)
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const fromEl = document.createElement('strong');
+    fromEl.textContent = m.from || '?';
+    const toEl = document.createElement('strong');
+    toEl.textContent = m.to || '?';
+    meta.appendChild(fromEl);
+    meta.appendChild(document.createTextNode(' → '));
+    meta.appendChild(toEl);
+    const badge = document.createElement('span');
+    badge.style.cssText = 'margin-left:8px;font-size:10px;opacity:.6;';
+    badge.textContent = (m.type || '') + (m.ts ? ' · ' + new Date(m.ts).toLocaleTimeString() : '');
+    meta.appendChild(badge);
+
+    // Safe text body — collapsible if > 30 lines
+    const COLLAPSE_LINES = 30;
+    const lines = messageText.split("\\n");
+    const isLong = lines.length > COLLAPSE_LINES;
+    const body = document.createElement('div');
+    body.className = 't';
+    body.style.whiteSpace = 'pre-wrap';
+    if (!isLong) {
+      body.textContent = messageText;
+    } else {
+      const preview = lines.slice(0, COLLAPSE_LINES).join("\\n");
+      const full = messageText;
+      let expanded = false;
+      const textNode = document.createTextNode(preview);
+      body.appendChild(textNode);
+      const toggle = document.createElement('button');
+      toggle.style.cssText = 'display:block;margin-top:6px;background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--accent);cursor:pointer;opacity:.8;';
+      toggle.textContent = '▼ Show ' + (lines.length - COLLAPSE_LINES) + ' more lines';
+      toggle.onclick = () => {
+        expanded = !expanded;
+        textNode.textContent = expanded ? full : preview;
+        toggle.textContent = expanded ? '▲ Collapse' : '▼ Show ' + (lines.length - COLLAPSE_LINES) + ' more lines';
+      };
+      body.appendChild(toggle);
+    }
+
+    div.appendChild(meta);
+    div.appendChild(body);
+    box.appendChild(div);
+  });
+  if (!box.children.length) box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;">No messages yet.</div>';
   const scrollBtn = document.getElementById('rtScrollBtn');
-  if (scrollBtn) scrollBtn.style.display = rtAtBottom() ? 'none' : 'block';
-
-  // Bind scroll listener once
+  const _rtAtBottom = () => rtView.scrollHeight - rtView.scrollTop - rtView.clientHeight < 120;
+  // Restore position: if user had scrolled up, keep them at the same relative spot
+  if (prevScrollFromBottom !== null) {
+    rtView.scrollTop = rtView.scrollHeight - prevScrollFromBottom;
+  } else {
+    // User was at bottom (or first load) — scroll to bottom
+    rtView.scrollTop = rtView.scrollHeight;
+  }
+  scrollBtn.style.display = _rtAtBottom() ? 'none' : 'block';
+  // Bind scroll listener once to track user intent
   if (!rtView._scrollListenerBound) {
     rtView._scrollListenerBound = true;
     rtView.addEventListener('scroll', () => {
-      if (scrollBtn) scrollBtn.style.display = rtAtBottom() ? 'none' : 'block';
-    });
-  }
-}
-
-function toggleRTPause(){
-  _rtPaused = !_rtPaused;
-  const btn = document.getElementById('rtPauseBtn');
-  if (btn) { btn.textContent = _rtPaused ? '▶ Resume' : '⏸ Pause'; btn.style.background = _rtPaused ? 'var(--accent)' : ''; btn.style.color = _rtPaused ? '#fff' : ''; }
-}
-
-function clearRTMessages(){
-  _rtSeenIds = new Set();
-  const box = document.getElementById('rtMessages');
-  if (box) box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;opacity:.6;">Cleared. New messages will appear on next poll.</div>';
-}
-
-function _initRTFilters(){
-  // Filter chips
-  document.querySelectorAll('.rt-filter-chip').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _rtFilter = btn.dataset.filter;
-      _rtSeenIds = new Set(); // force repaint with new filter
-      document.querySelectorAll('.rt-filter-chip').forEach(b => {
-        const active = b === btn;
-        b.style.background = active ? 'var(--accent)' : 'transparent';
-        b.style.color = active ? '#fff' : 'var(--text-2)';
-        b.classList.toggle('active', active);
-      });
-      loadRTMessages();
-    });
-  });
-  // Search
-  const search = document.getElementById('rtSearch');
-  if (search) {
-    search.addEventListener('input', () => {
-      _rtSearch = search.value.trim();
-      _rtSeenIds = new Set();
-      loadRTMessages();
+      const atBottom = _rtAtBottom();
+      scrollBtn.style.display = atBottom ? 'none' : 'block';
+      rtView._userScrolledUp = !atBottom;
     });
   }
 }
 async function loadDLQ(){
   const box = document.getElementById('dlqMessages');
-  if (box) box.innerHTML = '<div style="padding:20px;">Loading…</div>';
+  if (box) box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:13px;">Loading DLQ…</div>';
   const data = await getJSON('/api/dlq');
   const dlqBadgeEl = document.getElementById('dlqBadge');
   if (dlqBadgeEl) { dlqBadgeEl.textContent = data.length; dlqBadgeEl.classList.toggle('hidden', !data.length); }
   if (!box) return;
   box.innerHTML = data.length ? data.map(entry => {
     const key = entry.key || (entry.filename || '').replace('.json', '') || '?';
-    const keyAttr = escHtml(key);
-    return '<div class="msg dlq-item"><div class="meta"><strong>⚠️ Failed</strong> | ' + (entry.agent || '?') + ' | ' + (entry.failedAt ? new Date(entry.failedAt).toLocaleString() : '') + ' <button class="replay-btn" data-action="replayDLQ" data-arg="' + keyAttr + '">Replay</button> <button data-action="deleteDLQ" data-arg="' + keyAttr + '" style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--red-hi);background:transparent;color:var(--red-hi);cursor:pointer;">Delete</button></div><div class="t">' + (entry.error || '') + '</div></div>';
+    return '<div class="msg dlq-item"><div class="meta"><strong>⚠️ Failed</strong> | ' + (entry.agent || '?') + ' | ' + (entry.failedAt ? new Date(entry.failedAt).toLocaleString() : '') + ' <button class="replay-btn" data-action="replay-dlq" data-key="' + escHtml(key) + '">Replay</button> <button data-action="delete-dlq" data-key="' + escHtml(key) + '" style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--red,#ef4444);background:transparent;color:var(--red,#ef4444);cursor:pointer;">Delete</button></div><div class="t">' + (entry.error || '') + '</div></div>';
   }).join('') : '<div class="meta" style="padding:20px; text-align:center;">✓ DLQ empty</div>';
 }
+function filterRTMessages() {
+  const q = (document.getElementById('rtFilter')?.value || '').toLowerCase();
+  document.querySelectorAll('#rtMessages .rt-msg-row').forEach(row => {
+    row.style.display = !q || row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
 window.replayDLQ = async function(key){ if(!confirm('Replay?')) return; await postJSON('/api/dlq/replay', { key }); showNotification('Replayed'); loadDLQ(); };
-async function deleteDLQ(key) {
+window.deleteDLQ = async function(key) {
   if (!confirm('Delete this DLQ entry?')) return;
   try {
     await fetch('/api/dlq/' + encodeURIComponent(key), { method: 'DELETE' });
     showNotification('DLQ entry deleted');
     loadDLQ();
   } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
+};
 async function refreshAll(){
   try {
     const dot = document.getElementById('statusDot');
@@ -376,7 +1460,7 @@ function hideAllViews(){
 
 async function pickFolder(inputId) {
   const input = document.getElementById(inputId);
-  const def = encodeURIComponent(input?.value || window._crewHome || '');
+  const def = encodeURIComponent(input?.value || '${process.env.HOME}');
   const d = await getJSON('/api/pick-folder?default=' + def).catch(() => null);
   if (d?.path) { if (input) input.value = d.path; }
 }
@@ -433,8 +1517,8 @@ function showRT(){
   hideAllViews();
   document.getElementById('rtView').classList.add('active');
   setNavActive('navRT');
-  _initRTFilters();
   loadRTMessages();
+  // Hide scroll btn until user has had a chance to scroll up
   const scrollBtn = document.getElementById('rtScrollBtn');
   if (scrollBtn) scrollBtn.style.display = 'none';
 }
@@ -444,6 +1528,12 @@ function showDLQ(){
   setNavActive('navDLQ');
   loadDLQ();
 }
+document.getElementById('dlqView')?.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="replay-dlq"], [data-action="delete-dlq"]');
+  if (!btn || !btn.dataset.key) return;
+  if (btn.dataset.action === 'replay-dlq') window.replayDLQ(btn.dataset.key);
+  else if (btn.dataset.action === 'delete-dlq') window.deleteDLQ(btn.dataset.key);
+});
 function showFiles(){
   hideAllViews();
   document.getElementById('filesView').classList.add('active');
@@ -468,18 +1558,6 @@ function startAgentReplyListener() {
         if (el) el.remove();
         return;
       }
-      if (d.type === 'context_warning' && d.sessionId === chatSessionId) {
-        const existing = document.getElementById('contextWarningBanner');
-        if (existing) existing.remove();
-        const banner = document.createElement('div');
-        banner.id = 'contextWarningBanner';
-        const isCritical = d.level === 'critical';
-        banner.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:8px;margin:6px 0;font-size:12px;background:${isCritical ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)'};border:1px solid ${isCritical ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'};color:${isCritical ? '#f87171' : '#f59e0b'};`;
-        banner.innerHTML = `<span style="flex:1;">${d.message}</span><button onclick="clearChatHistory()" style="padding:2px 8px;font-size:11px;border-radius:4px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;">Clear now</button><button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:inherit;font-size:14px;padding:0 2px;">✕</button>`;
-        const box = document.getElementById('chatMessages');
-        if (box) { box.appendChild(banner); box.scrollTop = box.scrollHeight; }
-        return;
-      }
       if (d.type === 'chat_message' && d.sessionId === chatSessionId) {
         if (d.role === 'user') {
           if (d.content !== lastAppendedUserContent) {
@@ -490,7 +1568,7 @@ function startAgentReplyListener() {
         } else if (d.role === 'assistant') {
           document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
           if (d.content !== lastAppendedAssistantContent) {
-            appendChatBubble('assistant', d.content, d.fallbackModel, d.fallbackReason);
+            appendChatBubble('assistant', d.content);
             lastAppendedAssistantContent = d.content;
           }
         }
@@ -522,12 +1600,12 @@ function startAgentReplyListener() {
         row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:8px;background:var(--bg-2);font-size:12px;font-family:var(--font-mono,monospace);animation:fadeIn .25s ease;';
         const time = new Date(d.ts || Date.now()).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
         let icon = '⚙️', label = '';
-        if (d.kind === 'session_start') { icon = '▶'; row.style.borderLeft = '3px solid var(--green-hi)'; var _sd = d.dir || ''; label = 'session started' + (_sd ? ' — ' + _sd.split('/').pop() : ''); }
+        if (d.kind === 'session_start') { icon = '▶'; row.style.borderLeft = '3px solid #22c55e'; var _sd = d.dir || ''; label = 'session started' + (_sd ? ' — ' + _sd.split('/').pop() : ''); }
         else if (d.kind === 'session_end') { icon = '■'; row.style.borderLeft = '3px solid var(--text-3)'; label = 'session ended'; if (liveDot) liveDot.style.display = 'none'; }
-        else if (d.kind === 'file_edit') { icon = '✏️'; row.style.borderLeft = '3px solid var(--amber)'; label = (d.file || d.path || '') + (d.extra ? ' <span style="opacity:.5;">'+d.extra+'</span>' : ''); }
-        else if (d.kind === 'error') { icon = '✗'; row.style.borderLeft = '3px solid var(--red-hi)'; row.style.color = 'var(--red-hi)'; label = d.message || 'error'; }
+        else if (d.kind === 'file_edit') { icon = '✏️'; row.style.borderLeft = '3px solid #f59e0b'; label = (d.file || d.path || '') + (d.extra ? ' <span style="opacity:.5;">'+d.extra+'</span>' : ''); }
+        else if (d.kind === 'error') { icon = '✗'; row.style.borderLeft = '3px solid #ef4444'; row.style.color = '#ef4444'; label = d.message || 'error'; }
         else if (d.kind === 'tool') {
-          const toolColors = { read_file:'var(--accent)', write_file:'var(--amber)', bash:'var(--purple)', list_directory:'var(--green)', grep:'var(--green)' };
+          const toolColors = { read_file:'#60a5fa', write_file:'#f59e0b', bash:'#a78bfa', list_directory:'#6ee7b7', grep:'#6ee7b7' };
           const tc = toolColors[d.tool] || 'var(--text-2)';
           icon = d.phase === 'done' ? '✓' : '→';
           row.style.borderLeft = '3px solid ' + tc;
@@ -736,7 +1814,7 @@ function showCmdApprovalToast(approvalId, agent, cmd) {
 
   const reject = document.createElement('button');
   reject.textContent = '⛔ Deny';
-  reject.style.cssText = 'flex:1;padding:8px;border-radius:8px;border:none;background:var(--red-hi);color:#fff;cursor:pointer;font-weight:600;font-size:13px;';
+  reject.style.cssText = 'flex:1;padding:8px;border-radius:8px;border:none;background:var(--red,#ef4444);color:#fff;cursor:pointer;font-weight:600;font-size:13px;';
   reject.onclick = async () => {
     clearInterval(countdown);
     toast.remove();
@@ -793,11 +1871,9 @@ async function loadCmdAllowlist() {
       chk.style.cssText = 'width:14px;height:14px;cursor:pointer;accent-color:var(--green);flex-shrink:0;';
       chk.onchange = async function() {
         if (chk.checked) {
-          await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) })
-            .catch(e => showNotification('Failed to add pattern: ' + e.message, true));
+          await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) }).catch(e => showNotification('Failed: ' + e.message, true));
         } else {
-          await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) })
-            .catch(e => showNotification('Failed to remove pattern: ' + e.message, true));
+          await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern: preset.pattern }) }).catch(e => showNotification('Failed: ' + e.message, true));
         }
         loadCmdAllowlist();
       };
@@ -837,8 +1913,7 @@ async function loadCmdAllowlist() {
     del.style.cssText = 'border:none;background:transparent;color:var(--text-3);cursor:pointer;font-size:14px;padding:0 4px;';
     del.title = 'Remove';
     del.onclick = async function() {
-      await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) })
-        .catch(e => showNotification('Failed to delete pattern: ' + e.message, true));
+      await fetch('/api/cmd-allowlist', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) }).catch(e => showNotification('Failed: ' + e.message, true));
       loadCmdAllowlist();
     };
     row.appendChild(code);
@@ -851,8 +1926,7 @@ async function addAllowlistPattern() {
   const inp = document.getElementById('cmdAllowlistInput');
   const pattern = inp ? inp.value.trim() : '';
   if (!pattern) return;
-  await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) })
-    .catch(e => showNotification('Failed to add pattern: ' + e.message, true));
+  await fetch('/api/cmd-allowlist', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) }).catch(e => showNotification('Failed: ' + e.message, true));
   inp.value = '';
   loadCmdAllowlist();
 }
@@ -927,16 +2001,9 @@ const MODEL_COST_PER_M = {
   // ── Mistral ──────────────────────────────────────────────────────────────
   'mistral-large':         [0.50,  1.50],  // mistral-large-latest = Large 3 2512 (Dec 2025)
   'mistral-small':         [0.10,  0.30],
-  // ── Google Gemini 3 (preview, 2026) ──────────────────────────────────────
-  'gemini-3.1-pro':        [2.50, 15.00],  // 3.1 Pro preview
-  'gemini-3.1-flash':      [0.075, 0.30],  // 3.1 Flash preview
-  'gemini-3-pro':          [2.50, 15.00],  // Gemini 3 Pro preview
-  'gemini-3-flash':        [0.075, 0.30],  // Gemini 3 Flash preview
-  // ── Google Gemini 2.5 ────────────────────────────────────────────────────
+  // ── Google Gemini ─────────────────────────────────────────────────────────
   'gemini-2.5-pro':        [1.25, 10.00],
-  'gemini-2.5-flash-lite': [0.04,  0.15],  // Flash Lite (lower cost)
   'gemini-2.5-flash':      [0.075, 0.30],
-  'gemini-2.0-flash-lite': [0.075, 0.30],
   'gemini-2.0-flash':      [0.10,  0.40],
   // ── Anthropic Claude ─────────────────────────────────────────────────────
   'claude-opus-4':         [15.0, 75.00],
@@ -1000,7 +2067,7 @@ async function loadTokenUsage() {
         '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">total tokens</div>' +
       '</div>' +
       '<div style="text-align:center;">' +
-        '<div style="font-size:20px;font-weight:700;color:var(--yellow);">$' + cost.toFixed(4) + '</div>' +
+        '<div style="font-size:20px;font-weight:700;color:var(--yellow,#fbbf24);">$' + cost.toFixed(4) + '</div>' +
         '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">est. cost (all-time)</div>' +
       '</div>' +
     '</div>';
@@ -1023,7 +2090,7 @@ async function loadTokenUsage() {
         '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:14px;overflow:hidden;">' +
           '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;"></div>' +
         '</div>' +
-        '<span style="width:52px;text-align:right;color:var(--yellow);font-weight:600;">$' + dc.toFixed(4) + '</span>' +
+        '<span style="width:52px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + dc.toFixed(4) + '</span>' +
         '<span style="width:44px;text-align:right;color:var(--text-3);">' + tok.toFixed(1) + 'k</span>' +
       '</div>';
     });
@@ -1072,7 +2139,7 @@ async function loadOcStats() {
     const maxCost   = Math.max(...sortedDays.map(function(d){ return byDay[d].cost; }), 0.0001);
 
     let html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">' +
-      '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--yellow);">$' + totalCost.toFixed(4) + '</div><div style="font-size:11px;color:var(--text-3);">total cost</div></div>' +
+      '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--yellow,#fbbf24);">$' + totalCost.toFixed(4) + '</div><div style="font-size:11px;color:var(--text-3);">total cost</div></div>' +
       '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--accent);">' + totalCalls.toLocaleString() + '</div><div style="font-size:11px;color:var(--text-3);">messages</div></div>' +
       '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--green);">' + (totalIn/1e6).toFixed(1) + 'M</div><div style="font-size:11px;color:var(--text-3);">input tokens</div></div>' +
       '<div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--green);">' + (totalOut/1e6).toFixed(2) + 'M</div><div style="font-size:11px;color:var(--text-3);">output tokens</div></div>' +
@@ -1091,7 +2158,7 @@ async function loadOcStats() {
         '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:16px;overflow:hidden;">' +
           '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;opacity:0.85;"></div>' +
         '</div>' +
-        '<span style="width:60px;text-align:right;color:var(--yellow);font-weight:600;">$' + ds.cost.toFixed(4) + '</span>' +
+        '<span style="width:60px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + ds.cost.toFixed(4) + '</span>' +
         '<span style="width:50px;text-align:right;color:var(--text-3);">' + tok.toFixed(2) + 'M</span>' +
         '<span style="width:36px;text-align:right;color:var(--text-3);">' + ds.calls + '</span>' +
       '</div>';
@@ -1119,7 +2186,7 @@ async function loadOcStats() {
         html += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">' +
           '<code style="color:var(--accent);">' + m + '</code>' +
           '<span style="color:var(--text-2);">' + tok.toFixed(2) + 'M tok · ' + s.calls + ' calls · ' +
-            '<span style="color:var(--yellow);font-weight:600;">$' + s.cost.toFixed(4) + '</span>' +
+            '<span style="color:var(--yellow,#fbbf24);font-weight:600;">$' + s.cost.toFixed(4) + '</span>' +
           '</span>' +
         '</div>';
       });
@@ -1146,18 +2213,18 @@ async function checkCrewLeadStatus() {
 
 // @@ autocomplete: type @@ for list, @@PROMPT (or pick) shows exact JSON
 const ATAT_COMMANDS = [
-  { id: 'DISPATCH', label: 'Dispatch task to an agent', template: '{"agent":"crew-coder","task":"Your task here"}' },
-  { id: 'PROMPT', label: 'Append or set agent system prompt', template: '{"agent":"crew-lead","append":"Your new rule here"}' },
-  { id: 'PIPELINE', label: 'Multi-step pipeline (waves of agents)', template: '[{"wave":1,"agent":"crew-coder","task":"..."},{"wave":2,"agent":"crew-qa","task":"..."}]' },
-  { id: 'SKILL', label: 'Run a skill by name', template: 'skillName {"param":"value"}' },
-  { id: 'SERVICE', label: 'Restart/stop a service or agent', template: 'restart crew-coder' },
-  { id: 'PROJECT', label: 'Draft a new project roadmap', template: '{"name":"MyApp","description":"...","outputDir":"/path/to/dir"}' },
-  { id: 'BRAIN', label: 'Append a fact to brain.md', template: 'crew-lead: fact to remember' },
-  { id: 'TOOLS', label: 'Grant/revoke tools for an agent', template: '{"agent":"crew-qa","allow":["read_file","write_file"]}' },
-  { id: 'CREATE_AGENT', label: 'Create a dynamic agent', template: '{"id":"crew-ml","role":"coder","description":"ML specialist"}' },
-  { id: 'REMOVE_AGENT', label: 'Remove a dynamic agent', template: 'crew-ml' },
-  { id: 'DEFINE_SKILL', label: 'Define a new skill (then @@END_SKILL)', template: 'skillName\\n{"description":"...","url":"..."}' },
-  { id: 'DEFINE_WORKFLOW', label: 'Save a workflow for cron', template: 'name\\n[{"agent":"crew-copywriter","task":"..."}]' },
+  { id: 'DISPATCH', label: 'Dispatch task to an agent', template: \'{"agent":"crew-coder","task":"Your task here"}\' },
+  { id: 'PROMPT', label: 'Append or set agent system prompt', template: \'{"agent":"crew-lead","append":"Your new rule here"}\' },
+  { id: 'PIPELINE', label: 'Multi-step pipeline (waves of agents)', template: \'[{"wave":1,"agent":"crew-coder","task":"..."},{"wave":2,"agent":"crew-qa","task":"..."}]\' },
+  { id: 'SKILL', label: 'Run a skill by name', template: \'skillName {"param":"value"}\' },
+  { id: 'SERVICE', label: 'Restart/stop a service or agent', template: \'restart crew-coder\' },
+  { id: 'PROJECT', label: 'Draft a new project roadmap', template: \'{"name":"MyApp","description":"...","outputDir":"/path/to/dir"}\' },
+  { id: 'BRAIN', label: 'Append a fact to brain.md', template: \'crew-lead: fact to remember\' },
+  { id: 'TOOLS', label: 'Grant/revoke tools for an agent', template: \'{"agent":"crew-qa","allow":["read_file","write_file"]}\' },
+  { id: 'CREATE_AGENT', label: 'Create a dynamic agent', template: \'{"id":"crew-ml","role":"coder","description":"ML specialist"}\' },
+  { id: 'REMOVE_AGENT', label: 'Remove a dynamic agent', template: \'crew-ml\' },
+  { id: 'DEFINE_SKILL', label: 'Define a new skill (then @@END_SKILL)', template: \'skillName\\n{"description":"...","url":"..."}\' },
+  { id: 'DEFINE_WORKFLOW', label: 'Save a workflow for cron', template: \'name\\n[{"agent":"crew-copywriter","task":"..."}]\' },
 ];
 function chatAtAtInput() {
   const ta = document.getElementById('chatInput');
@@ -1210,7 +2277,7 @@ function chatKeydown(e) {
   if (menu && menu.style.display === 'block' && (e.key === 'Escape' || e.key === 'Tab')) { menu.style.display = 'none'; }
 }
 
-function appendChatBubble(role, text, fallbackModel, fallbackReason) {
+function appendChatBubble(role, text) {
   const box = document.getElementById('chatMessages');
   if (!box) return;
   const isUser = role === 'user';
@@ -1224,17 +2291,10 @@ function appendChatBubble(role, text, fallbackModel, fallbackReason) {
   const div = document.createElement('div');
   div.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isUser ? 'flex-end' : 'flex-start') + ';gap:4px;';
   const labelEl = document.createElement('div');
-  labelEl.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;display:flex;align-items:center;gap:6px;';
+  labelEl.style.cssText = 'font-size:11px;color:var(--text-3);padding:0 6px;';
   const cl = window._crewLeadInfo || { emoji: '🧠', name: 'crew-lead' };
   const displayName = isUser ? 'You' : (role === 'assistant' ? (cl.emoji + ' ' + cl.name) : role);
   labelEl.textContent = displayName;
-  if (!isUser && fallbackModel) {
-    const badge = document.createElement('span');
-    badge.title = 'Primary failed (' + (fallbackReason || 'error') + ') — running on fallback';
-    badge.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:default;';
-    badge.textContent = '⚡ fallback: ' + fallbackModel;
-    labelEl.appendChild(badge);
-  }
   const bubble = document.createElement('div');
   bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:' + (isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px') + ';background:' + (isUser ? 'var(--purple)' : 'var(--bg-2)') + ';color:' + (isUser ? '#fff' : 'var(--text-1)') + ';font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;border:1px solid var(--border);';
   bubble.textContent = text;
@@ -1259,8 +2319,8 @@ function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
 
   const header = document.createElement('div');
   header.style.cssText = 'background:var(--bg-card2);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);';
-  header.innerHTML = '<div><div style="font-size:13px;font-weight:600;color:var(--accent);">🚀 ' + name + '</div><div style="font-size:11px;color:var(--blue);margin-top:2px;">' + outputDir + '</div></div>' +
-    '<span style="font-size:10px;color:var(--text-3);padding:2px 7px;background:var(--bg-card2);border-radius:10px;" class="task-count">' + countTasks(roadmapMd) + ' tasks</span>';
+  header.innerHTML = '<div><div style="font-size:13px;font-weight:600;color:#60a5fa;">🚀 ' + name + '</div><div style="font-size:11px;color:#4a7ab5;margin-top:2px;">' + outputDir + '</div></div>' +
+    '<span style="font-size:10px;color:#4a5568;padding:2px 7px;background:#111827;border-radius:10px;" class="task-count">' + countTasks(roadmapMd) + ' tasks</span>';
 
   const ta = document.createElement('textarea');
   ta.value = roadmapMd;
@@ -1273,17 +2333,17 @@ function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
   });
 
   const actions = document.createElement('div');
-  actions.style.cssText = 'display:flex;gap:8px;align-items:center;padding:10px 14px 12px;border-top:1px solid var(--border);background:var(--bg-card2);';
+  actions.style.cssText = 'display:flex;gap:8px;align-items:center;padding:10px 14px 12px;border-top:1px solid #1a1a2e;background:#0d0d1a;';
 
   const startBtn = document.createElement('button');
   startBtn.textContent = '▶ Start Building';
-  startBtn.style.cssText = 'background:var(--green-hi);color:#000;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;';
+  startBtn.style.cssText = 'background:#22c55e;color:#000;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;';
   startBtn.onclick = async () => {
     startBtn.disabled = true; startBtn.textContent = '⏳ Launching…';
     try {
       const r = await postJSON('/api/crew-lead/confirm-project', { draftId, roadmapMd: ta.value });
       if (r.ok) {
-        card.innerHTML = '<div style="padding:14px;color:var(--green-hi);font-size:13px;font-weight:600;">✅ ' + name + ' — project created, PM loop running!<br><span style="color:var(--blue);font-size:11px;font-weight:400">' + (r.outputDir || outputDir) + '</span></div>';
+        card.innerHTML = '<div style="padding:14px;color:#22c55e;font-size:13px;font-weight:600;">✅ ' + name + ' — project created, PM loop running!<br><span style="color:#4a7ab5;font-size:11px;font-weight:400">' + (r.outputDir || outputDir) + '</span></div>';
         appendChatBubble('assistant', '🚀 ' + name + ' is building. Check the Projects tab to watch progress.');
       } else {
         startBtn.disabled = false; startBtn.textContent = '▶ Start Building';
@@ -1294,14 +2354,14 @@ function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
 
   const discardBtn = document.createElement('button');
   discardBtn.textContent = 'Discard';
-  discardBtn.style.cssText = 'background:none;border:1px solid var(--border);color:var(--text-3);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;';
+  discardBtn.style.cssText = 'background:none;border:1px solid #2d2d40;color:#666;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;';
   discardBtn.onclick = async () => {
     await postJSON('/api/crew-lead/discard-project', { draftId }).catch(() => {});
     wrap.remove();
   };
 
   const status = document.createElement('span');
-  status.style.cssText = 'font-size:11px;color:var(--blue);margin-left:auto;';
+  status.style.cssText = 'font-size:11px;color:#4a7ab5;margin-left:auto;';
   status.textContent = 'Edit above, then confirm';
 
   actions.appendChild(startBtn); actions.appendChild(discardBtn); actions.appendChild(status);
@@ -1316,12 +2376,12 @@ let lastAppendedUserContent = '';
 let lastSentContent = null;
 async function sendChat() {
   const input = document.getElementById('chatInput');
-  const sendBtn = document.querySelector('[data-action="sendChat"]');
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
-  input.disabled = true;
+  const sendBtn = document.querySelector('.btn-green[onclick="sendChat()"]') || document.querySelector('button[onclick*="sendChat"]');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
+  input.disabled = true;
   appendChatBubble('user', text);
   lastAppendedUserContent = text;
   lastSentContent = text;
@@ -1375,12 +2435,6 @@ async function sendChat() {
   }
 }
 
-async function clearChatHistory() {
-  if (!confirm('Clear chat history for this session?')) return;
-  document.getElementById('chatMessages').innerHTML = '';
-  await postJSON('/api/crew-lead/clear', { sessionId: chatSessionId }).catch(()=>{});
-}
-
 async function stopAll() {
   if (!confirm('Stop all running pipelines?')) return;
   try {
@@ -1394,6 +2448,11 @@ async function killAll() {
     await postJSON('/api/crew-lead/chat', { message: '@@KILL', sessionId: chatSessionId });
     showNotification('☠️ Kill signal sent');
   } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+async function clearChatHistory() {
+  if (!confirm('Clear chat history for this session?')) return;
+  document.getElementById('chatMessages').innerHTML = '';
+  await postJSON('/api/crew-lead/clear', { sessionId: chatSessionId }).catch(()=>{});
 }
 
 function showMessaging(){
@@ -1622,7 +2681,8 @@ async function loadServices(){
   grid.innerHTML = '<div class="meta" style="padding:20px;">Checking services...</div>';
   try {
     const services = await getJSON('/api/services/status');
-    const downCount = services.filter(s => !s.running).length;
+    // Only count critical services in the badge — not optional ones like openclaw-gateway
+    const downCount = services.filter(s => !s.running && s.id !== 'openclaw-gateway').length;
     const badge = document.getElementById('servicesBadge');
     if (downCount > 0) {
       badge.textContent = downCount;
@@ -1633,7 +2693,7 @@ async function loadServices(){
     grid.innerHTML = services.map(svc => {
       const up = svc.running;
       const canRestart = svc.canRestart;
-      const statusColor = up ? 'var(--green-hi)' : 'var(--red-hi)';
+      const statusColor = up ? '#22c55e' : '#ef4444';
       const statusText  = up ? (svc.pid ? '● running  pid ' + svc.pid : '● running') : '● stopped';
       const uptime = svc.uptimeSec ? formatUptime(svc.uptimeSec) : '';
       return '<div class="card" style="display:flex;flex-direction:column;gap:10px;">' +
@@ -1647,15 +2707,15 @@ async function loadServices(){
         (uptime ? '<div style="font-size:11px;color:var(--text-3);">Up ' + uptime + '</div>' : '') +
         (svc.port ? '<div style="font-size:11px;color:var(--text-3);">Port ' + svc.port + '</div>' : '') +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-          (canRestart && up   ? '<button class="btn-ghost" style="font-size:12px;" data-action="restartService" data-arg="' + svc.id + '">↻ Restart</button>' : '') +
-          (canRestart && !up  ? '<button class="btn-green" style="font-size:12px;" data-action="restartService" data-arg="' + svc.id + '">▶ Start</button>' : '') +
-          (canRestart && up   ? '<button class="btn-red" style="font-size:12px;" data-action="stopService" data-arg="' + svc.id + '">⏹ Stop</button>' : '') +
+          (canRestart && up   ? '<button class="btn-ghost" style="font-size:12px;" onclick="restartService(&quot;' + svc.id + '&quot;)">↻ Restart</button>' : '') +
+          (canRestart && !up  ? '<button class="btn-green" style="font-size:12px;" onclick="restartService(&quot;' + svc.id + '&quot;)">▶ Start</button>' : '') +
+          (canRestart && up   ? '<button class="btn-red" style="font-size:12px;" onclick="stopService(&quot;' + svc.id + '&quot;)">⏹ Stop</button>' : '') +
           (!canRestart        ? '<span style="font-size:11px;color:var(--text-3);align-self:center;">managed externally</span>' : '') +
         '</div>' +
       '</div>';
     }).join('');
   } catch(e) {
-    grid.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Error loading services: ' + e.message + '</div>';
+    grid.innerHTML = '<div class="meta" style="padding:20px;color:#ef4444;">Error loading services: ' + e.message + '</div>';
   }
 }
 
@@ -1707,12 +2767,12 @@ async function loadTgMessages(){
         '</div>';
     }).join('');
   } catch(e) {
-    feed.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Error loading messages</div>';
+    feed.innerHTML = '<div class="meta" style="padding:20px;color:#ef4444;">Error loading messages</div>';
   }
 }
 async function loadFiles(forceRefresh) {
   const el = document.getElementById('filesContent');
-  const dir = document.getElementById('filesDir').value.trim() || window._crewCwd || (window._crewHome ? window._crewHome + '/Desktop/CrewSwarm' : '');
+  const dir = document.getElementById('filesDir').value.trim() || '${process.env.HOME}/Desktop/CrewSwarm';
   el.innerHTML = '<div class="meta" style="padding:20px;">Scanning ' + dir + '...</div>';
   try {
     const data = await getJSON('/api/files?dir=' + encodeURIComponent(dir));
@@ -1743,13 +2803,13 @@ async function loadFiles(forceRefresh) {
         html += '<div class="file-actions">';
         html += '<a href="cursor://file/' + f.path + '" class="file-btn file-btn-cursor" title="Open in Cursor">Cursor</a>';
         html += '<a href="opencode://open?path=' + encodeURIComponent(f.path) + '" class="file-btn file-btn-opencode" title="Open in OpenCode">OpenCode</a>';
-        html += '<button data-action="previewFile" data-arg=\'' + f.path.replace(/'/g,'&#39;') + '\' data-self="1" class="file-btn" title="Preview">👁</button>';
+        html += '<button onclick="previewFile(' + JSON.stringify(f.path) + ', this)" class="file-btn" title="Preview">👁</button>';
         html += '</div></div>';
       });
       html += '</div></div>';
     }
     html += '</div>';
-    html += '<div id="file-preview-pane" style="display:none;margin-top:1rem;background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden;"><div id="file-preview-bar" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0d1420;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-2);"><span id="file-preview-name"></span><button data-action="closePreviewPane" style="margin-left:auto;background:none;border:none;color:var(--text-2);cursor:pointer;">✕</button></div><pre id="file-preview-content" style="margin:0;padding:1rem;font-size:0.75rem;overflow:auto;max-height:400px;"></pre></div>';
+    html += '<div id="file-preview-pane" style="display:none;margin-top:1rem;background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden;"><div id="file-preview-bar" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0d1420;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-2);"><span id="file-preview-name"></span><button onclick="closePreviewPane()" style="margin-left:auto;background:none;border:none;color:var(--text-2);cursor:pointer;">✕</button></div><pre id="file-preview-content" style="margin:0;padding:1rem;font-size:0.75rem;overflow:auto;max-height:400px;"></pre></div>';
     el.innerHTML = html;
   } catch(e) {
     el.innerHTML = '<div class="meta" style="padding:20px;color:var(--red);">Error: ' + e.message + '</div>';
@@ -1824,29 +2884,29 @@ async function loadSearchTools(){
   list.innerHTML = SEARCH_TOOLS.map(p => {
     const hasKey = !!saved[p.id];
     const badge = hasKey
-      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">set ✓</span>`
-      : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
-    return `<div class="card" style="margin-bottom:8px;">
-      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".st-body">
-        <span style="font-size:18px;width:24px;text-align:center;">${p.icon}</span>
+      ? \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">set ✓</span>\`
+      : \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>\`;
+    return \`<div class="card" style="margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="this.parentElement.querySelector('.st-body').style.display=this.parentElement.querySelector('.st-body').style.display==='none'?'block':'none'">
+        <span style="font-size:18px;width:24px;text-align:center;">\${p.icon}</span>
         <div style="flex:1;">
-          <div style="font-weight:600;font-size:13px;">${p.label}</div>
-          <div style="font-size:11px;color:var(--text-2);">${p.hint}</div>
+          <div style="font-weight:600;font-size:13px;">\${p.label}</div>
+          <div style="font-size:11px;color:var(--text-2);">\${p.hint}</div>
         </div>
-        ${badge}
+        \${badge}
         <span style="color:var(--text-2);font-size:12px;">▾</span>
       </div>
       <div class="st-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
         <div style="display:flex;gap:8px;">
-          <input id="st_${p.id}" type="password" autocomplete="new-password" placeholder="${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />
-          <button data-action="saveSearchTool" data-arg="${p.id}" class="btn-purple">Save</button>
-          <button data-action="testSearchTool" data-arg="${p.id}" class="btn-ghost">Test</button>
-          <a href="${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>
+          <input id="st_\${p.id}" type="password" autocomplete="new-password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />
+          <button onclick="saveSearchTool('\${p.id}')" class="btn-purple">Save</button>
+          <button onclick="testSearchTool('\${p.id}')" class="btn-ghost">Test</button>
+          <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>
         </div>
-        <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Saved as <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:4px;">${p.envKey}</code> in environment</div>
-        <div id="st_status_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+        <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Saved as <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:4px;">\${p.envKey}</code> in environment</div>
+        <div id="st_status_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
       </div>
-    </div>`;
+    </div>\`;
   }).join('');
 }
 
@@ -1866,9 +2926,9 @@ async function testSearchTool(toolId){
   statusEl.textContent = 'Testing…';
   try {
     const r = await postJSON('/api/search-tools/test', { toolId });
-    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+    statusEl.style.color = r.ok ? '#34d399' : '#f87171';
     statusEl.textContent = r.ok ? '✓ ' + (r.message || 'Connected') : '✗ ' + (r.error || 'Failed');
-  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
+  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
 }
 
 async function loadBuiltinProviders(){
@@ -1883,37 +2943,37 @@ async function loadBuiltinProviders(){
     const isOllama = p.id === 'ollama';
     const isOpenAiLocal = p.id === 'openai-local';
     const badge = hasKey || isOllama || isOpenAiLocal
-      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">${(isOllama || isOpenAiLocal) && !hasKey ? 'local' : 'set ✓'}</span>`
-      : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
-    return `<div class="card" style="margin-bottom:8px;">
-      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".bp-body">
-        <span style="font-size:18px;width:24px;text-align:center;">${p.icon}</span>
+      ? \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">\${(isOllama || isOpenAiLocal) && !hasKey ? 'local' : 'set ✓'}</span>\`
+      : \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>\`;
+    return \`<div class="card" style="margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="this.parentElement.querySelector('.bp-body').style.display=this.parentElement.querySelector('.bp-body').style.display==='none'?'block':'none'">
+        <span style="font-size:18px;width:24px;text-align:center;">\${p.icon}</span>
         <div style="flex:1;">
-          <div style="font-weight:600;font-size:13px;">${p.label}</div>
-          <div style="font-size:11px;color:var(--text-2);">${p.hint}</div>
+          <div style="font-weight:600;font-size:13px;">\${p.label}</div>
+          <div style="font-size:11px;color:var(--text-2);">\${p.hint}</div>
         </div>
-        ${badge}
+        \${badge}
         <span style="color:var(--text-2);font-size:12px;">▾</span>
       </div>
       <div class="bp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-        ${isOllama ? `<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;">Ollama runs locally — no API key required. Make sure Ollama is running on port 11434.</div>` : ''}
+        \${isOllama ? \`<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;">Ollama runs locally — no API key required. Make sure Ollama is running on port 11434.</div>\` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${isOllama ? '' : `<input id="bp_${p.id}" type="password" autocomplete="new-password" placeholder="${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />`}
-          ${isOllama
-            ? `<button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost">Test Connection</button>
-               <button data-action="fetchBuiltinModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>`
-            : `<button data-action="saveBuiltinKey" data-arg="${p.id}" class="btn-purple">Save</button>
-               <button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost">Test</button>
-               <button data-action="fetchBuiltinModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>
-               <a href="${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>`}
+          \${isOllama ? '' : \`<input id="bp_\${p.id}" type="password" autocomplete="new-password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />\`}
+          \${isOllama
+            ? \`<button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost">Test Connection</button>
+               <button onclick="fetchBuiltinModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>\`
+            : \`<button onclick="saveBuiltinKey('\${p.id}')" class="btn-purple">Save</button>
+               <button onclick="testBuiltinProvider('\${p.id}')" class="btn-ghost">Test</button>
+               <button onclick="fetchBuiltinModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
+               <a href="\${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>\`}
         </div>
-        <div id="bp_status_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
-        <div id="bp_models_${p.id}" style="margin-top:8px;display:none;">
-          <span style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Models (<span id="bp_mcount_${p.id}">0</span>):</span>
-          <span id="bp_mtags_${p.id}"></span>
+        <div id="bp_status_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+        <div id="bp_models_\${p.id}" style="margin-top:8px;display:none;">
+          <span style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Models (<span id="bp_mcount_\${p.id}">0</span>):</span>
+          <span id="bp_mtags_\${p.id}"></span>
         </div>
       </div>
-    </div>`;
+    </div>\`;
   }).join('');
 
   // ── Append any custom (non-built-in) providers from crewswarm.json ─────────
@@ -1921,39 +2981,39 @@ async function loadBuiltinProviders(){
     const data = await getJSON('/api/providers');
     const customs = (data.providers || []).filter(p => !builtinIds.has(p.id));
     if (customs.length) {
-      html += `<div style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px;padding:0 2px;">Custom Providers</div>`;
+      html += \`<div style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px;padding:0 2px;">Custom Providers</div>\`;
       html += customs.map(p => {
         const icon = PROVIDER_ICONS[p.id] || '🔌';
         const hasKey = p.hasKey;
         const badge = hasKey
-          ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">key set ✓</span>`
-          : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
+          ? \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);">key set ✓</span>\`
+          : \`<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>\`;
         const modelCount = p.models?.length || 0;
-        return `<div class="card" style="margin-bottom:8px;">
-          <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".cp-body">
-            <span style="font-size:18px;width:24px;text-align:center;">${icon}</span>
+        return \`<div class="card" style="margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="this.parentElement.querySelector('.cp-body').style.display=this.parentElement.querySelector('.cp-body').style.display==='none'?'block':'none'">
+            <span style="font-size:18px;width:24px;text-align:center;">\${icon}</span>
             <div style="flex:1;">
-              <div style="font-weight:600;font-size:13px;">${p.id}</div>
-              <div style="font-size:11px;color:var(--text-2);">${p.baseUrl}${modelCount ? ' · ' + modelCount + ' models' : ''}</div>
+              <div style="font-weight:600;font-size:13px;">\${p.id}</div>
+              <div style="font-size:11px;color:var(--text-2);">\${p.baseUrl}\${modelCount ? ' · ' + modelCount + ' models' : ''}</div>
             </div>
-            ${badge}
+            \${badge}
             <span style="color:var(--text-2);font-size:12px;">▾</span>
           </div>
           <div class="cp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <input id="key_${p.id}" type="password" autocomplete="new-password" placeholder="${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />
-              <button data-action="saveKey" data-arg="${p.id}" class="btn-purple">Save</button>
-              <button data-action="testKey" data-arg="${p.id}" class="btn-ghost">Test</button>
-              <button data-action="fetchModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>
+              <input id="key_\${p.id}" type="password" autocomplete="new-password" placeholder="\${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />
+              <button onclick="saveKey('\${p.id}')" class="btn-purple">Save</button>
+              <button onclick="testKey('\${p.id}')" class="btn-ghost">Test</button>
+              <button onclick="fetchModels('\${p.id}', this)" class="btn-ghost" style="background:#0f766e20;color:#34d399;border-color:#0f766e40;">↻ Models</button>
             </div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Base URL: <code style="font-size:10px;">${p.baseUrl}</code></div>
-            <div id="test_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
-            <div id="mwrap_${p.id}" style="margin-top:8px;${modelCount ? '' : 'display:none;'}">
-              <span style="font-size:11px;color:var(--text-2);">Models (<span id="mcount_${p.id}">${modelCount}</span>):</span>
-              <span id="mtags_${p.id}">${(p.models||[]).map(m => '<span class="model-tag">' + (m.id||m) + '</span>').join('')}</span>
+            <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Base URL: <code style="font-size:10px;">\${p.baseUrl}</code></div>
+            <div id="test_\${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+            <div id="mwrap_\${p.id}" style="margin-top:8px;\${modelCount ? '' : 'display:none;'}">
+              <span style="font-size:11px;color:var(--text-2);">Models (<span id="mcount_\${p.id}">\${modelCount}</span>):</span>
+              <span id="mtags_\${p.id}">\${(p.models||[]).map(m => '<span class="model-tag">' + (m.id||m) + '</span>').join('')}</span>
             </div>
           </div>
-        </div>`;
+        </div>\`;
       }).join('');
     }
   } catch {}
@@ -1981,7 +3041,7 @@ async function saveBuiltinKey(providerId){
       if (tags)   tags.innerHTML = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
       if (count)  count.textContent = r.models.length;
       if (wrap)   wrap.style.display = 'block';
-      if (status) { status.style.color = 'var(--green)'; status.textContent = '✓ ' + r.models.length + ' models'; }
+      if (status) { status.style.color = '#34d399'; status.textContent = '✓ ' + r.models.length + ' models'; }
       showNotification('Key saved for ' + providerId + ' — ' + r.models.length + ' models ready');
       loadAgents(); // refresh model dropdowns on the Agents tab
     } else {
@@ -1997,9 +3057,9 @@ async function testBuiltinProvider(providerId){
   statusEl.textContent = 'Testing…';
   try {
     const r = await postJSON('/api/providers/builtin/test', { providerId });
-    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+    statusEl.style.color = r.ok ? '#34d399' : '#f87171';
     statusEl.textContent = r.ok ? '✓ Connected — ' + (r.model || 'OK') : '✗ ' + (r.error || 'Failed');
-  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
+  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
 }
 
 async function fetchBuiltinModels(providerId, btn){
@@ -2017,14 +3077,14 @@ async function fetchBuiltinModels(providerId, btn){
       if (tags)  tags.innerHTML  = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
       if (count) count.textContent = r.models.length;
       if (wrap)  wrap.style.display = 'block';
-      statusEl.style.color = 'var(--green)';
+      statusEl.style.color = '#34d399';
       statusEl.textContent = '✓ ' + r.models.length + ' models fetched' + (r.note ? ' — ' + r.note : '');
       loadAgents();
     } else {
-      statusEl.style.color = 'var(--red)';
+      statusEl.style.color = '#f87171';
       statusEl.textContent = '✗ ' + (r.error || 'Failed');
     }
-  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
+  } catch(e) { statusEl.style.color='#f87171'; statusEl.textContent = '✗ ' + e.message; }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
@@ -2035,7 +3095,7 @@ async function loadOpenClawStatus(){
     if (d.installed) {
       badge.textContent = '● installed';
       badge.style.background = 'rgba(52,211,153,0.15)';
-      badge.style.color = 'var(--green)';
+      badge.style.color = '#34d399';
       badge.style.borderColor = 'rgba(52,211,153,0.3)';
     } else {
       badge.textContent = '○ not detected';
@@ -2053,13 +3113,13 @@ async function loadRTToken(){
     if (d.token) {
       badge.textContent = 'set ✓';
       badge.style.background = 'rgba(52,211,153,0.15)';
-      badge.style.color = 'var(--green)';
+      badge.style.color = '#34d399';
       badge.style.borderColor = 'rgba(52,211,153,0.3)';
       inp.placeholder = '••••••••••••••••••••••• (saved)';
     } else {
       badge.textContent = 'not set';
       badge.style.background = 'rgba(251,191,36,0.15)';
-      badge.style.color = 'var(--yellow)';
+      badge.style.color = '#fbbf24';
       badge.style.borderColor = 'rgba(251,191,36,0.3)';
     }
   } catch {}
@@ -2103,25 +3163,61 @@ async function saveOpencodeSettings(){
     loadOpencodeProject();
   } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
 }
+async function saveGlobalOcLoop() {
+  const enabled = document.getElementById('globalOcLoop')?.checked;
+  try {
+    await postJSON('/api/settings/global-oc-loop', { enabled });
+    showNotification('Global OC loop ' + (enabled ? 'enabled' : 'disabled'));
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+async function saveGlobalOcLoopRounds() {
+  const rounds = parseInt(document.getElementById('globalOcLoopRounds')?.value) || 10;
+  try {
+    await postJSON('/api/settings/global-oc-loop', { maxRounds: rounds });
+    showNotification('Max rounds set to ' + rounds);
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+async function loadGlobalOcLoop() {
+  try {
+    const d = await getJSON('/api/settings/global-oc-loop');
+    const chk = document.getElementById('globalOcLoop');
+    const inp = document.getElementById('globalOcLoopRounds');
+    if (chk) chk.checked = d.enabled || false;
+    if (inp) inp.value = d.maxRounds ?? 10;
+  } catch(e) {}
+}
 async function loadBgConsciousness() {
   const btn = document.getElementById('bgConsciousnessBtn');
   const status = document.getElementById('bgConsciousnessStatus');
+  const intervalEl = document.getElementById('bgConsciousnessInterval');
+  const modelEl = document.getElementById('bgConsciousnessModel');
   try {
     const d = await getJSON('/api/settings/bg-consciousness');
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '🟢 ON' : '⚫ OFF';
       btn.style.background = on ? 'rgba(34,197,94,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? 'var(--green-hi)' : 'var(--border)';
-      btn.style.color = on ? 'var(--green-hi)' : 'var(--text-2)';
+      btn.style.borderColor = on ? '#22c55e' : 'var(--border)';
+      btn.style.color = on ? '#22c55e' : 'var(--text-2)';
     }
     if (status) status.textContent = on
       ? 'Active — crew-lead reflects every ' + Math.round(d.intervalMs / 60000) + 'min when idle. Model: ' + d.model
       : 'Off — crew-lead will not self-reflect between tasks.';
+    if (intervalEl) intervalEl.value = Math.round((d.intervalMs || 900000) / 60000);
+    if (modelEl) modelEl.value = d.model || '';
   } catch(e) {
     if (btn) btn.textContent = 'Error';
     if (status) status.textContent = 'Could not load: ' + e.message;
   }
+}
+async function saveBgConsciousnessConfig() {
+  const intervalMin = parseInt(document.getElementById('bgConsciousnessInterval')?.value || '15');
+  const model = (document.getElementById('bgConsciousnessModel')?.value || '').trim();
+  try {
+    await postJSON('/api/settings/bg-consciousness', { intervalMs: intervalMin * 60000, model: model || undefined });
+    showNotification('Background consciousness settings saved');
+    loadBgConsciousness();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 async function toggleBgConsciousness() {
   const btn = document.getElementById('bgConsciousnessBtn');
@@ -2160,44 +3256,19 @@ async function toggleCursorWaves() {
     loadCursorWaves();
   } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
-async function loadClaudeCode() {
-  const btn = document.getElementById('claudeCodeBtn');
-  const status = document.getElementById('claudeCodeStatus');
+async function loadGlobalRules() {
   try {
-    const d = await getJSON('/api/settings/claude-code');
-    const on = d.enabled;
-    if (btn) {
-      btn.textContent = on ? '🤖 ON' : '⚫ OFF';
-      btn.style.background = on ? 'rgba(245,158,11,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? 'var(--amber)' : 'var(--border)';
-      btn.style.color = on ? 'var(--yellow)' : 'var(--text-2)';
-    }
-    if (status) {
-      if (!d.hasKey) {
-        status.textContent = '⚠️ ANTHROPIC_API_KEY not set — add it to ~/.crewswarm/crewswarm.json under providers.anthropic.apiKey or set the env var.';
-        status.style.color = 'var(--amber)';
-      } else {
-        status.textContent = on
-          ? 'Active — tasks route through Claude Code CLI. Per-agent override: set useClaudeCode: true in crewswarm.json.'
-          : 'Off — tasks use direct LLM or OpenCode. Enable to run agents through Claude Code CLI.';
-        status.style.color = '';
-      }
-    }
-  } catch(e) {
-    if (btn) btn.textContent = 'Error';
-    if (status) status.textContent = 'Could not load: ' + e.message;
-  }
+    const d = await getJSON('/api/settings/global-rules');
+    const el = document.getElementById('globalRulesEditor');
+    if (el) el.value = d.content || '';
+  } catch(e) {}
 }
-async function toggleClaudeCode() {
+async function saveGlobalRules() {
+  const content = document.getElementById('globalRulesEditor')?.value || '';
   try {
-    const current = await getJSON('/api/settings/claude-code');
-    if (!current.hasKey) {
-      showNotification('Set ANTHROPIC_API_KEY first — add it in ~/.crewswarm/crewswarm.json under providers.anthropic.apiKey', 'error');
-      return;
-    }
-    const d = await postJSON('/api/settings/claude-code', { enabled: !current.enabled });
-    showNotification('Claude Code executor ' + (d.enabled ? 'ENABLED 🤖' : 'DISABLED'));
-    loadClaudeCode();
+    await postJSON('/api/settings/global-rules', { content });
+    const st = document.getElementById('globalRulesStatus');
+    if (st) { st.textContent = '✅ Saved'; setTimeout(() => st.textContent = '', 3000); }
   } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 async function loadGlobalFallback() {
@@ -2219,73 +3290,11 @@ async function saveGlobalFallback() {
     loadGlobalFallback();
   } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
-async function saveGlobalOcLoop() {
-  const enabled = document.getElementById('globalOcLoop')?.checked;
-  try {
-    await postJSON('/api/settings/global-oc-loop', { enabled });
-    showNotification('Global OC loop ' + (enabled ? 'enabled' : 'disabled'));
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-async function saveGlobalOcLoopRounds() {
-  const rounds = parseInt(document.getElementById('globalOcLoopRounds')?.value) || 10;
-  try {
-    await postJSON('/api/settings/global-oc-loop', { maxRounds: rounds });
-    showNotification('Max rounds set to ' + rounds);
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-async function loadGlobalOcLoop() {
-  try {
-    const d = await getJSON('/api/settings/global-oc-loop');
-    const chk = document.getElementById('globalOcLoop');
-    const inp = document.getElementById('globalOcLoopRounds');
-    if (chk) chk.checked = d.enabled || false;
-    if (inp) inp.value = d.maxRounds ?? 10;
-  } catch(e) {}
-}
-
-async function loadEnvAdvanced() {
-  const box = document.getElementById('envAdvancedWidget');
-  if (!box) return;
-  try {
-    const [envBasic, d] = await Promise.all([
-      getJSON('/api/env').catch(() => ({})),
-      getJSON('/api/env-advanced').catch(() => ({ env: {} })),
-    ]);
-    const parts = [];
-    if (envBasic.cwd || envBasic.node || envBasic.uptime !== undefined) {
-      const uptime = envBasic.uptime != null ? (envBasic.uptime < 60 ? envBasic.uptime + 's' : Math.floor(envBasic.uptime / 60) + 'm') : '';
-      parts.push(
-        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);align-items:baseline;margin-bottom:8px;">' +
-        '<code style="color:var(--accent);font-size:11px;flex-shrink:0;">cwd</code>' +
-        '<span style="color:var(--text-1);font-family:monospace;font-size:11px;word-break:break-all;">' + (envBasic.cwd || '—') + '</span></div>' +
-        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);align-items:baseline;">' +
-        '<code style="color:var(--accent);font-size:11px;flex-shrink:0;">node</code>' +
-        '<span style="color:var(--text-1);font-family:monospace;font-size:11px;">' + (envBasic.node || '—') + '</span></div>' +
-        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);align-items:baseline;">' +
-        '<code style="color:var(--accent);font-size:11px;flex-shrink:0;">uptime</code>' +
-        '<span style="color:var(--text-1);font-family:monospace;font-size:11px;">' + uptime + '</span></div>'
-      );
-    }
-    const entries = Object.entries(d.env || {});
-    if (!entries.length && !parts.length) { box.textContent = 'No env vars set.'; return; }
-    box.innerHTML = parts.join('') + entries.map(([k, v]) =>
-      '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);align-items:baseline;">' +
-      '<code style="color:var(--accent);min-width:280px;font-size:11px;flex-shrink:0;">' + escHtml(k) + '</code>' +
-      '<span style="color:' + (v ? 'var(--text-1)' : 'var(--text-3)') + ';font-family:monospace;font-size:11px;word-break:break-all;">' + (v !== null ? escHtml(String(v)) : '<em>not set</em>') + '</span>' +
-      '</div>'
-    ).join('');
-  } catch(e) {
-    if (box) box.textContent = 'Could not load: ' + e.message;
-  }
-}
 function showSettings(){
   hideAllViews();
   document.getElementById('settingsView').classList.add('active');
   setNavActive('navSettings');
-  // Restore last active sub-tab from hash (e.g. #settings/telegram → telegram)
-  const hashSubtab = (location.hash || '').replace('#settings/', '');
-  const knownTabs = ['usage','security','webhooks','telegram','whatsapp','system'];
-  showSettingsTab(knownTabs.includes(hashSubtab) ? hashSubtab : 'usage');
+  showSettingsTab('usage');
 }
 function showSettingsTab(tab){
   ['usage','security','webhooks','telegram','whatsapp','system'].forEach(t => {
@@ -2297,13 +3306,9 @@ function showSettingsTab(tab){
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
   if (tab === 'security') { loadCmdAllowlist(); }
-  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadGlobalOcLoop(); loadEnvAdvanced(); }
-  if (tab === 'telegram') { loadTgStatus(); loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
+  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadGlobalRules(); loadGlobalOcLoop(); }
+  if (tab === 'telegram') { loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
   if (tab === 'whatsapp') { loadWaStatus(); loadWaConfig(); loadWaMessages(); }
-  // Update URL hash for deep linking — e.g. #settings/telegram
-  if (document.getElementById('settingsView')?.classList.contains('active')) {
-    history.replaceState(null, '', '#settings/' + tab);
-  }
 }
 
 function showSkills(){
@@ -2342,6 +3347,21 @@ function showToolMatrix(){
 function showIntegrations(){ showSkills(); }
 
 // ── Benchmarks (ZeroEval / llm-stats) ───────────────────────────────────────────
+const BENCHMARK_PINNED = [
+  { id: 'swe-bench-verified',     label: '⭐ SWE-Bench Verified' },
+  { id: 'livecodebench',          label: '⭐ LiveCodeBench' },
+  { id: 'livecodebench-v6',       label: '⭐ LiveCodeBench v6' },
+  { id: 'humaneval',              label: '⭐ HumanEval' },
+  { id: 'humaneval+',             label: '⭐ HumanEval+' },
+  { id: 'mmlu',                   label: '⭐ MMLU' },
+  { id: 'mmlu-pro',               label: '⭐ MMLU-Pro' },
+  { id: 'gpqa',                   label: '⭐ GPQA' },
+  { id: 'math-500',               label: '⭐ MATH-500' },
+  { id: 'aime-2025',              label: '⭐ AIME 2025' },
+  { id: 'arc-agi-v2',             label: '⭐ ARC-AGI v2' },
+  { id: 'gsm8k',                  label: '⭐ GSM8k' },
+];
+
 async function loadBenchmarkOptions() {
   const sel = document.getElementById('benchmarkSelect');
   if (!sel) return;
@@ -2351,16 +3371,34 @@ async function loadBenchmarkOptions() {
     const r = await fetch('/api/zeroeval/benchmarks');
     const arr = await r.json();
     if (!Array.isArray(arr)) throw new Error('Expected array');
-    sel.innerHTML = '<option value="">— Pick benchmark —</option>';
+    const allIds = new Set(arr.map(b => typeof b === 'object' ? (b.benchmark_id || b.id) : b));
+    sel.innerHTML = '';
+    // Pinned popular benchmarks at top
+    const pinnedGroup = document.createElement('optgroup');
+    pinnedGroup.label = '★ Popular';
+    BENCHMARK_PINNED.forEach(({ id, label }) => {
+      if (!allIds.has(id)) return;
+      const opt = document.createElement('option');
+      opt.value = id; opt.textContent = label;
+      pinnedGroup.appendChild(opt);
+    });
+    if (pinnedGroup.children.length) sel.appendChild(pinnedGroup);
+    // Separator + all others
+    const allGroup = document.createElement('optgroup');
+    allGroup.label = 'All benchmarks (' + arr.length + ')';
+    const pinnedSet = new Set(BENCHMARK_PINNED.map(p => p.id));
     arr.forEach(b => {
       const id = typeof b === 'object' ? (b.benchmark_id || b.id) : b;
+      if (pinnedSet.has(id)) return;
       const name = typeof b === 'object' ? (b.name || id) : id;
       const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = name;
-      sel.appendChild(opt);
+      opt.value = id; opt.textContent = name;
+      allGroup.appendChild(opt);
     });
-    if (cur && arr.some(b => (typeof b === 'object' ? b.benchmark_id : b) === cur)) sel.value = cur;
+    sel.appendChild(allGroup);
+    // Restore selection or default to swe-bench-verified
+    if (cur && allIds.has(cur)) sel.value = cur;
+    else sel.value = 'swe-bench-verified';
   } catch (e) {
     sel.innerHTML = '<option value="">— Failed to load —</option>';
   }
@@ -2439,7 +3477,7 @@ async function loadRunSkills(){
         + '<label style="font-size:11px;color:var(--text-2);margin-bottom:4px;">Params (JSON)</label>'
         + '<textarea data-skill="' + safeName + '" rows="4" style="font-family:monospace;font-size:12px;width:100%;margin-bottom:10px;resize:vertical;" class="runskills-params">' + defaults.replace(/</g, '&lt;') + '</textarea>'
         + '<div style="display:flex;align-items:center;gap:8px;margin-top:auto;">'
-        + '<button class="btn-green" style="font-size:12px;" data-action="runSkillFromUI" data-arg="' + safeName + '">Run</button>'
+        + '<button class="btn-green" style="font-size:12px;" data-skill="' + safeName + '" onclick="runSkillFromUI(this.dataset.skill)">Run</button>'
         + '<span class="runskills-result" data-skill="' + safeName + '" style="font-size:11px;color:var(--text-3);"></span>'
         + '</div></div>';
     }).join('');
@@ -2511,7 +3549,7 @@ async function loadToolMatrix(){
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) {
       const msg = d.error || (res.status === 401 ? 'Unauthorized' : res.statusText || 'Request failed');
-      el.innerHTML = '<div class="card" style="padding:16px;"><div style="color:var(--yellow);font-size:13px;font-weight:600;">Health check failed</div>' +
+      el.innerHTML = '<div class="card" style="padding:16px;"><div style="color:var(--yellow,#fbbf24);font-size:13px;font-weight:600;">Health check failed</div>' +
         '<div style="color:var(--text-2);font-size:12px;margin-top:8px;">' + (res.status === 401 ? 'RT token missing or invalid. Set it in Settings → System (RT token) or in ~/.crewswarm/config.json (rt.authToken).' : msg) + '</div>' +
         '<div style="color:var(--text-3);font-size:11px;margin-top:8px;">Ensure crew-lead is running on :5010 (Services tab).</div></div>';
       return;
@@ -2520,7 +3558,7 @@ async function loadToolMatrix(){
     window._telemetryEvents = d.telemetry || [];
     const bridgeAgents = (d.agents || []).filter(a => (a.id || '').toLowerCase() !== 'crew-lead');
     const crewLeadInfo = window._crewLeadInfo || { name: 'Crew Lead', emoji: '🧠' };
-    const crewLeadRow = { id: 'crew-lead', name: crewLeadInfo.name, emoji: crewLeadInfo.emoji, tools: ['read_file', 'write_file', 'mkdir', 'run_cmd', 'web_search', 'web_fetch', 'skill', 'define_skill', 'dispatch', 'telegram', 'whatsapp'] };
+    const crewLeadRow = { id: 'crew-lead', name: crewLeadInfo.name, emoji: crewLeadInfo.emoji, tools: ['dispatch', 'skill', 'define_skill', 'telegram', 'whatsapp'] };
     const agents = [crewLeadRow, ...bridgeAgents];
     const toolKeys = [...new Set(['define_skill', 'skill', ...agents.flatMap(a => Array.isArray(a.tools) ? a.tools : Object.keys(a.tools || {}))])].sort();
     const labels = toolKeys.map(t => TOOL_LABELS[t] || t);
@@ -2543,7 +3581,7 @@ async function loadToolMatrix(){
         const has = tools.includes(t);
         html += '<td style="text-align:center;padding:6px 8px;">' + (has ? '<span style="color:var(--green);" title="' + t + '">✓</span>' : '<span style="color:var(--text-3);">—</span>') + '</td>';
       });
-      html += '<td style="text-align:right;padding:8px 12px;"><button class="btn-ghost" style="font-size:11px;" data-action="restartAgentFromUI" data-arg="' + (a.id || '').replace(/"/g, '&quot;') + '">Restart</button></td></tr>';
+      html += '<td style="text-align:right;padding:8px 12px;"><button class="btn-ghost" style="font-size:11px;" data-agent-id="' + (a.id || '').replace(/"/g, "&quot;") + '" onclick="restartAgentFromUI(this.getAttribute(&quot;data-agent-id&quot;))">Restart</button></td></tr>';
     });
     html += '</tbody></table></div>';
     el.innerHTML = html;
@@ -2578,14 +3616,14 @@ function renderSkillsList(skills){
   const el = document.getElementById('skillsList');
   if (!skills.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0;">No skills match. Add one above or copy JSONs to ~/.crewswarm/skills/</div>'; return; }
   el.innerHTML = skills.map(s => {
-    const approvalBadge = s.requiresApproval ? '<span style="margin-left:8px;font-size:10px;background:rgba(251,191,36,0.15);color:var(--yellow);padding:2px 6px;border-radius:4px;">⚠️ approval</span>' : '';
+    const approvalBadge = s.requiresApproval ? '<span style="margin-left:8px;font-size:10px;background:rgba(251,191,36,0.15);color:#fbbf24;padding:2px 6px;border-radius:4px;">⚠️ approval</span>' : '';
     const urlNote = s.url ? ' · <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">' + (s.method||'POST') + ' ' + (s.url||'').slice(0,60) + '</code>' : '';
     return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border);">'
          + '<div><span style="font-weight:600;font-size:13px;">' + s.name + '</span>' + approvalBadge
          + '<div style="font-size:11px;color:var(--text-3);margin-top:3px;">' + (s.description||'') + urlNote + '</div></div>'
          + '<div style="display:flex;gap:6px;flex-shrink:0;">'
-         + '<button class="btn-ghost" style="font-size:11px;" data-action="editSkill" data-arg="' + s.name + '">Edit</button>'
-         + '<button class="btn-ghost" style="font-size:11px;color:var(--red);" data-action="deleteSkill" data-arg="' + s.name + '">Delete</button>'
+         + '<button class="btn-ghost" style="font-size:11px;" data-skill="' + s.name + '" onclick="editSkill(this.dataset.skill)">Edit</button>'
+         + '<button class="btn-ghost" style="font-size:11px;color:var(--red);" data-skill="' + s.name + '" onclick="deleteSkill(this.dataset.skill)">Delete</button>'
          + '</div></div>';
   }).join('');
 }
@@ -2624,49 +3662,44 @@ function editSkill(name){
 
 function toggleAddSkill(){
   cancelSkillForm();
-  document.getElementById('importSkillForm').style.display = 'none';
   const f = document.getElementById('addSkillForm');
   f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('importSkillForm').style.display = 'none';
 }
 
 function toggleImportSkill(){
   cancelSkillForm();
   const f = document.getElementById('importSkillForm');
   f.style.display = f.style.display === 'none' ? 'block' : 'none';
-  if (f.style.display !== 'none') setTimeout(() => document.getElementById('importSkillUrl').focus(), 50);
+  if (f.style.display !== 'none') document.getElementById('importSkillUrl').focus();
 }
 
 async function importSkillFromUrl(){
   const urlInput = document.getElementById('importSkillUrl');
-  const status   = document.getElementById('importSkillStatus');
-  const btn      = document.getElementById('importSkillBtn');
+  const status = document.getElementById('importSkillStatus');
+  const btn = document.getElementById('importSkillBtn');
   const skillUrl = urlInput.value.trim();
-  if (!skillUrl) { status.style.color = 'var(--red)'; status.textContent = 'Paste a URL first.'; return; }
-  btn.disabled = true; btn.textContent = 'Importing…';
-  status.style.color = 'var(--text-3)'; status.textContent = 'Fetching & scanning…';
+  if (!skillUrl) { status.textContent = 'Paste a URL first.'; status.style.color = 'var(--red)'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+  status.style.color = 'var(--text-3)';
+  status.textContent = 'Fetching…';
   try {
     const r = await fetch('/api/skills/import', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ url: skillUrl }) });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'Import failed');
-    // Show security warnings if any
-    if (d.warnings && d.warnings.length) {
-      status.style.color = 'var(--yellow)';
-      const warnLabels = { cmd_skill: '⚠ executes shell commands', ssrf_risk: '⚠ targets private network', insecure_url: '⚠ non-HTTPS endpoint', no_approval: '⚠ no approval gate on write' };
-      const msgs = d.warnings.map(w => warnLabels[w.split(':')[0]] || w);
-      status.innerHTML = '✓ Imported <strong>"' + d.name + '"</strong> — ' + msgs.join(' · ');
-    } else {
-      status.style.color = 'var(--green)';
-      status.textContent = '✓ Imported "' + d.name + '" — no security warnings';
-    }
+    status.style.color = 'var(--green)';
+    status.textContent = 'Imported as "' + d.name + '" ✓';
     urlInput.value = '';
     await loadSkills();
-    if (!d.warnings || !d.warnings.length) {
-      setTimeout(() => { document.getElementById('importSkillForm').style.display = 'none'; status.textContent = ''; }, 3000);
-    }
+    setTimeout(() => { document.getElementById('importSkillForm').style.display = 'none'; status.textContent = ''; }, 2000);
   } catch(e) {
     status.style.color = 'var(--red)';
     status.textContent = 'Error: ' + e.message;
-  } finally { btn.disabled = false; btn.textContent = 'Import'; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import';
+  }
 }
 
 function cancelSkillForm(){
@@ -2760,10 +3793,10 @@ async function loadSpending(){
       let out = '<div style="margin-bottom:10px;">'
               + '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em;">Global &middot; ' + (spending.date||'today') + '</div>'
               + '<div style="display:flex;gap:20px;"><span>' + gTokens.toLocaleString() + ' tokens' + (gCapTok ? ' / ' + Number(gCapTok).toLocaleString() : '') + '</span>'
-              + '<span style="color:var(--yellow);font-weight:600;">$' + gCost.toFixed(4) + '</span>' + (gCapCost ? '<span> / $' + gCapCost + '</span>' : '') + '</div>';
+              + '<span style="color:var(--yellow,#fbbf24);font-weight:600;">$' + gCost.toFixed(4) + '</span>' + (gCapCost ? '<span> / $' + gCapCost + '</span>' : '') + '</div>';
       if (gCapTok) {
         const pct = Math.min(100, (gTokens/gCapTok)*100);
-        const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--yellow)' : 'var(--green)';
+        const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? '#fbbf24' : 'var(--green)';
         out += '<div style="margin-top:4px;height:4px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;transition:width .3s;"></div></div>';
       }
       out += '</div>';
@@ -2779,7 +3812,7 @@ async function loadSpending(){
           const pct    = capTok ? Math.min(100, (toks/capTok)*100) : null;
           let row = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
                   + '<span style="min-width:140px;font-size:12px;">' + id + '</span>'
-                  + '<span style="font-size:12px;">' + toks.toLocaleString() + ' tok' + (capTok ? ' / ' + Number(capTok).toLocaleString() : '') + ' &middot; <span style="color:var(--yellow);">$' + cost + '</span></span>';
+                  + '<span style="font-size:12px;">' + toks.toLocaleString() + ' tok' + (capTok ? ' / ' + Number(capTok).toLocaleString() : '') + ' &middot; <span style="color:var(--yellow,#fbbf24);">$' + cost + '</span></span>';
           if (pct !== null) {
             const barColor = pct > 80 ? 'var(--red)' : 'var(--accent)';
             row += '<div style="flex:1;height:3px;background:var(--border);border-radius:2px;"><div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px;"></div></div>';
@@ -2787,8 +3820,10 @@ async function loadSpending(){
           return row + '</div>';
         }).join('');
       } else { out += '<div style="color:var(--text-3);">No per-agent data yet for today.</div>'; }
-      if (gCapTok) document.getElementById('gcapTokens').value = gCapTok;
-      if (gCapCost) document.getElementById('gcapCost').value = gCapCost;
+      const capTokEl = document.getElementById('capTokenInput');
+      const capCostEl = document.getElementById('capCostInput');
+      if (capTokEl) capTokEl.value = gCapTok || '';
+      if (capCostEl) capCostEl.value = gCapCost || '';
       _agentTotalCost = gCost;
       updateGrandTotal();
       el.innerHTML = out;
@@ -2820,7 +3855,7 @@ async function loadSpending(){
       totalCost = estimateCost(aggByModel);
       let out = '<div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
               + '<span style="font-size:12px;color:var(--text-3);">Last ' + days + ' days &middot; ' + filteredDays.length + ' days of data</span>'
-              + '<span style="font-size:16px;font-weight:700;color:var(--yellow);">$' + totalCost.toFixed(4) + '</span>'
+              + '<span style="font-size:16px;font-weight:700;color:var(--yellow,#fbbf24);">$' + totalCost.toFixed(4) + '</span>'
               + '</div>';
       // Daily breakdown bar chart
       const maxDayCost = Math.max(...filteredDays.map(function(d){ return estimateCost(byDay[d].byModel||{}); }), 0.0001);
@@ -2836,7 +3871,7 @@ async function loadSpending(){
              + '<div style="flex:1;background:var(--bg-1);border-radius:3px;height:12px;overflow:hidden;">'
              +   '<div style="width:' + pct.toFixed(1) + '%;height:100%;background:' + (isToday ? 'var(--accent)' : 'var(--green)') + ';border-radius:3px;opacity:.8;"></div>'
              + '</div>'
-             + '<span style="width:58px;text-align:right;color:var(--yellow);font-weight:600;">$' + dc.toFixed(4) + '</span>'
+             + '<span style="width:58px;text-align:right;color:var(--yellow,#fbbf24);font-weight:600;">$' + dc.toFixed(4) + '</span>'
              + '<span style="width:40px;text-align:right;color:var(--text-3);">' + tok.toFixed(0) + 'k</span>'
              + '</div>';
       });
@@ -2853,25 +3888,38 @@ async function loadSpending(){
           const tok = ((s.prompt||0)+(s.completion||0))/1000;
           out += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;border-bottom:1px solid var(--border);">'
                + '<code style="color:var(--accent);">' + m + '</code>'
-               + '<span style="color:var(--text-2);">' + tok.toFixed(1) + 'k tok &middot; <span style="color:var(--yellow);">$' + mc.toFixed(4) + '</span></span>'
+               + '<span style="color:var(--text-2);">' + tok.toFixed(1) + 'k tok &middot; <span style="color:var(--yellow,#fbbf24);">$' + mc.toFixed(4) + '</span></span>'
                + '</div>';
         });
       }
       _agentTotalCost = totalCost;
       updateGrandTotal();
       el.innerHTML = out;
+      // Multi-day view: load caps from config
+      try {
+        const capsData = await getJSON('/api/settings/spending-caps').catch(() => ({}));
+        const capTokEl = document.getElementById('capTokenInput');
+        const capCostEl = document.getElementById('capCostInput');
+        if (capTokEl) capTokEl.value = capsData.dailyTokenLimit ?? '';
+        if (capCostEl) capCostEl.value = capsData.dailyCostLimitUSD ?? '';
+      } catch (_) {}
     }
   } catch(e) { el.innerHTML = '<div style="color:var(--text-3);">Error: ' + e.message + '</div>'; }
 }
 async function resetSpending(){
   if (!confirm("Reset today's spending counters?")) return;
   try { await fetch('/api/spending/reset', { method: 'POST', headers:{'content-type':'application/json'}, body: '{}' }); loadSpending(); showNotification('Spending reset'); }
-  catch(e) { showNotification('Reset failed', true); }
+  catch(e) { showNotification('Reset failed: ' + e.message, true); }
 }
-async function saveGlobalCaps(){
-  const tokens = parseInt(document.getElementById('gcapTokens').value) || null;
-  const cost   = parseFloat(document.getElementById('gcapCost').value) || null;
-  showNotification('Add to ~/.crewswarm/crewswarm.json: "globalSpendingCaps": {"dailyTokenLimit":' + (tokens||'null') + ',"dailyCostLimitUSD":' + (cost||'null') + '}', 'warning');
+async function saveSpendingCaps() {
+  const tokens = parseInt(document.getElementById('capTokenInput')?.value || '0') || null;
+  const cost = parseFloat(document.getElementById('capCostInput')?.value || '0') || null;
+  try {
+    await postJSON('/api/settings/spending-caps', { dailyTokenLimit: tokens, dailyCostLimitUSD: cost });
+    const st = document.getElementById('capsStatus');
+    if (st) { st.textContent = '✅ Caps saved — resets at midnight'; setTimeout(() => st.textContent = '', 4000); }
+    loadSpending();
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
@@ -2909,11 +3957,59 @@ function showAgents(){
   document.getElementById('agentsView').classList.add('active');
   setNavActive('navAgents');
   loadAgents_cfg();
+  loadCustomRoles();
+}
+
+// ── Custom Roles ───────────────────────────────────────────────────────────
+async function loadCustomRoles() {
+  try {
+    const d = await getJSON('/api/settings/role-defaults');
+    const roles = d.roles || {};
+    const el = document.getElementById('customRolesList');
+    if (!el) return;
+    const BUILTIN = ['coder','researcher','writer','auditor','ops','generalist'];
+    const custom = Object.entries(roles).filter(([k]) => !BUILTIN.includes(k));
+    if (!custom.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text-3);">No custom roles yet. Built-in: coder, researcher, writer, auditor, ops, generalist.</div>'; return; }
+    el.innerHTML = custom.map(([name, tools]) =>
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+      '<code style="min-width:120px;font-size:12px;">' + name + '</code>' +
+      '<span style="font-size:12px;color:var(--text-3);">' + (Array.isArray(tools) ? tools.join(', ') : tools) + '</span>' +
+      '<button data-role-name="' + String(name).replace(/"/g, '&quot;') + '" onclick="deleteCustomRole(this.dataset.roleName)" style="font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--red,#ef4444);">✕</button>' +
+      '</div>'
+    ).join('');
+  } catch(e) {}
+}
+async function addCustomRole() {
+  const name = (document.getElementById('newRoleName')?.value || '').trim().toLowerCase();
+  const toolsStr = (document.getElementById('newRoleTools')?.value || '').trim();
+  if (!name || !toolsStr) { showNotification('Role name and tools required', 'error'); return; }
+  const tools = toolsStr.split(',').map(t => t.trim()).filter(Boolean);
+  try {
+    const d = await getJSON('/api/settings/role-defaults');
+    const roles = d.roles || {};
+    roles[name] = tools;
+    await postJSON('/api/settings/role-defaults', { roles });
+    document.getElementById('newRoleName').value = '';
+    document.getElementById('newRoleTools').value = '';
+    showNotification('Role "' + name + '" added');
+    loadCustomRoles();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
+async function deleteCustomRole(name) {
+  try {
+    const d = await getJSON('/api/settings/role-defaults');
+    const roles = d.roles || {};
+    delete roles[name];
+    await postJSON('/api/settings/role-defaults', { roles });
+    showNotification('Role "' + name + '" removed');
+    loadCustomRoles();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 
 // ── Agents UI ──────────────────────────────────────────────────────────────
 let _allModels = [];
 let _modelsByProvider = {};  // { "cerebras": ["llama3.1-8b", ...], ... }
+let _roleToolDefaults = {};
 
 // CrewSwarm gateway-bridge tool definitions
 const CREWSWARM_TOOLS = [
@@ -2972,6 +4068,7 @@ async function loadAgents_cfg(){
     const data = await getJSON('/api/agents-config');
     _allModels = data.allModels || [];
     _modelsByProvider = data.modelsByProvider || {};
+    _roleToolDefaults = data.roleToolDefaults || {};
     const agents = sortAgents(data.agents || []);
     if (!agents.length){ list.innerHTML = '<div class="meta" style="padding:20px;">No agents found in config. Check ~/.crewswarm/crewswarm.json</div>'; return; }
     list.innerHTML = '';
@@ -2979,97 +4076,97 @@ async function loadAgents_cfg(){
       const card = document.createElement('div');
       card.className = 'agent-card';
       card.id = 'agent-card-' + a.id;
-      const modelOpts = _allModels.map(m => `<option value="${m}" ${m === a.model ? 'selected' : ''}>${m}</option>`).join('');
-      const customOpt = (!a.model || _allModels.includes(a.model)) ? '' : `<option value="${a.model}" selected>${a.model} (custom)</option>`;
+      const modelOpts = _allModels.map(m => \`<option value="\${m}" \${m === a.model ? 'selected' : ''}>\${m}</option>\`).join('');
+      const customOpt = (!a.model || _allModels.includes(a.model)) ? '' : \`<option value="\${a.model}" selected>\${a.model} (custom)</option>\`;
       const liveDot = a.liveness === 'online'
         ? '<span title="● online — heartbeat <90s" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);margin-right:4px;flex-shrink:0;"></span>'
         : a.liveness === 'stale'
         ? '<span title="● stale — last seen >' + (a.ageSec||'?') + 's ago" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:4px;flex-shrink:0;"></span>'
         : a.liveness === 'offline'
-        ? '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red-hi);margin-right:4px;flex-shrink:0;"></span>'
+        ? '<span title="● offline — no heartbeat in 5min" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red,#ef4444);margin-right:4px;flex-shrink:0;"></span>'
         : '<span title="● unknown — never seen" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:4px;flex-shrink:0;"></span>';
-      card.innerHTML = `
+      card.innerHTML = \`
         <div class="agent-card-header">
-          <div class="agent-avatar" id="avatar-${a.id}" style="position:relative;">${a.emoji}</div>
+          <div class="agent-avatar" id="avatar-\${a.id}" style="position:relative;">\${a.emoji}</div>
           <div class="agent-meta">
-            <div class="agent-id" style="display:flex;align-items:center;">${liveDot}${a.id} <span class="meta" style="font-weight:400;margin-left:4px;">· ${a.name}</span>
-              ${MODEL_ROLE[a.id] ? '<span style="font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 6px;border-radius:4px;margin-left:8px;' + (ROLE_STYLE[MODEL_ROLE[a.id]]||'') + '">' + MODEL_ROLE[a.id] + '</span>' : ''}
-              <span id="coding-dot-${a.id}" style="display:none;margin-left:8px;align-items:center;gap:4px;font-size:11px;color:var(--accent);">
+            <div class="agent-id" style="display:flex;align-items:center;">\${liveDot}\${a.id} <span class="meta" style="font-weight:400;margin-left:4px;">· \${a.name}</span>
+              \${MODEL_ROLE[a.id] ? '<span style="font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 6px;border-radius:4px;margin-left:8px;' + (ROLE_STYLE[MODEL_ROLE[a.id]]||'') + '">' + MODEL_ROLE[a.id] + '</span>' : ''}
+              <span id="coding-dot-\${a.id}" style="display:none;margin-left:8px;align-items:center;gap:4px;font-size:11px;color:var(--accent);">
                 <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1s ease-in-out infinite;"></span>coding
               </span>
             </div>
-            <div id="cur-model-${a.id}" style="margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
-              <span style="font-size:11px;font-family:'SF Mono',monospace;color:${BROKEN_MODELS.has(a.model)?'var(--red-hi)':'var(--text-2)'};" title="Conversation model — used for direct replies and chat">
-                ${BROKEN_MODELS.has(a.model) ? '⚠ ' : '💬 '}${a.model || '(none)'}
+            <div id="cur-model-\${a.id}" style="margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+              <span style="font-size:11px;font-family:'SF Mono',monospace;color:\${BROKEN_MODELS.has(a.model)?'#ef4444':'var(--text-2)'};" title="Conversation model — used for direct replies and chat">
+                \${BROKEN_MODELS.has(a.model) ? '⚠ ' : '💬 '}\${a.model || '(none)'}
               </span>
-              ${a.opencodeModel ? '<span style="font-size:11px;font-family:monospace;color:' + (BROKEN_MODELS.has(a.opencodeModel)?'var(--red-hi)':'var(--green-hi)') + ';" title="OpenCode model — used when routing tasks through OpenCode CLI">⚡ ' + a.opencodeModel + '</span>' : ''}
-              ${BROKEN_MODELS.has(a.model) ? '<span style="font-size:10px;font-weight:600;color:var(--red-hi);background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>' : ''}
+              \${a.opencodeModel ? '<span style="font-size:11px;font-family:monospace;color:' + (BROKEN_MODELS.has(a.opencodeModel)?'#ef4444':'#4ade80') + ';" title="OpenCode model — used when routing tasks through OpenCode CLI">⚡ ' + a.opencodeModel + '</span>' : ''}
+              \${BROKEN_MODELS.has(a.model) ? '<span style="font-size:10px;font-weight:600;color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>' : ''}
             </div>
           </div>
-          <button class="btn-ghost" style="font-size:11px; padding:4px 10px;" data-action="toggleAgentBody" data-arg="${a.id}">Edit ▾</button>
-          <button class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--red); border-color:rgba(248,113,113,0.3);" data-action="deleteAgent" data-arg="${a.id}">✕</button>
+          <button class="btn-ghost" style="font-size:11px; padding:4px 10px;" onclick="toggleAgentBody('\${a.id}')">Edit ▾</button>
+          <button class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--red); border-color:rgba(248,113,113,0.3);" onclick="deleteAgent('\${a.id}')">✕</button>
         </div>
-        <div class="agent-body" id="body-${a.id}" style="display:none;">
+        <div class="agent-body" id="body-\${a.id}" style="display:none;">
           <div>
             <div class="field-label" style="display:flex;align-items:center;gap:8px;">
               <span>💬 Conversation Model</span>
               <span style="font-size:10px;font-weight:400;color:var(--text-3);">Used for direct replies, planning, and chat. <strong style="color:var(--text-2);">Not used when OpenCode is enabled.</strong></span>
             </div>
-            ${BROKEN_MODELS.has(a.model) ? '<div style="font-size:11px;color:var(--red-hi);background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:5px;padding:6px 10px;margin-bottom:8px;">⚠ Current model <code>' + a.model + '</code> is broken (returns empty responses). Please reassign.</div>' : ''}
+            \${BROKEN_MODELS.has(a.model) ? '<div style="font-size:11px;color:#ef4444;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:5px;padding:6px 10px;margin-bottom:8px;">⚠ Current model <code>' + a.model + '</code> is broken (returns empty responses). Please reassign.</div>' : ''}
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-              <select id="model-${a.id}" style="flex:1; min-width:200px;" onchange="syncModelText('${a.id}')">${customOpt}${modelOpts}</select>
-              <input id="modeltext-${a.id}" type="text" placeholder="or type provider/model…" value="${a.model || ''}" style="flex:1; min-width:160px; font-size:12px;" oninput="syncModelSelect('${a.id}')" />
-              <button data-action="saveAgentModel" data-arg="${a.id}" class="btn-green" style="white-space:nowrap;">Save</button>
+              <select id="model-\${a.id}" style="flex:1; min-width:200px;" onchange="syncModelText('\${a.id}')">\${customOpt}\${modelOpts}</select>
+              <input id="modeltext-\${a.id}" type="text" placeholder="or type provider/model…" value="\${a.model || ''}" style="flex:1; min-width:160px; font-size:12px;" oninput="syncModelSelect('\${a.id}')" />
+              <button onclick="saveAgentModel('\${a.id}')" class="btn-green" style="white-space:nowrap;">Save</button>
             </div>
             <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
               <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">↩ Fallback:</span>
-              ${(() => {
-                const fbCustomOpt = (a.fallbackModel && !_allModels.includes(a.fallbackModel)) ? `<option value="${a.fallbackModel}" selected>${a.fallbackModel} (custom)</option>` : '';
-                const fbOpts = _allModels.map(m => `<option value="${m}" ${m === a.fallbackModel ? 'selected' : ''}>${m}</option>`).join('');
-                return `<select id="fmodel-${a.id}" style="flex:1;min-width:180px;font-size:11px;" onchange="syncFallbackText('${a.id}')"><option value="">— none —</option>${fbCustomOpt}${fbOpts}</select>`;
+              \${(() => {
+                const fbCustomOpt = (a.fallbackModel && !_allModels.includes(a.fallbackModel)) ? \`<option value="\${a.fallbackModel}" selected>\${a.fallbackModel} (custom)</option>\` : '';
+                const fbOpts = _allModels.map(m => \`<option value="\${m}" \${m === a.fallbackModel ? 'selected' : ''}>\${m}</option>\`).join('');
+                return \`<select id="fmodel-\${a.id}" style="flex:1;min-width:180px;font-size:11px;" onchange="syncFallbackText('\${a.id}')"><option value="">— none —</option>\${fbCustomOpt}\${fbOpts}</select>\`;
               })()}
-              <input id="fallback-${a.id}" type="text" placeholder="or type any model…"
-                value="${a.fallbackModel || ''}"
+              <input id="fallback-\${a.id}" type="text" placeholder="or type any model…"
+                value="\${a.fallbackModel || ''}"
                 style="flex:1; min-width:140px; font-size:11px; color:var(--text-2);"
-                oninput="syncFallbackSelect('${a.id}')" />
-              <button data-action="saveAgentFallback" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:11px;">Save</button>
+                oninput="syncFallbackSelect('\${a.id}')" />
+              <button onclick="saveAgentFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:11px;">Save</button>
             </div>
           </div>
           <div>
             <div class="field-label">Display name &amp; emoji</div>
             <div style="display:flex; gap:8px;">
-              <input id="aname-${a.id}" type="text" value="${a.name}" placeholder="Display name" style="flex:1;" />
+              <input id="aname-\${a.id}" type="text" value="\${a.name}" placeholder="Display name" style="flex:1;" />
               <div class="emoji-picker-wrap">
-                <button type="button" class="emoji-btn" id="aemoji-btn-${a.id}" data-action="toggleEmojiPicker" data-arg="${a.id}" title="Pick emoji">${a.emoji||'🤖'}</button>
-                <input type="hidden" id="aemoji-${a.id}" value="${a.emoji||'🤖'}" />
-                <div class="emoji-picker-panel" id="aemoji-panel-${a.id}">
-                  <div class="emoji-grid" id="aemoji-grid-${a.id}"></div>
+                <button type="button" class="emoji-btn" id="aemoji-btn-\${a.id}" onclick="toggleEmojiPicker('\${a.id}')" title="Pick emoji">\${a.emoji||'🤖'}</button>
+                <input type="hidden" id="aemoji-\${a.id}" value="\${a.emoji||'🤖'}" />
+                <div class="emoji-picker-panel" id="aemoji-panel-\${a.id}">
+                  <div class="emoji-grid" id="aemoji-grid-\${a.id}"></div>
                 </div>
               </div>
-              <button data-action="saveAgentIdentity" data-arg="${a.id}" class="btn-ghost">Save</button>
+              <button onclick="saveAgentIdentity('\${a.id}')" class="btn-ghost">Save</button>
             </div>
             <div style="margin-top:8px;">
               <div class="field-label" style="margin-bottom:4px;">Role / Theme <span style="font-weight:400; color:var(--text-3); font-size:11px;">— used by PM router to assign tasks (e.g. "iOS/Swift developer (SwiftUI, UIKit)")</span></div>
-              <input id="atheme-${a.id}" type="text" value="${a.theme||''}" placeholder="Describe what this agent specialises in..." style="width:100%;" />
+              <input id="atheme-\${a.id}" type="text" list="themePresets" value="\${a.theme||''}" placeholder="Describe what this agent specialises in..." style="width:100%;" />
             </div>
           </div>
           <div>
             <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
               <div class="field-label" style="margin:0;">System Prompt</div>
-              ${!a.systemPrompt ? '<span style="font-size:11px; color:var(--yellow);">⚠ No prompt set — agent has no role context</span>' : ''}
-              <select style="font-size:11px; padding:3px 8px; margin-left:auto;" onchange="applyAgentPromptPreset('${a.id}', this.value); this.value=''">
-                ${buildPresetOptions()}
+              \${!a.systemPrompt ? '<span style="font-size:11px; color:var(--yellow);">⚠ No prompt set — agent has no role context</span>' : ''}
+              <select style="font-size:11px; padding:3px 8px; margin-left:auto;" onchange="applyAgentPromptPreset('\${a.id}', this.value); this.value=''">
+                \${buildPresetOptions()}
               </select>
             </div>
-            <textarea id="prompt-${a.id}" rows="5" placeholder="Describe this agent's role. It's injected at the top of every task.">${a.systemPrompt || ''}</textarea>
+            <textarea id="prompt-\${a.id}" rows="5" placeholder="Describe this agent's role. It's injected at the top of every task.">\${a.systemPrompt || ''}</textarea>
             <div style="margin-top:8px; display:flex; gap:8px;">
-              <button data-action="saveAgentPrompt" data-arg="${a.id}" class="btn-ghost">Save prompt</button>
+              <button onclick="saveAgentPrompt('\${a.id}')" class="btn-ghost">Save prompt</button>
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding-top:10px;">
             <div class="field-label" style="margin-bottom:8px;">Session</div>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
-              <button data-action="resetAgentSession" data-arg="${a.id}" class="btn-ghost" style="font-size:12px;">↺ Reset context window</button>
+              <button onclick="resetAgentSession('\${a.id}')" class="btn-ghost" style="font-size:12px;">↺ Reset context window</button>
               <span style="font-size:11px; color:var(--text-3);">Clears accumulated token context. Shared memory is re-injected on next task.</span>
             </div>
           </div>
@@ -3079,22 +4176,22 @@ async function loadAgents_cfg(){
               <span style="font-size:10px; font-weight:600; color:var(--accent); padding:2px 6px; border-radius:4px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25);">gateway-bridge</span>
             </div>
             <div class="meta" style="margin-bottom:10px; font-size:11px;">Controls which tools this agent can execute on disk and network. Enforced by gateway-bridge on every task — only checked tools are active.</div>
-            <div id="tools-${a.id}" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px; margin-bottom:12px;">
-              ${CREWSWARM_TOOLS.map(t => `
+            <div id="tools-\${a.id}" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px; margin-bottom:12px;">
+              \${CREWSWARM_TOOLS.map(t => \`
                 <label style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text-2); cursor:pointer; padding:6px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-card2);">
-                  <input type="checkbox" data-tool="${t.id}" ${(a.alsoAllow||[]).includes(t.id)?'checked':''} style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
+                  <input type="checkbox" data-tool="\${t.id}" \${(a.alsoAllow||[]).includes(t.id)?'checked':''} style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
                   <div>
-                    <code style="font-size:11px; color:var(--text-1);">${t.id}</code>
-                    <div style="font-size:10px; color:var(--text-3); margin-top:2px; line-height:1.3;">${t.desc}</div>
+                    <code style="font-size:11px; color:var(--text-1);">\${t.id}</code>
+                    <div style="font-size:10px; color:var(--text-3); margin-top:2px; line-height:1.3;">\${t.desc}</div>
                   </div>
                 </label>
-              `).join('')}
+              \`).join('')}
             </div>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
-              <button data-action="saveAgentTools" data-arg="${a.id}" class="btn-ghost" style="font-size:12px;">Save tools</button>
-              <button data-action="applyToolPreset" data-arg="${a.id}" class="btn-ghost" style="font-size:12px; color:var(--text-3);">↩ Role defaults</button>
+              <button onclick="saveAgentTools('\${a.id}')" class="btn-ghost" style="font-size:12px;">Save tools</button>
+              <button onclick="applyToolPreset('\${a.id}')" class="btn-ghost" style="font-size:12px; color:var(--text-3);">↩ Role defaults</button>
             </div>
-            <div class="meta">Workspace: <code style="font-size:11px;">${a.workspace}</code></div>
+            <div class="meta">Workspace: <code style="font-size:11px;">\${a.workspace}</code></div>
           </div>
           <div style="border-top:1px solid var(--border); padding-top:10px;">
             <div class="field-label" style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
@@ -3102,58 +4199,69 @@ async function loadAgents_cfg(){
               <span style="font-size:10px; font-weight:600; color:var(--text-3); padding:2px 6px; border-radius:4px; background:var(--surface-2);">pick one — mutually exclusive</span>
             </div>
             <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
-              <button id="route-direct-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="direct"
-                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${!a.useOpenCode && !a.useCursorCli ? 'var(--accent)' : 'var(--border)'}; background:${!a.useOpenCode && !a.useCursorCli ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)'}; color:${!a.useOpenCode && !a.useCursorCli ? 'var(--accent)' : 'var(--text-2)'};">
+              <button id="route-direct-\${a.id}" onclick="setRoute('\${a.id}','direct')"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${!a.useOpenCode && !a.useCursorCli ? 'var(--accent)' : 'var(--border)'}; background:\${!a.useOpenCode && !a.useCursorCli ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)'}; color:\${!a.useOpenCode && !a.useCursorCli ? 'var(--accent)' : 'var(--text-2)'};">
                 💬 Direct API
               </button>
-              <button id="route-opencode-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="opencode"
-                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useOpenCode && !a.useCursorCli ? 'var(--green-hi)' : 'var(--border)'}; background:${a.useOpenCode && !a.useCursorCli ? 'rgba(34,197,94,0.12)' : 'var(--surface-2)'}; color:${a.useOpenCode && !a.useCursorCli ? 'var(--green-hi)' : 'var(--text-2)'};">
+              <button id="route-opencode-\${a.id}" onclick="setRoute('\${a.id}','opencode')"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${a.useOpenCode && !a.useCursorCli ? '#22c55e' : 'var(--border)'}; background:\${a.useOpenCode && !a.useCursorCli ? 'rgba(34,197,94,0.12)' : 'var(--surface-2)'}; color:\${a.useOpenCode && !a.useCursorCli ? '#22c55e' : 'var(--text-2)'};">
                 ⚡ OpenCode
               </button>
-              <button id="route-cursor-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="cursor"
-                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useCursorCli ? 'var(--accent)' : 'var(--border)'}; background:${a.useCursorCli ? 'rgba(56,189,248,0.12)' : 'var(--surface-2)'}; color:${a.useCursorCli ? 'var(--accent)' : 'var(--text-2)'};">
+              <button id="route-cursor-\${a.id}" onclick="setRoute('\${a.id}','cursor')"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${a.useCursorCli ? '#38bdf8' : 'var(--border)'}; background:\${a.useCursorCli ? 'rgba(56,189,248,0.12)' : 'var(--surface-2)'}; color:\${a.useCursorCli ? '#38bdf8' : 'var(--text-2)'};">
                 🖱 Cursor CLI <span style="font-size:10px; font-weight:400; opacity:0.7;">(free · sub)</span>
               </button>
-              <button id="route-claudecode-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="claudecode"
-                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useClaudeCode ? '#f59e0b' : 'var(--border)'}; background:${a.useClaudeCode ? 'rgba(245,158,11,0.12)' : 'var(--surface-2)'}; color:${a.useClaudeCode ? '#f59e0b' : 'var(--text-2)'};">
-                🤖 Claude Code <span style="font-size:10px; font-weight:400; opacity:0.7;">(api key)</span>
+              <button id="route-claudecode-\${a.id}" onclick="setRoute('\${a.id}','claudecode')"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid \${a.useClaudeCode ? '#a855f7' : 'var(--border)'}; background:\${a.useClaudeCode ? 'rgba(168,85,247,0.12)' : 'var(--surface-2)'}; color:\${a.useClaudeCode ? '#a855f7' : 'var(--text-2)'};">
+                ⚡ Claude Code
               </button>
             </div>
-            <div id="oc-model-row-${a.id}" style="display:${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
-              <select id="oc-model-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcModelText('${a.id}')"></select>
-              <input id="oc-modeltext-${a.id}" type="text" placeholder="opencode/model…" value="${a.opencodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
-              <button data-action="saveOpenCodeConfig" data-arg="${a.id}" class="btn-green" style="white-space:nowrap; font-size:12px;">Save</button>
+            <div id="oc-model-row-\${a.id}" style="display:\${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+              <select id="oc-model-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcModelText('\${a.id}')"></select>
+              <input id="oc-modeltext-\${a.id}" type="text" placeholder="opencode/model…" value="\${a.opencodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button onclick="saveOpenCodeConfig('\${a.id}')" class="btn-green" style="white-space:nowrap; font-size:12px;">Save</button>
             </div>
-            <div id="oc-fallback-row-${a.id}" style="display:${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+            <div id="oc-fallback-row-\${a.id}" style="display:\${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
               <span style="font-size:11px; color:var(--text-3); white-space:nowrap;">↩ Fallback:</span>
-              <select id="oc-fallback-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcFallbackText('${a.id}')"></select>
-              <input id="oc-fallback-${a.id}" type="text" placeholder="opencode/model or leave blank" value="${a.opencodeFallbackModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
-              <button data-action="saveOpenCodeFallback" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px;">Save</button>
+              <select id="oc-fallback-sel-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcFallbackText('\${a.id}')"></select>
+              <input id="oc-fallback-\${a.id}" type="text" placeholder="opencode/model or leave blank" value="\${a.opencodeFallbackModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button onclick="saveOpenCodeFallback('\${a.id}')" class="btn-ghost" style="white-space:nowrap; font-size:12px;">Save</button>
             </div>
-            <div id="cursor-model-row-${a.id}" style="display:${a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
-              <select id="cursor-model-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncCursorModelText('${a.id}')"></select>
-              <input id="cursor-model-txt-${a.id}" type="text" placeholder="sonnet-4.6 or leave blank for auto" value="${a.cursorCliModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
-              <button data-action="saveCursorCliConfig" data-arg="${a.id}" class="btn-sky" style="white-space:nowrap; font-size:12px;">Save</button>
+            <div id="cursor-model-row-\${a.id}" style="display:\${a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <select id="cursor-model-sel-\${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncCursorModelText('\${a.id}')"></select>
+              <input id="cursor-model-txt-\${a.id}" type="text" placeholder="sonnet-4.6 or leave blank for auto" value="\${a.cursorCliModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button onclick="saveCursorCliConfig('\${a.id}')" class="btn-sky" style="white-space:nowrap; font-size:12px;">Save</button>
             </div>
-            <div id="claudecode-model-row-${a.id}" style="display:${a.useClaudeCode ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
-              <select id="claudecode-model-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncClaudeCodeModelText('${a.id}')">
-                <option value="">— auto (claude-sonnet-4-5) —</option>
-                <option value="claude-opus-4-5" ${(a.claudeCodeModel||'') === 'claude-opus-4-5' ? 'selected' : ''}>claude-opus-4-5 — best reasoning</option>
-                <option value="claude-sonnet-4-5" ${(a.claudeCodeModel||'') === 'claude-sonnet-4-5' ? 'selected' : ''}>claude-sonnet-4-5 — best coding</option>
-                <option value="claude-haiku-4-5" ${(a.claudeCodeModel||'') === 'claude-haiku-4-5' ? 'selected' : ''}>claude-haiku-4-5 — fast &amp; cheap</option>
-              </select>
-              <input id="claudecode-model-txt-${a.id}" type="text" placeholder="claude-sonnet-4-5 or leave blank" value="${a.claudeCodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
-              <button data-action="saveClaudeCodeConfig" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">Save</button>
+            <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label style="font-size:11px; color:var(--text-3); white-space:nowrap;">_role</label>
+                <select id="agent-role-\${a.id}" style="font-size:12px; min-width:130px; padding:4px 8px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px; color:var(--text-1);">
+                  \${(() => {
+                    const builtin = ['','coder','researcher','writer','auditor','ops','generalist'];
+                    const custom = Object.keys(_roleToolDefaults || {}).filter(k => !builtin.includes(k));
+                    return builtin.concat(custom).map(r => '<option value="' + r + '"' + (r === (a.role || '') ? ' selected' : '') + '>' + (r === '' ? '(auto-detect)' : r) + '</option>').join('');
+                  })()}
+                </select>
+              </div>
+              <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); cursor:pointer;">
+                <input id="agent-ocloop-\${a.id}" type="checkbox" \${a.opencodeLoop ? 'checked' : ''} style="accent-color:var(--accent);" />
+                opencodeLoop
+              </label>
+              <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:200px;">
+                <label style="font-size:11px; color:var(--text-3); white-space:nowrap;">Workspace</label>
+                <input id="agent-workspace-\${a.id}" type="text" value="\${a.workspace || ''}" placeholder="path or empty" style="flex:1; font-size:12px; padding:4px 8px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px; color:var(--text-1);" />
+              </div>
+              <button onclick="saveAgentAdvanced('\${a.id}')" class="btn-primary" style="font-size:11px; padding:4px 12px;">Save Advanced</button>
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
             <div style="font-size:11px; color:var(--text-3);">
               Session context accumulates over time. Reset clears the conversation history and re-injects shared memory.
             </div>
-            <button data-action="resetAgentSession" data-arg="${a.id}" class="btn-ghost" style="font-size:12px; white-space:nowrap; color:var(--amber); border-color:rgba(245,158,11,0.3);">↺ Reset session</button>
+            <button onclick="resetAgentSession('\${a.id}')" class="btn-ghost" style="font-size:12px; white-space:nowrap; color:#f59e0b; border-color:rgba(245,158,11,0.3);">↺ Reset session</button>
           </div>
         </div>
-      `;
+      \`;
       list.appendChild(card);
     });
     // Re-populate model selects with grouped optgroups
@@ -3177,7 +4285,7 @@ function toggleAgentBody(id){
   body.style.display = body.style.display === 'none' ? 'grid' : 'none';
 }
 
-async function resetAgentSessionRT(agentId){
+async function resetAgentSession(agentId){
   if (!confirm('Reset session for ' + agentId + '?\\n\\nThis clears accumulated conversation context. Shared memory (memory/*.md) is preserved and re-injected on next task.')) return;
   try {
     const r = await postJSON('/api/agents/reset-session', { agentId });
@@ -3217,6 +4325,7 @@ function syncModelSelect(agentId){
   const sel = document.getElementById('model-' + agentId);
   if (!sel) return;
   const typed = txt.value.trim();
+  // Try to match an existing option
   const match = [...sel.options].find(o => o.value === typed);
   sel.value = match ? typed : '';
 }
@@ -3233,13 +4342,8 @@ function syncFallbackSelect(agentId){
   const match = [...sel.options].find(o => o.value === typed);
   sel.value = match ? typed : '';
 }
-// Expose sync helpers globally — onchange="" attributes in dynamic HTML need window scope
-window.syncModelText    = syncModelText;
-window.syncModelSelect  = syncModelSelect;
-window.syncFallbackText = syncFallbackText;
-window.syncFallbackSelect = syncFallbackSelect;
 async function resetAgentSession(agentId){
-  if (!confirm('Reset context window for ' + agentId + '?\\n\\nThis clears the agent\'s accumulated conversation history. Shared memory files will be re-injected on the next task.')) return;
+  if (!confirm('Reset context window for ' + agentId + '?\\n\\nThis clears the agent\\'s accumulated conversation history. Shared memory files will be re-injected on the next task.')) return;
   showNotification('Resetting ' + agentId + ' session...');
   try {
     await postJSON('/api/agents-config/reset-session', { agentId });
@@ -3255,9 +4359,9 @@ function refreshModelHeader(agentId, model, opencodeModel) {
   const chatBroken = BROKEN_MODELS.has(model);
   const ocBroken   = opencodeModel && BROKEN_MODELS.has(opencodeModel);
   el.innerHTML =
-    `<span style="font-size:11px;font-family:'SF Mono',monospace;color:${chatBroken?'var(--red-hi)':'var(--text-2)'};" title="Conversation model">${chatBroken?'⚠ ':'💬 '}${model||'(none)'}</span>` +
-    (opencodeModel ? `<span style="font-size:11px;font-family:'SF Mono',monospace;color:${ocBroken?'var(--red-hi)':'var(--green-hi)'};" title="OpenCode model">⚡ ${opencodeModel}</span>` : '') +
-    (chatBroken ? `<span style="font-size:10px;font-weight:600;color:var(--red-hi);background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>` : '');
+    \`<span style="font-size:11px;font-family:'SF Mono',monospace;color:\${chatBroken?'#ef4444':'var(--text-2)'};" title="Conversation model">\${chatBroken?'⚠ ':'💬 '}\${model||'(none)'}</span>\` +
+    (opencodeModel ? \`<span style="font-size:11px;font-family:'SF Mono',monospace;color:\${ocBroken?'#ef4444':'#4ade80'};" title="OpenCode model">⚡ \${opencodeModel}</span>\` : '') +
+    (chatBroken ? \`<span style="font-size:10px;font-weight:600;color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>\` : '');
 }
 
 async function saveAgentModel(agentId){
@@ -3273,7 +4377,7 @@ async function saveAgentModel(agentId){
     await postJSON('/api/agents-config/update', { agentId, model });
     const ocModel = document.getElementById('oc-modeltext-' + agentId)?.value.trim() || '';
     refreshModelHeader(agentId, model, ocModel);
-    showNotification(`${agentId} → ${model}`);
+    showNotification(\`\${agentId} → \${model}\`);
   } catch(e){ showNotification('Failed: ' + e.message, true); }
 }
 
@@ -3282,7 +4386,7 @@ async function saveAgentFallback(agentId){
   const fallbackModel = inp?.value.trim() || '';
   try {
     await postJSON('/api/agents-config/update', { agentId, fallbackModel });
-    showNotification(fallbackModel ? `Fallback set: ${fallbackModel}` : `Fallback cleared for ${agentId}`);
+    showNotification(fallbackModel ? \`Fallback set: \${fallbackModel}\` : \`Fallback cleared for \${agentId}\`);
   } catch(e){ showNotification('Failed: ' + e.message, true); }
 }
 
@@ -3410,20 +4514,19 @@ function syncCursorModelText(agentId) {
   const txt = document.getElementById('cursor-model-txt-' + agentId);
   if (sel && txt) txt.value = sel.value;
 }
-window.syncCursorModelText = syncCursorModelText;
 
 // 4-way route toggle — mutually exclusive
 async function setRoute(agentId, route) {
-  const useOpenCode   = route === 'opencode';
-  const useCursorCli  = route === 'cursor';
+  const useOpenCode = route === 'opencode';
+  const useCursorCli = route === 'cursor';
   const useClaudeCode = route === 'claudecode';
   // Update button styles
   const styles = {
-    direct:      { border: 'var(--accent)',    bg: 'rgba(99,102,241,0.15)',  color: 'var(--accent)' },
-    opencode:    { border: 'var(--green-hi)',  bg: 'rgba(34,197,94,0.12)',   color: 'var(--green-hi)' },
-    cursor:      { border: 'var(--accent)',    bg: 'rgba(56,189,248,0.12)',  color: 'var(--accent)' },
-    claudecode:  { border: '#f59e0b',          bg: 'rgba(245,158,11,0.12)', color: '#f59e0b' },
-    inactive:    { border: 'var(--border)',    bg: 'var(--surface-2)',       color: 'var(--text-2)' },
+    direct:   { border: 'var(--accent)', bg: 'rgba(99,102,241,0.15)', color: 'var(--accent)' },
+    opencode: { border: '#22c55e',       bg: 'rgba(34,197,94,0.12)',  color: '#22c55e' },
+    cursor:   { border: '#38bdf8',       bg: 'rgba(56,189,248,0.12)', color: '#38bdf8' },
+    claudecode: { border: '#a855f7',     bg: 'rgba(168,85,247,0.12)', color: '#a855f7' },
+    inactive: { border: 'var(--border)', bg: 'var(--surface-2)',      color: 'var(--text-2)' },
   };
   ['direct','opencode','cursor','claudecode'].forEach(r => {
     const btn = document.getElementById('route-' + r + '-' + agentId);
@@ -3432,17 +4535,16 @@ async function setRoute(agentId, route) {
     btn.style.borderColor = s.border; btn.style.background = s.bg; btn.style.color = s.color;
   });
   // Show/hide model rows
-  const ocRow        = document.getElementById('oc-model-row-' + agentId);
-  const ocFbRow      = document.getElementById('oc-fallback-row-' + agentId);
-  const cursorRow    = document.getElementById('cursor-model-row-' + agentId);
-  const ccRow        = document.getElementById('claudecode-model-row-' + agentId);
-  if (ocRow)     ocRow.style.display     = useOpenCode   ? 'flex' : 'none';
-  if (ocFbRow)   ocFbRow.style.display   = useOpenCode   ? 'flex' : 'none';
-  if (cursorRow) cursorRow.style.display = useCursorCli  ? 'flex' : 'none';
-  if (ccRow)     ccRow.style.display     = useClaudeCode ? 'flex' : 'none';
+  const ocRow = document.getElementById('oc-model-row-' + agentId);
+  const ocFbRow = document.getElementById('oc-fallback-row-' + agentId);
+  const cursorRow = document.getElementById('cursor-model-row-' + agentId);
+  if (ocRow) ocRow.style.display = useOpenCode ? 'flex' : 'none';
+  if (ocFbRow) ocFbRow.style.display = useOpenCode ? 'flex' : 'none';
+  if (cursorRow) cursorRow.style.display = useCursorCli ? 'flex' : 'none';
   // Save
   try {
-    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli, useClaudeCode });
+    const payload = { agentId, useOpenCode: useOpenCode || false, useCursorCli: useCursorCli || false, useClaudeCode: useClaudeCode || false };
+    await postJSON('/api/agents-config/update', payload);
     const label = route === 'direct' ? 'Direct API' : route === 'opencode' ? 'OpenCode' : route === 'cursor' ? 'Cursor CLI' : 'Claude Code';
     showNotification(agentId + ' → ' + label);
   } catch(e) { showNotification('Failed: ' + e.message, true); }
@@ -3456,20 +4558,15 @@ async function saveCursorCliConfig(agentId) {
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 
-async function saveClaudeCodeConfig(agentId) {
-  const claudeCodeModel = (document.getElementById('claudecode-model-txt-' + agentId)?.value || '').trim();
+async function saveAgentAdvanced(agentId) {
+  const role = document.getElementById('agent-role-' + agentId)?.value || '';
+  const opencodeLoop = document.getElementById('agent-ocloop-' + agentId)?.checked || false;
+  const workspace = document.getElementById('agent-workspace-' + agentId)?.value?.trim() || '';
   try {
-    await postJSON('/api/agents-config/update', { agentId, claudeCodeModel });
-    showNotification(agentId + ' Claude Code model → ' + (claudeCodeModel || 'auto'));
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
+    await postJSON('/api/agents-config/update', { agentId, role: role || undefined, opencodeLoop: opencodeLoop || undefined, workspace: workspace || undefined });
+    showNotification(agentId + ' advanced settings saved');
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
-
-function syncClaudeCodeModelText(agentId) {
-  const sel = document.getElementById('claudecode-model-sel-' + agentId);
-  const txt = document.getElementById('claudecode-model-txt-' + agentId);
-  if (sel && txt) txt.value = sel.value;
-}
-window.syncClaudeCodeModelText = syncClaudeCodeModelText;
 
 function toggleOpenCodeUI(agentId) {
   // Legacy — kept for any stale references; use setRoute instead
@@ -3482,7 +4579,6 @@ function syncOcModelText(agentId) {
   const txt = document.getElementById('oc-modeltext-' + agentId);
   if (sel && txt && sel.value) txt.value = sel.value;
 }
-window.syncOcModelText = syncOcModelText;
 
 function syncOcFallbackText(agentId) {
   const sel = document.getElementById('oc-fallback-sel-' + agentId);
@@ -3520,17 +4616,15 @@ async function saveCursorCliToggle(agentId) {
 // Bulk route setter — apply a route to all coding agents at once
 async function bulkSetRoute(route, model) {
   const CODING_AGENTS = ['crew-coder','crew-coder-front','crew-coder-back','crew-frontend','crew-fixer','crew-architect','crew-ml'];
-  const label = route === 'cursor' ? 'Cursor CLI' : route === 'opencode' ? 'OpenCode' : route === 'claudecode' ? 'Claude Code' : 'Direct API';
+  const label = route === 'cursor' ? 'Cursor CLI' : route === 'opencode' ? 'OpenCode' : 'Direct API';
   showNotification('Applying ' + label + ' to all coding agents…');
   for (const agentId of CODING_AGENTS) {
-    const useOpenCode   = route === 'opencode';
-    const useCursorCli  = route === 'cursor';
-    const useClaudeCode = route === 'claudecode';
+    const useOpenCode = route === 'opencode';
+    const useCursorCli = route === 'cursor';
     try {
-      const payload = { agentId, useOpenCode, useCursorCli, useClaudeCode };
-      if (model && route === 'cursor')      payload.cursorCliModel  = model;
-      if (model && route === 'opencode')    payload.opencodeModel   = model;
-      if (model && route === 'claudecode')  payload.claudeCodeModel = model;
+      const payload = { agentId, useOpenCode, useCursorCli };
+      if (model && route === 'cursor') payload.cursorCliModel = model;
+      if (model && route === 'opencode') payload.opencodeModel = model;
       await postJSON('/api/agents-config/update', payload);
     } catch(e) { console.error('bulkSetRoute failed for', agentId, e.message); }
   }
@@ -3674,7 +4768,7 @@ function buildPresetOptions(placeholder) {
 }
 
 const PROMPT_PRESETS = {
-  frontend: `Frontend implementation specialist. Apple/Linear/Vercel-level polish is the baseline.
+  frontend: \`Frontend implementation specialist. Apple/Linear/Vercel-level polish is the baseline.
 
 ## Design standard
 - Typography: system font stack or Inter. 16-18px body, 1.5 line-height. Weight hierarchy (400/500/600/700).
@@ -3696,9 +4790,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - ALWAYS read existing files before editing. Match the design system in place.
 - If no design system exists, establish CSS custom properties (--color-*, --space-*, --radius-*).
-- Test mental model: 375px, 768px, 1440px — all three must look intentional.`,
+- Test mental model: 375px, 768px, 1440px — all three must look intentional.\`,
 
-  backend: `Backend specialist. Node.js, APIs, databases, server logic.
+  backend: \`Backend specialist. Node.js, APIs, databases, server logic.
 
 ## Standards
 - ES modules, async/await, no callbacks. Prefer native Node APIs over dependencies.
@@ -3711,9 +4805,9 @@ const PROMPT_PRESETS = {
 
 ## Rules
 - ALWAYS read existing files before editing. Match patterns and naming.
-- Think about failures: what happens when the request fails, DB is down, or input is malformed?`,
+- Think about failures: what happens when the request fails, DB is down, or input is malformed?\`,
 
-  fullstack: `Full-stack coding specialist. Clean, readable code across the entire stack.
+  fullstack: \`Full-stack coding specialist. Clean, readable code across the entire stack.
 
 ## Standards
 - Small functions, clear names, no dead code. Error handling everywhere.
@@ -3724,9 +4818,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - ALWAYS read existing files before editing — understand what exists.
 - Surgical edits only — change what's asked, nothing else.
-- Trace the happy path and one error path mentally before reporting done.`,
+- Trace the happy path and one error path mentally before reporting done.\`,
 
-  qa: `QA specialist. Systematic audits backed by evidence from the actual code.
+  qa: \`QA specialist. Systematic audits backed by evidence from the actual code.
 
 ## Process
 1. @@READ_FILE every file you audit — no exceptions
@@ -3743,9 +4837,9 @@ const PROMPT_PRESETS = {
 - Do NOT invent line numbers. Only cite what you read.
 - CRITICAL issues = FAIL verdict. No exceptions.
 - You are NOT a coordinator — do NOT use @@DISPATCH.
-- @@WEB_SEARCH best practices or known vulnerability patterns when unsure.`,
+- @@WEB_SEARCH best practices or known vulnerability patterns when unsure.\`,
 
-  github: `Git and GitHub specialist.
+  github: \`Git and GitHub specialist.
 
 ## Before any operation
 - git status, git config user.name, git config user.email
@@ -3760,9 +4854,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - Never force-push to main or master.
 - Always git diff --stat before committing.
-- One logical change per commit.`,
+- One logical change per commit.\`,
 
-  writer: `Content and copywriting specialist.
+  writer: \`Content and copywriting specialist.
 
 ## Voice
 - Clear, confident, human. Short sentences. Active voice. Cut every word that doesn't earn its place.
@@ -3777,9 +4871,9 @@ const PROMPT_PRESETS = {
 
 ## Rules
 - ALWAYS @@WRITE_FILE your output — never just show text in chat.
-- Read existing content first to match voice. After draft, cut 30%.`,
+- Read existing content first to match voice. After draft, cut 30%.\`,
 
-  ios: `iOS/Swift specialist. SwiftUI, UIKit, and native Apple platform code.
+  ios: \`iOS/Swift specialist. SwiftUI, UIKit, and native Apple platform code.
 
 ## Standards
 - SwiftUI for new views unless the project uses UIKit exclusively.
@@ -3791,9 +4885,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - ALWAYS read existing Swift files before editing.
 - Handle optionals safely — guard let / if let, never force-unwrap in production.
-- Support Dynamic Type and VoiceOver accessibility.`,
+- Support Dynamic Type and VoiceOver accessibility.\`,
 
-  android: `Android/Kotlin specialist. Jetpack Compose, Android SDK, and modern Android architecture.
+  android: \`Android/Kotlin specialist. Jetpack Compose, Android SDK, and modern Android architecture.
 
 ## Standards
 - Jetpack Compose for new UI unless the project uses XML layouts.
@@ -3804,9 +4898,9 @@ const PROMPT_PRESETS = {
 
 ## Rules
 - ALWAYS read existing files before editing. Match architecture patterns.
-- Handle configuration changes properly. Test on multiple screen sizes.`,
+- Handle configuration changes properly. Test on multiple screen sizes.\`,
 
-  devops: `DevOps and infrastructure specialist. CI/CD, Docker, shell scripts, IaC.
+  devops: \`DevOps and infrastructure specialist. CI/CD, Docker, shell scripts, IaC.
 
 ## Standards
 - Idempotent scripts — safe to run multiple times.
@@ -3818,9 +4912,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - ALWAYS read existing configs before editing. Never blindly overwrite deployment configs.
 - Secrets in env vars or secret managers, never in source.
-- Write clear inline comments in all scripts and configs.`,
+- Write clear inline comments in all scripts and configs.\`,
 
-  data: `Data and analytics specialist. Python, SQL, pandas, data pipelines.
+  data: \`Data and analytics specialist. Python, SQL, pandas, data pipelines.
 
 ## Standards
 - Clean Python with type hints and docstrings. Validate inputs, handle nulls explicitly.
@@ -3831,9 +4925,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - ALWAYS read existing data files and schemas before writing code.
 - NEVER overwrite raw data. Transform into new files/tables.
-- Reproducibility: set random seeds, log parameters, version datasets.`,
+- Reproducibility: set random seeds, log parameters, version datasets.\`,
 
-  security: `Security auditor. OWASP-aware, evidence-based.
+  security: \`Security auditor. OWASP-aware, evidence-based.
 
 ## Audit checklist
 - Secrets: hardcoded API keys/tokens/passwords, .env in source, secrets in logs or client code
@@ -3846,9 +4940,9 @@ const PROMPT_PRESETS = {
 - @@READ_FILE every file before reporting. Never guess.
 - Report only — NEVER modify files.
 - Output: severity + file:line + vulnerability + exact remediation.
-- Overall risk: CRITICAL / HIGH / MODERATE / LOW.`,
+- Overall risk: CRITICAL / HIGH / MODERATE / LOW.\`,
 
-  design: `UI/UX design and implementation specialist. You ship premium, production-ready interfaces.
+  design: \`UI/UX design and implementation specialist. You ship premium, production-ready interfaces.
 
 ## Design DNA — Apple.com, Linear.app, Vercel.com, Stripe.com level quality.
 - Reduction: remove every element that doesn't serve the user's goal. White space is a feature.
@@ -3867,9 +4961,9 @@ const PROMPT_PRESETS = {
 - @@WEB_SEARCH site:codepen.io [component] vanilla CSS for interactive examples
 
 ## Rules
-- Accessible: focus-visible, aria-labels, 4.5:1 contrast, semantic HTML.`,
+- Accessible: focus-visible, aria-labels, 4.5:1 contrast, semantic HTML.\`,
 
-  pm: `Product manager and project planner. Task decomposition and roadmap management.
+  pm: \`Product manager and project planner. Task decomposition and roadmap management.
 
 ## Planning principles
 - Every task: independently deliverable. If it can't be tested alone, split it.
@@ -3886,9 +4980,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - Flag missing requirements before handoff.
 - @@WEB_SEARCH to research approaches for unfamiliar features.
-- Update ROADMAP.md with [ ] checkboxes.`,
+- Update ROADMAP.md with [ ] checkboxes.\`,
 
-  aiml: `AI/ML engineering specialist. Model training, fine-tuning, eval, and MLOps.
+  aiml: \`AI/ML engineering specialist. Model training, fine-tuning, eval, and MLOps.
 
 ## Standards
 - Reproducibility: set random seeds, log all hyperparameters, version datasets.
@@ -3904,9 +4998,9 @@ const PROMPT_PRESETS = {
 
 ## Rules
 - ALWAYS read existing code before modifying. Pin dependency versions.
-- Never hardcode paths to datasets or models — use env vars or config.`,
+- Never hardcode paths to datasets or models — use env vars or config.\`,
 
-  api: `API design specialist. REST and GraphQL APIs.
+  api: \`API design specialist. REST and GraphQL APIs.
 
 ## Standards
 - OpenAPI/Swagger specs for all new endpoints. Schema-first design.
@@ -3920,9 +5014,9 @@ const PROMPT_PRESETS = {
 
 ## Rules
 - ALWAYS read existing routes and schemas before adding new ones. Match patterns.
-- Output both the spec and a working implementation stub.`,
+- Output both the spec and a working implementation stub.\`,
 
-  database: `Database specialist. SQL, migrations, indexes, and query optimization.
+  database: \`Database specialist. SQL, migrations, indexes, and query optimization.
 
 ## Standards
 - Idempotent migrations (safe to re-run). Use IF NOT EXISTS / IF EXISTS guards.
@@ -3935,9 +5029,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - ALWAYS read existing schema before writing migrations.
 - NEVER drop columns or tables without explicit instruction.
-- Transactions for multi-table changes. Rollback strategy for every migration.`,
+- Transactions for multi-table changes. Rollback strategy for every migration.\`,
 
-  reactnative: `React Native specialist. Cross-platform mobile with Expo or bare RN.
+  reactnative: \`React Native specialist. Cross-platform mobile with Expo or bare RN.
 
 ## Standards
 - Functional components with hooks. StyleSheet.create for all styles.
@@ -3949,9 +5043,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - ALWAYS read existing components and navigation before editing.
 - Test mental model on both iOS and Android.
-- Handle safe areas, keyboard avoidance, and different screen sizes.`,
+- Handle safe areas, keyboard avoidance, and different screen sizes.\`,
 
-  web3: `Web3 and blockchain specialist. Solidity smart contracts and dApp frontends.
+  web3: \`Web3 and blockchain specialist. Solidity smart contracts and dApp frontends.
 
 ## Standards
 - Storage layout: NEVER change variable order in upgradeable contracts.
@@ -3964,9 +5058,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - ALWAYS read existing contracts before editing.
 - Test all contracts with Hardhat or Foundry before reporting done.
-- Check: reentrancy guards, integer overflow (Solidity 0.8+ safe), access control on state-changing functions.`,
+- Check: reentrancy guards, integer overflow (Solidity 0.8+ safe), access control on state-changing functions.\`,
 
-  automation: `Automation and web scraping specialist. Playwright, Puppeteer, Python scrapers.
+  automation: \`Automation and web scraping specialist. Playwright, Puppeteer, Python scrapers.
 
 ## Standards
 - Playwright for JS-heavy sites, requests+BeautifulSoup for static HTML.
@@ -3978,9 +5072,9 @@ const PROMPT_PRESETS = {
 ## Rules
 - Store raw data before transforming — never lose the source.
 - Respect robots.txt and rate-limit requests (1-2 req/sec default).
-- Output structured data (JSON/CSV) with clear field names.`,
+- Output structured data (JSON/CSV) with clear field names.\`,
 
-  docs: `Technical documentation writer. API docs, READMEs, developer guides.
+  docs: \`Technical documentation writer. API docs, READMEs, developer guides.
 
 ## Standards
 - Write for the reader — assume minimal context, include working examples.
@@ -3993,9 +5087,9 @@ const PROMPT_PRESETS = {
 - ALWAYS read the code you're documenting before writing.
 - Keep docs in sync with implementation — flag discrepancies.
 - Markdown output unless another format is requested.
-- No fluff paragraphs. Scannable: headers, bullets, code blocks.`,
+- No fluff paragraphs. Scannable: headers, bullets, code blocks.\`,
 
-  orchestrator: `PM loop orchestrator. Roadmap reading, task expansion, specialist routing.
+  orchestrator: \`PM loop orchestrator. Roadmap reading, task expansion, specialist routing.
 
 ## Standards
 - Break each roadmap item into a single, scoped, actionable task.
@@ -4006,25 +5100,25 @@ const PROMPT_PRESETS = {
 ## Rules
 - NEVER implement tasks yourself — planning and delegation only.
 - Keep task descriptions under 200 words.
-- Mark items done only after confirmation from the executing agent.`,
+- Mark items done only after confirmation from the executing agent.\`,
 
-  lead: `Team lead and coordinator. Delegation, progress tracking, blocker escalation.
+  lead: \`Team lead and coordinator. Delegation, progress tracking, blocker escalation.
 
 ## Rules
 - Assign tasks to the right agent based on their specialty.
 - Track what's in progress and what's blocked.
 - Escalate failures to crew-fixer and report status.
 - Do NOT implement tasks yourself — delegate everything.
-- Communicate clearly: who is doing what, and what's blocked.`,
+- Communicate clearly: who is doing what, and what's blocked.\`,
 
-  main: `Main agent and general-purpose coordinator. Fallback for tasks that don't fit a specialist.
+  main: \`Main agent and general-purpose coordinator. Fallback for tasks that don't fit a specialist.
 
 ## Rules
 - Triage requests — handle directly or delegate to the right specialist.
 - @@WEB_SEARCH and @@WEB_FETCH for research tasks.
 - Write and edit files directly for general tasks.
 - Keep responses concise and action-oriented.
-- You're the catch-all — if something falls through the cracks, you handle it.`,
+- You're the catch-all — if something falls through the cracks, you handle it.\`,
 };
 
 const PRESET_META = {
@@ -4091,9 +5185,9 @@ const MODEL_ROLE = {
 };
 const ROLE_STYLE = {
   THINKER:    'background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.35);color:#a78bfa;',
-  EXECUTOR:   'background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.30);color:var(--green-hi);',
-  COORDINATOR:'background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.30);color:var(--accent);',
-  ANALYST:    'background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);color:var(--yellow);',
+  EXECUTOR:   'background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.30);color:#4ade80;',
+  COORDINATOR:'background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.30);color:#38bdf8;',
+  ANALYST:    'background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);color:#fbbf24;',
   RESEARCHER: 'background:rgba(249,115,22,0.10);border:1px solid rgba(249,115,22,0.30);color:#fb923c;',
 };
 
@@ -4111,7 +5205,7 @@ function populateModelDropdown(selectId, currentVal) {
         const opt = document.createElement('option');
         opt.value = full;
         opt.textContent = (broken ? '⚠ BROKEN — ' : '') + (name ? (name + '  (' + id + ')') : full);
-        if (broken) opt.style.color = 'var(--red-hi)';
+        if (broken) opt.style.color = '#ef4444';
         if (full === currentVal) opt.selected = true;
         grp.appendChild(opt);
       });
@@ -4123,7 +5217,7 @@ function populateModelDropdown(selectId, currentVal) {
       const opt = document.createElement('option');
       opt.value = m;
       opt.textContent = (broken ? '⚠ BROKEN — ' : '') + m;
-      if (broken) opt.style.color = 'var(--red-hi)';
+      if (broken) opt.style.color = '#ef4444';
       if (m === currentVal) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -4165,7 +5259,7 @@ document.getElementById('naCreateBtn').onclick = async () => {
   if (!id || !model){ showNotification('Agent ID and model are required', true); return; }
   try {
     await postJSON('/api/agents-config/create', { id, model, name, emoji, theme, systemPrompt, alsoAllow });
-    showNotification(`Agent "${id}" created — restart gateway-bridge to activate it on the RT bus.`);
+    showNotification(\`Agent "\${id}" created — restart gateway-bridge to activate it on the RT bus.\`);
     document.getElementById('newAgentForm').style.display = 'none';
     ['naId','naName','naTheme','naPrompt'].forEach(x => { document.getElementById(x).value = ''; });
     document.getElementById('naEmoji').value = '🔥';
@@ -4189,38 +5283,38 @@ async function loadProviders(){
     providers.forEach(p => {
       const icon = PROVIDER_ICONS[p.id] || '🔌';
       const hasKey = p.hasKey;
-      const badgeColor = hasKey ? '#10b981' : 'var(--red-hi)';
+      const badgeColor = hasKey ? '#10b981' : '#ef4444';
       const badgeText = hasKey ? '✓ key set' : '✗ no key';
       const card = document.createElement('div');
       card.className = 'provider-card';
-      card.innerHTML = `
-        <div class="provider-header" data-toggle-sibling="open">
-          <span style="font-size:20px;">${icon}</span>
+      card.innerHTML = \`
+        <div class="provider-header" onclick="this.nextElementSibling.classList.toggle('open')">
+          <span style="font-size:20px;">\${icon}</span>
           <div style="flex:1;">
-            <strong style="font-size:15px;">${p.id}</strong>
-            <span class="meta" style="margin-left:10px;">${p.baseUrl}</span>
+            <strong style="font-size:15px;">\${p.id}</strong>
+            <span class="meta" style="margin-left:10px;">\${p.baseUrl}</span>
           </div>
-          <span class="provider-badge" style="background:${badgeColor}20; color:${badgeColor}; border:1px solid ${badgeColor}40;">${badgeText}</span>
-          <span class="meta" style="margin-left:12px;">${p.models.length} model${p.models.length !== 1 ? 's' : ''}</span>
+          <span class="provider-badge" style="background:\${badgeColor}20; color:\${badgeColor}; border:1px solid \${badgeColor}40;">\${badgeText}</span>
+          <span class="meta" style="margin-left:12px;">\${p.models.length} model\${p.models.length !== 1 ? 's' : ''}</span>
           <span style="color:#64748b; margin-left:8px;">▼</span>
         </div>
         <div class="provider-body">
           <div class="key-row">
-            <input class="key-input" type="password" autocomplete="new-password" id="key_${p.id}" value="${p.maskedKey || ''}" placeholder="Paste API key…" />
-            <button data-action="toggleKeyVis" data-arg="key_${p.id}" data-self="1" style="background:#334155; padding:6px 10px; font-size:12px;">👁</button>
-            <button data-action="saveKey" data-arg="${p.id}" style="background:#6366f1; padding:6px 14px; font-size:12px;">Save</button>
-            <button data-action="testKey" data-arg="${p.id}" style="background:#334155; padding:6px 10px; font-size:12px;">Test</button>
-            <button data-action="fetchModels" data-arg="${p.id}" data-self="1" style="background:#0f766e; padding:6px 10px; font-size:12px;">↻ Fetch models</button>
-            <span id="test_${p.id}"></span>
+            <input class="key-input" type="password" autocomplete="new-password" id="key_\${p.id}" value="\${p.maskedKey || ''}" placeholder="Paste API key…" />
+            <button onclick="toggleKeyVis('key_\${p.id}', this)" style="background:#334155; padding:6px 10px; font-size:12px;">👁</button>
+            <button onclick="saveKey('\${p.id}')" style="background:#6366f1; padding:6px 14px; font-size:12px;">Save</button>
+            <button onclick="testKey('\${p.id}')" style="background:#334155; padding:6px 10px; font-size:12px;">Test</button>
+            <button onclick="fetchModels('\${p.id}', this)" style="background:#0f766e; padding:6px 10px; font-size:12px;">↻ Fetch models</button>
+            <span id="test_\${p.id}"></span>
           </div>
-          <div style="margin-bottom:8px;"><span class="meta">Base URL: </span><code style="font-size:11px; color:#94a3b8;">${p.baseUrl}</code></div>
-          <div><span class="meta" style="display:block; margin-bottom:6px;">Models (<span id="mcount_${p.id}">${p.models.length}</span>):</span><span id="mtags_${p.id}">${p.models.map(m => '<span class="model-tag">' + m.id + '</span>').join('')}</span></div>
-          ${p.models.length === 0 ? '<div class="meta" style="margin-top:8px; color:var(--amber);" id="mnone_${p.id}">No models yet — click ↻ Fetch models</div>' : ''}
+          <div style="margin-bottom:8px;"><span class="meta">Base URL: </span><code style="font-size:11px; color:#94a3b8;">\${p.baseUrl}</code></div>
+          <div><span class="meta" style="display:block; margin-bottom:6px;">Models (<span id="mcount_\${p.id}">\${p.models.length}</span>):</span><span id="mtags_\${p.id}">\${p.models.map(m => '<span class="model-tag">' + m.id + '</span>').join('')}</span></div>
+          \${p.models.length === 0 ? '<div class="meta" style="margin-top:8px; color:#f59e0b;" id="mnone_\${p.id}">No models yet — click ↻ Fetch models</div>' : ''}
         </div>
-      `;
+      \`;
       list.appendChild(card);
     });
-  } catch(e){ list.innerHTML = '<div class="meta" style="padding:20px; color:var(--red-hi);">Error: ' + e.message + '</div>'; }
+  } catch(e){ list.innerHTML = '<div class="meta" style="padding:20px; color:#ef4444;">Error: ' + e.message + '</div>'; }
 }
 function toggleKeyVis(inputId, btn){
   const inp = document.getElementById(inputId);
@@ -4347,7 +5441,7 @@ async function loadProjects(){
         +   '<div>'
         +     '<strong style="font-size:15px;">' + escHtml(p.name) + '</strong>'
         +     '<span style="margin-left:10px;font-size:11px;padding:2px 8px;border-radius:999px;background:' + statusBg + ';color:' + statusColor + ';border:1px solid ' + statusColor + '40;">' + escHtml(p.status) + '</span>'
-        +     (p.running ? '<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:var(--purple);border:1px solid rgba(99,102,241,0.3);">▶ running</span>' : '')
+        +     (p.running ? '<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">▶ running</span>' : '')
         +     (p.description ? '<div class="meta" style="margin-top:4px;">' + escHtml(p.description) + '</div>' : '')
         +   '</div>'
         +   '<div class="meta">' + new Date(p.created).toLocaleDateString() + '</div>'
@@ -4407,29 +5501,7 @@ async function loadProjects(){
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') addRoadmapItem(inp.dataset.rmAddId); });
     });
 
-  } catch(e) { list.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Failed to load projects: ' + escHtml(e.message) + '</div>'; }
-}
-
-function toggleProjectEdit(projectId) {
-  const viewEl = document.getElementById('proj-view-' + projectId);
-  const editEl = document.getElementById('proj-edit-' + projectId);
-  if (!viewEl || !editEl) return;
-  const isEditing = editEl.style.display !== 'none';
-  viewEl.style.display = isEditing ? '' : 'none';
-  editEl.style.display = isEditing ? 'none' : 'block';
-}
-
-async function saveProjectEdit(projectId) {
-  const name = document.getElementById('proj-name-' + projectId)?.value?.trim();
-  const description = document.getElementById('proj-desc-' + projectId)?.value?.trim();
-  const outputDir = document.getElementById('proj-dir-' + projectId)?.value?.trim();
-  if (!name) { showNotification('Project name is required', true); return; }
-  try {
-    await postJSON('/api/projects/update', { projectId, name, description, outputDir });
-    showNotification('Project saved');
-    toggleProjectEdit(projectId);
-    loadProjects();
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
+  } catch(e) { list.innerHTML = '<div class="meta" style="padding:20px;color:#ef4444;">Failed to load projects: ' + escHtml(e.message) + '</div>'; }
 }
 
 // Single delegated click handler — replaces ALL onclick strings in project cards
@@ -4463,7 +5535,7 @@ document.getElementById('projectsList').addEventListener('click', e => {
         .catch(e => { showNotification('Failed: ' + e.message, true); btn.checked = !checked; });
       return; // don't prevent default on checkbox
     }
-    case 'edit':             toggleProjectEdit(id); break;
+    case 'edit':         toggleProjectEdit(id); break;
     case 'save-project-edit': saveProjectEdit(id); break;
     case 'cancel-project-edit': toggleProjectEdit(id); break;
     case 'add-item':     addRoadmapItem(id); break;
@@ -4473,6 +5545,28 @@ document.getElementById('projectsList').addEventListener('click', e => {
     case 'close-editor': closeRoadmapEditor(id); break;
   }
 });
+
+function toggleProjectEdit(projectId) {
+  const viewEl = document.getElementById('proj-view-' + projectId);
+  const editEl = document.getElementById('proj-edit-' + projectId);
+  if (!viewEl || !editEl) return;
+  const isEditing = editEl.style.display !== 'none';
+  viewEl.style.display = isEditing ? '' : 'none';
+  editEl.style.display = isEditing ? 'none' : 'block';
+}
+
+window.saveProjectEdit = async function(projectId) {
+  const name = document.getElementById('proj-name-' + projectId)?.value?.trim();
+  const description = document.getElementById('proj-desc-' + projectId)?.value?.trim();
+  const outputDir = document.getElementById('proj-dir-' + projectId)?.value?.trim();
+  if (!name) { showNotification('Project name is required', true); return; }
+  try {
+    await postJSON('/api/projects/update', { projectId, name, description, outputDir });
+    showNotification('Project saved');
+    toggleProjectEdit(projectId);
+    loadProjects();
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+};
 
 // ── Chat project dropdown (next to input; persisted so it survives tab switch and reload) ───
 
@@ -4636,11 +5730,11 @@ function onBuildProjectChange() {
       'Output: ' + proj.outputDir + '<br>' +
       'Roadmap: ' + proj.roadmapFile + '<br>' +
       'Tasks: ' + proj.roadmap.done + ' done · ' + proj.roadmap.pending + ' pending · ' + proj.roadmap.failed + ' failed' +
-      (proj.running ? '<br><span style="color:var(--purple);">▶ PM Loop is running</span>' : '');
+      (proj.running ? '<br><span style="color:#818cf8;">▶ PM Loop is running</span>' : '');
     if (label) label.innerHTML =
       '<b style="color:var(--accent);">▶ ' + proj.name + '</b>' +
       ' &nbsp;·&nbsp; ' + proj.roadmap.done + ' done · ' + proj.roadmap.pending + ' pending' +
-      (proj.running ? ' &nbsp;<span style="color:var(--green-hi); font-weight:600;">● running</span>' : '');
+      (proj.running ? ' &nbsp;<span style="color:#4ade80; font-weight:600;">● running</span>' : '');
   } else {
     info.style.display = 'none';
     if (label) label.innerHTML = '← Select a project above';
@@ -4786,7 +5880,7 @@ async function loadPhasedProgress(){
       const task = (e.task || '').slice(0, 50) + ((e.task || '').length > 50 ? '...' : '');
       const status = e.status === 'completed' ? '✅' : '❌';
       const dur = e.duration_s != null ? e.duration_s + 's' : '';
-      return `<div style="margin-bottom:4px;">${status} [${phase}] ${agent}: ${task} ${dur}</div>`;
+      return \`<div style="margin-bottom:4px;">\${status} [\${phase}] \${agent}: \${task} \${dur}</div>\`;
     }).join('');
     box.scrollTop = box.scrollHeight;
   } catch (e) { box.textContent = 'Could not load progress.'; }
@@ -4855,7 +5949,7 @@ async function continuousBuildRun(){
         if (lg.lines && lg.lines.length) {
           logBox.textContent = lg.lines.map(l => {
             const icon = l.status === 'completed' ? '✅' : l.status === 'failed' ? '❌' : l.status === 'done' ? '🏁' : '·';
-            return `${icon} [rd${l.round||'?'}] ${l.agent ? l.agent+': ' : ''}${l.task || l.status || JSON.stringify(l)}`;
+            return \`\${icon} [rd\${l.round||'?'}] \${l.agent ? l.agent+': ' : ''}\${l.task || l.status || JSON.stringify(l)}\`;
           }).join('\\n');
           logBox.scrollTop = logBox.scrollHeight;
           const last = lg.lines[lg.lines.length - 1];
@@ -4914,7 +6008,7 @@ document.getElementById('npCreateBtn').onclick = async () => {
   if (!name || !outputDir) { showNotification('Name and output directory required', true); return; }
   try {
     const r = await postJSON('/api/projects', { name, description: desc, outputDir, featuresDoc });
-    showNotification(`Project "${r.project.name}" created!`);
+    showNotification(\`Project "\${r.project.name}" created!\`);
     document.getElementById('newProjectForm').style.display = 'none';
     document.getElementById('npName').value = '';
     document.getElementById('npDesc').value = '';
@@ -4970,12 +6064,12 @@ function startPmLogPoller() {
       const dryBtn   = document.getElementById('pmDryRunBtn');
       if (lg.lines && lg.lines.length) {
         logBox.textContent = lg.lines.map(l => {
-          if (l.event === 'finish') return `🏁 Done  ✓${l.done}  ✗${l.failed}  ⏳${l.pending}`;
+          if (l.event === 'finish') return \`🏁 Done  ✓\${l.done}  ✗\${l.failed}  ⏳\${l.pending}\`;
           if (l.event === 'stopped_by_file') return '⛔ Stopped by user';
-          if (l.event === 'all_done') return `🏁 All ${l.total} items complete!`;
+          if (l.event === 'all_done') return \`🏁 All \${l.total} items complete!\`;
           const icon = l.status === 'done' ? '✅' : l.status === 'failed' ? '❌' : l.event ? '·' : '·';
-          const txt  = l.item ? `${l.item.substring(0, 60)}` : (l.event || '');
-          return `${icon} ${txt}`;
+          const txt  = l.item ? \`\${l.item.substring(0, 60)}\` : (l.event || '');
+          return \`\${icon} \${txt}\`;
         }).join('\\n');
         logBox.scrollTop = logBox.scrollHeight;
         const last = lg.lines[lg.lines.length - 1];
@@ -5089,67 +6183,12 @@ document.getElementById('buildProjectPicker').addEventListener('change', () => {
   if (pmPoller) { clearInterval(pmPoller); pmPoller = null; }
   checkPmStatus();
 });
-// ── Hash routing — persist active view across refresh ────────────────────────
-// ── Hash routing ─────────────────────────────────────────────────────────────
-// Patch each top-level show* function so calling it (via onclick or code)
-// automatically updates location.hash. Refresh → restores the same tab.
-const VIEW_MAP = {
-  'chat':        showChat,
-  'swarm':       showSwarm,
-  'rt':          showRT,
-  'dlq':         showDLQ,
-  'files':       showFiles,
-  'services':    showServices,
-  'agents':      showAgents,
-  'models':      showModels,
-  'settings':    showSettings,
-  'skills':      showSkills,
-  'run-skills':  showRunSkills,
-  'benchmarks':  showBenchmarks,
-  'tool-matrix': showToolMatrix,
-  'build':       showBuild,
-  'messaging':   showMessaging,
-  'projects':    showProjects,
-};
-
-// Wrap each show* so it updates the hash when called from anywhere
-for (const [hash, fn] of Object.entries(VIEW_MAP)) {
-  const original = fn;
-  const wrapped = function(...args) {
-    history.replaceState(null, '', '#' + hash);
-    return original(...args);
-  };
-  // Update the reference in the map and on window (for onclick= handlers)
-  VIEW_MAP[hash] = wrapped;
-  window[original.name] = wrapped;
-}
-
-function navigateTo(view) {
-  const fn = VIEW_MAP[view] || VIEW_MAP['chat'];
-  fn();
-}
-
-// On load: restore from hash or default to chat
-// Supports top-level (#chat, #services) and sub-tab deep links (#settings/telegram)
-const startHash = (location.hash || '#chat').slice(1);
-const [startView, startSubtab] = startHash.split('/');
 const params = new URLSearchParams(window.location.search);
 if (params.get('focus') === '1') {
-  setTimeout(() => { const ci = document.getElementById('chatInput'); if (ci) { navigateTo('chat'); ci.focus(); } }, 500);
+  setTimeout(() => { const ci = document.getElementById('chatInput'); if (ci) { showChat(); ci.focus(); } }, 500);
 } else {
-  navigateTo(startView || 'chat');
-  if (startView === 'settings' && startSubtab) {
-    showSettingsTab(startSubtab);
-  }
+  showChat();
 }
-// Resolve server-side env vars (HOME, cwd) once on boot
-fetch('/api/env').then(r => r.json()).then(env => {
-  window._crewHome = env.HOME || '';
-  window._crewCwd  = env.cwd  || '';
-  const filesDir = document.getElementById('filesDir');
-  if (filesDir && !filesDir.value) filesDir.value = env.cwd || '';
-}).catch(() => {});
-
 loadAgents();
 refreshAll();
 
@@ -5188,228 +6227,6 @@ refreshAll();
   });
   obs.observe(document.body, { childList: true, subtree: true });
 }());
-
-// ── Expose functions to global scope for inline HTML event handlers ───────────
-// ── Global delegated click dispatcher ──────────────────────────────────────────
-// MetaMask's SES lockdown runs onclick handlers in an isolated Compartment where
-// neither globalThis.fn nor window.fn resolves. Using data-action + addEventListener
-// bypasses the Compartment entirely — the listener closure has full module scope.
-const ACTION_REGISTRY = {
-  // Nav views
-  showChat, showSwarm, showRT, showBuild, showFiles, showDLQ,
-  showProjects, showAgents, showModels, showSkills, showRunSkills,
-  showBenchmarks, showToolMatrix, showServices, showSettings,
-  // Static HTML actions (previously onclick="window.fn()")
-  pickFolder:          (id) => pickFolder(id),
-  loadFiles:           (force) => loadFiles(force === 'true' || force === true),
-  clearChatHistory,
-  sendChat,
-  stopAll,
-  killAll,
-  loadServices,
-  saveRTToken,
-  startCrew,
-  toggleEmojiPicker:   (id) => toggleEmojiPicker(id),
-  bulkSetRoute:        (route, model) => bulkSetRoute(route, model),
-  loadSpending,
-  resetSpending,
-  saveGlobalCaps,
-  loadOcStats,
-  addAllowlistPattern,
-  sendTestWebhook,
-  startTgBridge,
-  stopTgBridge,
-  saveTgConfig,
-  loadTelegramSessions,
-  loadTgMessages,
-  startWaBridge,
-  stopWaBridge,
-  saveWaConfig,
-  loadWaMessages,
-  saveOpencodeSettings,
-  saveGlobalFallback,
-  toggleBgConsciousness,
-  toggleCursorWaves,
-  toggleClaudeCode,
-  saveGlobalOcLoop,
-  saveGlobalOcLoopRounds,
-  toggleAddSkill,
-  toggleImportSkill,
-  importSkillFromUrl,
-  showSkills,
-  saveSkill,
-  cancelSkillForm,
-  loadRunSkills,
-  loadBenchmarks,
-  loadToolMatrix,
-  loadBuildProjectPicker,
-  // RT scroll button
-  scrollRTToBottom: () => {
-    const v = document.getElementById('rtView');
-    if (v) v.scrollTop = v.scrollHeight;
-  },
-  toggleRTPause,
-  clearRTMessages,
-  togglePmAdvanced: () => {
-    const el = document.getElementById('pmAdvanced');
-    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
-  },
-  // RT token visibility toggle
-  toggleRTTokenVis: () => {
-    const i = document.getElementById('rtTokenInput');
-    if (i) i.type = i.type === 'password' ? 'text' : 'password';
-  },
-  // Services
-  restartService: (id) => restartService(id),
-  stopService:    (id) => stopService(id),
-  // Files
-  closePreviewPane,
-  previewFile:    (path, el) => previewFile(path, el),
-  // DLQ
-  replayDLQ:      (key) => replayDLQ(key),
-  deleteDLQ:      (key) => deleteDLQ(key),
-  // Skills
-  runSkillFromUI: (name) => runSkillFromUI(name),
-  editSkill:      (name) => editSkill(name),
-  deleteSkill:    (name) => deleteSkill(name),
-  // Tool matrix
-  restartAgentFromUI: (id) => restartAgentFromUI(id),
-  // Models / providers
-  saveSearchTool:      (id) => saveSearchTool(id),
-  testSearchTool:      (id) => testSearchTool(id),
-  saveBuiltinKey:      (id) => saveBuiltinKey(id),
-  testBuiltinProvider: (id) => testBuiltinProvider(id),
-  fetchBuiltinModels:  (id, el) => fetchBuiltinModels(id, el),
-  saveKey:             (id) => saveKey(id),
-  testKey:             (id) => testKey(id),
-  fetchModels:         (id, el) => fetchModels(id, el),
-  toggleKeyVis:        (inputId, el) => toggleKeyVis(inputId, el),
-  // Agents
-  toggleAgentBody: (id) => toggleAgentBody(id),
-  deleteAgent:     (id) => deleteAgent(id),
-  saveAgentModel:  (id) => saveAgentModel(id),
-  saveAgentFallback: (id) => saveAgentFallback(id),
-  toggleEmojiPicker: (id) => toggleEmojiPicker(id),
-  saveAgentIdentity: (id) => saveAgentIdentity(id),
-  saveAgentPrompt:   (id) => saveAgentPrompt(id),
-  resetAgentSession: (id) => resetAgentSession(id),
-  saveAgentTools:    (id) => saveAgentTools(id),
-  applyToolPreset:   (id) => applyToolPreset(id),
-  setRoute:          (id, route) => setRoute(id, route),
-  saveOpenCodeConfig:   (id) => saveOpenCodeConfig(id),
-  saveOpenCodeFallback: (id) => saveOpenCodeFallback(id),
-  saveCursorCliConfig:  (id) => saveCursorCliConfig(id),
-  saveClaudeCodeConfig: (id) => saveClaudeCodeConfig(id),
-  // Settings tabs
-  showSettingsTab: (tab) => showSettingsTab(tab),
-};
-
-document.addEventListener('click', (e) => {
-  const el = e.target.closest('[data-action]');
-  if (!el) return;
-  e.stopPropagation();
-  const action = el.dataset.action;
-  const fn = ACTION_REGISTRY[action];
-  if (!fn) { console.warn('[CrewSwarm] unknown data-action:', action); return; }
-  const arg  = el.dataset.arg  ?? null;
-  const arg2 = el.dataset.arg2 ?? null;
-  const needsEl = el.dataset.self === '1';
-  if (arg !== null && arg2 !== null) fn(arg, arg2);
-  else if (arg !== null && needsEl)  fn(arg, el);
-  else if (arg !== null)             fn(arg);
-  else if (needsEl)                  fn(el);
-  else                               fn();
-});
-
-// ── Delegated change listener (data-onchange) ────────────────────────────────
-document.addEventListener('change', (e) => {
-  const el = e.target.closest('[data-onchange]');
-  if (!el) return;
-  const fn = ACTION_REGISTRY[el.dataset.onchange];
-  if (!fn) return;
-  // Pass element value if data-onchange-arg="this.value", otherwise no arg
-  const arg = el.dataset.onchangeArg === 'this.value' ? el.value : null;
-  arg !== null ? fn(arg) : fn();
-});
-
-// Wire chatInput keydown + oninput via addEventListener (SES-safe)
-document.addEventListener('DOMContentLoaded', () => {
-  // Set sidebar self-link to actual origin (avoids hardcoded localhost:4319)
-  const dashLink = document.getElementById('dashSelfLink');
-  if (dashLink) {
-    dashLink.href = window.location.origin;
-    dashLink.textContent = window.location.host;
-  }
-
-  const chatInput = document.getElementById('chatInput');
-  if (chatInput) {
-    chatInput.addEventListener('keydown', chatKeydown);
-    chatInput.addEventListener('input',   chatAtAtInput);
-  }
-  const cmdInput = document.getElementById('cmdAllowlistInput');
-  if (cmdInput) {
-    cmdInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addAllowlistPattern();
-    });
-  }
-  const waNumbers = document.getElementById('waAllowedNumbers');
-  if (waNumbers) waNumbers.addEventListener('input', renderWaContactRows);
-  const skillSearchInput = document.getElementById('skillSearch');
-  if (skillSearchInput) skillSearchInput.addEventListener('input', (e) => filterSkills(e.target.value));
-}, { once: true });
-
-// Nav view delegation (data-view buttons in sidebar)
-const NAV_VIEW_MAP = {
-  chat: showChat, swarm: showSwarm, rt: showRT, build: showBuild,
-  files: showFiles, dlq: showDLQ, projects: showProjects, agents: showAgents,
-  models: showModels, skills: showSkills, 'run-skills': showRunSkills,
-  benchmarks: showBenchmarks, 'tool-matrix': showToolMatrix,
-  services: showServices, settings: showSettings,
-};
-document.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-view]');
-  if (btn) { const fn = NAV_VIEW_MAP[btn.dataset.view]; if (fn) fn(); return; }
-  const stab = e.target.closest('[data-stab]');
-  if (stab) showSettingsTab(stab.dataset.stab);
-  // Collapse/expand panels with data-toggle-child
-  const tog = e.target.closest('[data-toggle-child]');
-  if (tog) {
-    const sel = tog.dataset.toggleChild;
-    const body = tog.parentElement && tog.parentElement.querySelector(sel);
-    if (body) body.style.display = body.style.display === 'none' ? 'block' : 'none';
-  }
-  // Collapse/expand next sibling with data-toggle-sibling (e.g. provider-header → provider-body)
-  const togSib = e.target.closest('[data-toggle-sibling]');
-  if (togSib && togSib.nextElementSibling) {
-    togSib.nextElementSibling.classList.toggle(togSib.dataset.toggleSibling);
-  }
-});
-
-// Vite wraps modules in a closure; onclick="window.fn()" attrs in static + dynamic HTML need window.fn.
-Object.assign(window, {
-  // ── Static HTML handlers ──
-  addAllowlistPattern, applyNewAgentToolPreset, applyPromptPreset,
-  bulkSetRoute, cancelSkillForm, chatAtAtInput, chatKeydown,
-  clearChatHistory, filterSkills, loadAllUsage, loadBenchmarkLeaderboard,
-  loadBenchmarks, loadBuildProjectPicker, loadFiles, loadOcStats,
-  loadRunSkills, loadServices, loadSpending, loadTelegramSessions,
-  loadTgMessages, loadToolMatrix, loadWaMessages, onBuildProjectChange,
-  onChatProjectChange, pickFolder, renderWaContactRows, resetSpending,
-  saveGlobalCaps, saveGlobalFallback, saveOpencodeSettings, saveRTToken,
-  saveSkill, saveTgConfig, saveWaConfig, sendChat, sendTestWebhook,
-  showAgents, showBenchmarks, showBuild, showChat, showDLQ, showFiles,
-  showModels, showProjects, showRT, showRunSkills, showServices,
-  showSettings, showSettingsTab, showSkills, showSwarm, showToolMatrix,
-  startCrew, startTgBridge, startWaBridge, stopTgBridge, stopWaBridge,
-  toggleAddSkill, toggleBgConsciousness, toggleCursorWaves, toggleClaudeCode, toggleEmojiPicker,
-  updateSkillAuthFields, navigateTo,
-  // ── Dynamic HTML handlers (innerHTML-rendered) ──
-  applyToolPreset, closePreviewPane, deleteAgent, deleteSkill, editSkill,
-  fetchBuiltinModels, fetchModels, previewFile, resetAgentSession,
-  restartAgentFromUI, restartService, runSkillFromUI,
-  saveAgentFallback, saveAgentIdentity, saveAgentModel, saveAgentPrompt,
-  saveAgentTools, saveBuiltinKey, saveCursorCliConfig, saveKey,
-  saveOpenCodeConfig, saveOpenCodeFallback, saveSearchTool, setRoute,
-  stopService, testBuiltinProvider, testKey, testSearchTool,
-  toggleAgentBody, toggleKeyVis,
-});
+</script>
+</body>
+</html>`;

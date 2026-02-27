@@ -1147,6 +1147,13 @@ function loadAgentToolPermissions(agentId) {
         generalist: new Set(['read_file','write_file','mkdir','run_cmd','dispatch','skill']),
       };
       if (ROLE_TOOL_DEFAULTS[cfg._role]) return ROLE_TOOL_DEFAULTS[cfg._role];
+      // Custom role: check crewswarm.json top-level roleToolDefaults map
+      // e.g. "roleToolDefaults": { "analyst": ["read_file","web_search","skill"] }
+      try {
+        const rootCfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+        const customTools = rootCfg.roleToolDefaults?.[cfg._role];
+        if (Array.isArray(customTools) && customTools.length > 0) return new Set(customTools);
+      } catch {}
     }
   } catch {}
   // Unknown agent — allow read/write/mkdir/run by default
@@ -1610,24 +1617,40 @@ function recordTokenUsage(modelId, usage, agentId) {
   const p = Number(usage.prompt_tokens || usage.input_tokens || 0);
   const c = Number(usage.completion_tokens || usage.output_tokens || 0);
   if (!p && !c) return;
+  // Cached token count — field name varies by provider
+  const cached = Number(
+    usage.prompt_tokens_details?.cached_tokens  // OpenAI / xAI / Groq
+    || usage.prompt_cache_hit_tokens            // DeepSeek
+    || usage.cache_read_input_tokens            // Anthropic
+    || 0
+  );
+  if (cached > 0) {
+    const pct = p > 0 ? Math.round(cached / p * 100) : 0;
+    console.log(`[bridge:${agentId || modelId}] cache hit: ${cached}/${p} tokens cached (${pct}%) — ${modelId}`);
+  }
   const today = new Date().toISOString().slice(0, 10);
   tokenUsage.calls++;
   tokenUsage.prompt     += p;
   tokenUsage.completion += c;
-  if (!tokenUsage.byModel[modelId]) tokenUsage.byModel[modelId] = { calls: 0, prompt: 0, completion: 0 };
+  if (!tokenUsage.cached) tokenUsage.cached = 0;
+  tokenUsage.cached += cached;
+  if (!tokenUsage.byModel[modelId]) tokenUsage.byModel[modelId] = { calls: 0, prompt: 0, completion: 0, cached: 0 };
   tokenUsage.byModel[modelId].calls++;
   tokenUsage.byModel[modelId].prompt     += p;
   tokenUsage.byModel[modelId].completion += c;
+  tokenUsage.byModel[modelId].cached     += cached;
   // Daily rollup
   if (!tokenUsage.byDay) tokenUsage.byDay = {};
-  if (!tokenUsage.byDay[today]) tokenUsage.byDay[today] = { calls: 0, prompt: 0, completion: 0, byModel: {} };
+  if (!tokenUsage.byDay[today]) tokenUsage.byDay[today] = { calls: 0, prompt: 0, completion: 0, cached: 0, byModel: {} };
   tokenUsage.byDay[today].calls++;
   tokenUsage.byDay[today].prompt     += p;
   tokenUsage.byDay[today].completion += c;
-  if (!tokenUsage.byDay[today].byModel[modelId]) tokenUsage.byDay[today].byModel[modelId] = { calls: 0, prompt: 0, completion: 0 };
+  tokenUsage.byDay[today].cached     += cached;
+  if (!tokenUsage.byDay[today].byModel[modelId]) tokenUsage.byDay[today].byModel[modelId] = { calls: 0, prompt: 0, completion: 0, cached: 0 };
   tokenUsage.byDay[today].byModel[modelId].calls++;
   tokenUsage.byDay[today].byModel[modelId].prompt     += p;
   tokenUsage.byDay[today].byModel[modelId].completion += c;
+  tokenUsage.byDay[today].byModel[modelId].cached     += cached;
   // Flush to disk every 5 calls
   if (tokenUsage.calls % 5 === 0) {
     try {
@@ -2080,8 +2103,12 @@ function shouldUseCursorCli(payload, incomingType) {
   if (runtime === "cursor" || runtime === "cursor-cli") return true;
   if (payload?.useCursorCli === true) return true;
   const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
-  // crew-orchestrator always runs through Cursor CLI — it IS a Cursor subagent orchestrator
-  if (agentId === "crew-orchestrator" || agentId === "orchestrator") return CREWSWARM_CURSOR_WAVES;
+  // crew-orchestrator: respect dashboard config first; fall back to CREWSWARM_CURSOR_WAVES (wave mode)
+  if (agentId === "crew-orchestrator" || agentId === "orchestrator") {
+    const ocCfg = getAgentOpenCodeConfig(agentId);
+    if (ocCfg.useCursorCli === true) return true;
+    return CREWSWARM_CURSOR_WAVES;
+  }
   return getAgentOpenCodeConfig(agentId).useCursorCli === true;
 }
 
@@ -2439,13 +2466,54 @@ async function runClaudeCodeTask(prompt, payload = {}) {
         // {"type":"result"} — task done
         if (ev.type === "result" && !resultReceived) {
           resultReceived = true;
-          // Claude Code returns session_id in the result event
           resultSessionId = ev.session_id || ev.sessionId || ev.chatId || null;
           clearTimeout(hardTimer);
           child.kill("SIGTERM");
-          // Prefer ev.result (plain text summary) over accumulated streaming text
           const out = (ev.result || accumulatedText).trim() || "(claude code completed with no text output)";
           console.log(`[ClaudeCode:${agentId}] Done — ${out.length} chars`);
+
+          // ── Record token usage + exact cost from Claude Code result event ───
+          // Claude Code returns per-model tokens and exact USD cost in every result.
+          // We record tokens for the dashboard chart but skip the estimated-cost path
+          // inside recordTokenUsage (pass null agentId) to avoid double-counting —
+          // then call addAgentSpend once with the exact USD figure from Claude Code.
+          try {
+            const modelUsage = ev.modelUsage || {};
+            const modelEntries = Object.entries(modelUsage);
+            let totalInputTokens = 0, totalOutputTokens = 0;
+            if (modelEntries.length > 0) {
+              for (const [mid, mu] of modelEntries) {
+                const p = (mu.inputTokens || 0) + (mu.cacheCreationInputTokens || 0);
+                const c = mu.outputTokens || 0;
+                totalInputTokens  += p;
+                totalOutputTokens += c;
+                // null agentId → skip estimated-cost addAgentSpend inside recordTokenUsage
+                recordTokenUsage(mid, {
+                  prompt_tokens:          p,
+                  completion_tokens:      c,
+                  cache_read_input_tokens: mu.cacheReadInputTokens || 0,
+                }, null);
+              }
+            } else if (ev.usage) {
+              const u = ev.usage;
+              totalInputTokens  = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+              totalOutputTokens = u.output_tokens || 0;
+              recordTokenUsage("claude/auto", {
+                prompt_tokens:          totalInputTokens,
+                completion_tokens:      totalOutputTokens,
+                cache_read_input_tokens: u.cache_read_input_tokens || 0,
+              }, null);
+            }
+            // Exact cost from Claude Code — feed spending caps with real USD
+            const exactCost = Number(ev.total_cost_usd || 0);
+            if (agentId && (exactCost > 0 || totalInputTokens > 0)) {
+              addAgentSpend(agentId, totalInputTokens + totalOutputTokens, exactCost);
+              console.log(`[ClaudeCode:${agentId}] Cost: $${exactCost.toFixed(6)} (${totalInputTokens}in + ${totalOutputTokens}out tokens)`);
+            }
+          } catch (usageErr) {
+            console.warn(`[ClaudeCode:${agentId}] Usage capture failed: ${usageErr.message}`);
+          }
+
           _rtClientForApprovals?.publish({ channel: "events", type: "agent_idle", to: "broadcast",
             payload: { agent: agentId, ts: Date.now() } });
           if (agentId && resultSessionId) {
@@ -2526,16 +2594,21 @@ function runOpenCodeTask(prompt, payload = {}) {
     const agentOcCfg = getAgentOpenCodeConfig(agentId);
     const model = String(payload?.model || agentOcCfg.model || OPENCREW_OPENCODE_MODEL);
     const OC_AGENT_MAP = {
-      "crew-coder":       "coder",
-      "crew-coder-front": "coder-front",
-      "crew-coder-back":  "coder-back",
-      "crew-fixer":       "fixer",
-      "crew-frontend":    "frontend",
-      "crew-qa":          "qa",
-      "crew-security":    "security",
-      "crew-pm":          "pm",
+      "crew-coder":         "coder",
+      "crew-coder-front":   "coder-front",
+      "crew-coder-back":    "coder-back",
+      "crew-fixer":         "fixer",
+      "crew-frontend":      "frontend",
+      "crew-qa":            "qa",
+      "crew-security":      "security",
+      "crew-pm":            "pm",
+      "crew-main":          "main",
+      "crew-copywriter":    "copywriter",
+      "crew-github":        "github",
+      "crew-orchestrator":  "orchestrator",
+      "orchestrator":       "orchestrator",
     };
-    const ocAgentName = OC_AGENT_MAP[agentId] || payload?.agent || OPENCREW_OPENCODE_AGENT || "admin";
+    const ocAgentName = OC_AGENT_MAP[agentId] || agentId.replace(/^crew-/, "") || payload?.agent || OPENCREW_OPENCODE_AGENT || "admin";
     const agent = String(ocAgentName).trim();
     const configuredDir = getOpencodeProjectDir();
     let projectDir = payload?.projectDir || configuredDir || null;
@@ -3299,7 +3372,35 @@ function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
     if (fromTask) dir = fromTask;
   }
   dir = dir || process.cwd();
-  return `[${agentId}] ${taskText}\n\nProject directory: ${dir}. Use the project files to complete this task only.`;
+
+  // Prepend condensed memory so OpenCode/Cursor/Claude Code agents have context
+  // without needing to read files themselves. Kept short to avoid prompt bloat.
+  const readSafe = (p) => { try { return fs.readFileSync(p, "utf8").trim(); } catch { return ""; } };
+  const memParts = [];
+
+  const globalRules = readSafe(path.join(os.homedir(), ".crewswarm", "global-rules.md"));
+  if (globalRules) memParts.push(`Global rules:\n${globalRules}`);
+
+  const lessons = readSafe(path.join(SHARED_MEMORY_DIR, "lessons.md"));
+  if (lessons) memParts.push(`Lessons learned:\n${lessons}`);
+
+  const brain = readSafe(path.join(SHARED_MEMORY_DIR, "brain.md")).slice(-1500);
+  if (brain) memParts.push(`Shared brain (recent):\n${brain}`);
+
+  // Project-specific brain if projectDir has one
+  if (dir) {
+    const projBrain = readSafe(path.join(dir, ".crewswarm", "brain.md")).slice(-1000);
+    if (projBrain) memParts.push(`Project brain:\n${projBrain}`);
+
+    const roadmap = readSafe(path.join(dir, "ROADMAP.md")).slice(-1500);
+    if (roadmap) memParts.push(`Active ROADMAP:\n${roadmap}`);
+  }
+
+  const memHeader = memParts.length > 0
+    ? `[Memory context — read before acting]\n${memParts.join("\n\n")}\n[End memory context]\n\n`
+    : "";
+
+  return `${memHeader}[${agentId}] ${taskText}\n\nProject directory: ${dir}. Use the project files to complete this task only.`;
 }
 
 /**
@@ -4066,26 +4167,26 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       // ── Cursor CLI backend ─────────────────────────────────────────────
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
       projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+      const cursorPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
       try {
-        reply = await runCursorCliTask(prompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+        reply = await runCursorCliTask(cursorPrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
       } catch (e) {
         const msg = e?.message ?? String(e);
         progress(`Cursor CLI failed: ${msg.slice(0, 120)} — falling back to OpenCode`);
         telemetry("cursor_cli_fallback", { taskId, error: msg });
-        const ocPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
-        reply = await runOpenCodeTask(ocPrompt, payload);
+        reply = await runOpenCodeTask(cursorPrompt, payload);
       }
     } else if (useClaudeCode) {
       // ── Claude Code backend ────────────────────────────────────────────
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
       projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+      const claudePrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
       try {
-        reply = await runClaudeCodeTask(prompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+        reply = await runClaudeCodeTask(claudePrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
       } catch (e) {
         const msg = e?.message ?? String(e);
         progress(`Claude Code failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
         telemetry("claude_code_fallback", { taskId, error: msg });
-        // Fall back to direct LLM via standard OpenAI-compat call
         reply = await callLLMDirect(finalPrompt, OPENCREW_RT_AGENT, null);
       }
     } else if (useOpenCode) {
@@ -4542,18 +4643,27 @@ function syncOpenCodePermissions() {
 
     // CrewSwarm agent-id → OpenCode agent profile name
     const AGENT_TO_OC_PROFILE = {
-      "crew-coder":       "coder",
-      "crew-coder-front": "coder",
-      "crew-coder-back":  "coder",
-      "crew-fixer":       "fixer",
-      "crew-frontend":    "coder",
-      "crew-qa":          "qa",
-      "crew-security":    "security",
-      "crew-pm":          "pm",
+      "crew-coder":         "coder",
+      "crew-coder-front":   "coder-front",
+      "crew-coder-back":    "coder-back",
+      "crew-fixer":         "fixer",
+      "crew-frontend":      "frontend",
+      "crew-qa":            "qa",
+      "crew-security":      "security",
+      "crew-pm":            "pm",
+      "crew-main":          "main",
+      "crew-copywriter":    "copywriter",
+      "crew-github":        "github",
+      "crew-orchestrator":  "orchestrator",
+      "orchestrator":       "orchestrator",
     };
 
     const agents = loadAgentList();
     if (!agents?.length) return;
+
+    // Resolve profile name: use static map, fall back to stripping crew- prefix
+    const resolveProfile = (agentId) =>
+      AGENT_TO_OC_PROFILE[agentId] || agentId.replace(/^crew-/, "");
 
     let raw = fs.readFileSync(ocCfgPath, "utf8");
     // Strip single-line comments so JSON.parse works
@@ -4565,8 +4675,7 @@ function syncOpenCodePermissions() {
     for (const agentCfg of agents) {
       const agentId = agentCfg.id || agentCfg.agentId;
       if (!agentId) continue;
-      const profile = AGENT_TO_OC_PROFILE[agentId];
-      if (!profile) continue;
+      const profile = resolveProfile(agentId);
 
       const tools = loadAgentToolPermissions(agentId); // reads crewswarm.json → role defaults
       const ocPerms = {};

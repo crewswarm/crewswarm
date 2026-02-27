@@ -94,6 +94,25 @@ function locateSyntaxError(script, blockIndex) {
 function runSourceHeuristics() {
   const issues = [];
   const raw = fs.readFileSync(DASHBOARD, "utf8");
+
+  // The dashboard UI now lives in frontend/src/app.js + frontend/index.html (Vite).
+  // dashboard.mjs only holds a tiny stub fallback — no inline <script> block needed.
+  // Detect stub by looking for the "Frontend not built" marker or very short html const.
+  const htmlConstMatch = raw.match(/^const html\s*=\s*`([\s\S]*?)`;/m);
+  const htmlConstLen = htmlConstMatch ? htmlConstMatch[1].length : 0;
+  if (htmlConstLen < 2000) {
+    // Stub mode — validate frontend Vite source instead
+    const frontendApp = path.join(ROOT, "frontend", "src", "app.js");
+    const frontendDist = path.join(ROOT, "frontend", "dist", "index.html");
+    if (!fs.existsSync(frontendDist)) {
+      issues.push("frontend/dist/index.html not found — run: cd frontend && npm run build");
+    }
+    if (!fs.existsSync(frontendApp)) {
+      issues.push("frontend/src/app.js not found — Vite source is missing.");
+    }
+    return issues;
+  }
+
   const scriptStart = raw.indexOf("<script>");
   const scriptEnd = raw.indexOf("</script>");
   if (scriptStart === -1 || scriptEnd === -1 || scriptEnd <= scriptStart) {

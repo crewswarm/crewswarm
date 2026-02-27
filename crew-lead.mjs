@@ -718,7 +718,18 @@ async function executeSkillFromCrewLead(skillName, params) {
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
+let _sysPromptCache = null;
+let _sysPromptKey = "";
+
 function buildSystemPrompt(cfg) {
+  // Memoize — only rebuild when config files or agent prompts change
+  const keyParts = [cfg.providerKey, cfg.modelId, cfg.displayName];
+  try {
+    keyParts.push(fs.statSync(CREWSWARM_CFG_FILE).mtimeMs);
+    keyParts.push(fs.statSync(path.join(os.homedir(), ".crewswarm", "agent-prompts.json")).mtimeMs);
+  } catch {}
+  const key = keyParts.join("|");
+  if (_sysPromptCache && key === _sysPromptKey) return _sysPromptCache;
   const knownAgents = cfg.knownAgents || [];
   const agentPrompts = getAgentPrompts();
   const customPrompt = (agentPrompts["crew-lead"] || "").trim();
@@ -1113,7 +1124,10 @@ function buildSystemPrompt(cfg) {
   const intro = customPrompt
     ? identityLine + "\n\n" + customPrompt + "\n\n"
     : defaultIntro;
-  return intro + rules;
+  const prompt = intro + rules;
+  _sysPromptCache = prompt;
+  _sysPromptKey = key;
+  return prompt;
 }
 
 // ── LLM call ─────────────────────────────────────────────────────────────────
@@ -1203,7 +1217,21 @@ async function _callLLMOnce(baseUrl, apiKey, modelId, providerKey, messages) {
     headers["authorization"] = `Bearer ${apiKey}`;
   }
 
-  const body = { model: modelId, messages, max_tokens: 2048, temperature: 0.7, stream: false };
+  const isGemini = providerKey === "google" || baseUrl.includes("googleapis.com");
+  // Gemini 2.5 Flash: input 1,048,576 tokens / output 65,536 tokens
+  // Anthropic Claude: output typically capped at 8,192 tokens
+  // All others: 4,096 safe default
+  const maxOutputTokens = isGemini ? 16384 : isAnthropic ? 8192 : 4096;
+  const body = {
+    model: modelId,
+    messages,
+    max_tokens: maxOutputTokens,
+    temperature: 0.7,
+    stream: false,
+    // Disable Gemini 2.5 thinking — crew-lead is a conversational router, not a reasoner.
+    // Thinking tokens are hidden but count against TPM quota, causing rate limits.
+    ...(isGemini && { reasoning_effort: "none" }),
+  };
   const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers,
@@ -1219,36 +1247,54 @@ async function _callLLMOnce(baseUrl, apiKey, modelId, providerKey, messages) {
   }
   const data = await res.json();
   const reply = data?.choices?.[0]?.message?.content || "";
-  _recordCrewLeadTokens(modelId, data.usage);
+  _recordCrewLeadTokens(modelId, providerKey, data.usage);
   return reply;
 }
 
 const TOKEN_USAGE_FILE = path.join(os.homedir(), ".crewswarm", "token-usage.json");
 
-function _recordCrewLeadTokens(modelId, usage) {
+function _recordCrewLeadTokens(modelId, providerKey, usage) {
   if (!usage) return;
   const p = Number(usage.prompt_tokens || usage.input_tokens || 0);
   const c = Number(usage.completion_tokens || usage.output_tokens || 0);
   if (!p && !c) return;
+
+  // Cached token count — field name varies by provider
+  const cached = Number(
+    usage.prompt_tokens_details?.cached_tokens   // OpenAI / xAI
+    || usage.prompt_cache_hit_tokens             // DeepSeek
+    || usage.cache_read_input_tokens             // Anthropic
+    || 0
+  );
+  if (cached > 0) {
+    const pct = p > 0 ? Math.round(cached / p * 100) : 0;
+    console.log(`[crew-lead] cache hit: ${cached}/${p} tokens cached (${pct}%) — ${providerKey}/${modelId}`);
+  }
+
   const today = new Date().toISOString().slice(0, 10);
-  let data = { calls: 0, prompt: 0, completion: 0, byModel: {}, byDay: {} };
+  let data = { calls: 0, prompt: 0, completion: 0, cached: 0, byModel: {}, byDay: {} };
   try { data = JSON.parse(fs.readFileSync(TOKEN_USAGE_FILE, "utf8")); } catch {}
   if (!data.byDay) data.byDay = {};
+  if (!data.cached) data.cached = 0;
   data.calls++;
   data.prompt     += p;
   data.completion += c;
-  if (!data.byModel[modelId]) data.byModel[modelId] = { calls: 0, prompt: 0, completion: 0 };
+  data.cached     += cached;
+  if (!data.byModel[modelId]) data.byModel[modelId] = { calls: 0, prompt: 0, completion: 0, cached: 0 };
   data.byModel[modelId].calls++;
   data.byModel[modelId].prompt     += p;
   data.byModel[modelId].completion += c;
-  if (!data.byDay[today]) data.byDay[today] = { calls: 0, prompt: 0, completion: 0, byModel: {} };
+  data.byModel[modelId].cached     += cached;
+  if (!data.byDay[today]) data.byDay[today] = { calls: 0, prompt: 0, completion: 0, cached: 0, byModel: {} };
   data.byDay[today].calls++;
   data.byDay[today].prompt     += p;
   data.byDay[today].completion += c;
-  if (!data.byDay[today].byModel[modelId]) data.byDay[today].byModel[modelId] = { calls: 0, prompt: 0, completion: 0 };
+  data.byDay[today].cached     += cached;
+  if (!data.byDay[today].byModel[modelId]) data.byDay[today].byModel[modelId] = { calls: 0, prompt: 0, completion: 0, cached: 0 };
   data.byDay[today].byModel[modelId].calls++;
   data.byDay[today].byModel[modelId].prompt     += p;
   data.byDay[today].byModel[modelId].completion += c;
+  data.byDay[today].byModel[modelId].cached     += cached;
   try {
     fs.mkdirSync(path.dirname(TOKEN_USAGE_FILE), { recursive: true });
     fs.writeFileSync(TOKEN_USAGE_FILE, JSON.stringify(data, null, 2));
@@ -1287,12 +1333,21 @@ function trimMessagesForFallback(messages) {
       : system.content,
   }] : [];
 
-  const recent = nonSystem.slice(-6);
+  // Always preserve memory injections (shared memory + project memory) so the
+  // fallback model has context even on a heavily trimmed history
+  const memoryMsgs = nonSystem.filter(m => m.role === "user" &&
+    (m.content.startsWith("[Shared memory") || m.content.startsWith("[Project memory")));
+  const withoutMemory = nonSystem.filter(m => !memoryMsgs.includes(m));
+  const recent = withoutMemory.slice(-6);
   const trimmedRecent = recent.map(m => ({
     ...m,
     content: m.content.length > 2000 ? m.content.slice(0, 2000) + "\n[...trimmed]" : m.content,
   }));
-  return [...trimmedSystem, ...trimmedRecent];
+  const trimmedMemory = memoryMsgs.map(m => ({
+    ...m,
+    content: m.content.length > 1500 ? m.content.slice(0, 1500) + "\n[...memory trimmed]" : m.content,
+  }));
+  return [...trimmedSystem, ...trimmedMemory, ...trimmedRecent];
 }
 
 async function callLLM(messages, cfg) {
@@ -2639,7 +2694,10 @@ function dispatchTask(agent, task, sessionId = "owner", pipelineMeta = null) {
 
   if (rtPublish) {
     try {
-      const taskId = rtPublish({ channel: "command", type: "command.run_task", to: agent, payload: { content: task, prompt: task } });
+      const extraFlags = pipelineMeta?.useClaudeCode || pipelineMeta?.useCursorCli || pipelineMeta?.runtime || pipelineMeta?.projectDir
+        ? { useClaudeCode: pipelineMeta.useClaudeCode, useCursorCli: pipelineMeta.useCursorCli, runtime: pipelineMeta.runtime, projectDir: pipelineMeta.projectDir }
+        : {};
+      const taskId = rtPublish({ channel: "command", type: "command.run_task", to: agent, payload: { content: task, prompt: task, ...extraFlags } });
       if (taskId) {
         pendingDispatches.set(taskId, {
           sessionId, agent, task, ts: Date.now(),
@@ -2772,7 +2830,83 @@ function isDispatchIntended(userMessage) {
 
 async function handleChat({ message, sessionId = "default", firstName = "User", projectId = null }) {
   const cfg = loadConfig();
-  const history = loadHistory(sessionId);
+  let history = loadHistory(sessionId);
+
+  // Inject shared memory once at session start — lands in history and gets
+  // prefix-cached on all subsequent calls (effectively free after first message).
+  // Includes: global brain, lessons, decisions, global-rules, and project brain if active.
+  if (history.length === 0) {
+    try {
+      const memDir = path.join(process.cwd(), "memory");
+      const homeDir = os.homedir();
+      const readMem = (p) => { try { return fs.readFileSync(p, "utf8").trim(); } catch { return ""; } };
+
+      const brain     = readMem(BRAIN_PATH).slice(-3000);
+      const lessons   = readMem(path.join(memDir, "lessons.md"));
+      const decisions = readMem(path.join(memDir, "decisions.md")).slice(-2000);
+      const rules     = readMem(path.join(homeDir, ".crewswarm", "global-rules.md"));
+
+      const sections = [];
+      if (brain)     sections.push(`## Shared Brain (accumulated facts)\n${brain}`);
+      if (lessons)   sections.push(`## Lessons Learned\n${lessons}`);
+      if (decisions) sections.push(`## Key Decisions\n${decisions}`);
+      if (rules)     sections.push(`## Global Rules\n${rules}`);
+
+      if (sections.length > 0) {
+        const combined = `[Shared memory — injected once at session start]\n${sections.join("\n\n")}`;
+        appendHistory(sessionId, "system", combined);
+        history = loadHistory(sessionId);
+        console.log(`[crew-lead] shared memory injected into session ${sessionId} (brain=${brain.length} lessons=${lessons.length} decisions=${decisions.length} rules=${rules.length})`);
+      }
+    } catch (e) {
+      console.error("[crew-lead] shared memory injection failed:", e.message);
+    }
+  }
+
+  // If a project is active, inject its brain + ROADMAP + PDD once per session —
+  // all cached in the history prefix so subsequent messages get them for free.
+  // If the project changes mid-session, inject the new project context with a
+  // clear "switched to" marker so crew-lead knows which project is now active.
+  if (projectId) {
+    try {
+      const projRes = await fetch(`${DASHBOARD}/api/projects`, { signal: AbortSignal.timeout(2000) });
+      const projData = await projRes.json();
+      const proj = (projData.projects || []).find(p => p.id === projectId);
+      if (proj?.outputDir) {
+        const projName = proj.name || projectId;
+        const outDir   = proj.outputDir;
+
+        // Check if THIS specific project's context is already in history
+        const alreadyInjected = history.some(h => h.content?.includes(`[Project memory — ${projName}`));
+
+        if (!alreadyInjected) {
+          const readSafe = (p) => { try { return fs.readFileSync(p, "utf8").trim(); } catch { return ""; } };
+
+          const projBrain = readSafe(path.join(outDir, ".crewswarm", "brain.md")).slice(-2000);
+          const roadmap   = readSafe(path.join(outDir, "ROADMAP.md")).slice(-3000);
+          const pddPaths  = ["PDD.md", "pdd.md", `${projName}-pdd.md`, "design.md", "DESIGN.md"];
+          const pdd       = pddPaths.map(f => readSafe(path.join(outDir, f))).find(c => c) || "";
+
+          // Detect mid-session project switch (another project was already injected)
+          const prevProject = history.find(h => h.content?.includes("[Project memory —"));
+          const isSwitch = !!prevProject;
+          const switchNote = isSwitch ? `⚠️ User switched active project to "${projName}". Previous project context above is no longer active — use this project's context from here on.\n\n` : "";
+
+          const sections = [];
+          if (projBrain) sections.push(`### Project Brain\n${projBrain}`);
+          if (roadmap)   sections.push(`### ROADMAP\n${roadmap}`);
+          if (pdd)       sections.push(`### PDD / Design\n${pdd.slice(0, 2000)}`);
+
+          const combined = `[Project memory — ${projName} at ${outDir}]\n${switchNote}${sections.join("\n\n") || "(no project files found yet)"}`;
+          appendHistory(sessionId, "system", combined);
+          history = loadHistory(sessionId);
+          console.log(`[crew-lead] project context ${isSwitch ? "switched" : "injected"} for "${projName}": brain=${projBrain.length} roadmap=${roadmap.length} pdd=${pdd.length} chars`);
+        }
+      }
+    } catch (e) {
+      console.error("[crew-lead] project context injection failed:", e.message);
+    }
+  }
 
   // If a project is selected in the dashboard, inject its context so crew-lead always knows the active project
   let projectContext = "";
@@ -3023,7 +3157,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
 
         return [
           `[System health snapshot — live data from your local machine, fetched right now]`,
-          `crew-lead: ${cfg.providerKey}/${cfg.modelId} | RT connected: ${!!rtPublish} | uptime: ${Math.floor(process.uptime())}s`,
+          `crew-lead: ${cfg.providerKey}/${cfg.modelId} | RT connected: ${!!rtPublish} | uptime: ${Math.floor(process.uptime()/300)*5}min`,
           `crew-lead (this process) can create skills: use @@DEFINE_SKILL name + JSON + @@END_SKILL when the user asks. The agent list below is bridge agents only.`,
           `OpenCode project dir: ${cfgRaw.opencodeProject || "(not set — agents write to repo root)"}`,
           projectsSnapshot,
@@ -3702,7 +3836,12 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
     }
   }
 
-  appendHistory(sessionId, "assistant", cleanReply);
+  // Store only the clean reply in history — the ⚡ fallback banner is a UI-only notice,
+  // not conversation context. Storing it pollutes future LLM requests with noisy boilerplate.
+  const historyReply = usedFallback
+    ? (cleanReply || "").replace(/^⚡\s*\*fallback:[^*]*\*[^\n]*\n?/gm, "").trimStart()
+    : cleanReply;
+  appendHistory(sessionId, "assistant", historyReply);
   broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: cleanReply, ...(usedFallback ? { fallbackModel: activeModel, fallbackReason } : {}) });
 
   return { reply: cleanReply, dispatched, pendingProject, pipeline };
@@ -3791,7 +3930,7 @@ const server = http.createServer(async (req, res) => {
       // @@RESET — clear session history and confirm
       if (/^@@RESET\b/i.test(message.trim()) || /^\/reset\b/i.test(message.trim())) {
         clearHistory(sessionId || "default");
-        const reply = "Session cleared. Fresh context — DeepSeek primary is back in play.";
+        const reply = `Session cleared. Fresh context — ${cfg.providerKey}/${cfg.modelId} primary is back.`;
         appendHistory(sessionId || "default", "assistant", reply);
         broadcastSSE({ type: "chat_message", sessionId, role: "assistant", content: reply });
         json(res, 200, { ok: true, reply });
@@ -3801,12 +3940,14 @@ const server = http.createServer(async (req, res) => {
       // Context fullness warning — warn at 75% (30/40) and 90% (36/40) of MAX_HISTORY
       {
         const histLen = loadHistory(sessionId || "default").length;
-        if (histLen >= 36) {
+        const critThresh = Math.floor(MAX_HISTORY * 0.9);
+        const warnThresh = Math.floor(MAX_HISTORY * 0.75);
+        if (histLen >= critThresh) {
           broadcastSSE({ type: "context_warning", sessionId, level: "critical", histLen, maxHistory: MAX_HISTORY,
-            message: `⚠️ Context nearly full (${histLen}/${MAX_HISTORY} messages). Type @@RESET or click New Chat to clear before DeepSeek hits its limit.` });
-        } else if (histLen === 30) {
+            message: `⚠️ Context nearly full (${histLen}/${MAX_HISTORY} messages). Type @@RESET or click New Chat to clear.` });
+        } else if (histLen === warnThresh) {
           broadcastSSE({ type: "context_warning", sessionId, level: "warn", histLen, maxHistory: MAX_HISTORY,
-            message: `⚡ Context at 75% (${histLen}/${MAX_HISTORY} messages). Consider @@RESET soon to avoid fallback to grok-3-mini.` });
+            message: `⚡ Context at 75% (${histLen}/${MAX_HISTORY} messages). Consider @@RESET soon.` });
         }
       }
       try {
@@ -3979,7 +4120,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/dispatch" && req.method === "POST") {
       if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized — Bearer token required" }); return; }
       const body = await readBody(req);
-      let { agent, task, verify, done, sessionId: sid } = body;
+      let { agent, task, verify, done, sessionId: sid, useClaudeCode, useCursorCli, runtime, projectDir: dispatchProjectDir } = body;
       if (!agent || !task) { json(res, 400, { ok: false, error: "agent and task are required" }); return; }
       const cfg = loadConfig();
       agent = resolveAgentId(cfg, agent) || agent;
@@ -3989,7 +4130,12 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const spec = verify || done ? { task, verify, done } : task;
-      const taskId = dispatchTask(agent, spec, sid || "external");
+      const routeFlags = {};
+      if (useClaudeCode) routeFlags.useClaudeCode = true;
+      if (useCursorCli) routeFlags.useCursorCli = true;
+      if (runtime) routeFlags.runtime = runtime;
+      if (dispatchProjectDir) routeFlags.projectDir = dispatchProjectDir;
+      const taskId = dispatchTask(agent, spec, sid || "external", Object.keys(routeFlags).length ? routeFlags : null);
       if (!taskId) { json(res, 503, { ok: false, error: "RT bus not connected — agent unreachable" }); return; }
       console.log(`[crew-lead] /api/dispatch → ${agent} taskId=${taskId}`);
       json(res, 200, { ok: true, taskId: taskId === true ? null : taskId, agent });

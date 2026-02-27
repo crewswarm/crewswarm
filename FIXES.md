@@ -146,6 +146,48 @@
 
 ---
 
+## Fixed in Session 4 (2026-02-27) ✅
+
+- **H6** — Mobile responsive layout: `@media` queries at 1100px, 768px, 480px — sidebar collapses to horizontal nav bar, grids go single-column, chat row wraps
+- **L1** — Hardcoded hex colors replaced with CSS variables (`--green`, `--red`, `--sky`, `--amber`) in styles, HTML, and inline JS styles
+- **L4** — Accessibility: `aria-label` on chat input + send button, `role="alert"` + `aria-live="polite"` on notifications, `<label for>` on project name, outputDir, files dir inputs
+- **M10** — Environment Variables card in Settings → System: shows cwd, node version, uptime + 21 operational env vars via new `/api/env-advanced` endpoint
+- **L6** — `/api/env` now returns useful system info (HOME, cwd, node, pid, uptime, platform); wired into env-advanced widget
+- **Vite bundle** — Rebuilt with new hash `index-D6SGSZsm.js`
+
+---
+
+## Fixed in Session 3 (2026-02-27) ✅
+
+- **M5** — Sidebar `localhost:4319` replaced with `window.location.origin` (dynamic, works on any port)
+- **M7** — Cmd allowlist add/delete/toggle all have `.catch()` error handling with `showNotification`
+- **C1** — Confirmed already fixed: `dlq-replay.mjs` and `gateway-bridge.mjs` both use `~/.crewswarm/workspace/shared-memory/claw-swarm/opencrew-rt/dlq`
+- **Claude Code cost tracking** — `runClaudeCodeTask()` now captures `ev.modelUsage` + `ev.total_cost_usd` from result event, feeds real USD into spending caps + token dashboard
+- **WhatsApp crash loop** — Added `httpServer.on("error")` handler; `EADDRINUSE` now logs warning instead of killing the process
+- **Vite bundle** — Rebuilt with new hash `index-B0fKPbge.js`; all new features confirmed in built output
+- **QA run** — Full E2E audit passed (31 items passing, 0 critical failures)
+
+---
+
+## Fixed in Session 2 (2026-02-27) ✅
+
+- **Dead code trap eliminated** — removed 6,232-line inline HTML fallback from `scripts/dashboard.mjs`; archived to `archive/dashboard-inline-html-legacy.mjs`; added workspace rule `.cursor/rules/dashboard-ui-location.mdc` to prevent future agents editing the wrong file
+- **H1** — ⏹ Stop + ☠️ Kill buttons added to chat toolbar in `frontend/index.html` + `frontend/src/app.js`
+- **H2** — Inline project editing (name, description, outputDir) — Edit button on project cards
+- **H3** — DLQ delete button — `DELETE /api/dlq/:key` backend + Delete button per row
+- **H4** — PM Loop advanced options — collapsible panel with useQA, useSecurity, maxItems, timeout, coder agent, etc.
+- **H5** — Global OpenCode Loop (Ouroboros) toggle + max rounds in Settings → System
+- **H7** — Cmd approval now proxies through `/api/cmd-approve` / `/api/cmd-reject` (no more hardcoded 5010)
+- **M1** — Loading states on RT Messages, DLQ, Sessions
+- **M2** — Chat input disabled + "Sending…" during send
+- **M3** — `showNotification` boolean arg fixed in `resetSpending`
+- **M6** — PM draft card colors use CSS variables
+- **M9** — `--warning` CSS variable added to `:root`
+- **Context windows** — model effective context window data saved to `memory/model-context-windows.md` + key routing rules added to `memory/lessons.md` (injected into crew-lead every session)
+- All Vite changes rebuilt (`cd frontend && npm run build`) and confirmed live
+
+---
+
 ## Already Fixed This Session ✅
 
 - `shouldUseCursorCli` hardcoded for orchestrator — bypassed dashboard config → **fixed**

@@ -80,7 +80,7 @@
     </div>
 
     <div class="sidebar-bottom">
-      <div class="meta" style="padding:4px 2px;">v1.0 · <a href="http://localhost:4319" style="color:var(--accent); text-decoration:none;">localhost:4319</a></div>
+      <div class="meta" style="padding:4px 2px;">v1.0 · <a id="dashSelfLink" href="#" style="color:var(--accent); text-decoration:none;">dashboard</a></div>
     </div>
   </nav>
 
@@ -113,7 +113,7 @@
       <div id="ocFeedWrap" style="margin:0 0 14px 0;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
           <span style="font-size:11px;font-weight:600;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;">Code Engine Activity</span>
-          <span id="ocFeedDot" style="display:none;width:7px;height:7px;border-radius:50%;background:#22c55e;animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;" title="Live"></span>
+          <span id="ocFeedDot" style="display:none;width:7px;height:7px;border-radius:50%;background:var(--green-hi);animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;" title="Live"></span>
         </div>
         <div id="ocFeed" style="display:flex;flex-direction:column;gap:4px;min-height:28px;"></div>
       </div>
@@ -134,6 +134,7 @@
       <div class="page-header">
         <div><div class="page-title">Files</div><div class="page-sub">Files written by the crew — click to open in Cursor or OpenCode</div></div>
         <div style="display:flex;gap:8px;align-items:center;">
+          <label for="filesDir" style="font-size:12px;color:var(--text-2);white-space:nowrap;">Path</label>
           <input id="filesDir" placeholder="/path/to/project" style="width:240px;" value="" />
           <button type="button" class="btn-ghost" style="font-size:13px;padding:6px 10px;" data-action="pickFolder" data-arg="filesDir">📂</button>
           <button data-action="loadFiles" class="btn-green">Scan</button>
@@ -157,15 +158,17 @@
       </div>
       <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
         <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
-        <div style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
+        <div class="chat-input-row" style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
           <div style="flex:1;position:relative;min-width:0;overflow:visible;">
-            <textarea id="chatInput" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
+            <textarea id="chatInput" aria-label="Chat message" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
               style="width:100%;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;min-width:0;box-sizing:border-box;"
               id-chatinput-keydown="" ></textarea>
             <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
             <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
           </div>
-          <button data-action="sendChat" class="btn-green" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
+          <button data-action="stopAll" title="Stop all pipelines" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;">⏹</button>
+          <button data-action="killAll" title="Kill all agents" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--red-hi);cursor:pointer;">☠️</button>
+          <button data-action="sendChat" class="btn-green" aria-label="Send message" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
           <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">Project context:</span>
@@ -195,11 +198,15 @@
       <div id="newProjectForm" style="display:none;" class="card" style="border-color:var(--yellow);">
         <h3>New Project</h3>
         <div style="display:grid; gap:10px; margin-top:12px;">
-          <input id="npName"        placeholder="Project name (e.g. CrewSwarm Docs)" />
-          <input id="npDesc"        placeholder="Description (optional)" />
-          <div style="display:flex;gap:6px;align-items:center;">
-            <input id="npOutputDir" placeholder="Project folder — anywhere on disk (e.g. ~/Desktop/MyApp). Agents write files here." style="flex:1;" />
+          <label for="npName" class="field-label">Project name</label>
+          <input id="npName" placeholder="Project name (e.g. CrewSwarm Docs)" />
+          <input id="npDesc" placeholder="Description (optional)" />
+          <div>
+            <label for="npOutputDir" class="field-label">Project folder</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+              <input id="npOutputDir" placeholder="e.g. ~/Desktop/MyApp — agents write files here" style="flex:1;" />
             <button type="button" class="btn-ghost" style="white-space:nowrap;font-size:13px;padding:6px 10px;" data-action="pickFolder" data-arg="npOutputDir">📂 Browse</button>
+            </div>
           </div>
           <input id="npFeaturesDoc" placeholder="Features doc path (optional)" />
           <div style="display:flex; gap:8px;">
@@ -229,7 +236,7 @@
             <div style="font-weight:600; font-size:14px;">RT Bus Auth Token</div>
             <div style="font-size:12px; color:var(--text-2);">Auto-generated during install and saved to <code style="font-size:11px;">~/.crewswarm/config.json</code>. All services read it from there — you never need to copy it manually. Only change this if you want to rotate the secret or run the RT bus on a shared machine.</div>
           </div>
-          <span id="rtTokenBadge" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">not set</span>
+          <span id="rtTokenBadge" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; background:rgba(251,191,36,0.15); color:var(--yellow); border:1px solid rgba(251,191,36,0.3);">not set</span>
         </div>
         <div style="display:flex; gap:8px;">
           <input id="rtTokenInput" type="password" autocomplete="new-password" placeholder="Leave blank to auto-use the token from config.json" style="flex:1;" />
@@ -354,8 +361,8 @@
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0 4px; border-bottom:1px solid var(--border); margin-bottom:12px;">
         <span style="font-size:11px; font-weight:600; color:var(--text-3); margin-right:4px;">BULK SET CODING AGENTS →</span>
         <button data-action="bulkSetRoute" data-arg="direct" class="btn-ghost" style="font-size:11px; padding:4px 10px;">💬 Direct API</button>
-        <button data-action="bulkSetRoute" data-arg="opencode" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#22c55e; border-color:rgba(34,197,94,0.3);">⚡ OpenCode</button>
-        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="sonnet-4.6" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.6</button>
+        <button data-action="bulkSetRoute" data-arg="opencode" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--green-hi); border-color:rgba(34,197,94,0.3);">⚡ OpenCode</button>
+        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="sonnet-4.6" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--accent); border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.6</button>
         <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="opus-4.6-thinking" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
       </div>
       <div id="agentsList" style="display:grid; gap:12px;"></div>
@@ -368,7 +375,7 @@
       </div>
 
       <!-- Settings sub-tabs -->
-      <div style="display:flex;gap:4px;padding:0 16px 0;border-bottom:1px solid var(--border);margin-bottom:0;">
+      <div class="tab-bar" style="display:flex;gap:4px;padding:0 16px 0;border-bottom:1px solid var(--border);margin-bottom:0;">
         <button class="stab active" id="stab-usage"    data-stab="usage">💰 Usage</button>
         <button class="stab"        id="stab-security" data-stab="security">🔐 Security</button>
         <button class="stab"        id="stab-webhooks" data-stab="webhooks">🌐 Webhooks</button>
@@ -397,7 +404,7 @@
               <div style="text-align:center;font-size:20px;color:var(--text-3);line-height:2;">+</div>
               <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">OpenCode</div><div style="font-size:20px;font-weight:700;color:var(--green);" id="gtOcCost">—</div></div>
               <div style="text-align:center;font-size:20px;color:var(--text-3);line-height:2;">=</div>
-              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">Grand Total</div><div style="font-size:22px;font-weight:800;color:var(--yellow,#fbbf24);" id="gtTotal">—</div></div>
+              <div style="text-align:center;"><div style="font-size:11px;color:var(--text-3);">Grand Total</div><div style="font-size:22px;font-weight:800;color:var(--yellow);" id="gtTotal">—</div></div>
             </div>
           </div>
         </div>
@@ -664,6 +671,21 @@
         </div>
 
         <div class="card" style="margin-top:16px;">
+          <div style="margin-top:16px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;">⚡ OpenCode Loop (Ouroboros)</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px;">
+              <input type="checkbox" id="globalOcLoop" data-onchange="saveGlobalOcLoop" style="accent-color:var(--accent);" />
+              Enable loop for all agents (OPENCREW_OPENCODE_LOOP)
+            </label>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="font-size:12px;color:var(--text-3);">Max rounds:</label>
+              <input type="number" id="globalOcLoopRounds" min="1" max="50" value="10" style="width:70px;font-size:12px;padding:4px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;color:var(--text-1);" />
+              <button data-action="saveGlobalOcLoopRounds" class="btn-ghost" style="font-size:12px;">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
             <div>
               <div class="card-title" style="margin-bottom:2px;">⚡ Cursor Parallel Waves</div>
@@ -692,6 +714,12 @@
             </button>
           </div>
           <div id="claudeCodeStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div class="card-title" style="margin-bottom:8px;">⚙️ Environment Variables</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Read-only view of key operational env vars. Set these before starting services.</div>
+          <div id="envAdvancedWidget" style="font-size:12px;color:var(--text-2);"></div>
         </div>
       </div>
 
@@ -913,7 +941,45 @@
             <button id="pmStopBtn" class="btn-red">⏹ Stop</button>
             <button id="pmDryRunBtn" class="btn-muted">🔍 Dry run</button>
             <button id="pmRoadmapBtn" class="btn-ghost">📋 Roadmap</button>
+            <button id="pmOptionsBtn" data-action="togglePmAdvanced" class="btn-ghost" style="font-size:12px;">⚙ Options</button>
             <span class="meta" id="pmStatus" style="align-self:center;"></span>
+          </div>
+          <div id="pmAdvanced" style="display:none;background:var(--bg-card2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;">Advanced Options</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:10px;">
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptQA" checked style="accent-color:var(--accent);"> QA review per task
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSecurity" checked style="accent-color:var(--accent);"> Security review
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSpecialists" checked style="accent-color:var(--accent);"> Use specialists (front/back/github)
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--text-2);">
+                <input type="checkbox" id="pmOptSelfExtend" checked style="accent-color:var(--accent);"> Self-extend roadmap when empty
+              </label>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;">
+              <label style="font-size:12px;color:var(--text-3);">Max items<br>
+                <input type="number" id="pmOptMaxItems" value="200" min="1" max="1000" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Task timeout (min)<br>
+                <input type="number" id="pmOptTimeout" value="10" min="1" max="120" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Self-extend every N tasks<br>
+                <input type="number" id="pmOptExtendN" value="5" min="1" max="50" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Pause between tasks (sec)<br>
+                <input type="number" id="pmOptPause" value="5" min="0" max="300" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Max retries per task<br>
+                <input type="number" id="pmOptMaxRetries" value="2" min="0" max="10" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+              <label style="font-size:12px;color:var(--text-3);">Default coder agent<br>
+                <input type="text" id="pmOptCoder" value="crew-coder" placeholder="crew-coder" style="width:100%;margin-top:3px;font-size:12px;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-1);">
+              </label>
+            </div>
           </div>
           <div id="pmRoadmapPanel" style="display:none; margin-bottom:12px;" class="log-block mono" style="max-height:220px;"></div>
           <div id="pmLiveLog" style="display:none;" class="log-block green"></div>

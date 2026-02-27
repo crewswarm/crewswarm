@@ -653,6 +653,13 @@ async function main() {
     res.writeHead(404); res.end("Not found");
   });
 
+  httpServer.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      log("warn", `Port ${HTTP_PORT} already in use — HTTP API disabled. Is another WhatsApp bridge running? Set WA_HTTP_PORT to use a different port.`);
+    } else {
+      log("error", `HTTP server error: ${err.message}`);
+    }
+  });
   httpServer.listen(HTTP_PORT, "127.0.0.1", () => {
     log("info", `WhatsApp HTTP API listening on :${HTTP_PORT}`);
   });

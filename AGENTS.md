@@ -103,7 +103,11 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 |---|---|
 | `crew-lead.mjs` | Conversational commander, HTTP server on :5010 |
 | `gateway-bridge.mjs` | Per-agent daemon — calls LLM, executes tools |
-| `scripts/dashboard.mjs` | API server on :4319; serves Vite frontend from `frontend/dist` |
+| `scripts/dashboard.mjs` | API server on :4319; serves Vite frontend from `frontend/dist`. **UI code is NOT here.** |
+| `frontend/index.html` | **Dashboard HTML structure** — tabs, cards, layout. Edit this for UI changes. |
+| `frontend/src/app.js` | **Dashboard JavaScript** — all functions, event handlers, API calls. Edit this for UI changes. |
+| `frontend/src/styles.css` | **Dashboard CSS** — variables, components, layout. |
+| `frontend/dist/` | Built output from `cd frontend && npm run build`. This is what the server serves. |
 | `frontend/` | Vite dashboard UI (`npm run build` outputs to `frontend/dist`) |
 | `scripts/mcp-server.mjs` | MCP + OpenAI-compatible API on :5020 — exposes agents/skills to Cursor, Claude Code, Open WebUI, etc. **(optional — core stack works without it)** |
 | `scripts/check-dashboard.mjs` | Validates dashboard HTML/inline script — **run after editing dashboard.mjs** to avoid breaking the UI |
