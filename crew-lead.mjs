@@ -101,7 +101,9 @@ const CTL_PATH    = (() => {
   if (fs.existsSync(homeBin)) return homeBin;
   return path.join(process.cwd(), "scripts", "openswitchctl");
 })();
-const DASHBOARD   = "http://127.0.0.1:4319";
+const DASH_PORT   = Number(process.env.SWARM_DASH_PORT || 4319);
+const DASH_HOST   = process.env.CREWSWARM_RT_HOST || "127.0.0.1";
+const DASHBOARD   = `http://${DASH_HOST}:${DASH_PORT}`;
 const DISPATCH_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_TIMEOUT_MS) || 300_000; // 5 min — unclaimed dispatches (OpenCode tasks need time to spin up)
 const DISPATCH_CLAIMED_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS) || 900_000; // 15 min — agent claimed, working (OpenCode CLI can be slow)
 // CREWSWARM_CURSOR_WAVES=1 — route multi-agent waves through the Cursor
@@ -236,7 +238,9 @@ const autonomousPmLoopSessions = new Set();
 
 async function isAgentOnRtBus(agentId) {
   try {
-    const resp = await fetch("http://127.0.0.1:18889/status", { signal: AbortSignal.timeout(3000) });
+    const rtHost = process.env.CREWSWARM_RT_HOST || "127.0.0.1";
+    const rtPort = Number(process.env.CREWSWARM_RT_PORT || 18889);
+    const resp = await fetch(`http://${rtHost}:${rtPort}/status`, { signal: AbortSignal.timeout(3000) });
     const data = await resp.json();
     return Array.isArray(data.agents) && data.agents.includes(agentId);
   } catch { return false; }

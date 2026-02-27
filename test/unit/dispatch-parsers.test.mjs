@@ -154,6 +154,93 @@ describe("parseRegisterProject", () => {
   });
 });
 
+describe("parseDispatch — natural language fallback", () => {
+  test("parses 'I'll dispatch to crew-coder' phrasing", () => {
+    const text = "I'll dispatch to crew-coder to write the auth module.";
+    const result = parseDispatch(text, "write the auth module");
+    assert.ok(result !== null, "expected a dispatch result");
+    assert.equal(result.agent, "crew-coder");
+  });
+
+  test("parses 'routing to crew-qa' phrasing", () => {
+    const text = "Routing to crew-qa for a code audit.";
+    const result = parseDispatch(text, "run a code audit");
+    assert.ok(result !== null, "expected a dispatch result");
+    assert.equal(result.agent, "crew-qa");
+  });
+
+  test("parses 'dispatching now to crew-fixer' phrasing", () => {
+    const text = "Dispatching now to crew-fixer for the bug fix.";
+    const result = parseDispatch(text, "fix the login bug");
+    assert.ok(result !== null, "expected a dispatch result");
+    assert.equal(result.agent, "crew-fixer");
+  });
+
+  test("uses userMessage as task text in NL fallback", () => {
+    const text = "I am dispatching to crew-coder.";
+    const result = parseDispatch(text, "build the checkout page");
+    assert.ok(result !== null, "expected a dispatch result");
+    assert.ok(result.task.includes("checkout"), `expected task to contain user message, got: ${result.task}`);
+  });
+
+  test("does not match past-tense 'dispatched' (re-dispatch prevention)", () => {
+    const text = "I dispatched to crew-coder earlier and it worked.";
+    const result = parseDispatch(text, "");
+    assert.equal(result, null, "past tense should not match");
+  });
+
+  test("structured @@DISPATCH takes priority over NL fallback", () => {
+    const text = `I'll dispatch to crew-qa.\n@@DISPATCH {"agent":"crew-coder","task":"the real task"}`;
+    const result = parseDispatch(text, "user message");
+    assert.equal(result.agent, "crew-coder", "structured dispatch should win");
+  });
+});
+
+describe("parsePipeline — fixer re-QA insertion", () => {
+  test("inserts re-QA wave after fixer when QA precedes fixer", () => {
+    const text = `@@PIPELINE [
+      {"wave":1,"agent":"crew-coder","task":"build"},
+      {"wave":2,"agent":"crew-qa","task":"audit"},
+      {"wave":3,"agent":"crew-fixer","task":"fix issues"}
+    ]`;
+    const result = parsePipeline(text);
+    assert.ok(result !== null, "pipeline should parse");
+    const qaSteps = result.steps.filter(s => s.agent === "crew-qa");
+    assert.ok(qaSteps.length >= 2, `expected re-QA step to be inserted, got ${qaSteps.length} QA steps`);
+  });
+
+  test("does not insert re-QA if QA already follows fixer", () => {
+    const text = `@@PIPELINE [
+      {"wave":1,"agent":"crew-coder","task":"build"},
+      {"wave":2,"agent":"crew-fixer","task":"fix"},
+      {"wave":3,"agent":"crew-qa","task":"re-audit"}
+    ]`;
+    const result = parsePipeline(text);
+    assert.ok(result !== null);
+    const qaSteps = result.steps.filter(s => s.agent === "crew-qa");
+    assert.equal(qaSteps.length, 1, "should not double-insert QA when it already follows fixer");
+  });
+
+  test("does not auto-append crew-pm when only non-coding agents present", () => {
+    const text = `@@PIPELINE [
+      {"wave":1,"agent":"crew-pm","task":"plan the roadmap"},
+      {"wave":2,"agent":"crew-copywriter","task":"write the docs"}
+    ]`;
+    const result = parsePipeline(text);
+    assert.ok(result !== null);
+    const pmSteps = result.steps.filter(s => s.agent === "crew-pm");
+    assert.equal(pmSteps.length, 1, "crew-pm should not be auto-appended when already present");
+  });
+
+  test("falls back to JSON array without @@PIPELINE marker", () => {
+    const text = `Here is the plan:
+[{"wave":1,"agent":"crew-coder","task":"build it"},{"wave":2,"agent":"crew-qa","task":"test it"}]`;
+    const result = parsePipeline(text);
+    assert.ok(result !== null, "should parse pipeline from bare JSON array");
+    assert.ok(result.steps.some(s => s.agent === "crew-coder"), "should contain crew-coder");
+  });
+});
+
 describe("stripThink", () => {
   test("removes <think> blocks", () => {
     const text = `<think>internal reasoning here</think>Visible reply.`;

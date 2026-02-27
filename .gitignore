@@ -86,6 +86,12 @@ venv/
 *-output.md
 task-done.md
 
+# QA output and one-off screenshot/QA scripts
+qa-output/
+scripts/qa-*.mjs
+scripts/quick-screenshot.mjs
+scripts/capture-nav-screenshots.mjs
+
 # Leaked paths / junk dirs agents accidentally create
 desktop/
 /src/
