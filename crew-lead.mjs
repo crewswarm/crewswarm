@@ -233,6 +233,14 @@ function pushRtActivity(entry) {
 
 const autonomousPmLoopSessions = new Set();
 
+async function isAgentOnRtBus(agentId) {
+  try {
+    const resp = await fetch("http://127.0.0.1:18889/status", { signal: AbortSignal.timeout(3000) });
+    const data = await resp.json();
+    return Array.isArray(data.agents) && data.agents.includes(agentId);
+  } catch { return false; }
+}
+
 // ── Init extracted modules ────────────────────────────────────────────────
 initTools({ historyDir: HISTORY_DIR, crewswarmCfgFile: CREWSWARM_CFG_FILE });
 initBrain({ brainPath: BRAIN_PATH, globalRulesPath: GLOBAL_RULES_PATH });
