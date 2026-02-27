@@ -1,0 +1,63 @@
+services:
+  crewswarm:
+    build: .
+    image: crewswarm:latest
+    container_name: crewswarm
+    restart: unless-stopped
+
+    ports:
+      - "4319:4319"   # Dashboard
+      - "5010:5010"   # crew-lead
+      - "18889:18889" # RT message bus
+      - "4096:4096"   # Code engine
+      - "5020:5020"   # MCP server (optional — comment out if not used)
+
+    volumes:
+      # ~/.crewswarm contains all config, API keys, agent prompts, and chat history.
+      # This is the only persistent state — never baked into the image.
+      - crewswarm-config:/root/.crewswarm
+
+      # Mount host engine binaries so passthrough works inside the container.
+      # Comment out any you don't use.
+      - /usr/local/bin/claude:/usr/local/bin/claude:ro
+      - /usr/local/bin/cursor:/usr/local/bin/cursor:ro
+      - /usr/local/bin/codex:/usr/local/bin/codex:ro
+      - /usr/local/bin/opencode:/usr/local/bin/opencode:ro
+
+    environment:
+      # Node environment
+      - NODE_ENV=production
+
+      # All runtime config lives in ~/.crewswarm/crewswarm.json (mounted above).
+      # Override specific vars here if needed — they take precedence over the JSON config.
+
+      # Core ports (uncomment to override defaults)
+      # - CREW_LEAD_PORT=5010
+      # - SWARM_DASH_PORT=4319
+
+      # Engine routing (uncomment to enable globally)
+      # - CREWSWARM_OPENCODE_ENABLED=1
+      # - CREWSWARM_DOCKER_SANDBOX=1
+
+      # Background consciousness (uncomment to enable)
+      # - CREWSWARM_BG_CONSCIOUSNESS=1
+
+    # Engine CLI tools need their auth state from the host.
+    # If running fully containerized (no host binary mounts), remove this.
+    network_mode: host
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4319/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  crewswarm-config:
+    # Use a named volume for portability, or bind-mount your host dir:
+    # driver: local
+    # driver_opts:
+    #   type: none
+    #   o: bind
+    #   device: ~/.crewswarm

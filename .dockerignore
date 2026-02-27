@@ -1,0 +1,37 @@
+# Dependencies
+node_modules
+frontend/node_modules
+website/node_modules
+.opencode/plugin/node_modules
+
+# Build artifacts
+frontend/dist
+website/dist
+*.log
+
+# Git
+.git
+.gitignore
+
+# Local config and secrets — always mounted as a volume at runtime
+~/.crewswarm
+
+# Dev/local files
+.cursor
+.env
+.env.*
+!.env.example
+
+# Test and archive
+archive
+*.test.mjs
+qa-test-output.txt
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Editor
+.vscode
+*.swp
+*.swo

@@ -4818,6 +4818,7 @@ const server = http.createServer(async (req, res) => {
         // ── Notify Telegram/WA on completion (dashboard already saw it stream live) ──
         const summary = fullOutput.trim().slice(0, 3000) || "(no output)";
         const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : engine === "codex" ? "Codex CLI" : engine === "docker-sandbox" ? "Docker Sandbox" : "OpenCode";
+        const broadcastContent = `⚡ ${engineLabel}: ${summary}`;
 
         // PASSTHROUGH_NOTIFY: "tg" | "wa" | "both" | "none" (default: "both")
         // Set in ~/.crewswarm/crewswarm.json env block or as env var
