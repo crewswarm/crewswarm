@@ -8,7 +8,13 @@ RUN rm -f /usr/share/nginx/html/Dockerfile \
           /usr/share/nginx/html/ROADMAP.md
 
 # Gzip + cache headers
-RUN printf 'server {\n\
+RUN printf '# Redirect www → non-www\n\
+server {\n\
+    listen 8080;\n\
+    server_name www.crewswarm.ai;\n\
+    return 301 https://crewswarm.ai$request_uri;\n\
+}\n\
+server {\n\
     listen 8080;\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
