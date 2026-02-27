@@ -88,15 +88,18 @@ async function run() {
 
   // ── 2. API keys ──────────────────────────────────────────────────────────────
   section("API Keys");
-  let providers = {};
-  try { providers = JSON.parse(fs.readFileSync(SWARM_PATH, "utf8"))?.providers || {}; } catch {}
-  const KEY_PROVIDERS = ["groq","anthropic","openai","mistral","cerebras","deepseek","xai","google","perplexity","nvidia","groq"];
-  const configuredKeys = Object.entries(providers).filter(([,v]) => v?.apiKey?.length > 8);
-  if (configuredKeys.length === 0) {
-    check("API keys", "fail", "no provider keys found — open dashboard → Providers");
+  if (NO_SERVICES) {
+    check("API keys skipped", "pass", "--no-services mode");
   } else {
-    for (const [name, v] of configuredKeys) {
-      check(`${name} key`, "pass", `${v.apiKey.slice(0,8)}…`);
+    let providers = {};
+    try { providers = JSON.parse(fs.readFileSync(SWARM_PATH, "utf8"))?.providers || {}; } catch {}
+    const configuredKeys = Object.entries(providers).filter(([,v]) => v?.apiKey?.length > 8);
+    if (configuredKeys.length === 0) {
+      check("API keys", "fail", "no provider keys found — open dashboard → Providers");
+    } else {
+      for (const [name, v] of configuredKeys) {
+        check(`${name} key`, "pass", `${v.apiKey.slice(0,8)}…`);
+      }
     }
   }
 
