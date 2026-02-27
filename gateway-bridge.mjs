@@ -354,6 +354,25 @@ function loadAgentLLMConfig(ocAgentId) {
   }
 }
 
+/**
+ * Load the central loop brain config from crewswarm.json → loopBrain field.
+ * Format: "provider/model" (e.g. "groq/llama-3.3-70b-versatile").
+ * Falls back to the agent's own model if not set.
+ */
+function loadLoopBrainConfig() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
+    const loopBrain = cfg.loopBrain || process.env.CREWSWARM_LOOP_BRAIN || null;
+    if (!loopBrain) return null;
+    const [providerKey, ...modelParts] = loopBrain.split("/");
+    const modelId = modelParts.join("/");
+    const providers = loadProviderMap();
+    const provider = providers[providerKey];
+    if (!provider?.baseUrl || !provider?.apiKey) return null;
+    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, providerKey };
+  } catch { return null; }
+}
+
 async function callLLMDirect(prompt, ocAgentId, systemPrompt) {
   const llm = loadAgentLLMConfig(ocAgentId);
   if (!llm) return null; // fall through to legacy gateway
@@ -3404,18 +3423,63 @@ function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
 }
 
 /**
- * Ouroboros-style LLM ↔ OpenCode loop (see https://github.com/joi-lab/ouroboros).
- * LLM decomposes task into steps; each step is executed by OpenCode; results fed back until DONE or max rounds.
+ * Ouroboros-style LLM ↔ engine loop (see https://github.com/joi-lab/ouroboros).
+ * LLM decomposes task into steps; each step is executed by the chosen engine (OpenCode, Cursor CLI,
+ * or Claude Code); results are fed back until LLM says DONE or max rounds is reached.
+ * engine: "opencode" | "cursor" | "claude" — selects which execution backend runs each step.
  */
-async function runOuroborosStyleLoop(originalTask, agentId, projectDir, payload, progress) {
-  const DECOMPOSER_SYSTEM = "You are a task decomposer. Output exactly one line: either STEP: <one clear instruction to do now> or DONE. No other text.";
-  const maxRounds = Math.min(20, Math.max(1, parseInt(process.env.OPENCREW_OPENCODE_LOOP_MAX_ROUNDS || "10", 10)));
+async function runOuroborosStyleLoop(originalTask, agentId, projectDir, payload, progress, engine = "opencode") {
+  const agentCfg = loadAgentList().find(a => a.id === agentId) || {};
+  const maxRounds = Math.min(20, Math.max(1,
+    agentCfg.opencodeLoopMaxRounds ||
+    parseInt(process.env.OPENCREW_OPENCODE_LOOP_MAX_ROUNDS || "10", 10)
+  ));
+
+  // Central loop brain: one fast model controls all STEP/DONE decisions.
+  // Falls back to agent's own model if loopBrain not configured.
+  const loopBrain = loadLoopBrainConfig();
+  const agentPrompts = loadAgentPrompts();
+  const bareId = agentId ? agentId.replace(/^crew-/, "") : null;
+  const rolePrompt = (agentId && agentPrompts[agentId]) || (bareId && agentPrompts[bareId]) || "";
+  const DECOMPOSER_SYSTEM = [
+    "You are a task decomposer controlling a specialist AI agent.",
+    rolePrompt ? `The agent's role: ${rolePrompt.slice(0, 300)}` : "",
+    "Output exactly one line: either STEP: <one clear instruction for the agent to execute now> or DONE.",
+    "No other text. Be specific and actionable. DONE only when the full task is complete.",
+  ].filter(Boolean).join("\n");
+
+  const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : "OpenCode";
+  const brainLabel = loopBrain ? `${loopBrain.modelId} (central brain)` : `${agentId} model`;
+  progress(`Loop brain: ${brainLabel} | Engine: ${engineLabel} | Max ${maxRounds} rounds`);
+
   const steps = [];
   let prompt = `${originalTask}\n\nOutput the first step: STEP: <instruction> or DONE.`;
   let lastReply = "";
 
   for (let round = 0; round < maxRounds; round++) {
-    const reply = await callLLMDirect(prompt, agentId, DECOMPOSER_SYSTEM);
+    // Use central brain if configured, otherwise fall back to agent's own model
+    let reply;
+    if (loopBrain) {
+      const messages = [
+        { role: "system", content: DECOMPOSER_SYSTEM },
+        { role: "user", content: prompt },
+      ];
+      try {
+        const res = await fetch(`${loopBrain.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${loopBrain.apiKey}` },
+          body: JSON.stringify({ model: loopBrain.modelId, messages, max_tokens: 256, stream: false }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          reply = data?.choices?.[0]?.message?.content?.trim() || "";
+        }
+      } catch (e) {
+        console.warn(`[loop-brain] Central brain failed (${e.message}) — falling back to agent model`);
+      }
+    }
+    if (!reply) reply = await callLLMDirect(prompt, agentId, DECOMPOSER_SYSTEM);
     if (!reply || !reply.trim()) break;
     lastReply = reply.trim();
 
@@ -3425,14 +3489,22 @@ async function runOuroborosStyleLoop(originalTask, agentId, projectDir, payload,
     const step = stepMatch ? stepMatch[1].trim().replace(/\n.*/gs, "").trim() : lastReply.slice(0, 500);
     if (!step) break;
 
-    progress(`Round ${round + 1}/${maxRounds}: ${step.slice(0, 60)}${step.length > 60 ? "…" : ""}`);
-    let ocResult;
+    progress(`[${engineLabel} loop] Round ${round + 1}/${maxRounds}: ${step.slice(0, 60)}${step.length > 60 ? "…" : ""}`);
+
+    const miniTask = buildMiniTaskForOpenCode(step, agentId, projectDir);
+    let stepResult;
     try {
-      ocResult = await runOpenCodeTask(buildMiniTaskForOpenCode(step, agentId, projectDir), payload);
+      if (engine === "cursor") {
+        stepResult = await runCursorCliTask(miniTask, { ...payload, agentId, projectDir });
+      } else if (engine === "claude") {
+        stepResult = await runClaudeCodeTask(miniTask, { ...payload, agentId, projectDir });
+      } else {
+        stepResult = await runOpenCodeTask(miniTask, payload);
+      }
     } catch (e) {
-      ocResult = `Error: ${e?.message || String(e)}`;
+      stepResult = `Error: ${e?.message || String(e)}`;
     }
-    steps.push({ step, result: ocResult });
+    steps.push({ step, result: stepResult });
     prompt = `Task: ${originalTask}\n\nCompleted steps:\n${steps.map((s, i) => `${i + 1}. ${s.step}\nResult: ${s.result}`).join("\n\n")}\n\nWhat is the next step? Reply with exactly: STEP: <instruction> or DONE.`;
   }
 
@@ -4168,26 +4240,48 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
       projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
       const cursorPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
-      try {
-        reply = await runCursorCliTask(cursorPrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
-      } catch (e) {
-        const msg = e?.message ?? String(e);
-        progress(`Cursor CLI failed: ${msg.slice(0, 120)} — falling back to OpenCode`);
-        telemetry("cursor_cli_fallback", { taskId, error: msg });
-        reply = await runOpenCodeTask(cursorPrompt, payload);
+      const cursorAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
+      if (cursorAgentCfg.loop) {
+        progress("Cursor CLI loop mode: LLM ↔ Cursor until DONE…");
+        try {
+          reply = await runOuroborosStyleLoop(prompt, OPENCREW_RT_AGENT, projectDir, payload, progress, "cursor");
+        } catch (e) {
+          progress(`Cursor loop failed: ${e?.message?.slice(0, 80)} — falling back to single shot`);
+          reply = await runCursorCliTask(cursorPrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+        }
+      } else {
+        try {
+          reply = await runCursorCliTask(cursorPrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+        } catch (e) {
+          const msg = e?.message ?? String(e);
+          progress(`Cursor CLI failed: ${msg.slice(0, 120)} — falling back to OpenCode`);
+          telemetry("cursor_cli_fallback", { taskId, error: msg });
+          reply = await runOpenCodeTask(cursorPrompt, payload);
+        }
       }
     } else if (useClaudeCode) {
       // ── Claude Code backend ────────────────────────────────────────────
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
       projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
       const claudePrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
-      try {
-        reply = await runClaudeCodeTask(claudePrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
-      } catch (e) {
-        const msg = e?.message ?? String(e);
-        progress(`Claude Code failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
-        telemetry("claude_code_fallback", { taskId, error: msg });
-        reply = await callLLMDirect(finalPrompt, OPENCREW_RT_AGENT, null);
+      const claudeAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
+      if (claudeAgentCfg.loop) {
+        progress("Claude Code loop mode: LLM ↔ Claude until DONE…");
+        try {
+          reply = await runOuroborosStyleLoop(prompt, OPENCREW_RT_AGENT, projectDir, payload, progress, "claude");
+        } catch (e) {
+          progress(`Claude loop failed: ${e?.message?.slice(0, 80)} — falling back to single shot`);
+          reply = await runClaudeCodeTask(claudePrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+        }
+      } else {
+        try {
+          reply = await runClaudeCodeTask(claudePrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+        } catch (e) {
+          const msg = e?.message ?? String(e);
+          progress(`Claude Code failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
+          telemetry("claude_code_fallback", { taskId, error: msg });
+          reply = await callLLMDirect(finalPrompt, OPENCREW_RT_AGENT, null);
+        }
       }
     } else if (useOpenCode) {
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || null;
@@ -4203,7 +4297,7 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         // Ouroboros-style: LLM decomposes → OpenCode executes each step → repeat until DONE
         progress("OpenCode loop mode: LLM ↔ OpenCode until DONE...");
         try {
-          reply = await runOuroborosStyleLoop(prompt, OPENCREW_RT_AGENT, projectDir, payload, progress);
+          reply = await runOuroborosStyleLoop(prompt, OPENCREW_RT_AGENT, projectDir, payload, progress, "opencode");
         } catch (e) {
           opencodeErr = e;
           progress(`OpenCode loop failed: ${e?.message?.slice(0, 80)} — falling back to single shot`);

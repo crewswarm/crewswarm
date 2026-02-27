@@ -89,11 +89,16 @@ else
   fi
 fi
 
-# ── Primary action — chat first ─────────────────────────────────────
+# ── Primary actions ──────────────────────────────────────────────────
 echo "---"
-echo "💬 Open Chat | href='${DASHBOARD_URL}/#chat' color=#38bdf8"
+echo "CREWCHAT | size=10 color=#6b7280"
+echo "💬 CrewChat  | bash='open' param1='-a' param2='CrewChat' terminal=false color=#38bdf8"
+echo "🌐 Chat (browser) | href='${DASHBOARD_URL}/#chat' color=#94a3b8"
+echo "---"
+echo "DASHBOARD | size=10 color=#6b7280"
 echo "🖥️  Open Dashboard | href='$DASHBOARD_URL'"
 echo "---"
+echo "SERVICES | size=10 color=#6b7280"
 echo "⚙️ Stack Controls"
 echo "▶ Start   | bash='/bin/bash' param1='$CTL' param2=start terminal=false refresh=true"
 echo "⏹ Stop    | bash='/bin/bash' param1='$CTL' param2=stop terminal=false refresh=true"

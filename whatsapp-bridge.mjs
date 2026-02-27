@@ -560,8 +560,7 @@ async function main() {
       // For regular DMs, check the allowlist against the sender's JID.
       if (!isSelfChatLid && !isSelfChatOwn) {
         if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
-          log("warn", "Blocked unauthorized sender", { jid });
-          await sendToJid(jid, "⛔ Unauthorized.");
+          log("warn", "Silently ignored unauthorized sender", { jid });
           continue;
         }
       }

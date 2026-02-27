@@ -23,7 +23,8 @@ const PORT        = Number(process.env.CREW_LEAD_PORT || 5010);
 const HISTORY_DIR = path.join(os.homedir(), ".crewswarm", "chat-history");
 // Shared projects registry (same file dashboard writes to for autoAdvance toggle)
 const PROJECTS_REGISTRY = path.join(path.dirname(new URL(import.meta.url).pathname), "orchestrator-logs", "projects.json");
-const MAX_HISTORY = 40;
+const MAX_HISTORY    = 2000; // disk storage cap — effectively unlimited for normal usage
+// No LLM_WINDOW cap — models handle 64k–1M tokens. Send full history each call.
 const LLM_TIMEOUT = 180000; // 3 min — reasoning models (e.g. gpt-5.1-codex) can take 1–2+ min for complex prompts
 const CTL_PATH    = (() => {
   const homeBin = path.join(os.homedir(), "bin", "openswitchctl");
@@ -59,7 +60,14 @@ function loadClaudeCodeEnabled() {
 let _claudeCodeEnabled = loadClaudeCodeEnabled();
 
 const BG_CONSCIOUSNESS_INTERVAL_MS = Number(process.env.CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS) || 15 * 60 * 1000;
-const BG_CONSCIOUSNESS_MODEL = process.env.CREWSWARM_BG_CONSCIOUSNESS_MODEL || "groq/llama-3.1-8b-instant";
+let BG_CONSCIOUSNESS_MODEL = (() => {
+  if (process.env.CREWSWARM_BG_CONSCIOUSNESS_MODEL) return process.env.CREWSWARM_BG_CONSCIOUSNESS_MODEL;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+    if (cfg.bgConsciousnessModel) return cfg.bgConsciousnessModel;
+  } catch {}
+  return "groq/llama-3.1-8b-instant";
+})();
 // Runtime-mutable — can be toggled via dashboard without restart.
 // Reads from env first, then from ~/.crewswarm/config.json bgConsciousness field.
 function loadBgConsciousnessEnabled() {
@@ -335,7 +343,8 @@ async function execCrewLeadTools(reply) {
   // ── @@READ_FILE /path ─────────────────────────────────────────────────────
   const readRe = /@@READ_FILE[ \t]+([^\n@@]+)/g;
   while ((m = readRe.exec(reply)) !== null) {
-    const filePath = resolvePath(m[1]);
+    // Strip trailing prose (e.g. "/path/file.txt — to read it")
+    const filePath = resolvePath(m[1].trim().replace(/\s+[—–-]{1,2}\s+.*$/, "").trim());
     try {
       const content = fs.readFileSync(filePath, "utf8");
       const isDoc = /\.(md|txt|json|yaml|yml|toml)$/i.test(filePath);
@@ -373,7 +382,8 @@ async function execCrewLeadTools(reply) {
   // ── @@RUN_CMD command ─────────────────────────────────────────────────────
   const cmdRe = /@@RUN_CMD[ \t]+([^\n]+)/g;
   while ((m = cmdRe.exec(reply)) !== null) {
-    const cmd = m[1].trim();
+    // Strip trailing prose that models sometimes append after the command (e.g. "ls -la /path — to list files")
+    const cmd = m[1].trim().replace(/\s+[—–-]{1,2}\s+.*$/, "").trim();
     if (CREWLEAD_BLOCKED_CMDS.test(cmd)) {
       toolResults.push(`[run_cmd] ⛔ Blocked dangerous command: ${cmd}`);
       continue;
@@ -392,7 +402,7 @@ async function execCrewLeadTools(reply) {
   // ── @@WEB_SEARCH query ────────────────────────────────────────────────────
   const searchRe = /@@WEB_SEARCH[ \t]+([^\n]+)/g;
   while ((m = searchRe.exec(reply)) !== null) {
-    const query = m[1].trim();
+    const query = m[1].trim().replace(/\s+[—–-]{1,2}\s+.*$/, "").trim();
     try {
       const perplexityKey = (() => {
         try { return JSON.parse(fs.readFileSync(CREWSWARM_CFG_FILE, "utf8"))?.providers?.perplexity?.apiKey || null; }
@@ -435,6 +445,46 @@ async function execCrewLeadTools(reply) {
       toolResults.push(`[web_fetch] 🌐 ${url} (${text.length} chars):\n${snippet}`);
       console.log(`[crew-lead:web_fetch] ${url}`);
     } catch (e) { toolResults.push(`[web_fetch] ❌ ${url}: ${e.message}`); }
+  }
+
+  // ── @@SEARCH_HISTORY query ────────────────────────────────────────────────
+  // Searches all session history files for a keyword/phrase. Returns matching lines
+  // with their timestamp and session so Stinki can answer "what did we discuss about X"
+  // without needing the full history in context.
+  const searchHistRe = /@@SEARCH_HISTORY[ \t]+([^\n]+)/g;
+  while ((m = searchHistRe.exec(reply)) !== null) {
+    const query = m[1].trim();
+    if (!query) { toolResults.push(`[search_history] ❌ No query provided`); continue; }
+    try {
+      const histDir = HISTORY_DIR;
+      if (!fs.existsSync(histDir)) { toolResults.push(`[search_history] No history found`); continue; }
+      const files = fs.readdirSync(histDir).filter(f => f.endsWith(".jsonl")).sort();
+      const lq = query.toLowerCase();
+      const hits = [];
+      for (const file of files) {
+        const sessionId = file.replace(".jsonl", "");
+        const lines = fs.readFileSync(path.join(histDir, file), "utf8").split("\n");
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const entry = JSON.parse(line);
+            if ((entry.content || "").toLowerCase().includes(lq)) {
+              const date = entry.ts ? new Date(entry.ts).toISOString().slice(0, 16).replace("T", " ") : "unknown";
+              const snippet = (entry.content || "").slice(0, 300).replace(/\n/g, " ");
+              hits.push(`[${date}][${sessionId}][${entry.role}] ${snippet}${entry.content?.length > 300 ? "…" : ""}`);
+              if (hits.length >= 20) break;
+            }
+          } catch {}
+        }
+        if (hits.length >= 20) break;
+      }
+      if (hits.length === 0) {
+        toolResults.push(`[search_history] No matches for "${query}"`);
+      } else {
+        toolResults.push(`[search_history] ${hits.length} match(es) for "${query}":\n${hits.join("\n")}`);
+      }
+      console.log(`[crew-lead:search_history] query="${query}" hits=${hits.length}`);
+    } catch (e) { toolResults.push(`[search_history] ❌ ${e.message}`); }
   }
 
   // ── @@TELEGRAM message ────────────────────────────────────────────────────
@@ -627,6 +677,7 @@ function loadHistory(sessionId) {
   return history.slice(-MAX_HISTORY);
 }
 
+
 function appendHistory(sessionId, role, content) {
   fs.appendFileSync(sessionFile(sessionId), JSON.stringify({ role, content, ts: Date.now() }) + "\n");
 }
@@ -782,18 +833,41 @@ function buildSystemPrompt(cfg) {
   const rules = [
     ...(modelLine ? [modelLine, ""] : []),
     ...(agentModelList ? [agentModelList, ""] : []),
-    "DIRECT TOOLS (you execute these — no dispatch needed):",
-    "  @@READ_FILE /path          → read any file and answer from its contents",
-    "  @@WRITE_FILE /path\\n...\\n@@END_FILE → write a file",
-    "  @@MKDIR /path              → create directory",
-    "  @@RUN_CMD <cmd>            → run shell command",
-    "  @@WEB_SEARCH query         → search the web (Perplexity)",
-    "  @@WEB_FETCH https://url    → fetch a webpage",
-    "  @@TELEGRAM message         → send Telegram to owner",
-    "  @@TELEGRAM @Name message   → send Telegram to a named contact",
-    "  @@WHATSAPP message         → send WhatsApp to owner",
-    "  @@WHATSAPP @Name message   → send WhatsApp to a named contact",
-    "NEVER say 'I cannot read files' — emit @@READ_FILE and you get the contents back. Same for all tools above.",
+    "DIRECT TOOLS — emit these EXACTLY, replacing the example values with real ones:",
+    "  @@READ_FILE /Users/jeffhobbs/Desktop/CrewSwarm/crew-lead.mjs",
+    "  @@WRITE_FILE /tmp/output.txt",
+    "  file contents go here",
+    "  @@END_FILE",
+    "  @@MKDIR /tmp/my-project",
+    "  @@RUN_CMD ls -la /Users/jeffhobbs/Desktop/CrewSwarm",
+    "  @@RUN_CMD git -C /Users/jeffhobbs/Desktop/CrewSwarm status",
+    "  @@WEB_SEARCH latest openai model releases 2026",
+    "  @@WEB_FETCH https://example.com/page",
+    "  @@SEARCH_HISTORY gemini rate limit",
+    "  @@SEARCH_HISTORY roadmap hobbs2",
+    "  @@TELEGRAM Hey, your build finished successfully",
+    "  @@WHATSAPP Update: all agents are online",
+    "CRITICAL SYNTAX RULES:",
+    "  1. The @@ tag and its argument go on ONE line. Nothing else on that line.",
+    "  2. WRONG: @@RUN_CMD ls -la /path — to show the files",
+    "     RIGHT:  @@RUN_CMD ls -la /path",
+    "  3. WRONG: @@READ_FILE /path/to/file.txt so I can read it",
+    "     RIGHT:  @@READ_FILE /path/to/file.txt",
+    "  4. WRONG: @@WEB_SEARCH query text here",
+    "     RIGHT:  @@WEB_SEARCH actual search terms",
+    "  5. No placeholder text like <cmd>, <path>, 'query', 'https://url' — use REAL values.",
+    "  6. Emit the tool line, then continue your reply on the NEXT line.",
+    "NEVER say 'I cannot read files' — emit @@READ_FILE /actual/path and you get the contents back instantly. Same for all tools.",
+    "NEVER describe what you think a command would show. NEVER say 'The output would be...' or 'I can see X' without actually running the tool.",
+    "If you need to know something from the filesystem, run @@RUN_CMD or @@READ_FILE and report the ACTUAL result. Guessing = wrong.",
+    "After you emit a @@ tool line, continue your reply on the next line — the system executes it and feeds you the real output before showing the user.",
+    "Self-teaching: if you make a tool mistake, emit @@PROMPT {\"agent\":\"crew-lead\",\"append\":\"learned: <what you did wrong and the correct format>\"} to permanently remember it.",
+    "",
+    "LONG-TERM MEMORY — full chat history lives on disk forever:",
+    `  Chat archive: ${HISTORY_DIR}/<sessionId>.jsonl (owner.jsonl = main chat, one entry per line)`,
+    "  Use @@SEARCH_HISTORY <keywords> to search across all sessions — returns up to 20 matching lines with timestamps.",
+    "  Use this when user asks 'what did we discuss about X', 'find that thing we said last week', 'look up our conversation about Y'.",
+    "  You don't need the full history in context — just search for what's relevant.",
     "",
     "Your crew (name, agent ID, role, model):",
     agentList,
@@ -884,7 +958,8 @@ function buildSystemPrompt(cfg) {
     "- ONLY dispatch when user says 'have [agent] do X', 'send this to [agent]', 'dispatch [agent]', 'kick off', 'rally the crew', 'build me X', or clearly wants agent work done.",
     "- If the user is ASKING you something, ANSWER IT. If the user is TELLING you to assign work, DISPATCH IT.",
     "- When in doubt: CHAT. Never dispatch a conversational question to an agent.",
-    "- SELF-AUDIT: When user asks you to find bugs, QA, or inspect the CrewSwarm codebase itself — use your own tools (@@READ_FILE, @@RUN_CMD) to investigate directly and report findings. Only dispatch to crew-coder/crew-qa if the user explicitly asks you to send the work to an agent. 'Can you find bugs in this?' = you do it. 'Have crew-qa audit this' = dispatch.",
+    "- SELF-AUDIT: When user asks you to find bugs, audit, review, read, understand, inspect, or explore any file or the codebase — DO IT YOURSELF with @@READ_FILE and @@RUN_CMD. No plan presentation, no 'are you ready?', no asking permission to start reading. Just emit @@READ_FILE and go. You have a 1M token context window — read as many files as needed and report findings. Only dispatch to crew-qa/crew-coder if user explicitly says 'have X do it'.",
+    "- DISPATCH CONFIRMATION: Before dispatching to any agent, confirm the intent with the user UNLESS the request uses explicit action words ('go build', 'kick off', 'dispatch', 'have crew-X do'). Do NOT dispatch based on ambiguous phrasing.",
     "- SELF-PATCH WORKFLOW — when the user says 'fix it', 'patch that', 'self-heal', or similar after you or another agent found a bug in the CrewSwarm codebase:",
     "  1. @@READ_FILE the affected file to get the exact lines",
     "  2. Describe the specific bug clearly (file path, line numbers, what's wrong)",
@@ -1047,7 +1122,7 @@ function buildSystemPrompt(cfg) {
     "- NEVER pretend you have results before the tags run. Emit the tag; the result comes back to you automatically.",
     "- NEVER fabricate file contents, system health output, or tool results. If you don't have data, say so or use a tool to get it.",
     "- Prefer direct tools for quick lookups. Dispatch agents for complex multi-step work (code, builds, deep audits).",
-    "- Full list of @@markers you can use: @@READ_FILE, @@WRITE_FILE...@@END_FILE, @@MKDIR, @@RUN_CMD, @@WEB_SEARCH, @@WEB_FETCH, @@TELEGRAM, @@DISPATCH, @@PIPELINE, @@PROMPT, @@TOOLS, @@SERVICE, @@PROJECT, @@BRAIN, @@SKILL, @@CREATE_AGENT, @@REMOVE_AGENT, @@DEFINE_SKILL, @@DEFINE_WORKFLOW.",
+    "- Full list of @@markers you can use: @@READ_FILE, @@WRITE_FILE...@@END_FILE, @@MKDIR, @@RUN_CMD, @@WEB_SEARCH, @@WEB_FETCH, @@SEARCH_HISTORY, @@TELEGRAM, @@DISPATCH, @@PIPELINE, @@PROMPT, @@TOOLS, @@SERVICE, @@PROJECT, @@BRAIN, @@SKILL, @@CREATE_AGENT, @@REMOVE_AGENT, @@DEFINE_SKILL, @@DEFINE_WORKFLOW.",
     "",
     "- Be concise. Under 2000 chars.",
     "- No filler phrases.",
@@ -3234,7 +3309,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
   const fallbackReason = llmResult.reason;
 
   // ── Direct tool execution (all crew-lead native tools) ──────────────────
-  const hasDirectTools = /@@READ_FILE[ \t]|@@WRITE_FILE[ \t]|@@WEB_SEARCH[ \t]|@@WEB_FETCH[ \t]|@@MKDIR[ \t]|@@RUN_CMD[ \t]|@@TELEGRAM[ \t]|@@WHATSAPP[ \t]/.test(fullReply);
+  const hasDirectTools = /@@READ_FILE[ \t]|@@WRITE_FILE[ \t]|@@WEB_SEARCH[ \t]|@@WEB_FETCH[ \t]|@@MKDIR[ \t]|@@RUN_CMD[ \t]|@@TELEGRAM[ \t]|@@WHATSAPP[ \t]|@@SEARCH_HISTORY[ \t]/.test(fullReply);
   if (hasDirectTools) {
     const toolResults = await execCrewLeadTools(fullReply);
     if (toolResults.length > 0) {
@@ -3244,7 +3319,7 @@ async function handleChat({ message, sessionId = "default", firstName = "User", 
         ...historyAsMessages,
         { role: "user", content: userContent },
         { role: "assistant", content: fullReply },
-        { role: "user", content: `[Tool results]\n${toolResults.join("\n\n")}\n\nUsing only the above results, give a concise, direct answer to the user. Do not repeat tool tags. Do not use @@READ_FILE or @@WEB_SEARCH again.` },
+        { role: "user", content: `[Tool results]\n${toolResults.join("\n\n")}\n\nUsing only the above results, give a concise, direct answer to the user. IMPORTANT: Do NOT emit any @@ tags in your reply (no @@DISPATCH, @@PIPELINE, @@READ_FILE, @@RUN_CMD, @@WEB_SEARCH, or any other @@command). The tool phase is complete — just answer in plain text.` },
       ];
       try {
         const followUp = await callLLM(followUpMessages, cfg);
@@ -3937,19 +4012,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       console.log(`[crew-lead] /chat session=${sessionId} project=${projectId || 'none'} msg=${message.slice(0, 60)}`);
-      // Context fullness warning — warn at 75% (30/40) and 90% (36/40) of MAX_HISTORY
-      {
-        const histLen = loadHistory(sessionId || "default").length;
-        const critThresh = Math.floor(MAX_HISTORY * 0.9);
-        const warnThresh = Math.floor(MAX_HISTORY * 0.75);
-        if (histLen >= critThresh) {
-          broadcastSSE({ type: "context_warning", sessionId, level: "critical", histLen, maxHistory: MAX_HISTORY,
-            message: `⚠️ Context nearly full (${histLen}/${MAX_HISTORY} messages). Type @@RESET or click New Chat to clear.` });
-        } else if (histLen === warnThresh) {
-          broadcastSSE({ type: "context_warning", sessionId, level: "warn", histLen, maxHistory: MAX_HISTORY,
-            message: `⚡ Context at 75% (${histLen}/${MAX_HISTORY} messages). Consider @@RESET soon.` });
-        }
-      }
       try {
         const result = await handleChat({ message, sessionId, firstName, projectId });
         json(res, 200, { ok: true, ...result });
@@ -4426,18 +4488,122 @@ const server = http.createServer(async (req, res) => {
         const body = await readBody(req);
         const enable = typeof body.enabled === "boolean" ? body.enabled : !_bgConsciousnessEnabled;
         _bgConsciousnessEnabled = enable;
+        if (body.model && typeof body.model === "string") BG_CONSCIOUSNESS_MODEL = body.model.trim();
         // Persist to config.json so it survives restarts
         try {
           const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
           const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
           cfg.bgConsciousness = enable;
+          if (body.model) cfg.bgConsciousnessModel = BG_CONSCIOUSNESS_MODEL;
           fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
         } catch (e) { console.warn("[crew-lead] Could not persist bgConsciousness:", e.message); }
-        console.log(`[crew-lead] Background consciousness ${enable ? "ENABLED" : "DISABLED"} via dashboard`);
-        if (enable) _lastBgConsciousnessAt = 0; // trigger soon
-        json(res, 200, { ok: true, enabled: _bgConsciousnessEnabled });
+        console.log(`[crew-lead] Background consciousness ${enable ? "ENABLED" : "DISABLED"} model=${BG_CONSCIOUSNESS_MODEL} via dashboard`);
+        if (enable) _lastBgConsciousnessAt = 0;
+        json(res, 200, { ok: true, enabled: _bgConsciousnessEnabled, model: BG_CONSCIOUSNESS_MODEL });
         return;
       }
+    }
+
+    // POST /api/engine-passthrough — stream a message directly to Cursor CLI, Claude Code, or OpenCode
+    // Body: { engine: "cursor"|"claude"|"opencode", message: string, projectDir?: string }
+    // Streams raw output back as SSE: data: {"type":"chunk","text":"..."} then data: {"type":"done"}
+    if (url.pathname === "/api/engine-passthrough" && req.method === "POST") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { engine = "claude", message, projectDir: reqProjectDir } = JSON.parse(body || "{}");
+      if (!message) { json(res, 400, { ok: false, error: "message required" }); return; }
+
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        "access-control-allow-origin": "*",
+        "connection": "keep-alive",
+      });
+      const send = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch {} };
+      const projectDir = reqProjectDir || process.cwd();
+
+      let bin, args;
+      if (engine === "cursor") {
+        const cursorBin = process.env.CURSOR_CLI_BIN ||
+          (fs.existsSync(path.join(os.homedir(), ".local", "bin", "agent"))
+            ? path.join(os.homedir(), ".local", "bin", "agent") : "agent");
+        bin = cursorBin;
+        args = ["-p", "--force", "--trust", "--output-format", "stream-json", message, "--workspace", projectDir];
+      } else if (engine === "opencode") {
+        bin = "opencode";
+        args = ["run", "--print", message];
+      } else {
+        bin = process.env.CLAUDE_CODE_BIN || "claude";
+        args = ["-p", "--dangerously-skip-permissions", "--output-format", "stream-json", message];
+      }
+
+      send({ type: "start", engine, message: message.slice(0, 80) });
+      const { spawn: _spawn } = await import("node:child_process");
+      const proc = _spawn(bin, args, { cwd: projectDir, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+      let lineBuffer = "";
+      let fullOutput = "";
+
+      const handleChunk = (chunk) => {
+        lineBuffer += chunk.toString();
+        const lines = lineBuffer.split("\n");
+        lineBuffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          if (engine === "opencode") {
+            send({ type: "chunk", text: line + "\n" });
+            fullOutput += line + "\n";
+            continue;
+          }
+          try {
+            const ev = JSON.parse(line);
+            if (ev.type === "stream_event" && ev.event?.type === "content_block_delta") {
+              const t = ev.event.delta?.text || "";
+              send({ type: "chunk", text: t }); fullOutput += t;
+            } else if (ev.type === "assistant") {
+              const content = ev.message?.content;
+              if (Array.isArray(content)) { for (const c of content) { if (c.type === "text") { send({ type: "chunk", text: c.text }); fullOutput += c.text; } } }
+              else if (typeof content === "string") { send({ type: "chunk", text: content }); fullOutput += content; }
+            } else if (ev.type === "result") {
+              if (ev.result) { send({ type: "chunk", text: ev.result }); fullOutput += ev.result; }
+              proc.kill("SIGTERM");
+            }
+          } catch { send({ type: "chunk", text: line + "\n" }); fullOutput += line + "\n"; }
+        }
+      };
+
+      proc.stdout.on("data", handleChunk);
+      proc.stderr.on("data", (d) => send({ type: "stderr", text: d.toString() }));
+      proc.on("close", (code) => {
+        if (lineBuffer.trim()) { send({ type: "chunk", text: lineBuffer }); fullOutput += lineBuffer; }
+        send({ type: "done", exitCode: code });
+        try { res.end(); } catch {}
+
+        // ── Broadcast to crew chat + TG/WA on completion ──────────────────────
+        const summary = fullOutput.trim().slice(0, 3000) || "(no output)";
+        const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : "OpenCode";
+        const broadcastContent = `⚡ *${engineLabel} direct* — \`${message.slice(0, 60)}${message.length > 60 ? "…" : ""}\`\n\n${summary}`;
+
+        // Crew chat (dashboard SSE)
+        broadcastSSE({ type: "agent_reply", from: engineLabel, content: broadcastContent, sessionId: "owner", ts: Date.now() });
+
+        // Telegram notification (if configured)
+        try {
+          const tgBridge = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8"));
+          const botToken = process.env.TELEGRAM_BOT_TOKEN || tgBridge.token || "";
+          const chatId = process.env.TELEGRAM_CHAT_ID
+            || (Array.isArray(tgBridge.allowedChatIds) && tgBridge.allowedChatIds[0] ? String(tgBridge.allowedChatIds[0]) : "")
+            || tgBridge.defaultChatId || "";
+          if (botToken && chatId) {
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: chatId, text: `⚡ ${engineLabel}: ${message.slice(0, 80)}\n\n${summary.slice(0, 800)}`, parse_mode: "Markdown" }),
+              signal: AbortSignal.timeout(8000),
+            }).catch(() => {});
+          }
+        } catch {}
+      });
+      req.on("close", () => { try { proc.kill("SIGTERM"); } catch {} });
+      return;
     }
 
     // GET/POST /api/settings/claude-code — toggle Claude Code executor at runtime

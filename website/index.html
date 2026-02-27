@@ -109,6 +109,8 @@
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">Claude Code executor</span>
       <span class="proof-sep" aria-hidden="true">•</span>
+      <span class="proof-item">MCP server</span>
+      <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">PM-led phases</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">DLQ recovery</span>
@@ -464,6 +466,39 @@
             </div>
           </div>
         </div>
+        <div class="feature-card feature-card-wide">
+          <div class="feature-icon">🔌</div>
+          <h3>MCP server — your crew in any AI tool</h3>
+          <p>CrewSwarm exposes your entire crew as an <strong>MCP server on port 5020</strong>. Add one line to <code>~/.cursor/mcp.json</code> (or Claude Code, OpenCode) and every project gets your full persistent agent fleet — not session-scoped generics, but your crew with memory, custom models, and cross-agent coordination.</p>
+          <div class="engines-grid" style="margin-top:16px;">
+            <div class="engine-card">
+              <div class="engine-header"><strong>dispatch_agent</strong></div>
+              <ul class="engine-traits">
+                <li>Send a task to any specialist agent</li>
+                <li>Waits for the result</li>
+                <li>Full tool access + memory</li>
+              </ul>
+            </div>
+            <div class="engine-card">
+              <div class="engine-header"><strong>run_pipeline</strong></div>
+              <ul class="engine-traits">
+                <li>Multi-agent chains from any client</li>
+                <li>Each stage passes output to the next</li>
+                <li>PM → coder → QA in one call</li>
+              </ul>
+            </div>
+            <div class="engine-card">
+              <div class="engine-header"><strong>chat_stinki + skills</strong></div>
+              <ul class="engine-traits">
+                <li>Talk to crew-lead directly via MCP</li>
+                <li>Run any skill (deploy, TTS, webhooks…)</li>
+                <li>OpenAI-compatible API on same port</li>
+              </ul>
+            </div>
+          </div>
+          <div class="feature-code" style="margin-top:14px;">~/.cursor/mcp.json → {"mcpServers":{"crewswarm":{"url":"http://127.0.0.1:5020/mcp"}}}</div>
+        </div>
+
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🖥️</div>
           <h3>Seven control surfaces</h3>

@@ -1,0 +1,4 @@
+@@LESSON: After @@WRITE_FILE, immediately @@READ_FILE the file to confirm it was written correctly — do not assume success.
+@@LESSON: When editing an existing file, always @@READ_FILE first to see the current content — never guess the structure.
+@@LESSON: Chain all tool calls in a single reply (e.g., @@MKDIR → @@WRITE_FILE → @@READ_FILE) — never split them across multiple replies.
+@@LESSON: Ensure 

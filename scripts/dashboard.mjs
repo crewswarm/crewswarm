@@ -1328,6 +1328,91 @@ const server = http.createServer(async (req, res) => {
         return;
       }
     }
+    // ── GET/POST /api/settings/loop-brain ────────────────────────────────────────
+    if (url.pathname === "/api/settings/loop-brain") {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(CFG_FILE, "utf8"));
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ loopBrain: cfg.loopBrain || null }));
+        } catch { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ loopBrain: null })); }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = ""; for await (const chunk of req) body += chunk;
+        const { loopBrain } = JSON.parse(body || "{}");
+        const cfg = JSON.parse(await readFile(CFG_FILE, "utf8"));
+        if (loopBrain) cfg.loopBrain = loopBrain; else delete cfg.loopBrain;
+        await writeFile(CFG_FILE, JSON.stringify(cfg, null, 4), "utf8");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+    }
+    // ── GET/POST /api/settings/loop-brain — central Ouroboros brain model ────────
+    if (url.pathname === "/api/settings/loop-brain") {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ loopBrain: cfg.loopBrain || null }));
+        } catch {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ loopBrain: null }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = ""; for await (const chunk of req) body += chunk;
+        const { loopBrain } = JSON.parse(body || "{}");
+        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+        if (loopBrain) cfg.loopBrain = loopBrain;
+        else delete cfg.loopBrain;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+    }
+    // ── Proxy /api/engine-passthrough → crew-lead:5010 (SSE streaming) ─────────
+    if (url.pathname === "/api/engine-passthrough" && req.method === "POST") {
+      try {
+        const rawBody = await (async () => { let b = ""; for await (const c of req) b += c; return b; })();
+        const token = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch { return ""; } })();
+        const upstream = await fetch("http://127.0.0.1:5010/api/engine-passthrough", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          body: rawBody,
+        });
+        res.writeHead(upstream.status, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+        });
+        // Stream SSE chunks straight through
+        const reader = upstream.body.getReader();
+        const pump = async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) { try { res.end(); } catch {} break; }
+              try { res.write(value); } catch { reader.cancel(); break; }
+            }
+          } catch {}
+        };
+        pump();
+        req.on("close", () => { try { reader.cancel(); } catch {} });
+      } catch (e) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ type: "done", exitCode: 1, error: e.message })}\n\n`);
+        res.end();
+      }
+      return;
+    }
     // ── Proxy /api/settings/global-fallback → crew-lead:5010 ─────────────────
     if (url.pathname === "/api/settings/global-fallback") {
       try {
@@ -2016,6 +2101,7 @@ ORDER BY day DESC, cost DESC;`;
           claudeCodeModel: a.claudeCodeModel || "",
           role: a._role || "",
           opencodeLoop: a.opencodeLoop || false,
+          opencodeLoopMaxRounds: a.opencodeLoopMaxRounds || 10,
           liveness, lastSeen, ageSec,
         };
       });
@@ -2095,7 +2181,7 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, role, opencodeLoop, workspace } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -2141,6 +2227,7 @@ ORDER BY day DESC, cost DESC;`;
       if (claudeCodeModel !== undefined) agent.claudeCodeModel = claudeCodeModel || undefined;
       if (role !== undefined) agent._role = role || undefined;
       if (opencodeLoop !== undefined) agent.opencodeLoop = opencodeLoop || undefined;
+      if (opencodeLoopMaxRounds !== undefined) agent.opencodeLoopMaxRounds = opencodeLoopMaxRounds > 0 ? opencodeLoopMaxRounds : undefined;
       if (workspace !== undefined) agent.workspace = workspace || undefined;
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
       // System prompts live in agent-prompts.json, not crewswarm.json

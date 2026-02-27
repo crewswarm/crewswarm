@@ -1146,11 +1146,19 @@ async function checkCrewLeadStatus() {
 
 // @@ autocomplete: type @@ for list, @@PROMPT (or pick) shows exact JSON
 const ATAT_COMMANDS = [
+  { id: 'RESET', label: 'Clear session history and start fresh', template: '' },
+  { id: 'STOP', label: 'Cancel all running pipelines (agents keep running)', template: '' },
+  { id: 'KILL', label: 'Kill all pipelines + terminate all agent bridges', template: '' },
+  { id: 'SEARCH_HISTORY', label: 'Search long-term chat history by keyword', template: 'your search terms' },
   { id: 'DISPATCH', label: 'Dispatch task to an agent', template: '{"agent":"crew-coder","task":"Your task here"}' },
-  { id: 'PROMPT', label: 'Append or set agent system prompt', template: '{"agent":"crew-lead","append":"Your new rule here"}' },
   { id: 'PIPELINE', label: 'Multi-step pipeline (waves of agents)', template: '[{"wave":1,"agent":"crew-coder","task":"..."},{"wave":2,"agent":"crew-qa","task":"..."}]' },
+  { id: 'PROMPT', label: 'Append or set agent system prompt', template: '{"agent":"crew-lead","append":"Your new rule here"}' },
   { id: 'SKILL', label: 'Run a skill by name', template: 'skillName {"param":"value"}' },
   { id: 'SERVICE', label: 'Restart/stop a service or agent', template: 'restart crew-coder' },
+  { id: 'READ_FILE', label: 'Read a file and get its contents', template: '/path/to/file' },
+  { id: 'RUN_CMD', label: 'Run a shell command', template: 'ls -la /Users/jeffhobbs/Desktop/CrewSwarm' },
+  { id: 'WEB_SEARCH', label: 'Search the web (Perplexity)', template: 'your search query' },
+  { id: 'WEB_FETCH', label: 'Fetch a webpage or URL', template: 'https://example.com' },
   { id: 'PROJECT', label: 'Draft a new project roadmap', template: '{"name":"MyApp","description":"...","outputDir":"/path/to/dir"}' },
   { id: 'BRAIN', label: 'Append a fact to brain.md', template: 'crew-lead: fact to remember' },
   { id: 'TOOLS', label: 'Grant/revoke tools for an agent', template: '{"agent":"crew-qa","allow":["read_file","write_file"]}' },
@@ -1319,6 +1327,11 @@ async function sendChat() {
   const sendBtn = document.querySelector('[data-action="sendChat"]');
   const text = input.value.trim();
   if (!text) return;
+
+  // ── Direct engine passthrough mode ──────────────────────────────────────────
+  const engine = document.getElementById('passthroughEngine')?.value || '';
+  if (engine) { await sendPassthrough(text, engine); return; }
+
   input.value = '';
   input.disabled = true;
   if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
@@ -1380,6 +1393,70 @@ async function clearChatHistory() {
   document.getElementById('chatMessages').innerHTML = '';
   await postJSON('/api/crew-lead/clear', { sessionId: chatSessionId }).catch(()=>{});
 }
+
+async function sendPassthrough(text, engine) {
+  const input = document.getElementById('chatInput');
+  const sendBtn = document.querySelector('[data-action="sendChat"]');
+  const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode' };
+  input.value = '';
+  input.disabled = true;
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '…'; }
+
+  appendChatBubble('user', text);
+  const box = document.getElementById('chatMessages');
+
+  // Create streaming reply bubble
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble assistant';
+  bubble.style.cssText = 'background:var(--surface-2);border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:12px;color:var(--text-2);';
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px;';
+  label.textContent = (engineLabels[engine] || engine) + ' · direct passthrough';
+  const content = document.createElement('div');
+  bubble.appendChild(label);
+  bubble.appendChild(content);
+  box.appendChild(bubble);
+  box.scrollTop = box.scrollHeight;
+
+  try {
+    const resp = await fetch('/api/engine-passthrough', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ engine, message: text }),
+    });
+    if (!resp.ok) { content.textContent = `Error ${resp.status}: ${await resp.text()}`; return; }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          if (ev.type === 'chunk' && ev.text) {
+            content.textContent += ev.text;
+            box.scrollTop = box.scrollHeight;
+          } else if (ev.type === 'done') {
+            label.textContent += ` ✓ (exit ${ev.exitCode ?? 0})`;
+          }
+        } catch {}
+      }
+    }
+  } catch(e) {
+    content.textContent = 'Error: ' + e.message;
+  } finally {
+    input.disabled = false;
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
+    input.focus();
+  }
+}
+window.sendPassthrough = sendPassthrough;
 
 async function stopAll() {
   if (!confirm('Stop all running pipelines?')) return;
@@ -2106,6 +2183,7 @@ async function saveOpencodeSettings(){
 async function loadBgConsciousness() {
   const btn = document.getElementById('bgConsciousnessBtn');
   const status = document.getElementById('bgConsciousnessStatus');
+  const modelInput = document.getElementById('bgConsciousnessModel');
   try {
     const d = await getJSON('/api/settings/bg-consciousness');
     const on = d.enabled;
@@ -2115,6 +2193,7 @@ async function loadBgConsciousness() {
       btn.style.borderColor = on ? 'var(--green-hi)' : 'var(--border)';
       btn.style.color = on ? 'var(--green-hi)' : 'var(--text-2)';
     }
+    if (modelInput && d.model) modelInput.placeholder = d.model;
     if (status) status.textContent = on
       ? 'Active — crew-lead reflects every ' + Math.round(d.intervalMs / 60000) + 'min when idle. Model: ' + d.model
       : 'Off — crew-lead will not self-reflect between tasks.';
@@ -2124,11 +2203,21 @@ async function loadBgConsciousness() {
   }
 }
 async function toggleBgConsciousness() {
-  const btn = document.getElementById('bgConsciousnessBtn');
   try {
     const current = await getJSON('/api/settings/bg-consciousness');
     const d = await postJSON('/api/settings/bg-consciousness', { enabled: !current.enabled });
     showNotification('Background consciousness ' + (d.enabled ? 'ENABLED' : 'DISABLED'));
+    loadBgConsciousness();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
+async function saveBgConsciousnessModel() {
+  const modelInput = document.getElementById('bgConsciousnessModel');
+  const model = (modelInput?.value || '').trim();
+  if (!model) { showNotification('Enter a model first (e.g. groq/llama-3.3-70b-versatile)', 'error'); return; }
+  try {
+    await postJSON('/api/settings/bg-consciousness', { model });
+    showNotification('Background consciousness model → ' + model);
+    modelInput.value = '';
     loadBgConsciousness();
   } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
@@ -2243,6 +2332,23 @@ async function loadGlobalOcLoop() {
   } catch(e) {}
 }
 
+async function saveLoopBrain() {
+  const model = (document.getElementById('loopBrainModel')?.value || '').trim();
+  try {
+    await postJSON('/api/settings/loop-brain', { loopBrain: model || null });
+    showNotification(model ? `Loop brain → ${model}` : 'Loop brain cleared (each agent uses own model)');
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+window.saveLoopBrain = saveLoopBrain;
+
+async function loadLoopBrain() {
+  try {
+    const d = await getJSON('/api/settings/loop-brain');
+    const inp = document.getElementById('loopBrainModel');
+    if (inp && d.loopBrain) inp.value = d.loopBrain;
+  } catch {}
+}
+
 async function loadEnvAdvanced() {
   const box = document.getElementById('envAdvancedWidget');
   if (!box) return;
@@ -2297,7 +2403,7 @@ function showSettingsTab(tab){
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
   if (tab === 'security') { loadCmdAllowlist(); }
-  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadGlobalOcLoop(); loadEnvAdvanced(); }
+  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadGlobalOcLoop(); loadLoopBrain(); loadEnvAdvanced(); }
   if (tab === 'telegram') { loadTgStatus(); loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
   if (tab === 'whatsapp') { loadWaStatus(); loadWaConfig(); loadWaMessages(); }
   // Update URL hash for deep linking — e.g. #settings/telegram
@@ -3119,6 +3225,17 @@ async function loadAgents_cfg(){
                 🤖 Claude Code <span style="font-size:10px; font-weight:400; opacity:0.7;">(api key)</span>
               </button>
             </div>
+            <div id="loop-row-${a.id}" style="display:${(a.useOpenCode || a.useCursorCli || a.useClaudeCode) ? 'flex' : 'none'}; align-items:center; gap:10px; margin-bottom:10px; padding:8px 10px; background:var(--surface-2); border-radius:8px; border:1px solid var(--border);">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="loop-toggle-${a.id}" ${a.opencodeLoop ? 'checked' : ''} onchange="saveAgentLoop('${a.id}')" style="width:14px; height:14px; cursor:pointer;" />
+                <span style="font-size:12px; font-weight:600; color:var(--text-1);">🔁 Ouroboros Loop</span>
+                <span style="font-size:11px; color:var(--text-3);">LLM decomposes task → engine runs each step → feeds result back until DONE</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:11px; color:var(--text-3); white-space:nowrap;">Max rounds:</span>
+                <input type="number" id="loop-rounds-${a.id}" min="1" max="20" value="${a.opencodeLoopMaxRounds || 10}" style="width:52px; font-size:12px; padding:3px 6px; border-radius:5px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-1); text-align:center;" onchange="saveAgentLoop('${a.id}')" />
+              </div>
+            </div>
             <div id="oc-model-row-${a.id}" style="display:${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
               <select id="oc-model-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncOcModelText('${a.id}')"></select>
               <input id="oc-modeltext-${a.id}" type="text" placeholder="opencode/model…" value="${a.opencodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
@@ -3440,6 +3557,8 @@ async function setRoute(agentId, route) {
   if (ocFbRow)   ocFbRow.style.display   = useOpenCode   ? 'flex' : 'none';
   if (cursorRow) cursorRow.style.display = useCursorCli  ? 'flex' : 'none';
   if (ccRow)     ccRow.style.display     = useClaudeCode ? 'flex' : 'none';
+  const loopRow = document.getElementById('loop-row-' + agentId);
+  if (loopRow)   loopRow.style.display   = (useOpenCode || useCursorCli || useClaudeCode) ? 'flex' : 'none';
   // Save
   try {
     await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli, useClaudeCode });
@@ -3463,6 +3582,17 @@ async function saveClaudeCodeConfig(agentId) {
     showNotification(agentId + ' Claude Code model → ' + (claudeCodeModel || 'auto'));
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
+
+async function saveAgentLoop(agentId) {
+  const enabled = document.getElementById('loop-toggle-' + agentId)?.checked ?? false;
+  const maxRoundsRaw = document.getElementById('loop-rounds-' + agentId)?.value;
+  const opencodeLoopMaxRounds = Math.min(20, Math.max(1, parseInt(maxRoundsRaw || '10', 10)));
+  try {
+    await postJSON('/api/agents-config/update', { agentId, opencodeLoop: enabled, opencodeLoopMaxRounds });
+    showNotification(agentId + ' loop ' + (enabled ? `ON (${opencodeLoopMaxRounds} rounds max)` : 'OFF'));
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+window.saveAgentLoop = saveAgentLoop;
 
 function syncClaudeCodeModelText(agentId) {
   const sel = document.getElementById('claudecode-model-sel-' + agentId);

@@ -3,6 +3,15 @@
 Agents: append discoveries here. This is the persistent knowledge base for this workspace.
 Read it to avoid repeating mistakes. Write to it when you learn something durable.
 
+## [2026-02-27] system: crew-lead chat history architecture (current)
+
+- **Disk storage:** `~/.crewswarm/chat-history/<sessionId>.jsonl` — stores up to 2000 messages per session, indefinitely across browser sessions
+- **LLM context:** Full history sent to LLM on every call — no artificial message cap. Models handle 64k–1M tokens; history only truncates if the model's actual token limit is hit (rare)
+- **No context warnings:** The old 40-message "context nearly full" warning was removed. Context never "fills up" from our side.
+- **@@RESET** still works to clear history and start fresh if desired
+- **@@SEARCH_HISTORY <query>** — searches all session history files by keyword. Returns up to 20 matching lines with timestamps. Use when user asks about past conversations or old decisions.
+- **Session memory injection:** On first message of a new session (history.length === 0), brain.md + lessons.md + decisions.md + global-rules.md are injected as a system message. Subsequent messages load them from disk history — no re-read needed.
+
 ## [2026-02-26] system: Cursor CLI + OpenCode session continuity
 
 **Cursor CLI (`agent` binary):**
@@ -42,10 +51,12 @@ Read it to avoid repeating mistakes. Write to it when you learn something durabl
 - `groq/llama-3.3-70b-versatile` — reliable, free-tier friendly, good for simple tasks
 
 **Broken / do not use:**
-- `groq/openai/gpt-oss-120b` — returns empty string, silently broken
+- `groq/openai/gpt-oss-120b` — Groq's proxy returns empty string. NEVER assign as fallback. Direct via OpenAI key (`openai/gpt-oss-120b`) or OpenCode (`opencode/gpt-oss-120b`) may work fine.
+- `groq/openai/gpt-oss-20b` — same, Groq proxy broken. Direct OpenAI/OpenCode routes may work.
+- `gpt-5` (bare, without opencode/ prefix) — not a real routable model outside OpenCode. Use `opencode/gpt-5` or `opencode/gpt-5-nano` for OpenCode routes.
 - `groq/openai/gpt-oss-20b` — same, empty responses
 
-**Google Gemini key: free tier only** — hits 429 rate limit immediately under agent load. Not usable for production agents without upgrading to paid Google AI Studio billing.
+**Google Gemini key: PAID tier** — upgraded. `google/gemini-2.5-flash` confirmed working for crew-lead; `reasoning_effort: "none"` required to suppress hidden thinking tokens that burn TPM quota. `max_tokens` bumped to 16384. Excellent for conversational routing.
 
 **Current role → model assignment (as of 2026-02-26):**
 - EXECUTOR (coders/fixer): kimi-k2-instruct-0905 + opencode/claude-sonnet-4-5 via OpenCode
@@ -54,6 +65,12 @@ Read it to avoid repeating mistakes. Write to it when you learn something durabl
 - ANALYST (qa/security/mega): deepseek/deepseek-chat
 - SIMPLE (github/copywriter/telegram/seo): groq/llama-3.3-70b-versatile
 - RESEARCHER: perplexity/sonar
+
+**Battle-tested crew-lead models (2026-02-26, live user validation):**
+- `xai/grok-3-mini` ✅ — fast, reliable coordinator, great for conversational routing
+- `deepseek/deepseek-chat` ✅ — solid crew-lead, good at tool syntax, cost-effective
+- `google/gemini-2.5-flash` ✅ — excellent after fixes: reasoning_effort=none, max_tokens=16384, strip fallback banners from history. Needs concrete @@ tool examples in prompt (not placeholders like `<cmd>`).
+- All three handle dispatch, tool calls, and conversation well. Rotate freely.
 
 ## [2026-02-25] system: opencode --attach implemented
 
@@ -148,3 +165,32 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 - Before creating or modifying ANY file, @@READ_FILE every relevant existing file first. If the needed functionality already exists, reply "no-op" — do NOT create a duplicate.
 - @@READ_FILE the target module before adding any import. If the symbol is missing, abort rather than inventing a new file.
 
+
+## [2026-02-27] system: new capabilities built — Ouroboros loop, central brain, engine passthrough
+
+### Ouroboros loop — all 3 engines (gateway-bridge.mjs)
+- `runOuroborosStyleLoop(task, agentId, projectDir, payload, progress, engine)` — shared loop for all engines
+- `engine` param: `"opencode"` | `"cursor"` | `"claude"` — selects which binary runs each step
+- Central loop brain: `crewswarm.json → loopBrain: "groq/llama-3.3-70b-versatile"` — one fast model controls STEP/DONE for ALL agents across all engines. Falls back to agent's own model if not set.
+- Per-agent config: `opencodeLoop: true` + `opencodeLoopMaxRounds: 10` in crewswarm.json
+- Dashboard: Agents tab → per-agent 🔁 Ouroboros Loop checkbox + max rounds (shows when any coding engine is selected)
+- Dashboard: Settings → System → OpenCode Loop section → 🧠 Central loop brain input field
+- Loop progress visible in chat: `[Cursor CLI loop] Loop brain: llama-3.3-70b-versatile (central brain) | Engine: Cursor CLI | Max 10 rounds`
+
+### Engine passthrough — direct chat to any coding engine (crew-lead.mjs)
+- `POST /api/engine-passthrough` — body: `{ engine, message, projectDir }` — streams output as SSE
+- On completion: broadcasts `agent_reply` to dashboard SSE + sends TG notification if configured
+- Dashboard: Chat tab → "⚡ Direct engine" dropdown below input — pick Claude Code / Cursor CLI / OpenCode
+- When active: messages bypass crew-lead entirely, go straight to the binary, stream back live in monospace bubble
+- Route: dashboard proxy (`/api/engine-passthrough`) → crew-lead `:5010` → engine binary
+
+### MCP server — CrewSwarm as MCP server for Cursor/Claude/OpenCode
+- 13 tools exposed at `http://127.0.0.1:5020/mcp`: dispatch_agent, list_agents, run_pipeline, chat_stinki, crewswarm_status, smart_dispatch, skill_*
+- Config: `~/.cursor/mcp.json` and `~/.claude/mcp.json` both pointing to port 5020
+- install.sh has optional MCP setup step (6f) that auto-writes all 3 client configs
+- AGENTS.md has full "MCP Integration" section with comparison table vs Cursor built-in subagents
+- Website: feature card added to features grid explaining the MCP integration
+
+### Key architecture fact — gateway-bridge.mjs was truncated
+- The file on disk was a 4031-byte stub ending in `...[truncated]`. Restored from git with `git checkout HEAD -- gateway-bridge.mjs`.
+- Always verify with `wc -l gateway-bridge.mjs` — should be ~5000+ lines.

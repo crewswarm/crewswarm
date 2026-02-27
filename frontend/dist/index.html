@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="/assets/index-CR1CTzcz.js"></script>
+  <script type="module" crossorigin src="/assets/index-DGJ-PVAR.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-DT_vadY2.css">
 </head>
 <body>
@@ -171,11 +171,20 @@
           <button data-action="killAll" title="Kill all agents" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--red-hi);cursor:pointer;">☠️</button>
           <button data-action="sendChat" class="btn-green" aria-label="Send message" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
           <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">Project context:</span>
           <select id="chatProjectSelect" style="width:200px;max-width:200px;font-size:12px;padding:6px 8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" data-onchange="onChatProjectChange" title="Active project for dispatch context">
             <option value="">— none —</option>
           </select>
+          <div style="display:flex;align-items:center;gap:6px;margin-left:8px;">
+            <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">⚡ Direct engine:</span>
+            <select id="passthroughEngine" style="font-size:11px;padding:4px 6px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" title="Route chat directly to a coding engine (bypasses crew-lead LLM)">
+              <option value="">— off (crew-lead) —</option>
+              <option value="claude">Claude Code</option>
+              <option value="cursor">Cursor CLI</option>
+              <option value="opencode">OpenCode</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
@@ -661,12 +670,17 @@
               <div class="card-title" style="margin-bottom:2px;">🧠 Background Consciousness</div>
               <div style="font-size:11px;color:var(--text-3);line-height:1.5;">
                 When idle, crew-lead reflects on system state, surfaces blockers, and dispatches follow-ups automatically.
-                Uses a cheap Groq model (llama-3.1-8b) — runs every 15 min when no pipelines are active.
+                Runs every 15 min when no pipelines are active.
               </div>
             </div>
             <button id="bgConsciousnessBtn" data-action="toggleBgConsciousness" style="font-size:12px;font-weight:700;padding:8px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;min-width:80px;">
               Loading…
             </button>
+          </div>
+          <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+            <label style="font-size:12px;color:var(--text-3);white-space:nowrap;">Model:</label>
+            <input id="bgConsciousnessModel" type="text" placeholder="groq/llama-3.1-8b-instant" style="flex:1;font-size:12px;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);font-family:monospace;" />
+            <button onclick="saveBgConsciousnessModel()" style="font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;">Save</button>
           </div>
           <div id="bgConsciousnessStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
         </div>
@@ -678,10 +692,17 @@
               <input type="checkbox" id="globalOcLoop" data-onchange="saveGlobalOcLoop" style="accent-color:var(--accent);" />
               Enable loop for all agents (OPENCREW_OPENCODE_LOOP)
             </label>
-            <div style="display:flex;align-items:center;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
               <label style="font-size:12px;color:var(--text-3);">Max rounds:</label>
               <input type="number" id="globalOcLoopRounds" min="1" max="50" value="10" style="width:70px;font-size:12px;padding:4px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;color:var(--text-1);" />
               <button data-action="saveGlobalOcLoopRounds" class="btn-ghost" style="font-size:12px;">Save</button>
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:10px;">
+              <label style="font-size:12px;color:var(--text-3);display:block;margin-bottom:6px;">🧠 Central loop brain <span style="opacity:0.6;">(one fast model controls STEP/DONE for all agents — leave blank to use each agent's own model)</span></label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input id="loopBrainModel" type="text" placeholder="groq/llama-3.3-70b-versatile" style="flex:1;font-size:12px;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);font-family:monospace;" />
+                <button data-action="saveLoopBrain" class="btn-ghost" style="font-size:12px;white-space:nowrap;">Save</button>
+              </div>
             </div>
           </div>
         </div>

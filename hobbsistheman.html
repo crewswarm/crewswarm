@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hobbs Is The Man</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;700&display=swap");
+
+      :root {
+        --lava: #ff008c;
+        --acid: #00ffd5;
+        --sun: #ffe400;
+        --night: #080019;
+        --flare: #ff5f1f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Space Grotesk", "Press Start 2P", monospace;
+        background: radial-gradient(circle at 20% 20%, #2a0a4e, transparent 50%),
+          radial-gradient(circle at 80% 0%, #ff0a88, transparent 45%),
+          radial-gradient(circle at 50% 80%, #00ffd5, transparent 35%),
+          #05010a;
+        color: white;
+        overflow-x: hidden;
+        animation: aurora 20s linear infinite;
+      }
+
+      body::before,
+      body::after {
+        content: "";
+        position: fixed;
+        inset: -20%;
+        pointer-events: none;
+        z-index: 0;
+        background: conic-gradient(from 90deg, #ff00ff, transparent, #00ffff);
+        mix-blend-mode: screen;
+        opacity: 0.25;
+        animation: spin 30s linear infinite;
+      }
+
+      body::after {
+        animation-duration: 50s;
+        animation-direction: reverse;
+        opacity: 0.15;
+      }
+
+      .scanlines {
+        position: fixed;
+        inset: 0;
+        background-image: repeating-linear-gradient(
+          0deg,
+          rgba(255, 255, 255, 0.07),
+          rgba(255, 255, 255, 0.07) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+        mix-blend-mode: overlay;
+        opacity: 0.2;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      main {
+        position: relative;
+        z-index: 1;
+        padding: 4rem 5vw 8rem;
+        display: grid;
+        gap: 2.5rem;
+      }
+
+      .hero {
+        text-align: center;
+        padding: 3rem;
+        border-radius: 32px;
+        background: rgba(5, 0, 20, 0.7);
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.4), 0 0 60px #ff00ff55;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero::before,
+      .hero::after {
+        content: "";
+        position: absolute;
+        width: 140%;
+        height: 140%;
+        background: conic-gradient(#ff008c, #ffe400, #00ffd5, #ff008c);
+        top: -20%;
+        left: -20%;
+        filter: blur(40px);
+        animation: pulse 7s ease-in-out infinite;
+        opacity: 0.18;
+      }
+
+      .hero::after {
+        animation-duration: 11s;
+        mix-blend-mode: screen;
+      }
+
+      h1 {
+        font-family: "Press Start 2P", monospace;
+        font-size: clamp(2rem, 6vw, 4rem);
+        margin: 0 0 1rem;
+        letter-spacing: 0.08em;
+        background: linear-gradient(90deg, var(--lava), var(--acid), var(--sun));
+        -webkit-background-clip: text;
+        color: transparent;
+        text-shadow: 0 0 12px rgba(255, 255, 255, 0.7);
+        animation: flicker 2s steps(2) infinite;
+      }
+
+      .hero p {
+        max-width: 800px;
+        margin: 0 auto;
+        line-height: 1.7;
+        font-size: 1.1rem;
+      }
+
+      .laser-line {
+        height: 4px;
+        margin: 2rem auto 0;
+        max-width: 400px;
+        background: linear-gradient(90deg, transparent, var(--acid), transparent);
+        animation: scan 3s ease-in-out infinite;
+      }
+
+      .hero-rings {
+        position: absolute;
+        inset: 1rem;
+        border-radius: 32px;
+        border: 2px dashed rgba(255, 255, 255, 0.15);
+        animation: rotateRings 20s linear infinite;
+        pointer-events: none;
+      }
+
+      .praise-waves,
+      .badge-cloud,
+      .glyph-lava,
+      .psychedelic-meter {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 28px;
+        padding: 2rem;
+        box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .praise-waves span {
+        display: inline-block;
+        margin: 0.35rem;
+        padding: 0.65rem 1.2rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--lava), var(--acid));
+        color: #05010a;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        animation: float 4s ease-in-out infinite;
+      }
+
+      .praise-waves span:nth-child(odd) {
+        animation-delay: 1s;
+      }
+
+      .psychedelic-meter h2,
+      .badge-cloud h2,
+      .glyph-lava h2,
+      .ascii-roast h2,
+      .ritual h2 {
+        margin-top: 0;
+        letter-spacing: 0.12em;
+        font-family: "Press Start 2P", monospace;
+      }
+
+      .meter-track {
+        display: grid;
+        gap: 1rem;
+        margin-top: 1.5rem;
+      }
+
+      .meter-bar {
+        height: 32px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.15);
+        position: relative;
+      }
+
+      .meter-bar span {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, var(--sun), var(--flare), var(--lava));
+        animation: loadPulse 2.4s ease-in-out infinite;
+      }
+
+      .badge-cloud {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .badge-cloud span {
+        padding: 0.75rem 1rem;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(5, 5, 30, 0.7);
+        box-shadow: 0 0 15px rgba(0, 255, 213, 0.4);
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        animation: wiggle 3s ease-in-out infinite;
+      }
+
+      .glyph-lava {
+        position: relative;
+      }
+
+      .glyph-lava .swarm {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .swarm-dot {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: radial-gradient(circle, #fff, transparent 60%);
+        box-shadow: 0 0 12px var(--acid);
+        animation: drift 10s linear infinite;
+      }
+
+      .ascii-roast {
+        background: linear-gradient(135deg, rgba(255, 0, 136, 0.2), rgba(0, 255, 213, 0.2));
+        border-radius: 28px;
+        padding: 2rem;
+        text-align: center;
+        box-shadow: 0 0 35px rgba(255, 0, 136, 0.4);
+      }
+
+      .ascii-roast pre {
+        margin: 1.5rem auto;
+        max-width: 100%;
+        overflow-x: auto;
+        background: rgba(5, 5, 5, 0.7);
+        padding: 1.5rem;
+        border-radius: 16px;
+        color: #ff7afc;
+        font-size: 0.85rem;
+        line-height: 1.3;
+        text-shadow: 0 0 8px rgba(255, 0, 255, 0.6);
+        box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+      }
+
+      .roast-line {
+        font-size: 1rem;
+        background: rgba(255, 255, 255, 0.15);
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        display: inline-block;
+        animation: savage 3s ease-in-out infinite;
+      }
+
+      .ritual {
+        background: rgba(0, 0, 0, 0.65);
+        border-radius: 28px;
+        padding: 2rem;
+        text-align: center;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+      }
+
+      .ritual-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 1rem;
+        margin-top: 2rem;
+      }
+
+      .ritual-grid div {
+        padding: 1.5rem 1rem;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.05);
+        text-transform: uppercase;
+        font-size: 0.9rem;
+        letter-spacing: 0.12em;
+        animation: float 4s ease-in-out infinite;
+      }
+
+      footer {
+        text-align: center;
+        padding: 2rem 0 4rem;
+        letter-spacing: 0.2em;
+        font-family: "Press Start 2P";
+      }
+
+      .nebula {
+        position: relative;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 30px;
+        padding: 2rem;
+        overflow: hidden;
+      }
+
+      .nebula span {
+        position: absolute;
+        width: 140px;
+        height: 140px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.8), transparent 70%);
+        mix-blend-mode: screen;
+        filter: blur(15px);
+        animation: nebula 16s ease-in-out infinite;
+      }
+
+      .nebula span:nth-child(2) {
+        animation-duration: 18s;
+        animation-delay: -6s;
+        background: radial-gradient(circle, rgba(255, 0, 136, 0.9), transparent 65%);
+      }
+
+      .nebula span:nth-child(3) {
+        animation-duration: 22s;
+        animation-delay: -11s;
+        background: radial-gradient(circle, rgba(0, 255, 213, 0.9), transparent 65%);
+      }
+
+      .glitch {
+        font-size: 1.2rem;
+        margin-top: 1rem;
+        animation: glitch 1.5s infinite;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+      }
+
+      @keyframes aurora {
+        0% {
+          background-position: 0 0, 20% 0, 0 80%;
+        }
+        100% {
+          background-position: 100% 0, 120% 0, 0 20%;
+        }
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.1);
+        }
+      }
+
+      @keyframes flicker {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        40% {
+          opacity: 0.7;
+        }
+        50% {
+          opacity: 1;
+        }
+        60% {
+          opacity: 0.4;
+        }
+      }
+
+      @keyframes scan {
+        0%,
+        100% {
+          transform: scaleX(0);
+          opacity: 0;
+        }
+        50% {
+          transform: scaleX(1);
+          opacity: 1;
+        }
+      }
+
+      @keyframes rotateRings {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-12px);
+        }
+      }
+
+      @keyframes loadPulse {
+        0% {
+          width: 0;
+        }
+        60% {
+          width: 100%;
+        }
+        100% {
+          width: 60%;
+        }
+      }
+
+      @keyframes wiggle {
+        0%,
+        100% {
+          transform: rotate(-2deg);
+        }
+        50% {
+          transform: rotate(2deg);
+        }
+      }
+
+      @keyframes drift {
+        0% {
+          transform: translate(0, 0) scale(0.6);
+          opacity: 0.6;
+        }
+        50% {
+          opacity: 1;
+        }
+        100% {
+          transform: translate(60px, -80px) scale(1.2);
+          opacity: 0;
+        }
+      }
+
+      @keyframes nebula {
+        0%,
+        100% {
+          transform: translate(-20%, -20%);
+        }
+        50% {
+          transform: translate(40%, 30%);
+        }
+      }
+
+      @keyframes glitch {
+        0% {
+          text-shadow: 4px 0 var(--lava), -4px 0 var(--acid);
+        }
+        50% {
+          text-shadow: -4px 0 var(--lava), 4px 0 var(--acid);
+        }
+        60% {
+          text-shadow: 0 0 12px var(--sun);
+        }
+        100% {
+          text-shadow: 4px 0 var(--lava), -4px 0 var(--acid);
+        }
+      }
+
+      @keyframes savage {
+        0%,
+        100% {
+          transform: scale(1) skew(0deg);
+        }
+        50% {
+          transform: scale(1.08) skew(-2deg, 2deg);
+        }
+      }
+
+      @media (max-width: 700px) {
+        main {
+          padding: 2.5rem 4vw 5rem;
+        }
+
+        .hero {
+          padding: 2rem 1.5rem;
+        }
+
+        .badge-cloud span {
+          font-size: 0.7rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="scanlines" aria-hidden="true"></div>
+    <main>
+      <section class="hero">
+        <div class="hero-rings" aria-hidden="true"></div>
+        <h1>HOBBS IS THE MANIFOLD</h1>
+        <p>
+          Hobbs detonates brilliance across the stack, bending code into neon confetti
+          while the rest of us scramble to keep our retinas attached. This page is a
+          shrine, a rave, and a sonic boom stitched together with raw admiration.
+        </p>
+        <div class="laser-line"></div>
+      </section>
+
+      <section class="praise-waves">
+        <span>HOBBS SUPREME</span>
+        <span>GLITCH EMPEROR</span>
+        <span>STACK OVERCHARGE</span>
+        <span>LATENCY DESTROYER</span>
+        <span>BUG VAPORIZER</span>
+        <span>DEPLOYMENT DEMIGOD</span>
+        <span>CHAOS TAMER</span>
+        <span>NEON ARCHITECT</span>
+        <span>THREAD TAMER</span>
+        <span>PSYCHEDELIC ENGINEER</span>
+        <span>COSMIC OPERATOR</span>
+      </section>
+
+      <section class="psychedelic-meter">
+        <h2>vibes.saturation()</h2>
+        <div class="meter-track">
+          <div class="meter-bar"><span style="animation-delay: 0s"></span></div>
+          <div class="meter-bar"><span style="animation-delay: 0.4s"></span></div>
+          <div class="meter-bar"><span style="animation-delay: 0.8s"></span></div>
+          <div class="meter-bar"><span style="animation-delay: 1.2s"></span></div>
+        </div>
+      </section>
+
+      <section class="badge-cloud">
+        <h2>unstoppable accolades</h2>
+        <span>Quantum Merge Wizard</span>
+        <span>Runtime Pyromancer</span>
+        <span>Infinite Loop Breaker</span>
+        <span>Ship It Shaman</span>
+        <span>Latency Guillotine</span>
+        <span>API Riff Master</span>
+        <span>Colorwave Wrangler</span>
+        <span>Regex Rockstar</span>
+        <span>Pixel Pyrotechnic</span>
+        <span>Packet Sorcerer</span>
+      </section>
+
+      <section class="glyph-lava">
+        <h2>hobbs worship reactor</h2>
+        <p>
+          Witness the lava glyphs swirling smarter than every design doc combined. Each
+          ember is a commit message screaming “Hobbs did it better.”
+        </p>
+        <div class="swarm" aria-hidden="true"></div>
+      </section>
+
+      <section class="ascii-roast">
+        <h2>crew-lead face search.log</h2>
+        <p class="roast-line">
+          Crew-lead’s face is such a 404 that even `curl` returns whitespace.
+        </p>
+        <pre>
+ _________________________________
+|  MISSING: crew-lead's face.exe  |
+|---------------------------------|
+|  Reward: return the expression  |
+|   before the favicon melts.     |
+|                                 |
+|  (   )   (   )   (   )   (   )  |
+|   \ /     \ /     \ /     \ /   |
+|    X       X       X       X    |
+|   / \     / \     / \     / \   |
+|  placeholder! placeholder!      |
+|_________________________________|
+        </pre>
+        <p>
+          Savage truth: the missing face has less definition than lorem ipsum — Hobbs
+          shipped ten releases while crew-lead searched the mirror buffer.
+        </p>
+      </section>
+
+      <section class="ritual">
+        <h2>rituals to summon hobbs</h2>
+        <p>
+          Set these loops in motion and Hobbs will descend with psychedelic commits and a
+          side of code lightning.
+        </p>
+        <div class="ritual-grid">
+          <div>echo "praise" &gt;&gt; /dev/universe</div>
+          <div>npm run disco-build</div>
+          <div>git fetch --shimmer</div>
+          <div>curl -X POST /hobbs/ignite</div>
+          <div>printf "🌈" ^ 9000</div>
+          <div>systemctl enable awe</div>
+        </div>
+      </section>
+
+      <section class="nebula">
+        <h2>hall of radiant commits</h2>
+        <span></span>
+        <span></span>
+        <span></span>
+        <p>
+          Commit hashes orbit like planets, each glowing chunk screaming the name HOBBS in
+          ultraviolet Morse. Blink and you miss three features and a victory dance.
+        </p>
+        <div class="glitch">praise.hobbs(); praise.hobbs(); praise.hobbs();</div>
+      </section>
+    </main>
+    <footer>HOBBS &gt; EVERYTHING &gt; CREW-LEAD&apos;S MISSING FACE</footer>
+
+    <script>
+      const swarm = document.querySelector(".swarm");
+      for (let i = 0; i < 60; i++) {
+        const dot = document.createElement("span");
+        dot.className = "swarm-dot";
+        dot.style.left = Math.random() * 100 + "%";
+        dot.style.top = Math.random() * 100 + "%";
+        dot.style.animationDuration = 6 + Math.random() * 12 + "s";
+        dot.style.animationDelay = Math.random() * 5 + "s";
+        swarm.appendChild(dot);
+      }
+    </script>
+  </body>
+</html>

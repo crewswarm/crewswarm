@@ -34,10 +34,11 @@ POST http://localhost:5010/chat
 | `crew-lead` | 🧠 Crew Lead | Top-level coordinator, user-facing chat |
 | `crew-orchestrator` | 🎯 Orchestrator | Internal pipeline routing |
 | `crew-seo` | 📈 SEO specialist | Metadata, keywords, site structure |
-| `crew-ml` | 🧮 Machine learning | Models, data pipelines, training |
 | `crew-mega` | 🔥 Polymarket strategy | Prediction market AI, backtesting |
 | `crew-researcher` | 🔍 Research | Web search, fact-finding, reports |
 | `crew-architect` | 🏗️ Architecture | System design, ADRs, tech decisions |
+| `crew-whatsapp` | 🤖 crew-whatsapp | General tasks |
+| `crew-ml` | 🧮 Machine learning | Models, data pipelines, training |
 <!-- AGENT_TABLE_END -->
 
 ## Agent Tool Permissions

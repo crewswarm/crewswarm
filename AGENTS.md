@@ -196,6 +196,15 @@ See `~/.crewswarm/crewswarm.json` → `agents[].tools.crewswarmAllow` to overrid
 | `crew-copywriter` | Writing & docs |
 | `crew-github` | Git & PRs |
 | `crew-main` | General purpose |
+| `crew-orchestrator` | Parallel wave orchestrator |
+| `crew-researcher` | Web research (Perplexity) |
+| `crew-architect` | System design / DevOps / infrastructure |
+| `crew-seo` | SEO specialist |
+| `crew-ml` | Machine learning / AI pipelines |
+| `crew-mega` | General purpose heavy tasks |
+| `crew-telegram` | Telegram bridge agent |
+| `crew-whatsapp` | WhatsApp bridge agent |
+| `orchestrator` | Internal pipeline routing (alias for crew-orchestrator) |
 
 ---
 
@@ -499,6 +508,69 @@ Numbers in international format. Leave empty to allow any sender.
 
 ---
 
+## MCP Integration — use your crew from any AI tool
+
+CrewSwarm runs a built-in **MCP server on port 5020**. Connect it to Cursor, Claude Code, OpenCode, or any MCP-compatible client and your full 20-agent crew becomes available as callable tools — from any project, not just the CrewSwarm repo.
+
+### What's exposed (13 MCP tools)
+
+| Tool | What it does |
+|---|---|
+| `dispatch_agent` | Send a task to any specialist agent and get the result |
+| `list_agents` | List all agents, models, and live status |
+| `run_pipeline` | Multi-agent pipeline — each stage passes output to the next |
+| `chat_stinki` | Talk directly to crew-lead (roadmaps, questions, dispatch) |
+| `crewswarm_status` | Live status of all agents + recent task telemetry |
+| `smart_dispatch` | Analyze a task → get a multi-agent plan before executing |
+| `skill_*` | Run any installed skill (ElevenLabs TTS, Fly deploy, Twitter, etc.) |
+
+### Why this is different from built-in Cursor subagents
+
+| Cursor built-in | CrewSwarm via MCP |
+|---|---|
+| Session-scoped, die when chat closes | Persistent daemons running 24/7 |
+| No memory between sessions | brain.md, lessons, decisions persist forever |
+| Generic role descriptions | Your custom crew — names, rules, specialized prompts |
+| One model per subagent type | Each agent uses YOUR configured model |
+| No cross-agent coordination | RT bus — agents dispatch to each other |
+
+### Setup (automatic)
+
+Run `bash install.sh` and choose **yes** at the MCP integration prompt. It writes `mcp.json` for Cursor, Claude Code, and OpenCode automatically.
+
+### Setup (manual)
+
+Add to `~/.cursor/mcp.json` (same format for `~/.claude/mcp.json` and `~/.config/opencode/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "crewswarm": {
+      "url": "http://127.0.0.1:5020/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-rt-auth-token>"
+      }
+    }
+  }
+}
+```
+
+Find your auth token: `cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])"`
+
+Restart your editor after adding the config. The MCP server must be running (`npm run restart-all`).
+
+### OpenAI-compatible API (bonus)
+
+The same port also exposes an OpenAI-compatible API — use it with Open WebUI or any tool that accepts a custom base URL:
+
+```
+Base URL: http://127.0.0.1:5020/v1
+API key:  (any string)
+Models:   one per agent (crew-coder, crew-qa, etc.)
+```
+
+---
+
 ## crew-github — what it needs
 
 crew-github runs real `git` and `gh` commands via `@@RUN_CMD`. For it to work:
@@ -516,6 +588,39 @@ gh auth login   # follow prompts — authenticates gh with GitHub
 ```
 
 **No special API key needed** — it uses your local git credentials, same as you would from the terminal. It cannot push to repos you don't have access to.
+
+---
+
+## MCP Integration — use CrewSwarm agents in any project
+
+CrewSwarm runs an MCP server on port **5020**. Wire it into Cursor, Claude Code, or OpenCode and all 20 agents become available as callable tools in any project — no AGENTS.md copy needed.
+
+**Auto-setup (recommended):** run `bash install.sh` and answer `y` to the MCP prompt. It configures all three tools automatically.
+
+**Manual setup:** get your auth token, then add the crewswarm entry to each tool's MCP config:
+
+```bash
+TOKEN=$(node -e "const c=require('fs').readFileSync(require('os').homedir()+'/.crewswarm/config.json','utf8');console.log(JSON.parse(c).rt?.authToken)")
+```
+
+**Cursor** — `~/.cursor/mcp.json`:
+```json
+{
+  "mcpServers": {
+    "crewswarm": {
+      "url": "http://127.0.0.1:5020/mcp",
+      "headers": { "Authorization": "Bearer <TOKEN>" }
+    }
+  }
+}
+```
+Restart Cursor after saving.
+
+**Claude Code** — `~/.claude/mcp.json`: same format as above.
+
+**OpenCode** — `~/.config/opencode/mcp.json`: same format as above.
+
+Once configured, agents appear as MCP tools. The MCP server must be running (`npm run restart-all` starts it on :5020).
 
 ---
 
