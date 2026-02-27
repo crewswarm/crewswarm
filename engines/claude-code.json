@@ -3,6 +3,7 @@
   "label": "Claude Code",
   "description": "Route tasks through Anthropic's Claude Code CLI (claude -p). Full workspace context, native tool use, and session continuity per agent. Best for large refactors and multi-file reasoning.",
   "bin": "claude",
+  "binAlternate": "~/.local/bin/claude",
   "installCmd": "npm install -g @anthropic-ai/claude-code",
   "installUrl": "https://claude.ai/code",
   "docsUrl": "https://docs.anthropic.com/claude-code",
@@ -10,7 +11,8 @@
   "icon": "claude",
   "agentConfigKey": "useClaudeCode",
   "envToggle": "CREWSWARM_CLAUDE_CODE",
-  "authNote": "Uses OAuth — run `claude` once to authenticate, or set ANTHROPIC_API_KEY for API-key mode.",
+  "requiresAuth": true,
+  "authNote": "Uses OAuth — run `claude` once to authenticate. No API key needed. Set ANTHROPIC_API_KEY only if you prefer API-key mode.",
   "modelEnvVar": "CREWSWARM_CLAUDE_CODE_MODEL",
   "modelFlag": "--model",
   "bestFor": ["crew-coder", "crew-fixer", "crew-coder-back"],
@@ -18,10 +20,11 @@
     "Full workspace context at every call",
     "Native Anthropic tool use (no @@TOOL parsing)",
     "Session continuity per agent ID",
-    "Requires ANTHROPIC_API_KEY"
+    "OAuth auth — no API key required"
   ],
   "args": {
-    "run": ["-p", "{prompt}"]
+    "run": ["-p", "--dangerously-skip-permissions", "{prompt}"],
+    "run_with_model": ["-p", "--dangerously-skip-permissions", "--model", "{model}", "{prompt}"]
   },
-  "outputMode": "streaming"
+  "outputMode": "stream-json"
 }

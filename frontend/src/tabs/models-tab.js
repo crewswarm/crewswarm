@@ -20,15 +20,17 @@ export function initModelsTab({ hideAllViews, setNavActive, loadAgents } = {}) {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const BUILTIN_PROVIDERS = [
-  { id:'groq',         label:'Groq',              icon:'⚡', url:'https://console.groq.com/keys',         hint:'Fast inference — great for crew-coder, crew-fixer' },
-  { id:'anthropic',    label:'Anthropic',          icon:'🟣', url:'https://console.anthropic.com/',         hint:'Claude models — best for complex reasoning tasks' },
-  { id:'openai',       label:'OpenAI (API)',        icon:'🟢', url:'https://platform.openai.com/api-keys',   hint:'GPT-4o and o-series — pay per use with API key' },
-  { id:'perplexity',   label:'Perplexity',          icon:'🔍', url:'https://www.perplexity.ai/settings/api', hint:'Sonar Pro — ideal for crew-pm research tasks' },
-  { id:'mistral',      label:'Mistral',             icon:'🌀', url:'https://console.mistral.ai/',            hint:'Open-weight models, efficient mid-tier tasks' },
-  { id:'deepseek',     label:'DeepSeek',            icon:'🌊', url:'https://platform.deepseek.com/',         hint:'Low cost, strong coding performance' },
-  { id:'xai',          label:'xAI (Grok)',          icon:'𝕏',  url:'https://console.x.ai/',                 hint:'Grok models from xAI' },
-  { id:'ollama',       label:'Ollama',              icon:'🏠', url:'https://ollama.com/download',            hint:'Local models — no API key needed, runs offline' },
-  { id:'openai-local', label:'OpenAI (local)',      icon:'🟢', url:'https://github.com/RayBytes/ChatMock', hint:'ChatMock — use ChatGPT Plus/Pro subscription. Run ChatMock server first (e.g. port 8000). Key ignored.' },
+  { id:'groq',         label:'Groq',              icon:'⚡', url:'https://console.groq.com/keys',              hint:'Fast inference — great for crew-coder, crew-fixer' },
+  { id:'anthropic',    label:'Anthropic',          icon:'🟣', url:'https://console.anthropic.com/',              hint:'Claude models — best for complex reasoning tasks' },
+  { id:'openai',       label:'OpenAI (API)',        icon:'🟢', url:'https://platform.openai.com/api-keys',        hint:'GPT-4o and o-series — pay per use with API key' },
+  { id:'cerebras',     label:'Cerebras',            icon:'🧠', url:'https://cloud.cerebras.ai/',                  hint:'Ultra-fast inference on Cerebras hardware — llama-3.3-70b at 2,000 tok/s' },
+  { id:'nvidia',       label:'NVIDIA NIM',          icon:'🎮', url:'https://build.nvidia.com/explore/discover',   hint:'NVIDIA NIM microservices — Llama, Mistral, Phi and more' },
+  { id:'perplexity',   label:'Perplexity',          icon:'🔍', url:'https://www.perplexity.ai/settings/api',      hint:'Sonar Pro — ideal for crew-pm research tasks' },
+  { id:'mistral',      label:'Mistral',             icon:'🌀', url:'https://console.mistral.ai/',                 hint:'Open-weight models, efficient mid-tier tasks' },
+  { id:'deepseek',     label:'DeepSeek',            icon:'🌊', url:'https://platform.deepseek.com/',              hint:'Low cost, strong coding performance' },
+  { id:'xai',          label:'xAI (Grok)',          icon:'𝕏',  url:'https://console.x.ai/',                      hint:'Grok models from xAI' },
+  { id:'ollama',       label:'Ollama',              icon:'🏠', url:'https://ollama.com/download',                 hint:'Local models — no API key needed, runs offline' },
+  { id:'openai-local', label:'OpenAI (local)',      icon:'🟢', url:'https://github.com/RayBytes/ChatMock',        hint:'ChatMock — use ChatGPT Plus/Pro subscription. Run ChatMock server first (e.g. port 8000). Key ignored.' },
 ];
 
 const SEARCH_TOOLS = [

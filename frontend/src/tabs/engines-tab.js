@@ -68,13 +68,12 @@ export async function loadEngines() {
       card.className = 'card';
       card.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
       const iconHtml = ENGINE_ICONS[eng.icon || eng.id] || `<span style="font-size:20px;">⚙️</span>`;
-      const needsAuth = eng.requiresAuth && eng.installed;
-      const statusDot = eng.ready && !needsAuth ? '🟢' : eng.installed ? '🟡' : '⚫';
-      const statusLabel = eng.ready && !needsAuth ? 'Ready'
+      const statusDot = eng.ready ? '🟢' : eng.installed ? '🟡' : '⚫';
+      const statusLabel = eng.ready ? 'Ready'
         : eng.installed && eng.requiresAuth ? 'Installed — run auth to activate'
         : eng.installed ? 'Installed — missing env vars'
         : 'Not installed';
-      const statusColor = eng.ready && !needsAuth ? 'var(--green)' : eng.installed ? 'var(--yellow,#fbbf24)' : 'var(--text-3)';
+      const statusColor = eng.ready ? 'var(--green)' : eng.installed ? 'var(--yellow,#fbbf24)' : 'var(--text-3)';
       const traitsHtml = (eng.traits || []).map(t =>
         `<li style="font-size:11px;color:var(--text-3);list-style:none;padding:2px 0;">▸ ${escHtml(t)}</li>`
       ).join('');
@@ -97,7 +96,7 @@ export async function loadEngines() {
                 <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px;">${escHtml(m.label)}</div>
                 <div style="position:relative;display:flex;align-items:stretch;gap:0;">
                   <code style="flex:1;font-size:11px;background:var(--bg-1);padding:6px 8px;border-radius:4px 0 0 4px;display:block;word-break:break-all;border:1px solid var(--border);border-right:none;">${escHtml(m.cmd)}</code>
-                  <button onclick="navigator.clipboard.writeText(${JSON.stringify(m.cmd)}).then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='Copy',1200)})" style="font-size:10px;padding:0 8px;border-radius:0 4px 4px 0;border:1px solid var(--border);background:var(--bg-card2);color:var(--text-2);cursor:pointer;white-space:nowrap;flex-shrink:0;">Copy</button>
+                  <button onclick="navigator.clipboard.writeText(${escHtml(JSON.stringify(m.cmd))}).then(()=>{this.textContent='\u2713';setTimeout(()=>this.textContent='Copy',1200)})" style="font-size:10px;padding:0 8px;border-radius:0 4px 4px 0;border:1px solid var(--border);background:var(--bg-card2);color:var(--text-2);cursor:pointer;white-space:nowrap;flex-shrink:0;">Copy</button>
                 </div>
                 ${m.note ? `<div style="font-size:10px;color:var(--text-3);margin-top:3px;">${escHtml(m.note)}</div>` : ''}
               </div>

@@ -224,8 +224,12 @@ async function loadAgents_cfg(){
                 style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useCodex ? '#a855f7' : 'var(--border)'}; background:${a.useCodex ? 'rgba(168,85,247,0.12)' : 'var(--surface-2)'}; color:${a.useCodex ? '#a855f7' : 'var(--text-2)'};">
                 🟣 Codex CLI <span style="font-size:10px; font-weight:400; opacity:0.7;">(subscription)</span>
               </button>
+              <button id="route-gemini-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="gemini"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useGeminiCli ? '#4285f4' : 'var(--border)'}; background:${a.useGeminiCli ? 'rgba(66,133,244,0.12)' : 'var(--surface-2)'}; color:${a.useGeminiCli ? '#4285f4' : 'var(--text-2)'};">
+                🔵 Gemini CLI <span style="font-size:10px; font-weight:400; opacity:0.7;">(free · OAuth)</span>
+              </button>
             </div>
-            <div id="loop-row-${a.id}" style="display:${(a.useOpenCode || a.useCursorCli || a.useClaudeCode || a.useCodex) ? 'flex' : 'none'}; align-items:center; gap:10px; margin-bottom:10px; padding:8px 10px; background:var(--surface-2); border-radius:8px; border:1px solid var(--border);">
+            <div id="loop-row-${a.id}" style="display:${(a.useOpenCode || a.useCursorCli || a.useClaudeCode || a.useCodex || a.useGeminiCli) ? 'flex' : 'none'}; align-items:center; gap:10px; margin-bottom:10px; padding:8px 10px; background:var(--surface-2); border-radius:8px; border:1px solid var(--border);">
               <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
                 <input type="checkbox" id="loop-toggle-${a.id}" ${a.opencodeLoop ? 'checked' : ''} onchange="saveAgentLoop('${a.id}')" style="width:14px; height:14px; cursor:pointer;" />
                 <span style="font-size:12px; font-weight:600; color:var(--text-1);">🔁 Ouroboros Loop</span>
@@ -261,6 +265,16 @@ async function loadAgents_cfg(){
               </select>
               <input id="claudecode-model-txt-${a.id}" type="text" placeholder="claude-sonnet-4-5 or leave blank" value="${a.claudeCodeModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
               <button data-action="saveClaudeCodeConfig" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">Save</button>
+            </div>
+            <div id="gemini-model-row-${a.id}" style="display:${a.useGeminiCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <select id="gemini-model-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncGeminiModelText('${a.id}')">
+                <option value="">— auto (gemini-2.5-pro) —</option>
+                <option value="gemini-2.5-pro" ${(a.geminiCliModel||'') === 'gemini-2.5-pro' ? 'selected' : ''}>gemini-2.5-pro — best reasoning</option>
+                <option value="gemini-2.5-flash" ${(a.geminiCliModel||'') === 'gemini-2.5-flash' ? 'selected' : ''}>gemini-2.5-flash — fast &amp; cheap</option>
+                <option value="gemini-2.0-flash" ${(a.geminiCliModel||'') === 'gemini-2.0-flash' ? 'selected' : ''}>gemini-2.0-flash — ultra fast</option>
+              </select>
+              <input id="gemini-model-txt-${a.id}" type="text" placeholder="gemini-2.5-flash or leave blank for auto" value="${a.geminiCliModel || ''}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button data-action="saveGeminiCliConfig" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px; color:#4285f4; border-color:rgba(66,133,244,0.3);">Save</button>
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
@@ -529,12 +543,13 @@ function syncCursorModelText(agentId) {
 }
 window.syncCursorModelText = syncCursorModelText;
 
-// 4-way route toggle — mutually exclusive
+// route toggle — mutually exclusive
 async function setRoute(agentId, route) {
   const useOpenCode   = route === 'opencode';
   const useCursorCli  = route === 'cursor';
   const useClaudeCode = route === 'claudecode';
   const useCodex      = route === 'codex';
+  const useGeminiCli  = route === 'gemini';
   // Update button styles
   const styles = {
     direct:      { border: 'var(--accent)',    bg: 'rgba(99,102,241,0.15)',   color: 'var(--accent)' },
@@ -542,9 +557,10 @@ async function setRoute(agentId, route) {
     cursor:      { border: 'var(--accent)',    bg: 'rgba(56,189,248,0.12)',   color: 'var(--accent)' },
     claudecode:  { border: '#f59e0b',          bg: 'rgba(245,158,11,0.12)',  color: '#f59e0b' },
     codex:       { border: '#a855f7',          bg: 'rgba(168,85,247,0.12)',  color: '#a855f7' },
+    gemini:      { border: '#4285f4',          bg: 'rgba(66,133,244,0.12)',  color: '#4285f4' },
     inactive:    { border: 'var(--border)',    bg: 'var(--surface-2)',        color: 'var(--text-2)' },
   };
-  ['direct','opencode','cursor','claudecode','codex'].forEach(r => {
+  ['direct','opencode','cursor','claudecode','codex','gemini'].forEach(r => {
     const btn = document.getElementById('route-' + r + '-' + agentId);
     if (!btn) return;
     const s = r === route ? styles[r] : styles.inactive;
@@ -555,16 +571,18 @@ async function setRoute(agentId, route) {
   const ocFbRow      = document.getElementById('oc-fallback-row-' + agentId);
   const cursorRow    = document.getElementById('cursor-model-row-' + agentId);
   const ccRow        = document.getElementById('claudecode-model-row-' + agentId);
-  if (ocRow)     ocRow.style.display     = useOpenCode   ? 'flex' : 'none';
-  if (ocFbRow)   ocFbRow.style.display   = useOpenCode   ? 'flex' : 'none';
-  if (cursorRow) cursorRow.style.display = useCursorCli  ? 'flex' : 'none';
-  if (ccRow)     ccRow.style.display     = useClaudeCode ? 'flex' : 'none';
+  const geminiRow    = document.getElementById('gemini-model-row-' + agentId);
+  if (ocRow)      ocRow.style.display      = useOpenCode   ? 'flex' : 'none';
+  if (ocFbRow)    ocFbRow.style.display    = useOpenCode   ? 'flex' : 'none';
+  if (cursorRow)  cursorRow.style.display  = useCursorCli  ? 'flex' : 'none';
+  if (ccRow)      ccRow.style.display      = useClaudeCode ? 'flex' : 'none';
+  if (geminiRow)  geminiRow.style.display  = useGeminiCli  ? 'flex' : 'none';
   const loopRow = document.getElementById('loop-row-' + agentId);
-  if (loopRow)   loopRow.style.display   = (useOpenCode || useCursorCli || useClaudeCode || useCodex) ? 'flex' : 'none';
+  if (loopRow)   loopRow.style.display   = (useOpenCode || useCursorCli || useClaudeCode || useCodex || useGeminiCli) ? 'flex' : 'none';
   // Save
   try {
-    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli, useClaudeCode, useCodex });
-    const labels = { direct: 'Direct API', opencode: 'OpenCode', cursor: 'Cursor CLI', claudecode: 'Claude Code', codex: 'Codex CLI' };
+    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli, useClaudeCode, useCodex, useGeminiCli });
+    const labels = { direct: 'Direct API', opencode: 'OpenCode', cursor: 'Cursor CLI', claudecode: 'Claude Code', codex: 'Codex CLI', gemini: 'Gemini CLI' };
     showNotification(agentId + ' → ' + (labels[route] || route));
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
@@ -582,6 +600,21 @@ async function saveClaudeCodeConfig(agentId) {
   try {
     await postJSON('/api/agents-config/update', { agentId, claudeCodeModel });
     showNotification(agentId + ' Claude Code model → ' + (claudeCodeModel || 'auto'));
+  } catch(e) { showNotification('Failed: ' + e.message, true); }
+}
+
+function syncGeminiModelText(agentId) {
+  const sel = document.getElementById('gemini-model-sel-' + agentId);
+  const txt = document.getElementById('gemini-model-txt-' + agentId);
+  if (sel && txt) txt.value = sel.value;
+}
+window.syncGeminiModelText = syncGeminiModelText;
+
+async function saveGeminiCliConfig(agentId) {
+  const geminiCliModel = (document.getElementById('gemini-model-txt-' + agentId)?.value || '').trim();
+  try {
+    await postJSON('/api/agents-config/update', { agentId, geminiCliModel });
+    showNotification(agentId + ' Gemini model → ' + (geminiCliModel || 'auto'));
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 
@@ -652,17 +685,21 @@ async function saveCursorCliToggle(agentId) {
 // Bulk route setter — apply a route to all coding agents at once
 async function bulkSetRoute(route, model) {
   const CODING_AGENTS = ['crew-coder','crew-coder-front','crew-coder-back','crew-frontend','crew-fixer','crew-architect','crew-ml'];
-  const label = route === 'cursor' ? 'Cursor CLI' : route === 'opencode' ? 'OpenCode' : route === 'claudecode' ? 'Claude Code' : 'Direct API';
+  const labels = { cursor: 'Cursor CLI', opencode: 'OpenCode', claudecode: 'Claude Code', codex: 'Codex CLI', gemini: 'Gemini CLI', direct: 'Direct API' };
+  const label = labels[route] || 'Direct API';
   showNotification('Applying ' + label + ' to all coding agents…');
   for (const agentId of CODING_AGENTS) {
     const useOpenCode   = route === 'opencode';
     const useCursorCli  = route === 'cursor';
     const useClaudeCode = route === 'claudecode';
+    const useCodex      = route === 'codex';
+    const useGeminiCli  = route === 'gemini';
     try {
-      const payload = { agentId, useOpenCode, useCursorCli, useClaudeCode };
+      const payload = { agentId, useOpenCode, useCursorCli, useClaudeCode, useCodex, useGeminiCli };
       if (model && route === 'cursor')      payload.cursorCliModel  = model;
       if (model && route === 'opencode')    payload.opencodeModel   = model;
       if (model && route === 'claudecode')  payload.claudeCodeModel = model;
+      if (model && route === 'gemini')      payload.geminiCliModel  = model;
       await postJSON('/api/agents-config/update', payload);
     } catch(e) { console.error('bulkSetRoute failed for', agentId, e.message); }
   }
@@ -1272,7 +1309,7 @@ export function populateModelDropdown(selectId, currentVal) {
 document.getElementById('newAgentBtn').onclick = () => {
   document.getElementById('newAgentForm').style.display = 'block';
   populateModelDropdown('naModel', '');
-  // Populate preset dropdown dynamically (can't be server-rendered since PRESET_OPTIONS is client-side)
+  // Populate preset dropdown dynamically (PRESET_OPTIONS is client-side only)
   const sel = document.getElementById('naPromptPreset');
   if (sel && sel.options.length <= 1) {
     PRESET_OPTIONS.forEach(p => {
@@ -1280,6 +1317,19 @@ document.getElementById('newAgentBtn').onclick = () => {
       opt.value = p.value; opt.textContent = p.label;
       sel.appendChild(opt);
     });
+  }
+  // Populate tool checkboxes dynamically (CREWSWARM_TOOLS is not available at HTML parse time)
+  const grid = document.getElementById('naToolsGrid');
+  if (grid && grid.querySelectorAll('.naToolCheck').length === 0) {
+    grid.innerHTML = CREWSWARM_TOOLS.map(t => `
+      <label style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text-2); cursor:pointer; padding:6px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-card2);">
+        <input type="checkbox" class="naToolCheck" data-tool="${t.id}" style="accent-color:var(--accent); margin-top:2px; flex-shrink:0;" />
+        <div>
+          <code style="font-size:11px; color:var(--text-1);">${t.id}</code>
+          <div style="font-size:10px; color:var(--text-3); margin-top:2px; line-height:1.3;">${t.desc}</div>
+        </div>
+      </label>
+    `).join('');
   }
 };
 document.getElementById('naCancelBtn').onclick = () => {
@@ -1327,6 +1377,7 @@ export {
   saveOpenCodeFallback,
   saveCursorCliConfig,
   saveClaudeCodeConfig,
+  saveGeminiCliConfig,
   bulkSetRoute,
   startCrew,
 };

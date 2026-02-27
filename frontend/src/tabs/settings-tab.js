@@ -285,47 +285,6 @@ export async function toggleGeminiCliExecutor() {
   } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 
-export async function loadAntigravityExecutor() {
-  const btn = document.getElementById('antigravityBtn');
-  const status = document.getElementById('antigravityStatus');
-  try {
-    const d = await getJSON('/api/settings/antigravity');
-    const on = d.enabled;
-    if (btn) {
-      btn.textContent = on ? '🌀 ON' : '⚫ OFF';
-      btn.style.background = on ? 'rgba(66,133,244,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? '#4285f4' : 'var(--border)';
-      btn.style.color = on ? '#4285f4' : 'var(--text-2)';
-    }
-    if (status) {
-      if (!d.installed) {
-        status.textContent = '⚠️ opencode binary not found — run: npm install -g opencode-ai';
-        status.style.color = 'var(--amber)';
-      } else {
-        status.textContent = on
-          ? 'Active — tasks route through Antigravity (google/antigravity-* models). Run opencode auth login if you haven\'t authenticated yet.'
-          : 'Off — tasks use direct LLM or other engine. Enable to route coding agents through Antigravity (free Gemini 3 Pro + Claude Opus 4.6 via Google OAuth).';
-        status.style.color = 'var(--text-3)';
-      }
-    }
-  } catch(e) {
-    if (btn) btn.textContent = 'Error';
-    if (status) { status.textContent = 'Could not load: ' + e.message; status.style.color = 'var(--text-3)'; }
-  }
-}
-
-export async function toggleAntigravityExecutor() {
-  try {
-    const current = await getJSON('/api/settings/antigravity');
-    if (!current.installed) {
-      showNotification('Install OpenCode first: npm install -g opencode-ai', 'error');
-      return;
-    }
-    const d = await postJSON('/api/settings/antigravity', { enabled: !current.enabled });
-    showNotification('Antigravity executor ' + (d.enabled ? 'ENABLED 🌀' : 'DISABLED'));
-    loadAntigravityExecutor();
-  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
-}
 
 export async function loadGlobalFallback() {
   try {
