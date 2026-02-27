@@ -21,6 +21,22 @@ import {
   RT_TO_GATEWAY_AGENT_MAP as REGISTRY_RT_TO_GATEWAY_AGENT_MAP,
 } from "./lib/agent-registry.mjs";
 import {
+  initTaskLease,
+  ensureSwarmRuntimeDirs,
+  parseTaskState,
+  taskIdentity,
+  taskKeyFor,
+  leasePath,
+  taskStatePath,
+  lockPath,
+  withTaskLock,
+  clearStaleTaskState,
+  claimTaskLease,
+  startTaskLeaseHeartbeat,
+  finalizeTaskState,
+  releaseRuntimeTaskLease,
+} from "./lib/runtime/task-lease.mjs";
+import {
   initTools,
   setRtClient,
   pendingCmdApprovals,
@@ -107,6 +123,7 @@ function resolveProviderConfig(cfg, providerKey) {
   };
 }
 // Wire injected deps into extracted modules (after config fns are defined)
+initTaskLease({ telemetry, sleep, parseJsonSafe });
 initTools({ resolveConfig, resolveTelegramBridgeConfig, loadAgentList, getOpencodeProjectDir,
   loadSkillDef, loadPendingSkills, savePendingSkills, notifyTelegramSkillApproval, executeSkill });
 initSpending({ resolveConfig, resolveTelegramBridgeConfig });
@@ -2044,204 +2061,6 @@ function runOpenCodeTask(prompt, payload = {}) {
 
       resolve(out || "(opencode completed with no output)");
     });
-  });
-}
-
-function ensureSwarmRuntimeDirs() {
-  fs.mkdirSync(SWARM_RUNTIME_DIR, { recursive: true });
-  fs.mkdirSync(SWARM_TASK_LEASE_DIR, { recursive: true });
-  fs.mkdirSync(SWARM_TASK_STATE_DIR, { recursive: true });
-  fs.mkdirSync(SWARM_DLQ_DIR, { recursive: true });
-}
-
-function parseTaskState(filePath) {
-  try {
-    const raw = fs.readFileSync(filePath, "utf8");
-    return parseJsonSafe(raw, null);
-  } catch {
-    return null;
-  }
-}
-
-function taskIdentity({ envelope, payload, incomingType, prompt }) {
-  const explicit = String(payload?.idempotencyKey || payload?.idempotency_key || payload?.dedupeKey || "").trim();
-  if (explicit) return explicit;
-  const taskId = String(envelope?.taskId || "").trim();
-  if (taskId) return `${incomingType}:${taskId}`;
-  const envelopeId = String(envelope?.id || "").trim();
-  if (envelopeId) return `${incomingType}:${envelopeId}`;
-  const base = JSON.stringify({
-    incomingType,
-    from: envelope?.from || "unknown",
-    prompt: String(prompt || "").slice(0, 2000),
-  });
-  return `hash:${crypto.createHash("sha256").update(base).digest("hex")}`;
-}
-
-function taskKeyFor(identity) {
-  return crypto.createHash("sha256").update(String(identity)).digest("hex");
-}
-
-function leasePath(taskKey) {
-  return path.join(SWARM_TASK_LEASE_DIR, `${taskKey}.json`);
-}
-
-function taskStatePath(taskKey) {
-  return path.join(SWARM_TASK_STATE_DIR, `${taskKey}.json`);
-}
-
-function lockPath(taskKey) {
-  return path.join(SWARM_TASK_LEASE_DIR, `${taskKey}.lock`);
-}
-
-async function withTaskLock(taskKey, fn) {
-  ensureSwarmRuntimeDirs();
-  const file = lockPath(taskKey);
-  const deadline = Date.now() + Math.max(200, CREWSWARM_RT_DISPATCH_HEARTBEAT_MS);
-  let lastErr;
-  while (Date.now() < deadline) {
-    try {
-      const fd = fs.openSync(file, "wx");
-      try {
-        return await fn();
-      } finally {
-        try { fs.closeSync(fd); } catch {}
-        try { fs.unlinkSync(file); } catch {}
-      }
-    } catch (err) {
-      lastErr = err;
-      if (err?.code !== "EEXIST") throw err;
-      await sleep(40);
-    }
-  }
-  throw new Error(`task lock timeout for ${taskKey}: ${lastErr?.message || "unknown"}`);
-}
-
-function clearStaleTaskState() {
-  try {
-    ensureSwarmRuntimeDirs();
-    const now = Date.now();
-    for (const fileName of fs.readdirSync(SWARM_TASK_STATE_DIR)) {
-      if (!fileName.endsWith(".json")) continue;
-      const fullPath = path.join(SWARM_TASK_STATE_DIR, fileName);
-      const row = parseTaskState(fullPath);
-      if (!row) continue;
-      const ts = Date.parse(String(row.completedAt || row.updatedAt || ""));
-      if (!Number.isFinite(ts)) continue;
-      if (now - ts > CREWSWARM_RT_TASK_STATE_TTL_MS) {
-        try { fs.unlinkSync(fullPath); } catch {}
-      }
-    }
-  } catch {}
-}
-
-async function claimTaskLease({ taskKey, identity, incomingType, envelope, payload }) {
-  const nowIso = new Date().toISOString();
-  const nowMs = Date.now();
-  return withTaskLock(taskKey, async () => {
-    clearStaleTaskState();
-    const stateFile = taskStatePath(taskKey);
-    const existingState = parseTaskState(stateFile);
-    if (existingState?.status === "done") {
-      return {
-        status: "already_done",
-        owner: existingState.owner || "unknown",
-      };
-    }
-
-    const leaseFile = leasePath(taskKey);
-    const existingLease = parseTaskState(leaseFile) || {};
-    const leaseExpiresAtMs = Date.parse(String(existingLease.leaseExpiresAt || ""));
-    const leaseActive = Number.isFinite(leaseExpiresAtMs) && leaseExpiresAtMs > nowMs;
-    if (leaseActive && existingLease.owner && existingLease.owner !== CREWSWARM_RT_AGENT) {
-      return {
-        status: "claimed_by_other",
-        owner: existingLease.owner,
-        leaseExpiresAt: existingLease.leaseExpiresAt,
-      };
-    }
-
-    const previousAttempts = Number(existingLease.attempt || payload?.retryCount || 0);
-    const attempt = leaseActive && existingLease.owner === CREWSWARM_RT_AGENT
-      ? Math.max(1, previousAttempts)
-      : previousAttempts + 1;
-
-    const leaseRecord = {
-      taskKey,
-      identity,
-      incomingType,
-      owner: CREWSWARM_RT_AGENT,
-      source: envelope?.from || "unknown",
-      attempt,
-      taskId: envelope?.taskId || "",
-      messageId: envelope?.id || "",
-      claimedAt: nowIso,
-      heartbeatAt: nowIso,
-      leaseExpiresAt: new Date(nowMs + CREWSWARM_RT_DISPATCH_LEASE_MS).toISOString(),
-    };
-    fs.writeFileSync(leaseFile, `${JSON.stringify(leaseRecord, null, 2)}\n`, "utf8");
-    telemetry("realtime_task_claimed", {
-      taskKey,
-      identity,
-      attempt,
-      incomingType,
-      owner: CREWSWARM_RT_AGENT,
-    });
-    return {
-      status: "claimed",
-      attempt,
-      lease: leaseRecord,
-    };
-  });
-}
-
-function startTaskLeaseHeartbeat(taskKey) {
-  return setInterval(async () => {
-    try {
-      await withTaskLock(taskKey, async () => {
-        const leaseFile = leasePath(taskKey);
-        const existingLease = parseTaskState(leaseFile);
-        if (!existingLease || existingLease.owner !== CREWSWARM_RT_AGENT) return;
-        const nowMs = Date.now();
-        existingLease.heartbeatAt = new Date(nowMs).toISOString();
-        existingLease.leaseExpiresAt = new Date(nowMs + CREWSWARM_RT_DISPATCH_LEASE_MS).toISOString();
-        fs.writeFileSync(leaseFile, `${JSON.stringify(existingLease, null, 2)}\n`, "utf8");
-      });
-    } catch (err) {
-      telemetry("realtime_task_heartbeat_error", { taskKey, message: err?.message ?? String(err) });
-    }
-  }, Math.max(1000, CREWSWARM_RT_DISPATCH_HEARTBEAT_MS));
-}
-
-async function finalizeTaskState({ taskKey, identity, status, attempt, error = "", note = "" }) {
-  const completedAt = new Date().toISOString();
-  await withTaskLock(taskKey, async () => {
-    const stateFile = taskStatePath(taskKey);
-    const leaseFile = leasePath(taskKey);
-    const state = {
-      taskKey,
-      identity,
-      status,
-      owner: CREWSWARM_RT_AGENT,
-      attempt,
-      error,
-      note,
-      completedAt,
-      updatedAt: completedAt,
-    };
-    fs.writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-    try { fs.unlinkSync(leaseFile); } catch {}
-  });
-}
-
-async function releaseRuntimeTaskLease(taskKey) {
-  await withTaskLock(taskKey, async () => {
-    const leaseFile = leasePath(taskKey);
-    const lease = parseTaskState(leaseFile);
-    if (!lease || lease.owner !== CREWSWARM_RT_AGENT) return;
-    lease.leaseExpiresAt = new Date(Date.now() - 1).toISOString();
-    lease.releasedAt = new Date().toISOString();
-    fs.writeFileSync(leaseFile, `${JSON.stringify(lease, null, 2)}\n`, "utf8");
   });
 }
 
