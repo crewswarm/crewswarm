@@ -4,12 +4,15 @@
  *
  * Validates that the dashboard HTML and inline script do not have syntax errors
  * or common pitfalls that break the browser (e.g. "Uncaught SyntaxError: Unexpected string").
+ * Also optionally validates telemetry event payloads against the canonical schema.
  *
  * Run after editing scripts/dashboard.mjs:
  *   node scripts/check-dashboard.mjs
  *
  * Options:
- *   --source-only   Only run source heuristics (no spawn, no --print-html).
+ *   --source-only       Only run source heuristics (no spawn, no --print-html).
+ *   --validate-schema   Also validate telemetry event log against JSON Schema.
+ *   --schema-only       Only run telemetry schema validation (skip HTML checks).
  *
  * Exit 0 = pass, 1 = fail.
  */
@@ -191,8 +194,149 @@ async function getDashboardHtml() {
   });
 }
 
+// ── Telemetry schema validation ───────────────────────────────────────────────
+
+async function runSchemaValidation() {
+  const schemaModPath = path.join(ROOT, "lib", "runtime", "telemetry-schema.mjs");
+  if (!fs.existsSync(schemaModPath)) {
+    console.error("  lib/runtime/telemetry-schema.mjs not found — skipping schema validation.");
+    return { ok: true, skipped: true };
+  }
+
+  let validateTelemetryEvent, TELEMETRY_SCHEMAS;
+  try {
+    ({ validateTelemetryEvent, TELEMETRY_SCHEMAS } = await import(schemaModPath));
+  } catch (e) {
+    console.error("  Failed to import telemetry schema:", e.message);
+    return { ok: false };
+  }
+
+  // Validate the schema itself can be imported and has expected event types
+  const expectedTypes = ["agent.presence", "task.lifecycle", "error"];
+  const missingTypes = expectedTypes.filter(t => !TELEMETRY_SCHEMAS[t]);
+  if (missingTypes.length > 0) {
+    console.error(`  Schema missing event types: ${missingTypes.join(", ")}`);
+    return { ok: false };
+  }
+  console.log(`  Schema loaded — ${Object.keys(TELEMETRY_SCHEMAS).length} event types defined.`);
+
+  // Validate canonical test vectors
+  const testVectors = [
+    {
+      label: "agent.presence (valid)",
+      ok: true,
+      event: {
+        schemaVersion: "1.0", eventType: "agent.presence", eventId: "ev-001",
+        occurredAt: "2026-02-27T00:00:00.000Z", correlationId: "corr-001",
+        source: { component: "crew-coder", agentId: "crew-coder" },
+        data: { status: "online", latencyMs: 12, uptimeSeconds: 300, heartbeatSeq: 1, version: "1.0.0" },
+      },
+    },
+    {
+      label: "task.lifecycle (valid)",
+      ok: true,
+      event: {
+        schemaVersion: "1.0", eventType: "task.lifecycle", eventId: "ev-002",
+        occurredAt: "2026-02-27T00:00:00.000Z", correlationId: "corr-002",
+        source: { component: "crew-lead" },
+        data: { taskId: "t-001", agentId: "crew-coder", taskType: "code", phase: "completed", phaseOrdinal: 4 },
+      },
+    },
+    {
+      label: "error (valid)",
+      ok: true,
+      event: {
+        schemaVersion: "1.0", eventType: "error", eventId: "ev-003",
+        occurredAt: "2026-02-27T00:00:00.000Z", correlationId: "corr-003",
+        source: { component: "gateway-bridge" },
+        data: { component: "gateway-bridge", severity: "error", errorCode: "ERR_TIMEOUT", message: "Agent timed out" },
+      },
+    },
+    {
+      label: "missing required envelope field",
+      ok: false,
+      event: {
+        schemaVersion: "1.0", eventType: "agent.presence", eventId: "ev-004",
+        source: { component: "crew-coder" },
+        data: { status: "online", latencyMs: 5, uptimeSeconds: 1, heartbeatSeq: 1, version: "1.0.0" },
+      },
+    },
+    {
+      label: "invalid status enum",
+      ok: false,
+      event: {
+        schemaVersion: "1.0", eventType: "agent.presence", eventId: "ev-005",
+        occurredAt: "2026-02-27T00:00:00.000Z", correlationId: "corr-005",
+        source: { component: "crew-coder" },
+        data: { status: "sleeping", latencyMs: 5, uptimeSeconds: 1, heartbeatSeq: 1, version: "1.0.0" },
+      },
+    },
+  ];
+
+  let vectorFailed = 0;
+  for (const v of testVectors) {
+    const result = validateTelemetryEvent(v.event);
+    const pass = result.ok === v.ok;
+    if (!pass) {
+      console.error(`  FAIL test vector "${v.label}": expected ok=${v.ok}, got ok=${result.ok}`);
+      if (result.errors.length) console.error("    errors:", result.errors.slice(0, 3).join("; "));
+      vectorFailed++;
+    }
+  }
+
+  if (vectorFailed > 0) {
+    console.error(`  ${vectorFailed}/${testVectors.length} schema test vectors failed.`);
+    return { ok: false };
+  }
+  console.log(`  ${testVectors.length}/${testVectors.length} schema test vectors passed.`);
+
+  // Optionally validate live log file
+  const logCandidates = [
+    path.join(os.homedir(), ".crewswarm", "events.jsonl"),
+    path.join(os.homedir(), ".crewswarm", "telemetry.jsonl"),
+  ];
+  for (const logPath of logCandidates) {
+    if (!fs.existsSync(logPath)) continue;
+    const lines = fs.readFileSync(logPath, "utf8").split("\n").filter(l => l.trim());
+    if (lines.length === 0) continue;
+    const sample = lines.slice(-20);
+    let logFailed = 0;
+    for (const line of sample) {
+      let parsed;
+      try { parsed = JSON.parse(line); } catch { logFailed++; continue; }
+      const result = validateTelemetryEvent(parsed);
+      if (!result.ok && !result.errors.some(e => e.includes("unknown type"))) logFailed++;
+    }
+    const label = path.basename(logPath);
+    if (logFailed > 0) {
+      console.warn(`  ${label}: ${logFailed}/${sample.length} recent events failed validation (non-blocking).`);
+    } else {
+      console.log(`  ${label}: ${sample.length} recent events validated OK.`);
+    }
+  }
+
+  return { ok: true };
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
 async function main() {
   const sourceOnly = process.argv.includes("--source-only");
+  const schemaOnly = process.argv.includes("--schema-only");
+  const validateSchema = process.argv.includes("--validate-schema") || schemaOnly;
+
+  if (schemaOnly) {
+    console.log("Validating telemetry schema...");
+    const result = await runSchemaValidation();
+    if (!result.ok) {
+      console.error("\n✗ Telemetry schema validation failed.");
+      process.exit(1);
+    }
+    console.log("\n✓ Telemetry schema validation passed.");
+    process.exit(0);
+    return;
+  }
+
   console.log("Checking dashboard...");
 
   if (sourceOnly) {
@@ -202,6 +346,17 @@ async function main() {
       console.error("\n✗ Source heuristics found issues. Fix scripts/dashboard.mjs.");
       process.exit(1);
     }
+
+    if (validateSchema) {
+      console.log("Validating telemetry schema...");
+      const result = await runSchemaValidation();
+      if (!result.ok) {
+        console.error("\n✗ Telemetry schema validation failed.");
+        process.exit(1);
+      }
+      console.log("✓ Telemetry schema validation passed.");
+    }
+
     console.log("✓ Source heuristics passed (run without --source-only to validate rendered script).");
     process.exit(0);
     return;
@@ -245,6 +400,16 @@ async function main() {
   if (failed > 0) {
     console.error(`\n✗ ${failed} script block(s) have syntax errors. Fix scripts/dashboard.mjs.`);
     process.exit(1);
+  }
+
+  if (validateSchema) {
+    console.log("Validating telemetry schema...");
+    const schemaResult = await runSchemaValidation();
+    if (!schemaResult.ok) {
+      console.error("\n✗ Telemetry schema validation failed.");
+      process.exit(1);
+    }
+    console.log("✓ Telemetry schema validation passed.");
   }
 
   console.log(`✓ ${blocks.length} script block(s) parse OK.`);

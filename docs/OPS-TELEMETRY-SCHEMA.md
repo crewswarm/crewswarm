@@ -214,3 +214,32 @@ Dashboards should also persist the last `agent.presence` per agent keyed by `sou
 - All timestamps must be UTC.
 - If the RT bus or dashboard can’t parse an event, it should log the `eventId` and raw payload to `events-invalid.jsonl` for later analysis.
 - Additional event types (e.g., `provider.usage`, `cmd.approval`) should inherit these envelope rules to keep ingestion and storage uniform.
+
+---
+
+## Validation Tooling
+
+The canonical schema is codified in **`lib/runtime/telemetry-schema.mjs`**.
+
+```js
+import { validateTelemetryEvent, validateTelemetryLog, TELEMETRY_SCHEMAS } from "./lib/runtime/telemetry-schema.mjs";
+
+// Validate a single parsed event
+const { ok, errors } = validateTelemetryEvent(myEvent);
+
+// Validate an entire JSONL log
+const summary = validateTelemetryLog("~/.crewswarm/events.jsonl");
+// => { total, valid, invalid, unknownType, issues }
+```
+
+**CLI usage:**
+
+```bash
+# Validate the schema module + run test vectors
+node scripts/check-dashboard.mjs --schema-only
+
+# Run alongside the dashboard source check
+node scripts/check-dashboard.mjs --source-only --validate-schema
+```
+
+The schema check runs in CI via `scripts/smoke.sh` and `.github/workflows/smoke.yml`.

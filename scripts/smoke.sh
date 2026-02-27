@@ -102,12 +102,18 @@ else
   fail "frontend/dist/index.html missing — run: cd frontend && npm run build"
 fi
 
-# ── 5. Dashboard source check ────────────────────────────────────────────────
+# ── 5. Dashboard source check + telemetry schema validation ──────────────────
 info "Dashboard"
 if node scripts/check-dashboard.mjs --source-only 2>&1 | grep -q "passed"; then
   ok "check-dashboard --source-only"
 else
   fail "check-dashboard --source-only"
+fi
+
+if node scripts/check-dashboard.mjs --schema-only 2>&1 | grep -q "passed"; then
+  ok "telemetry schema validation"
+else
+  fail "telemetry schema validation"
 fi
 
 # ── 6. Config bootstrap ──────────────────────────────────────────────────────
