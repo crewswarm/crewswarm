@@ -17,6 +17,21 @@ import http from "node:http";
 import { execSync, spawnSync } from "node:child_process";
 import WebSocket from "ws";
 import {
+  CREWSWARM_TOOL_NAMES,
+  AGENT_TOOL_ROLE_DEFAULTS,
+  readAgentTools,
+  writeAgentTools,
+  getSearchToolsConfig,
+  getAgentPrompts,
+  writeAgentPrompt,
+} from "./lib/agents/permissions.mjs";
+import {
+  sessionFile,
+  loadHistory,
+  appendHistory,
+  clearHistory,
+} from "./lib/chat/history.mjs";
+import {
   initDispatchParsers,
   parseDispatch,
   stripDispatch,
@@ -158,79 +173,6 @@ function readProjectsRegistry() {
   if (!raw) return [];
   // Format is a dict keyed by projectId — convert to array
   return Object.values(raw);
-}
-
-// ── Agent tool permission helpers ─────────────────────────────────────────────
-
-const CREWSWARM_TOOL_NAMES = new Set([
-  "write_file","read_file","mkdir","run_cmd","git","dispatch","telegram","web_search","web_fetch","skill","define_skill",
-]);
-
-const AGENT_TOOL_ROLE_DEFAULTS = {
-  "crew-qa":          ["read_file"],
-  "crew-security":    ["read_file","run_cmd"],
-  "crew-coder":       ["write_file","read_file","mkdir","run_cmd"],
-  "crew-coder-front": ["write_file","read_file","mkdir","run_cmd"],
-  "crew-coder-back":  ["write_file","read_file","mkdir","run_cmd"],
-  "crew-frontend":    ["write_file","read_file","mkdir","run_cmd"],
-  "crew-fixer":       ["write_file","read_file","mkdir","run_cmd"],
-  "crew-github":      ["read_file","run_cmd","git"],
-  "crew-copywriter":  ["write_file","read_file","web_search","web_fetch"],
-  "crew-main":        ["write_file","read_file","mkdir","run_cmd","dispatch","web_search","web_fetch"],
-  "crew-pm":          ["read_file","dispatch"],
-  "crew-telegram":    ["telegram","read_file"],
-};
-
-function readAgentTools(agentId) {
-  const swarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
-  const agents = Array.isArray(swarm.agents) ? swarm.agents : [];
-  const agent  = agents.find(a => a.id === agentId);
-  const explicit = agent?.tools?.crewswarmAllow || agent?.tools?.alsoAllow || null;
-  if (explicit) {
-    const valid = explicit.filter(t => CREWSWARM_TOOL_NAMES.has(t));
-    if (valid.length) return { source: "config", tools: valid };
-  }
-  // Fuzzy-match role defaults
-  const exact = AGENT_TOOL_ROLE_DEFAULTS[agentId];
-  if (exact) return { source: "role-default", tools: exact };
-  for (const [key, val] of Object.entries(AGENT_TOOL_ROLE_DEFAULTS)) {
-    if (agentId.startsWith(key)) return { source: "role-default", tools: val };
-  }
-  return { source: "fallback", tools: ["read_file","write_file","mkdir","run_cmd"] };
-}
-
-function writeAgentTools(agentId, tools) {
-  const valid = tools.filter(t => CREWSWARM_TOOL_NAMES.has(t));
-  const swarmPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
-  const swarm = tryRead(swarmPath) || {};
-  if (!Array.isArray(swarm.agents)) swarm.agents = [];
-  let agent = swarm.agents.find(a => a.id === agentId);
-  if (!agent) {
-    agent = { id: agentId };
-    swarm.agents.push(agent);
-  }
-  if (!agent.tools) agent.tools = {};
-  agent.tools.crewswarmAllow = valid;
-  fs.writeFileSync(swarmPath, JSON.stringify(swarm, null, 2), "utf8");
-  return valid;
-}
-
-function getSearchToolsConfig() {
-  return tryRead(path.join(os.homedir(), ".crewswarm", "search-tools.json"))
-      || {};
-}
-
-function getAgentPrompts() {
-  return tryRead(path.join(os.homedir(), ".crewswarm", "agent-prompts.json"))
-      || {};
-}
-
-function writeAgentPrompt(agentId, promptText) {
-  const promptsPath = path.join(os.homedir(), ".crewswarm", "agent-prompts.json");
-  const prompts = getAgentPrompts();
-  prompts[agentId] = promptText;
-  fs.writeFileSync(promptsPath, JSON.stringify(prompts, null, 2), "utf8");
-  return promptText;
 }
 
 // ── Dynamic agent creation ─────────────────────────────────────────────────
@@ -673,37 +615,6 @@ function searchCodebase(query) {
   }
 }
 
-// ── Conversation history ──────────────────────────────────────────────────────
-
-fs.mkdirSync(HISTORY_DIR, { recursive: true });
-
-function sessionFile(sessionId) {
-  return path.join(HISTORY_DIR, `${sessionId.replace(/[^a-z0-9_-]/gi, "_")}.jsonl`);
-}
-
-function loadHistory(sessionId) {
-  const file = sessionFile(sessionId);
-  const history = [];
-  if (fs.existsSync(file)) {
-    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-      if (!line.trim()) continue;
-      try { history.push(JSON.parse(line)); } catch {}
-    }
-  }
-  return history.slice(-MAX_HISTORY);
-}
-
-
-function appendHistory(sessionId, role, content) {
-  fs.appendFileSync(sessionFile(sessionId), JSON.stringify({ role, content, ts: Date.now() }) + "\n");
-}
-
-function clearHistory(sessionId) {
-  const file = sessionFile(sessionId);
-  if (fs.existsSync(file)) fs.unlinkSync(file);
-}
-
-/** Resolve skill name alias to actual skill file name. E.g. "benchmark" → "zeroeval.benchmark". */
 function resolveSkillAlias(skillName) {
   const skillsDir = path.join(os.homedir(), ".crewswarm", "skills");
   const exact = path.join(skillsDir, `${skillName}.json`);
