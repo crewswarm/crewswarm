@@ -199,14 +199,93 @@ const activeProjectByChatId = new Map(); // chatId → { id, name, outputDir }
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://127.0.0.1:4319";
 
+// Auth token for crew-lead API calls (engine passthrough requires Bearer auth)
+function getAuthToken() {
+  try {
+    const configPath = join(homedir(), ".crewswarm", "config.json");
+    const c = JSON.parse(readFileSync(configPath, "utf8"));
+    return c.rt?.authToken || "";
+  } catch { return ""; }
+}
+
 async function fetchProjects() {
   const r = await fetch(`${DASHBOARD_URL}/api/projects`, { signal: AbortSignal.timeout(5000) });
   const d = await r.json();
   return d.projects || [];
 }
 
+// ── Engine passthrough from Telegram ─────────────────────────────────────────
+// /claude <msg>, /cursor <msg>, /opencode <msg>, /codex <msg>
+// Streams the response back to TG in chunks as it arrives.
+const ENGINE_COMMANDS = { "/claude": "claude", "/cursor": "cursor", "/opencode": "opencode", "/codex": "codex" };
+const ENGINE_LABELS   = { claude: "🤖 Claude Code", cursor: "🖱 Cursor CLI", opencode: "⚡ OpenCode", codex: "🟣 Codex CLI" };
+
+async function handleEnginePassthrough(chatId, engine, message) {
+  const token = getAuthToken();
+  const label = ENGINE_LABELS[engine] || engine;
+  await tgSend(chatId, `${label} ⏳ _running..._`);
+  try {
+    const res = await fetch(`${CREW_LEAD_URL}/api/engine-passthrough`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ engine, message }),
+      signal: AbortSignal.timeout(300000), // 5 min
+    });
+    if (!res.ok) { await tgSend(chatId, `❌ ${label}: HTTP ${res.status}`); return; }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let fullText = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const d = JSON.parse(line.slice(6));
+          if (d.type === "chunk" && d.text) fullText += d.text;
+          if (d.type === "done") {
+            const exitCode = d.exitCode ?? 0;
+            const body = fullText.trim() || "(no output)";
+            const header = `${label} ✓ (exit ${exitCode})\n\n`;
+            await tgSend(chatId, header + body);
+            return;
+          }
+        } catch {}
+      }
+    }
+    // Stream ended without done event
+    if (fullText.trim()) await tgSend(chatId, `${label}\n\n${fullText.trim()}`);
+  } catch (e) {
+    await tgSend(chatId, `❌ ${label} error: ${e.message}`);
+  }
+}
+
 async function handleCommand(chatId, text) {
   const lower = text.toLowerCase().trim();
+
+  // /claude <msg>, /cursor <msg>, /opencode <msg>, /codex <msg> — direct engine passthrough
+  for (const [cmd, engine] of Object.entries(ENGINE_COMMANDS)) {
+    if (lower.startsWith(cmd + " ") || lower === cmd) {
+      const message = text.slice(cmd.length).trim();
+      if (!message) {
+        await tgSend(chatId, `Usage: \`${cmd} <your message>\`\n\nSends your message directly to ${ENGINE_LABELS[engine]} and streams the reply back here.`);
+        return true;
+      }
+      handleEnginePassthrough(chatId, engine, message).catch(() => {});
+      return true;
+    }
+  }
+
+  // /engines — list available engines + usage
+  if (lower === "/engines" || lower === "/cli" || lower === "/direct") {
+    const lines = Object.entries(ENGINE_LABELS).map(([k, v]) => `${v} → \`/${k} <message>\``);
+    await tgSend(chatId, `*Direct engine passthrough:*\n\n${lines.join("\n")}\n\n_Bypasses crew-lead — sends directly to the CLI tool and streams the reply._`);
+    return true;
+  }
 
   // /projects — list all registered projects
   if (lower === "/projects" || lower === "/project") {

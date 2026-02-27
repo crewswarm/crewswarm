@@ -21,9 +21,11 @@ You interact through a web dashboard, Telegram, WhatsApp, or by chatting directl
 |---|---|---|
 | **OpenCode** | Agent tasks run inside `opencode run` — full file editing, bash, session memory | Coding agents (crew-coder, crew-coder-back, crew-coder-front, crew-fixer) |
 | **Cursor CLI** | Agent tasks run via `cursor --model <model> --execute` | Complex reasoning tasks, architect, crew-main |
+| **Claude Code** | Agent tasks run via `claude -p` — full workspace context, native tool use, session continuity | Large refactors, multi-file reasoning, crew-coder |
+| **Codex CLI** | Agent tasks run via `codex exec --sandbox workspace-write --json` — OpenAI Codex with full file write access | Coding agents that prefer OpenAI models; compatible with any agent |
 | **Direct API** | Agent calls the LLM provider directly, parses `@@TOOL` markers | Fast/cheap agents, crew-pm, crew-qa, crew-copywriter |
 
-Switch modes from the **Settings → Agents** tab with the bulk setter buttons, or configure per-agent in `~/.crewswarm/crewswarm.json`.
+Switch modes from the **Settings → Engines** tab with the bulk setter buttons, or configure per-agent in `~/.crewswarm/crewswarm.json`.
 
 **Ports when running:**
 | Service | Port |
@@ -232,9 +234,9 @@ See `~/.crewswarm/crewswarm.json` → `agents[].tools.crewswarmAllow` to overrid
 - The crew-main daemon is in `OPENCODE_AGENTS` in `gateway-bridge.mjs`, so it routes those tasks to **OpenCode** when `OPENCREW_OPENCODE_ENABLED` is on.
 - PM-loop sets `OPENCREW_OPENCODE_PROJECT` to the PM output dir when invoking crew-main; the bridge passes it as `payload.projectDir` so OpenCode runs in the build output directory.
 
-### Ouroboros-style LLM ↔ OpenCode loop
+### Ouroboros-style LLM ↔ Engine loop
 
-- When an agent has **OpenCode loop** enabled (`opencodeLoop: true` in `crewswarm.json` or `OPENCREW_OPENCODE_LOOP=1`), the gateway runs a multi-step loop instead of a single OpenCode call: the **role’s LLM** is asked for “STEP: &lt;instruction&gt; or DONE”; each STEP is sent to OpenCode as a mini task; results are fed back until the LLM says DONE or `OPENCREW_OPENCODE_LOOP_MAX_ROUNDS` (default 10) is reached. Same idea as [Ouroboros](https://github.com/joi-lab/ouroboros) tool loop, adapted for multi-agent: each agent can run this loop when handling a task.
+- When an agent has **Engine loop** enabled (`opencodeLoop: true` in `crewswarm.json` or `OPENCREW_OPENCODE_LOOP=1`), the gateway runs a multi-step loop instead of a single engine call: the **role’s LLM** is asked for “STEP: &lt;instruction&gt; or DONE”; each STEP is sent to the agent's active engine (OpenCode, Cursor CLI, Claude Code, or Codex) as a mini task; results are fed back until the LLM says DONE or `OPENCREW_OPENCODE_LOOP_MAX_ROUNDS` (default 10) is reached. Same idea as [Ouroboros](https://github.com/joi-lab/ouroboros) tool loop, adapted for multi-agent: each agent can run this loop when handling a task.
 
 ---
 
@@ -595,7 +597,7 @@ gh auth login   # follow prompts — authenticates gh with GitHub
 
 CrewSwarm runs an MCP server on port **5020**. Wire it into Cursor, Claude Code, or OpenCode and all 20 agents become available as callable tools in any project — no AGENTS.md copy needed.
 
-**Auto-setup (recommended):** run `bash install.sh` and answer `y` to the MCP prompt. It configures all three tools automatically.
+**Auto-setup (recommended):** run `bash install.sh` and answer `y` to the MCP prompt. It configures all four tools automatically.
 
 **Manual setup:** get your auth token, then add the crewswarm entry to each tool's MCP config:
 
@@ -620,7 +622,17 @@ Restart Cursor after saving.
 
 **OpenCode** — `~/.config/opencode/mcp.json`: same format as above.
 
-Once configured, agents appear as MCP tools. The MCP server must be running (`npm run restart-all` starts it on :5020).
+**Codex CLI** — uses its own MCP config via CLI:
+```bash
+# Store your token permanently
+echo 'export CREWSWARM_TOKEN="<TOKEN>"' >> ~/.zshenv
+
+# Register the MCP server
+codex mcp add crewswarm --url "http://127.0.0.1:5020/mcp" --bearer-token-env-var CREWSWARM_TOKEN
+```
+The token is read from `$CREWSWARM_TOKEN` at runtime — Codex handles auth automatically.
+
+Once configured, agents appear as MCP tools in all four editors. The MCP server must be running (`npm run restart-all` starts it on :5020).
 
 ---
 

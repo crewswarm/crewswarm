@@ -406,6 +406,7 @@ async function showChat(){
   startAgentReplyListener();
   loadCrewLeadInfo();
   await loadChatHistory();
+  restorePassthroughLog();
 }
 async function loadChatHistory() {
   try {
@@ -1391,13 +1392,49 @@ async function sendChat() {
 async function clearChatHistory() {
   if (!confirm('Clear chat history for this session?')) return;
   document.getElementById('chatMessages').innerHTML = '';
+  localStorage.removeItem(PASSTHROUGH_LOG_KEY);
   await postJSON('/api/crew-lead/clear', { sessionId: chatSessionId }).catch(()=>{});
 }
 
+const PASSTHROUGH_LOG_KEY = 'crewswarm_passthrough_log';
+const PASSTHROUGH_LOG_MAX = 200;
+function savePassthroughMsg(role, engine, text, exitCode) {
+  try {
+    const log = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
+    log.push({ role, engine, text, exitCode, ts: Date.now() });
+    if (log.length > PASSTHROUGH_LOG_MAX) log.splice(0, log.length - PASSTHROUGH_LOG_MAX);
+    localStorage.setItem(PASSTHROUGH_LOG_KEY, JSON.stringify(log));
+  } catch {}
+}
+function restorePassthroughLog() {
+  try {
+    const log = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
+    const box = document.getElementById('chatMessages');
+    if (!box || !log.length) return;
+    const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode', codex: '🟣 Codex CLI' };
+    for (const entry of log) {
+      if (entry.role === 'user') {
+        appendChatBubble('user', entry.text);
+      } else {
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble assistant';
+        bubble.style.cssText = 'background:var(--surface-2);border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:12px;color:var(--text-2);';
+        const lbl = document.createElement('div');
+        lbl.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px;';
+        lbl.textContent = (engineLabels[entry.engine] || entry.engine) + ' · direct passthrough ✓ (exit ' + (entry.exitCode ?? 0) + ')';
+        const cnt = document.createElement('div');
+        cnt.textContent = entry.text;
+        bubble.appendChild(lbl); bubble.appendChild(cnt);
+        box.appendChild(bubble);
+      }
+    }
+    box.scrollTop = box.scrollHeight;
+  } catch {}
+}
 async function sendPassthrough(text, engine) {
   const input = document.getElementById('chatInput');
   const sendBtn = document.querySelector('[data-action="sendChat"]');
-  const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode' };
+  const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode', codex: '🟣 Codex CLI' };
   input.value = '';
   input.disabled = true;
   if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '…'; }
@@ -1411,7 +1448,8 @@ async function sendPassthrough(text, engine) {
   bubble.style.cssText = 'background:var(--surface-2);border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:12px;color:var(--text-2);';
   const label = document.createElement('div');
   label.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px;';
-  label.textContent = (engineLabels[engine] || engine) + ' · direct passthrough';
+  const activeProj2 = _chatActiveProjectId && _projectsData[_chatActiveProjectId];
+  label.textContent = (engineLabels[engine] || engine) + ' · direct passthrough' + (activeProj2?.outputDir ? ' @ ' + activeProj2.outputDir.split('/').pop() : '');
   const content = document.createElement('div');
   bubble.appendChild(label);
   bubble.appendChild(content);
@@ -1419,10 +1457,13 @@ async function sendPassthrough(text, engine) {
   box.scrollTop = box.scrollHeight;
 
   try {
+    const activeProj = _chatActiveProjectId && _projectsData[_chatActiveProjectId];
+    const projectDir = activeProj?.outputDir || undefined;
+    const injectHistory = document.getElementById('passthroughInjectHistory')?.checked || false;
     const resp = await fetch('/api/engine-passthrough', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ engine, message: text }),
+      body: JSON.stringify({ engine, message: text, ...(projectDir ? { projectDir } : {}), ...(injectHistory ? { injectHistory: true } : {}) }),
     });
     if (!resp.ok) { content.textContent = `Error ${resp.status}: ${await resp.text()}`; return; }
 
@@ -1443,7 +1484,10 @@ async function sendPassthrough(text, engine) {
             content.textContent += ev.text;
             box.scrollTop = box.scrollHeight;
           } else if (ev.type === 'done') {
-            label.textContent += ` ✓ (exit ${ev.exitCode ?? 0})`;
+            const exitCode = ev.exitCode ?? 0;
+            label.textContent += ` ✓ (exit ${exitCode})`;
+            savePassthroughMsg('user', engine, text, null);
+            savePassthroughMsg('engine', engine, content.textContent, exitCode);
           }
         } catch {}
       }
@@ -1475,7 +1519,7 @@ async function killAll() {
 
 function showMessaging(){
   showSettings();
-  showSettingsTab('telegram');
+  showSettingsTab('comms');
   loadTgStatus();
 }
 
@@ -2269,13 +2313,44 @@ async function loadClaudeCode() {
         status.textContent = on
           ? 'Active — tasks route through Claude Code CLI. Per-agent override: set useClaudeCode: true in crewswarm.json.'
           : 'Off — tasks use direct LLM or OpenCode. Enable to run agents through Claude Code CLI.';
-        status.style.color = '';
+        status.style.color = 'var(--text-3)';
       }
     }
   } catch(e) {
     if (btn) btn.textContent = 'Error';
     if (status) status.textContent = 'Could not load: ' + e.message;
   }
+}
+async function loadCodexExecutor() {
+  const btn = document.getElementById('codexBtn');
+  const status = document.getElementById('codexStatus');
+  try {
+    const d = await getJSON('/api/settings/codex');
+    const on = d.enabled;
+    if (btn) {
+      btn.textContent = on ? '🟣 ON' : '⚫ OFF';
+      btn.style.background = on ? 'rgba(168,85,247,0.15)' : 'var(--surface-2)';
+      btn.style.borderColor = on ? '#a855f7' : 'var(--border)';
+      btn.style.color = on ? '#a855f7' : 'var(--text-2)';
+    }
+    if (status) {
+      status.textContent = on
+        ? 'Active — tasks route through Codex CLI. Per-agent override: set useCodex: true in crewswarm.json.'
+        : 'Off — tasks use direct LLM or other engine. Enable to route all coding agents through Codex CLI.';
+      status.style.color = 'var(--text-3)';
+    }
+  } catch(e) {
+    if (btn) btn.textContent = 'Error';
+    if (status) { status.textContent = 'Could not load: ' + e.message; status.style.color = 'var(--text-3)'; }
+  }
+}
+async function toggleCodexExecutor() {
+  try {
+    const current = await getJSON('/api/settings/codex');
+    const d = await postJSON('/api/settings/codex', { enabled: !current.enabled });
+    showNotification('Codex CLI executor ' + (d.enabled ? 'ENABLED 🟣' : 'DISABLED'));
+    loadCodexExecutor();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 async function toggleClaudeCode() {
   try {
@@ -2331,6 +2406,24 @@ async function loadGlobalOcLoop() {
     if (inp) inp.value = d.maxRounds ?? 10;
   } catch(e) {}
 }
+async function loadPassthroughNotify() {
+  try {
+    const d = await getJSON('/api/settings/passthrough-notify');
+    const sel = document.getElementById('passthroughNotifySelect');
+    if (sel) sel.value = d.value || 'both';
+  } catch(e) {}
+}
+async function savePassthroughNotify() {
+  const value = document.getElementById('passthroughNotifySelect')?.value || 'both';
+  const st = document.getElementById('passthroughNotifyStatus');
+  try {
+    await postJSON('/api/settings/passthrough-notify', { value });
+    if (st) { st.textContent = '✓ Saved — takes effect on the next passthrough'; st.style.color = 'var(--green-hi)'; }
+    showNotification('Passthrough notifications → ' + value);
+  } catch(e) {
+    if (st) { st.textContent = 'Error: ' + e.message; st.style.color = 'var(--red)'; }
+  }
+}
 
 async function saveLoopBrain() {
   const model = (document.getElementById('loopBrainModel')?.value || '').trim();
@@ -2349,6 +2442,85 @@ async function loadLoopBrain() {
   } catch {}
 }
 
+const ENV_GROUPS = [
+  {
+    label: 'Engine & Timeouts',
+    vars: [
+      { key: 'OPENCREW_OPENCODE_TIMEOUT_MS',      hint: 'ms before an OpenCode task is killed (default: 300000)' },
+      { key: 'OPENCREW_OPENCODE_LOOP_MAX_ROUNDS',  hint: 'Max STEP iterations in the engine loop (default: 10)' },
+      { key: 'CREWSWARM_DISPATCH_TIMEOUT',         hint: 'ms before a dispatched task times out' },
+      { key: 'OPENCREW_OPENCODE_MODEL',            hint: 'Default model used by OpenCode (e.g. anthropic/claude-sonnet-4-5)' },
+      { key: 'OPENCREW_OPENCODE_AGENT',            hint: 'Override agent name passed to OpenCode' },
+      { key: 'OPENCREW_OPENCODE_ENABLED',          hint: '1 to route coding agents through OpenCode globally' },
+      { key: 'OPENCREW_OPENCODE_LOOP',             hint: '1 to enable engine loop (Ouroboros) for all agents' },
+      { key: 'OPENCREW_RT_AGENT',                  hint: 'Agent ID to use for the RT bus' },
+    ],
+  },
+  {
+    label: 'Ports',
+    vars: [
+      { key: 'CREW_LEAD_PORT',  hint: 'Port for crew-lead HTTP server (default: 5010)' },
+      { key: 'SWARM_DASH_PORT', hint: 'Port for the dashboard (default: 4319)' },
+      { key: 'WA_HTTP_PORT',    hint: 'Port for WhatsApp bridge HTTP (default: 3000)' },
+    ],
+  },
+  {
+    label: 'Background Consciousness',
+    vars: [
+      { key: 'CREWSWARM_BG_CONSCIOUSNESS',              hint: '1 to enable idle reflection loop' },
+      { key: 'CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS',  hint: 'Reflection interval in ms (default: 900000 = 15 min)' },
+      { key: 'CREWSWARM_BG_CONSCIOUSNESS_MODEL',        hint: 'Model for background cycle (e.g. groq/llama-3.1-8b-instant)' },
+    ],
+  },
+  {
+    label: 'Messaging',
+    vars: [
+      { key: 'TELEGRAM_ALLOWED_USERNAMES', hint: 'Comma-separated Telegram usernames allowed to message the bot' },
+      { key: 'WA_ALLOWED_NUMBERS',         hint: 'Comma-separated WhatsApp numbers in intl format (+1555…)' },
+    ],
+  },
+  {
+    label: 'Memory',
+    vars: [
+      { key: 'SHARED_MEMORY_NAMESPACE', hint: 'Namespace prefix for shared memory keys' },
+      { key: 'SHARED_MEMORY_DIR',       hint: 'Directory for shared memory files' },
+    ],
+  },
+  {
+    label: 'PM Loop',
+    vars: [
+      { key: 'PM_MAX_ITEMS',    hint: 'Max roadmap items per PM loop run' },
+      { key: 'PM_USE_QA',       hint: '1 to include crew-qa in PM pipeline' },
+      { key: 'PM_USE_SECURITY', hint: '1 to include crew-security in PM pipeline' },
+    ],
+  },
+];
+
+async function saveEnvVar(key, inputEl, statusEl) {
+  const val = inputEl.value.trim();
+  statusEl.textContent = 'Saving…';
+  statusEl.style.color = 'var(--text-3)';
+  try {
+    const r = await fetch('/api/env-advanced', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: val || null }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      statusEl.textContent = val ? '✓ Saved' : '✓ Cleared';
+      statusEl.style.color = 'var(--green)';
+    } else {
+      statusEl.textContent = 'Error: ' + (d.error || 'unknown');
+      statusEl.style.color = 'var(--red, #f87171)';
+    }
+  } catch(e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.style.color = 'var(--red, #f87171)';
+  }
+  setTimeout(() => { statusEl.textContent = ''; }, 3000);
+}
+
 async function loadEnvAdvanced() {
   const box = document.getElementById('envAdvancedWidget');
   if (!box) return;
@@ -2357,29 +2529,59 @@ async function loadEnvAdvanced() {
       getJSON('/api/env').catch(() => ({})),
       getJSON('/api/env-advanced').catch(() => ({ env: {} })),
     ]);
-    const parts = [];
-    if (envBasic.cwd || envBasic.node || envBasic.uptime !== undefined) {
-      const uptime = envBasic.uptime != null ? (envBasic.uptime < 60 ? envBasic.uptime + 's' : Math.floor(envBasic.uptime / 60) + 'm') : '';
-      parts.push(
-        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);align-items:baseline;margin-bottom:8px;">' +
-        '<code style="color:var(--accent);font-size:11px;flex-shrink:0;">cwd</code>' +
-        '<span style="color:var(--text-1);font-family:monospace;font-size:11px;word-break:break-all;">' + (envBasic.cwd || '—') + '</span></div>' +
-        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);align-items:baseline;">' +
-        '<code style="color:var(--accent);font-size:11px;flex-shrink:0;">node</code>' +
-        '<span style="color:var(--text-1);font-family:monospace;font-size:11px;">' + (envBasic.node || '—') + '</span></div>' +
-        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);align-items:baseline;">' +
-        '<code style="color:var(--accent);font-size:11px;flex-shrink:0;">uptime</code>' +
-        '<span style="color:var(--text-1);font-family:monospace;font-size:11px;">' + uptime + '</span></div>'
-      );
+    const env = d.env || {};
+
+    // Runtime info row
+    const uptime = envBasic.uptime != null
+      ? (envBasic.uptime < 60 ? envBasic.uptime + 's' : Math.floor(envBasic.uptime / 60) + 'm')
+      : '—';
+    let html = `<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:11px;color:var(--text-3);margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);">
+      <span>cwd: <code style="color:var(--text-2);">${escHtml(envBasic.cwd || '—')}</code></span>
+      <span>node: <code style="color:var(--text-2);">${escHtml(envBasic.node || '—')}</code></span>
+      <span>uptime: <code style="color:var(--text-2);">${uptime}</code></span>
+    </div>`;
+
+    box.innerHTML = html;
+
+    for (const group of ENV_GROUPS) {
+      const section = document.createElement('div');
+      section.style.cssText = 'margin-bottom:18px;';
+      section.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">${escHtml(group.label)}</div>`;
+
+      for (const { key, hint } of group.vars) {
+        const current = env[key] ?? '';
+        const row = document.createElement('div');
+        row.style.cssText = 'margin-bottom:8px;';
+        row.innerHTML = `
+          <div style="font-size:11px;font-family:monospace;color:var(--accent);margin-bottom:3px;">${escHtml(key)}</div>
+          <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;">${escHtml(hint)}</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input data-env-key="${escHtml(key)}" type="text" value="${escHtml(current)}"
+              placeholder="not set"
+              style="flex:1;font-size:12px;font-family:monospace;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:${current ? 'var(--text-1)' : 'var(--text-3)'};" />
+            <button data-env-save="${escHtml(key)}" style="font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;">Save</button>
+            <span data-env-status="${escHtml(key)}" style="font-size:11px;min-width:50px;"></span>
+          </div>`;
+        section.appendChild(row);
+      }
+      box.appendChild(section);
     }
-    const entries = Object.entries(d.env || {});
-    if (!entries.length && !parts.length) { box.textContent = 'No env vars set.'; return; }
-    box.innerHTML = parts.join('') + entries.map(([k, v]) =>
-      '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);align-items:baseline;">' +
-      '<code style="color:var(--accent);min-width:280px;font-size:11px;flex-shrink:0;">' + escHtml(k) + '</code>' +
-      '<span style="color:' + (v ? 'var(--text-1)' : 'var(--text-3)') + ';font-family:monospace;font-size:11px;word-break:break-all;">' + (v !== null ? escHtml(String(v)) : '<em>not set</em>') + '</span>' +
-      '</div>'
-    ).join('');
+
+    // Wire up save buttons
+    box.querySelectorAll('[data-env-save]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.envSave;
+        const inputEl = box.querySelector(`[data-env-key="${key}"]`);
+        const statusEl = box.querySelector(`[data-env-status="${key}"]`);
+        if (inputEl && statusEl) saveEnvVar(key, inputEl, statusEl);
+      });
+    });
+    // Style inputs on change
+    box.querySelectorAll('[data-env-key]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        inp.style.color = inp.value ? 'var(--text-1)' : 'var(--text-3)';
+      });
+    });
   } catch(e) {
     if (box) box.textContent = 'Could not load: ' + e.message;
   }
@@ -2390,11 +2592,15 @@ function showSettings(){
   setNavActive('navSettings');
   // Restore last active sub-tab from hash (e.g. #settings/telegram → telegram)
   const hashSubtab = (location.hash || '').replace('#settings/', '');
-  const knownTabs = ['usage','security','webhooks','telegram','whatsapp','system'];
-  showSettingsTab(knownTabs.includes(hashSubtab) ? hashSubtab : 'usage');
+  // Support legacy deep-link aliases
+  const TAB_ALIASES = { system: 'engines', telegram: 'comms', whatsapp: 'comms' };
+  const knownTabs = ['usage','engines','comms','security','webhooks'];
+  const resolved = TAB_ALIASES[hashSubtab] || hashSubtab;
+  showSettingsTab(knownTabs.includes(resolved) ? resolved : 'usage');
 }
 function showSettingsTab(tab){
-  ['usage','security','webhooks','telegram','whatsapp','system'].forEach(t => {
+  const knownTabs = ['usage','engines','comms','security','webhooks'];
+  knownTabs.forEach(t => {
     const panel = document.getElementById('stab-panel-' + t);
     const btn   = document.getElementById('stab-' + t);
     if (!panel || !btn) return;
@@ -2402,10 +2608,10 @@ function showSettingsTab(tab){
     btn.classList.toggle('active', t === tab);
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
-  if (tab === 'security') { loadCmdAllowlist(); }
-  if (tab === 'system')   { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadGlobalOcLoop(); loadLoopBrain(); loadEnvAdvanced(); }
-  if (tab === 'telegram') { loadTgStatus(); loadTelegramSessions(); loadTgMessages(); loadTgConfig(); }
-  if (tab === 'whatsapp') { loadWaStatus(); loadWaConfig(); loadWaMessages(); }
+  if (tab === 'engines')  { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadCodexExecutor(); loadGlobalOcLoop(); loadLoopBrain(); loadPassthroughNotify(); }
+  if (tab === 'comms')    { loadTgStatus(); loadTelegramSessions(); loadTgMessages(); loadTgConfig(); loadWaStatus(); loadWaConfig(); loadWaMessages(); }
+  if (tab === 'security') { loadCmdAllowlist(); loadEnvAdvanced(); }
+  if (tab === 'webhooks') { /* static */ }
   // Update URL hash for deep linking — e.g. #settings/telegram
   if (document.getElementById('settingsView')?.classList.contains('active')) {
     history.replaceState(null, '', '#settings/' + tab);
@@ -2466,7 +2672,15 @@ async function loadBenchmarkOptions() {
       opt.textContent = name;
       sel.appendChild(opt);
     });
-    if (cur && arr.some(b => (typeof b === 'object' ? b.benchmark_id : b) === cur)) sel.value = cur;
+    if (cur && arr.some(b => (typeof b === 'object' ? b.benchmark_id : b) === cur)) {
+      sel.value = cur;
+    } else {
+      const DEFAULT_BENCHMARK = 'swe-bench-verified';
+      if (arr.some(b => (typeof b === 'object' ? b.benchmark_id : b) === DEFAULT_BENCHMARK)) {
+        sel.value = DEFAULT_BENCHMARK;
+      }
+    }
+    return sel.value;
   } catch (e) {
     sel.innerHTML = '<option value="">— Failed to load —</option>';
   }
@@ -3224,8 +3438,12 @@ async function loadAgents_cfg(){
                 style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useClaudeCode ? '#f59e0b' : 'var(--border)'}; background:${a.useClaudeCode ? 'rgba(245,158,11,0.12)' : 'var(--surface-2)'}; color:${a.useClaudeCode ? '#f59e0b' : 'var(--text-2)'};">
                 🤖 Claude Code <span style="font-size:10px; font-weight:400; opacity:0.7;">(api key)</span>
               </button>
+              <button id="route-codex-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="codex"
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useCodex ? '#a855f7' : 'var(--border)'}; background:${a.useCodex ? 'rgba(168,85,247,0.12)' : 'var(--surface-2)'}; color:${a.useCodex ? '#a855f7' : 'var(--text-2)'};">
+                🟣 Codex CLI <span style="font-size:10px; font-weight:400; opacity:0.7;">(subscription)</span>
+              </button>
             </div>
-            <div id="loop-row-${a.id}" style="display:${(a.useOpenCode || a.useCursorCli || a.useClaudeCode) ? 'flex' : 'none'}; align-items:center; gap:10px; margin-bottom:10px; padding:8px 10px; background:var(--surface-2); border-radius:8px; border:1px solid var(--border);">
+            <div id="loop-row-${a.id}" style="display:${(a.useOpenCode || a.useCursorCli || a.useClaudeCode || a.useCodex) ? 'flex' : 'none'}; align-items:center; gap:10px; margin-bottom:10px; padding:8px 10px; background:var(--surface-2); border-radius:8px; border:1px solid var(--border);">
               <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
                 <input type="checkbox" id="loop-toggle-${a.id}" ${a.opencodeLoop ? 'checked' : ''} onchange="saveAgentLoop('${a.id}')" style="width:14px; height:14px; cursor:pointer;" />
                 <span style="font-size:12px; font-weight:600; color:var(--text-1);">🔁 Ouroboros Loop</span>
@@ -3534,15 +3752,17 @@ async function setRoute(agentId, route) {
   const useOpenCode   = route === 'opencode';
   const useCursorCli  = route === 'cursor';
   const useClaudeCode = route === 'claudecode';
+  const useCodex      = route === 'codex';
   // Update button styles
   const styles = {
-    direct:      { border: 'var(--accent)',    bg: 'rgba(99,102,241,0.15)',  color: 'var(--accent)' },
-    opencode:    { border: 'var(--green-hi)',  bg: 'rgba(34,197,94,0.12)',   color: 'var(--green-hi)' },
-    cursor:      { border: 'var(--accent)',    bg: 'rgba(56,189,248,0.12)',  color: 'var(--accent)' },
-    claudecode:  { border: '#f59e0b',          bg: 'rgba(245,158,11,0.12)', color: '#f59e0b' },
-    inactive:    { border: 'var(--border)',    bg: 'var(--surface-2)',       color: 'var(--text-2)' },
+    direct:      { border: 'var(--accent)',    bg: 'rgba(99,102,241,0.15)',   color: 'var(--accent)' },
+    opencode:    { border: 'var(--green-hi)',  bg: 'rgba(34,197,94,0.12)',    color: 'var(--green-hi)' },
+    cursor:      { border: 'var(--accent)',    bg: 'rgba(56,189,248,0.12)',   color: 'var(--accent)' },
+    claudecode:  { border: '#f59e0b',          bg: 'rgba(245,158,11,0.12)',  color: '#f59e0b' },
+    codex:       { border: '#a855f7',          bg: 'rgba(168,85,247,0.12)',  color: '#a855f7' },
+    inactive:    { border: 'var(--border)',    bg: 'var(--surface-2)',        color: 'var(--text-2)' },
   };
-  ['direct','opencode','cursor','claudecode'].forEach(r => {
+  ['direct','opencode','cursor','claudecode','codex'].forEach(r => {
     const btn = document.getElementById('route-' + r + '-' + agentId);
     if (!btn) return;
     const s = r === route ? styles[r] : styles.inactive;
@@ -3558,12 +3778,12 @@ async function setRoute(agentId, route) {
   if (cursorRow) cursorRow.style.display = useCursorCli  ? 'flex' : 'none';
   if (ccRow)     ccRow.style.display     = useClaudeCode ? 'flex' : 'none';
   const loopRow = document.getElementById('loop-row-' + agentId);
-  if (loopRow)   loopRow.style.display   = (useOpenCode || useCursorCli || useClaudeCode) ? 'flex' : 'none';
+  if (loopRow)   loopRow.style.display   = (useOpenCode || useCursorCli || useClaudeCode || useCodex) ? 'flex' : 'none';
   // Save
   try {
-    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli, useClaudeCode });
-    const label = route === 'direct' ? 'Direct API' : route === 'opencode' ? 'OpenCode' : route === 'cursor' ? 'Cursor CLI' : 'Claude Code';
-    showNotification(agentId + ' → ' + label);
+    await postJSON('/api/agents-config/update', { agentId, useOpenCode, useCursorCli, useClaudeCode, useCodex });
+    const labels = { direct: 'Direct API', opencode: 'OpenCode', cursor: 'Cursor CLI', claudecode: 'Claude Code', codex: 'Codex CLI' };
+    showNotification(agentId + ' → ' + (labels[route] || route));
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 
@@ -5361,8 +5581,10 @@ const ACTION_REGISTRY = {
   toggleBgConsciousness,
   toggleCursorWaves,
   toggleClaudeCode,
+  toggleCodexExecutor,
   saveGlobalOcLoop,
   saveGlobalOcLoopRounds,
+  savePassthroughNotify,
   toggleAddSkill,
   toggleImportSkill,
   importSkillFromUrl,
@@ -5371,6 +5593,7 @@ const ACTION_REGISTRY = {
   cancelSkillForm,
   loadRunSkills,
   loadBenchmarks,
+  loadBenchmarkLeaderboard,
   loadToolMatrix,
   loadBuildProjectPicker,
   // RT scroll button

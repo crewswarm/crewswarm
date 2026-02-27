@@ -2215,9 +2215,18 @@ async function runBackgroundConsciousnessDirect() {
   if (!llm) return false;
   let brainContent = "";
   try {
-    brainContent = fs.readFileSync(BRAIN_PATH, "utf8").slice(-6000);
+    const raw = fs.readFileSync(BRAIN_PATH, "utf8");
+    // Strip template header lines — anything that is just the scaffold
+    const stripped = raw.replace(/^#[^\n]*\n/gm, "").replace(/^Agents: append.*\n?/gm, "").replace(/^This is the persistent.*\n?/gm, "").replace(/^Read it to.*\n?/gm, "").replace(/^Write to it.*\n?/gm, "").trim();
+    if (stripped.length < 80) {
+      // Brain has no real content yet — nothing useful to reflect on, skip silently
+      console.log("[bg-loop] Brain empty — skipping consciousness cycle");
+      return true;
+    }
+    brainContent = raw.slice(-6000);
   } catch {
-    brainContent = "(brain.md not found or empty)";
+    console.log("[bg-loop] brain.md not found — skipping consciousness cycle");
+    return true;
   }
   const system = "You are crew-main managing the process for the user. Reply in under 100 words. Output: 1) One sentence on system/crew state or suggested next step. 2) If something needs follow-up, emit exactly one line: @@BRAIN crew-main: <fact> OR @@DISPATCH {\"agent\":\"...\",\"task\":\"...\"}. Otherwise reply NO_ACTION.";
   const user = `Shared memory (recent):\n${brainContent}\n\nWhat should the user know? Any follow-up? Reply briefly.`;
@@ -2260,8 +2269,12 @@ async function runBackgroundConsciousnessDirect() {
     }
   }
   const short = content.replace(/\n+/g, " ").slice(0, 800).trim();
-  appendHistory("owner", "system", `[crew-main — background]: ${short}`);
-  broadcastSSE({ type: "agent_reply", from: "crew-main", content: short, sessionId: "owner", _bg: true, ts: Date.now() });
+  // Don't broadcast NO_ACTION or empty/error responses to the user's chat
+  const isNoAction = /^NO_ACTION/i.test(short) || short.length < 10;
+  if (!isNoAction) {
+    appendHistory("owner", "system", `[crew-main — background]: ${short}`);
+    broadcastSSE({ type: "agent_reply", from: "crew-main", content: short, sessionId: "owner", _bg: true, ts: Date.now() });
+  }
   try {
     const statusPath = path.join(os.homedir(), ".crewswarm", "process-status.md");
     const stamp = new Date().toISOString().slice(0, 19).replace("T", " ");
@@ -4505,14 +4518,195 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // POST /api/engine-passthrough — stream a message directly to Cursor CLI, Claude Code, or OpenCode
-    // Body: { engine: "cursor"|"claude"|"opencode", message: string, projectDir?: string }
+    // GET /api/claude-sessions — list + read Claude Code session history
+    // ?dir=<project-path>  (default: current repo)  &limit=20
+    if (url.pathname === "/api/claude-sessions" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      try {
+        const qDir = url.searchParams.get("dir") || process.cwd();
+        const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 100);
+        // Claude stores projects as path-with-dashes: /Users/foo/bar → -Users-foo-bar
+        const dirKey = qDir.replace(/\//g, "-");
+        const projectsBase = path.join(os.homedir(), ".claude", "projects");
+        const candidates = fs.existsSync(projectsBase)
+          ? fs.readdirSync(projectsBase).filter(d => d === dirKey || d.endsWith(dirKey.split("-").slice(-2).join("-")))
+          : [];
+        const sessions = [];
+        for (const cand of candidates) {
+          const sessDir = path.join(projectsBase, cand);
+          const files = fs.readdirSync(sessDir).filter(f => f.endsWith(".jsonl"))
+            .map(f => ({ f, mt: fs.statSync(path.join(sessDir, f)).mtimeMs }))
+            .sort((a, b) => b.mt - a.mt).slice(0, limit).map(x => x.f);
+          for (const file of files) {
+            const sessionId = file.replace(".jsonl", "");
+            const messages = [];
+            const lines = fs.readFileSync(path.join(sessDir, file), "utf8").trim().split("\n");
+            for (const line of lines) {
+              try {
+                const d = JSON.parse(line);
+                if (d.type !== "user" && d.type !== "assistant") continue;
+                const content = d.message?.content;
+                const text = Array.isArray(content)
+                  ? content.filter(c => c.type === "text").map(c => c.text).join("")
+                  : typeof content === "string" ? content : "";
+                if (text) messages.push({ role: d.type, text: text.slice(0, 2000), ts: d.timestamp });
+              } catch {}
+            }
+            if (messages.length) sessions.push({ sessionId, file, messages });
+          }
+        }
+        json(res, 200, { ok: true, dir: qDir, sessions });
+      } catch (e) {
+        json(res, 200, { ok: true, sessions: [], error: e.message });
+      }
+      return;
+    }
+
+    // GET /api/opencode-sessions — list + read OpenCode session history from SQLite
+    // ?limit=10&session=<id>
+    if (url.pathname === "/api/opencode-sessions" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      try {
+        const { execSync } = await import("node:child_process");
+        const dbPath = path.join(os.homedir(), ".local", "share", "opencode", "opencode.db");
+        if (!fs.existsSync(dbPath)) { json(res, 200, { ok: true, sessions: [], error: "opencode.db not found" }); return; }
+        const limit = Math.min(Number(url.searchParams.get("limit") || "10"), 50);
+        const sessionFilter = url.searchParams.get("session") || "";
+
+        // List sessions
+        const sessRows = execSync(
+          `sqlite3 "${dbPath}" "SELECT s.id, s.title, s.time_updated, count(m.id) as msg_count FROM session s LEFT JOIN message m ON m.session_id=s.id ${sessionFilter ? `WHERE s.id='${sessionFilter}'` : ""} GROUP BY s.id ORDER BY s.time_updated DESC LIMIT ${limit};"`,
+          { encoding: "utf8" }
+        ).trim().split("\n").filter(Boolean);
+
+        const sessions = [];
+        for (const row of sessRows) {
+          const [id, title, timeUpdated, msgCount] = row.split("|");
+          // Get parts (actual message content) for this session
+          const partRows = execSync(
+            `sqlite3 "${dbPath}" "SELECT p.data FROM part p JOIN message m ON p.message_id=m.id WHERE m.session_id='${id}' ORDER BY p.time_created LIMIT 100;"`,
+            { encoding: "utf8" }
+          ).trim().split("\n").filter(Boolean);
+
+          const messages = [];
+          let currentRole = null;
+          // Group parts by message
+          const msgRows = execSync(
+            `sqlite3 "${dbPath}" "SELECT m.id, m.data FROM message m WHERE m.session_id='${id}' ORDER BY m.time_created;"`,
+            { encoding: "utf8" }
+          ).trim().split("\n").filter(Boolean);
+
+          for (const mrow of msgRows) {
+            const [mid, mdata] = mrow.split("|");
+            try {
+              const md = JSON.parse(mdata);
+              const role = md.role;
+              // Get text parts for this message
+              const textParts = execSync(
+                `sqlite3 "${dbPath}" "SELECT data FROM part WHERE message_id='${mid}' AND json_extract(data,'$.type')='text';"`,
+                { encoding: "utf8" }
+              ).trim().split("\n").filter(Boolean);
+              const text = textParts.map(p => { try { return JSON.parse(p).text || ""; } catch { return ""; } }).join("").trim();
+              const cost = md.cost || 0;
+              const tokens = md.tokens || {};
+              if (text) messages.push({ role, text: text.slice(0, 2000), cost, tokens });
+            } catch {}
+          }
+          sessions.push({ id, title, timeUpdated: Number(timeUpdated), msgCount: Number(msgCount), messages });
+        }
+        json(res, 200, { ok: true, sessions });
+      } catch (e) {
+        json(res, 200, { ok: true, sessions: [], error: e.message });
+      }
+      return;
+    }
+
+    // GET /api/agent-transcripts/recent — read most recent Cursor agent transcript(s)
+    if (url.pathname === "/api/agent-transcripts/recent" && req.method === "GET") {
+      if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
+      try {
+        const transcriptsDir = path.join(
+          os.homedir(), ".cursor", "projects",
+          Object.readdirSync(path.join(os.homedir(), ".cursor", "projects"))
+            .filter(d => d.includes("CrewSwarm"))
+            .sort().pop() || "",
+          "agent-transcripts"
+        );
+        const files = fs.existsSync(transcriptsDir)
+          ? fs.readdirSync(transcriptsDir).filter(f => f.endsWith(".jsonl"))
+              .map(f => ({ f, mt: fs.statSync(path.join(transcriptsDir, f)).mtimeMs }))
+              .sort((a, b) => b.mt - a.mt)
+              .slice(0, 3).map(x => x.f)
+          : [];
+        const messages = [];
+        for (const file of files) {
+          const lines = fs.readFileSync(path.join(transcriptsDir, file), "utf8").trim().split("\n");
+          for (const line of lines) {
+            try {
+              const d = JSON.parse(line);
+              const role = d.role || "";
+              const content = (d.message?.content || []);
+              const text = Array.isArray(content)
+                ? content.filter(c => c.type === "text").map(c => c.text).join("")
+                : String(content);
+              // Strip system wrapper tags
+              const clean = text.replace(/<user_query>/g, "").replace(/<\/user_query>/g, "").trim();
+              if (clean) messages.push({ role, text: clean });
+            } catch {}
+          }
+        }
+        json(res, 200, { ok: true, messages: messages.slice(-40) }); // last 40 turns
+      } catch (e) {
+        json(res, 200, { ok: true, messages: [], error: e.message });
+      }
+      return;
+    }
+
+    // POST /api/engine-passthrough — stream a message directly to Cursor CLI, Claude Code, OpenCode, or Codex
+    // Body: { engine: "cursor"|"claude"|"opencode"|"codex", message: string, projectDir?: string, injectHistory?: boolean }
     // Streams raw output back as SSE: data: {"type":"chunk","text":"..."} then data: {"type":"done"}
     if (url.pathname === "/api/engine-passthrough" && req.method === "POST") {
       if (!checkBearer(req)) { json(res, 401, { ok: false, error: "Unauthorized" }); return; }
       let body = ""; for await (const chunk of req) body += chunk;
-      const { engine = "claude", message, projectDir: reqProjectDir } = JSON.parse(body || "{}");
+      const { engine = "claude", message, projectDir: reqProjectDir, injectHistory } = JSON.parse(body || "{}");
       if (!message) { json(res, 400, { ok: false, error: "message required" }); return; }
+
+      // Optionally prepend recent Cursor agent chat history as context
+      let finalMessage = message;
+      if (injectHistory) {
+        try {
+          const transcriptsDir = path.join(
+            os.homedir(), ".cursor", "projects",
+            fs.readdirSync(path.join(os.homedir(), ".cursor", "projects"))
+              .filter(d => d.includes("CrewSwarm")).sort().pop() || "",
+            "agent-transcripts"
+          );
+          if (fs.existsSync(transcriptsDir)) {
+            const files = fs.readdirSync(transcriptsDir).filter(f => f.endsWith(".jsonl"))
+              .map(f => ({ f, mt: fs.statSync(path.join(transcriptsDir, f)).mtimeMs }))
+              .sort((a, b) => b.mt - a.mt).slice(0, 2).map(x => x.f);
+            const lines = [];
+            for (const file of files) {
+              const raw = fs.readFileSync(path.join(transcriptsDir, file), "utf8").trim().split("\n");
+              for (const l of raw) {
+                try {
+                  const d = JSON.parse(l);
+                  const role = d.role || "";
+                  const content = d.message?.content || [];
+                  const text = Array.isArray(content)
+                    ? content.filter(c => c.type === "text").map(c => c.text).join("")
+                    : String(content);
+                  const clean = text.replace(/<user_query>/g, "").replace(/<\/user_query>/g, "").trim();
+                  if (clean) lines.push(`[${role}]: ${clean.slice(0, 600)}`);
+                } catch {}
+              }
+            }
+            if (lines.length) {
+              finalMessage = `[Recent Cursor agent chat context — use as background only]\n${lines.slice(-20).join("\n")}\n\n[Current request]\n${message}`;
+            }
+          }
+        } catch {}
+      }
 
       res.writeHead(200, {
         "content-type": "text/event-stream",
@@ -4524,19 +4718,28 @@ const server = http.createServer(async (req, res) => {
       const projectDir = reqProjectDir || process.cwd();
 
       let bin, args;
+      const continueSession = req.headers["x-passthrough-continue"] !== "false"; // default on
       if (engine === "cursor") {
         const cursorBin = process.env.CURSOR_CLI_BIN ||
           (fs.existsSync(path.join(os.homedir(), ".local", "bin", "agent"))
             ? path.join(os.homedir(), ".local", "bin", "agent") : "agent");
         bin = cursorBin;
-        args = ["-p", "--force", "--trust", "--output-format", "stream-json", message, "--workspace", projectDir];
+        args = ["-p", "--force", "--trust", "--output-format", "stream-json"];
+        if (continueSession) args.push("--continue");
+        args.push(finalMessage, "--workspace", projectDir);
       } else if (engine === "opencode") {
         bin = process.env.OPENCREW_OPENCODE_BIN || "opencode";
         const ocModel = process.env.OPENCREW_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
-        args = ["run", message, "--model", ocModel];
+        args = ["run", finalMessage, "--model", ocModel];
+        if (continueSession) args.push("--continue");
+      } else if (engine === "codex") {
+        bin = process.env.CODEX_CLI_BIN || "codex";
+        args = ["exec", "--sandbox", "workspace-write", "--json", finalMessage];
       } else {
         bin = process.env.CLAUDE_CODE_BIN || "claude";
-        args = ["-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", message];
+        args = ["-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
+        if (continueSession) args.push("--continue");
+        args.push(finalMessage);
       }
 
       send({ type: "start", engine, message: message.slice(0, 80) });
@@ -4544,6 +4747,7 @@ const server = http.createServer(async (req, res) => {
       const proc = _spawn(bin, args, { cwd: projectDir, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
       let lineBuffer = "";
       let fullOutput = "";
+      let receivedStreamDeltas = false; // track whether incremental deltas arrived
 
       const handleChunk = (chunk) => {
         lineBuffer += chunk.toString();
@@ -4558,15 +4762,33 @@ const server = http.createServer(async (req, res) => {
           }
           try {
             const ev = JSON.parse(line);
+            // Codex CLI --json events (actual format):
+            //   { type: "thread.started", thread_id: "..." }
+            //   { type: "turn.started" }
+            //   { type: "item.completed", item: { type: "reasoning", text: "..." } }  — skip
+            //   { type: "item.completed", item: { type: "agent_message", text: "..." } }  — this is the reply
+            //   { type: "turn.completed", usage: {...} }
+            if (engine === "codex") {
+              if (ev.type === "item.completed" && ev.item?.type === "agent_message" && ev.item?.text) {
+                send({ type: "chunk", text: ev.item.text }); fullOutput += ev.item.text;
+              } else if (ev.type === "turn.completed") {
+                proc.kill("SIGTERM");
+              }
+              continue;
+            }
             if (ev.type === "stream_event" && ev.event?.type === "content_block_delta") {
               const t = ev.event.delta?.text || "";
-              send({ type: "chunk", text: t }); fullOutput += t;
+              if (t) { send({ type: "chunk", text: t }); fullOutput += t; receivedStreamDeltas = true; }
             } else if (ev.type === "assistant") {
-              const content = ev.message?.content;
-              if (Array.isArray(content)) { for (const c of content) { if (c.type === "text") { send({ type: "chunk", text: c.text }); fullOutput += c.text; } } }
-              else if (typeof content === "string") { send({ type: "chunk", text: content }); fullOutput += content; }
+              // Skip if we already streamed deltas — the assistant event would duplicate them
+              if (!receivedStreamDeltas) {
+                const content = ev.message?.content;
+                if (Array.isArray(content)) { for (const c of content) { if (c.type === "text") { send({ type: "chunk", text: c.text }); fullOutput += c.text; } } }
+                else if (typeof content === "string") { send({ type: "chunk", text: content }); fullOutput += content; }
+              }
             } else if (ev.type === "result") {
-              if (ev.result) { send({ type: "chunk", text: ev.result }); fullOutput += ev.result; }
+              // result.result duplicates streamed content — only use it if we got nothing else
+              if (!fullOutput && ev.result) { send({ type: "chunk", text: ev.result }); fullOutput += ev.result; }
               proc.kill("SIGTERM");
             }
           } catch { send({ type: "chunk", text: line + "\n" }); fullOutput += line + "\n"; }
@@ -4575,32 +4797,48 @@ const server = http.createServer(async (req, res) => {
 
       proc.stdout.on("data", handleChunk);
       proc.stderr.on("data", (d) => send({ type: "stderr", text: d.toString() }));
-      proc.on("close", (code) => {
+      proc.on("close", async (code) => {
         if (lineBuffer.trim()) { send({ type: "chunk", text: lineBuffer }); fullOutput += lineBuffer; }
         send({ type: "done", exitCode: code });
         try { res.end(); } catch {}
 
-        // ── Broadcast to crew chat + TG/WA on completion ──────────────────────
+        // ── Notify Telegram/WA on completion (dashboard already saw it stream live) ──
         const summary = fullOutput.trim().slice(0, 3000) || "(no output)";
-        const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : "OpenCode";
-        const broadcastContent = `⚡ *${engineLabel} direct* — \`${message.slice(0, 60)}${message.length > 60 ? "…" : ""}\`\n\n${summary}`;
+        const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : engine === "codex" ? "Codex CLI" : "OpenCode";
 
-        // Crew chat (dashboard SSE)
-        broadcastSSE({ type: "agent_reply", from: engineLabel, content: broadcastContent, sessionId: "owner", ts: Date.now() });
+        // PASSTHROUGH_NOTIFY: "tg" | "wa" | "both" | "none" (default: "both")
+        // Set in ~/.crewswarm/crewswarm.json env block or as env var
+        const passthroughNotify = (() => {
+          try { return (process.env.PASSTHROUGH_NOTIFY || JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8")).env?.PASSTHROUGH_NOTIFY || "both").toLowerCase(); } catch { return "both"; }
+        })();
+        const notifyTG = passthroughNotify === "both" || passthroughNotify === "tg";
+        const notifyWA = passthroughNotify === "both" || passthroughNotify === "wa";
 
-        // Telegram notification (if configured)
-        try {
+        // Broadcast to WhatsApp via /events SSE (whatsapp-bridge listens here)
+        if (notifyWA) broadcastSSE({ type: "agent_reply", from: engineLabel, content: broadcastContent, sessionId: "owner", ts: Date.now() });
+
+        // Telegram — split into chunks if > 3800 chars (TG max is 4096)
+        if (notifyTG) try {
           const tgBridge = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8"));
           const botToken = process.env.TELEGRAM_BOT_TOKEN || tgBridge.token || "";
           const chatId = process.env.TELEGRAM_CHAT_ID
             || (Array.isArray(tgBridge.allowedChatIds) && tgBridge.allowedChatIds[0] ? String(tgBridge.allowedChatIds[0]) : "")
             || tgBridge.defaultChatId || "";
           if (botToken && chatId) {
-            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ chat_id: chatId, text: `⚡ ${engineLabel}: ${message.slice(0, 80)}\n\n${summary.slice(0, 800)}`, parse_mode: "Markdown" }),
-              signal: AbortSignal.timeout(8000),
-            }).catch(() => {});
+            const TG_MAX = 3800;
+            const header = `⚡ *${engineLabel}*: \`${message.slice(0, 80)}${message.length > 80 ? "…" : ""}\`\n\n`;
+            const chunks = [];
+            let remaining = summary;
+            chunks.push(header + remaining.slice(0, TG_MAX - header.length));
+            remaining = remaining.slice(TG_MAX - header.length);
+            while (remaining.length > 0) { chunks.push(remaining.slice(0, TG_MAX)); remaining = remaining.slice(TG_MAX); }
+            for (const chunk of chunks) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ chat_id: chatId, text: chunk, parse_mode: "Markdown" }),
+                signal: AbortSignal.timeout(8000),
+              }).catch(() => {});
+            }
           }
         } catch {}
       });

@@ -41,6 +41,7 @@ No broadcast races. No duplicate work. Each agent gets exactly one task, from on
 - **Command approval gate** — `@@RUN_CMD` calls from non-trusted agents pause and show an approval toast in the dashboard (Allow / Deny with 60s countdown). Pre-approve patterns like `npm *` or `node *` in **Settings → Command Allowlist** so common commands run without prompting. Dangerous commands (`rm -rf`, `sudo`, `curl | bash`) are always hard-blocked.
 - **Token / cost tracking** — Every LLM call captures token usage. Dashboard **Settings** shows total calls, tokens, and estimated cost with per-model breakdown.
 - **Telegram** — Full bidirectional Telegram integration. Each chat gets an isolated crew-lead session. Agents reply directly to the sender.
+- **Four execution engines** — Route any agent through **OpenCode** (persistent sessions), **Cursor CLI** (reasoning models), **Claude Code** (`claude -p`, full workspace context), or **Codex CLI** (`codex exec`, workspace-write sandbox). Switch per-agent from the dashboard **Engines** tab.
 - **Four control surfaces** — CLI (`crew-cli`), web dashboard (port 4319), macOS SwiftBar menu bar, and Telegram.
 - **Any model, any agent** — Each agent runs its own model. Mix OpenAI, Anthropic, Groq, Mistral, DeepSeek, Perplexity, or local Ollama. Switch without restarting.
 - **PM Loop** — Autonomous mode: reads a `ROADMAP.md`, dispatches one item at a time, self-extends when the roadmap empties.
@@ -185,11 +186,11 @@ PM_ROADMAP_FILE=./ROADMAP.md OPENCREW_OUTPUT_DIR=./output node pm-loop.mjs
                  ├── calls LLM directly (per-provider API)
                  ├── executes @@WRITE_FILE / @@READ_FILE / @@RUN_CMD
                  ├── approval gate for @@RUN_CMD
-                 ├── Code Engine :4096 (OpenCode / Claude Code / Cursor)
+                 ├── Code Engine :4096 (OpenCode / Claude Code / Cursor / Codex)
                  └── retry → escalate to crew-fixer → DLQ
 
   MCP + OpenAI API (5020)  ← mcp-server.mjs (optional)
-     ├── Cursor MCP · Claude Code MCP
+     ├── Cursor MCP · Claude Code MCP · OpenCode MCP · Codex MCP
      └── Open WebUI · LM Studio · Aider (/v1/chat/completions)
 
   memory/           ← shared agent context (markdown)
@@ -312,18 +313,6 @@ CrewSwarm/
 ---
 
 ## Docs
-
-### Polymarket Data Fetcher & Backtest Setup
-
-1. **Data Fetcher**
-   - Ensure `POLYMARKET_API_KEY` is set in `.env`
-   - Run: `npm run fetch:polymarket`
-   - Configuration: `config/fetchers/polymarket.js`
-
-2. **Backtest with Real Price History**
-   - Verify database connection in `config/db.js`
-   - Run: `npm run backtest -- --use-db`
-   - Results saved to: `data/backtest-results/`
 
 - [System Architecture](docs/SYSTEM-ARCHITECTURE.md)
 - [Orchestrator Guide](docs/ORCHESTRATOR-GUIDE.md)

@@ -101,13 +101,15 @@
       </picture>
     </div>
     <h1>One idea.<br/>One build.<br/><span class="gradient-text">One crew.</span></h1>
-    <p class="hero-sub">The multi-agent orchestration layer for <strong>OpenCode</strong>, <strong>Cursor</strong>, and <strong>Claude Code</strong>. Ideate, build &amp; ship — with real files on disk.</p>
+    <p class="hero-sub">The multi-agent orchestration layer for <strong>OpenCode</strong>, <strong>Cursor</strong>, <strong>Claude Code</strong>, and <strong>Codex</strong>. Ideate, build &amp; ship — with real files on disk.</p>
     <div class="proof-bar visible">
       <span class="proof-item">OpenCode sessions</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">Cursor CLI routing</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">Claude Code executor</span>
+      <span class="proof-sep" aria-hidden="true">•</span>
+      <span class="proof-item">Codex CLI</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">MCP server</span>
       <span class="proof-sep" aria-hidden="true">•</span>
@@ -336,7 +338,7 @@
           <div class="layer-num">02</div>
           <div class="layer-content">
             <h3>Execution layer</h3>
-            <span class="layer-tag">OpenCode · Cursor CLI · Claude Code · Direct API</span>
+            <span class="layer-tag">OpenCode · Cursor CLI · Claude Code · Codex · Direct API</span>
             <p>Each agent runs in the engine you choose: <strong>OpenCode</strong> for persistent sessions and file editing, <strong>Cursor CLI</strong> for deep reasoning, <strong>Claude Code</strong> for full workspace context, or a <strong>direct LLM call</strong> for speed. Switch per agent from the dashboard — no restarts.</p>
           </div>
         </div>
@@ -359,12 +361,12 @@
       <div class="section-header">
         <div class="eyebrow">Built different</div>
         <h2>How CrewSwarm differs from framework-only stacks</h2>
-        <p class="section-desc">CrewSwarm is a runtime, not just a library. You get a realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, and Claude Code out of the box.</p>
+        <p class="section-desc">CrewSwarm is a runtime, not just a library. You get a realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, Claude Code, and Codex out of the box.</p>
       </div>
       <div class="differs-grid">
         <div class="differs-card">
-          <h3>Three execution engines, first-class</h3>
-          <p>Every agent can run inside <strong>OpenCode</strong> (persistent sessions, full file editing), <strong>Cursor CLI</strong> (opus-thinking, sonnet-4.6), or <strong>Claude Code</strong> (full workspace context, native tool use). Switch per agent from the dashboard — no config files, no restarts.</p>
+          <h3>Four execution engines, first-class</h3>
+          <p>Every agent can run inside <strong>OpenCode</strong> (persistent sessions, full file editing), <strong>Cursor CLI</strong> (opus-thinking, sonnet-4.6), <strong>Claude Code</strong> (full workspace context, native tool use), or <strong>Codex CLI</strong> (OpenAI Codex with workspace-write access). Switch per agent from the dashboard — no config files, no restarts.</p>
         </div>
         <div class="differs-card">
           <h3>Realtime bus + daemons</h3>
@@ -464,12 +466,25 @@
               </ul>
               <div class="engine-tag">Best for: large refactors, multi-file reasoning</div>
             </div>
+            <div class="engine-card">
+              <div class="engine-header">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-label="Codex CLI" style="flex-shrink:0;"><circle cx="12" cy="12" r="10" stroke="#a78bfa" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <strong>Codex CLI</strong>
+              </div>
+              <ul class="engine-traits">
+                <li>OpenAI Codex — non-interactive <code>codex exec</code></li>
+                <li>workspace-write sandbox — full file access, no approval prompts</li>
+                <li>MCP-connected: agents available inside Codex sessions</li>
+                <li>Per-agent or global toggle from the Engines tab</li>
+              </ul>
+              <div class="engine-tag">Best for: OpenAI-model workflows, coding agents</div>
+            </div>
           </div>
         </div>
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🔌</div>
           <h3>MCP server — your crew in any AI tool</h3>
-          <p>CrewSwarm exposes your entire crew as an <strong>MCP server on port 5020</strong>. Add one line to <code>~/.cursor/mcp.json</code> (or Claude Code, OpenCode) and every project gets your full persistent agent fleet — not session-scoped generics, but your crew with memory, custom models, and cross-agent coordination.</p>
+          <p>CrewSwarm exposes your entire crew as an <strong>MCP server on port 5020</strong>. Add one line to <code>~/.cursor/mcp.json</code> (or Claude Code, OpenCode, Codex) and every project gets your full persistent agent fleet — not session-scoped generics, but your crew with memory, custom models, and cross-agent coordination.</p>
           <div class="engines-grid" style="margin-top:16px;">
             <div class="engine-card">
               <div class="engine-header"><strong>dispatch_agent</strong></div>
@@ -841,6 +856,86 @@
             <div class="agent-name">crew-security <span class="agent-handle">Guardian</span></div>
             <div class="agent-role">Security review</div>
             <p>Audits for vulnerabilities, hardens configs, and enforces best practices.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(34,197,94,0.15); color:#4ade80;">G</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-github <span class="agent-handle">GitBot</span></div>
+            <div class="agent-role">Git &amp; PRs</div>
+            <p>Commits, branches, pull requests, and GitHub Actions. Runs real git and gh commands.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(251,191,36,0.15); color:#fbbf24;">R</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-researcher <span class="agent-handle">Scout</span></div>
+            <div class="agent-role">Web research</div>
+            <p>Searches the web, summarizes findings, and surfaces competitive intelligence via Perplexity.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(168,85,247,0.15); color:#c084fc;">A</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-architect <span class="agent-handle">Arch</span></div>
+            <div class="agent-role">System design &amp; DevOps</div>
+            <p>Designs systems, writes infra-as-code, and handles deployment pipelines.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(244,63,94,0.15); color:#fb7185;">F</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-frontend <span class="agent-handle">Pixel</span></div>
+            <div class="agent-role">CSS &amp; design systems</div>
+            <p>Polished UI, animations, theming, and layout — Apple/Linear-level visual craft.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(234,179,8,0.15); color:#facc15;">S</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-seo <span class="agent-handle">Rank</span></div>
+            <div class="agent-role">SEO specialist</div>
+            <p>Keyword research, meta tags, content strategy, and technical SEO audits.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(99,102,241,0.15); color:#818cf8;">M</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-ml <span class="agent-handle">Neuron</span></div>
+            <div class="agent-role">Machine learning</div>
+            <p>AI pipelines, model selection, fine-tuning setup, and data preprocessing workflows.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(239,68,68,0.15); color:#f87171;">O</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-orchestrator <span class="agent-handle">Wave</span></div>
+            <div class="agent-role">Parallel orchestration</div>
+            <p>Fans out tasks to multiple agents simultaneously in waves. No queuing, no collisions.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(56,189,248,0.12); color:#38bdf8;">T</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-telegram <span class="agent-handle">TGBot</span></div>
+            <div class="agent-role">Telegram bridge</div>
+            <p>Routes tasks and replies through your Telegram bot. Dispatch to any agent from your phone.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(34,197,94,0.12); color:#4ade80;">W</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-whatsapp <span class="agent-handle">WABot</span></div>
+            <div class="agent-role">WhatsApp bridge</div>
+            <p>Personal WhatsApp bot via Baileys. Chat with your crew from any device — no Business API needed.</p>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-avatar" style="background:rgba(168,85,247,0.12); color:#c084fc;">M</div>
+          <div class="agent-info">
+            <div class="agent-name">crew-mega <span class="agent-handle">Mega</span></div>
+            <div class="agent-role">Heavy general tasks</div>
+            <p>Long-horizon, high-complexity tasks that need extended context and deep reasoning.</p>
           </div>
         </div>
       </div>
@@ -1430,13 +1525,13 @@
               <div class="faq-answer-inner"><p>A JSONL feed at <code>~/.crewswarm/logs/events.jsonl</code> stores bootstrap events, memory load failures, protocol violations, retries, and RT events for later auditing.</p></div>
             </div>
           </div>
-          <div class="faq-item" data-question="agent roster roles crew main pm coder qa fixer security">
+          <div class="faq-item" data-question="agent roster roles crew-main crew-pm crew-coder crew-qa crew-fixer crew-security crew-github crew-researcher crew-architect crew-seo crew-ml crew-orchestrator crew-frontend crew-copywriter crew-telegram crew-whatsapp crew-mega 20 agents">
             <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-15" id="faq-heading-15">
               <span>Which agents ship with the default crew?</span>
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-15" role="region" aria-labelledby="faq-heading-15">
-              <div class="faq-answer-inner"><p>You get crew-main (coordination), crew-pm (planning), crew-coder (implementation), crew-qa (testing), crew-fixer (debugging), security (audits), plus optional specialized front/back coders.</p></div>
+              <div class="faq-answer-inner"><p>You get crew-main (coordination), crew-pm (planning), crew-coder (implementation), crew-qa (testing), crew-fixer (debugging), crew-security (audits), crew-github (git/PRs), crew-researcher (web research), crew-architect (system design), crew-copywriter (docs/copy), crew-frontend (CSS/UI), crew-seo, crew-ml, and more — 20 agents total.</p></div>
             </div>
           </div>
           <div class="faq-item" data-question="orchestration modes phased pm loop continuous unified single task">

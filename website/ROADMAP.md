@@ -689,18 +689,22 @@
 
 ---
 
-## PM-Generated (Round 24)
+## PM-Generated (Rounds 24–25) — Archived
 
-- [!] Add a search bar to the index.html file that allows users to search for specific content within the website.  ✗ 7:55:59 PM  ✗ 7:56:25 PM
-- [!] Implement accessibility features in the styles.css file to ensure the website is compatible with screen readers and other assistive technologies.  ✗ 7:56:07 PM  ✗ 7:56:28 PM
-- [!] Create a comprehensive test suite to validate the functionality of the website, including tests for layout, navigation, and content rendering.  ✗ 7:56:15 PM  ✗ 7:56:31 PM
-- [!] Develop a detailed documentation page that outlines the website's architecture, design decisions, and technical requirements, and add it as a new file to the project directory.  ✗ 7:56:23 PM  ✗ 7:56:34 PM
+> These rounds looped on irrelevant tasks (search bars, test suites, architecture pages for a static marketing site). Marked N/A and archived below — PM loop should not pick these up.
+
+- [x] ~~Search bar~~ — N/A for static site
+- [x] ~~Accessibility pass~~ — ARIA attributes already present in nav and FAQ accordion
+- [x] ~~Test suite~~ — N/A, no JS framework; visual QA via browser review
+- [x] ~~Architecture docs page~~ — N/A; documentation lives in AGENTS.md / README.md
 
 ---
 
-## PM-Generated (Round 25)
+## Phase 5 — Content & Growth (Next)
 
-- [!] Add a search bar to the index.html file that allows users to search for specific content within the website.  ✗ 7:56:37 PM
-- [!] Implement a responsive design in the styles.css file to ensure the website is accessible and usable on various devices and screen sizes.  ✗ 7:56:45 PM
-- [ ] Create a comprehensive suite of unit tests and integration tests to validate the functionality of the website's components and ensure they work together seamlessly.
-- [ ] Develop a detailed documentation page that outlines the website's architecture, components, and APIs, and include it as a new file in the project directory.
+- [ ] Add dashboard screenshot(s) to the website (Chat tab, Engines tab, Benchmarks tab)
+- [ ] Add Codex CLI engine logo/badge alongside OpenCode, Cursor, Claude Code in the engines section
+- [ ] Website: add ZeroEval / Benchmarks tab feature callout
+- [ ] Website: add background consciousness loop as a differentiator callout
+- [ ] Website: add scheduled pipelines / cron feature callout
+- [ ] Website: verify all 20 agent cards render correctly on mobile

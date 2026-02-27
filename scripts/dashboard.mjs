@@ -526,6 +526,34 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/env-advanced" && req.method === "POST") {
+      const body = await (async () => { let b = ""; for await (const c of req) b += c; return b; })();
+      let updates;
+      try { updates = JSON.parse(body); } catch { updates = {}; }
+      const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
+      try {
+        const raw = (() => { try { return fs.readFileSync(cfgPath, "utf8"); } catch { return "{}"; } })();
+        const cfg = JSON.parse(raw);
+        if (!cfg.env) cfg.env = {};
+        for (const [k, v] of Object.entries(updates)) {
+          if (v === null || v === "") {
+            delete cfg.env[k];
+            delete process.env[k];
+          } else {
+            cfg.env[k] = String(v);
+            process.env[k] = String(v);
+          }
+        }
+        fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (err) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
     if (url.pathname === "/api/agents") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(await getAgentList()));
@@ -1199,6 +1227,34 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    // ── Codex CLI executor toggle ──────────────────────────────────────────────
+    if (url.pathname === "/api/settings/codex") {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+          const enabled = cfg.codex === true || process.env.CREWSWARM_CODEX === "1";
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled }));
+        } catch {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled: false }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = ""; for await (const chunk of req) body += chunk;
+        const { enabled } = JSON.parse(body || "{}");
+        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+        cfg.codex = enabled === true;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        process.env.CREWSWARM_CODEX = enabled ? "1" : "0";
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, enabled: cfg.codex }));
+        return;
+      }
+    }
     // ── Global OpenCode loop (Ouroboros) ───────────────────────────────────────
     if (url.pathname === "/api/settings/global-oc-loop") {
       const { readFile, writeFile } = await import("node:fs/promises");
@@ -1226,6 +1282,38 @@ const server = http.createServer(async (req, res) => {
         await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+    }
+    // ── Passthrough notification routing ──────────────────────────────────────
+    if (url.pathname === "/api/settings/passthrough-notify") {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+          const value = cfg.env?.PASSTHROUGH_NOTIFY || "both";
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ value }));
+        } catch {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ value: "both" }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = ""; for await (const chunk of req) body += chunk;
+        const { value } = JSON.parse(body || "{}");
+        const allowed = ["both", "tg", "wa", "none"];
+        const safe = allowed.includes(value) ? value : "both";
+        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+        if (!cfg.env) cfg.env = {};
+        cfg.env.PASSTHROUGH_NOTIFY = safe;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        // Also set in process.env so it takes effect without crew-lead restart
+        process.env.PASSTHROUGH_NOTIFY = safe;
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, value: safe }));
         return;
       }
     }
@@ -2099,6 +2187,7 @@ ORDER BY day DESC, cost DESC;`;
           cursorCliModel: a.cursorCliModel || "",
           useClaudeCode: a.useClaudeCode || false,
           claudeCodeModel: a.claudeCodeModel || "",
+          useCodex: a.useCodex || false,
           role: a._role || "",
           opencodeLoop: a.opencodeLoop || false,
           opencodeLoopMaxRounds: a.opencodeLoopMaxRounds || 10,
@@ -2181,7 +2270,7 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, useCodex, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -2225,6 +2314,7 @@ ORDER BY day DESC, cost DESC;`;
       if (cursorCliModel !== undefined) agent.cursorCliModel = cursorCliModel || undefined;
       if (useClaudeCode !== undefined) agent.useClaudeCode = useClaudeCode;
       if (claudeCodeModel !== undefined) agent.claudeCodeModel = claudeCodeModel || undefined;
+      if (useCodex !== undefined) agent.useCodex = useCodex;
       if (role !== undefined) agent._role = role || undefined;
       if (opencodeLoop !== undefined) agent.opencodeLoop = opencodeLoop || undefined;
       if (opencodeLoopMaxRounds !== undefined) agent.opencodeLoopMaxRounds = opencodeLoopMaxRounds > 0 ? opencodeLoopMaxRounds : undefined;

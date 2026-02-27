@@ -25,7 +25,25 @@ test-output/
 # Private roadmap (internal only)
 docs/ROADMAP-PRIVATE.md
 
+# OpenClaw legacy files (old brand name — not for public repo)
+docs/OPENCLAW-*.md
+docs/SESSION-SUMMARY.md
+docs/IMPROVEMENT-PLAN.md
+docs/MIGRATION-CREW-IDS.md
+docs/OPENAI-CHATGPT-VS-API.md
+docs/OPENCODE-INTEGRATION-STATUS.md
+
+# Personal files in memory/
+memory/stinki-bio.md
+
+# Personal Polymarket trading project (not part of CrewSwarm)
+polymarket_ai_strat/
+
+# Legacy HTML shells
+crew-chat.html
+
 # Personal / workspace scratchpad files — never commit these
+Modelfile
 black_bio.txt
 hobbsistheman.html
 stinky.html
@@ -82,6 +100,9 @@ newfeature/
 .env.local
 *.pem
 openclaw.json
+
+# Stray runtime files
+frontend/memory/
 
 # IDE / OS
 .DS_Store

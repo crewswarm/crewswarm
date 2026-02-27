@@ -2157,13 +2157,37 @@ function shouldUseOpenCode(payload, prompt, incomingType) {
 
   // Explicit override via runtime flag or payload hint
   const runtime = String(payload?.runtime || payload?.executor || payload?.engine || "").toLowerCase();
-  if (runtime === "opencode" || runtime === "codex" || runtime === "gpt5" || runtime === "gpt-5") return true;
+  if (runtime === "opencode" || runtime === "gpt5" || runtime === "gpt-5") return true;
   if (payload?.useOpenCode === true) return true;
 
   // Config-driven: check crewswarm.json useOpenCode field (or role-based default)
   const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
   const ocCfg = getAgentOpenCodeConfig(agentId);
   return ocCfg.enabled;
+}
+
+// ── Codex CLI routing ──────────────────────────────────────────────────────
+const CODEX_CLI_BIN = process.env.CODEX_CLI_BIN || "codex";
+const CODEX_CLI_TIMEOUT_MS = Number(process.env.CODEX_CLI_TIMEOUT_MS || "300000");
+
+const CREWSWARM_CODEX = process.env.CREWSWARM_CODEX === "1" ||
+  (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"))?.codex === true; } catch { return false; } })();
+
+function shouldUseCodex(payload, incomingType) {
+  if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
+  // Cursor CLI and Claude Code take priority if configured
+  if (shouldUseCursorCli(payload, incomingType)) return false;
+  if (shouldUseClaudeCode(payload, incomingType)) return false;
+  const runtime = String(payload?.runtime || payload?.executor || payload?.engine || "").toLowerCase();
+  if (runtime === "codex" || runtime === "codex-cli") return true;
+  if (payload?.useCodex === true) return true;
+  const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "").toLowerCase();
+  try {
+    const agents = loadAgentList();
+    const cfg = agents.find(a => a.id === agentId || a.id === `crew-${agentId}`);
+    if (cfg?.useCodex === true) return true;
+  } catch {}
+  return CREWSWARM_CODEX;
 }
 
 function shouldConnectGateway(args) {
@@ -2396,6 +2420,84 @@ function clearClaudeSessionId(agentId) {
     const f = path.join(CLAUDE_SESSION_DIR, `${agentId}.claude-session`);
     if (fs.existsSync(f)) fs.unlinkSync(f);
   } catch {}
+}
+
+async function runCodexTask(prompt, payload = {}) {
+  // Codex CLI: `codex exec --json <prompt>`
+  // JSON events: { type:"item.completed", item:{ type:"agent_message", text:"..." } }
+  //              { type:"turn.completed" }
+  return new Promise((resolve, reject) => {
+    const agentId = String(payload?.agentId || payload?.agent || OPENCREW_RT_AGENT || "");
+    const configuredDir = getOpencodeProjectDir();
+    let projectDir = payload?.projectDir || configuredDir || process.cwd();
+    projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+
+    const agentPrefix = agentId ? `[${agentId}]` : "";
+    const titledPrompt = agentPrefix ? `${agentPrefix} ${String(prompt)}` : String(prompt);
+
+    const args = ["exec", "--sandbox", "workspace-write", "--json", titledPrompt];
+
+    console.error(`[Codex:${agentId}] Running: ${CODEX_CLI_BIN} exec --json (cwd=${projectDir})`);
+
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast",
+      payload: { agent: agentId, model: "codex/auto", ts: Date.now() } });
+
+    const child = spawn(CODEX_CLI_BIN, args, {
+      cwd: projectDir,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let lineBuffer = "";
+    let accumulatedText = "";
+    let resolved = false;
+
+    const hardTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+      if (!resolved) reject(new Error(`Codex timeout after ${CODEX_CLI_TIMEOUT_MS}ms`));
+    }, CODEX_CLI_TIMEOUT_MS);
+
+    function handleLine(line) {
+      line = line.trim();
+      if (!line) return;
+      try {
+        const ev = JSON.parse(line);
+        if (ev.type === "item.completed" && ev.item?.type === "agent_message" && ev.item?.text) {
+          accumulatedText += ev.item.text;
+        } else if (ev.type === "turn.completed") {
+          clearTimeout(hardTimer);
+          resolved = true;
+          child.kill("SIGTERM");
+          resolve(accumulatedText.trim() || "(no output from Codex)");
+        }
+      } catch { /* non-JSON stderr lines — ignore */ }
+    }
+
+    function onData(chunk) {
+      lineBuffer += chunk.toString();
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop() || "";
+      for (const line of lines) handleLine(line);
+    }
+
+    child.stdout.on("data", onData);
+    child.stderr.on("data", onData);
+
+    child.on("close", (code) => {
+      clearTimeout(hardTimer);
+      if (lineBuffer.trim()) handleLine(lineBuffer);
+      if (!resolved) {
+        resolved = true;
+        if (accumulatedText.trim()) resolve(accumulatedText.trim());
+        else reject(new Error(`Codex exited with code ${code} and no output`));
+      }
+    });
+
+    child.on("error", (e) => {
+      clearTimeout(hardTimer);
+      if (!resolved) { resolved = true; reject(e); }
+    });
+  });
 }
 
 async function runClaudeCodeTask(prompt, payload = {}) {
@@ -3498,6 +3600,8 @@ async function runOuroborosStyleLoop(originalTask, agentId, projectDir, payload,
         stepResult = await runCursorCliTask(miniTask, { ...payload, agentId, projectDir });
       } else if (engine === "claude") {
         stepResult = await runClaudeCodeTask(miniTask, { ...payload, agentId, projectDir });
+      } else if (engine === "codex") {
+        stepResult = await runCodexTask(miniTask, { ...payload, agentId, projectDir });
       } else {
         stepResult = await runOpenCodeTask(miniTask, payload);
       }
@@ -4215,13 +4319,17 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
 
     const useCursorCli = shouldUseCursorCli(payload, incomingType);
     const useClaudeCode = shouldUseClaudeCode(payload, incomingType);
-    const useOpenCode = shouldUseOpenCode(payload, prompt, incomingType);
+    const useCodex = shouldUseCodex(payload, incomingType);
+    const useOpenCode = !useCodex && shouldUseOpenCode(payload, prompt, incomingType);
     if (useCursorCli) {
       progress(`Routing realtime task to Cursor CLI (agent -p --force)...`);
       telemetry("realtime_route_cursor_cli", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
     } else if (useClaudeCode) {
       progress(`Routing realtime task to Claude Code (claude -p)...`);
       telemetry("realtime_route_claude_code", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
+    } else if (useCodex) {
+      progress(`Routing realtime task to Codex CLI (codex exec)...`);
+      telemetry("realtime_route_codex", { taskId, incomingType, from, agent: OPENCREW_RT_AGENT });
     } else if (useOpenCode) {
       const routeAgent = String(payload?.agent || OPENCREW_OPENCODE_AGENT || "default");
       const ocAgentCfg = getAgentOpenCodeConfig(OPENCREW_RT_AGENT);
@@ -4282,6 +4390,19 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
           telemetry("claude_code_fallback", { taskId, error: msg });
           reply = await callLLMDirect(finalPrompt, OPENCREW_RT_AGENT, null);
         }
+      }
+    } else if (useCodex) {
+      // ── Codex CLI backend ──────────────────────────────────────────────
+      let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
+      projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+      const codexPrompt = buildMiniTaskForOpenCode(prompt, OPENCREW_RT_AGENT, projectDir);
+      try {
+        reply = await runCodexTask(codexPrompt, { ...payload, agentId: OPENCREW_RT_AGENT, projectDir });
+      } catch (e) {
+        const msg = e?.message ?? String(e);
+        progress(`Codex CLI failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
+        telemetry("codex_fallback", { taskId, error: msg });
+        reply = await callLLMDirect(finalPrompt, OPENCREW_RT_AGENT, null);
       }
     } else if (useOpenCode) {
       let projectDir = payload?.projectDir || getOpencodeProjectDir() || null;
