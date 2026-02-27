@@ -314,6 +314,10 @@ export function openProjectInBuild(projectId, deps) {
 
 let _buildProjects = {};
 
+export function getBuildProjectById(projectId) {
+  return _buildProjects[projectId] || null;
+}
+
 export async function loadBuildProjectPicker() {
   try {
     const data = await getJSON('/api/projects');
