@@ -146,6 +146,18 @@
 
 ---
 
+## Fixed in Session 5 (2026-02-27) ✅
+
+- **God-file splits** — `gateway-bridge.mjs` 5408 → 3954 lines (−27%), `crew-lead.mjs` 5458 → 5169 lines (−5%)
+- **9 new modules** extracted into `lib/`: `skills/index.mjs` (223), `runtime/spending.mjs` (127), `tools/executor.mjs` (676), `runtime/task-lease.mjs` (198), `runtime/utils.mjs` (52), `dispatch/parsers.mjs` (215), `chat/history.mjs` (31), `agents/permissions.mjs` (73), `runtime/memory.mjs` (290) — **1,885 lines total extracted**
+- **L2** — `renderStatusBadge`, `showLoading`, `showEmpty`, `showError` added to `core/dom.js`; imported by `agents-tab.js` + `models-tab.js`; duplicate local definitions removed
+- **L3** — `showLoading/Empty/Error` wired into `loadOcStats`, `loadProviders`, replacing all inline `div.innerHTML` loading strings
+- **C2** — Confirmed already fixed: `useClaudeCode` + `claudeCodeModel` present in `/api/agents-config/update` destructuring and write logic
+- **Benchmark runner** — `GET /api/benchmark-tasks` + `POST /api/benchmark-run` added to `dashboard.mjs` (SWE-bench Verified + LiveCodeBench via HuggingFace dataset rows API)
+- **Vite bundle** — Rebuilt with hash `index-B2cCpwbp.js`
+
+---
+
 ## Fixed in Session 4 (2026-02-27) ✅
 
 - **H6** — Mobile responsive layout: `@media` queries at 1100px, 768px, 480px — sidebar collapses to horizontal nav bar, grids go single-column, chat row wraps
