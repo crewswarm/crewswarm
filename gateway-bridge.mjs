@@ -112,6 +112,7 @@ import {
   shouldUseDockerSandbox,
   runDockerSandboxTask,
   runClaudeCodeTask,
+  _rtClientForApprovals,
 } from "./lib/engines/runners.mjs";
 
 const LEGACY_STATE_DIR = path.join(os.homedir(), ".openclaw");
@@ -2277,7 +2278,6 @@ async function runRealtimeDaemon(bridge) {
       }), { retries: 2, baseDelayMs: 300, label: "realtime connect" });
 
       currentClient = rt;
-      _rtClientForApprovals = rt; // local ref for agent_working/agent_idle publishes
       setRtClient(rt); // wire into tool executor for cmd approval requests
       setRtClientForRunners(rt); // wire into engine runners for agent_working/agent_idle
       rt.publish({
