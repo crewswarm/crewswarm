@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # CrewSwarm — first-time install script for macOS
 # Usage: bash install.sh
+#   bash install.sh --non-interactive   # CI / headless mode — skips all prompts
 # Or via curl: bash <(curl -fsSL https://raw.githubusercontent.com/CrewSwarm/CrewSwarm/main/install.sh)
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CREWSWARM_DIR="$HOME/.crewswarm"
+
+# ── Non-interactive / CI mode ─────────────────────────────────────────────────
+NON_INTERACTIVE=0
+for _arg in "$@"; do
+  [[ "$_arg" == "--non-interactive" || "$_arg" == "--ci" ]] && NON_INTERACTIVE=1
+done
+# Also auto-detect CI environments
+[[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]] && NON_INTERACTIVE=1
 
 # ── colours ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -220,9 +229,13 @@ fi
 
 # ── 6b. CrewChat macOS app ────────────────────────────────────────────────────
 if command -v swiftc &>/dev/null; then
-  echo -n "  Build CrewChat.app (native macOS chat window)? [Y/n] "
-  read -r BUILD_CHAT
-  BUILD_CHAT="${BUILD_CHAT:-Y}"
+  if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    BUILD_CHAT="N"
+  else
+    echo -n "  Build CrewChat.app (native macOS chat window)? [Y/n] "
+    read -r BUILD_CHAT
+    BUILD_CHAT="${BUILD_CHAT:-Y}"
+  fi
   if [[ "$BUILD_CHAT" =~ ^[Yy] ]]; then
     mkdir -p "$HOME/bin"
     APP_DIR="$HOME/Applications/CrewChat.app"
@@ -274,15 +287,23 @@ fi
 
 # ── 6c. Telegram bot ─────────────────────────────────────────────────────────
 echo ""
-echo -n "  Set up Telegram bot? [y/N] "
-read -r SETUP_TG
+if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+  SETUP_TG="N"
+else
+  echo -n "  Set up Telegram bot? [y/N] "
+  read -r SETUP_TG
+fi
 SETUP_TG="${SETUP_TG:-N}"
 if [[ "$SETUP_TG" =~ ^[Yy] ]]; then
   echo ""
   echo "  1. Open Telegram and message @BotFather → /newbot"
   echo "  2. Copy the token it gives you, paste below:"
-  echo -n "  Bot token: "
-  read -r TG_TOKEN
+  if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    TG_TOKEN=""
+  else
+    echo -n "  Bot token: "
+    read -r TG_TOKEN
+  fi
   if [[ -n "$TG_TOKEN" ]]; then
     # Add to .env if it exists, otherwise write one
     ENV_FILE="$REPO_DIR/.env"
@@ -303,16 +324,25 @@ fi
 
 # ── 6d. WhatsApp bridge ───────────────────────────────────────────────────────
 echo ""
-echo -n "  Set up WhatsApp bridge? [y/N] "
-read -r SETUP_WA
+if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+  SETUP_WA="N"
+else
+  echo -n "  Set up WhatsApp bridge? [y/N] "
+  read -r SETUP_WA
+fi
 SETUP_WA="${SETUP_WA:-N}"
 if [[ "$SETUP_WA" =~ ^[Yy] ]]; then
   echo ""
   echo "  WhatsApp uses your personal number as a linked device (no business account needed)."
-  echo -n "  Your WhatsApp number in international format (e.g. 14155552671), or leave blank to allow anyone: "
-  read -r WA_NUMBER
-  echo -n "  Your name (so the crew knows who you are, e.g. Jeff): "
-  read -r WA_NAME
+  if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    WA_NUMBER=""
+    WA_NAME="Owner"
+  else
+    echo -n "  Your WhatsApp number in international format (e.g. 14155552671), or leave blank to allow anyone: "
+    read -r WA_NUMBER
+    echo -n "  Your name (so the crew knows who you are, e.g. Jeff): "
+    read -r WA_NAME
+  fi
 
   WA_CFG="$CREWSWARM_DIR/whatsapp-bridge.json"
   if [[ -n "$WA_NUMBER" ]]; then
@@ -340,13 +370,21 @@ fi
 
 # ── 6e. Autonomous / background consciousness ─────────────────────────────────
 echo ""
-echo -n "  Enable autonomous mode? Crew-lead reflects between tasks and can self-initiate [y/N] "
-read -r SETUP_AUTO
+if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+  SETUP_AUTO="N"
+else
+  echo -n "  Enable autonomous mode? Crew-lead reflects between tasks and can self-initiate [y/N] "
+  read -r SETUP_AUTO
+fi
 SETUP_AUTO="${SETUP_AUTO:-N}"
 ENV_FILE="$REPO_DIR/.env"
 if [[ "$SETUP_AUTO" =~ ^[Yy] ]]; then
-  echo -n "  Check interval in minutes (default 15): "
-  read -r AUTO_INTERVAL
+  if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    AUTO_INTERVAL=15
+  else
+    echo -n "  Check interval in minutes (default 15): "
+    read -r AUTO_INTERVAL
+  fi
   AUTO_INTERVAL="${AUTO_INTERVAL:-15}"
   AUTO_MS=$(( AUTO_INTERVAL * 60 * 1000 ))
 
@@ -366,8 +404,12 @@ fi
 
 # ── 6f. MCP integration (Cursor / Claude Code / OpenCode) ────────────────────
 echo ""
-echo -n "  Wire CrewSwarm agents into Cursor / Claude Code / OpenCode via MCP? [y/N] "
-read -r SETUP_MCP
+if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+  SETUP_MCP="N"
+else
+  echo -n "  Wire CrewSwarm agents into Cursor / Claude Code / OpenCode via MCP? [y/N] "
+  read -r SETUP_MCP
+fi
 SETUP_MCP="${SETUP_MCP:-N}"
 if [[ "$SETUP_MCP" =~ ^[Yy] ]]; then
   RT_TOKEN=$(node -e "try{const c=require('fs').readFileSync('$CREWSWARM_DIR/config.json','utf8');console.log(JSON.parse(c).rt?.authToken||'')}catch{}" 2>/dev/null)
@@ -441,8 +483,12 @@ if [[ "$HAS_KEY" -eq 0 ]]; then
   echo ""
 fi
 
-echo -n "  Start CrewSwarm now? [Y/n] "
-read -r START_NOW
+if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+  START_NOW="N"
+else
+  echo -n "  Start CrewSwarm now? [Y/n] "
+  read -r START_NOW
+fi
 START_NOW="${START_NOW:-Y}"
 
 if [[ "$START_NOW" =~ ^[Yy] ]]; then

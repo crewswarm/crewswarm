@@ -15,11 +15,75 @@ import path from "node:path";
 import os from "node:os";
 import { spawn, execFileSync } from "node:child_process";
 import { getProjectDir } from "./lib/project-dir.mjs";
+import { COORDINATOR_AGENT_IDS } from "./lib/agent-registry.mjs";
 import {
-  BUILT_IN_RT_AGENTS,
-  COORDINATOR_AGENT_IDS,
-  RT_TO_GATEWAY_AGENT_MAP as REGISTRY_RT_TO_GATEWAY_AGENT_MAP,
-} from "./lib/agent-registry.mjs";
+  resolveConfig,
+  resolveTelegramBridgeConfig,
+  loadAgentList,
+  loadAgentLLMConfig,
+  loadLoopBrainConfig,
+  CREWSWARM_RT_SWARM_AGENTS,
+  RT_TO_GATEWAY_AGENT_MAP,
+} from "./lib/agents/registry.mjs";
+import {
+  validateCodingArtifacts,
+  assertTaskPromptProtocol,
+  initValidation,
+} from "./lib/agents/validation.mjs";
+import {
+  spawnAgentDaemon,
+  isAgentDaemonRunning,
+  readPid,
+  resolveSpawnTargets,
+} from "./lib/agents/daemon.mjs";
+import {
+  acquireTaskLease,
+  renewTaskLease,
+  releaseTaskLease,
+  markTaskDone,
+  dispatchKeyForTask,
+  shouldUseDispatchGuard,
+  shouldRetryTaskFailure,
+  isCodingTask,
+} from "./lib/agents/dispatch.mjs";
+import {
+  CREWSWARM_RT_URL,
+  CREWSWARM_RT_AGENT,
+  CREWSWARM_RT_TOKEN,
+  CREWSWARM_RT_CHANNELS,
+  CREWSWARM_RT_TLS_INSECURE,
+  CREWSWARM_RT_RECONNECT_MS,
+  CREWSWARM_RT_DISPATCH_LEASE_MS,
+  CREWSWARM_RT_DISPATCH_HEARTBEAT_MS,
+  CREWSWARM_RT_DISPATCH_MAX_RETRIES,
+  CREWSWARM_RT_DISPATCH_MAX_RETRIES_CODING,
+  CREWSWARM_RT_DISPATCH_RETRY_BACKOFF_MS,
+  CREWSWARM_OPENCODE_ENABLED,
+  CREWSWARM_OPENCODE_BIN,
+  CREWSWARM_OPENCODE_AGENT,
+  CREWSWARM_OPENCODE_MODEL,
+  CREWSWARM_OPENCODE_FALLBACK_DEFAULT,
+  CREWSWARM_OPENCODE_TIMEOUT_MS,
+  loadGenericEngines,
+  SHARED_MEMORY_BASE,
+  SHARED_MEMORY_NAMESPACE,
+  SWARM_STATUS_LOG,
+  SWARM_DISPATCH_DIR,
+  SWARM_DLQ_DIR,
+  SWARM_RUNTIME_DIR,
+  CREWSWARM_RT_COMMAND_TYPES,
+  PROTOCOL_VERSION,
+  CLI_VERSION,
+  RUN_ID,
+  GATEWAY_URL,
+  TELEMETRY_DIR,
+  LEGACY_STATE_DIR,
+  CREWSWARM_CONFIG_PATH,
+  MEMORY_BOOTSTRAP_AGENT,
+  ED25519_SPKI_PREFIX,
+  REQUEST_TIMEOUT_MS,
+  CHAT_TIMEOUT_MS,
+} from "./lib/runtime/config.mjs";
 import {
   TELEMETRY_LOG,
   formatError,
@@ -105,8 +169,8 @@ import {
   shouldUseCodex,
   shouldUseGeminiCli,
   runGeminiCliTask,
-  shouldUseAntigravity,
-  runAntigravityTask,
+  shouldUseGenericEngine,
+  runGenericEngineTask,
   runCursorCliTask,
   runCodexTask,
   shouldUseDockerSandbox,
@@ -117,128 +181,18 @@ import {
 import { initLlmDirect, callLLMDirect } from "./lib/engines/llm-direct.mjs";
 import { initOpenCode, runOpenCodeTask } from "./lib/engines/opencode.mjs";
 
-const LEGACY_STATE_DIR = path.join(os.homedir(), ".openclaw");
-const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
-const CREWSWARM_CONFIG_PATH = path.join(CREWSWARM_DIR, "config.json");
-const TELEGRAM_BRIDGE_CONFIG_PATH = path.join(CREWSWARM_DIR, "telegram-bridge.json");
-const TELEMETRY_DIR = path.join(LEGACY_STATE_DIR, "telemetry");
-
-// ── Built-in provider base URLs — users only need to supply apiKey ──────────
-const PROVIDER_REGISTRY = {
-  groq:        { baseUrl: "https://api.groq.com/openai/v1" },
-  anthropic:   { baseUrl: "https://api.anthropic.com/v1" },
-  openai:      { baseUrl: "https://api.openai.com/v1" },
-  perplexity:  { baseUrl: "https://api.perplexity.ai" },
-  mistral:     { baseUrl: "https://api.mistral.ai/v1" },
-  deepseek:    { baseUrl: "https://api.deepseek.com/v1" },
-  nvidia:      { baseUrl: "https://integrate.api.nvidia.com/v1" },
-  google:      { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
-  xai:         { baseUrl: "https://api.x.ai/v1" },
-  ollama:      { baseUrl: "http://localhost:11434/v1" },
-  "openai-compatible": { baseUrl: null }, // user must supply baseUrl
-};
-
-// ── Config resolver: ~/.crewswarm/config.json first, ~/.openclaw/openclaw.json fallback ──
-function resolveConfig() {
-  const paths = [CREWSWARM_CONFIG_PATH, path.join(LEGACY_STATE_DIR, "openclaw.json")];
-  for (const p of paths) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
-      cfg.__source = p;
-      return cfg;
-    } catch { /* try next */ }
-  }
-  return {};
-}
-
-/** Load ~/.crewswarm/telegram-bridge.json for @@TELEGRAM (token + default chat). */
-function resolveTelegramBridgeConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(TELEGRAM_BRIDGE_CONFIG_PATH, "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-function resolveProviderConfig(cfg, providerKey) {
-  const explicit = cfg?.models?.providers?.[providerKey] || cfg?.providers?.[providerKey];
-  const builtin  = PROVIDER_REGISTRY[providerKey];
-  if (!explicit && !builtin) return null;
-  return {
-    baseUrl: explicit?.baseUrl || builtin?.baseUrl,
-    apiKey:  explicit?.apiKey  || cfg?.env?.[`${providerKey.toUpperCase()}_API_KEY`] || null,
-  };
-}
-// Wire injected deps into extracted modules (after config fns are defined)
+// Wire injected deps into extracted modules
 initTaskLease({ telemetry, sleep, parseJsonSafe });
 initTools({ resolveConfig, resolveTelegramBridgeConfig, loadAgentList, getOpencodeProjectDir,
   loadSkillDef, loadPendingSkills, savePendingSkills, notifyTelegramSkillApproval, executeSkill });
 initSpending({ resolveConfig, resolveTelegramBridgeConfig });
 initSkills({ resolveConfig, resolveTelegramBridgeConfig });
 initMemory({ telemetry, ensureSharedMemoryFiles, loadAgentList, loadAgentToolPermissions, buildToolInstructions, getOpencodeProjectDir });
+initValidation({ telemetry });
 
-
-const MEMORY_BOOTSTRAP_AGENT = "gateway-bridge";
-const SHARED_MEMORY_PROTOCOL = [
-  "Memory loaded. Current UTC: `$(date -u +%Y-%m-%d\\ %H:%M\\ UTC)`; last handoff: `${getLastHandoffTimestamp()}`.",
-  "",
-  "Complete your task using available tools. When done, briefly note what you did.",
-  "Your reply is sent back to whoever dispatched this task (e.g. crew-pm or crew-lead); keep it concise and actionable so they can update the plan or assign next steps.",
-  "When you create or edit files, always report the full absolute path of each file (e.g. /Users/.../project/tests/file.js) in your reply so the user knows exactly where output went."
-].join("\n");
-const MEMORY_PROTOCOL_MARKER = "Mandatory memory protocol (apply for this task):";
-const GATEWAY_URL = "ws://127.0.0.1:18789";
-const CREWSWARM_RT_URL = process.env.CREWSWARM_RT_URL || "ws://127.0.0.1:18889";
-const CREWSWARM_RT_AGENT = process.env.CREWSWARM_RT_AGENT || "crew-main";
-function getRTToken() {
-  let token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
-  if (!token) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
-      token = cfg?.rt?.authToken || cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
-    } catch {}
-  }
-  if (!token) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "openclaw.json"), "utf8"));
-      token = cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
-    } catch {}
-  }
-  return typeof token === "string" ? token.trim() : "";
-}
-const CREWSWARM_RT_TOKEN = getRTToken();
-const CREWSWARM_RT_CHANNELS = (process.env.CREWSWARM_RT_CHANNELS || "command,assign,handoff,reassign,events")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-const CREWSWARM_RT_TLS_INSECURE = process.env.CREWSWARM_RT_TLS_INSECURE === "1";
-const CREWSWARM_RT_RECONNECT_MS = Number(process.env.CREWSWARM_RT_RECONNECT_MS || "1500");
-const CREWSWARM_RT_DISPATCH_ENABLED = (process.env.CREWSWARM_RT_DISPATCH_ENABLED || "1") !== "0";
-const CREWSWARM_RT_DISPATCH_LEASE_MS = Number(process.env.CREWSWARM_RT_DISPATCH_LEASE_MS || "45000");
-const CREWSWARM_RT_DISPATCH_HEARTBEAT_MS = Number(process.env.CREWSWARM_RT_DISPATCH_HEARTBEAT_MS || "10000");
-const CREWSWARM_RT_DISPATCH_MAX_RETRIES = Number(process.env.CREWSWARM_RT_DISPATCH_MAX_RETRIES || "2");
-const CREWSWARM_RT_DISPATCH_MAX_RETRIES_CODING = Number(process.env.CREWSWARM_RT_DISPATCH_MAX_RETRIES_CODING || "3");
-const CREWSWARM_RT_DISPATCH_RETRY_BACKOFF_MS = Number(process.env.CREWSWARM_RT_DISPATCH_RETRY_BACKOFF_MS || "2000");
-const CREWSWARM_OPENCODE_ENABLED = (process.env.CREWSWARM_OPENCODE_ENABLED || "1") !== "0";  // ON by default
-// CREWSWARM_CURSOR_WAVES=1 — route multi-agent waves through Cursor subagents
-// instead of dispatching each agent independently. The crew-orchestrator subagent
-// fans all tasks in a wave out to /crew-* subagents in parallel.
-const CREWSWARM_CURSOR_WAVES = process.env.CREWSWARM_CURSOR_WAVES === "1";
-// CREWSWARM_CLAUDE_CODE=1 — route tasks through Claude Code CLI (`claude -p`)
-// Uses ANTHROPIC_API_KEY. Per-agent opt-in via useClaudeCode:true in crewswarm.json.
-const CREWSWARM_CLAUDE_CODE = process.env.CREWSWARM_CLAUDE_CODE === "1";
-const CREWSWARM_OPENCODE_FORCE = process.env.CREWSWARM_OPENCODE_FORCE === "1";
-const CREWSWARM_OPENCODE_BIN = process.env.CREWSWARM_OPENCODE_BIN || path.join(os.homedir(), ".opencode", "bin", "opencode");
 function getOpencodeProjectDir() {
   return getProjectDir("") || "";
 }
-const CREWSWARM_OPENCODE_AGENT = process.env.CREWSWARM_OPENCODE_AGENT || "admin";
-// Primary OpenCode model: kimi-k2 is reliable at exact file edits on Groq (free tier).
-// openai/gpt-5.x-codex models are rate-limited and fall back to imprecise smaller models.
-const CREWSWARM_OPENCODE_MODEL = process.env.CREWSWARM_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
-const CREWSWARM_OPENCODE_FALLBACK_DEFAULT = "groq/llama-3.3-70b-versatile";
-const CREWSWARM_OPENCODE_TIMEOUT_MS = Number(process.env.CREWSWARM_OPENCODE_TIMEOUT_MS || "300000");
-const CREWSWARM_ANTIGRAVITY_MODEL = process.env.CREWSWARM_ANTIGRAVITY_MODEL || "google/antigravity-gemini-3-pro";
 
 // ── Per-agent OpenCode session persistence ─────────────────────────────────
 // Each agent maintains a session ID so `opencode run -s <id>` continues from
@@ -317,165 +271,9 @@ function getOpencodeFallbackModel() {
   } catch {}
   return CREWSWARM_OPENCODE_FALLBACK_DEFAULT;
 }
-// ── Auto-load agents from crewswarm.json / openclaw.json (legacy) so new agents added via the dashboard
-//    are immediately available without editing this file.
-function buildAgentMapsFromConfig() {
-  const BUILT_IN_MAP = { ...REGISTRY_RT_TO_GATEWAY_AGENT_MAP };
-
-  if (process.env.CREWSWARM_RT_SWARM_AGENTS) {
-    // Fully overridden by env — build map from env list, fall back to built-in map values
-    const list = process.env.CREWSWARM_RT_SWARM_AGENTS.split(",").map(s => s.trim()).filter(Boolean);
-    const map = {};
-    for (const a of list) map[a] = BUILT_IN_MAP[a] || a.replace(/^crew-/, "");
-    return { list, map };
-  }
-
-  // Merge built-in agents with all agents from crewswarm.json (canonical) + openclaw.json (legacy)
-  const map = { ...BUILT_IN_MAP };
-  const listSet = new Set(BUILT_IN_RT_AGENTS);
-
-  const cfgSources = [
-    path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-    path.join(os.homedir(), ".openclaw", "openclaw.json"),
-  ];
-
-  for (const cfgPath of cfgSources) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-      const cfgAgents = Array.isArray(cfg.agents) ? cfg.agents
-                      : Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
-
-      for (const agent of cfgAgents) {
-        const rawId = agent.id;
-        const bareId = rawId.replace(/^crew-/, "");
-        const rtId   = "crew-" + bareId;
-        if (!map[rtId]) { map[rtId] = bareId; listSet.add(rtId); }
-        if (rawId === bareId && !map[bareId]) { map[bareId] = bareId; listSet.add(bareId); }
-      }
-    } catch {}
-  }
-
-  return { list: [...listSet], map };
-}
-
-const { list: CREWSWARM_RT_SWARM_AGENTS, map: RT_TO_GATEWAY_AGENT_MAP } = buildAgentMapsFromConfig();
 console.log(`[bridge] Registered ${CREWSWARM_RT_SWARM_AGENTS.length} RT agents: ${CREWSWARM_RT_SWARM_AGENTS.join(", ")}`);
 
-// ── Direct LLM call — bypasses legacy gateway, uses agent's configured model directly ──
-
-// Load agent list — checks crewswarm.json first (canonical), falls back to openclaw.json
-function loadAgentList() {
-  const sources = [
-    path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-    path.join(os.homedir(), ".openclaw",  "openclaw.json"),
-  ];
-  for (const p of sources) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
-      const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
-      if (agents.length > 0) return agents;
-    } catch {}
-  }
-  return [];
-}
-
-// Load provider map — checks crewswarm.json providers, then config.json providers, then openclaw.json models.providers
-function loadProviderMap() {
-  const sources = [
-    path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-    path.join(os.homedir(), ".crewswarm", "config.json"),
-    path.join(os.homedir(), ".openclaw",  "openclaw.json"),
-  ];
-  const merged = {};
-  for (const p of sources) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
-      // Support both cfg.providers and cfg.models.providers
-      const provs = cfg.providers || cfg.models?.providers || {};
-      for (const [k, v] of Object.entries(provs)) {
-        if (!merged[k] && v?.apiKey && v?.baseUrl) merged[k] = v;
-      }
-    } catch {}
-  }
-  return merged;
-}
-
-function loadAgentLLMConfig(ocAgentId) {
-  try {
-    const agents = loadAgentList();
-    const crewId = ocAgentId.startsWith("crew-") ? ocAgentId : `crew-${ocAgentId}`;
-    const bareId = ocAgentId.startsWith("crew-") ? ocAgentId.slice(5) : ocAgentId;
-    const agent = agents.find(a => a.id === ocAgentId) ||
-                  agents.find(a => a.id === crewId) ||
-                  agents.find(a => a.id === bareId);
-    if (!agent?.model) return null;
-
-    const [providerKey, ...modelParts] = agent.model.split("/");
-    const modelId = modelParts.join("/");
-    const providers = loadProviderMap();
-    const provider = providers[providerKey];
-    if (!provider?.baseUrl || !provider?.apiKey) {
-      console.warn(`[bridge] No provider config for "${providerKey}" (agent ${ocAgentId}) — check ~/.crewswarm/config.json providers`);
-      return null;
-    }
-
-    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, agentId: agent.id, providerKey, fallbackModel: agent.fallbackModel || null };
-  } catch (e) {
-    console.warn(`[bridge] loadAgentLLMConfig error: ${e.message}`);
-    return null;
-  }
-}
-
-/**
- * Load the central loop brain config from crewswarm.json → loopBrain field.
- * Format: "provider/model" (e.g. "groq/llama-3.3-70b-versatile").
- * Falls back to the agent's own model if not set.
- */
-function loadLoopBrainConfig() {
-  try {
-    const cfg = JSON.parse(fs.readFileSync(CREWSWARM_CONFIG_PATH, "utf8"));
-    const loopBrain = cfg.loopBrain || process.env.CREWSWARM_LOOP_BRAIN || null;
-    if (!loopBrain) return null;
-    const [providerKey, ...modelParts] = loopBrain.split("/");
-    const modelId = modelParts.join("/");
-    const providers = loadProviderMap();
-    const provider = providers[providerKey];
-    if (!provider?.baseUrl || !provider?.apiKey) return null;
-    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, modelId, providerKey };
-  } catch { return null; }
-}
-
 // callLLMDirect → lib/engines/llm-direct.mjs
-const SHARED_MEMORY_BASE = process.env.SHARED_MEMORY_DIR || path.join(os.homedir(), ".crewswarm", "workspace", "shared-memory");
-const SHARED_MEMORY_NAMESPACE = process.env.SHARED_MEMORY_NAMESPACE || "claw-swarm";
-const SWARM_STATUS_LOG = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "channels", "status.jsonl");
-const SWARM_DISPATCH_DIR = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "dispatch");
-const SWARM_DLQ_DIR = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "dlq");
-const SWARM_HEARTBEAT_WINDOW_SEC = Number(process.env.CREWSWARM_RT_HEARTBEAT_WINDOW_SEC || "90");
-const CREWSWARM_RT_TASK_LEASE_MS = Number(process.env.CREWSWARM_RT_TASK_LEASE_MS || "120000");
-const CREWSWARM_RT_TASK_HEARTBEAT_MS = Number(process.env.CREWSWARM_RT_TASK_HEARTBEAT_MS || "15000");
-const CREWSWARM_RT_TASK_RETRY_MAX = Number(process.env.CREWSWARM_RT_TASK_RETRY_MAX || "2");
-const CREWSWARM_RT_TASK_STATE_TTL_MS = Number(process.env.CREWSWARM_RT_TASK_STATE_TTL_MS || "21600000");
-const SWARM_RUNTIME_DIR = path.join(SHARED_MEMORY_BASE, SHARED_MEMORY_NAMESPACE, "opencrew-rt", "runtime");
-const SWARM_TASK_LEASE_DIR = path.join(SWARM_RUNTIME_DIR, "task-leases");
-const SWARM_TASK_STATE_DIR = path.join(SWARM_RUNTIME_DIR, "task-state");
-const CREWSWARM_RT_COMMAND_TYPES = new Set([
-  "command.spawn_agent",
-  "command.run_task",
-  "command.cancel_task",
-  "command.collect_status",
-  "task.assigned",
-  "task.reassigned",
-  "system.broadcast",
-  "cmd.approved",
-  "cmd.rejected",
-]);
-const PROTOCOL_VERSION = 3;
-const CLI_VERSION = "1.2.0";
-const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
-const REQUEST_TIMEOUT_MS = 60000;
-const CHAT_TIMEOUT_MS = 55000;
-const RUN_ID = crypto.randomUUID();
 
 // ─── Crypto helpers ─────────────────────────────────────────────────────────
 function b64url(buf) { return buf.toString("base64").replaceAll("+","-").replaceAll("/","_").replace(/=+$/g,""); }
@@ -555,275 +353,6 @@ function currentUtcLabel(date = new Date()) {
 
 function isoNow() {
   return new Date().toISOString();
-}
-
-function safeReadJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function ensureDispatchDir() {
-  fs.mkdirSync(SWARM_DISPATCH_DIR, { recursive: true });
-  return SWARM_DISPATCH_DIR;
-}
-
-function dispatchKeyForTask({ taskId, incomingType, prompt, idempotencyKey }) {
-  const stableTaskId = String(taskId || "").trim();
-  if (stableTaskId) return `task-${stableTaskId}`;
-  const stableIdempotency = String(idempotencyKey || "").trim();
-  if (stableIdempotency) return `idem-${stableIdempotency}`;
-  const hash = crypto.createHash("sha256")
-    .update(`${incomingType || "event"}\n${prompt || ""}`, "utf8")
-    .digest("hex")
-    .slice(0, 24);
-  return `hash-${hash}`;
-}
-
-function leasePathForKey(key) {
-  return path.join(ensureDispatchDir(), `${key}.lease`);
-}
-
-function donePathForKey(key) {
-  return path.join(ensureDispatchDir(), `${key}.done.json`);
-}
-
-function readTaskDoneRecord(key) {
-  return safeReadJson(donePathForKey(key));
-}
-
-function isDoneRecordFresh(record) {
-  if (!record?.doneAt) return false;
-  const doneAtMs = Date.parse(record.doneAt);
-  if (!Number.isFinite(doneAtMs)) return false;
-  return (Date.now() - doneAtMs) <= CREWSWARM_RT_TASK_STATE_TTL_MS;
-}
-
-function readLeaseRecord(leaseDir) {
-  return safeReadJson(path.join(leaseDir, "lease.json"));
-}
-
-function writeLeaseRecord(leaseDir, leaseRecord) {
-  fs.writeFileSync(path.join(leaseDir, "lease.json"), JSON.stringify(leaseRecord, null, 2));
-}
-
-function acquireTaskLease({ key, source, incomingType, from, leaseMs }) {
-  const leaseDir = leasePathForKey(key);
-  const donePath = donePathForKey(key);
-  const doneRecord = readTaskDoneRecord(key);
-  if (doneRecord) {
-    if (isDoneRecordFresh(doneRecord)) {
-      return { acquired: false, reason: "already_done", doneRecord };
-    }
-    try {
-      fs.rmSync(donePath, { force: true });
-    } catch {}
-  }
-
-  const now = Date.now();
-  const claimId = `${CREWSWARM_RT_AGENT}-${process.pid}-${crypto.randomUUID()}`;
-  const leaseRecord = {
-    key,
-    claimId,
-    agent: CREWSWARM_RT_AGENT,
-    source,
-    from,
-    incomingType,
-    leaseMs,
-    leasedAt: isoNow(),
-    leaseExpiresAt: new Date(now + leaseMs).toISOString(),
-    updatedAt: isoNow(),
-  };
-
-  const writeNewLease = () => {
-    fs.mkdirSync(leaseDir);
-    writeLeaseRecord(leaseDir, leaseRecord);
-    return { acquired: true, claimId, leaseDir };
-  };
-
-  try {
-    return writeNewLease();
-  } catch (err) {
-    if (err?.code !== "EEXIST") throw err;
-  }
-
-  const existing = readLeaseRecord(leaseDir);
-  const existingExpiry = Date.parse(existing?.leaseExpiresAt || "");
-  if (Number.isFinite(existingExpiry) && existingExpiry > now) {
-    return {
-      acquired: false,
-      reason: "claimed",
-      claimedBy: existing?.agent || "unknown",
-      leaseExpiresAt: existing?.leaseExpiresAt || null,
-    };
-  }
-
-  try {
-    fs.rmSync(leaseDir, { recursive: true, force: true });
-    return writeNewLease();
-  } catch {
-    return {
-      acquired: false,
-      reason: "claimed",
-      claimedBy: existing?.agent || "unknown",
-      leaseExpiresAt: existing?.leaseExpiresAt || null,
-    };
-  }
-}
-
-function renewTaskLease({ key, claimId, leaseMs }) {
-  const leaseDir = leasePathForKey(key);
-  const current = readLeaseRecord(leaseDir);
-  if (!current || current.claimId !== claimId || current.agent !== CREWSWARM_RT_AGENT) return false;
-  const now = Date.now();
-  current.updatedAt = isoNow();
-  current.leaseMs = leaseMs;
-  current.leaseExpiresAt = new Date(now + leaseMs).toISOString();
-  writeLeaseRecord(leaseDir, current);
-  return true;
-}
-
-function releaseTaskLease({ key, claimId }) {
-  const leaseDir = leasePathForKey(key);
-  try {
-    const current = readLeaseRecord(leaseDir);
-    if (!current || current.claimId !== claimId || current.agent !== CREWSWARM_RT_AGENT) return false;
-    fs.rmSync(leaseDir, { recursive: true, force: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function markTaskDone({ key, claimId, taskId, incomingType, from, attempt, idempotencyKey, reply }) {
-  const donePath = donePathForKey(key);
-  const replyText = String(reply || "");
-  const doneRecord = {
-    key,
-    taskId,
-    incomingType,
-    from,
-    claimId,
-    idempotencyKey,
-    agent: CREWSWARM_RT_AGENT,
-    attempt,
-    reply: replyText.slice(0, 24000),
-    replyHash: crypto.createHash("sha256").update(replyText, "utf8").digest("hex"),
-    doneAt: isoNow(),
-  };
-  fs.writeFileSync(donePath, JSON.stringify(doneRecord, null, 2));
-}
-
-function shouldUseDispatchGuard(incomingType) {
-  if (!CREWSWARM_RT_DISPATCH_ENABLED) return false;
-  return incomingType === "command.run_task" || incomingType === "task.assigned" || incomingType === "task.reassigned";
-}
-
-function shouldRetryTaskFailure(err) {
-  const msg = String(err?.message ?? err ?? "");
-  if (!msg) return false;
-  if (msg.includes("MEMORY_PROTOCOL_MISSING") || msg.includes("MEMORY_LOAD_FAILED")) return false;
-  if (msg.includes("CODING_ARTIFACT_MISSING")) return true; // Retry if agent didn't deliver code
-  return transientError(err) || msg.toLowerCase().includes("timeout");
-}
-
-function isCodingTask(incomingType, prompt, payload) {
-  if (!incomingType) return false;
-  const codingTypes = ["command.run_task", "task.assigned", "task.reassigned"];
-  if (!codingTypes.includes(incomingType)) return false;
-  
-  // Explicit action exemptions (NOT coding tasks)
-  const action = String(payload?.action || "").toLowerCase();
-  if (action === "collect_status" || action === "status" || action === "heartbeat") return false;
-  
-  // Check for status/reporting prompts (NOT coding)
-  const text = String(prompt || "").toLowerCase();
-  if (text.includes("report status") || text.includes("reply with agent id")) return false;
-  if (text.includes("busy/idle") || text.includes("active task")) return false;
-  
-  // Check for coding keywords
-  const codingKeywords = [
-    "implement", "build", "create", "fix", "refactor", "add", "update", "modify",
-    "code", "function", "class", "component", "api", "endpoint", "route", "test",
-    "bug", "error", "issue", "file", "script", "module", "package"
-  ];
-  return codingKeywords.some(kw => text.includes(kw));
-}
-
-// ── Agent reply quality gate ───────────────────────────────────────────────
-// Catches hollow replies BEFORE they get returned to crew-lead, preventing
-// the "bad response → retry loop" that was burning tokens and cycling tasks.
-//
-// Design notes:
-// - OpenCode agents write files on disk and confirm; they do NOT show code blocks
-//   in their replies. So we NEVER check for ``` presence.
-// - Direct-API agents do show code — but we still don't require it; we just
-//   reject clearly hollow/broken patterns.
-// - Validation is intentionally lenient: only hard-fail on patterns that are
-//   definitively wrong. False negatives (letting a weak reply through) are
-//   much cheaper than false positives (rejecting a valid reply and retrying).
-
-const HOLLOW_REPLY_PATTERNS = [
-  // AI refusals
-  /^(sorry,?\s+)?(as an? (AI|language model|llm|assistant))[,.]?\s+i (can'?t|cannot|don'?t|am not able)/i,
-  /i('?m| am) not able to (access|read|write|execute|run|perform)/i,
-  /i don'?t have (access|permission|the ability) to/i,
-  // Naked stall / forwarding without content
-  /^(please|kindly)?\s*(wait|hold on|one moment|stand by)[.!]*$/i,
-  /^i'?ll? (get|check|look|fetch|read) (that|this|it) (for you\s*)?$/i,
-  // Pure error echo-back (realtime token noise should be filtered already, but belt+suspenders)
-  /^(•\s*)?realtime (daemon )?error:/i,
-  /invalid realtime token/i,
-  // OpenCode "I have no tools" bailout
-  /i (don'?t|do not) have (any )?(tools?|the ability|capabilities?) (to|for) (write|create|modify|execute|run)/i,
-];
-
-const WEASEL_ONLY_PATTERNS = [
-  // These alone (with no action) are hollow for coding tasks
-  /\b(i will|i would|i can|i could|i should|i might|i plan to|i recommend|i suggest)\b/i,
-];
-
-function validateAgentReply(reply, incomingType, prompt) {
-  const text = String(reply || "").trim();
-
-  // Empty reply is always bad
-  if (!text || text.length < 15) {
-    return { valid: false, reason: "reply too short or empty" };
-  }
-
-  // Hard-fail: hollow/broken patterns
-  for (const pat of HOLLOW_REPLY_PATTERNS) {
-    if (pat.test(text)) {
-      return { valid: false, reason: `hollow reply pattern: ${pat.toString().slice(0, 60)}` };
-    }
-  }
-
-  // For coding/writing tasks only: reject weasel-only replies that never act
-  const isCoding = /code|write|build|create|implement|fix|refactor|generate|edit|update|add|remove/i.test(String(prompt || ""));
-  if (isCoding && text.length < 300) {
-    const allWeasel = WEASEL_ONLY_PATTERNS.every(p => p.test(text));
-    const hasAction = /@@WRITE_FILE|@@RUN_CMD|@@READ_FILE|✅|wrote|created|updated|fixed|done|complete/i.test(text);
-    if (allWeasel && !hasAction) {
-      return { valid: false, reason: "short coding reply is all weasel words with no action evidence" };
-    }
-  }
-
-  return { valid: true, reason: "ok" };
-}
-
-function validateCodingArtifacts(reply, incomingType, prompt, payload) {
-  return validateAgentReply(reply, incomingType, prompt);
-}
-
-function assertTaskPromptProtocol(prompt, source = "task") {
-  // Simplified: just check if prompt exists
-  if (typeof prompt !== "string" || !prompt || prompt === "MEMORY_LOAD_FAILED") {
-    const err = new Error("MEMORY_PROTOCOL_MISSING");
-    telemetry("memory_protocol_missing", { source });
-    throw err;
-  }
 }
 
 function memoryTemplate(fileName) {
@@ -1001,15 +530,6 @@ function ensureSharedMemoryFiles() {
   }
 }
 
-function looksLikeCodingTask(prompt = "") {
-  const p = String(prompt).toLowerCase();
-  return [
-    "implement", "write code", "refactor", "fix bug", "unit test", "integration test",
-    "build", "compile", "typescript", "javascript", "python", "go ", "rust",
-    "repo", "pull request", "pr ", "commit", "lint", "migrate",
-  ].some((kw) => p.includes(kw));
-}
-
 function agentDefaultsToOpenCode(agentId) {
   const defaults = AGENT_TOOL_ROLE_DEFAULTS[agentId];
   if (defaults) return defaults.has("write_file") && defaults.has("run_cmd");
@@ -1094,106 +614,6 @@ async function runCursorWaveTask(waveIndex, tasks, payload = {}) {
 }
 
 // runOpenCodeTask → lib/engines/opencode.mjs
-
-function agentRuntimeDir() {
-  const dir = path.join(STATE_DIR, "rt-agents");
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
-function agentPidPath(agent) {
-  return path.join(agentRuntimeDir(), `${agent}.pid`);
-}
-
-function agentLogPath(agent) {
-  return path.join(agentRuntimeDir(), `${agent}.log`);
-}
-
-function readPid(agent) {
-  try {
-    return Number(fs.readFileSync(agentPidPath(agent), "utf8").trim());
-  } catch {
-    return 0;
-  }
-}
-
-function isPidAlive(pid) {
-  if (!pid || Number.isNaN(pid)) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isAgentDaemonRunning(agent) {
-  const heartbeatAge = latestHeartbeatAgeSec(agent);
-  if (heartbeatAge !== null && heartbeatAge <= SWARM_HEARTBEAT_WINDOW_SEC) return true;
-  const pid = readPid(agent);
-  if (isPidAlive(pid)) return true;
-  return false;
-}
-
-function latestHeartbeatAgeSec(agent) {
-  try {
-    if (!fs.existsSync(SWARM_STATUS_LOG)) return null;
-    const lines = fs.readFileSync(SWARM_STATUS_LOG, "utf8").split("\n");
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      let row;
-      try { row = JSON.parse(line); } catch { continue; }
-      if (row?.type !== "agent.heartbeat") continue;
-      const hbAgent = row?.payload?.agent || row?.from;
-      if (hbAgent !== agent) continue;
-      const ts = Date.parse(row?.ts || "");
-      if (!Number.isFinite(ts)) return null;
-      return (Date.now() - ts) / 1000;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function spawnAgentDaemon(agent) {
-  if (isAgentDaemonRunning(agent)) {
-    return { agent, status: "already_running" };
-  }
-  const logFile = agentLogPath(agent);
-  const out = fs.openSync(logFile, "a");
-  const child = spawn(process.execPath, [path.join(process.cwd(), "gateway-bridge.mjs"), "--rt-daemon"], {
-    cwd: process.cwd(),
-    detached: true,
-    stdio: ["ignore", out, out],
-    env: {
-      ...process.env,
-      CREWSWARM_RT_AGENT: agent,
-      CREWSWARM_RT_CHANNELS,
-    },
-  });
-  child.unref();
-  fs.writeFileSync(agentPidPath(agent), `${child.pid}`);
-  return { agent, status: "started", pid: child.pid, logFile };
-}
-
-function resolveSpawnTargets(payload) {
-  const all = [...new Set(CREWSWARM_RT_SWARM_AGENTS)];
-  if (Array.isArray(payload?.agents)) {
-    const agents = payload.agents.map((a) => String(a).trim()).filter(Boolean);
-    return agents.length ? agents : all;
-  }
-  if (typeof payload?.agent === "string" && payload.agent.trim()) {
-    if (payload.agent.trim().toLowerCase() === "all") return all;
-    return [payload.agent.trim()];
-  }
-  if (typeof payload?.target === "string" && payload.target.trim()) {
-    if (payload.target.trim().toLowerCase() === "all") return all;
-    return [payload.target.trim()];
-  }
-  return all;
-}
 
 function createRealtimeClient({ onEnvelope, agentName = CREWSWARM_RT_AGENT, token = CREWSWARM_RT_TOKEN, channels = CREWSWARM_RT_CHANNELS }) {
   return new Promise((resolveConnect, rejectConnect) => {
@@ -1366,7 +786,7 @@ initOpenCode({
 });
 
 // Engine runners → lib/engines/runners.mjs
-initRunners({ getAgentOpenCodeConfig, loadAgentList, getOpencodeProjectDir, buildMiniTaskForOpenCode, runOpenCodeTask });
+initRunners({ getAgentOpenCodeConfig, loadAgentList, getOpencodeProjectDir, buildMiniTaskForOpenCode, runOpenCodeTask, loadGenericEngines });
 
 // runOuroborosStyleLoop → lib/engines/ouroboros.mjs
 initOuroboros({
@@ -1401,14 +821,15 @@ initRtEnvelope({
   shouldUseCodex,
   shouldUseDockerSandbox,
   shouldUseGeminiCli,
-  shouldUseAntigravity,
   shouldUseOpenCode,
+  shouldUseGenericEngine,
+  loadGenericEngines,
   // runners
   runCursorCliTask,
   runClaudeCodeTask,
   runCodexTask,
   runGeminiCliTask,
-  runAntigravityTask,
+  runGenericEngineTask,
   runDockerSandboxTask,
   runOpenCodeTask,
   runOuroborosStyleLoop,
@@ -1443,7 +864,6 @@ initRtEnvelope({
   CREWSWARM_RT_DISPATCH_RETRY_BACKOFF_MS,
   CREWSWARM_OPENCODE_AGENT,
   CREWSWARM_OPENCODE_MODEL,
-  CREWSWARM_ANTIGRAVITY_MODEL,
   OPENCODE_FREE_MODEL_CHAIN,
   RT_TO_GATEWAY_AGENT_MAP,
   SHARED_MEMORY_DIR,

@@ -6,9 +6,10 @@
  * Checks every service, CLI tool, API key, and MCP server.
  *
  * Usage:
- *   node scripts/health-check.mjs           # full check
- *   node scripts/health-check.mjs --json    # machine-readable output
- *   node scripts/health-check.mjs --quiet   # only print failures
+ *   node scripts/health-check.mjs                # full check
+ *   node scripts/health-check.mjs --json         # machine-readable output
+ *   node scripts/health-check.mjs --quiet        # only print failures
+ *   node scripts/health-check.mjs --no-services  # skip live service/agent/chat checks (CI static mode)
  */
 
 import fs   from "node:fs";
@@ -16,8 +17,9 @@ import path from "node:path";
 import os   from "node:os";
 import { execSync } from "node:child_process";
 
-const JSON_MODE  = process.argv.includes("--json");
-const QUIET_MODE = process.argv.includes("--quiet");
+const JSON_MODE    = process.argv.includes("--json");
+const QUIET_MODE   = process.argv.includes("--quiet");
+const NO_SERVICES  = process.argv.includes("--no-services"); // skip live checks for CI static mode
 const CREW_LEAD  = process.env.CREW_LEAD_URL  || "http://127.0.0.1:5010";
 const DASHBOARD  = process.env.DASHBOARD_URL  || "http://127.0.0.1:4319";
 const MCP_URL    = process.env.MCP_URL        || "http://127.0.0.1:5020";
@@ -99,39 +101,46 @@ async function run() {
   }
 
   // ── 3. Services (parallel) ───────────────────────────────────────────────────
-  section("Services");
-  const [crewLead, dashboard, mcpServer] = await Promise.all([
-    ping(`${CREW_LEAD}/health`, "crew-lead"),
-    ping(`${DASHBOARD}/`, "dashboard"),           // dashboard serves HTML on /
-    ping(`${MCP_URL}/health`, "mcp-server"),
-  ]);
+  if (NO_SERVICES) {
+    section("Services");
+    check("services skipped", "pass", "--no-services mode");
+  } else {
+    section("Services");
+    const [crewLead, dashboard, mcpServer] = await Promise.all([
+      ping(`${CREW_LEAD}/health`, "crew-lead"),
+      ping(`${DASHBOARD}/`, "dashboard"),           // dashboard serves HTML on /
+      ping(`${MCP_URL}/health`, "mcp-server"),
+    ]);
 
-  check("crew-lead :5010", crewLead.ok ? "pass" : "fail",
-    crewLead.ok ? `HTTP ${crewLead.status}` : crewLead.error || `HTTP ${crewLead.status}`);
-  check("dashboard :4319", dashboard.ok ? "pass" : "fail",
-    dashboard.ok ? `HTTP ${dashboard.status}` : (dashboard.error || `HTTP ${dashboard.status}`) + " — run: node scripts/dashboard.mjs");
-  check("mcp-server :5020", mcpServer.ok ? "pass" : "warn",
-    mcpServer.ok ? `HTTP ${mcpServer.status}` : "not running — start: npm run mcp");
+    check("crew-lead :5010", crewLead.ok ? "pass" : "fail",
+      crewLead.ok ? `HTTP ${crewLead.status}` : crewLead.error || `HTTP ${crewLead.status}`);
+    check("dashboard :4319", dashboard.ok ? "pass" : "fail",
+      dashboard.ok ? `HTTP ${dashboard.status}` : (dashboard.error || `HTTP ${dashboard.status}`) + " — run: node scripts/dashboard.mjs");
+    check("mcp-server :5020", mcpServer.ok ? "pass" : "warn",
+      mcpServer.ok ? `HTTP ${mcpServer.status}` : "not running — start: npm run mcp");
+  }
 
   // ── 4. Agents online ─────────────────────────────────────────────────────────
-  section("Agents");
-  try {
-    const res = await fetch(`${CREW_LEAD}/api/agents`, { headers: authHeaders(), signal: AbortSignal.timeout(5000) });
-    const d = await res.json();
-    const agents = d.agents || [];
-    // crew-lead /api/agents uses liveness field; dashboard /api/agents uses online/alive/liveness
-    const online = agents.filter(a => a.online || a.alive || a.liveness === "alive");
-    const coreAgents = ["crew-coder","crew-qa","crew-pm","crew-main","crew-fixer"];
-    check(`Agents online (${online.length}/${agents.length})`,
-      online.length > 0 ? "pass" : "warn",
-      online.length === 0 ? "bridges not started — run: npm run start-crew" : online.map(a => a.id?.replace("crew-","")).join(", ").slice(0,80));
-    for (const core of coreAgents) {
-      const a = agents.find(x => x.id === core);
-      const isOnline = a?.online || a?.alive || a?.liveness === "alive";
-      check(`  ${core}`, isOnline ? "pass" : "warn", isOnline ? "" : "bridge not running");
+  if (!NO_SERVICES) {
+    section("Agents");
+    try {
+      const res = await fetch(`${CREW_LEAD}/api/agents`, { headers: authHeaders(), signal: AbortSignal.timeout(5000) });
+      const d = await res.json();
+      const agents = d.agents || [];
+      // crew-lead /api/agents uses liveness field; dashboard /api/agents uses online/alive/liveness
+      const online = agents.filter(a => a.online || a.alive || a.liveness === "alive");
+      const coreAgents = ["crew-coder","crew-qa","crew-pm","crew-main","crew-fixer"];
+      check(`Agents online (${online.length}/${agents.length})`,
+        online.length > 0 ? "pass" : "warn",
+        online.length === 0 ? "bridges not started — run: npm run start-crew" : online.map(a => a.id?.replace("crew-","")).join(", ").slice(0,80));
+      for (const core of coreAgents) {
+        const a = agents.find(x => x.id === core);
+        const isOnline = a?.online || a?.alive || a?.liveness === "alive";
+        check(`  ${core}`, isOnline ? "pass" : "warn", isOnline ? "" : "bridge not running");
+      }
+    } catch (e) {
+      check("Agents", "fail", `could not reach crew-lead: ${e.message}`);
     }
-  } catch (e) {
-    check("Agents", "fail", `could not reach crew-lead: ${e.message}`);
   }
 
   // ── 5. CLI tools ─────────────────────────────────────────────────────────────
@@ -152,7 +161,8 @@ async function run() {
     opencodeCli.version?.includes("not found") ? "npm install -g opencode-ai" : (opencodeCli.version || opencodeCli.error));
 
   // ── 6. MCP protocol (if server is up) ────────────────────────────────────────
-  if (mcpServer.ok) {
+  const mcpServer = NO_SERVICES ? { ok: false } : (await ping(`${MCP_URL}/health`, "mcp-server"));
+  if (!NO_SERVICES && mcpServer.ok) {
     section("MCP Protocol");
     try {
       const initRes = await fetch(`${MCP_URL}/mcp`, {
@@ -182,21 +192,25 @@ async function run() {
 
   // ── 7. Quick crew-lead chat ───────────────────────────────────────────────────
   section("crew-lead Chat");
-  try {
-    const start = Date.now();
-    const res = await fetch(`${CREW_LEAD}/chat`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ message: "say: HEALTH_OK", sessionId: "health-check" }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const d = await res.json();
-    const elapsed = Date.now() - start;
-    const reply = d.reply || d.message || "";
-    check("crew-lead responds", reply.length > 0 ? "pass" : "fail",
-      `${Math.round(elapsed/100)/10}s — "${reply.slice(0,60)}"`);
-  } catch (e) {
-    check("crew-lead chat", "fail", e.message);
+  if (NO_SERVICES) {
+    check("chat skipped", "pass", "--no-services mode");
+  } else {
+    try {
+      const start = Date.now();
+      const res = await fetch(`${CREW_LEAD}/chat`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ message: "say: HEALTH_OK", sessionId: "health-check" }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const d = await res.json();
+      const elapsed = Date.now() - start;
+      const reply = d.reply || d.message || "";
+      check("crew-lead responds", reply.length > 0 ? "pass" : "fail",
+        `${Math.round(elapsed/100)/10}s — "${reply.slice(0,60)}"`);
+    } catch (e) {
+      check("crew-lead chat", "fail", e.message);
+    }
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────────
