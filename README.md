@@ -41,7 +41,7 @@ No broadcast races. No duplicate work. Each agent gets exactly one task, from on
 - **Command approval gate** — `@@RUN_CMD` calls from non-trusted agents pause and show an approval toast in the dashboard (Allow / Deny with 60s countdown). Pre-approve patterns like `npm *` or `node *` in **Settings → Command Allowlist** so common commands run without prompting. Dangerous commands (`rm -rf`, `sudo`, `curl | bash`) are always hard-blocked.
 - **Token / cost tracking** — Every LLM call captures token usage. Dashboard **Settings** shows total calls, tokens, and estimated cost with per-model breakdown.
 - **Telegram** — Full bidirectional Telegram integration. Each chat gets an isolated crew-lead session. Agents reply directly to the sender.
-- **Four execution engines** — Route any agent through **OpenCode** (persistent sessions), **Cursor CLI** (reasoning models), **Claude Code** (`claude -p`, full workspace context), or **Codex CLI** (`codex exec`, workspace-write sandbox). Switch per-agent from the dashboard **Engines** tab.
+- **Five execution engines** — Route any agent through **OpenCode** (persistent sessions), **Cursor CLI** (reasoning models), **Claude Code** (`claude -p`, full workspace context), **Codex CLI** (`codex exec`, workspace-write sandbox), or **Gemini CLI** (free via Google OAuth). Switch per-agent from the dashboard **Engines** tab.
 - **Four control surfaces** — CLI (`crew-cli`), web dashboard (port 4319), macOS SwiftBar menu bar, and Telegram.
 - **Any model, any agent** — Each agent runs its own model. Mix OpenAI, Anthropic, Groq, Mistral, DeepSeek, Perplexity, or local Ollama. Switch without restarting.
 - **PM Loop** — Autonomous mode: reads a `ROADMAP.md`, dispatches one item at a time, self-extends when the roadmap empties.
@@ -88,7 +88,7 @@ npm run dashboard
 # Open http://127.0.0.1:4319 → Providers tab
 ```
 
-Keys are saved to `~/.crewswarm/config.json`. Groq is free and the fastest way to get started.
+Keys are saved to `~/.crewswarm/crewswarm.json`. Groq is free and the fastest way to get started.
 
 ### Start the crew
 
@@ -120,7 +120,7 @@ npm run smoke
 ### Preflight check
 
 ```bash
-openswitchctl doctor     # verify paths, config, token, provider, and running services
+npm run health           # verify paths, config, token, provider, and running services
 ```
 
 ### Fresh-machine verification

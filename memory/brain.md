@@ -3,6 +3,28 @@
 Agents: append discoveries here. This is the persistent knowledge base for this workspace.
 Read it to avoid repeating mistakes. Write to it when you learn something durable.
 
+## [2026-02-27] system: crew-mega capabilities + Polymarket strategy
+
+**crew-mega** is the generalist heavy-hitter agent — use it for tasks that require broad context, deep reasoning, or multiple capability types in a single session. It runs Claude Code by default (`useClaudeCode: true`) so it has full file-read/write access.
+
+**Model setup:**
+- Primary: `deepseek/deepseek-chat` (fast, cheap, capable)
+- Fallback: `deepseek/deepseek-reasoner` (o1-style deep reasoning for hard problems)
+- Claude Code engine: `opencode/claude-sonnet-4-6`
+
+**Best uses for crew-mega:**
+- Multi-file refactors that cross several modules
+- Strategy analysis (especially Polymarket prediction markets)
+- Tasks that don't fit neatly into coder/qa/pm roles
+- When other agents keep failing and you need a generalist
+
+**Polymarket strategy tips (for when crew-mega analyzes markets):**
+- Check liquidity and spread before entering — low-liquidity markets have wide spreads that eat alpha
+- Calibration beats prediction: focus on identifying where market prices deviate from true probability
+- Consensus anchoring: Polymarket crowds over-anchor to 50/50 on contested events; exploit systematic under-pricing of strong favorites and strong underdogs
+- Time decay: YES/NO prices compress toward terminal value as resolution nears — trade this intentionally
+- Resolution risk: always read the exact resolution criteria before buying — ambiguity is a trap
+
 ## [2026-02-27] system: crew-lead chat history architecture (current)
 
 - **Disk storage:** `~/.crewswarm/chat-history/<sessionId>.jsonl` — stores up to 2000 messages per session, indefinitely across browser sessions

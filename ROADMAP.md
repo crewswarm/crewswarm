@@ -9,7 +9,7 @@
 **Goal:** clean, contributor-friendly, regression-protected codebase ready for public beta (`0.1.0-beta`).
 **Current state:** 7.5/10 — all features working, naming consistent, Docker ready. Blocked on structure + CI.
 
-### Phase 1 — God-file split
+### Phase 1 — God-file split ✅ DONE
 
 Extract module boundaries from the three large files. No behavior changes — only move code. Keep entrypoint APIs stable throughout.
 
@@ -17,47 +17,41 @@ Extract module boundaries from the three large files. No behavior changes — on
 
 **Module boundaries:**
 
-| Module | Path | Extracted from |
-|---|---|---|
-| HTTP routes + handlers | `lib/http/` | `crew-lead.mjs` |
-| Pipeline engine + orchestration | `lib/pipeline/` | `crew-lead.mjs` |
-| Skill loader + runner | `lib/skills/` | `crew-lead.mjs` |
-| Agent registry + dispatch | `lib/agents/` | `gateway-bridge.mjs` |
-| Engine adapters (one file per engine) | `lib/engines/` | `gateway-bridge.mjs` |
-| Tool executor + permissions | `lib/tools/` | `gateway-bridge.mjs` |
-| Config + env bootstrap | `lib/runtime/` | both |
-| Dashboard tab modules | `frontend/src/tabs/` | `frontend/src/app.js` |
-
-**Process per slice:**
-- [ ] Create module file with extracted code
-- [ ] Update entrypoint to import from new module
-- [ ] Verify smoke tests still pass
-- [ ] Commit
+| Module | Path | Extracted from | Status |
+|---|---|---|---|
+| HTTP routes + handlers | `lib/crew-lead/http-server.mjs` | `crew-lead.mjs` | ✅ |
+| Pipeline engine + orchestration | `lib/pipeline/` | `crew-lead.mjs` | ✅ |
+| Skill loader + runner | `lib/skills/` | `crew-lead.mjs` | ✅ |
+| Agent registry + dispatch | `lib/agents/` | `gateway-bridge.mjs` | ✅ |
+| Engine adapters (one file per engine) | `lib/engines/` | `gateway-bridge.mjs` | ✅ |
+| Tool executor + permissions | `lib/tools/` | `gateway-bridge.mjs` | ✅ |
+| Config + env bootstrap | `lib/runtime/` | both | ✅ |
+| Dashboard tab modules | `frontend/src/tabs/` | `frontend/src/app.js` | ✅ |
 
 **Acceptance criteria:**
-- `crew-lead.mjs` and `gateway-bridge.mjs` are orchestration-only shells
-- `app.js` imports from tab modules — no tab logic inline
-- Each module has one clear responsibility, testable in isolation
-- All smoke tests pass unchanged
+- ✅ `crew-lead.mjs` and `gateway-bridge.mjs` are orchestration-only shells
+- ✅ `app.js` imports from tab modules — no tab logic inline
+- ✅ Each module has one clear responsibility, testable in isolation
+- ✅ All smoke tests pass unchanged
 
 ---
 
-### Phase 2 — Smoke-test CI
+### Phase 2 — Smoke-test CI ✅ DONE
 
-- [ ] Add `scripts/smoke.sh` — single script capturing current manual smoke commands
-- [ ] Add `.github/workflows/smoke.yml`:
+- [x] Add `scripts/smoke.sh` — single script capturing current manual smoke commands
+- [x] Add `.github/workflows/smoke.yml` (two jobs: static + integration):
   - `npm ci`
   - `cd frontend && npm run build`
   - `node scripts/health-check.mjs --no-services`
   - `node scripts/check-dashboard.mjs --source-only`
   - `bash install.sh --non-interactive`
-- [ ] Trigger on PR + push to `main`
-- [ ] Verify CI green on clean clone
+- [x] Trigger on PR + push to `main`
+- [x] CI green on clean clone
 
 **Acceptance criteria:**
-- CI passes on every push
-- Fails fast on runtime regressions (syntax errors, missing deps, broken build)
-- Logs useful for debugging failures
+- ✅ CI passes on every push (static + integration both green)
+- ✅ Fails fast on runtime regressions (syntax errors, missing deps, broken build)
+- ✅ Logs useful for debugging failures (bridge logs dumped on agent connection timeout)
 
 ---
 
@@ -65,12 +59,12 @@ Extract module boundaries from the three large files. No behavior changes — on
 
 Do not cut `0.1.0-beta` until all boxes below are checked:
 
-- [ ] God-file split complete (Phase 1 done)
-- [ ] CI smoke green for 5+ consecutive merges
-- [ ] No P0/P1 regressions from `node scripts/health-check.mjs`
-- [ ] `install.sh --non-interactive` succeeds on a clean machine
-- [ ] `README.md` first-run section verified accurate
-- [ ] `docs/docker.md` tested end-to-end
+- [x] God-file split complete (Phase 1 done)
+- [ ] CI smoke green for 5+ consecutive merges (at 2+ as of 2026-02-27 — watch for 3 more)
+- [x] No P0/P1 regressions from `node scripts/health-check.mjs` (10/10 checks pass)
+- [x] `install.sh --non-interactive` succeeds on a clean machine
+- [x] `README.md` first-run section verified accurate (fixed: config path, engine count, health cmd)
+- [ ] `docs/docker.md` tested end-to-end (needs live Docker test)
 
 **When all boxes checked → bump to `0.1.0-beta` and open repo.**
 
@@ -89,10 +83,10 @@ Do not cut `0.1.0-beta` until all boxes below are checked:
 
 ### Re-implementation tasks (CrewSwarm repo / `~/.crewswarm/` only)
 
-- [ ] **Phase 1** — crew-main: Update `~/.crewswarm/agent-prompts.json` → `crew-mega` key with full prompt. Acceptance: crew-mega shows new prompt after bridge restart.
-- [x] **Phase 2** — crew-coder: Create `~/.crewswarm/skills/polymarket-strategy.json` (skill plugin for Polymarket context). Acceptance: skill appears in `/api/skills`.
-- [ ] **Phase 4** — crew-main: In `~/.crewswarm/crewswarm.json` set crew-mega `fallbackModel` to `deepseek/deepseek-reasoner`. Acceptance: fallback used when primary fails.
-- [ ] **Phase 5** — crew-main: Add crew-mega / Polymarket strategy tips entry to `memory/brain.md`. Acceptance: entry present and loaded in prompts.
+- [x] **Phase 1** — crew-mega prompt in `~/.crewswarm/agent-prompts.json` confirmed present.
+- [x] **Phase 2** — `~/.crewswarm/skills/polymarket-strategy.json` exists. Skill appears in `/api/skills`.
+- [x] **Phase 4** — `fallbackModel: deepseek/deepseek-reasoner` set in `~/.crewswarm/crewswarm.json`.
+- [x] **Phase 5** — crew-mega + Polymarket strategy tips added to `memory/brain.md`.
 
 *(User told crew-lead how to make mega 10x better; this is the implementation checklist.)*
 
@@ -100,11 +94,11 @@ Do not cut `0.1.0-beta` until all boxes below are checked:
 
 ## Ops / Telemetry
 
-- [ ] Add field matrix to docs/OPS-TELEMETRY-SCHEMA.md (all fields, type, which event type)
-- [ ] Document heartbeat thresholds (e.g. offline after 90s without agent.presence) and task failure windows in schema doc
-- [ ] Add event lifecycle guidance (versioning, unknown fields, retry/backoff when RT bridge can't publish)
-- [ ] Define sample telemetry bundle (multiple event types in chronological order) for QA/UI replay
-- [ ] Add validation guidelines (JSON Schema or tooling) and scripts/check-dashboard.mjs update for payload validation
+- [x] Field matrix in `docs/OPS-TELEMETRY-SCHEMA.md` — all fields, types, event types documented
+- [x] Heartbeat thresholds and task failure windows documented (agent.presence section)
+- [x] Event lifecycle guidance — versioning, unknown fields, retry/backoff rules in schema doc
+- [x] Sample telemetry bundles — agent.presence, task.lifecycle, error examples with all required fields
+- [ ] JSON Schema validation tooling and `scripts/check-dashboard.mjs` payload validation update
 
 ---
 
