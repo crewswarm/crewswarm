@@ -8,14 +8,8 @@ RUN rm -f /usr/share/nginx/html/Dockerfile \
           /usr/share/nginx/html/ROADMAP.md
 
 # Gzip + cache headers
-RUN printf '# Redirect www → non-www\n\
-server {\n\
-    listen 8080;\n\
-    server_name www.crewswarm.ai;\n\
-    return 301 https://crewswarm.ai$request_uri;\n\
-}\n\
-server {\n\
-    listen 8080;\n\
+RUN printf 'server {\n\
+    listen 8080 default_server;\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
     gzip on;\n\
@@ -40,6 +34,11 @@ server {\n\
         expires 7d;\n\
     }\n\
     error_page 404 /404.html;\n\
+}\n\
+server {\n\
+    listen 8080;\n\
+    server_name www.crewswarm.ai;\n\
+    return 301 https://crewswarm.ai$request_uri;\n\
 }\n' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
