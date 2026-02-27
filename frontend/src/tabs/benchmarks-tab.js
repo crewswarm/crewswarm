@@ -1,5 +1,16 @@
 import { escHtml } from '../core/dom.js';
 
+export function showBenchmarks({ hideAllViews, setNavActive } = {}) {
+  if (typeof hideAllViews === 'function') hideAllViews();
+  const view = document.getElementById('benchmarksView');
+  if (view) view.classList.add('active');
+  if (typeof setNavActive === 'function') setNavActive('navBenchmarks');
+  loadBenchmarkOptions().then(() => {
+    const sel = document.getElementById('benchmarkSelect');
+    if (sel && sel.value) loadBenchmarkLeaderboard(sel.value);
+  });
+}
+
 export async function loadBenchmarkOptions() {
   const sel = document.getElementById('benchmarkSelect');
   if (!sel) return;
@@ -79,4 +90,3 @@ export async function loadBenchmarkLeaderboard(benchmarkId) {
     tableEl.innerHTML = '<div style="color:var(--red);padding:20px;">Error: ' + escHtml(e.message) + '</div>';
   }
 }
-

@@ -1235,7 +1235,7 @@ const ROLE_STYLE = {
   RESEARCHER: 'background:rgba(249,115,22,0.10);border:1px solid rgba(249,115,22,0.30);color:#fb923c;',
 };
 
-function populateModelDropdown(selectId, currentVal) {
+export function populateModelDropdown(selectId, currentVal) {
   const sel = document.getElementById(selectId);
   sel.innerHTML = '<option value="">— select a model —</option>';
   if (Object.keys(_modelsByProvider).length) {

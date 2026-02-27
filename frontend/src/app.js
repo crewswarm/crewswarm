@@ -1,7 +1,7 @@
 import { getJSON, postJSON } from './core/api.js';
 import { escHtml, showNotification, fmt, createdAt, appendChatBubble } from './core/dom.js';
-import { sortAgents } from './core/state.js';
-import { loadBenchmarkOptions, loadBenchmarks, loadBenchmarkLeaderboard } from './tabs/benchmarks-tab.js';
+import { sortAgents, state } from './core/state.js';
+import { showBenchmarks as showBenchmarksTab, loadBenchmarks, loadBenchmarkLeaderboard } from './tabs/benchmarks-tab.js';
 import {
   initServicesTab,
   showServices,
@@ -30,7 +30,142 @@ import {
   saveClaudeCodeConfig,
   bulkSetRoute,
   startCrew,
+  populateModelDropdown,
 } from './tabs/agents-tab.js';
+import {
+  showSkills,
+  showRunSkills,
+  loadRunSkills,
+  runSkillFromUI,
+  loadSkills,
+  renderSkillsList,
+  filterSkills,
+  editSkill,
+  toggleAddSkill,
+  toggleImportSkill,
+  importSkillFromUrl,
+  cancelSkillForm,
+  updateSkillAuthFields,
+  saveSkill,
+  deleteSkill,
+} from './tabs/skills-tab.js';
+import {
+  loadEngines,
+  deleteEngine,
+  toggleImportEngine,
+  importEngineFromUrl,
+} from './tabs/engines-tab.js';
+import { initChatActions } from './chat/chat-actions.js';
+import {
+  initSwarmTab,
+  showSwarm,
+  showRT,
+  showDLQ,
+  loadSessions,
+  loadMessages,
+  loadRTMessages,
+  toggleRTPause,
+  clearRTMessages,
+  loadDLQ,
+  replayDLQ,
+  deleteDLQ,
+} from './tabs/swarm-tab.js';
+import {
+  initModelsTab,
+  initAddProviderForm,
+  showModels,
+  showProviders,
+  loadSearchTools,
+  saveSearchTool,
+  testSearchTool,
+  loadBuiltinProviders,
+  saveBuiltinKey,
+  testBuiltinProvider,
+  fetchBuiltinModels,
+  loadProviders,
+  toggleKeyVis,
+  saveKey,
+  testKey,
+  fetchModels,
+} from './tabs/models-tab.js';
+import {
+  initSettingsTab,
+  loadOpenClawStatus,
+  loadRTToken,
+  saveRTToken,
+  loadOpencodeProject,
+  saveOpencodeSettings,
+  loadBgConsciousness,
+  toggleBgConsciousness,
+  saveBgConsciousnessModel,
+  loadCursorWaves,
+  toggleCursorWaves,
+  loadClaudeCode,
+  toggleClaudeCode,
+  loadCodexExecutor,
+  toggleCodexExecutor,
+  loadGlobalFallback,
+  saveGlobalFallback,
+  loadGlobalOcLoop,
+  saveGlobalOcLoop,
+  saveGlobalOcLoopRounds,
+  loadPassthroughNotify,
+  savePassthroughNotify,
+  loadLoopBrain,
+  saveLoopBrain,
+  loadEnvAdvanced,
+} from './tabs/settings-tab.js';
+import {
+  initCommsTab,
+  showMessaging,
+  loadCommsTabData,
+  loadTgStatus,
+  loadTgConfig,
+  saveTgConfig,
+  startTgBridge,
+  stopTgBridge,
+  loadWaStatus,
+  renderWaContactRows,
+  loadWaConfig,
+  saveWaConfig,
+  startWaBridge,
+  stopWaBridge,
+  loadWaMessages,
+  loadTgMessages,
+  loadTelegramSessions,
+} from './tabs/comms-tab.js';
+import {
+  showBuild as _showBuild,
+  showProjects as _showProjects,
+  loadProjects,
+  toggleProjectEdit,
+  saveProjectEdit,
+  initProjectsList,
+  populateChatProjectDropdown,
+  onChatProjectChange,
+  updateChatProjectHint,
+  autoSelectChatProject,
+  resumeProject,
+  stopProjectPMLoop,
+  startProjectPMLoop,
+  deleteProject,
+  openProjectInBuild as _openProjectInBuild,
+  loadBuildProjectPicker,
+  onBuildProjectChange,
+  stopBuild,
+  stopContinuousBuild,
+  retryFailed,
+  openRoadmapEditor,
+  closeRoadmapEditor,
+  saveRoadmap,
+  addRoadmapItem,
+  skipNextItem,
+  resetAllFailed,
+  loadPhasedProgress,
+  runBuild,
+  enhancePrompt,
+  continuousBuildRun,
+} from './tabs/projects-tab.js';
 
 let selected = null;
 let agents = [];
@@ -38,327 +173,6 @@ async function loadAgents() {
   try {
     agents = sortAgents(await getJSON('/api/agents'));
   } catch (e) { console.error('Failed to load agents:', e); }
-}
-async function loadSessions(){
-  const box = document.getElementById('sessions');
-  if (box) box.innerHTML = '<div style="padding:20px;">Loading…</div>';
-  try {
-    const data = await getJSON('/api/sessions');
-    const box = document.getElementById('sessions');
-    box.innerHTML = '';
-    if (!data.length) {
-      box.innerHTML = '<div style="padding:20px 16px;">'
-        + '<div style="font-size:13px;font-weight:600;margin-bottom:6px;">No OpenCode sessions</div>'
-        + '<div style="font-size:12px;color:var(--text-3);line-height:1.6;">'
-        + 'This tab shows sessions from the <strong>OpenCode</strong> execution engine (port 4096). '
-        + 'Start it from <strong>Services → Code Engine</strong>, then run a task to see sessions here.<br><br>'
-        + '<strong>Claude Code</strong> and <strong>Cursor CLI</strong> don\'t expose a session REST API, '
-        + 'so their runs aren\'t listed here — use the Chat tab\'s activity feed or the RT Messages tab to follow those tasks.'
-        + '</div></div>';
-      return;
-    }
-    if (!selected && data[0]) selected = data[0].id;
-    // Crew agent from title: "[crew-fixer] ..." or "crew-fixer" (we prefix prompts with [agentId])
-    function crewAgentFromTitle(title) {
-      if (!title || typeof title !== 'string') return null;
-      const m = title.match(/\[?(crew-\w+)\]?/);
-      return m ? m[1] : null;
-    }
-    // Infer role from task keywords when slug is OpenCode codename (sunny-comet, calm-tiger)
-    function inferAgentFromTitle(title) {
-      if (!title || typeof title !== 'string') return null;
-      const t = title;
-      if (/\bFixer\b|fixer\s+task|fix\s+.*\.py|syntax\s+error/i.test(t)) return 'fixer';
-      if (/\bQA\b|qa\s+audit|audit:/i.test(t)) return 'qa';
-      if (/\bPM\b|crew-pm|roadmap\b/i.test(t)) return 'pm';
-      if (/\bCoder\b|coder\s+task|frontend\b|backend\b/i.test(t)) return 'coder';
-      if (/\bSecurity\b|security\s+review/i.test(t)) return 'security';
-      if (/\bCopywriter\b|copy\s+task/i.test(t)) return 'copywriter';
-      return null;
-    }
-    // OpenCode uses random adjective-noun slugs (sunny-comet, calm-tiger); they don't map to crew agents
-    function isOpencodeCodename(slug) {
-      return slug && /^[a-z]+-[a-z]+$/.test(slug) && !slug.startsWith('crew-');
-    }
-    data.forEach(s => {
-      const div = document.createElement('div');
-      div.className = 'row' + (s.id === selected ? ' active' : '');
-      div.onclick = () => { selected = s.id; refreshAll(); };
-      const crewAgent = crewAgentFromTitle(s.title || '');
-      const inferred = inferAgentFromTitle(s.title || '');
-      const slug = s.slug || '';
-      const agent = crewAgent || (slug && !isOpencodeCodename(slug) ? slug : null) || inferred;
-      const slugLabel = isOpencodeCodename(slug) ? ' (' + slug + ')' : '';
-      const assigned = agent ? ('Assigned to: ' + agent + slugLabel) : (slug ? ('Assigned to: ' + slug + ' (OpenCode session)') : '');
-      div.innerHTML = '<div><strong>' + (s.title || s.slug || s.id) + '</strong></div><div class="meta">' + (s.directory || '-') + '</div>' + (assigned ? '<div class="meta" style="font-size:11px;color:var(--accent);">' + assigned + '</div>' : '');
-      box.appendChild(div);
-    });
-  } catch (e) { document.getElementById('sessions').innerHTML = '<div class="meta" style="padding:20px; color:var(--red-hi);">Error loading sessions.</div>'; }
-}
-async function loadMessages(){
-  const box = document.getElementById('messages');
-  if (!selected) { box.innerHTML = '<div class="meta">No session selected.</div>'; return; }
-  try {
-    const data = await getJSON('/api/messages?session=' + encodeURIComponent(selected));
-    box.innerHTML = '';
-    data.slice(-40).forEach(m => {
-      const text = (m.parts || []).filter(p => p.type === 'text').map(p => p.text).join('').trim();
-      if (!text) return;
-      const div = document.createElement('div');
-      div.className = 'msg ' + ((m.info && m.info.role) === 'assistant' ? 'a' : 'u');
-      div.innerHTML = '<div class="meta">' + (m.info && m.info.role) + ' • ' + fmt(createdAt(m.info)) + '</div><div class="t"></div>';
-      div.querySelector('.t').textContent = text;
-      box.appendChild(div);
-    });
-    box.scrollTop = box.scrollHeight;
-  } catch (e) { box.innerHTML = '<div class="meta">Error</div>'; }
-}
-// ── RT Messages state ─────────────────────────────────────────────────────────
-let _rtPaused = false;
-let _rtFilter = 'tasks'; // 'tasks' | 'replies' | 'all'
-let _rtSearch = '';
-let _rtSeenIds = new Set(); // track rendered message IDs to avoid re-render flicker
-const RT_SKIP = new Set(['agent.heartbeat','agent.online','agent.offline']);
-const RT_TASK_TYPES = new Set(['task.dispatched','task.completed','task.failed','task.cancelled','task.started']);
-
-function _rtMatchesFilter(m) {
-  if (RT_SKIP.has(m.type)) return false;
-  const payload = m.payload || {};
-  const text = payload.reply || payload.prompt || payload.message || payload.content || '';
-  if (!text || text === 'run_task') return false;
-  if (_rtFilter === 'tasks' && !RT_TASK_TYPES.has(m.type)) return false;
-  if (_rtFilter === 'replies') {
-    const hasReply = !!(payload.reply || payload.message || payload.content);
-    if (!hasReply) return false;
-  }
-  if (_rtSearch) {
-    const q = _rtSearch.toLowerCase();
-    const inFrom = (m.from || '').toLowerCase().includes(q);
-    const inTo   = (m.to   || '').toLowerCase().includes(q);
-    const inText = text.toLowerCase().includes(q);
-    const inType = (m.type || '').toLowerCase().includes(q);
-    if (!inFrom && !inTo && !inText && !inType) return false;
-  }
-  return true;
-}
-
-// Phase → badge color + label
-const RT_PHASE_STYLE = {
-  'task.dispatched': { color: 'var(--purple)',   label: 'dispatched' },
-  'task.started':    { color: 'var(--amber)',    label: 'started'    },
-  'task.completed':  { color: 'var(--green-hi)', label: 'completed'  },
-  'task.failed':     { color: 'var(--red-hi)',   label: 'failed'     },
-  'task.cancelled':  { color: 'var(--text-3)',   label: 'cancelled'  },
-};
-
-function _rtBuildElement(m) {
-  const payload    = m.payload || {};
-  const fullText   = payload.reply || payload.prompt || payload.message || payload.content || '';
-  const type       = m.type || '';
-  const phase      = RT_PHASE_STYLE[type];
-  const timeStr    = m.ts ? new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-  // First non-empty line as summary
-  const firstLine  = fullText.split('\n').map(l => l.trim()).find(l => l.length > 2) || fullText;
-  const summary    = firstLine.length > 90 ? firstLine.slice(0, 90) + '…' : firstLine;
-  const hasMore    = fullText.length > summary.length || fullText.split('\n').length > 1;
-
-  const row = document.createElement('div');
-  row.style.cssText = [
-    'display:grid',
-    'grid-template-columns:auto auto 1fr auto',
-    'align-items:center',
-    'gap:10px',
-    'padding:7px 10px',
-    'border-radius:6px',
-    'cursor:' + (hasMore ? 'pointer' : 'default'),
-    'transition:background .12s',
-    'border-bottom:1px solid var(--border)',
-  ].join(';');
-  row.onmouseenter = () => { row.style.background = 'var(--bg-2)'; };
-  row.onmouseleave = () => { row.style.background = ''; };
-
-  // Agent pill: from → to
-  const agents = document.createElement('div');
-  agents.style.cssText = 'display:flex;align-items:center;gap:5px;white-space:nowrap;min-width:0;';
-  const fromPill = document.createElement('span');
-  fromPill.style.cssText = 'font-size:11px;font-weight:600;color:var(--text-1);max-width:110px;overflow:hidden;text-overflow:ellipsis;';
-  fromPill.textContent = (m.from || '?').replace('crew-', '');
-  fromPill.title = m.from || '';
-  agents.appendChild(fromPill);
-  if (m.to && m.to !== m.from) {
-    const arrow = document.createElement('span');
-    arrow.style.cssText = 'font-size:10px;color:var(--text-3);flex-shrink:0;';
-    arrow.textContent = '→';
-    const toPill = document.createElement('span');
-    toPill.style.cssText = 'font-size:11px;color:var(--text-2);max-width:110px;overflow:hidden;text-overflow:ellipsis;';
-    toPill.textContent = (m.to || '').replace('crew-', '');
-    toPill.title = m.to || '';
-    agents.appendChild(arrow);
-    agents.appendChild(toPill);
-  }
-
-  // Phase badge
-  const badge = document.createElement('span');
-  const ps = phase || { color: 'var(--text-3)', label: type.split('.').pop() || type };
-  badge.style.cssText = 'font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;color:#fff;background:' + ps.color + ';letter-spacing:.03em;';
-  badge.textContent = ps.label;
-
-  // Summary text
-  const preview = document.createElement('span');
-  preview.style.cssText = 'font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;';
-  preview.textContent = summary;
-
-  // Time + expand hint
-  const right = document.createElement('div');
-  right.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;';
-  const timeEl = document.createElement('span');
-  timeEl.style.cssText = 'font-size:10px;color:var(--text-3);white-space:nowrap;';
-  timeEl.textContent = timeStr;
-  right.appendChild(timeEl);
-  if (hasMore) {
-    const hint = document.createElement('span');
-    hint.style.cssText = 'font-size:10px;color:var(--text-3);';
-    hint.textContent = '▸';
-    right.appendChild(hint);
-  }
-
-  row.appendChild(agents);
-  row.appendChild(badge);
-  row.appendChild(preview);
-  row.appendChild(right);
-
-  // Expand panel — shown on click
-  if (hasMore) {
-    const detail = document.createElement('div');
-    detail.style.cssText = 'display:none;grid-column:1/-1;padding:8px 6px 4px;font-size:12px;color:var(--text-2);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;border-top:1px solid var(--border);margin-top:4px;font-family:monospace;';
-    detail.textContent = fullText;
-    // Wrap row + detail in a container
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:grid;grid-template-columns:1fr;border-radius:6px;overflow:hidden;border-bottom:1px solid var(--border);';
-    row.style.borderBottom = 'none'; // remove double border when wrapped
-    let open = false;
-    row.onclick = () => {
-      open = !open;
-      detail.style.display = open ? 'block' : 'none';
-      const hint = right.querySelector('span:last-child');
-      if (hint) hint.textContent = open ? '▾' : '▸';
-    };
-    wrap.appendChild(row);
-    wrap.appendChild(detail);
-    return wrap;
-  }
-
-  return row;
-}
-
-async function loadRTMessages(){
-  if (_rtPaused) return;
-  const box    = document.getElementById('rtMessages');
-  const rtView = document.getElementById('rtView');
-  if (!box || !rtView) return;
-  box.innerHTML = '<div style="padding:20px;">Loading…</div>';
-
-  const data = await getJSON('/api/rt-messages');
-  const filtered = data.filter(_rtMatchesFilter);
-
-  // Check if the set of visible messages changed (by type+ts key)
-  const newIds = new Set(filtered.map(m => (m.type||'') + '|' + (m.ts||'') + '|' + (m.from||'')));
-  const changed = newIds.size !== _rtSeenIds.size || [...newIds].some(id => !_rtSeenIds.has(id));
-
-  if (!changed) return; // nothing new — don't repaint
-
-  // Record scroll position BEFORE touching the DOM
-  const rtAtBottom = () => rtView.scrollHeight - rtView.scrollTop - rtView.clientHeight < 100;
-  const wasAtBottom = rtAtBottom();
-
-  _rtSeenIds = newIds;
-  box.innerHTML = '';
-  if (!filtered.length) {
-    box.innerHTML = '<div style="padding:24px;text-align:center;font-size:12px;color:var(--text-3);">No events match the current filter.</div>';
-  } else {
-    // Subtle column header
-    const header = document.createElement('div');
-    header.style.cssText = 'display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;padding:4px 10px 6px;font-size:10px;font-weight:600;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;border-bottom:2px solid var(--border);margin-bottom:2px;';
-    ['Agent', 'Phase', 'Summary', 'Time'].forEach(label => {
-      const th = document.createElement('span'); th.textContent = label; header.appendChild(th);
-    });
-    box.appendChild(header);
-    filtered.forEach(m => box.appendChild(_rtBuildElement(m)));
-  }
-
-  // Only scroll to bottom if user was already at bottom before repaint
-  if (wasAtBottom) rtView.scrollTop = rtView.scrollHeight;
-
-  const scrollBtn = document.getElementById('rtScrollBtn');
-  if (scrollBtn) scrollBtn.style.display = rtAtBottom() ? 'none' : 'block';
-
-  // Bind scroll listener once
-  if (!rtView._scrollListenerBound) {
-    rtView._scrollListenerBound = true;
-    rtView.addEventListener('scroll', () => {
-      if (scrollBtn) scrollBtn.style.display = rtAtBottom() ? 'none' : 'block';
-    });
-  }
-}
-
-function toggleRTPause(){
-  _rtPaused = !_rtPaused;
-  const btn = document.getElementById('rtPauseBtn');
-  if (btn) { btn.textContent = _rtPaused ? '▶ Resume' : '⏸ Pause'; btn.style.background = _rtPaused ? 'var(--accent)' : ''; btn.style.color = _rtPaused ? '#fff' : ''; }
-}
-
-function clearRTMessages(){
-  _rtSeenIds = new Set();
-  const box = document.getElementById('rtMessages');
-  if (box) box.innerHTML = '<div class="meta" style="padding:20px;text-align:center;opacity:.6;">Cleared. New messages will appear on next poll.</div>';
-}
-
-function _initRTFilters(){
-  // Filter chips
-  document.querySelectorAll('.rt-filter-chip').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _rtFilter = btn.dataset.filter;
-      _rtSeenIds = new Set(); // force repaint with new filter
-      document.querySelectorAll('.rt-filter-chip').forEach(b => {
-        const active = b === btn;
-        b.style.background = active ? 'var(--accent)' : 'transparent';
-        b.style.color = active ? '#fff' : 'var(--text-2)';
-        b.classList.toggle('active', active);
-      });
-      loadRTMessages();
-    });
-  });
-  // Search
-  const search = document.getElementById('rtSearch');
-  if (search) {
-    search.addEventListener('input', () => {
-      _rtSearch = search.value.trim();
-      _rtSeenIds = new Set();
-      loadRTMessages();
-    });
-  }
-}
-async function loadDLQ(){
-  const box = document.getElementById('dlqMessages');
-  if (box) box.innerHTML = '<div style="padding:20px;">Loading…</div>';
-  const data = await getJSON('/api/dlq');
-  const dlqBadgeEl = document.getElementById('dlqBadge');
-  if (dlqBadgeEl) { dlqBadgeEl.textContent = data.length; dlqBadgeEl.classList.toggle('hidden', !data.length); }
-  if (!box) return;
-  box.innerHTML = data.length ? data.map(entry => {
-    const key = entry.key || (entry.filename || '').replace('.json', '') || '?';
-    const keyAttr = escHtml(key);
-    return '<div class="msg dlq-item"><div class="meta"><strong>⚠️ Failed</strong> | ' + (entry.agent || '?') + ' | ' + (entry.failedAt ? new Date(entry.failedAt).toLocaleString() : '') + ' <button class="replay-btn" data-action="replayDLQ" data-arg="' + keyAttr + '">Replay</button> <button data-action="deleteDLQ" data-arg="' + keyAttr + '" style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--red-hi);background:transparent;color:var(--red-hi);cursor:pointer;">Delete</button></div><div class="t">' + (entry.error || '') + '</div></div>';
-  }).join('') : '<div class="meta" style="padding:20px; text-align:center;">✓ DLQ empty</div>';
-}
-window.replayDLQ = async function(key){ if(!confirm('Replay?')) return; await postJSON('/api/dlq/replay', { key }); showNotification('Replayed'); loadDLQ(); };
-async function deleteDLQ(key) {
-  if (!confirm('Delete this DLQ entry?')) return;
-  try {
-    await fetch('/api/dlq/' + encodeURIComponent(key), { method: 'DELETE' });
-    showNotification('DLQ entry deleted');
-    loadDLQ();
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 async function refreshAll(){
   try {
@@ -391,6 +205,7 @@ function hideAllViews(){
 
 initServicesTab({ hideAllViews, setNavActive });
 initAgentsTab({ hideAllViews, setNavActive, refreshAgents: loadAgents });
+initSwarmTab({ hideAllViews, setNavActive });
 
 async function pickFolder(inputId) {
   const input = document.getElementById(inputId);
@@ -417,51 +232,14 @@ async function showChat(){
   setNavActive('navChat');
   const mb = document.querySelector('.msg-bar');
   if (mb) mb.style.display = 'none';
-  _chatActiveProjectId = getStoredChatProjectId();
+  try { state.chatActiveProjectId = localStorage.getItem('crewswarm_chat_active_project_id') || ''; } catch { state.chatActiveProjectId = ''; }
   const sel = document.getElementById('chatProjectSelect');
-  if (sel && _chatActiveProjectId && sel.querySelector('option[value="' + _chatActiveProjectId + '"]')) sel.value = _chatActiveProjectId;
+  if (sel && state.chatActiveProjectId && sel.querySelector('option[value="' + state.chatActiveProjectId + '"]')) sel.value = state.chatActiveProjectId;
   checkCrewLeadStatus();
   startAgentReplyListener();
   loadCrewLeadInfo();
   await loadChatHistory();
   restorePassthroughLog();
-}
-async function loadChatHistory() {
-  try {
-    const d = await getJSON('/api/crew-lead/history?sessionId=' + encodeURIComponent(chatSessionId));
-    const box = document.getElementById('chatMessages');
-    if (!d.history || !d.history.length) return;
-    box.innerHTML = '';
-    lastAppendedAssistantContent = '';
-    lastAppendedUserContent = '';
-    d.history.forEach(h => {
-      appendChatBubble(h.role === 'user' ? 'user' : 'assistant', h.content);
-      if (h.role === 'assistant') lastAppendedAssistantContent = h.content;
-      if (h.role === 'user') lastAppendedUserContent = h.content;
-    });
-    box.scrollTop = box.scrollHeight;
-  } catch {}
-}
-function showSwarm(){
-  hideAllViews();
-  document.getElementById('sessionsView').classList.add('active');
-  setNavActive('navSwarm');
-  loadSessions(); loadMessages();
-}
-function showRT(){
-  hideAllViews();
-  document.getElementById('rtView').classList.add('active');
-  setNavActive('navRT');
-  _initRTFilters();
-  loadRTMessages();
-  const scrollBtn = document.getElementById('rtScrollBtn');
-  if (scrollBtn) scrollBtn.style.display = 'none';
-}
-function showDLQ(){
-  hideAllViews();
-  document.getElementById('dlqView').classList.add('active');
-  setNavActive('navDLQ');
-  loadDLQ();
 }
 function showFiles(){
   hideAllViews();
@@ -876,39 +654,6 @@ async function addAllowlistPattern() {
   loadCmdAllowlist();
 }
 
-// ── Telegram sessions viewer ──────────────────────────────────────────────────
-
-async function loadTelegramSessions() {
-  const box = document.getElementById('tgSessionsList');
-  if (!box) return;
-  const sessions = await getJSON('/api/telegram-sessions').catch(() => []);
-  box.innerHTML = '';
-  if (!sessions.length) {
-    box.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px;">No Telegram sessions yet — send a message to your bot to start one.</div>';
-    return;
-  }
-  for (const s of sessions) {
-    const card = document.createElement('div');
-    card.style.cssText = 'background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;';
-    const ago = s.lastTs ? Math.round((Date.now() - s.lastTs) / 60000) + 'm ago' : 'unknown';
-    const msgLines = s.messages.slice(-6).map(m => {
-      const color = m.role === 'user' ? 'var(--accent)' : 'var(--green)';
-      const icon  = m.role === 'user' ? '👤' : '🤖';
-      const txt   = String(m.content || '').slice(0, 100).replace(/</g, '&lt;');
-      return '<div style="margin-bottom:4px;"><span style="color:' + color + ';">' + icon + '</span> <span>' + txt + '</span></div>';
-    }).join('');
-    card.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-        '<span style="font-size:13px;font-weight:600;">chat ' + s.chatId + '</span>' +
-        '<span style="font-size:11px;color:var(--text-3);">' + s.messageCount + ' msgs · ' + ago + '</span>' +
-      '</div>' +
-      '<div style="font-size:12px;color:var(--text-2);border-top:1px solid var(--border);padding-top:8px;max-height:120px;overflow-y:auto;">' +
-        msgLines +
-      '</div>';
-    box.appendChild(card);
-  }
-}
-
 // ── Token usage widget ────────────────────────────────────────────────────────
 
 // Approximate cost per 1M tokens by model prefix (input / output)
@@ -1163,81 +908,6 @@ async function checkCrewLeadStatus() {
   } catch {}
 }
 
-// @@ autocomplete: type @@ for list, @@PROMPT (or pick) shows exact JSON
-const ATAT_COMMANDS = [
-  { id: 'RESET', label: 'Clear session history and start fresh', template: '' },
-  { id: 'STOP', label: 'Cancel all running pipelines (agents keep running)', template: '' },
-  { id: 'KILL', label: 'Kill all pipelines + terminate all agent bridges', template: '' },
-  { id: 'SEARCH_HISTORY', label: 'Search long-term chat history by keyword', template: 'your search terms' },
-  { id: 'DISPATCH', label: 'Dispatch task to an agent', template: '{"agent":"crew-coder","task":"Your task here"}' },
-  { id: 'PIPELINE', label: 'Multi-step pipeline (waves of agents)', template: '[{"wave":1,"agent":"crew-coder","task":"..."},{"wave":2,"agent":"crew-qa","task":"..."}]' },
-  { id: 'PROMPT', label: 'Append or set agent system prompt', template: '{"agent":"crew-lead","append":"Your new rule here"}' },
-  { id: 'SKILL', label: 'Run a skill by name', template: 'skillName {"param":"value"}' },
-  { id: 'SERVICE', label: 'Restart/stop a service or agent', template: 'restart crew-coder' },
-  { id: 'READ_FILE', label: 'Read a file and get its contents', template: '/path/to/file' },
-  { id: 'RUN_CMD', label: 'Run a shell command', template: 'ls -la /Users/jeffhobbs/Desktop/CrewSwarm' },
-  { id: 'WEB_SEARCH', label: 'Search the web (Perplexity)', template: 'your search query' },
-  { id: 'WEB_FETCH', label: 'Fetch a webpage or URL', template: 'https://example.com' },
-  { id: 'PROJECT', label: 'Draft a new project roadmap', template: '{"name":"MyApp","description":"...","outputDir":"/path/to/dir"}' },
-  { id: 'BRAIN', label: 'Append a fact to brain.md', template: 'crew-lead: fact to remember' },
-  { id: 'TOOLS', label: 'Grant/revoke tools for an agent', template: '{"agent":"crew-qa","allow":["read_file","write_file"]}' },
-  { id: 'CREATE_AGENT', label: 'Create a dynamic agent', template: '{"id":"crew-ml","role":"coder","description":"ML specialist"}' },
-  { id: 'REMOVE_AGENT', label: 'Remove a dynamic agent', template: 'crew-ml' },
-  { id: 'DEFINE_SKILL', label: 'Define a new skill (then @@END_SKILL)', template: 'skillName\\n{"description":"...","url":"..."}' },
-  { id: 'DEFINE_WORKFLOW', label: 'Save a workflow for cron', template: 'name\\n[{"agent":"crew-copywriter","task":"..."}]' },
-];
-function chatAtAtInput() {
-  const ta = document.getElementById('chatInput');
-  const menu = document.getElementById('chatAtAtMenu');
-  const hint = document.getElementById('chatAtAtTemplate');
-  if (!ta || !menu || !hint) return;
-  try {
-  const val = ta.value;
-  const caret = ta.selectionStart;
-  const before = val.slice(0, caret);
-  const lastAt = before.lastIndexOf('@@');
-  if (lastAt === -1) { menu.style.display = 'none'; hint.style.display = 'none'; return; }
-  const afterAt = before.slice(lastAt + 2);
-  if (/\\s/.test(afterAt)) { menu.style.display = 'none'; hint.style.display = 'none'; return; }
-  const prefix = afterAt.toUpperCase();
-  const filtered = ATAT_COMMANDS.filter(function(c) { return c.id.indexOf(prefix) === 0; });
-  if (filtered.length === 0) { menu.style.display = 'none'; hint.style.display = 'none'; return; }
-  menu.style.display = 'block';
-  menu.style.visibility = 'visible';
-  menu.innerHTML = '';
-  filtered.forEach(function(c) {
-    const row = document.createElement('div');
-    row.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);';
-    row.onmouseenter = function() { row.style.background = 'var(--bg-hover)'; };
-    row.onmouseleave = function() { row.style.background = ''; };
-    row.innerHTML = '<span style="color:var(--accent);font-weight:600;">@@' + c.id + '</span> <span style="color:var(--text-3);">' + c.label + '</span>';
-    row.onclick = function() {
-      const insert = '@@' + c.id + (c.template ? ' ' + c.template : '');
-      ta.value = val.slice(0, lastAt) + insert + val.slice(caret);
-      ta.selectionStart = ta.selectionEnd = lastAt + insert.length;
-      ta.focus();
-      menu.style.display = 'none';
-      hint.style.display = 'block';
-      hint.textContent = (c.id === 'PROMPT' ? 'Full line to send: @@PROMPT ' : 'Template: ') + (c.template ? c.template : '');
-    };
-    menu.appendChild(row);
-  });
-  const exact = filtered.find(function(c) { return c.id === prefix; });
-  if (exact) {
-    hint.style.display = 'block';
-    hint.textContent = (exact.id === 'PROMPT' ? 'Full line: @@PROMPT ' : 'Template: ') + (exact.template || '');
-  } else {
-    hint.style.display = 'none';
-  }
-  } catch (err) { if (typeof console !== 'undefined') console.warn('chatAtAtInput', err); }
-}
-function chatKeydown(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
-  var menu = document.getElementById('chatAtAtMenu');
-  if (menu && menu.style.display === 'block' && (e.key === 'Escape' || e.key === 'Tab')) { menu.style.display = 'none'; }
-}
-
-
 function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
   function countTasks(md) { return (md.match(/^- \[ \]/gm) || []).length; }
 
@@ -1309,434 +979,33 @@ function appendRoadmapCard(box, { draftId, name, outputDir, roadmapMd }) {
 let lastAppendedAssistantContent = '';
 let lastAppendedUserContent = '';
 let lastSentContent = null;
-async function sendChat() {
-  const input = document.getElementById('chatInput');
-  const sendBtn = document.querySelector('[data-action="sendChat"]');
-  const text = input.value.trim();
-  if (!text) return;
-
-  // ── Direct engine passthrough mode ──────────────────────────────────────────
-  const engine = document.getElementById('passthroughEngine')?.value || '';
-  if (engine) { await sendPassthrough(text, engine); return; }
-
-  input.value = '';
-  input.disabled = true;
-  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
-  appendChatBubble('user', text);
-  lastAppendedUserContent = text;
-  lastSentContent = text;
-  const typingId = 'typing-' + Date.now();
-  const typingDiv = document.createElement('div');
-  typingDiv.id = typingId;
-  typingDiv.style.cssText = 'font-size:12px;color:var(--text-3);padding:4px 6px;';
-  const _cl = window._crewLeadInfo || { emoji: '🧠', name: 'crew-lead' };
-  typingDiv.textContent = _cl.emoji + ' ' + _cl.name + ' is thinking...';
-  const box = document.getElementById('chatMessages');
-  box.appendChild(typingDiv);
-  box.scrollTop = box.scrollHeight;
-  try {
-    const d = await postJSON('/api/crew-lead/chat', { message: text, sessionId: chatSessionId, projectId: _chatActiveProjectId || undefined });
-    document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
-    if (d.ok === false && d.error) {
-      appendChatBubble('assistant', '⚠️ ' + d.error);
-      lastAppendedAssistantContent = '';
-    } else if (d.reply) {
-      const reply = d.reply;
-      setTimeout(() => {
-        if (reply !== lastAppendedAssistantContent) {
-          appendChatBubble('assistant', reply);
-          lastAppendedAssistantContent = reply;
-          if (box) box.scrollTop = box.scrollHeight;
-        }
-      }, 400);
-    }
-    if (d.dispatched) {
-      const note = document.createElement('div');
-      note.style.cssText = 'font-size:11px;color:var(--text-3);text-align:center;padding:4px;';
-      note.textContent = '⚡ Dispatched to ' + d.dispatched.agent;
-      box.appendChild(note);
-    }
-    if (d.pendingProject) appendRoadmapCard(box, d.pendingProject);
-    box.scrollTop = box.scrollHeight;
-  } catch(e) {
-    document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
-    let errMsg = e.message || String(e);
-    try {
-      const parsed = JSON.parse(errMsg);
-      if (parsed && typeof parsed.error === 'string') errMsg = parsed.error;
-    } catch {}
-    appendChatBubble('assistant', '⚠️ Error: ' + errMsg);
-    lastAppendedAssistantContent = '';
-    box.scrollTop = box.scrollHeight;
-  } finally {
-    input.disabled = false;
-    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
-    input.focus();
-  }
-}
-
-async function clearChatHistory() {
-  if (!confirm('Clear chat history for this session?')) return;
-  document.getElementById('chatMessages').innerHTML = '';
-  localStorage.removeItem(PASSTHROUGH_LOG_KEY);
-  await postJSON('/api/crew-lead/clear', { sessionId: chatSessionId }).catch(()=>{});
-}
-
-const PASSTHROUGH_LOG_KEY = 'crewswarm_passthrough_log';
-const PASSTHROUGH_LOG_MAX = 200;
-function savePassthroughMsg(role, engine, text, exitCode) {
-  try {
-    const log = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
-    log.push({ role, engine, text, exitCode, ts: Date.now() });
-    if (log.length > PASSTHROUGH_LOG_MAX) log.splice(0, log.length - PASSTHROUGH_LOG_MAX);
-    localStorage.setItem(PASSTHROUGH_LOG_KEY, JSON.stringify(log));
-  } catch {}
-}
-function restorePassthroughLog() {
-  try {
-    const log = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
-    const box = document.getElementById('chatMessages');
-    if (!box || !log.length) return;
-    const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode', codex: '🟣 Codex CLI', 'docker-sandbox': '🐳 Docker Sandbox' };
-    for (const entry of log) {
-      if (entry.role === 'user') {
-        appendChatBubble('user', entry.text);
-      } else {
-        const bubble = document.createElement('div');
-        bubble.className = 'chat-bubble assistant';
-        bubble.style.cssText = 'background:var(--surface-2);border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:12px;color:var(--text-2);';
-        const lbl = document.createElement('div');
-        lbl.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px;';
-        lbl.textContent = (engineLabels[entry.engine] || entry.engine) + ' · direct passthrough ✓ (exit ' + (entry.exitCode ?? 0) + ')';
-        const cnt = document.createElement('div');
-        cnt.textContent = entry.text;
-        bubble.appendChild(lbl); bubble.appendChild(cnt);
-        box.appendChild(bubble);
-      }
-    }
-    box.scrollTop = box.scrollHeight;
-  } catch {}
-}
-async function sendPassthrough(text, engine) {
-  const input = document.getElementById('chatInput');
-  const sendBtn = document.querySelector('[data-action="sendChat"]');
-  const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode', codex: '🟣 Codex CLI', 'docker-sandbox': '🐳 Docker Sandbox' };
-  input.value = '';
-  input.disabled = true;
-  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '…'; }
-
-  appendChatBubble('user', text);
-  const box = document.getElementById('chatMessages');
-
-  // Create streaming reply bubble
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-bubble assistant';
-  bubble.style.cssText = 'background:var(--surface-2);border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:12px;color:var(--text-2);';
-  const label = document.createElement('div');
-  label.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px;';
-  const activeProj2 = _chatActiveProjectId && _projectsData[_chatActiveProjectId];
-  label.textContent = (engineLabels[engine] || engine) + ' · direct passthrough' + (activeProj2?.outputDir ? ' @ ' + activeProj2.outputDir.split('/').pop() : '');
-  const content = document.createElement('div');
-  bubble.appendChild(label);
-  bubble.appendChild(content);
-  box.appendChild(bubble);
-  box.scrollTop = box.scrollHeight;
-
-  try {
-    const activeProj = _chatActiveProjectId && _projectsData[_chatActiveProjectId];
-    const projectDir = activeProj?.outputDir || undefined;
-    const injectHistory = document.getElementById('passthroughInjectHistory')?.checked || false;
-    const resp = await fetch('/api/engine-passthrough', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ engine, message: text, ...(projectDir ? { projectDir } : {}), ...(injectHistory ? { injectHistory: true } : {}) }),
-    });
-    if (!resp.ok) { content.textContent = `Error ${resp.status}: ${await resp.text()}`; return; }
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const ev = JSON.parse(line.slice(6));
-          if (ev.type === 'chunk' && ev.text) {
-            content.textContent += ev.text;
-            box.scrollTop = box.scrollHeight;
-          } else if (ev.type === 'done') {
-            const exitCode = ev.exitCode ?? 0;
-            label.textContent += ` ✓ (exit ${exitCode})`;
-            savePassthroughMsg('user', engine, text, null);
-            savePassthroughMsg('engine', engine, content.textContent, exitCode);
-          }
-        } catch {}
-      }
-    }
-  } catch(e) {
-    content.textContent = 'Error: ' + e.message;
-  } finally {
-    input.disabled = false;
-    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
-    input.focus();
-  }
-}
-window.sendPassthrough = sendPassthrough;
-
-async function stopAll() {
-  if (!confirm('Stop all running pipelines?')) return;
-  try {
-    await postJSON('/api/crew-lead/chat', { message: '@@STOP', sessionId: chatSessionId });
-    showNotification('⏹ Stop signal sent');
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-async function killAll() {
-  if (!confirm('Kill all agents? Bridges must be restarted after.')) return;
-  try {
-    await postJSON('/api/crew-lead/chat', { message: '@@KILL', sessionId: chatSessionId });
-    showNotification('☠️ Kill signal sent');
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-
-function showMessaging(){
-  showSettings();
-  showSettingsTab('comms');
-  loadTgStatus();
-}
-
-async function loadTgStatus(){
-  try {
-    const d = await getJSON('/api/telegram/status');
-    const badge = document.getElementById('tgStatusBadge');
-    if (d.running) {
-      badge.textContent = d.botName ? '● @' + d.botName : '● running';
-      badge.className = 'status-badge status-active';
-    } else {
-      badge.textContent = '● stopped';
-      badge.className = 'status-badge status-stopped';
-    }
-  } catch {}
-}
-
-async function loadTgConfig(){
-  try {
-    const d = await getJSON('/api/telegram/config');
-    if (d.token) document.getElementById('tgTokenInput').value = d.token;
-    const ids = d.allowedChatIds && d.allowedChatIds.length ? d.allowedChatIds : [];
-    document.getElementById('tgAllowedIds').value = ids.join(', ');
-    const contactNames = d.contactNames || {};
-    const listEl = document.getElementById('tgContactNamesList');
-    listEl.innerHTML = '';
-    if (ids.length) {
-      const title = document.createElement('label');
-      title.style.cssText = 'display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);';
-      title.textContent = 'Contact names (optional)';
-      listEl.appendChild(title);
-      ids.forEach(id => {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
-        const span = document.createElement('span');
-        span.style.cssText = 'font-size:12px;color:var(--text-3);min-width:100px;';
-        span.textContent = id;
-        const input = document.createElement('input');
-        input.id = 'tgContact-' + id;
-        input.placeholder = 'e.g. Jeff';
-        input.value = contactNames[String(id)] || '';
-        input.style.flex = '1';
-        row.appendChild(span);
-        row.appendChild(input);
-        listEl.appendChild(row);
-      });
-    }
-  } catch {}
-}
-
-async function saveTgConfig(){
-  const token = document.getElementById('tgTokenInput').value.trim();
-  const idsRaw = document.getElementById('tgAllowedIds').value.trim();
-  const allowedChatIds = idsRaw
-    ? idsRaw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
-    : [];
-  if (!token) { showNotification('Enter a bot token first', true); return; }
-  const contactNames = {};
-  allowedChatIds.forEach(id => {
-    const el = document.getElementById('tgContact-' + id);
-    if (el && el.value.trim()) contactNames[String(id)] = el.value.trim();
-  });
-  await postJSON('/api/telegram/config', { token, targetAgent: 'crew-lead', allowedChatIds, contactNames });
-  showNotification('Config saved');
-  loadTgConfig(); // refresh contact names list
-}
-
-async function startTgBridge(){
-  const token = document.getElementById('tgTokenInput').value.trim();
-  const body = { targetAgent: 'crew-lead' };
-  if (token) body.token = token;
-  const r = await postJSON('/api/telegram/start', body);
-  if (r && r.error) { showNotification(r.error, true); return; }
-  showNotification(r && r.message === 'Already running' ? 'Already running' : 'Telegram bridge starting...');
-  setTimeout(loadTgStatus, 2000);
-}
-
-async function stopTgBridge(){
-  await postJSON('/api/telegram/stop', {});
-  showNotification('Telegram bridge stopped');
-  setTimeout(loadTgStatus, 1000);
-}
-
-// ── WhatsApp settings ──────────────────────────────────────────────────────────
-
-async function loadWaStatus(){
-  try {
-    const d = await getJSON('/api/whatsapp/status');
-    const badge = document.getElementById('waStatusBadge');
-    if (!badge) return;
-    if (d.running) {
-      badge.textContent = d.number ? '● +' + d.number : '● running';
-      badge.className = 'status-badge status-active';
-    } else {
-      badge.textContent = '● stopped';
-      badge.className = 'status-badge status-stopped';
-    }
-    const authEl = document.getElementById('waAuthStatus');
-    if (authEl) authEl.textContent = d.authSaved
-      ? '✅ Auth saved — no QR scan needed on restart'
-      : '⚠️ No auth saved — run npm run whatsapp in terminal to scan QR';
-  } catch {}
-}
-
-let _waSavedContactNames = {};
-
-function renderWaContactRows(){
-  const listEl = document.getElementById('waContactNamesList');
-  if (!listEl) return;
-  const raw = (document.getElementById('waAllowedNumbers')?.value || '').trim();
-  const numbers = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
-  listEl.innerHTML = '';
-  if (!numbers.length) return;
-  const title = document.createElement('label');
-  title.style.cssText = 'display:block;margin-bottom:6px;font-size:12px;color:var(--text-2);';
-  title.textContent = 'Contact names (address book)';
-  listEl.appendChild(title);
-  numbers.forEach(num => {
-    const key = num.replace(/\D/g, '');
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
-    const span = document.createElement('span');
-    span.style.cssText = 'font-size:12px;color:var(--text-3);min-width:120px;font-family:monospace;';
-    span.textContent = num;
-    const input = document.createElement('input');
-    input.id = 'waContact-' + key;
-    input.placeholder = 'e.g. Jeff';
-    input.value = _waSavedContactNames[key] || _waSavedContactNames[num] || '';
-    input.style.flex = '1';
-    row.appendChild(span);
-    row.appendChild(input);
-    listEl.appendChild(row);
-  });
-}
-
-async function loadWaConfig(){
-  try {
-    const d = await getJSON('/api/whatsapp/config');
-    const n = document.getElementById('waAllowedNumbers');
-    const t = document.getElementById('waTargetAgent');
-    _waSavedContactNames = d.contactNames || {};
-    if (n) n.value = (d.allowedNumbers || []).join(', ');
-    if (t) t.value = d.targetAgent || 'crew-lead';
-    renderWaContactRows();
-  } catch {}
-}
-
-async function saveWaConfig(){
-  const numbersRaw = document.getElementById('waAllowedNumbers').value.trim();
-  const allowedNumbers = numbersRaw ? numbersRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-  const targetAgent = (document.getElementById('waTargetAgent').value.trim()) || 'crew-lead';
-  const contactNames = {};
-  allowedNumbers.forEach(num => {
-    const key = num.replace(/\D/g, '');
-    const el = document.getElementById('waContact-' + key);
-    if (el && el.value.trim()) contactNames[key] = el.value.trim();
-  });
-  _waSavedContactNames = contactNames;
-  await postJSON('/api/whatsapp/config', { allowedNumbers, targetAgent, contactNames });
-  showNotification('WhatsApp config saved');
-  renderWaContactRows();
-}
-
-async function startWaBridge(){
-  const r = await postJSON('/api/whatsapp/start', {});
-  if (r && r.error) { showNotification(r.error, true); return; }
-  showNotification(r && r.message === 'Already running' ? 'Already running' : 'WhatsApp bridge starting…');
-  setTimeout(loadWaStatus, 2000);
-}
-
-async function stopWaBridge(){
-  await postJSON('/api/whatsapp/stop', {});
-  showNotification('WhatsApp bridge stopped');
-  setTimeout(loadWaStatus, 1000);
-}
-
-async function loadWaMessages(){
-  const feed = document.getElementById('waMessageFeed');
-  if (!feed) return;
-  try {
-    const msgs = await getJSON('/api/whatsapp/messages');
-    if (!msgs.length) {
-      feed.innerHTML = '<div class="meta" style="padding:20px;text-align:center;">No messages yet. Send a WhatsApp message to your linked number.</div>';
-      return;
-    }
-    feed.innerHTML = msgs.slice(-50).reverse().map(m => {
-      const isIn = m.direction === 'inbound';
-      const time = m.ts ? new Date(m.ts).toLocaleTimeString() : '';
-      const number = (m.jid || '').split('@')[0] || '';
-      return '<div style="display:flex;gap:10px;padding:8px;background:var(--bg-2);border-radius:6px;align-items:flex-start;">' +
-        '<span style="font-size:18px;">' + (isIn ? '📲' : '🤖') + '</span>' +
-        '<div style="flex:1;min-width:0;">' +
-          '<div style="font-size:11px;color:var(--text-3);margin-bottom:2px;">' +
-            escHtml(isIn ? ('+' + number) : 'CrewSwarm') + (time ? ' · ' + time : '') +
-          '</div>' +
-          '<div style="font-size:13px;word-break:break-word;">' + escHtml((m.text||'').slice(0,300)) + '</div>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-  } catch(e) {
-    feed.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px;">Could not load messages.</div>';
-  }
-}
+const {
+  loadChatHistory,
+  chatAtAtInput,
+  chatKeydown,
+  sendChat,
+  clearChatHistory,
+  restorePassthroughLog,
+  sendPassthrough,
+  stopAll,
+  killAll,
+} = initChatActions({
+  postJSON,
+  getJSON,
+  appendChatBubble,
+  showNotification,
+  state,
+  getChatSessionId: () => chatSessionId,
+  getChatActiveProjectId: () => _chatActiveProjectId,
+  getCrewLeadInfo: () => window._crewLeadInfo,
+  appendRoadmapCard,
+  getLastAppendedAssistantContent: () => lastAppendedAssistantContent,
+  setLastAppendedAssistantContent: (value) => { lastAppendedAssistantContent = value; },
+  setLastAppendedUserContent: (value) => { lastAppendedUserContent = value; },
+  setLastSentContent: (value) => { lastSentContent = value; },
+});
 
 /* services tab extracted to tabs/services-tab.js */
-
-async function loadTgMessages(){
-  const feed = document.getElementById('tgMessageFeed');
-  if (!feed) return;
-  try {
-    const msgs = await getJSON('/api/telegram/messages');
-    if (!msgs.length) {
-      feed.innerHTML = '<div class="meta" style="padding:20px;text-align:center;">No messages yet. Send something to your bot on Telegram.</div>';
-      return;
-    }
-    feed.innerHTML = msgs.slice(-50).reverse().map(m => {
-      const isIn = m.direction === 'inbound';
-      const time = m.ts ? new Date(m.ts).toLocaleTimeString() : '';
-      const who  = isIn ? (m.firstName || m.username || 'User') : 'CrewSwarm';
-      const icon = isIn ? '👤' : '⚡';
-      return '<div class="card" style="padding:12px;gap:4px;display:flex;flex-direction:column;">' +
-        '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);">' +
-        '<span>' + icon + ' ' + escHtml(who) + (m.username ? ' @' + escHtml(m.username) : '') + '</span>' +
-        '<span>' + time + '</span></div>' +
-        '<div style="font-size:13px;white-space:pre-wrap;">' + escHtml(m.text || '') + '</div>' +
-        '</div>';
-    }).join('');
-  } catch(e) {
-    feed.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Error loading messages</div>';
-  }
-}
 async function loadFiles(forceRefresh) {
   const el = document.getElementById('filesContent');
   const dir = document.getElementById('filesDir').value.trim() || window._crewCwd || (window._crewHome ? window._crewHome + '/Desktop/CrewSwarm' : '');
@@ -1816,710 +1085,6 @@ function formatSize(bytes) {
   if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + 'KB';
   return (bytes/1024/1024).toFixed(1) + 'MB';
 }
-function showModels(){
-  hideAllViews();
-  document.getElementById('modelsView').classList.add('active');
-  setNavActive('navModels');
-  loadRTToken();
-  loadBuiltinProviders(); // renders built-ins + custom providers in one unified list
-  loadSearchTools();
-}
-// keep old name working for any legacy calls
-function showProviders(){ showModels(); }
-
-const BUILTIN_PROVIDERS = [
-  { id:'groq',       label:'Groq',       icon:'⚡', url:'https://console.groq.com/keys',         hint:'Fast inference — great for crew-coder, crew-fixer' },
-  { id:'anthropic',  label:'Anthropic',  icon:'🟣', url:'https://console.anthropic.com/',         hint:'Claude models — best for complex reasoning tasks' },
-  { id:'openai',     label:'OpenAI (API)',     icon:'🟢', url:'https://platform.openai.com/api-keys',   hint:'GPT-4o and o-series — pay per use with API key' },
-  { id:'perplexity', label:'Perplexity', icon:'🔍', url:'https://www.perplexity.ai/settings/api', hint:'Sonar Pro — ideal for crew-pm research tasks' },
-  { id:'mistral',    label:'Mistral',    icon:'🌀', url:'https://console.mistral.ai/',            hint:'Open-weight models, efficient mid-tier tasks' },
-  { id:'deepseek',   label:'DeepSeek',   icon:'🌊', url:'https://platform.deepseek.com/',         hint:'Low cost, strong coding performance' },
-  { id:'xai',        label:'xAI (Grok)', icon:'𝕏',  url:'https://console.x.ai/',                 hint:'Grok models from xAI' },
-  { id:'ollama',     label:'Ollama',     icon:'🏠', url:'https://ollama.com/download',            hint:'Local models — no API key needed, runs offline' },
-  { id:'openai-local', label:'OpenAI (local)', icon:'🟢', url:'https://github.com/RayBytes/ChatMock', hint:'ChatMock — use ChatGPT Plus/Pro subscription. Run ChatMock server first (e.g. port 8000). Key ignored.' },
-];
-
-const SEARCH_TOOLS = [
-  { id:'parallel', label:'Parallel',    icon:'🔬', url:'https://platform.parallel.ai/signup', hint:'Deep research & web synthesis — used by crew-pm for project planning', envKey:'PARALLEL_API_KEY' },
-  { id:'brave',    label:'Brave Search', icon:'🦁', url:'https://api.search.brave.com/',       hint:'Fast web search (~700ms) — best for quick agent lookups',            envKey:'BRAVE_API_KEY'    },
-];
-
-async function loadSearchTools(){
-  const list = document.getElementById('searchToolsList');
-  let saved = {};
-  try { saved = (await getJSON('/api/search-tools')).keys || {}; } catch {}
-  list.innerHTML = SEARCH_TOOLS.map(p => {
-    const hasKey = !!saved[p.id];
-    const badge = hasKey
-      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">set ✓</span>`
-      : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
-    return `<div class="card" style="margin-bottom:8px;">
-      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".st-body">
-        <span style="font-size:18px;width:24px;text-align:center;">${p.icon}</span>
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:13px;">${p.label}</div>
-          <div style="font-size:11px;color:var(--text-2);">${p.hint}</div>
-        </div>
-        ${badge}
-        <span style="color:var(--text-2);font-size:12px;">▾</span>
-      </div>
-      <div class="st-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-        <div style="display:flex;gap:8px;">
-          <input id="st_${p.id}" type="password" autocomplete="new-password" placeholder="${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;" />
-          <button data-action="saveSearchTool" data-arg="${p.id}" class="btn-purple">Save</button>
-          <button data-action="testSearchTool" data-arg="${p.id}" class="btn-ghost">Test</button>
-          <a href="${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>
-        </div>
-        <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Saved as <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:4px;">${p.envKey}</code> in environment</div>
-        <div id="st_status_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function saveSearchTool(toolId){
-  const inp = document.getElementById('st_' + toolId);
-  const key = inp?.value?.trim();
-  if (!key) { showNotification('Paste an API key first', 'error'); return; }
-  try {
-    await postJSON('/api/search-tools/save', { toolId, key });
-    showNotification('Key saved', 'success');
-    loadSearchTools();
-  } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
-}
-
-async function testSearchTool(toolId){
-  const statusEl = document.getElementById('st_status_' + toolId);
-  statusEl.textContent = 'Testing…';
-  try {
-    const r = await postJSON('/api/search-tools/test', { toolId });
-    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
-    statusEl.textContent = r.ok ? '✓ ' + (r.message || 'Connected') : '✗ ' + (r.error || 'Failed');
-  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
-}
-
-async function loadBuiltinProviders(){
-  const list = document.getElementById('builtinProvidersList');
-  let saved = {};
-  try { saved = (await getJSON('/api/providers/builtin')).keys || {}; } catch {}
-  const builtinIds = new Set(BUILTIN_PROVIDERS.map(p => p.id));
-
-  // ── Render built-in provider cards ─────────────────────────────────────────
-  let html = BUILTIN_PROVIDERS.map(p => {
-    const hasKey = !!saved[p.id];
-    const isOllama = p.id === 'ollama';
-    const isOpenAiLocal = p.id === 'openai-local';
-    const badge = hasKey || isOllama || isOpenAiLocal
-      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">${(isOllama || isOpenAiLocal) && !hasKey ? 'local' : 'set ✓'}</span>`
-      : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
-    return `<div class="card" style="margin-bottom:8px;">
-      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".bp-body">
-        <span style="font-size:18px;width:24px;text-align:center;">${p.icon}</span>
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:13px;">${p.label}</div>
-          <div style="font-size:11px;color:var(--text-2);">${p.hint}</div>
-        </div>
-        ${badge}
-        <span style="color:var(--text-2);font-size:12px;">▾</span>
-      </div>
-      <div class="bp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-        ${isOllama ? `<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;">Ollama runs locally — no API key required. Make sure Ollama is running on port 11434.</div>` : ''}
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${isOllama ? '' : `<input id="bp_${p.id}" type="password" autocomplete="new-password" placeholder="${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />`}
-          ${isOllama
-            ? `<button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost">Test Connection</button>
-               <button data-action="fetchBuiltinModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>`
-            : `<button data-action="saveBuiltinKey" data-arg="${p.id}" class="btn-purple">Save</button>
-               <button data-action="testBuiltinProvider" data-arg="${p.id}" class="btn-ghost">Test</button>
-               <button data-action="fetchBuiltinModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>
-               <a href="${p.url}" target="_blank" class="btn-ghost" style="text-decoration:none;font-size:12px;">Keys ↗</a>`}
-        </div>
-        <div id="bp_status_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
-        <div id="bp_models_${p.id}" style="margin-top:8px;display:none;">
-          <span style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px;">Models (<span id="bp_mcount_${p.id}">0</span>):</span>
-          <span id="bp_mtags_${p.id}"></span>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  // ── Append any custom (non-built-in) providers from crewswarm.json ─────────
-  try {
-    const data = await getJSON('/api/providers');
-    const customs = (data.providers || []).filter(p => !builtinIds.has(p.id));
-    if (customs.length) {
-      html += `<div style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px;padding:0 2px;">Custom Providers</div>`;
-      html += customs.map(p => {
-        const icon = PROVIDER_ICONS[p.id] || '🔌';
-        const hasKey = p.hasKey;
-        const badge = hasKey
-          ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">key set ✓</span>`
-          : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">no key</span>`;
-        const modelCount = p.models?.length || 0;
-        return `<div class="card" style="margin-bottom:8px;">
-          <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".cp-body">
-            <span style="font-size:18px;width:24px;text-align:center;">${icon}</span>
-            <div style="flex:1;">
-              <div style="font-weight:600;font-size:13px;">${p.id}</div>
-              <div style="font-size:11px;color:var(--text-2);">${p.baseUrl}${modelCount ? ' · ' + modelCount + ' models' : ''}</div>
-            </div>
-            ${badge}
-            <span style="color:var(--text-2);font-size:12px;">▾</span>
-          </div>
-          <div class="cp-body" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <input id="key_${p.id}" type="password" autocomplete="new-password" placeholder="${hasKey ? '••••••••••••••• (saved — paste to update)' : 'Paste API key'}" style="flex:1;min-width:180px;" />
-              <button data-action="saveKey" data-arg="${p.id}" class="btn-purple">Save</button>
-              <button data-action="testKey" data-arg="${p.id}" class="btn-ghost">Test</button>
-              <button data-action="fetchModels" data-arg="${p.id}" data-self="1" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>
-            </div>
-            <div style="font-size:11px;color:var(--text-2);margin-top:6px;">Base URL: <code style="font-size:10px;">${p.baseUrl}</code></div>
-            <div id="test_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
-            <div id="mwrap_${p.id}" style="margin-top:8px;${modelCount ? '' : 'display:none;'}">
-              <span style="font-size:11px;color:var(--text-2);">Models (<span id="mcount_${p.id}">${modelCount}</span>):</span>
-              <span id="mtags_${p.id}">${(p.models||[]).map(m => '<span class="model-tag">' + (m.id||m) + '</span>').join('')}</span>
-            </div>
-          </div>
-        </div>`;
-      }).join('');
-    }
-  } catch {}
-
-  list.innerHTML = html;
-}
-
-async function saveBuiltinKey(providerId){
-  const inp = document.getElementById('bp_' + providerId);
-  const key = inp?.value?.trim();
-  if (!key && providerId !== 'openai-local') { showNotification('Paste an API key first', 'error'); return; }
-  await postJSON('/api/providers/builtin/save', { providerId, apiKey: key || '' });
-  inp.value = '';
-  showNotification('Key saved — fetching models…');
-  // Await so the re-rendered card DOM exists before we write into it
-  await loadBuiltinProviders();
-  // Auto-fetch models so the agent model dropdown populates immediately
-  try {
-    const r = await postJSON('/api/providers/fetch-models', { providerId });
-    if (r.ok) {
-      const tags   = document.getElementById('bp_mtags_'  + providerId);
-      const count  = document.getElementById('bp_mcount_' + providerId);
-      const wrap   = document.getElementById('bp_models_' + providerId);
-      const status = document.getElementById('bp_status_' + providerId);
-      if (tags)   tags.innerHTML = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
-      if (count)  count.textContent = r.models.length;
-      if (wrap)   wrap.style.display = 'block';
-      if (status) { status.style.color = 'var(--green)'; status.textContent = '✓ ' + r.models.length + ' models'; }
-      showNotification('Key saved for ' + providerId + ' — ' + r.models.length + ' models ready');
-      loadAgents(); // refresh model dropdowns on the Agents tab
-    } else {
-      showNotification('Key saved — could not fetch models: ' + (r.error || 'unknown'), 'warning');
-    }
-  } catch(e) {
-    showNotification('Key saved — model fetch failed: ' + e.message, 'warning');
-  }
-}
-
-async function testBuiltinProvider(providerId){
-  const statusEl = document.getElementById('bp_status_' + providerId);
-  statusEl.textContent = 'Testing…';
-  try {
-    const r = await postJSON('/api/providers/builtin/test', { providerId });
-    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
-    statusEl.textContent = r.ok ? '✓ Connected — ' + (r.model || 'OK') : '✗ ' + (r.error || 'Failed');
-  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
-}
-
-async function fetchBuiltinModels(providerId, btn){
-  const statusEl = document.getElementById('bp_status_' + providerId);
-  const orig = btn.textContent;
-  btn.textContent = 'Fetching…';
-  btn.disabled = true;
-  statusEl.textContent = '';
-  try {
-    const r = await postJSON('/api/providers/fetch-models', { providerId });
-    if (r.ok) {
-      const tags  = document.getElementById('bp_mtags_' + providerId);
-      const count = document.getElementById('bp_mcount_' + providerId);
-      const wrap  = document.getElementById('bp_models_' + providerId);
-      if (tags)  tags.innerHTML  = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
-      if (count) count.textContent = r.models.length;
-      if (wrap)  wrap.style.display = 'block';
-      statusEl.style.color = 'var(--green)';
-      statusEl.textContent = '✓ ' + r.models.length + ' models fetched' + (r.note ? ' — ' + r.note : '');
-      loadAgents();
-    } else {
-      statusEl.style.color = 'var(--red)';
-      statusEl.textContent = '✗ ' + (r.error || 'Failed');
-    }
-  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = '✗ ' + e.message; }
-  finally { btn.textContent = orig; btn.disabled = false; }
-}
-
-async function loadOpenClawStatus(){
-  const badge = document.getElementById('oclawBadge');
-  try {
-    const d = await getJSON('/api/settings/openclaw-status');
-    if (d.installed) {
-      badge.textContent = '● installed';
-      badge.style.background = 'rgba(52,211,153,0.15)';
-      badge.style.color = 'var(--green)';
-      badge.style.borderColor = 'rgba(52,211,153,0.3)';
-    } else {
-      badge.textContent = '○ not detected';
-      badge.style.background = 'rgba(107,114,128,0.12)';
-      badge.style.color = 'var(--text-2)';
-      badge.style.borderColor = 'var(--border)';
-    }
-  } catch { badge.textContent = '? unknown'; }
-}
-async function loadRTToken(){
-  try {
-    const d = await getJSON('/api/settings/rt-token');
-    const badge = document.getElementById('rtTokenBadge');
-    const inp   = document.getElementById('rtTokenInput');
-    if (d.token) {
-      badge.textContent = 'set ✓';
-      badge.style.background = 'rgba(52,211,153,0.15)';
-      badge.style.color = 'var(--green)';
-      badge.style.borderColor = 'rgba(52,211,153,0.3)';
-      inp.placeholder = '••••••••••••••••••••••• (saved)';
-    } else {
-      badge.textContent = 'not set';
-      badge.style.background = 'rgba(251,191,36,0.15)';
-      badge.style.color = 'var(--yellow)';
-      badge.style.borderColor = 'rgba(251,191,36,0.3)';
-    }
-  } catch {}
-}
-async function saveRTToken(){
-  const token = document.getElementById('rtTokenInput').value.trim();
-  if (!token) { showNotification('Paste a token first', 'error'); return; }
-  try {
-    await postJSON('/api/settings/rt-token', { token });
-    showNotification('RT Bus token saved');
-    document.getElementById('rtTokenInput').value = '';
-    loadRTToken();
-  } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
-}
-async function loadOpencodeProject(){
-  try {
-    const d = await getJSON('/api/settings/opencode-project');
-    const inp = document.getElementById('opencodeProjInput');
-    const st  = document.getElementById('opencodeProjStatus');
-    if (inp) { inp.placeholder = d.dir || 'e.g. /Users/you/Desktop/myproject'; inp.value = d.dir || ''; }
-    if (st) st.textContent = d.dir ? ('✅ Current: ' + d.dir) : '⚠️ Not set — OpenCode will write files to the CrewSwarm repo root. Set this to your project folder.';
-    const fbSel = document.getElementById('opencodeFallbackSelect');
-    const fbSt  = document.getElementById('opencodeFallbackStatus');
-    if (fbSel) {
-      if (_allModels.length === 0) {
-        const ac = await getJSON('/api/agents-config');
-        _allModels = ac.allModels || [];
-        _modelsByProvider = ac.modelsByProvider || {};
-      }
-      populateModelDropdown('opencodeFallbackSelect', d.fallbackModel || '');
-    }
-    if (fbSt) fbSt.textContent = d.fallbackModel ? ('✅ Fallback: ' + d.fallbackModel) : '⚠️ Using default groq/kimi-k2-instruct-0905';
-  } catch {}
-}
-async function saveOpencodeSettings(){
-  const dir = (document.getElementById('opencodeProjInput')?.value || '').trim();
-  const fallbackModel = (document.getElementById('opencodeFallbackSelect')?.value || '').trim();
-  try {
-    await postJSON('/api/settings/opencode-project', { dir: dir || undefined, fallbackModel: fallbackModel || undefined });
-    showNotification('OpenCode settings saved — fallback takes effect on next task (no restart needed)');
-    loadOpencodeProject();
-  } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
-}
-async function loadBgConsciousness() {
-  const btn = document.getElementById('bgConsciousnessBtn');
-  const status = document.getElementById('bgConsciousnessStatus');
-  const modelInput = document.getElementById('bgConsciousnessModel');
-  try {
-    const d = await getJSON('/api/settings/bg-consciousness');
-    const on = d.enabled;
-    if (btn) {
-      btn.textContent = on ? '🟢 ON' : '⚫ OFF';
-      btn.style.background = on ? 'rgba(34,197,94,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? 'var(--green-hi)' : 'var(--border)';
-      btn.style.color = on ? 'var(--green-hi)' : 'var(--text-2)';
-    }
-    if (modelInput && d.model) modelInput.placeholder = d.model;
-    if (status) status.textContent = on
-      ? 'Active — crew-lead reflects every ' + Math.round(d.intervalMs / 60000) + 'min when idle. Model: ' + d.model
-      : 'Off — crew-lead will not self-reflect between tasks.';
-  } catch(e) {
-    if (btn) btn.textContent = 'Error';
-    if (status) status.textContent = 'Could not load: ' + e.message;
-  }
-}
-async function toggleBgConsciousness() {
-  try {
-    const current = await getJSON('/api/settings/bg-consciousness');
-    const d = await postJSON('/api/settings/bg-consciousness', { enabled: !current.enabled });
-    showNotification('Background consciousness ' + (d.enabled ? 'ENABLED' : 'DISABLED'));
-    loadBgConsciousness();
-  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
-}
-async function saveBgConsciousnessModel() {
-  const modelInput = document.getElementById('bgConsciousnessModel');
-  const model = (modelInput?.value || '').trim();
-  if (!model) { showNotification('Enter a model first (e.g. groq/llama-3.3-70b-versatile)', 'error'); return; }
-  try {
-    await postJSON('/api/settings/bg-consciousness', { model });
-    showNotification('Background consciousness model → ' + model);
-    modelInput.value = '';
-    loadBgConsciousness();
-  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
-}
-async function loadCursorWaves() {
-  const btn = document.getElementById('cursorWavesBtn');
-  const status = document.getElementById('cursorWavesStatus');
-  try {
-    const d = await getJSON('/api/settings/cursor-waves');
-    const on = d.enabled;
-    if (btn) {
-      btn.textContent = on ? '⚡ ON' : '⚫ OFF';
-      btn.style.background = on ? 'rgba(168,85,247,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? '#a855f7' : 'var(--border)';
-      btn.style.color = on ? '#c084fc' : 'var(--text-2)';
-    }
-    if (status) status.textContent = on
-      ? 'Active — multi-agent waves fan out to Cursor subagents in parallel. crew-orchestrator coordinates each wave.'
-      : 'Off — each agent in a wave dispatches independently through the standard gateway.';
-  } catch(e) {
-    if (btn) btn.textContent = 'Error';
-    if (status) status.textContent = 'Could not load: ' + e.message;
-  }
-}
-async function toggleCursorWaves() {
-  try {
-    const current = await getJSON('/api/settings/cursor-waves');
-    const d = await postJSON('/api/settings/cursor-waves', { enabled: !current.enabled });
-    showNotification('Cursor Parallel Waves ' + (d.enabled ? 'ENABLED ⚡' : 'DISABLED'));
-    loadCursorWaves();
-  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
-}
-async function loadClaudeCode() {
-  const btn = document.getElementById('claudeCodeBtn');
-  const status = document.getElementById('claudeCodeStatus');
-  try {
-    const d = await getJSON('/api/settings/claude-code');
-    const on = d.enabled;
-    if (btn) {
-      btn.textContent = on ? '🤖 ON' : '⚫ OFF';
-      btn.style.background = on ? 'rgba(245,158,11,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? 'var(--amber)' : 'var(--border)';
-      btn.style.color = on ? 'var(--yellow)' : 'var(--text-2)';
-    }
-    if (status) {
-      if (!d.hasKey) {
-        status.textContent = '⚠️ ANTHROPIC_API_KEY not set — add it to ~/.crewswarm/crewswarm.json under providers.anthropic.apiKey or set the env var.';
-        status.style.color = 'var(--amber)';
-      } else {
-        status.textContent = on
-          ? 'Active — tasks route through Claude Code CLI. Per-agent override: set useClaudeCode: true in crewswarm.json.'
-          : 'Off — tasks use direct LLM or OpenCode. Enable to run agents through Claude Code CLI.';
-        status.style.color = 'var(--text-3)';
-      }
-    }
-  } catch(e) {
-    if (btn) btn.textContent = 'Error';
-    if (status) status.textContent = 'Could not load: ' + e.message;
-  }
-}
-async function loadCodexExecutor() {
-  const btn = document.getElementById('codexBtn');
-  const status = document.getElementById('codexStatus');
-  try {
-    const d = await getJSON('/api/settings/codex');
-    const on = d.enabled;
-    if (btn) {
-      btn.textContent = on ? '🟣 ON' : '⚫ OFF';
-      btn.style.background = on ? 'rgba(168,85,247,0.15)' : 'var(--surface-2)';
-      btn.style.borderColor = on ? '#a855f7' : 'var(--border)';
-      btn.style.color = on ? '#a855f7' : 'var(--text-2)';
-    }
-    if (status) {
-      status.textContent = on
-        ? 'Active — tasks route through Codex CLI. Per-agent override: set useCodex: true in crewswarm.json.'
-        : 'Off — tasks use direct LLM or other engine. Enable to route all coding agents through Codex CLI.';
-      status.style.color = 'var(--text-3)';
-    }
-  } catch(e) {
-    if (btn) btn.textContent = 'Error';
-    if (status) { status.textContent = 'Could not load: ' + e.message; status.style.color = 'var(--text-3)'; }
-  }
-}
-async function toggleCodexExecutor() {
-  try {
-    const current = await getJSON('/api/settings/codex');
-    const d = await postJSON('/api/settings/codex', { enabled: !current.enabled });
-    showNotification('Codex CLI executor ' + (d.enabled ? 'ENABLED 🟣' : 'DISABLED'));
-    loadCodexExecutor();
-  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
-}
-async function toggleClaudeCode() {
-  try {
-    const current = await getJSON('/api/settings/claude-code');
-    if (!current.hasKey) {
-      showNotification('Set ANTHROPIC_API_KEY first — add it in ~/.crewswarm/crewswarm.json under providers.anthropic.apiKey', 'error');
-      return;
-    }
-    const d = await postJSON('/api/settings/claude-code', { enabled: !current.enabled });
-    showNotification('Claude Code executor ' + (d.enabled ? 'ENABLED 🤖' : 'DISABLED'));
-    loadClaudeCode();
-  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
-}
-async function loadGlobalFallback() {
-  try {
-    const d = await getJSON('/api/settings/global-fallback');
-    const el = document.getElementById('globalFallbackInput');
-    if (el) el.value = d.globalFallbackModel || '';
-    const status = document.getElementById('globalFallbackStatus');
-    if (status) status.textContent = d.globalFallbackModel
-      ? 'Active: any agent without a per-agent fallback will use ' + d.globalFallbackModel
-      : 'Not set — agents without fallback will use the built-in default (groq/llama-3.3-70b-versatile).';
-  } catch(e) { console.warn('loadGlobalFallback:', e.message); }
-}
-async function saveGlobalFallback() {
-  const model = (document.getElementById('globalFallbackInput')?.value || '').trim();
-  try {
-    await postJSON('/api/settings/global-fallback', { globalFallbackModel: model });
-    showNotification(model ? 'Global fallback → ' + model : 'Global fallback cleared');
-    loadGlobalFallback();
-  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
-}
-async function saveGlobalOcLoop() {
-  const enabled = document.getElementById('globalOcLoop')?.checked;
-  try {
-    await postJSON('/api/settings/global-oc-loop', { enabled });
-    showNotification('Global OC loop ' + (enabled ? 'enabled' : 'disabled'));
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-async function saveGlobalOcLoopRounds() {
-  const rounds = parseInt(document.getElementById('globalOcLoopRounds')?.value) || 10;
-  try {
-    await postJSON('/api/settings/global-oc-loop', { maxRounds: rounds });
-    showNotification('Max rounds set to ' + rounds);
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-async function loadGlobalOcLoop() {
-  try {
-    const d = await getJSON('/api/settings/global-oc-loop');
-    const chk = document.getElementById('globalOcLoop');
-    const inp = document.getElementById('globalOcLoopRounds');
-    if (chk) chk.checked = d.enabled || false;
-    if (inp) inp.value = d.maxRounds ?? 10;
-  } catch(e) {}
-}
-async function loadPassthroughNotify() {
-  try {
-    const d = await getJSON('/api/settings/passthrough-notify');
-    const sel = document.getElementById('passthroughNotifySelect');
-    if (sel) sel.value = d.value || 'both';
-  } catch(e) {}
-}
-async function savePassthroughNotify() {
-  const value = document.getElementById('passthroughNotifySelect')?.value || 'both';
-  const st = document.getElementById('passthroughNotifyStatus');
-  try {
-    await postJSON('/api/settings/passthrough-notify', { value });
-    if (st) { st.textContent = '✓ Saved — takes effect on the next passthrough'; st.style.color = 'var(--green-hi)'; }
-    showNotification('Passthrough notifications → ' + value);
-  } catch(e) {
-    if (st) { st.textContent = 'Error: ' + e.message; st.style.color = 'var(--red)'; }
-  }
-}
-
-async function saveLoopBrain() {
-  const model = (document.getElementById('loopBrainModel')?.value || '').trim();
-  try {
-    await postJSON('/api/settings/loop-brain', { loopBrain: model || null });
-    showNotification(model ? `Loop brain → ${model}` : 'Loop brain cleared (each agent uses own model)');
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-window.saveLoopBrain = saveLoopBrain;
-
-async function loadLoopBrain() {
-  try {
-    const d = await getJSON('/api/settings/loop-brain');
-    const inp = document.getElementById('loopBrainModel');
-    if (inp && d.loopBrain) inp.value = d.loopBrain;
-  } catch {}
-}
-
-const ENV_GROUPS = [
-  {
-    label: 'Engine — OpenCode',
-    vars: [
-      { key: 'CREWSWARM_OPENCODE_ENABLED',          hint: 'Route coding agents through OpenCode globally',           default: 'off' },
-      { key: 'CREWSWARM_OPENCODE_MODEL',            hint: 'Model passed to OpenCode — leave blank to use per-agent model', default: 'per-agent' },
-      { key: 'CREWSWARM_OPENCODE_TIMEOUT_MS',       hint: 'ms before an OpenCode task is killed',                    default: '300000' },
-      { key: 'CREWSWARM_OPENCODE_AGENT',            hint: 'Override agent name passed to OpenCode',                  default: 'auto' },
-    ],
-  },
-  {
-    label: 'Engine — Claude Code & Cursor',
-    note: 'Both use OAuth login (run claude or cursor once). No API key required.',
-    vars: [
-      { key: 'CREWSWARM_CLAUDE_CODE_MODEL', hint: 'Model passed to claude -p — leave blank for Claude Code default', default: 'claude default' },
-      { key: 'CREWSWARM_CURSOR_MODEL',      hint: 'Model passed to cursor --execute — leave blank for Cursor default', default: 'cursor default' },
-    ],
-  },
-  {
-    label: 'Engine — Docker Sandbox',
-    note: 'Runs any inner engine inside an isolated Docker microVM. API keys injected by network proxy — never exposed to the agent.',
-    vars: [
-      { key: 'CREWSWARM_DOCKER_SANDBOX',              hint: 'Route all coding agents through Docker Sandbox globally', default: 'off' },
-      { key: 'CREWSWARM_DOCKER_SANDBOX_NAME',         hint: 'Pre-created sandbox name (docker sandbox create --name crewswarm shell <dir>)', default: 'crewswarm' },
-      { key: 'CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE', hint: 'Engine inside the sandbox: claude, opencode, or codex',  default: 'claude' },
-      { key: 'CREWSWARM_DOCKER_SANDBOX_TIMEOUT_MS',   hint: 'ms before a sandboxed task is killed',                   default: '300000' },
-    ],
-  },
-  {
-    label: 'Engine Loop & Dispatch',
-    vars: [
-      { key: 'CREWSWARM_ENGINE_LOOP',            hint: 'Enable Ouroboros engine loop for all agents (LLM ↔ engine until DONE)', default: 'off' },
-      { key: 'CREWSWARM_ENGINE_LOOP_MAX_ROUNDS', hint: 'Max STEP iterations per loop run',                          default: '10' },
-      { key: 'CREWSWARM_DISPATCH_TIMEOUT',         hint: 'ms before a dispatched task times out',                     default: '120000' },
-      { key: 'CREWSWARM_RT_AGENT',                 hint: 'Agent ID used for the RT bus',                              default: 'crew-coder' },
-    ],
-  },
-  {
-    label: 'Ports',
-    vars: [
-      { key: 'CREW_LEAD_PORT',  hint: 'crew-lead HTTP server port',   default: '5010' },
-      { key: 'SWARM_DASH_PORT', hint: 'Dashboard port',               default: '4319' },
-      { key: 'WA_HTTP_PORT',    hint: 'WhatsApp bridge HTTP port',    default: '3000' },
-    ],
-  },
-  {
-    label: 'Background Consciousness',
-    vars: [
-      { key: 'CREWSWARM_BG_CONSCIOUSNESS',             hint: 'Enable idle reflection loop (crew-main reflects between tasks)', default: 'off' },
-      { key: 'CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS', hint: 'Idle reflection interval in ms',                                 default: '900000' },
-      { key: 'CREWSWARM_BG_CONSCIOUSNESS_MODEL',       hint: 'Model for background cycle (e.g. groq/llama-3.1-8b-instant)',   default: 'groq/llama-3.1-8b-instant' },
-    ],
-  },
-  {
-    label: 'Messaging',
-    vars: [
-      { key: 'TELEGRAM_ALLOWED_USERNAMES', hint: 'Comma-separated Telegram usernames allowed to message the bot', default: 'all allowed' },
-      { key: 'WA_ALLOWED_NUMBERS',         hint: 'Comma-separated WhatsApp numbers in intl format (+1555…)',     default: 'all allowed' },
-    ],
-  },
-  {
-    label: 'Memory',
-    vars: [
-      { key: 'SHARED_MEMORY_NAMESPACE', hint: 'Namespace prefix for shared memory keys', default: 'crewswarm' },
-      { key: 'SHARED_MEMORY_DIR',       hint: 'Directory for shared memory files',       default: '~/.crewswarm/memory' },
-    ],
-  },
-  {
-    label: 'PM Loop',
-    vars: [
-      { key: 'PM_MAX_ITEMS',    hint: 'Max roadmap items per PM loop run',         default: '10' },
-      { key: 'PM_USE_QA',       hint: 'Include crew-qa in PM pipeline',            default: 'off' },
-      { key: 'PM_USE_SECURITY', hint: 'Include crew-security in PM pipeline',      default: 'off' },
-    ],
-  },
-];
-
-async function saveEnvVar(key, inputEl, statusEl) {
-  const val = inputEl.value.trim();
-  statusEl.textContent = 'Saving…';
-  statusEl.style.color = 'var(--text-3)';
-  try {
-    const r = await fetch('/api/env-advanced', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [key]: val || null }),
-    });
-    const d = await r.json();
-    if (d.ok) {
-      statusEl.textContent = val ? '✓ Saved' : '✓ Cleared';
-      statusEl.style.color = 'var(--green)';
-    } else {
-      statusEl.textContent = 'Error: ' + (d.error || 'unknown');
-      statusEl.style.color = 'var(--red, #f87171)';
-    }
-  } catch(e) {
-    statusEl.textContent = 'Error: ' + e.message;
-    statusEl.style.color = 'var(--red, #f87171)';
-  }
-  setTimeout(() => { statusEl.textContent = ''; }, 3000);
-}
-
-async function loadEnvAdvanced() {
-  const box = document.getElementById('envAdvancedWidget');
-  if (!box) return;
-  try {
-    const [envBasic, d] = await Promise.all([
-      getJSON('/api/env').catch(() => ({})),
-      getJSON('/api/env-advanced').catch(() => ({ env: {} })),
-    ]);
-    const env = d.env || {};
-
-    // Runtime info row
-    const uptime = envBasic.uptime != null
-      ? (envBasic.uptime < 60 ? envBasic.uptime + 's' : Math.floor(envBasic.uptime / 60) + 'm')
-      : '—';
-    let html = `<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:11px;color:var(--text-3);margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);">
-      <span>cwd: <code style="color:var(--text-2);">${escHtml(envBasic.cwd || '—')}</code></span>
-      <span>node: <code style="color:var(--text-2);">${escHtml(envBasic.node || '—')}</code></span>
-      <span>uptime: <code style="color:var(--text-2);">${uptime}</code></span>
-    </div>`;
-
-    box.innerHTML = html;
-
-    for (const group of ENV_GROUPS) {
-      const section = document.createElement('div');
-      section.style.cssText = 'margin-bottom:18px;';
-      section.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:${group.note ? '4px' : '8px'};">${escHtml(group.label)}</div>`
-        + (group.note ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px;line-height:1.4;">${escHtml(group.note)}</div>` : '');
-
-      for (const { key, hint, default: def } of group.vars) {
-        const current = env[key] ?? '';
-        const placeholder = def ? `default: ${def}` : 'not set';
-        const row = document.createElement('div');
-        row.style.cssText = 'margin-bottom:8px;';
-        row.innerHTML = `
-          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px;">
-            <span style="font-size:11px;font-family:monospace;color:var(--accent);">${escHtml(key)}</span>
-            ${!current && def ? `<span style="font-size:10px;color:var(--text-3);font-family:monospace;background:var(--bg-1);padding:1px 5px;border-radius:4px;border:1px solid var(--border);">${escHtml(def)}</span>` : ''}
-          </div>
-          <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;">${escHtml(hint)}</div>
-          <div style="display:flex;gap:6px;align-items:center;">
-            <input data-env-key="${escHtml(key)}" type="text" value="${escHtml(current)}"
-              placeholder="${escHtml(placeholder)}"
-              style="flex:1;font-size:12px;font-family:monospace;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:${current ? 'var(--text-1)' : 'var(--text-3)'};" />
-            <button data-env-save="${escHtml(key)}" style="font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;">Save</button>
-            <span data-env-status="${escHtml(key)}" style="font-size:11px;min-width:50px;"></span>
-          </div>`;
-        section.appendChild(row);
-      }
-      box.appendChild(section);
-    }
-
-    // Wire up save buttons
-    box.querySelectorAll('[data-env-save]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const key = btn.dataset.envSave;
-        const inputEl = box.querySelector(`[data-env-key="${key}"]`);
-        const statusEl = box.querySelector(`[data-env-status="${key}"]`);
-        if (inputEl && statusEl) saveEnvVar(key, inputEl, statusEl);
-      });
-    });
-    // Style inputs on change
-    box.querySelectorAll('[data-env-key]').forEach(inp => {
-      inp.addEventListener('input', () => {
-        inp.style.color = inp.value ? 'var(--text-1)' : 'var(--text-3)';
-      });
-    });
-  } catch(e) {
-    if (box) box.textContent = 'Could not load: ' + e.message;
-  }
-}
 function showSettings(){
   hideAllViews();
   document.getElementById('settingsView').classList.add('active');
@@ -2543,7 +1108,7 @@ function showSettingsTab(tab){
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
   if (tab === 'engines')  { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadCodexExecutor(); loadGlobalOcLoop(); loadLoopBrain(); loadPassthroughNotify(); }
-  if (tab === 'comms')    { loadTgStatus(); loadTelegramSessions(); loadTgMessages(); loadTgConfig(); loadWaStatus(); loadWaConfig(); loadWaMessages(); }
+  if (tab === 'comms')    { loadCommsTabData(); }
   if (tab === 'security') { loadCmdAllowlist(); loadEnvAdvanced(); }
   if (tab === 'webhooks') { /* static */ }
   // Update URL hash for deep linking — e.g. #settings/telegram
@@ -2552,15 +1117,12 @@ function showSettingsTab(tab){
   }
 }
 
-// ── Engines ──────────────────────────────────────────────────────────────────
-const ENGINE_ICONS = {
-  opencode:       `<svg viewBox="0 0 24 30" width="20" height="24" fill="#38bdf8"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`,
-  cursor:         `<svg viewBox="0 0 24 24" width="20" height="20" fill="#818cf8"><path d="M4 4l8 16 3-7 7-3L4 4z"/></svg>`,
-  claude:         `<svg viewBox="0 0 24 24" width="20" height="20" fill="#d4a853"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>`,
-  codex:          `<svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="12" cy="12" r="10" stroke="#a78bfa" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-  "docker-sandbox": `<svg viewBox="0 0 24 24" width="20" height="20" fill="#2496ed"><path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.186.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.186.185.186m-2.943 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.157a.185.185 0 00-.185.185v1.887c0 .102.083.186.185.186m8.763 2.714h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/></svg>`,
-};
+initCommsTab({ showSettings, showSettingsTab });
+initSettingsTab({ getModels: loadAgents_cfg, populateModelDropdown });
+initModelsTab({ hideAllViews, setNavActive, loadAgents });
+initAddProviderForm();
 
+// ── Engines → engines-tab.js ─────────────────────────────────────────────────
 function showEngines(){
   hideAllViews();
   document.getElementById('enginesView').classList.add('active');
@@ -2568,124 +1130,9 @@ function showEngines(){
   loadEngines();
 }
 
-function toggleImportEngine(){
-  const f = document.getElementById('importEngineForm');
-  if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
-}
+// showSkills / showRunSkills → skills-tab.js
 
-async function importEngineFromUrl(){
-  const inp = document.getElementById('importEngineUrl');
-  const status = document.getElementById('importEngineStatus');
-  const url = inp?.value?.trim();
-  if (!url || !status) return;
-  status.textContent = 'Importing…'; status.style.color = 'var(--text-3)';
-  try {
-    const d = await postJSON('/api/engines/import', { url });
-    if (d.ok) {
-      status.textContent = `✓ Imported ${d.label}`; status.style.color = 'var(--green)';
-      inp.value = '';
-      loadEngines();
-    } else {
-      status.textContent = 'Error: ' + (d.error || 'unknown'); status.style.color = 'var(--red,#f87171)';
-    }
-  } catch(e) {
-    status.textContent = 'Error: ' + e.message; status.style.color = 'var(--red,#f87171)';
-  }
-}
-
-async function deleteEngine(id){
-  if (!confirm(`Remove engine "${id}"?`)) return;
-  await fetch(`/api/engines/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  loadEngines();
-}
-
-async function loadEngines(){
-  const grid = document.getElementById('enginesGrid');
-  if (!grid) return;
-  grid.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px;">Loading…</div>';
-  try {
-    const { engines = [] } = await getJSON('/api/engines');
-    if (!engines.length) {
-      grid.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px;">No engines found.</div>';
-      return;
-    }
-    grid.innerHTML = '';
-    for (const eng of engines) {
-      const card = document.createElement('div');
-      card.className = 'card';
-      card.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
-      const iconHtml = ENGINE_ICONS[eng.icon || eng.id] || `<span style="font-size:20px;">⚙️</span>`;
-      const statusDot = eng.ready ? '🟢' : eng.installed ? '🟡' : '⚫';
-      const statusLabel = eng.ready ? 'Ready' : eng.installed ? 'Installed — missing env vars' : 'Not installed';
-      const statusColor = eng.ready ? 'var(--green)' : eng.installed ? 'var(--yellow,#fbbf24)' : 'var(--text-3)';
-      const traitsHtml = (eng.traits || []).map(t =>
-        `<li style="font-size:11px;color:var(--text-3);list-style:none;padding:2px 0;">▸ ${escHtml(t)}</li>`
-      ).join('');
-      const missingHtml = eng.missingEnv?.length
-        ? `<div style="font-size:11px;color:var(--yellow,#fbbf24);margin-top:4px;">Missing env: ${eng.missingEnv.map(e => `<code style="background:var(--bg-1);padding:1px 3px;border-radius:3px;">${escHtml(e)}</code>`).join(', ')}</div>`
-        : '';
-      const installHtml = !eng.installed
-        ? `<div style="margin-top:6px;"><div style="font-size:11px;color:var(--text-3);margin-bottom:4px;">Install:</div>
-           <code style="font-size:11px;background:var(--bg-1);padding:4px 8px;border-radius:4px;display:block;word-break:break-all;">${escHtml(eng.installCmd || '')}</code>
-           ${eng.installUrl ? `<a href="${escHtml(eng.installUrl)}" target="_blank" style="font-size:11px;color:var(--accent);margin-top:4px;display:inline-block;">↗ Install guide</a>` : ''}
-          </div>` : '';
-      const bestForHtml = eng.bestFor?.length
-        ? `<div style="font-size:11px;color:var(--text-3);">Best for: ${eng.bestFor.map(a => `<code style="background:var(--bg-1);padding:1px 3px;border-radius:3px;">${escHtml(a)}</code>`).join(' ')}</div>`
-        : '';
-      const deleteBtn = eng.source === 'user'
-        ? `<button onclick="deleteEngine('${escHtml(eng.id)}')" style="font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-3);">Remove</button>`
-        : '';
-      card.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div style="display:flex;align-items:center;gap:10px;">
-            ${iconHtml}
-            <div>
-              <div style="font-weight:700;font-size:14px;">${escHtml(eng.label)}</div>
-              <div style="font-size:11px;color:${statusColor};">${statusDot} ${escHtml(statusLabel)}</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;">
-            ${eng.docsUrl ? `<a href="${escHtml(eng.docsUrl)}" target="_blank" class="btn-ghost" style="font-size:11px;padding:4px 8px;text-decoration:none;">Docs ↗</a>` : ''}
-            ${deleteBtn}
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--text-2);line-height:1.5;">${escHtml(eng.description || '')}</div>
-        ${missingHtml}
-        ${installHtml}
-        <ul style="margin:0;padding:0;">${traitsHtml}</ul>
-        ${bestForHtml}
-      `;
-      grid.appendChild(card);
-    }
-  } catch(e) {
-    grid.innerHTML = `<div style="color:var(--red,#f87171);font-size:13px;">Error: ${escHtml(e.message)}</div>`;
-  }
-}
-
-function showSkills(){
-  hideAllViews();
-  document.getElementById('skillsView').classList.add('active');
-  setNavActive('navSkills');
-  loadSkills();
-  loadPendingApprovals();
-}
-
-function showRunSkills(){
-  hideAllViews();
-  document.getElementById('runSkillsView').classList.add('active');
-  setNavActive('navRunSkills');
-  loadRunSkills();
-}
-
-function showBenchmarks(){
-  hideAllViews();
-  document.getElementById('benchmarksView').classList.add('active');
-  setNavActive('navBenchmarks');
-  loadBenchmarkOptions().then(() => {
-    const sel = document.getElementById('benchmarkSelect');
-    if (sel && sel.value) loadBenchmarkLeaderboard(sel.value);
-  });
-}
+const showBenchmarks = () => showBenchmarksTab({ hideAllViews, setNavActive });
 
 function showToolMatrix(){
   hideAllViews();
@@ -2697,70 +1144,7 @@ function showToolMatrix(){
 // keep old name working for any legacy calls
 function showIntegrations(){ showSkills(); }
 
-// ── Run skills (from health snapshot) ───────────────────────────────────────────
-async function loadRunSkills(){
-  const el = document.getElementById('runSkillsGrid');
-  if (!el) return;
-  try {
-    const d = await (await fetch('/api/health')).json();
-    const skills = (d.skills || []).filter(s => !s.error);
-    if (!skills.length) {
-      el.innerHTML = '<div style="color:var(--text-3);font-size:13px;">No skills in health snapshot. Add skills in the Skills tab or add JSON files to ~/.crewswarm/skills/</div>';
-      return;
-    }
-    el.innerHTML = skills.map(s => {
-      const defaults = s.defaultParams && Object.keys(s.defaultParams).length
-        ? JSON.stringify(s.defaultParams, null, 2)
-        : '{}';
-      const paramHint = (s.paramNotes || s.description || '').slice(0, 120);
-      const safeName = (s.name || '').replace(/"/g, '&quot;');
-      return '<div class="card" style="display:flex;flex-direction:column;">'
-        + '<div class="card-title" style="margin-bottom:6px;">' + (s.name || 'unnamed') + '</div>'
-        + '<div style="font-size:12px;color:var(--text-3);margin-bottom:10px;line-height:1.4;">' + (s.description || '') + '</div>'
-        + (paramHint ? '<div style="font-size:11px;color:var(--text-2);margin-bottom:8px;">' + paramHint + '</div>' : '')
-        + '<label style="font-size:11px;color:var(--text-2);margin-bottom:4px;">Params (JSON)</label>'
-        + '<textarea data-skill="' + safeName + '" rows="4" style="font-family:monospace;font-size:12px;width:100%;margin-bottom:10px;resize:vertical;" class="runskills-params">' + defaults.replace(/</g, '&lt;') + '</textarea>'
-        + '<div style="display:flex;align-items:center;gap:8px;margin-top:auto;">'
-        + '<button class="btn-green" style="font-size:12px;" data-action="runSkillFromUI" data-arg="' + safeName + '">Run</button>'
-        + '<span class="runskills-result" data-skill="' + safeName + '" style="font-size:11px;color:var(--text-3);"></span>'
-        + '</div></div>';
-    }).join('');
-  } catch (e) {
-    el.innerHTML = '<div style="color:var(--red);font-size:12px;">Error loading health/skills: ' + (e.message || '') + '</div>';
-  }
-}
-
-async function runSkillFromUI(skillName){
-  const textarea = document.querySelector('.runskills-params[data-skill="' + (skillName || '').replace(/"/g, '\\"') + '"]');
-  const resultEl = document.querySelector('.runskills-result[data-skill="' + (skillName || '').replace(/"/g, '\\"') + '"]');
-  if (!textarea) return;
-  let params = {};
-  try { params = JSON.parse(textarea.value.trim() || '{}'); } catch (e) {
-    if (resultEl) resultEl.textContent = 'Invalid JSON';
-    return;
-  }
-  if (resultEl) resultEl.textContent = 'Running…';
-  try {
-    const r = await fetch('/api/skills/' + encodeURIComponent(skillName) + '/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ params })
-    });
-    const data = await r.json();
-    if (resultEl) {
-      if (data.ok) resultEl.textContent = 'Done';
-      else resultEl.textContent = data.error || 'Error';
-      resultEl.style.color = data.ok ? 'var(--green)' : 'var(--red)';
-    }
-    if (!data.ok) return;
-    if (data.result !== undefined && resultEl) {
-      const preview = typeof data.result === 'string' ? data.result : JSON.stringify(data.result).slice(0, 120);
-      resultEl.textContent = preview + (preview.length >= 120 ? '…' : '');
-    }
-  } catch (e) {
-    if (resultEl) { resultEl.textContent = e.message || 'Request failed'; resultEl.style.color = 'var(--red)'; }
-  }
-}
+// loadRunSkills / runSkillFromUI → skills-tab.js
 
 // ── Task lifecycle (telemetry schema 1.1) ────────────────────────────────────────
 window._telemetryEvents = window._telemetryEvents || [];
@@ -2844,161 +1228,7 @@ async function restartAgentFromUI(agentId){
   } catch (e) { showNotification(e.message || 'Request failed', 'error'); }
 }
 
-// ── Skills ────────────────────────────────────────────────────────────────────
-let _skillsCache = [];
-
-async function loadSkills(){
-  const el = document.getElementById('skillsList');
-  try {
-    const d = await (await fetch('/api/skills')).json();
-    _skillsCache = d.skills || [];
-    renderSkillsList(_skillsCache);
-  } catch(e) { el.innerHTML = '<div style="color:var(--text-3);font-size:12px;">Error loading skills</div>'; }
-}
-
-function renderSkillsList(skills){
-  const el = document.getElementById('skillsList');
-  if (!skills.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0;">No skills match. Add one above or copy JSONs to ~/.crewswarm/skills/</div>'; return; }
-  el.innerHTML = skills.map(s => {
-    const approvalBadge = s.requiresApproval ? '<span style="margin-left:8px;font-size:10px;background:rgba(251,191,36,0.15);color:var(--yellow);padding:2px 6px;border-radius:4px;">⚠️ approval</span>' : '';
-    const urlNote = s.url ? ' · <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">' + (s.method||'POST') + ' ' + (s.url||'').slice(0,60) + '</code>' : '';
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border);">'
-         + '<div><span style="font-weight:600;font-size:13px;">' + s.name + '</span>' + approvalBadge
-         + '<div style="font-size:11px;color:var(--text-3);margin-top:3px;">' + (s.description||'') + urlNote + '</div></div>'
-         + '<div style="display:flex;gap:6px;flex-shrink:0;">'
-         + '<button class="btn-ghost" style="font-size:11px;" data-action="editSkill" data-arg="' + s.name + '">Edit</button>'
-         + '<button class="btn-ghost" style="font-size:11px;color:var(--red);" data-action="deleteSkill" data-arg="' + s.name + '">Delete</button>'
-         + '</div></div>';
-  }).join('');
-}
-
-function filterSkills(q){
-  const lower = q.toLowerCase();
-  renderSkillsList(lower ? _skillsCache.filter(s =>
-    (s.name||'').toLowerCase().includes(lower) ||
-    (s.description||'').toLowerCase().includes(lower) ||
-    (s.url||'').toLowerCase().includes(lower)
-  ) : _skillsCache);
-}
-
-function editSkill(name){
-  const s = _skillsCache.find(x => x.name === name);
-  if (!s) return;
-  document.getElementById('skEditName').value = name;
-  document.getElementById('addSkillFormTitle').textContent = 'Edit Skill';
-  document.getElementById('saveSkillBtn').textContent = 'Update Skill';
-  document.getElementById('skName').value = s.name || '';
-  document.getElementById('skDesc').value = s.description || '';
-  document.getElementById('skUrl').value = s.url || '';
-  const meth = document.getElementById('skMethod');
-  for (let i = 0; i < meth.options.length; i++) if (meth.options[i].value === s.method) { meth.selectedIndex = i; break; }
-  const authType = s.auth?.type || '';
-  document.getElementById('skAuthType').value = authType;
-  document.getElementById('skAuthKey').value = s.auth?.keyFrom || s.auth?.token || '';
-  document.getElementById('skAuthHeader').value = s.auth?.header || '';
-  document.getElementById('skRequiresApproval').checked = !!s.requiresApproval;
-  document.getElementById('skDefaults').value = s.defaultParams && Object.keys(s.defaultParams).length ? JSON.stringify(s.defaultParams, null, 2) : '';
-  updateSkillAuthFields();
-  const f = document.getElementById('addSkillForm');
-  f.style.display = 'block';
-  f.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function toggleAddSkill(){
-  cancelSkillForm();
-  document.getElementById('importSkillForm').style.display = 'none';
-  const f = document.getElementById('addSkillForm');
-  f.style.display = f.style.display === 'none' ? 'block' : 'none';
-}
-
-function toggleImportSkill(){
-  cancelSkillForm();
-  const f = document.getElementById('importSkillForm');
-  f.style.display = f.style.display === 'none' ? 'block' : 'none';
-  if (f.style.display !== 'none') setTimeout(() => document.getElementById('importSkillUrl').focus(), 50);
-}
-
-async function importSkillFromUrl(){
-  const urlInput = document.getElementById('importSkillUrl');
-  const status   = document.getElementById('importSkillStatus');
-  const btn      = document.getElementById('importSkillBtn');
-  const skillUrl = urlInput.value.trim();
-  if (!skillUrl) { status.style.color = 'var(--red)'; status.textContent = 'Paste a URL first.'; return; }
-  btn.disabled = true; btn.textContent = 'Importing…';
-  status.style.color = 'var(--text-3)'; status.textContent = 'Fetching & scanning…';
-  try {
-    const r = await fetch('/api/skills/import', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ url: skillUrl }) });
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || 'Import failed');
-    // Show security warnings if any
-    if (d.warnings && d.warnings.length) {
-      status.style.color = 'var(--yellow)';
-      const warnLabels = { cmd_skill: '⚠ executes shell commands', ssrf_risk: '⚠ targets private network', insecure_url: '⚠ non-HTTPS endpoint', no_approval: '⚠ no approval gate on write' };
-      const msgs = d.warnings.map(w => warnLabels[w.split(':')[0]] || w);
-      status.innerHTML = '✓ Imported <strong>"' + d.name + '"</strong> — ' + msgs.join(' · ');
-    } else {
-      status.style.color = 'var(--green)';
-      status.textContent = '✓ Imported "' + d.name + '" — no security warnings';
-    }
-    urlInput.value = '';
-    await loadSkills();
-    if (!d.warnings || !d.warnings.length) {
-      setTimeout(() => { document.getElementById('importSkillForm').style.display = 'none'; status.textContent = ''; }, 3000);
-    }
-  } catch(e) {
-    status.style.color = 'var(--red)';
-    status.textContent = 'Error: ' + e.message;
-  } finally { btn.disabled = false; btn.textContent = 'Import'; }
-}
-
-function cancelSkillForm(){
-  document.getElementById('skEditName').value = '';
-  document.getElementById('addSkillFormTitle').textContent = 'New Skill';
-  document.getElementById('saveSkillBtn').textContent = 'Save Skill';
-  document.getElementById('addSkillForm').style.display = 'none';
-  ['skName','skDesc','skUrl','skAuthKey','skAuthHeader','skDefaults'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
-  document.getElementById('skAuthType').value = '';
-  document.getElementById('skRequiresApproval').checked = false;
-  updateSkillAuthFields();
-}
-function updateSkillAuthFields(){
-  const t = document.getElementById('skAuthType').value;
-  document.getElementById('skAuthHeaderWrap').style.display = t === 'header' ? 'block' : 'none';
-}
-async function saveSkill(){
-  const name = document.getElementById('skName').value.trim();
-  const url  = document.getElementById('skUrl').value.trim();
-  if (!name || !url) { alert('Skill name and URL are required'); return; }
-  let defaultParams = {};
-  try { const v = document.getElementById('skDefaults').value.trim(); if(v) defaultParams = JSON.parse(v); } catch { alert('Default Params must be valid JSON'); return; }
-  const authType = document.getElementById('skAuthType').value;
-  const authKeyRaw = document.getElementById('skAuthKey').value.trim();
-  let auth = {};
-  if (authType && authKeyRaw) {
-    auth = { type: authType };
-    if (authKeyRaw.startsWith('providers.') || authKeyRaw.startsWith('env.')) auth.keyFrom = authKeyRaw;
-    else auth.token = authKeyRaw;
-    if (authType === 'header') auth.header = document.getElementById('skAuthHeader').value.trim() || 'X-API-Key';
-  }
-  const editingName = document.getElementById('skEditName').value.trim();
-  const body = { name, url, method: document.getElementById('skMethod').value, description: document.getElementById('skDesc').value.trim(), auth: Object.keys(auth).length ? auth : undefined, defaultParams, requiresApproval: document.getElementById('skRequiresApproval').checked };
-  try {
-    // If renaming, delete old file first
-    if (editingName && editingName !== name) {
-      await fetch('/api/skills/' + editingName, { method: 'DELETE' });
-    }
-    const r = await fetch('/api/skills', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(await r.text());
-    cancelSkillForm();
-    loadSkills();
-    showNotification(editingName ? 'Skill updated' : 'Skill saved');
-  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
-}
-async function deleteSkill(name){
-  if (!confirm('Delete skill "' + name + '"?')) return;
-  try { const r = await fetch('/api/skills/' + name, { method: 'DELETE' }); if(!r.ok) throw new Error(await r.text()); loadSkills(); showNotification('Deleted'); }
-  catch(e) { showNotification('Delete failed: ' + e.message, 'error'); }
-}
+// ── Skills → skills-tab.js ─────────────────────────────────────────────────────
 
 // ── Spending ──────────────────────────────────────────────────────────────────
 var _agentTotalCost = null;
@@ -3187,704 +1417,13 @@ async function rejectSkill(approvalId){
 }
 
 /* agents tab extracted to tabs/agents-tab.js */
-const PROVIDER_ICONS = { opencode:'🚀', groq:'⚡', nvidia:'🎮', ollama:'🏠', 'openai-local':'🟢', xai:'𝕏', google:'🔵', deepseek:'🌊', openai:'🟢', perplexity:'🔍', cerebras:'🧠', mistral:'🌀', together:'🤝', cohere:'🔶', anthropic:'🟣' };
-async function loadProviders(){
-  const list = document.getElementById('providersList');
-  list.innerHTML = '<div class="meta" style="padding:20px;">Loading providers...</div>';
-  try {
-    const data = await getJSON('/api/providers');
-    const providers = data.providers || [];
-    if (!providers.length){ list.innerHTML = '<div class="meta" style="padding:20px;">No providers found. Check ~/.crewswarm/crewswarm.json</div>'; return; }
-    list.innerHTML = '';
-    providers.forEach(p => {
-      const icon = PROVIDER_ICONS[p.id] || '🔌';
-      const hasKey = p.hasKey;
-      const badgeColor = hasKey ? '#10b981' : 'var(--red-hi)';
-      const badgeText = hasKey ? '✓ key set' : '✗ no key';
-      const card = document.createElement('div');
-      card.className = 'provider-card';
-      card.innerHTML = `
-        <div class="provider-header" data-toggle-sibling="open">
-          <span style="font-size:20px;">${icon}</span>
-          <div style="flex:1;">
-            <strong style="font-size:15px;">${p.id}</strong>
-            <span class="meta" style="margin-left:10px;">${p.baseUrl}</span>
-          </div>
-          <span class="provider-badge" style="background:${badgeColor}20; color:${badgeColor}; border:1px solid ${badgeColor}40;">${badgeText}</span>
-          <span class="meta" style="margin-left:12px;">${p.models.length} model${p.models.length !== 1 ? 's' : ''}</span>
-          <span style="color:#64748b; margin-left:8px;">▼</span>
-        </div>
-        <div class="provider-body">
-          <div class="key-row">
-            <input class="key-input" type="password" autocomplete="new-password" id="key_${p.id}" value="${p.maskedKey || ''}" placeholder="Paste API key…" />
-            <button data-action="toggleKeyVis" data-arg="key_${p.id}" data-self="1" style="background:#334155; padding:6px 10px; font-size:12px;">👁</button>
-            <button data-action="saveKey" data-arg="${p.id}" style="background:#6366f1; padding:6px 14px; font-size:12px;">Save</button>
-            <button data-action="testKey" data-arg="${p.id}" style="background:#334155; padding:6px 10px; font-size:12px;">Test</button>
-            <button data-action="fetchModels" data-arg="${p.id}" data-self="1" style="background:#0f766e; padding:6px 10px; font-size:12px;">↻ Fetch models</button>
-            <span id="test_${p.id}"></span>
-          </div>
-          <div style="margin-bottom:8px;"><span class="meta">Base URL: </span><code style="font-size:11px; color:#94a3b8;">${p.baseUrl}</code></div>
-          <div><span class="meta" style="display:block; margin-bottom:6px;">Models (<span id="mcount_${p.id}">${p.models.length}</span>):</span><span id="mtags_${p.id}">${p.models.map(m => '<span class="model-tag">' + m.id + '</span>').join('')}</span></div>
-          ${p.models.length === 0 ? '<div class="meta" style="margin-top:8px; color:var(--amber);" id="mnone_${p.id}">No models yet — click ↻ Fetch models</div>' : ''}
-        </div>
-      `;
-      list.appendChild(card);
-    });
-  } catch(e){ list.innerHTML = '<div class="meta" style="padding:20px; color:var(--red-hi);">Error: ' + e.message + '</div>'; }
-}
-function toggleKeyVis(inputId, btn){
-  const inp = document.getElementById(inputId);
-  inp.type = inp.type === 'password' ? 'text' : 'password';
-  btn.textContent = inp.type === 'password' ? '👁' : '🙈';
-}
-async function saveKey(providerId){
-  const inp = document.getElementById('key_' + providerId);
-  const key = inp.value.trim();
-  if (!key){ showNotification('Key is empty', true); return; }
-  try {
-    await postJSON('/api/providers/save', { providerId, apiKey: key });
-    showNotification('Saved key for ' + providerId);
-    loadProviders();
-  } catch(e){ showNotification('Failed: ' + e.message, true); }
-}
-async function testKey(providerId){
-  const statusEl = document.getElementById('test_' + providerId);
-  statusEl.textContent = 'testing…';
-  statusEl.className = 'meta';
-  try {
-    const r = await postJSON('/api/providers/test', { providerId });
-    statusEl.textContent = r.ok ? '✓ ' + (r.model || 'ok') : '✗ ' + r.error;
-    statusEl.className = r.ok ? 'test-ok' : 'test-err';
-  } catch(e){ statusEl.textContent = '✗ ' + e.message; statusEl.className = 'test-err'; }
-}
-async function fetchModels(providerId, btn){
-  const statusEl = document.getElementById('test_' + providerId);
-  const origText = btn.textContent;
-  btn.textContent = 'Fetching…';
-  btn.disabled = true;
-  if (statusEl) statusEl.textContent = '';
-  try {
-    const r = await postJSON('/api/providers/fetch-models', { providerId });
-    if (r.ok) {
-      const tags = document.getElementById('mtags_' + providerId);
-      const count = document.getElementById('mcount_' + providerId);
-      const none = document.getElementById('mnone_' + providerId);   // old provider-card style
-      const wrap = document.getElementById('mwrap_' + providerId);   // new unified-list style
-      if (tags)  tags.innerHTML = r.models.map(m => '<span class="model-tag">' + m + '</span>').join('');
-      if (count) count.textContent = r.models.length;
-      if (none)  none.style.display = 'none';
-      if (wrap)  wrap.style.display = 'block';
-      if (statusEl) { statusEl.textContent = '✓ ' + r.models.length + ' models'; statusEl.className = 'test-ok'; }
-      loadAgents(); // refresh agent model dropdowns
-    } else {
-      if (statusEl) { statusEl.textContent = '✗ ' + r.error; statusEl.className = 'test-err'; }
-    }
-  } catch(e){
-    if (statusEl) { statusEl.textContent = '✗ ' + e.message; statusEl.className = 'test-err'; }
-  }
-  finally { btn.textContent = origText; btn.disabled = false; }
-}
-document.getElementById('addProviderBtn').onclick = () => {
-  const form = document.getElementById('addProviderForm');
-  form.style.display = 'block';
-  setTimeout(() => form.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-  const firstInput = form.querySelector('input');
-  if (firstInput) setTimeout(() => firstInput.focus(), 150);
-};
-document.getElementById('apCancelBtn').onclick = () => {
-  document.getElementById('addProviderForm').style.display = 'none';
-};
-document.getElementById('apSaveBtn').onclick = async () => {
-  const id = document.getElementById('apId').value.trim();
-  const baseUrl = document.getElementById('apBaseUrl').value.trim();
-  const apiKey = document.getElementById('apKey').value.trim();
-  const api = document.getElementById('apApi').value;
-  if (!id || !baseUrl){ showNotification('ID and Base URL are required', true); return; }
-  try {
-    await postJSON('/api/providers/add', { id, baseUrl, apiKey, api });
-    showNotification('Provider added: ' + id);
-    document.getElementById('addProviderForm').style.display = 'none';
-    loadBuiltinProviders(); // unified list re-renders with new custom provider appended
-  } catch(e){ showNotification('Failed: ' + e.message, true); }
-};
-document.getElementById('refreshProvidersBtn').onclick = loadBuiltinProviders;
-function showBuild(){
-  hideAllViews();
-  document.getElementById('buildView').classList.add('active');
-  setNavActive('navBuild');
-  loadPhasedProgress();
-}
-function showProjects(){
-  hideAllViews();
-  document.getElementById('projectsView').classList.add('active');
-  setNavActive('navProjects');
-  loadProjects();
-}
-// Project registry cache — populated by loadProjects, used by delegated handler
-let _projectsData = {};
+function showBuild(){ _showBuild({ hideAllViews, setNavActive }); }
+function showProjects(){ _showProjects({ hideAllViews, setNavActive }); }
 
-async function loadProjects(){
-  const list = document.getElementById('projectsList');
-  list.innerHTML = '<div class="meta" style="padding:20px;">Loading projects...</div>';
-  try {
-    const data = await getJSON('/api/projects');
-    const projects = data.projects || [];
-    _projectsData = {};
-    projects.forEach(p => { _projectsData[p.id] = p; });
-    populateChatProjectDropdown(projects);
-    if (!projects.length) {
-      list.innerHTML = '<div class="meta" style="padding:20px;">No projects yet. Click &quot;+ New Project&quot; to create one.</div>';
-      return;
-    }
-    // Build HTML using ONLY data-action + data-id on buttons — zero dynamic data in onclick strings
-    list.innerHTML = projects.map(p => {
-      const id  = escHtml(p.id);
-      const pct = p.roadmap.total ? Math.round((p.roadmap.done / p.roadmap.total) * 100) : 0;
-      const barColor   = pct === 100 ? 'var(--green)' : pct > 50 ? 'var(--accent)' : 'var(--yellow)';
-      const statusBg   = p.status === 'active' ? 'rgba(52,211,153,0.1)' : 'var(--bg-card2)';
-      const statusColor= p.status === 'active' ? 'var(--green)' : 'var(--text-3)';
-      const retryBtn   = p.roadmap.failed
-        ? '<button data-action="retry-failed" data-id="' + id + '" style="background:rgba(248,113,113,0.15);color:var(--red);border:1px solid rgba(248,113,113,0.3);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px;font-weight:600;">↩ Retry ' + p.roadmap.failed + ' failed</button>'
-        : '';
-      return '<div class="card" id="proj-card-' + id + '" data-proj-id="' + id + '">'
-        + '<div id="proj-view-' + id + '">'
-        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">'
-        +   '<div>'
-        +     '<strong style="font-size:15px;">' + escHtml(p.name) + '</strong>'
-        +     '<span style="margin-left:10px;font-size:11px;padding:2px 8px;border-radius:999px;background:' + statusBg + ';color:' + statusColor + ';border:1px solid ' + statusColor + '40;">' + escHtml(p.status) + '</span>'
-        +     (p.running ? '<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:var(--purple);border:1px solid rgba(99,102,241,0.3);">▶ running</span>' : '')
-        +     (p.description ? '<div class="meta" style="margin-top:4px;">' + escHtml(p.description) + '</div>' : '')
-        +   '</div>'
-        +   '<div class="meta">' + new Date(p.created).toLocaleDateString() + '</div>'
-        + '</div>'
-        + '<div style="margin-bottom:12px;">'
-        +   '<div style="display:flex;justify-content:space-between;margin-bottom:6px;">'
-        +     '<span class="meta">Roadmap</span>'
-        +     '<span class="meta">' + p.roadmap.done + '/' + p.roadmap.total + ' done' + (p.roadmap.failed ? ' · ' + p.roadmap.failed + ' failed' : '') + ' · ' + p.roadmap.pending + ' pending</span>'
-        +   '</div>'
-        +   '<div class="prog-bar"><div class="prog-fill" style="width:' + pct + '%;background:' + barColor + ';"></div></div>'
-        + '</div>'
-        + '<div style="font-size:11px;color:var(--text-3);margin-bottom:12px;font-family:monospace;">' + escHtml(p.outputDir) + '</div>'
-        + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
-        +   '<button data-action="pm-toggle" data-id="' + id + '" class="' + (p.running ? 'btn-red' : 'btn-green') + '" style="font-size:13px;">' + (p.running ? '⏹ Stop PM Loop' : '▶ Start PM Loop') + '</button>'
-        +   '<button data-action="open-build" data-id="' + id + '" class="btn-ghost" style="font-size:13px;">🔧 Build tab</button>'
-        +   '<button data-action="edit-roadmap" data-id="' + id + '" class="btn-ghost" style="font-size:13px;" id="roadmap-btn-' + id + '">📋 Roadmap</button>'
-        +   '<button data-action="chat-project" data-id="' + id + '" data-name="' + escHtml(p.name) + '" class="btn-ghost" style="font-size:13px;">🧠 Chat</button>'
-        +   retryBtn
-        +   '<label style="margin-left:auto;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-3);user-select:none;" title="When enabled, crew-lead automatically starts the next ROADMAP phase when the current pipeline completes">'
-        +     '<input type="checkbox" data-action="toggle-auto-advance" data-id="' + id + '" ' + (p.autoAdvance ? 'checked' : '') + ' style="accent-color:var(--green);width:14px;height:14px;cursor:pointer;">'
-        +     '⚡ Auto-advance'
-        +   '</label>'
-        +   '<button data-action="edit" data-id="' + id + '" style="background:transparent;color:var(--text-3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;" title="Edit project">✎ Edit</button>'
-        +   '<button data-action="delete" data-id="' + id + '" style="background:transparent;color:var(--text-3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;" title="Remove from dashboard (files stay on disk)">🗑 Delete</button>'
-        + '</div>'
-        + '</div>'
-        + '<div id="proj-edit-' + id + '" style="display:none;padding:12px;border-top:1px solid var(--border);margin-top:12px;">'
-        +   '<div style="margin-bottom:8px;"><label style="font-size:11px;color:var(--text-3);">Name</label><input id="proj-name-' + id + '" type="text" value="' + escHtml(p.name) + '" style="margin-top:4px;" /></div>'
-        +   '<div style="margin-bottom:8px;"><label style="font-size:11px;color:var(--text-3);">Description</label><input id="proj-desc-' + id + '" type="text" value="' + escHtml(p.description || '') + '" style="margin-top:4px;" placeholder="Optional" /></div>'
-        +   '<div style="margin-bottom:8px;"><label style="font-size:11px;color:var(--text-3);">Output directory</label><input id="proj-dir-' + id + '" type="text" value="' + escHtml(p.outputDir || '') + '" style="margin-top:4px;" /></div>'
-        +   '<div style="display:flex;gap:8px;"><button data-action="save-project-edit" data-id="' + id + '" class="btn-green" style="font-size:12px;">Save</button><button data-action="cancel-project-edit" data-id="' + id + '" class="btn-ghost" style="font-size:12px;">Cancel</button></div>'
-        + '</div>'
-        + '<div id="proj-pm-status-' + id + '" style="display:none;margin-top:10px;font-size:12px;padding:8px 12px;background:rgba(99,102,241,0.08);border-radius:6px;border:1px solid rgba(99,102,241,0.2);color:#a5b4fc;"></div>'
-        + '<div id="rm-editor-' + id + '" style="display:none;margin-top:14px;">'
-        +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">'
-        +     '<span class="field-label" style="margin:0;">ROADMAP</span>'
-        +     '<span class="meta" style="font-family:monospace;">' + escHtml(p.roadmapFile) + '</span>'
-        +     '<div style="margin-left:auto;display:flex;gap:6px;">'
-        +       '<button data-action="add-item" data-id="' + id + '" style="font-size:11px;padding:3px 10px;background:var(--green);color:#000;">+ Add item</button>'
-        +       '<button data-action="skip-next" data-id="' + id + '" style="font-size:11px;padding:3px 10px;background:var(--yellow);color:#000;">⏭ Skip next</button>'
-        +       '<button data-action="reset-failed" data-id="' + id + '" style="font-size:11px;padding:3px 10px;" class="btn-ghost">↩ Reset failed</button>'
-        +       '<button data-action="save-roadmap" data-id="' + id + '" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#000;">💾 Save</button>'
-        +       '<button data-action="close-editor" data-id="' + id + '" style="font-size:11px;padding:3px 10px;" class="btn-ghost">✕</button>'
-        +     '</div>'
-        +   '</div>'
-        +   '<div style="display:flex;gap:8px;margin-bottom:8px;">'
-        +     '<input id="rm-add-' + id + '" type="text" placeholder="New item text… (Enter to add)" style="flex:1;font-size:13px;" data-rm-add-id="' + id + '" />'
-        +   '</div>'
-        +   '<textarea id="rm-ta-' + id + '" rows="16" class="rm-textarea" spellcheck="false"></textarea>'
-        +   '<div id="rm-status-' + id + '" class="meta" style="margin-top:6px;min-height:16px;"></div>'
-        + '</div>'
-        + '</div>';
-    }).join('');
+// ── Projects / Build → projects-tab.js ───────────────────────────────────────
+// Wire project list delegated click handler
+initProjectsList({ showChat, showBuild });
 
-    // Wire Enter key on quick-add inputs
-    list.querySelectorAll('[data-rm-add-id]').forEach(inp => {
-      inp.addEventListener('keydown', e => { if (e.key === 'Enter') addRoadmapItem(inp.dataset.rmAddId); });
-    });
-
-  } catch(e) { list.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Failed to load projects: ' + escHtml(e.message) + '</div>'; }
-}
-
-function toggleProjectEdit(projectId) {
-  const viewEl = document.getElementById('proj-view-' + projectId);
-  const editEl = document.getElementById('proj-edit-' + projectId);
-  if (!viewEl || !editEl) return;
-  const isEditing = editEl.style.display !== 'none';
-  viewEl.style.display = isEditing ? '' : 'none';
-  editEl.style.display = isEditing ? 'none' : 'block';
-}
-
-async function saveProjectEdit(projectId) {
-  const name = document.getElementById('proj-name-' + projectId)?.value?.trim();
-  const description = document.getElementById('proj-desc-' + projectId)?.value?.trim();
-  const outputDir = document.getElementById('proj-dir-' + projectId)?.value?.trim();
-  if (!name) { showNotification('Project name is required', true); return; }
-  try {
-    await postJSON('/api/projects/update', { projectId, name, description, outputDir });
-    showNotification('Project saved');
-    toggleProjectEdit(projectId);
-    loadProjects();
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-
-// Single delegated click handler — replaces ALL onclick strings in project cards
-document.getElementById('projectsList').addEventListener('click', e => {
-  const btn = e.target.closest('[data-action]');
-  if (!btn) return;
-  const id   = btn.dataset.id;
-  const proj = _projectsData[id];
-  switch (btn.dataset.action) {
-    case 'pm-toggle':    proj && proj.running ? stopProjectPMLoop(id) : startProjectPMLoop(id); break;
-    case 'open-build':   openProjectInBuild(id); break;
-    case 'edit-roadmap': proj && openRoadmapEditor(id, proj.roadmapFile); break;
-    case 'retry-failed': proj && retryFailed(proj.roadmapFile); break;
-    case 'delete':       deleteProject(id); break;
-    case 'chat-project': {
-      const name = btn.dataset.name || id;
-      showChat();
-      // Auto-select this project in the chat dropdown
-      autoSelectChatProject(id);
-      const inp = document.getElementById('chatInput');
-      inp?.focus();
-      break;
-    }
-    case 'toggle-auto-advance': {
-      const checked = btn.checked;
-      postJSON('/api/projects/update', { projectId: id, autoAdvance: checked })
-        .then(() => {
-          if (_projectsData[id]) _projectsData[id].autoAdvance = checked;
-          showNotification('Auto-advance ' + (checked ? 'enabled' : 'disabled') + ' for ' + (proj?.name || id));
-        })
-        .catch(e => { showNotification('Failed: ' + e.message, true); btn.checked = !checked; });
-      return; // don't prevent default on checkbox
-    }
-    case 'edit':             toggleProjectEdit(id); break;
-    case 'save-project-edit': saveProjectEdit(id); break;
-    case 'cancel-project-edit': toggleProjectEdit(id); break;
-    case 'add-item':     addRoadmapItem(id); break;
-    case 'skip-next':    skipNextItem(id); break;
-    case 'reset-failed': resetAllFailed(id); break;
-    case 'save-roadmap': saveRoadmap(id); break;
-    case 'close-editor': closeRoadmapEditor(id); break;
-  }
-});
-
-// ── Chat project dropdown (next to input; persisted so it survives tab switch and reload) ───
-
-const CHAT_ACTIVE_PROJECT_KEY = 'crewswarm_chat_active_project_id';
-let _chatActiveProjectId = '';
-
-function getStoredChatProjectId() {
-  try { return localStorage.getItem(CHAT_ACTIVE_PROJECT_KEY) || ''; } catch { return ''; }
-}
-function setStoredChatProjectId(id) {
-  try { if (id) localStorage.setItem(CHAT_ACTIVE_PROJECT_KEY, id); else localStorage.removeItem(CHAT_ACTIVE_PROJECT_KEY); } catch {}
-}
-
-function populateChatProjectDropdown(projects) {
-  const sel = document.getElementById('chatProjectSelect');
-  if (!sel) return;
-  const prev = getStoredChatProjectId() || sel.value || _chatActiveProjectId;
-  sel.innerHTML = '<option value="">— none —</option>';
-  (projects || []).forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.name + (p.outputDir ? ' (' + p.outputDir.split('/').pop() + ')' : '');
-    sel.appendChild(opt);
-  });
-  if (prev && sel.querySelector('option[value="' + prev + '"]')) {
-    sel.value = prev;
-    _chatActiveProjectId = prev;
-    setStoredChatProjectId(prev);
-    // Sync config.json so gateway-bridge gets the right --dir even after a restart
-    const restoredProj = _projectsData[prev];
-    if (restoredProj && restoredProj.outputDir) {
-      postJSON('/api/settings/opencode-project', { dir: restoredProj.outputDir }).catch(() => {});
-    }
-  } else {
-    _chatActiveProjectId = '';
-    setStoredChatProjectId('');
-  }
-  updateChatProjectHint();
-}
-
-function onChatProjectChange() {
-  const sel = document.getElementById('chatProjectSelect');
-  _chatActiveProjectId = sel ? sel.value : '';
-  setStoredChatProjectId(_chatActiveProjectId);
-  updateChatProjectHint();
-  const proj = _projectsData[_chatActiveProjectId];
-  if (proj && proj.outputDir) {
-    postJSON('/api/settings/opencode-project', { dir: proj.outputDir }).catch(() => {});
-  }
-}
-
-function updateChatProjectHint() {
-  const hint = document.getElementById('chatProjectHint');
-  if (!hint) return;
-  if (_chatActiveProjectId && _projectsData[_chatActiveProjectId]) {
-    const p = _projectsData[_chatActiveProjectId];
-    hint.textContent = p.outputDir || '';
-    hint.style.display = p.outputDir ? 'block' : 'none';
-  } else {
-    hint.style.display = 'none';
-  }
-}
-
-function autoSelectChatProject(projectId) {
-  _chatActiveProjectId = projectId;
-  setStoredChatProjectId(projectId);
-  const sel = document.getElementById('chatProjectSelect');
-  if (sel && sel.querySelector('option[value="' + projectId + '"]')) {
-    sel.value = projectId;
-    updateChatProjectHint();
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function resumeProject(projectId) {
-  try {
-    const resp = await fetch('/api/pm-loop/start', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ projectId }) });
-    const r = await resp.json();
-    if (r.alreadyRunning) { showNotification('PM Loop already running (pid ' + r.pid + ')', true); return; }
-    showNotification('PM Loop started for project ' + projectId + ' (pid ' + r.pid + ')');
-    setTimeout(loadProjects, 3000);
-  } catch(e) { showNotification('Failed: ' + e.message, true); }
-}
-async function stopProjectPMLoop(projectId) {
-  try {
-    await postJSON('/api/pm-loop/stop', { projectId });
-    showNotification('Stop signal sent — PM will finish current task then halt.');
-    const statusEl = document.getElementById('proj-pm-status-' + projectId);
-    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '⛔ Stopping after current task…'; }
-    setTimeout(loadProjects, 3000);
-  } catch(e) { showNotification('Stop failed: ' + e.message, true); }
-}
-async function startProjectPMLoop(projectId) {
-  const statusEl = document.getElementById('proj-pm-status-' + projectId);
-  try {
-    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '⚙ Starting PM Loop…'; }
-    const r = await postJSON('/api/pm-loop/start', { projectId });
-    if (r.alreadyRunning) {
-      showNotification('PM Loop already running (pid ' + r.pid + ')', true);
-      if (statusEl) statusEl.textContent = '▶ Already running (pid ' + r.pid + ')';
-      return;
-    }
-    showNotification('PM Loop started (pid ' + r.pid + ')');
-    if (statusEl) statusEl.textContent = '▶ Running (pid ' + r.pid + ') — check Build tab for live log';
-    setTimeout(loadProjects, 3000);
-  } catch(e) {
-    showNotification('Start failed: ' + e.message, true);
-    if (statusEl) { statusEl.style.display = 'none'; }
-  }
-}
-async function deleteProject(projectId) {
-  const proj = _projectsData[projectId];
-  const name = proj ? proj.name : projectId;
-  if (!confirm('Remove "' + name + '" from the dashboard registry?\\n\\nFiles on disk are NOT deleted.')) return;
-  try {
-    await postJSON('/api/projects/delete', { projectId });
-    showNotification('Project "' + name + '" removed from dashboard.');
-    loadProjects();
-  } catch(e) { showNotification('Delete failed: ' + e.message, true); }
-}
-// Open a project in the Build tab with it pre-selected
-function openProjectInBuild(projectId) {
-  showBuild();
-  loadBuildProjectPicker().then(() => {
-    const sel = document.getElementById('buildProjectPicker');
-    if (sel) { sel.value = projectId; onBuildProjectChange(); }
-  });
-}
-
-// ── Build tab project picker ──────────────────────────────────────────────
-let _buildProjects = {};
-async function loadBuildProjectPicker() {
-  try {
-    const data = await getJSON('/api/projects');
-    _buildProjects = {};
-    const sel = document.getElementById('buildProjectPicker');
-    const cur = sel ? sel.value : '';
-    if (!sel) return;
-    sel.innerHTML = '<option value="">— No project (use defaults) —</option>';
-    (data.projects || []).forEach(p => {
-      _buildProjects[p.id] = p;
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name + (p.running ? ' ▶' : '') + ' (' + p.roadmap.pending + ' pending)';
-      if (p.id === cur) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    onBuildProjectChange();
-  } catch(e) { /* ignore */ }
-}
-function onBuildProjectChange() {
-  const sel = document.getElementById('buildProjectPicker');
-  const info = document.getElementById('buildProjectInfo');
-  const label = document.getElementById('pmLoopProjectLabel');
-  const proj = _buildProjects[sel ? sel.value : ''];
-  if (proj) {
-    info.style.display = 'block';
-    info.innerHTML =
-      '<b>' + proj.name + '</b><br>' +
-      'Output: ' + proj.outputDir + '<br>' +
-      'Roadmap: ' + proj.roadmapFile + '<br>' +
-      'Tasks: ' + proj.roadmap.done + ' done · ' + proj.roadmap.pending + ' pending · ' + proj.roadmap.failed + ' failed' +
-      (proj.running ? '<br><span style="color:var(--purple);">▶ PM Loop is running</span>' : '');
-    if (label) label.innerHTML =
-      '<b style="color:var(--accent);">▶ ' + proj.name + '</b>' +
-      ' &nbsp;·&nbsp; ' + proj.roadmap.done + ' done · ' + proj.roadmap.pending + ' pending' +
-      (proj.running ? ' &nbsp;<span style="color:var(--green-hi); font-weight:600;">● running</span>' : '');
-  } else {
-    info.style.display = 'none';
-    if (label) label.innerHTML = '← Select a project above';
-  }
-  // Reload dispatch log filtered to the newly selected project
-  loadPhasedProgress();
-}
-
-// ── Stop build/continuous-build ───────────────────────────────────────────
-async function stopBuild() {
-  try {
-    await postJSON('/api/build/stop', {});
-    showNotification('Build stop signal sent');
-    document.getElementById('stopBuildBtn').style.display = 'none';
-    document.getElementById('runBuildBtn').style.display = '';
-    document.getElementById('buildStatus').textContent = '';
-  } catch(e) { showNotification('Stop failed: ' + e.message, true); }
-}
-async function stopContinuousBuild() {
-  try {
-    await postJSON('/api/continuous-build/stop', {});
-    showNotification('Continuous build stop signal sent');
-    document.getElementById('stopContinuousBtn').style.display = 'none';
-    document.getElementById('continuousBuildBtn').style.display = '';
-  } catch(e) { showNotification('Stop failed: ' + e.message, true); }
-}
-async function retryFailed(roadmapFile) {
-  if (!confirm('Reset all [!] failed items back to [ ] pending so the PM Loop retries them?')) return;
-  try {
-    const r = await postJSON('/api/roadmap/retry-failed', { roadmapFile });
-    if (r.count === 0) { showNotification('No failed items found in roadmap', true); return; }
-    showNotification('↩ ' + r.count + ' failed item' + (r.count !== 1 ? 's' : '') + ' reset — click Resume to retry');
-    await loadProjects();
-  } catch(e) { showNotification('Retry failed: ' + e.message, true); }
-}
-// ── Roadmap editor ──────────────────────────────────────────────────────────
-const _roadmapFiles = {};   // projectId → roadmapFile path
-
-async function openRoadmapEditor(projectId, roadmapFile) {
-  _roadmapFiles[projectId] = roadmapFile;
-  const panel = document.getElementById('rm-editor-' + projectId);
-  const ta    = document.getElementById('rm-ta-' + projectId);
-  const btn   = document.getElementById('roadmap-btn-' + projectId);
-  if (!panel || !ta) return;
-  if (panel.style.display !== 'none') { closeRoadmapEditor(projectId); return; }
-  panel.style.display = 'block';
-  if (btn) btn.textContent = '📋 Editing…';
-  ta.value = 'Loading…';
-  try {
-    const r = await postJSON('/api/roadmap/read', { roadmapFile });
-    ta.value = r.content || '';
-    setRmStatus(projectId, 'Loaded · ' + (r.content || '').split('\\n').length + ' lines');
-  } catch(e) { ta.value = ''; setRmStatus(projectId, 'Error: ' + e.message, true); }
-}
-
-function closeRoadmapEditor(projectId) {
-  const panel = document.getElementById('rm-editor-' + projectId);
-  const btn   = document.getElementById('roadmap-btn-' + projectId);
-  if (panel) panel.style.display = 'none';
-  if (btn) btn.textContent = '📋 Edit Roadmap';
-}
-
-function setRmStatus(projectId, msg, isErr) {
-  const el = document.getElementById('rm-status-' + projectId);
-  if (!el) return;
-  el.textContent = msg;
-  el.style.color = isErr ? 'var(--red)' : 'var(--text-2)';
-}
-
-async function saveRoadmap(projectId) {
-  const ta = document.getElementById('rm-ta-' + projectId);
-  const roadmapFile = _roadmapFiles[projectId];
-  if (!ta || !roadmapFile) return;
-  try {
-    await postJSON('/api/roadmap/write', { roadmapFile, content: ta.value });
-    setRmStatus(projectId, '✓ Saved — ' + new Date().toLocaleTimeString());
-    showNotification('Roadmap saved');
-    setTimeout(loadProjects, 800);
-  } catch(e) { setRmStatus(projectId, 'Save failed: ' + e.message, true); }
-}
-
-function addRoadmapItem(projectId) {
-  const ta    = document.getElementById('rm-ta-' + projectId);
-  const input = document.getElementById('rm-add-' + projectId);
-  if (!ta) return;
-  const text = (input ? input.value.trim() : '') || 'New task';
-  if (!text) return;
-  const line = '- [ ] ' + text;
-  ta.value = ta.value.trimEnd() + '\\n' + line + '\\n';
-  ta.scrollTop = ta.scrollHeight;
-  if (input) input.value = '';
-  setRmStatus(projectId, 'Item added — click 💾 Save to persist');
-}
-
-function skipNextItem(projectId) {
-  const ta = document.getElementById('rm-ta-' + projectId);
-  if (!ta) return;
-  const lines = ta.value.split('\\n');
-  let skipped = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^- \[ \]/.test(lines[i])) {
-      lines[i] = lines[i].replace('- [ ]', '- [x]') + '  ✓ skipped';
-      skipped = true;
-      break;
-    }
-  }
-  if (skipped) {
-    ta.value = lines.join('\\n');
-    setRmStatus(projectId, 'Next pending item skipped — click 💾 Save to persist');
-  } else {
-    setRmStatus(projectId, 'No pending items to skip');
-  }
-}
-
-async function resetAllFailed(projectId) {
-  const ta = document.getElementById('rm-ta-' + projectId);
-  if (!ta) return;
-  const before = (ta.value.match(/\[!\]/g) || []).length;
-  if (!before) { setRmStatus(projectId, 'No failed items to reset'); return; }
-  ta.value = ta.value
-    .split('\\n')
-    .map(l => l.replace(/\[!\]/, '[ ]').replace(/\s+✗\s+\d+:\d+:\d+/g, ''))
-    .join('\\n');
-  setRmStatus(projectId, before + ' failed item(s) reset — click 💾 Save to persist');
-}
-async function loadPhasedProgress(){
-  const box = document.getElementById('phasedProgress');
-  if (!box) return;
-  const projectId = document.getElementById('buildProjectPicker')?.value || '';
-  const label = document.getElementById('phasedProgressLabel');
-  try {
-    const url = '/api/phased-progress' + (projectId ? '?projectId=' + encodeURIComponent(projectId) : '');
-    const data = await getJSON(url);
-    const scopeText = projectId ? 'This project' : 'All projects (no project selected)';
-    if (label) label.textContent = scopeText;
-    if (!data.length) {
-      box.textContent = projectId ? 'No runs yet for this project.' : 'No phased runs yet.';
-      return;
-    }
-    box.innerHTML = data.map(e => {
-      const phase = e.phase || '?';
-      const agent = e.agent || '?';
-      const task = (e.task || '').slice(0, 50) + ((e.task || '').length > 50 ? '...' : '');
-      const status = e.status === 'completed' ? '✅' : '❌';
-      const dur = e.duration_s != null ? e.duration_s + 's' : '';
-      return `<div style="margin-bottom:4px;">${status} [${phase}] ${agent}: ${task} ${dur}</div>`;
-    }).join('');
-    box.scrollTop = box.scrollHeight;
-  } catch (e) { box.textContent = 'Could not load progress.'; }
-}
-async function runBuild(){
-  const req = document.getElementById('buildRequirement').value.trim();
-  if (!req) { showNotification('Enter a requirement', true); return; }
-  const status = document.getElementById('buildStatus');
-  const btn = document.getElementById('runBuildBtn');
-  const stopBtn = document.getElementById('stopBuildBtn');
-  const projectId = document.getElementById('buildProjectPicker')?.value || '';
-  try {
-    status.textContent = 'Starting...';
-    btn.disabled = true;
-    const r = await postJSON('/api/build', { requirement: req, projectId });
-    showNotification('Build started (pid ' + r.pid + '). Watch RT Messages or Phased Progress.');
-    status.textContent = 'Running (pid ' + r.pid + ')';
-    btn.style.display = 'none';
-    if (stopBtn) stopBtn.style.display = '';
-    // Auto-clear after 2 minutes (phased build is typically done by then)
-    setTimeout(() => {
-      status.textContent = '';
-      btn.disabled = false;
-      btn.style.display = '';
-      if (stopBtn) stopBtn.style.display = 'none';
-    }, 120000);
-  } catch (e) { showNotification('Build failed: ' + e.message, true); status.textContent = ''; btn.disabled = false; }
-}
-async function enhancePrompt(){
-  const ta = document.getElementById('buildRequirement');
-  const raw = ta.value.trim();
-  const btn = document.getElementById('enhancePromptBtn');
-  if (!raw) { showNotification('Type an idea first', true); return; }
-  try {
-    btn.disabled = true;
-    document.getElementById('buildStatus').textContent = 'Enhancing...';
-    const r = await postJSON('/api/enhance-prompt', { text: raw });
-    if (r.enhanced) { ta.value = r.enhanced; showNotification('Prompt updated'); }
-    else { showNotification(r.error || 'No result', true); }
-  } catch (e) { showNotification('Enhance failed: ' + e.message, true); }
-  finally { btn.disabled = false; document.getElementById('buildStatus').textContent = ''; }
-}
-async function continuousBuildRun(){
-  const req = document.getElementById('buildRequirement').value.trim();
-  if (!req) { showNotification('Enter a requirement first', true); return; }
-  const status = document.getElementById('buildStatus');
-  const btn = document.getElementById('continuousBuildBtn');
-  const stopBtn = document.getElementById('stopContinuousBtn');
-  const logBox = document.getElementById('buildLiveLog');
-  const projectId = document.getElementById('buildProjectPicker')?.value || '';
-  try {
-    status.textContent = 'Running continuously...';
-    btn.disabled = true;
-    btn.style.display = 'none';
-    if (stopBtn) stopBtn.style.display = '';
-    logBox.style.display = 'block';
-    logBox.textContent = '⚙ Starting continuous build...\\n';
-    const r = await postJSON('/api/continuous-build', { requirement: req, projectId });
-    logBox.textContent += '✅ Spawned (pid ' + r.pid + '). Checking progress below and in RT Messages tab.\\n';
-    showNotification('Continuous build started — will keep going until all sections are done.');
-    status.textContent = 'Running (continuous)';
-    // Poll build log every 4s
-    const poller = setInterval(async () => {
-      try {
-        const lg = await fetch('/api/continuous-build/log').then(r2 => r2.json());
-        if (lg.lines && lg.lines.length) {
-          logBox.textContent = lg.lines.map(l => {
-            const icon = l.status === 'completed' ? '✅' : l.status === 'failed' ? '❌' : l.status === 'done' ? '🏁' : '·';
-            return `${icon} [rd${l.round||'?'}] ${l.agent ? l.agent+': ' : ''}${l.task || l.status || JSON.stringify(l)}`;
-          }).join('\\n');
-          logBox.scrollTop = logBox.scrollHeight;
-          const last = lg.lines[lg.lines.length - 1];
-          if (last && last.status === 'done') {
-            clearInterval(poller);
-            btn.disabled = false;
-            btn.style.display = '';
-            if (stopBtn) stopBtn.style.display = 'none';
-            status.textContent = '🏁 Done!';
-            showNotification('🏁 Continuous build complete!');
-          }
-        }
-      } catch(_){}
-    }, 4000);
-    // Safety: re-enable button after 30 minutes max
-    setTimeout(() => {
-      clearInterval(poller);
-      btn.disabled = false;
-      btn.style.display = '';
-      if (stopBtn) stopBtn.style.display = 'none';
-      if (status.textContent.includes('continuous')) status.textContent = '';
-    }, 30 * 60 * 1000);
-  } catch (e) { showNotification('Continuous build failed: ' + e.message, true); status.textContent = ''; btn.disabled = false; btn.style.display = ''; if (stopBtn) stopBtn.style.display = 'none'; }
-}
 refreshAll();
 setInterval(refreshAll, 3000);
 // Populate chat project dropdown on load; respect #projects deep link (e.g. from native app)
@@ -3892,8 +1431,8 @@ setInterval(refreshAll, 3000);
   try {
     const data = await getJSON('/api/projects');
     const projects = data.projects || [];
-    _projectsData = {};
-    projects.forEach(p => { _projectsData[p.id] = p; });
+    state.projectsData = {};
+    projects.forEach(p => { state.projectsData[p.id] = p; });
     populateChatProjectDropdown(projects);
     if (location.hash === '#projects') showProjects();
   } catch {}
