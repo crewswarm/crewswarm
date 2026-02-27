@@ -364,6 +364,20 @@ function setupConnectionHandlers() {
             throw new Error(`agent not allowed: ${claimedAgent}`);
           }
           validateRealtimeToken(claimedAgent, token);
+
+          // Evict any stale connections already registered under the same agent name.
+          // This prevents reconnect storms (e.g. whatsapp-bridge restarting every 3s)
+          // from accumulating hundreds of phantom slots in /status.
+          if (claimedAgent !== "anonymous") {
+            for (const [otherSocket, otherMeta] of state.clients) {
+              if (otherSocket !== socket && otherMeta.agent === claimedAgent) {
+                try { otherSocket.close(1000, "replaced by new connection"); } catch {}
+                state.clients.delete(otherSocket);
+                console.log(`[opencrew-rt-daemon] Evicted stale ${claimedAgent} connection (replaced)`);
+              }
+            }
+          }
+
           meta.agent = claimedAgent;
           meta.authed = true;
           sendJson(socket, {
