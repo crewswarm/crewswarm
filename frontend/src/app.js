@@ -1411,7 +1411,7 @@ function restorePassthroughLog() {
     const log = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
     const box = document.getElementById('chatMessages');
     if (!box || !log.length) return;
-    const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode', codex: '🟣 Codex CLI' };
+    const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode', codex: '🟣 Codex CLI', 'docker-sandbox': '🐳 Docker Sandbox' };
     for (const entry of log) {
       if (entry.role === 'user') {
         appendChatBubble('user', entry.text);
@@ -1434,7 +1434,7 @@ function restorePassthroughLog() {
 async function sendPassthrough(text, engine) {
   const input = document.getElementById('chatInput');
   const sendBtn = document.querySelector('[data-action="sendChat"]');
-  const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode', codex: '🟣 Codex CLI' };
+  const engineLabels = { claude: '🤖 Claude Code', cursor: '🖱 Cursor CLI', opencode: '⚡ OpenCode', codex: '🟣 Codex CLI', 'docker-sandbox': '🐳 Docker Sandbox' };
   input.value = '';
   input.disabled = true;
   if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '…'; }
@@ -2461,6 +2461,16 @@ const ENV_GROUPS = [
     ],
   },
   {
+    label: 'Engine — Docker Sandbox',
+    note: 'Runs any inner engine inside an isolated Docker microVM. API keys are injected by the network proxy and never exposed to the agent. Requires Docker Desktop with Sandboxes enabled.',
+    vars: [
+      { key: 'CREWSWARM_DOCKER_SANDBOX',              hint: '1 to route all coding agents through Docker Sandbox globally' },
+      { key: 'CREWSWARM_DOCKER_SANDBOX_NAME',         hint: 'Name of the pre-created sandbox (default: crewswarm). Create with: docker sandbox create --name crewswarm shell <dir>' },
+      { key: 'CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE', hint: 'Engine to run inside the sandbox: claude (default), opencode, or codex' },
+      { key: 'CREWSWARM_DOCKER_SANDBOX_TIMEOUT_MS',   hint: 'ms before a sandboxed task is killed (default: 300000)' },
+    ],
+  },
+  {
     label: 'Engine Loop & Dispatch',
     vars: [
       { key: 'CREWSWARM_OPENCODE_LOOP',             hint: '1 to enable engine loop (Ouroboros) for all agents' },
@@ -2634,10 +2644,11 @@ function showSettingsTab(tab){
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 const ENGINE_ICONS = {
-  opencode: `<svg viewBox="0 0 24 30" width="20" height="24" fill="#38bdf8"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`,
-  cursor:   `<svg viewBox="0 0 24 24" width="20" height="20" fill="#818cf8"><path d="M4 4l8 16 3-7 7-3L4 4z"/></svg>`,
-  claude:   `<svg viewBox="0 0 24 24" width="20" height="20" fill="#d4a853"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>`,
-  codex:    `<svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="12" cy="12" r="10" stroke="#a78bfa" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  opencode:       `<svg viewBox="0 0 24 30" width="20" height="24" fill="#38bdf8"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`,
+  cursor:         `<svg viewBox="0 0 24 24" width="20" height="20" fill="#818cf8"><path d="M4 4l8 16 3-7 7-3L4 4z"/></svg>`,
+  claude:         `<svg viewBox="0 0 24 24" width="20" height="20" fill="#d4a853"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>`,
+  codex:          `<svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="12" cy="12" r="10" stroke="#a78bfa" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  "docker-sandbox": `<svg viewBox="0 0 24 24" width="20" height="20" fill="#2496ed"><path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.186.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.186.185.186m-2.943 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.157a.185.185 0 00-.185.185v1.887c0 .102.083.186.185.186m8.763 2.714h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/></svg>`,
 };
 
 function showEngines(){

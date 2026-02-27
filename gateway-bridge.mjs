@@ -2500,6 +2500,135 @@ async function runCodexTask(prompt, payload = {}) {
   });
 }
 
+function shouldUseDockerSandbox(payload, incomingType) {
+  if (incomingType !== "command.run_task" && incomingType !== "task.assigned") return false;
+  const runtime = String(payload?.runtime || payload?.executor || payload?.engine || "").toLowerCase();
+  if (runtime === "docker-sandbox" || runtime === "docker") return true;
+  if (payload?.useDockerSandbox === true) return true;
+  const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "").toLowerCase();
+  try {
+    const agents = loadAgentList();
+    const cfg = agents.find(a => a.id === agentId || a.id === `crew-${agentId}`);
+    if (cfg?.useDockerSandbox === true) return true;
+  } catch {}
+  return process.env.CREWSWARM_DOCKER_SANDBOX === "1";
+}
+
+async function runDockerSandboxTask(prompt, payload = {}) {
+  // Wraps an inner engine (default: claude) inside a Docker Sandbox microVM.
+  // docker sandbox exec <name> -- <inner-engine> <args...> "<prompt>"
+  // Inner engine: CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE (claude|opencode|codex) default: claude
+  return new Promise((resolve, reject) => {
+    const agentId = String(payload?.agentId || payload?.agent || CREWSWARM_RT_AGENT || "");
+    const configuredDir = getOpencodeProjectDir();
+    let projectDir = payload?.projectDir || configuredDir || process.cwd();
+    projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+
+    const sandboxName = process.env.CREWSWARM_DOCKER_SANDBOX_NAME || "crewswarm";
+    const innerEngine = (process.env.CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE || "claude").toLowerCase();
+
+    const agentPrefix = agentId ? `[${agentId}]` : "";
+    const titledPrompt = agentPrefix ? `${agentPrefix} ${String(prompt)}` : String(prompt);
+
+    let innerArgs;
+    if (innerEngine === "opencode") {
+      innerArgs = ["opencode", "run", titledPrompt, "--model", process.env.CREWSWARM_OPENCODE_MODEL || "anthropic/claude-sonnet-4-5"];
+    } else if (innerEngine === "codex") {
+      innerArgs = ["codex", "exec", "--sandbox", "workspace-write", "--json", titledPrompt];
+    } else {
+      // Default: Claude Code
+      innerArgs = ["claude", "-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", titledPrompt];
+    }
+
+    const args = ["sandbox", "exec", sandboxName, "--", ...innerArgs];
+    console.error(`[DockerSandbox:${agentId}] Running: docker ${args.slice(0, 4).join(" ")} (inner=${innerEngine}, cwd=${projectDir})`);
+
+    _rtClientForApprovals?.publish({ channel: "events", type: "agent_working", to: "broadcast",
+      payload: { agent: agentId, model: `docker-sandbox/${innerEngine}`, ts: Date.now() } });
+
+    const TIMEOUT_MS = parseInt(process.env.CREWSWARM_DOCKER_SANDBOX_TIMEOUT_MS || "300000", 10);
+    const child = spawn("docker", args, {
+      cwd: projectDir,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let lineBuffer = "";
+    let accumulatedText = "";
+    let resolved = false;
+    let receivedDeltas = false;
+
+    const hardTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+      if (!resolved) reject(new Error(`Docker Sandbox timeout after ${TIMEOUT_MS}ms`));
+    }, TIMEOUT_MS);
+
+    function handleLine(line) {
+      line = line.trim();
+      if (!line) return;
+      if (innerEngine === "opencode") {
+        accumulatedText += line + "\n";
+        return;
+      }
+      if (innerEngine === "codex") {
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === "item.completed" && ev.item?.type === "agent_message" && ev.item?.text) {
+            accumulatedText += ev.item.text;
+          } else if (ev.type === "turn.completed") {
+            clearTimeout(hardTimer); resolved = true;
+            child.kill("SIGTERM");
+            resolve(accumulatedText.trim() || "(no output from Docker Sandbox / Codex)");
+          }
+        } catch {}
+        return;
+      }
+      // Claude Code stream-json
+      try {
+        const ev = JSON.parse(line);
+        if (ev.type === "stream_event" && ev.event?.type === "content_block_delta") {
+          const t = ev.event.delta?.text || "";
+          if (t) { accumulatedText += t; receivedDeltas = true; }
+        } else if (ev.type === "assistant" && !receivedDeltas) {
+          const content = ev.message?.content;
+          if (Array.isArray(content)) { for (const c of content) { if (c.type === "text") accumulatedText += c.text; } }
+          else if (typeof content === "string") accumulatedText += content;
+        } else if (ev.type === "result") {
+          if (!accumulatedText && ev.result) accumulatedText += ev.result;
+          clearTimeout(hardTimer); resolved = true;
+          child.kill("SIGTERM");
+          resolve(accumulatedText.trim() || "(no output from Docker Sandbox / Claude)");
+        }
+      } catch { accumulatedText += line + "\n"; }
+    }
+
+    function onData(chunk) {
+      lineBuffer += chunk.toString();
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop() || "";
+      for (const line of lines) handleLine(line);
+    }
+
+    child.stdout.on("data", onData);
+    child.stderr.on("data", onData);
+
+    child.on("close", (code) => {
+      clearTimeout(hardTimer);
+      if (lineBuffer.trim()) handleLine(lineBuffer);
+      if (!resolved) {
+        resolved = true;
+        if (accumulatedText.trim()) resolve(accumulatedText.trim());
+        else reject(new Error(`Docker Sandbox exited with code ${code} and no output`));
+      }
+    });
+
+    child.on("error", (e) => {
+      clearTimeout(hardTimer);
+      if (!resolved) { resolved = true; reject(e); }
+    });
+  });
+}
+
 async function runClaudeCodeTask(prompt, payload = {}) {
   // Claude Code CLI: `claude -p --dangerously-skip-permissions --output-format stream-json`
   // stream-json emits newline-delimited events; we accumulate text from content_block_delta
@@ -3550,7 +3679,7 @@ async function runOuroborosStyleLoop(originalTask, agentId, projectDir, payload,
     "No other text. Be specific and actionable. DONE only when the full task is complete.",
   ].filter(Boolean).join("\n");
 
-  const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : "OpenCode";
+  const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : engine === "docker-sandbox" ? "Docker Sandbox" : "OpenCode";
   const brainLabel = loopBrain ? `${loopBrain.modelId} (central brain)` : `${agentId} model`;
   progress(`Loop brain: ${brainLabel} | Engine: ${engineLabel} | Max ${maxRounds} rounds`);
 
@@ -4320,7 +4449,8 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     const useCursorCli = shouldUseCursorCli(payload, incomingType);
     const useClaudeCode = shouldUseClaudeCode(payload, incomingType);
     const useCodex = shouldUseCodex(payload, incomingType);
-    const useOpenCode = !useCodex && shouldUseOpenCode(payload, prompt, incomingType);
+    const useDockerSandbox = shouldUseDockerSandbox(payload, incomingType);
+    const useOpenCode = !useCodex && !useDockerSandbox && shouldUseOpenCode(payload, prompt, incomingType);
     if (useCursorCli) {
       progress(`Routing realtime task to Cursor CLI (agent -p --force)...`);
       telemetry("realtime_route_cursor_cli", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT });
@@ -4330,6 +4460,11 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
     } else if (useCodex) {
       progress(`Routing realtime task to Codex CLI (codex exec)...`);
       telemetry("realtime_route_codex", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT });
+    } else if (useDockerSandbox) {
+      const innerEngine = process.env.CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE || "claude";
+      const sandboxName = process.env.CREWSWARM_DOCKER_SANDBOX_NAME || "crewswarm";
+      progress(`Routing realtime task to Docker Sandbox "${sandboxName}" (inner: ${innerEngine})...`);
+      telemetry("realtime_route_docker_sandbox", { taskId, incomingType, from, agent: CREWSWARM_RT_AGENT, sandboxName, innerEngine });
     } else if (useOpenCode) {
       const routeAgent = String(payload?.agent || CREWSWARM_OPENCODE_AGENT || "default");
       const ocAgentCfg = getAgentOpenCodeConfig(CREWSWARM_RT_AGENT);
@@ -4402,6 +4537,19 @@ async function handleRealtimeEnvelope(envelope, client, bridge) {
         const msg = e?.message ?? String(e);
         progress(`Codex CLI failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
         telemetry("codex_fallback", { taskId, error: msg });
+        reply = await callLLMDirect(finalPrompt, CREWSWARM_RT_AGENT, null);
+      }
+    } else if (useDockerSandbox) {
+      // ── Docker Sandbox backend ─────────────────────────────────────────────
+      let projectDir = payload?.projectDir || getOpencodeProjectDir() || process.cwd();
+      projectDir = String(projectDir).replace(/[.,;!?]+$/, "");
+      const sandboxPrompt = buildMiniTaskForOpenCode(prompt, CREWSWARM_RT_AGENT, projectDir);
+      try {
+        reply = await runDockerSandboxTask(sandboxPrompt, { ...payload, agentId: CREWSWARM_RT_AGENT, projectDir });
+      } catch (e) {
+        const msg = e?.message ?? String(e);
+        progress(`Docker Sandbox failed: ${msg.slice(0, 120)} — falling back to direct LLM`);
+        telemetry("docker_sandbox_fallback", { taskId, error: msg });
         reply = await callLLMDirect(finalPrompt, CREWSWARM_RT_AGENT, null);
       }
     } else if (useOpenCode) {

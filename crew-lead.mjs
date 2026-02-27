@@ -4735,6 +4735,19 @@ const server = http.createServer(async (req, res) => {
       } else if (engine === "codex") {
         bin = process.env.CODEX_CLI_BIN || "codex";
         args = ["exec", "--sandbox", "workspace-write", "--json", finalMessage];
+      } else if (engine === "docker-sandbox") {
+        bin = "docker";
+        const sandboxName = process.env.CREWSWARM_DOCKER_SANDBOX_NAME || "crewswarm";
+        const innerEngine = (process.env.CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE || "claude").toLowerCase();
+        let innerArgs;
+        if (innerEngine === "opencode") {
+          innerArgs = ["opencode", "run", finalMessage];
+        } else if (innerEngine === "codex") {
+          innerArgs = ["codex", "exec", "--sandbox", "workspace-write", "--json", finalMessage];
+        } else {
+          innerArgs = ["claude", "-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", finalMessage];
+        }
+        args = ["sandbox", "exec", sandboxName, "--", ...innerArgs];
       } else {
         bin = process.env.CLAUDE_CODE_BIN || "claude";
         args = ["-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
@@ -4804,7 +4817,7 @@ const server = http.createServer(async (req, res) => {
 
         // ── Notify Telegram/WA on completion (dashboard already saw it stream live) ──
         const summary = fullOutput.trim().slice(0, 3000) || "(no output)";
-        const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : engine === "codex" ? "Codex CLI" : "OpenCode";
+        const engineLabel = engine === "cursor" ? "Cursor CLI" : engine === "claude" ? "Claude Code" : engine === "codex" ? "Codex CLI" : engine === "docker-sandbox" ? "Docker Sandbox" : "OpenCode";
 
         // PASSTHROUGH_NOTIFY: "tg" | "wa" | "both" | "none" (default: "both")
         // Set in ~/.crewswarm/crewswarm.json env block or as env var
