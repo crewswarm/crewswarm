@@ -16,6 +16,18 @@ import crypto from "node:crypto";
 import http from "node:http";
 import { execSync, spawnSync } from "node:child_process";
 import WebSocket from "ws";
+import {
+  initDispatchParsers,
+  parseDispatch,
+  stripDispatch,
+  parseDispatches,
+  parsePipeline,
+  stripPipeline,
+  parseProject,
+  stripProject,
+  parseRegisterProject,
+  stripThink,
+} from "./lib/dispatch/parsers.mjs";
 
 // ── Global state (declared early — referenced throughout) ────────────────────
 const sseClients = new Set();
@@ -1478,221 +1490,6 @@ async function callLLM(messages, cfg) {
   }
 }
 
-// ── Dispatch ──────────────────────────────────────────────────────────────────
-
-function parseDispatch(text, userMessage = "") {
-  // Strip think tags before parsing so <think> content doesn't pollute task text
-  const cleanText = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-
-  // Primary: structured @@DISPATCH marker (check original text too in case tags wrap it)
-  const match = cleanText.match(/@@DISPATCH\s+(\{[\s\S]*?\})/);
-  if (match) {
-    try {
-      const d = JSON.parse(match[1]);
-      // d.verify and d.done are optional acceptance criteria fields
-      if (d.agent && d.task) return d;
-    } catch {}
-  }
-
-  // Fallback: LLM described a dispatch in natural language without using @@DISPATCH
-  // Only match present/future action phrases — never past tense ("dispatched") which is
-  // just description of history and would cause infinite re-dispatch loops.
-  const nlMatch = cleanText.match(
-    /(?:dispatching now|I(?:'ll| will| am) dispatch(?:ing)?|sending(?: this)? to|routing to|forwarding to|siccing)\b[^.]*?\b(crew-[a-z0-9-]+)/i
-  );
-  if (nlMatch) {
-    let agent = nlMatch[1].trim();
-    // Try to resolve display names to crew-X IDs
-    if (!agent.startsWith("crew-")) {
-      try {
-        const cfg = loadConfig();
-        const resolved = resolveAgentId(cfg, agent);
-        if (resolved && resolved !== agent) agent = resolved;
-      } catch {}
-    } else {
-      agent = agent.toLowerCase();
-    }
-    const task = userMessage
-      ? userMessage.replace(/^(?:go\s+(?:write\s+)?(?:have\s+)?|have\s+|ask\s+|tell\s+)(?:crew-[a-z0-9-]+|[a-z]+)\s+(?:to\s+)?/i, "").trim() || userMessage
-      : cleanText.replace(/\n/g, " ").slice(0, 200).trim();
-    if (agent && task) {
-      console.log(`[crew-lead] NL dispatch fallback: agent=${agent} task="${task.slice(0, 60)}"`);
-      return { agent, task };
-    }
-  }
-
-  return null;
-}
-
-function stripDispatch(text) {
-  return text.replace(/@@DISPATCH\s+\{[\s\S]*?\}/g, "").trim();
-}
-
-/** Parse all @@DISPATCH {...} from text (e.g. PM reply). Returns array of { agent, task, verify?, done? }. */
-function parseDispatches(text) {
-  if (!text || typeof text !== "string") return [];
-  const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  const list = [];
-  const re = /@@DISPATCH\s+(\{[\s\S]*?\})/g;
-  let m;
-  while ((m = re.exec(clean)) !== null) {
-    try {
-      const d = JSON.parse(m[1]);
-      if (d.agent && d.task) list.push(d);
-    } catch {}
-  }
-  return list;
-}
-
-// ── Pipeline DSL ──────────────────────────────────────────────────────────────
-// Format: @@PIPELINE [{"wave":1,"agent":"crew-coder","task":"..."},{"wave":1,"agent":"crew-coder-front","task":"..."},{"wave":2,"agent":"crew-qa","task":"..."}]
-// Backward-compat: steps without "wave" are assigned sequential waves 1,2,3,...
-
-function parsePipeline(text) {
-  const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-
-  // Extract JSON array using bracket-counting (regex [\s\S]*?] fails on nested brackets like [SCOPE])
-  function extractJsonArray(str, startIdx) {
-    if (str[startIdx] !== "[") return null;
-    let depth = 0;
-    for (let i = startIdx; i < str.length; i++) {
-      if (str[i] === "[") depth++;
-      else if (str[i] === "]") { depth--; if (depth === 0) return str.slice(startIdx, i + 1); }
-    }
-    return null;
-  }
-
-  let jsonStr = null;
-
-  // Try explicit @@PIPELINE marker first
-  const markerIdx = clean.indexOf("@@PIPELINE");
-  if (markerIdx !== -1) {
-    const bracketIdx = clean.indexOf("[", markerIdx);
-    if (bracketIdx !== -1) jsonStr = extractJsonArray(clean, bracketIdx);
-  }
-
-  // Fallback: find last JSON array in text that looks like pipeline steps
-  if (!jsonStr) {
-    let lastBracket = clean.lastIndexOf("[{");
-    if (lastBracket !== -1) {
-      const candidate = extractJsonArray(clean, lastBracket);
-      if (candidate) {
-        try {
-          const test = JSON.parse(candidate);
-          if (Array.isArray(test) && test.length >= 2 && test.every(s => s.agent && s.task)) {
-            jsonStr = candidate;
-          }
-        } catch {}
-      }
-    }
-  }
-
-  if (!jsonStr) return null;
-  try {
-    const steps = JSON.parse(jsonStr);
-    if (!Array.isArray(steps) || steps.length < 2) return null;
-    if (!steps.every(s => s.agent && s.task)) return null;
-
-    steps.forEach((s, i) => { if (s.wave == null) s.wave = i + 1; });
-
-    // Auto-append crew-pm ROADMAP update as final wave if any coding agents are present
-    // and crew-pm isn't already in the pipeline
-    const codingAgents = new Set(['crew-coder','crew-coder-front','crew-coder-back','crew-frontend','crew-fixer','crew-ml']);
-    const hasCodingAgent = steps.some(s => codingAgents.has(s.agent) || codingAgents.has((s.agent||'').toLowerCase()));
-    const hasPm = steps.some(s => s.agent === 'crew-pm' || s.agent === 'pm');
-    const hasQa = steps.some(s => s.agent === 'crew-qa' || s.agent === 'qa');
-    const hasFixer = steps.some(s => s.agent === 'crew-fixer' || s.agent === 'fixer');
-
-    // If pipeline has fixer but only one QA pass, insert a re-QA wave after fixer
-    // so the pattern is always: ... → fixer → QA (re-check) → pm
-    if (hasFixer && hasQa) {
-      const fixerWaves = steps.filter(s => s.agent === 'crew-fixer' || s.agent === 'fixer').map(s => Number(s.wave));
-      const maxFixerWave = Math.max(...fixerWaves);
-      const qaAfterFixer = steps.some(s => (s.agent === 'crew-qa' || s.agent === 'qa') && Number(s.wave) > maxFixerWave);
-      if (!qaAfterFixer) {
-        // Shift all waves after fixer up by 1 to make room
-        steps.forEach(s => { if (Number(s.wave) > maxFixerWave) s.wave = Number(s.wave) + 1; });
-        steps.push({
-          wave: maxFixerWave + 1,
-          agent: 'crew-qa',
-          task: 'Re-audit the previously flagged files after crew-fixer ran. Read the existing qa-report.md in the project directory (same folder as ROADMAP.md) to know what was fixed. Run py_compile on all .py files. Confirm CRITICAL and HIGH issues are resolved. Write your updated report to qa-report.md in that same project directory (no other filename).',
-        });
-      }
-    }
-
-    if (hasCodingAgent && !hasPm) {
-      const maxWave = Math.max(...steps.map(s => Number(s.wave)));
-      steps.push({
-        wave: maxWave + 1,
-        agent: 'crew-pm',
-        task: 'Read the project ROADMAP.md and mark any completed phases/tasks as done based on the work just finished by the coding agents. Use @@READ_FILE to read the roadmap first, then @@WRITE_FILE to update it. Only mark items complete if they were actually built.',
-      });
-    }
-
-    const waveMap = new Map();
-    for (const s of steps) {
-      const w = Number(s.wave);
-      if (!waveMap.has(w)) waveMap.set(w, []);
-      waveMap.get(w).push(s);
-    }
-    const sortedWaveNums = [...waveMap.keys()].sort((a, b) => a - b);
-    return { steps, waves: sortedWaveNums.map(n => waveMap.get(n)) };
-  } catch { return null; }
-}
-
-function stripPipeline(text) {
-  // Remove pipeline JSON using bracket-counting (handles nested brackets like [SCOPE])
-  const markerIdx = text.indexOf("@@PIPELINE");
-  if (markerIdx !== -1) {
-    const bracketIdx = text.indexOf("[", markerIdx);
-    if (bracketIdx !== -1) {
-      let depth = 0;
-      for (let i = bracketIdx; i < text.length; i++) {
-        if (text[i] === "[") depth++;
-        else if (text[i] === "]") { depth--; if (depth === 0) return (text.slice(0, markerIdx) + text.slice(i + 1)).trim(); }
-      }
-    }
-  }
-  // Fallback: strip trailing JSON array
-  const lastBracket = text.lastIndexOf("[{");
-  if (lastBracket !== -1) {
-    let depth = 0;
-    for (let i = lastBracket; i < text.length; i++) {
-      if (text[i] === "[") depth++;
-      else if (text[i] === "]") { depth--; if (depth === 0) return text.slice(0, lastBracket).trim(); }
-    }
-  }
-  return text.trim();
-}
-
-function parseProject(text) {
-  const match = text.match(/@@PROJECT\s+(\{[\s\S]*?\})/);
-  if (!match) return null;
-  try { return JSON.parse(match[1]); } catch { return null; }
-}
-
-function stripProject(text) {
-  return text.replace(/@@PROJECT\s+\{[\s\S]*?\}/, "").trim();
-}
-
-/** Parse @@REGISTER_PROJECT {"name":"...","outputDir":"..."} from PM reply so the project appears in the dashboard Projects tab. */
-function parseRegisterProject(text) {
-  const match = text.match(/@@REGISTER_PROJECT\s+(\{[\s\S]*?\})/);
-  if (!match) return null;
-  try {
-    const o = JSON.parse(match[1]);
-    if (o.name && o.outputDir) return { name: String(o.name).trim(), outputDir: String(o.outputDir).trim(), description: o.description ? String(o.description).trim() : "" };
-  } catch {}
-  return null;
-}
-
-/** Remove <think>...</think> reasoning blocks so they are not shown to the user. */
-function stripThink(text) {
-  if (!text || typeof text !== "string") return text;
-  let out = text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<\/think>/g, "").replace(/<think>/g, "");
-  return out.trim();
-}
-
 // ── PM LLM config (same sources as pm-loop.mjs) ───────────────────────────────
 
 function getPMLLMProviders() {
@@ -2754,6 +2551,9 @@ function resolveAgentId(cfg, nameOrId) {
   if (byName) return byName.id;
   return id; // pass through; downstream may reject if unknown
 }
+
+// Wire dispatch parsers — must come after loadConfig + resolveAgentId are defined
+initDispatchParsers({ loadConfig, resolveAgentId });
 
 /** Write a focused task brief to a temp .md file in the project dir and return a short pointer prompt.
  *  Keeps model prompts small — agent uses @@READ_FILE to load the brief itself.
