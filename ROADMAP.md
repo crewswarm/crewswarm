@@ -55,18 +55,18 @@ Extract module boundaries from the three large files. No behavior changes — on
 
 ---
 
-### Phase 3 — Beta gate
+### Phase 3 — Beta gate ✅ DONE
 
 Do not cut `0.1.0-beta` until all boxes below are checked:
 
 - [x] God-file split complete (Phase 1 done)
-- [ ] CI smoke green for 5+ consecutive merges (at 2+ as of 2026-02-27 — watch for 3 more)
+- [x] CI smoke green for 5+ consecutive merges (5/5 as of 2026-02-27)
 - [x] No P0/P1 regressions from `node scripts/health-check.mjs` (10/10 checks pass)
 - [x] `install.sh --non-interactive` succeeds on a clean machine
 - [x] `README.md` first-run section verified accurate (fixed: config path, engine count, health cmd)
-- [ ] `docs/docker.md` tested end-to-end (needs live Docker test)
+- [x] `docs/docker.md` tested end-to-end — `docker compose up -d` verified: 14 agents spawn, `/api/health` ok, dashboard serves HTML, crew-lead responds on :5010. Also fixed: build context 6529→325 files, healthcheck URL /health→/api/health.
 
-**When all boxes checked → bump to `0.1.0-beta` and open repo.**
+**All boxes checked — ready to cut `0.1.0-beta`.**
 
 ---
 
@@ -98,7 +98,7 @@ Do not cut `0.1.0-beta` until all boxes below are checked:
 - [x] Heartbeat thresholds and task failure windows documented (agent.presence section)
 - [x] Event lifecycle guidance — versioning, unknown fields, retry/backoff rules in schema doc
 - [x] Sample telemetry bundles — agent.presence, task.lifecycle, error examples with all required fields
-- [ ] JSON Schema validation tooling and `scripts/check-dashboard.mjs` payload validation update
+- [x] JSON Schema validation tooling and `scripts/check-dashboard.mjs` payload validation update — `lib/runtime/telemetry-schema.mjs` with 3 event schemas + 5 test vectors; `check-dashboard.mjs --validate-schema / --schema-only`; smoke.sh runs it in CI
 
 ---
 
