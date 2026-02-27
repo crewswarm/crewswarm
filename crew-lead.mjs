@@ -50,6 +50,22 @@ import {
   patchMessagesWithActiveModel,
   trimMessagesForFallback,
 } from "./lib/crew-lead/llm-caller.mjs";
+import {
+  initWaveDispatcher,
+  pendingDispatches,
+  pendingPipelines,
+  dispatchTimeoutInterval,
+  setDispatchTimeoutInterval,
+  checkDispatchTimeouts,
+  markDispatchClaimed,
+  savePipelineState,
+  deletePipelineState,
+  resumePipelines,
+  cancelAllPipelines,
+  dispatchPipelineWave,
+  checkWaveQualityGate,
+  dispatchTask,
+} from "./lib/crew-lead/wave-dispatcher.mjs";
 
 // ── Global state (declared early — referenced throughout) ────────────────────
 const sseClients = new Set();
@@ -1426,9 +1442,7 @@ function pushRtActivity(entry) {
   if (rtActivityLog.length > RT_ACTIVITY_MAX) rtActivityLog.shift();
 }
 
-// Track dispatched tasks so completions route back to the right session
-// Map<taskId, { sessionId, agent, task, ts, pipelineId?, stepIndex?, done? }>
-const pendingDispatches = new Map();
+// Pipeline wave dispatcher → lib/crew-lead/wave-dispatcher.mjs
 // Sessions in autonomous PM loop: on agent completion we auto-dispatch to PM to update plan and dispatch next
 const autonomousPmLoopSessions = new Set();
 
@@ -1439,152 +1453,6 @@ async function isAgentOnRtBus(agentId) {
     const data = await resp.json();
     return Array.isArray(data.agents) && data.agents.includes(agentId);
   } catch { return false; }
-}
-
-// Unanswered dispatches: timeout logic with auto-extend when agent is on RT bus
-function checkDispatchTimeouts() {
-  const now = Date.now();
-  for (const [taskId, d] of pendingDispatches.entries()) {
-    if (d.done) continue;
-    const elapsed = now - (d.claimedAt || d.ts);
-    const limit = d.claimed ? DISPATCH_CLAIMED_TIMEOUT_MS : DISPATCH_TIMEOUT_MS;
-    if (elapsed < limit) continue;
-
-    const agent = d.agent || "?";
-
-    // Before timing out unclaimed tasks: check if agent is on the RT bus
-    // If online, auto-claim (they're likely just slow, not offline)
-    if (!d.claimed) {
-      if (!d._autoExtended) {
-        d._autoExtended = true;
-        isAgentOnRtBus(agent).then(online => {
-          if (online && !d.done) {
-            d.claimed = true;
-            d.claimedAt = Date.now();
-            console.log(`[crew-lead] ⚡ Auto-extending timeout for ${agent} (online on RT bus but slow to claim) — ${DISPATCH_CLAIMED_TIMEOUT_MS / 1000}s`);
-            broadcastSSE({ type: "task.claimed", taskId, agent, ts: d.claimedAt, autoExtended: true });
-          }
-        });
-        continue; // give the RT bus check a cycle before timing out
-      }
-    }
-
-    const sessionId = d.sessionId || "owner";
-    const kind = d.claimed ? "claimed_timeout" : "never_claimed";
-    pendingDispatches.delete(taskId);
-    emitTaskLifecycle("cancelled", { taskId, agentId: agent, taskType: "task", error: { code: "DISPATCH_TIMEOUT", message: `${kind}: no reply within ${Math.round(limit / 1000)}s` } });
-    const msg = d.claimed
-      ? `[crew-lead] Task to ${agent} timed out after ${Math.round(limit / 1000)}s (agent claimed it but never finished). Consider @@SERVICE restart ${agent}.`
-      : `[crew-lead] Task to ${agent} never claimed (no response within ${Math.round(limit / 1000)}s). Agent may be offline — try @@SERVICE restart ${agent} or re-dispatch to another agent.`;
-    appendHistory(sessionId, "system", msg);
-    broadcastSSE({ type: "task.timeout", taskId, agent, sessionId, kind, ts: now });
-    console.log(`[crew-lead] ${kind} taskId=${taskId} agent=${agent} elapsed=${Math.round(elapsed / 1000)}s`);
-    recordAgentTimeout(agent);
-    if (d.pipelineId) {
-      const pipeline = pendingPipelines.get(d.pipelineId);
-      if (pipeline?.pendingTaskIds) {
-        pipeline.pendingTaskIds.delete(taskId);
-        pipeline.waveResults.push(`[Timeout: ${agent} — ${kind} after ${Math.round(limit / 1000)}s]`);
-        if (pipeline.pendingTaskIds.size === 0) {
-          if (!pipeline.completedWaveResults) pipeline.completedWaveResults = [];
-          pipeline.completedWaveResults.push([...pipeline.waveResults]);
-          pipeline.currentWave++;
-          savePipelineState(d.pipelineId);
-          dispatchPipelineWave(d.pipelineId);
-        }
-      }
-    }
-  }
-}
-
-// Mark a pending dispatch as claimed/in-progress — extends timeout to DISPATCH_CLAIMED_TIMEOUT_MS
-function markDispatchClaimed(taskId, agent) {
-  const d = pendingDispatches.get(taskId);
-  if (!d || d.done) return;
-  if (!d.claimed) {
-    d.claimed = true;
-    d.claimedAt = Date.now();
-    console.log(`[crew-lead] ⚡ ${agent || d.agent} claimed task ${taskId} — extending timeout to ${DISPATCH_CLAIMED_TIMEOUT_MS / 1000}s`);
-    broadcastSSE({ type: "task.claimed", taskId, agent: agent || d.agent, ts: d.claimedAt });
-  }
-}
-let dispatchTimeoutInterval = null;
-
-// Track active pipelines: pipelineId → { steps, stepIndex, sessionId }
-// pendingPipelines: Map<pipelineId, { waves, currentWave, pendingTaskIds, waveResults, sessionId, steps }>
-const pendingPipelines = new Map();
-
-// ── Pipeline state persistence (survives crew-lead restarts) ─────────────────
-const PIPELINE_STATE_DIR = path.join(os.homedir(), ".crewswarm", "pipelines");
-try { fs.mkdirSync(PIPELINE_STATE_DIR, { recursive: true }); } catch {}
-
-function savePipelineState(pipelineId) {
-  const pipeline = pendingPipelines.get(pipelineId);
-  if (!pipeline) return;
-  try {
-    const serializable = {
-      pipelineId,
-      sessionId: pipeline.sessionId,
-      steps: pipeline.steps,
-      waves: pipeline.waves,
-      currentWave: pipeline.currentWave,
-      completedWaveResults: pipeline.completedWaveResults || [],
-      status: "in_progress",
-      savedAt: Date.now(),
-    };
-    // Persist any dynamic keys (retry counters, etc.)
-    for (const [k, v] of Object.entries(pipeline)) {
-      if (k.startsWith("_")) serializable[k] = v;
-    }
-    fs.writeFileSync(
-      path.join(PIPELINE_STATE_DIR, `${pipelineId}.json`),
-      JSON.stringify(serializable, null, 2)
-    );
-  } catch (e) {
-    console.error(`[pipeline-state] Failed to save ${pipelineId}:`, e.message);
-  }
-}
-
-function deletePipelineState(pipelineId) {
-  try { fs.unlinkSync(path.join(PIPELINE_STATE_DIR, `${pipelineId}.json`)); } catch {}
-}
-
-function resumePipelines() {
-  let resumed = 0;
-  try {
-    const files = fs.readdirSync(PIPELINE_STATE_DIR).filter(f => f.endsWith(".json"));
-    for (const file of files) {
-      try {
-        const raw = JSON.parse(fs.readFileSync(path.join(PIPELINE_STATE_DIR, file), "utf8"));
-        if (raw.status !== "in_progress") { deletePipelineState(raw.pipelineId); continue; }
-        // Don't resume pipelines older than 2 hours (stale)
-        if (Date.now() - raw.savedAt > 2 * 60 * 60 * 1000) {
-          console.log(`[pipeline-state] Dropping stale pipeline ${raw.pipelineId} (saved ${Math.round((Date.now() - raw.savedAt) / 60000)}m ago)`);
-          deletePipelineState(raw.pipelineId); continue;
-        }
-        console.log(`[pipeline-state] Resuming pipeline ${raw.pipelineId} from wave ${raw.currentWave + 1}/${raw.waves.length}`);
-        const pipeline = {
-          sessionId: raw.sessionId,
-          steps: raw.steps,
-          waves: raw.waves,
-          currentWave: raw.currentWave,
-          waveResults: raw.completedWaveResults?.slice(-1)?.[0] || [],
-          completedWaveResults: raw.completedWaveResults || [],
-          pendingTaskIds: new Set(),
-        };
-        // Restore dynamic keys
-        for (const [k, v] of Object.entries(raw)) {
-          if (k.startsWith("_")) pipeline[k] = v;
-        }
-        pendingPipelines.set(raw.pipelineId, pipeline);
-        dispatchPipelineWave(raw.pipelineId);
-        resumed++;
-      } catch (e) {
-        console.error(`[pipeline-state] Failed to resume ${file}:`, e.message);
-      }
-    }
-  } catch {}
-  if (resumed > 0) console.log(`[pipeline-state] Resumed ${resumed} pipeline(s)`);
 }
 
 // ── Phase B: ROADMAP awareness ───────────────────────────────────────────────
@@ -1826,23 +1694,6 @@ function startBackgroundLoop() {
   }
 }
 
-function cancelAllPipelines(sessionId) {
-  if (pendingPipelines.size === 0) return 0;
-  let cancelled = 0;
-  for (const [pid, pipeline] of pendingPipelines) {
-    const waveInfo = `wave ${pipeline.currentWave + 1}/${pipeline.waves.length}`;
-    console.log(`[crew-lead] Cancelling pipeline ${pid} (${waveInfo}, ${pipeline.pendingTaskIds.size} pending tasks)`);
-    broadcastSSE({ type: "pipeline_cancelled", pipelineId: pid, ts: Date.now() });
-    deletePipelineState(pid);
-    cancelled++;
-  }
-  pendingPipelines.clear();
-  if (sessionId) {
-    appendHistory(sessionId, "system", `Cancelled ${cancelled} running pipeline(s).`);
-  }
-  return cancelled;
-}
-
 // When an agent is rate limited (429 / quota), crew-lead can re-dispatch to a fallback agent who can handle the same kind of task
 const _RATE_LIMIT_FALLBACK_STATIC = {
   "crew-coder-back": "crew-coder",
@@ -1945,319 +1796,6 @@ function readOpsEvents(limit = 25) {
   return OPS_EVENTS.slice(sliceCount * -1);
 }
 
-function dispatchPipelineWave(pipelineId) {
-  const pipeline = pendingPipelines.get(pipelineId);
-  if (!pipeline) return;
-
-  const { waves, currentWave, sessionId, steps } = pipeline;
-  if (currentWave >= waves.length) {
-    // All waves done
-    broadcastSSE({ type: "pipeline_done", pipelineId, ts: Date.now() });
-    appendHistory(sessionId, "system", `Pipeline complete — all ${steps.length} steps finished.`);
-    console.log(`[crew-lead] Pipeline ${pipelineId} complete`);
-    recordOpsEvent("pipeline_completed", { pipelineId, steps: steps.length, sessionId });
-    bumpOpsCounter("pipelinesCompleted");
-    const completedProjectDir = pipeline.projectDir;
-    pendingPipelines.delete(pipelineId);
-    deletePipelineState(pipelineId);
-    // Phase B: auto-advance to next ROADMAP phase if project is registered with autoAdvance
-    if (completedProjectDir) {
-      const proj = readProjectsRegistry().find(p => p.outputDir === completedProjectDir);
-      if (proj?.autoAdvance === true) setTimeout(() => autoAdvanceRoadmap(completedProjectDir, sessionId), 3000);
-    }
-    return;
-  }
-
-  const waveSteps = waves[currentWave];
-  const prevResults = pipeline.waveResults || [];
-  let contextBlock = "";
-  if (prevResults.length) {
-    const filePaths = [];
-    for (const r of prevResults) {
-      const writeMatches = r.matchAll(/@@WRITE_FILE\s+(\S+)/g);
-      for (const m of writeMatches) filePaths.push(m[1]);
-      const readMatches = r.matchAll(/@@READ_FILE\s+(\S+)/g);
-      for (const m of readMatches) filePaths.push(m[1]);
-      const pathMatches = r.matchAll(/(?:wrote|created|saved|updated|output)\s+(?:to\s+)?(\S+\.(?:html|css|js|mjs|ts|tsx|md|json))/gi);
-      for (const m of pathMatches) filePaths.push(m[1]);
-    }
-    const uniquePaths = [...new Set(filePaths)];
-    const pathBlock = uniquePaths.length ? `\n\nFiles produced by previous wave: ${uniquePaths.join(", ")}` : "";
-    contextBlock = `\n\n[Results from previous pipeline wave]:${pathBlock}\n${prevResults.map((r, i) => `[${i+1}] ${r.slice(0, 2000)}`).join("\n\n")}`;
-  }
-
-  pipeline.pendingTaskIds = new Set();
-  pipeline.waveResults = [];
-
-  const cfg = loadConfig();
-  const resolvedAgentNames = waveSteps.map(s => resolveAgentId(cfg, s.agent) || s.agent);
-  broadcastSSE({ type: "pipeline_progress", pipelineId, waveIndex: currentWave, totalWaves: waves.length, waveSize: waveSteps.length, agents: resolvedAgentNames, ts: Date.now() });
-  console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1}/${waves.length} — dispatching ${waveSteps.length} agent(s) in parallel: ${resolvedAgentNames.join(", ")}`);
-  recordOpsEvent("pipeline_wave_started", { pipelineId, waveIndex: currentWave, agents: resolvedAgentNames });
-  savePipelineState(pipelineId);
-
-  // ── Cursor wave path ────────────────────────────────────────────────────
-  // When Cursor Waves is enabled and the wave has >1 task, route through the
-  // crew-orchestrator Cursor subagent which fans all tasks out in parallel.
-  // Single-task waves skip the orchestrator overhead and dispatch directly.
-  if (_cursorWavesEnabled && waveSteps.length > 1) {
-    const waveManifest = {
-      wave: currentWave + 1,
-      projectDir: pipeline.projectDir || "",
-      context: contextBlock ? contextBlock.slice(0, 3000) : undefined,
-      tasks: waveSteps.map(step => {
-        let taskText = step.task;
-        const isQa = step.agent === "crew-qa" || (step.agent && step.agent.includes("qa"));
-        if (isQa && pipeline.projectDir && !/qa-report\.md|Write your report to/i.test(taskText)) {
-          taskText += `\n\nWrite your report to ${pipeline.projectDir}/qa-report.md (no other filename).`;
-        }
-        return { agent: resolveAgentId(cfg, step.agent) || step.agent, task: taskText };
-      }),
-    };
-    const orchestratorTask = [
-      `[crew-orchestrator] Execute this wave — dispatch ALL tasks to subagents in parallel:`,
-      "```json",
-      JSON.stringify(waveManifest, null, 2),
-      "```",
-      `Fan out all ${waveSteps.length} tasks simultaneously and return combined results.`,
-    ].join("\n");
-
-    console.log(`[crew-lead] CURSOR_WAVES: routing wave ${currentWave + 1} through crew-orchestrator (${waveSteps.length} parallel tasks)`);
-    const taskId = dispatchTask("crew-orchestrator", { task: orchestratorTask, runtime: "cursor-cli" }, sessionId, {
-      pipelineId,
-      waveIndex: currentWave,
-      projectDir: pipeline.projectDir,
-      useCursorCli: true,
-    });
-    if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
-    return;
-  }
-
-  // ── Standard path (individual dispatch per agent) ───────────────────────
-  for (const step of waveSteps) {
-    let taskText = step.task + contextBlock;
-    // QA always writes to projectDir/qa-report.md so reports aren't random filenames
-    const isQa = step.agent === "crew-qa" || (step.agent && step.agent.includes("qa"));
-    if (isQa && pipeline.projectDir && !/qa-report\.md|Write your report to/i.test(taskText)) {
-      taskText += `\n\nWrite your report to ${pipeline.projectDir}/qa-report.md (no other filename).`;
-    }
-    const stepSpec = {
-      task: taskText,
-      ...(step.verify ? { verify: step.verify } : {}),
-      ...(step.done   ? { done:   step.done   } : {}),
-    };
-    const taskId = dispatchTask(step.agent, stepSpec, sessionId, { pipelineId, waveIndex: currentWave, projectDir: pipeline.projectDir });
-    if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
-  }
-}
-
-/**
- * Quality gate: runs after all tasks in a wave complete, before advancing to the next wave.
- * Checks:
- *   - Planning waves (PM/copywriter): did they produce files? Are deliverables referenced?
- *   - Build waves (coders/frontend): did they write output files?
- *   - Any wave: did agents ask questions instead of doing work? (indicates missing context)
- * On failure: logs warning, notifies user via SSE, but still advances (max 1 retry per wave).
- */
-const _PLANNING_AGENTS_STATIC = new Set(["crew-pm", "crew-copywriter"]);
-const _BUILD_AGENTS_STATIC = new Set(["crew-coder", "crew-coder-front", "crew-coder-back", "crew-frontend"]);
-const _PLANNING_ROLES = new Set(["researcher", "writer", "orchestrator"]);
-const _BUILD_ROLES = new Set(["coder", "ops"]);
-
-function isPlanningAgent(agentId) {
-  if (_PLANNING_AGENTS_STATIC.has(agentId)) return true;
-  const swarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json"));
-  const agent = (swarm?.agents || []).find(a => a.id === agentId);
-  return agent?._role ? _PLANNING_ROLES.has(agent._role) : false;
-}
-function isBuildAgent(agentId) {
-  if (_BUILD_AGENTS_STATIC.has(agentId)) return true;
-  const swarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json"));
-  const agent = (swarm?.agents || []).find(a => a.id === agentId);
-  return agent?._role ? _BUILD_ROLES.has(agent._role) : false;
-}
-const MAX_WAVE_RETRIES = 1;
-
-function checkWaveQualityGate(pipeline, pipelineId) {
-  const { waves, currentWave, waveResults, sessionId } = pipeline;
-  const waveSteps = waves[currentWave];
-  const retryKey = `_retries_wave_${currentWave}`;
-  pipeline[retryKey] = pipeline[retryKey] || 0;
-
-  const issues = [];
-  const nextWaveHasBuilders = currentWave + 1 < waves.length &&
-    waves[currentWave + 1].some(s => isBuildAgent(s.agent));
-
-  // ── Cursor waves path: combined orchestrator output covers all steps ──────
-  // When _cursorWavesEnabled routed the wave through crew-orchestrator, we get
-  // one combined result that covers all agents. Expand it into virtual per-step
-  // results so the gate checks each agent correctly.
-  let effectiveResults = waveResults;
-  let effectiveSteps = waveSteps;
-  const isCursorWaveResult = waveResults.length === 1 && waveSteps.length > 1 &&
-    /===\s*WAVE\s+\d+\s+RESULTS\s*===/.test(waveResults[0] || "");
-  if (isCursorWaveResult) {
-    // Parse per-agent sections from the combined report: "[crew-X]: ..."
-    const combined = waveResults[0];
-    effectiveResults = waveSteps.map(step => {
-      const agentId = step.agent || "";
-      const pattern = new RegExp(`\\[${agentId.replace(/-/g, "[-]")}\\]:\\s*([\\s\\S]*?)(?=\\n\\[crew-|===\\s*END WAVE|$)`, "i");
-      const m = combined.match(pattern);
-      return m ? m[1].trim() : combined; // fallback to full combined if not found
-    });
-    effectiveSteps = waveSteps;
-  }
-
-  for (let i = 0; i < effectiveResults.length; i++) {
-    const result = effectiveResults[i];
-    const step = effectiveSteps[i] || {};
-    const agent = step.agent || "unknown";
-
-    // Check if agent asked a question instead of doing work
-    const questionPattern = /(?:^|\n)\s*(?:should I|do you want|which|what|where should|can you clarify|please confirm|could you specify)/im;
-    if (questionPattern.test(result) && !result.includes("@@WRITE_FILE")) {
-      issues.push(`${agent} asked a question instead of producing output — likely missing context in task`);
-    }
-
-    // For planning agents: check they mentioned or produced files
-    if (isPlanningAgent(agent) && nextWaveHasBuilders) {
-      const hasFilePath = /(?:\/[A-Za-z][\w.-]*){2,}/.test(result);
-      const hasWriteFile = /@@WRITE_FILE/.test(result);
-      if (!hasFilePath && !hasWriteFile) {
-        issues.push(`${agent} (planning) produced no file references — downstream builders won't know what to read`);
-      }
-    }
-
-    // For PM specifically: check if PDD was produced when build wave follows
-    if (agent === "crew-pm" && nextWaveHasBuilders) {
-      const hasPDD = /PDD\.md|product.design.document/i.test(result);
-      const hasRoadmap = /ROADMAP\.md/i.test(result);
-      if (!hasPDD && !hasRoadmap) {
-        issues.push(`crew-pm did not produce PDD.md or ROADMAP.md — build agents need these before starting`);
-      }
-    }
-
-    // For build agents: check they actually wrote files
-    if (isBuildAgent(agent)) {
-      const hasWriteFile = /@@WRITE_FILE/.test(result);
-      const wroteFile = /(?:wrote|created|saved|written|updated|enhanced|implemented|added)\s+(?:to\s+)?(?:\/\S+|[a-zA-Z][\w/.-]+\.(?:html|css|js|ts|py|json|md|txt|sh|yaml|yml))/i.test(result);
-      const opencodeWrote = /(?:←\s*Write|Wrote file|Write\s+\.\.[\w/.-]+\.(?:html|css|js|ts|py|json|md)|Created\s+`\/)/i.test(result);
-      const explicitDone = /Done\.\s+(?:Created|Updated|Enhanced|Implemented|The\s+(?:file|prototype|component))/i.test(result);
-      // OpenCode agents write silently — check if any src files changed in last 20 min as fallback
-      let opencodeFilesChanged = false;
-      if (!hasWriteFile && !wroteFile && !opencodeWrote && !explicitDone) {
-        try {
-          const cutoff = Date.now() - 20 * 60 * 1000;
-          const dirs = ["/Users/jeffhobbs/Desktop/polymarket-ai-strat/src"];
-          const exts = new Set([".py",".js",".ts",".html",".css",".md"]);
-          const checkDir = (d) => {
-            try {
-              for (const f of fs.readdirSync(d)) {
-                const full = path.join(d, f);
-                try {
-                  const st = fs.statSync(full);
-                  if (st.isDirectory()) { if (checkDir(full)) return true; }
-                  else if (exts.has(path.extname(f)) && st.mtimeMs > cutoff) return true;
-                } catch {}
-              }
-            } catch {}
-            return false;
-          };
-          opencodeFilesChanged = dirs.some(checkDir);
-        } catch {}
-      }
-      if (!hasWriteFile && !wroteFile && !opencodeWrote && !explicitDone && !opencodeFilesChanged) {
-        issues.push(`${agent} (builder) did not write any files`);
-      }
-    }
-  }
-
-  // ── QA FAIL auto-fixer: if a QA agent returned FAIL verdict, insert fixer wave ──
-  const qaFixRetryKey = `_qa_fix_retries_wave_${currentWave}`;
-  pipeline[qaFixRetryKey] = pipeline[qaFixRetryKey] || 0;
-  const MAX_QA_FIX_LOOPS = 2;
-
-  for (let i = 0; i < effectiveResults.length; i++) {
-    const result = effectiveResults[i];
-    const step = effectiveSteps[i] || {};
-    const agent = step.agent || "unknown";
-    const isQaAgent = agent === "crew-qa" || agent.includes("qa");
-    if (!isQaAgent) continue;
-
-    const hasFailVerdict = /verdict\s*:\s*FAIL/i.test(result);
-    const criticalCount = (result.match(/###\s*CRITICAL|severity.*critical/gi) || []).length;
-
-    if ((hasFailVerdict || criticalCount >= 2) && pipeline[qaFixRetryKey] < MAX_QA_FIX_LOOPS) {
-      pipeline[qaFixRetryKey]++;
-      console.log(`[crew-lead] Pipeline ${pipelineId} QA FAIL detected — auto-dispatching crew-fixer (loop ${pipeline[qaFixRetryKey]}/${MAX_QA_FIX_LOOPS})`);
-
-      const fixerTask = `Fix all CRITICAL and HIGH issues found by crew-qa. QA report:\n\n${result.slice(0, 4000)}\n\nRead each failing file, patch in place (same path, no _fixed variants), run python3 -m py_compile on each fixed file to confirm PASS.`;
-
-      // Insert: fixer wave, then re-run this QA wave
-      const qaWaveClone = waveSteps.map(s => ({ ...s, task: s.task.split("\n\n[Quality gate feedback")[0] }));
-      waves.splice(currentWave + 1, 0,
-        [{ agent: "crew-fixer", task: fixerTask }],
-        qaWaveClone
-      );
-
-      broadcastSSE({ type: "pipeline_qa_fail_autofix", pipelineId, waveIndex: currentWave, loop: pipeline[qaFixRetryKey], ts: Date.now() });
-      appendHistory(sessionId, "system", `QA FAIL detected — auto-dispatching crew-fixer (loop ${pipeline[qaFixRetryKey]}/${MAX_QA_FIX_LOOPS}), then re-running QA.`);
-
-      pipeline.currentWave++;
-      dispatchPipelineWave(pipelineId);
-      return { pass: false, qaAutoFix: true };
-    }
-  }
-
-  if (issues.length === 0) {
-    console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1} quality gate: PASS`);
-    return { pass: true };
-  }
-
-  console.log(`[crew-lead] Pipeline ${pipelineId} wave ${currentWave + 1} quality gate: ${issues.length} issue(s)`);
-  for (const issue of issues) console.log(`  ⚠️  ${issue}`);
-
-  // Notify user via SSE
-  broadcastSSE({
-    type: "pipeline_quality_gate",
-    pipelineId,
-    waveIndex: currentWave,
-    issues,
-    willRetry: pipeline[retryKey] < MAX_WAVE_RETRIES,
-    ts: Date.now(),
-  });
-  appendHistory(sessionId, "system", `Pipeline wave ${currentWave + 1} quality gate flagged ${issues.length} issue(s): ${issues.join("; ")}. ${pipeline[retryKey] < MAX_WAVE_RETRIES ? "Retrying wave." : "Advancing anyway."}`);
-
-  if (pipeline[retryKey] < MAX_WAVE_RETRIES) {
-    pipeline[retryKey]++;
-    // Re-dispatch the wave with feedback so agents know what went wrong
-    const feedback = `\n\n[Quality gate feedback — FIX THESE ISSUES]:\n${issues.map((iss, i) => `${i + 1}. ${iss}`).join("\n")}\n\nYou MUST produce concrete file output. Do NOT ask questions — use the information you have.`;
-    for (const step of waveSteps) {
-      step.task = step.task.split("\n\n[Quality gate feedback")[0] + feedback;
-    }
-    pipeline.pendingTaskIds = new Set();
-    pipeline.waveResults = [];
-    console.log(`[crew-lead] Retrying wave ${currentWave + 1} with quality feedback`);
-    broadcastSSE({ type: "pipeline_progress", pipelineId, waveIndex: currentWave, totalWaves: waves.length, waveSize: waveSteps.length, agents: waveSteps.map(s => s.agent), ts: Date.now() });
-
-    for (const step of waveSteps) {
-      let taskText = step.task;
-      const isQa = step.agent === "crew-qa" || (step.agent && step.agent.includes("qa"));
-      if (isQa && pipeline.projectDir && !/qa-report\.md|Write your report to/i.test(taskText)) {
-        taskText += `\n\nWrite your report to ${pipeline.projectDir}/qa-report.md (no other filename).`;
-      }
-      const stepSpec = { task: taskText, ...(step.verify ? { verify: step.verify } : {}), ...(step.done ? { done: step.done } : {}) };
-      const taskId = dispatchTask(step.agent, stepSpec, sessionId, { pipelineId, waveIndex: currentWave });
-      if (taskId && taskId !== true) pipeline.pendingTaskIds.add(taskId);
-    }
-    return { pass: false, retried: true };
-  }
-
-  // Max retries exceeded — advance anyway with warning
-  console.log(`[crew-lead] Max retries reached for wave ${currentWave + 1} — advancing with issues`);
-  return { pass: true };
-}
-
 function buildTaskText(taskSpec) {
   // taskSpec can be a plain string or a {task, verify, done} object
   if (typeof taskSpec === "string") return taskSpec;
@@ -2300,54 +1838,6 @@ function writeTaskBrief(agent, task, projectDir) {
     return task; // can't write — fall back to inline
   }
 }
-
-function dispatchTask(agent, task, sessionId = "owner", pipelineMeta = null) {
-  const cfg = loadConfig();
-  agent = resolveAgentId(cfg, agent) || agent;
-  // task may be a plain string or a {task, verify, done} spec object
-  const taskText = buildTaskText(task);
-  task = taskText; // normalise to string for the rest of this function
-
-  // For QA and fixer: write a brief file instead of stuffing everything in the prompt
-  const isBriefAgent = agent === "crew-qa" || agent === "crew-fixer" || agent.includes("qa");
-  if (isBriefAgent && task.length > 800) {
-    const projectDir = pipelineMeta?.projectDir || null;
-    task = writeTaskBrief(agent, task, projectDir);
-  }
-
-  if (rtPublish) {
-    try {
-      const extraFlags = pipelineMeta?.useClaudeCode || pipelineMeta?.useCursorCli || pipelineMeta?.runtime || pipelineMeta?.projectDir
-        ? { useClaudeCode: pipelineMeta.useClaudeCode, useCursorCli: pipelineMeta.useCursorCli, runtime: pipelineMeta.runtime, projectDir: pipelineMeta.projectDir }
-        : {};
-      const taskId = rtPublish({ channel: "command", type: "command.run_task", to: agent, payload: { content: task, prompt: task, ...extraFlags } });
-      if (taskId) {
-        pendingDispatches.set(taskId, {
-          sessionId, agent, task, ts: Date.now(),
-          ...(pipelineMeta || {}),
-        });
-      }
-      console.log(`[crew-lead] dispatched via RT to ${agent} (taskId=${taskId}): ${task.slice(0, 60)}`);
-      broadcastSSE({ type: "agent_working", agent, taskId, sessionId, ts: Date.now() });
-      emitTaskLifecycle("dispatched", { taskId, agentId: agent, taskType: "task" });
-      return taskId || true;
-    } catch (e) {
-      console.error(`[crew-lead] RT dispatch failed: ${e.message}`);
-    }
-  }
-  // Fallback: openswitchctl (no reply routing back to crew-lead)
-  console.log("[crew-lead] RT not connected — using openswitchctl send (replies won't appear in chat; check RT Messages tab)");
-  try {
-    const safeTask = task.replace(/"/g, '\\"').replace(/\n/g, " ");
-    execSync(`"${CTL_PATH}" send "${agent}" "${safeTask}"`, { encoding: "utf8", timeout: 10000 });
-    console.log(`[crew-lead] dispatched via ctl to ${agent}: ${task.slice(0, 60)}`);
-    return true;
-  } catch (e) {
-    console.error(`[crew-lead] dispatch failed: ${e.message}`);
-    return false;
-  }
-}
-
 
 /**
  * Detect explicit service restart/stop requests from the user message.
@@ -4648,7 +4138,7 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`[crew-lead] Agents: ${cfg.knownAgents.join(", ")}`);
   console.log(`[crew-lead] Dispatch timeout: ${DISPATCH_TIMEOUT_MS / 1000}s`);
   if (!dispatchTimeoutInterval) {
-    dispatchTimeoutInterval = setInterval(checkDispatchTimeouts, 15_000); // check every 15s
+    setDispatchTimeoutInterval(setInterval(checkDispatchTimeouts, 15_000)); // check every 15s
   }
   connectRT();
 });
@@ -4703,6 +4193,29 @@ function broadcastSSE(payload) {
     try { client.write(`data: ${event}\n\n`); } catch {}
   }
 }
+
+initWaveDispatcher({
+  appendHistory,
+  broadcastSSE,
+  emitTaskLifecycle,
+  recordAgentTimeout,
+  isAgentOnRtBus,
+  loadConfig,
+  resolveAgentId,
+  writeTaskBrief,
+  buildTaskText,
+  getRtPublish: () => rtPublish,
+  execSync,
+  CTL_PATH,
+  readProjectsRegistry,
+  autoAdvanceRoadmap,
+  recordOpsEvent,
+  bumpOpsCounter,
+  tryRead,
+  _cursorWavesEnabled,
+  dispatchTimeoutMs: DISPATCH_TIMEOUT_MS,
+  dispatchClaimedTimeoutMs: DISPATCH_CLAIMED_TIMEOUT_MS,
+});
 
 // ── OpenCode plugin event receiver ────────────────────────────────────────────
 // The crewswarm-feed OpenCode plugin POSTs events here; we forward to the
