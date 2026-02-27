@@ -4,6 +4,18 @@ frontend/node_modules
 website/node_modules
 .opencode/plugin/node_modules
 
+# Python / AI strategy dirs — not needed in container
+venv
+.venv
+polymarket_ai_strat
+__pycache__
+*.pyc
+*.pyo
+
+# OpenCode local cache / plugin build — not needed at runtime
+.opencode
+.ruff_cache
+
 # Build artifacts
 frontend/dist
 website/dist
@@ -18,14 +30,23 @@ website/dist
 
 # Dev/local files
 .cursor
+.claude
 .env
 .env.*
 !.env.example
 
-# Test and archive
+# Test, QA, and archive
 archive
+qa-output
+test-output
+orchestrator-logs
+backups
+website-backup*
 *.test.mjs
 qa-test-output.txt
+scripts/qa-*.mjs
+scripts/capture-nav-screenshots.mjs
+scripts/quick-screenshot.mjs
 
 # macOS
 .DS_Store

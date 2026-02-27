@@ -70,7 +70,7 @@ docker compose up -d --build
 docker compose exec crewswarm bash
 
 # Check health
-curl http://localhost:4319/health
+curl http://localhost:4319/api/health
 curl http://localhost:5010/health
 ```
 
@@ -87,6 +87,28 @@ This means:
 - Engine binaries stay up to date with your host installs
 
 If an engine binary lives somewhere other than `/usr/local/bin/`, update the path in `docker-compose.yml`.
+
+---
+
+## Verification checklist
+
+After `docker compose up -d`, confirm these all pass:
+
+```bash
+# Dashboard API is up
+curl -s http://localhost:4319/api/health | grep '"ok":true'
+
+# Dashboard HTML is serving
+curl -s http://localhost:4319 | grep -i "CrewSwarm Dashboard"
+
+# crew-lead is up
+curl -s http://localhost:5010/health | grep '"ok":true'
+
+# Agent list is populated
+curl -s http://localhost:4319/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d[\"agents\"])} agents online')"
+```
+
+Expected output: `{"ok":true, ...}`, `<title>CrewSwarm Dashboard</title>`, and `14+ agents online`.
 
 ---
 
