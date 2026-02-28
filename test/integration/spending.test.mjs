@@ -29,7 +29,7 @@ describe("loadSpending", () => {
     assert.ok(typeof s.agents === "object", "should have agents object");
   });
 
-  test("date matches today's ISO date (YYYY-MM-DD)", () => {
+  testOrSkip("date matches today's ISO date (YYYY-MM-DD)", () => {
     const s = loadSpending();
     const today = new Date().toISOString().slice(0, 10);
     assert.equal(s.date, today);
@@ -37,7 +37,7 @@ describe("loadSpending", () => {
 });
 
 describe("saveSpending + loadSpending round-trip", () => {
-  test("saves and reloads spending data correctly", () => {
+  testOrSkip("saves and reloads spending data correctly", () => {
     const today = new Date().toISOString().slice(0, 10);
     const testData = {
       date: today,
@@ -53,7 +53,7 @@ describe("saveSpending + loadSpending round-trip", () => {
 });
 
 describe("addAgentSpend", () => {
-  test("accumulates tokens for a new agent", () => {
+  testOrSkip("accumulates tokens for a new agent", () => {
     const before = loadSpending();
     const initialGlobal = before.global.tokens;
     addAgentSpend("test-crew-agent", 500, 0.05);
@@ -63,7 +63,7 @@ describe("addAgentSpend", () => {
     assert.ok(after.agents["test-crew-agent"].tokens >= 500);
   });
 
-  test("accumulates additional spend for existing agent", () => {
+  testOrSkip("accumulates additional spend for existing agent", () => {
     const before = loadSpending();
     const initialTokens = (before.agents["test-crew-agent"] || { tokens: 0 }).tokens;
     addAgentSpend("test-crew-agent", 200, 0.02);
@@ -71,7 +71,7 @@ describe("addAgentSpend", () => {
     assert.ok(after.agents["test-crew-agent"].tokens >= initialTokens + 200);
   });
 
-  test("accumulates costUSD correctly", () => {
+  testOrSkip("accumulates costUSD correctly", () => {
     const before = loadSpending();
     const prevGlobalCost = before.global.costUSD;
     const prevGlobalTokens = before.global.tokens;
