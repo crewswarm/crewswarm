@@ -102,7 +102,23 @@ function log(level, msg, data = {}) {
   try { appendFileSync(LOG_PATH, JSON.stringify(entry) + "\n"); } catch {}
 }
 
-try { writeFileSync(PID_PATH, String(process.pid)); } catch {}
+// ── Singleton guard — kill stale duplicate before writing our PID ──────────
+try {
+  if (existsSync(PID_PATH)) {
+    const existingPid = parseInt(readFileSync(PID_PATH, "utf8").trim(), 10);
+    if (existingPid && existingPid !== process.pid) {
+      try {
+        process.kill(existingPid, 0); // throws ESRCH if not running
+        process.kill(existingPid, "SIGTERM");
+        log("warn", `Killed stale whatsapp-bridge (pid ${existingPid}) — only one instance allowed`);
+        await new Promise(r => setTimeout(r, 500));
+      } catch (e) {
+        if (e.code !== "ESRCH") log("warn", `Could not kill old bridge pid ${existingPid}: ${e.message}`);
+      }
+    }
+  }
+} catch {}
+writeFileSync(PID_PATH, String(process.pid));
 process.on("exit", () => { try { writeFileSync(PID_PATH, ""); } catch {} });
 
 // ── Message helpers ────────────────────────────────────────────────────────────
