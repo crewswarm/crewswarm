@@ -482,6 +482,39 @@ async function handleCommand(chatId, text) {
     return true;
   }
 
+  // /miniapp — open Mini App control deck
+  if (lower === "/miniapp" || lower === "/app" || lower === "/ui") {
+    // Get current state to pre-populate Mini App
+    const st = getState(chatId);
+    const activeProj = activeProjectByChatId.get(chatId);
+    
+    // Fetch projects for Mini App
+    let projects = [];
+    try {
+      projects = await fetchProjects();
+    } catch (e) {
+      log("warn", "Could not fetch projects for Mini App", { error: e.message });
+    }
+
+    // For now, show instructions - actual Mini App button requires hosting the HTML
+    const projectsJson = JSON.stringify(projects.map(p => ({ id: p.id, name: p.name })));
+    await tgSend(chatId, `🎛 *CrewSwarm Mini App Control Deck*
+
+Current state:
+• Mode: ${st.mode}
+• Engine: ${st.engine}
+• Agent: ${st.agent}
+${activeProj ? `• Project: ${activeProj.name}` : '• Project: none'}
+
+To enable Mini App button:
+1. Host \`crew-cli/docs/telegram-miniapp/\` on a public HTTPS URL
+2. Set bot menu button via \`setChatMenuButton\`
+3. Projects will auto-populate from /api/projects
+
+For now, use /menu for button controls or direct commands.`);
+    return true;
+  }
+
   // /mode — inline mode selector
   if (lower === "/mode") {
     const st = getState(chatId);
@@ -743,6 +776,79 @@ async function dispatchChat(chatId, text, agent = "crew-main") {
   });
 }
 
+// ── Mini App data handler ─────────────────────────────────────────────────────
+
+async function handleMiniAppData(msg) {
+  const chatId = msg.chat.id;
+  const username = msg.from?.username || "";
+  const firstName = msg.from?.first_name || "";
+  
+  let payload;
+  try {
+    payload = JSON.parse(msg.web_app_data.data);
+  } catch (e) {
+    await tgSend(chatId, `❌ Invalid Mini App payload: ${e.message}`);
+    return;
+  }
+
+  // Allowlist check
+  const allowed = getAllowedIds();
+  if (allowed && !allowed.has(chatId)) {
+    log("warn", "Blocked unauthorized Mini App request", { chatId, username });
+    await tgSend(chatId, "⛔ Unauthorized.");
+    return;
+  }
+
+  log("info", "Mini App payload received", { chatId, username, payload });
+
+  // Track session
+  activeSessions.set(chatId, { username, firstName, lastSeen: Date.now() });
+
+  // Validate payload structure
+  if (payload.type !== "crew_miniapp") {
+    await tgSend(chatId, `❌ Unknown payload type: ${payload.type}`);
+    return;
+  }
+
+  // Update chat state from Mini App controls
+  setState(chatId, {
+    mode: payload.mode || "chat",
+    engine: payload.engine || "cursor",
+    agent: payload.agent || "crew-main",
+    projectId: payload.projectId || null
+  });
+
+  // Handle action
+  if (payload.action === "message" && payload.prompt) {
+    // Update project context if specified
+    if (payload.projectId) {
+      try {
+        const projects = await fetchProjects();
+        const match = projects.find(p => p.id === payload.projectId || p.name === payload.projectId);
+        if (match) {
+          activeProjectByChatId.set(chatId, { id: match.id, name: match.name, outputDir: match.outputDir });
+        }
+      } catch (e) {
+        log("warn", "Could not fetch projects for Mini App context", { error: e.message });
+      }
+    }
+    
+    // Route the prompt using state
+    await routeByState(chatId, payload.prompt);
+    return;
+  }
+
+  if (payload.action === "get_status") {
+    const st = getState(chatId);
+    const activeProj = activeProjectByChatId.get(chatId);
+    const projLine = activeProj ? `📁 *Project:* ${activeProj.name}` : "📁 *Project:* none";
+    await tgSend(chatId, `*Mini App State:*\n\n🔧 *Mode:* ${st.mode}\n⚙️ *Engine:* ${st.engine}\n🤖 *Agent:* ${st.agent}\n${projLine}`);
+    return;
+  }
+
+  await tgSend(chatId, `❌ Unknown Mini App action: ${payload.action}`);
+}
+
 // ── Persistent memory writer ───────────────────────────────────────────────────
 // Writes a rolling summary to memory/telegram-context.md so agents remember
 // who they talked to and what was said across bridge restarts.
@@ -869,6 +975,13 @@ async function pollLoop() {
         }
 
         const msg = update.message;
+        
+        // Handle Mini App data (web_app_data)
+        if (msg?.web_app_data?.data) {
+          await handleMiniAppData(msg);
+          continue;
+        }
+        
         if (!msg?.text) continue;
 
         const chatId    = msg.chat.id;
@@ -926,6 +1039,7 @@ async function main() {
         { command: "engine", description: "Select direct engine" },
         { command: "status", description: "Show current state" },
         { command: "projects", description: "List projects" },
+        { command: "miniapp", description: "Open Mini App control deck" },
         { command: "home", description: "Clear project context" }
       ]
     });
