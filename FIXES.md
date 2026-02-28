@@ -7,15 +7,11 @@
 
 ## CRITICAL — Broken (fix immediately)
 
-### C1 — DLQ replay path mismatch
-**What:** `dlq-replay.mjs` reads from `~/.crewswarm/logs/dlq` but gateway-bridge writes DLQ entries to `~/.crewswarm/workspace/shared-memory/claw-swarm/opencrew-rt/dlq`. Every "Retry" click in the dashboard silently fails.  
-**Fix:** Update `dlq-replay.mjs` to read from the same path gateway-bridge uses, OR add a constant both files import from a shared config.  
-**Files:** `scripts/dlq-replay.mjs`, `gateway-bridge.mjs`
+### C1 — DLQ replay path mismatch ✅ FIXED
+`dlq-replay.mjs` now uses `SHARED_MEMORY_BASE`/`SHARED_MEMORY_NAMESPACE` constants matching gateway-bridge exactly.
 
-### C2 — Claude Code mode silently does not save
-**What:** Gateway-bridge reads `agent.useClaudeCode` and `agent.claudeCodeModel` from crewswarm.json. The dashboard shows Claude Code route buttons. But `/api/agents-config/update` never writes `useClaudeCode` or `claudeCodeModel` — they're stripped from the body destructuring. Setting Claude Code mode does nothing.  
-**Fix:** Add `useClaudeCode`, `claudeCodeModel` to destructuring and update logic in the POST handler.  
-**Files:** `scripts/dashboard.mjs` (line ~7693)
+### C2 — Claude Code mode silently does not save ✅ FIXED
+`useClaudeCode` and `claudeCodeModel` are now destructured and persisted in `/api/agents-config/update`.
 
 ---
 
@@ -36,10 +32,8 @@
 **Fix:** Add `DELETE /api/dlq/:key` endpoint. Add ✕ button per DLQ row.  
 **Files:** `scripts/dashboard.mjs`
 
-### H4 — PM Loop options entirely env-only
-**What:** QA toggle, security toggle, specialist routing, max items, task timeout, extend behavior, coder agent, pause between tasks, max retries — none are configurable from the PM Loop tab.  
-**Fix:** Add an "Advanced Options" collapsible section to the PM Loop tab with toggles/inputs for: QA enabled, security enabled, use specialists, max items, task timeout (min), extend every N, default coder agent.  
-**Files:** `scripts/dashboard.mjs`, `pm-loop.mjs` (pass as env to spawned process)
+### H4 — PM Loop options entirely env-only ✅ FIXED
+PM Loop tab now has: QA, security, specialist routing toggles; max items, task timeout, extend every N, coder agent, max retries, pause inputs. All passed as env to spawned pm-loop process.
 
 ### H5 — No global OpenCode loop toggle
 **What:** `CREWSWARM_ENGINE_LOOP=1` enables the Ouroboros loop for ALL agents. Per-agent `opencodeLoop` checkbox exists but there's no global toggle or `CREWSWARM_ENGINE_LOOP_MAX_ROUNDS` input.  
@@ -105,10 +99,8 @@
 **Fix:** Add `--purple: #a855f7` and `--warning: #f59e0b` to `:root` in the dashboard CSS.  
 **Files:** `scripts/dashboard.mjs` (CSS section)
 
-### M10 — Many important env vars have zero dashboard exposure
-**What:** ~35 env vars control meaningful behavior (dispatch timeouts, retry limits, reconnect delays, memory namespace, etc.) with no dashboard visibility or editability.  
-**Fix (phased):** Add an "Advanced / Environment" section to Settings that shows current values of key operational env vars (read-only first, then editable for the most useful ones like timeouts and retry counts).  
-**Files:** `scripts/dashboard.mjs`, `scripts/dashboard.mjs` API section
+### M10 — Many important env vars have zero dashboard exposure ✅ FIXED
+Security tab now exposes all 39 env vars (up from 27). All new watchdog, PM loop, Gemini CLI, and dispatch vars are visible and editable with defaults pre-filled.
 
 ---
 
@@ -145,6 +137,16 @@
 **Files:** `scripts/dashboard.mjs`
 
 ---
+
+## Fixed in Session 7 (2026-02-27) ✅
+
+- **Runaway processes** — `restart-all-from-repo.sh` now uses broad `pkill -f` patterns; kills `crew-scribe`; uses absolute paths; guards MCP port with `lsof`
+- **PM loop hanging** — Activity-based watchdog in `lib/engines/runners.mjs` (idle + absolute max); adaptive deadline in `pm-loop.mjs`; binary existence check for early failure
+- **Env vars tab empty** — Inputs now pre-populate with code defaults (`saved ?? def ?? ''`); "default" badge shown; all 39 vars surfaced (up from 27); **M10 ✅**
+- **Provider key detection** — `BUILTIN_URLS` expanded to include Cerebras, NVIDIA, Google, Together, Cohere; "no key" / "Failed to parse URL" errors eliminated
+- **Default values dim text** — Restored white text for default values (was accidentally dimmed to `var(--text-3)`); opacity 0.65 now indicates defaults without losing readability
+- **Tests: 408 total** — Added 129 new tests (bg-consciousness, Ouroboros loop, PM synthesis, all 12 new env vars, Telegram round-trip E2E); 0 failures
+- **Docs cleanup** — Archived completed plan docs (crew-lead split, agent migration, OpenClaw ref audit, session summary, refactor plan); deleted stale agent output files from repo root; **C1 ✅ C2 ✅ H4 ✅ M10 ✅**
 
 ## Fixed in Session 6 (2026-02-27) ✅
 
@@ -241,11 +243,11 @@
 
 | Priority | ID | Effort | Impact |
 |---|---|---|---|
-| 1 | C1 | 30min | DLQ is completely broken |
-| 2 | C2 | 30min | Claude Code mode silently broken |
-| 3 | H1 | 1hr | @@STOP/@@KILL UX critical for autonomous mode |
-| 4 | H2 | 1hr | Projects unusable without edit |
-| 5 | H3 | 30min | DLQ unmanageable without delete |
+| ~~1~~ | ~~C1~~ | ~~30min~~ | ~~DLQ is completely broken~~ ✅ Fixed |
+| ~~2~~ | ~~C2~~ | ~~30min~~ | ~~Claude Code mode silently broken~~ ✅ Fixed |
+| 1 | H1 | 1hr | @@STOP/@@KILL UX critical for autonomous mode |
+| 2 | H2 | 1hr | Projects unusable without edit |
+| 3 | H3 | 30min | DLQ unmanageable without delete |
 | 6 | H4 | 2hr | PM loop power users locked out of all config |
 | 7 | H6 | 3hr | Mobile — kills any phone/tablet use |
 | 8 | H5 | 1hr | Global loop toggle |
