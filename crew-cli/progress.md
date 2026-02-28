@@ -25,3 +25,10 @@ Date: 2026-02-28
 
 - OpenCode workflow requires `ANTHROPIC_API_KEY` secret.
 - Workflow uses built-in `github.token` for repo writes/comments.
+- Added Node 24 test compatibility fix:
+  - Replaced `chalk` dependency in `src/utils/logger.ts` with internal ANSI color helpers
+  - Removes ESM import mismatch in `tests/orchestrator.test.js` and `tests/router.test.js`
+- Latest verification:
+  - `npm run build` ✓
+  - `npm run check` ✓
+  - `npm test` ✓ (34 passing, 0 failing on Node v24.10.0)

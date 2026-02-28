@@ -61,10 +61,21 @@ export class SessionManager {
     return JSON.parse(raw);
   }
 
+  async saveSession(session) {
+    await this.ensureInitialized();
+    session.updatedAt = nowIso();
+    await writeFile(this.paths.session, JSON.stringify(session, null, 2), 'utf8');
+  }
+
   async loadCost() {
     await this.ensureInitialized();
     const raw = await readFile(this.paths.cost, 'utf8');
     return JSON.parse(raw);
+  }
+
+  async saveCost(cost) {
+    await this.ensureInitialized();
+    await writeFile(this.paths.cost, JSON.stringify(cost, null, 2), 'utf8');
   }
 
   async getSessionId() {
@@ -112,5 +123,35 @@ export class SessionManager {
   async clear() {
     await rm(this.stateDir, { recursive: true, force: true });
     await this.ensureInitialized();
+  }
+
+  async compact(options: { keepHistory?: number; keepCostEntries?: number } = {}) {
+    const keepHistory = Math.max(1, Number(options.keepHistory || 200));
+    const keepCostEntries = Math.max(1, Number(options.keepCostEntries || 500));
+
+    const session = await this.loadSession();
+    const cost = await this.loadCost();
+
+    const historyBefore = session.history.length;
+    const costBefore = (cost.entries || []).length;
+
+    session.history = session.history.slice(-keepHistory);
+    cost.entries = (cost.entries || []).slice(-keepCostEntries);
+    cost.totalUsd = Number((cost.entries || []).reduce((sum: number, entry: any) => sum + Number(entry.usd || 0), 0));
+    cost.byModel = {};
+    for (const entry of cost.entries) {
+      const model = entry.model || 'unknown';
+      cost.byModel[model] = (cost.byModel[model] || 0) + Number(entry.usd || 0);
+    }
+
+    await this.saveSession(session);
+    await this.saveCost(cost);
+
+    return {
+      historyBefore,
+      historyAfter: session.history.length,
+      costBefore,
+      costAfter: cost.entries.length
+    };
   }
 }

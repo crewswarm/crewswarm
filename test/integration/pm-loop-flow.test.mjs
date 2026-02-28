@@ -26,7 +26,7 @@ import { tmpdir } from "node:os";
 
 const CREWSWARM_DIR = path.resolve(".");
 const PM_LOOP_SCRIPT = path.join(CREWSWARM_DIR, "pm-loop.mjs");
-const LOGS_DIR = path.join(os.homedir(), ".crewswarm", "orchestrator-logs");
+const LOGS_DIR = path.join(CREWSWARM_DIR, "orchestrator-logs"); // Use repo-local logs, matching pm-loop.mjs
 
 // Check if services are running
 let rtBusReachable = false;

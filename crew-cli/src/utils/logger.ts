@@ -1,4 +1,19 @@
-import chalk from 'chalk';
+const useColor = Boolean(process.stdout?.isTTY) && !process.env.NO_COLOR;
+
+function ansi(code: string, text: string): string {
+  if (!useColor) return text;
+  return `\u001b[${code}m${text}\u001b[0m`;
+}
+
+const color = {
+  gray: (text: string) => ansi('90', text),
+  red: (text: string) => ansi('31', text),
+  yellow: (text: string) => ansi('33', text),
+  green: (text: string) => ansi('32', text),
+  blue: (text: string) => ansi('34', text),
+  cyan: (text: string) => ansi('36', text),
+  bold: (text: string) => ansi('1', text),
+};
 
 export class Logger {
   constructor(options = {}) {
@@ -8,15 +23,15 @@ export class Logger {
 
   formatMessage(level, message, ...args) {
     const timestamp = new Date().toISOString();
-    const prefix = `${chalk.gray(timestamp)} ${this.prefix}`;
+    const prefix = `${color.gray(timestamp)} ${this.prefix}`;
     
     let colorFn;
     switch (level) {
-      case 'error': colorFn = chalk.red; break;
-      case 'warn': colorFn = chalk.yellow; break;
-      case 'success': colorFn = chalk.green; break;
-      case 'debug': colorFn = chalk.gray; break;
-      default: colorFn = chalk.blue;
+      case 'error': colorFn = color.red; break;
+      case 'warn': colorFn = color.yellow; break;
+      case 'success': colorFn = color.green; break;
+      case 'debug': colorFn = color.gray; break;
+      default: colorFn = color.blue;
     }
 
     return `${prefix} ${colorFn(`[${level.toUpperCase()}]`)} ${message}`;
@@ -51,7 +66,7 @@ export class Logger {
     return parts
       .map(part => {
         if (!part.startsWith('```')) return part;
-        return chalk.cyan(part);
+        return color.cyan(part);
       })
       .join('');
   }
@@ -64,11 +79,11 @@ export class Logger {
     return diff
       .split('\n')
       .map(line => {
-        if (line.startsWith('+') && !line.startsWith('+++')) return chalk.green(line);
-        if (line.startsWith('-') && !line.startsWith('---')) return chalk.red(line);
-        if (line.startsWith('@@')) return chalk.cyan(line);
+        if (line.startsWith('+') && !line.startsWith('+++')) return color.green(line);
+        if (line.startsWith('-') && !line.startsWith('---')) return color.red(line);
+        if (line.startsWith('@@')) return color.cyan(line);
         if (line.startsWith('diff') || line.startsWith('index') || line.startsWith('---') || line.startsWith('+++')) {
-          return chalk.bold(line);
+          return color.bold(line);
         }
         return line;
       })
@@ -82,6 +97,6 @@ export class Logger {
     const filled = Math.round((clamped / safeTotal) * width);
     const bar = `${'='.repeat(filled)}${'-'.repeat(width - filled)}`;
     const pct = Math.round((clamped / safeTotal) * 100);
-    console.log(`${chalk.blue(label)} [${bar}] ${pct}% (${clamped}/${safeTotal})`);
+    console.log(`${color.blue(label)} [${bar}] ${pct}% (${clamped}/${safeTotal})`);
   }
 }

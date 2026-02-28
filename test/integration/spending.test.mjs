@@ -1,29 +1,14 @@
 /**
  * Integration tests for lib/runtime/spending.mjs
  * Tests loadSpending, saveSpending, and addAgentSpend.
- * Saves/restores the real spending file to avoid corrupting live data.
+ * Uses hermetic test mode to avoid corrupting live data.
  */
 import { test, describe, before, after } from "node:test";
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
+import assert from "assert/strict";
+import { setupHermeticTest } from "../helpers/hermetic.mjs";
 import { loadSpending, saveSpending, addAgentSpend } from "../../lib/runtime/spending.mjs";
 
-const SPENDING_FILE = path.join(os.homedir(), ".crewswarm", "spending.json");
-let savedSpending = null;
-
-before(() => {
-  try { savedSpending = fs.readFileSync(SPENDING_FILE, "utf8"); } catch { savedSpending = null; }
-});
-
-after(() => {
-  if (savedSpending !== null) {
-    try { fs.writeFileSync(SPENDING_FILE, savedSpending); } catch {}
-  } else {
-    try { fs.unlinkSync(SPENDING_FILE); } catch {}
-  }
-});
+before(() => setupHermeticTest());
 
 describe("loadSpending", () => {
   test("returns an object with date, global, and agents fields", () => {

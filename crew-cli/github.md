@@ -42,6 +42,10 @@ This repo includes safe OpenCode v1 workflows:
   - low-risk dependency hygiene
   - small/safe follow-up recommendations
 
+## QA Checklist
+
+- See `docs/github-qa-checklist.md` for end-to-end validation steps and pass criteria.
+
 ## Required Secrets
 
 - `ANTHROPIC_API_KEY` in repo/org GitHub secrets.

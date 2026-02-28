@@ -21,8 +21,36 @@ import { runCiFixLoop } from '../ci/index.js';
 import { compareScreenshots, runBrowserDebug } from '../browser/index.js';
 import { downloadTeamContext, getTeamSyncStatus, loadPrivacyControls, savePrivacyControls, uploadTeamContext } from '../team/index.js';
 import { appendVoiceTranscript, recordAudio, speakWithSkill, transcribeAudio } from '../voice/listener.js';
+import { buildFileContextBlock, buildRepoContextBlock, collectOption, mergeTaskWithContext, readStdinText } from '../context/augment.js';
+import { getReviewPayload } from '../review/index.js';
+import { addMcpServer, listMcpServers, removeMcpServer } from '../mcp/index.js';
+import { getHeadlessState, runHeadlessTask, setHeadlessPaused } from '../headless/index.js';
+import { runSrcCli } from '../sourcegraph/index.js';
+import { getProjectContext } from '../context/git.js';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const program = new Command();
+
+function parseHeadlessShortcutArgs(args: string[]) {
+  const enabled = args.includes('--headless');
+  if (!enabled) return { enabled: false };
+
+  const readValue = (...names: string[]) => {
+    for (let i = 0; i < args.length; i += 1) {
+      if (names.includes(args[i])) return args[i + 1];
+    }
+    return undefined;
+  };
+
+  return {
+    enabled: true,
+    json: args.includes('--json'),
+    alwaysApprove: args.includes('--always-approve'),
+    task: readValue('-t', '--task'),
+    agent: readValue('--agent')
+  };
+}
 
 export async function main(args = []) {
   const logger = new Logger();
@@ -38,6 +66,27 @@ export async function main(args = []) {
   await toolManager.initialize();
   await sandbox.load();
 
+  const headlessShortcut = parseHeadlessShortcutArgs(args);
+  if (headlessShortcut.enabled) {
+    if (!headlessShortcut.task) {
+      console.error('Missing task for headless mode. Use -t "your task".');
+      process.exit(1);
+    }
+    const result = await runHeadlessTask({
+      task: headlessShortcut.task,
+      json: headlessShortcut.json,
+      alwaysApprove: headlessShortcut.alwaysApprove,
+      agent: headlessShortcut.agent,
+      projectDir: process.cwd(),
+      router: agentRouter,
+      orchestrator,
+      sandbox,
+      session: sessionManager
+    });
+    if (!result.success) process.exit(1);
+    return;
+  }
+
   program
     .name('crew')
     .description('CrewSwarm CLI - Agent orchestration made simple')
@@ -49,9 +98,18 @@ export async function main(args = []) {
     .argument('<input...>', 'Message or question')
     .option('-p, --project <path>', 'Project directory')
     .option('--cross-repo', 'Inject sibling repository context', false)
+    .option('--context-file <path>', 'Attach a file as additional context (repeatable)', collectOption, [])
+    .option('--context-repo <path>', 'Attach git context from another repo (repeatable)', collectOption, [])
+    .option('--stdin', 'Read additional context from stdin', false)
     .action(async (inputArray, options) => {
       let input = inputArray.join(' ');
       try {
+        const fileBlock = await buildFileContextBlock(options.contextFile || []);
+        const repoBlock = await buildRepoContextBlock(options.contextRepo || []);
+        const stdinText = options.stdin ? await readStdinText() : '';
+        const stdinBlock = stdinText ? `## Stdin Context\n\`\`\`text\n${stdinText}\n\`\`\`` : '';
+        input = mergeTaskWithContext(input, [fileBlock, repoBlock, stdinBlock]);
+
         if (options.crossRepo) {
           const multiContext = await collectMultiRepoContext(options.project || process.cwd());
           input = `${input}\n\n${multiContext}`;
@@ -98,12 +156,21 @@ export async function main(args = []) {
     .option('--max-cost <usd>', 'Require confirmation if estimate exceeds this USD amount', '1')
     .option('--skip-cost-check', 'Skip cost estimate confirmation gate', false)
     .option('--cross-repo', 'Inject sibling repository context', false)
+    .option('--context-file <path>', 'Attach a file as additional context (repeatable)', collectOption, [])
+    .option('--context-repo <path>', 'Attach git context from another repo (repeatable)', collectOption, [])
+    .option('--stdin', 'Read additional context from stdin', false)
     .action(async (agent, task, options) => {
       let finalTask = task;
       try {
+        const fileBlock = await buildFileContextBlock(options.contextFile || []);
+        const repoBlock = await buildRepoContextBlock(options.contextRepo || []);
+        const stdinText = options.stdin ? await readStdinText() : '';
+        const stdinBlock = stdinText ? `## Stdin Context\n\`\`\`text\n${stdinText}\n\`\`\`` : '';
+        finalTask = mergeTaskWithContext(finalTask, [fileBlock, repoBlock, stdinBlock]);
+
         if (options.crossRepo) {
           const multiContext = await collectMultiRepoContext(options.project || process.cwd());
-          finalTask = `${task}\n\n${multiContext}`;
+          finalTask = `${finalTask}\n\n${multiContext}`;
         }
 
         const sessionId = await sessionManager.getSessionId();
@@ -370,6 +437,187 @@ export async function main(args = []) {
           break;
         }
       }
+    });
+
+  program
+    .command('review')
+    .description('Analyze current git diff before commit and request a QA-style review')
+    .option('--agent <id>', 'Agent to run review with', 'crew-qa')
+    .action(async options => {
+      const review = await getReviewPayload(process.cwd());
+      if (!review.hasChanges) {
+        logger.warn('No staged/unstaged git diff detected.');
+        return;
+      }
+      logger.info(`Dispatching diff review to ${options.agent}`);
+      const result = await agentRouter.dispatch(options.agent, review.payload, {
+        sessionId: await sessionManager.getSessionId(),
+        project: process.cwd(),
+        injectGitContext: false
+      });
+      logger.printWithHighlight(String(result.result || ''));
+    });
+
+  program
+    .command('context')
+    .description('Inspect current prompt/context footprint')
+    .option('-p, --project <path>', 'Project directory', process.cwd())
+    .action(async options => {
+      const project = options.project || process.cwd();
+      const gitContext = await getProjectContext(project);
+      const session = await sessionManager.loadSession();
+      const tokenEstimate = Math.ceil((gitContext.length + JSON.stringify(session.history).length) / 4);
+
+      console.log(chalk.blue('--- Context Report ---'));
+      console.log(`Project: ${project}`);
+      console.log(`Session entries: ${session.history.length}`);
+      console.log(`Git context chars: ${gitContext.length}`);
+      console.log(`Estimated tokens in active context: ~${tokenEstimate}`);
+    });
+
+  program
+    .command('compact')
+    .description('Compact local session/cost context windows to keep prompts lean')
+    .option('--history <n>', 'Keep last N history entries', '200')
+    .option('--cost <n>', 'Keep last N cost entries', '500')
+    .option('--write-summary', 'Write compact context summary file', true)
+    .action(async options => {
+      const result = await sessionManager.compact({
+        keepHistory: Number.parseInt(options.history || '200', 10),
+        keepCostEntries: Number.parseInt(options.cost || '500', 10)
+      });
+
+      if (options.writeSummary) {
+        const session = await sessionManager.loadSession();
+        const last = session.history.slice(-10);
+        const summary = [
+          '# Compact Context Summary',
+          '',
+          `Updated: ${new Date().toISOString()}`,
+          `History entries kept: ${session.history.length}`,
+          '',
+          '## Recent activity',
+          ...last.map((entry: any) => `- ${entry.timestamp} ${entry.type}${entry.agent ? ` (${entry.agent})` : ''}`)
+        ].join('\n');
+        await writeFile(join(process.cwd(), '.crew', 'context-summary.md'), `${summary}\n`, 'utf8');
+      }
+
+      logger.success(
+        `Compacted session history ${result.historyBefore} -> ${result.historyAfter}, ` +
+        `cost entries ${result.costBefore} -> ${result.costAfter}`
+      );
+    });
+
+  const mcp = program
+    .command('mcp')
+    .description('Manage MCP server entries (add/list/remove)');
+
+  mcp
+    .command('list')
+    .description('List local MCP servers from .crew/mcp-servers.json')
+    .action(async () => {
+      const servers = await listMcpServers(process.cwd());
+      const names = Object.keys(servers);
+      if (!names.length) {
+        logger.warn('No MCP servers configured.');
+        return;
+      }
+      names.forEach(name => {
+        const item = servers[name];
+        console.log(`- ${name}: ${item.url}${item.bearerTokenEnvVar ? ` (token env: ${item.bearerTokenEnvVar})` : ''}`);
+      });
+    });
+
+  mcp
+    .command('add')
+    .description('Add an MCP server entry')
+    .argument('<name>', 'Server name')
+    .requiredOption('--url <url>', 'MCP server URL')
+    .option('--bearer-token-env-var <var>', 'Bearer token env variable name')
+    .option('--header <kv>', 'Custom header key:value (repeatable)', collectOption, [])
+    .option('--client <id>', 'Optional client sync: cursor | claude | opencode')
+    .action(async (name, options) => {
+      const headers: Record<string, string> = {};
+      for (const raw of options.header || []) {
+        const [key, ...rest] = String(raw).split(':');
+        if (key && rest.length) headers[key.trim()] = rest.join(':').trim();
+      }
+      await addMcpServer(name, {
+        url: options.url,
+        bearerTokenEnvVar: options.bearerTokenEnvVar,
+        headers
+      }, process.cwd(), options.client);
+      logger.success(`Added MCP server "${name}"`);
+    });
+
+  mcp
+    .command('remove')
+    .description('Remove an MCP server entry')
+    .argument('<name>', 'Server name')
+    .option('--client <id>', 'Optional client sync removal: cursor | claude | opencode')
+    .action(async (name, options) => {
+      await removeMcpServer(name, process.cwd(), options.client);
+      logger.success(`Removed MCP server "${name}"`);
+    });
+
+  const headless = program
+    .command('headless')
+    .description('Headless execution controls for CI automation');
+
+  headless
+    .command('run')
+    .requiredOption('-t, --task <text>', 'Task text')
+    .option('--agent <id>', 'Override routed agent')
+    .option('--json', 'Emit JSONL events', false)
+    .option('--always-approve', 'Auto-apply sandbox changes', false)
+    .action(async options => {
+      const result = await runHeadlessTask({
+        task: options.task,
+        agent: options.agent,
+        json: options.json,
+        alwaysApprove: options.alwaysApprove,
+        projectDir: process.cwd(),
+        router: agentRouter,
+        orchestrator,
+        sandbox,
+        session: sessionManager
+      });
+      if (!result.success) process.exit(1);
+    });
+
+  headless
+    .command('pause')
+    .description('Pause headless execution')
+    .action(async () => {
+      await setHeadlessPaused(true, process.cwd());
+      logger.success('Headless mode paused.');
+    });
+
+  headless
+    .command('resume')
+    .description('Resume headless execution')
+    .action(async () => {
+      await setHeadlessPaused(false, process.cwd());
+      logger.success('Headless mode resumed.');
+    });
+
+  headless
+    .command('status')
+    .description('Show headless pause/resume state')
+    .action(async () => {
+      const state = await getHeadlessState(process.cwd());
+      console.log(`paused=${state.paused} updatedAt=${state.updatedAt || 'n/a'}`);
+    });
+
+  program
+    .command('src')
+    .description('Run Sourcegraph src CLI commands (for batch codemods/search)')
+    .argument('<args...>', 'Arguments passed to src CLI')
+    .action(async (srcArgs: string[]) => {
+      const result = await runSrcCli(srcArgs, process.cwd());
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      if (!result.success) process.exit(result.code || 1);
     });
 
   program

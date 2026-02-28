@@ -1,18 +1,15 @@
 /**
  * Integration tests for lib/chat/history.mjs
- * Uses unique test session IDs so they don't collide with real history.
- * Cleans up after each test.
+ * Uses hermetic test mode to isolate from real history.
  */
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { setupHermeticTest, generateTestSessionId } from "../helpers/hermetic.mjs";
 import { sessionFile, loadHistory, appendHistory, clearHistory } from "../../lib/chat/history.mjs";
 
-const TEST_SESSION = `test-session-${process.pid}-${Date.now()}`;
+const TEST_SESSION = generateTestSessionId("chat");
 
-after(() => {
-  try { fs.unlinkSync(sessionFile(TEST_SESSION)); } catch {}
-});
+before(() => setupHermeticTest());
 
 describe("sessionFile", () => {
   test("returns a path string ending in .jsonl", () => {
