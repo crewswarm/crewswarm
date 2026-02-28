@@ -14,6 +14,10 @@
     "test:coverage": "node --import tsx --test --experimental-test-coverage tests/*.test.js",
     "qa:inventory": "node tools/qa-file-inventory.mjs",
     "qa:smoke": "node tools/qa-command-smoke.mjs",
+    "qa:gateway-contract": "node tools/qa-gateway-contract.mjs",
+    "qa:engine-matrix": "node tools/qa-engine-matrix.mjs",
+    "qa:pm-loop": "node tools/qa-pm-loop-e2e.mjs",
+    "qa:e2e": "npm run qa:gateway-contract && npm run qa:engine-matrix && npm run qa:pm-loop",
     "qa:full": "npm run build && npm run test:coverage && npm run qa:inventory && npm run qa:smoke",
     "check": "npm run build && node --check dist/crew.mjs",
     "doctor": "node bin/crew.js doctor"

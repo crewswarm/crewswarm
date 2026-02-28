@@ -136,3 +136,21 @@ Date: 2026-02-28
   - `tools/qa-command-smoke.mjs`
 - Verified locally:
   - `npm run qa:full` ✓
+
+## Gateway/Engine E2E Harness — 2026-02-28
+
+- Added end-to-end validation harnesses (rate-limit aware):
+  - `tools/qa-gateway-contract.mjs`
+  - `tools/qa-engine-matrix.mjs`
+  - `tools/qa-pm-loop-e2e.mjs`
+- Added npm commands:
+  - `npm run qa:gateway-contract`
+  - `npm run qa:engine-matrix`
+  - `npm run qa:pm-loop`
+  - `npm run qa:e2e` (runs all three)
+- Added manual dispatch workflow:
+  - `.github/workflows/e2e-engines.yml`
+  - supports input gateway URL, timeout, require-gateway mode, and custom engine matrix JSON
+- Behavior:
+  - 429/rate-limit responses are marked `SKIP_RATE_LIMIT` (non-fatal)
+  - non-rate-limit failures remain fatal

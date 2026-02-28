@@ -1,0 +1,48 @@
+name: E2E Engines and PM Loop
+
+on:
+  workflow_dispatch:
+    inputs:
+      gateway:
+        description: "Gateway base URL (e.g. http://127.0.0.1:5010)"
+        required: false
+        default: "http://127.0.0.1:5010"
+      require_gateway:
+        description: "Fail if gateway is unreachable"
+        required: false
+        default: "false"
+      timeout_ms:
+        description: "Per-step timeout in milliseconds"
+        required: false
+        default: "120000"
+      engine_matrix_json:
+        description: "Optional JSON array override for engine matrix"
+        required: false
+        default: ""
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run gateway contract + engine matrix + pm loop e2e
+        env:
+          QA_GATEWAY: ${{ inputs.gateway }}
+          QA_REQUIRE_GATEWAY: ${{ inputs.require_gateway }}
+          QA_TIMEOUT_MS: ${{ inputs.timeout_ms }}
+          QA_ENGINE_MATRIX_JSON: ${{ inputs.engine_matrix_json }}
+        run: npm run qa:e2e
