@@ -390,6 +390,14 @@ const ENV_GROUPS = [
     ],
   },
   {
+    label: 'Engine — Gemini CLI',
+    note: 'Free tier via Google account — 60 req/min. Run gemini once to auth.',
+    vars: [
+      { key: 'CREWSWARM_GEMINI_CLI_ENABLED', hint: 'Route agents through Gemini CLI globally',                               default: 'off' },
+      { key: 'CREWSWARM_GEMINI_CLI_MODEL',   hint: 'Model passed to gemini -p (e.g. gemini-2.0-flash) — blank for default',  default: 'gemini default' },
+    ],
+  },
+  {
     label: 'Engine — Docker Sandbox',
     note: 'Runs any inner engine inside an isolated Docker microVM. API keys injected by network proxy — never exposed to the agent.',
     vars: [
@@ -402,10 +410,13 @@ const ENV_GROUPS = [
   {
     label: 'Engine Loop & Dispatch',
     vars: [
-      { key: 'CREWSWARM_ENGINE_LOOP',            hint: 'Enable Ouroboros engine loop for all agents',          default: 'off' },
-      { key: 'CREWSWARM_ENGINE_LOOP_MAX_ROUNDS', hint: 'Max STEP iterations per loop run',                     default: '10' },
-      { key: 'CREWSWARM_DISPATCH_TIMEOUT',       hint: 'ms before a dispatched task times out',                default: '120000' },
-      { key: 'CREWSWARM_RT_AGENT',               hint: 'Agent ID used for the RT bus',                         default: 'crew-coder' },
+      { key: 'CREWSWARM_ENGINE_LOOP',                 hint: 'Enable Ouroboros engine loop for all agents',                      default: 'off' },
+      { key: 'CREWSWARM_ENGINE_LOOP_MAX_ROUNDS',      hint: 'Max STEP iterations per loop run',                                 default: '10' },
+      { key: 'CREWSWARM_ENGINE_IDLE_TIMEOUT_MS',      hint: 'Kill engine (Cursor/Claude) if no output for this many ms',        default: '300000' },
+      { key: 'CREWSWARM_ENGINE_MAX_TOTAL_MS',         hint: 'Absolute max ms for any single engine task',                       default: '2700000' },
+      { key: 'CREWSWARM_DISPATCH_TIMEOUT_MS',         hint: 'ms before an unclaimed dispatch times out',                        default: '300000' },
+      { key: 'CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS', hint: 'ms before a claimed (in-progress) dispatch times out',             default: '900000' },
+      { key: 'CREWSWARM_RT_AGENT',                    hint: 'Agent ID used for the RT bus',                                     default: 'crew-coder' },
     ],
   },
   {
@@ -441,9 +452,16 @@ const ENV_GROUPS = [
   {
     label: 'PM Loop',
     vars: [
-      { key: 'PM_MAX_ITEMS',    hint: 'Max roadmap items per PM loop run',    default: '10' },
-      { key: 'PM_USE_QA',       hint: 'Include crew-qa in PM pipeline',       default: 'off' },
-      { key: 'PM_USE_SECURITY', hint: 'Include crew-security in PM pipeline', default: 'off' },
+      { key: 'PM_MAX_ITEMS',           hint: 'Max roadmap items per PM loop run',                                        default: '10' },
+      { key: 'PM_MAX_CONCURRENT',      hint: 'Max concurrent agent tasks in PM loop',                                    default: '20' },
+      { key: 'PM_USE_QA',              hint: 'Include crew-qa review after each PM task',                                default: 'off' },
+      { key: 'PM_USE_SECURITY',        hint: 'Include crew-security review for auth/key tasks',                          default: 'off' },
+      { key: 'PM_USE_SPECIALISTS',     hint: 'Route tasks to specialist agents (front/back/github) by keyword',          default: 'on' },
+      { key: 'PM_SELF_EXTEND',         hint: 'Auto-generate new roadmap items when queue is empty',                      default: 'on' },
+      { key: 'PM_EXTEND_EVERY',        hint: 'Generate new items every N completions (0 = only when empty)',             default: '5' },
+      { key: 'PM_CODER_AGENT',         hint: 'Override default coding agent for PM loop (e.g. crew-coder-front)',        default: 'crew-coder' },
+      { key: 'PM_AGENT_IDLE_TIMEOUT_MS', hint: 'Kill PM dispatch if no activity for this many ms',                      default: '900000' },
+      { key: 'PHASED_TASK_TIMEOUT_MS', hint: 'Overall timeout for a single agent task in the PM loop',                  default: '600000' },
     ],
   },
 ];
@@ -496,20 +514,24 @@ export async function loadEnvAdvanced() {
       section.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:${group.note ? '4px' : '8px'};">${escHtml(group.label)}</div>`
         + (group.note ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px;line-height:1.4;">${escHtml(group.note)}</div>` : '');
       for (const { key, hint, default: def } of group.vars) {
-        const current = env[key] ?? '';
+        const saved = env[key] ?? null;
+        // Show saved value if set, otherwise fall back to the default so users
+        // can see the effective value and edit from a sensible starting point.
+        const current = saved ?? def ?? '';
+        const isDefault = saved === null;
         const placeholder = def ? `default: ${def}` : 'not set';
         const row = document.createElement('div');
         row.style.cssText = 'margin-bottom:8px;';
         row.innerHTML = `
           <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px;">
             <span style="font-size:11px;font-family:monospace;color:var(--accent);">${escHtml(key)}</span>
-            ${!current && def ? `<span style="font-size:10px;color:var(--text-3);font-family:monospace;background:var(--bg-1);padding:1px 5px;border-radius:4px;border:1px solid var(--border);">${escHtml(def)}</span>` : ''}
+            ${isDefault && def ? `<span style="font-size:10px;color:var(--text-3);font-family:monospace;background:var(--bg-1);padding:1px 5px;border-radius:4px;border:1px solid var(--border);">default</span>` : ''}
           </div>
           <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;">${escHtml(hint)}</div>
           <div style="display:flex;gap:6px;align-items:center;">
-            <input data-env-key="${escHtml(key)}" type="text" value="${escHtml(current)}"
+            <input data-env-key="${escHtml(key)}" data-env-default="${escHtml(def || '')}" type="text" value="${escHtml(current)}"
               placeholder="${escHtml(placeholder)}"
-              style="flex:1;font-size:12px;font-family:monospace;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:${current ? 'var(--text-1)' : 'var(--text-3)'};" />
+              style="flex:1;font-size:12px;font-family:monospace;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:${isDefault ? 'var(--text-3)' : 'var(--text-1)'};" />
             <button data-env-save="${escHtml(key)}" style="font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;">Save</button>
             <span data-env-status="${escHtml(key)}" style="font-size:11px;min-width:50px;"></span>
           </div>`;
@@ -527,7 +549,9 @@ export async function loadEnvAdvanced() {
     });
     box.querySelectorAll('[data-env-key]').forEach(inp => {
       inp.addEventListener('input', () => {
-        inp.style.color = inp.value ? 'var(--text-1)' : 'var(--text-3)';
+        // Dim if empty or if value matches the default (user hasn't customised)
+        const isDefault = inp.value === (inp.dataset.envDefault || '');
+        inp.style.color = (inp.value && !isDefault) ? 'var(--text-1)' : 'var(--text-3)';
       });
     });
   } catch(e) {

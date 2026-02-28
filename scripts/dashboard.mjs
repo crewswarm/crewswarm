@@ -513,33 +513,55 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/api/env-advanced" && req.method === "GET") {
       const vars = [
-        "CREWSWARM_OPENCODE_TIMEOUT_MS",
-        "CREWSWARM_ENGINE_LOOP_MAX_ROUNDS",
-        "CREWSWARM_DISPATCH_TIMEOUT",
-        "CREW_LEAD_PORT",
-        "SWARM_DASH_PORT",
-        "CREWSWARM_BG_CONSCIOUSNESS",
-        "CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS",
-        "CREWSWARM_BG_CONSCIOUSNESS_MODEL",
-        "SHARED_MEMORY_NAMESPACE",
-        "SHARED_MEMORY_DIR",
-        "CREWSWARM_RT_AGENT",
-        "CREWSWARM_OPENCODE_MODEL",
-        "CREWSWARM_OPENCODE_AGENT",
+        // Engine — OpenCode
         "CREWSWARM_OPENCODE_ENABLED",
-        "CREWSWARM_ENGINE_LOOP",
+        "CREWSWARM_OPENCODE_MODEL",
+        "CREWSWARM_OPENCODE_TIMEOUT_MS",
+        "CREWSWARM_OPENCODE_AGENT",
+        // Engine — Claude Code & Cursor
         "CREWSWARM_CLAUDE_CODE_MODEL",
         "CREWSWARM_CURSOR_MODEL",
+        // Engine — Gemini CLI
+        "CREWSWARM_GEMINI_CLI_ENABLED",
+        "CREWSWARM_GEMINI_CLI_MODEL",
+        // Engine — Docker Sandbox
         "CREWSWARM_DOCKER_SANDBOX",
         "CREWSWARM_DOCKER_SANDBOX_NAME",
         "CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE",
         "CREWSWARM_DOCKER_SANDBOX_TIMEOUT_MS",
+        // Engine Loop & Dispatch
+        "CREWSWARM_ENGINE_LOOP",
+        "CREWSWARM_ENGINE_LOOP_MAX_ROUNDS",
+        "CREWSWARM_ENGINE_IDLE_TIMEOUT_MS",
+        "CREWSWARM_ENGINE_MAX_TOTAL_MS",
+        "CREWSWARM_DISPATCH_TIMEOUT_MS",
+        "CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS",
+        "CREWSWARM_RT_AGENT",
+        // Ports
+        "CREW_LEAD_PORT",
+        "SWARM_DASH_PORT",
         "WA_HTTP_PORT",
-        "WA_ALLOWED_NUMBERS",
+        // Background Consciousness
+        "CREWSWARM_BG_CONSCIOUSNESS",
+        "CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS",
+        "CREWSWARM_BG_CONSCIOUSNESS_MODEL",
+        // Messaging
         "TELEGRAM_ALLOWED_USERNAMES",
+        "WA_ALLOWED_NUMBERS",
+        // Memory
+        "SHARED_MEMORY_NAMESPACE",
+        "SHARED_MEMORY_DIR",
+        // PM Loop
         "PM_MAX_ITEMS",
+        "PM_MAX_CONCURRENT",
         "PM_USE_QA",
         "PM_USE_SECURITY",
+        "PM_USE_SPECIALISTS",
+        "PM_SELF_EXTEND",
+        "PM_EXTEND_EVERY",
+        "PM_CODER_AGENT",
+        "PM_AGENT_IDLE_TIMEOUT_MS",
+        "PHASED_TASK_TIMEOUT_MS",
       ];
       // Read from crewswarm.json env block first, fall back to process.env
       // Credential keys are never exposed here
