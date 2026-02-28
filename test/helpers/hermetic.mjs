@@ -13,15 +13,12 @@ import { randomBytes } from "crypto";
 /**
  * Enable hermetic test mode.
  * This redirects all CrewSwarm config/state paths to temporary directories.
- * Call this in your test's before() hook.
+ * Call this in your test's before() hook BEFORE any imports that use paths.
+ * 
+ * NOTE: This must be called at the top level before importing modules that use paths.
  */
 export function setupHermeticTest() {
-  if (process.env.CREWSWARM_TEST_MODE !== "true") {
-    process.env.CREWSWARM_TEST_MODE = "true";
-    // Force path resolution to re-evaluate after setting env var
-    const pathsModule = await import("../../lib/runtime/paths.mjs");
-    pathsModule.resetPaths();
-  }
+  process.env.CREWSWARM_TEST_MODE = "true";
 }
 
 /**

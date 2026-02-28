@@ -15,6 +15,7 @@ interface HeadlessRunOptions extends HeadlessDeps {
   agent?: string;
   json?: boolean;
   alwaysApprove?: boolean;
+  out?: string;
 }
 
 function statePath(baseDir: string): string {
@@ -49,9 +50,19 @@ export async function setHeadlessPaused(paused: boolean, baseDir = process.cwd()
   );
 }
 
-function emit(jsonMode: boolean, event: string, data: any = {}): void {
+async function appendOutLine(baseDir: string, outPath: string | undefined, payload: any): Promise<void> {
+  if (!outPath) return;
+  const fullPath = join(baseDir, outPath);
+  await mkdir(join(fullPath, '..'), { recursive: true });
+  const prev = existsSync(fullPath) ? await readFile(fullPath, 'utf8') : '';
+  await writeFile(fullPath, `${prev}${JSON.stringify(payload)}\n`, 'utf8');
+}
+
+async function emit(baseDir: string, jsonMode: boolean, outPath: string | undefined, event: string, data: any = {}): Promise<void> {
+  const payload = { ts: new Date().toISOString(), event, ...data };
+  await appendOutLine(baseDir, outPath, payload);
   if (jsonMode) {
-    process.stdout.write(`${JSON.stringify({ ts: new Date().toISOString(), event, ...data })}\n`);
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
     return;
   }
   const suffix = data?.message ? `: ${data.message}` : '';
@@ -64,15 +75,15 @@ export async function runHeadlessTask(options: HeadlessRunOptions): Promise<{ su
   const state = await getHeadlessState(cwd);
 
   if (state.paused) {
-    emit(jsonMode, 'blocked', { message: 'headless mode is paused' });
+    await emit(cwd, jsonMode, options.out, 'blocked', { message: 'headless mode is paused' });
     return { success: false };
   }
 
-  emit(jsonMode, 'start', { task: options.task });
+  await emit(cwd, jsonMode, options.out, 'start', { task: options.task });
 
   const route = await options.orchestrator.route(options.task);
   const agent = options.agent || route.agent || 'crew-main';
-  emit(jsonMode, 'route', { decision: route.decision, agent });
+  await emit(cwd, jsonMode, options.out, 'route', { decision: route.decision, agent });
 
   const dispatch = await options.router.dispatch(agent, options.task, {
     sessionId: await options.session.getSessionId(),
@@ -80,18 +91,18 @@ export async function runHeadlessTask(options: HeadlessRunOptions): Promise<{ su
   });
 
   const responseText = String(dispatch.result || '');
-  emit(jsonMode, 'result', { agent, response: responseText });
+  await emit(cwd, jsonMode, options.out, 'result', { agent, response: responseText });
 
   const edits = await options.orchestrator.parseAndApplyToSandbox(responseText);
-  emit(jsonMode, 'sandbox', { filesChanged: edits.length });
+  await emit(cwd, jsonMode, options.out, 'sandbox', { filesChanged: edits.length });
 
   if (options.alwaysApprove && options.sandbox.hasChanges(options.sandbox.getActiveBranch())) {
     await options.sandbox.apply(options.sandbox.getActiveBranch());
-    emit(jsonMode, 'applied', { message: 'sandbox changes applied (--always-approve)' });
+    await emit(cwd, jsonMode, options.out, 'applied', { message: 'sandbox changes applied (--always-approve)' });
   } else if (edits.length > 0) {
-    emit(jsonMode, 'approval_required', { message: 'pending sandbox changes require apply' });
+    await emit(cwd, jsonMode, options.out, 'approval_required', { message: 'pending sandbox changes require apply' });
   }
 
-  emit(jsonMode, 'done', { success: true });
+  await emit(cwd, jsonMode, options.out, 'done', { success: true });
   return { success: true, response: responseText };
 }

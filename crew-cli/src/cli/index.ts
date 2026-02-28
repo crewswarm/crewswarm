@@ -21,11 +21,11 @@ import { runCiFixLoop } from '../ci/index.js';
 import { compareScreenshots, runBrowserDebug } from '../browser/index.js';
 import { downloadTeamContext, getTeamSyncStatus, loadPrivacyControls, savePrivacyControls, uploadTeamContext } from '../team/index.js';
 import { appendVoiceTranscript, recordAudio, speakWithSkill, transcribeAudio } from '../voice/listener.js';
-import { buildFileContextBlock, buildRepoContextBlock, collectOption, mergeTaskWithContext, readStdinText } from '../context/augment.js';
-import { getReviewPayload } from '../review/index.js';
-import { addMcpServer, listMcpServers, removeMcpServer } from '../mcp/index.js';
+import { buildFileContextBlock, buildRepoContextBlock, collectOption, enforceContextBudget, mergeTaskWithContext, readStdinText } from '../context/augment.js';
+import { detectHighSeverityFindings, getReviewPayload } from '../review/index.js';
+import { addMcpServer, doctorMcpServers, listMcpServers, removeMcpServer } from '../mcp/index.js';
 import { getHeadlessState, runHeadlessTask, setHeadlessPaused } from '../headless/index.js';
-import { runSrcCli } from '../sourcegraph/index.js';
+import { createSrcBatchPlan, runSrcCli } from '../sourcegraph/index.js';
 import { getProjectContext } from '../context/git.js';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -47,6 +47,7 @@ function parseHeadlessShortcutArgs(args: string[]) {
     enabled: true,
     json: args.includes('--json'),
     alwaysApprove: args.includes('--always-approve'),
+    out: readValue('--out'),
     task: readValue('-t', '--task'),
     agent: readValue('--agent')
   };
@@ -76,6 +77,7 @@ export async function main(args = []) {
       task: headlessShortcut.task,
       json: headlessShortcut.json,
       alwaysApprove: headlessShortcut.alwaysApprove,
+      out: headlessShortcut.out,
       agent: headlessShortcut.agent,
       projectDir: process.cwd(),
       router: agentRouter,
@@ -101,6 +103,8 @@ export async function main(args = []) {
     .option('--context-file <path>', 'Attach a file as additional context (repeatable)', collectOption, [])
     .option('--context-repo <path>', 'Attach git context from another repo (repeatable)', collectOption, [])
     .option('--stdin', 'Read additional context from stdin', false)
+    .option('--max-context-tokens <n>', 'Max context token budget (approx, chars/4)')
+    .option('--context-budget-mode <mode>', 'trim | stop when budget exceeded', 'trim')
     .action(async (inputArray, options) => {
       let input = inputArray.join(' ');
       try {
@@ -108,7 +112,19 @@ export async function main(args = []) {
         const repoBlock = await buildRepoContextBlock(options.contextRepo || []);
         const stdinText = options.stdin ? await readStdinText() : '';
         const stdinBlock = stdinText ? `## Stdin Context\n\`\`\`text\n${stdinText}\n\`\`\`` : '';
-        input = mergeTaskWithContext(input, [fileBlock, repoBlock, stdinBlock]);
+        const budget = enforceContextBudget(
+          input,
+          [fileBlock, repoBlock, stdinBlock],
+          options.maxContextTokens ? Number.parseInt(options.maxContextTokens, 10) : undefined,
+          options.contextBudgetMode === 'stop' ? 'stop' : 'trim'
+        );
+        if (budget.exceeded) {
+          throw new Error(`Context budget exceeded (~${budget.estimatedTokens} tokens > ${options.maxContextTokens}). Use --context-budget-mode trim or raise budget.`);
+        }
+        if (budget.trimmed) {
+          logger.warn(`Context trimmed to stay under budget (~${budget.estimatedTokens} tokens).`);
+        }
+        input = budget.task;
 
         if (options.crossRepo) {
           const multiContext = await collectMultiRepoContext(options.project || process.cwd());
@@ -159,6 +175,8 @@ export async function main(args = []) {
     .option('--context-file <path>', 'Attach a file as additional context (repeatable)', collectOption, [])
     .option('--context-repo <path>', 'Attach git context from another repo (repeatable)', collectOption, [])
     .option('--stdin', 'Read additional context from stdin', false)
+    .option('--max-context-tokens <n>', 'Max context token budget (approx, chars/4)')
+    .option('--context-budget-mode <mode>', 'trim | stop when budget exceeded', 'trim')
     .action(async (agent, task, options) => {
       let finalTask = task;
       try {
@@ -166,7 +184,19 @@ export async function main(args = []) {
         const repoBlock = await buildRepoContextBlock(options.contextRepo || []);
         const stdinText = options.stdin ? await readStdinText() : '';
         const stdinBlock = stdinText ? `## Stdin Context\n\`\`\`text\n${stdinText}\n\`\`\`` : '';
-        finalTask = mergeTaskWithContext(finalTask, [fileBlock, repoBlock, stdinBlock]);
+        const budget = enforceContextBudget(
+          finalTask,
+          [fileBlock, repoBlock, stdinBlock],
+          options.maxContextTokens ? Number.parseInt(options.maxContextTokens, 10) : undefined,
+          options.contextBudgetMode === 'stop' ? 'stop' : 'trim'
+        );
+        if (budget.exceeded) {
+          throw new Error(`Context budget exceeded (~${budget.estimatedTokens} tokens > ${options.maxContextTokens}). Use --context-budget-mode trim or raise budget.`);
+        }
+        if (budget.trimmed) {
+          logger.warn(`Context trimmed to stay under budget (~${budget.estimatedTokens} tokens).`);
+        }
+        finalTask = budget.task;
 
         if (options.crossRepo) {
           const multiContext = await collectMultiRepoContext(options.project || process.cwd());
@@ -443,6 +473,7 @@ export async function main(args = []) {
     .command('review')
     .description('Analyze current git diff before commit and request a QA-style review')
     .option('--agent <id>', 'Agent to run review with', 'crew-qa')
+    .option('--strict', 'Exit non-zero if review includes high-severity findings', false)
     .action(async options => {
       const review = await getReviewPayload(process.cwd());
       if (!review.hasChanges) {
@@ -455,7 +486,15 @@ export async function main(args = []) {
         project: process.cwd(),
         injectGitContext: false
       });
-      logger.printWithHighlight(String(result.result || ''));
+      const text = String(result.result || '');
+      logger.printWithHighlight(text);
+      if (options.strict) {
+        const strict = detectHighSeverityFindings(text);
+        if (strict.hasHighSeverity) {
+          logger.error(`Strict review failed due to high-severity markers: ${strict.matches.join(', ')}`);
+          process.exit(1);
+        }
+      }
     });
 
   program
@@ -529,6 +568,18 @@ export async function main(args = []) {
     });
 
   mcp
+    .command('doctor')
+    .description('Validate MCP server config, env tokens, and reachability')
+    .action(async () => {
+      const checks = await doctorMcpServers(process.cwd());
+      checks.forEach(check => {
+        const marker = check.ok ? chalk.green('✓') : chalk.red('✗');
+        console.log(`${marker} ${check.server}: ${check.details}`);
+      });
+      if (checks.some(x => !x.ok)) process.exit(1);
+    });
+
+  mcp
     .command('add')
     .description('Add an MCP server entry')
     .argument('<name>', 'Server name')
@@ -570,12 +621,14 @@ export async function main(args = []) {
     .option('--agent <id>', 'Override routed agent')
     .option('--json', 'Emit JSONL events', false)
     .option('--always-approve', 'Auto-apply sandbox changes', false)
+    .option('--out <path>', 'Write JSONL events to file (for CI artifacts)')
     .action(async options => {
       const result = await runHeadlessTask({
         task: options.task,
         agent: options.agent,
         json: options.json,
         alwaysApprove: options.alwaysApprove,
+        out: options.out,
         projectDir: process.cwd(),
         router: agentRouter,
         orchestrator,
@@ -612,8 +665,36 @@ export async function main(args = []) {
   program
     .command('src')
     .description('Run Sourcegraph src CLI commands (for batch codemods/search)')
+    .allowUnknownOption(true)
     .argument('<args...>', 'Arguments passed to src CLI')
     .action(async (srcArgs: string[]) => {
+      if (srcArgs[0] === 'batch-plan') {
+        const args = srcArgs.slice(1);
+        const readValue = (...names: string[]) => {
+          for (let i = 0; i < args.length; i += 1) {
+            if (names.includes(args[i])) return args[i + 1];
+          }
+          return undefined;
+        };
+        const repos: string[] = [];
+        for (let i = 0; i < args.length; i += 1) {
+          if (args[i] === '--repo' && args[i + 1]) repos.push(args[i + 1]);
+        }
+        const plan = await createSrcBatchPlan({
+          query: readValue('--query', '-q') || '',
+          repos,
+          execute: args.includes('--execute'),
+          specPath: readValue('--spec')
+        }, process.cwd());
+
+        if (plan.success) {
+          logger.success(plan.message);
+          return;
+        }
+        logger.error(plan.message);
+        process.exit(1);
+      }
+
       const result = await runSrcCli(srcArgs, process.cwd());
       if (result.stdout) process.stdout.write(result.stdout);
       if (result.stderr) process.stderr.write(result.stderr);

@@ -57,3 +57,23 @@ export async function getReviewPayload(cwd = process.cwd()): Promise<{ hasChange
     return { hasChanges: false, payload: `Unable to collect review payload: ${(error as Error).message}` };
   }
 }
+
+const HIGH_SEVERITY_PATTERNS = [
+  /\bcritical\b/i,
+  /\bseverity\s*:\s*high\b/i,
+  /\bhigh[-\s]?severity\b/i,
+  /\bsev[-\s]?1\b/i,
+  /\bp0\b/i,
+  /\bmust fix before merge\b/i,
+  /\bdo not merge\b/i
+];
+
+export function detectHighSeverityFindings(text: string): { hasHighSeverity: boolean; matches: string[] } {
+  const content = String(text || '');
+  const matches: string[] = [];
+  for (const pattern of HIGH_SEVERITY_PATTERNS) {
+    const found = content.match(pattern);
+    if (found?.[0]) matches.push(found[0]);
+  }
+  return { hasHighSeverity: matches.length > 0, matches };
+}

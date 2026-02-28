@@ -61,3 +61,43 @@ export function mergeTaskWithContext(task: string, blocks: string[]): string {
   if (!filtered.length) return task;
   return `${task}\n\n${filtered.join('\n\n')}`;
 }
+
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+export function enforceContextBudget(
+  task: string,
+  blocks: string[],
+  maxTokens?: number,
+  mode: 'trim' | 'stop' = 'trim'
+): { task: string; estimatedTokens: number; trimmed: boolean; exceeded: boolean } {
+  const merged = mergeTaskWithContext(task, blocks);
+  if (!maxTokens || maxTokens <= 0) {
+    return { task: merged, estimatedTokens: estimateTokens(merged), trimmed: false, exceeded: false };
+  }
+
+  const estimated = estimateTokens(merged);
+  if (estimated <= maxTokens) {
+    return { task: merged, estimatedTokens: estimated, trimmed: false, exceeded: false };
+  }
+
+  if (mode === 'stop') {
+    return { task: merged, estimatedTokens: estimated, trimmed: false, exceeded: true };
+  }
+
+  const baseTask = String(task || '');
+  const maxChars = maxTokens * 4;
+  const baseChars = baseTask.length;
+  const remainingForContext = Math.max(0, maxChars - baseChars - 2);
+  const contextText = blocks.map(x => String(x || '').trim()).filter(Boolean).join('\n\n');
+  const clippedContext = contextText.slice(0, remainingForContext);
+  const clipped = clippedContext ? `${baseTask}\n\n${clippedContext}` : baseTask.slice(0, maxChars);
+  return {
+    task: clipped,
+    estimatedTokens: estimateTokens(clipped),
+    trimmed: true,
+    exceeded: false
+  };
+}

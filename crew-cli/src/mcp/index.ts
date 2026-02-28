@@ -102,3 +102,64 @@ export async function syncServerToClient(name: string, config: McpServerConfig, 
   store.mcpServers[name] = payload;
   await saveStore(path, store);
 }
+
+export interface McpDoctorCheck {
+  server: string;
+  ok: boolean;
+  details: string;
+}
+
+export async function doctorMcpServers(baseDir = process.cwd()): Promise<McpDoctorCheck[]> {
+  const checks: McpDoctorCheck[] = [];
+  const servers = await listMcpServers(baseDir);
+  const names = Object.keys(servers);
+
+  if (!names.length) {
+    return [{ server: '(none)', ok: false, details: 'No MCP servers configured' }];
+  }
+
+  for (const name of names) {
+    const server = servers[name];
+    if (!server?.url) {
+      checks.push({ server: name, ok: false, details: 'Missing URL' });
+      continue;
+    }
+
+    try {
+      // URL format validation
+      new URL(server.url);
+    } catch {
+      checks.push({ server: name, ok: false, details: `Invalid URL: ${server.url}` });
+      continue;
+    }
+
+    if (server.bearerTokenEnvVar && !process.env[server.bearerTokenEnvVar]) {
+      checks.push({
+        server: name,
+        ok: false,
+        details: `Missing env var ${server.bearerTokenEnvVar}`
+      });
+      continue;
+    }
+
+    try {
+      const res = await fetch(server.url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(2500)
+      });
+      checks.push({
+        server: name,
+        ok: res.ok,
+        details: `HTTP ${res.status}`
+      });
+    } catch (error) {
+      checks.push({
+        server: name,
+        ok: false,
+        details: `Unreachable: ${(error as Error).message}`
+      });
+    }
+  }
+
+  return checks;
+}

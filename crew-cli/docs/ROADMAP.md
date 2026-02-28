@@ -253,6 +253,42 @@
 
 ---
 
+## Phase 5: CLI ROI Imports (Copilot/OpenHands/Sourcegraph) ✓ 2026-02-28
+
+### [x] 1. Copilot-style UX imports ✓ 2026-02-28
+- [x] Add `crew review` for pre-commit diff analysis ✓
+- [x] Add `crew context` for context introspection/token footprint ✓
+- [x] Add `crew compact` for context window compression ✓
+- [x] Add `crew mcp add|list|remove` management UX ✓
+
+### [x] 2. OpenHands-style headless mode ✓ 2026-02-28
+- [x] Add `--headless --json -t \"...\"` shortcut execution path ✓
+- [x] Add guarded approval default + `--always-approve` path ✓
+- [x] Add pause/resume semantics: `crew headless pause|resume|status` ✓
+- [x] Add `crew headless run` explicit CI command ✓
+
+### [x] 3. Sourcegraph-style context + integration ✓ 2026-02-28
+- [x] Add `--context-file` support on `chat` and `dispatch` ✓
+- [x] Add `--context-repo` support on `chat` and `dispatch` ✓
+- [x] Add `--stdin` context piping support on `chat` and `dispatch` ✓
+- [x] Add optional `crew src <args...>` CLI integration for `src` workflows ✓
+
+### [x] 4. QA & Validation ✓ 2026-02-28
+- [x] Added tests for context augmentation (`tests/context-augment.test.js`) ✓
+- [x] Added tests for MCP manager (`tests/mcp.test.js`) ✓
+- [x] Added tests for headless pause/run (`tests/headless.test.js`) ✓
+- [x] Build/check/test passes after implementation (41 passing) ✓
+
+### [x] 5. ROI Follow-up Hardening ✓ 2026-02-28
+- [x] Add `crew review --strict` CI gate for high-severity findings ✓
+- [x] Add headless JSONL artifact output (`--out .crew/headless-run.jsonl`) ✓
+- [x] Add context budget guard (`--max-context-tokens`, `--context-budget-mode`) ✓
+- [x] Add `crew src batch-plan` safe preset (dry-run default; optional `--execute`) ✓
+- [x] Add `crew mcp doctor` validation command (URL/env/reachability checks) ✓
+- [x] Extend tests for new hardening features (49 passing total) ✓
+
+---
+
 ## Success Metrics
 
 | Metric | Week 2 | Month 1 | Month 3 | Month 6 |
