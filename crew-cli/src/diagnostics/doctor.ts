@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { doctorMcpServers } from '../mcp/index.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -123,6 +124,7 @@ export async function runDoctorChecks(options = {}) {
   const installedVersion = await getInstalledCliVersion();
   const latestVersion = await getLatestCliVersion(options.updateTag || 'latest');
   const linkedInstall = await isGlobalInstallLinked();
+  const mcpChecks = await doctorMcpServers(process.cwd());
 
   let updateDetails = 'Update check unavailable';
   if (installedVersion && latestVersion) {
@@ -136,6 +138,11 @@ export async function runDoctorChecks(options = {}) {
   if (linkedInstall) {
     updateDetails += ' [global npm link detected]';
   }
+
+  const mcpFailed = mcpChecks.filter(x => !x.ok).length;
+  const mcpDetails = mcpFailed === 0 
+    ? `All ${mcpChecks.length} servers online` 
+    : `${mcpFailed}/${mcpChecks.length} servers failing`;
 
   return [
     {
@@ -157,6 +164,11 @@ export async function runDoctorChecks(options = {}) {
       name: 'CrewSwarm gateway reachable',
       ok: gatewayOk,
       details: `${gateway}/status`
+    },
+    {
+      name: 'MCP configuration health',
+      ok: mcpFailed === 0,
+      details: mcpDetails
     },
     {
       name: 'CLI update status',

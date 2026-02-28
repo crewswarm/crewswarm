@@ -17,7 +17,8 @@ function defaultMatrix() {
     { name: 'cursor', engine: 'cursor', model: process.env.QA_CURSOR_MODEL || '', agent: 'crew-coder' },
     { name: 'claude-cli', engine: 'claude-cli', model: process.env.QA_CLAUDE_MODEL || '', agent: 'crew-coder' },
     { name: 'codex-cli', engine: 'codex-cli', model: process.env.QA_CODEX_MODEL || '', agent: 'crew-coder' },
-    { name: 'gemini-cli', engine: 'gemini-cli', model: process.env.QA_GEMINI_MODEL || '', agent: 'crew-coder' }
+    { name: 'gemini-cli', engine: 'gemini-cli', model: process.env.QA_GEMINI_MODEL || '', agent: 'crew-coder' },
+    { name: 'opencode', engine: 'opencode', model: process.env.QA_OPENCODE_MODEL || '', agent: 'crew-coder' }
   ];
 }
 

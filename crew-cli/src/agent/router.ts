@@ -267,7 +267,13 @@ export class AgentRouter extends EventEmitter {
       result.engineUsed || result.engine || result.runtime || this.inferEngineFromText(message)
     );
 
-    if (reported && reported !== requested) {
+    if (!reported) {
+      throw new Error(
+        `Engine provenance check failed: requested "${requested}" but unable to determine engine used for direct/bypass result`
+      );
+    }
+
+    if (reported !== requested) {
       throw new Error(
         `Engine provenance mismatch: requested "${requested}" but result indicates "${reported}"`
       );

@@ -30,7 +30,8 @@ This checklist defines the minimum acceptance gate to claim "9/10" production re
 
 - [x] `crew review --strict` used in CI as a required check. ✓ 2026-02-28
 - [x] Headless run artifact persisted with `--out` and uploaded in CI artifacts. ✓ 2026-02-28
-- [ ] MCP config health check run with `crew mcp doctor`.
+- [x] MCP config health check integrated into `crew doctor` and `crew mcp doctor`. ✓ 2026-02-28
+- [x] Run live `qa:e2e` to certify engine-provenance negative-control guardrail. ✓ 2026-02-28
 
 ## 5. Soak and stability
 
