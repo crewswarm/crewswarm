@@ -14,7 +14,7 @@
       gtag('config', 'G-0QSG6Y9DHT');
     </script>
 
-    <meta name="description" content="Orchestrate 20+ specialized AI agents from your terminal. Safe cumulative sandbox, git context auto-injection, and local token recovery. Built for senior engineers.">
+    <meta name="description" content="Orchestrate 20+ AI coding agents from your terminal. Strict pre-commit reviews, headless JSONL CI runs, context budget guards, MCP doctor, and sandboxed apply.">
     <meta name="keywords" content="AI coding, multi-agent orchestration, CLI, developer tools, LLM, sandbox, git context, Claude Code, Cursor alternative">
     
     <!-- Open Graph / Facebook -->
@@ -22,7 +22,7 @@
     <meta property="og:url" content="https://crewswarm.ai/crew-cli">
     <meta property="og:site_name" content="CrewSwarm">
     <meta property="og:title" content="crew-cli | The Multi-Agent Coding Orchestrator">
-    <meta property="og:description" content="Orchestrate 20+ specialized AI agents from your terminal. Safe cumulative sandbox, git context auto-injection, and local token recovery.">
+    <meta property="og:description" content="Orchestrate 20+ AI coding agents from your terminal with strict review gates, headless JSONL CI artifacts, context budget guards, and sandboxed apply.">
     <meta property="og:image" content="https://crewswarm.ai/assets/og-image-cli.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -33,7 +33,7 @@
     <meta property="twitter:creator" content="@crewswarm">
     <meta property="twitter:url" content="https://crewswarm.ai/crew-cli">
     <meta property="twitter:title" content="crew-cli | The Multi-Agent Coding Orchestrator">
-    <meta property="twitter:description" content="Orchestrate 20+ specialized AI agents from your terminal. Safe cumulative sandbox, git context auto-injection, and local token recovery.">
+    <meta property="twitter:description" content="Orchestrate 20+ AI coding agents from your terminal with strict review gates, headless JSONL CI artifacts, context budget guards, and sandboxed apply.">
     <meta property="twitter:image" content="https://crewswarm.ai/assets/og-image-cli.png">
 
     <!-- Favicon -->
@@ -444,6 +444,69 @@
             letter-spacing: -0.03em;
         }
 
+        .recipes-wrap {
+            margin-bottom: 8rem;
+        }
+
+        .recipes-wrap h2 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+
+        .recipe-card {
+            background: linear-gradient(135deg, var(--bg-card), var(--bg-card2));
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .recipe-card p {
+            color: var(--text-2);
+            margin-bottom: 1rem;
+        }
+
+        .recipe-card pre {
+            margin: 0;
+            overflow-x: auto;
+            background: #060a10;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            color: #cbd5e1;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        .proof-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .proof-item {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .proof-item h5 {
+            color: var(--accent);
+            margin-bottom: 0.4rem;
+            font-size: 1rem;
+        }
+
+        .proof-item p {
+            margin: 0;
+            color: var(--text-2);
+            font-size: 0.95rem;
+        }
+
         /* --- Footer --- */
         footer {
             text-align: center;
@@ -459,6 +522,23 @@
             h1 { font-size: 3.5rem; }
             .hero p { font-size: 1.2rem; }
             .features { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 640px) {
+            .container { padding: 0 1rem; }
+            header { padding: 1.5rem 0; }
+            .hero { padding: 3rem 0 4rem; }
+            .terminal-body { padding: 1.25rem; font-size: 0.9rem; }
+            .comparison { padding: 3rem 1rem; }
+            .card { padding: 1.5rem; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                transition: none !important;
+                animation: none !important;
+                scroll-behavior: auto !important;
+            }
         }
     </style>
 </head>
@@ -490,19 +570,18 @@
                 <div class="dot dot-green"></div>
             </div>
             <div class="terminal-body">
-                <div class="line"><span class="prompt">$</span><span class="cmd">crew chat "Refactor auth middleware to use JWT"</span></div>
-                <div class="line"><span class="info">[INFO]</span> Routing to crew-coder (Decision: CODE)</div>
-                <div class="line"><span class="output">... CrewCoder is exploring the codebase ...</span></div>
-                <div class="line"><span class="success">[SUCCESS]</span> Staged changes to 2 files in sandbox.</div>
+                <div class="line"><span class="prompt">$</span><span class="cmd">crew review --strict</span></div>
+                <div class="line"><span class="info">[INFO]</span> Analyzing git diff with risk severity gates...</div>
+                <div class="line"><span class="success">[SUCCESS]</span> No high-severity risks found.</div>
                 <div class="line"></div>
-                <div class="line"><span class="prompt">$</span><span class="cmd">crew preview</span></div>
-                <div class="line"><span class="output">--- Sandbox Preview (branch: main) ---</span></div>
-                <div class="line"><span class="output" style="color: #6ee7b7;">+ import jwt from 'jsonwebtoken';</span></div>
-                <div class="line"><span class="output" style="color: #6ee7b7;">+ const token = jwt.sign({ id: user.id }, secret);</span></div>
+                <div class="line"><span class="prompt">$</span><span class="cmd">crew --headless --json -t "fix flaky test" --out .crew/headless-run.jsonl</span></div>
+                <div class="line"><span class="info">[INFO]</span> Streaming JSONL events for CI artifacts...</div>
+                <div class="line"><span class="success">[SUCCESS]</span> Wrote 43 events to .crew/headless-run.jsonl</div>
                 <div class="line"></div>
-                <div class="line"><span class="prompt">$</span><span class="cmd">crew apply --check "npm test"</span></div>
-                <div class="line"><span class="info">[INFO]</span> Running validation: npm test</div>
-                <div class="line"><span class="success">[SUCCESS]</span> Tests passed. Applied changes to disk.</div>
+                <div class="line"><span class="prompt">$</span><span class="cmd">crew dispatch "refactor auth" --max-context-tokens 12000 --context-budget-mode trim</span></div>
+                <div class="line"><span class="output">... auto-injected git branch/status/diff/log ...</span></div>
+                <div class="line"><span class="prompt">$</span><span class="cmd">crew mcp doctor</span></div>
+                <div class="line"><span class="success">[SUCCESS]</span> MCP URL/auth/header checks passed.</div>
             </div>
         </div>
 
@@ -520,16 +599,24 @@
                 <p>Reuse API tokens from Claude Code, Cursor, and Gemini. Stop paying double for keys you already possess.</p>
             </div>
             <div class="card">
-                <h3><span class="icon">🎙️</span> Voice-Activated</h3>
-                <p>Coding hands-free with Whisper-powered voice orchestration and direct Chrome DevTools debugging hooks.</p>
+                <h3><span class="icon">🚦</span> Strict Review Gate</h3>
+                <p>Run <code>crew review --strict</code> before merge. Fail CI automatically when high-severity risks are detected.</p>
             </div>
             <div class="card">
-                <h3><span class="icon">📋</span> Plan-First Flow</h3>
-                <p>Break complex features into 10-step technical plans. Execute them step-by-step with human review at every stage.</p>
+                <h3><span class="icon">📊</span> Headless CI Artifacts</h3>
+                <p>Use <code>--headless --json --out</code> to stream JSONL execution logs for CI upload, auditing, and replay.</p>
             </div>
             <div class="card">
-                <h3><span class="icon">🤖</span> CI Auto-Healing</h3>
-                <p>Detect test failures in CI pipelines and automatically dispatch specialist agents to propose surgical fixes.</p>
+                <h3><span class="icon">🧠</span> Context Budget Guard</h3>
+                <p>Set <code>--max-context-tokens</code> with trim/stop behavior to prevent prompt bloat and token-cost runaway.</p>
+            </div>
+            <div class="card">
+                <h3><span class="icon">🔌</span> MCP Doctor</h3>
+                <p>Validate MCP URL, auth token, and headers before runtime with <code>crew mcp doctor</code>.</p>
+            </div>
+            <div class="card">
+                <h3><span class="icon">🧭</span> Safe Batch Plans</h3>
+                <p>Use <code>crew src batch-plan</code> for safer large codemods with dry-run defaults before touching code.</p>
             </div>
         </section>
 
@@ -542,7 +629,7 @@
                         <li>Overwrites files blindly</li>
                         <li>Single-model hallucinations</li>
                         <li>Tedious copy-pasting</li>
-                        <li>Disconnected from tests</li>
+                        <li>No CI-grade artifacts</li>
                     </ul>
                 </div>
                 <div class="compare-side good">
@@ -550,7 +637,9 @@
                     <ul class="compare-list">
                         <li>Safety-first Sandbox</li>
                         <li>Multi-agent experts</li>
-                        <li>Auto-injects Git context</li>
+                        <li>Strict review + CI fail gates</li>
+                        <li>Headless JSONL artifacts</li>
+                        <li>Auto-injects Git context + token budget guards</li>
                         <li>Verify-then-Apply flow</li>
                     </ul>
                 </div>
@@ -573,8 +662,64 @@
                     <p style="color: var(--text-2);">Through the CrewSwarm gateway, we support Claude 3.5 Sonnet, GPT-4o, DeepSeek, and Grok. The orchestrator chooses the best model for the specific sub-task (e.g., PM for planning, Coder for implementation).</p>
                 </div>
                 <div style="margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">Can I run it in CI?</h4>
+                    <p style="color: var(--text-2);">Yes. Use <code>crew --headless --json --out .crew/headless-run.jsonl</code> to capture structured logs, plus <code>crew review --strict</code> to fail the pipeline on high-severity review findings.</p>
+                </div>
+                <div style="margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
                     <h4 style="color: var(--accent); margin-bottom: 0.5rem;">Is my data private?</h4>
                     <p style="color: var(--text-2);">Absolutely. `crew-cli` is local-first. Your code and session data stay on your machine in the `.crew/` directory. We only send the minimum context required to your chosen LLM provider, and you have full control over what gets shared with your team via the `crew privacy` command.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="recipes-wrap">
+            <h2>CI Recipe + Demo</h2>
+            <div class="recipe-card">
+                <p>Drop this into <code>.github/workflows/crew-review.yml</code> to run strict diff review and store headless JSONL artifacts on every PR.</p>
+<pre><code>name: crew-review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx crew-cli review --strict
+      - run: npx crew-cli --headless --json -t "review PR risk + fix plan" --out .crew/headless-run.jsonl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crew-headless-log
+          path: .crew/headless-run.jsonl</code></pre>
+            </div>
+            <div class="recipe-card">
+                <p><strong>60-second demo flow:</strong> run these commands in sequence to show the entire value loop in one minute.</p>
+<pre><code>crew review --strict
+crew --headless --json -t "summarize risk + propose patch" --out .crew/headless-run.jsonl
+crew dispatch "refactor auth middleware" --max-context-tokens 12000 --context-budget-mode trim
+crew mcp doctor</code></pre>
+                <p style="margin-top: 1rem; margin-bottom: 0;">Need a visual clip: record this exact sequence and attach it as a short GIF/MP4 in your launch posts.</p>
+            </div>
+            <div class="recipe-card">
+                <p><strong>Proof points to show in posts/screenshots:</strong></p>
+                <div class="proof-grid">
+                    <div class="proof-item">
+                        <h5>Strict Gate Blocked Merge</h5>
+                        <p>Example high-severity finding: destructive file operation without guard, CI fails before merge.</p>
+                    </div>
+                    <div class="proof-item">
+                        <h5>Artifact Audit Trail</h5>
+                        <p>Every headless run exports JSONL events so reviewers can inspect decisions and actions after the run.</p>
+                    </div>
+                    <div class="proof-item">
+                        <h5>Context Budget Discipline</h5>
+                        <p>Large tasks stay bounded via max token guard with trim/stop mode instead of unbounded context growth.</p>
+                    </div>
                 </div>
             </div>
         </section>

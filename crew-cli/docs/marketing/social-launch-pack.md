@@ -6,9 +6,11 @@
 2. Ask naturally with `crew chat "..."` and it routes to the right specialist agent.
 3. All edits stage in `.crew/sandbox.json` first. Review before applying.
 4. Compare alternatives with sandbox branches, then merge the winner.
-5. Cost-aware dispatch with model comparison and spend guard.
-6. Local correction capture + LoRA-style export dataset.
-7. Try it: `npm i -g @crewswarm/crew-cli` and run `crew --help`.
+5. Run `crew review --strict` to fail CI on high-severity risks.
+6. Headless mode ships JSONL artifacts: `crew --headless --json --out .crew/headless-run.jsonl`.
+7. Bound token/context growth with `--max-context-tokens` budget controls.
+8. Validate MCP config with `crew mcp doctor` before agents run.
+9. Try it: `npm i -g @crewswarm/crew-cli` and run `crew --help`.
 
 ## Reddit Post (r/LocalLLaMA / r/ChatGPT)
 
@@ -19,8 +21,10 @@ Core idea: no blind file writes. You preview diff, branch alternatives, then app
 Features:
 - agent routing (`crew chat`)
 - sandbox diff workflow (`crew preview`, `crew apply`)
-- cost estimate + cheaper model suggestions (`crew estimate`)
-- correction dataset capture (`crew correction`) + export (`crew tune --format lora`)
+- strict review gate (`crew review --strict`)
+- headless JSONL artifacts for CI (`--headless --json --out`)
+- context budget guard (`--max-context-tokens`)
+- MCP preflight checks (`crew mcp doctor`)
 
 Would love feedback from folks using Aider/Codex/Claude Code workflows.
 
@@ -29,6 +33,7 @@ Would love feedback from folks using Aider/Codex/Claude Code workflows.
 1. Intro (15s): "This is crew-cli, multi-agent orchestration in terminal."
 2. Chat route (30s): run `crew chat "refactor auth middleware"` and show routed agent.
 3. Sandbox flow (45s): show `crew preview`, `crew branch`, `crew merge`.
-4. Cost flow (20s): show `crew estimate "add oauth login"` and dispatch guard.
-5. Corrections flow (20s): `crew correction ...` then `crew tune --format lora`.
-6. Close (10s): install command + repo link + ask for feedback.
+4. Review flow (20s): show `crew review --strict` in a pre-commit pass.
+5. CI flow (20s): run headless command with JSONL `--out` artifact.
+6. Ops flow (15s): run `crew mcp doctor` and mention context budgets.
+7. Close (10s): install command + repo link + ask for feedback.

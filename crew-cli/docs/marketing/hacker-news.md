@@ -14,6 +14,13 @@ The part I'm most proud of is the Sandbox. When an agent suggests a code change 
 
 We also added a token finder (`crew auth`) that can utilize your existing local session tokens (like Claude Code or Cursor) so you aren't paying double for API keys.
 
+Recent upgrades were focused on CI and safety:
+1. `crew review --strict` can fail CI on high-severity risks.
+2. `crew --headless --json --out .crew/headless-run.jsonl` writes structured artifacts.
+3. `--max-context-tokens` prevents context/token runaway on big tasks.
+4. `crew mcp doctor` validates MCP URL/auth/header config before runtime.
+5. `crew src batch-plan` provides safer large codemod planning with dry-run defaults.
+
 It's open-source and built heavily around TS, esbuild, and Node's native fetch/test modules.
 
 Repo: https://github.com/crewswarm/crew-cli

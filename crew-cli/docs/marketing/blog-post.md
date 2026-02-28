@@ -1,6 +1,6 @@
 # Announcing crew-cli: The Multi-Agent Orchestrator for Your Terminal
 
-We are excited to announce `crew-cli` v0.1.0, a command-line tool that brings the power of CrewSwarm directly to your terminal. 
+We are excited to announce `crew-cli` v0.1.0-alpha, a command-line tool that brings the power of CrewSwarm directly to your terminal. 
 
 Whether you need a dedicated frontend specialist, a bug-fixing expert, or a product manager to help plan out a massive refactor, `crew-cli` lets you seamlessly interact with specialized AI agents while keeping complete control over your codebase.
 
@@ -28,5 +28,15 @@ Install `crew-cli` today:
 ```bash
 npm install -g @crewswarm/crew-cli
 ```
+
+## What is New in This Release
+
+We added CI- and operations-focused workflows that teams asked for:
+
+- `crew review --strict` to gate merges and fail CI on high-severity risks.
+- `crew --headless --json --out .crew/headless-run.jsonl` for structured run artifacts.
+- `--max-context-tokens` (+ budget mode) to prevent context/token runaway.
+- `crew mcp doctor` to validate MCP URL/auth/header config before runtime.
+- `crew src batch-plan` safety preset for large codemods (dry-run default).
 
 Check out our [GitHub repository](https://github.com/crewswarm/crew-cli) for documentation and examples. Let's build the future of software development, together!

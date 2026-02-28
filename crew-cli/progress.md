@@ -5,21 +5,40 @@ Date: 2026-02-28
 ## Completed
 
 - Added OpenCode GitHub v1 automation workflow:
-  - `.github/workflows/opencode-comment.yml`
+  - `.github/workflows/opencode-comment.yml` (comment-triggered)
+  - `.github/workflows/opencode-pr-review.yml` (automatic PR review)
+  - `.github/workflows/opencode-triage.yml` (issue triage with spam filter)
+  - `.github/workflows/opencode-scheduled.yml` (weekly maintenance)
 - Workflow gates:
   - Runs on `/oc` or `/opencode` comment commands.
   - Restricted to `OWNER`, `MEMBER`, `COLLABORATOR`.
+  - Account age check (30+ days) for issue triage spam prevention
 - Added GitHub operations notes:
   - `github.md` with setup, required secrets, usage, and safety notes.
-- Added two additional OpenCode workflows:
-  - `.github/workflows/opencode-pr-review.yml` for automatic PR review
-  - `.github/workflows/opencode-triage.yml` for issue triage
-- Added scheduled OpenCode maintenance workflow:
-  - `.github/workflows/opencode-scheduled.yml` (weekly cron + manual dispatch)
-- Added custom prompts per workflow and anti-spam gating for triage:
-  - trusted associations allowed immediately
-  - non-trusted users must have account age >= 30 days
-  - bot accounts are blocked from auto-triage
+  - `docs/github-qa-checklist.md` with QA verification steps
+
+## OpenCode Feature Comparison (2026-02-28)
+
+### ✅ Features We Have (Complete Parity)
+1. **Comment Triggers** - `/oc` and `/opencode` commands ✓
+2. **PR Auto-Review** - Opens on `pull_request: [opened, synchronize]` ✓
+3. **Issue Triage** - With 30-day account age spam filter ✓
+4. **Scheduled Tasks** - Weekly cron + manual dispatch ✓
+5. **Permission Gating** - OWNER/MEMBER/COLLABORATOR restrictions ✓
+6. **Custom Prompts** - Per-workflow customization ✓
+7. **Code-Line Comments** - Via `pull_request_review_comment` event ✓
+
+### 🎯 OpenCode Features We DON'T Need
+- Session sharing (`share: true`) - Not relevant for our architecture
+- OpenCode GitHub App installation - We use built-in `github.token`
+- Alternative token options (PAT) - Built-in token is sufficient
+- Workflow dispatch for every event - Manual triggers less useful than comments
+
+### 💡 Unique Advantages We Have
+- **Multiple model support** - Can use any OpenRouter model, not just Claude
+- **Integration with CrewSwarm** - Full multi-agent dispatch available
+- **Local testing** - Can test workflows with crew-cli before GitHub Actions
+- **Cost tracking** - Built into CrewSwarm dashboard
 
 ## Notes
 
