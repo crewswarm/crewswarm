@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CrewSwarm Control Deck</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <main class="app">
+      <header class="hero">
+        <p class="eyebrow">CrewSwarm</p>
+        <h1>Telegram Control Deck</h1>
+        <p class="sub">Switch modes fast. Route to crew-main, direct engines, or bypass dispatch without typing commands.</p>
+        <div class="status-row">
+          <span class="pill" id="tgState">Telegram: Unknown</span>
+          <span class="pill" id="modeState">Mode: chat</span>
+          <span class="pill" id="engineState">Engine: cursor</span>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h2>Mode</h2>
+        <div class="segmented" id="modeSelect" role="group" aria-label="Mode">
+          <button data-mode="chat" class="seg is-active">Chat</button>
+          <button data-mode="direct" class="seg">Direct</button>
+          <button data-mode="bypass" class="seg">Bypass</button>
+        </div>
+      </section>
+
+      <section class="panel two-col">
+        <div>
+          <h2>Engine</h2>
+          <div class="chip-grid" id="engineSelect">
+            <button class="chip is-active" data-engine="cursor">Cursor</button>
+            <button class="chip" data-engine="claude">Claude</button>
+            <button class="chip" data-engine="codex">Codex</button>
+            <button class="chip" data-engine="opencode">OpenCode</button>
+          </div>
+        </div>
+        <div>
+          <h2>Target Agent</h2>
+          <select id="agentSelect" class="field">
+            <option value="crew-main">crew-main</option>
+            <option value="crew-coder">crew-coder</option>
+            <option value="crew-fixer">crew-fixer</option>
+            <option value="crew-qa">crew-qa</option>
+            <option value="crew-pm">crew-pm</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Project</h2>
+        <div class="project-row">
+          <select id="projectSelect" class="field">
+            <option value="">General mode (no project)</option>
+          </select>
+          <button id="refreshProjects" class="btn ghost" type="button">Refresh</button>
+        </div>
+        <p class="hint">Set `window.CREW_MINIAPP_PROJECTS` in embed context to prefill projects.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Message</h2>
+        <textarea id="prompt" class="field area" rows="5" placeholder="Type your request..."></textarea>
+        <div class="quick-actions" id="quickActions">
+          <button class="quick" data-template="hi">Hi</button>
+          <button class="quick" data-template="status">Show current status</button>
+          <button class="quick" data-template="review">Run strict review on current diff</button>
+          <button class="quick" data-template="fix">Fix failing tests from latest run</button>
+          <button class="quick" data-template="plan">Create a 5-step implementation plan</button>
+        </div>
+        <div class="action-row">
+          <button id="sendBtn" class="btn primary" type="button">Send</button>
+          <button id="openModeBtn" class="btn" type="button">Send Mode Update</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Payload Preview</h2>
+        <pre id="payloadPreview" class="preview"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

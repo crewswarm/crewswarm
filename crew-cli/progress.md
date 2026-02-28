@@ -2,6 +2,30 @@
 
 Date: 2026-02-28
 
+## 9/10 Hardening Pass (in progress) — 2026-02-28
+
+- Fixed gateway passthrough result semantics in `src/agent/router.ts`:
+  - `status=done` no longer implies success.
+  - If gateway result includes `exitCode != 0` (or `success:false` / `ok:false`), dispatch now throws and exits non-zero.
+  - Added explicit empty-output errors for `--direct` / `--bypass` paths.
+- Added regression test:
+  - `tests/router.test.js` now asserts failure on `done` payload with `exitCode: 1`.
+- Added additional dispatch contract tests:
+  - fail on `done` payload with `success: false`
+  - fail on empty `done` payload for direct passthrough
+- Updated roadmap status:
+  - Marked Phase 4.2 (GitHub advanced triggers) as completed where already implemented.
+  - Added a dedicated "Reliability Gate to 9/10" checklist for remaining quality work.
+- Verification:
+  - `npm run qa:full` ✓ (54 passing tests, 0 failing)
+  - `npm run check` ✓
+  - `npm test` ✓ (54 passing, 0 failing)
+  - Live `npm run qa:e2e` ✓ on `QA_GATEWAY=http://127.0.0.1:5010`:
+    - `[gateway-contract] PASS taskId=7f965d5f-001a-43d9-8a18-f89cd2551ee7`
+    - `[engine-matrix] PASS cursor|claude-cli|codex-cli|gemini-cli (pass=4 skip=0 fail=0)`
+    - `[pm-loop-e2e] PASS pm->coder->preview flow`
+  - Updated `docs/qa-9of10-checklist.md` and checked off completed gates
+
 ## Completed
 
 - Added OpenCode GitHub v1 automation workflow:

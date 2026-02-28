@@ -226,19 +226,19 @@
 - [x] Safe v1 workflow with conservative permissions ✓
 - [x] GitHub operations documentation ✓
 
-### [ ] 2. GitHub Integration v2 (Advanced Triggers)
-- [ ] PR auto-review workflow (on `pull_request: [opened, synchronize]`)
-- [ ] Issue triage workflow with spam prevention
-  - [ ] Account age check (30+ days filter)
-  - [ ] Auto-link docs for common issues
-  - [ ] Smart labeling and priority assignment
-- [ ] Scheduled maintenance workflow (cron-based)
-  - [ ] Weekly TODO cleanup
-  - [ ] Dependency update checks
-  - [ ] Security audit reports
-- [ ] Code-line specific comments (already supported via `pull_request_review_comment`)
-  - [ ] Document usage pattern in github.md
-  - [ ] Add examples for inline code review
+### [x] 2. GitHub Integration v2 (Advanced Triggers) ✓ 2026-02-28
+- [x] PR auto-review workflow (on `pull_request: [opened, synchronize]`) ✓ 2026-02-28
+- [x] Issue triage workflow with spam prevention ✓ 2026-02-28
+  - [x] Account age check (30+ days filter) ✓
+  - [x] Auto-link docs for common issues ✓
+  - [x] Smart labeling and priority assignment ✓
+- [x] Scheduled maintenance workflow (cron-based) ✓ 2026-02-28
+  - [x] Weekly TODO cleanup ✓
+  - [x] Dependency update checks ✓
+  - [x] Security audit reports ✓
+- [x] Code-line specific comments (already supported via `pull_request_review_comment`) ✓ 2026-02-28
+  - [x] Document usage pattern in github.md ✓
+  - [x] Add examples for inline code review ✓
 
 ### [x] 3. Multi-Repo Awareness ✓ 2026-02-28
 - [x] Detect sibling repos (../backend, ../frontend) ✓
@@ -272,6 +272,14 @@
 - [x] Auto-fix failing UI tests ✓
 - [x] Screenshot diff comparison ✓
 
+### [ ] 8. Reliability Gate to 9/10 (Hardening Pass)
+- [x] Gateway done-result semantics: fail when `exitCode != 0` even if status is `done` ✓ 2026-02-28
+- [x] Real-call engine matrix QA (mark rate-limits as skip, fail non-rate-limit errors) ✓ 2026-02-28
+- [x] Dispatch contract tests for empty output and malformed payloads ✓ 2026-02-28
+- [ ] Soak test for long-running headless sessions (stability + memory)
+- [ ] CI strict review gate required on PRs (`crew review --strict`)
+- [x] Publish `docs/qa-9of10-checklist.md` with release acceptance gates ✓ 2026-02-28
+
 ---
 
 ## Success Metrics
@@ -303,6 +311,6 @@
 ---
 
 **Roadmap version:** 1.0  
-**Last updated:** 2026-02-27  
+**Last updated:** 2026-02-28  
 **Owner:** CrewSwarm team  
 **Output directory:** `/Users/jeffhobbs/Desktop/CrewSwarm/crew-cli`

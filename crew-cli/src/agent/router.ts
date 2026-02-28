@@ -146,7 +146,13 @@ export class AgentRouter extends EventEmitter {
         const status = await statusResponse.json();
 
         if (status.status === 'done') {
-          return status.result || 'Task completed';
+          try {
+            return this.normalizeCompletedResult(status.result, options);
+          } catch (normalizeError) {
+            const fatal = normalizeError instanceof Error ? normalizeError : new Error(String(normalizeError));
+            fatal.fatal = true;
+            throw fatal;
+          }
         }
 
         if (status.status === 'error') {
@@ -170,6 +176,47 @@ export class AgentRouter extends EventEmitter {
     }
 
     throw new Error(`Timeout waiting for ${taskId} (${timeoutMs}ms)`);
+  }
+
+  normalizeCompletedResult(rawResult, options = {}) {
+    const isObject = rawResult && typeof rawResult === 'object';
+    if (!isObject) {
+      const text = String(rawResult || '').trim();
+      if (!text) {
+        if (options.direct || options.bypass) {
+          throw new Error('Gateway returned an empty direct/bypass response');
+        }
+        return 'Task completed';
+      }
+      return text;
+    }
+
+    const result = rawResult;
+    const exitCode =
+      typeof result.exitCode === 'number'
+        ? result.exitCode
+        : (typeof result.code === 'number' ? result.code : undefined);
+    const reportedFailure = result.success === false || result.ok === false;
+    const message = String(
+      result.error ||
+      result.stderr ||
+      result.message ||
+      result.result ||
+      result.output ||
+      result.stdout ||
+      ''
+    ).trim();
+
+    if ((typeof exitCode === 'number' && exitCode !== 0) || reportedFailure) {
+      const base = message || `Task failed (exit code ${exitCode ?? 'unknown'})`;
+      throw new Error(`${base}${this.getDispatchErrorHint(base, options)}`);
+    }
+
+    if (message) return message;
+    if (options.direct || options.bypass) {
+      throw new Error('Gateway returned no textual output for direct/bypass request');
+    }
+    return 'Task completed';
   }
 
   async listAgents() {

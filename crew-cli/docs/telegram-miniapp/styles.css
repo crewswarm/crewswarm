@@ -1,0 +1,216 @@
+:root {
+  --bg: #07121d;
+  --bg2: #0e2030;
+  --ink: #e8f2ff;
+  --muted: #9eb6d1;
+  --line: #23384e;
+  --accent: #24d3a9;
+  --accent2: #4db6ff;
+  --danger: #ff6b6b;
+  --card: rgba(11, 26, 40, 0.85);
+  --radius: 14px;
+  --shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: "Space Grotesk", sans-serif;
+  background: radial-gradient(1200px 700px at 10% -20%, #11304a 0%, transparent 60%),
+              radial-gradient(1100px 700px at 95% -25%, #0f2f3b 0%, transparent 60%),
+              var(--bg);
+  color: var(--ink);
+  min-height: 100dvh;
+}
+
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(circle at 50% 30%, black 0%, transparent 75%);
+  pointer-events: none;
+}
+
+.app {
+  position: relative;
+  width: min(860px, 100%);
+  margin: 0 auto;
+  padding: 18px 14px 26px;
+  display: grid;
+  gap: 12px;
+}
+
+.hero {
+  background: linear-gradient(145deg, rgba(36, 211, 169, 0.16), rgba(77, 182, 255, 0.12));
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent2);
+}
+
+h1 {
+  margin: 4px 0 8px;
+  line-height: 1.1;
+  font-size: clamp(1.25rem, 2.8vw, 1.9rem);
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.status-row {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill {
+  font-size: 12px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(7, 18, 29, 0.7);
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  backdrop-filter: blur(4px);
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 0.98rem;
+  letter-spacing: 0.01em;
+}
+
+.two-col {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.seg, .chip, .btn, .quick {
+  border: 1px solid var(--line);
+  background: #0b1f31;
+  color: var(--ink);
+  border-radius: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 0.92rem;
+}
+
+.seg.is-active, .chip.is-active {
+  border-color: var(--accent2);
+  background: linear-gradient(145deg, rgba(77, 182, 255, 0.24), rgba(36, 211, 169, 0.14));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+}
+
+.chip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #081827;
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 10px;
+  font: inherit;
+}
+
+.area {
+  resize: vertical;
+  min-height: 98px;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quick-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick {
+  min-height: 32px;
+  font-size: 0.81rem;
+  padding: 6px 8px;
+}
+
+.action-row {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.btn.primary {
+  background: linear-gradient(145deg, #2bd0a6, #33a4ff);
+  border-color: transparent;
+  color: #04101a;
+  font-weight: 700;
+}
+
+.btn.ghost {
+  background: transparent;
+}
+
+.preview {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #06131f;
+  color: #cde3ff;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+}
+
+@media (min-width: 760px) {
+  .two-col { grid-template-columns: 1fr 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

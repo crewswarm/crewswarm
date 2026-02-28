@@ -68,6 +68,27 @@ or
 
 PR review and issue triage run automatically on their respective events.
 
+## Inline Review Comments (Files Tab)
+
+When you leave a review comment on a specific changed line in a PR (Files tab), the
+`pull_request_review_comment` event includes:
+
+- file path
+- line number + side
+- diff hunk context
+
+Example trigger comment on a PR diff line:
+
+```text
+/oc review this null-check and propose the safest fix
+```
+
+Recommended pattern for line-level reviews:
+
+1. Ask for a narrow fix tied to the commented hunk.
+2. Request test impact for that exact change.
+3. If needed, follow with a second `/oc` comment for broader repo cleanup.
+
 ## Safety Note
 
 `smoke-test.yml` includes a `crew doctor` check that may fail in CI if local CrewSwarm services are not running on `localhost:5010`. This is documented inline in that workflow.
