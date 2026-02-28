@@ -662,6 +662,7 @@ function connectRT() {
         if (dispatch) {
           dispatch.done = true;
           dispatch.result = content.slice(0, 4000);
+          dispatch.engineUsed = env.payload?.engineUsed || null;
           setTimeout(() => pendingDispatches.delete(taskId), 600_000);
         }
 

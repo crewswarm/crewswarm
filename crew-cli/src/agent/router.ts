@@ -164,7 +164,7 @@ export class AgentRouter extends EventEmitter {
 
         if (status.status === 'done') {
           try {
-            return this.normalizeCompletedResult(status.result, options);
+            return this.normalizeCompletedResult(status.result, options, status);
           } catch (normalizeError) {
             const fatal = normalizeError instanceof Error ? normalizeError : new Error(String(normalizeError));
             fatal.fatal = true;
@@ -195,7 +195,7 @@ export class AgentRouter extends EventEmitter {
     throw new Error(`Timeout waiting for ${taskId} (${timeoutMs}ms)`);
   }
 
-  normalizeCompletedResult(rawResult, options = {}) {
+  normalizeCompletedResult(rawResult, options = {}, statusObj = {}) {
     const isObject = rawResult && typeof rawResult === 'object';
     if (!isObject) {
       const text = String(rawResult || '').trim();
@@ -205,7 +205,7 @@ export class AgentRouter extends EventEmitter {
         }
         return 'Task completed';
       }
-      this.assertEngineProvenance(text, options, {});
+      this.assertEngineProvenance(text, options, statusObj);
       return text;
     }
 
@@ -230,7 +230,7 @@ export class AgentRouter extends EventEmitter {
       throw new Error(`${base}${this.getDispatchErrorHint(base, options)}`);
     }
 
-    this.assertEngineProvenance(message, options, result);
+    this.assertEngineProvenance(message, options, { ...result, ...statusObj });
     if (message) return message;
     if (options.direct || options.bypass) {
       throw new Error('Gateway returned no textual output for direct/bypass request');
@@ -245,6 +245,7 @@ export class AgentRouter extends EventEmitter {
     if (s.includes('cursor cli') || s.includes('cursor')) return 'cursor';
     if (s.includes('codex cli') || s.includes('codex')) return 'codex-cli';
     if (s.includes('gemini cli') || s.includes('gemini')) return 'gemini-cli';
+    if (s.includes('opencode')) return 'opencode';
     return null;
   }
 
