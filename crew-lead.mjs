@@ -730,7 +730,7 @@ function connectRT() {
           content: content.slice(0, 2000), 
           sessionId: targetSession, 
           taskId, 
-          engineUsed: payload?.engineUsed || null, // Track which coding engine was used
+          engineUsed: env.payload?.engineUsed || null, // Track which coding engine was used
           ts: Date.now() 
         });
         if (dispatch?.ts) {
