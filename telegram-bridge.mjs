@@ -120,6 +120,31 @@ async function tgRequest(method, body = {}) {
   return json.result;
 }
 
+async function tgAnswerCallbackQuery(callbackQueryId, text = "") {
+  try {
+    await tgRequest("answerCallbackQuery", {
+      callback_query_id: callbackQueryId,
+      text: text.slice(0, 180) || undefined,
+      show_alert: false
+    });
+  } catch {}
+}
+
+async function tgEdit(chatId, messageId, text, replyMarkup) {
+  await tgRequest("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text: text.slice(0, 4000),
+    parse_mode: "Markdown",
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {})
+  }).catch(() => tgRequest("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text: text.slice(0, 4000),
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {})
+  }));
+}
+
 // Dedupe: avoid sending the same long message twice (e.g. roadmap sent via reply and again via another path)
 const lastSentByChat = new Map(); // chatId -> { content, ts }
 const DEDUPE_WINDOW_MS = 30000;  // wider window to catch SSE + RT race
@@ -171,6 +196,46 @@ function splitMessage(text, maxLen) {
   return chunks;
 }
 
+// ── Menu keyboards ───────────────────────────────────────────────────────────
+
+function mainReplyKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "Chat crew-main" }, { text: "Direct engine" }, { text: "Bypass mode" }],
+      [{ text: "Set engine" }, { text: "Set agent" }, { text: "Projects" }],
+      [{ text: "Status" }, { text: "Help" }]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  };
+}
+
+function engineInline() {
+  return {
+    inline_keyboard: [
+      [{ text: "Cursor", callback_data: "eng:cursor" }, { text: "Claude", callback_data: "eng:claude" }],
+      [{ text: "Codex", callback_data: "eng:codex" }, { text: "OpenCode", callback_data: "eng:opencode" }]
+    ]
+  };
+}
+
+function modeInline() {
+  return {
+    inline_keyboard: [
+      [{ text: "Chat", callback_data: "mode:chat" }, { text: "Direct", callback_data: "mode:direct" }, { text: "Bypass", callback_data: "mode:bypass" }]
+    ]
+  };
+}
+
+function errorInline() {
+  return {
+    inline_keyboard: [
+      [{ text: "Retry", callback_data: "retry:last" }, { text: "Fallback crew-main", callback_data: "fallback:main" }],
+      [{ text: "Set engine", callback_data: "open:engine" }, { text: "Set mode", callback_data: "open:mode" }]
+    ]
+  };
+}
+
 async function tgGetMe() {
   return tgRequest("getMe");
 }
@@ -178,6 +243,71 @@ async function tgGetMe() {
 // ── RT Bus client ─────────────────────────────────────────────────────────────
 
 let rtClient = null;
+
+// ── Callback query handler ───────────────────────────────────────────────────
+
+async function handleCallback(q) {
+  const chatId = q.message?.chat?.id;
+  const messageId = q.message?.message_id;
+  const data = String(q.data || "");
+  if (!chatId) return;
+
+  if (q.id) await tgAnswerCallbackQuery(q.id, "Updated");
+
+  if (data.startsWith("mode:")) {
+    const mode = data.slice(5);
+    const next = setState(chatId, { mode });
+    if (messageId) await tgEdit(chatId, messageId, `Mode set to *${next.mode}*`, modeInline());
+    return;
+  }
+
+  if (data.startsWith("eng:")) {
+    const engine = data.slice(4);
+    const next = setState(chatId, { engine, mode: "direct" });
+    if (messageId) await tgEdit(chatId, messageId, `Engine set to *${next.engine}* (mode: direct)`, engineInline());
+    return;
+  }
+
+  if (data.startsWith("retry:last")) {
+    const st = getState(chatId);
+    if (!st.lastPrompt) {
+      await tgSend(chatId, "No last prompt found.");
+      return;
+    }
+    await routeByState(chatId, st.lastPrompt);
+    return;
+  }
+
+  if (data.startsWith("fallback:main")) {
+    setState(chatId, { mode: "chat", agent: "crew-main" });
+    const st = getState(chatId);
+    await tgSend(chatId, "Switched to chat → crew-main fallback.");
+    if (st.lastPrompt) await routeByState(chatId, st.lastPrompt);
+    return;
+  }
+
+  if (data.startsWith("open:engine")) {
+    const st = getState(chatId);
+    await tgRequest("sendMessage", {
+      chat_id: chatId,
+      text: `Current engine: *${st.engine}*\n\nSelect engine:`,
+      parse_mode: "Markdown",
+      reply_markup: engineInline()
+    });
+    return;
+  }
+
+  if (data.startsWith("open:mode")) {
+    const st = getState(chatId);
+    await tgRequest("sendMessage", {
+      chat_id: chatId,
+      text: `Current mode: *${st.mode}*\n\nSelect mode:`,
+      parse_mode: "Markdown",
+      reply_markup: modeInline()
+    });
+    return;
+  }
+}
 
 // ── Conversation history (per chatId) ─────────────────────────────────────────
 // Keeps last N turns so crew-main has thread context
@@ -209,6 +339,29 @@ const activeSessions = new Map();
 // Track last crew-main reply time to debounce rapid messages
 const lastReplyTime = new Map();
 
+// ── Per-chat state for mode, engine, agent selection ─────────────────────────
+const chatState = new Map(); // chatId -> { mode, engine, agent, projectId, lastPrompt, lastEngine, lastErrorType }
+const pendingInput = new Map(); // chatId -> { kind: "engine_prompt"|"agent_task", value: string }
+
+const DEFAULT_STATE = {
+  mode: "chat",          // chat | direct | bypass
+  engine: "cursor",      // cursor | claude | codex | opencode
+  agent: "crew-main",
+  projectId: null,
+  lastPrompt: "",
+  lastEngine: "",
+  lastErrorType: ""
+};
+
+function getState(chatId) {
+  return { ...DEFAULT_STATE, ...(chatState.get(chatId) || {}) };
+}
+function setState(chatId, patch) {
+  const next = { ...getState(chatId), ...patch };
+  chatState.set(chatId, next);
+  return next;
+}
+
 // ── Per-chat active project ───────────────────────────────────────────────────
 // Set once via /project <name>, cleared via /project off or /home
 // Persists for the lifetime of the bridge process (survives messages, not restarts)
@@ -237,10 +390,20 @@ async function fetchProjects() {
 const ENGINE_COMMANDS = { "/claude": "claude", "/cursor": "cursor", "/opencode": "opencode", "/codex": "codex" };
 const ENGINE_LABELS   = { claude: "🤖 Claude Code", cursor: "🖱 Cursor CLI", opencode: "⚡ OpenCode", codex: "🟣 Codex CLI" };
 
+function classifyEngineFailure(text) {
+  const s = String(text || "").toLowerCase();
+  if (s.includes("rate limit") || s.includes("429") || s.includes("too many requests")) return "rate_limit";
+  if (s.includes("hit your limit") || s.includes("quota") || s.includes("billing")) return "quota_limit";
+  if (s.includes("auth") || s.includes("token") || s.includes("unauthorized")) return "auth";
+  if (s.includes("no text output") || s.includes("completed with no text output")) return "empty_output";
+  return "generic";
+}
+
 async function handleEnginePassthrough(chatId, engine, message) {
   const token = getAuthToken();
   const label = ENGINE_LABELS[engine] || engine;
   await tgSend(chatId, `${label} ⏳ _running..._`);
+  setState(chatId, { lastPrompt: message, lastEngine: engine });
   try {
     const res = await fetch(`${CREW_LEAD_URL}/api/engine-passthrough`, {
       method: "POST",
@@ -266,9 +429,28 @@ async function handleEnginePassthrough(chatId, engine, message) {
           if (d.type === "chunk" && d.text) fullText += d.text;
           if (d.type === "done") {
             const exitCode = d.exitCode ?? 0;
-            const body = fullText.trim() || "(no output)";
-            const header = `${label} ✓ (exit ${exitCode})\n\n`;
-            await tgSend(chatId, header + body);
+            const body = fullText.trim();
+            if (exitCode !== 0) {
+              const failText = body || "(no output returned)";
+              const kind = classifyEngineFailure(failText);
+              setState(chatId, { lastErrorType: kind });
+              await tgRequest("sendMessage", {
+                chat_id: chatId,
+                text: `❌ ${label} failed (exit ${exitCode})\n\n${failText.slice(0, 2000)}`,
+                reply_markup: errorInline()
+              });
+              return;
+            }
+            if (!body) {
+              setState(chatId, { lastErrorType: "empty_output" });
+              await tgRequest("sendMessage", {
+                chat_id: chatId,
+                text: `⚠️ ${label} completed with no text output.`,
+                reply_markup: errorInline()
+              });
+              return;
+            }
+            await tgSend(chatId, `✅ ${label} (exit 0)\n\n${body}`);
             return;
           }
         } catch {}
@@ -277,12 +459,61 @@ async function handleEnginePassthrough(chatId, engine, message) {
     // Stream ended without done event
     if (fullText.trim()) await tgSend(chatId, `${label}\n\n${fullText.trim()}`);
   } catch (e) {
-    await tgSend(chatId, `❌ ${label} error: ${e.message}`);
+    const kind = classifyEngineFailure(e.message);
+    setState(chatId, { lastErrorType: kind });
+    await tgRequest("sendMessage", {
+      chat_id: chatId,
+      text: `❌ ${label} error: ${e.message}`,
+      reply_markup: errorInline()
+    });
   }
 }
 
 async function handleCommand(chatId, text) {
   const lower = text.toLowerCase().trim();
+
+  // /menu — show main keyboard
+  if (lower === "/menu") {
+    await tgRequest("sendMessage", {
+      chat_id: chatId,
+      text: "Main menu — tap buttons to navigate:",
+      reply_markup: mainReplyKeyboard()
+    });
+    return true;
+  }
+
+  // /mode — inline mode selector
+  if (lower === "/mode") {
+    const st = getState(chatId);
+    await tgRequest("sendMessage", {
+      chat_id: chatId,
+      text: `Current mode: *${st.mode}*\n\nSelect mode:`,
+      parse_mode: "Markdown",
+      reply_markup: modeInline()
+    });
+    return true;
+  }
+
+  // /engine — inline engine selector
+  if (lower === "/engine") {
+    const st = getState(chatId);
+    await tgRequest("sendMessage", {
+      chat_id: chatId,
+      text: `Current engine: *${st.engine}*\n\nSelect engine:`,
+      parse_mode: "Markdown",
+      reply_markup: engineInline()
+    });
+    return true;
+  }
+
+  // /status — show current state
+  if (lower === "/status") {
+    const st = getState(chatId);
+    const activeProj = activeProjectByChatId.get(chatId);
+    const projLine = activeProj ? `📁 *Project:* ${activeProj.name} (${activeProj.outputDir})` : "📁 *Project:* none (general mode)";
+    await tgSend(chatId, `*Current state:*\n\n🔧 *Mode:* ${st.mode}\n⚙️ *Engine:* ${st.engine}\n🤖 *Agent:* ${st.agent}\n${projLine}`);
+    return true;
+  }
 
   // /claude <msg>, /cursor <msg>, /opencode <msg>, /codex <msg> — direct engine passthrough
   for (const [cmd, engine] of Object.entries(ENGINE_COMMANDS)) {
@@ -462,6 +693,56 @@ function logMessage({ direction, chatId, username, text, firstName }) {
   try { appendFileSync(MSG_LOG, JSON.stringify(entry) + "\n"); } catch {}
 }
 
+// ── Unified routing by chat state ─────────────────────────────────────────────
+
+async function routeByState(chatId, text) {
+  const st = setState(chatId, { lastPrompt: text, lastEngine: getState(chatId).engine });
+  if (st.mode === "direct") {
+    await handleEnginePassthrough(chatId, st.engine, text);
+    return;
+  }
+  if (st.mode === "bypass") {
+    // TODO: implement bypass dispatch via crew-lead /api/dispatch with direct=true, bypass=true
+    await tgSend(chatId, `⚠️ Bypass mode not yet implemented. Falling back to chat mode.`);
+    await dispatchChat(chatId, text, st.agent || "crew-main");
+    return;
+  }
+  await dispatchChat(chatId, text, st.agent || "crew-main");
+}
+
+async function dispatchChat(chatId, text, agent = "crew-main") {
+  const taskId = randomUUID();
+  const history = formatHistory(chatId);
+  const activeProj = activeProjectByChatId.get(chatId);
+
+  // Add to conversation history
+  addToHistory(chatId, "user", text);
+  persistTurn("user", text, activeSessions.get(chatId)?.firstName || "User");
+
+  // Send to crew-lead HTTP server
+  fetch(`${CREW_LEAD_URL}/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(RT_TOKEN ? { authorization: `Bearer ${RT_TOKEN}` } : {}) },
+    body: JSON.stringify({ message: text, sessionId: `telegram-${chatId}`, firstName: activeSessions.get(chatId)?.firstName || "User", projectId: activeProj?.id || undefined }),
+    signal: AbortSignal.timeout(65000),
+  }).then(async r => {
+    const d = await r.json();
+    if (d.reply) {
+      addToHistory(chatId, "assistant", d.reply);
+      persistTurn("assistant", d.reply, "CrewSwarm");
+      logMessage({ direction: "outbound", chatId, text: d.reply });
+      lastReplyTime.set(chatId, Date.now());
+      await tgSend(chatId, d.reply);
+      if (d.dispatched) {
+        await tgSend(chatId, `⚡ Dispatching to ${d.dispatched.agent}...`);
+      }
+    }
+  }).catch(async e => {
+    log("error", "crew-lead HTTP error", { error: e.message });
+    await tgSend(chatId, `⚠️ crew-lead error: ${e.message.slice(0,100)}`);
+  });
+}
+
 // ── Persistent memory writer ───────────────────────────────────────────────────
 // Writes a rolling summary to memory/telegram-context.md so agents remember
 // who they talked to and what was said across bridge restarts.
@@ -575,11 +856,18 @@ async function pollLoop() {
       const updates = await tgRequest("getUpdates", {
         offset,
         timeout: POLL_TIMEOUT,
-        allowed_updates: ["message"],
+        allowed_updates: ["message", "callback_query"],
       });
 
       for (const update of updates) {
         offset = update.update_id + 1;
+
+        // Handle callback queries (button clicks)
+        if (update.callback_query) {
+          await handleCallback(update.callback_query);
+          continue;
+        }
+
         const msg = update.message;
         if (!msg?.text) continue;
 
@@ -608,39 +896,8 @@ async function pollLoop() {
           if (handled) continue;
         }
 
-        // Add to in-memory and persistent conversation history
-        addToHistory(chatId, "user", text);
-        persistTurn("user", text, firstName || username);
-
-        const taskId        = randomUUID();
-        const correlationId = randomUUID();
-        const history       = formatHistory(chatId);
-
-        // Inject active project context if set for this chat
-        const activeProj = activeProjectByChatId.get(chatId);
-
-        // Send to crew-lead HTTP server — each Telegram chatId gets its own session
-        fetch(`${CREW_LEAD_URL}/chat`, {
-          method: "POST",
-          headers: { "content-type": "application/json", ...(RT_TOKEN ? { authorization: `Bearer ${RT_TOKEN}` } : {}) },
-          body: JSON.stringify({ message: text, sessionId: `telegram-${chatId}`, firstName: firstName || username, projectId: activeProj?.id || undefined }),
-          signal: AbortSignal.timeout(65000),
-        }).then(async r => {
-          const d = await r.json();
-          if (d.reply) {
-            addToHistory(chatId, "assistant", d.reply);
-            persistTurn("assistant", d.reply, "CrewSwarm");
-            logMessage({ direction: "outbound", chatId, text: d.reply });
-            lastReplyTime.set(chatId, Date.now());
-            await tgSend(chatId, d.reply);
-            if (d.dispatched) {
-              await tgSend(chatId, `⚡ Dispatching to ${d.dispatched.agent}...`);
-            }
-          }
-        }).catch(async e => {
-          log("error", "crew-lead HTTP error", { error: e.message });
-          await tgSend(chatId, `⚠️ crew-lead error: ${e.message.slice(0,100)}`);
-        });
+        // Route by current chat state (mode, engine, agent)
+        await routeByState(chatId, text);
       }
     } catch (e) {
       log("error", "Poll error", { error: e.message });
@@ -660,6 +917,19 @@ async function main() {
   try {
     const me = await tgGetMe();
     log("info", `Telegram bot connected: @${me.username} (${me.first_name})`);
+    
+    // Set bot commands menu
+    await tgRequest("setMyCommands", {
+      commands: [
+        { command: "menu", description: "Show quick menu" },
+        { command: "mode", description: "Select chat/direct/bypass mode" },
+        { command: "engine", description: "Select direct engine" },
+        { command: "status", description: "Show current state" },
+        { command: "projects", description: "List projects" },
+        { command: "home", description: "Clear project context" }
+      ]
+    });
+    
     console.log(`\n✅ Telegram bridge running`);
     console.log(`   Bot: @${me.username}`);
     console.log(`   RT:  ${RT_URL} (as ${AGENT_NAME})`);
