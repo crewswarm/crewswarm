@@ -60,6 +60,8 @@ const _pidSuffix     = PROJECT_ID ? `-${PROJECT_ID}` : "";
 const STOP_FILE      = join(LOG_DIR, `pm-loop${_pidSuffix}.stop`);
 const PID_FILE       = join(LOG_DIR, `pm-loop${_pidSuffix}.pid`);
 const TASK_TIMEOUT        = Number(process.env.PHASED_TASK_TIMEOUT_MS  || "600000"); // 10min — OpenCode sessions need room
+// If an agent is still producing stderr progress output, extend deadline by this many ms (default 15 min).
+const PM_AGENT_IDLE_TIMEOUT_MS = Number(process.env.PM_AGENT_IDLE_TIMEOUT_MS || "900000");
 const MAX_CONCURRENT_TASKS = Number(process.env.PM_MAX_CONCURRENT || "20");
 const GROQ_API_KEY   = process.env.GROQ_API_KEY || ""; // kept for backwards compat
 
@@ -935,14 +937,36 @@ function _callAgentRaw(agentId, message, { timeout } = {}) {
       env,
     });
     let out = "", err = "";
-    proc.stdout?.on("data", d => { out += d; });
-    proc.stderr?.on("data", d => { err += d; });
-    // Kill timer must be longer than agentTimeout (the RT-level timeout) so we
-    // never cut the OpenCode session short. Add a 60s grace window.
-    const killAfterMs = agentTimeout + 60_000;
-    const timer = setTimeout(() => { proc.kill("SIGTERM"); reject(new Error(`Timeout ${killAfterMs}ms`)); }, killAfterMs);
+    let lastActivity = Date.now();
+    const startTime = Date.now();
+
+    proc.stdout?.on("data", d => { lastActivity = Date.now(); out += d; });
+    proc.stderr?.on("data", d => {
+      lastActivity = Date.now();
+      err += d;
+    });
+
+    // Watchdog: extend deadline while the --send process is producing output
+    // (stderr carries gateway-bridge progress lines like "• Routing to Cursor CLI...").
+    // Kill only when idle > PM_AGENT_IDLE_TIMEOUT_MS, subject to an absolute ceiling.
+    const absoluteMax = agentTimeout + 60_000;
+    const watchdog = setInterval(() => {
+      const idle  = Date.now() - lastActivity;
+      const total = Date.now() - startTime;
+      if (total >= absoluteMax) {
+        clearInterval(watchdog);
+        proc.kill("SIGTERM");
+        reject(new Error(`PM agent absolute timeout after ${Math.round(total / 1000)}s`));
+      } else if (idle >= PM_AGENT_IDLE_TIMEOUT_MS) {
+        clearInterval(watchdog);
+        proc.kill("SIGTERM");
+        reject(new Error(`PM agent idle timeout: no activity for ${Math.round(idle / 1000)}s`));
+      }
+      // Otherwise: still active — let it run.
+    }, 30_000);
+
     proc.on("close", code => {
-      clearTimeout(timer);
+      clearInterval(watchdog);
       if (code !== 0) reject(new Error(err || out || `exit ${code}`));
       else resolve(out.trim() || err.trim());
     });
