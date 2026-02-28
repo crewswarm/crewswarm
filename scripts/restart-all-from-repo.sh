@@ -10,28 +10,39 @@ export OPENCLAW_DIR="$REPO_DIR"   # backward compat for scripts that only check 
 export NODE="${NODE:-node}"
 
 echo "Stopping existing CrewSwarm processes..."
-# Kill by port first (catches zombies that survive name-based pkill)
+
+# ── Kill by process name first (don't rely on port — avoids killing unrelated listeners)
+# Use pattern without leading "node " so we catch all node binary paths (/usr/local/bin/node,
+# /usr/local/Cellar/node/x.y.z/bin/node, bare "node", etc.)
+pkill -9 -f "gateway-bridge.mjs"      2>/dev/null; true  # all --rt-daemon AND --send stragglers
+pkill -9 -f "opencrew-rt-daemon.mjs"  2>/dev/null; true
+pkill -9 -f "crew-lead.mjs"           2>/dev/null; true
+pkill -9 -f "scripts/dashboard.mjs"   2>/dev/null; true
+pkill -9 -f "scripts/mcp-server.mjs"  2>/dev/null; true
+pkill -9 -f "scripts/crew-scribe.mjs" 2>/dev/null; true  # was never killed; accumulated on restart
+pkill -9 -f "telegram-bridge.mjs"     2>/dev/null; true  # catches all node binary path variants
+pkill -9 -f "whatsapp-bridge.mjs"     2>/dev/null; true  # ditto
+pkill -9 -f "opencode serve"          2>/dev/null; true
+
+# ── Kill by port (catches anything that survived above — e.g. launchd-managed dashboard)
 lsof -ti :5010  2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :4319  2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :18889 2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :4096  2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :5020  2>/dev/null | xargs kill -9 2>/dev/null; true
-# Kill by process name
-pkill -9 -f "gateway-bridge.mjs" 2>/dev/null; true
-pkill -9 -f "opencrew-rt-daemon.mjs" 2>/dev/null; true
-pkill -9 -f "crew-lead.mjs" 2>/dev/null; true
-pkill -9 -f "scripts/dashboard.mjs" 2>/dev/null; true
-pkill -9 -f "scripts/mcp-server.mjs" 2>/dev/null; true
-pkill -9 -f "opencode serve" 2>/dev/null; true
-# Remove stale PID files
+
+# ── Clean stale PID files so start-crew doesn't skip re-spawning
 find /tmp -maxdepth 1 -name "bridge-*.pid" -delete 2>/dev/null; true
+
 sleep 2
-# Confirm ports are clear before starting
+
+# ── Confirm ports are clear
 for port in 5010 4319 18889 4096 5020; do
   HELD=$(lsof -ti :$port 2>/dev/null | wc -l | tr -d ' ')
   if [ "$HELD" -gt 0 ]; then
-    echo "  WARNING: port $port still held by $HELD process(es) — force killing..."
+    echo "  WARNING: port $port still held — force killing..."
     lsof -ti :$port 2>/dev/null | xargs kill -9 2>/dev/null; true
+    sleep 1
   fi
 done
 
@@ -87,19 +98,25 @@ done
 
 if [[ "$START_BRIDGES" -eq 1 ]]; then
   echo "Starting Telegram bridge..."
-  pkill -f "node telegram-bridge.mjs" 2>/dev/null; sleep 1
-  nohup "$NODE" telegram-bridge.mjs >> /tmp/telegram-bridge.log 2>&1 &
+  # Pattern without leading "node " to catch any node binary path variant
+  pkill -9 -f "telegram-bridge.mjs" 2>/dev/null; sleep 1
+  nohup "$NODE" "$REPO_DIR/telegram-bridge.mjs" >> /tmp/telegram-bridge.log 2>&1 &
   echo "  PID: $!"
 
   echo "Starting WhatsApp bridge..."
-  pkill -f "node whatsapp-bridge.mjs" 2>/dev/null; sleep 1
-  nohup "$NODE" whatsapp-bridge.mjs >> /tmp/whatsapp-bridge.log 2>&1 &
+  pkill -9 -f "whatsapp-bridge.mjs" 2>/dev/null; sleep 1
+  nohup "$NODE" "$REPO_DIR/whatsapp-bridge.mjs" >> /tmp/whatsapp-bridge.log 2>&1 &
   echo "  PID: $!"
 fi
 
 echo "Starting MCP + OpenAI-compat server (port 5020)..."
-nohup "$NODE" scripts/mcp-server.mjs >> /tmp/crewswarm-mcp.log 2>&1 &
-sleep 1
+# Guard: mcp-server is also spawned by start-crew.mjs — only start if not already up
+if ! lsof -ti :5020 >/dev/null 2>&1; then
+  nohup "$NODE" scripts/mcp-server.mjs >> /tmp/crewswarm-mcp.log 2>&1 &
+  sleep 1
+else
+  echo "  (already running on :5020)"
+fi
 
 echo ""
 echo "Stack restarted from repo. Check:"
