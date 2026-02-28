@@ -28,8 +28,8 @@ This checklist defines the minimum acceptance gate to claim "9/10" production re
 
 ## 4. CI/automation gates
 
-- [ ] `crew review --strict` used in CI as a required check.
-- [ ] Headless run artifact persisted with `--out` and uploaded in CI artifacts.
+- [x] `crew review --strict` used in CI as a required check. ✓ 2026-02-28
+- [x] Headless run artifact persisted with `--out` and uploaded in CI artifacts. ✓ 2026-02-28
 - [ ] MCP config health check run with `crew mcp doctor`.
 
 ## 5. Soak and stability
@@ -53,3 +53,4 @@ This checklist defines the minimum acceptance gate to claim "9/10" production re
   - `[gateway-contract] PASS taskId=7f965d5f-001a-43d9-8a18-f89cd2551ee7`
   - `[engine-matrix] PASS cursor|claude-cli|codex-cli|gemini-cli (pass=4 skip=0 fail=0)`
   - `[pm-loop-e2e] PASS pm->coder->preview flow`
+- Note: engine matrix now includes a new provenance negative-control check; run live `qa:e2e` once more to certify this updated guardrail.

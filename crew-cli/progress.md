@@ -16,15 +16,29 @@ Date: 2026-02-28
 - Updated roadmap status:
   - Marked Phase 4.2 (GitHub advanced triggers) as completed where already implemented.
   - Added a dedicated "Reliability Gate to 9/10" checklist for remaining quality work.
+- Added provenance hardening for engine matrix:
+  - `tools/qa-engine-matrix.mjs` now includes a negative-control engine check.
+  - Matrix run fails if an invalid engine unexpectedly succeeds (detects silent fallback).
+  - `src/agent/router.ts` now enforces direct/bypass engine provenance and fails on mismatch
+    (for example requested `cursor` but result indicates `claude-cli`).
+- Added strict review and soak tooling:
+  - `tools/qa-review-strict.mjs`
+  - `tools/qa-soak-headless.mjs`
+  - npm scripts: `qa:review-strict`, `qa:soak`
+- Added CI workflows:
+  - `.github/workflows/review-strict.yml` (PR + manual strict review gate)
+  - `.github/workflows/soak-test.yml` (manual soak run + artifact upload)
+  - `.github/workflows/e2e-engines.yml` now produces and uploads `.crew/headless-run.jsonl`
 - Verification:
   - `npm run qa:full` ✓ (54 passing tests, 0 failing)
   - `npm run check` ✓
-  - `npm test` ✓ (54 passing, 0 failing)
+  - `npm test` ✓ (55 passing, 0 failing)
   - Live `npm run qa:e2e` ✓ on `QA_GATEWAY=http://127.0.0.1:5010`:
     - `[gateway-contract] PASS taskId=7f965d5f-001a-43d9-8a18-f89cd2551ee7`
     - `[engine-matrix] PASS cursor|claude-cli|codex-cli|gemini-cli (pass=4 skip=0 fail=0)`
     - `[pm-loop-e2e] PASS pm->coder->preview flow`
   - Updated `docs/qa-9of10-checklist.md` and checked off completed gates
+  - Pending live re-run: `qa:e2e` after engine-provenance enforcement upgrade
 
 ## Completed
 

@@ -17,6 +17,8 @@
     "qa:gateway-contract": "node tools/qa-gateway-contract.mjs",
     "qa:engine-matrix": "node tools/qa-engine-matrix.mjs",
     "qa:pm-loop": "node tools/qa-pm-loop-e2e.mjs",
+    "qa:review-strict": "node tools/qa-review-strict.mjs",
+    "qa:soak": "node tools/qa-soak-headless.mjs",
     "qa:e2e": "npm run qa:gateway-contract && npm run qa:engine-matrix && npm run qa:pm-loop",
     "qa:full": "npm run build && npm run test:coverage && npm run qa:inventory && npm run qa:smoke",
     "check": "npm run build && node --check dist/crew.mjs",

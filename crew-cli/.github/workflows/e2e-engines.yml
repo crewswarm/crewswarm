@@ -46,3 +46,21 @@ jobs:
           QA_TIMEOUT_MS: ${{ inputs.timeout_ms }}
           QA_ENGINE_MATRIX_JSON: ${{ inputs.engine_matrix_json }}
         run: npm run qa:e2e
+
+      - name: Produce headless JSONL artifact
+        env:
+          QA_GATEWAY: ${{ inputs.gateway }}
+        run: |
+          node bin/crew.js --headless --json \
+            -t "Reply with exactly QA_HEADLESS_ARTIFACT_OK" \
+            --agent crew-main \
+            --gateway "$QA_GATEWAY" \
+            --out .crew/headless-run.jsonl
+
+      - name: Upload headless artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-run-jsonl
+          path: .crew/headless-run.jsonl
+          if-no-files-found: ignore

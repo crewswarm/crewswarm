@@ -1,0 +1,43 @@
+name: Review Strict Gate
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      gateway:
+        description: Gateway URL
+        required: false
+        default: http://127.0.0.1:5010
+      require_gateway:
+        description: Fail if gateway is unreachable
+        required: false
+        default: 'true'
+      review_agent:
+        description: Review agent id
+        required: false
+        default: crew-qa
+
+jobs:
+  strict-review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run strict review gate
+        env:
+          QA_GATEWAY: ${{ github.event.inputs.gateway || 'http://127.0.0.1:5010' }}
+          QA_REQUIRE_GATEWAY: ${{ github.event.inputs.require_gateway || 'true' }}
+          QA_REVIEW_AGENT: ${{ github.event.inputs.review_agent || 'crew-qa' }}
+        run: npm run qa:review-strict
+

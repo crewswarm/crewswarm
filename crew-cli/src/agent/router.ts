@@ -29,6 +29,7 @@ export class AgentRouter extends EventEmitter {
       const taskWithContext = context ? `${task}\n\n${context}` : task;
 
       // Dispatch to CrewSwarm gateway
+      const runtime = this.mapEngineToRuntime(options.engine);
       const dispatchPayload = {
         agent: agentName,
         task: taskWithContext,
@@ -37,6 +38,11 @@ export class AgentRouter extends EventEmitter {
         // Forward optional execution controls for gateway direct/bypass paths.
         model: options.model,
         engine: options.engine,
+        runtime: runtime || options.runtime,
+        useCursorCli: runtime === 'cursor' || runtime === 'cursor-cli',
+        useClaudeCode: runtime === 'claude' || runtime === 'claude-code',
+        useCodex: runtime === 'codex' || runtime === 'codex-cli',
+        useGeminiCli: runtime === 'gemini' || runtime === 'gemini-cli',
         direct: Boolean(options.direct),
         bypass: Boolean(options.bypass),
         gatewayMode: options.gatewayMode,
@@ -103,6 +109,17 @@ export class AgentRouter extends EventEmitter {
       this.logger.error(`Dispatch failed: ${error.message}`);
       throw error;
     }
+  }
+
+  mapEngineToRuntime(engine) {
+    const raw = String(engine || '').toLowerCase();
+    if (!raw) return null;
+    if (raw === 'cursor' || raw === 'cursor-cli') return 'cursor-cli';
+    if (raw === 'claude' || raw === 'claude-cli' || raw === 'claude-code') return 'claude-code';
+    if (raw === 'codex' || raw === 'codex-cli') return 'codex-cli';
+    if (raw === 'gemini' || raw === 'gemini-cli' || raw === 'gemini-api') return 'gemini-cli';
+    if (raw === 'opencode' || raw === 'gpt5' || raw === 'gpt-5') return 'opencode';
+    return raw;
   }
 
   getDispatchErrorHint(message, options = {}) {
@@ -188,6 +205,7 @@ export class AgentRouter extends EventEmitter {
         }
         return 'Task completed';
       }
+      this.assertEngineProvenance(text, options, {});
       return text;
     }
 
@@ -212,11 +230,48 @@ export class AgentRouter extends EventEmitter {
       throw new Error(`${base}${this.getDispatchErrorHint(base, options)}`);
     }
 
+    this.assertEngineProvenance(message, options, result);
     if (message) return message;
     if (options.direct || options.bypass) {
       throw new Error('Gateway returned no textual output for direct/bypass request');
     }
     return 'Task completed';
+  }
+
+  inferEngineFromText(text) {
+    const s = String(text || '').toLowerCase();
+    if (!s) return null;
+    if (s.includes('claude code')) return 'claude-cli';
+    if (s.includes('cursor cli') || s.includes('cursor')) return 'cursor';
+    if (s.includes('codex cli') || s.includes('codex')) return 'codex-cli';
+    if (s.includes('gemini cli') || s.includes('gemini')) return 'gemini-cli';
+    return null;
+  }
+
+  normalizeEngineId(value) {
+    const s = String(value || '').toLowerCase();
+    if (!s) return null;
+    if (s === 'claude' || s === 'claude-code' || s === 'claudecli') return 'claude-cli';
+    if (s === 'cursor-cli') return 'cursor';
+    if (s === 'codex') return 'codex-cli';
+    if (s === 'gemini' || s === 'gemini-api') return 'gemini-cli';
+    return s;
+  }
+
+  assertEngineProvenance(message, options = {}, result = {}) {
+    const requested = this.normalizeEngineId(options.engine);
+    if (!requested) return;
+    if (!(options.direct || options.bypass)) return;
+
+    const reported = this.normalizeEngineId(
+      result.engineUsed || result.engine || result.runtime || this.inferEngineFromText(message)
+    );
+
+    if (reported && reported !== requested) {
+      throw new Error(
+        `Engine provenance mismatch: requested "${requested}" but result indicates "${reported}"`
+      );
+    }
   }
 
   async listAgents() {

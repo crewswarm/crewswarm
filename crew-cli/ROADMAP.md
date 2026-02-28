@@ -275,9 +275,10 @@
 ### [ ] 8. Reliability Gate to 9/10 (Hardening Pass)
 - [x] Gateway done-result semantics: fail when `exitCode != 0` even if status is `done` ✓ 2026-02-28
 - [x] Real-call engine matrix QA (mark rate-limits as skip, fail non-rate-limit errors) ✓ 2026-02-28
+- [ ] Re-run live matrix after provenance negative-control upgrade
 - [x] Dispatch contract tests for empty output and malformed payloads ✓ 2026-02-28
 - [ ] Soak test for long-running headless sessions (stability + memory)
-- [ ] CI strict review gate required on PRs (`crew review --strict`)
+- [x] CI strict review gate required on PRs (`crew review --strict`) ✓ 2026-02-28
 - [x] Publish `docs/qa-9of10-checklist.md` with release acceptance gates ✓ 2026-02-28
 
 ---

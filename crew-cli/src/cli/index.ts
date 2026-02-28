@@ -56,7 +56,8 @@ function parseHeadlessShortcutArgs(args: string[]) {
     alwaysApprove: args.includes('--always-approve'),
     out: readValue('--out'),
     task: readValue('-t', '--task'),
-    agent: readValue('--agent')
+    agent: readValue('--agent'),
+    gateway: readValue('-g', '--gateway')
   };
 }
 
@@ -86,6 +87,7 @@ export async function main(args = []) {
       alwaysApprove: headlessShortcut.alwaysApprove,
       out: headlessShortcut.out,
       agent: headlessShortcut.agent,
+      gateway: headlessShortcut.gateway,
       projectDir: process.cwd(),
       router: agentRouter,
       orchestrator,
@@ -642,6 +644,7 @@ export async function main(args = []) {
     .command('run')
     .requiredOption('-t, --task <text>', 'Task text')
     .option('--agent <id>', 'Override routed agent')
+    .option('-g, --gateway <url>', 'Override gateway URL')
     .option('--json', 'Emit JSONL events', false)
     .option('--always-approve', 'Auto-apply sandbox changes', false)
     .option('--out <path>', 'Write JSONL events to file (for CI artifacts)')
@@ -652,6 +655,7 @@ export async function main(args = []) {
         json: options.json,
         alwaysApprove: options.alwaysApprove,
         out: options.out,
+        gateway: options.gateway,
         projectDir: process.cwd(),
         router: agentRouter,
         orchestrator,

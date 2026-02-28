@@ -13,6 +13,7 @@ interface HeadlessRunOptions extends HeadlessDeps {
   task: string;
   projectDir?: string;
   agent?: string;
+  gateway?: string;
   json?: boolean;
   alwaysApprove?: boolean;
   out?: string;
@@ -87,7 +88,8 @@ export async function runHeadlessTask(options: HeadlessRunOptions): Promise<{ su
 
   const dispatch = await options.router.dispatch(agent, options.task, {
     sessionId: await options.session.getSessionId(),
-    project: cwd
+    project: cwd,
+    gateway: options.gateway
   });
 
   const responseText = String(dispatch.result || '');

@@ -25,3 +25,9 @@ jobs:
 
       - name: Full QA Audit
         run: npm run qa:full
+
+      - name: Strict Review Gate (best-effort)
+        env:
+          QA_REQUIRE_GATEWAY: 'false'
+          QA_GATEWAY: http://127.0.0.1:5010
+        run: npm run qa:review-strict
