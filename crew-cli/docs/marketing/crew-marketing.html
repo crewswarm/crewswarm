@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>crew-cli | The Multi-Agent Coding Orchestrator for Terminal</title>
+    
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-0QSG6Y9DHT');
+    </script>
+
+    <meta name="description" content="Orchestrate 20+ specialized AI agents from your terminal. Safe cumulative sandbox, git context auto-injection, and local token recovery. Built for senior engineers.">
+    <meta name="keywords" content="AI coding, multi-agent orchestration, CLI, developer tools, LLM, sandbox, git context, Claude Code, Cursor alternative">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://crewswarm.ai/crew-cli">
+    <meta property="og:site_name" content="CrewSwarm">
+    <meta property="og:title" content="crew-cli | The Multi-Agent Coding Orchestrator">
+    <meta property="og:description" content="Orchestrate 20+ specialized AI agents from your terminal. Safe cumulative sandbox, git context auto-injection, and local token recovery.">
+    <meta property="og:image" content="https://crewswarm.ai/assets/og-image-cli.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:site" content="@crewswarm">
+    <meta property="twitter:creator" content="@crewswarm">
+    <meta property="twitter:url" content="https://crewswarm.ai/crew-cli">
+    <meta property="twitter:title" content="crew-cli | The Multi-Agent Coding Orchestrator">
+    <meta property="twitter:description" content="Orchestrate 20+ specialized AI agents from your terminal. Safe cumulative sandbox, git context auto-injection, and local token recovery.">
+    <meta property="twitter:image" content="https://crewswarm.ai/assets/og-image-cli.png">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="stinki-avatar.png">
+    <link rel="apple-touch-icon" href="stinki-avatar.png">
+    <link rel="shortcut icon" href="stinki-avatar.png">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "crew-cli",
+      "operatingSystem": "Cross-platform",
+      "applicationCategory": "DeveloperApplication",
+      "description": "Multi-agent coding CLI that orchestrates specialized AI agents with a cumulative diff sandbox.",
+      "softwareVersion": "0.1.0-alpha",
+      "offers": {
+        "@type": "Offer",
+        "price": "0.00",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "CrewSwarm"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [{
+        "@type": "Question",
+        "name": "How is crew-cli different from Aider or Cursor?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Cursor is an IDE; Aider is a single-agent CLI. crew-cli is an orchestrator that routes your tasks to a crew of specialists using a cumulative sandbox."
+        }
+      }, {
+        "@type": "Question",
+        "name": "Do I need to pay for a subscription?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No, crew-cli is open-source. You only pay for the LLM API usage you consume via your own keys or recovered tokens."
+        }
+      }, {
+        "@type": "Question",
+        "name": "Is my data private?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. crew-cli is local-first. Your code and session data stay on your machine in the .crew/ directory. You have full control over privacy via the crew privacy command."
+        }
+      }]
+    }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #060a10;
+            --bg-card: #0d1420;
+            --bg-card2: #111827;
+            --border: rgba(255,255,255,0.07);
+            --border-hi: rgba(56, 189, 248, 0.3);
+            --text: #f0f6ff;
+            --text-2: #8b9db3;
+            --text-3: #4a5568;
+            --accent: #38bdf8;
+            --accent2: #818cf8;
+            --green: #34d399;
+            --red: #f87171;
+            --yellow: #fbbf24;
+            --radius: 12px;
+            --radius-lg: 20px;
+            --font-main: 'Inter', sans-serif;
+            --font-mono: 'Fira Code', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: var(--font-main);
+            line-height: 1.6;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* --- Background Decoration --- */
+        .glow {
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle at 50% -20%, rgba(56, 189, 248, 0.15), transparent 70%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* --- Header --- */
+        header {
+            padding: 2.5rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-weight: 800;
+            font-size: 1.5rem;
+            letter-spacing: -0.04em;
+            text-decoration: none;
+            color: var(--text);
+        }
+
+        .logo img {
+            height: 40px;
+            width: 40px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        .version-badge {
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid var(--border-hi);
+            color: var(--accent);
+            padding: 0.25rem 0.85rem;
+            border-radius: 99px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        /* --- Hero --- */
+        .hero {
+            padding: 5rem 0 6rem;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: clamp(2.8rem, 9vw, 5rem);
+            font-weight: 800;
+            line-height: 1.05;
+            margin-bottom: 2rem;
+            letter-spacing: -0.05em;
+            background: linear-gradient(to bottom, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 1.4rem;
+            color: var(--text-2);
+            max-width: 750px;
+            margin: 0 auto 3rem;
+            font-weight: 450;
+        }
+
+        .cta-group {
+            display: flex;
+            gap: 1.25rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 1rem 2.5rem;
+            border-radius: var(--radius);
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            font-size: 1.1rem;
+        }
+
+        .btn-primary {
+            background-color: var(--accent);
+            color: var(--bg);
+            box-shadow: 0 0 25px rgba(56, 189, 248, 0.3);
+            border: none;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 0 40px rgba(56, 189, 248, 0.6);
+            background-color: #7dd3fc;
+        }
+
+        .btn-secondary {
+            background-color: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--bg-card2);
+            border-color: var(--border-hi);
+            transform: translateY(-3px);
+        }
+
+        /* --- Terminal Mockup --- */
+        .terminal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            margin: 4rem auto 8rem;
+            max-width: 900px;
+            box-shadow: 0 50px 120px rgba(0,0,0,0.6);
+            overflow: hidden;
+            text-align: left;
+            position: relative;
+        }
+
+        .terminal::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            border-radius: inherit;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+        }
+
+        .terminal-header {
+            background: rgba(255,255,255,0.03);
+            padding: 1rem 1.5rem;
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red { background: #ff5f56; }
+        .dot-yellow { background: #ffbd2e; }
+        .dot-green { background: #27c93f; }
+
+        .terminal-body {
+            padding: 2rem;
+            font-family: var(--font-mono);
+            font-size: 1rem;
+            color: #e5e7eb;
+            line-height: 1.7;
+        }
+
+        .line { margin-bottom: 0.6rem; }
+        .prompt { color: var(--accent); font-weight: bold; margin-right: 0.75rem; }
+        .cmd { color: #fff; }
+        .output { color: var(--text-2); }
+        .success { color: var(--green); }
+        .info { color: var(--accent2); }
+
+        /* --- Features --- */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2.5rem;
+            margin-bottom: 8rem;
+        }
+
+        .card {
+            background: linear-gradient(135deg, var(--bg-card), var(--bg-card2));
+            border: 1px solid var(--border);
+            padding: 2.5rem;
+            border-radius: var(--radius-lg);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: var(--border-hi);
+            transform: translateY(-5px);
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card h3 {
+            font-size: 1.4rem;
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-weight: 700;
+        }
+
+        .card p {
+            color: var(--text-2);
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+
+        .icon {
+            font-size: 1.8rem;
+            filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.4));
+        }
+
+        /* --- Comparison Section --- */
+        .comparison {
+            background: var(--bg-card);
+            padding: 6rem 3rem;
+            border-radius: 32px;
+            margin-bottom: 8rem;
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .comparison h2 {
+            text-align: center;
+            margin-bottom: 4rem;
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+
+        .grid-compare {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+        }
+
+        .compare-side {
+            padding: 2rem;
+            border-radius: var(--radius-lg);
+            background: rgba(255,255,255,0.02);
+        }
+
+        .compare-side h4 {
+            margin-bottom: 2rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+
+        .bad h4 { color: var(--red); }
+        .good h4 { color: var(--green); }
+
+        .bad { border-top: 4px solid var(--red); }
+        .good { border-top: 4px solid var(--green); }
+
+        .compare-list {
+            list-style: none;
+        }
+
+        .compare-list li {
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            font-size: 1.1rem;
+            color: var(--text-2);
+        }
+
+        .compare-list li::before {
+            content: '•';
+            font-size: 1.5rem;
+            line-height: 1;
+        }
+
+        .bad .compare-list li::before { color: var(--red); }
+        .good .compare-list li::before { color: var(--green); }
+
+        /* --- CTA Footer --- */
+        .final-cta {
+            text-align: center;
+            padding: 8rem 0;
+            background: radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.1), transparent 60%);
+        }
+
+        .final-cta h2 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 2rem;
+            letter-spacing: -0.03em;
+        }
+
+        /* --- Footer --- */
+        footer {
+            text-align: center;
+            padding: 5rem 0 3rem;
+            border-top: 1px solid var(--border);
+            color: var(--text-3);
+            font-size: 1rem;
+            letter-spacing: 0.01em;
+        }
+
+        @media (max-width: 900px) {
+            .grid-compare { grid-template-columns: 1fr; gap: 2rem; }
+            h1 { font-size: 3.5rem; }
+            .hero p { font-size: 1.2rem; }
+            .features { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="glow"></div>
+    
+    <div class="container">
+        <header>
+            <a href="https://crewswarm.ai" class="logo">
+                <img src="stinki-avatar.png" alt="CrewSwarm Mascot - Stinki the Crew-Lead (Brain/Skull Hybrid)">
+                crew<span>cli</span>
+            </a>
+            <div class="version-badge">v0.1.0-alpha</div>
+        </header>
+
+        <section class="hero">
+            <h1>Expert Agents.<br>Zero Risk.</h1>
+            <p>The multi-agent orchestration layer for your terminal. Stage changes in a cumulative sandbox. Audit AI diffs before they touch your source.</p>
+            <div class="cta-group">
+                <a href="https://github.com/crewswarm/crew-cli" class="btn btn-primary">npm install crew-cli</a>
+                <a href="#features" class="btn btn-secondary">Learn More</a>
+            </div>
+        </section>
+
+        <div class="terminal">
+            <div class="terminal-header">
+                <div class="dot dot-red"></div>
+                <div class="dot dot-yellow"></div>
+                <div class="dot dot-green"></div>
+            </div>
+            <div class="terminal-body">
+                <div class="line"><span class="prompt">$</span><span class="cmd">crew chat "Refactor auth middleware to use JWT"</span></div>
+                <div class="line"><span class="info">[INFO]</span> Routing to crew-coder (Decision: CODE)</div>
+                <div class="line"><span class="output">... CrewCoder is exploring the codebase ...</span></div>
+                <div class="line"><span class="success">[SUCCESS]</span> Staged changes to 2 files in sandbox.</div>
+                <div class="line"></div>
+                <div class="line"><span class="prompt">$</span><span class="cmd">crew preview</span></div>
+                <div class="line"><span class="output">--- Sandbox Preview (branch: main) ---</span></div>
+                <div class="line"><span class="output" style="color: #6ee7b7;">+ import jwt from 'jsonwebtoken';</span></div>
+                <div class="line"><span class="output" style="color: #6ee7b7;">+ const token = jwt.sign({ id: user.id }, secret);</span></div>
+                <div class="line"></div>
+                <div class="line"><span class="prompt">$</span><span class="cmd">crew apply --check "npm test"</span></div>
+                <div class="line"><span class="info">[INFO]</span> Running validation: npm test</div>
+                <div class="line"><span class="success">[SUCCESS]</span> Tests passed. Applied changes to disk.</div>
+            </div>
+        </div>
+
+        <section class="features" id="features">
+            <div class="card">
+                <h3><span class="icon">🦾</span> Specialist Crews</h3>
+                <p>Don't trust a generalist with your backend. `crew-cli` routes your task to expert agents: Coder, QA, PM, Security, or Frontend.</p>
+            </div>
+            <div class="card">
+                <h3><span class="icon">🛡️</span> Cumulative Sandbox</h3>
+                <p>Stage changes in a local diff sandbox. Branch implementation ideas and switch between them without messy git checkouts.</p>
+            </div>
+            <div class="card">
+                <h3><span class="icon">💰</span> Token Recovery</h3>
+                <p>Reuse API tokens from Claude Code, Cursor, and Gemini. Stop paying double for keys you already possess.</p>
+            </div>
+            <div class="card">
+                <h3><span class="icon">🎙️</span> Voice-Activated</h3>
+                <p>Coding hands-free with Whisper-powered voice orchestration and direct Chrome DevTools debugging hooks.</p>
+            </div>
+            <div class="card">
+                <h3><span class="icon">📋</span> Plan-First Flow</h3>
+                <p>Break complex features into 10-step technical plans. Execute them step-by-step with human review at every stage.</p>
+            </div>
+            <div class="card">
+                <h3><span class="icon">🤖</span> CI Auto-Healing</h3>
+                <p>Detect test failures in CI pipelines and automatically dispatch specialist agents to propose surgical fixes.</p>
+            </div>
+        </section>
+
+        <section class="comparison">
+            <h2>The New Standard</h2>
+            <div class="grid-compare">
+                <div class="compare-side bad">
+                    <h4>Legacy AI Helpers</h4>
+                    <ul class="compare-list">
+                        <li>Overwrites files blindly</li>
+                        <li>Single-model hallucinations</li>
+                        <li>Tedious copy-pasting</li>
+                        <li>Disconnected from tests</li>
+                    </ul>
+                </div>
+                <div class="compare-side good">
+                    <h4>crew-cli</h4>
+                    <ul class="compare-list">
+                        <li>Safety-first Sandbox</li>
+                        <li>Multi-agent experts</li>
+                        <li>Auto-injects Git context</li>
+                        <li>Verify-then-Apply flow</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="comparison" style="background: transparent; border: none; padding: 0;">
+            <h2 style="margin-bottom: 2rem;">Common Questions</h2>
+            <div style="max-width: 800px; margin: 0 auto; text-align: left;">
+                <div style="margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">How is this different from Aider or Cursor?</h4>
+                    <p style="color: var(--text-2);">Cursor is an IDE; Aider is a single-agent CLI. `crew-cli` is an orchestrator that routes your tasks to a <strong>crew of specialists</strong>. It also uses a unique cumulative sandbox, so you can branch implementation ideas without touching your git history until you're ready.</p>
+                </div>
+                <div style="margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">Do I need to pay for a subscription?</h4>
+                    <p style="color: var(--text-2);">`crew-cli` itself is open-source. It can use your existing API keys or auto-discover local tokens from Claude Code and Cursor to save you money. You only pay the model providers for what you use.</p>
+                </div>
+                <div style="margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">What models are supported?</h4>
+                    <p style="color: var(--text-2);">Through the CrewSwarm gateway, we support Claude 3.5 Sonnet, GPT-4o, DeepSeek, and Grok. The orchestrator chooses the best model for the specific sub-task (e.g., PM for planning, Coder for implementation).</p>
+                </div>
+                <div style="margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">Is my data private?</h4>
+                    <p style="color: var(--text-2);">Absolutely. `crew-cli` is local-first. Your code and session data stay on your machine in the `.crew/` directory. We only send the minimum context required to your chosen LLM provider, and you have full control over what gets shared with your team via the `crew privacy` command.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="final-cta" style="padding-top: 0;">
+            <div style="margin-bottom: 4rem;">
+                <p style="color: var(--text-3); font-size: 0.9rem; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.1em;">Spread the word</p>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <a href="https://twitter.com/intent/tweet?text=Check%20out%20crew-cli%20%E2%80%93%20The%20multi-agent%20coding%20orchestrator%20for%20your%20terminal!%20%F0%9F%9A%80%20https://crewswarm.ai/crew-cli" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                        Share on X
+                    </a>
+                </div>
+            </div>
+            <h2>Ready to level up?</h2>
+            <div class="cta-group">
+                <a href="https://github.com/crewswarm/crew-cli" class="btn btn-primary">Try crew-cli Today</a>
+            </div>
+        </section>
+
+        <footer>
+            Built by the <a href="https://crewswarm.ai" style="color: inherit; text-decoration: underline;">CrewSwarm Team</a> &copy; 2026. <br>
+            Multi-Agent Orchestration for the Modern Terminal.
+        </footer>
+    </div>
+</body>
+</html>

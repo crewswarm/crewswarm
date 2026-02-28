@@ -216,3 +216,5 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 ### Key architecture fact — gateway-bridge.mjs was truncated
 - The file on disk was a 4031-byte stub ending in `...[truncated]`. Restored from git with `git checkout HEAD -- gateway-bridge.mjs`.
 - Always verify with `wc -l gateway-bridge.mjs` — should be ~5000+ lines.
+
+## [2026-02-28] crew-main: crew-main: The recent shared memory update indicates a successful deployment of the new coding standards and guidelines.

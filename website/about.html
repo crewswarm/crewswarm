@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About CrewSwarm — Mission & Expertise</title>
+  <meta name="description" content="Learn about the team and mission behind CrewSwarm, the multi-agent AI orchestrator. Building the future of autonomous software engineering." />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .about-content { max-width: 800px; margin: 0 auto; padding: 4rem 1.5rem; }
+    .about-header { text-align: center; margin-bottom: 4rem; }
+    .about-header h1 { font-size: 3.5rem; margin-bottom: 1.5rem; line-height: 1.1; }
+    .about-section { margin-bottom: 3rem; color: var(--text-2); }
+    .about-section h2 { color: var(--text); margin-bottom: 1rem; }
+    .about-section p { margin-bottom: 1.25rem; font-size: 1.125rem; }
+    .about-section ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 1.5rem; }
+    .about-section li { margin-bottom: 0.75rem; font-size: 1.125rem; }
+    @media (max-width: 768px) {
+      .about-header h1 { font-size: 2.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <a class="nav-logo" href="index.html" aria-label="CrewSwarm home">Crew<span class="nav-logo-hq">Swarm</span></a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html#how-it-works" role="menuitem" class="nav-link-item">How it works</a></li>
+      <li role="none"><a href="index.html#system-diagram" role="menuitem" class="nav-link-item">Architecture</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="about.html" role="menuitem" class="nav-link-item active">About</a></li>
+      <li role="none"><a href="contact.html" role="menuitem" class="nav-link-item">Contact</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started →</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="about-content">
+    <div class="about-header">
+      <div class="eyebrow" style="color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1rem;">Our Mission</div>
+      <h1>Autonomous engineering<br/><span class="gradient-text">for everyone.</span></h1>
+    </div>
+
+    <section class="about-section">
+      <p>CrewSwarm was born from a simple observation: LLMs are incredible coders, but they struggle with project management, testing, and long-term architectural consistency. To build real software, you don't just need a model—you need a crew.</p>
+      <p>We built the orchestration layer that brings specialist AI agents together under a unified PM-led workflow. By coordinating planners, builders, and testers, CrewSwarm transforms a single requirement into a fully realized build on your local disk.</p>
+    </section>
+
+    <section class="about-section">
+      <h2>Research-Driven Foundations</h2>
+      <p>Our approach is grounded in leading AI research to ensure that autonomous development is both factual and robust. We incorporate key findings from:</p>
+      <ul>
+        <li><strong>Generative Engine Optimization (GEO):</strong> Based on research from Princeton and Georgia Tech, we prioritize authoritative content and structural markers that improve AI citation and factual accuracy.</li>
+        <li><strong>Agentic Reasoning:</strong> Our loops are inspired by frameworks like <em>Reflexion</em>, allowing agents to self-correct and iterate before shipping code.</li>
+      </ul>
+    </section>
+
+    <section class="about-section">
+      <h2>Local-First AI</h2>
+      <p>We believe your intellectual property belongs to you. CrewSwarm is a "local-first" orchestrator—your models, your keys, and your files stay on your machine. We provide the glue, you provide the vision.</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">CrewSwarm</div>
+        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html#how-it-works">How it works</a>
+          <a href="index.html#system-diagram">Architecture</a>
+          <a href="index.html#features">Features</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://twitter.com/CrewSwarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 CrewSwarm. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script>
+    // Hamburger nav toggle
+    (function() {
+      const btn = document.getElementById('navHamburger');
+      const links = document.getElementById('navLinks');
+      if (!btn || !links) return;
+      btn.addEventListener('click', function() {
+        const open = links.classList.toggle('open');
+        btn.classList.toggle('open', open);
+        btn.setAttribute('aria-expanded', String(open));
+      });
+    })();
+  </script>
+</body>
+</html>

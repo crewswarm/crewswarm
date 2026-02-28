@@ -195,7 +195,7 @@ export function populateChatProjectDropdown(projects) {
   const sel = document.getElementById('chatProjectSelect');
   if (!sel) return;
   const prev = getStoredChatProjectId() || sel.value || state.chatActiveProjectId;
-  sel.innerHTML = '<option value="">— none —</option>';
+  sel.innerHTML = '<option value="">📁 Select Project...</option>';
   (projects || []).forEach(p => {
     const opt = document.createElement('option');
     opt.value = p.id;
@@ -342,6 +342,7 @@ export function onBuildProjectChange() {
   const sel = document.getElementById('buildProjectPicker');
   const info = document.getElementById('buildProjectInfo');
   const label = document.getElementById('pmLoopProjectLabel');
+  const phasedLabel = document.getElementById('phasedProgressLabel');
   const proj = _buildProjects[sel ? sel.value : ''];
   if (proj) {
     info.style.display = 'block';
@@ -355,10 +356,13 @@ export function onBuildProjectChange() {
       '<b style="color:var(--accent);">▶ ' + proj.name + '</b>' +
       ' &nbsp;·&nbsp; ' + proj.roadmap.done + ' done · ' + proj.roadmap.pending + ' pending' +
       (proj.running ? ' &nbsp;<span style="color:var(--green-hi); font-weight:600;">● running</span>' : '');
+    if (phasedLabel) phasedLabel.textContent = '▶ ' + proj.name;
   } else {
     info.style.display = 'none';
     if (label) label.innerHTML = '← Select a project above';
+    if (phasedLabel) phasedLabel.textContent = 'All projects (no project selected)';
   }
+  // Reload phased progress with new project filter
   loadPhasedProgress();
 }
 
@@ -498,7 +502,11 @@ export async function loadPhasedProgress() {
     const scopeText = projectId ? 'This project' : 'All projects (no project selected)';
     if (label) label.textContent = scopeText;
     if (!data.length) {
-      box.textContent = projectId ? 'No runs yet for this project.' : 'No phased runs yet.';
+      if (projectId) {
+        box.innerHTML = '<div style="padding:20px;color:var(--text-3);text-align:center;">No phased builds yet for this project.<br><br>💡 Tip: Click <b>▶ Run Build</b> or <b>🔁 Build Until Done</b> above to start.</div>';
+      } else {
+        box.textContent = 'No phased runs yet.';
+      }
       return;
     }
     box.innerHTML = data.map(e => {
@@ -507,7 +515,23 @@ export async function loadPhasedProgress() {
       const task = (e.task || '').slice(0, 50) + ((e.task || '').length > 50 ? '...' : '');
       const status = e.status === 'completed' ? '✅' : '❌';
       const dur = e.duration_s != null ? e.duration_s + 's' : '';
-      return `<div style="margin-bottom:4px;">${status} [${phase}] ${agent}: ${task} ${dur}</div>`;
+      
+      // Add timestamp in human-readable format
+      let timeStr = '';
+      if (e.timestamp) {
+        const d = new Date(e.timestamp);
+        const hours = d.getHours();
+        const mins = d.getMinutes().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const hrs12 = hours % 12 || 12;
+        timeStr = `${hrs12}:${mins} ${ampm}`;
+      }
+      
+      // Add project name if showing all projects
+      const projName = !projectId && e.projectId && _buildProjects[e.projectId] ? 
+        `<span style="color:var(--text-3);font-size:10px;"> · ${_buildProjects[e.projectId].name}</span>` : '';
+      
+      return `<div style="margin-bottom:4px;">${status} [${phase}] ${agent}: ${task} ${dur}${timeStr ? ` <span style="color:var(--text-3);font-size:10px;">· ${timeStr}</span>` : ''}${projName}</div>`;
     }).join('');
     box.scrollTop = box.scrollHeight;
   } catch (e) { box.textContent = 'Could not load progress.'; }

@@ -6,6 +6,8 @@ CrewSwarm is an open-source, PM-led multi-agent orchestration platform for softw
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org)
+[![Tests](https://img.shields.io/badge/tests-433%20passing-brightgreen)](#)
+[![CI](https://github.com/CrewSwarm/CrewSwarm/actions/workflows/smoke.yml/badge.svg)](https://github.com/CrewSwarm/CrewSwarm/actions/workflows/smoke.yml)
 [![Website](https://img.shields.io/badge/website-crewswarm.ai-blue)](https://crewswarm.ai)
 
 ---
@@ -28,6 +30,24 @@ Files on disk. Done.
 ```
 
 No broadcast races. No duplicate work. Each agent gets exactly one task, from one dispatcher, with full context — and actually writes the files.
+
+> **Demo:** type `"build me a REST API with JWT auth and tests"` in the dashboard chat → watch crew-pm plan it → crew-coder write the files → crew-qa audit them → crew-github commit. Takes ~3 minutes on Groq.
+
+---
+
+## Why CrewSwarm vs alternatives
+
+| | CrewSwarm | LangChain/LangGraph | AutoGen | CrewAI |
+|---|---|---|---|---|
+| **Real file writes** | ✅ actual disk I/O | ⚠️ tools vary | ⚠️ tools vary | ⚠️ tools vary |
+| **PM-led planning** | ✅ dedicated crew-pm | ❌ manual | ❌ manual | ⚠️ role-based |
+| **Any model, any agent** | ✅ per-agent model | ⚠️ global config | ✅ per-agent | ⚠️ limited |
+| **Persistent memory** | ✅ brain.md + session-log | ⚠️ vector store setup | ❌ | ⚠️ |
+| **Local-first** | ✅ no cloud required | ⚠️ | ⚠️ | ⚠️ |
+| **Dashboard + UI** | ✅ built-in | ❌ | ❌ | ❌ |
+| **Telegram / WhatsApp** | ✅ built-in bridges | ❌ | ❌ | ❌ |
+| **Free to start** | ✅ Groq free tier | ✅ | ✅ | ✅ |
+| **Setup time** | ~5 min | hours | hours | 30 min |
 
 ---
 
@@ -314,13 +334,16 @@ CrewSwarm/
 
 ## Docs
 
-- [System Architecture](docs/SYSTEM-ARCHITECTURE.md)
+- [Architecture](docs/ARCHITECTURE.md) — system diagram, port map, request flow, key files
+- [System Architecture (deep)](docs/SYSTEM-ARCHITECTURE.md)
 - [Orchestrator Guide](docs/ORCHESTRATOR-GUIDE.md)
 - [Phased Builds (PDD)](docs/PHASED-ORCHESTRATOR.md)
 - [Agent Setup](docs/SETUP-NEW-AGENTS.md)
 - [Model Recommendations](docs/MODEL-RECOMMENDATIONS.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
-- [Go Public Roadmap](docs/GO-PUBLIC-ROADMAP.md)
+- [Test Coverage](docs/test-coverage.md) — 433 tests, full flow matrix
+- [Changelog](CHANGELOG.md)
+- [Security Policy](SECURITY.md)
 - [SwiftBar Plugin](contrib/swiftbar/README.md)
 
 ---

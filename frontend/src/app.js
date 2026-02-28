@@ -1,6 +1,7 @@
 import { getJSON, postJSON } from './core/api.js';
 import { escHtml, showNotification, fmt, createdAt, appendChatBubble, showLoading, showEmpty, showError, renderStatusBadge } from './core/dom.js';
 import { sortAgents, state } from './core/state.js';
+import { initActiveTasksPanel } from './components/active-tasks-panel.js';
 import { showBenchmarks as showBenchmarksTab, loadBenchmarks, loadBenchmarkLeaderboard, loadBenchmarkTasks, onBenchmarkTaskSelect, runBenchmarkTask, stopBenchmarkRun } from './tabs/benchmarks-tab.js';
 import {
   initServicesTab,
@@ -260,6 +261,18 @@ async function showChat(){
   setNavActive('navChat');
   const mb = document.querySelector('.msg-bar');
   if (mb) mb.style.display = 'none';
+  
+  // Refresh project dropdown to ensure it's up-to-date
+  try {
+    const data = await getJSON('/api/projects');
+    const projects = data.projects || [];
+    state.projectsData = {};
+    projects.forEach(p => { state.projectsData[p.id] = p; });
+    populateChatProjectDropdown(projects);
+  } catch (e) {
+    console.warn('Failed to refresh projects dropdown:', e);
+  }
+  
   try { state.chatActiveProjectId = localStorage.getItem('crewswarm_chat_active_project_id') || ''; } catch { state.chatActiveProjectId = ''; }
   const sel = document.getElementById('chatProjectSelect');
   if (sel && state.chatActiveProjectId && sel.querySelector('option[value="' + state.chatActiveProjectId + '"]')) sel.value = state.chatActiveProjectId;
@@ -315,7 +328,7 @@ function startAgentReplyListener() {
         } else if (d.role === 'assistant') {
           document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
           if (d.content !== lastAppendedAssistantContent) {
-            appendChatBubble('assistant', d.content, d.fallbackModel, d.fallbackReason);
+            appendChatBubble('assistant', d.content, d.fallbackModel, d.fallbackReason, d.model, d.engineUsed);
             lastAppendedAssistantContent = d.content;
           }
         }
@@ -388,12 +401,14 @@ function startAgentReplyListener() {
       // agent_reply: task completion from any crew member — replace spinner, show reply, notify
       if (d.type === 'agent_reply' || (d.from && d.content)) {
         if (!d.from || !d.content) return;
+        // Skip passthrough summaries — the dashboard already rendered the live stream
+        if (d._passthroughSummary) return;
         const spinnerId = 'agent-spinner-' + (d.taskId || d.from);
         const spinnerEl = document.getElementById(spinnerId);
         if (spinnerEl) spinnerEl.remove();
         const agentSpinner = document.getElementById('agent-spinner-' + d.from);
         if (agentSpinner) agentSpinner.remove();
-        appendChatBubble('🤖 ' + d.from, d.content, false);
+        appendChatBubble('🤖 ' + d.from, d.content, false, null, null, d.engineUsed);
         if (box) box.scrollTop = box.scrollHeight;
         showNotification(d.from + ' finished a task');
         return;
@@ -768,6 +783,10 @@ const {
   sendPassthrough,
   stopAll,
   killAll,
+  killPassthrough,
+  refreshSessionIndicator,
+  clearPassthroughSession,
+  resetSendButton,
 } = initChatActions({
   postJSON,
   getJSON,
@@ -968,7 +987,7 @@ function showProjects(){ _showProjects({ hideAllViews, setNavActive }); }
 initProjectsList({ showChat, showBuild });
 
 refreshAll();
-setInterval(refreshAll, 3000);
+setInterval(refreshAll, 5000); // Increased from 3s to 5s to reduce RT message polling
 // Populate chat project dropdown on load; respect #projects deep link (e.g. from native app)
 (async () => {
   try {
@@ -1131,6 +1150,8 @@ const ACTION_REGISTRY = {
   sendChat,
   stopAll,
   killAll,
+  stopPassthrough: killPassthrough,
+  clearPassthroughSession,
   loadServices,
   saveRTToken,
   startCrew,
@@ -1238,6 +1259,21 @@ const ACTION_REGISTRY = {
   saveCursorCliConfig:  (id) => saveCursorCliConfig(id),
   saveClaudeCodeConfig: (id) => saveClaudeCodeConfig(id),
   saveGeminiCliConfig:  (id) => saveGeminiCliConfig(id),
+  // PM Loop / Projects
+  'pm-toggle':      (id) => {
+    const proj = state.projects?.find(p => p.id === id);
+    proj && proj.running ? stopProjectPMLoop(id) : startProjectPMLoop(id);
+  },
+  'edit-roadmap':   (id) => {
+    const proj = state.projects?.find(p => p.id === id);
+    if (proj) openRoadmapEditor(id, proj.roadmapFile);
+  },
+  'retry-failed':   (id) => {
+    const proj = state.projects?.find(p => p.id === id);
+    if (proj) retryFailed(proj.roadmapFile);
+  },
+  'save-roadmap':   (id) => saveRoadmap(id),
+  'reset-failed':   (id) => resetAllFailed(id),
   // Settings tabs
   showSettingsTab: (tab) => showSettingsTab(tab),
 };
@@ -1273,6 +1309,9 @@ document.addEventListener('change', (e) => {
 
 // Wire chatInput keydown + oninput via addEventListener (SES-safe)
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize active tasks panel
+  initActiveTasksPanel('activeTasksPanel');
+
   // Set sidebar self-link to actual origin (avoids hardcoded localhost:4319)
   const dashLink = document.getElementById('dashSelfLink');
   if (dashLink) {
@@ -1295,7 +1334,147 @@ document.addEventListener('DOMContentLoaded', () => {
   if (waNumbers) waNumbers.addEventListener('input', renderWaContactRows);
   const skillSearchInput = document.getElementById('skillSearch');
   if (skillSearchInput) skillSearchInput.addEventListener('input', (e) => filterSkills(e.target.value));
+
+  // Refresh session indicator when engine or project changes
+  const engineSel = document.getElementById('passthroughEngine');
+  if (engineSel) {
+    engineSel.addEventListener('change', () => {
+      refreshSessionIndicator();
+      updatePassthroughModelDropdown();
+      // Reset send button state when switching engines
+      resetSendButton();
+    });
+  }
+  const projSel = document.getElementById('chatProjectSelect');
+  if (projSel) projSel.addEventListener('change', refreshSessionIndicator);
+  
+  // Reset send button when model changes
+  const modelSel = document.getElementById('passthroughModel');
+  if (modelSel) {
+    modelSel.addEventListener('change', () => {
+      resetSendButton();
+    });
+  }
 }, { once: true });
+
+// Update passthrough model dropdown based on selected engine
+function updatePassthroughModelDropdown() {
+  const engineSel = document.getElementById('passthroughEngine');
+  const modelSel = document.getElementById('passthroughModel');
+  if (!engineSel || !modelSel) return;
+  
+  const engine = engineSel.value;
+  const modelsByEngine = {
+    cursor: [
+      { value: '', label: '— default (opus-4.6-thinking) —' },
+      { optgroup: 'Recommended (No Rate Limits)' },
+      { value: 'gemini-3-flash', label: '🟢 Gemini 3 Flash (fastest)' },
+      { value: 'gemini-3-pro', label: '🟢 Gemini 3 Pro' },
+      { value: 'gemini-3.1-pro', label: '🟢 Gemini 3.1 Pro' },
+      { value: 'gpt-5.2-codex', label: '🟢 GPT-5.2 Codex' },
+      { value: 'gpt-5.3-codex', label: '🟢 GPT-5.3 Codex' },
+      { optgroup: 'Claude Models (May Hit Rate Limits)' },
+      { value: 'sonnet-4.5', label: '🟡 Claude 4.5 Sonnet' },
+      { value: 'sonnet-4.6', label: '🟡 Claude 4.6 Sonnet (current)' },
+      { value: 'opus-4.5', label: '🟡 Claude 4.5 Opus' },
+      { value: 'opus-4.6', label: '🟡 Claude 4.6 Opus' },
+      { optgroup: 'Thinking Models (Slower)' },
+      { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet Thinking' },
+      { value: 'opus-4.6-thinking', label: 'Claude 4.6 Opus Thinking' },
+      { optgroup: 'Other' },
+      { value: 'grok', label: 'xAI Grok' },
+      { value: 'kimi-k2.5', label: 'Moonshot Kimi K2.5' },
+    ],
+    claude: [
+      { value: '', label: '— default (Sonnet 4.6) —' },
+      { optgroup: 'Recommended' },
+      { value: 'sonnet', label: '🟢 Sonnet (alias for latest)' },
+      { value: 'Default', label: '🟢 Default (Sonnet 4.6)' },
+      { optgroup: 'Specific Versions' },
+      { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 · Best for everyday tasks' },
+      { value: 'Opus', label: 'Opus (Opus 4.6) · Most capable for complex work' },
+      { value: 'claude-opus-4-6', label: 'Opus 4.6 · Most capable' },
+      { value: 'Haiku', label: 'Haiku (Haiku 4.5) · Fastest for quick answers' },
+      { value: 'claude-haiku-4-5', label: 'Haiku 4.5 · Fastest' },
+      { optgroup: 'Legacy' },
+      { value: 'claude-sonnet-4-5', label: 'Sonnet 4.5 (legacy)' },
+    ],
+    codex: [
+      { value: '', label: '— default (gpt-5.3-codex) —' },
+      { optgroup: 'Recommended' },
+      { value: 'gpt-5.3-codex', label: '🟢 GPT-5.3 Codex (current)' },
+      { value: 'gpt-5.2-codex', label: '🟢 GPT-5.2 Codex' },
+      { optgroup: 'Specialized' },
+      { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max (deep reasoning)' },
+      { value: 'gpt-5.2', label: 'GPT-5.2 (general purpose)' },
+      { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini (fast & cheap)' },
+    ],
+    opencode: [
+      { value: '', label: '— default —' },
+      { optgroup: 'Free Models 🎁' },
+      { value: 'opencode/big-pickle', label: '🆓 Big Pickle (Free)' },
+      { value: 'opencode/minimax-m2.5-free', label: '🆓 MiniMax M2.5 Free' },
+      { value: 'openai/gpt-5-nano', label: '🆓 GPT 5 Nano (Free)' },
+      { optgroup: 'Budget Models 💰' },
+      { value: 'openai/gpt-5.1-codex-mini', label: '💰 GPT 5.1 Codex Mini ($0.25/$2)' },
+      { value: 'google/gemini-3-flash', label: '💰 Gemini 3 Flash ($0.50/$3)' },
+      { value: 'anthropic/claude-haiku-4-5', label: '💰 Claude Haiku 4.5 ($1/$5)' },
+      { optgroup: 'Interesting Models 🎯' },
+      { value: 'moonshot/kimi-k2.5', label: 'Kimi K2.5 ($0.60/$3)' },
+      { value: 'moonshot/kimi-k2-thinking', label: 'Kimi K2 Thinking ($0.40/$2.50)' },
+      { value: 'alibaba/qwen3-coder-480b', label: 'Qwen3 Coder 480B ($0.45/$1.50)' },
+      { value: 'zhipu/glm-5', label: 'GLM 5 ($1/$3.20)' },
+      { optgroup: 'Premium Claude' },
+      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6 ($3/$15)' },
+      { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6 ($5/$25)' },
+      { optgroup: 'Premium OpenAI' },
+      { value: 'openai/gpt-5.3-codex', label: 'GPT 5.3 Codex ($1.75/$14)' },
+      { value: 'openai/gpt-5.2-codex', label: 'GPT 5.2 Codex ($1.75/$14)' },
+      { value: 'openai/gpt-5.1-codex-max', label: 'GPT 5.1 Codex Max ($1.25/$10)' },
+      { optgroup: 'Premium Google' },
+      { value: 'google/gemini-3.1-pro', label: 'Gemini 3.1 Pro ($2/$12)' },
+      { value: 'google/gemini-3-pro', label: 'Gemini 3 Pro ($2/$12)' },
+    ],
+    gemini: [
+      { value: '', label: '— default (gemini-3-flash-preview) —' },
+      { optgroup: 'Recommended (Latest)' },
+      { value: 'gemini-3-flash-preview', label: '🟢 Gemini 3 Flash Preview (current)' },
+      { value: 'gemini-3.1-pro-preview', label: '🟢 Gemini 3.1 Pro Preview' },
+      { optgroup: 'Gemini 2.5 Series' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (fastest)' },
+    ],
+  };
+
+  if (!engine || !modelsByEngine[engine]) {
+    modelSel.style.display = 'none';
+    return;
+  }
+
+  modelSel.style.display = 'inline-block';
+  modelSel.innerHTML = '';
+  
+  let currentOptgroup = null;
+  for (const item of modelsByEngine[engine]) {
+    if (item.optgroup) {
+      // Create optgroup
+      currentOptgroup = document.createElement('optgroup');
+      currentOptgroup.label = item.optgroup;
+      modelSel.appendChild(currentOptgroup);
+    } else {
+      // Create option
+      const opt = document.createElement('option');
+      opt.value = item.value;
+      opt.textContent = item.label;
+      if (currentOptgroup) {
+        currentOptgroup.appendChild(opt);
+      } else {
+        modelSel.appendChild(opt);
+      }
+    }
+  }
+}
 
 // Nav view delegation (data-view buttons in sidebar)
 const NAV_VIEW_MAP = {

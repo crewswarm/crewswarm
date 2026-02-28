@@ -1,6 +1,39 @@
 # Troubleshooting
 
-**Last Updated:** 2026-02-21
+**Last Updated:** 2026-02-28
+
+## Top 5 most common issues (quick reference)
+
+| # | Symptom | Jump to |
+|---|---------|---------|
+| 1 | "pairing required" / "invalid realtime token" | [Token alignment](#token-alignment-pairing-required--invalid-realtime-token) |
+| 2 | Agents don't respond / tasks hang | [Agents don't respond](#agents-dont-respond--gateway-closed) |
+| 3 | `openswitchctl status` shows `agents: 0/N` | [RT daemons not connected](#rt-daemons-not-connected) |
+| 4 | Multiple instances / port conflicts / 3+ Telegram replies | [Runaway processes](#runaway-processes--services-fighting-for-ports-after-restart) |
+| 5 | "No config found" after fresh install | [No config](#no-config--no-config-found) |
+
+Run `openswitchctl health` for a live snapshot. Run `openswitchctl doctor` for a full preflight check.
+
+---
+
+## 🔥 Top 5 Most Common Issues
+
+### 1. **Token Misalignment** — "pairing required" / "invalid realtime token"
+→ See full details below. **Quick fix:** Ensure `~/.crewswarm/config.json` has `rt.authToken` and restart all services.
+
+### 2. **Agents Don't Respond** — dispatched tasks never complete
+→ See "Agents don't respond / gateway closed" below. **Quick fix:** Run `bash scripts/openswitchctl status` then `start` if needed.
+
+### 3. **PM Loop Fails to Dispatch** — tasks never reach agents
+→ See "Token alignment" (PM loop needs token injected by dashboard). **Quick fix:** Restart dashboard, then restart PM loop from UI.
+
+### 4. **Duplicate Replies** — Telegram bot or dashboard chat shows 3-4 copies
+→ See "Duplicate replies" sections below. **Quick fix:** `pkill -f telegram-bridge.mjs` then restart once, or hard-refresh dashboard.
+
+### 5. **No Config Found** — scripts report missing config
+→ See "No config / 'No config found'" below. **Quick fix:** Run `bash install.sh` from the repo root.
+
+---
 
 ## Token alignment ("pairing required" / "invalid realtime token")
 
@@ -135,3 +168,132 @@ Gateway-bridge bootstraps missing files when run from the repo root. Run orchest
 bash install.sh
 ```
 This creates `~/.crewswarm/crewswarm.json`, `config.json`, and copies `agent-prompts.json`. Then add your provider API keys in the Dashboard (Providers) or by editing `~/.crewswarm/crewswarm.json`.
+
+---
+
+## Duplicate replies from Telegram bot (3-4 replies per message)
+
+**Symptom:** Every message sent via Telegram gets 3 or 4 identical replies.
+
+**Cause:** Multiple `telegram-bridge.mjs` processes running simultaneously. Each restart spawns a new one without killing the old one.
+
+**Fix:**
+```bash
+pkill -f "telegram-bridge.mjs"
+node telegram-bridge.mjs &
+```
+
+The bridge now uses a PID file (`~/.crewswarm/logs/telegram-bridge.pid`) as a singleton guard — a second instance exits immediately. If the PID file is stale after a crash:
+```bash
+rm ~/.crewswarm/logs/telegram-bridge.pid
+node telegram-bridge.mjs &
+```
+
+---
+
+## Duplicate replies in main dashboard chat from CLI passthrough
+
+**Symptom:** After a Codex/Gemini/Claude CLI passthrough completes, the reply appears twice in the chat — once streamed live, once as a duplicate bubble.
+
+**Cause:** The passthrough endpoint sent live SSE chunks AND a final `agent_reply` SSE event. Both rendered.
+
+**Fix:** Already patched — the final summary event is tagged `_passthroughSummary: true` and the frontend skips rendering it. If you still see duplicates, hard-refresh the dashboard (`Cmd+Shift+R`).
+
+---
+
+## Codex CLI says "no write control" / blocks on approval prompt
+
+**Symptom:** Codex passthrough hangs or reports it cannot write files. The process waits for manual approval.
+
+**Cause:** Older invocation used `--sandbox workspace-write` which still prompts for write approval in non-interactive mode.
+
+**Fix:** Codex is now invoked with `--full-auto` which auto-approves all writes:
+```
+codex exec --full-auto --json "your task"
+```
+
+If you're running Codex manually, always pass `--full-auto` for non-interactive use.
+
+---
+
+## Gemini CLI passthrough blocks on file write approval
+
+**Symptom:** Gemini CLI passthrough hangs waiting for user approval to write files.
+
+**Fix:** Gemini is now invoked with `--approval-mode yolo` which auto-approves all tool calls. If running manually:
+```bash
+gemini -p "your task" --output-format stream-json --approval-mode yolo
+```
+
+---
+
+## Codex / Gemini session drops between chats (starts fresh every time)
+
+**Symptom:** Each new message to Codex or Gemini CLI starts a brand-new session with no memory of previous conversation.
+
+**Fix:** Session IDs are now stored in `~/.crewswarm/passthrough-sessions.json` and reused:
+- Codex uses `exec resume --last` when a prior session exists for the project directory
+- Gemini uses `--resume <session_id>` captured from the `init` stream event
+
+If you want to force a fresh session (clear stored IDs):
+```bash
+rm ~/.crewswarm/passthrough-sessions.json
+```
+
+---
+
+## Environment Variables tab shows blank inputs / "default" values don't appear
+
+**Symptom:** The Settings → Environment Variables tab shows empty text fields even for variables that have defaults.
+
+**Cause (old):** Inputs used `value="${saved ?? ''}"` — when a variable wasn't in `crewswarm.json`, the field showed blank instead of the code default.
+
+**Fix:** Inputs now use `value="${saved ?? default ?? ''}"` — unset variables pre-populate with their code default and show a "default" badge. Hard-refresh (`Cmd+Shift+R`) if still blank after updating.
+
+---
+
+## "Failed to parse URL from /models" for Cerebras / NVIDIA NIM / Google in Models tab
+
+**Symptom:** Models tab shows `✗ Failed to parse URL from /models` next to Cerebras, NVIDIA NIM, or Google providers.
+
+**Cause:** Missing `BUILTIN_URLS` entries — the dashboard tried to call `/models` with no base URL.
+
+**Fix:** Already resolved — correct API base URLs are now in `scripts/dashboard.mjs → BUILTIN_URLS`. Restart the dashboard if you see this on an older install:
+```bash
+pkill -f "dashboard.mjs" && node scripts/dashboard.mjs &
+```
+
+---
+
+## Skills tab shows only 7-8 skills despite having 44 installed
+
+**Symptom:** Dashboard → Skills shows only the JSON API skills. The SKILL.md knowledge skills (roadmap-planning, code-review, ai-seo, etc.) don't appear.
+
+**Cause (old):** `GET /api/skills` only read `.json` files. Folder-based `SKILL.md` skills were invisible to the API.
+
+**Fix:** Already resolved — the API now returns all skills with a `type` field (`"api"` or `"knowledge"`). The Skills tab shows two sections: **Knowledge** and **API Integrations**. Restart crew-lead if you see the old behaviour:
+```bash
+pkill -f "crew-lead.mjs" && node crew-lead.mjs &
+```
+
+---
+
+## Runaway processes / services fighting for ports after restart
+
+**Symptom:** After `npm run restart-all`, multiple copies of the same service start. Port conflicts appear (`EADDRINUSE`). Telegram bridge sends 3+ replies.
+
+**Cause:** Old restart script used overly specific `pkill` patterns that missed some process variants. WhatsApp/Telegram bridges accumulated multiple instances.
+
+**Fix:** `scripts/restart-all-from-repo.sh` now uses broader patterns and kills all related processes. Bridges have singleton guards (PID files). If you still see issues:
+
+```bash
+# Nuclear option — kill everything and restart clean
+pkill -f "crew-lead.mjs" || true
+pkill -f "gateway-bridge.mjs" || true
+pkill -f "telegram-bridge.mjs" || true
+pkill -f "whatsapp-bridge.mjs" || true
+pkill -f "dashboard.mjs" || true
+pkill -f "opencrew-rt-daemon.mjs" || true
+sleep 2
+npm run restart-all
+```

@@ -138,36 +138,98 @@ LLM leaderboard data from [llm-stats.com](https://llm-stats.com) — compare mod
 
 ---
 
-## Skill plugins (add skills without custom code)
+## Skill plugins
 
-Skills in `~/.crewswarm/skills/*.json` are **data-driven plugins**. Drop a JSON file and it works — no edits to crew-lead or gateway-bridge.
+Skills live in `~/.crewswarm/skills/` and come in two distinct types. Both are called with `@@SKILL skillname {params}` but behave differently:
 
-**Core fields:** `description`, `url`, `method`, `defaultParams`, `paramNotes`
+### API skills (`.json` files) — call external endpoints
 
-**Optional — discoverable params:**
-- `listUrl` — when the main URL's path param is empty, call this instead (e.g. list all).
-- `listUrlIdField` — when building health snapshot, fetch listUrl and extract this field from each item → shows "IDs (live): x, y, z" to agents.
+```json
+{
+  "description": "Post a tweet",
+  "url": "https://api.twitter.com/2/tweets",
+  "method": "POST",
+  "auth": { "type": "bearer", "keyFrom": "providers.twitter" },
+  "defaultParams": {},
+  "paramNotes": "text: string (max 280 chars)"
+}
+```
 
-**Optional — skill name aliases:**
-- `aliases` — `["benchmark", "benchmarks"]` — friendly names that map to this skill. `@@SKILL benchmark {}` resolves to `zeroeval.benchmark`.
+**Optional fields:**
+- `listUrl` — fallback URL when main URL's path param is empty (e.g. list all items)
+- `listUrlIdField` — field to extract from `listUrl` response for health snapshot display
+- `aliases` — `["benchmark", "benchmarks"]` — friendly names that resolve to this skill
+- `paramAliases` — `{"benchmark_id": {"human-eval": "humaneval"}}` — normalize wrong values
 
-**Optional — param normalization:**
-- `paramAliases` — `{"paramName": {"wrong-value": "correct-value"}}` — e.g. `{"benchmark_id": {"human-eval": "humaneval"}}`
+Bundled: `elevenlabs.tts`, `fly.deploy`, `polymarket.trade`, `twitter.post`, `zeroeval.benchmark`, `webhook.post`, `read-log`, `swebench.task`.
 
-**Example:** See `skills/zeroeval.benchmark.json`. Install copies from `skills/` to `~/.crewswarm/skills/` (install overwrites bundled skills).
+### Knowledge skills (`SKILL.md` folders) — inject playbooks into agent context
 
-**SKILL.md format (ClawHub-compatible):** Skills can also be a folder with a `SKILL.md` file (YAML frontmatter + body). Drop a `~/.crewswarm/skills/<name>/SKILL.md` folder and it works alongside JSON skills.
+```
+~/.crewswarm/skills/
+└── code-review/
+    └── SKILL.md
+```
 
-**Import from URL (dashboard):** In the **Skills tab → Import URL**, paste any raw URL to a `.json` or `SKILL.md` skill file. GitHub blob URLs are auto-converted to raw. The skill is saved to `~/.crewswarm/skills/` and immediately available to agents.
+`SKILL.md` format (YAML frontmatter + Markdown body):
+```markdown
+---
+name: code-review
+description: Structured review framework — correctness, security, performance, readability.
+aliases: [review, pr-review]
+---
+
+# Code Review Skill
+
+## Checklist
+...frameworks and checklists here...
+```
+
+When an agent calls `@@SKILL code-review {}`, the full markdown body is injected into its context. No HTTP call is made — this is context injection.
+
+**36 knowledge skills installed** across: engineering (code-review, api-design, component-design, threat-model, adr-generator, git-pr-workflow, test-strategy, root-cause-analysis, ml-evaluation, synthesis-advisor, design-system-advisor), PM (roadmap-planning, problem-statement, prioritization-advisor, epic-breakdown-advisor, product-strategy-session, user-story, problem-framing-canvas, opportunity-solution-tree, epic-hypothesis, discovery-process), and GTM (ai-seo, content-to-pipeline, positioning-icp, gtm-metrics, ai-pricing, solo-founder-gtm, lead-enrichment, ai-cold-outreach, social-selling, multi-platform-launch, ai-ugc-ads, paid-creative-ai, expansion-retention, partner-affiliate, gtm-engineering).
+
+### Dashboard Skills tab
+
+Shows two sections: **Knowledge** (SKILL.md skills) and **API Integrations** (JSON endpoint skills). Import new skills via **Skills tab → Import URL** — paste any raw GitHub URL to a `.json` or `SKILL.md` file.
+
+### Per-agent skill assignments
+
+Each agent has a primary skill referenced in its system prompt:
+
+| Agent | Skill |
+|---|---|
+| crew-coder | `code-review` |
+| crew-coder-front | `component-design` |
+| crew-coder-back | `api-design` |
+| crew-frontend | `design-system-advisor` |
+| crew-github | `git-pr-workflow` |
+| crew-qa | `test-strategy` |
+| crew-fixer | `root-cause-analysis` |
+| crew-security | `threat-model` |
+| crew-main | `synthesis-advisor` |
+| crew-architect | `adr-generator` |
+| crew-seo | `ai-seo` |
+| crew-copywriter | `content-to-pipeline` |
+| crew-researcher | `positioning-icp` |
+| crew-ml | `ml-evaluation` |
+| crew-pm | `roadmap-planning` + `problem-statement` + `prioritization-advisor` + `epic-breakdown-advisor` |
 
 ---
 
-## Roadmap and paths
+## Roadmap, PDD, and paths
 
-- **One ROADMAP per project.** Each project has exactly one `ROADMAP.md` at its output directory: `<outputDir>/ROADMAP.md`.
-- **Repo root** `ROADMAP.md` = ops/core (CrewSwarm itself). `website/ROADMAP.md` = website project only. Do not assume “ROADMAP.md” without a path means repo root — use the project’s outputDir when given.
-- **PM:** When a task says “the roadmap” or “ROADMAP.md”, use the project’s outputDir when given; otherwise repo root = ops/core, `website/ROADMAP.md` = website project.
+Every new project gets **two** planning documents written to `<outputDir>/`:
 
+| File | What it is | Who writes it |
+|---|---|---|
+| `ROADMAP.md` | Phased task list — agents, file paths, acceptance criteria | crew-pm (wave 3) or AI generation |
+| `PDD.md` | Product Design Doc — persona, problem, success metrics, constraints, non-goals, decisions | crew-pm (wave 3) or template at confirm time |
+
+- **One ROADMAP + one PDD per project.** They live at `<outputDir>/ROADMAP.md` and `<outputDir>/PDD.md`.
+- **Repo root** `ROADMAP.md` = ops/core (CrewSwarm itself). `website/ROADMAP.md` = website project only.
+- **PM:** When a task says "the roadmap", use the project's outputDir when given; otherwise repo root = ops/core.
+- **PRD interview:** When crew-lead receives a vague "build me X" request, it asks 5 questions (persona, problem, success metric, constraints, non-goals) before firing the planning pipeline. The answers seed wave 1 and land in `PDD.md`.
 ## Who can write where
 
 | Agent | write_file | mkdir | Notes |
@@ -636,12 +698,74 @@ Once configured, agents appear as MCP tools in all four editors. The MCP server 
 
 ---
 
+## Environment variables reference
+
+All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, or exported before starting services. Visible in the dashboard **Settings → Environment Variables** tab.
+
+### Engine timeouts (activity-based watchdogs)
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `CREWSWARM_ENGINE_IDLE_TIMEOUT_MS` | `300000` | Kill engine process after this many ms of silence (no stdout/stderr). Resets on any output. |
+| `CREWSWARM_ENGINE_MAX_TOTAL_MS` | `1800000` | Absolute ceiling per engine task regardless of activity (30 min). |
+| `PM_AGENT_IDLE_TIMEOUT_MS` | `300000` | Kill PM loop's `--send` subprocess after this many ms of silence. |
+| `PHASED_TASK_TIMEOUT_MS` | `300000` | Per-agent timeout inside the PM loop's phased dispatch. |
+| `CREWSWARM_DISPATCH_TIMEOUT_MS` | `120000` | ms before a dispatched task times out. |
+| `CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS` | `600000` | Timeout for tasks already claimed by an agent bridge. |
+
+### PM loop behaviour
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `PM_MAX_ITEMS` | `10` | Max roadmap items per PM loop run. |
+| `PM_MAX_CONCURRENT` | `1` | Max parallel tasks dispatched simultaneously. |
+| `PM_CODER_AGENT` | `crew-coder` | Override default coding agent for PM loop. |
+| `PM_USE_QA` | `off` | Include crew-qa quality gate in PM pipeline. |
+| `PM_USE_SECURITY` | `off` | Include crew-security in PM pipeline. |
+| `PM_USE_SPECIALISTS` | `off` | Keyword-based routing: frontend→crew-coder-front, backend→crew-coder-back, git→crew-github. |
+| `PM_SELF_EXTEND` | `off` | Auto-generate new roadmap items when roadmap empties. |
+| `PM_EXTEND_EVERY` | `5` | Self-extend every N items completed. |
+
+### Engine routing
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `CREWSWARM_OPENCODE_ENABLED` | `off` | Route coding agents through OpenCode globally. |
+| `CREWSWARM_OPENCODE_MODEL` | per-agent | Model passed to OpenCode. |
+| `CREWSWARM_OPENCODE_TIMEOUT_MS` | `300000` | ms before OpenCode task is killed. |
+| `CREWSWARM_ENGINE_LOOP` | `off` | Enable Ouroboros LLM↔engine loop for all agents. |
+| `CREWSWARM_ENGINE_LOOP_MAX_ROUNDS` | `10` | Max STEP iterations per Ouroboros loop run. |
+| `CREWSWARM_GEMINI_CLI_ENABLED` | `off` | Route agents through Gemini CLI. |
+| `CREWSWARM_GEMINI_CLI_MODEL` | — | Which Gemini model (e.g. `gemini-2.0-flash`). |
+
+### Background consciousness
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `CREWSWARM_BG_CONSCIOUSNESS` | `off` | Enable idle reflection loop for crew-main. |
+| `CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS` | `900000` | Idle reflection interval (15 min). |
+| `CREWSWARM_BG_CONSCIOUSNESS_MODEL` | `groq/llama-3.1-8b-instant` | Model for background cycle. |
+
+### Ports
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `CREW_LEAD_PORT` | `5010` | crew-lead HTTP server port. |
+| `SWARM_DASH_PORT` | `4319` | Dashboard port. |
+| `WA_HTTP_PORT` | `3000` | WhatsApp bridge HTTP port. |
+
+---
+
 ## Troubleshooting
 
-**Agents not responding** — run `npm run restart-all`, check logs in `/tmp/`.
+**Agents not responding** — run `npm run restart-all`, check logs in `/tmp/`. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed fixes.
 
 **No API key error** — open dashboard → Providers tab, add a Groq key (free).
 
 **crew-lead not reachable** — `curl http://127.0.0.1:5010/health` — if 404, restart with `node crew-lead.mjs`.
 
 **File not written by agent** — agent's tool permissions come from `~/.crewswarm/crewswarm.json → agents[].tools.crewswarmAllow` or role defaults in `gateway-bridge.mjs → AGENT_TOOL_ROLE_DEFAULTS`.
+
+**Duplicate Telegram/WhatsApp replies** — multiple bridge instances running. `pkill -f telegram-bridge.mjs && node telegram-bridge.mjs &`. Bridges have singleton guards (PID files) — remove stale `.pid` file in `~/.crewswarm/logs/` if needed.
+
+**Skills tab shows only 7 skills** — restart crew-lead. The API now returns all 44 skills (JSON + SKILL.md) with `type: "api" | "knowledge"` field.

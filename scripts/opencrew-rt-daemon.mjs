@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import WebSocket, { WebSocketServer } from "ws";
 import { BUILT_IN_RT_AGENTS, RT_TO_GATEWAY_AGENT_MAP } from "../lib/agent-registry.mjs";
+import { acquireStartupLock } from "../lib/runtime/startup-guard.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -447,6 +448,13 @@ function setupConnectionHandlers() {
 }
 
 export async function startServer(config) {
+  // Startup Guard: Ensure only one RT daemon instance
+  const lockResult = acquireStartupLock("opencrew-rt-daemon", { port: config.port, killStale: true });
+  if (!lockResult.ok) {
+    console.error(`[opencrew-rt] ${lockResult.message}`);
+    process.exit(1);
+  }
+
   if (state.server || state.wss) {
     throw new Error("[opencrew-rt] Server already running");
   }

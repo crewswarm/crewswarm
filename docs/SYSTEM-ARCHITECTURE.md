@@ -1,6 +1,8 @@
 # CrewSwarm — System Architecture
 
-**Last Updated:** 2026-02-26
+**Last Updated:** 2026-02-27
+
+> For a visual Mermaid diagram, port map, and request flow walkthrough see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
@@ -325,3 +327,75 @@ User types in dashboard Chat tab
 | `~/.crewswarm/workspace/shared-memory/…/done.jsonl` | Task completion log (RT bus output). Default; overridden by `SHARED_MEMORY_DIR`. |
 | `~/.crewswarm/workspace/shared-memory/…/events.jsonl` | RT bus event log |
 | `~/.crewswarm/logs/dlq/*.json` | Failed tasks pending replay (or under shared-memory per RT daemon). |
+
+---
+
+## Skill system
+
+Skills live in `~/.crewswarm/skills/` and come in two distinct types:
+
+### API skills (`.json` files)
+
+Make real HTTP calls to external endpoints. Used with `@@SKILL skillname {params}`.
+
+```json
+{
+  "description": "Post a tweet",
+  "url": "https://api.twitter.com/2/tweets",
+  "method": "POST",
+  "auth": { "type": "bearer", "keyFrom": "providers.twitter" },
+  "defaultParams": {},
+  "paramNotes": "text: string (max 280 chars)"
+}
+```
+
+Bundled API skills: `elevenlabs.tts`, `fly.deploy`, `polymarket.trade`, `twitter.post`, `zeroeval.benchmark`, `webhook.post`.
+
+### Knowledge skills (`SKILL.md` folders)
+
+Markdown playbooks injected into the agent's context when called. The agent reads the content and follows the frameworks inside — no HTTP call made.
+
+```
+~/.crewswarm/skills/
+└── code-review/
+    └── SKILL.md    ← YAML frontmatter (name, description, aliases) + markdown body
+```
+
+36 knowledge skills installed covering: code review, API design, component design, threat modeling, ADRs, GTM (SEO, pricing, outbound, retention), PM planning (roadmap, prioritization, epics), ML evaluation, synthesis, and more.
+
+Both types are returned by `GET /api/skills` with a `type: "api" | "knowledge"` field. The dashboard Skills tab shows them in separate sections.
+
+---
+
+## PRD interview + PDD.md flow
+
+When a user says "build me X" without a detailed spec:
+
+1. **Stinki (crew-lead)** detects a vague project request and asks 5 questions in one message: who is it for, what problem does it solve, what does success look like, constraints, non-goals.
+2. User answers (even partially) → Stinki summarises and fires the **3-wave planning pipeline**.
+3. **Wave 1** — crew-pm uses `@@SKILL problem-statement {}` to frame scope; crew-copywriter researches; crew-main maps competitive landscape.
+4. **Wave 3** — crew-pm uses `@@SKILL roadmap-planning {}` to compile all input into:
+   - `PDD.md` (Product Design Doc: persona, problem, success metrics, constraints, non-goals, decisions)
+   - `ROADMAP.md` (phased tasks with agents, file paths, acceptance criteria)
+5. crew-lead presents both to the user. On approval, the build pipeline fires.
+
+For `@@PROJECT` (quick draft without agent execution), `confirmProject()` in `lib/pipeline/manager.mjs` also writes a template `PDD.md` if one doesn't already exist.
+
+---
+
+## Execution engines
+
+Each agent can be routed through one of five engines (configured per-agent in `~/.crewswarm/crewswarm.json` or the dashboard Engines tab):
+
+| Engine | Binary | Session | Best for |
+|---|---|---|---|
+| **Direct LLM** | — | Stateless | Fast agents, simple tasks, crew-pm, crew-copywriter |
+| **OpenCode** | `opencode` | Persistent (project-scoped) | Large codebases, multi-file edits, crew-coder |
+| **Cursor CLI** | `cursor` | Stateless | Reasoning-heavy tasks, crew-architect, crew-main |
+| **Claude Code** | `claude` | OAuth, resumable | Large refactors, full workspace context |
+| **Codex CLI** | `codex` | Resumable (`exec resume --last`) | OpenAI models, workspace-write sandbox, `--full-auto` |
+| **Gemini CLI** | `gemini` | Resumable (`--resume <id>`) | Free via Google OAuth, `--approval-mode yolo` |
+
+Session IDs for Codex and Gemini are persisted across restarts in `~/.crewswarm/passthrough-sessions.json`, keyed by `engine:projectDir`.
+
+Engine runners live in `lib/engines/runners.mjs`. All use **activity-based watchdogs** — the process is killed only after `CREWSWARM_ENGINE_IDLE_TIMEOUT_MS` of silence (stdout/stderr), not a fixed wall-clock timer.

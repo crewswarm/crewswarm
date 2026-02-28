@@ -33,9 +33,9 @@ export async function loadRunSkills() {
   if (!el) return;
   try {
     const d = await (await fetch('/api/health')).json();
-    const skills = (d.skills || []).filter(s => !s.error);
+    const skills = (d.skills || []).filter(s => !s.error && s.url);
     if (!skills.length) {
-      el.innerHTML = '<div style="color:var(--text-3);font-size:13px;">No skills in health snapshot. Add skills in the Skills tab or add JSON files to ~/.crewswarm/skills/</div>';
+      el.innerHTML = '<div style="color:var(--text-3);font-size:13px;">No API skills found. Add API skills (with a URL endpoint) in the Skills tab.</div>';
       return;
     }
     el.innerHTML = skills.map(s => {
@@ -107,19 +107,45 @@ export function renderSkillsList(skills) {
     el.innerHTML = '<div style="color:var(--text-3);font-size:12px;padding:8px 0;">No skills match. Add one above or copy JSONs to ~/.crewswarm/skills/</div>';
     return;
   }
-  el.innerHTML = skills.map(s => {
+
+  const apiSkills = skills.filter(s => s.type === 'api' || (!s.type && s.url));
+  const knowledgeSkills = skills.filter(s => s.type === 'knowledge' || (!s.type && !s.url));
+
+  function renderSkillRow(s) {
+    const isKnowledge = s.type === 'knowledge';
     const approvalBadge = s.requiresApproval
-      ? '<span style="margin-left:8px;font-size:10px;background:rgba(251,191,36,0.15);color:var(--yellow);padding:2px 6px;border-radius:4px;">⚠️ approval</span>' : '';
+      ? '<span style="margin-left:6px;font-size:10px;background:rgba(251,191,36,0.15);color:var(--yellow);padding:2px 6px;border-radius:4px;">⚠️ approval</span>' : '';
+    const typeBadge = isKnowledge
+      ? '<span style="margin-left:6px;font-size:10px;background:rgba(99,102,241,0.15);color:#818cf8;padding:2px 6px;border-radius:4px;">knowledge</span>'
+      : '<span style="margin-left:6px;font-size:10px;background:rgba(34,197,94,0.12);color:var(--green);padding:2px 6px;border-radius:4px;">API</span>';
     const urlNote = s.url
-      ? ' · <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">' + (s.method||'POST') + ' ' + (s.url||'').slice(0,60) + '</code>' : '';
+      ? ' · <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">' + (s.method||'POST') + ' ' + (s.url||'').slice(0,55) + '</code>' : '';
+    const aliasNote = (s.aliases && s.aliases.length)
+      ? '<span style="margin-left:6px;font-size:10px;color:var(--text-3);">aliases: ' + s.aliases.join(', ') + '</span>' : '';
     return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border);">'
-      + '<div><span style="font-weight:600;font-size:13px;">' + s.name + '</span>' + approvalBadge
-      + '<div style="font-size:11px;color:var(--text-3);margin-top:3px;">' + (s.description||'') + urlNote + '</div></div>'
-      + '<div style="display:flex;gap:6px;flex-shrink:0;">'
-      + '<button class="btn-ghost" style="font-size:11px;" data-action="editSkill" data-arg="' + s.name + '">Edit</button>'
+      + '<div style="min-width:0;">'
+      + '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;">'
+      + '<span style="font-weight:600;font-size:13px;">' + s.name + '</span>'
+      + typeBadge + approvalBadge + aliasNote
+      + '</div>'
+      + '<div style="font-size:11px;color:var(--text-3);margin-top:3px;">' + (s.description||'') + urlNote + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px;">'
+      + (isKnowledge ? '' : '<button class="btn-ghost" style="font-size:11px;" data-action="editSkill" data-arg="' + s.name + '">Edit</button>')
       + '<button class="btn-ghost" style="font-size:11px;color:var(--red);" data-action="deleteSkill" data-arg="' + s.name + '">Delete</button>'
       + '</div></div>';
-  }).join('');
+  }
+
+  function renderSection(title, items, emptyMsg) {
+    if (!items.length) return '';
+    return '<div style="margin-bottom:20px;">'
+      + '<div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px;">' + title + ' <span style="font-weight:400;opacity:.7;">(' + items.length + ')</span></div>'
+      + '<div style="display:flex;flex-direction:column;gap:6px;">' + items.map(renderSkillRow).join('') + '</div>'
+      + '</div>';
+  }
+
+  el.innerHTML = renderSection('Knowledge', knowledgeSkills)
+    + renderSection('API Integrations', apiSkills);
 }
 
 export function filterSkills(q) {
@@ -127,7 +153,8 @@ export function filterSkills(q) {
   renderSkillsList(lower ? _skillsCache.filter(s =>
     (s.name||'').toLowerCase().includes(lower) ||
     (s.description||'').toLowerCase().includes(lower) ||
-    (s.url||'').toLowerCase().includes(lower)
+    (s.url||'').toLowerCase().includes(lower) ||
+    (s.aliases||[]).some(a => a.toLowerCase().includes(lower))
   ) : _skillsCache);
 }
 

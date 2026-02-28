@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import { execSync, spawnSync } from "node:child_process";
 import WebSocket from "ws";
+import { acquireStartupLock } from "./lib/runtime/startup-guard.mjs";
 import {
   CREWSWARM_TOOL_NAMES,
   readAgentTools,
@@ -80,7 +81,23 @@ import {
 const sseClients = new Set();
 const activeOpenCodeAgents = new Map(); // agentId → { model, since }
 
+// SSE message throttling to prevent dashboard flashing
+const SSE_THROTTLE_MS = 500; // Only send same agent_working/idle once per 500ms
+const sseThrottle = new Map(); // key → lastSentMs
+
 function broadcastSSE(payload) {
+  // Throttle high-frequency agent status updates to prevent dashboard flashing
+  if (payload?.type === "agent_working" || payload?.type === "agent_idle") {
+    const throttleKey = `${payload.type}:${payload.agent}`;
+    const now = Date.now();
+    const lastSent = sseThrottle.get(throttleKey) || 0;
+    
+    if (now - lastSent < SSE_THROTTLE_MS) {
+      return; // Throttle: skip this update
+    }
+    sseThrottle.set(throttleKey, now);
+  }
+  
   const event = JSON.stringify(payload);
   for (const client of sseClients) {
     try { client.write(`data: ${event}\n\n`); } catch {}
@@ -90,6 +107,14 @@ function broadcastSSE(payload) {
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const PORT        = Number(process.env.CREW_LEAD_PORT || 5010);
+
+// ── Startup Guard: Ensure only one crew-lead instance ────────────────────────
+const lockResult = acquireStartupLock("crew-lead", { port: PORT, killStale: true });
+if (!lockResult.ok) {
+  console.error(`[crew-lead] ${lockResult.message}`);
+  process.exit(1);
+}
+
 const HISTORY_DIR = path.join(os.homedir(), ".crewswarm", "chat-history");
 // Shared projects registry (same file dashboard writes to for autoAdvance toggle)
 const PROJECTS_REGISTRY = path.join(path.dirname(new URL(import.meta.url).pathname), "orchestrator-logs", "projects.json");
@@ -498,6 +523,7 @@ initWaveDispatcher({
   bumpOpsCounter,
   tryRead,
   _cursorWavesEnabled,
+  getClaudeCodeEnabled: () => _claudeCodeEnabled,
   dispatchTimeoutMs: DISPATCH_TIMEOUT_MS,
   dispatchClaimedTimeoutMs: DISPATCH_CLAIMED_TIMEOUT_MS,
 });
@@ -698,7 +724,15 @@ function connectRT() {
             fs.writeFileSync(statusPath, `# Process status (crew-main)\nLast updated: ${stamp}\n\n${safe}\n`, "utf8");
           } catch (_) {}
         }
-        broadcastSSE({ type: "agent_reply", from, content: content.slice(0, 2000), sessionId: targetSession, taskId, ts: Date.now() });
+        broadcastSSE({ 
+          type: "agent_reply", 
+          from, 
+          content: content.slice(0, 2000), 
+          sessionId: targetSession, 
+          taskId, 
+          engineUsed: payload?.engineUsed || null, // Track which coding engine was used
+          ts: Date.now() 
+        });
         if (dispatch?.ts) {
           emitTaskLifecycle("completed", {
             taskId,

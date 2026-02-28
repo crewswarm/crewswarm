@@ -39,10 +39,10 @@ Success criteria:
 
 ### 2) Add openswitchctl doctor
 
-- [ ] Add `openswitchctl doctor` with clear PASS/FAIL output.
-- [ ] Path/config/token/model/output-dir checks.
-- [ ] Actionable fix messages for each failure.
-- [ ] Non-zero exit on blockers.
+- [x] Add `openswitchctl doctor` with clear PASS/FAIL output.
+- [x] Path/config/token/model/output-dir checks.
+- [x] Actionable fix messages for each failure.
+- [x] Non-zero exit on blockers.
 
 Success criteria:
 - New users can run `openswitchctl doctor` and fix all blockers without reading code.
@@ -50,8 +50,8 @@ Success criteria:
 ### 3) Runaway + protocol hardening (see also §4)
 
 **Runaway:**
-- [ ] Bridge cap (hard max bridge process count).
-- [ ] Queue limit + bounded retries + jitter.
+- [x] Bridge cap — `CREWSWARM_MAX_BRIDGES` in `scripts/start-crew.mjs` (default 20).
+- [x] Queue limit + bounded retries + jitter — `CREWSWARM_DISPATCH_QUEUE_LIMIT` (default 50), jittered wave retry (500–1500ms).
 - [x] Duplicate spawn guard per agent (already in `start-crew.mjs`).
 
 **Protocol (detailed in §4):**
@@ -68,28 +68,68 @@ Success criteria:
 
 ### 5) Observability pass
 
-- [ ] One correlation ID from PM -> dispatch -> done/issues -> synthesis.
-- [ ] One `openswitchctl health` command with queue/agents/failures snapshot.
-- [ ] Logs human-readable and machine-parseable where needed.
+- [x] Correlation ID — generated per-dispatch in `wave-dispatcher.mjs`, threaded through RT payload, pendingDispatches, SSE, and lifecycle events.
+- [x] `openswitchctl health` — live snapshot: RT bus, bridges, crew-lead queue/pipelines, timeouts.
+- [x] Logs human-readable and machine-parseable — `lib/runtime/logger.mjs` (`LOG_FORMAT=json` for NDJSON, default for human text).
 
 ## Phase 3 - Public launch confidence
 
 ### 6) Fresh-machine automation
 
-- [ ] Scripted clean-user install test.
-- [ ] Documented “clone -> install -> first build” checklist with expected outputs.
-- [ ] Failure recovery steps in docs.
+- [x] Scripted clean-user install test (`scripts/fresh-machine-smoke.sh`).
+- [x] Documented “clone -> install -> first build” checklist with expected outputs (`docs/FRESH-MACHINE-VERIFY.md`).
+- [x] Failure recovery steps in docs (`docs/TROUBLESHOOTING.md`, `docs/FRESH-MACHINE-VERIFY.md`).
 
 ### 7) Public-repo hygiene
 
-- [ ] Keep only templates/examples for secrets (`.env.example`, config examples).
-- [ ] Maintain `.gitignore` for logs/state/runtime artifacts.
-- [ ] Keep top-5 troubleshooting section current as issues are discovered.
+- [x] Keep only templates/examples for secrets (`.env.example` covers all 39+ env vars).
+- [x] Maintain `.gitignore` for logs/state/runtime artifacts.
+- [x] Keep top-5 troubleshooting section current — "Top 5 most common issues" table added to `docs/TROUBLESHOOTING.md`.
 
 ## Exit criteria for "9/10 ready"
 
-- [ ] Smoke + E2E checks green on every PR.
-- [ ] `openswitchctl doctor` catches all common setup errors.
+- [ ] Smoke + E2E checks green on every PR (add `CREWSWARM_RT_TOKEN` + `GROQ_API_KEY` as GitHub repo secrets).
+- [x] `openswitchctl doctor` catches all common setup errors.
 - [ ] No runaway process incidents in a 24-hour soak test.
 - [ ] Fresh-machine install succeeds from docs only.
 - [ ] Demo flow (`crew-lead -> crew-coder`, `crew-lead -> crew-main`) passes 3/3 attempts.
+
+---
+
+## Phase 4 — Go public
+
+Runs after all exit criteria above are green.
+
+### 8) Version + release prep
+
+- [ ] Bump `package.json` from `0.1.0-alpha` → `0.9.0-beta`.
+- [ ] Write `CHANGELOG.md` entry for `[0.9.0-beta]` summarising Phases 1–3.
+- [ ] Verify `name`, `description`, `author`, `license`, `repository` fields are public-ready.
+- [ ] Run `npm pack --dry-run` — confirm no secrets or personal files included.
+- [ ] Tag release commit: `git tag v0.9.0-beta && git push origin v0.9.0-beta`.
+
+### 9) GitHub release
+
+- [ ] Create GitHub release from tag; paste CHANGELOG entry as body.
+- [ ] Attach `npm pack` tarball as release asset.
+- [ ] Confirm `.github/ISSUE_TEMPLATE/` and `CONTRIBUTING.md` present (already done ✓).
+- [ ] Set GitHub repo description (one-liner) and website URL.
+- [ ] Add topics: `ai`, `multi-agent`, `llm`, `orchestration`, `autonomous-agents`.
+
+### 10) README polish
+
+- [ ] Add "Quick start" (3 commands: clone, install, start).
+- [ ] Add screenshot or GIF of dashboard.
+- [ ] Add CI status, version, and license badges.
+- [ ] Verify no private URLs, personal names, or leaked project references remain.
+
+### 11) Community
+
+- [ ] Post announcement (HN / X / LinkedIn) linking to GitHub release.
+- [ ] Optional: enable GitHub Discussions for community support.
+
+### Phase 4 exit criteria
+
+- [ ] GitHub release page is live with full CHANGELOG.
+- [ ] README hero takes < 60s to understand what CrewSwarm does.
+- [ ] Fresh clone → `npm install` → `npm start` works end-to-end from README alone.

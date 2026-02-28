@@ -589,7 +589,7 @@ WORKFLOW — follow this every time:
   try {
     const result = await callPMLLM(
       [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      { maxTokens: 380, temperature: 0.3 }
+      { maxTokens: 1000, temperature: 0.3 }
     );
     const raw = (result || "").trim() || item;
     // Parse strict schema so caller can use TARGET_AGENT, FILES, SUCCESS_CRITERIA

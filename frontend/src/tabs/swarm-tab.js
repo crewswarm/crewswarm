@@ -175,10 +175,40 @@ function _rtBuildElement(m) {
     agentsEl.appendChild(toPill);
   }
 
+  const badgeContainer = document.createElement('div');
+  badgeContainer.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+  
   const badge = document.createElement('span');
   const ps = phase || { color: 'var(--text-3)', label: type.split('.').pop() || type };
   badge.style.cssText = 'font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;color:#fff;background:' + ps.color + ';letter-spacing:.03em;';
   badge.textContent = ps.label;
+  badgeContainer.appendChild(badge);
+
+  // Engine badge for task.done messages
+  if (type === 'task.done' && payload.engineUsed) {
+    const engineColors = {
+      'claude': '#e07a5f',      // warm coral for Claude Code
+      'codex': '#8338ec',       // purple for Codex
+      'cursor': '#3d405b',      // dark gray for Cursor
+      'opencode': '#06d6a0',    // teal for OpenCode
+      'gemini': '#4285f4',      // Google blue for Gemini
+      'docker-sandbox': '#0db7ed' // Docker blue
+    };
+    const engineLabels = {
+      'claude': '🤖',
+      'codex': '🟣',
+      'cursor': '🖱',
+      'opencode': '⚡',
+      'gemini': '✨',
+      'docker-sandbox': '🐳'
+    };
+    const engine = payload.engineUsed;
+    const engineBadge = document.createElement('span');
+    engineBadge.style.cssText = 'font-size:10px;font-weight:600;padding:2px 6px;border-radius:20px;white-space:nowrap;flex-shrink:0;color:#fff;background:' + (engineColors[engine] || 'var(--text-3)') + ';';
+    engineBadge.textContent = (engineLabels[engine] || '') + ' ' + engine;
+    engineBadge.title = 'Executed by ' + engine;
+    badgeContainer.appendChild(engineBadge);
+  }
 
   const preview = document.createElement('span');
   preview.style.cssText = 'font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;';
@@ -198,7 +228,7 @@ function _rtBuildElement(m) {
   }
 
   row.appendChild(agentsEl);
-  row.appendChild(badge);
+  row.appendChild(badgeContainer);
   row.appendChild(preview);
   row.appendChild(right);
 
@@ -228,33 +258,67 @@ export async function loadRTMessages() {
   const box    = document.getElementById('rtMessages');
   const rtView = document.getElementById('rtView');
   if (!box || !rtView) return;
-  const firstLoad = box.innerHTML.includes('Loading') || box.innerHTML === '';
-  if (firstLoad) box.innerHTML = '<div style="padding:20px;">Loading…</div>';
+  
+  // Check if this is first load - only if box has no child elements at all
+  const firstLoad = box.children.length === 0;
+  if (firstLoad) {
+    const loadingDiv = document.createElement('div');
+    loadingDiv.style.cssText = 'padding:20px;';
+    loadingDiv.textContent = 'Loading…';
+    box.replaceChildren(loadingDiv);
+  }
 
   const data     = await getJSON('/api/rt-messages');
   const filtered = data.filter(_rtMatchesFilter);
-  const newIds   = new Set(filtered.map(m => (m.type||'') + '|' + (m.ts||'') + '|' + (m.from||'')));
-  const changed  = newIds.size !== _rtSeenIds.size || [...newIds].some(id => !_rtSeenIds.has(id));
-  if (!changed && !firstLoad) return;
+  
+  // PERFORMANCE FIX: Limit to last 100 messages to prevent DOM bloat
+  const limited = filtered.slice(-100);
+
+  // Use stable hash based on message content, not timestamp
+  const newHash = limited.map(m => {
+    const payload = m.payload || {};
+    const text = payload.reply || payload.prompt || payload.message || payload.content || '';
+    return `${m.type}|${m.from}|${m.to}|${text.slice(0, 100)}`;
+  }).join('::');
+
+  if (newHash === window._rtLastHash && !firstLoad) {
+    return; // No changes, skip redraw
+  }
+  window._rtLastHash = newHash;
 
   const rtAtBottom = () => rtView.scrollHeight - rtView.scrollTop - rtView.clientHeight < 100;
   const wasAtBottom = rtAtBottom();
-  _rtSeenIds = newIds;
-  box.innerHTML = '';
+  const scrollPos = rtView.scrollTop; // Save scroll position
+  
+  // CRITICAL FIX: Use DocumentFragment + replaceChildren to avoid flash
+  const fragment = document.createDocumentFragment();
 
-  if (!filtered.length) {
-    box.innerHTML = '<div style="padding:24px;text-align:center;font-size:12px;color:var(--text-3);">No events match the current filter.</div>';
+  if (!limited.length) {
+    const emptyDiv = document.createElement('div');
+    emptyDiv.style.cssText = 'padding:24px;text-align:center;font-size:12px;color:var(--text-3);';
+    emptyDiv.textContent = 'No events match the current filter.';
+    fragment.appendChild(emptyDiv);
   } else {
     const header = document.createElement('div');
     header.style.cssText = 'display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;padding:4px 10px 6px;font-size:10px;font-weight:600;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;border-bottom:2px solid var(--border);margin-bottom:2px;';
     ['Agent', 'Phase', 'Summary', 'Time'].forEach(label => {
       const th = document.createElement('span'); th.textContent = label; header.appendChild(th);
     });
-    box.appendChild(header);
-    filtered.forEach(m => box.appendChild(_rtBuildElement(m)));
+    fragment.appendChild(header);
+    limited.forEach(m => fragment.appendChild(_rtBuildElement(m)));
   }
+  
+  // CRITICAL: Use replaceChildren instead of innerHTML = '' to prevent flash
+  box.replaceChildren(fragment);
 
-  if (wasAtBottom) rtView.scrollTop = rtView.scrollHeight;
+  // Restore scroll position: if user was at bottom, stay at bottom; otherwise preserve their scroll position
+  if (wasAtBottom) {
+    rtView.scrollTop = rtView.scrollHeight;
+  } else {
+    // If saved position is now beyond the new content height, scroll to the bottom of new content minus viewport
+    const maxScroll = Math.max(0, rtView.scrollHeight - rtView.clientHeight);
+    rtView.scrollTop = Math.min(scrollPos, maxScroll);
+  }
   const scrollBtn = document.getElementById('rtScrollBtn');
   if (scrollBtn) scrollBtn.style.display = rtAtBottom() ? 'none' : 'block';
 

@@ -14,6 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { BUILT_IN_RT_AGENTS, normalizeRtAgentId } from "../lib/agent-registry.mjs";
+import { acquireStartupLock } from "../lib/runtime/startup-guard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPENCLAW_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
@@ -44,6 +45,14 @@ try {
 // Default 4319 so we don't conflict with CrewSwarm RT Messages dashboard on 4318
 const listenPort = Number(process.env.SWARM_DASH_PORT || 4319);
 const listenHost = process.env.CREWSWARM_BIND_HOST || "127.0.0.1";
+
+// ── Startup Guard: Ensure only one dashboard instance ────────────────────────
+const lockResult = acquireStartupLock("crewswarm-dashboard", { port: listenPort, killStale: true });
+if (!lockResult.ok) {
+  console.error(`[dashboard] ${lockResult.message}`);
+  process.exit(1);
+}
+
 const opencodeBase = process.env.OPENCODE_URL || "http://127.0.0.1:4096";
 const phasedOrchestrator = path.join(OPENCLAW_DIR, "phased-orchestrator.mjs");
 const continuousBuild = path.join(OPENCLAW_DIR, "continuous-build.mjs");
@@ -417,6 +426,48 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(await getRecentRTMessages(100)));
       return;
+    }
+
+    // ── Passthrough sessions (Gemini CLI, Codex CLI session persistence) ──────
+    if (url.pathname === "/api/passthrough-sessions") {
+      if (req.method === "GET") {
+        try {
+          const sessionFile = path.join(os.homedir(), ".crewswarm", "passthrough-sessions.json");
+          let sessions = {};
+          if (fs.existsSync(sessionFile)) {
+            sessions = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ sessions }));
+        } catch (e) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ sessions: {} }));
+        }
+        return;
+      }
+      if (req.method === "DELETE") {
+        const key = url.searchParams.get("key");
+        if (!key) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "key parameter required" }));
+          return;
+        }
+        try {
+          const sessionFile = path.join(os.homedir(), ".crewswarm", "passthrough-sessions.json");
+          let sessions = {};
+          if (fs.existsSync(sessionFile)) {
+            sessions = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+          }
+          delete sessions[key];
+          fs.writeFileSync(sessionFile, JSON.stringify(sessions, null, 2), "utf8");
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+      }
     }
 
     // ── Token usage ──────────────────────────────────────────────────────────
@@ -963,8 +1014,8 @@ const server = http.createServer(async (req, res) => {
         ...(rtToken ? { CREWSWARM_RT_AUTH_TOKEN: rtToken } : {}),
         PHASED_TASK_TIMEOUT_MS: process.env.PHASED_TASK_TIMEOUT_MS || "300000",
         CREWSWARM_RT_SEND_TIMEOUT_MS: process.env.CREWSWARM_RT_SEND_TIMEOUT_MS || "300000",
-        CREWSWARM_RT_SEND_SENDER: "PM Loop",
-        CREWSWARM_RT_BROADCAST_SENDER: "PM Loop",
+        CREWSWARM_RT_SEND_SENDER: "orchestrator",
+        CREWSWARM_RT_BROADCAST_SENDER: "orchestrator",
         ...(projectId     ? { PM_PROJECT_ID: projectId }              : {}),
         ...(projectDir    ? { CREWSWARM_OUTPUT_DIR: projectDir }        : {}),
         ...(projectRoadmap    ? { PM_ROADMAP_FILE: projectRoadmap }    : {}),
@@ -2850,6 +2901,21 @@ ORDER BY day DESC, cost DESC;`;
           } catch { return 0; }
         }
 
+        function getPid(pattern) {
+          try {
+            const out = execSync(`pgrep -f "${pattern}"`, { encoding: "utf8", timeout: 2000, stdio: ["pipe", "pipe", "pipe"] }).trim();
+            const pids = out.split('\n').filter(Boolean).map(p => parseInt(p, 10));
+            return pids.length > 0 ? pids[0] : null;
+          } catch { return null; }
+        }
+
+        function getAllPids(pattern) {
+          try {
+            const out = execSync(`pgrep -f "${pattern}"`, { encoding: "utf8", timeout: 2000, stdio: ["pipe", "pipe", "pipe"] }).trim();
+            return out.split('\n').filter(Boolean).map(p => parseInt(p, 10));
+          } catch { return []; }
+        }
+
         function procStartTime(pid) {
           try {
             const out = execSync(`ps -p ${pid} -o lstart=`, { encoding: "utf8", timeout: 1500, stdio: ["pipe", "pipe", "pipe"] }).trim();
@@ -2861,25 +2927,33 @@ ORDER BY day DESC, cost DESC;`;
         const tgPid     = pidRunning(path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.pid"));
         const waPid     = pidRunning(path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"));
         const rtUp      = await portListening(18889);
+        const rtPid     = getPid("opencrew-rt-daemon");
         const crewLeadUp = await portListening(crewLeadPort);
+        const crewLeadPid = getPid("crew-lead.mjs");
         const gwUp      = await portListening(18789);
+        const gwPid     = getPid("openclaw-gateway");
         const oclawPaired = fs.existsSync(path.join(os.homedir(), ".openclaw", "devices", "paired.json"))
                          || fs.existsSync(path.join(os.homedir(), ".openclaw", "device.json"));
         const ocUp      = await portListening(4096);
+        const ocPid     = getPid("opencode serve");
+        const mcpPid    = getPid("mcp-server.mjs");
         const dashUp    = await portListening(listenPort);
 
         // Agent count: ask RT bus which agents are actually connected (most reliable source)
         let agentsOnline = 0;
         let rtAgentList = [];
+        let agentPids = [];
         try {
           const rtStatusRes = await fetch("http://127.0.0.1:18889/status", { signal: AbortSignal.timeout(1500) });
           const rtStatus = await rtStatusRes.json();
           const raw = (rtStatus.agents || []).filter(Boolean);
           rtAgentList = raw.filter(a => String(a).toLowerCase() !== "crew-lead");
           agentsOnline = rtAgentList.length;
+          agentPids = getAllPids("gateway-bridge.mjs --rt-daemon");
         } catch {
           // RT not reachable — fall back to pgrep
           agentsOnline = countProcs("gateway-bridge.mjs --rt-daemon");
+          agentPids = getAllPids("gateway-bridge.mjs --rt-daemon");
         }
         // Total: count configured agents (minus crew-lead); never show X/Y with X > Y
         let agentsTotal = 0;
@@ -2898,7 +2972,7 @@ ORDER BY day DESC, cost DESC;`;
           port: 18889,
           running: rtUp,
           canRestart: true,
-          pid: null,
+          pid: rtPid,
         },
         {
           id: "agents",
@@ -2909,7 +2983,7 @@ ORDER BY day DESC, cost DESC;`;
           port: null,
           running: agentsOnline > 0,
           canRestart: true,
-          pid: null,
+          pid: agentPids.length > 1 ? `${agentPids.length} procs` : (agentPids[0] || null),
         },
         {
           id: "crew-lead",
@@ -2918,7 +2992,7 @@ ORDER BY day DESC, cost DESC;`;
           port: crewLeadPort,
           running: crewLeadUp,
           canRestart: true,
-          pid: null,
+          pid: crewLeadPid,
         },
         {
           id: "telegram",
@@ -2945,7 +3019,7 @@ ORDER BY day DESC, cost DESC;`;
           port: 4096,
           running: ocUp,
           canRestart: true,
-          pid: null,
+          pid: ocPid,
         },
         {
           id: "dashboard",
@@ -2963,7 +3037,7 @@ ORDER BY day DESC, cost DESC;`;
           port: 5020,
           running: await (async () => { try { const r = await fetch("http://127.0.0.1:5020/health", { signal: AbortSignal.timeout(1500) }); return r.ok; } catch { return false; } })(),
           canRestart: true,
-          pid: null,
+          pid: mcpPid,
         },
         {
           id: "openclaw-gateway",
@@ -2975,7 +3049,7 @@ ORDER BY day DESC, cost DESC;`;
           running: gwUp,
           optional: true,
           canRestart: true,
-          pid: null,
+          pid: gwPid,
         },
       ];
       } catch (statusErr) {
@@ -3040,7 +3114,17 @@ ORDER BY day DESC, cost DESC;`;
 
       if (id === "rt-bus") {
         try { execSync(`pkill -f "opencrew-rt-daemon"`, { stdio: "ignore" }); } catch {}
-        await new Promise(r => setTimeout(r, 800));
+        // Wait for process to actually die and port to be released (up to 5 seconds)
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          try {
+            execSync(`lsof -ti :18889`, { stdio: "ignore" });
+            // Port still in use, keep waiting
+          } catch {
+            // Port free, process is dead
+            break;
+          }
+        }
         const rtDaemon = fs.existsSync(path.join(OPENCLAW_DIR, "scripts", "opencrew-rt-daemon.mjs"))
           ? path.join(OPENCLAW_DIR, "scripts", "opencrew-rt-daemon.mjs")
           : path.join(os.homedir(), "swarm", ".opencode", "plugin", "opencrew-rt-daemon.mjs");
@@ -3050,12 +3134,13 @@ ORDER BY day DESC, cost DESC;`;
         }).unref();
       } else if (id === "agents") {
         try { execSync(`pkill -f "gateway-bridge.mjs --rt-daemon"`, { stdio: "ignore" }); } catch {}
-        await new Promise(r => setTimeout(r, 800));
+        // Wait for bridges to actually die (no port to check, just wait longer)
+        await new Promise(r => setTimeout(r, 1500));
         spawnProc("node", [path.join(OPENCLAW_DIR, "scripts", "start-crew.mjs")], {
           cwd: OPENCLAW_DIR,
           detached: true,
           stdio: "ignore",
-          env: { ...process.env, OPENCLAW_DIR },
+          env: { ...process.env, OPENCLAW_DIR, SKIP_CREW_LEAD: "1" },
         }).unref();
       } else if (id === "telegram") {
         try {
@@ -3093,8 +3178,21 @@ ORDER BY day DESC, cost DESC;`;
           detached: true, stdio: "ignore",
         }).unref();
       } else if (id === "crew-lead") {
-        try { execSync(`pkill -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
-        await new Promise(r => setTimeout(r, 800));
+        // Kill ALL crew-lead processes, even if multiple exist
+        try { execSync(`pkill -9 -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
+        // Also kill any process holding the port
+        const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
+        try { execSync(`lsof -ti :${crewLeadPort} | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
+        
+        // Wait for process to actually die and port to be released (up to 5 seconds)
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          // Check both: no processes AND port is free
+          const procsRunning = (() => { try { execSync(`pgrep -f "crew-lead.mjs"`, { stdio: "ignore" }); return true; } catch { return false; } })();
+          const portInUse = (() => { try { execSync(`lsof -ti :${crewLeadPort}`, { stdio: "ignore" }); return true; } catch { return false; } })();
+          if (!procsRunning && !portInUse) break;
+        }
+        
         spawnProc("node", [path.join(OPENCLAW_DIR, "crew-lead.mjs")], {
           cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
         }).unref();
@@ -3173,7 +3271,11 @@ ORDER BY day DESC, cost DESC;`;
           if (pid) process.kill(pid, "SIGTERM");
         } catch {}
       } else if (id === "crew-lead") {
-        try { execSync(`pkill -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
+        // Kill ALL crew-lead processes with SIGKILL for immediate termination
+        try { execSync(`pkill -9 -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
+        // Also kill any process holding the port
+        const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
+        try { execSync(`lsof -ti :${crewLeadPort} | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
       } else if (id === "rt-bus") {
         try { execSync(`pkill -f "opencrew-rt-daemon"`, { stdio: "ignore" }); } catch {}
       } else if (id === "openclaw-gateway") {

@@ -432,6 +432,105 @@ cmd_doctor() {
   fi
 }
 
+# ── health: live snapshot — queue, agents, failures ──
+cmd_health() {
+  local GRN="\033[32m" RED="\033[31m" YLW="\033[33m" BLD="\033[1m" RST="\033[0m" DIM="\033[2m"
+  printf "\n${BLD}📊  CrewSwarm Health Snapshot${RST}\n\n"
+
+  # ── RT bus ─────────────────────────────────────────────────────────────────
+  local rt_out
+  rt_out=$("$NODE" -e "
+    const http=require('http');
+    const req=http.get('http://127.0.0.1:18889/status',{timeout:2000},(r)=>{
+      let d='';r.on('data',c=>d+=c);r.on('end',()=>{
+        try{const j=JSON.parse(d);console.log(JSON.stringify(j));}catch{console.log('{}');}
+      });
+    });
+    req.on('error',()=>console.log('down'));req.on('timeout',()=>{req.destroy();console.log('down');});
+  " 2>/dev/null)
+
+  if [[ "$rt_out" == "down" ]]; then
+    printf "${RED}❌ RT bus  — down (port 18889)${RST}\n"
+  else
+    local clients
+    clients=$(echo "$rt_out" | "$NODE" -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);console.log(j.clients??'?');}catch{console.log('?');}})" 2>/dev/null)
+    printf "${GRN}✅ RT bus  — up  (${clients} connections)${RST}\n"
+  fi
+
+  # ── Bridge PID files ───────────────────────────────────────────────────────
+  local bridge_count=0
+  local bridges=""
+  while IFS= read -r pidfile; do
+    local agent
+    agent=$(basename "$pidfile" .pid | sed 's/^bridge-//')
+    local pid
+    pid=$(cat "$pidfile" 2>/dev/null)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      bridge_count=$((bridge_count+1))
+      bridges="$bridges $agent"
+    fi
+  done < <(ls /tmp/bridge-*.pid 2>/dev/null)
+  printf "   Bridges   — ${bridge_count} running:${bridges:-  (none)}\n"
+
+  # ── crew-lead + queue ──────────────────────────────────────────────────────
+  local cl_ok
+  cl_ok=$("$NODE" -e "
+    const http=require('http');
+    const req=http.get('http://127.0.0.1:5010/health',{timeout:2000},(r)=>{
+      let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log('up'));
+    });
+    req.on('error',()=>console.log('down'));req.on('timeout',()=>{req.destroy();console.log('down');});
+  " 2>/dev/null)
+
+  if [[ "$cl_ok" == "down" ]]; then
+    printf "${RED}❌ crew-lead — down (port 5010)${RST}\n"
+  else
+    printf "${GRN}✅ crew-lead — up  (http://127.0.0.1:5010)${RST}\n"
+    # Try to hit /api/background for queue depth (requires auth token)
+    local token
+    token=$(rt_token 2>/dev/null)
+    if [[ -n "$token" ]]; then
+      local bg_out
+      bg_out=$("$NODE" -e "
+        const http=require('http');
+        const opts={hostname:'127.0.0.1',port:5010,path:'/api/background',timeout:2000,
+          headers:{Authorization:'Bearer $token'}};
+        const req=http.get(opts,(r)=>{
+          let d='';r.on('data',c=>d+=c);r.on('end',()=>{
+            try{const j=JSON.parse(d);console.log(JSON.stringify(j));}catch{console.log('{}');}
+          });
+        });
+        req.on('error',()=>console.log('{}'));req.on('timeout',()=>{req.destroy();console.log('{}');});
+      " 2>/dev/null)
+      local pipelines timeouts stalled
+      pipelines=$(echo "$bg_out" | "$NODE" -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);console.log(j.activePipelines??0);}catch{console.log(0);}})" 2>/dev/null)
+      stalled=$(echo "$bg_out" | "$NODE" -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);console.log((j.stalledPipelines||[]).length);}catch{console.log(0);}})" 2>/dev/null)
+      timeouts=$(echo "$bg_out" | "$NODE" -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);const t=j.timeoutPatterns||[];const total=t.reduce((s,x)=>s+(x.count||0),0);console.log(total+' across '+t.length+' agent(s)');}catch{console.log('0');}})" 2>/dev/null)
+      printf "   Pipelines — ${pipelines} active"
+      [[ "$stalled" -gt 0 ]] && printf "${YLW}, ${stalled} stalled${RST}" || printf ", 0 stalled"
+      printf "\n"
+      printf "   Timeouts  — ${timeouts}\n"
+    fi
+  fi
+
+  # ── Dashboard ──────────────────────────────────────────────────────────────
+  local dash_ok
+  dash_ok=$("$NODE" -e "
+    const http=require('http');
+    const req=http.get('http://127.0.0.1:4319',{timeout:2000},(r)=>{
+      let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log('up'));
+    });
+    req.on('error',()=>console.log('down'));req.on('timeout',()=>{req.destroy();console.log('down');});
+  " 2>/dev/null)
+  if [[ "$dash_ok" == "down" ]]; then
+    printf "${RED}❌ Dashboard — down (port 4319)${RST}\n"
+  else
+    printf "${GRN}✅ Dashboard — up  (http://127.0.0.1:4319)${RST}\n"
+  fi
+
+  printf "\n${DIM}Full preflight: openswitchctl doctor${RST}\n\n"
+}
+
 # ── restart-openclaw-gateway (macOS: open OpenClaw app) ──
 cmd_restart_openclaw_gateway() {
   pkill -f "openclaw-gateway" 2>/dev/null || true
@@ -516,12 +615,13 @@ case "$CMD" in
   stop-agent) cmd_stop_agent "$1" ;;
   restart-agent) cmd_restart_agent "$1" ;;
   doctor)     cmd_doctor ;;
+  health)     cmd_health ;;
   logs)
     echo "Use dashboard Services or: tail -f /tmp/bridge-*.log" >&2
     exit 1
     ;;
   *)
-    echo "Usage: openswitchctl { doctor | status | start | stop | restart | restart-rt | restart-gateway | send <agent> <msg> | agents | list | start-agent <agent> | restart-agent <agent> | ... }" >&2
+    echo "Usage: openswitchctl { health | doctor | status | start | stop | restart | restart-rt | restart-gateway | send <agent> <msg> | agents | list | start-agent <agent> | restart-agent <agent> | ... }" >&2
     exit 1
     ;;
 esac

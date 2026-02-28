@@ -160,6 +160,9 @@
         </div>
       </div>
       <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
+        <!-- Active Tasks Panel -->
+        <div id="activeTasksPanel" style="display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
+        
         <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
         <div class="chat-input-row" style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
           <div style="flex:1;position:relative;min-width:0;overflow:visible;">
@@ -169,29 +172,31 @@
             <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
             <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
           </div>
-          <button data-action="stopAll" title="Stop all pipelines" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;">⏹</button>
-          <button data-action="killAll" title="Kill all agents" style="height:56px;padding:0 14px;font-size:13px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--red-hi);cursor:pointer;">☠️</button>
-          <button data-action="sendChat" class="btn-green" aria-label="Send message" style="height:56px;padding:0 20px;font-size:15px;">Send</button>
+          <button data-action="sendChat" class="btn-green" aria-label="Send message" style="height:56px;padding:0 24px;font-size:15px;">Send</button>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
-          <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">Project context:</span>
-          <select id="chatProjectSelect" style="width:200px;max-width:200px;font-size:12px;padding:6px 8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" data-onchange="onChatProjectChange" title="Active project for dispatch context">
-            <option value="">— none —</option>
+        <div style="display:flex;gap:10px;align-items:center;flex-shrink:0;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border-light);">
+          <select id="chatProjectSelect" style="flex:1;min-width:180px;max-width:250px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" data-onchange="onChatProjectChange" title="Active project for dispatch context">
+            <option value="">📁 Select Project...</option>
           </select>
-          <div style="display:flex;align-items:center;gap:6px;margin-left:8px;">
-            <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">⚡ Direct engine:</span>
-            <select id="passthroughEngine" style="font-size:11px;padding:4px 6px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" title="Route chat directly to a coding engine (bypasses crew-lead LLM)">
-              <option value="">— off (crew-lead) —</option>
-              <option value="claude">Claude Code</option>
-              <option value="cursor">Cursor CLI</option>
-              <option value="opencode">OpenCode</option>
-              <option value="codex">Codex CLI</option>
-              <option value="gemini">🔵 Gemini CLI</option>
-              <option value="docker-sandbox">🐳 Docker Sandbox</option>
-            </select>
-            <label title="Inject recent Cursor agent chat history as context" style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-3);cursor:pointer;white-space:nowrap;">
-              <input type="checkbox" id="passthroughInjectHistory" style="cursor:pointer;"> 📋 history
-            </label>
+          <select id="passthroughEngine" style="flex:1;min-width:160px;max-width:220px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" title="Route chat directly to a coding engine (bypasses crew-lead LLM)">
+            <option value="">🧠 Crew Lead (Commander)</option>
+            <option value="claude">🟢 Claude Code</option>
+            <option value="cursor">⚫ Cursor CLI</option>
+            <option value="opencode">🟣 OpenCode</option>
+            <option value="codex">🔵 Codex CLI</option>
+            <option value="gemini">🔷 Gemini CLI</option>
+          </select>
+          <select id="passthroughModel" style="display:none;flex:1;min-width:140px;max-width:180px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" title="Model for the selected engine">
+            <option value="">Model: Default</option>
+          </select>
+          <label title="Inject recent Cursor agent chat history as context" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);cursor:pointer;white-space:nowrap;padding:6px 10px;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;">
+            <input type="checkbox" id="passthroughInjectHistory" style="cursor:pointer;"> 📋 History
+          </label>
+          <span id="passthroughSessionIndicator" title="Active session — context is retained between messages. Click to clear." style="display:none;font-size:11px;padding:6px 12px;border-radius:12px;background:var(--green-hi);color:#000;cursor:pointer;font-weight:600;white-space:nowrap;" data-action="clearPassthroughSession">● Session</span>
+          <button data-action="stopPassthrough" title="Kill the running CLI process" style="display:none;font-size:12px;padding:6px 14px;border-radius:6px;border:1px solid var(--red-hi);background:transparent;color:var(--red-hi);cursor:pointer;font-weight:600;">⏹ Kill CLI</button>
+          <div style="margin-left:auto;display:flex;gap:6px;">
+            <button data-action="stopAll" title="Stop all running pipelines (agents stay online)" style="font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card2);color:var(--text-2);cursor:pointer;white-space:nowrap;">⏹ Stop All</button>
+            <button data-action="killAll" title="Emergency: kill all agent processes" style="font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--red-hi);background:transparent;color:var(--red-hi);cursor:pointer;font-weight:600;white-space:nowrap;">☠️ Kill Agents</button>
           </div>
         </div>
       </div>
@@ -372,7 +377,10 @@
         <button data-action="bulkSetRoute" data-arg="direct" class="btn-ghost" style="font-size:11px; padding:4px 10px;">💬 Direct API</button>
         <button data-action="bulkSetRoute" data-arg="opencode" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--green-hi); border-color:rgba(34,197,94,0.3);">⚡ OpenCode</button>
         <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="sonnet-4.6" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--accent); border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.6</button>
-        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="opus-4.6-thinking" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
+        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="gpt-5-codex" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#8b5cf6; border-color:rgba(139,92,246,0.3);">🖱 Cursor CLI · gpt-5-codex</button>
+        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="opus-thinking" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
+        <button data-action="bulkSetRoute" data-arg="claudecode" data-arg2="claude-sonnet-4-5" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">📜 Claude Code · 4.5</button>
+        <button data-action="bulkSetRoute" data-arg="gemini" data-arg2="gemini-2.0-flash-exp" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#10b981; border-color:rgba(16,185,129,0.3);">🔷 Gemini CLI · 2.0-flash</button>
         <button data-action="bulkSetRoute" data-arg="codex" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a855f7; border-color:rgba(168,85,247,0.3);">🟣 Codex CLI</button>
       </div>
       <div id="agentsList" style="display:grid; gap:12px;"></div>
@@ -1075,17 +1083,6 @@
         </div>
 
         <div class="card">
-          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
-            <h3 style="margin:0;">Phased Progress</h3>
-            <span id="phasedProgressLabel" style="font-size:11px;color:var(--text-3);"></span>
-          </div>
-          <p class="meta" style="margin-bottom:10px;">Task dispatch log — filtered to the selected project when one is chosen</p>
-          <div id="phasedProgress" class="log-block mono" style="max-height:180px;"></div>
-        </div>
-
-        <hr class="divider" />
-
-        <div class="card">
           <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
             <h3 style="margin:0;">PM Loop</h3>
             <span class="pm-badge" id="pmLoopBadge">idle</span>
@@ -1141,6 +1138,17 @@
           </div>
           <div id="pmRoadmapPanel" style="display:none; margin-bottom:12px; max-height:220px;" class="log-block mono"></div>
           <div id="pmLiveLog" style="display:none;" class="log-block green"></div>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="card">
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
+            <h3 style="margin:0;">Phased Progress</h3>
+            <span id="phasedProgressLabel" style="font-size:11px;color:var(--text-3);"></span>
+          </div>
+          <p class="meta" style="margin-bottom:10px;">Task dispatch log — filtered to the selected project when one is chosen</p>
+          <div id="phasedProgress" class="log-block mono" style="max-height:180px;"></div>
         </div>
       </div>
     </div>

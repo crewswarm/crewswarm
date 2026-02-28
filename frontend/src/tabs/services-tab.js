@@ -30,11 +30,13 @@ export async function loadServices() {
     const services = await getJSON('/api/services/status');
     const downCount = services.filter(s => !s.running).length;
     const badge = document.getElementById('servicesBadge');
-    if (downCount > 0) {
-      badge.textContent = downCount;
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
+    if (badge) {
+      if (downCount > 0) {
+        badge.textContent = downCount;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
     }
     grid.innerHTML = services.map(svc => {
       const up = svc.running;
@@ -62,6 +64,7 @@ export async function loadServices() {
     }).join('');
   } catch (e) {
     grid.innerHTML = '<div class="meta" style="padding:20px;color:var(--red-hi);">Error loading services: ' + e.message + '</div>';
+    showNotification('⚠️ Failed to load services: ' + e.message, true);
   }
 }
 
@@ -72,6 +75,16 @@ function formatUptime(sec) {
 }
 
 export async function restartService(id) {
+  // Debounce: prevent rapid double-clicks
+  const now = Date.now();
+  const lastRestart = window._lastServiceRestart || {};
+  if (lastRestart[id] && (now - lastRestart[id]) < 3000) {
+    showNotification('⏳ Restart already in progress...', 'warning');
+    return;
+  }
+  if (!window._lastServiceRestart) window._lastServiceRestart = {};
+  window._lastServiceRestart[id] = now;
+  
   const r = await postJSON('/api/services/restart', { id });
   if (r && r.ok === false && r.message) {
     showNotification('⚠️ ' + r.message, 'warning');
@@ -82,6 +95,16 @@ export async function restartService(id) {
 }
 
 export async function stopService(id) {
+  // Debounce: prevent rapid double-clicks
+  const now = Date.now();
+  const lastStop = window._lastServiceStop || {};
+  if (lastStop[id] && (now - lastStop[id]) < 2000) {
+    showNotification('⏳ Stop already in progress...', 'warning');
+    return;
+  }
+  if (!window._lastServiceStop) window._lastServiceStop = {};
+  window._lastServiceStop[id] = now;
+  
   const r = await postJSON('/api/services/stop', { id });
   if (r && r.ok === false && r.message) {
     showNotification('⚠️ ' + r.message, 'warning');

@@ -12,13 +12,13 @@
     gtag('config', 'G-0QSG6Y9DHT');
   </script>
   <!-- End Google Analytics -->
-  <title>CrewSwarm — Multi-Agent Orchestrator for OpenCode, Cursor &amp; Claude Code</title>
-  <meta name="description" content="CrewSwarm orchestrates a crew of specialist AI agents across OpenCode, Cursor CLI, and Claude Code. Led by Stinki — the AI captain who plans, dispatches, and ships. PM, coder, QA, fixer and more collaborate over a realtime bus. Bring your own LLM." />
+  <title>CrewSwarm — Multi-Agent AI Orchestrator for Cursor &amp; Claude</title>
+  <meta name="description" content="Orchestrate specialist AI agents across OpenCode, Cursor, and Claude. PM-led builds, shared memory, and fault recovery for autonomous software engineering." />
   <!-- Open Graph -->
   <meta property="og:site_name" content="CrewSwarm" />
   <meta property="og:locale" content="en_US" />
-  <meta property="og:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode, Cursor &amp; Claude Code" />
-  <meta property="og:description" content="Orchestrate specialist AI agents across OpenCode, Cursor CLI, and Claude Code. Ideate, build &amp; ship — PM-led builds, fault recovery, real files on disk." />
+  <meta property="og:title" content="CrewSwarm — Multi-Agent AI Orchestrator for Cursor &amp; Claude" />
+  <meta property="og:description" content="Orchestrate specialist AI agents across OpenCode, Cursor, and Claude. PM-led builds, shared memory, and fault recovery for autonomous software engineering." />
   <meta property="og:url" content="https://crewswarm.ai/" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png?v=2" />
@@ -28,8 +28,8 @@
   <!-- Twitter / X -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@crewswarm_ai" />
-  <meta name="twitter:title" content="CrewSwarm — Multi-Agent Orchestrator for OpenCode, Cursor &amp; Claude Code" />
-  <meta name="twitter:description" content="Route each agent through OpenCode, Cursor CLI, Claude Code, or direct API. PM-led builds, realtime dispatch, real files on disk. Free &amp; open source." />
+  <meta name="twitter:title" content="CrewSwarm — Multi-Agent AI Orchestrator for Cursor &amp; Claude" />
+  <meta name="twitter:description" content="Orchestrate specialist AI agents across OpenCode, Cursor, and Claude. PM-led builds, shared memory, and fault recovery for autonomous software engineering." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png?v=2" />
   <meta name="twitter:image:alt" content="CrewSwarm — multi-agent AI orchestration" />
   <!-- Misc SEO -->
@@ -41,28 +41,81 @@
   <link rel="apple-touch-icon" href="favicon.png?v=3" />
   <!-- JSON-LD structured data -->
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "CrewSwarm",
-    "url": "https://crewswarm.ai/",
-    "description": "Multi-agent AI orchestration layer for OpenCode, Cursor CLI, and Claude Code. Coordinate specialist agents (PM, coder, QA, fixer, security) over a realtime bus. Bring your own LLM.",
-    "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "macOS, Linux, Windows",
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    },
-    "author": {
-      "@type": "Organization",
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
       "name": "CrewSwarm",
-      "url": "https://crewswarm.ai/"
+      "url": "https://crewswarm.ai/",
+      "description": "Orchestrate specialist AI agents across OpenCode, Cursor, and Claude. PM-led builds, shared memory, and fault recovery for autonomous software engineering.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS, Linux, Windows",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "CrewSwarm",
+        "url": "https://crewswarm.ai/"
+      },
+      "image": "https://crewswarm.ai/og-image.png?v=2",
+      "softwareVersion": "1.0",
+      "license": "https://github.com/CrewSwarm/CrewSwarm/blob/main/LICENSE"
     },
-    "image": "https://crewswarm.ai/og-image.png?v=2",
-    "softwareVersion": "1.0",
-    "license": "https://github.com/CrewSwarm/CrewSwarm/blob/main/LICENSE"
-  }
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "@id": "https://crewswarm.ai/#organization",
+      "name": "CrewSwarm",
+      "url": "https://crewswarm.ai/",
+      "logo": "https://crewswarm.ai/favicon.png",
+      "email": "info@crewswarm.ai",
+      "sameAs": [
+        "https://github.com/crewswarm",
+        "https://twitter.com/crewswarm_ai"
+      ]
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What does “One requirement. One crew.” actually mean?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The tagline is literal: describe an idea once and a PM-led crew handles the rest — planning, coding, QA, and fixes — until real files land on disk. Ideate, build & ship."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does the PM Loop keep shipping without new prompts?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The PM Loop reads ROADMAP.md, ships every pending item, then calls Groq as a product strategist to append fresh roadmap items based on the live output. It repeats forever until you stop it."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How is targeted dispatch different from broadcast-style bots?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "CrewSwarm never shouts into a swarm. Each task goes to one named agent, eliminating race conditions and duplicate work. You send a command, the gateway routes it to exactly the right specialist, and only that agent replies."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What phases does a phased build follow?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Everything ships in three passes: MVP for the smallest viable outcome, Phase 1 for depth, and Phase 2 for polish. Each phase carries 3–5 tightly scoped tasks so agents never time out."
+          }
+        }
+      ]
+    }
+  ]
   </script>
   <link rel="stylesheet" href="styles.css" />
   <style id="hero-styles">
@@ -77,9 +130,8 @@
       <li role="none"><a href="#how-it-works" role="menuitem" class="nav-link-item">How it works</a></li>
       <li role="none"><a href="#system-diagram" role="menuitem" class="nav-link-item">Architecture</a></li>
       <li role="none"><a href="#features" role="menuitem" class="nav-link-item">Features</a></li>
-      <li role="none"><a href="#agents" role="menuitem" class="nav-link-item">Agents</a></li>
-      <li role="none"><a href="#comparison" role="menuitem" class="nav-link-item">Compare</a></li>
-      <li role="none"><a href="#get-started" role="menuitem" class="nav-link-item">Docs</a></li>
+      <li role="none"><a href="about.html" role="menuitem" class="nav-link-item">About</a></li>
+      <li role="none"><a href="contact.html" role="menuitem" class="nav-link-item">Contact</a></li>
       <li role="none" class="nav-mobile-cta"><a href="#get-started" class="btn btn-sm">Get started →</a></li>
     </ul>
     <div class="nav-actions">
@@ -101,7 +153,7 @@
       </picture>
     </div>
     <h1>One idea.<br/>One build.<br/><span class="gradient-text">One crew.</span></h1>
-    <p class="hero-sub">The multi-agent orchestration layer for <strong>OpenCode</strong>, <strong>Cursor</strong>, <strong>Claude Code</strong>, and <strong>Codex</strong>. Ideate, build &amp; ship — with real files on disk.</p>
+    <p class="hero-sub">The <a href="#how-it-works" style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">multi-agent orchestration</a> layer for <strong>OpenCode</strong>, <strong>Cursor</strong>, <strong>Claude Code</strong>, and <strong>Codex</strong>. Ideate, build &amp; ship — with real files on disk.</p>
     <div class="proof-bar visible">
       <span class="proof-item">OpenCode sessions</span>
       <span class="proof-sep" aria-hidden="true">•</span>
@@ -116,6 +168,8 @@
       <span class="proof-item">PM-led phases</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">DLQ recovery</span>
+      <span class="proof-sep" aria-hidden="true">•</span>
+      <span class="proof-item">SWE-Bench Verified</span>
     </div>
     <div class="hero-cta">
       <a href="#get-started" class="btn btn-primary">Get started free</a>
@@ -294,7 +348,7 @@
       <div class="section-header">
         <div class="eyebrow">Architecture</div>
         <h2>PM → specialists → synthesizer over RT</h2>
-        <p class="section-desc">Agents run as daemons on a realtime message bus. The PM dispatches to specialists; the synthesizer assembles the result.</p>
+        <p class="section-desc">Agents run as daemons on a <a href="#how-it-works">realtime message bus</a>. The <a href="#agents">PM Loop</a> dispatches to specialists; the synthesizer assembles the result.</p>
       </div>
       <div class="rt-flow-diagram" aria-label="Architecture flow: PM to specialists to synthesizer over RT channels">
         <div class="rt-flow-row rt-flow-pm">
@@ -361,7 +415,7 @@
       <div class="section-header">
         <div class="eyebrow">Built different</div>
         <h2>How CrewSwarm differs from framework-only stacks</h2>
-        <p class="section-desc">CrewSwarm is a runtime, not just a library. You get a realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, Claude Code, and Codex out of the box.</p>
+        <p class="section-desc">CrewSwarm is a <a href="#system-diagram">runtime</a>, not just a library. You get a realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, Claude Code, and Codex out of the box.</p>
       </div>
       <div class="differs-grid">
         <div class="differs-card">
@@ -415,12 +469,22 @@
         <div class="feature-card">
           <div class="feature-icon">🧠</div>
           <h3>Shared memory</h3>
-          <p>Persistent markdown files — current state, decisions, handoff — injected into every agent call. The crew stays aligned across sessions.</p>
+          <p>Persistent markdown files — current state, decisions, handoff — injected into every agent call. The crew stays aligned.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔌</div>
+          <h3>Skill-powered</h3>
+          <p>Extend agents with data-driven <code>SKILL.md</code> or JSON plugins. Add Twitter, Fly.io, or custom API tools without writing JS code.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📦</div>
+          <h3>Sandboxed (Docker)</h3>
+          <p>Execute agent code in secure Docker containers or sandboxed engines. Path-based allowlists protect your host machine.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🔄</div>
           <h3>Fault tolerance</h3>
-          <p>Retry with backoff, task leases, heartbeat checks. After max retries, tasks go to the Dead Letter Queue for replay from the dashboard.</p>
+          <p>Retry with backoff and task leases. After max retries, tasks hit the Dead Letter Queue for manual replay from the dashboard.</p>
         </div>
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🚀</div>
@@ -970,8 +1034,14 @@
         </div>
         <div class="case-card">
           <div class="case-num">04</div>
+          <h3>Automate your workflows with Skills</h3>
+          <p>Drop a <code>SKILL.md</code> in your config folder. Agents immediately gain the ability to deploy to Fly.io, send tweets, or hit any custom API.</p>
+          <div class="case-tag">Extensibility</div>
+        </div>
+        <div class="case-card">
+          <div class="case-num">05</div>
           <h3>Control from the menu bar</h3>
-          <p>SwiftBar shows you CrewSwarm status at a glance. Start, stop, restart agents. Send a message to any agent. Open logs.</p>
+          <p>SwiftBar shows status at a glance. Start, stop, restart agents. Send a message to any agent. Open logs.</p>
           <div class="case-tag">SwiftBar</div>
         </div>
         <div class="case-card">
@@ -1042,6 +1112,11 @@
       </div>
       <div class="wwd-grid">
         <div class="wwd-card wwd-card-wide">
+          <div class="wwd-icon">🎓</div>
+          <h3>Research-driven orchestration</h3>
+          <p>CrewSwarm implements structural and content markers identified in <a href="https://arxiv.org/abs/2402.14207" target="_blank" rel="noopener" style="text-decoration: underline;">Princeton GEO (Generative Engine Optimization)</a> research to maximize AI visibility and authority. Our agents also utilize iterative reasoning loops inspired by the <strong>Reflexion</strong> framework to ensure code quality.</p>
+        </div>
+        <div class="wwd-card">
           <div class="wwd-icon">🧠</div>
           <h3>PM-led phased builds</h3>
           <p>A dedicated Project Manager agent reads your ROADMAP, breaks work into phases, dispatches tasks to the right specialists, and writes handoff notes between sessions — automatically.</p>
@@ -1316,17 +1391,24 @@
           </div>
         </div>
         <div class="tech-badge">
+          <img src="https://cdn.simpleicons.org/docker/2496ED" alt="Docker" width="28" height="28" loading="lazy">
+          <div>
+            <strong>Docker</strong>
+            <span>Sandboxed execution — route any agent into a secure container</span>
+          </div>
+        </div>
+        <div class="tech-badge">
           <img src="https://cdn.simpleicons.org/json/f59e0b" alt="JSON" width="28" height="28" loading="lazy">
           <div>
-            <strong>JSON / JSONL</strong>
-            <span>Config, task dispatch, DLQ, and telemetry event log</span>
+            <strong>Skills (JSON/MD)</strong>
+            <span>Data-driven plugins — add new tools to agents without code</span>
           </div>
         </div>
         <div class="tech-badge">
           <img src="https://cdn.simpleicons.org/markdown/94a3b8" alt="Markdown" width="28" height="28" loading="lazy">
           <div>
-            <strong>Markdown</strong>
-            <span>Shared memory — current-state, decisions, handoff, roadmap</span>
+            <strong>Shared Memory</strong>
+            <span>Markdown — current-state, decisions, handoff, roadmap</span>
           </div>
         </div>
         <div class="tech-badge">
@@ -1444,7 +1526,25 @@
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-6" role="region" aria-labelledby="faq-heading-6">
-              <div class="faq-answer-inner"><p>Failures trigger automatic retries with exponential backoff. If attempts are exhausted, the task lands in the Dead Letter Queue where you can replay it from the dashboard or hand it to <code>crew-fixer</code>.</p></div>
+              <div class="faq-answer-inner"><p>Failures trigger automatic retries. If attempts are exhausted, the task lands in the Dead Letter Queue (DLQ) for replay from the dashboard or handoff to <code>crew-fixer</code>.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="safety docker sandbox execution secure machine">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-s1" id="faq-heading-s1">
+              <span>Is it safe to run AI code on my machine?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-s1" role="region" aria-labelledby="faq-heading-s1">
+              <div class="faq-answer-inner"><p>Yes. You can route any agent into a <strong>Docker sandbox</strong> so they have no access to your host files. CrewSwarm also uses path-based allowlists and permission layers to restrict tool usage.</p></div>
+            </div>
+          </div>
+          <div class="faq-item" data-question="add tools skills plugin json md">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-s2" id="faq-heading-s2">
+              <span>Can I add new tools to my agents?</span>
+              <span class="faq-icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-answer" id="faq-panel-s2" role="region" aria-labelledby="faq-heading-s2">
+              <div class="faq-answer-inner"><p>Absolutely. You can add "Skills" by dropping a simple JSON or <code>SKILL.md</code> file into <code>~/.crewswarm/skills/</code>. No custom JavaScript is required to extend your crew's capabilities.</p></div>
             </div>
           </div>
           <div class="faq-item" data-question="dashboard command start gui">
@@ -1767,17 +1867,23 @@
       <div class="footer-brand">
         <div class="footer-logo">CrewSwarm</div>
         <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
       </div>
       <div class="footer-links">
         <div class="footer-col">
           <div class="footer-col-title">Product</div>
-          <a href="#how-it-works">How it works</a>
-          <a href="#system-diagram">Architecture</a>
-          <a href="#features">Features</a>
-          <a href="#agents">Agents</a>
-          <a href="#comparison">Compare</a>
-          <a href="#use-cases">Use cases</a>
-          <a href="#orchestration">Modes</a>
+          <a href="index.html#how-it-works">How it works</a>
+          <a href="index.html#system-diagram">Architecture</a>
+          <a href="index.html#features">Features</a>
+          <a href="index.html#agents">Agents</a>
+          <a href="index.html#comparison">Compare</a>
+          <a href="index.html#use-cases">Use cases</a>
+          <a href="index.html#orchestration">Modes</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Docs</div>

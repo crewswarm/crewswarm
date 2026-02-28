@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact CrewSwarm — Get in Touch</title>
+  <meta name="description" content="Have questions or feedback about CrewSwarm? Reach out to our team via email or GitHub. We're here to help you build the future." />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .contact-content { max-width: 800px; margin: 0 auto; padding: 4rem 1.5rem; text-align: center; }
+    .contact-header h1 { font-size: 3.5rem; margin-bottom: 1.5rem; }
+    .contact-header p { color: var(--text-2); font-size: 1.25rem; margin-bottom: 3rem; }
+    .contact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem; }
+    .contact-card { background: var(--bg-card); border: 1px solid var(--border); padding: 2.5rem; border-radius: var(--radius-lg); transition: border-color 0.3s; }
+    .contact-card:hover { border-color: var(--accent); }
+    .contact-card h2 { margin-bottom: 1rem; color: var(--text); }
+    .contact-card p { color: var(--text-2); margin-bottom: 1.5rem; }
+    .contact-card .email { font-size: 1.25rem; font-weight: 600; color: var(--accent); }
+    @media (max-width: 768px) {
+      .contact-grid { grid-template-columns: 1fr; }
+      .contact-header h1 { font-size: 2.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <a class="nav-logo" href="index.html" aria-label="CrewSwarm home">Crew<span class="nav-logo-hq">Swarm</span></a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html#how-it-works" role="menuitem" class="nav-link-item">How it works</a></li>
+      <li role="none"><a href="index.html#system-diagram" role="menuitem" class="nav-link-item">Architecture</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="about.html" role="menuitem" class="nav-link-item">About</a></li>
+      <li role="none"><a href="contact.html" role="menuitem" class="nav-link-item active">Contact</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started →</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="contact-content">
+    <div class="contact-header">
+      <div class="eyebrow" style="color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1rem;">Support & Sales</div>
+      <h1>Get in <span class="gradient-text">touch.</span></h1>
+      <p>Have questions or feedback? Our team is here to help you get the most out of your AI crew.</p>
+    </div>
+
+    <div class="contact-grid">
+      <div class="contact-card">
+        <div style="font-size: 2.5rem; margin-bottom: 1rem;">✉️</div>
+        <h2>Email Us</h2>
+        <p>For support, partnerships, or general inquiries, shoot us an email.</p>
+        <a href="mailto:info@crewswarm.ai" class="email">info@crewswarm.ai</a>
+        <p style="margin-top: 1rem; font-size: 0.85rem;">Response time: ~24 hours</p>
+      </div>
+
+      <div class="contact-card">
+        <div style="font-size: 2.5rem; margin-bottom: 1rem;">🐙</div>
+        <h2>GitHub</h2>
+        <p>For bug reports, feature requests, or contributions, use our GitHub repo.</p>
+        <a href="https://github.com/crewswarm/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">View Issues</a>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">CrewSwarm</div>
+        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html#how-it-works">How it works</a>
+          <a href="index.html#system-diagram">Architecture</a>
+          <a href="index.html#features">Features</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://twitter.com/CrewSwarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 CrewSwarm. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script>
+    // Hamburger nav toggle
+    (function() {
+      const btn = document.getElementById('navHamburger');
+      const links = document.getElementById('navLinks');
+      if (!btn || !links) return;
+      btn.addEventListener('click', function() {
+        const open = links.classList.toggle('open');
+        btn.classList.toggle('open', open);
+        btn.setAttribute('aria-expanded', String(open));
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -164,6 +164,19 @@ if (toStart.length === 0) {
   process.exit(0);
 }
 
+// ── Hard bridge cap (runaway protection) ────────────────────────────────────
+const MAX_BRIDGES = parseInt(process.env.CREWSWARM_MAX_BRIDGES || "20", 10);
+const totalAfterStart = already.size + toStart.length;
+if (totalAfterStart > MAX_BRIDGES) {
+  const cap = Math.max(0, MAX_BRIDGES - already.size);
+  console.warn(`⚠️  Bridge cap: ${already.size} running + ${toStart.length} requested exceeds max ${MAX_BRIDGES}. Launching ${cap}. Set CREWSWARM_MAX_BRIDGES to raise limit.`);
+  toStart = toStart.slice(0, cap);
+  if (toStart.length === 0) {
+    console.warn(`⚠️  No new bridges started — cap reached. Stop some agents first or raise CREWSWARM_MAX_BRIDGES.`);
+    process.exit(0);
+  }
+}
+
 console.log(`Starting crew bridges…`);
 console.log(`  Already running : ${already.size} (${[...already].join(", ") || "none"})`);
 console.log(`  Launching new   : ${toStart.length} (${toStart.join(", ")})`);
@@ -178,7 +191,10 @@ const crewLeadRunning = (() => {
   } catch { return false; }
 })();
 
-if (toStart.includes("crew-lead") && !crewLeadRunning && fs.existsSync(CREW_LEAD_SCRIPT)) {
+// Skip crew-lead if SKIP_CREW_LEAD env var is set (dashboard manages crew-lead separately)
+const shouldSkipCrewLead = process.env.SKIP_CREW_LEAD === "1";
+
+if (toStart.includes("crew-lead") && !crewLeadRunning && !shouldSkipCrewLead && fs.existsSync(CREW_LEAD_SCRIPT)) {
   const logFile = path.join(os.tmpdir(), "bridge-crew-lead.log");
   const logFd = fs.openSync(logFile, "a");
   const proc = spawn("node", [CREW_LEAD_SCRIPT], {

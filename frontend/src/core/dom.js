@@ -42,7 +42,7 @@ export function createdAt(info) {
   return (info && info.time && info.time.created) || '';
 }
 
-export function appendChatBubble(role, text, fallbackModel, fallbackReason) {
+export function appendChatBubble(role, text, fallbackModel, fallbackReason, primaryModel, engineUsed) {
   const box = document.getElementById('chatMessages');
   if (!box) return;
   const isUser = role === 'user';
@@ -60,13 +60,50 @@ export function appendChatBubble(role, text, fallbackModel, fallbackReason) {
   const cl = window._crewLeadInfo || { emoji: '🧠', name: 'crew-lead' };
   const displayName = isUser ? 'You' : (role === 'assistant' ? (cl.emoji + ' ' + cl.name) : role);
   labelEl.textContent = displayName;
-  if (!isUser && fallbackModel) {
-    const badge = document.createElement('span');
-    badge.title = 'Primary failed (' + (fallbackReason || 'error') + ') — running on fallback';
-    badge.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:default;';
-    badge.textContent = '⚡ fallback: ' + fallbackModel;
-    labelEl.appendChild(badge);
+  
+  // Show model badge - always for non-user messages
+  if (!isUser) {
+    const modelToShow = fallbackModel || primaryModel;
+    if (modelToShow) {
+      const badge = document.createElement('span');
+      if (fallbackModel) {
+        badge.title = 'Primary failed (' + (fallbackReason || 'error') + ') — running on fallback';
+        badge.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:default;';
+        badge.textContent = '⚡ fallback: ' + fallbackModel;
+      } else {
+        badge.title = 'Primary model';
+        badge.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.2);cursor:default;';
+        badge.textContent = modelToShow;
+      }
+      labelEl.appendChild(badge);
+    }
+    
+    // Show engine badge if available (for coding agents using CLIs)
+    if (engineUsed) {
+      const engineColors = {
+        'claude': '#e07a5f',
+        'codex': '#8338ec',
+        'cursor': '#3d405b',
+        'opencode': '#06d6a0',
+        'gemini': '#4285f4',
+        'docker-sandbox': '#0db7ed'
+      };
+      const engineLabels = {
+        'claude': '🤖 Claude Code',
+        'codex': '🟣 Codex',
+        'cursor': '🖱 Cursor',
+        'opencode': '⚡ OpenCode',
+        'gemini': '✨ Gemini',
+        'docker-sandbox': '🐳 Docker'
+      };
+      const engineBadge = document.createElement('span');
+      engineBadge.title = 'Executed by ' + (engineLabels[engineUsed] || engineUsed);
+      engineBadge.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:999px;color:#fff;background:' + (engineColors[engineUsed] || 'var(--text-3)') + ';cursor:default;';
+      engineBadge.textContent = engineLabels[engineUsed] || engineUsed;
+      labelEl.appendChild(engineBadge);
+    }
   }
+  
   const bubble = document.createElement('div');
   bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:' + (isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px') + ';background:' + (isUser ? 'var(--purple)' : 'var(--bg-2)') + ';color:' + (isUser ? '#fff' : 'var(--text-1)') + ';font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;border:1px solid var(--border);';
   bubble.textContent = text;

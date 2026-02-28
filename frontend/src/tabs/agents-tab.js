@@ -205,11 +205,11 @@ async function loadAgents_cfg(){
             </div>
             <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
               <button id="route-direct-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="direct"
-                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${!a.useOpenCode && !a.useCursorCli ? 'var(--accent)' : 'var(--border)'}; background:${!a.useOpenCode && !a.useCursorCli ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)'}; color:${!a.useOpenCode && !a.useCursorCli ? 'var(--accent)' : 'var(--text-2)'};">
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${!a.useOpenCode && !a.useCursorCli && !a.useClaudeCode && !a.useCodex && !a.useGeminiCli ? 'var(--accent)' : 'var(--border)'}; background:${!a.useOpenCode && !a.useCursorCli && !a.useClaudeCode && !a.useCodex && !a.useGeminiCli ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)'}; color:${!a.useOpenCode && !a.useCursorCli && !a.useClaudeCode && !a.useCodex && !a.useGeminiCli ? 'var(--accent)' : 'var(--text-2)'};">
                 💬 Direct API
               </button>
               <button id="route-opencode-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="opencode"
-                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useOpenCode && !a.useCursorCli ? 'var(--green-hi)' : 'var(--border)'}; background:${a.useOpenCode && !a.useCursorCli ? 'rgba(34,197,94,0.12)' : 'var(--surface-2)'}; color:${a.useOpenCode && !a.useCursorCli ? 'var(--green-hi)' : 'var(--text-2)'};">
+                style="font-size:11px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1px solid ${a.useOpenCode ? 'var(--green-hi)' : 'var(--border)'}; background:${a.useOpenCode ? 'rgba(34,197,94,0.12)' : 'var(--surface-2)'}; color:${a.useOpenCode ? 'var(--green-hi)' : 'var(--text-2)'};">
                 ⚡ OpenCode
               </button>
               <button id="route-cursor-${a.id}" data-action="setRoute" data-arg="${a.id}" data-arg2="cursor"
