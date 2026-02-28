@@ -237,7 +237,7 @@ async function loadAgents_cfg(){
               </label>
               <div style="display:flex; align-items:center; gap:6px;">
                 <span style="font-size:11px; color:var(--text-3); white-space:nowrap;">Max rounds:</span>
-                <input type="number" id="loop-rounds-${a.id}" min="1" max="20" value="${a.opencodeLoopMaxRounds || 10}" style="width:52px; font-size:12px; padding:3px 6px; border-radius:5px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-1); text-align:center;" onchange="saveAgentLoop('${a.id}')" />
+                <input type="number" id="loop-rounds-${a.id}" min="1" max="20" value="${a.opencodeLoopMaxRounds || 10}" class="inp-xs" style="width:52px;text-align:center;" onchange="saveAgentLoop('${a.id}')" />
               </div>
             </div>
             <div id="oc-model-row-${a.id}" style="display:${a.useOpenCode && !a.useCursorCli ? 'flex' : 'none'}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">

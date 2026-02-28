@@ -141,18 +141,19 @@
     .file-btn-opencode { border-color: rgba(52,211,153,0.4); color: #34d399; }
     .file-btn-opencode:hover { background: rgba(52,211,153,0.1); }
 
-    /* ── Form inputs ── */
+    /* ── Form inputs — single source of truth ── */
     select, input[type="text"], input[type="password"], input[type="number"], input[type="email"], input:not([type]), textarea {
-      background: rgba(255,255,255,0.04);
-      color: var(--text);
-      border: 1px solid rgba(255,255,255,0.10);
-      border-radius: var(--radius);
-      padding: 10px 14px;
+      background: var(--bg-1);
+      color: var(--text-1);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
       font-size: 13px;
       font-family: inherit;
       outline: none;
       transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
       width: 100%;
+      box-sizing: border-box;
     }
     select:focus, input:not([type]):focus, input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, input[type="email"]:focus, textarea:focus {
       border-color: var(--accent);
@@ -164,6 +165,16 @@
     input[type="text"] { flex: 1; }
     textarea { resize: vertical; width: 100%; }
     input, textarea, select { user-select: text; -webkit-user-select: text; cursor: text; }
+
+    /* ── Input size variants — use instead of inline styles ── */
+    /* .inp-sm  — compact rows (env vars, config tables) */
+    .inp-sm { padding: 5px 8px !important; font-size: 12px !important; }
+    /* .inp-xs  — very tight rows (number spinners, short codes) */
+    .inp-xs { padding: 3px 6px !important; font-size: 12px !important; width: auto !important; }
+    /* .inp-mono — monospace content (keys, paths, code) */
+    .inp-mono { font-family: "SF Mono","Fira Code",ui-monospace,monospace !important; }
+    /* .inp-flex — takes remaining row width */
+    .inp-flex { flex: 1; width: auto !important; }
 
     /* ── Notification ── */
     .notification { position: fixed; top: 20px; right: 20px; background: var(--green); color: #000; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); z-index: 1000; animation: slideIn 0.25s ease; font-weight: 600; font-size: 13px; }
@@ -186,7 +197,7 @@
     .provider-body { display: none; padding: 16px; border-top: 1px solid var(--border); background: var(--bg); }
     .provider-body.open { display: block; }
     .key-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-    .key-input { flex: 1; background: var(--bg-card2); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 8px 12px; font-size: 13px; font-family: "SF Mono","Fira Code",monospace; }
+    .key-input { flex: 1; font-family: "SF Mono","Fira Code",ui-monospace,monospace; }
     .model-tag { display: inline-block; background: var(--bg-card2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; font-size: 11px; margin: 2px; font-family: "SF Mono",monospace; color: var(--text-2); }
     .test-ok  { color: var(--green); font-size: 12px; margin-left: 8px; font-weight: 600; }
     .test-err { color: var(--red);   font-size: 12px; margin-left: 8px; }

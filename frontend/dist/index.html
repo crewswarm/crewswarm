@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="/assets/index-CCBnf27A.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-2gogF7QG.css">
+  <script type="module" crossorigin src="/assets/index-wEQdKuSG.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CMiILqKd.css">
 </head>
 <body>
   <!-- ── Sidebar ── -->
@@ -688,7 +688,7 @@
           </div>
           <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
             <label style="font-size:12px;color:var(--text-3);white-space:nowrap;">Model:</label>
-            <input id="bgConsciousnessModel" type="text" placeholder="groq/llama-3.1-8b-instant" style="flex:1;font-size:12px;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);font-family:monospace;" />
+            <input id="bgConsciousnessModel" type="text" placeholder="groq/llama-3.1-8b-instant" class="inp-sm inp-mono inp-flex" />
             <button onclick="saveBgConsciousnessModel()" style="font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;">Save</button>
           </div>
           <div id="bgConsciousnessStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
@@ -706,13 +706,13 @@
             </label>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
               <label style="font-size:12px;color:var(--text-3);">Max rounds:</label>
-              <input type="number" id="globalOcLoopRounds" min="1" max="50" value="10" style="width:70px;font-size:12px;padding:4px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;color:var(--text-1);" />
+              <input type="number" id="globalOcLoopRounds" min="1" max="50" value="10" class="inp-xs" style="width:70px;" />
               <button data-action="saveGlobalOcLoopRounds" class="btn-ghost" style="font-size:12px;">Save</button>
             </div>
             <div style="border-top:1px solid var(--border);padding-top:10px;">
               <label style="font-size:12px;color:var(--text-3);display:block;margin-bottom:6px;">🧠 Central loop brain <span style="opacity:0.6;">(one fast model controls STEP/DONE for all agents — leave blank to use each agent's own model)</span></label>
               <div style="display:flex;gap:8px;align-items:center;">
-                <input id="loopBrainModel" type="text" placeholder="groq/llama-3.3-70b-versatile" style="flex:1;font-size:12px;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);font-family:monospace;" />
+                <input id="loopBrainModel" type="text" placeholder="groq/llama-3.3-70b-versatile" class="inp-sm inp-mono inp-flex" />
                 <button data-action="saveLoopBrain" class="btn-ghost" style="font-size:12px;white-space:nowrap;">Save</button>
               </div>
             </div>

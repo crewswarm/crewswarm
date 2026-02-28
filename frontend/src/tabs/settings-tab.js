@@ -531,7 +531,7 @@ export async function loadEnvAdvanced() {
           <div style="display:flex;gap:6px;align-items:center;">
             <input data-env-key="${escHtml(key)}" data-env-default="${escHtml(def || '')}" type="text" value="${escHtml(current)}"
               placeholder="${escHtml(placeholder)}"
-              style="flex:1;font-size:12px;font-family:monospace;padding:5px 8px;background:var(--bg-1);border:1px solid var(--border);border-radius:6px;color:var(--text-1);" />
+              class="inp-sm inp-mono inp-flex" />
             <button data-env-save="${escHtml(key)}" style="font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);white-space:nowrap;">Save</button>
             <span data-env-status="${escHtml(key)}" style="font-size:11px;min-width:50px;"></span>
           </div>`;
