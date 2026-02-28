@@ -47,9 +47,16 @@ export class AgentRouter extends EventEmitter {
         }
       };
 
+      // Get auth token from config
+      const token = this.getAuthToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const dispatchResponse = await fetch(`${crewLeadUrl}/api/dispatch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(dispatchPayload)
       });
 
@@ -120,9 +127,17 @@ export class AgentRouter extends EventEmitter {
     const startTime = Date.now();
     const pollInterval = 2000; // 2 seconds
 
+    const token = this.getAuthToken();
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     while (Date.now() - startTime < timeoutMs) {
       try {
-        const statusResponse = await fetch(`${gatewayUrl}/api/status/${taskId}`);
+        const statusResponse = await fetch(`${gatewayUrl}/api/status/${taskId}`, {
+          headers
+        });
 
         if (!statusResponse.ok) {
           throw new Error(`Status check failed: ${statusResponse.status}`);
@@ -193,6 +208,12 @@ export class AgentRouter extends EventEmitter {
     ];
   }
 
+  getAuthToken() {
+    // Try to read from config (rt.authToken path)
+    const config = this.config.getAll();
+    return config?.rt?.authToken || null;
+  }
+
   getAgentRole(agentName) {
     const roles = {
       'crew-coder': 'Full Stack Coder',
@@ -249,48 +270,41 @@ export class AgentRouter extends EventEmitter {
     }
 
     const crewLeadUrl = options.gateway || this.config.get('crewLeadUrl') || 'http://localhost:5010';
-    const endpoints = [
-      `${crewLeadUrl}/api/skill`,
-      `${crewLeadUrl}/api/skills/call`
-    ];
+    const url = `${crewLeadUrl}/api/skills/${name}/run`;
 
-    let lastError = null;
-
-    for (const url of endpoints) {
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name,
-            skill: name,
-            params
-          })
-        });
-
-        if (!response.ok) {
-          let errorBody = null;
-          try {
-            errorBody = await response.json();
-          } catch {
-            errorBody = null;
-          }
-          const message = errorBody?.error || `Skill call failed (${response.status})`;
-          throw new Error(message);
-        }
-
-        const result = await response.json();
-        return {
-          success: true,
-          skill: name,
-          result,
-          timestamp: new Date().toISOString()
-        };
-      } catch (error) {
-        lastError = error;
+    try {
+      const token = this.getAuthToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
-    }
 
-    throw new Error(`Unable to call skill "${name}": ${lastError?.message || 'unknown error'}`);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(params)
+      });
+
+      if (!response.ok) {
+        let errorBody = null;
+        try {
+          errorBody = await response.json();
+        } catch {
+          errorBody = null;
+        }
+        const message = errorBody?.error || `Skill call failed (${response.status})`;
+        throw new Error(message);
+      }
+
+      const result = await response.json();
+      return {
+        success: true,
+        skill: name,
+        result,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      throw new Error(`Unable to call skill "${name}": ${error.message}`);
+    }
   }
 }
