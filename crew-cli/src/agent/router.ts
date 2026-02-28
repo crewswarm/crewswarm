@@ -29,20 +29,42 @@ export class AgentRouter extends EventEmitter {
       const taskWithContext = context ? `${task}\n\n${context}` : task;
 
       // Dispatch to CrewSwarm gateway
+      const dispatchPayload = {
+        agent: agentName,
+        task: taskWithContext,
+        sessionId: options.sessionId || 'crew-cli',
+        projectDir,
+        // Forward optional execution controls for gateway direct/bypass paths.
+        model: options.model,
+        engine: options.engine,
+        direct: Boolean(options.direct),
+        bypass: Boolean(options.bypass),
+        gatewayMode: options.gatewayMode,
+        session: {
+          id: options.sessionId || 'crew-cli',
+          source: 'crew-cli',
+          timestamp: new Date().toISOString()
+        }
+      };
+
       const dispatchResponse = await fetch(`${crewLeadUrl}/api/dispatch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agent: agentName,
-          task: taskWithContext,
-          sessionId: options.sessionId || 'crew-cli',
-          projectDir
-        })
+        body: JSON.stringify(dispatchPayload)
       });
 
       if (!dispatchResponse.ok) {
-        const error = await dispatchResponse.json();
-        throw new Error(error.error || `Gateway returned ${dispatchResponse.status}`);
+        const raw = await dispatchResponse.text();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = null;
+        }
+        const baseMessage = parsed?.error || raw || `Gateway returned ${dispatchResponse.status}`;
+        throw new Error(
+          `${baseMessage}${this.getDispatchErrorHint(baseMessage, options)}`
+        );
       }
 
       const { taskId } = await dispatchResponse.json();
@@ -60,7 +82,7 @@ export class AgentRouter extends EventEmitter {
 
       // Poll for completion
       this.logger.info(`Polling for task completion (taskId: ${taskId})`);
-      const result = await this.pollTaskStatus(crewLeadUrl, taskId, timeout);
+      const result = await this.pollTaskStatus(crewLeadUrl, taskId, timeout, options);
 
       return {
         success: true,
@@ -76,7 +98,25 @@ export class AgentRouter extends EventEmitter {
     }
   }
 
-  async pollTaskStatus(gatewayUrl, taskId, timeoutMs) {
+  getDispatchErrorHint(message, options = {}) {
+    const text = String(message || '').toLowerCase();
+    const hints = [];
+    if (text.includes('429') || text.includes('rate limit') || text.includes('too many requests')) {
+      hints.push('rate-limited upstream; retry with backoff or switch model');
+    }
+    if (text.includes('missing model') || text.includes('model required') || text.includes('--model')) {
+      hints.push('set an explicit model (e.g. --model anthropic/claude-3-5-sonnet)');
+    }
+    if (
+      (text.includes('exit code 1') || text.includes('code 1')) &&
+      (text.includes('cursor') || options.engine === 'cursor' || options.direct || options.bypass)
+    ) {
+      hints.push('Cursor CLI likely failed; verify cursor auth/env and pass --model explicitly');
+    }
+    return hints.length ? ` (hint: ${hints.join('; ')})` : '';
+  }
+
+  async pollTaskStatus(gatewayUrl, taskId, timeoutMs, options = {}) {
     const startTime = Date.now();
     const pollInterval = 2000; // 2 seconds
 
@@ -95,12 +135,18 @@ export class AgentRouter extends EventEmitter {
         }
 
         if (status.status === 'error') {
-          throw new Error(status.error || 'Task failed');
+          const baseError = status.error || status.result || 'Task failed';
+          const fatal = new Error(`${baseError}${this.getDispatchErrorHint(baseError, options)}`);
+          fatal.fatal = true;
+          throw fatal;
         }
 
         // Still pending, wait before polling again
         await new Promise(resolve => setTimeout(resolve, pollInterval));
       } catch (error) {
+        if (error && error.fatal) {
+          throw error;
+        }
         // Log but continue polling unless timeout
         if (Date.now() - startTime >= timeoutMs) {
           throw new Error(`Timeout waiting for ${taskId} (${timeoutMs}ms)`);

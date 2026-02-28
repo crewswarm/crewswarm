@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# User config and state (should not be in repo)
+.crewswarm/
+
 # Runtime logs & state
 orchestrator-logs/
 *.log
@@ -41,6 +44,9 @@ polymarket_ai_strat/
 
 # Legacy HTML shells
 crew-chat.html
+
+# Archive folder for orphaned/moved files
+../CrewSwarm-archive/
 
 # Personal / workspace scratchpad files — never commit these
 Modelfile

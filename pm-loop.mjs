@@ -94,6 +94,8 @@ async function searchWithBrave(query) {
 
 // Perplexity Sonar Pro — PM orchestrator model with real-time web search
 let _ocCfg = null;
+let _rosterCache = null; // Cache for buildActiveAgentRoster()
+
 function getOCConfig() {
   if (_ocCfg) return _ocCfg;
   const candidates = [
@@ -102,7 +104,11 @@ function getOCConfig() {
   for (const p of candidates) {
     try {
       const cfg = JSON.parse(readFileSync(p, "utf8"));
-      if (cfg && typeof cfg === "object") { _ocCfg = cfg; return _ocCfg; }
+      if (cfg && typeof cfg === "object") { 
+        _ocCfg = cfg;
+        _rosterCache = null; // Invalidate roster cache when config changes
+        return _ocCfg; 
+      }
     } catch {}
   }
   return {};
@@ -198,6 +204,9 @@ const ROLE_HINTS = {
  * Returns: { active: [{id, name, emoji, role, model}], nonDoers: Set<string> }
  */
 function buildActiveAgentRoster() {
+  // Return cached roster if available
+  if (_rosterCache) return _rosterCache;
+  
   const cfg = getOCConfig();
   const providers = { ...(cfg.models?.providers || {}), ...(cfg.providers || {}) };
   const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
@@ -249,7 +258,9 @@ function buildActiveAgentRoster() {
     active.push({ id: a.id, name, emoji, role, model: a.model });
   }
 
-  return { active, nonDoers };
+  // Cache the result
+  _rosterCache = { active, nonDoers };
+  return _rosterCache;
 }
 
 /**
@@ -409,7 +420,7 @@ async function clearPid() {
   await unlink(PID_FILE).catch(() => {});
 }
 // Clean up PID on any exit
-process.on("exit",    () => { try { require("node:fs").unlinkSync(PID_FILE); } catch {} });
+process.on("exit",    () => { try { unlinkSync(PID_FILE); } catch {} });
 process.on("SIGTERM", async () => { await clearPid(); process.exit(0); });
 process.on("SIGINT",  async () => { await clearPid(); process.exit(0); });
 
@@ -459,16 +470,36 @@ function nextPending(items) {
 async function markItem(lineIdx, status, agent = null) {
   const content = await readFile(ROADMAP_FILE, "utf8");
   const lines = content.split("\n");
+  
+  // CRITICAL: Re-parse to find the actual current line index
+  // The original lineIdx may be stale due to concurrent tasks or self-extend
+  const { items } = parseRoadmap(content);
+  const originalLine = lines[lineIdx];
+  
+  // Find the item by matching the text content (strip markers and timestamps)
+  const cleanOriginal = originalLine.replace(/^-\s+\[[ x!]\]\s+/, "").replace(/\s+[✓✗]\s+\d+:\d+:\d+.*$/g, "").trim();
+  const actualItem = items.find(it => {
+    const cleanItem = it.text.replace(/\s+[✓✗]\s+\d+:\d+:\d+.*$/g, "").trim();
+    return cleanItem === cleanOriginal && it.status !== "done"; // Don't re-mark already done items
+  });
+  
+  if (!actualItem) {
+    console.warn(`[markItem] Could not find item to mark: ${cleanOriginal.substring(0, 50)}...`);
+    return;
+  }
+  
+  const actualLineIdx = actualItem.lineIdx;
   const ts = new Date().toLocaleTimeString();
+  
   if (status === "done") {
     // Mark done — replace any [ ] or [!] marker
-    lines[lineIdx] = lines[lineIdx].replace(/\[[ !]\]/, "[x]");
-    lines[lineIdx] += `  ✓ ${ts}`;
-    if (agent) lines[lineIdx] += ` (${agent})`;
+    lines[actualLineIdx] = lines[actualLineIdx].replace(/\[[ !]\]/, "[x]");
+    lines[actualLineIdx] += `  ✓ ${ts}`;
+    if (agent) lines[actualLineIdx] += ` (${agent})`;
   } else {
     // Mark failed — keep [!] marker, append another ✗ timestamp for retry tracking
-    lines[lineIdx] = lines[lineIdx].replace(/\[ \]/, "[!]");
-    lines[lineIdx] += `  ✗ ${ts}`;
+    lines[actualLineIdx] = lines[actualLineIdx].replace(/\[ \]/, "[!]");
+    lines[actualLineIdx] += `  ✗ ${ts}`;
   }
   await writeFile(ROADMAP_FILE, lines.join("\n"), "utf8");
 }

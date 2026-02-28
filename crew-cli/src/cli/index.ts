@@ -99,6 +99,11 @@ export async function main(args = []) {
     .description('Chat with CrewSwarm (automatically routed to best agent)')
     .argument('<input...>', 'Message or question')
     .option('-p, --project <path>', 'Project directory')
+    .option('-g, --gateway <url>', 'Override gateway URL')
+    .option('-m, --model <id>', 'Model override for direct/bypass gateway paths')
+    .option('--engine <id>', 'Engine override for direct/bypass gateway paths (e.g. cursor)')
+    .option('--direct', 'Request direct execution path on gateway', false)
+    .option('--bypass', 'Request bypass/orchestrator-skip path on gateway', false)
     .option('--cross-repo', 'Inject sibling repository context', false)
     .option('--context-file <path>', 'Attach a file as additional context (repeatable)', collectOption, [])
     .option('--context-repo <path>', 'Attach git context from another repo (repeatable)', collectOption, [])
@@ -140,7 +145,12 @@ export async function main(args = []) {
           
           const result = await agentRouter.dispatch(agent, input, {
             project: projectDir,
-            sessionId: await sessionManager.getSessionId()
+            sessionId: await sessionManager.getSessionId(),
+            gateway: options.gateway,
+            model: options.model,
+            engine: options.engine,
+            direct: options.direct,
+            bypass: options.bypass
           });
 
           console.log(chalk.blue('\n--- Agent Response ---'));
@@ -166,8 +176,12 @@ export async function main(args = []) {
     .argument('<agent>', 'Agent name')
     .argument('<task>', 'Task description')
     .option('-p, --project <path>', 'Project directory')
+    .option('-g, --gateway <url>', 'Override gateway URL')
     .option('-t, --timeout <ms>', 'Timeout in milliseconds', '30000')
     .option('-m, --model <id>', 'Model ID for cost estimate', 'openai/gpt-4o-mini')
+    .option('--engine <id>', 'Engine override for direct/bypass gateway paths (e.g. cursor)')
+    .option('--direct', 'Request direct execution path on gateway', false)
+    .option('--bypass', 'Request bypass/orchestrator-skip path on gateway', false)
     .option('--output-tokens <count>', 'Expected completion tokens for estimate', '1200')
     .option('--max-cost <usd>', 'Require confirmation if estimate exceeds this USD amount', '1')
     .option('--skip-cost-check', 'Skip cost estimate confirmation gate', false)

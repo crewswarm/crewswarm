@@ -28,6 +28,12 @@ const get = (flag) => {
 };
 
 const PROJECT_DIR  = get("--project-dir") || process.env.PROJECT_DIR;
+
+if (!PROJECT_DIR) {
+  console.error("Usage: node ai-pm.mjs --project-dir /path/to/project");
+  process.exit(1);
+}
+
 const ROADMAP_FILE = path.join(PROJECT_DIR, "ROADMAP.md");
 const DRY_RUN      = args.includes("--dry-run");
 const MAX_ITEMS    = Number(get("--max-items") || "200");
@@ -35,11 +41,6 @@ const CREW_URL     = `http://127.0.0.1:${process.env.CREW_LEAD_PORT || 5010}`;
 const TASK_TIMEOUT   = Number(process.env.AI_PM_TASK_TIMEOUT_MS || "720000"); // 12 min
 const MAX_PARALLEL   = Number(process.env.AI_PM_PARALLEL || "3");            // concurrent agents
 const STOP_FILE      = path.join(os.homedir(), ".crewswarm", "ai-pm.stop");
-
-if (!PROJECT_DIR) {
-  console.error("Usage: node ai-pm.mjs --project-dir /path/to/project");
-  process.exit(1);
-}
 
 // ── Failure memory + agent self-improvement ───────────────────────────────────
 
@@ -159,7 +160,7 @@ Write 2-4 bullet points (starting with "- ") that should be APPENDED to this age
 
 // ── Healthcheck + bridge recovery ────────────────────────────────────────────
 
-const CREW_DIR = path.join(os.homedir(), "Desktop", "CrewSwarm");
+const CREW_DIR = process.env.CREWSWARM_DIR || path.dirname(new URL(import.meta.url).pathname);
 
 async function healthCheck(agentId) {
   // 1. crew-lead reachable?
@@ -204,12 +205,29 @@ async function healthCheck(agentId) {
 // ── Auth + config ─────────────────────────────────────────────────────────────
 
 function loadCrew() {
-  return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+  } catch (e) {
+    console.error(`ERROR: Cannot read ~/.crewswarm/crewswarm.json: ${e.message}`);
+    console.error("Run the dashboard first to initialize config: npm run dashboard");
+    process.exit(1);
+  }
 }
 
-const configJson = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
-const TOKEN = configJson.rt?.authToken;
-if (!TOKEN) { console.error("No auth token in config.json"); process.exit(1); }
+let configJson, TOKEN;
+try {
+  configJson = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
+  TOKEN = configJson.rt?.authToken;
+  if (!TOKEN) { 
+    console.error("ERROR: No auth token in ~/.crewswarm/config.json");
+    console.error("Run the dashboard first to generate auth token: npm run dashboard");
+    process.exit(1); 
+  }
+} catch (e) {
+  console.error(`ERROR: Cannot read ~/.crewswarm/config.json: ${e.message}`);
+  console.error("Run the dashboard first to initialize config: npm run dashboard");
+  process.exit(1);
+}
 
 // ── crew-lead API ─────────────────────────────────────────────────────────────
 
@@ -496,7 +514,8 @@ async function healthCheckAndRestart() {
   if (!ocAlive) {
     console.log(`     ❌ OpenCode server DOWN (port 4096) — restarting...`);
     try {
-      execSync(`pkill -f "opencode serve" 2>/dev/null; sleep 1; nohup opencode serve --port 4096 --hostname 127.0.0.1 >> /tmp/opencode-server.log 2>&1 &`, {
+      const logPath = path.join(os.tmpdir(), "opencode-server.log");
+      execSync(`pkill -f "opencode serve" 2>/dev/null; sleep 1; nohup opencode serve --port 4096 --hostname 127.0.0.1 >> ${logPath} 2>&1 &`, {
         timeout: 5000, shell: true,
       });
       await sleep(6000); // give OC time to come up
@@ -523,7 +542,8 @@ async function healthCheckAndRestart() {
   if (bridgeCount < 3) {
     console.log(`     🚀 Low bridge count (${bridgeCount}) — restarting crew daemons...`);
     try {
-      execSync(`pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null; sleep 1; node ${crewDir}/scripts/start-crew.mjs >> /tmp/crew-restart-ai-pm.log 2>&1 &`, {
+      const logPath = path.join(os.tmpdir(), "crew-restart-ai-pm.log");
+      execSync(`pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null; sleep 1; node ${crewDir}/scripts/start-crew.mjs >> ${logPath} 2>&1 &`, {
         timeout: 5000, shell: true,
       });
       await sleep(8000);
