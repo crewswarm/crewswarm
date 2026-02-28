@@ -405,10 +405,13 @@ async function handleEnginePassthrough(chatId, engine, message) {
   await tgSend(chatId, `${label} ⏳ _running..._`);
   setState(chatId, { lastPrompt: message, lastEngine: engine });
   try {
+    const activeProj = activeProjectByChatId.get(chatId);
+    const projectDir = activeProj?.path || undefined;
+    const sessionId = `telegram-${chatId}`;
     const res = await fetch(`${CREW_LEAD_URL}/api/engine-passthrough`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ engine, message }),
+      body: JSON.stringify({ engine, message, projectDir, sessionId }),
       signal: AbortSignal.timeout(300000), // 5 min
     });
     if (!res.ok) { await tgSend(chatId, `❌ ${label}: HTTP ${res.status}`); return; }
