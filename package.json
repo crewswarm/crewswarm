@@ -31,7 +31,8 @@
     "test:unit": "node --test test/unit/*.test.mjs",
     "test:integration": "node --test test/integration/*.test.mjs",
     "test": "node --test test/unit/*.test.mjs test/integration/*.test.mjs",
-    "test:all": "npm run health && npm run smoke && npm run test:mcp && npm run test:classifier"
+    "test:all": "node --test test/unit/*.test.mjs test/integration/*.test.mjs test/e2e/*.test.mjs",
+    "test:e2e": "node --test test/e2e/*.test.mjs"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
