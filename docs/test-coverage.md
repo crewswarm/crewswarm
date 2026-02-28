@@ -1,13 +1,13 @@
 # CrewSwarm — Test Coverage Report
 
 **Generated:** 2026-02-27  
-**Total tests:** 279  **Pass:** 279  **Fail:** 0
+**Total tests:** 408  **Pass:** 408  **Fail:** 0
 
 ---
 
 ## Test suites
 
-### Unit tests — `test/unit/` (14 files, 227 tests)
+### Unit tests — `test/unit/` (18 files, 376 tests)
 
 | File | Tests | What it covers |
 |---|---|---|
@@ -25,6 +25,10 @@
 | `stop-kill-signals.test.mjs` | 5 | `cancelAllPipelines` (count/map clear/SSE), stop regex + cancel integration, `@@KILL` double-clear, no-throw on missing pipeline, PM stop-file path determinism |
 | `telemetry-schema.test.mjs` | 13 | `TELEMETRY_SCHEMAS`, `ENVELOPE_REQUIRED`, `validateTelemetryEvent` — valid and invalid events for all three event types |
 | `wave-dispatcher.test.mjs` | 10 | `dispatchTask` (RT publish, ctl fallback, task normalization), `cancelAllPipelines`, `checkDispatchTimeouts` (stale/fresh), `savePipelineState`/`deletePipelineState`, `markDispatchClaimed` |
+| `bg-consciousness.test.mjs` | 36 | `getBgConsciousnessLLM` (provider lookup/baseUrl/multi-slash models), `parseDispatches`/`parseBrainLines` (extract @@DISPATCH/@@BRAIN), `isNoAction`, `shouldRunCycle` (enabled+interval+pipeline guards), stall detection (15-min threshold), agent timeout tracking + 3x pattern alerts, `getRateLimitFallback` static map |
+| `ouroboros-loop.test.mjs` | 45 | `parseStep` (DONE/STEP:/fallback/empty), `runOuroborosLoop` (DONE-on-first/single-step/multi-step/maxRounds-cap/engine-error-capture/empty-LLM/context-accumulation/progress-callbacks), `clampMaxRounds` (min 1 / max 20), `buildDecomposerSystem` |
+| `pm-synthesis.test.mjs` | 49 | `detectVerdict` (SHIP IT/DO NOT SHIP/NEEDS WORK), `hasDisconnects`, `shouldRunAssembly`, audit prompt structure, concurrency semaphore (slot limit/queue/release/rapid workers), `PHASED_TASK_TIMEOUT_MS`, `PM_MAX_CONCURRENT`, `PM_CODER_AGENT`, `PM_USE_SPECIALISTS` routing, `FINAL_REPORT.md` + `AUDIT_DONE` |
+| `env-vars-coverage.test.mjs` | 39 | All 12 new env vars: idle watchdog, max-total ceiling, PM subprocess idle, Gemini CLI enable/model, dispatch-claimed timeout, PM_USE_SPECIALISTS, PM_SELF_EXTEND, PM_EXTEND_EVERY, PM_CODER_AGENT, PM_MAX_CONCURRENT, PHASED_TASK_TIMEOUT_MS; watchdog logic; ordering invariants |
 
 ---
 
@@ -41,13 +45,14 @@
 
 ---
 
-### E2E tests — `test/e2e/` (1 file, 6 tests) — requires live services
+### E2E tests — `test/e2e/` (2 files, 16 tests) — requires live services
 
 | File | Tests | What it covers |
 |---|---|---|
 | `live-dispatch.test.mjs` | 6 | `GET /health` 200 OK; chat round-trip (PONG); dispatch to crew-copywriter; history persistence; agents online list; 2-agent wave pipeline end-to-end |
+| `telegram-roundtrip.test.mjs` | 10 | Bot API reachability (`getMe`), bot identity (is_bot), `sendMessage` delivery to owner chat, correct `chat_id` on reply, bridge process alive (PID file), bridge log has recent entries, log contains owner `chatId`, `getUpdates` response structure, crew-lead reachability, `telegram-messages.jsonl` records |
 
-Tests skip gracefully if crew-lead is not running on port 5010.
+Tests skip gracefully if crew-lead is not running or no `TELEGRAM_BOT_TOKEN` is configured.
 
 ---
 
