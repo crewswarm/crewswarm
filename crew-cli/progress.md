@@ -119,4 +119,20 @@ Date: 2026-02-28
     - `crew review --help` ✓
     - `crew headless run --help` ✓
     - `crew src batch-plan --query \"TODO\"` ✓
-    - `crew dispatch ... --max-context-tokens ... --context-budget-mode stop` budget failure path ✓
+  - `crew dispatch ... --max-context-tokens ... --context-budget-mode stop` budget failure path ✓
+
+## Full QA Audit Pass — 2026-02-28
+
+- Added full-audit CI workflow:
+  - `.github/workflows/full-audit.yml`
+  - runs on push/PR + manual dispatch
+- Added repository-wide QA gates:
+  - `npm run test:coverage` (Node test runner coverage report)
+  - `npm run qa:inventory` (ensures every `src/` file is covered by build graph and/or tests)
+  - `npm run qa:smoke` (CLI command contract checks, including expected non-zero failure paths)
+  - `npm run qa:full` (build + coverage + inventory + smoke)
+- Added QA tooling:
+  - `tools/qa-file-inventory.mjs`
+  - `tools/qa-command-smoke.mjs`
+- Verified locally:
+  - `npm run qa:full` ✓

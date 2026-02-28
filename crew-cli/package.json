@@ -11,6 +11,10 @@
     "start": "node bin/crew.js",
     "build": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --target=node20 --sourcemap --outfile=dist/crew.mjs --packages=external",
     "test": "node --import tsx --test tests/*.test.js",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage tests/*.test.js",
+    "qa:inventory": "node tools/qa-file-inventory.mjs",
+    "qa:smoke": "node tools/qa-command-smoke.mjs",
+    "qa:full": "npm run build && npm run test:coverage && npm run qa:inventory && npm run qa:smoke",
     "check": "npm run build && node --check dist/crew.mjs",
     "doctor": "node bin/crew.js doctor"
   },
