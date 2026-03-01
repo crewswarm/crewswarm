@@ -110,6 +110,7 @@ Latest local QA pass (2026-03-01):
 - [BENCHMARK-RESULTS.md](docs/BENCHMARK-RESULTS.md) - 📊 Performance metrics
 - [API.md](docs/API.md)
 - [API-UNIFIED-v1.md](docs/API-UNIFIED-v1.md) - Unified dashboard/CLI/headless contract
+- [MCP-CLI-INTEGRATION.md](docs/MCP-CLI-INTEGRATION.md) - Codex/Cursor/Claude MCP setup + CLI boundary
 - [openapi.unified.v1.json](docs/openapi.unified.v1.json) - OpenAPI spec for unified endpoints
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 - [CONTRIBUTING.md](docs/CONTRIBUTING.md)
