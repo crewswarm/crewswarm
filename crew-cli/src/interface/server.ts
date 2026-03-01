@@ -8,10 +8,11 @@ import type { Orchestrator } from '../orchestrator/index.js';
 import type { Sandbox } from '../sandbox/index.js';
 import type { SessionManager } from '../session/manager.js';
 import { buildCollectionIndex, searchCollection } from '../collections/index.js';
+import { handleMcpRequest } from './mcp-handler.js';
 
 type InterfaceMode = 'connected' | 'standalone';
 
-interface UnifiedServerOptions {
+export interface UnifiedServerOptions {
   mode: InterfaceMode;
   host: string;
   port: number;
@@ -42,6 +43,13 @@ let latestIndexId = '';
 interface OpenAIMessage {
   role?: string;
   content?: string | Array<{ type?: string; text?: string }>;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: Array<{
+    id?: string;
+    type?: string;
+    function?: { name?: string; arguments?: string };
+  }>;
 }
 
 function readRtToken(): string {
@@ -120,6 +128,13 @@ function composeChatPayloadFromOpenAI(messages: unknown): {
   const contextSections: string[] = [];
   if (system.length > 0) contextSections.push(`SYSTEM INSTRUCTIONS:\n${system.join('\n\n')}`);
   if (historyTail.length > 0) contextSections.push(`RECENT CONTEXT:\n${historyTail.join('\n\n')}`);
+  const toolResults = normalized
+    .filter(m => m.role === 'tool')
+    .map(m => m.text)
+    .filter(Boolean);
+  if (toolResults.length > 0) {
+    contextSections.push(`TOOL RESULTS:\n${toolResults.join('\n\n')}`);
+  }
   const context = contextSections.join('\n\n');
   const inputChars = normalized.reduce((sum, m) => sum + m.text.length, 0);
   return {
@@ -127,6 +142,97 @@ function composeChatPayloadFromOpenAI(messages: unknown): {
     context,
     inputChars
   };
+}
+
+function buildToolCallResponse(params: {
+  model: string;
+  stream: boolean;
+  toolName: string;
+  message: string;
+}): { status: number; data: any } {
+  const completionId = `chatcmpl-${randomUUID()}`;
+  const created = Math.floor(Date.now() / 1000);
+  const toolCallId = `call_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+  const toolCall = {
+    id: toolCallId,
+    type: 'function',
+    function: {
+      name: params.toolName,
+      arguments: JSON.stringify({ task: params.message })
+    }
+  };
+  if (params.stream) {
+    return {
+      status: 200,
+      data: {
+        _sse: true,
+        model: params.model,
+        chunks: [
+          {
+            id: completionId,
+            object: 'chat.completion.chunk',
+            created,
+            model: params.model,
+            choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [toolCall] }, finish_reason: null }]
+          },
+          {
+            id: completionId,
+            object: 'chat.completion.chunk',
+            created,
+            model: params.model,
+            choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }]
+          }
+        ]
+      }
+    };
+  }
+  return {
+    status: 200,
+    data: {
+      id: completionId,
+      object: 'chat.completion',
+      created,
+      model: params.model,
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [toolCall]
+          },
+          finish_reason: 'tool_calls'
+        }
+      ],
+      usage: {
+        prompt_tokens: Math.ceil(params.message.length / 4),
+        completion_tokens: 1,
+        total_tokens: Math.ceil(params.message.length / 4) + 1
+      }
+    }
+  };
+}
+
+function selectToolCallName(body: any, userMessage: string): string | null {
+  const tools = Array.isArray(body?.tools) ? body.tools : [];
+  if (tools.length === 0) return null;
+  const names = tools
+    .map((t: any) => String(t?.function?.name || '').trim())
+    .filter(Boolean);
+  if (names.length === 0) return null;
+
+  const choice = body?.tool_choice;
+  if (choice === 'none') return null;
+  if (choice && typeof choice === 'object') {
+    const forced = String(choice?.function?.name || '').trim();
+    if (forced && names.includes(forced)) return forced;
+  }
+  if (choice === 'required') return names[0];
+  if (choice && choice !== 'auto') return null;
+
+  const lower = userMessage.toLowerCase();
+  const likelyAction = /\b(build|implement|write|create|edit|refactor|fix|change|update|run|test|analyze)\b/.test(lower);
+  return likelyAction ? names[0] : null;
 }
 
 async function forwardJson(
@@ -233,6 +339,16 @@ async function handleOpenAIChatCompletions(options: UnifiedServerOptions, body: 
       status: 400,
       data: { error: { message: 'No user message found', type: 'invalid_request_error' } }
     };
+  }
+
+  const selectedTool = selectToolCallName(body, composed.message);
+  if (selectedTool) {
+    return buildToolCallResponse({
+      model,
+      stream,
+      toolName: selectedTool,
+      message: composed.message
+    });
   }
 
   const chatBody = {
@@ -559,6 +675,24 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
           snippet: h.text
         }));
         return json(res, 200, { hits });
+      }
+
+      // MCP endpoint
+      if (req.method === 'POST' && path === '/mcp') {
+        const body = await readJson(req);
+        const mcpResponse = await handleMcpRequest(options, body);
+        return json(res, 200, mcpResponse);
+      }
+
+      // MCP health check  
+      if (req.method === 'GET' && path === '/mcp/health') {
+        return json(res, 200, {
+          ok: true,
+          server: 'crew-cli-mcp',
+          mode: options.mode,
+          version: '1.0.0',
+          tools: 8
+        });
       }
 
       return json(res, 404, { error: 'not found' });
