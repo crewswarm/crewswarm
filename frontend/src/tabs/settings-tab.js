@@ -6,6 +6,8 @@
 
 import { getJSON, postJSON } from '../core/api.js';
 import { escHtml, showNotification } from '../core/dom.js';
+import { state } from '../core/state.js';
+import { setStoredChatProjectId, updateChatProjectHint } from './projects-tab.js';
 
 let _getModels = null;
 let _populateModelDropdown = null;
@@ -81,6 +83,10 @@ export async function loadOpencodeProject() {
     }
     const fbSt = document.getElementById('opencodeFallbackStatus');
     if (fbSt) fbSt.textContent = d.fallbackModel ? ('✅ Fallback: ' + d.fallbackModel) : '⚠️ Using default groq/kimi-k2-instruct-0905';
+    
+    // Load crew-lead model
+    const clSel = document.getElementById('crewLeadModelSelect');
+    if (clSel && d.crewLeadModel) clSel.value = d.crewLeadModel;
   } catch {}
 }
 
@@ -91,7 +97,34 @@ export async function saveOpencodeSettings() {
     await postJSON('/api/settings/opencode-project', { dir: dir || undefined, fallbackModel: fallbackModel || undefined });
     showNotification('OpenCode settings saved — fallback takes effect on next task (no restart needed)');
     loadOpencodeProject();
+    
+    // Sync to chat project dropdown if this directory matches a registered project
+    if (dir && state.projectsData) {
+      const matchingProj = Object.values(state.projectsData).find(p => p.outputDir === dir);
+      if (matchingProj) {
+        state.chatActiveProjectId = matchingProj.id;
+        setStoredChatProjectId(matchingProj.id);
+        const sel = document.getElementById('chatProjectSelect');
+        if (sel) sel.value = matchingProj.id;
+        updateChatProjectHint();
+      }
+    }
   } catch(e) { showNotification('Save failed: ' + e.message, 'error'); }
+}
+
+export async function saveCrewLeadModel() {
+  const sel = document.getElementById('crewLeadModelSelect');
+  const crewLeadModel = (sel?.value || '').trim();
+  const st = document.getElementById('crewLeadModelStatus');
+  try {
+    await postJSON('/api/settings/opencode-project', { crewLeadModel: crewLeadModel || undefined });
+    if (st) { st.textContent = '✓ Saved'; st.style.color = 'var(--green-hi)'; }
+    showNotification(crewLeadModel ? `Crew lead model → ${crewLeadModel}` : 'Crew lead model reset to default');
+    setTimeout(() => { if (st) st.textContent = ''; }, 3000);
+  } catch(e) {
+    if (st) { st.textContent = 'Error: ' + e.message; st.style.color = 'var(--red)'; }
+    showNotification('Save failed: ' + e.message, 'error');
+  }
 }
 
 export async function loadBgConsciousness() {

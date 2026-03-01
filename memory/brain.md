@@ -25,6 +25,73 @@ Read it to avoid repeating mistakes. Write to it when you learn something durabl
 - Time decay: YES/NO prices compress toward terminal value as resolution nears — trade this intentionally
 - Resolution risk: always read the exact resolution criteria before buying — ambiguity is a trap
 
+## [2026-02-28] system: Grok/xAI integration — advanced capabilities
+
+**Provider:** xAI (https://console.x.ai/) — base URL `https://api.x.ai/v1` (OpenAI-compatible)
+
+**Models:**
+- `xai/grok-beta` — 128K context, real-time X/Twitter access, function calling
+- `xai/grok-vision-beta` — multimodal (text + images), 128K context
+- `xai/grok-3-mini` — fast coordinator, confirmed working (see model roster above)
+- `xai/grok-3` — full model (replaced by deepseek-chat for cost efficiency in most roles)
+
+**Unique capabilities vs other providers:**
+1. **Real-time X/Twitter integration** — Grok can search and retrieve live tweets, trends, and social conversations. No other LLM has this natively.
+2. **Vision** — grok-vision-beta analyzes images (JPEG, PNG, WebP, GIF up to 20MB). Competitive with GPT-4V and Claude 4 Vision.
+3. **128K context** — larger than most providers (Groq: 32K, Mistral: 32K, Cerebras: 8K). Same as Claude/GPT-4.
+4. **Function calling** — OpenAI-compatible tool use (not yet exposed in CrewSwarm skills, but supported by the API).
+
+**New skills (2026-02-28):**
+1. **grok.x-search** — Search Twitter/X in real-time. Returns tweet summaries, author mentions, trending context.
+   - Aliases: `x-search`, `twitter-search`, `grok-search`
+   - No approval required (read-only)
+   - 30s timeout
+   - Example: `@@SKILL grok.x-search {"query": "What are developers saying about Cursor AI this week?"}`
+
+2. **grok.vision** — Analyze images with Grok Vision.
+   - Aliases: `grok-vision`, `vision`, `image-analysis`
+   - Supports: JPEG, PNG, WebP, GIF (non-animated), max 20MB
+   - No approval required
+   - 45s timeout
+   - Example: `@@SKILL grok.vision {"image_url": "https://example.com/ui-screenshot.png", "prompt": "Is this UI accessible? Check contrast ratios."}`
+
+**When to use Grok over other models:**
+- **crew-researcher + grok.x-search:** Track competitor launches, product sentiment, trending topics on X
+- **crew-copywriter + grok.x-search:** Research viral tweet patterns, hashtag performance for content strategy
+- **crew-qa + grok.vision:** Automated UI screenshot testing, visual regression detection
+- **crew-security + grok.vision:** Analyze phishing images, suspicious documents, identity verification
+- **crew-pm + grok.x-search:** Gather user feedback and feature requests from social media
+- **crew-seo + grok.x-search:** Monitor brand mentions, backlink opportunities, influencer reach
+
+**Cost comparison (as of 2026-02-28):**
+- grok-beta: ~$5/M input, ~$15/M output (mid-tier pricing, justified by X access)
+- grok-vision-beta: ~$10/M input, ~$30/M output (image tokens cost more)
+- Alternative for pure text: deepseek-chat ($0.27/$1.10) or groq/llama-3.3-70b (free tier)
+- Alternative for vision: OpenAI GPT-4V or Claude 4 Vision (similar pricing, no X access)
+
+**Configuration example:**
+```json
+// ~/.crewswarm/crewswarm.json
+{
+  "providers": {
+    "xai": {
+      "apiKey": "xai-..."
+    }
+  },
+  "agents": [
+    {
+      "id": "crew-researcher",
+      "model": "xai/grok-beta",
+      "tools": {
+        "crewswarmAllow": ["read_file", "write_file", "skill"]
+      }
+    }
+  ]
+}
+```
+
+**Skills are auto-discovered** from `~/.crewswarm/skills/*.json` — no agent config changes needed to use grok.x-search or grok.vision.
+
 ## [2026-02-27] system: crew-lead chat history architecture (current)
 
 - **Disk storage:** `~/.crewswarm/chat-history/<sessionId>.jsonl` — stores up to 2000 messages per session, indefinitely across browser sessions
@@ -87,6 +154,8 @@ Read it to avoid repeating mistakes. Write to it when you learn something durabl
 - ANALYST (qa/security/mega): deepseek/deepseek-chat
 - SIMPLE (github/copywriter/telegram/seo): groq/llama-3.3-70b-versatile
 - RESEARCHER: perplexity/sonar
+- **SOCIAL_INTEL (new):** xai/grok-beta with grok.x-search skill — real-time Twitter/X monitoring, trend analysis, sentiment tracking
+- **VISION (new):** xai/grok-vision-beta — image analysis, UI testing, document OCR, accessibility audits
 
 **Battle-tested crew-lead models (2026-02-26, live user validation):**
 - `xai/grok-3-mini` ✅ — fast, reliable coordinator, great for conversational routing
@@ -218,3 +287,5 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 - Always verify with `wc -l gateway-bridge.mjs` — should be ~5000+ lines.
 
 ## [2026-02-28] crew-main: crew-main: The recent shared memory update indicates a successful deployment of the new coding standards and guidelines.
+
+## [2026-03-01] crew-lead: crew-lead (auto): **Never store secrets in code** - use environment variables 2

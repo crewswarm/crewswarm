@@ -20,7 +20,7 @@ export interface RecordOptions {
 }
 
 export interface TranscribeOptions {
-  provider?: 'auto' | 'openai' | 'whisper-cli';
+  provider?: 'auto' | 'openai' | 'groq' | 'whisper-cli';
 }
 
 async function commandExists(command: string): Promise<boolean> {
@@ -145,14 +145,49 @@ export async function transcribeWithOpenAi(audioPath: string): Promise<string> {
   return String(data.text || '').trim();
 }
 
-export async function transcribeWithWhisperCli(audioPath: string): Promise<string> {
-  if (!(await commandExists('whisper'))) {
-    throw new Error('Local whisper CLI is not installed.');
+export async function transcribeWithGroq(audioPath: string): Promise<string> {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) {
+    throw new Error('GROQ_API_KEY is required for Groq Whisper transcription.');
   }
 
+  const audioBuffer = await readFile(audioPath);
+  const blob = new Blob([audioBuffer], { type: 'audio/wav' });
+  const form = new FormData();
+  form.append('model', 'whisper-large-v3-turbo');
+  form.append('file', blob, 'audio.wav');
+  form.append('response_format', 'json');
+
+  const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}` },
+    body: form
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Groq Whisper API failed (${response.status}): ${body.slice(0, 400)}`);
+  }
+  const data = await response.json() as any;
+  return String(data.text || '').trim();
+}
+
+export async function transcribeWithWhisperCli(audioPath: string): Promise<string> {
+  // Check for faster-whisper first (4x faster, same API as whisper)
+  const hasFasterWhisper = await commandExists('faster-whisper');
+  const hasWhisper = await commandExists('whisper');
+  
+  if (!hasFasterWhisper && !hasWhisper) {
+    throw new Error('Local whisper CLI is not installed. Install with: pip install faster-whisper');
+  }
+
+  const whisperCmd = hasFasterWhisper ? 'faster-whisper' : 'whisper';
   const outDir = join(tmpdir(), `crew-whisper-${Date.now()}`);
   await execFileAsync('mkdir', ['-p', outDir]);
-  await execFileAsync('whisper', [audioPath, '--model', 'base', '--output_format', 'txt', '--output_dir', outDir], {
+  
+  // Use tiny model for speed (base for quality)
+  const model = hasFasterWhisper ? 'tiny' : 'base';
+  
+  await execFileAsync(whisperCmd, [audioPath, '--model', model, '--output_format', 'txt', '--output_dir', outDir], {
     maxBuffer: 1024 * 1024 * 16
   });
   const baseName = audioPath.split('/').pop()?.replace(/\.[^.]+$/, '') || 'audio';
@@ -167,16 +202,26 @@ export async function transcribeAudio(audioPath: string, options: TranscribeOpti
   if (provider === 'openai') {
     return transcribeWithOpenAi(audioPath);
   }
+  if (provider === 'groq') {
+    return transcribeWithGroq(audioPath);
+  }
   if (provider === 'whisper-cli') {
     return transcribeWithWhisperCli(audioPath);
   }
 
-  // auto
+  // auto: try Groq first (fastest + cheapest), then OpenAI, then local CLI
+  if (process.env.GROQ_API_KEY) {
+    try {
+      return await transcribeWithGroq(audioPath);
+    } catch {
+      // fallback to next option
+    }
+  }
   if (process.env.OPENAI_API_KEY) {
     try {
       return await transcribeWithOpenAi(audioPath);
     } catch {
-      // fallback
+      // fallback to local
     }
   }
   return transcribeWithWhisperCli(audioPath);

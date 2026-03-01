@@ -2,6 +2,7 @@ import { getJSON, postJSON } from './core/api.js';
 import { escHtml, showNotification, fmt, createdAt, appendChatBubble, showLoading, showEmpty, showError, renderStatusBadge } from './core/dom.js';
 import { sortAgents, state } from './core/state.js';
 import { initActiveTasksPanel } from './components/active-tasks-panel.js';
+import { startOrchestrationStatusUpdates } from './orchestration-status.js';
 import { showBenchmarks as showBenchmarksTab, loadBenchmarks, loadBenchmarkLeaderboard, loadBenchmarkTasks, onBenchmarkTaskSelect, runBenchmarkTask, stopBenchmarkRun } from './tabs/benchmarks-tab.js';
 import {
   initServicesTab,
@@ -262,6 +263,9 @@ async function showChat(){
   const mb = document.querySelector('.msg-bar');
   if (mb) mb.style.display = 'none';
   
+  // Start orchestration status updates
+  startOrchestrationStatusUpdates();
+  
   // Refresh project dropdown to ensure it's up-to-date
   try {
     const data = await getJSON('/api/projects');
@@ -280,7 +284,8 @@ async function showChat(){
   startAgentReplyListener();
   loadCrewLeadInfo();
   await loadChatHistory();
-  restorePassthroughLog();
+  // Note: loadChatHistory() now handles both crew-lead history AND passthrough logs
+  // restorePassthroughLog(); // REMOVED: redundant, causes duplicate loading
 }
 function showFiles(){
   hideAllViews();

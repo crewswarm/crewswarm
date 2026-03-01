@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
 import { Logger } from '../utils/logger.js';
 import { getProjectContext } from '../context/git.js';
+import { CLI_SYSTEM_PROMPT } from './prompt.js';
+import { readFileSync } from 'node:fs';
 
 export class AgentRouter extends EventEmitter {
   constructor(config, toolManager) {
@@ -23,10 +25,35 @@ export class AgentRouter extends EventEmitter {
     const projectDir = options.project || process.cwd();
 
     try {
-      const context = options.injectGitContext === false
+      const gitContext = options.injectGitContext === false
         ? ''
         : await getProjectContext(projectDir);
-      const taskWithContext = context ? `${task}\n\n${context}` : task;
+      
+      // Inject CLI identity and instructions as system preamble
+      const preamble = options.skipPreamble ? '' : CLI_SYSTEM_PROMPT;
+      const taskWithContext = [
+        preamble,
+        '--- USER REQUEST ---',
+        task,
+        '--- REPO CONTEXT ---',
+        gitContext
+      ].filter(Boolean).join('\n\n');
+
+      // Process images if any
+      const imagesData = [];
+      if (options.images && Array.isArray(options.images)) {
+        for (const imgPath of options.images) {
+          try {
+            const data = readFileSync(imgPath);
+            const base64 = data.toString('base64');
+            const ext = imgPath.split('.').pop().toLowerCase();
+            const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+            imagesData.push({ data: base64, mimeType });
+          } catch (err) {
+            this.logger.warn(`Could not read image ${imgPath}: ${err.message}`);
+          }
+        }
+      }
 
       // Dispatch to CrewSwarm gateway
       const runtime = this.mapEngineToRuntime(options.engine);
@@ -35,6 +62,7 @@ export class AgentRouter extends EventEmitter {
         task: taskWithContext,
         sessionId: options.sessionId || 'crew-cli',
         projectDir,
+        images: imagesData.length > 0 ? imagesData : undefined,
         // Forward optional execution controls for gateway direct/bypass paths.
         model: options.model,
         engine: options.engine,

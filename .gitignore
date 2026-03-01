@@ -125,3 +125,5 @@ Thumbs.db
 !.cursor/mcp.json
 *.swp
 *.swo
+.env
+.env

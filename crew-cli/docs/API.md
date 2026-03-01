@@ -1,6 +1,18 @@
 # Programmatic API
 
+## Unified Endpoint Contract (Recommended)
+
+For dashboard, standalone CLI adapter, and headless integrations, use the versioned OpenAPI spec:
+
+- `docs/openapi.unified.v1.json`
+
+This keeps `connected` and `standalone` modes on the same API envelope.
+
 While `crew-cli` is primarily designed as a command-line tool, its core components are exported as TypeScript modules and can be used programmatically in Node.js applications.
+
+For interface-level API contracts (dashboard-first + standalone/headless), see:
+
+- [API-UNIFIED-v1.md](API-UNIFIED-v1.md)
 
 ## Installation
 

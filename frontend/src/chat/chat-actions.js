@@ -46,22 +46,22 @@ export function initChatActions(deps) {
     try {
       const d = await getJSON('/api/crew-lead/history?sessionId=' + encodeURIComponent(getChatSessionId()));
       const box = document.getElementById('chatMessages');
-      if (!d.history || !d.history.length) {
-        // No crew-lead history - just restore passthrough logs if any exist
-        return;
-      }
       
-      // Only clear and reload if we have history to show
+      // Clear and reset state
       box.innerHTML = '';
       setLastAppendedAssistantContent('');
       setLastAppendedUserContent('');
-      d.history.forEach((h) => {
-        appendChatBubble(h.role === 'user' ? 'user' : 'assistant', h.content);
-        if (h.role === 'assistant') setLastAppendedAssistantContent(h.content);
-        if (h.role === 'user') setLastAppendedUserContent(h.content);
-      });
       
-      // After loading crew-lead history, append any passthrough logs on top
+      // Load crew-lead history if available
+      if (d.history && d.history.length) {
+        d.history.forEach((h) => {
+          appendChatBubble(h.role === 'user' ? 'user' : 'assistant', h.content);
+          if (h.role === 'assistant') setLastAppendedAssistantContent(h.content);
+          if (h.role === 'user') setLastAppendedUserContent(h.content);
+        });
+      }
+      
+      // Always append passthrough logs (CLI interactions) after crew-lead history
       const passthroughLog = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
       if (passthroughLog.length > 0) {
         appendPassthroughLogsToChat(passthroughLog);
@@ -310,6 +310,7 @@ export function initChatActions(deps) {
   let _passthroughAbort = null;
 
   // Update the session indicator badge — shows green dot when a session exists for current engine+project
+  // Backend keys: engine:projectDir:sessionScope (e.g. gemini:/path/to/crew-cli:owner)
   async function refreshSessionIndicator() {
     const indicator = document.getElementById('passthroughSessionIndicator');
     if (!indicator) return;
@@ -318,12 +319,14 @@ export function initChatActions(deps) {
     const activeProjectId = getChatActiveProjectId();
     const activeProj = activeProjectId && state.projectsData[activeProjectId];
     const projectDir = activeProj?.outputDir || null;
+    const sessionScope = getChatSessionId() || 'owner';
     try {
       const data = await getJSON('/api/passthrough-sessions');
       const sessions = data.sessions || {};
-      // Gemini keyed by gemini:<dir>, Codex by codex:<dir> (truthy = has session)
-      const key = projectDir ? `${engine}:${projectDir}` : null;
-      const hasSession = key && sessions[key];
+      // Backend uses engine:projectDir:sessionScope; when no project, backend falls back to config/cwd
+      const key = projectDir ? `${engine}:${projectDir}:${sessionScope}` : null;
+      // Also check legacy key format (engine:projectDir) for backward compat
+      const hasSession = key && (sessions[key] || sessions[`${engine}:${projectDir}`]);
       indicator.style.display = hasSession ? 'inline-block' : 'none';
       indicator.title = hasSession
         ? `Session active for ${activeProj?.name || projectDir?.split('/').pop() || 'this project'} — click to clear`
@@ -338,9 +341,13 @@ export function initChatActions(deps) {
     const activeProj = activeProjectId && state.projectsData[activeProjectId];
     const projectDir = activeProj?.outputDir || null;
     if (!projectDir) return;
-    const key = `${engine}:${projectDir}`;
+    const sessionScope = getChatSessionId() || 'owner';
+    const key = `${engine}:${projectDir}:${sessionScope}`;
+    const legacyKey = `${engine}:${projectDir}`;
     try {
+      // Try full key first (backend format), then legacy
       await fetch(`/api/passthrough-sessions?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+      await fetch(`/api/passthrough-sessions?key=${encodeURIComponent(legacyKey)}`, { method: 'DELETE' });
       showNotification('Session cleared — next message starts fresh');
       refreshSessionIndicator();
     } catch (e) { showNotification('Failed: ' + e.message, true); }
@@ -423,6 +430,7 @@ export function initChatActions(deps) {
       const injectHistory = document.getElementById('passthroughInjectHistory')?.checked || false;
       const payload = { engine, message: text };
       if (projectDir) payload.projectDir = projectDir;
+      payload.sessionId = getChatSessionId(); // Add session ID for proper isolation
       if (injectHistory) payload.injectHistory = true;
       if (selectedModel) payload.model = selectedModel;
       const resp = await fetch('/api/engine-passthrough', {

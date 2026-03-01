@@ -11,6 +11,8 @@ import { Sandbox } from '../sandbox/index.js';
 import { Orchestrator } from '../orchestrator/index.js';
 import { TokenFinder } from '../auth/token-finder.js';
 import { Planner } from '../planner/index.js';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import {
   compareVersions,
   getInstalledCliVersion,
@@ -23,19 +25,40 @@ import { compareModelCosts, estimateCost, getCheapestAlternative } from '../cost
 import { CorrectionStore } from '../learning/corrections.js';
 import { runEngine } from '../engines/index.js';
 import { startWatchMode } from '../watch/index.js';
+import { getBanner } from '../hello/index.js';
 import { collectMultiRepoContext, detectBreakingApiSignals, findSiblingRepos, getRepoSummary, syncRepoSnapshots } from '../multirepo/index.js';
 import { runCiFixLoop } from '../ci/index.js';
 import { compareScreenshots, runBrowserDebug } from '../browser/index.js';
 import { downloadTeamContext, getTeamSyncStatus, loadPrivacyControls, savePrivacyControls, uploadTeamContext } from '../team/index.js';
 import { appendVoiceTranscript, recordAudio, speakWithSkill, transcribeAudio } from '../voice/listener.js';
-import { buildFileContextBlock, buildRepoContextBlock, collectOption, enforceContextBudget, mergeTaskWithContext, readStdinText } from '../context/augment.js';
+import { buildFileContextBlock, buildImageContextBlock, buildRepoContextBlock, collectOption, enforceContextBudget, mergeTaskWithContext, readStdinText } from '../context/augment.js';
 import { detectHighSeverityFindings, getReviewPayload } from '../review/index.js';
 import { addMcpServer, doctorMcpServers, listMcpServers, removeMcpServer } from '../mcp/index.js';
 import { getHeadlessState, runHeadlessTask, setHeadlessPaused } from '../headless/index.js';
+import { startUnifiedServer } from '../interface/server.js';
 import { createSrcBatchPlan, runSrcCli } from '../sourcegraph/index.js';
 import { getProjectContext } from '../context/git.js';
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { startRepl } from '../repl/index.js';
+import { startTui } from '../tui/index.js';
+import { TokenCache } from '../cache/token-cache.js';
+import { analyzeBlastRadius, isSeverityAtLeast } from '../blast-radius/index.js';
+import { AgentKeeper } from '../memory/agentkeeper.js';
+import { CheckpointStore } from '../checkpoint/store.js';
+import { scorePatchRisk } from '../risk/score.js';
+import { runXSearch } from '../xai/search.js';
+import { getNestedValue, loadResolvedRepoConfig, readRepoConfig, redactRepoConfigForDisplay, setRepoConfigValue } from '../config/repo-config.js';
+import { commandToShell, describeIntent, executeGitHubIntent, parseGitHubIntent, requiresConfirmation, runGitHubDoctor, buildGitHubCommand } from '../github/nl.js';
+import { loadModelPolicy } from '../config/model-policy.js';
+import { AutoFixStore, type AutoFixApplyPolicy, type AutoFixJobStatus } from '../autofix/store.js';
+import { runAutoFixJob } from '../autofix/runner.js';
+import { runAutoFixJob } from '../autofix/runner.js';
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { execSync } from 'node:child_process';
+
 
 const program = new Command();
 
@@ -61,7 +84,256 @@ function parseHeadlessShortcutArgs(args: string[]) {
   };
 }
 
+function extractValidationSignals(result: any, requireValidation: boolean) {
+  if (!requireValidation) {
+    return {
+      required: false,
+      passed: true,
+      lintPassed: undefined as boolean | undefined,
+      testsPassed: undefined as boolean | undefined,
+      notes: ''
+    };
+  }
+
+  const candidates = [
+    result?.validation,
+    result?.metadata?.validation,
+    result?.meta?.validation
+  ].filter(Boolean);
+  const merged = Object.assign({}, ...candidates);
+
+  let lintPassed: boolean | undefined;
+  let testsPassed: boolean | undefined;
+  const hasLint = typeof merged?.lintPassed === 'boolean' || typeof result?.lintPassed === 'boolean';
+  const hasTests = typeof merged?.testsPassed === 'boolean' || typeof result?.testsPassed === 'boolean';
+  if (hasLint) lintPassed = Boolean(merged?.lintPassed ?? result?.lintPassed);
+  if (hasTests) testsPassed = Boolean(merged?.testsPassed ?? result?.testsPassed);
+
+  let explicitPass: boolean | undefined;
+  if (typeof merged?.passed === 'boolean') explicitPass = merged.passed;
+  else if (typeof merged?.ok === 'boolean') explicitPass = merged.ok;
+  else if (typeof merged?.success === 'boolean') explicitPass = merged.success;
+
+  if (explicitPass === undefined && !hasLint && !hasTests) {
+    const text = String(result?.result || '').toLowerCase();
+    if (/\btests?\s+(all\s+)?passed\b/.test(text)) testsPassed = true;
+    if (/\b(?:lint|eslint|typecheck|type-check)\s+passed\b/.test(text)) lintPassed = true;
+    if (/\btests?\s+failed\b/.test(text)) testsPassed = false;
+    if (/\b(?:lint|eslint|typecheck|type-check)\s+failed\b/.test(text)) lintPassed = false;
+  }
+
+  const anySignal = explicitPass !== undefined || lintPassed !== undefined || testsPassed !== undefined;
+  const checks: boolean[] = [];
+  if (explicitPass !== undefined) checks.push(explicitPass);
+  if (lintPassed !== undefined) checks.push(lintPassed);
+  if (testsPassed !== undefined) checks.push(testsPassed);
+  const passed = anySignal && checks.every(Boolean);
+  const notes = passed
+    ? 'validation-signals-present'
+    : anySignal
+      ? 'validation-failed'
+      : 'validation-signals-missing';
+
+  return {
+    required: true,
+    passed,
+    lintPassed,
+    testsPassed,
+    notes
+  };
+}
+
+function shouldRetryWithFallback(error: unknown): boolean {
+  const text = String((error as Error)?.message || '').toLowerCase();
+  return (
+    text.includes('rate limit') ||
+    text.includes('429') ||
+    text.includes('timeout') ||
+    text.includes('empty') ||
+    text.includes('temporar') ||
+    text.includes('unavailable') ||
+    text.includes('quota')
+  );
+}
+
+async function runValidationCommands(commands: string[] = [], cwd = process.cwd()) {
+  if (!Array.isArray(commands) || commands.length === 0) {
+    return { passed: true, failedCommand: '', output: '' };
+  }
+  for (const cmd of commands) {
+    try {
+      const out = execSync(cmd, {
+        cwd,
+        stdio: 'pipe',
+        encoding: 'utf8',
+        maxBuffer: 2 * 1024 * 1024
+      });
+      if (String(out || '').trim().length > 0) {
+        // keep deterministic side-effect free behavior, no streaming here.
+      }
+    } catch (error) {
+      return {
+        passed: false,
+        failedCommand: cmd,
+        output: String((error as any)?.stderr || (error as Error)?.message || '')
+      };
+    }
+  }
+  return { passed: true, failedCommand: '', output: '' };
+}
+
+async function runLspAutoFixCycle(
+  projectDir: string,
+  maxAttempts: number,
+  options: {
+    router: AgentRouter;
+    orchestrator: Orchestrator;
+    sessionId: string;
+    gateway?: string;
+    model?: string;
+    fallbackModels?: string[];
+    checkpoints?: CheckpointStore;
+    runId?: string;
+    logger: Logger;
+  }
+): Promise<{ fixed: boolean; attempts: number; remainingDiagnostics: number }> {
+  const { typeCheckProject } = await import('../lsp/index.js');
+  const cappedAttempts = Math.max(1, maxAttempts);
+  let diagnostics = typeCheckProject(projectDir, []);
+  if (diagnostics.length === 0) return { fixed: true, attempts: 0, remainingDiagnostics: 0 };
+
+  let attempts = 0;
+  while (attempts < cappedAttempts && diagnostics.length > 0) {
+    attempts += 1;
+    const top = diagnostics.slice(0, 30);
+    const summary = top
+      .map(d => `${d.file}:${d.line}:${d.column} [${d.category}] TS${d.code} ${d.message}`)
+      .join('\n');
+    const task = [
+      'Run a targeted TypeScript auto-fix pass for the following diagnostics.',
+      'Apply minimal safe changes only.',
+      'Diagnostics:',
+      summary
+    ].join('\n');
+
+    const dispatched = await dispatchWithFallback(
+      options.router,
+      'crew-fixer',
+      task,
+      {
+        project: projectDir,
+        sessionId: options.sessionId,
+        gateway: options.gateway,
+        model: options.model
+      },
+      options.fallbackModels || [],
+      options.checkpoints,
+      options.runId
+    );
+    const response = String(dispatched.result?.result || '');
+    const edits = await options.orchestrator.parseAndApplyToSandbox(response);
+    options.logger.info(`LSP auto-fix attempt ${attempts}: ${diagnostics.length} diagnostics, ${edits.length} sandbox edit(s).`);
+    await options.checkpoints?.append(String(options.runId || ''), 'lsp.autofix.attempt', {
+      attempt: attempts,
+      diagnostics: diagnostics.length,
+      edits: edits.length
+    });
+    diagnostics = typeCheckProject(projectDir, []);
+  }
+
+  return {
+    fixed: diagnostics.length === 0,
+    attempts,
+    remainingDiagnostics: diagnostics.length
+  };
+}
+
+async function dispatchWithFallback(
+  router: AgentRouter,
+  agent: string,
+  task: string,
+  options: any,
+  fallbackModels: string[] = [],
+  checkpoint?: CheckpointStore,
+  runId?: string
+) {
+  const tried: string[] = [];
+  const primary = String(options.model || '').trim();
+  if (primary) tried.push(primary);
+  const chain = [primary, ...fallbackModels].map(x => String(x || '').trim()).filter(Boolean);
+  if (chain.length === 0) {
+    const result = await router.dispatch(agent, task, options);
+    return { result, usedModel: primary || 'default', attempts: tried };
+  }
+
+  let lastError: Error | null = null;
+  for (let i = 0; i < chain.length; i++) {
+    const model = chain[i];
+    tried.push(model);
+    try {
+      if (checkpoint && runId) {
+        await checkpoint.append(runId, 'dispatch.model.attempt', { model, index: i + 1 });
+      }
+      const result = await router.dispatch(agent, task, { ...options, model });
+      if (checkpoint && runId) {
+        await checkpoint.append(runId, 'dispatch.model.success', { model, index: i + 1 });
+      }
+      return { result, usedModel: model, attempts: tried };
+    } catch (error) {
+      lastError = error as Error;
+      if (checkpoint && runId) {
+        await checkpoint.append(runId, 'dispatch.model.failed', { model, error: String((error as Error).message || error) });
+      }
+      const retryable = shouldRetryWithFallback(error);
+      const hasNext = i < chain.length - 1;
+      if (!retryable || !hasNext) break;
+    }
+  }
+
+  throw lastError || new Error('Dispatch failed across fallback chain');
+}
+
+function parseConfigValue(raw: string, asJson = false): unknown {
+  const text = String(raw ?? '').trim();
+  if (asJson) {
+    return JSON.parse(text);
+  }
+  if (text === 'true') return true;
+  if (text === 'false') return false;
+  if (text === 'null') return null;
+  if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text);
+  return text;
+}
+
 export async function main(args = []) {
+  // Show banner on first launch (or always if CREW_SHOW_BANNER=1)
+  const bannerFile = join(process.env.HOME || homedir(), '.crew', 'cli-banner-seen');
+  const showAlways = process.env.CREW_SHOW_BANNER === '1';
+  
+  if (showAlways || !existsSync(bannerFile)) {
+    const banner = `
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║     ██████╗ ██████╗ ███████╗██╗    ██╗      ██████╗██╗     ██╗           ║
+║    ██╔════╝ ██╔══██╗██╔════╝██║    ██║     ██╔════╝██║     ██║           ║
+║    ██║      ██████╔╝█████╗  ██║ █╗ ██║     ██║     ██║     ██║           ║
+║    ██║      ██╔══██╗██╔══╝  ██║███╗██║     ██║     ██║     ██║           ║
+║    ╚██████╗ ██║  ██║███████╗╚███╔███╔╝     ╚██████╗███████╗██║           ║
+║     ╚═════╝ ╚═╝  ╚═╝╚══════╝ ╚══╝╚══╝       ╚═════╝╚══════╝╚═╝           ║
+║                                                                           ║
+║                   🎪 One idea. One Build. One Crew.                       ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+`;
+    console.log(chalk.cyan(banner));
+    
+    // Mark as seen (best effort)
+    try {
+      await mkdir(dirname(bannerFile), { recursive: true });
+      await writeFile(bannerFile, new Date().toISOString());
+    } catch {}
+  }
+
   const logger = new Logger();
   const config = new ConfigManager();
   const toolManager = new ToolManager(config);
@@ -70,10 +342,35 @@ export async function main(args = []) {
   const sandbox = new Sandbox(process.cwd());
   const orchestrator = new Orchestrator(agentRouter, sandbox, sessionManager);
   const corrections = new CorrectionStore(process.cwd());
+  const tokenCache = new TokenCache(process.cwd());
+  const agentKeeper = new AgentKeeper(process.cwd());
+  const checkpoints = new CheckpointStore(process.cwd());
+  const autoFixStore = new AutoFixStore(process.cwd());
+  const repoConfig = await loadResolvedRepoConfig(process.cwd());
+  const modelPolicy = await loadModelPolicy(process.cwd());
+  const cliDefaults = repoConfig.cli || {};
+  const plannerPolicy = modelPolicy.tiers?.planner || {};
+  const executorPolicy = modelPolicy.tiers?.executor || {};
+  const workerPolicy = modelPolicy.tiers?.worker || {};
+  const plannerPrimary = plannerPolicy.primary || cliDefaults.model || '';
+  const executorPrimary = executorPolicy.primary || cliDefaults.model || '';
+  const workerPrimary = workerPolicy.primary || cliDefaults.model || '';
 
   await sessionManager.ensureInitialized();
   await toolManager.initialize();
   await sandbox.load();
+
+  // Show banner on new sessions
+  const sessionData = await sessionManager.loadSession();
+  if (sessionData.history.length === 0 && !args.includes('--headless') && !args.includes('--json')) {
+    console.log(getBanner());
+  }
+
+  try {
+    await agentKeeper.compact();
+  } catch {
+    // Never fail startup due to maintenance compaction.
+  }
 
   const headlessShortcut = parseHeadlessShortcutArgs(args);
   if (headlessShortcut.enabled) {
@@ -111,26 +408,54 @@ export async function main(args = []) {
     .argument('<input...>', 'Message or question')
     .option('-p, --project <path>', 'Project directory')
     .option('-g, --gateway <url>', 'Override gateway URL')
-    .option('-m, --model <id>', 'Model override for direct/bypass gateway paths')
-    .option('--engine <id>', 'Engine override for direct/bypass gateway paths (e.g. cursor)')
+    .option('-m, --model <id>', 'Model override for direct/bypass gateway paths', executorPrimary || undefined)
+    .option('--engine <id>', 'Engine override for direct/bypass gateway paths (e.g. cursor)', cliDefaults.engine || undefined)
     .option('--direct', 'Request direct execution path on gateway', false)
     .option('--bypass', 'Request bypass/orchestrator-skip path on gateway', false)
+    .option('--image <path>', 'Attach an image file to the prompt (repeatable)', collectOption, [])
+    .option('--context-image <path>', 'Attach an image file as context (repeatable)', collectOption, [])
+    .option('--image-max-bytes <n>', 'Max bytes per image context payload', '250000')
     .option('--cross-repo', 'Inject sibling repository context', false)
     .option('--context-file <path>', 'Attach a file as additional context (repeatable)', collectOption, [])
     .option('--context-repo <path>', 'Attach git context from another repo (repeatable)', collectOption, [])
     .option('--stdin', 'Read additional context from stdin', false)
     .option('--max-context-tokens <n>', 'Max context token budget (approx, chars/4)')
     .option('--context-budget-mode <mode>', 'trim | stop when budget exceeded', 'trim')
+    .option('--docs', 'Inject matching docs context via collections search', false)
+    .option('--docs-path <paths...>', 'Custom paths for docs search (default: docs/ + project root)')
+    .option('--docs-code', 'Include source code files in docs retrieval index', Boolean(cliDefaults.docsCode))
     .action(async (inputArray, options) => {
       let input = inputArray.join(' ');
       try {
         const fileBlock = await buildFileContextBlock(options.contextFile || []);
         const repoBlock = await buildRepoContextBlock(options.contextRepo || []);
+        const imagePaths = [...(options.image || []), ...(options.contextImage || [])];
+        const imageBlock = await buildImageContextBlock(
+          imagePaths,
+          Number.parseInt(options.imageMaxBytes || '250000', 10)
+        );
         const stdinText = options.stdin ? await readStdinText() : '';
         const stdinBlock = stdinText ? `## Stdin Context\n\`\`\`text\n${stdinText}\n\`\`\`` : '';
+
+        let docsBlock = '';
+        if (options.docs) {
+          const { buildCollectionIndex, searchCollection } = await import('../collections/index.js');
+          const docsPaths = options.docsPath && options.docsPath.length > 0
+            ? options.docsPath
+            : [join(process.cwd(), 'docs'), process.cwd()];
+          const index = await buildCollectionIndex(docsPaths, {
+            includeCode: Boolean(options.docsCode)
+          });
+          const result = searchCollection(index, input, 5);
+          if (result.hits.length > 0) {
+            const chunks = result.hits.map(h => `### ${h.source}:${h.startLine} (score: ${h.score})\n${h.text}`);
+            docsBlock = `## Docs Context (auto-retrieved)\n${chunks.join('\n\n')}`;
+          }
+        }
+
         const budget = enforceContextBudget(
           input,
-          [fileBlock, repoBlock, stdinBlock],
+          [fileBlock, repoBlock, imageBlock, stdinBlock, docsBlock],
           options.maxContextTokens ? Number.parseInt(options.maxContextTokens, 10) : undefined,
           options.contextBudgetMode === 'stop' ? 'stop' : 'trim'
         );
@@ -161,7 +486,8 @@ export async function main(args = []) {
             model: options.model,
             engine: options.engine,
             direct: options.direct,
-            bypass: options.bypass
+            bypass: options.bypass,
+            images: options.image || []
           });
 
           console.log(chalk.blue('\n--- Agent Response ---'));
@@ -182,6 +508,598 @@ export async function main(args = []) {
     });
 
   program
+    .command('auto')
+    .description('Autonomous mode - LLM iterates on task until completion without approval prompts')
+    .argument('<task...>', 'Task description')
+    .option('-p, --project <path>', 'Project directory', process.cwd())
+    .option('-g, --gateway <url>', 'Override gateway URL')
+    .option('-m, --model <id>', 'Model override', workerPrimary || undefined)
+    .option('--fallback-model <id>', 'Fallback model chain entry (repeatable)', collectOption, [])
+    .option('--max-iterations <n>', 'Maximum autonomous iterations', '10')
+    .option('--auto-apply', 'Automatically apply sandbox changes when task completes', false)
+    .option('--cross-repo', 'Inject sibling repository context', false)
+    .option('--cache', 'Enable output cache for autonomous iterations', false)
+    .option('--cache-ttl <sec>', 'Output cache TTL in seconds', '1800')
+    .option('--no-memory', 'Disable shared AgentKeeper memory')
+    .option('--memory-max <n>', 'Max recalled memory entries', String(cliDefaults.memoryMax ?? 3))
+    .option('--memory-require-validation', 'Store memory only when validation is marked passed', false)
+    .option('--lsp-auto-fix', 'Run LSP diagnostics and auto-dispatch fixes after edits', false)
+    .option('--lsp-auto-fix-max-attempts <n>', 'Max LSP auto-fix attempts per iteration', '3')
+    .option('--no-blast-radius-gate', 'Disable blast-radius safety gate before auto-apply')
+    .option('--blast-radius-threshold <level>', 'Blast-radius gate threshold: low|medium|high', 'high')
+    .option('--force-auto-apply', 'Bypass blast-radius gate and auto-apply anyway', false)
+    .option('--escalate-risk', 'Escalate high-risk patches to QA and Security before completion', false)
+    .option('--risk-threshold <level>', 'Escalation threshold: low|medium|high', 'high')
+    .action(async (taskArray, options) => {
+      const task = taskArray.join(' ');
+      const projectDir = options.project || process.cwd();
+      const maxIterations = Number.parseInt(options.maxIterations || '10', 10);
+      const fallbackModels = (options.fallbackModel && options.fallbackModel.length > 0)
+        ? options.fallbackModel
+        : (workerPolicy.fallback || []);
+
+      logger.info(chalk.cyan(`🤖 Autonomous Mode: ${task}`));
+      logger.info(chalk.gray(`   Max iterations: ${maxIterations}`));
+      logger.info(chalk.gray(`   Project: ${projectDir}\n`));
+
+      let currentTask = task;
+      let iteration = 0;
+      let failedRun = false;
+      const runId = `auto-${randomUUID()}`;
+      const useMemory = options.memory !== false;
+      await checkpoints.beginRun({ runId, mode: 'auto', task });
+
+      if (useMemory) {
+        const matches = await agentKeeper.recall(task, Number.parseInt(options.memoryMax || '3', 10), {
+          preferSuccessful: true
+        });
+        const avgScore = matches.length
+          ? matches.reduce((sum, m) => sum + Number(m.score || 0), 0) / matches.length
+          : 0;
+        await sessionManager.trackMemoryRecall({
+          used: true,
+          miss: matches.length === 0,
+          matchCount: matches.length,
+          qualityScore: avgScore
+        });
+        if (matches.length > 0) {
+          const memoryContext = await agentKeeper.recallAsContext(task, Number.parseInt(options.memoryMax || '3', 10), {
+            preferSuccessful: true
+          });
+          currentTask = `${currentTask}\n\n${memoryContext}`;
+        }
+      }
+
+      if (options.crossRepo) {
+        const multiContext = await collectMultiRepoContext(projectDir);
+        currentTask = `${currentTask}\n\n${multiContext}`;
+      }
+
+      while (iteration < maxIterations) {
+        iteration += 1;
+        logger.info(chalk.blue(`\n[Iteration ${iteration}/${maxIterations}]`));
+
+        try {
+          const route = await orchestrator.route(currentTask);
+          const agent = route.agent || 'crew-main';
+          
+          logger.info(chalk.gray(`  Routing to: ${agent}`));
+
+          const useCache = Boolean(options.cache);
+          const cacheKey = TokenCache.hashKey(JSON.stringify({
+            kind: 'auto-output',
+            agent,
+            task: currentTask,
+            projectDir,
+            gateway: options.gateway || '',
+            model: options.model || ''
+          }));
+
+          let result: any;
+          if (useCache) {
+            const cached = await tokenCache.get<any>('output', cacheKey);
+            if (cached.hit && cached.value) {
+              logger.info(chalk.gray('  Using cached output.'));
+              result = cached.value;
+              await sessionManager.trackCacheSavings({
+                hit: true,
+                tokensSaved: Number(cached.meta?.tokensSaved || 0),
+                usdSaved: Number(cached.meta?.usdSaved || 0)
+              });
+            } else {
+              await sessionManager.trackCacheSavings({ miss: true });
+              const dispatched = await dispatchWithFallback(
+                agentRouter,
+                agent,
+                currentTask,
+                {
+                  project: projectDir,
+                  sessionId: await sessionManager.getSessionId(),
+                  gateway: options.gateway,
+                  model: options.model
+                },
+                fallbackModels,
+                checkpoints,
+                runId
+              );
+              result = dispatched.result;
+              const estTokens = Math.ceil((String(currentTask).length + String(result.result || '').length) / 4);
+              await tokenCache.set(
+                'output',
+                cacheKey,
+                result,
+                Number.parseInt(options.cacheTtl || '1800', 10),
+                { tokensSaved: estTokens, usdSaved: estTokens / 1_000_000, source: 'auto-output' }
+              );
+            }
+          } else {
+            const dispatched = await dispatchWithFallback(
+              agentRouter,
+              agent,
+              currentTask,
+              {
+                project: projectDir,
+                sessionId: await sessionManager.getSessionId(),
+                gateway: options.gateway,
+                model: options.model
+              },
+              fallbackModels,
+              checkpoints,
+              runId
+            );
+            result = dispatched.result;
+          }
+
+          await sessionManager.appendHistory({
+            type: 'auto_iteration',
+            agent,
+            iteration,
+            task: currentTask,
+            success: Boolean(result.success),
+            result: result.result
+          });
+          if (useMemory) {
+            const response = String(result.result || '').trim();
+            const isControlPrompt =
+              currentTask.startsWith('The previous changes have been staged in sandbox') ||
+              currentTask.startsWith('Continue working on:');
+            const hasSignal = response.length > 0;
+            const isSuccessful = Boolean(result.success);
+            const validation = extractValidationSignals(result, Boolean(options.memoryRequireValidation));
+            if (hasSignal && isSuccessful && !isControlPrompt && validation.passed) {
+              const saved = await agentKeeper.recordSafe({
+                runId,
+                tier: 'worker',
+                task,
+                result: response,
+                agent,
+                structured: {
+                  problem: task,
+                  validation: {
+                    lintPassed: validation.lintPassed,
+                    testsPassed: validation.testsPassed,
+                    notes: validation.notes
+                  },
+                  outcome: 'success'
+                },
+                metadata: {
+                  iteration,
+                  promptKind: 'user-task',
+                  success: true,
+                  validationRequired: validation.required,
+                  validationPassed: validation.passed
+                }
+              });
+              if (!saved.ok) {
+                logger.warn(`Memory write skipped: ${saved.error}`);
+              }
+            }
+          }
+
+          if (result.costUsd && result.model) {
+            await sessionManager.trackCost({
+              model: result.model,
+              usd: result.costUsd,
+              promptTokens: result.promptTokens || 0,
+              completionTokens: result.completionTokens || 0
+            });
+          }
+
+          const responseText = String(result.result || '');
+          console.log(chalk.cyan('\n  Response:'));
+          logger.printWithHighlight(responseText);
+
+          // Parse and add to sandbox
+          const edits = await orchestrator.parseAndApplyToSandbox(responseText);
+          await checkpoints.append(runId, 'auto.iteration', {
+            iteration,
+            agent,
+            success: Boolean(result.success),
+            edits: edits.length
+          });
+          if (edits.length > 0) {
+            logger.success(`  ✓ Added ${edits.length} file changes to sandbox`);
+            if (options.lspAutoFix) {
+              const lspFix = await runLspAutoFixCycle(
+                projectDir,
+                Number.parseInt(options.lspAutoFixMaxAttempts || '3', 10),
+                {
+                  router: agentRouter,
+                  orchestrator,
+                  sessionId: await sessionManager.getSessionId(),
+                  gateway: options.gateway,
+                  model: options.model,
+                  fallbackModels,
+                  checkpoints,
+                  runId,
+                  logger
+                }
+              );
+              if (lspFix.fixed) {
+                logger.success(`  ✓ LSP auto-fix complete (${lspFix.attempts} attempt(s)).`);
+              } else {
+                logger.warn(`  ⚠ LSP auto-fix incomplete (${lspFix.remainingDiagnostics} diagnostics remain after ${lspFix.attempts} attempt(s)).`);
+              }
+            }
+          }
+
+          // Check if task appears complete
+          const lowerResponse = responseText.toLowerCase();
+          const completionSignals = [
+            'task complete', 'task is complete', 'implementation complete',
+            'all done', 'finished', 'successfully implemented',
+            'no further changes needed', 'ready for review'
+          ];
+          
+          const hasCompletionSignal = completionSignals.some(signal => lowerResponse.includes(signal));
+          
+          if (hasCompletionSignal) {
+            logger.success(chalk.green(`\n✓ Task appears complete after ${iteration} iteration(s)`));
+            break;
+          }
+
+          // If we have sandbox changes, ask the LLM to verify and continue or finish
+          if (edits.length > 0 && iteration < maxIterations) {
+            currentTask = `The previous changes have been staged in sandbox. Please verify the implementation is complete and correct. If there are any remaining issues, fix them. If everything looks good, respond with "Task complete."`;
+          } else if (iteration >= maxIterations) {
+            logger.warn(chalk.yellow(`\n⚠️  Reached max iterations (${maxIterations})`));
+            break;
+          } else {
+            // No edits detected, ask for next step
+            currentTask = `Continue working on: ${task}`;
+          }
+        } catch (err) {
+          logger.error(`Iteration ${iteration} failed: ${(err as Error).message}`);
+          failedRun = true;
+          await checkpoints.append(runId, 'auto.error', {
+            iteration,
+            error: (err as Error).message
+          });
+          
+          await sessionManager.appendHistory({
+            type: 'auto_error',
+            iteration,
+            task: currentTask,
+            error: (err as Error).message
+          });
+          
+          break;
+        }
+      }
+
+      // Show final sandbox state
+      const activeBranch = sandbox.getActiveBranch();
+      if (sandbox.hasChanges(activeBranch)) {
+        console.log(chalk.blue('\n--- Pending Changes ---'));
+        console.log(logger.highlightDiff(sandbox.preview(activeBranch)));
+        
+        if (options.autoApply) {
+          try {
+            const paths = sandbox.getPendingPaths(activeBranch);
+            const report = await analyzeBlastRadius(projectDir, { changedFiles: paths });
+            const patchRisk = scorePatchRisk({
+              blastRadius: report,
+              changedFiles: paths.length
+            });
+            logger.info(`Patch confidence: ${(patchRisk.confidence * 100).toFixed(0)}% (risk score ${patchRisk.riskScore}/100, ${patchRisk.riskLevel})`);
+            await checkpoints.append(runId, 'patch.risk', {
+              riskLevel: patchRisk.riskLevel,
+              riskScore: patchRisk.riskScore,
+              confidence: patchRisk.confidence
+            });
+            if (options.escalateRisk && isSeverityAtLeast(patchRisk.riskLevel, String(options.riskThreshold || 'high').toLowerCase() as any)) {
+              const escalationTask = `High-risk patch review requested.\nRisk score: ${patchRisk.riskScore}/100 (${patchRisk.riskLevel}).\nFiles: ${paths.join(', ')}.\nPlease review for correctness, regressions, and security concerns.`;
+              const qa = await dispatchWithFallback(agentRouter, 'crew-qa', escalationTask, {
+                project: projectDir,
+                sessionId: await sessionManager.getSessionId(),
+                gateway: options.gateway
+              }, fallbackModels, checkpoints, runId);
+              const sec = await dispatchWithFallback(agentRouter, 'crew-security', escalationTask, {
+                project: projectDir,
+                sessionId: await sessionManager.getSessionId(),
+                gateway: options.gateway
+              }, fallbackModels, checkpoints, runId);
+              logger.info(chalk.yellow('\n--- QA Escalation ---'));
+              logger.printWithHighlight(String(qa.result.result || ''));
+              logger.info(chalk.yellow('\n--- Security Escalation ---'));
+              logger.printWithHighlight(String(sec.result.result || ''));
+            }
+            if (options.blastRadiusGate && !options.forceAutoApply) {
+              const threshold = (String(options.blastRadiusThreshold || 'high').toLowerCase() as 'low' | 'medium' | 'high');
+              logger.info(`Blast radius: ${report.summary}`);
+              if (isSeverityAtLeast(report.risk, threshold)) {
+                logger.warn('Auto-apply blocked by blast-radius safety gate.');
+                logger.warn(`Changed files: ${report.changedFiles.length}, direct impacts: ${report.affectedFiles.filter(f => f.relation === 'direct-importer').length}, transitive impacts: ${report.affectedFiles.filter(f => f.relation === 'transitive-importer').length}`);
+                logger.warn('Re-run with --force-auto-apply or lower --blast-radius-threshold to override.');
+                return;
+              }
+            }
+            await sandbox.apply(activeBranch);
+            logger.success(`\n✓ Auto-applied changes to: ${paths.join(', ')}`);
+          } catch (applyErr) {
+            logger.error(`Auto-apply failed: ${(applyErr as Error).message}`);
+            logger.info('Run "crew apply" manually to apply changes.');
+          }
+        } else {
+          logger.info('\nRun "crew apply" to write changes to disk, or "crew preview" to review.');
+        }
+      }
+
+      const cost = await sessionManager.loadCost();
+      logger.info(chalk.gray(`\nTotal session cost: $${cost.totalUsd.toFixed(4)}`));
+      if (useMemory) {
+        const saved = await agentKeeper.recordSafe({
+          runId,
+          tier: 'orchestrator',
+          task,
+          result: sandbox.hasChanges(sandbox.getActiveBranch())
+            ? `Autonomous run finished with pending changes on branch ${sandbox.getActiveBranch()}`
+            : 'Autonomous run finished with no pending changes',
+          agent: 'crew-main',
+          structured: {
+            problem: task,
+            outcome: 'run-complete'
+          },
+          metadata: {
+            iterations: iteration,
+            autoApply: Boolean(options.autoApply)
+          }
+        });
+        if (!saved.ok) {
+          logger.warn(`Memory write skipped: ${saved.error}`);
+        }
+        if (iteration >= 5) {
+          try {
+            await agentKeeper.compact();
+          } catch {
+            // Best-effort maintenance.
+          }
+        }
+      }
+      await checkpoints.finish(runId, failedRun ? 'failed' : 'completed');
+    });
+
+  const autofix = program
+    .command('autofix')
+    .description('Background AutoFix queue and worker (safe unattended fix cycles)');
+
+  autofix
+    .command('enqueue')
+    .description('Queue a background AutoFix job')
+    .argument('<task...>', 'Task description')
+    .option('-p, --project <path>', 'Project directory', process.cwd())
+    .option('-g, --gateway <url>', 'Override gateway URL')
+    .option('-m, --model <id>', 'Model override', workerPrimary || undefined)
+    .option('--fallback-model <id>', 'Fallback model chain entry (repeatable)', collectOption, [])
+    .option('--max-iterations <n>', 'Maximum AutoFix iterations per job', '6')
+    .option('--validate-cmd <cmd>', 'Validation command gate (repeatable)', collectOption, [])
+    .option('--auto-apply-policy <mode>', 'never|safe|force', 'safe')
+    .option('--blast-radius-threshold <level>', 'Blast-radius threshold: low|medium|high', 'high')
+    .option('--lsp-auto-fix', 'Run TypeScript diagnostics auto-fix loop after edits', false)
+    .option('--lsp-auto-fix-max-attempts <n>', 'Max LSP auto-fix attempts', '3')
+    .action(async (taskArray, options) => {
+      const task = taskArray.join(' ').trim();
+      if (!task) {
+        logger.error('Task is required.');
+        process.exit(1);
+      }
+      const fallbackModels = (options.fallbackModel && options.fallbackModel.length > 0)
+        ? options.fallbackModel
+        : (workerPolicy.fallback || []);
+      const policyRaw = String(options.autoApplyPolicy || 'safe').toLowerCase();
+      const autoApplyPolicy: AutoFixApplyPolicy = policyRaw === 'force'
+        ? 'force'
+        : policyRaw === 'never'
+          ? 'never'
+          : 'safe';
+      const threshold = String(options.blastRadiusThreshold || 'high').toLowerCase();
+      const blastRadiusThreshold = threshold === 'low' || threshold === 'medium' || threshold === 'high'
+        ? threshold
+        : 'high';
+      const job = await autoFixStore.enqueue({
+        task,
+        projectDir: options.project || process.cwd(),
+        config: {
+          maxIterations: Number.parseInt(options.maxIterations || '6', 10),
+          model: options.model,
+          fallbackModels,
+          gateway: options.gateway,
+          validateCommands: options.validateCmd || [],
+          autoApplyPolicy,
+          blastRadiusThreshold,
+          lspAutoFix: Boolean(options.lspAutoFix),
+          lspAutoFixMaxAttempts: Number.parseInt(options.lspAutoFixMaxAttempts || '3', 10)
+        }
+      });
+      logger.success(`Queued AutoFix job ${job.id}`);
+      logger.info(`Policy: ${job.config.autoApplyPolicy} | Max iterations: ${job.config.maxIterations} | Project: ${job.projectDir}`);
+    });
+
+  autofix
+    .command('list')
+    .description('List background AutoFix jobs')
+    .option('--status <status>', 'Filter by status: queued|running|completed|failed|canceled')
+    .option('--max <n>', 'Maximum jobs to show', '30')
+    .action(async (options) => {
+      const statusRaw = String(options.status || '').toLowerCase();
+      const allowed: AutoFixJobStatus[] = ['queued', 'running', 'completed', 'failed', 'canceled'];
+      const filterStatus = allowed.includes(statusRaw as AutoFixJobStatus)
+        ? statusRaw as AutoFixJobStatus
+        : undefined;
+      const jobs = await autoFixStore.list({ status: filterStatus });
+      const max = Math.max(1, Number.parseInt(options.max || '30', 10));
+      const sliced = jobs.slice(0, max);
+      if (sliced.length === 0) {
+        logger.info('No AutoFix jobs found.');
+        return;
+      }
+      for (const job of sliced) {
+        const summary = job.result?.applied
+          ? 'applied'
+          : job.result?.proposalPath
+            ? `proposal: ${job.result.proposalPath}`
+            : '';
+        logger.info(`${job.id} | ${job.status} | ${job.updatedAt} | ${job.task}${summary ? ` | ${summary}` : ''}`);
+      }
+    });
+
+  autofix
+    .command('show')
+    .description('Show one AutoFix job in detail')
+    .argument('<jobId>', 'AutoFix job id')
+    .action(async (jobId) => {
+      const job = await autoFixStore.get(jobId);
+      if (!job) {
+        logger.error(`Job not found: ${jobId}`);
+        process.exit(1);
+      }
+      console.log(JSON.stringify(job, null, 2));
+    });
+
+  autofix
+    .command('cancel')
+    .description('Cancel a queued/running AutoFix job')
+    .argument('<jobId>', 'AutoFix job id')
+    .action(async (jobId) => {
+      const ok = await autoFixStore.cancel(jobId);
+      if (!ok) {
+        logger.error(`Unable to cancel job ${jobId}. It may be missing or already final.`);
+        process.exit(1);
+      }
+      logger.success(`Canceled ${jobId}`);
+    });
+
+  autofix
+    .command('worker')
+    .description('Run background AutoFix worker loop')
+    .option('--once', 'Process at most one queued job and exit', false)
+    .option('--max-jobs <n>', 'Stop after processing N jobs (0 = unlimited)', '0')
+    .option('--poll-ms <ms>', 'Poll interval when queue is empty', '5000')
+    .option('--worker-id <id>', 'Worker identity for lock/debug info', `worker-${process.pid}`)
+    .action(async (options) => {
+      const once = Boolean(options.once);
+      const maxJobs = Math.max(0, Number.parseInt(options.maxJobs || '0', 10));
+      const pollMs = Math.max(1000, Number.parseInt(options.pollMs || '5000', 10));
+      const workerId = String(options.workerId || `worker-${process.pid}`);
+      let processed = 0;
+
+      logger.info(`AutoFix worker started (${workerId})`);
+      while (true) {
+        const job = await autoFixStore.claimNext(workerId);
+        if (!job) {
+          if (once || (maxJobs > 0 && processed >= maxJobs)) break;
+          await new Promise(resolve => setTimeout(resolve, pollMs));
+          continue;
+        }
+
+        logger.info(`Running ${job.id}: ${job.task}`);
+        try {
+          const result = await runAutoFixJob(job, {
+            router: agentRouter,
+            orchestrator,
+            sandbox,
+            session: sessionManager,
+            logger,
+            checkpoints
+          });
+          await autoFixStore.markCompleted(job.id, {
+            ...result,
+            completedAt: new Date().toISOString()
+          });
+          logger.success(`Completed ${job.id} | applied=${result.applied} | files=${result.editedFiles.length}`);
+        } catch (error) {
+          const message = String((error as Error).message || error);
+          await autoFixStore.markFailed(job.id, message, {
+            failedAt: new Date().toISOString()
+          });
+          logger.error(`Failed ${job.id}: ${message}`);
+        }
+
+        processed += 1;
+        if (once || (maxJobs > 0 && processed >= maxJobs)) break;
+      }
+      logger.info(`AutoFix worker exiting (${workerId}). Jobs processed: ${processed}`);
+    });
+
+  program
+    .command('repl')
+    .description('Start interactive REPL mode for continuous conversations')
+    .option('-p, --project <path>', 'Project directory', process.cwd())
+    .option('-m, --mode <mode>', 'Initial REPL mode (manual|assist|autopilot)', 'manual')
+    .action(async (options) => {
+      const projectDir = options.project || process.cwd();
+      const initialMode = options.mode?.toLowerCase();
+      if (initialMode && !['manual', 'assist', 'autopilot'].includes(initialMode)) {
+        console.error(chalk.red(`Invalid mode "${initialMode}". Must be one of: manual, assist, autopilot`));
+        process.exit(1);
+      }
+      try {
+        await startRepl({
+          router: agentRouter,
+          orchestrator,
+          sandbox,
+          session: sessionManager,
+          logger,
+          projectDir,
+          repoConfig,
+          initialMode: initialMode as 'manual' | 'assist' | 'autopilot' | undefined
+        });
+      } catch (error) {
+        console.error('Error starting REPL:', error);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('tui')
+    .description('Start terminal UI mode (same runtime/controller as REPL, improved layout)')
+    .option('-p, --project <path>', 'Project directory', process.cwd())
+    .option('-m, --mode <mode>', 'Initial TUI mode (manual|assist|autopilot)', 'manual')
+    .action(async (options) => {
+      const projectDir = options.project || process.cwd();
+      const initialMode = options.mode?.toLowerCase();
+      if (initialMode && !['manual', 'assist', 'autopilot'].includes(initialMode)) {
+        console.error(chalk.red(`Invalid mode "${initialMode}". Must be one of: manual, assist, autopilot`));
+        process.exit(1);
+      }
+      try {
+        await startTui({
+          router: agentRouter,
+          orchestrator,
+          sandbox,
+          session: sessionManager,
+          logger,
+          projectDir,
+          repoConfig,
+          initialMode: initialMode as 'manual' | 'assist' | 'autopilot' | undefined
+        });
+      } catch (error) {
+        console.error('Error starting TUI:', error);
+        process.exit(1);
+      }
+    });
+
+  program
     .command('dispatch')
     .description('Dispatch a task to an agent')
     .argument('<agent>', 'Agent name')
@@ -189,29 +1107,94 @@ export async function main(args = []) {
     .option('-p, --project <path>', 'Project directory')
     .option('-g, --gateway <url>', 'Override gateway URL')
     .option('-t, --timeout <ms>', 'Timeout in milliseconds', '30000')
-    .option('-m, --model <id>', 'Model ID for cost estimate', 'openai/gpt-4o-mini')
+    .option('-m, --model <id>', 'Model ID for cost estimate', executorPrimary || 'openai/gpt-4o-mini')
+    .option('--fallback-model <id>', 'Fallback model chain entry (repeatable)', collectOption, [])
     .option('--engine <id>', 'Engine override for direct/bypass gateway paths (e.g. cursor)')
     .option('--direct', 'Request direct execution path on gateway', false)
     .option('--bypass', 'Request bypass/orchestrator-skip path on gateway', false)
     .option('--output-tokens <count>', 'Expected completion tokens for estimate', '1200')
-    .option('--max-cost <usd>', 'Require confirmation if estimate exceeds this USD amount', '1')
+    .option('--max-cost <usd>', 'Require confirmation if estimate exceeds this USD amount', String(executorPolicy.maxCostUsd ?? 1))
     .option('--skip-cost-check', 'Skip cost estimate confirmation gate', false)
     .option('--cross-repo', 'Inject sibling repository context', false)
+    .option('--cache', 'Enable output cache for dispatch result', false)
+    .option('--cache-ttl <sec>', 'Output cache TTL in seconds', '1800')
+    .option('--no-memory', 'Disable shared AgentKeeper memory')
+    .option('--memory-max <n>', 'Max recalled memory entries', String(cliDefaults.memoryMax ?? 3))
+    .option('--memory-require-validation', 'Store memory only when validation is marked passed', false)
+    .option('--image <path>', 'Attach an image file to the task (repeatable)', collectOption, [])
+    .option('--context-image <path>', 'Attach an image file as context (repeatable)', collectOption, [])
+    .option('--image-max-bytes <n>', 'Max bytes per image context payload', '250000')
     .option('--context-file <path>', 'Attach a file as additional context (repeatable)', collectOption, [])
     .option('--context-repo <path>', 'Attach git context from another repo (repeatable)', collectOption, [])
     .option('--stdin', 'Read additional context from stdin', false)
     .option('--max-context-tokens <n>', 'Max context token budget (approx, chars/4)')
     .option('--context-budget-mode <mode>', 'trim | stop when budget exceeded', 'trim')
+    .option('--docs', 'Inject matching docs context via collections search', false)
+    .option('--docs-path <paths...>', 'Custom paths for docs search (default: docs/ + project root)')
+    .option('--docs-code', 'Include source code files in docs retrieval index', Boolean(cliDefaults.docsCode))
+    .option('--escalate-risk', 'Escalate high-risk patches to QA and Security', false)
+    .option('--risk-threshold <level>', 'Escalation threshold: low|medium|high', 'high')
     .action(async (agent, task, options) => {
       let finalTask = task;
+      const runId = `dispatch-${randomUUID()}`;
+      const fallbackModels = (options.fallbackModel && options.fallbackModel.length > 0)
+        ? options.fallbackModel
+        : (executorPolicy.fallback || []);
       try {
+        await checkpoints.beginRun({ runId, mode: 'dispatch', task });
+        const useMemory = options.memory !== false;
+        if (useMemory) {
+          const pathHints = (options.contextFile || []).map((p: string) => String(p).trim()).filter(Boolean);
+          const matches = await agentKeeper.recall(finalTask, Number.parseInt(options.memoryMax || '3', 10), {
+            preferSuccessful: true,
+            pathHints
+          });
+          const avgScore = matches.length
+            ? matches.reduce((sum, m) => sum + Number(m.score || 0), 0) / matches.length
+            : 0;
+          await sessionManager.trackMemoryRecall({
+            used: true,
+            miss: matches.length === 0,
+            matchCount: matches.length,
+            qualityScore: avgScore
+          });
+          if (matches.length > 0) {
+            const memoryContext = await agentKeeper.recallAsContext(finalTask, Number.parseInt(options.memoryMax || '3', 10), {
+              preferSuccessful: true,
+              pathHints
+            });
+            finalTask = `${finalTask}\n\n${memoryContext}`;
+          }
+        }
         const fileBlock = await buildFileContextBlock(options.contextFile || []);
         const repoBlock = await buildRepoContextBlock(options.contextRepo || []);
+        const imagePaths = [...(options.image || []), ...(options.contextImage || [])];
+        const imageBlock = await buildImageContextBlock(
+          imagePaths,
+          Number.parseInt(options.imageMaxBytes || '250000', 10)
+        );
         const stdinText = options.stdin ? await readStdinText() : '';
         const stdinBlock = stdinText ? `## Stdin Context\n\`\`\`text\n${stdinText}\n\`\`\`` : '';
+
+        let docsBlock = '';
+        if (options.docs) {
+          const { buildCollectionIndex, searchCollection } = await import('../collections/index.js');
+          const docsPaths = options.docsPath && options.docsPath.length > 0
+            ? options.docsPath
+            : [join(process.cwd(), 'docs'), process.cwd()];
+          const index = await buildCollectionIndex(docsPaths, {
+            includeCode: Boolean(options.docsCode)
+          });
+          const result = searchCollection(index, task, 5);
+          if (result.hits.length > 0) {
+            const chunks = result.hits.map(h => `### ${h.source}:${h.startLine} (score: ${h.score})\n${h.text}`);
+            docsBlock = `## Docs Context (auto-retrieved)\n${chunks.join('\n\n')}`;
+          }
+        }
+
         const budget = enforceContextBudget(
           finalTask,
-          [fileBlock, repoBlock, stdinBlock],
+          [fileBlock, repoBlock, imageBlock, stdinBlock, docsBlock],
           options.maxContextTokens ? Number.parseInt(options.maxContextTokens, 10) : undefined,
           options.contextBudgetMode === 'stop' ? 'stop' : 'trim'
         );
@@ -263,7 +1246,8 @@ export async function main(args = []) {
         const dispatchOptions = {
           ...options,
           project: projectDir,
-          sessionId
+          sessionId,
+          images: options.image || []
         };
 
         await sessionManager.appendHistory({
@@ -274,7 +1258,64 @@ export async function main(args = []) {
         });
 
         logger.info(`Dispatching task to ${agent}: ${finalTask}`);
-        const result = await agentRouter.dispatch(agent, finalTask, dispatchOptions);
+        let result: any;
+        if (options.cache) {
+          const cacheKey = TokenCache.hashKey(JSON.stringify({
+            kind: 'dispatch-output',
+            agent,
+            task: finalTask,
+            projectDir,
+            gateway: options.gateway || '',
+            model: options.model || '',
+            engine: options.engine || '',
+            direct: Boolean(options.direct),
+            bypass: Boolean(options.bypass)
+          }));
+          const cached = await tokenCache.get<any>('output', cacheKey);
+          if (cached.hit && cached.value) {
+            logger.info('Using cached dispatch output.');
+            result = cached.value;
+            await sessionManager.trackCacheSavings({
+              hit: true,
+              tokensSaved: Number(cached.meta?.tokensSaved || 0),
+              usdSaved: Number(cached.meta?.usdSaved || 0)
+            });
+          } else {
+            await sessionManager.trackCacheSavings({ miss: true });
+            const dispatched = await dispatchWithFallback(
+              agentRouter,
+              agent,
+              finalTask,
+              dispatchOptions,
+              fallbackModels,
+              checkpoints,
+              runId
+            );
+            result = dispatched.result;
+            await tokenCache.set(
+              'output',
+              cacheKey,
+              result,
+              Number.parseInt(options.cacheTtl || '1800', 10),
+              {
+                tokensSaved: estimate.inputTokens + estimate.outputTokens,
+                usdSaved: estimate.totalUsd,
+                source: 'dispatch-output'
+              }
+            );
+          }
+        } else {
+          const dispatched = await dispatchWithFallback(
+            agentRouter,
+            agent,
+            finalTask,
+            dispatchOptions,
+            fallbackModels,
+            checkpoints,
+            runId
+          );
+          result = dispatched.result;
+        }
 
         await sessionManager.appendHistory({
           type: 'dispatch_result',
@@ -283,6 +1324,37 @@ export async function main(args = []) {
           success: Boolean(result.success),
           result: result.result
         });
+        if (useMemory) {
+          const response = String(result.result || '').trim();
+          const validation = extractValidationSignals(result, Boolean(options.memoryRequireValidation));
+          if (Boolean(result.success) && response.length > 0 && validation.passed) {
+            const saved = await agentKeeper.recordSafe({
+              runId,
+              tier: 'orchestrator',
+              task,
+              result: response,
+              agent,
+              structured: {
+                problem: task,
+                validation: {
+                  lintPassed: validation.lintPassed,
+                  testsPassed: validation.testsPassed,
+                  notes: validation.notes
+                },
+                outcome: 'success'
+              },
+              metadata: {
+                taskId: result.taskId || null,
+                success: true,
+                validationRequired: validation.required,
+                validationPassed: validation.passed
+              }
+            });
+            if (!saved.ok) {
+              logger.warn(`Memory write skipped: ${saved.error}`);
+            }
+          }
+        }
         await sessionManager.appendRouting({
           route: 'DISPATCH',
           model: result.model || 'unknown',
@@ -296,7 +1368,41 @@ export async function main(args = []) {
           completionTokens: result.completionTokens || estimate.outputTokens || 0
         });
 
+        const responseText = String(result.result || '');
+        const edits = await orchestrator.parseAndApplyToSandbox(responseText);
+        await checkpoints.append(runId, 'dispatch.completed', {
+          agent,
+          success: Boolean(result.success),
+          edits: edits.length
+        });
+        if (edits.length > 0) {
+          const report = await analyzeBlastRadius(process.cwd(), { changedFiles: edits });
+          const patchRisk = scorePatchRisk({
+            blastRadius: report,
+            changedFiles: edits.length
+          });
+          logger.info(`Patch confidence: ${(patchRisk.confidence * 100).toFixed(0)}% (risk score ${patchRisk.riskScore}/100, ${patchRisk.riskLevel})`);
+          if (options.escalateRisk && isSeverityAtLeast(patchRisk.riskLevel, String(options.riskThreshold || 'high').toLowerCase() as any)) {
+            const escalationTask = `High-risk patch review requested.\nRisk score: ${patchRisk.riskScore}/100 (${patchRisk.riskLevel}).\nFiles: ${edits.join(', ')}.\nPlease review for correctness, regressions, and security concerns.`;
+            const qa = await dispatchWithFallback(agentRouter, 'crew-qa', escalationTask, {
+              project: projectDir,
+              sessionId,
+              gateway: options.gateway
+            }, fallbackModels, checkpoints, runId);
+            const sec = await dispatchWithFallback(agentRouter, 'crew-security', escalationTask, {
+              project: projectDir,
+              sessionId,
+              gateway: options.gateway
+            }, fallbackModels, checkpoints, runId);
+            logger.info(chalk.yellow('\n--- QA Escalation ---'));
+            logger.printWithHighlight(String(qa.result.result || ''));
+            logger.info(chalk.yellow('\n--- Security Escalation ---'));
+            logger.printWithHighlight(String(sec.result.result || ''));
+          }
+        }
+
         logger.success('Task completed:', result);
+        await checkpoints.finish(runId, 'completed');
       } catch (error) {
         await sessionManager.appendHistory({
           type: 'dispatch_error',
@@ -304,8 +1410,327 @@ export async function main(args = []) {
           task: finalTask,
           error: error.message
         });
+        await checkpoints.append(runId, 'dispatch.error', { error: error.message });
+        await checkpoints.finish(runId, 'failed');
         logger.error('Dispatch failed:', error.message);
         process.exit(1);
+      }
+    });
+
+  program
+    .command('status')
+    .description('Show CrewSwarm orchestration status dashboard')
+    .action(async () => {
+      const { displayStatus } = await import('../status/dashboard.ts');
+      await displayStatus();
+    });
+
+  program
+    .command('map')
+    .description('Generate a repository structure graph respecting .gitignore')
+    .option('--graph', 'Emit dependency graph instead of tree output', false)
+    .option('--visualize', 'Generate interactive HTML graph (implies --graph)', false)
+    .option('--out <path>', 'Output path for --visualize HTML', join(process.cwd(), '.crew', 'repo-graph.html'))
+    .option('--json', 'Emit graph as JSON', false)
+    .option('--max-nodes <n>', 'Limit graph nodes in text mode', '200')
+    .action(async (options) => {
+      const {
+        buildRepositoryGraph,
+        buildRepositoryMap,
+        buildRepositoryGraphDot,
+        buildRepositoryGraphHtml
+      } = await import('../mapping/index.js');
+      try {
+        if (options.graph || options.visualize) {
+          const graph = await buildRepositoryGraph(process.cwd());
+          if (options.visualize) {
+            const htmlPath = String(options.out || join(process.cwd(), '.crew', 'repo-graph.html'));
+            await mkdir(dirname(htmlPath), { recursive: true });
+            const html = buildRepositoryGraphHtml(graph);
+            await writeFile(htmlPath, html, 'utf8');
+            const dotPath = `${htmlPath}.dot`;
+            await writeFile(dotPath, buildRepositoryGraphDot(graph), 'utf8');
+            logger.success(`Wrote graph visualization: ${htmlPath}`);
+            logger.info(`Wrote Graphviz DOT: ${dotPath}`);
+            return;
+          }
+          if (options.json) {
+            console.log(JSON.stringify(graph, null, 2));
+            return;
+          }
+          const maxNodes = Number.parseInt(options.maxNodes || '200', 10);
+          console.log(chalk.blue('--- Repository Dependency Graph ---'));
+          console.log(`Root: ${graph.root}`);
+          console.log(`Nodes: ${graph.nodeCount}`);
+          console.log(`Edges: ${graph.edgeCount}`);
+          const shown = graph.nodes.slice(0, Math.max(1, maxNodes));
+          for (const node of shown) {
+            const imports = node.imports.length ? node.imports.join(', ') : '(none)';
+            const importedBy = node.importedBy.length ? node.importedBy.join(', ') : '(none)';
+            console.log(`\n- ${node.path}`);
+            console.log(`  imports: ${imports}`);
+            console.log(`  importedBy: ${importedBy}`);
+          }
+          if (graph.nodes.length > shown.length) {
+            console.log(`\n... ${graph.nodes.length - shown.length} more nodes omitted`);
+          }
+          return;
+        }
+
+        const map = await buildRepositoryMap(process.cwd());
+        console.log(chalk.blue('--- Repository Tree Map ---'));
+        console.log(map);
+      } catch (err) {
+        logger.error(`Failed to generate map: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  const lsp = program
+    .command('lsp')
+    .description('Language-server style utilities (typecheck, completions)');
+
+  lsp
+    .command('check')
+    .description('Run TypeScript diagnostics for the current project')
+    .argument('[files...]', 'Optional relative files to filter diagnostics')
+    .option('--json', 'Emit JSON', false)
+    .action(async (files, options) => {
+      try {
+        const { typeCheckProject } = await import('../lsp/index.js');
+        const diagnostics = typeCheckProject(process.cwd(), files || []);
+        if (options.json) {
+          console.log(JSON.stringify({ count: diagnostics.length, diagnostics }, null, 2));
+          return;
+        }
+        if (diagnostics.length === 0) {
+          logger.success('No LSP diagnostics found.');
+          return;
+        }
+        console.log(chalk.yellow(`Found ${diagnostics.length} diagnostic(s):`));
+        for (const diag of diagnostics) {
+          console.log(`${diag.category.toUpperCase()} ${diag.code} ${diag.file}:${diag.line}:${diag.column}`);
+          console.log(`  ${diag.message}`);
+        }
+        process.exit(1);
+      } catch (error) {
+        logger.error(`LSP check failed: ${(error as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  lsp
+    .command('complete')
+    .description('Get code completions at a cursor position')
+    .argument('<file>', 'Relative or absolute path to source file')
+    .argument('<line>', '1-based line number')
+    .argument('<column>', '1-based column number')
+    .option('--prefix <text>', 'Filter completions by prefix', '')
+    .option('--limit <n>', 'Max completion count', '50')
+    .option('--json', 'Emit JSON', false)
+    .action(async (file, line, column, options) => {
+      try {
+        const { getCompletions } = await import('../lsp/index.js');
+        const completions = getCompletions(
+          process.cwd(),
+          file,
+          Number.parseInt(line, 10),
+          Number.parseInt(column, 10),
+          Number.parseInt(options.limit || '50', 10),
+          String(options.prefix || '')
+        );
+        if (options.json) {
+          console.log(JSON.stringify({ count: completions.length, completions }, null, 2));
+          return;
+        }
+        if (completions.length === 0) {
+          logger.warn('No completions found.');
+          return;
+        }
+        console.log(chalk.blue(`Completions (${completions.length}):`));
+        completions.forEach(item => {
+          console.log(`- ${item.name} (${item.kind})`);
+        });
+      } catch (error) {
+        logger.error(`LSP completion failed: ${(error as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('pty')
+    .description('Run an interactive command in a pseudo-terminal')
+    .argument('<command...>', 'Command to execute in PTY')
+    .option('-p, --project <path>', 'Working directory', process.cwd())
+    .option('--timeout <ms>', 'Timeout in milliseconds (0 disables)', '0')
+    .action(async (commandArray, options) => {
+      const command = commandArray.join(' ');
+      try {
+        const { runPtyCommand } = await import('../pty/index.js');
+        const result = await runPtyCommand(command, {
+          cwd: options.project || process.cwd(),
+          timeoutMs: Number.parseInt(options.timeout || '0', 10)
+        });
+        if (!result.success) {
+          process.exit(result.exitCode === 0 ? 1 : result.exitCode);
+        }
+      } catch (error) {
+        logger.error(`PTY command failed: ${(error as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('shell')
+    .description('Translate natural language into a shell command and execute it (GitHub Copilot CLI style)')
+    .argument('<request...>', 'Natural language request (e.g. "list files sorted by size")')
+    .option('-m, --model <id>', 'Model override for shell command generation')
+    .action(async (requestArray, options) => {
+      const { runShellCopilot } = await import('../shell/index.js');
+      await runShellCopilot(requestArray.join(' '), agentRouter, {
+        projectDir: process.cwd(),
+        model: options.model
+      });
+    });
+
+  program
+    .command('exec')
+    .description('Run an interactive terminal command with PTY support')
+    .argument('<command>', 'Command to run')
+    .argument('[args...]', 'Arguments for the command')
+    .action(async (command, args) => {
+      // Unified: use src/pty implementation (has fallback logic)
+      const { runPtyCommand } = await import('../pty/index.js');
+      try {
+        const fullCommand = [command, ...args].join(' ');
+        const result = await runPtyCommand(fullCommand);
+        process.exit(result.exitCode);
+      } catch (err) {
+        logger.error(`Interactive command failed: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('lsp-check')
+    .description('Run LSP type checking on a file')
+    .argument('<file>', 'File to check')
+    .action(async (file) => {
+      const { LspService } = await import('../lsp/index.js');
+      const service = new LspService(process.cwd());
+      const diagnostics = service.getDiagnostics(file);
+      
+      if (diagnostics.length === 0) {
+        logger.success('No type errors found.');
+      } else {
+        console.log(chalk.red(`Found ${diagnostics.length} errors:`));
+        diagnostics.forEach(d => console.log(`- ${d}`));
+      }
+    });
+
+  program
+    .command('lsp-complete')
+    .description('Get LSP autocomplete suggestions at a specific position')
+    .argument('<file>', 'File path')
+    .argument('<line>', 'Line number (1-based)')
+    .argument('<char>', 'Character number (1-based)')
+    .action(async (file, lineStr, charStr) => {
+      const { LspService } = await import('../lsp/index.js');
+      const service = new LspService(process.cwd());
+      const line = parseInt(lineStr, 10);
+      const char = parseInt(charStr, 10);
+      const completions = service.getCompletions(file, line, char);
+      
+      if (completions.length === 0) {
+        logger.info('No completions found.');
+      } else {
+        console.log(chalk.blue(`--- Autocomplete (${completions.length}) ---`));
+        console.log(completions.slice(0, 50).join(', ') + (completions.length > 50 ? '...' : ''));
+      }
+    });
+
+  program
+    .command('explore')
+    .description('Speculative execution: run a task on 3 parallel branches with different strategies')
+    .argument('<task...>', 'Task to explore')
+    .option('-p, --project <path>', 'Project directory')
+    .option('-g, --gateway <url>', 'Override gateway URL')
+    .action(async (taskArray, options) => {
+      const task = taskArray.join(' ');
+      const projectDir = options.project || process.cwd();
+      const sessionId = await sessionManager.getSessionId();
+
+      logger.info(chalk.blue(`\n🔀 Exploring 3 approaches for: ${task}`));
+
+      const branches = [
+        { name: 'explore-minimal', prompt: `Implement this task with the MINIMAL possible changes. Be extremely concise and surgical: "${task}"` },
+        { name: 'explore-clean', prompt: `Implement this task following CLEAN ARCHITECTURE principles. Prioritize maintainability and best practices: "${task}"` },
+        { name: 'explore-pragmatic', prompt: `Implement this task with a PRAGMATIC approach. Balance speed and quality: "${task}"` }
+      ];
+
+      const originalBranch = sandbox.getActiveBranch();
+      const results: any[] = [];
+
+      // Run in parallel
+      await Promise.all(branches.map(async (b) => {
+        try {
+          logger.info(chalk.gray(`  Starting ${b.name}...`));
+          
+          // Create and switch to branch
+          try {
+            await sandbox.createBranch(b.name, originalBranch);
+          } catch {
+            await sandbox.switchBranch(b.name);
+            await sandbox.rollback(b.name);
+          }
+
+          const result = await agentRouter.dispatch('crew-coder', b.prompt, {
+            project: projectDir,
+            sessionId: `${sessionId}-${b.name}`,
+            gateway: options.gateway
+          });
+
+          const edits = await orchestrator.parseAndApplyToSandbox(String(result.result || ''));
+          
+          results.push({
+            name: b.name,
+            success: true,
+            edits: edits.length,
+            result: result.result
+          });
+
+          logger.success(`  ✓ Completed ${b.name} (${edits.length} files)`);
+        } catch (err) {
+          logger.error(`  ✗ ${b.name} failed: ${(err as Error).message}`);
+          results.push({ name: b.name, success: false, error: (err as Error).message });
+        }
+      }));
+
+      // Switch back to original branch
+      await sandbox.switchBranch(originalBranch);
+
+      console.log(chalk.blue('\n--- Exploration Results ---'));
+      results.forEach(r => {
+        if (r.success) {
+          console.log(chalk.green(`  ${r.name}: ${r.edits} files modified`));
+        } else {
+          console.log(chalk.red(`  ${r.name}: Failed (${r.error})`));
+        }
+      });
+
+      const { choice } = await (import('inquirer')).then(m => m.default.prompt([{
+        type: 'list',
+        name: 'choice',
+        message: 'Which approach would you like to inspect or merge?',
+        choices: [
+          ...results.filter(r => r.success).map(r => r.name),
+          'none'
+        ]
+      }]));
+
+      if (choice !== 'none') {
+        await sandbox.switchBranch(choice);
+        logger.info(`Switched to branch: ${choice}. Use "crew preview" to review or "crew merge ${choice} main" to merge.`);
       }
     });
 
@@ -388,6 +1813,166 @@ export async function main(args = []) {
       }
     });
 
+  const configCmd = program
+    .command('config')
+    .description('Manage repo-level configuration in .crew/config.json and .crew/config.local.json');
+
+  configCmd
+    .command('show')
+    .description('Show resolved/team/user repo configuration')
+    .option('--scope <scope>', 'resolved | team | user', 'resolved')
+    .option('--json', 'Output JSON', false)
+    .action(async (options) => {
+      const scope = String(options.scope || 'resolved').toLowerCase();
+      if (!['resolved', 'team', 'user'].includes(scope)) {
+        logger.error('Invalid scope. Use: resolved | team | user');
+        process.exit(1);
+      }
+      const value = scope === 'resolved'
+        ? await loadResolvedRepoConfig(process.cwd())
+        : await readRepoConfig(process.cwd(), scope as 'team' | 'user');
+      const redacted = redactRepoConfigForDisplay(value);
+      if (options.json) {
+        console.log(JSON.stringify(redacted, null, 2));
+        return;
+      }
+      console.log(chalk.blue(`--- Repo Config (${scope}) ---`));
+      console.log(JSON.stringify(redacted, null, 2));
+    });
+
+  configCmd
+    .command('get')
+    .description('Get a repo config value by dotted key path')
+    .argument('<key>', 'Dotted key path (e.g. cli.model)')
+    .option('--scope <scope>', 'resolved | team | user', 'resolved')
+    .option('--json', 'Output JSON', false)
+    .action(async (key, options) => {
+      const scope = String(options.scope || 'resolved').toLowerCase();
+      if (!['resolved', 'team', 'user'].includes(scope)) {
+        logger.error('Invalid scope. Use: resolved | team | user');
+        process.exit(1);
+      }
+      const source = scope === 'resolved'
+        ? await loadResolvedRepoConfig(process.cwd())
+        : await readRepoConfig(process.cwd(), scope as 'team' | 'user');
+      const value = getNestedValue(source as Record<string, unknown>, String(key));
+      if (value === undefined) {
+        logger.warn(`No value found for key "${key}" in ${scope} config.`);
+        process.exit(1);
+      }
+      const redacted = redactRepoConfigForDisplay(value);
+      if (options.json) {
+        console.log(JSON.stringify(redacted, null, 2));
+        return;
+      }
+      if (typeof redacted === 'object') {
+        console.log(JSON.stringify(redacted, null, 2));
+      } else {
+        console.log(String(redacted));
+      }
+    });
+
+  configCmd
+    .command('set')
+    .description('Set a repo config value by dotted key path')
+    .argument('<key>', 'Dotted key path (e.g. repl.autoApply)')
+    .argument('<value>', 'Value (string by default, or JSON with --json)')
+    .option('--scope <scope>', 'team | user', 'user')
+    .option('--json', 'Parse value as JSON', false)
+    .action(async (key, value, options) => {
+      const scope = String(options.scope || 'user').toLowerCase();
+      if (!['team', 'user'].includes(scope)) {
+        logger.error('Invalid scope for set. Use: team | user');
+        process.exit(1);
+      }
+      let parsedValue: unknown;
+      try {
+        parsedValue = parseConfigValue(String(value), Boolean(options.json));
+      } catch (error) {
+        logger.error(`Invalid value: ${(error as Error).message}`);
+        process.exit(1);
+      }
+      await setRepoConfigValue(process.cwd(), scope as 'team' | 'user', String(key), parsedValue);
+      logger.success(`Set ${scope}.${String(key)} = ${JSON.stringify(redactRepoConfigForDisplay(parsedValue))}`);
+    });
+
+  program
+    .command('github')
+    .description('Natural language GitHub issue/PR flows via gh CLI')
+    .argument('<request...>', 'Natural language request or "doctor"')
+    .option('--repo <owner/name>', 'Override GitHub repository (default: current git remote)')
+    .option('--limit <n>', 'Default list limit for list requests', '10')
+    .option('-y, --yes', 'Skip confirmation gate for mutating actions', false)
+    .option('--dry-run', 'Parse and print the exact gh command without executing', false)
+    .option('--json', 'Output raw gh JSON for list flows when available', false)
+    .action(async (requestArray, options) => {
+      const request = String((requestArray || []).join(' ') || '').trim();
+      if (request.toLowerCase() === 'doctor') {
+        const checks = await runGitHubDoctor(process.cwd(), options.repo);
+        let failed = false;
+        for (const check of checks) {
+          const marker = check.ok ? chalk.green('✓') : chalk.red('✗');
+          console.log(`${marker} ${check.name}: ${check.details}`);
+          if (!check.ok) failed = true;
+        }
+        if (failed) process.exit(1);
+        return;
+      }
+      const intent = parseGitHubIntent(request, {
+        defaultLimit: Number.parseInt(options.limit || '10', 10)
+      });
+      if (intent.kind === 'unknown') {
+        logger.error(intent.reason);
+        logger.info('Try examples:');
+        logger.info('  crew github "list open issues limit 20"');
+        logger.info('  crew github "create issue \\"Fix login bug\\" body: repro steps..."');
+        logger.info('  crew github "update issue #42 close"');
+        logger.info('  crew github "create draft pr \\"Refactor auth\\" body: summary..."');
+        process.exit(1);
+      }
+
+      logger.info(`Intent: ${describeIntent(intent)}`);
+      const ghArgs = buildGitHubCommand(intent, options.repo);
+      if (options.dryRun) {
+        console.log(chalk.blue('\n--- GitHub Dry Run ---'));
+        console.log(`Intent: ${describeIntent(intent)}`);
+        console.log(`Command: ${commandToShell(ghArgs)}`);
+        return;
+      }
+      if (requiresConfirmation(intent) && !options.yes) {
+        const answer = await (await import('inquirer')).default.prompt([{
+          type: 'confirm',
+          name: 'confirm',
+          message: `Proceed with: ${describeIntent(intent)}?`,
+          default: false
+        }]);
+        if (!answer.confirm) {
+          logger.warn('Cancelled.');
+          return;
+        }
+      }
+
+      try {
+        const output = await executeGitHubIntent(intent, {
+          cwd: process.cwd(),
+          repo: options.repo
+        });
+        if (options.json || intent.kind === 'issue_create' || intent.kind === 'issue_update' || intent.kind === 'pr_draft') {
+          console.log(output);
+          return;
+        }
+        try {
+          const parsed = JSON.parse(output);
+          console.log(JSON.stringify(parsed, null, 2));
+        } catch {
+          console.log(output);
+        }
+      } catch (error) {
+        logger.error(`GitHub command failed: ${(error as Error).message}`);
+        process.exit(1);
+      }
+    });
+
   program
     .command('privacy')
     .description('Configure privacy controls for team sync')
@@ -430,7 +2015,7 @@ export async function main(args = []) {
     .command('listen')
     .description('Voice mode: record speech, transcribe via Whisper, run command, and optionally speak response')
     .option('--duration-sec <n>', 'Recording duration in seconds', '6')
-    .option('--provider <id>', 'STT provider: auto | openai | whisper-cli', 'auto')
+    .option('--provider <id>', 'STT provider: auto | groq | openai | whisper-cli', 'auto')
     .option('--text <value>', 'Skip recording and use raw text directly')
     .option('--continuous', 'Keep listening in a loop', false)
     .option('--max-rounds <n>', 'Maximum rounds in continuous mode', '5')
@@ -811,6 +2396,25 @@ export async function main(args = []) {
           console.log(`- ${model}: $${usd.toFixed(4)}`);
         });
       }
+      const cache = cost.cacheSavings || {};
+      console.log(chalk.gray('\nCache savings:'));
+      console.log(`- hits: ${Number(cache.hits || 0)}`);
+      console.log(`- misses: ${Number(cache.misses || 0)}`);
+      console.log(`- tokens saved (est): ${Number(cache.tokensSaved || 0)}`);
+      console.log(`- usd saved (est): $${Number(cache.usdSaved || 0).toFixed(4)}`);
+      const memory = cost.memoryMetrics || {};
+      const recallUsed = Number(memory.recallUsed || 0);
+      const recallMisses = Number(memory.recallMisses || 0);
+      const matchCount = Number(memory.totalMatches ?? memory.matchCount ?? 0);
+      const avgQuality = Number(
+        memory.averageQualityScore
+        ?? (recallUsed > 0 ? (Number(memory.qualityScoreSum || 0) / recallUsed) : 0)
+      );
+      console.log(chalk.gray('\nMemory recall metrics:'));
+      console.log(`- recall_used: ${recallUsed}`);
+      console.log(`- recall_misses: ${recallMisses}`);
+      console.log(`- match_count: ${matchCount}`);
+      console.log(`- quality_score_avg: ${avgQuality.toFixed(3)}`);
     });
 
   program
@@ -875,23 +2479,102 @@ export async function main(args = []) {
     });
 
   program
+    .command('x-search')
+    .description('Run native Grok X/Twitter search via xAI Responses API')
+    .argument('<query...>', 'Search query')
+    .option('--model <id>', 'xAI model', 'grok-4-1-fast-reasoning')
+    .option('--from-date <date>', 'Start date (YYYY-MM-DD)')
+    .option('--to-date <date>', 'End date (YYYY-MM-DD)')
+    .option('--allow-handle <handle>', 'Allowed X handle (repeatable)', collectOption, [])
+    .option('--exclude-handle <handle>', 'Excluded X handle (repeatable)', collectOption, [])
+    .option('--images', 'Enable image understanding in x_search tool', false)
+    .option('--videos', 'Enable video understanding in x_search tool', false)
+    .option('--json', 'Output full JSON payload', false)
+    .action(async (queryArray, options) => {
+      try {
+        const query = queryArray.join(' ').trim();
+        const result = await runXSearch(query, {
+          model: options.model,
+          fromDate: options.fromDate,
+          toDate: options.toDate,
+          allowedHandles: options.allowHandle || [],
+          excludedHandles: options.excludeHandle || [],
+          enableImages: Boolean(options.images),
+          enableVideos: Boolean(options.videos)
+        });
+        if (options.json) {
+          console.log(JSON.stringify(result.raw, null, 2));
+          return;
+        }
+        console.log(chalk.blue('\n--- X Search Result ---\n'));
+        logger.printWithHighlight(result.text);
+        if (result.citations.length > 0) {
+          console.log(chalk.gray('\nCitations:'));
+          for (const c of result.citations) console.log(`- ${c}`);
+        }
+      } catch (error) {
+        logger.error('x-search failed:', (error as Error).message);
+        process.exit(1);
+      }
+    });
+
+  program
     .command('plan')
-    .description('Generate a detailed plan for a task and execute it step-by-step')
+    .description('Generate a detailed plan for a task and execute it step-by-step or in parallel')
     .argument('<task...>', 'Task to plan and execute')
-    .action(async (taskArray) => {
+    .option('--parallel', 'Execute plan steps in parallel using worker pool', false)
+    .option('--concurrency <n>', 'Maximum parallel workers', '3')
+    .option('-m, --model <id>', 'Model override for plan execution', plannerPrimary || undefined)
+    .option('--fallback-model <id>', 'Fallback model chain entry (repeatable)', collectOption, [])
+    .option('--resume <runId>', 'Resume a prior plan run from checkpoint')
+    .option('--validate-cmd <cmd>', 'Validation command (repeatable, hard gate)', collectOption, [])
+    .option('--reflect-agent <id>', 'Agent used for reflect step', 'crew-main')
+    .option('--no-cache', 'Disable planner cache')
+    .option('--cache-ttl <sec>', 'Planner cache TTL in seconds', '3600')
+    .option('--no-memory', 'Disable shared AgentKeeper memory')
+    .option('--memory-max <n>', 'Max recalled memory entries', String(cliDefaults.memoryMax ?? 3))
+    .option('--memory-require-validation', 'Store memory only when validation is marked passed', false)
+    .action(async (taskArray, options) => {
       const task = taskArray.join(' ');
-      const planner = new Planner(agentRouter);
+      const planner = new Planner(agentRouter, sessionManager, process.cwd());
+      const runId = options.resume ? String(options.resume) : `plan-${randomUUID()}`;
+      const validationCommands = options.validateCmd || [];
+      const fallbackModels = (options.fallbackModel && options.fallbackModel.length > 0)
+        ? options.fallbackModel
+        : (plannerPolicy.fallback || []);
+      const existingRun = options.resume ? await checkpoints.load(runId) : null;
+      if (!existingRun) {
+        await checkpoints.beginRun({ runId, mode: 'plan', task });
+      }
       
       logger.info(`Generating plan for: ${task}`);
-      const plan = await planner.generatePlan(task);
+      const plan = await planner.generatePlan(task, {
+        useCache: options.cache,
+        cacheTtlSeconds: Number.parseInt(options.cacheTtl || '3600', 10),
+        useMemory: options.memory,
+        memoryMaxResults: Number.parseInt(options.memoryMax || '3', 10),
+        runId
+      });
+      await checkpoints.append(runId, 'plan.generated', { steps: plan.steps.length });
       
       console.log(chalk.blue('\n--- Proposed Plan ---'));
       plan.steps.forEach(s => console.log(`${s.id}. ${s.task}`));
+
+      let completedSteps = new Set<number>();
+      if (options.resume) {
+        const prior = existingRun || await checkpoints.load(runId);
+        if (prior) {
+          completedSteps = new Set(CheckpointStore.completedPlanSteps(prior));
+          if (completedSteps.size > 0) {
+            logger.info(`Resuming from checkpoint ${runId}; skipping completed steps: ${Array.from(completedSteps).join(', ')}`);
+          }
+        }
+      }
       
       const { confirm } = await (import('inquirer')).then(m => m.default.prompt([{
         type: 'confirm',
         name: 'confirm',
-        message: 'Execute this plan step-by-step?',
+        message: `Execute this plan ${options.parallel ? 'in parallel' : 'step-by-step'}?`,
         default: true
       }]));
       
@@ -900,25 +2583,172 @@ export async function main(args = []) {
         return;
       }
       
-      for (const step of plan.steps) {
-        logger.progress(step.id - 1, plan.steps.length, 'Plan');
-        logger.info(`Step ${step.id}: ${step.task}`);
-        try {
-          const result = await agentRouter.dispatch('crew-coder', step.task);
-          logger.printWithHighlight(chalk.gray(String(result.result || '')));
-          
-          const edits = await orchestrator.parseAndApplyToSandbox(result.result);
-          if (edits.length > 0) {
-            logger.success(`Added changes to ${edits.length} files in sandbox for step ${step.id}.`);
+      if (options.parallel) {
+        const { WorkerPool } = await import('../orchestrator/index.js');
+        const pool = new WorkerPool({
+          router: agentRouter,
+          orchestrator,
+          sandbox,
+          keeper: options.memory !== false ? agentKeeper : undefined,
+          concurrency: Number.parseInt(options.concurrency || '3', 10)
+        });
+
+        logger.info(`Starting parallel execution with concurrency ${options.concurrency}`);
+        
+        pool.enqueueAll(plan.steps.map(s => ({
+          id: `step-${s.id}`,
+          agent: 'crew-coder',
+          prompt: s.task
+        })));
+
+        const results = await pool.runAll({
+          sessionId: await sessionManager.getSessionId(),
+          projectDir: process.cwd(),
+          runId
+        });
+
+        const successCount = results.filter(r => r.success).length;
+        const failedCount = results.length - successCount;
+        
+        logger.info(`Parallel execution complete: ${successCount} succeeded, ${failedCount} failed.`);
+        results.forEach(r => {
+          if (!r.success) {
+            logger.error(`Task ${r.taskId} failed: ${r.error}`);
           }
-        } catch (err) {
-          logger.error(`Failed at step ${step.id}: ${err.message}`);
-          break;
+        });
+      } else {
+        for (const step of plan.steps) {
+          if (completedSteps.has(step.id)) {
+            continue;
+          }
+          logger.progress(step.id - 1, plan.steps.length, 'Plan');
+          logger.info(`Step ${step.id}: ${step.task}`);
+          try {
+            await checkpoints.append(runId, 'plan.step.started', { stepId: step.id, task: step.task });
+            const dispatched = await dispatchWithFallback(
+              agentRouter,
+              'crew-coder',
+              step.task,
+              {
+                sessionId: await sessionManager.getSessionId(),
+                project: process.cwd(),
+                model: options.model
+              },
+              fallbackModels,
+              checkpoints,
+              runId
+            );
+            const result = dispatched.result;
+            logger.printWithHighlight(chalk.gray(String(result.result || '')));
+            
+            const edits = await orchestrator.parseAndApplyToSandbox(result.result);
+            const validationGate = await runValidationCommands(validationCommands, process.cwd());
+            await checkpoints.append(runId, 'plan.step.validation', {
+              stepId: step.id,
+              passed: validationGate.passed,
+              failedCommand: validationGate.failedCommand || null
+            });
+            if (!validationGate.passed) {
+              logger.error(`Validation failed at step ${step.id}: ${validationGate.failedCommand}`);
+              logger.printWithHighlight(String(validationGate.output || ''));
+              await checkpoints.append(runId, 'plan.step.failed', {
+                stepId: step.id,
+                reason: 'validation-failed',
+                command: validationGate.failedCommand
+              });
+              await checkpoints.finish(runId, 'failed');
+              process.exit(1);
+            }
+            if (options.memory !== false) {
+              const response = String(result.result || '').trim();
+              const validation = extractValidationSignals(result, Boolean(options.memoryRequireValidation));
+              if (response.length > 0 && validation.passed) {
+                const saved = await agentKeeper.recordSafe({
+                  runId,
+                  tier: 'worker',
+                  task: step.task,
+                  result: response,
+                  agent: 'crew-coder',
+                  structured: {
+                    problem: step.task,
+                    edits: edits.map((path: string) => ({ path })),
+                    validation: {
+                      lintPassed: validation.lintPassed,
+                      testsPassed: validation.testsPassed,
+                      notes: validation.notes
+                    },
+                    outcome: 'success'
+                  },
+                  metadata: {
+                    stepId: step.id,
+                    edits: edits.length,
+                    success: true,
+                    paths: edits,
+                    validationRequired: validation.required,
+                    validationPassed: validation.passed
+                  }
+                });
+                if (!saved.ok) {
+                  logger.warn(`Memory write skipped: ${saved.error}`);
+                }
+              }
+            }
+            if (edits.length > 0) {
+              logger.success(`Added changes to ${edits.length} files in sandbox for step ${step.id}.`);
+              const report = await analyzeBlastRadius(process.cwd(), { changedFiles: edits });
+              const patchRisk = scorePatchRisk({
+                blastRadius: report,
+                validationPassed: validationGate.passed,
+                changedFiles: edits.length
+              });
+              logger.info(`Step ${step.id} patch confidence: ${(patchRisk.confidence * 100).toFixed(0)}% (${patchRisk.riskLevel}, ${patchRisk.riskScore}/100)`);
+            }
+            const reflectPrompt = [
+              `Reflect on this completed step and decide next action.`,
+              `Step: ${step.task}`,
+              `Output summary: ${String(result.result || '').slice(0, 1200)}`,
+              `Validation: ${validationGate.passed ? 'passed' : 'failed'}`,
+              `Return concise guidance for next step execution.`
+            ].join('\n');
+            const reflect = await dispatchWithFallback(
+              agentRouter,
+              options.reflectAgent || 'crew-main',
+              reflectPrompt,
+              {
+                sessionId: await sessionManager.getSessionId(),
+                project: process.cwd()
+              },
+              fallbackModels,
+              checkpoints,
+              runId
+            );
+            logger.info(chalk.gray(`Reflect (${options.reflectAgent || 'crew-main'}): ${String(reflect.result.result || '').slice(0, 180)}`));
+            await checkpoints.append(runId, 'plan.step.completed', {
+              stepId: step.id,
+              edits: edits.length
+            });
+          } catch (err) {
+            logger.error(`Failed at step ${step.id}: ${err.message}`);
+            await checkpoints.append(runId, 'plan.step.failed', {
+              stepId: step.id,
+              reason: String(err.message || err)
+            });
+            await checkpoints.finish(runId, 'failed');
+            break;
+          }
         }
+        logger.progress(plan.steps.length, plan.steps.length, 'Plan');
       }
-      logger.progress(plan.steps.length, plan.steps.length, 'Plan');
       
       logger.success('Plan execution complete. Use "crew preview" to review changes.');
+      await checkpoints.finish(runId, 'completed');
+      if (options.memory !== false) {
+        try {
+          await agentKeeper.compact();
+        } catch {
+          // Best-effort maintenance.
+        }
+      }
     });
 
   program
@@ -1404,6 +3234,92 @@ export async function main(args = []) {
       }
     });
 
+  // ── Collections Search (RAG over docs) ─────────────────────────
+  program
+    .command('docs')
+    .description('Search project docs and optionally code with source-attributed local RAG')
+    .argument('<query...>', 'Search query')
+    .option('--path <paths...>', 'Paths to index (default: docs/ and project root)')
+    .option('--code', 'Include source code files in the index', false)
+    .option('--max <n>', 'Max results to return', '8')
+    .option('--json', 'Output as JSON', false)
+    .action(async (queryArray, options) => {
+      const { buildCollectionIndex, searchCollection } = await import('../collections/index.js');
+      const query = queryArray.join(' ');
+      const paths = options.path && options.path.length > 0
+        ? options.path
+        : [join(process.cwd(), 'docs'), process.cwd()];
+      try {
+        const index = await buildCollectionIndex(paths, {
+          includeCode: Boolean(options.code)
+        });
+        const result = searchCollection(index, query, Number.parseInt(options.max || '8', 10));
+
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+
+        if (result.hits.length === 0) {
+          logger.warn(`No results for "${query}" (${index.fileCount} files, ${index.chunkCount} chunks indexed).`);
+          return;
+        }
+
+        console.log(chalk.blue(`\n--- Docs Search: "${query}" (${result.hits.length} hits from ${index.chunkCount} chunks) ---\n`));
+        for (const hit of result.hits) {
+          console.log(chalk.yellow(`[${hit.score}] ${hit.source}:${hit.startLine}`));
+          const preview = hit.text.length > 200 ? hit.text.slice(0, 200) + '...' : hit.text;
+          console.log(chalk.gray(preview));
+          console.log('');
+        }
+      } catch (error) {
+        logger.error('Docs search failed:', error.message);
+        process.exit(1);
+      }
+    });
+
+  // ── Blast Radius Analysis ─────────────────────────────────────
+  program
+    .command('blast-radius')
+    .description('Analyze impact of current changes across the codebase')
+    .option('--ref <ref>', 'Git diff reference (default: HEAD)')
+    .option('--max-depth <n>', 'Max transitive import depth', '5')
+    .option('--json', 'Output as JSON', false)
+    .option('--gate', 'Exit non-zero if risk is high (for CI)', false)
+    .action(async (options) => {
+      const { analyzeBlastRadius } = await import('../blast-radius/index.js');
+      try {
+        const report = await analyzeBlastRadius(process.cwd(), {
+          diffRef: options.ref,
+          maxDepth: Number.parseInt(options.maxDepth || '5', 10)
+        });
+
+        if (options.json) {
+          console.log(JSON.stringify(report, null, 2));
+        } else {
+          const riskColor = { low: chalk.green, medium: chalk.yellow, high: chalk.red }[report.risk];
+          console.log(chalk.blue('\n--- Blast Radius Analysis ---\n'));
+          console.log(riskColor(report.summary));
+
+          if (report.affectedFiles.length > 0) {
+            console.log(chalk.blue('\nAffected files:'));
+            for (const af of report.affectedFiles) {
+              const tag = { changed: chalk.red('CHANGED'), 'direct-importer': chalk.yellow('DIRECT'), 'transitive-importer': chalk.gray('TRANSITIVE') }[af.relation];
+              console.log(`  ${tag}  ${af.path}`);
+            }
+          }
+        }
+
+        if (options.gate && report.risk === 'high') {
+          logger.error('Blast radius is HIGH — aborting (use without --gate to see report only).');
+          process.exit(1);
+        }
+      } catch (error) {
+        logger.error('Blast radius analysis failed:', error.message);
+        process.exit(1);
+      }
+    });
+
   program
     .command('test-sandbox')
     .description('Internal test for sandbox')
@@ -1417,6 +3333,236 @@ export async function main(args = []) {
       } catch (error) {
         logger.error('Test failed:', error.message);
       }
+    });
+
+  // ── AgentKeeper Memory ─────────────────────────────────────────
+  program
+    .command('memory')
+    .description('Query AgentKeeper task memory')
+    .argument('[query...]', 'Search query (omit to show stats)')
+    .option('--max <n>', 'Max results', '5')
+    .option('--json', 'Output as JSON', false)
+    .action(async (queryArray, options) => {
+      const { AgentKeeper } = await import('../memory/agentkeeper.js');
+      const keeper = new AgentKeeper(process.cwd());
+      const query = (queryArray || []).join(' ').trim();
+
+      if (!query) {
+        const stats = await keeper.stats();
+        if (options.json) {
+          console.log(JSON.stringify(stats, null, 2));
+        } else {
+          console.log(chalk.blue('\n--- AgentKeeper Memory Stats ---\n'));
+          console.log(`  Total entries: ${stats.entries}`);
+          console.log(`  Approx bytes: ${stats.bytes}`);
+          if (Object.keys(stats.byTier).length > 0) {
+            console.log('  By tier:');
+            for (const [tier, count] of Object.entries(stats.byTier)) {
+              console.log(`    ${tier}: ${count}`);
+            }
+          }
+          if (Object.keys(stats.byAgent).length > 0) {
+            console.log('  By agent:');
+            for (const [agent, count] of Object.entries(stats.byAgent)) {
+              console.log(`    ${agent}: ${count}`);
+            }
+          }
+          try {
+            const cost = await sessionManager.loadCost();
+            const memory = cost.memoryMetrics || {};
+            const recallUsed = Number(memory.recallUsed || 0);
+            const recallMisses = Number(memory.recallMisses || 0);
+            const matchCount = Number(memory.totalMatches ?? memory.matchCount ?? 0);
+            const avgQuality = Number(
+              memory.averageQualityScore
+              ?? (recallUsed > 0 ? (Number(memory.qualityScoreSum || 0) / recallUsed) : 0)
+            );
+            console.log('  Recall metrics:');
+            console.log(`    recall_used: ${recallUsed}`);
+            console.log(`    recall_misses: ${recallMisses}`);
+            console.log(`    match_count: ${matchCount}`);
+            console.log(`    quality_score_avg: ${avgQuality.toFixed(3)}`);
+          } catch {
+            // Best-effort observability section.
+          }
+        }
+        return;
+      }
+
+      const matches = await keeper.recall(query, Number.parseInt(options.max || '5', 10));
+      if (options.json) {
+        console.log(JSON.stringify(matches, null, 2));
+        return;
+      }
+      if (matches.length === 0) {
+        logger.warn(`No memory matches for "${query}".`);
+        return;
+      }
+      console.log(chalk.blue(`\n--- Memory Recall: "${query}" (${matches.length} matches) ---\n`));
+      for (const m of matches) {
+        console.log(chalk.yellow(`[${m.score}] ${m.entry.tier} — ${m.entry.task.slice(0, 80)}`));
+        if (m.entry.agent) console.log(chalk.gray(`  Agent: ${m.entry.agent}`));
+        const preview = m.entry.result.length > 150 ? m.entry.result.slice(0, 150) + '...' : m.entry.result;
+        console.log(chalk.gray(`  Result: ${preview}`));
+        console.log('');
+      }
+    });
+
+  program
+    .command('memory-compact')
+    .description('Compact AgentKeeper memory store')
+    .option('--max-entries <n>', 'Max entries to keep', '500')
+    .action(async (options) => {
+      const { AgentKeeper } = await import('../memory/agentkeeper.js');
+      const keeper = new AgentKeeper(process.cwd(), {
+        maxEntries: Number.parseInt(options.maxEntries || '500', 10)
+      });
+      const result = await keeper.compact();
+      logger.success(`Compacted: ${result.entriesBefore} → ${result.entriesAfter} entries (freed ${result.bytesFreed} bytes).`);
+    });
+
+  const checkpointCmd = program
+    .command('checkpoint')
+    .description('Inspect or replay resumable run checkpoints');
+
+  checkpointCmd
+    .command('list')
+    .description('List recent checkpoints')
+    .option('--max <n>', 'Max checkpoints', '20')
+    .action(async options => {
+      const runs = await checkpoints.list(Number.parseInt(options.max || '20', 10));
+      if (runs.length === 0) {
+        logger.warn('No checkpoints found.');
+        return;
+      }
+      console.log(chalk.blue('\n--- Checkpoints ---\n'));
+      for (const run of runs) {
+        console.log(`${run.runId}  ${run.mode}  ${run.status}  ${run.updatedAt}`);
+        console.log(chalk.gray(`  ${run.task.slice(0, 120)}`));
+      }
+    });
+
+  checkpointCmd
+    .command('show')
+    .description('Show checkpoint details and deterministic event log')
+    .argument('<runId>', 'Checkpoint run id')
+    .option('--json', 'Output raw JSON', false)
+    .action(async (runId, options) => {
+      const run = await checkpoints.load(runId);
+      if (!run) {
+        logger.error(`Checkpoint not found: ${runId}`);
+        process.exit(1);
+      }
+      if (options.json) {
+        console.log(JSON.stringify(run, null, 2));
+        return;
+      }
+      console.log(chalk.blue(`\n--- Checkpoint ${run.runId} ---\n`));
+      console.log(`Mode: ${run.mode}`);
+      console.log(`Status: ${run.status}`);
+      console.log(`Task: ${run.task}`);
+      console.log(`Events: ${run.events.length}\n`);
+      for (const ev of run.events) {
+        console.log(`${ev.ts}  ${ev.type}`);
+        if (ev.data && Object.keys(ev.data).length > 0) {
+          console.log(chalk.gray(`  ${JSON.stringify(ev.data)}`));
+        }
+      }
+    });
+
+  checkpointCmd
+    .command('replay')
+    .description('Replay checkpoint decisions/tools (dry-run by default)')
+    .argument('<runId>', 'Checkpoint run id')
+    .option('--execute', 'Execute replay for supported modes', false)
+    .action(async (runId, options) => {
+      const run = await checkpoints.load(runId);
+      if (!run) {
+        logger.error(`Checkpoint not found: ${runId}`);
+        process.exit(1);
+      }
+      console.log(chalk.blue(`\n--- Replay ${run.runId} (${run.mode}) ---\n`));
+      for (const ev of run.events) {
+        console.log(`${ev.ts}  ${ev.type}`);
+      }
+      if (!options.execute) {
+        logger.info('Dry-run replay complete. Re-run with --execute to execute replay where supported.');
+        return;
+      }
+      if (run.mode === 'plan') {
+        logger.info(`Use: crew plan "${run.task}" --resume ${run.runId}`);
+        return;
+      }
+      if (run.mode !== 'dispatch') {
+        logger.warn('Execute replay currently supports dispatch checkpoints only.');
+        return;
+      }
+      const agent =
+        String(run.events.find(e => e.type === 'dispatch.completed')?.data?.agent || 'crew-main');
+      const chain = run.events
+        .filter(e => e.type === 'dispatch.model.attempt')
+        .map(e => String(e.data?.model || '').trim())
+        .filter(Boolean);
+      const primary = chain[0];
+      const fallbacks = chain.slice(1);
+      const replay = await dispatchWithFallback(
+        agentRouter,
+        agent,
+        run.task,
+        {
+          sessionId: await sessionManager.getSessionId(),
+          project: process.cwd(),
+          model: primary || undefined
+        },
+        fallbacks,
+        checkpoints,
+        `${run.runId}-replay-${Date.now()}`
+      );
+      logger.success('Replay dispatch complete.');
+      logger.printWithHighlight(String(replay.result.result || ''));
+    });
+
+  program
+    .command('serve')
+    .description('Start unified interface API server (connected or standalone)')
+    .option('--mode <mode>', 'connected | standalone', process.env.CREW_INTERFACE_MODE || 'standalone')
+    .option('--host <host>', 'Bind host', process.env.CREW_API_HOST || '127.0.0.1')
+    .option('--port <port>', 'Bind port', process.env.CREW_API_PORT || '4317')
+    .option('--gateway <url>', 'Crew-lead URL for connected mode', process.env.CREW_LEAD_URL || config.get('crewLeadUrl') || 'http://127.0.0.1:5010')
+    .action(async (options) => {
+      const mode = String(options.mode || 'standalone').toLowerCase() === 'connected' ? 'connected' : 'standalone';
+      const host = String(options.host || '127.0.0.1');
+      const port = Number.parseInt(String(options.port || '4317'), 10);
+      if (Number.isNaN(port) || port <= 0) {
+        logger.error('Invalid --port value.');
+        process.exit(1);
+      }
+
+      const svc = await startUnifiedServer({
+        mode,
+        host,
+        port,
+        gateway: options.gateway,
+        router: agentRouter,
+        orchestrator,
+        sandbox,
+        session: sessionManager,
+        projectDir: process.cwd(),
+        logger
+      });
+
+      logger.success(`Unified API server running at ${svc.address} (${mode})`);
+      logger.info('Press Ctrl+C to stop.');
+      const shutdown = async () => {
+        try {
+          await svc.close();
+        } finally {
+          process.exit(0);
+        }
+      };
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
+      await new Promise(() => {});
     });
 
   if (args.length === 0) {

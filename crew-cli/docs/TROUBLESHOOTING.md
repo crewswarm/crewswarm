@@ -35,6 +35,22 @@ Ensure your `~/.crewswarm/config.json` has the correct authentication setup or u
 1. The Sandbox uses exact matching for safety.
 2. Provide a clearer prompt to the agent, or manually open the file, make the change, and run `crew chat "I fixed it manually, moving on."`
 
+## DevEx Features
+
+### `LSP: File not found` or `diagnostics empty`
+**Cause:** You are running `crew lsp-check` on a file that isn't in a TypeScript project or is missing from `tsconfig.json`.
+**Fix:**
+1. Ensure the file exists.
+2. Verify you have a `tsconfig.json` in the project root.
+3. If the project is large, the first run may be slow while the Language Service initializes.
+
+### `PTY: node-pty not found` or `command failed`
+**Cause:** The `node-pty` native module failed to compile during installation or is incompatible with your architecture (e.g., M1 Mac with x64 Node).
+**Fix:**
+1. Try `npm rebuild`.
+2. Ensure your Node.js and system architecture match.
+3. Fallback: The CLI will attempt to use a standard non-interactive process if PTY is unavailable, but interactive tools like `vim` will not work.
+
 ## Diagnostics
 
 Use the built-in diagnostic tool to check your environment:

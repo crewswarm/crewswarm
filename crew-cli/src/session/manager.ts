@@ -40,7 +40,19 @@ export class SessionManager {
       const initialCost = {
         totalUsd: 0,
         byModel: {},
-        entries: []
+        entries: [],
+        cacheSavings: {
+          hits: 0,
+          misses: 0,
+          tokensSaved: 0,
+          usdSaved: 0
+        },
+        memoryMetrics: {
+          recallUsed: 0,
+          recallMisses: 0,
+          totalMatches: 0,
+          averageQualityScore: 0
+        }
       };
       await writeFile(this.paths.cost, JSON.stringify(initialCost, null, 2), 'utf8');
     }
@@ -70,7 +82,20 @@ export class SessionManager {
   async loadCost() {
     await this.ensureInitialized();
     const raw = await readFile(this.paths.cost, 'utf8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    parsed.cacheSavings = parsed.cacheSavings || {
+      hits: 0,
+      misses: 0,
+      tokensSaved: 0,
+      usdSaved: 0
+    };
+    parsed.memoryMetrics = parsed.memoryMetrics || {
+      recallUsed: 0,
+      recallMisses: 0,
+      totalMatches: 0,
+      averageQualityScore: 0
+    };
+    return parsed;
   }
 
   async saveCost(cost) {
@@ -117,6 +142,46 @@ export class SessionManager {
       timestamp: nowIso()
     });
 
+    await writeFile(this.paths.cost, JSON.stringify(cost, null, 2), 'utf8');
+  }
+
+  async trackCacheSavings(entry: { hit?: boolean; miss?: boolean; tokensSaved?: number; usdSaved?: number } = {}) {
+    const raw = await readFile(this.paths.cost, 'utf8');
+    const cost = JSON.parse(raw);
+    cost.cacheSavings = cost.cacheSavings || {
+      hits: 0,
+      misses: 0,
+      tokensSaved: 0,
+      usdSaved: 0
+    };
+
+    if (entry.hit) cost.cacheSavings.hits += 1;
+    if (entry.miss) cost.cacheSavings.misses += 1;
+    cost.cacheSavings.tokensSaved += Number(entry.tokensSaved || 0);
+    cost.cacheSavings.usdSaved += Number(entry.usdSaved || 0);
+
+    await writeFile(this.paths.cost, JSON.stringify(cost, null, 2), 'utf8');
+  }
+
+  async trackMemoryRecall(entry: { used?: boolean; miss?: boolean; matchCount?: number; qualityScore?: number } = {}) {
+    const raw = await readFile(this.paths.cost, 'utf8');
+    const cost = JSON.parse(raw);
+    cost.memoryMetrics = cost.memoryMetrics || {
+      recallUsed: 0,
+      recallMisses: 0,
+      totalMatches: 0,
+      averageQualityScore: 0
+    };
+    const mm = cost.memoryMetrics;
+    if (entry.used) mm.recallUsed += 1;
+    if (entry.miss) mm.recallMisses += 1;
+    const matchCount = Number(entry.matchCount || 0);
+    mm.totalMatches += matchCount;
+    const qualityScore = Number(entry.qualityScore || 0);
+    if (entry.used) {
+      const n = Math.max(1, mm.recallUsed);
+      mm.averageQualityScore = ((Number(mm.averageQualityScore || 0) * (n - 1)) + qualityScore) / n;
+    }
     await writeFile(this.paths.cost, JSON.stringify(cost, null, 2), 'utf8');
   }
 

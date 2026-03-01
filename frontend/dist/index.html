@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="/assets/index-BIy-ow5C.js"></script>
+  <script type="module" crossorigin src="/assets/index-V1lU1sM6.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-CMiILqKd.css">
 </head>
 <body>
@@ -160,6 +160,52 @@
           <button data-action="clearChatHistory" class="btn-ghost" style="font-size:12px;">🗑 Clear</button>
         </div>
       </div>
+      
+      <!-- Orchestration Status Panel -->
+      <div id="orchestrationStatus" style="background:linear-gradient(135deg, rgba(59,130,246,0.05) 0%, rgba(147,51,234,0.05) 100%); border:1px solid rgba(59,130,246,0.2); border-radius:12px; padding:20px; margin-bottom:16px; font-family:monospace; font-size:13px; line-height:1.6;">
+        <div style="border:2px solid rgba(59,130,246,0.3); border-radius:8px; padding:16px; background:rgba(0,0,0,0.3);">
+          <div style="text-align:center; color:#3b82f6; font-weight:700; letter-spacing:0.1em; margin-bottom:12px; font-size:11px;">
+            ┌─[ CREWSWARM :: ORCHESTRATION LAYER ]────────────────────────┐
+          </div>
+          
+          <div style="display:grid; grid-template-columns:120px 1fr; gap:8px; margin:12px 0;">
+            <span style="color:#6b7280;">CORE</span><span style="color:#fff; font-weight:600;">ROUTER 🧠</span>
+            <span style="color:#6b7280;">REASONING</span><span style="color:#fff; font-weight:600;">PLANNER 🧭</span>
+            <span style="color:#6b7280;">EXECUTION</span><span style="color:#fff; font-weight:600;">WORKERS ⚡</span>
+          </div>
+          
+          <div style="border-top:1px solid rgba(59,130,246,0.2); margin:12px 0; padding-top:12px;">
+            <div style="display:grid; grid-template-columns:120px 1fr; gap:8px;">
+              <span style="color:#6b7280;">SYSTEM STATUS</span><span id="orchSystemStatus" style="color:#10b981; font-weight:600;">● LOADING...</span>
+              <span style="color:#6b7280;">MODEL STACK</span><span id="orchModelStack" style="color:#fff; font-weight:600;">—</span>
+              <span style="color:#6b7280;">TASK PIPELINE</span><span style="color:#fff; font-weight:600;">REALTIME</span>
+            </div>
+          </div>
+          
+          <div style="border-top:1px solid rgba(59,130,246,0.2); margin:12px 0; padding-top:12px;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+              <span style="color:#60a5fa; font-weight:600; min-width:110px;">Swarm Status</span>
+              <div id="orchSwarmBar" style="flex:1; height:16px; background:rgba(107,114,128,0.3); border-radius:8px; overflow:hidden;">
+                <div id="orchSwarmFill" style="height:100%; background:linear-gradient(90deg, #10b981 0%, #3b82f6 100%); width:0%; transition:width 0.5s;"></div>
+              </div>
+              <span id="orchSwarmPercent" style="color:#fff; font-weight:600; min-width:45px;">0%</span>
+            </div>
+            <div style="display:grid; grid-template-columns:120px 1fr; gap:6px; font-size:12px;">
+              <span style="color:#60a5fa;">Active Agents</span><span id="orchActiveAgents" style="color:#fff; font-weight:600;">0</span>
+              <span style="color:#60a5fa;">Task Queue</span><span id="orchTaskQueue" style="color:#fff; font-weight:600;">0 pending</span>
+            </div>
+          </div>
+          
+          <div style="text-align:center; color:#6b7280; font-style:italic; font-size:11px; margin-top:12px;">
+            "One idea. One Build. One Crew."
+          </div>
+          
+          <div style="text-align:center; color:#3b82f6; font-weight:700; letter-spacing:0.1em; margin-top:12px; font-size:11px;">
+            └──────────────────────────────────────────────────────────────┘
+          </div>
+        </div>
+      </div>
+      
       <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
         <!-- Active Tasks Panel -->
         <div id="activeTasksPanel" style="display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
@@ -655,6 +701,27 @@
           </div>
           <div id="opencodeProjStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
         </div>
+        
+        <div class="card" style="margin-top:16px;">
+          <div class="card-title" style="margin-bottom:6px;">🧠 Crew Lead Default Model</div>
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">
+            Default model for crew-lead LLM router. Used when no agent-specific model is set.
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <select id="crewLeadModelSelect" style="flex:1;font-size:13px;font-family:monospace;">
+              <option value="">Default (from config)</option>
+              <option value="openrouter/anthropic/claude-sonnet-4.5">Claude Sonnet 4.5</option>
+              <option value="openrouter/anthropic/claude-opus-4">Claude Opus 4</option>
+              <option value="openrouter/google/gemini-2.0-flash-exp">Gemini 2.0 Flash</option>
+              <option value="openrouter/google/gemini-3-flash">Gemini 3 Flash</option>
+              <option value="openrouter/deepseek/deepseek-chat">DeepSeek Chat</option>
+              <option value="openrouter/x-ai/grok-4-fast">Grok 4 Fast</option>
+            </select>
+            <button data-action="saveCrewLeadModel" class="btn-green" style="font-size:12px;padding:7px 14px;">Save</button>
+          </div>
+          <div id="crewLeadModelStatus" style="margin-top:8px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+        
         <div class="card" style="margin-top:16px;">
           <div class="card-title" style="margin-bottom:6px;">⚡ OpenCode Fallback Model</div>
           <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">

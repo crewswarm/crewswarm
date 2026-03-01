@@ -1,7 +1,7 @@
 # crew-cli Status
 
-Last Updated: 2026-02-28  
-Overall Status: Complete through Phase 4
+Last Updated: 2026-03-01  
+Overall Status: Complete through Phase 5 + Growth Batch + Ops Hardening
 
 ## Roadmap Status
 
@@ -9,14 +9,17 @@ Overall Status: Complete through Phase 4
 - Phase 2 (Intelligence): complete
 - Phase 3 (Polish & Launch): complete
 - Phase 4 (Advanced): complete
+- Phase 5 (3-Tier LLM Scale-Up): complete
+- Phase 8 (Next Growth Batch): complete
+- Phase 9 (Operational Hardening): complete
 
-Source of truth: [ROADMAP.md](ROADMAP.md) (no unchecked items).
+Source of truth: repo-root `ROADMAP.md` (no unchecked items).
 
 ## Verified QA (this pass)
 
 - `npm run build`: pass
 - `npm run check`: pass
-- `npm test`: pass (33/33)
+- `npm test`: pass (109/109)
 - CLI command help smoke checks: pass
   - `crew --help`
   - `crew listen --help`

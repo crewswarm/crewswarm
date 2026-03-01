@@ -55,11 +55,23 @@ Expected output:
 ./bin/crew.js dispatch crew-coder "Fix authentication bug in auth.js"
 ```
 
-With options:
+### GitHub Intelligence
+Run health checks and perform issue/PR actions with natural language:
 ```bash
-./bin/crew.js dispatch crew-qa "Run tests" \
-  --project /path/to/project \
-  --timeout 60000
+crew github doctor
+crew github "create issue 'Add rate limiting' body: describe steps here" --dry-run
+```
+
+### Interactive Terminal
+Run interactive tools directly with PTY support:
+```bash
+crew exec "vim src/app.js"
+```
+
+### Parallel Planning
+Execute complex multi-step plans in parallel:
+```bash
+crew plan "implement user dashboard" --parallel --concurrency 4
 ```
 
 ## Configuration
@@ -138,5 +150,7 @@ npm run check
 - [x] **Automated Debugging** (`crew apply --check`)
 - [x] **Voice & Browser Debugging** (`crew listen`, `crew browser-debug`)
 - [x] **Multi-Repo & Team Sync** (`crew repos-scan`, `crew sync`)
+- [x] **Speculative Execution** (`crew explore`)
+- [x] **DevEx Intelligence** (`crew lsp-check`, `crew map --graph`, `crew docs`)
 
 See `ROADMAP.md` for full completion status.

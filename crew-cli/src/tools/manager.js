@@ -23,6 +23,18 @@ export class ToolManager {
       description: 'Shell command execution',
       handler: this.handleShellTool.bind(this)
     });
+
+    this.registerTool('pty', {
+      name: 'pty',
+      description: 'Interactive PTY command execution',
+      handler: this.handlePtyTool.bind(this)
+    });
+
+    this.registerTool('lsp', {
+      name: 'lsp',
+      description: 'Language server style type-check and completion',
+      handler: this.handleLspTool.bind(this)
+    });
   }
 
   registerTool(name, tool) {
@@ -114,6 +126,60 @@ export class ToolManager {
         stderr: error.stderr || ''
       };
     }
+  }
+
+  async handlePtyTool(params) {
+    const { command, cwd, timeoutMs } = params || {};
+    if (!command) {
+      throw new Error('PTY tool requires command parameter');
+    }
+    const { runPtyCommand } = await import('../pty/index.js');
+    const result = await runPtyCommand(command, { cwd, timeoutMs });
+    return {
+      success: result.success,
+      operation: 'pty',
+      command,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      output: result.output
+    };
+  }
+
+  async handleLspTool(params) {
+    const { action, projectDir, file, files, line, column, limit, prefix } = params || {};
+    if (!action) {
+      throw new Error('LSP tool requires action parameter');
+    }
+    const { getCompletions, typeCheckProject } = await import('../lsp/index.js');
+    if (action === 'check') {
+      const diagnostics = typeCheckProject(projectDir || process.cwd(), files || []);
+      return {
+        success: true,
+        operation: 'lsp',
+        action,
+        diagnostics
+      };
+    }
+    if (action === 'complete') {
+      if (!file || !line || !column) {
+        throw new Error('LSP complete requires file, line, and column');
+      }
+      const completions = getCompletions(
+        projectDir || process.cwd(),
+        file,
+        Number(line),
+        Number(column),
+        Number(limit || 50),
+        String(prefix || '')
+      );
+      return {
+        success: true,
+        operation: 'lsp',
+        action,
+        completions
+      };
+    }
+    throw new Error(`Unsupported lsp action: ${action}`);
   }
 
   getAvailableTools() {

@@ -66,26 +66,9 @@ export async function launchChromeDebug(url: string, port = 9222): Promise<Child
   return proc;
 }
 
-async function waitForWsDebuggerUrl(port: number, timeoutMs = 10000): Promise<string> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) {
-        const data = await res.json() as any;
-        if (data.webSocketDebuggerUrl) return data.webSocketDebuggerUrl;
-      }
-    } catch {
-      // retry
-    }
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
-  throw new Error('Timed out waiting for Chrome DevTools endpoint.');
-}
+export type CdpEventHandler = (params: any) => void;
 
-type CdpEventHandler = (params: any) => void;
-
-class CdpClient {
+export class CdpClient {
   ws: WebSocket;
   id = 0;
   pending = new Map<number, (value: any) => void>();
@@ -126,6 +109,41 @@ class CdpClient {
 export interface BrowserDebugResult {
   consoleErrors: string[];
   screenshotPath?: string;
+}
+
+export async function getPageWsUrl(port: number, timeoutMs = 10000): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/json`);
+      if (res.ok) {
+        const targets = await res.json() as any[];
+        const page = targets.find(t => t.type === 'page');
+        if (page && page.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
+      }
+    } catch {
+      // retry
+    }
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
+  throw new Error('Timed out waiting for Chrome Page target.');
+}
+
+export async function waitForWsDebuggerUrl(port: number, timeoutMs = 10000): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (res.ok) {
+        const data = await res.json() as any;
+        if (data.webSocketDebuggerUrl) return data.webSocketDebuggerUrl;
+      }
+    } catch {
+      // retry
+    }
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
+  throw new Error('Timed out waiting for Chrome DevTools endpoint.');
 }
 
 export async function runBrowserDebug(url: string, options: { port?: number; durationMs?: number; screenshotPath?: string } = {}): Promise<BrowserDebugResult> {

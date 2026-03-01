@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 import { getProjectContext } from './git.js';
 
 export function collectOption(value: string, previous: string[] = []): string[] {
@@ -19,6 +19,15 @@ export async function readStdinText(): Promise<string> {
 function clip(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n... [truncated ${text.length - maxChars} chars]`;
+}
+
+function inferImageMime(path: string): string | null {
+  const ext = extname(path).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  return null;
 }
 
 export async function buildFileContextBlock(paths: string[] = [], maxChars = 8000): Promise<string> {
@@ -54,6 +63,40 @@ export async function buildRepoContextBlock(repos: string[] = []): Promise<strin
   }
 
   return `## Extra Repository Context\n${sections.join('\n\n')}`;
+}
+
+export async function buildImageContextBlock(paths: string[] = [], maxBytes = 250_000): Promise<string> {
+  if (!paths.length) return '';
+  const sections: string[] = [];
+
+  for (const rawPath of paths) {
+    const abs = resolve(rawPath);
+    try {
+      const mime = inferImageMime(abs);
+      if (!mime) {
+        sections.push(`### Image Context: ${abs}\n(unsupported image type; supported: png, jpg, jpeg, webp, gif)`);
+        continue;
+      }
+
+      const buf = await readFile(abs);
+      const used = buf.subarray(0, maxBytes);
+      const truncated = buf.length > maxBytes;
+      const dataUri = `data:${mime};base64,${used.toString('base64')}`;
+      sections.push([
+        `### Image Context: ${abs}`,
+        `mime: ${mime}`,
+        `bytes: ${buf.length}${truncated ? ` (truncated to ${maxBytes})` : ''}`,
+        '```text',
+        dataUri,
+        '```',
+        'Instruction: If vision is available, inspect this image for UI/layout/code details and apply the request.'
+      ].join('\n'));
+    } catch (error) {
+      sections.push(`### Image Context: ${abs}\n(unavailable: ${(error as Error).message})`);
+    }
+  }
+
+  return `## Extra Image Context\n${sections.join('\n\n')}`;
 }
 
 export function mergeTaskWithContext(task: string, blocks: string[]): string {

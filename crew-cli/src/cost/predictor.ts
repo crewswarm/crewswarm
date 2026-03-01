@@ -20,7 +20,11 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   'openai/gpt-4o-mini': { model: 'openai/gpt-4o-mini', inputPerMillion: 0.15, outputPerMillion: 0.6 },
   'anthropic/claude-3-5-sonnet': { model: 'anthropic/claude-3-5-sonnet', inputPerMillion: 3.0, outputPerMillion: 15.0 },
   'deepseek/deepseek-chat': { model: 'deepseek/deepseek-chat', inputPerMillion: 0.27, outputPerMillion: 1.1 },
-  'groq/llama-3.3-70b-versatile': { model: 'groq/llama-3.3-70b-versatile', inputPerMillion: 0.59, outputPerMillion: 0.79 }
+  'deepseek/deepseek-reasoner': { model: 'deepseek/deepseek-reasoner', inputPerMillion: 0.55, outputPerMillion: 2.19 },
+  'google/gemini-2.0-flash-exp': { model: 'google/gemini-2.0-flash-exp', inputPerMillion: 0.075, outputPerMillion: 0.30 },
+  'google/gemini-2.5-flash': { model: 'google/gemini-2.5-flash', inputPerMillion: 0.075, outputPerMillion: 0.30 },
+  'groq/llama-3.3-70b-versatile': { model: 'groq/llama-3.3-70b-versatile', inputPerMillion: 0.59, outputPerMillion: 0.79 },
+  'xai/grok-4': { model: 'xai/grok-4', inputPerMillion: 0.50, outputPerMillion: 2.00 }
 };
 
 function normalizeModel(model?: string): string {

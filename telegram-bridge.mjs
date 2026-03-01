@@ -148,11 +148,11 @@ async function tgEdit(chatId, messageId, text, replyMarkup) {
 // Dedupe: avoid sending the same long message twice (e.g. roadmap sent via reply and again via another path)
 const lastSentByChat = new Map(); // chatId -> { content, ts }
 const DEDUPE_WINDOW_MS = 30000;  // wider window to catch SSE + RT race
-const DEDUPE_MIN_LEN = 200;      // catch shorter duplicates too
+const DEDUPE_MIN_LEN = 80;       // catch shorter duplicates (RT + SSE race)
 
 // Normalise to raw content so SSE-wrapped and RT-raw versions both match
 function dedupeKey(text) {
-  return text.replace(/^✅ \*.+?\* finished:\n/, "").trim();
+  return text.replace(/^✅ \*.+?\* finished:\n/, "").replace(/\n\nReply to follow up.*$/s, "").trim();
 }
 
 function shouldSkipDuplicate(chatId, text) {
@@ -168,6 +168,17 @@ function shouldSkipDuplicate(chatId, text) {
     && lastKey.slice(0, 200) === key.slice(0, 200)
     && Math.abs(lastKey.length - key.length) < 200;
   return same || prefixMatch;
+}
+
+// Check if raw content was already sent (e.g. RT sent it, now SSE would duplicate)
+function wasRawContentAlreadySent(chatId, rawContent) {
+  if (!rawContent || rawContent.length < 50) return false;
+  const last = lastSentByChat.get(chatId);
+  if (!last) return false;
+  if (Date.now() - last.ts > DEDUPE_WINDOW_MS) return false;
+  const lastKey = dedupeKey(last.content);
+  return last.content === rawContent || lastKey === rawContent
+    || (rawContent.length > 100 && lastKey.includes(rawContent.slice(0, 100)));
 }
 
 async function tgSend(chatId, text) {
@@ -214,7 +225,8 @@ function engineInline() {
   return {
     inline_keyboard: [
       [{ text: "Cursor", callback_data: "eng:cursor" }, { text: "Claude", callback_data: "eng:claude" }],
-      [{ text: "Codex", callback_data: "eng:codex" }, { text: "OpenCode", callback_data: "eng:opencode" }]
+      [{ text: "Codex", callback_data: "eng:codex" }, { text: "Gemini", callback_data: "eng:gemini" }],
+      [{ text: "OpenCode", callback_data: "eng:opencode" }, { text: "Gemini", callback_data: "eng:gemini" }]
     ]
   };
 }
@@ -265,6 +277,49 @@ async function handleCallback(q) {
     const engine = data.slice(4);
     const next = setState(chatId, { engine, mode: "direct" });
     if (messageId) await tgEdit(chatId, messageId, `Engine set to *${next.engine}* (mode: direct)`, engineInline());
+    return;
+  }
+  
+  if (data.startsWith("model:")) {
+    const model = data.slice(6);
+    if (model === "default") {
+      const st = setState(chatId, { model: null });
+      if (messageId) await tgEdit(chatId, messageId, `Model reset to default for *${st.engine}*`);
+      return;
+    }
+    const st = setState(chatId, { model });
+    if (messageId) await tgEdit(chatId, messageId, `Model set to *${model}* for *${st.engine}*`);
+    return;
+  }
+  
+  if (data.startsWith("proj:")) {
+    const projectId = data.slice(5);
+    
+    // Handle special cases
+    if (projectId === "none") {
+      activeProjectByChatId.delete(chatId);
+      if (messageId) await tgEdit(chatId, messageId, "✅ Back to general mode — no active project.");
+      return;
+    }
+    if (projectId === "new") {
+      if (messageId) await tgEdit(chatId, messageId, "📝 To create a new project, tell crew-lead:\n\n_\"Create a new project called X in directory Y\"_");
+      return;
+    }
+    
+    // Set active project
+    try {
+      const projects = await fetchProjects();
+      const match = projects.find(p => p.id === projectId);
+      if (!match) {
+        if (messageId) await tgEdit(chatId, messageId, `❌ Project not found (id: ${projectId})`);
+        return;
+      }
+      activeProjectByChatId.set(chatId, { id: match.id, name: match.name, outputDir: match.outputDir });
+      const roadmap = match.roadmapFile ? `\nROADMAP: ${match.roadmapFile}` : "";
+      if (messageId) await tgEdit(chatId, messageId, `✅ *${match.name}* is now the active project.\n📁 ${match.outputDir || "?"}${roadmap}`);
+    } catch (e) {
+      if (messageId) await tgEdit(chatId, messageId, `⚠️ Error: ${e.message}`);
+    }
     return;
   }
 
@@ -345,7 +400,8 @@ const pendingInput = new Map(); // chatId -> { kind: "engine_prompt"|"agent_task
 
 const DEFAULT_STATE = {
   mode: "chat",          // chat | direct | bypass
-  engine: "cursor",      // cursor | claude | codex | opencode
+  engine: "cursor",      // cursor | claude | codex | opencode | gemini
+  model: null,           // optional model override for engine
   agent: "crew-main",
   projectId: null,
   lastPrompt: "",
@@ -387,8 +443,8 @@ async function fetchProjects() {
 // ── Engine passthrough from Telegram ─────────────────────────────────────────
 // /claude <msg>, /cursor <msg>, /opencode <msg>, /codex <msg>
 // Streams the response back to TG in chunks as it arrives.
-const ENGINE_COMMANDS = { "/claude": "claude", "/cursor": "cursor", "/opencode": "opencode", "/codex": "codex" };
-const ENGINE_LABELS   = { claude: "🤖 Claude Code", cursor: "🖱 Cursor CLI", opencode: "⚡ OpenCode", codex: "🟣 Codex CLI" };
+const ENGINE_COMMANDS = { "/claude": "claude", "/cursor": "cursor", "/opencode": "opencode", "/codex": "codex", "/gemini": "gemini" };
+const ENGINE_LABELS   = { claude: "🤖 Claude Code", cursor: "🖱 Cursor CLI", opencode: "⚡ OpenCode", codex: "🟣 Codex CLI", gemini: "✨ Gemini CLI" };
 
 function classifyEngineFailure(text) {
   const s = String(text || "").toLowerCase();
@@ -405,13 +461,16 @@ async function handleEnginePassthrough(chatId, engine, message) {
   await tgSend(chatId, `${label} ⏳ _running..._`);
   setState(chatId, { lastPrompt: message, lastEngine: engine });
   try {
+    const st = getState(chatId);
     const activeProj = activeProjectByChatId.get(chatId);
-    const projectDir = activeProj?.path || undefined;
+    const projectDir = activeProj?.outputDir || activeProj?.path || undefined;
     const sessionId = `telegram-${chatId}`;
+    const payload = { engine, message, projectDir, sessionId };
+    if (st.model) payload.model = st.model;
     const res = await fetch(`${CREW_LEAD_URL}/api/engine-passthrough`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ engine, message, projectDir, sessionId }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(300000), // 5 min
     });
     if (!res.ok) { await tgSend(chatId, `❌ ${label}: HTTP ${res.status}`); return; }
@@ -542,11 +601,36 @@ For now, use /menu for button controls or direct commands.`);
     return true;
   }
 
+  // /models — show model options and set defaults
+  if (lower === "/models" || lower === "/model") {
+    const st = getState(chatId);
+    const engineModels = {
+      cursor: ["gemini-3-flash", "gemini-3-pro", "opus-4.6-thinking", "sonnet-4.6"],
+      claude: ["claude-sonnet-4.5", "claude-opus-4", "claude-haiku-3.5"],
+      codex: ["gpt-5", "gpt-4o", "gpt-4o-mini"],
+      gemini: ["gemini-2.5-flash", "gemini-2.0-flash-exp", "gemini-3-flash", "gemini-3-pro"],
+      opencode: ["kimi-k2", "grok-4-fast", "deepseek-chat", "gemini-2.5-flash"]
+    };
+    
+    const models = engineModels[st.engine] || ["deepseek-chat", "gemini-2.0-flash-exp"];
+    const keyboard = models.map(m => [{ text: m, callback_data: `model:${m}` }]);
+    keyboard.push([{ text: "🔙 Back", callback_data: "model:default" }]);
+    
+    await tgRequest("sendMessage", {
+      chat_id: chatId,
+      text: `*Model for ${st.engine}:*\n\nSelect model:`,
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: keyboard }
+    });
+    return true;
+  }
+
   // /status — show current state
   if (lower === "/status") {
     const st = getState(chatId);
     const activeProj = activeProjectByChatId.get(chatId);
-    const projLine = activeProj ? `📁 *Project:* ${activeProj.name} (${activeProj.outputDir})` : "📁 *Project:* none (general mode)";
+    const projPath = activeProj?.outputDir || activeProj?.path;
+    const projLine = activeProj ? `📁 *Project:* ${activeProj.name} (${projPath || "?"})` : "📁 *Project:* none (general mode)";
     await tgSend(chatId, `*Current state:*\n\n🔧 *Mode:* ${st.mode}\n⚙️ *Engine:* ${st.engine}\n🤖 *Agent:* ${st.agent}\n${projLine}`);
     return true;
   }
@@ -571,7 +655,7 @@ For now, use /menu for button controls or direct commands.`);
     return true;
   }
 
-  // /projects — list all registered projects
+  // /projects — list all registered projects with inline buttons
   if (lower === "/projects" || lower === "/project") {
     try {
       const projects = await fetchProjects();
@@ -580,13 +664,31 @@ For now, use /menu for button controls or direct commands.`);
         return true;
       }
       const current = activeProjectByChatId.get(chatId);
-      const lines = projects.map(p => {
-        const active = current && current.id === p.id ? " ✅" : "";
-        const pct = p.roadmap?.total ? Math.round((p.roadmap.done / p.roadmap.total) * 100) : 0;
-        return `• *${p.name}*${active} — ${pct}% done\n  \`/project ${p.name}\`\n  📁 ${p.outputDir || "?"}`;
+      
+      // Create inline keyboard with project buttons (max 3 columns)
+      const buttons = projects.map(p => {
+        const active = current && current.id === p.id ? "✅ " : "";
+        return { text: active + p.name, callback_data: `proj:${p.id}` };
       });
-      const msg = `*Registered projects (${projects.length}):*\n\n${lines.join("\n\n")}\n\n_Use /project <name> to set active context. /home to return to general mode._`;
-      await tgSend(chatId, msg);
+      
+      // Split into rows of 2 buttons each
+      const keyboard = [];
+      for (let i = 0; i < buttons.length; i += 2) {
+        keyboard.push(buttons.slice(i, i + 2));
+      }
+      // Add "None" and "New" buttons in last row
+      keyboard.push([
+        { text: "🏠 None (general mode)", callback_data: "proj:none" },
+        { text: "➕ New Project", callback_data: "proj:new" }
+      ]);
+      
+      const msg = `*Select project (${projects.length}):*\n\n${current ? `Current: *${current.name}*` : 'None selected'}`;
+      await tgRequest("sendMessage", {
+        chat_id: chatId,
+        text: msg,
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard }
+      });
     } catch (e) {
       await tgSend(chatId, `⚠️ Could not fetch projects: ${e.message}`);
     }
@@ -686,9 +788,11 @@ function connectRT() {
           const isHeartbeat = env.type === "agent.heartbeat" || env.channel === "status";
           const isTaskNoise = content.startsWith("@@DISPATCH") || content.startsWith("[bridge]");
           if (!isHeartbeat && !isTaskNoise) {
-            // If reply has a specific sessionId, route only to that chat
-            const targetSessions = sessionId && activeSessions.has(Number(sessionId))
-              ? [[Number(sessionId), activeSessions.get(Number(sessionId))]]
+            // If reply has sessionId "telegram-<chatId>", route only to that chat
+            const telegramChatId = sessionId?.startsWith("telegram-")
+              ? parseInt(sessionId.slice(9), 10) : null;
+            const targetSessions = telegramChatId && !isNaN(telegramChatId) && activeSessions.has(telegramChatId)
+              ? [[telegramChatId, activeSessions.get(telegramChatId)]]
               : [...activeSessions];
             for (const [chatId, session] of targetSessions) {
               const lastReply = lastReplyTime.get(chatId) || 0;
@@ -933,19 +1037,19 @@ async function listenForAgentReplies() {
           try {
             const d = JSON.parse(line.slice(6));
             if (!d.from || !d.content) continue;
-            // Skip if the raw content was already forwarded by the RT path
-            let alreadySent = false;
-            for (const [chatId] of activeSessions) {
-              if (shouldSkipDuplicate(chatId, d.content)) { alreadySent = true; break; }
-            }
-            if (alreadySent) {
-              log("info", "SSE reply already sent via RT path — skipping", { from: d.from });
-              continue;
-            }
-            const preview = d.content.length > 300 ? d.content.slice(0, 300) + "…" : d.content;
-            const msg = `✅ *${d.from}* finished:\n${preview}\n\nReply to follow up or dispatch more work.`;
-            log("info", "Agent reply forwarded to Telegram (SSE)", { from: d.from });
-            for (const [chatId] of activeSessions) {
+            // Route to specific chat if sessionId is "telegram-<chatId>"
+            const telegramChatId = d.sessionId?.startsWith("telegram-")
+              ? parseInt(d.sessionId.slice(9), 10) : null;
+            const targetChatIds = telegramChatId && !isNaN(telegramChatId) && activeSessions.has(telegramChatId)
+              ? [telegramChatId] : [...activeSessions.keys()];
+            for (const chatId of targetChatIds) {
+              if (wasRawContentAlreadySent(chatId, d.content)) {
+                log("info", "SSE reply already sent via RT path — skipping", { chatId, from: d.from });
+                continue;
+              }
+              const preview = d.content.length > 300 ? d.content.slice(0, 300) + "…" : d.content;
+              const msg = `✅ *${d.from}* finished:\n${preview}\n\nReply to follow up or dispatch more work.`;
+              log("info", "Agent reply forwarded to Telegram (SSE)", { chatId, from: d.from });
               await tgSend(chatId, msg);
             }
           } catch {}
@@ -1046,6 +1150,8 @@ async function main() {
         { command: "home", description: "Clear project context" }
       ]
     });
+    
+    // Mini App removed - use /menu for button controls instead
     
     console.log(`\n✅ Telegram bridge running`);
     console.log(`   Bot: @${me.username}`);

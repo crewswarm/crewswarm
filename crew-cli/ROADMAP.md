@@ -125,11 +125,11 @@
 
 ## Phase 2: Intelligence & Advanced Features (Days 8-14)
 
-### [x] 1. Speculative Execution ✓ 2026-02-28
+### [x] 1. Speculative Execution ✓ 2026-03-01
 - [x] Create 3 sandbox branches for same task ✓
-- [x] Run same task with 3 different strategies (Manually via branches) ✓
+- [x] Run same task with 3 different strategies (Automated via `crew explore`) ✓
 - [x] Show side-by-side comparison of results (via `crew preview <branch>`) ✓
-- [x] Let user pick winner (via `crew merge <winner> main`) ✓
+- [x] Let user pick winner (via CLI interactive choice) ✓
 
 ### [x] 2. Cost Prediction ✓ 2026-02-28
 - [x] Estimate tokens before execution ✓
@@ -281,6 +281,146 @@
 - [x] CI strict review gate required on PRs (`crew review --strict`) ✓ 2026-02-28
 - [x] Publish `docs/qa-9of10-checklist.md` with release acceptance gates ✓ 2026-02-28
 
+### [x] 9. DevEx Foundations (LSP/PTy/Graph/Image Context) ✓ 2026-03-01
+- [x] Add LSP diagnostics + completions module (`src/lsp/index.ts`) ✓
+- [x] Add CLI commands: `crew lsp check`, `crew lsp complete` ✓
+- [x] Add PTY runtime with `node-pty` + safe fallback (`src/pty/index.ts`) ✓
+- [x] Add CLI command: `crew pty "<command>"` ✓
+- [x] Upgrade repo map to include dependency graph output (`crew map --graph [--json]`) ✓
+- [x] Add image context ingestion (data URI blocks) for `chat` + `dispatch` ✓
+- [x] Add/extend tests:
+  - [x] `tests/lsp.test.js`
+  - [x] `tests/mapping.test.js`
+  - [x] `tests/context-augment.test.js`
+
+---
+
+## Phase 5: 3-Tier LLM Scale-Up (Month 2-3)
+
+Reference design: `docs/THREE-TIER-IMPLEMENTATION.md`
+
+### [x] 1. Parallel Function Calling (Tier 3 workers) ✓ 2026-03-01
+- [x] Introduce worker-executor API in `src/orchestrator/` with bounded concurrency (`maxWorkers`, queue backpressure).
+- [x] Run micro-tasks in parallel and merge to sandbox branches before final apply.
+- [x] Add deterministic merge/conflict policy and failure rollback.
+- [x] Add `crew plan --parallel` execution mode with metrics output.
+- Acceptance criteria:
+  - 10 independent file tasks run concurrently with bounded worker pool.
+  - wall-clock time improves by at least 3x vs sequential baseline.
+  - merge conflicts reported with file-level attribution.
+
+### [x] 2. AgentKeeper Memory (cross-tier persistence) ✓ 2026-03-01
+- [x] Add long-lived task memory store (`.crew/agentkeeper.jsonl` + compacted summary snapshots) (`src/memory/agentkeeper.ts`) ✓
+- [x] Persist Tier 2 planner decisions and Tier 3 worker outputs with run IDs ✓
+- [x] Inject relevant prior plans/results into subsequent runs via memory retrieval (`recallAsContext()`) in `plan`, `dispatch`, and `auto` ✓
+- [x] CLI commands: `crew memory [query]`, `crew memory-compact` ✓
+- [x] Runtime controls: `--no-memory`, `--memory-max <n>` on `plan`, `dispatch`, `auto` ✓
+- Acceptance criteria:
+  - [x] repeated similar tasks reuse prior decomposition patterns (similarity-based recall).
+  - [x] memory compaction keeps store bounded and queryable (`maxEntries` + `compact()`).
+
+### [x] 3. Token Caching (cost optimization) ✓ 2026-03-01
+- [x] Add local cache keying by task/context/model hash (`src/cache/token-cache.ts`) ✓
+- [x] Cache planner output (`crew plan`, TTL configurable) ✓
+- [x] Cache dispatch/auto output paths (`--cache`, `--cache-ttl`) ✓
+- [x] Add cache stats to cost report (`hits`, `misses`, `tokens saved`, `usd saved`) ✓
+- Acceptance criteria:
+  - [x] cache hit path avoids upstream model call.
+  - [x] cost report shows estimated saved tokens and USD.
+
+### [x] 4. Blast Radius Analysis (safe refactoring) ✓ 2026-03-01
+- [x] Build impact analyzer from repo dependency graph + pending change set (`src/safety/blast-radius.ts`) ✓
+- [x] Add risk scoring (`low/medium/high`) and impact summary ✓
+- [x] Gate `crew auto --auto-apply` by blast radius by default ✓
+- [x] Add override controls:
+  - [x] `--no-blast-radius-gate`
+  - [x] `--blast-radius-threshold <low|medium|high>`
+  - [x] `--force-auto-apply`
+- Acceptance criteria:
+  - [x] high-impact edits produce explicit risk warning and impacted-file counts.
+  - [x] unsafe auto-apply is blocked by default unless user overrides.
+
+### [x] 5. Collections Search (RAG over docs) ✓ 2026-03-01
+- [x] Add local collections index for `docs/`, markdown notes, and optional custom paths (`src/collections/index.ts`) ✓
+- [x] Add retrieval command (`crew docs <query>`) with TF-IDF ranked results and source attribution ✓
+- [x] Support `--path`, `--max`, `--json` options for flexible querying ✓
+- Acceptance criteria:
+  - [x] retrieval returns ranked relevant chunks with source paths.
+  - [x] `chat`/`dispatch` can opt into collections context via `--docs` flag ✓
+
+### [x] 6. Shared Brain Hardening + UX Parity (ROI Pass) ✓ 2026-03-01
+- [x] Recommended improvements (best ROI): ✓ 2026-03-01
+  - [x] Add `safeRecord()` wrappers (try/catch + warn) so memory failures never fail core execution.
+  - [x] Add redaction filters before memory writes (API keys, tokens, emails, long hex/base64).
+  - [x] Add memory quality gates: only store entries when step succeeded and optionally tests/lint passed.
+  - [x] Store structured memory fields (`problem`, `plan`, `edits`, `validation`, `outcome`) instead of only raw blobs.
+  - [x] Add automatic compaction policy (`maxEntries`, `maxBytes`, `ttlDays`) on startup and after large runs.
+  - [x] Add retrieval reranking by recency + success + path overlap to avoid stale but similar memories.
+  - [x] Add memory observability metrics (`recall_used`, `match_count`, `quality_score`) in `crew cost` or `crew memory stats`.
+- [x] Popular CLI patterns worth borrowing: ✓ 2026-03-01
+  - [x] Explicit `plan -> execute -> validate -> reflect` loop with hard validation gates (Aider/OpenHands/Cline style).
+  - [x] Resumable checkpoints per run with deterministic replay of decisions/tools (Cursor/Claude Code UX).
+  - [x] Semantic indexing for docs+code with source-attributed retrieval (Continue/Cody pattern).
+  - [x] Model fallback chains (`primary -> cheap fallback -> robust fallback`) with policy rules.
+  - [x] Confidence/risk score per patch and automatic escalation to QA/security when risk is high.
+
+### [x] 7. Copilot CLI Parity Add-ons (Adoption Backlog) ✓ 2026-03-01
+- Source reference:
+  - [x] Reviewed/copied parity requirements into CrewSwarm roadmap + PDD and implemented P1-compatible adaptations.
+- High Priority (P1) — 2 days total:
+  - [x] Slash command system (`/model`, `/lsp`, `/memory`, `/help`) — 1 day ✓ 2026-03-01
+  - [x] Repo-level configuration (`.crew/config.json` for teams) — 1 day ✓ 2026-03-01
+- Medium Priority (P2) — 3.5 days total:
+  - [x] GitHub native integration (natural language for issues/PRs) — 3 days ✓ 2026-03-01
+  - [x] Animated banner (ASCII art on first launch) — 0.5 day ✓ 2026-03-01
+- Low Priority (P3) — 2 days:
+  - [x] Autopilot mode (Shift+Tab to cycle REPL modes) — 2 days ✓ 2026-03-01
+- Acceptance criteria:
+  - [x] Slash commands are discoverable via `/help` and work in `crew repl`.
+  - [x] Team config supports repo defaults and per-user overrides without leaking secrets.
+  - [x] GitHub NL flows can create/list/update issues and draft PRs with confirmation gates.
+  - [x] Banner renders once per session and can be disabled by config.
+  - [x] Autopilot mode cycles deterministically and status is visible in REPL prompt.
+
+### [x] 8. Next Growth Batch (Requested Priority Reshuffle) ✓ 2026-03-01
+- Source reference:
+  - [x] Additions requested by user (post-Copilot parity pass), aligned with `docs/FUTURE-ENHANCEMENTS.md`.
+- P1 (High Priority) — 10-14 days:
+  - [x] Background Agent System (AutoFix) — GitHub Copilot-style background agent, extended to multi-agent CrewSwarm flow ✓ 2026-03-01
+- P2 (Medium Priority):
+  - [x] Real-World Benchmark — 1 day ✓ 2026-03-01
+    - run sequential vs parallel benchmark, report time/cost/quality.
+  - [x] Video Demo — 1 day ✓ 2026-03-01
+    - produce 3-5 minute walkthrough showing benchmark + memory + safety gates.
+- P3 (Low Priority):
+  - [x] Other enhancements bucket (execute first per user instruction) ✓ partial 2026-03-01
+    - [x] LSP Auto-Fix integration: `crew auto --lsp-auto-fix [--lsp-auto-fix-max-attempts N]` ✓
+    - [x] Repository map visualization: `crew map --graph --visualize [--out <path>]` ✓
+    - [x] Semantic memory deduplication during AgentKeeper compaction ✓
+    - [x] Natural language to shell translation: `crew shell "<request>"` (GitHub Copilot CLI parity) ✓
+- Execution order override:
+  - [x] Started implementation with P3 bucket first (as requested), then P2, then P1.
+- Acceptance criteria:
+  - [x] Background agent can run unattended fix cycles with explicit safety and rollback guarantees.
+  - [x] Benchmark output is reproducible and checked into docs with command transcript (`docs/BENCHMARK-RESULTS.md`).
+  - [x] Video demo assets + script are checked into docs and linked from README (`docs/VIDEO-SCRIPT.md`, `docs/DEMO-SCENARIO.md`).
+
+### [x] 9. Operational Hardening (Post-Parity) — Complete
+- Source:
+  - [x] PDD: `docs/PDD-OPS-HARDENING.md`
+- P1 (High) — 2 days:
+  - [x] Add `crew github doctor` command to verify `gh` install, auth state, and repo permission baseline before NL GitHub actions.
+  - [x] Add `--dry-run` to `crew github` to print the exact `gh` command and parsed intent without mutating.
+- P2 (Medium) — 2 days:
+  - [x] Add REPL replay/audit logs for mode changes and autopilot actions into session history and checkpoint events.
+- P3 (Low) — 2 days:
+  - [x] Add model policy file support (`.crew/model-policy.json`) for centralized tier defaults, fallback chains, and optional max-cost gates.
+- Acceptance criteria:
+  - [x] `crew github doctor` exits non-zero with actionable reasons when `gh` is unavailable or unauthenticated.
+  - [x] `crew github --dry-run` never mutates GitHub state and shows parse + command details.
+  - [x] REPL emits deterministic, queryable mode/audit events.
+  - [x] Model policy is loaded once, validated, and can override per-command defaults safely.
+
 ---
 
 ## Success Metrics
@@ -311,7 +451,7 @@
 
 ---
 
-**Roadmap version:** 1.0  
-**Last updated:** 2026-02-28  
+**Roadmap version:** 1.1  
+**Last updated:** 2026-03-01  
 **Owner:** CrewSwarm team  
 **Output directory:** `/Users/jeffhobbs/Desktop/CrewSwarm/crew-cli`

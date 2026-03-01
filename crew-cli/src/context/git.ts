@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { buildRepositoryMap } from '../mapping/index.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -32,14 +33,21 @@ export async function getProjectContext(
   options: GitContextOptions = {}
 ): Promise<string> {
   const maxDiffChars = Number.isInteger(options.maxDiffChars) ? (options.maxDiffChars as number) : 6000;
+  
+  let tree = '(unavailable)';
+  try {
+    tree = await buildRepositoryMap(cwd);
+  } catch (err) {
+    // Ignore
+  }
 
   try {
     const insideWorkTree = await runGit(['rev-parse', '--is-inside-work-tree'], cwd);
     if (insideWorkTree !== 'true') {
-      return '## Git Context\n```text\nNo git repository detected.\n```';
+      return `## Repository Context\n\`\`\`text\n${tree}\n\`\`\`\n\n## Git Context\n\`\`\`text\nNo git repository detected.\n\`\`\``;
     }
   } catch {
-    return '## Git Context\n```text\nNo git repository detected.\n```';
+    return `## Repository Context\n\`\`\`text\n${tree}\n\`\`\`\n\n## Git Context\n\`\`\`text\nNo git repository detected.\n\`\`\``;
   }
 
   const [branch, status, unstagedDiff, stagedDiff, log] = await Promise.all([
@@ -51,6 +59,11 @@ export async function getProjectContext(
   ]);
 
   return [
+    '## Repository Context',
+    '```text',
+    clip(tree, 8000),
+    '```',
+    '',
     '## Git Context',
     '```text',
     `Branch: ${branch || '(detached HEAD)'}`,
