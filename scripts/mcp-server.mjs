@@ -79,6 +79,7 @@ function composeChatPayloadFromOpenAI(messages, { maxContextChars = 12000 } = {}
   const users = normalized.filter(m => m.role === "user");
   const lastUser = users.at(-1)?.text || "";
   const priorUsers = users.slice(0, -1).map(m => m.text);
+  const toolResults = normalized.filter(m => m.role === "tool").map(m => m.text);
   const historyTail = [...priorUsers, ...assistant].slice(-10);
 
   const sections = [];
@@ -86,6 +87,7 @@ function composeChatPayloadFromOpenAI(messages, { maxContextChars = 12000 } = {}
   if (historyTail.length > 0) sections.push(`RECENT CONTEXT:\n${historyTail.join("\n\n")}`);
   let context = sections.join("\n\n");
   if (context.length > maxContextChars) context = context.slice(context.length - maxContextChars);
+  if (toolResults.length > 0) context += `${context ? "\n\n" : ""}TOOL RESULTS:\n${toolResults.join("\n\n")}`;
 
   const inputChars = normalized.reduce((sum, m) => sum + m.text.length, 0);
   return {
@@ -98,6 +100,77 @@ function composeChatPayloadFromOpenAI(messages, { maxContextChars = 12000 } = {}
       total: normalized.length,
     },
     inputChars,
+  };
+}
+
+function selectToolCallName(payload, userMessage) {
+  const tools = Array.isArray(payload?.tools) ? payload.tools : [];
+  if (tools.length === 0) return null;
+  const names = tools
+    .map(t => String(t?.function?.name || "").trim())
+    .filter(Boolean);
+  if (names.length === 0) return null;
+
+  const choice = payload?.tool_choice;
+  if (choice === "none") return null;
+  if (choice && typeof choice === "object") {
+    const forced = String(choice?.function?.name || "").trim();
+    if (forced && names.includes(forced)) return forced;
+  }
+  if (choice === "required") return names[0];
+  if (choice && choice !== "auto") return null;
+
+  const lower = String(userMessage || "").toLowerCase();
+  const likelyAction = /\b(build|implement|write|create|edit|refactor|fix|change|update|run|test|analyze)\b/.test(lower);
+  return likelyAction ? names[0] : null;
+}
+
+function buildToolCallResponse({ model, stream, toolName, task }) {
+  const completionId = `chatcmpl-${Date.now().toString(36)}`;
+  const ts = Math.floor(Date.now() / 1000);
+  const toolCall = {
+    id: `call_${Date.now().toString(36)}`,
+    type: "function",
+    function: {
+      name: toolName,
+      arguments: JSON.stringify({ task: String(task || "") }),
+    },
+  };
+
+  if (stream) {
+    return {
+      streamChunks: [
+        {
+          id: completionId,
+          object: "chat.completion.chunk",
+          created: ts,
+          model,
+          choices: [{ index: 0, delta: { role: "assistant", tool_calls: [toolCall] }, finish_reason: null }],
+        },
+        {
+          id: completionId,
+          object: "chat.completion.chunk",
+          created: ts,
+          model,
+          choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+        },
+      ],
+    };
+  }
+
+  return {
+    json: {
+      id: completionId,
+      object: "chat.completion",
+      created: ts,
+      model,
+      choices: [{ index: 0, message: { role: "assistant", content: "", tool_calls: [toolCall] }, finish_reason: "tool_calls" }],
+      usage: {
+        prompt_tokens: Math.ceil(String(task || "").length / 4),
+        completion_tokens: 1,
+        total_tokens: Math.ceil(String(task || "").length / 4) + 1,
+      },
+    },
   };
 }
 
@@ -606,6 +679,7 @@ if (STDIO_MODE) {
         temperature,
         top_p,
         max_tokens,
+        tool_choice,
         tools,
       } = payload;
 
@@ -616,6 +690,28 @@ if (STDIO_MODE) {
       if (!task) {
         res.writeHead(400, { "content-type": "application/json", ...corsHeaders });
         res.end(JSON.stringify({ error: { message: "No user message found", type: "invalid_request_error" } }));
+        return;
+      }
+
+      const selectedTool = selectToolCallName({ tools, tool_choice }, task);
+      if (selectedTool) {
+        const toolResponse = buildToolCallResponse({
+          model,
+          stream: Boolean(stream),
+          toolName: selectedTool,
+          task,
+        });
+        if (toolResponse.streamChunks) {
+          res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", ...corsHeaders });
+          for (const chunk of toolResponse.streamChunks) {
+            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          }
+          res.write("data: [DONE]\n\n");
+          res.end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify(toolResponse.json));
         return;
       }
 
