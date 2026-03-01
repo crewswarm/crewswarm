@@ -116,10 +116,11 @@ Forward these fields as metadata:
 
 **Note:** `stream: true` is acknowledged but not implemented (returns non-streaming response).
 
-### 6. Tool Calls (Future)
+### 6. Tool Calls
 
-**Phase 1 (Current):** Tools metadata forwarded, not executed  
-**Phase 2 (Future):** Support tool round-trip:
+**Status:** ✅ Implemented (2026-03-01)
+
+Supports full OpenAI tool-calling semantics:
 
 ```typescript
 // Assistant calls tool
@@ -134,10 +135,20 @@ Forward these fields as metadata:
 { role: "assistant", content: "It's 70°F and sunny today." }
 ```
 
-**Implementation requirement:**
-- Parse `tool` role messages
-- Forward tool results to crew-lead with context
-- Map CrewSwarm `@@SKILL` to OpenAI tool calls
+**Implemented behavior:**
+- ✅ Parse `tool` role messages
+- ✅ Forward tool results in context (TOOL RESULTS section)
+- ✅ Respect `tool_choice` parameter (none|auto|required|{function})
+- ✅ Generate OpenAI-compatible `tool_calls` responses
+- ✅ Support streaming and non-streaming tool call responses
+- ✅ Heuristic selection on `tool_choice: auto` (action verb detection)
+
+**Implementation functions:**
+- `selectToolCallName()` - handles tool_choice semantics (line 106)
+- `buildToolCallResponse()` - generates tool_calls payload (line 128)
+- Tool result extraction in `composeChatPayloadFromOpenAI()` (line 82)
+
+**Future:** Map CrewSwarm `@@SKILL` execution back to tool results
 
 ### 7. Token Usage Calculation
 
@@ -229,15 +240,19 @@ Example:
 - [x] Parse `messages[]` array (string + multimodal content)
 - [x] Extract system messages
 - [x] Extract conversation history (assistant + prior users)
+- [x] Extract tool role messages and include in context
 - [x] Compose context with 12KB limit
 - [x] Route to chat vs dispatch based on model
 - [x] Forward OpenAI fields as metadata
 - [x] Calculate accurate token usage from full input
 - [x] Add request trace logging
 - [x] Add model metadata (capabilities, mode)
-- [ ] Implement streaming responses
-- [ ] Implement tool call round-trip
-- [ ] Map CrewSwarm `@@SKILL` to OpenAI tools
+- [x] Implement tool_choice handling (none|auto|required|forced)
+- [x] Generate tool_calls responses (streaming + non-streaming)
+- [x] Heuristic tool selection on auto mode
+- [ ] Implement streaming responses for chat
+- [ ] Execute tools via CrewSwarm `@@SKILL` and return results
+- [ ] Map tool execution results back to role: tool format
 
 ## Testing
 
@@ -251,6 +266,11 @@ Example:
 5. Multimodal content (text extraction)
 6. Context truncation (>12KB)
 7. Token usage accuracy
+8. Tool call with auto choice (action verb detection)
+9. Tool call with required choice
+10. Tool call with forced function name
+11. Tool results in conversation context
+12. Streaming tool call responses
 
 **Success criteria:**
 - All messages parsed correctly
@@ -288,10 +308,11 @@ Example:
 
 **Version history:**
 - v1.0 (2026-03-01): Initial spec with message parsing and context forwarding
+- v1.1 (2026-03-01): Add tool-calling support (tool_choice, tool_calls, role: tool)
 
 ## References
 
 - OpenAI Chat Completions API: https://platform.openai.com/docs/api-reference/chat
 - MCP Protocol: https://modelcontextprotocol.io/
-- Implementation: `scripts/mcp-server.mjs` (lines 48-104, 570-706)
+- Implementation: `scripts/mcp-server.mjs` (lines 48-180, 570-720)
 - Tests: `scripts/test-mcp-context.mjs`
