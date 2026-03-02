@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import WebSocket, { WebSocketServer } from "ws";
 import { BUILT_IN_RT_AGENTS, RT_TO_GATEWAY_AGENT_MAP } from "../lib/agent-registry.mjs";
 import { acquireStartupLock } from "../lib/runtime/startup-guard.mjs";
+import { appendWithRotation } from "../lib/runtime/log-rotation.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -219,7 +220,7 @@ function channelPath(channel) {
 }
 
 async function appendJsonLine(filePath, value) {
-  await appendFile(filePath, `${JSON.stringify(value)}\n`, "utf8");
+  await appendWithRotation(filePath, `${JSON.stringify(value)}\n`);
 }
 
 function sendJson(socket, value) {

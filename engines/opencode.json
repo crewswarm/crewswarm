@@ -2,6 +2,13 @@
   "id": "opencode",
   "label": "OpenCode",
   "description": "Full agentic coding sessions with persistent memory, file editing, and bash execution. Runs opencode run — the original CrewSwarm execution engine.",
+  "priority": 40,
+  "shouldUse": {
+    "runtime": ["opencode", "gpt5", "gpt-5"],
+    "payloadKey": "useOpenCode",
+    "agentConfigKey": "useOpenCode",
+    "envVar": "CREWSWARM_OPENCODE_ENABLED"
+  },
   "bin": "opencode",
   "installCmd": "npm install -g opencode-ai",
   "installUrl": "https://opencode.ai",

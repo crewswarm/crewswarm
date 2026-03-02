@@ -46,6 +46,61 @@ function crewHeaders() {
   return { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) };
 }
 
+
+function extractMessageText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (!part) return "";
+        if (!part.type || part.type === "text") return String(part.text || "");
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+function normalizeOpenAIMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+  return messages
+    .map(m => ({
+      role: String(m?.role || "").trim().toLowerCase(),
+      text: extractMessageText(m?.content).trim(),
+    }))
+    .filter(m => m.role && m.text);
+}
+
+function composeChatPayloadFromOpenAI(messages, { maxContextChars = 12000 } = {}) {
+  const normalized = normalizeOpenAIMessages(messages);
+  const system = normalized.filter(m => m.role === "system").map(m => m.text);
+  const assistant = normalized.filter(m => m.role === "assistant").map(m => m.text);
+  const users = normalized.filter(m => m.role === "user");
+  const lastUser = users.at(-1)?.text || "";
+  const priorUsers = users.slice(0, -1).map(m => m.text);
+  const historyTail = [...priorUsers, ...assistant].slice(-10);
+
+  const sections = [];
+  if (system.length > 0) sections.push(`SYSTEM INSTRUCTIONS:\n${system.join("\n\n")}`);
+  if (historyTail.length > 0) sections.push(`RECENT CONTEXT:\n${historyTail.join("\n\n")}`);
+  let context = sections.join("\n\n");
+  if (context.length > maxContextChars) context = context.slice(context.length - maxContextChars);
+
+  const inputChars = normalized.reduce((sum, m) => sum + m.text.length, 0);
+  return {
+    message: lastUser,
+    context,
+    messageCounts: {
+      system: system.length,
+      assistant: assistant.length,
+      user: users.length,
+      total: normalized.length,
+    },
+    inputChars,
+  };
+}
+
 // ── Dynamic agent list ────────────────────────────────────────────────────────
 function loadAgents() {
   try {
@@ -515,7 +570,9 @@ if (STDIO_MODE) {
       const models = [
         // crew-lead (Stinki) — the general-purpose commander
         { id: "crewswarm", object: "model", created: 1700000000, owned_by: "crewswarm",
-          description: "🧠 Stinki — crew-lead, general purpose commander" },
+          description: "🧠 Stinki — crew-lead, general purpose commander",
+          capabilities: ["chat", "coordination", "dispatch"],
+          mode: "chat" },
         // One model per agent
         ...agents.map(a => ({
           id: a.id,
@@ -523,6 +580,8 @@ if (STDIO_MODE) {
           created: 1700000000,
           owned_by: "crewswarm",
           description: `${a.emoji || ""} ${a.name} — ${a.role || a.id}`.trim(),
+          capabilities: ["dispatch", "tools"],
+          mode: "agent",
         })),
       ];
       res.writeHead(200, { "content-type": "application/json", ...corsHeaders });
@@ -540,12 +599,19 @@ if (STDIO_MODE) {
         return;
       }
 
-      const { model = "crewswarm", messages = [], stream = false } = payload;
-      // Extract the last user message as the task
-      const lastUser = [...messages].reverse().find(m => m.role === "user");
-      const task = typeof lastUser?.content === "string"
-        ? lastUser.content
-        : lastUser?.content?.map?.(c => c.text || "").join("") || "";
+      const {
+        model = "crewswarm",
+        messages = [],
+        stream = false,
+        temperature,
+        top_p,
+        max_tokens,
+        tools,
+      } = payload;
+
+      const composed = composeChatPayloadFromOpenAI(messages);
+      const task = composed.message;
+      const contextPack = composed.context;
 
       if (!task) {
         res.writeHead(400, { "content-type": "application/json", ...corsHeaders });
@@ -553,22 +619,47 @@ if (STDIO_MODE) {
         return;
       }
 
+      const startedAt = Date.now();
+      const runMeta = {
+        source: "openai-wrapper",
+        clientModel: model,
+        temperature,
+        top_p,
+        max_tokens,
+        hasTools: Array.isArray(tools) && tools.length > 0,
+      };
+
       // Route: "crewswarm" / "crew-lead" → /chat  |  anything else → dispatch
       const isChatRoute = model === "crewswarm" || model === "crew-lead";
       let reply = "";
       try {
         if (isChatRoute) {
+          const chatMessage = contextPack ? `${contextPack}\n\n${task}` : task;
           const r = await fetch(`${CREW_LEAD_URL}/chat`, {
             method: "POST", headers: crewHeaders(),
-            body: JSON.stringify({ message: task, sessionId: `openai-compat-${Date.now()}` }),
+            body: JSON.stringify({
+              message: chatMessage,
+              context: contextPack,
+              sessionId: `openai-compat-${Date.now()}`,
+              metadata: runMeta,
+            }),
             signal: AbortSignal.timeout(120_000),
           });
           const d = await r.json();
           reply = d.reply || d.message || "(no reply)";
         } else {
+          const taskWithContext = contextPack ? `${task}\n\n${contextPack}` : task;
           const r = await fetch(`${CREW_LEAD_URL}/api/dispatch`, {
             method: "POST", headers: crewHeaders(),
-            body: JSON.stringify({ agent: model, task }),
+            body: JSON.stringify({
+              agent: model,
+              task: taskWithContext,
+              context: contextPack,
+              source: "openai-wrapper",
+              clientModel: model,
+              sessionId: `openai-compat-${Date.now()}`,
+              metadata: runMeta,
+            }),
             signal: AbortSignal.timeout(10_000),
           });
           const dispatched = await r.json();
@@ -592,6 +683,10 @@ if (STDIO_MODE) {
         reply = `Error: ${e.message}`;
       }
 
+      console.log(`[openai-wrapper] model=${model} stream=${Boolean(stream)} route=${isChatRoute ? "chat" : "dispatch"} ` +
+        `msgs=${composed.messageCounts.total} (sys:${composed.messageCounts.system},asst:${composed.messageCounts.assistant},usr:${composed.messageCounts.user}) ` +
+        `contextChars=${contextPack.length} latencyMs=${Date.now() - startedAt}`);
+
       const completionId = `chatcmpl-${Date.now().toString(36)}`;
       const ts = Math.floor(Date.now() / 1000);
 
@@ -611,7 +706,11 @@ if (STDIO_MODE) {
         res.end(JSON.stringify({
           id: completionId, object: "chat.completion", created: ts, model,
           choices: [{ index: 0, message: { role: "assistant", content: reply }, finish_reason: "stop" }],
-          usage: { prompt_tokens: Math.ceil(task.length / 4), completion_tokens: Math.ceil(reply.length / 4), total_tokens: Math.ceil((task.length + reply.length) / 4) },
+          usage: {
+            prompt_tokens: Math.ceil(composed.inputChars / 4),
+            completion_tokens: Math.ceil(reply.length / 4),
+            total_tokens: Math.ceil((composed.inputChars + reply.length) / 4),
+          },
         }));
       }
       return;

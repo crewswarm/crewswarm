@@ -25,7 +25,9 @@ export class TokenFinder {
         const data = await readFile(claudePath, 'utf8');
         const parsed = JSON.parse(data);
         if (parsed.sessionToken) tokens.claude = parsed.sessionToken;
-      } catch {}
+      } catch (e) {
+        console.error(`Failed to parse Claude config: ${e.message}`);
+      }
     }
 
     // 2. OpenAI (~/.openai/config)
@@ -33,19 +35,21 @@ export class TokenFinder {
     if (await this.exists(openaiPath)) {
       try {
         const data = await readFile(openaiPath, 'utf8');
-        // Simple search for key
         const match = data.match(/api_key[:=]\s*([a-zA-Z0-9\-]+)/);
         if (match) tokens.openai = match[1];
-      } catch {}
+      } catch (e) {
+        console.error(`Failed to parse OpenAI config: ${e.message}`);
+      }
     }
 
     // 3. Gemini ADC (~/.config/gcloud/application_default_credentials.json)
     const geminiPath = join(homedir(), '.config', 'gcloud', 'application_default_credentials.json');
     if (await this.exists(geminiPath)) {
       try {
-        // Just note if found for now
         tokens.gemini = '(detected via ADC)';
-      } catch {}
+      } catch (e) {
+        console.error(`Failed to check Gemini ADC: ${e.message}`);
+      }
     }
 
     // 4. Cursor auth from SQLite state DB

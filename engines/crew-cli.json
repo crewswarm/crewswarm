@@ -1,0 +1,42 @@
+{
+  "id": "crew-cli",
+  "label": "crew-cli",
+  "description": "CrewSwarm's native CLI with intelligent routing, sandbox workflow, and cross-repo context. Full agent orchestration with safety gates, review loops, and persistent memory.",
+  "priority": 60,
+  "shouldUse": {
+    "runtime": ["crew-cli", "crewcli"],
+    "payloadKey": "useCrewCLI",
+    "agentConfigKey": "useCrewCLI",
+    "envVar": "CREWSWARM_CREW_CLI_ENABLED"
+  },
+  "bin": "crew",
+  "binAlternate": "~/Desktop/CrewSwarm/crew-cli/bin/crew.js",
+  "installCmd": "cd ~/Desktop/CrewSwarm/crew-cli && npm install && npm run build",
+  "installUrl": "https://github.com/crewswarm/CrewSwarm/tree/main/crew-cli",
+  "docsUrl": "https://github.com/crewswarm/CrewSwarm/blob/main/crew-cli/docs/OVERVIEW.md",
+  "color": "#8b5cf6",
+  "icon": "crew",
+  "agentConfigKey": "useCrewCLI",
+  "envToggle": "CREWSWARM_CREW_CLI_ENABLED",
+  "bestFor": ["crew-coder", "crew-coder-front", "crew-coder-back", "crew-fixer"],
+  "traits": [
+    "Intelligent routing to 20+ specialist agents",
+    "Sandbox workflow (preview → branch → apply)",
+    "Cross-repo context injection",
+    "QA loop with fixer integration",
+    "Git-aware context (diffs, branches, status)",
+    "Persistent memory via AgentKeeper",
+    "Cost-optimized 3-tier LLM architecture",
+    "Safety gates (--check flag, blast radius)"
+  ],
+  "args": {
+    "chat": ["chat", "{prompt}"],
+    "plan": ["plan", "{prompt}"],
+    "run": ["run", "-t", "{prompt}"],
+    "dispatch": ["dispatch", "{agent}", "{prompt}"]
+  },
+  "outputMode": "streaming",
+  "requiresEnv": [],
+  "requiresAuth": false,
+  "notes": "crew-cli is CrewSwarm's native execution engine. Unlike external CLIs (OpenCode, Cursor), it has direct access to the full agent roster, shared memory, and gateway routing. Use for complex multi-agent tasks, planning, and orchestration."
+}

@@ -36,6 +36,7 @@ const BUILTIN_PROVIDERS = [
 const SEARCH_TOOLS = [
   { id:'parallel', label:'Parallel',    icon:'🔬', url:'https://platform.parallel.ai/signup', hint:'Deep research & web synthesis — used by crew-pm for project planning', envKey:'PARALLEL_API_KEY' },
   { id:'brave',    label:'Brave Search', icon:'🦁', url:'https://api.search.brave.com/',       hint:'Fast web search (~700ms) — best for quick agent lookups',            envKey:'BRAVE_API_KEY'    },
+  { id:'greptile', label:'Greptile',     icon:'🔎', url:'https://app.greptile.com/api',        hint:'Code search & repo indexing — query codebases with natural language', envKey:'GREPTILE_API_KEY' },
 ];
 
 const PROVIDER_ICONS = {

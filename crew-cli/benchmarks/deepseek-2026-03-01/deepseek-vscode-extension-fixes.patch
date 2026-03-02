@@ -1,0 +1,948 @@
+diff --git a/package.json b/package.json
+index e091115..1ba942e 100644
+--- a/package.json
++++ b/package.json
+@@ -11,7 +11,6 @@
+     "Other"
+   ],
+   "activationEvents": [
+-    "onView:crewswarm.chatView",
+     "onCommand:crewswarm.openChat",
+     "onCommand:crewswarm.showStatus"
+   ],
+@@ -46,6 +45,27 @@
+         "category": "CrewSwarm"
+       }
+     ],
++    "configuration": {
++      "title": "CrewSwarm",
++      "properties": {
++        "crewswarm.apiUrl": {
++          "type": "string",
++          "default": "http://127.0.0.1:4096",
++          "description": "CrewSwarm backend base URL"
++        },
++        "crewswarm.apiKey": {
++          "type": "string",
++          "default": "",
++          "description": "Optional bearer token for backend requests"
++        },
++        "crewswarm.api.timeoutMs": {
++          "type": "number",
++          "default": 30000,
++          "minimum": 1000,
++          "description": "API timeout in milliseconds"
++        }
++      }
++    },
+     "menus": {
+       "view/title": [
+         {
+@@ -61,14 +81,15 @@
+     "compile": "tsc -p ./",
+     "watch": "tsc -watch -p ./",
+     "lint": "eslint src --ext ts",
+-    "test": "npm run compile && node ./out/test/runTest.js"
++    "test": "npm run compile && node ./test/test-runner.js"
+   },
+   "devDependencies": {
+-    "@types/vscode": "^1.85.0",
+-    "@types/node": "^20.0.0",
+     "@types/mocha": "^10.0.0",
+-    "typescript": "^5.0.0",
+-    "eslint": "^8.0.0"
++    "@types/node": "^20.0.0",
++    "@types/vscode": "^1.85.0",
++    "@vscode/test-electron": "^2.4.0",
++    "eslint": "^8.0.0",
++    "typescript": "^5.0.0"
+   },
+   "repository": {
+     "type": "git",
+diff --git a/src/api-client.ts b/src/api-client.ts
+index df7a6a5..5ae63c0 100644
+--- a/src/api-client.ts
++++ b/src/api-client.ts
+@@ -21,6 +21,7 @@ export interface ChatResponse {
+     type: 'diff' | 'suggestion' | 'command';
+     content: string;
+     description?: string;
++    filePath?: string;
+   }>;
+   conversationId?: string;
+   timestamp: string;
+@@ -61,8 +62,8 @@ export interface ApiClientConfig {
+ }
+ 
+ const DEFAULT_CONFIG: ApiClientConfig = {
+-  baseUrl: 'https://api.crewswarm.ai',
+-  timeoutMs: 30000, // 30 seconds
++  baseUrl: 'http://127.0.0.1:4096',
++  timeoutMs: 30000,
+   maxRetries: 3,
+   retryDelayMs: 1000,
+   enableLogging: true,
+@@ -75,24 +76,13 @@ export class ChatApiClient {
+     this.config = { ...DEFAULT_CONFIG, ...config };
+   }
+ 
+-  /**
+-   * Make a POST request to the /v1/chat endpoint
+-   */
+   async sendMessage(request: ChatRequest): Promise<ChatResponse> {
+-    const url = `${this.config.baseUrl}/v1/chat`;
++    const url = `${this.config.baseUrl.replace(/\/$/, '')}/v1/chat`;
+     const headers = this.createHeaders();
+     const body = JSON.stringify(request);
+-    
+-    if (this.config.enableLogging) {
+-      console.log(`[ChatApiClient] Sending request to ${url}`, {
+-        messageLength: request.message.length,
+-        hasContext: !!request.context,
+-        conversationId: request.conversationId,
+-      });
+-    }
+ 
+     let lastError: Error | undefined;
+-    
++
+     for (let attempt = 0; attempt <= this.config.maxRetries!; attempt++) {
+       try {
+         const response = await this.fetchWithTimeout(url, {
+@@ -108,7 +98,7 @@ export class ChatApiClient {
+           } catch {
+             errorData = await response.text();
+           }
+-          
++
+           throw new ApiError(
+             `API request failed with status ${response.status}`,
+             response.status,
+@@ -116,63 +106,42 @@ export class ChatApiClient {
+           );
+         }
+ 
+-        const data: ChatResponse = await response.json();
+-        
+-        if (this.config.enableLogging) {
+-          console.log(`[ChatApiClient] Received response`, {
+-            messageLength: data.message.length,
+-            hasActions: !!(data.actions && data.actions.length > 0),
+-            conversationId: data.conversationId,
+-          });
+-        }
+-
+-        return data;
++        const data: any = await response.json();
++        const message = String(data?.reply || data?.response || data?.message || '').trim();
++        const actions = Array.isArray(data?.actions) ? data.actions : [];
+ 
++        return {
++          message: message || 'No response body returned by backend.',
++          actions,
++          conversationId: data?.conversationId,
++          timestamp: new Date().toISOString()
++        };
+       } catch (error) {
+         lastError = error as Error;
+-        
+-        // Don't retry on client errors (4xx) except 429 (rate limit)
++
+         if (
+-          error instanceof ApiError && 
+-          error.statusCode >= 400 && 
+-          error.statusCode < 500 && 
++          error instanceof ApiError &&
++          error.statusCode >= 400 &&
++          error.statusCode < 500 &&
+           error.statusCode !== 429
+         ) {
+           throw error;
+         }
+ 
+-        // Don't retry on timeout errors
+         if (error instanceof TimeoutError) {
+           throw error;
+         }
+ 
+-        // Calculate delay with exponential backoff and jitter
+         if (attempt < this.config.maxRetries!) {
+           const delay = this.calculateRetryDelay(attempt);
+-          
+-          if (this.config.enableLogging) {
+-            console.warn(
+-              `[ChatApiClient] Request failed (attempt ${attempt + 1}/${this.config.maxRetries! + 1}), retrying in ${delay}ms:`,
+-              error.message
+-            );
+-          }
+-          
+           await this.delay(delay);
+         }
+       }
+     }
+ 
+-    // If we get here, all retries failed
+-    if (this.config.enableLogging) {
+-      console.error(`[ChatApiClient] All ${this.config.maxRetries! + 1} attempts failed:`, lastError);
+-    }
+-    
+     throw lastError || new NetworkError('Request failed after all retry attempts');
+   }
+ 
+-  /**
+-   * Create headers for the API request
+-   */
+   private createHeaders(): Record<string, string> {
+     const headers: Record<string, string> = {
+       'Content-Type': 'application/json',
+@@ -183,15 +152,10 @@ export class ChatApiClient {
+       headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+     }
+ 
+-    // Add user agent for tracking
+     headers['User-Agent'] = 'CrewSwarm-VSCode-Extension/1.0.0';
+-
+     return headers;
+   }
+ 
+-  /**
+-   * Fetch with timeout using AbortController
+-   */
+   private async fetchWithTimeout(
+     url: string,
+     options: RequestInit
+@@ -208,11 +172,11 @@ export class ChatApiClient {
+       return response;
+     } catch (error) {
+       clearTimeout(timeoutId);
+-      
++
+       if (error instanceof DOMException && error.name === 'AbortError') {
+         throw new TimeoutError(`Request timeout after ${this.config.timeoutMs}ms`);
+       }
+-      
++
+       throw new NetworkError(
+         `Network request failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+         error instanceof Error ? error : undefined
+@@ -220,37 +184,24 @@ export class ChatApiClient {
+     }
+   }
+ 
+-  /**
+-   * Calculate retry delay with exponential backoff and jitter
+-   */
+   private calculateRetryDelay(attempt: number): number {
+     const baseDelay = this.config.retryDelayMs!;
+     const exponentialDelay = baseDelay * Math.pow(2, attempt);
+-    const jitter = Math.random() * 0.3 * exponentialDelay; // Up to 30% jitter
++    const jitter = Math.random() * 0.3 * exponentialDelay;
+     return exponentialDelay + jitter;
+   }
+ 
+-  /**
+-   * Utility function for delay
+-   */
+   private delay(ms: number): Promise<void> {
+     return new Promise(resolve => setTimeout(resolve, ms));
+   }
+ 
+-  /**
+-   * Update configuration at runtime
+-   */
+   updateConfig(newConfig: Partial<ApiClientConfig>): void {
+     this.config = { ...this.config, ...newConfig };
+   }
+ 
+-  /**
+-   * Get current configuration
+-   */
+   getConfig(): ApiClientConfig {
+     return { ...this.config };
+   }
+ }
+ 
+-// Export a default instance for convenience
+ export const defaultChatApiClient = new ChatApiClient();
+diff --git a/src/extension.ts b/src/extension.ts
+index 0ee9a15..38566e9 100644
+--- a/src/extension.ts
++++ b/src/extension.ts
+@@ -1,33 +1,27 @@
+ import * as vscode from 'vscode';
+ import { ChatApiClient } from './api-client';
++import { DiffHandler } from './diff-handler';
+ 
+-/**
+- * Main extension entry point for CrewSwarm VS Code Extension
+- */
+ export function activate(context: vscode.ExtensionContext) {
+-    console.log('CrewSwarm extension is now active!');
+-
+-    // Create status bar item
+     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+     statusBarItem.text = '$(comment-discussion) CrewSwarm';
+     statusBarItem.tooltip = 'CrewSwarm AI Assistant - Ready';
+     statusBarItem.show();
+-    
+-    // Register the command to open the chat panel
+-    const disposable = vscode.commands.registerCommand('crewswarm.openChat', () => {
++
++    const openChat = vscode.commands.registerCommand('crewswarm.openChat', () => {
+         CrewSwarmPanel.createOrShow(context.extensionUri, statusBarItem);
+     });
+ 
+-    context.subscriptions.push(disposable, statusBarItem);
++    const showStatus = vscode.commands.registerCommand('crewswarm.showStatus', () => {
++        vscode.window.showInformationMessage(`CrewSwarm: ${statusBarItem.tooltip}`);
++    });
++
++    context.subscriptions.push(openChat, showStatus, statusBarItem);
+ }
+ 
+ export function deactivate() {
+-    console.log('CrewSwarm extension is now deactivated.');
+ }
+ 
+-/**
+- * Manages CrewSwarm chat webview panels
+- */
+ export class CrewSwarmPanel {
+     public static currentPanel: CrewSwarmPanel | undefined;
+     private readonly _panel: vscode.WebviewPanel;
+@@ -40,47 +34,33 @@ export class CrewSwarmPanel {
+         this._panel = panel;
+         this._extensionUri = extensionUri;
+         this._statusBarItem = statusBarItem;
+-        this._apiClient = new ChatApiClient();
+ 
+-        // Set up the webview panel
++        const config = vscode.workspace.getConfiguration('crewswarm');
++        const baseUrl = config.get<string>('apiUrl') || 'http://127.0.0.1:4096';
++        const apiKey = config.get<string>('apiKey') || '';
++        const timeoutMs = config.get<number>('api.timeoutMs') || 30000;
++        this._apiClient = new ChatApiClient({ baseUrl, apiKey, timeoutMs });
++
+         this._panel.webview.options = {
+             enableScripts: true,
+-            localResourceRoots: [
+-                vscode.Uri.joinPath(this._extensionUri, 'src', 'webview')
+-            ]
++            localResourceRoots: [vscode.Uri.joinPath(this._extensionUri, 'src', 'webview')]
+         };
+ 
+-        // Set the webview's initial html content
+         this._updateWebview();
+-
+-        // Listen for when the panel is disposed
+         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+-
+-        // Handle messages from the webview
+-        this._panel.webview.onDidReceiveMessage(
+-            async (message) => {
+-                await this._handleWebviewMessage(message);
+-            },
+-            null,
+-            this._disposables
+-        );
+-
+-        // Update status bar
++        this._panel.webview.onDidReceiveMessage(async (message) => {
++            await this._handleWebviewMessage(message);
++        }, null, this._disposables);
+         this._updateStatusBar('connected');
+     }
+ 
+     public static createOrShow(extensionUri: vscode.Uri, statusBarItem: vscode.StatusBarItem) {
+-        const column = vscode.window.activeTextEditor
+-            ? vscode.window.activeTextEditor.viewColumn
+-            : undefined;
+-
+-        // If we already have a panel, show it
++        const column = vscode.window.activeTextEditor?.viewColumn;
+         if (CrewSwarmPanel.currentPanel) {
+             CrewSwarmPanel.currentPanel._panel.reveal(column);
+             return;
+         }
+ 
+-        // Otherwise, create a new panel
+         const panel = vscode.window.createWebviewPanel(
+             'crewswarmChat',
+             'CrewSwarm AI Assistant',
+@@ -88,9 +68,7 @@ export class CrewSwarmPanel {
+             {
+                 enableScripts: true,
+                 retainContextWhenHidden: true,
+-                localResourceRoots: [
+-                    vscode.Uri.joinPath(extensionUri, 'src', 'webview')
+-                ]
++                localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'src', 'webview')]
+             }
+         );
+ 
+@@ -100,20 +78,11 @@ export class CrewSwarmPanel {
+     private _updateWebview() {
+         const webview = this._panel.webview;
+         this._panel.title = 'CrewSwarm AI Assistant';
+-        
+-        // Get URIs for webview resources
+-        const stylesUri = webview.asWebviewUri(
+-            vscode.Uri.joinPath(this._extensionUri, 'src', 'webview', 'styles.css')
+-        );
+-        
+-        const scriptUri = webview.asWebviewUri(
+-            vscode.Uri.joinPath(this._extensionUri, 'src', 'webview', 'chat.js')
+-        );
+ 
+-        // Generate a nonce for CSP
++        const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'webview', 'styles.css'));
++        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'webview', 'chat.js'));
+         const nonce = getNonce();
+ 
+-        // HTML content with CSP
+         webview.html = `<!DOCTYPE html>
+ <html lang="en">
+ <head>
+@@ -125,55 +94,29 @@ export class CrewSwarmPanel {
+ </head>
+ <body>
+     <div class="chat-container" role="main" aria-label="CrewSwarm AI Chat">
+-        <!-- Header -->
+         <header class="chat-header" role="banner">
+-            <h1 class="chat-title">
+-                <span class="chat-icon" aria-hidden="true">🤖</span>
+-                CrewSwarm AI Assistant
+-            </h1>
++            <h1 class="chat-title"><span class="chat-icon" aria-hidden="true">🤖</span>CrewSwarm AI Assistant</h1>
+             <div class="connection-status" id="connectionStatus">
+                 <span class="status-indicator connected"></span>
+                 <span class="status-text">Connected</span>
+             </div>
+         </header>
+-
+-        <!-- Messages Container -->
+         <div class="messages-container" id="messagesContainer" role="log" aria-live="polite">
+-            <div class="welcome-message">
+-                <p>Hello! I'm CrewSwarm AI Assistant. How can I help you with your code today?</p>
+-            </div>
++            <div class="welcome-message"><p>Hello! I'm CrewSwarm AI Assistant. How can I help you with your code today?</p></div>
+         </div>
+-
+-        <!-- Input Area -->
+         <div class="input-area" role="form">
+             <div class="input-wrapper">
+-                <textarea 
+-                    id="messageInput" 
+-                    placeholder="Type your message here... (Press Ctrl+Enter to send)" 
+-                    rows="3"
+-                    aria-label="Message input"
+-                ></textarea>
+-                <button id="sendButton" class="send-button" aria-label="Send message">
+-                    <span class="button-icon" aria-hidden="true">📤</span>
+-                    Send
+-                </button>
+-            </div>
+-            <div class="input-hint">
+-                <span class="hint-icon" aria-hidden="true">💡</span>
+-                You can ask for code explanations, refactoring suggestions, or debugging help.
++                <textarea id="messageInput" placeholder="Type your message here... (Press Ctrl+Enter to send)" rows="3" aria-label="Message input"></textarea>
++                <button id="sendButton" class="send-button" aria-label="Send message"><span class="button-icon" aria-hidden="true">📤</span>Send</button>
+             </div>
++            <div class="input-hint"><span class="hint-icon" aria-hidden="true">💡</span>You can ask for code explanations, refactoring suggestions, or debugging help.</div>
+         </div>
+-
+-        <!-- Loading Indicator -->
+         <div class="loading-indicator" id="loadingIndicator" style="display: none;" role="status" aria-live="polite">
+             <div class="loading-spinner" aria-hidden="true"></div>
+             <span class="loading-text">CrewSwarm is thinking...</span>
+         </div>
+-
+-        <!-- Error Display -->
+         <div class="error-display" id="errorDisplay" style="display: none;" role="alert"></div>
+     </div>
+-
+     <script nonce="${nonce}" src="${scriptUri}"></script>
+ </body>
+ </html>`;
+@@ -182,96 +125,68 @@ export class CrewSwarmPanel {
+     private async _handleWebviewMessage(message: any) {
+         switch (message.command) {
+             case 'sendMessage':
+-                await this._handleChatMessage(message.text);
++                await this._handleChatMessage(String(message.text || ''));
+                 break;
+-                
+             case 'applyDiff':
+-                await this._handleApplyDiff(message.diff, message.filePath);
++                await this._handleApplyDiff(String(message.diff || ''), String(message.filePath || ''));
+                 break;
+-                
+             case 'updateStatus':
+                 this._updateStatusBar(message.status);
+                 break;
+-                
+             case 'log':
+-                console.log(`[Webview]: ${message.text}`);
++                console.log(`[Webview]: ${String(message.text || '')}`);
+                 break;
+-                
+             case 'error':
+-                console.error(`[Webview Error]: ${message.text}`);
+-                vscode.window.showErrorMessage(`CrewSwarm: ${message.text}`);
++                vscode.window.showErrorMessage(`CrewSwarm: ${String(message.text || '')}`);
+                 break;
+         }
+     }
+ 
+     private async _handleChatMessage(text: string) {
+         try {
+-            // Update status to indicate processing
+             this._updateStatusBar('processing');
+-            
+-            // Send message to webview to show user message
+-            this._panel.webview.postMessage({
+-                command: 'showUserMessage',
+-                text: text
+-            });
++            this._panel.webview.postMessage({ command: 'showUserMessage', text });
+ 
+-            // Call API
++            const active = vscode.window.activeTextEditor;
+             const response = await this._apiClient.sendMessage({
+                 message: text,
+                 context: {
+-                    workspace: vscode.workspace.rootPath || '',
+-                    activeFile: vscode.window.activeTextEditor?.document.uri.fsPath || ''
++                    filePath: active?.document.uri.fsPath || '',
++                    language: active?.document.languageId || '',
++                    selection: active ? active.document.getText(active.selection) : ''
+                 }
+             });
+ 
+-            // Send response to webview
+             this._panel.webview.postMessage({
+                 command: 'showAssistantMessage',
+                 text: response.message,
+-                actions: response.actions
++                actions: response.actions || []
+             });
+ 
+-            // Update status back to connected
+             this._updateStatusBar('connected');
+-
+         } catch (error) {
+-            console.error('Error handling chat message:', error);
+-            
+-            // Send error to webview
+-            this._panel.webview.postMessage({
+-                command: 'showError',
+-                text: error instanceof Error ? error.message : 'Failed to get response from AI'
+-            });
+-
+-            // Update status to error
++            const msg = error instanceof Error ? error.message : 'Failed to get response from AI';
++            this._panel.webview.postMessage({ command: 'showError', text: msg });
+             this._updateStatusBar('error');
+-            
+-            // Show error to user
+-            vscode.window.showErrorMessage(`CrewSwarm API Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
++            vscode.window.showErrorMessage(`CrewSwarm API Error: ${msg}`);
+         }
+     }
+ 
+     private async _handleApplyDiff(diff: string, filePath: string) {
+         try {
+-            // TODO: Implement diff application logic
+-            // This will be implemented in diff-handler.ts
+-            console.log('Applying diff:', { diff, filePath });
+-            
+-            // For now, just acknowledge receipt
++            const applied = await DiffHandler.applyDiff(diff, filePath || undefined);
+             this._panel.webview.postMessage({
+                 command: 'diffApplied',
+-                success: true,
+-                filePath: filePath
++                success: applied.success,
++                filePath: applied.filePath,
++                error: applied.error
+             });
+-
+         } catch (error) {
+-            console.error('Error applying diff:', error);
+-            
+             this._panel.webview.postMessage({
+                 command: 'diffApplied',
+                 success: false,
+                 error: error instanceof Error ? error.message : 'Failed to apply diff',
+-                filePath: filePath
++                filePath
+             });
+         }
+     }
+@@ -298,41 +213,28 @@ export class CrewSwarmPanel {
+                 tooltip: 'CrewSwarm AI Assistant - Disconnected',
+                 color: new vscode.ThemeColor('statusBarItem.errorForeground')
+             }
+-        };
++        } as const;
+ 
+         const config = statusConfig[status];
+         this._statusBarItem.text = config.text;
+         this._statusBarItem.tooltip = config.tooltip;
+         this._statusBarItem.color = config.color;
+ 
+-        // Also update webview status if panel exists
+-        if (this._panel) {
+-            this._panel.webview.postMessage({
+-                command: 'updateConnectionStatus',
+-                status: status
+-            });
+-        }
++        this._panel?.webview.postMessage({ command: 'updateConnectionStatus', status });
+     }
+ 
+     public dispose() {
+         CrewSwarmPanel.currentPanel = undefined;
+-
+-        // Clean up resources
+         this._panel.dispose();
+         this._updateStatusBar('disconnected');
+ 
+         while (this._disposables.length) {
+             const disposable = this._disposables.pop();
+-            if (disposable) {
+-                disposable.dispose();
+-            }
++            disposable?.dispose();
+         }
+     }
+ }
+ 
+-/**
+- * Generate a nonce for Content Security Policy
+- */
+ function getNonce() {
+     let text = '';
+     const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+diff --git a/src/webview/chat.js b/src/webview/chat.js
+index 5fa24c2..9154ab2 100644
+--- a/src/webview/chat.js
++++ b/src/webview/chat.js
+@@ -1,142 +1,158 @@
+-// CrewSwarm Chat Webview JavaScript
+-// Handles UI events, message display, and communication with extension.ts
+-
+-(function() {
+-    'use strict';
+-    
+-    const vscode = acquireVsCodeApi();
+-    let isProcessing = false;
+-    let messageHistory = [];
+-    
+-    // DOM Elements - Updated to match HTML IDs
+-    const messagesContainer = document.getElementById('messagesContainer');
+-    const messageInput = document.getElementById('messageInput');
+-    const sendButton = document.getElementById('sendButton');
+-    const loadingIndicator = document.getElementById('loadingIndicator');
+-    const errorDisplay = document.getElementById('errorDisplay');
+-    const connectionStatus = document.getElementById('connectionStatus');
+-    
+-    // Initialize
+-    document.addEventListener('DOMContentLoaded', () => {
+-        setupEventListeners();
+-        loadMessageHistory();
+-        messageInput.focus();
+-        
+-        // Notify extension that webview is ready
+-        vscode.postMessage({ command: 'log', text: 'Webview ready' });
+-    });
+-    
+-    // Event Listeners Setup
+-    function setupEventListeners() {
+-        // Send message on button click
+-        sendButton.addEventListener('click', handleSendMessage);
+-        
+-        // Send message on Ctrl+Enter
+-        messageInput.addEventListener('keydown', (e) => {
+-            if (e.key === 'Enter' && e.ctrlKey) {
+-                e.preventDefault();
+-                handleSendMessage();
+-            }
+-        });
+-        
+-        // Input validation and UI updates
+-        messageInput.addEventListener('input', updateSendButtonState);
+-        
+-        // Handle messages from extension
+-        window.addEventListener('message', handleExtensionMessage);
++(function () {
++  'use strict';
++
++  const vscode = acquireVsCodeApi();
++  let isProcessing = false;
++
++  const messagesContainer = document.getElementById('messagesContainer');
++  const messageInput = document.getElementById('messageInput');
++  const sendButton = document.getElementById('sendButton');
++  const loadingIndicator = document.getElementById('loadingIndicator');
++  const errorDisplay = document.getElementById('errorDisplay');
++  const connectionStatus = document.getElementById('connectionStatus');
++
++  if (!messagesContainer || !messageInput || !sendButton || !loadingIndicator || !errorDisplay) {
++    return;
++  }
++
++  sendButton.addEventListener('click', handleSendMessage);
++  messageInput.addEventListener('keydown', (e) => {
++    if (e.key === 'Enter' && e.ctrlKey) {
++      e.preventDefault();
++      handleSendMessage();
++    }
++  });
++  messageInput.addEventListener('input', updateSendButtonState);
++  window.addEventListener('message', handleExtensionMessage);
++
++  updateSendButtonState();
++  messageInput.focus();
++
++  function handleSendMessage() {
++    const text = String(messageInput.value || '').trim();
++    if (!text || isProcessing) return;
++    addMessage('user', text);
++    messageInput.value = '';
++    updateSendButtonState();
++    setLoading(true);
++    hideError();
++    vscode.postMessage({ command: 'sendMessage', text });
++  }
++
++  function handleExtensionMessage(event) {
++    const msg = event.data || {};
++    if (msg.command === 'showAssistantMessage') {
++      setLoading(false);
++      addMessage('assistant', String(msg.text || ''));
++      if (Array.isArray(msg.actions) && msg.actions.length > 0) {
++        renderActions(msg.actions);
++      }
++    } else if (msg.command === 'showError') {
++      setLoading(false);
++      showError(String(msg.text || 'Unknown error'));
++      addMessage('error', `Error: ${String(msg.text || 'Unknown error')}`);
++    } else if (msg.command === 'updateConnectionStatus') {
++      updateConnectionStatus(String(msg.status || 'disconnected'));
++    } else if (msg.command === 'diffApplied') {
++      const ok = Boolean(msg.success);
++      addMessage(ok ? 'assistant' : 'error', ok ? `Diff applied: ${msg.filePath || ''}` : `Diff apply failed: ${msg.error || 'unknown error'}`);
+     }
+-    
+-    // Send Message Handler
+-    function handleSendMessage() {
+-        const message = messageInput.value.trim();
+-        
+-        if (!message || isProcessing) {
+-            return;
+-        }
+-        
+-        // Add user message to UI
+-        addMessage('user', message);
+-        
+-        // Clear input and update UI
+-        messageInput.value = '';
+-        updateSendButtonState();
+-        
+-        // Show loading state
+-        setLoadingState(true);
+-        
+-        // Send message to extension
++  }
++
++  function setLoading(value) {
++    isProcessing = Boolean(value);
++    loadingIndicator.style.display = isProcessing ? 'flex' : 'none';
++    sendButton.disabled = isProcessing || !String(messageInput.value || '').trim();
++    messageInput.disabled = isProcessing;
++  }
++
++  function updateSendButtonState() {
++    sendButton.disabled = isProcessing || !String(messageInput.value || '').trim();
++  }
++
++  function addMessage(role, content) {
++    const wrapper = document.createElement('div');
++    wrapper.className = `message ${role}-message`;
++
++    const bubble = document.createElement('div');
++    bubble.className = 'message-bubble';
++
++    const header = document.createElement('div');
++    header.className = 'message-header';
++
++    const roleEl = document.createElement('span');
++    roleEl.className = 'message-role';
++    roleEl.textContent = role;
++
++    const timeEl = document.createElement('span');
++    timeEl.className = 'message-time';
++    timeEl.textContent = new Date().toLocaleTimeString();
++
++    header.append(roleEl, timeEl);
++
++    const body = document.createElement('div');
++    body.className = 'message-content';
++    body.textContent = String(content || '');
++
++    bubble.append(header, body);
++    wrapper.appendChild(bubble);
++    messagesContainer.appendChild(wrapper);
++    messagesContainer.scrollTop = messagesContainer.scrollHeight;
++  }
++
++  function renderActions(actions) {
++    for (const action of actions) {
++      if (action?.type !== 'diff') continue;
++      const card = document.createElement('div');
++      card.className = 'diff-action';
++
++      const title = document.createElement('div');
++      title.className = 'diff-title';
++      title.textContent = action.description || 'Suggested diff';
++
++      const preview = document.createElement('pre');
++      preview.className = 'diff-preview';
++      preview.textContent = String(action.content || '').slice(0, 2000);
++
++      const btnRow = document.createElement('div');
++      btnRow.className = 'diff-buttons';
++
++      const applyBtn = document.createElement('button');
++      applyBtn.className = 'apply-btn';
++      applyBtn.textContent = 'Apply Diff';
++      applyBtn.addEventListener('click', () => {
+         vscode.postMessage({
+-            command: 'sendMessage',
+-            text: message
++          command: 'applyDiff',
++          diff: String(action.content || ''),
++          filePath: String(action.filePath || '')
+         });
+-        
+-        // Save to history
+-        saveToHistory('user', message);
+-    }
+-    
+-    // Handle Messages from Extension
+-    function handleExtensionMessage(event) {
+-        const message = event.data;
+-        
+-        switch (message.command) {
+-            case 'showUserMessage':
+-                // User message already shown, just ensure loading state
+-                break;
+-                
+-            case 'showAssistantMessage':
+-                handleAssistantResponse(message);
+-                break;
+-                
+-            case 'showError':
+-                handleError(message);
+-                break;
+-                
+-            case 'updateConnectionStatus':
+-                updateConnectionStatus(message.status);
+-                break;
+-                
+-            case 'diffApplied':
+-                showDiffResult(message);
+-                break;
+-        }
+-    }
+-    
+-    // Handle Assistant Response
+-    function handleAssistantResponse(message) {
+-        setLoadingState(false);
+-        
+-        if (message.text) {
+-            addMessage('assistant', message.text);
+-            saveToHistory('assistant', message.text);
+-        }
+-        
+-        if (message.actions && message.actions.length > 0) {
+-            renderActions(message.actions);
+-        }
+-    }
+-    
+-    // Handle Errors
+-    function handleError(message) {
+-        setLoadingState(false);
+-        
+-        // Show error in UI
+-        showError(message.text || 'An error occurred');
+-        
+-        // Add error message to chat
+-        addMessage('error', `Error: ${message.text || 'Failed to get response'}`);
++      });
++
++      btnRow.appendChild(applyBtn);
++      card.append(title, preview, btnRow);
++      messagesContainer.appendChild(card);
+     }
+-    
+-    // Add Message to UI
+-    function addMessage(role, content) {
+-        const messageElement = createMessageElement(role, content);
+-        messagesContainer.appendChild(messageElement);
+-        
+-        // Scroll to bottom
+-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+-        
+-        // Announce new message for screen readers
+-        announceNewMessage(role);
++    messagesContainer.scrollTop = messagesContainer.scrollHeight;
++  }
++
++  function showError(text) {
++    errorDisplay.style.display = 'block';
++    errorDisplay.textContent = text;
++  }
++
++  function hideError() {
++    errorDisplay.style.display = 'none';
++    errorDisplay.textContent = '';
++  }
++
++  function updateConnectionStatus(status) {
++    if (!connectionStatus) return;
++    const textEl = connectionStatus.querySelector('.status-text');
++    const indicator = connectionStatus.querySelector('.status-indicator');
++    if (textEl) textEl.textContent = status;
++    if (indicator) {
++      indicator.classList.remove('connected', 'processing', 'error', 'disconnected');
++      indicator.classList.add(status);
+     }
+-    
+-    // Create Message Element
+-    function createMessageElement(role, content
++  }
++})();
+diff --git atsconfig.json btsconfig.json
+new file mode 100644
+index 0000000..2ed59a5
+--- /dev/null
++++ b/tsconfig.json
+@@ -0,0 +1,16 @@
++{
++  "compilerOptions": {
++    "module": "commonjs",
++    "target": "ES2020",
++    "outDir": "dist",
++    "lib": ["ES2020", "DOM"],
++    "sourceMap": true,
++    "rootDir": "src",
++    "strict": true,
++    "esModuleInterop": true,
++    "skipLibCheck": true,
++    "forceConsistentCasingInFileNames": true
++  },
++  "include": ["src/**/*", "tests/**/*"],
++  "exclude": ["node_modules", ".vscode-test"]
++}

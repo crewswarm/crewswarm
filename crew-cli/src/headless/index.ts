@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { getExecutionPolicy, isRetryableError, isRiskBlocked, withRetries } from '../runtime/execution-policy.js';
+import { analyzeBlastRadius } from '../blast-radius/index.js';
 
 interface HeadlessDeps {
   router: any;
@@ -16,6 +18,10 @@ interface HeadlessRunOptions extends HeadlessDeps {
   gateway?: string;
   json?: boolean;
   alwaysApprove?: boolean;
+  forceAutoApply?: boolean;
+  riskThreshold?: 'low' | 'medium' | 'high';
+  retryAttempts?: number;
+  fallbackModels?: string[];
   out?: string;
 }
 
@@ -82,15 +88,43 @@ export async function runHeadlessTask(options: HeadlessRunOptions): Promise<{ su
 
   await emit(cwd, jsonMode, options.out, 'start', { task: options.task });
 
-  const route = await options.orchestrator.route(options.task);
+  const policy = getExecutionPolicy({
+    retryAttempts: Number(options.retryAttempts || 2),
+    riskThreshold: options.riskThreshold || 'high',
+    forceAutoApply: Boolean(options.forceAutoApply)
+  });
+
+  const route = await withRetries(
+    async () => options.orchestrator.route(options.task),
+    policy
+  );
   const agent = options.agent || route.agent || 'crew-main';
   await emit(cwd, jsonMode, options.out, 'route', { decision: route.decision, agent });
 
-  const dispatch = await options.router.dispatch(agent, options.task, {
-    sessionId: await options.session.getSessionId(),
-    project: cwd,
-    gateway: options.gateway
-  });
+  const fallbackChain = (options.fallbackModels || []).map(v => String(v || '').trim()).filter(Boolean);
+  const chain = fallbackChain.length > 0 ? fallbackChain : [''];
+  let dispatch: any = null;
+  let lastError: unknown = null;
+  for (const model of chain) {
+    try {
+      dispatch = await withRetries(
+        async () => options.router.dispatch(agent, options.task, {
+          sessionId: await options.session.getSessionId(),
+          project: cwd,
+          gateway: options.gateway,
+          model: model || undefined
+        }),
+        policy,
+        { shouldRetry: isRetryableError }
+      );
+      if (dispatch) break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!dispatch) {
+    throw (lastError as Error) || new Error('Headless dispatch failed');
+  }
 
   const responseText = String(dispatch.result || '');
   await emit(cwd, jsonMode, options.out, 'result', { agent, response: responseText });
@@ -99,7 +133,18 @@ export async function runHeadlessTask(options: HeadlessRunOptions): Promise<{ su
   await emit(cwd, jsonMode, options.out, 'sandbox', { filesChanged: edits.length });
 
   if (options.alwaysApprove && options.sandbox.hasChanges(options.sandbox.getActiveBranch())) {
-    await options.sandbox.apply(options.sandbox.getActiveBranch());
+    const active = options.sandbox.getActiveBranch();
+    const changedFiles = typeof options.sandbox.getPendingPaths === 'function'
+      ? options.sandbox.getPendingPaths(active)
+      : [];
+    const report = await analyzeBlastRadius(cwd, { changedFiles });
+    if (isRiskBlocked(report.risk, policy.riskThreshold, policy.forceAutoApply)) {
+      await emit(cwd, jsonMode, options.out, 'approval_required', {
+        message: `risk gate blocked auto-apply (${report.risk} >= ${policy.riskThreshold})`
+      });
+      return { success: false, response: responseText };
+    }
+    await options.sandbox.apply(active);
     await emit(cwd, jsonMode, options.out, 'applied', { message: 'sandbox changes applied (--always-approve)' });
   } else if (edits.length > 0) {
     await emit(cwd, jsonMode, options.out, 'approval_required', { message: 'pending sandbox changes require apply' });

@@ -6,6 +6,20 @@ This repo has two related but different pieces:
 2. `crew-cli` NOW ALSO serves its own MCP server in standalone mode (NEW!)
 3. The CrewSwarm gateway (parent repo) hosts the main MCP server at `http://127.0.0.1:5020/mcp`.
 
+## Supported AI Coding Tools
+
+CrewSwarm MCP integration works with:
+
+| Tool | MCP Support | Config File | How to Add |
+|------|------------|-------------|------------|
+| **Cursor** | ✅ Yes | `~/.cursor/mcp.json` | Manual JSON edit |
+| **Claude Code** | ✅ Yes | `~/.claude/mcp.json` | Manual JSON edit |
+| **OpenCode** | ✅ Yes | `~/.config/opencode/mcp.json` | Manual JSON edit |
+| **Codex CLI** | ✅ Yes | `~/.codex/mcp/config.json` | `codex mcp add` command |
+| **Gemini CLI** | ✅ Yes | `.gemini/settings.json` | `gemini mcp add` command |
+
+All 5 tools can connect to **both** CrewSwarm MCP servers (main gateway + crew-cli standalone).
+
 ## Two MCP Servers Available
 
 ### crew-cli MCP Server (NEW!)
@@ -34,6 +48,42 @@ This repo has two related but different pieces:
 5. `crewswarm_status` - System status
 6. `smart_dispatch` - Auto-route to best agent
 7. Dynamic `skill_*` tools (twitter, polymarket, etc.)
+
+## Install In Gemini CLI (Google AI)
+
+Gemini CLI supports MCP servers through HTTP transport with headers for authentication.
+
+### Install Both MCP Servers in Gemini CLI
+
+```bash
+# 1) Ensure servers are running
+# Main CrewSwarm: npm run restart-all (or: node scripts/mcp-server.mjs)
+# crew-cli: crew serve --mode standalone --port 4097
+
+# 2) Add CrewSwarm gateway MCP
+gemini mcp add crewswarm "http://127.0.0.1:5020/mcp" \
+  --transport http \
+  --header "Authorization: Bearer $(cat ~/.crewswarm/config.json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"rt\"][\"authToken\"])')" \
+  --description "CrewSwarm main MCP server - 20 agents + 46 skills" \
+  --trust
+
+# 3) Add crew-cli MCP
+gemini mcp add crew-cli "http://127.0.0.1:4097/mcp" \
+  --transport http \
+  --header "Authorization: Bearer $(cat ~/.crewswarm/config.json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"rt\"][\"authToken\"])')" \
+  --description "crew-cli MCP server - unified routing + sandbox" \
+  --trust
+
+# 4) Verify
+gemini mcp list
+
+# 5) Test with a prompt
+gemini "list all available mcp tools" --allowed-mcp-server-names crewswarm crew-cli
+```
+
+**Configuration location:** `.gemini/settings.json` (project-level) or `~/.config/gemini-cli/settings.json` (user-level)
+
+**Note:** Gemini CLI autodiscovers tools from configured MCP servers. The `--trust` flag bypasses confirmation prompts for tool calls from these servers.
 
 ## Install In Codex
 
@@ -110,9 +160,12 @@ crew serve --mode standalone
 crew serve --mode connected
 ```
 
-Those expose `/v1/*` endpoints (OpenAI-compatible + unified task endpoints), not a native MCP server.
+Those expose:
 
-Use gateway `:5020/mcp` for MCP tools.
+1. `/v1/*` endpoints (OpenAI-compatible + unified task endpoints)
+2. `/mcp` endpoint (native MCP tools in `crew-cli`)
+
+Use gateway `:5020/mcp` for full CrewSwarm agents + skills.
 
 ## Troubleshooting
 

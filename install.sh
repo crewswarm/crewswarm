@@ -413,49 +413,61 @@ fi
 SETUP_MCP="${SETUP_MCP:-N}"
 if [[ "$SETUP_MCP" =~ ^[Yy] ]]; then
   RT_TOKEN=$(node -e "try{const c=require('fs').readFileSync('$CREWSWARM_DIR/config.json','utf8');console.log(JSON.parse(c).rt?.authToken||'')}catch{}" 2>/dev/null)
-  MCP_ENTRY=$(cat <<EOF
-{
-  "mcpServers": {
-    "crewswarm": {
-      "url": "http://127.0.0.1:5020/mcp",
-      "headers": {
-        "Authorization": "Bearer ${RT_TOKEN}"
-      }
-    }
+  upsert_mcp_config() {
+    local mcp_file="$1"
+    local client_name="$2"
+    local mcp_dir
+    mcp_dir="$(dirname "$mcp_file")"
+    mkdir -p "$mcp_dir"
+
+    if MCP_FILE="$mcp_file" RT_TOKEN="$RT_TOKEN" node <<'NODE'
+const fs = require("fs");
+const path = process.env.MCP_FILE;
+const token = process.env.RT_TOKEN || "";
+
+const serverEntry = {
+  url: "http://127.0.0.1:5020/mcp",
+  headers: { Authorization: `Bearer ${token}` }
+};
+
+let root = {};
+if (fs.existsSync(path)) {
+  const raw = fs.readFileSync(path, "utf8").trim();
+  if (raw) {
+    root = JSON.parse(raw);
   }
 }
-EOF
-)
+
+if (!root || typeof root !== "object" || Array.isArray(root)) {
+  root = {};
+}
+
+if (!root.mcpServers || typeof root.mcpServers !== "object" || Array.isArray(root.mcpServers)) {
+  root.mcpServers = {};
+}
+
+root.mcpServers.crewswarm = serverEntry;
+fs.writeFileSync(path, JSON.stringify(root, null, 2) + "\n", "utf8");
+NODE
+    then
+      success "$client_name MCP configured → $mcp_file"
+    else
+      warn "Could not update $mcp_file automatically (invalid JSON). Please add crewswarm manually."
+    fi
+  }
 
   # Cursor
   CURSOR_MCP="$HOME/.cursor/mcp.json"
-  mkdir -p "$HOME/.cursor"
-  if [[ -f "$CURSOR_MCP" ]]; then
-    skip "Cursor mcp.json already exists — skipping (edit $CURSOR_MCP to add crewswarm manually)"
-  else
-    echo "$MCP_ENTRY" > "$CURSOR_MCP"
-    success "Cursor MCP configured → $CURSOR_MCP (restart Cursor to activate)"
-  fi
+  upsert_mcp_config "$CURSOR_MCP" "Cursor"
+  echo "    restart Cursor to activate MCP tools"
 
   # Claude Code
   CLAUDE_MCP="$HOME/.claude/mcp.json"
-  mkdir -p "$HOME/.claude"
-  if [[ -f "$CLAUDE_MCP" ]]; then
-    skip "Claude Code mcp.json already exists — skipping (edit $CLAUDE_MCP to add crewswarm manually)"
-  else
-    echo "$MCP_ENTRY" > "$CLAUDE_MCP"
-    success "Claude Code MCP configured → $CLAUDE_MCP"
-  fi
+  upsert_mcp_config "$CLAUDE_MCP" "Claude Code"
 
   # OpenCode
   OPENCODE_MCP="$HOME/.config/opencode/mcp.json"
-  mkdir -p "$HOME/.config/opencode"
-  if [[ -f "$OPENCODE_MCP" ]]; then
-    skip "OpenCode mcp.json already exists — skipping (edit $OPENCODE_MCP to add crewswarm manually)"
-  else
-    echo "$MCP_ENTRY" > "$OPENCODE_MCP"
-    success "OpenCode MCP configured → $OPENCODE_MCP"
-  fi
+  upsert_mcp_config "$OPENCODE_MCP" "OpenCode"
 
   echo ""
   echo "  Once configured, all 20 CrewSwarm agents are available as MCP tools in any project."

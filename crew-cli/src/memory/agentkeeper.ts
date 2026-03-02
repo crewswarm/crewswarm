@@ -46,6 +46,7 @@ export interface CompactionResult {
 }
 
 interface AgentKeeperOptions {
+  storageDir?: string;
   maxEntries?: number;
   maxBytes?: number;
   maxAgeDays?: number;
@@ -98,7 +99,8 @@ export class AgentKeeper {
   private writeCount = 0;
 
   constructor(baseDir: string, options: AgentKeeperOptions = {}) {
-    this.storePath = join(baseDir, '.crew', 'agentkeeper.jsonl');
+    const storageBase = options.storageDir || process.env.CREW_MEMORY_DIR || baseDir;
+    this.storePath = join(storageBase, '.crew', 'agentkeeper.jsonl');
     this.maxEntries = options.maxEntries ?? 500;
     this.maxBytes = options.maxBytes ?? 2_000_000;
     this.maxAgeDays = options.maxAgeDays ?? 30;
@@ -353,20 +355,37 @@ export class AgentKeeper {
 
   /**
    * Format recalled memories into a context block for prompt injection.
+   * Recent entries shown full, older entries compressed (progressive disclosure pattern).
    */
   async recallAsContext(task: string, maxResults = 3, options: RecallOptions = {}): Promise<string> {
     const matches = await this.recall(task, maxResults, options);
     if (matches.length === 0) return '';
 
     const lines = ['## Prior Task Memory'];
-    for (const m of matches) {
-      const resultPreview = m.entry.result.length > 300
-        ? m.entry.result.slice(0, 300) + '...'
-        : m.entry.result;
-      lines.push(`### [${m.entry.tier}] ${m.entry.task} (score: ${m.score})`);
-      if (m.entry.agent) lines.push(`Agent: ${m.entry.agent}`);
-      lines.push(`Result: ${resultPreview}`);
-      lines.push('');
+    const keepFullCount = Math.min(5, Math.ceil(matches.length * 0.5)); // Keep top 50% full
+    
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      const isFull = i < keepFullCount;
+      
+      // Full version for recent/high-scoring entries
+      if (isFull) {
+        const resultPreview = m.entry.result.length > 400
+          ? m.entry.result.slice(0, 400) + '...'
+          : m.entry.result;
+        lines.push(`### [${m.entry.tier}] ${m.entry.task} (score: ${m.score})`);
+        if (m.entry.agent) lines.push(`Agent: ${m.entry.agent}`);
+        lines.push(`Result: ${resultPreview}`);
+        lines.push('');
+      } else {
+        // Compressed version for older/lower-scoring entries
+        const hasError = /error|failed|exception/i.test(m.entry.result);
+        const statusIcon = hasError ? '❌' : '✓';
+        const preview = m.entry.result.slice(0, 120);
+        lines.push(`### ${statusIcon} [${m.entry.tier}] ${m.entry.task}`);
+        lines.push(`${preview}... [${hasError ? 'failed' : 'completed'}]`);
+        lines.push('');
+      }
     }
     return lines.join('\n');
   }

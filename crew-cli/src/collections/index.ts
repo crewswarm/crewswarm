@@ -66,6 +66,40 @@ function tokenize(text: string): string[] {
     .filter(t => t.length > 1);
 }
 
+function hashToken(token: string, dim: number): number {
+  let h = 2166136261;
+  for (let i = 0; i < token.length; i++) {
+    h ^= token.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h) % dim;
+}
+
+function toHashedVector(text: string, dim = 256): Float64Array {
+  const vec = new Float64Array(dim);
+  const toks = tokenize(text);
+  for (const t of toks) {
+    vec[hashToken(t, dim)] += 1;
+  }
+  // l2 normalize
+  let norm = 0;
+  for (let i = 0; i < dim; i++) norm += vec[i] * vec[i];
+  norm = Math.sqrt(norm);
+  if (norm > 0) {
+    for (let i = 0; i < dim; i++) vec[i] /= norm;
+  }
+  return vec;
+}
+
+function cosineSimilarity(a: Float64Array, b: Float64Array): number {
+  const dim = Math.min(a.length, b.length);
+  let dot = 0;
+  for (let i = 0; i < dim; i++) {
+    dot += a[i] * b[i];
+  }
+  return dot;
+}
+
 /**
  * Split a file into chunks — one chunk per heading section, or fixed-size
  * paragraphs for files without headings.
@@ -230,9 +264,25 @@ export function searchCollection(
   // Sort descending by score
   candidates.sort((a, b) => b.score - a.score);
 
-  const hits = candidates.slice(0, maxResults).map(c => ({
+  const queryVector = toHashedVector(query);
+  const maxTfidf = candidates.length > 0 ? candidates[0].score : 1;
+  const tfidfWeight = 0.7;
+  const vectorWeight = 0.3;
+
+  const hybrid = candidates.map(c => {
+    const chunk = index.chunks[c.idx];
+    const chunkVector = toHashedVector(chunk.text);
+    const cosine = Math.max(0, cosineSimilarity(queryVector, chunkVector));
+    const tfidfNorm = maxTfidf > 0 ? (c.score / maxTfidf) : 0;
+    const hybridScore = (tfidfNorm * tfidfWeight) + (cosine * vectorWeight);
+    return { idx: c.idx, score: hybridScore };
+  });
+
+  hybrid.sort((a, b) => b.score - a.score);
+
+  const hits = hybrid.slice(0, maxResults).map(c => ({
     ...index.chunks[c.idx],
-    score: Math.round(c.score * 100) / 100
+    score: Math.round(c.score * 1000) / 1000
   }));
 
   return { query, hits, totalChunks: index.chunkCount };

@@ -2,6 +2,13 @@
   "id": "claude-code",
   "label": "Claude Code",
   "description": "Route tasks through Anthropic's Claude Code CLI (claude -p). Full workspace context, native tool use, and session continuity per agent. Best for large refactors and multi-file reasoning.",
+  "priority": 90,
+  "shouldUse": {
+    "runtime": ["claude", "claude-code"],
+    "payloadKey": "useClaudeCode",
+    "agentConfigKey": "useClaudeCode",
+    "envVar": "CREWSWARM_CLAUDE_CODE"
+  },
   "bin": "claude",
   "binAlternate": "~/.local/bin/claude",
   "installCmd": "npm install -g @anthropic-ai/claude-code",

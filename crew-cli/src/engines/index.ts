@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { Logger } from '../utils/logger.js';
+const logger = new Logger({ level: process.env.CREW_LOG_LEVEL || 'info' });
 
 export interface EngineRunOptions {
   model?: string;
@@ -14,21 +16,48 @@ export interface EngineRunResult {
   exitCode: number;
 }
 
-async function runCommand(command: string, args: string[], options: EngineRunOptions = {}): Promise<EngineRunResult> {
+async function runCommand(command: string, args: string[], options: EngineRunOptions = {}, stdin?: string): Promise<EngineRunResult> {
   return new Promise(resolve => {
     const child = spawn(command, args, {
       cwd: options.cwd || process.cwd(),
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe']
     });
 
-    const timeoutMs = options.timeoutMs || 300000;
+    let stdinWritten = false;
+    if (stdin && child.stdin) {
+      try {
+        child.stdin.write(stdin, 'utf8', (err) => {
+          if (err) {
+            logger.error(`[${command}] stdin write error:`, err);
+          }
+          // Give the process a moment to start reading before closing stdin
+          setTimeout(() => {
+            if (child.stdin && !child.stdin.destroyed) {
+              child.stdin.end();
+            }
+          }, 50);
+        });
+        stdinWritten = true;
+      } catch (err) {
+        logger.error(`[${command}] failed to write stdin:`, err);
+      }
+    }
+
+    const timeoutMs = options.timeoutMs || 600000;
     let stdout = '';
     let stderr = '';
     let done = false;
 
     const timer = setTimeout(() => {
       if (done) return;
+      logger.error(`[${command}] Timing out after ${timeoutMs}ms. stdout: ${stdout.slice(0, 200)}, stderr: ${stderr.slice(0, 200)}`);
       child.kill('SIGTERM');
+      // Give process 2s to clean up, then SIGKILL if needed
+      setTimeout(() => {
+        if (!done && !child.killed) {
+          child.kill('SIGKILL');
+        }
+      }, 2000);
       done = true;
       resolve({
         success: false,
@@ -44,6 +73,20 @@ async function runCommand(command: string, args: string[], options: EngineRunOpt
     });
     child.stderr.on('data', chunk => {
       stderr += String(chunk);
+    });
+
+    child.on('error', (err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      logger.error(`[${command}] process error:`, err);
+      resolve({
+        success: false,
+        engine: command,
+        stdout,
+        stderr: `${stderr}\nProcess error: ${err.message}`,
+        exitCode: -1
+      });
     });
 
     child.on('close', code => {
@@ -160,7 +203,11 @@ export async function runCodexCli(prompt: string, options: EngineRunOptions = {}
 }
 
 export async function runClaudeCli(prompt: string, options: EngineRunOptions = {}): Promise<EngineRunResult> {
-  return runCommand('claude', ['-p', '--dangerously-skip-permissions', '--output-format', 'stream-json', prompt], options);
+  const args = ['-p'];
+  if (process.env.CREW_CLAUDE_SKIP_PERMISSIONS === 'true') {
+    args.push('--dangerously-skip-permissions');
+  }
+  return runCommand('claude', args, options, prompt);
 }
 
 export async function runEngine(engine: string, prompt: string, options: EngineRunOptions = {}): Promise<EngineRunResult> {

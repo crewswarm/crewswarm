@@ -7,9 +7,24 @@ import { readFile } from 'node:fs/promises';
 import { LocalExecutor } from '../executor/local.js';
 import { getProfileConfig, type RuntimeProfile } from '../executor/profiles.js';
 import { UnifiedPipeline } from '../pipeline/unified.js';
+import { parseJsonObjectWithRepair } from '../utils/structured-json.js';
 
 export { WorkerPool } from './worker-pool.js';
 export type { WorkerTask, TaskResult, WorkerPoolOptions } from './worker-pool.js';
+
+const ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crew-cli, a multi-agent orchestration platform.
+
+Route this request to one of: CHAT, CODE, DISPATCH, SKILL.
+
+- CHAT: Simple conversation, greetings, status checks, or informational questions about the system
+- CODE: Code editing, building, implementing, creating, refactoring, or any development task
+- DISPATCH: Specific agent request (QA, PM, security, fixer, etc) or complex multi-step tasks
+- SKILL: Explicit skill invocation
+
+For CHAT decisions, provide a helpful conversational response in the "response" field.
+
+Return ONLY a JSON object in this exact format:
+{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-xxx if needed","task":"reformulated task","response":"your chat response if CHAT"}`;
 
 export enum RouteDecision {
   CHAT = 'CHAT',
@@ -44,7 +59,8 @@ export class Orchestrator {
    * Decides which path to take based on user input.
    */
   async route(input: string): Promise<RouteResult> {
-    if (process.env.CREW_USE_UNIFIED_ROUTER === 'true') {
+    const useUnifiedRouter = this.shouldUseUnifiedRouter();
+    if (useUnifiedRouter) {
       try {
         const routed = await this.pipeline.routeOnly({
           userInput: input,
@@ -155,6 +171,16 @@ export class Orchestrator {
     return result;
   }
 
+  private shouldUseUnifiedRouter(): boolean {
+    const explicitLegacy = String(process.env.CREW_LEGACY_ROUTER || '').trim().toLowerCase();
+    if (explicitLegacy === '1' || explicitLegacy === 'true' || explicitLegacy === 'yes') {
+      return false;
+    }
+    const explicit = String(process.env.CREW_USE_UNIFIED_ROUTER || '').trim().toLowerCase();
+    if (!explicit) return true;
+    return !(explicit === '0' || explicit === 'false' || explicit === 'no' || explicit === 'off');
+  }
+
   private async getGeminiADCToken(): Promise<string | null> {
     try {
       const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || 
@@ -203,6 +229,44 @@ export class Orchestrator {
       copywriter: 'crew-copywriter', crewcopywriter: 'crew-copywriter',
     };
     return aliases[lower] || (raw.startsWith('crew-') ? raw : undefined);
+  }
+
+  private getJsonRepairModel(): string | undefined {
+    const explicit = String(process.env.CREW_JSON_REPAIR_MODEL || '').trim();
+    if (explicit) return explicit;
+    if (process.env.GROQ_API_KEY) return 'llama-3.3-70b-versatile';
+    if (process.env.XAI_API_KEY) return 'grok-4-1-fast-reasoning';
+    if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) return 'gemini-2.5-flash';
+    if (process.env.DEEPSEEK_API_KEY) return 'deepseek-chat';
+    return undefined;
+  }
+
+  private async parseRouteJson(raw: string, fallbackTask: string): Promise<RouteResult | null> {
+    try {
+      const parsed = await parseJsonObjectWithRepair(raw, {
+        label: 'Route decision',
+        schemaHint: '{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-coder","task":"...","response":"..."}',
+        repair: async (repairPrompt: string) => {
+          const res = await this.localExecutor.execute(repairPrompt, {
+            model: this.getJsonRepairModel(),
+            temperature: 0,
+            maxTokens: 500
+          });
+          return String(res.result || '');
+        }
+      });
+      const decision = String(parsed.decision || '').toUpperCase();
+      if (!Object.values(RouteDecision).includes(decision as RouteDecision)) return null;
+      return {
+        decision: decision as RouteDecision,
+        agent: parsed.agent || undefined,
+        task: parsed.task || fallbackTask,
+        explanation: parsed.explanation || 'LLM-based routing',
+        response: parsed.response || undefined
+      };
+    } catch {
+      return null;
+    }
   }
 
   private async routeWithLLM(input: string): Promise<RouteResult | null> {
@@ -263,7 +327,7 @@ export class Orchestrator {
           messages: [
             {
               role: 'system',
-              content: 'You are the intelligent routing system for crew-cli, a multi-agent orchestration platform.\n\nRoute this request to one of: CHAT, CODE, DISPATCH, SKILL.\n\n- CHAT: Simple conversation, greetings, status checks, or informational questions about the system\n- CODE: Code editing, building, implementing, creating, refactoring, or any development task\n- DISPATCH: Specific agent request (QA, PM, security, fixer, etc) or complex multi-step tasks\n- SKILL: Explicit skill invocation\n\nFor CHAT decisions, provide a helpful conversational response in the "response" field.\n\nReturn ONLY a JSON object in this exact format:\n{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-xxx if needed","task":"reformulated task","response":"your chat response if CHAT"}'
+              content: ROUTING_SYSTEM_PROMPT
             },
             {
               role: 'user',
@@ -275,29 +339,15 @@ export class Orchestrator {
       });
 
       if (!response.ok) return null;
-      
+
       const data = await response.json() as any;
       const content = data?.choices?.[0]?.message?.content;
       if (!content) return null;
 
-      const jsonStart = content.indexOf('{');
-      const jsonEnd = content.lastIndexOf('}');
-      if (jsonStart < 0 || jsonEnd < 0) return null;
-
-      const parsed = JSON.parse(content.slice(jsonStart, jsonEnd + 1));
-      const decision = String(parsed.decision || '').toUpperCase();
-
-      if (!Object.values(RouteDecision).includes(decision as RouteDecision)) {
-        return null;
-      }
-
-      return {
-        decision: decision as RouteDecision,
-        agent: parsed.agent || undefined,
-        task: parsed.task || input,
-        explanation: parsed.explanation || 'Grok routing',
-        response: parsed.response || undefined
-      };
+      const routed = await this.parseRouteJson(content, input);
+      if (!routed) return null;
+      routed.explanation = routed.explanation || 'Grok routing';
+      return routed;
     } catch {
       return null;
     }
@@ -319,7 +369,7 @@ export class Orchestrator {
           messages: [
             {
               role: 'system',
-              content: 'You are the intelligent routing system for crew-cli, a multi-agent orchestration platform.\n\nRoute this request to one of: CHAT, CODE, DISPATCH, SKILL.\n\n- CHAT: Simple conversation, greetings, status checks, or informational questions about the system\n- CODE: Code editing, building, implementing, creating, refactoring, or any development task\n- DISPATCH: Specific agent request (QA, PM, security, fixer, etc) or complex multi-step tasks\n- SKILL: Explicit skill invocation\n\nFor CHAT decisions, provide a helpful conversational response in the "response" field.\n\nReturn ONLY a JSON object in this exact format:\n{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-xxx if needed","task":"reformulated task","response":"your chat response if CHAT"}'
+              content: ROUTING_SYSTEM_PROMPT
             },
             {
               role: 'user',
@@ -331,29 +381,15 @@ export class Orchestrator {
       });
 
       if (!response.ok) return null;
-      
+
       const data = await response.json() as any;
       const content = data?.choices?.[0]?.message?.content;
       if (!content) return null;
 
-      const jsonStart = content.indexOf('{');
-      const jsonEnd = content.lastIndexOf('}');
-      if (jsonStart < 0 || jsonEnd < 0) return null;
-
-      const parsed = JSON.parse(content.slice(jsonStart, jsonEnd + 1));
-      const decision = String(parsed.decision || '').toUpperCase();
-
-      if (!Object.values(RouteDecision).includes(decision as RouteDecision)) {
-        return null;
-      }
-
-      return {
-        decision: decision as RouteDecision,
-        agent: parsed.agent || undefined,
-        task: parsed.task || input,
-        explanation: parsed.explanation || 'DeepSeek routing',
-        response: parsed.response || undefined
-      };
+      const routed = await this.parseRouteJson(content, input);
+      if (!routed) return null;
+      routed.explanation = routed.explanation || 'DeepSeek routing';
+      return routed;
     } catch {
       return null;
     }
@@ -375,7 +411,7 @@ export class Orchestrator {
           messages: [
             {
               role: 'system',
-              content: 'You are the intelligent routing system for crew-cli, a multi-agent orchestration platform.\n\nRoute this request to one of: CHAT, CODE, DISPATCH, SKILL.\n\n- CHAT: Simple conversation, greetings, status checks, or informational questions about the system\n- CODE: Code editing, building, implementing, creating, refactoring, or any development task\n- DISPATCH: Specific agent request (QA, PM, security, fixer, etc) or complex multi-step tasks\n- SKILL: Explicit skill invocation\n\nFor CHAT decisions, provide a helpful conversational response in the "response" field.\n\nReturn ONLY a JSON object in this exact format:\n{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-xxx if needed","task":"reformulated task","response":"your chat response if CHAT"}'
+              content: ROUTING_SYSTEM_PROMPT
             },
             {
               role: 'user',
@@ -392,24 +428,10 @@ export class Orchestrator {
       const content = data?.choices?.[0]?.message?.content;
       if (!content) return null;
 
-      const jsonStart = content.indexOf('{');
-      const jsonEnd = content.lastIndexOf('}');
-      if (jsonStart < 0 || jsonEnd < 0) return null;
-
-      const parsed = JSON.parse(content.slice(jsonStart, jsonEnd + 1));
-      const decision = String(parsed.decision || '').toUpperCase();
-
-      if (!Object.values(RouteDecision).includes(decision as RouteDecision)) {
-        return null;
-      }
-
-      return {
-        decision: decision as RouteDecision,
-        agent: parsed.agent || undefined,
-        task: parsed.task || input,
-        explanation: parsed.explanation || 'LLM-based routing',
-        response: parsed.response || undefined
-      };
+      const routed = await this.parseRouteJson(content, input);
+      if (!routed) return null;
+      routed.explanation = routed.explanation || 'LLM-based routing';
+      return routed;
     } catch {
       return null;
     }
@@ -423,21 +445,7 @@ export class Orchestrator {
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: `You are the intelligent routing system for crew-cli, a multi-agent orchestration platform.
-
-Route this request to one of: CHAT, CODE, DISPATCH, SKILL.
-
-- CHAT: Simple conversation, greetings, status checks, or informational questions about the system
-- CODE: Code editing, building, implementing, creating, refactoring, or any development task  
-- DISPATCH: Specific agent request (QA, PM, security, etc) or complex multi-step tasks like research, planning, building complex features
-- SKILL: Explicit skill invocation
-
-For CHAT decisions, provide a helpful conversational response in the "response" field.
-
-Return ONLY a JSON object in this exact format:
-{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-xxx if needed","task":"reformulated task","response":"your chat response if CHAT"}
-
-User request: ${input}`
+              text: `${ROUTING_SYSTEM_PROMPT}\n\nUser request: ${input}`
             }]
           }],
           generationConfig: {
@@ -452,24 +460,10 @@ User request: ${input}`
       const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!content) return null;
 
-      const jsonStart = content.indexOf('{');
-      const jsonEnd = content.lastIndexOf('}');
-      if (jsonStart < 0 || jsonEnd < 0) return null;
-
-      const parsed = JSON.parse(content.slice(jsonStart, jsonEnd + 1));
-      const decision = String(parsed.decision || '').toUpperCase();
-
-      if (!Object.values(RouteDecision).includes(decision as RouteDecision)) {
-        return null;
-      }
-
-      return {
-        decision: decision as RouteDecision,
-        agent: parsed.agent || undefined,
-        task: parsed.task || input,
-        explanation: parsed.explanation || 'Routed via Gemini 2.0 Flash (2M context)',
-        response: parsed.response || undefined
-      };
+      const routed = await this.parseRouteJson(content, input);
+      if (!routed) return null;
+      routed.explanation = routed.explanation || 'Routed via Gemini 2.0 Flash (2M context)';
+      return routed;
     } catch {
       return null;
     }
@@ -530,6 +524,35 @@ User request: ${input}`
         error: (err as Error).message
       };
     }
+  }
+
+  /**
+   * Execute full unified L1->L2->L3 pipeline locally.
+   */
+  async executePipeline(
+    task: string,
+    context = '',
+    sessionId = 'crew-cli',
+    resume?: {
+      fromPhase?: 'plan' | 'execute' | 'validate';
+      priorPlan?: any;
+      priorResponse?: string;
+      priorExecutionResults?: any;
+    }
+  ): Promise<any> {
+    const out = await this.pipeline.execute({
+      userInput: task,
+      context,
+      sessionId,
+      resume
+    });
+    return {
+      ...out,
+      success: true,
+      result: out.response,
+      costUsd: out.totalCost,
+      model: 'unified-pipeline'
+    };
   }
 
   /**

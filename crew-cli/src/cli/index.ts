@@ -46,23 +46,23 @@ import { AgentKeeper } from '../memory/agentkeeper.js';
 import { CheckpointStore } from '../checkpoint/store.js';
 import { scorePatchRisk } from '../risk/score.js';
 import { runXSearch } from '../xai/search.js';
+import { MemoryBroker } from '../memory/broker.js';
 import { getNestedValue, loadResolvedRepoConfig, readRepoConfig, redactRepoConfigForDisplay, setRepoConfigValue } from '../config/repo-config.js';
 import { commandToShell, describeIntent, executeGitHubIntent, parseGitHubIntent, requiresConfirmation, runGitHubDoctor, buildGitHubCommand } from '../github/nl.js';
 import { loadModelPolicy } from '../config/model-policy.js';
 import { AutoFixStore, type AutoFixApplyPolicy, type AutoFixJobStatus } from '../autofix/store.js';
 import { runAutoFixJob } from '../autofix/runner.js';
-import { runAutoFixJob } from '../autofix/runner.js';
+import { loadPipelineMetricsSummary } from '../metrics/pipeline.js';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
 import { execSync } from 'node:child_process';
+import { enforceStrictPreflight, getCapabilityHandshake, getExecutionPolicy, isRetryableError, isRiskBlocked, withRetries } from '../runtime/execution-policy.js';
 
 
 const program = new Command();
 
-function parseHeadlessShortcutArgs(args: string[]) {
+export function parseHeadlessShortcutArgs(args: string[]) {
   const enabled = args.includes('--headless');
   if (!enabled) return { enabled: false };
 
@@ -143,17 +143,174 @@ function extractValidationSignals(result: any, requireValidation: boolean) {
   };
 }
 
+type SubscriptionEngineId = 'cursor' | 'claude-cli' | 'codex-cli';
+
+interface SubscriptionEngineProbe {
+  id: SubscriptionEngineId;
+  binary: string;
+  installed: boolean;
+  authenticated: boolean;
+  ready: boolean;
+  notes: string[];
+  version: string;
+}
+
+function hasBinary(bin: string): boolean {
+  try {
+    execSync(`command -v ${bin}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readBinaryVersion(bin: string): string {
+  try {
+    return String(execSync(`${bin} --version`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })).trim();
+  } catch {
+    return '';
+  }
+}
+
+function commandOutput(command: string): { ok: boolean; output: string } {
+  try {
+    const output = String(execSync(`${command} 2>&1`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).trim();
+    return { ok: true, output };
+  } catch (error: any) {
+    const output = String(error?.stdout || error?.stderr || '').trim();
+    return { ok: false, output };
+  }
+}
+
+function detectCliAuthStatus(): { claude: boolean; codex: boolean; cursor: boolean } {
+  const claude = hasBinary('claude')
+    ? (() => {
+      const result = commandOutput('claude auth status');
+      const text = (result.output || '').toLowerCase();
+      if (!text) return false;
+      if (/"loggedin"\s*:\s*true/.test(text)) return true;
+      if (text.includes('logged in')) return true;
+      return false;
+    })()
+    : false;
+
+  const codex = hasBinary('codex')
+    ? (() => {
+      const result = commandOutput('codex login status');
+      const text = (result.output || '').toLowerCase();
+      return text.includes('logged in');
+    })()
+    : false;
+
+  const cursor = hasBinary('cursor') && existsSync(join(homedir(), '.cursor', 'User', 'globalStorage', 'state.vscdb'));
+
+  return { claude, codex, cursor };
+}
+
+function detectSubscriptionEngines(tokens: Record<string, string | undefined>): SubscriptionEngineProbe[] {
+  const cursorInstalled = hasBinary('cursor');
+  const claudeInstalled = hasBinary('claude');
+  const codexInstalled = hasBinary('codex');
+  const cliAuth = detectCliAuthStatus();
+
+  const cursorAuth = Boolean(tokens.cursor || cliAuth.cursor);
+  const claudeAuth = Boolean(tokens.claude || process.env.ANTHROPIC_API_KEY || cliAuth.claude);
+  const codexAuth = Boolean(tokens.openai || process.env.OPENAI_API_KEY || cliAuth.codex);
+
+  return [
+    {
+      id: 'cursor',
+      binary: 'cursor',
+      installed: cursorInstalled,
+      authenticated: cursorAuth,
+      ready: cursorInstalled && cursorAuth,
+      notes: [
+        cursorInstalled ? 'binary-ok' : 'missing-binary',
+        cursorAuth ? 'auth-ok' : 'auth-not-detected'
+      ],
+      version: cursorInstalled ? readBinaryVersion('cursor') : ''
+    },
+    {
+      id: 'claude-cli',
+      binary: 'claude',
+      installed: claudeInstalled,
+      authenticated: claudeAuth,
+      ready: claudeInstalled && claudeAuth,
+      notes: [
+        claudeInstalled ? 'binary-ok' : 'missing-binary',
+        claudeAuth ? 'auth-ok' : 'auth-not-detected'
+      ],
+      version: claudeInstalled ? readBinaryVersion('claude') : ''
+    },
+    {
+      id: 'codex-cli',
+      binary: 'codex',
+      installed: codexInstalled,
+      authenticated: codexAuth,
+      ready: codexInstalled && codexAuth,
+      notes: [
+        codexInstalled ? 'binary-ok' : 'missing-binary',
+        codexAuth ? 'auth-ok' : 'auth-not-detected'
+      ],
+      version: codexInstalled ? readBinaryVersion('codex') : ''
+    }
+  ];
+}
+
 function shouldRetryWithFallback(error: unknown): boolean {
   const text = String((error as Error)?.message || '').toLowerCase();
-  return (
-    text.includes('rate limit') ||
-    text.includes('429') ||
-    text.includes('timeout') ||
-    text.includes('empty') ||
-    text.includes('temporar') ||
-    text.includes('unavailable') ||
-    text.includes('quota')
-  );
+  return isRetryableError(error) || text.includes('empty');
+}
+
+function printJsonEnvelope(kind: string, payload: Record<string, unknown>) {
+  console.log(JSON.stringify({
+    version: 'v1',
+    kind,
+    ts: new Date().toISOString(),
+    ...payload
+  }, null, 2));
+}
+
+async function loadPipelineRunEvents(traceId: string, baseDir = process.cwd()): Promise<any[]> {
+  const path = join(baseDir, '.crew', 'pipeline-runs', `${traceId}.jsonl`);
+  const raw = await readFile(path, 'utf8');
+  return raw
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function inferResumeTask(events: any[]): { task: string; phase: string } | null {
+  if (!Array.isArray(events) || events.length === 0) return null;
+  const firstPlan = events.find(e => String(e?.phase || '') === 'plan' && typeof e?.userInput === 'string');
+  const last = events[events.length - 1];
+  if (!firstPlan?.userInput) return null;
+  return {
+    task: String(firstPlan.userInput),
+    phase: String(last?.phase || 'unknown')
+  };
+}
+
+function extractResumeArtifacts(events: any[]): {
+  priorPlan?: any;
+  priorResponse?: string;
+  priorExecutionResults?: any;
+} {
+  const planEvent = [...events].reverse().find(e => String(e?.phase || '') === 'plan.completed' && e?.plan);
+  const validateInput = [...events].reverse().find(e => String(e?.phase || '') === 'validate.input');
+  return {
+    priorPlan: planEvent?.plan,
+    priorResponse: typeof validateInput?.response === 'string' ? validateInput.response : undefined,
+    priorExecutionResults: validateInput?.executionResults
+  };
 }
 
 async function runValidationCommands(commands: string[] = [], cwd = process.cwd()) {
@@ -293,7 +450,7 @@ async function dispatchWithFallback(
   throw lastError || new Error('Dispatch failed across fallback chain');
 }
 
-function parseConfigValue(raw: string, asJson = false): unknown {
+export function parseConfigValue(raw: string, asJson = false): unknown {
   const text = String(raw ?? '').trim();
   if (asJson) {
     return JSON.parse(text);
@@ -306,6 +463,15 @@ function parseConfigValue(raw: string, asJson = false): unknown {
 }
 
 export async function main(args = []) {
+  const normalizedArgs = [...args];
+  if (normalizedArgs.includes('--legacy-router')) {
+    process.env.CREW_LEGACY_ROUTER = 'true';
+    process.env.CREW_USE_UNIFIED_ROUTER = 'false';
+    const idx = normalizedArgs.indexOf('--legacy-router');
+    normalizedArgs.splice(idx, 1);
+    args = normalizedArgs;
+  }
+
   // Show banner on first launch (or always if CREW_SHOW_BANNER=1)
   const bannerFile = join(process.env.HOME || homedir(), '.crew', 'cli-banner-seen');
   const showAlways = process.env.CREW_SHOW_BANNER === '1';
@@ -331,7 +497,9 @@ export async function main(args = []) {
     try {
       await mkdir(dirname(bannerFile), { recursive: true });
       await writeFile(bannerFile, new Date().toISOString());
-    } catch {}
+    } catch (e) {
+      logger.error(`Failed to mark banner as seen: ${e.message}`);
+    }
   }
 
   const logger = new Logger();
@@ -402,6 +570,8 @@ export async function main(args = []) {
     .description('CrewSwarm CLI - Agent orchestration made simple')
     .version(cliVersion);
 
+  program.option('--legacy-router', 'Use legacy routing path (disables UnifiedPipeline default)', false);
+
   program
     .command('chat')
     .description('Chat with CrewSwarm (automatically routed to best agent)')
@@ -424,9 +594,18 @@ export async function main(args = []) {
     .option('--docs', 'Inject matching docs context via collections search', false)
     .option('--docs-path <paths...>', 'Custom paths for docs search (default: docs/ + project root)')
     .option('--docs-code', 'Include source code files in docs retrieval index', Boolean(cliDefaults.docsCode))
+    .option('--fallback-model <id>', 'Fallback model chain entry (repeatable)', collectOption, [])
+    .option('--retry-attempts <n>', 'Retry attempts for transient failures', '2')
+    .option('--strict-preflight', 'Block execution if doctor checks fail', false)
+    .option('--json', 'Output machine-readable JSON envelope', false)
     .action(async (inputArray, options) => {
       let input = inputArray.join(' ');
       try {
+        const policy = getExecutionPolicy({
+          strictPreflight: Boolean(options.strictPreflight),
+          retryAttempts: Number.parseInt(options.retryAttempts || '2', 10)
+        });
+        await enforceStrictPreflight(policy, options.gateway);
         const fileBlock = await buildFileContextBlock(options.contextFile || []);
         const repoBlock = await buildRepoContextBlock(options.contextRepo || []);
         const imagePaths = [...(options.image || []), ...(options.contextImage || [])];
@@ -475,26 +654,67 @@ export async function main(args = []) {
         const route = await orchestrator.route(input);
         const projectDir = options.project || process.cwd();
         
+        const interfaceMode = String(process.env.CREW_INTERFACE_MODE || 'standalone').toLowerCase();
+        const useLegacyStandalone = String(process.env.CREW_LEGACY_ROUTER || '').toLowerCase() === 'true';
+        const useUnifiedStandalone = interfaceMode === 'standalone' && !useLegacyStandalone;
+        const fallbackModels = (options.fallbackModel && options.fallbackModel.length > 0)
+          ? options.fallbackModel
+          : (executorPolicy.fallback || []);
+        const capabilityHandshake = getCapabilityHandshake(
+          interfaceMode === 'connected' ? 'connected' : 'standalone'
+        );
+
         if (route.decision === 'CHAT' || route.decision === 'CODE' || route.decision === 'DISPATCH') {
           const agent = route.agent || 'crew-main';
           logger.info(`Routing to ${agent} (Decision: ${route.decision})`);
-          
-          const result = await agentRouter.dispatch(agent, input, {
-            project: projectDir,
-            sessionId: await sessionManager.getSessionId(),
-            gateway: options.gateway,
-            model: options.model,
-            engine: options.engine,
-            direct: options.direct,
-            bypass: options.bypass,
-            images: options.image || []
-          });
 
-          console.log(chalk.blue('\n--- Agent Response ---'));
-          logger.printWithHighlight(String(result.result || ''));
-          
+          const result = useUnifiedStandalone
+            ? await withRetries(
+                async () => orchestrator.executePipeline(input, '', await sessionManager.getSessionId()),
+                policy
+              )
+            : (await dispatchWithFallback(
+                agentRouter,
+                agent,
+                input,
+                {
+                  project: projectDir,
+                  sessionId: await sessionManager.getSessionId(),
+                  gateway: options.gateway,
+                  model: options.model,
+                  engine: options.engine,
+                  direct: options.direct,
+                  bypass: options.bypass,
+                  images: options.image || []
+                },
+                fallbackModels,
+                checkpoints,
+                `chat-${randomUUID()}`
+              )).result;
+
           // Try to parse any edits
-          const edits = await orchestrator.parseAndApplyToSandbox(result.result);
+          const edits = await orchestrator.parseAndApplyToSandbox(String(result.response || result.result || ''));
+          if (options.json) {
+            printJsonEnvelope('chat.result', {
+              route,
+              agent,
+              response: String(result.response || result.result || ''),
+              edits,
+              needsApproval: edits.length > 0,
+              traceId: result.traceId || null,
+              timeline: Array.isArray(result.timeline) ? result.timeline : [],
+              capabilityHandshake
+            });
+            return;
+          }
+          console.log(chalk.blue('\n--- Agent Response ---'));
+          logger.printWithHighlight(String(result.response || result.result || ''));
+          if (Array.isArray(result.timeline) && result.timeline.length > 0) {
+            console.log(chalk.gray('\nPipeline timeline:'));
+            for (const step of result.timeline) {
+              console.log(chalk.gray(`  - ${step.phase} @ ${step.ts}`));
+            }
+          }
           if (edits.length > 0) {
             logger.success(`Added changes to ${edits.length} files in sandbox. Run "crew preview" to review.`);
           }
@@ -1046,6 +1266,10 @@ export async function main(args = []) {
     .description('Start interactive REPL mode for continuous conversations')
     .option('-p, --project <path>', 'Project directory', process.cwd())
     .option('-m, --mode <mode>', 'Initial REPL mode (manual|assist|autopilot)', 'manual')
+    .option('--interface-mode <mode>', 'Initial interface mode (standalone|connected)')
+    .option('--pick-interface', 'Show connected/standalone picker on REPL launch', false)
+    .option('--strict-preflight', 'Block launch if doctor checks fail', false)
+    .option('-g, --gateway <url>', 'Gateway URL for strict preflight checks')
     .action(async (options) => {
       const projectDir = options.project || process.cwd();
       const initialMode = options.mode?.toLowerCase();
@@ -1053,7 +1277,14 @@ export async function main(args = []) {
         console.error(chalk.red(`Invalid mode "${initialMode}". Must be one of: manual, assist, autopilot`));
         process.exit(1);
       }
+      const interfaceMode = String(options.interfaceMode || '').toLowerCase();
+      if (interfaceMode && !['standalone', 'connected'].includes(interfaceMode)) {
+        console.error(chalk.red(`Invalid interface mode "${interfaceMode}". Must be one of: standalone, connected`));
+        process.exit(1);
+      }
       try {
+        const policy = getExecutionPolicy({ strictPreflight: Boolean(options.strictPreflight) });
+        await enforceStrictPreflight(policy, options.gateway);
         await startRepl({
           router: agentRouter,
           orchestrator,
@@ -1062,7 +1293,9 @@ export async function main(args = []) {
           logger,
           projectDir,
           repoConfig,
-          initialMode: initialMode as 'manual' | 'assist' | 'autopilot' | undefined
+          initialMode: initialMode as 'manual' | 'assist' | 'autopilot' | undefined,
+          initialInterfaceMode: (interfaceMode || undefined) as 'standalone' | 'connected' | undefined,
+          promptInterfaceMode: Boolean(options.pickInterface) || (!interfaceMode && process.stdin.isTTY)
         });
       } catch (error) {
         console.error('Error starting REPL:', error);
@@ -1075,6 +1308,8 @@ export async function main(args = []) {
     .description('Start terminal UI mode (same runtime/controller as REPL, improved layout)')
     .option('-p, --project <path>', 'Project directory', process.cwd())
     .option('-m, --mode <mode>', 'Initial TUI mode (manual|assist|autopilot)', 'manual')
+    .option('--strict-preflight', 'Block launch if doctor checks fail', false)
+    .option('-g, --gateway <url>', 'Gateway URL for strict preflight checks')
     .action(async (options) => {
       const projectDir = options.project || process.cwd();
       const initialMode = options.mode?.toLowerCase();
@@ -1083,6 +1318,8 @@ export async function main(args = []) {
         process.exit(1);
       }
       try {
+        const policy = getExecutionPolicy({ strictPreflight: Boolean(options.strictPreflight) });
+        await enforceStrictPreflight(policy, options.gateway);
         await startTui({
           router: agentRouter,
           orchestrator,
@@ -1134,6 +1371,9 @@ export async function main(args = []) {
     .option('--docs-code', 'Include source code files in docs retrieval index', Boolean(cliDefaults.docsCode))
     .option('--escalate-risk', 'Escalate high-risk patches to QA and Security', false)
     .option('--risk-threshold <level>', 'Escalation threshold: low|medium|high', 'high')
+    .option('--retry-attempts <n>', 'Retry attempts for transient failures', '2')
+    .option('--strict-preflight', 'Block execution if doctor checks fail', false)
+    .option('--json', 'Output machine-readable JSON envelope', false)
     .action(async (agent, task, options) => {
       let finalTask = task;
       const runId = `dispatch-${randomUUID()}`;
@@ -1141,6 +1381,12 @@ export async function main(args = []) {
         ? options.fallbackModel
         : (executorPolicy.fallback || []);
       try {
+        const policy = getExecutionPolicy({
+          strictPreflight: Boolean(options.strictPreflight),
+          retryAttempts: Number.parseInt(options.retryAttempts || '2', 10),
+          riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as any
+        });
+        await enforceStrictPreflight(policy, options.gateway);
         await checkpoints.beginRun({ runId, mode: 'dispatch', task });
         const useMemory = options.memory !== false;
         if (useMemory) {
@@ -1305,14 +1551,18 @@ export async function main(args = []) {
             );
           }
         } else {
-          const dispatched = await dispatchWithFallback(
-            agentRouter,
-            agent,
-            finalTask,
-            dispatchOptions,
-            fallbackModels,
-            checkpoints,
-            runId
+          const dispatched = await withRetries(
+            async () => dispatchWithFallback(
+              agentRouter,
+              agent,
+              finalTask,
+              dispatchOptions,
+              fallbackModels,
+              checkpoints,
+              runId
+            ),
+            policy,
+            { shouldRetry: shouldRetryWithFallback }
           );
           result = dispatched.result;
         }
@@ -1370,15 +1620,22 @@ export async function main(args = []) {
 
         const responseText = String(result.result || '');
         const edits = await orchestrator.parseAndApplyToSandbox(responseText);
+        const capabilityHandshake = getCapabilityHandshake(
+          String(process.env.CREW_INTERFACE_MODE || 'standalone').toLowerCase() === 'connected'
+            ? 'connected'
+            : 'standalone'
+        );
         await checkpoints.append(runId, 'dispatch.completed', {
           agent,
           success: Boolean(result.success),
           edits: edits.length
         });
+        let riskReport: any = null;
+        let patchRisk: any = null;
         if (edits.length > 0) {
-          const report = await analyzeBlastRadius(process.cwd(), { changedFiles: edits });
-          const patchRisk = scorePatchRisk({
-            blastRadius: report,
+          riskReport = await analyzeBlastRadius(process.cwd(), { changedFiles: edits });
+          patchRisk = scorePatchRisk({
+            blastRadius: riskReport,
             changedFiles: edits.length
           });
           logger.info(`Patch confidence: ${(patchRisk.confidence * 100).toFixed(0)}% (risk score ${patchRisk.riskScore}/100, ${patchRisk.riskLevel})`);
@@ -1399,6 +1656,23 @@ export async function main(args = []) {
             logger.info(chalk.yellow('\n--- Security Escalation ---'));
             logger.printWithHighlight(String(sec.result.result || ''));
           }
+        }
+
+        if (options.json) {
+          printJsonEnvelope('dispatch.result', {
+            runId,
+            agent,
+            taskId: result.taskId || null,
+            success: Boolean(result.success),
+            response: responseText,
+            edits,
+            needsApproval: edits.length > 0,
+            risk: patchRisk || null,
+            blastRadius: riskReport || null,
+            capabilityHandshake
+          });
+          await checkpoints.finish(runId, 'completed');
+          return;
         }
 
         logger.success('Task completed:', result);
@@ -1423,6 +1697,149 @@ export async function main(args = []) {
     .action(async () => {
       const { displayStatus } = await import('../status/dashboard.ts');
       await displayStatus();
+    });
+
+  program
+    .command('capabilities')
+    .description('Show runtime capability handshake for current interface mode')
+    .option('--mode <mode>', 'standalone | connected (default: current env)')
+    .option('--json', 'Output as JSON', false)
+    .action(options => {
+      const mode = String(options.mode || process.env.CREW_INTERFACE_MODE || 'standalone').toLowerCase() === 'connected'
+        ? 'connected'
+        : 'standalone';
+      const handshake = getCapabilityHandshake(mode as 'connected' | 'standalone');
+      if (options.json) {
+        printJsonEnvelope('capabilities', { handshake });
+        return;
+      }
+      console.log(chalk.blue('\n--- Capability Handshake ---\n'));
+      console.log(`  mode        : ${handshake.mode}`);
+      console.log(`  can_read    : ${handshake.can_read}`);
+      console.log(`  can_write   : ${handshake.can_write}`);
+      console.log(`  can_pty     : ${handshake.can_pty}`);
+      console.log(`  can_lsp     : ${handshake.can_lsp}`);
+      console.log(`  can_dispatch: ${handshake.can_dispatch}`);
+      console.log(`  can_git     : ${handshake.can_git}`);
+    });
+
+  program
+    .command('run')
+    .description('Execute unified pipeline task (supports phase-aware resume from trace checkpoint)')
+    .option('-t, --task <text>', 'Task text for a new run')
+    .option('--resume <traceId>', 'Resume/replay a prior pipeline trace id')
+    .option('--from-phase <phase>', 'Resume from phase: plan|execute|validate')
+    .option('--retry-attempts <n>', 'Retry attempts for transient failures', '2')
+    .option('--strict-preflight', 'Block execution if doctor checks fail', false)
+    .option('-g, --gateway <url>', 'Gateway URL for strict preflight checks')
+    .option('--json', 'Output machine-readable JSON envelope', false)
+    .action(async options => {
+      try {
+        const policy = getExecutionPolicy({
+          strictPreflight: Boolean(options.strictPreflight),
+          retryAttempts: Number.parseInt(options.retryAttempts || '2', 10)
+        });
+        await enforceStrictPreflight(policy, options.gateway);
+
+        let task = String(options.task || '').trim();
+        let resumedFrom: string | null = null;
+        let previousPhase: string | null = null;
+        let resumeContext: any = undefined;
+
+        if (options.resume) {
+          const traceId = String(options.resume).trim();
+          const events = await loadPipelineRunEvents(traceId, process.cwd());
+          const resumeInfo = inferResumeTask(events);
+          if (!resumeInfo) {
+            throw new Error(`Unable to infer task from trace ${traceId}.`);
+          }
+          task = task || resumeInfo.task;
+          resumedFrom = traceId;
+          previousPhase = resumeInfo.phase;
+          const requestedPhase = String(options.fromPhase || '').toLowerCase();
+          const fromPhase = requestedPhase || (previousPhase === 'failed' ? 'execute' : 'plan');
+          if (!['plan', 'execute', 'validate'].includes(fromPhase)) {
+            throw new Error(`Invalid --from-phase "${fromPhase}". Use plan|execute|validate.`);
+          }
+          const artifacts = extractResumeArtifacts(events);
+          if (fromPhase === 'execute' || fromPhase === 'validate') {
+            if (!artifacts.priorPlan) {
+              throw new Error(`Trace ${traceId} missing prior plan artifact; cannot resume from ${fromPhase}.`);
+            }
+          }
+          if (fromPhase === 'validate' && !artifacts.priorResponse) {
+            throw new Error(`Trace ${traceId} missing prior validation input; cannot resume from validate.`);
+          }
+          resumeContext = {
+            fromPhase,
+            priorPlan: artifacts.priorPlan,
+            priorResponse: artifacts.priorResponse,
+            priorExecutionResults: artifacts.priorExecutionResults
+          };
+
+          if (previousPhase === 'complete' && fromPhase === 'plan') {
+            if (options.json) {
+              printJsonEnvelope('run.resume', {
+                resumedFrom,
+                previousPhase,
+                task,
+                skipped: true,
+                reason: 'already-complete'
+              });
+              return;
+            }
+            logger.info(`Trace ${traceId} already completed. Re-running task for deterministic replay.`);
+          }
+        }
+
+        if (!task) {
+          throw new Error('Provide --task for a new run or --resume <traceId> for replay.');
+        }
+
+        const sessionId = await sessionManager.getSessionId();
+        const result = await withRetries(
+          async () => orchestrator.executePipeline(task, '', sessionId, resumeContext),
+          policy
+        );
+        const responseText = String(result.response || result.result || '');
+        const edits = await orchestrator.parseAndApplyToSandbox(responseText);
+        const capabilityHandshake = getCapabilityHandshake(
+          String(process.env.CREW_INTERFACE_MODE || 'standalone').toLowerCase() === 'connected'
+            ? 'connected'
+            : 'standalone'
+        );
+
+        if (options.json) {
+          printJsonEnvelope('run.result', {
+            task,
+            resumedFrom,
+            previousPhase,
+            resumedPhase: resumeContext?.fromPhase || null,
+            traceId: result.traceId || null,
+            phase: result.phase || null,
+            timeline: Array.isArray(result.timeline) ? result.timeline : [],
+            response: responseText,
+            edits,
+            needsApproval: edits.length > 0,
+            capabilityHandshake
+          });
+          return;
+        }
+
+        logger.printWithHighlight(responseText);
+        if (Array.isArray(result.timeline) && result.timeline.length > 0) {
+          console.log(chalk.gray('\nPipeline timeline:'));
+          for (const step of result.timeline) {
+            console.log(chalk.gray(`  - ${step.phase} @ ${step.ts}`));
+          }
+        }
+        if (edits.length > 0) {
+          logger.success(`Staged ${edits.length} file change(s). Run "crew preview" then "crew apply".`);
+        }
+      } catch (error) {
+        logger.error(`Run failed: ${(error as Error).message}`);
+        process.exit(1);
+      }
     });
 
   program
@@ -2232,13 +2649,29 @@ export async function main(args = []) {
     .option('-g, --gateway <url>', 'Override gateway URL')
     .option('--json', 'Emit JSONL events', false)
     .option('--always-approve', 'Auto-apply sandbox changes', false)
+    .option('--force-auto-apply', 'Bypass risk gate for auto-apply', false)
+    .option('--risk-threshold <level>', 'Auto-apply risk threshold (low|medium|high)', 'high')
+    .option('--retry-attempts <n>', 'Retry attempts for transient failures', '2')
+    .option('--fallback-model <id>', 'Fallback model chain entry (repeatable)', collectOption, [])
+    .option('--strict-preflight', 'Block execution if doctor checks fail', false)
     .option('--out <path>', 'Write JSONL events to file (for CI artifacts)')
     .action(async options => {
+      const policy = getExecutionPolicy({
+        strictPreflight: Boolean(options.strictPreflight),
+        retryAttempts: Number.parseInt(options.retryAttempts || '2', 10),
+        riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as any,
+        forceAutoApply: Boolean(options.forceAutoApply)
+      });
+      await enforceStrictPreflight(policy, options.gateway);
       const result = await runHeadlessTask({
         task: options.task,
         agent: options.agent,
         json: options.json,
         alwaysApprove: options.alwaysApprove,
+        forceAutoApply: options.forceAutoApply,
+        riskThreshold: policy.riskThreshold,
+        retryAttempts: policy.retryAttempts,
+        fallbackModels: options.fallbackModel || [],
         out: options.out,
         gateway: options.gateway,
         projectDir: process.cwd(),
@@ -2387,6 +2820,7 @@ export async function main(args = []) {
     .option('--summary', 'Show breakdown by model', true)
     .action(async () => {
       const cost = await sessionManager.loadCost();
+      const pipeline = await loadPipelineMetricsSummary(process.cwd());
       console.log(chalk.blue('--- Cost Summary ---'));
       console.log(`Total Spent: ${chalk.green(`$${cost.totalUsd.toFixed(4)}`)}`);
       
@@ -2415,6 +2849,14 @@ export async function main(args = []) {
       console.log(`- recall_misses: ${recallMisses}`);
       console.log(`- match_count: ${matchCount}`);
       console.log(`- quality_score_avg: ${avgQuality.toFixed(3)}`);
+      console.log(chalk.gray('\nPipeline metrics:'));
+      console.log(`- runs: ${pipeline.runs}`);
+      console.log(`- qa_approved: ${pipeline.qaApproved}`);
+      console.log(`- qa_rejected: ${pipeline.qaRejected}`);
+      const avgRounds = pipeline.runs > 0 ? (pipeline.qaRoundsTotal / pipeline.runs) : 0;
+      console.log(`- qa_rounds_avg: ${avgRounds.toFixed(2)}`);
+      console.log(`- context_chunks_used: ${pipeline.contextChunksUsed}`);
+      console.log(`- context_chars_saved_est: ${pipeline.contextCharsSaved}`);
     });
 
   program
@@ -2754,7 +3196,16 @@ export async function main(args = []) {
   program
     .command('auth')
     .description('Search for local OAuth tokens from other coding CLIs')
-    .action(async () => {
+    .option('--link', 'Probe local subscription engines and show routing readiness')
+    .option('--no-link', 'Disable engine probe/autolink behavior')
+    .option('--apply', 'Persist auto-plumbed engine defaults to repo config.local.json')
+    .option('--scope <scope>', 'Config scope for --apply: user|team', 'user')
+    .action(async (options) => {
+      const argv = process.argv.slice(2);
+      const explicitLinkFlag = argv.includes('--link') || argv.includes('--no-link');
+      const explicitApplyFlag = argv.includes('--apply');
+      const implicitConnectMode = !explicitLinkFlag && !explicitApplyFlag;
+
       const finder = new TokenFinder();
       const tokens = await finder.findTokens();
       
@@ -2765,6 +3216,65 @@ export async function main(args = []) {
       if (Object.keys(tokens).length === 0) {
         console.log(chalk.yellow('No local tokens detected.'));
       }
+
+      const linkEnabled = options.link !== false;
+      if (!linkEnabled) return;
+
+      const probes = detectSubscriptionEngines(tokens);
+      const ready = probes.filter(p => p.ready).map(p => p.id);
+      const installed = probes.filter(p => p.installed).map(p => p.id);
+
+      console.log(chalk.blue('\n--- Engine Auto-Plumb Probe ---'));
+      for (const probe of probes) {
+        const status = probe.ready
+          ? chalk.green('ready')
+          : probe.installed
+            ? chalk.yellow('partial')
+            : chalk.red('missing');
+        const version = probe.version ? ` (${probe.version})` : '';
+        console.log(`- ${probe.id.padEnd(10)} ${status}${version}`);
+        console.log(chalk.gray(`  notes: ${probe.notes.join(', ')}`));
+      }
+
+      if (installed.length === 0) {
+        console.log(chalk.yellow('\nNo subscription CLIs detected (cursor/claude/codex).'));
+        return;
+      }
+
+      if (ready.length === 0) {
+        console.log(chalk.yellow('\nNo engine is fully ready yet. Install/login first, then rerun `crew auth --link --apply`.'));
+        return;
+      }
+
+      const preferredOrder: SubscriptionEngineId[] = ['cursor', 'claude-cli', 'codex-cli'];
+      const preferredReady = preferredOrder.filter(id => ready.includes(id));
+      const recommended = preferredReady[0];
+      console.log(chalk.green(`\nRecommended default engine: ${recommended}`));
+      console.log(chalk.gray(`Preferred ready order: ${preferredReady.join(' -> ')}`));
+
+      const shouldApply = Boolean(options.apply || implicitConnectMode);
+      if (!shouldApply) {
+        console.log(chalk.gray('Use --apply to persist this into .crew/config.local.json'));
+        return;
+      }
+
+      const scope = String(options.scope || 'user').toLowerCase();
+      if (scope !== 'user' && scope !== 'team') {
+        throw new Error(`Invalid scope "${scope}". Use user or team.`);
+      }
+
+      await setRepoConfigValue(process.cwd(), scope as 'user' | 'team', 'cli.engine', recommended);
+      await setRepoConfigValue(process.cwd(), scope as 'user' | 'team', 'repl.engine', recommended);
+      await setRepoConfigValue(process.cwd(), scope as 'user' | 'team', 'cli.preferredEngines', preferredReady);
+
+      console.log(chalk.green('\n✓ Auto-plumb applied'));
+      if (implicitConnectMode) {
+        console.log(chalk.gray('  mode: implicit (crew auth)'));
+      }
+      console.log(chalk.gray(`  scope: ${scope}`));
+      console.log(chalk.gray(`  cli.engine: ${recommended}`));
+      console.log(chalk.gray(`  repl.engine: ${recommended}`));
+      console.log(chalk.gray(`  cli.preferredEngines: ${preferredReady.join(', ')}`));
     });
 
   program
@@ -2843,11 +3353,11 @@ export async function main(args = []) {
     .requiredOption('-e, --engine <id>', 'gemini-api | claude-api | gemini-cli | codex-cli | claude-cli')
     .requiredOption('-p, --prompt <text>', 'Prompt text')
     .option('-m, --model <id>', 'Model override')
-    .option('-t, --timeout <ms>', 'Timeout in milliseconds', '300000')
+    .option('-t, --timeout <ms>', 'Timeout in milliseconds', '600000')
     .action(async options => {
       const result = await runEngine(options.engine, options.prompt, {
         model: options.model,
-        timeoutMs: Number.parseInt(options.timeout || '300000', 10)
+        timeoutMs: Number.parseInt(options.timeout || '600000', 10)
       });
 
       if (result.stdout) logger.printWithHighlight(result.stdout);
@@ -3178,6 +3688,8 @@ export async function main(args = []) {
     .description('Apply all pending changes in the sandbox to the filesystem')
     .argument('[branch]', 'Optional branch name to apply')
     .option('-c, --check <command>', 'Command to run after apply (e.g. "npm test")')
+    .option('--risk-threshold <level>', 'Block apply when risk is >= threshold (low|medium|high)', 'high')
+    .option('--force', 'Bypass risk gate', false)
     .action(async (branch, options) => {
       const active = branch || sandbox.getActiveBranch();
       if (!sandbox.hasChanges(active)) {
@@ -3186,6 +3698,16 @@ export async function main(args = []) {
       }
       try {
         const paths = sandbox.getPendingPaths(active);
+        const policy = getExecutionPolicy({
+          riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as any,
+          forceAutoApply: Boolean(options.force)
+        });
+        const report = await analyzeBlastRadius(process.cwd(), { changedFiles: paths });
+        if (isRiskBlocked(report.risk, policy.riskThreshold, policy.forceAutoApply)) {
+          logger.error(`Apply blocked by risk gate (${report.risk} >= ${policy.riskThreshold}).`);
+          logger.warn('Run "crew preview" to inspect changes, then re-run with --force if intentional.');
+          process.exit(1);
+        }
         await sandbox.apply(active);
         logger.success(`Applied changes from branch "${active}" to: ${paths.join(', ')}`);
 
@@ -3341,10 +3863,15 @@ export async function main(args = []) {
     .description('Query AgentKeeper task memory')
     .argument('[query...]', 'Search query (omit to show stats)')
     .option('--max <n>', 'Max results', '5')
+    .option('--rag', 'Blend AgentKeeper + shared fact memory + collections RAG', true)
+    .option('--no-rag', 'Use AgentKeeper-only recall')
+    .option('--include-code', 'Include source files in collections retrieval', false)
+    .option('--path <paths...>', 'Custom docs/code search paths for RAG')
     .option('--json', 'Output as JSON', false)
     .action(async (queryArray, options) => {
       const { AgentKeeper } = await import('../memory/agentkeeper.js');
       const keeper = new AgentKeeper(process.cwd());
+      const broker = new MemoryBroker(process.cwd());
       const query = (queryArray || []).join(' ').trim();
 
       if (!query) {
@@ -3389,7 +3916,33 @@ export async function main(args = []) {
         return;
       }
 
-      const matches = await keeper.recall(query, Number.parseInt(options.max || '5', 10));
+      const max = Number.parseInt(options.max || '5', 10);
+      if (options.rag) {
+        const hits = await broker.recall(query, {
+          maxResults: max,
+          includeDocs: true,
+          includeCode: Boolean(options.includeCode),
+          docsPaths: options.path && options.path.length > 0 ? options.path : undefined
+        });
+        if (options.json) {
+          console.log(JSON.stringify(hits, null, 2));
+          return;
+        }
+        if (hits.length === 0) {
+          logger.warn(`No shared memory/RAG matches for "${query}".`);
+          return;
+        }
+        console.log(chalk.blue(`\n--- Shared Memory + RAG Recall: "${query}" (${hits.length} hits) ---\n`));
+        for (const h of hits) {
+          console.log(chalk.yellow(`[${h.score.toFixed(3)}] ${h.source} — ${h.title.slice(0, 100)}`));
+          const preview = h.text.length > 160 ? h.text.slice(0, 160) + '...' : h.text;
+          console.log(chalk.gray(`  ${preview}`));
+          console.log('');
+        }
+        return;
+      }
+
+      const matches = await keeper.recall(query, max);
       if (options.json) {
         console.log(JSON.stringify(matches, null, 2));
         return;

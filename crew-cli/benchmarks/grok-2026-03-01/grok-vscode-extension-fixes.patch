@@ -1,0 +1,171 @@
+diff --git a/tsconfig.json b/tsconfig.json
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -11,8 +11,8 @@
+     "strict": true
+   },
+   "include": [
+-    "src/**",
+-    "tests/**"
++    "src/**/*.ts",
++    "tests/**/*.ts"
+   ],
+   "exclude": [
+     "node_modules",
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -31,6 +31,15 @@
+         }
+       ]
++    },
++    "configuration": {
++      "title": "CrewSwarm",
++      "properties": {
++        "crewswarm.apiUrl": {
++          "type": "string",
++          "default": "http://127.0.0.1:4097/v1",
++          "description": "CrewSwarm unified API base URL."
++        }
++      }
+     }
+   },
+   "scripts": {
+@@ -38,7 +47,7 @@
+     "watch": "tsc -watch -p ./",
+     "pretest": "npm run compile && npm run lint",
+     "lint": "eslint src --ext ts",
+-    "test": "npm run compile && npx @vscode/test-electron ./test-runner.js"
++    "test": "npm run compile && npx @vscode/test-electron ./test/test-runner.js"
+   },
+   "devDependencies": {
+     "@types/vscode": "^1.85.0",
+diff --git a/src/api-client.ts b/src/api-client.ts
+--- a/src/api-client.ts
++++ b/src/api-client.ts
+@@ -1,10 +1,10 @@
+ import * as vscode from 'vscode';
+ 
+ export class ApiClient {
+-  private baseUrl = vscode.workspace.getConfiguration('crewswarm')?.get('apiUrl') as string || 'https://api.crewswarm.dev';
++  private baseUrl = (vscode.workspace.getConfiguration('crewswarm')?.get('apiUrl') as string) || 'http://127.0.0.1:4097/v1';
+ 
+   async chat(message: string): Promise<string> {
+-    const response = await fetch(`${this.baseUrl}/chat`, {
++    const response = await fetch(`${this.baseUrl}/chat`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+@@ -12,9 +12,12 @@
+-      body: JSON.stringify({ message }),
++      body: JSON.stringify({
++        message,
++        sessionId: 'vscode-extension'
++      }),
+     });
+     if (!response.ok) {
+       throw new Error(`API error: ${response.status}`);
+     }
+-    return response.text();
++    const payload = await response.json();
++    return String(payload?.reply || '');
+   }
+@@ -20,13 +23,16 @@
+   async generateCode(prompt: string): Promise<string> {
+-    const response = await fetch(`${this.baseUrl}/codegen`, {
++    const response = await fetch(`${this.baseUrl}/chat`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+       },
+-      body: JSON.stringify({ prompt }),
++      body: JSON.stringify({
++        message: prompt,
++        sessionId: 'vscode-extension'
++      }),
+     });
+     if (!response.ok) {
+       throw new Error(`API error: ${response.status}`);
+     }
+-    return response.text();
++    const payload = await response.json();
++    return String(payload?.reply || '');
+   }
+ }
+diff --git a/src/extension.ts b/src/extension.ts
+--- a/src/extension.ts
++++ b/src/extension.ts
+@@ -22,9 +22,12 @@ export function activate(context: vscode.ExtensionContext) {
+     const htmlPath = path.join(context.extensionPath, 'src', 'webview', 'chat.html');
+     let html = fs.readFileSync(htmlPath, 'utf-8');
++    const nonce = String(Date.now()) + String(Math.floor(Math.random() * 1e9));
+ 
+     const stylesUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, 'src', 'webview', 'styles.css')));
+     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, 'src', 'webview', 'chat.js')));
+ 
+     html = html.replace('${styles}', stylesUri.toString());
+     html = html.replace('${script}', scriptUri.toString());
++    html = html.replace('${cspSource}', panel.webview.cspSource);
++    html = html.replaceAll('${nonce}', nonce);
+ 
+     panel.webview.html = html;
+@@ -39,7 +42,7 @@ export function activate(context: vscode.ExtensionContext) {
+               const response = await apiClient.chat(message.text);
+               panel.webview.postMessage({ command: 'addResponse', response });
+             } catch (error) {
+-              panel.webview.postMessage({ command: 'addResponse', response: 'Error: ' + error });
++              panel.webview.postMessage({ command: 'addResponse', response: 'Error: ' + ((error as Error)?.message || String(error)) });
+             }
+             break;
+           case 'applyDiff':
+diff --git a/src/webview/chat.html b/src/webview/chat.html
+--- a/src/webview/chat.html
++++ b/src/webview/chat.html
+@@ -3,6 +3,12 @@
+ <head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
++  <meta http-equiv="Content-Security-Policy" content="
++    default-src 'none';
++    img-src ${cspSource} https: data:;
++    style-src ${cspSource};
++    script-src 'nonce-${nonce}';
++  ">
+   <title>CrewSwarm Chat</title>
+   <link rel="stylesheet" href="${styles}">
+ </head>
+@@ -14,6 +20,6 @@
+       <button id="send-btn">Send</button>
+     </div>
+   </div>
+-  <script src="${script}"></script>
++  <script nonce="${nonce}" src="${script}"></script>
+ </body>
+ </html>
+diff --git a/src/webview/chat.js b/src/webview/chat.js
+--- a/src/webview/chat.js
++++ b/src/webview/chat.js
+@@ -39,12 +39,17 @@ window.addEventListener('message', (event) => {
+         const diff = diffMatch[1];
+         const messageDiv = document.createElement('div');
+         messageDiv.className = 'message assistant';
+-        messageDiv.innerHTML = `
+-          <div>${message.response.replace(diffMatch[0], '')}</div>
+-          <pre class="diff">${diff}</pre>
+-          <button onclick="applyDiff('${diff.replace(/'/g, "\\'")}')">Apply Diff</button>
+-        `;
++        const text = document.createElement('div');
++        text.textContent = message.response.replace(diffMatch[0], '');
++        const pre = document.createElement('pre');
++        pre.className = 'diff';
++        pre.textContent = diff;
++        const btn = document.createElement('button');
++        btn.textContent = 'Apply Diff';
++        btn.addEventListener('click', () => applyDiff(diff));
++        messageDiv.appendChild(text);
++        messageDiv.appendChild(pre);
++        messageDiv.appendChild(btn);
+         messagesContainer.appendChild(messageDiv);
+       } else {
+         addMessage('assistant', message.response);
+*** End Patch

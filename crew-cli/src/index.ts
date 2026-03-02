@@ -1,11 +1,23 @@
 #!/usr/bin/env node
 
-export * from './utils/math.ts';
+import { Command } from 'commander';
+import { createMonitorCommand } from './commands/monitor';
+import { logger } from './lib/logger';
 
-export function main(): void {
-  console.log('Crew CLI ready');
-}
+const program = new Command();
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
+program
+  .name('crew-cli')
+  .description('CrewSwarm command-line interface')
+  .version('1.0.0');
+
+// Add monitor command
+program.addCommand(createMonitorCommand());
+
+// Parse command-line arguments
+program.parse(process.argv);
+
+// Show help if no command provided
+if (!process.argv.slice(2).length) {
+  program.outputHelp();
 }

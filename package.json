@@ -1,22 +1,33 @@
 {
-  "name": "jwt-middleware",
-  "version": "1.0.0",
-  "description": "JWT validation middleware for Node.js REST APIs",
+  "name": "crewswarm",
+  "version": "0.5.0",
+  "description": "Multi-agent AI orchestration platform",
   "type": "module",
-  "main": "jwt-middleware.js",
+  "main": "gateway-bridge.mjs",
   "scripts": {
-    "test": "jest",
-    "start": "node example-usage.js"
+    "start": "node crew-lead.mjs",
+    "test": "node --test test/unit/*.mjs test/integration/*.mjs",
+    "validate-config": "node scripts/validate-config.mjs",
+    "restart-all": "bash scripts/restart-all-from-repo.sh",
+    "dashboard": "node scripts/dashboard.mjs",
+    "mcp-server": "node scripts/mcp-server.mjs",
+    "telegram": "node telegram-bridge.mjs",
+    "whatsapp": "node whatsapp-bridge.mjs"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.2"
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "pino": "^10.3.1",
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.16.0",
+    "zod": "^4.3.6"
   },
-  "devDependencies": {
-    "@jest/globals": "^29.7.0",
-    "jest": "^29.7.0"
-  },
-  "keywords": ["jwt", "middleware", "authentication", "express"],
+  "keywords": [
+    "ai",
+    "agents",
+    "orchestration",
+    "multi-agent",
+    "llm"
+  ],
   "author": "",
   "license": "MIT"
 }

@@ -3,7 +3,16 @@ import { escHtml, showNotification, fmt, createdAt, appendChatBubble, showLoadin
 import { sortAgents, state } from './core/state.js';
 import { initActiveTasksPanel } from './components/active-tasks-panel.js';
 import { startOrchestrationStatusUpdates } from './orchestration-status.js';
+import './cli-process.js';
 import { showBenchmarks as showBenchmarksTab, loadBenchmarks, loadBenchmarkLeaderboard, loadBenchmarkTasks, onBenchmarkTaskSelect, runBenchmarkTask, stopBenchmarkRun } from './tabs/benchmarks-tab.js';
+import {
+  initMemoryTab,
+  showMemory,
+  loadMemoryStats,
+  searchMemory,
+  migrateMemory,
+  compactMemory,
+} from './tabs/memory-tab.js';
 import {
   initServicesTab,
   showServices,
@@ -236,6 +245,7 @@ function hideAllViews(){
 initServicesTab({ hideAllViews, setNavActive });
 initAgentsTab({ hideAllViews, setNavActive, refreshAgents: loadAgents });
 initSwarmTab({ hideAllViews, setNavActive });
+initMemoryTab(state);
 
 async function pickFolder(inputId) {
   const input = document.getElementById(inputId);
@@ -937,6 +947,21 @@ function showEngines(){
 
 const showBenchmarks = () => showBenchmarksTab({ hideAllViews, setNavActive });
 
+function showMemoryView(){
+  hideAllViews();
+  document.getElementById('memoryView').classList.add('active');
+  setNavActive('navMemory');
+  showMemory();
+}
+
+function showCLIProcess(){
+  hideAllViews();
+  document.getElementById('cliProcessView').classList.add('active');
+  setNavActive('navCLI');
+  // Initialize CLI process view
+  if (window.initCLIProcess) window.initCLIProcess();
+}
+
 function showToolMatrix(){
   hideAllViews();
   document.getElementById('toolMatrixView').classList.add('active');
@@ -1091,6 +1116,25 @@ if (params.get('focus') === '1') {
     showSettingsTab(startSubtab);
   }
 }
+
+// Handle browser back/forward buttons
+window.addEventListener('hashchange', () => {
+  const hash = (location.hash || '#chat').slice(1);
+  const [view, subtab] = hash.split('/');
+  
+  // Navigate to the view from hash
+  const viewFn = NAV_VIEW_MAP[view];
+  if (viewFn) {
+    viewFn();
+    // If it's a settings subtab, show that too
+    if (view === 'settings' && subtab) {
+      showSettingsTab(subtab);
+    }
+  } else {
+    // Fallback to chat if invalid hash
+    showChat();
+  }
+});
 // Resolve server-side env vars (HOME, cwd) once on boot
 fetch('/api/env').then(r => r.json()).then(env => {
   window._crewHome = env.HOME || '';
@@ -1200,6 +1244,11 @@ const ACTION_REGISTRY = {
   onBenchmarkTaskSelect,
   runBenchmarkTask,
   stopBenchmarkRun,
+  // Memory
+  loadMemoryStats,
+  searchMemory,
+  migrateMemory,
+  compactMemory,
   loadEngines,
   toggleImportEngine,
   importEngineFromUrl,
@@ -1487,13 +1536,29 @@ const NAV_VIEW_MAP = {
   files: showFiles, dlq: showDLQ, projects: showProjects, agents: showAgents,
   models: showModels, engines: showEngines, skills: showSkills, 'run-skills': showRunSkills,
   benchmarks: showBenchmarks, 'tool-matrix': showToolMatrix,
+  memory: showMemoryView,
+  'cli-process': showCLIProcess,
   services: showServices, settings: showSettings,
 };
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-view]');
-  if (btn) { const fn = NAV_VIEW_MAP[btn.dataset.view]; if (fn) fn(); return; }
+  if (btn) { 
+    const viewName = btn.dataset.view;
+    const fn = NAV_VIEW_MAP[viewName];
+    if (fn) {
+      // Update URL hash before switching view
+      window.location.hash = viewName;
+      fn();
+    }
+    return;
+  }
   const stab = e.target.closest('[data-stab]');
-  if (stab) showSettingsTab(stab.dataset.stab);
+  if (stab) {
+    const subtab = stab.dataset.stab;
+    // Update URL hash for settings sub-tabs
+    window.location.hash = `settings/${subtab}`;
+    showSettingsTab(subtab);
+  }
   // Collapse/expand panels with data-toggle-child
   const tog = e.target.closest('[data-toggle-child]');
   if (tog) {
@@ -1515,6 +1580,7 @@ Object.assign(window, {
   bulkSetRoute, cancelSkillForm, chatAtAtInput, chatKeydown,
   clearChatHistory, filterSkills, loadAllUsage, loadBenchmarkLeaderboard,
   loadBenchmarks, loadBenchmarkTasks, onBenchmarkTaskSelect, runBenchmarkTask, stopBenchmarkRun,
+  loadMemoryStats, searchMemory, migrateMemory, compactMemory,
   loadBuildProjectPicker, loadFiles, loadOcStats,
   loadRunSkills, loadServices, loadSpending, loadTelegramSessions,
   loadTgMessages, loadToolMatrix, loadWaMessages, onBuildProjectChange,
@@ -1524,7 +1590,7 @@ Object.assign(window, {
   saveSkill, saveTgConfig, saveWaConfig, sendChat, sendTestWebhook,
   showAgents, showBenchmarks, showBuild, showChat, showDLQ, showFiles,
   showModels, showProjects, showRT, showRunSkills, showServices,
-  showSettings, showSettingsTab, showSkills, showSwarm, showToolMatrix,
+  showSettings, showSettingsTab, showSkills, showSwarm, showToolMatrix, showMemoryView,
   startCrew, startTgBridge, startWaBridge, stopTgBridge, stopWaBridge,
   toggleAddSkill, toggleBgConsciousness, toggleCursorWaves, toggleClaudeCode, toggleEmojiPicker,
   updateSkillAuthFields, navigateTo,

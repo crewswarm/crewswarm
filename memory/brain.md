@@ -289,3 +289,7 @@ Key fact or decision. Max 3 sentences. Be specific — no fluff.
 ## [2026-02-28] crew-main: crew-main: The recent shared memory update indicates a successful deployment of the new coding standards and guidelines.
 
 ## [2026-03-01] crew-lead: crew-lead (auto): **Never store secrets in code** - use environment variables 2
+
+## [2026-03-02] crew-lead: crew-lead (auto): It claims everything is "✅ Complete" but: 1
+
+## [2026-03-02] crew-lead: crew-lead (auto): json` with bin entry `crew` ✓ (already exists) - [x] Install dependencies: chalk, commander, ora, inquirer, ws ✓ (node_modules confirmed) - [x] Create basic folder structure: `src/`, `bin/`, `lib/`, `

@@ -1,0 +1,368 @@
+diff -ruN a/package.json b/package.json
+--- a/package.json	2026-03-01 13:18:19
++++ b/package.json	2026-03-01 13:51:18
+@@ -1,14 +1,14 @@
+ {
+   "name": "crew-ai-vscode-extension",
+   "displayName": "Crew AI VSCode Extension",
+-  "description": "A VS Code extension for interacting with Crew AI.",
++  "description": "CrewSwarm VS Code chat panel with safe diff apply flow.",
+   "version": "0.0.1",
+   "publisher": "YourPublisher",
+   "engines": {
+     "vscode": "^1.85.0"
+   },
+   "categories": [
+-    "Other"
++    "Programming Languages"
+   ],
+   "activationEvents": [
+     "onCommand:crew-ai-vscode-extension.startChat"
+@@ -20,7 +20,17 @@
+         "command": "crew-ai-vscode-extension.startChat",
+         "title": "Crew AI: Start Chat"
+       }
+-    ]
++    ],
++    "configuration": {
++      "title": "CrewSwarm",
++      "properties": {
++        "crewswarm.apiUrl": {
++          "type": "string",
++          "default": "http://127.0.0.1:4097/v1",
++          "description": "CrewSwarm unified API base URL."
++        }
++      }
++    }
+   },
+   "scripts": {
+     "vscode:prepublish": "npm run compile",
+@@ -28,7 +38,10 @@
+     "watch": "tsc -watch -p ./",
+     "pretest": "npm run compile && npm run lint",
+     "lint": "eslint src --ext ts",
+-    "test": "node ./out/test/runTests.js"
++    "test": "npm run compile"
++  },
++  "dependencies": {
++    "diff": "^8.0.3"
+   },
+   "devDependencies": {
+     "@types/vscode": "^1.85.0",
+diff -ruN a/src/api-client.ts b/src/api-client.ts
+--- a/src/api-client.ts	2026-03-01 13:18:19
++++ b/src/api-client.ts	2026-03-01 13:51:18
+@@ -1,37 +1,42 @@
+ import * as vscode from 'vscode';
+ 
++export interface CrewChatResponse {
++  reply: string;
++  patches?: Array<{ path?: string; unifiedDiff?: string }>;
++  files?: Array<{ path?: string; contents?: string }>;
++}
++
+ export class ApiClient {
+   private baseUrl: string;
+ 
+   constructor() {
+-    // You might want to get this from VS Code settings
+-    this.baseUrl = vscode.workspace.getConfiguration('crewAiExtension').get('apiBaseUrl') || 'http://localhost:5000';
++    this.baseUrl =
++      (vscode.workspace.getConfiguration('crewswarm').get('apiUrl') as string) ||
++      'http://127.0.0.1:4097/v1';
+   }
+ 
+-  public async sendMessage(message: string): Promise<any> {
+-    try {
+-      vscode.window.showInformationMessage(`Sending message to API: ${message}`);
+-      const response = await fetch(`${this.baseUrl}/chat`, {
+-        method: 'POST',
+-        headers: {
+-          'Content-Type': 'application/json',
+-        },
+-        body: JSON.stringify({ message }),
+-      });
++  public async sendMessage(message: string): Promise<CrewChatResponse> {
++    const response = await fetch(`${this.baseUrl}/chat`, {
++      method: 'POST',
++      headers: {
++        'Content-Type': 'application/json',
++      },
++      body: JSON.stringify({
++        message,
++        sessionId: 'vscode-extension',
++      }),
++    });
+ 
+-      if (!response.ok) {
+-        throw new Error(`HTTP error! status: ${response.status}`);
+-      }
+-
+-      const data = await response.json();
+-      vscode.window.showInformationMessage(`API response: ${JSON.stringify(data)}`);
+-      return data;
+-    } catch (error: any) {
+-      vscode.window.showErrorMessage(`Failed to send message to API: ${error.message}`);
+-      console.error('API Client Error:', error);
+-      throw error;
++    if (!response.ok) {
++      const text = await response.text().catch(() => '');
++      throw new Error(`HTTP ${response.status}: ${text || 'request failed'}`);
+     }
+-  }
+ 
+-  // Add other API interaction methods here (e.g., for diffs, code execution, etc.)
++    const data = (await response.json()) as CrewChatResponse;
++    return {
++      reply: String(data?.reply || ''),
++      patches: Array.isArray(data?.patches) ? data.patches : [],
++      files: Array.isArray(data?.files) ? data.files : [],
++    };
++  }
+ }
+diff -ruN a/src/diff-handler.ts b/src/diff-handler.ts
+--- a/src/diff-handler.ts	2026-03-01 13:18:19
++++ b/src/diff-handler.ts	2026-03-01 13:51:18
+@@ -1,15 +1,7 @@
+ import * as vscode from 'vscode';
++import { applyPatch } from 'diff';
+ 
+ export class DiffHandler {
+-  constructor() {
+-    // Constructor logic if needed
+-  }
+-
+-  /**
+-   * Applies a given diff string to the currently active text editor.
+-   * This is a simplified example and might need more robust parsing for complex diffs.
+-   * @param diff The diff string to apply.
+-   */
+   public async applyDiff(diff: string): Promise<void> {
+     const editor = vscode.window.activeTextEditor;
+     if (!editor) {
+@@ -18,77 +10,20 @@
+     }
+ 
+     const document = editor.document;
+-    const documentText = document.getText();
+-    let newText = documentText;
+-
+-    // A very basic diff application logic.
+-    // In a real-world scenario, you'd use a proper diff parsing library
+-    // like 'diff' or 'jsdiff' to apply patches.
+-    // This example assumes a simple replacement or insertion based on markers.
+-    // For now, we'll just log and show a message.
+-    vscode.window.showInformationMessage('Attempting to apply diff (simplified logic).');
+-    console.log('Original Document Text:', documentText);
+-    console.log('Diff to Apply:', diff);
+-
+-    // Placeholder for actual diff application logic
+-    // Example: If the diff is a simple replacement, you'd find the old content
+-    // and replace it with new content.
+-    // For a more realistic approach, consider:
+-    // 1. Parsing the diff to get hunks (additions, deletions, changes).
+-    // 2. Applying these changes using `editor.edit`.
+-
+-    // Example of a very naive application (DO NOT USE IN PRODUCTION FOR COMPLEX DIFFS):
+-    // If the diff format is like "--- a/file\n+++ b/file\n@@ -x,y +a,b @@\n-old line\n+new line"
+-    // you would parse it. For this placeholder, we'll just simulate a change.
+-    //
+-    // For a real implementation, you'd parse the diff and then use `editor.edit`
+-    // to apply the changes.
+-    //
+-    // Example using `editor.edit`:
+-    // await editor.edit(editBuilder => {
+-    //   // For each change in the parsed diff:
+-    //   // editBuilder.replace(new vscode.Range(startLine, startChar, endLine, endChar), newContent);
+-    //   // editBuilder.insert(new vscode.Position(line, char), content);
+-    //   // editBuilder.delete(new vscode.Range(startLine, startChar, endLine, endChar));
+-    // });
+-
+-    vscode.window.showInformationMessage('Diff application simulated. A robust diff parsing and application library is recommended for production.');
+-  }
+-
+-  /**
+-   * Generates a diff between two strings.
+-   * @param originalContent The original string content.
+-   * @param newContent The new string content.
+-   * @returns A string representing the diff.
+-   */
+-  public generateDiff(originalContent: string, newContent: string): string {
+-    // In a real scenario, you'd use a library like 'diff' or 'jsdiff' here.
+-    // For now, return a placeholder or a very simple comparison.
+-    if (originalContent === newContent) {
+-      return 'No changes detected.';
++    const patched = applyPatch(document.getText(), diff);
++    if (patched === false) {
++      vscode.window.showErrorMessage('Failed to apply diff to active file. Ensure the diff matches current file contents.');
++      return;
+     }
+ 
+-    // A very basic line-by-line diff for demonstration
+-    const originalLines = originalContent.split('\n');
+-    const newLines = newContent.split('\n');
+-    let diffOutput = '';
++    const fullRange = new vscode.Range(
++      document.positionAt(0),
++      document.positionAt(document.getText().length)
++    );
++    await editor.edit((editBuilder) => {
++      editBuilder.replace(fullRange, patched);
++    });
+ 
+-    for (let i = 0; i < Math.max(originalLines.length, newLines.length); i++) {
+-      const originalLine = originalLines[i] !== undefined ? originalLines[i] : '';
+-      const newLine = newLines[i] !== undefined ? newLines[i] : '';
+-
+-      if (originalLine === newLine) {
+-        diffOutput += `  ${originalLine}\n`;
+-      } else {
+-        if (originalLine !== '') {
+-          diffOutput += `- ${originalLine}\n`;
+-        }
+-        if (newLine !== '') {
+-          diffOutput += `+ ${newLine}\n`;
+-        }
+-      }
+-    }
+-
+-    return diffOutput;
++    vscode.window.showInformationMessage('Diff applied to active editor.');
+   }
+ }
+diff -ruN a/src/extension.ts b/src/extension.ts
+--- a/src/extension.ts	2026-03-01 13:18:19
++++ b/src/extension.ts	2026-03-01 13:51:18
+@@ -1,28 +1,71 @@
+ import * as vscode from 'vscode';
+-import { ChatWebviewProvider } from './webview/chatWebviewProvider';
++import * as fs from 'node:fs';
++import * as path from 'node:path';
+ import { ApiClient } from './api-client';
+ import { DiffHandler } from './diff-handler';
+ 
+-export function activate(context: vscode.ExtensionContext) {
+-  console.log('Congratulations, your extension "crew-ai-vscode-extension" is now active!');
++const START_CHAT_COMMAND = 'crew-ai-vscode-extension.startChat';
+ 
++export function activate(context: vscode.ExtensionContext) {
+   const apiClient = new ApiClient();
+   const diffHandler = new DiffHandler();
+-  const chatWebviewProvider = new ChatWebviewProvider(context.extensionUri, apiClient, diffHandler);
+ 
+-  context.subscriptions.push(
+-    vscode.window.registerWebviewViewProvider(ChatWebviewProvider.viewType, chatWebviewProvider)
+-  );
++  const disposable = vscode.commands.registerCommand(START_CHAT_COMMAND, () => {
++    const panel = vscode.window.createWebviewPanel(
++      'crewswarmChat',
++      'CrewSwarm Chat',
++      vscode.ViewColumn.Beside,
++      {
++        enableScripts: true,
++        retainContextWhenHidden: true
++      }
++    );
+ 
+-  let disposable = vscode.commands.registerCommand('crew-ai-vscode-extension.startChat', () => {
+-    vscode.window.showInformationMessage('Starting Crew AI Chat!');
+-    // This command can be used to focus the webview or open it if not already open
+-    // For a WebviewView, simply registering the provider makes it available.
+-    // You might want to add logic here to reveal the webview if it's hidden.
+-    vscode.commands.executeCommand(`${ChatWebviewProvider.viewType}.focus`);
++    panel.webview.html = getWebviewHtml(panel, context.extensionPath);
++
++    panel.webview.onDidReceiveMessage(async (message) => {
++      if (message?.command === 'sendMessage') {
++        try {
++          const response = await apiClient.sendMessage(String(message.text || ''));
++          panel.webview.postMessage({ command: 'response', text: response.reply || '' });
++
++          const firstPatch = Array.isArray(response.patches) ? response.patches[0] : undefined;
++          if (firstPatch?.unifiedDiff) {
++            panel.webview.postMessage({ command: 'diffResponse', text: firstPatch.unifiedDiff });
++          }
++        } catch (error) {
++          const msg = (error as Error)?.message || String(error);
++          panel.webview.postMessage({ command: 'response', text: `Error: ${msg}` });
++        }
++        return;
++      }
++
++      if (message?.command === 'applyDiff') {
++        const diffText = String(message.diff || '');
++        await diffHandler.applyDiff(diffText);
++      }
++    });
+   });
+ 
+   context.subscriptions.push(disposable);
+ }
+ 
+ export function deactivate() {}
++
++function getWebviewHtml(panel: vscode.WebviewPanel, extensionPath: string): string {
++  const htmlPath = path.join(extensionPath, 'src', 'webview', 'chat.html');
++  const scriptPath = path.join(extensionPath, 'src', 'webview', 'chat.js');
++  const stylesPath = path.join(extensionPath, 'src', 'webview', 'styles.css');
++
++  let html = fs.readFileSync(htmlPath, 'utf8');
++  const scriptUri = panel.webview.asWebviewUri(vscode.Uri.file(scriptPath));
++  const stylesUri = panel.webview.asWebviewUri(vscode.Uri.file(stylesPath));
++  const nonce = String(Date.now()) + String(Math.floor(Math.random() * 1e9));
++
++  html = html.replace('${script}', scriptUri.toString());
++  html = html.replace('${styles}', stylesUri.toString());
++  html = html.replaceAll('${nonce}', nonce);
++  html = html.replace('${cspSource}', panel.webview.cspSource);
++
++  return html;
++}
+diff -ruN a/src/webview/chat.html b/src/webview/chat.html
+--- a/src/webview/chat.html	2026-03-01 13:18:19
++++ b/src/webview/chat.html	2026-03-01 13:51:18
+@@ -3,8 +3,14 @@
+ <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-    <title>Crew AI Chat</title>
+-    <link href="{{cspSource}}/webview/styles.css" rel="stylesheet">
++    <meta http-equiv="Content-Security-Policy" content="
++      default-src 'none';
++      img-src ${cspSource} https: data:;
++      style-src ${cspSource};
++      script-src 'nonce-${nonce}';
++    ">
++    <title>CrewSwarm Chat</title>
++    <link rel="stylesheet" href="${styles}">
+ </head>
+ <body>
+     <div id="chat-container">
+@@ -14,6 +20,6 @@
+             <button id="send-button">Send</button>
+         </div>
+     </div>
+-    <script src="{{cspSource}}/webview/chat.js"></script>
++    <script nonce="${nonce}" src="${script}"></script>
+ </body>
+ </html>
+diff -ruN a/tsconfig.json b/tsconfig.json
+--- a/tsconfig.json	1969-12-31 19:00:00
++++ b/tsconfig.json	2026-03-01 13:51:18
+@@ -0,0 +1,16 @@
++{
++  "compilerOptions": {
++    "module": "Node16",
++    "target": "ES2022",
++    "outDir": "out",
++    "lib": ["ES2022", "DOM"],
++    "sourceMap": true,
++    "rootDir": ".",
++    "strict": true,
++    "moduleResolution": "Node16",
++    "types": ["node", "vscode"],
++    "esModuleInterop": true
++  },
++  "include": ["src/**/*.ts", "tests/**/*.ts"],
++  "exclude": ["node_modules"]
++}

@@ -1,0 +1,65 @@
+{
+  "name": "crewswarm",
+  "displayName": "CrewSwarm",
+  "description": "CrewSwarm: Chat-based code generation with write + QA loop",
+  "version": "0.1.0",
+  "publisher": "crewswarm",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "crewswarm.openChat",
+        "title": "Open CrewSwarm Chat"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "crewswarm.openChat",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CrewSwarm",
+      "properties": {
+      "crewswarm.apiUrl": {
+        "type": "string",
+        "default": "http://127.0.0.1:4319/api/crew-lead",
+        "description": "CrewSwarm API base URL (dashboard proxy)"
+      }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "npm run compile && npx @vscode/test-electron ./test/test-runner.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^6.20.0",
+    "@typescript-eslint/parser": "^6.20.0",
+    "glob": "^10.3.12",
+    "mocha": "^10.4.0",
+    "typescript": "^5.4.5",
+    "@vscode/test-electron": "^2.3.8"
+  }
+}

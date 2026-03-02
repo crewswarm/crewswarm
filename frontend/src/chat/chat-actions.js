@@ -47,8 +47,9 @@ export function initChatActions(deps) {
       const d = await getJSON('/api/crew-lead/history?sessionId=' + encodeURIComponent(getChatSessionId()));
       const box = document.getElementById('chatMessages');
       
-      // Clear and reset state
+      // ALWAYS clear on load - fixes hard refresh showing old messages
       box.innerHTML = '';
+      box.dataset.historyLoaded = 'false';
       setLastAppendedAssistantContent('');
       setLastAppendedUserContent('');
       
@@ -61,16 +62,40 @@ export function initChatActions(deps) {
         });
       }
       
-      // Always append passthrough logs (CLI interactions) after crew-lead history
-      const passthroughLog = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
-      if (passthroughLog.length > 0) {
-        appendPassthroughLogsToChat(passthroughLog);
+      // Load passthrough logs (CLI interactions) ONLY if no crew-lead history exists
+      // This prevents mixing old CLI logs with current crew-lead conversations
+      if (!d.history || d.history.length === 0) {
+        const passthroughLog = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
+        
+        // Strict timestamp validation: only last 6 hours + valid timestamp
+        const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+        const recentLog = passthroughLog.filter(entry => {
+          // Must have timestamp AND be within last 6 hours AND have valid content
+          return entry.timestamp 
+            && typeof entry.timestamp === 'number' 
+            && entry.timestamp > sixHoursAgo
+            && entry.text
+            && entry.text.trim().length > 0;
+        });
+        
+        if (recentLog.length > 0) {
+          appendPassthroughLogsToChat(recentLog);
+        }
+        
+        // Clean up localStorage - remove old entries
+        if (recentLog.length !== passthroughLog.length) {
+          localStorage.setItem(PASSTHROUGH_LOG_KEY, JSON.stringify(recentLog));
+        }
       }
       
       box.scrollTop = box.scrollHeight;
+      box.dataset.historyLoaded = 'true';
+      
     } catch (err) {
       console.warn('Failed to load chat history:', err);
-      // Don't clear existing messages on error
+      // On error, still mark as loaded to prevent infinite retry
+      const box = document.getElementById('chatMessages');
+      if (box) box.dataset.historyLoaded = 'true';
     }
   }
   
@@ -203,13 +228,14 @@ export function initChatActions(deps) {
     const controller = new AbortController();
     const taskId = 'chat-' + Date.now();
     
-    // Register task with TaskManager
-    taskManager.registerTask(taskId, {
-      agent: 'crew-lead',
-      type: 'chat',
-      description: text.slice(0, 60) + (text.length > 60 ? '...' : ''),
-      controller,
-    });
+    // DON'T register chat messages as tasks - they're just conversations
+    // Only agent dispatches should show in tasks panel
+    // taskManager.registerTask(taskId, {
+    //   agent: 'crew-lead',
+    //   type: 'chat',
+    //   description: text.slice(0, 60) + (text.length > 60 ? '...' : ''),
+    //   controller,
+    // });
 
     try {
       const d = await postJSON('/api/crew-lead/chat', {
@@ -221,7 +247,8 @@ export function initChatActions(deps) {
       if (d.ok === false && d.error) {
         appendChatBubble('assistant', '⚠️ ' + d.error);
         setLastAppendedAssistantContent('');
-        taskManager.failTask(taskId, d.error);
+        // Don't fail task since we didn't register it
+        // taskManager.failTask(taskId, d.error);
       } else if (d.reply) {
         const reply = d.reply;
         setTimeout(() => {
@@ -231,7 +258,8 @@ export function initChatActions(deps) {
             if (box) box.scrollTop = box.scrollHeight;
           }
         }, 400);
-        taskManager.completeTask(taskId);
+        // Don't complete task since we didn't register it
+        // taskManager.completeTask(taskId);
       }
       if (d.dispatched) {
         const note = document.createElement('div');
@@ -246,7 +274,8 @@ export function initChatActions(deps) {
       if (e.name === 'AbortError') {
         appendChatBubble('assistant', '⚠️ Message cancelled');
         setLastAppendedAssistantContent('');
-        taskManager.stopTask(taskId);
+        // Don't stop task since we didn't register it
+        // taskManager.stopTask(taskId);
       } else {
         let errMsg = e.message || String(e);
         try {
@@ -255,7 +284,8 @@ export function initChatActions(deps) {
         } catch {}
         appendChatBubble('assistant', '⚠️ Error: ' + errMsg);
         setLastAppendedAssistantContent('');
-        taskManager.failTask(taskId, errMsg);
+        // Don't fail task since we didn't register it
+        // taskManager.failTask(taskId, errMsg);
       }
       box.scrollTop = box.scrollHeight;
     } finally {
@@ -272,15 +302,19 @@ export function initChatActions(deps) {
 
   async function clearChatHistory() {
     if (!confirm('Clear chat history for this session?')) return;
-    document.getElementById('chatMessages').innerHTML = '';
+    const box = document.getElementById('chatMessages');
+    box.innerHTML = '';
+    box.dataset.historyLoaded = 'false'; // Reset the flag so history reloads
     localStorage.removeItem(PASSTHROUGH_LOG_KEY);
     await postJSON('/api/crew-lead/clear', { sessionId: getChatSessionId() }).catch(() => {});
+    // Reload fresh history after clearing
+    await loadChatHistory();
   }
 
   function savePassthroughMsg(role, engine, text, exitCode) {
     try {
       const log = JSON.parse(localStorage.getItem(PASSTHROUGH_LOG_KEY) || '[]');
-      log.push({ role, engine, text, exitCode, ts: Date.now() });
+      log.push({ role, engine, text, exitCode, timestamp: Date.now() }); // Changed ts → timestamp
       if (log.length > PASSTHROUGH_LOG_MAX) log.splice(0, log.length - PASSTHROUGH_LOG_MAX);
       localStorage.setItem(PASSTHROUGH_LOG_KEY, JSON.stringify(log));
     } catch {}
@@ -417,13 +451,14 @@ export function initChatActions(deps) {
     const controller = new AbortController();
     const taskId = 'passthrough-' + engine + '-' + Date.now();
     
-    // Register task with TaskManager
-    taskManager.registerTask(taskId, {
-      agent: engineLabels[engine] || engine,
-      type: 'passthrough',
-      description: text.slice(0, 60) + (text.length > 60 ? '...' : ''),
-      controller,
-    });
+    // DON'T register passthrough/CLI messages as tasks
+    // Only actual agent dispatches should show in tasks panel
+    // taskManager.registerTask(taskId, {
+    //   agent: engineLabels[engine] || engine,
+    //   type: 'passthrough',
+    //   description: text.slice(0, 60) + (text.length > 60 ? '...' : ''),
+    //   controller,
+    // });
 
     try {
       const projectDir = activeProj?.outputDir || undefined;
@@ -441,7 +476,8 @@ export function initChatActions(deps) {
       });
       if (!resp.ok) { 
         content.textContent = `Error ${resp.status}: ${await resp.text()}`;
-        taskManager.failTask(taskId, `HTTP ${resp.status}`);
+        // Don't fail task since we didn't register it
+        // taskManager.failTask(taskId, `HTTP ${resp.status}`);
         return;
       }
 
@@ -466,7 +502,8 @@ export function initChatActions(deps) {
               label.textContent += ` ✓ (exit ${exitCode})`;
               savePassthroughMsg('user', engine, text, null);
               savePassthroughMsg('engine', engine, content.textContent, exitCode);
-              taskManager.completeTask(taskId);
+              // Don't complete task since we didn't register it
+              // taskManager.completeTask(taskId);
             }
           } catch {}
         }
@@ -475,10 +512,12 @@ export function initChatActions(deps) {
       if (e.name === 'AbortError') {
         label.textContent += ' ✗ (killed)';
         content.textContent += content.textContent ? '\n\n[stopped]' : '[stopped]';
-        taskManager.stopTask(taskId);
+        // Don't stop task since we didn't register it
+        // taskManager.stopTask(taskId);
       } else {
         content.textContent = 'Error: ' + e.message;
-        taskManager.failTask(taskId, e.message);
+        // Don't fail task since we didn't register it
+        // taskManager.failTask(taskId, e.message);
       }
     } finally {
       _passthroughAbort = null;

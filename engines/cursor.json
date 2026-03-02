@@ -2,6 +2,14 @@
   "id": "cursor",
   "label": "Cursor CLI",
   "description": "Route agent tasks through Cursor's native subagent system. Parallel waves, isolated context windows per agent, no queuing. Best for complex reasoning and architectural work.",
+  "priority": 100,
+  "shouldUse": {
+    "runtime": ["cursor", "cursor-cli"],
+    "payloadKey": "useCursorCli",
+    "agentConfigKey": "useCursorCli",
+    "envVar": "CREWSWARM_CURSOR_ENABLED",
+    "specialLogic": "orchestrator-waves"
+  },
   "bin": "cursor",
   "binAlternate": "~/.local/bin/agent",
   "installCmd": "# Install Cursor from https://cursor.sh then enable CLI from Command Palette → Install cursor command",

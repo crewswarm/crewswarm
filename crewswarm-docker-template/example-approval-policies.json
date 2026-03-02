@@ -1,0 +1,48 @@
+{
+  "approvalPolicies": {
+    "@@RUN_CMD": {
+      "git": "auto",
+      "ls": "auto",
+      "pwd": "auto",
+      "cat": "auto",
+      "grep": "auto",
+      "rm -rf": "admin",
+      "docker": "admin",
+      "kubectl": "admin",
+      "default": "user"
+    },
+    "@@SKILL": {
+      "twitter.post": "user",
+      "polymarket.trade": "user",
+      "fly.deploy": "admin",
+      "elevenlabs.tts": "auto",
+      "webhook.post": "user",
+      "default": "user"
+    },
+    "@@DISPATCH": {
+      "crew-coder": "auto",
+      "crew-coder-front": "auto",
+      "crew-coder-back": "auto",
+      "crew-fixer": "auto",
+      "crew-qa": "auto",
+      "crew-github": "user",
+      "default": "auto"
+    },
+    "@@WRITE_FILE": {
+      "default": "auto"
+    },
+    "@@READ_FILE": {
+      "default": "auto"
+    }
+  },
+  "adminUsers": [],
+  "approvalTimeouts": {
+    "user": 60000,
+    "admin": 300000
+  },
+  "_comments": {
+    "approvalPolicies": "Define which actions require auto/user/admin approval. Use 'default' for catch-all.",
+    "adminUsers": "List of admin user IDs (e.g. ['telegram:123456789', 'dashboard:admin@example.com'])",
+    "approvalTimeouts": "Timeout in ms for user/admin approval before rejecting"
+  }
+}

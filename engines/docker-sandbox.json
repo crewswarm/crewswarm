@@ -2,6 +2,13 @@
   "id": "docker-sandbox",
   "label": "Docker Sandbox",
   "description": "Run any CrewSwarm engine inside an isolated Docker microVM. Filesystem and network are sandboxed — API keys are injected by the network proxy and never exposed to the agent.",
+  "priority": 70,
+  "shouldUse": {
+    "runtime": ["docker-sandbox", "docker"],
+    "payloadKey": "useDockerSandbox",
+    "agentConfigKey": "useDockerSandbox",
+    "envVar": "CREWSWARM_DOCKER_SANDBOX"
+  },
   "bin": "docker",
   "installCmd": "brew install --cask docker",
   "installUrl": "https://www.docker.com/products/docker-desktop/",

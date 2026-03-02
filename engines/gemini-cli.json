@@ -2,6 +2,13 @@
   "id": "gemini-cli",
   "label": "Gemini CLI",
   "description": "Google's open-source terminal AI agent powered by Gemini 3. Free tier: 60 req/min and 1,000 req/day with a personal Google account. Runs non-interactively with -p flag. Full workspace context, built-in Google Search grounding, file operations, and shell commands.",
+  "priority": 50,
+  "shouldUse": {
+    "runtime": ["gemini", "gemini-cli"],
+    "payloadKey": "useGeminiCli",
+    "agentConfigKey": "useGeminiCli",
+    "envVar": "CREWSWARM_GEMINI_CLI_ENABLED"
+  },
   "bin": "gemini",
   "installCmd": "npm install -g @google/gemini-cli",
   "installUrl": "https://github.com/google-gemini/gemini-cli",

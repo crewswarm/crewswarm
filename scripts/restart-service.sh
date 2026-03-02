@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# DEPRECATED: Use swiftbar-restart-service.sh instead (calls validated REST API)
+# This script is kept for backward compatibility only.
+#
+# Legacy restart script - directly uses pkill + nohup without validation.
+# New scripts should use: scripts/swiftbar-restart-service.sh
+#
 # Restart a named CrewSwarm service (telegram, crew-lead, opencode, dashboard). Used by SwiftBar.
 SERVICE="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

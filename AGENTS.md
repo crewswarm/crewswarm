@@ -97,6 +97,69 @@ Open `http://127.0.0.1:4319` → **Chat** tab and start typing.
 
 ---
 
+## Shared Memory — unified knowledge across all agents and CLIs
+
+**Every agent, CLI, and session now shares the same memory store.** No more context loss between Cursor sessions, CLI runs, or dashboard chats.
+
+### Three memory layers
+
+1. **AgentMemory** — cognitive facts (decisions, constraints, preferences)
+   - Stored in: `~/.crewswarm/shared-memory/.crew/agent-memory/<agent-id>.json`
+   - Written by: `@@BRAIN` commands, migration script, `rememberFact()` API
+   - Example: "Use bcrypt for password hashing", "Requires 2FA for admin routes"
+
+2. **AgentKeeper** — task results (completed work by all agents)
+   - Stored in: `~/.crewswarm/shared-memory/.crew/agentkeeper.jsonl`
+   - Written by: Gateway after task completion, CLI `--keep` mode
+   - Example: Task "Write auth endpoint" → Result "Created src/api/auth.ts with JWT..."
+
+3. **Collections** — local docs/code RAG (optional, future)
+   - Stored in: `~/.crewswarm/shared-memory/.crew/collections/`
+   - Written by: `crew index --docs`, `crew index --code`
+   - Example: Indexed README.md, API docs, architecture guides
+
+**MemoryBroker** blends all three, scores hits, returns unified context.
+
+### Migrate legacy brain.md (one-time)
+
+```bash
+# Preview what will migrate
+node scripts/migrate-brain-to-shared-memory.mjs --dry-run
+
+# Perform migration (imports memory/brain.md + memory/lessons.md)
+node scripts/migrate-brain-to-shared-memory.mjs
+```
+
+After migration: `@@MEMORY stats` shows 200+ facts available to all agents.
+
+### Use shared memory
+
+**From dashboard chat:**
+```
+@@MEMORY search "authentication security"
+@@MEMORY stats
+@@BRAIN This project requires 2FA for admin routes
+```
+
+**From Cursor/Claude Code:** Just dispatch tasks normally — agents recall shared memory automatically.
+
+**From CLI:** Run `cd crew-cli && npm run build` first, then all CLI commands (`crew chat`, `crew exec`) use shared memory.
+
+**Dashboard Memory tab:** Open `http://127.0.0.1:4319` → **Memory** → view stats, search, migrate, compact.
+
+### How it works
+
+- **Gateway (`gateway-bridge.mjs`):** Calls `recallMemoryContext()` when building agent prompts; records completed tasks via `recordTaskMemory()`
+- **Crew-lead chat (`chat-handler.mjs`):** Injects MemoryBroker context at session start; parses `@@MEMORY` commands
+- **CLI (`crew chat`, `crew exec`):** Uses MemoryBroker natively (built-in to crew-cli)
+- **MCP (Cursor/Claude Code):** crew-lead agent sees shared memory via same chat handler
+
+**Cross-system example:** User stores a fact in Cursor via `@@BRAIN` → Gateway recalls it when dispatching to crew-coder → CLI sees it in next `crew chat` session. Zero duplication, zero sync lag.
+
+See `SHARED-MEMORY-INTEGRATION.md` for full architecture and API reference.
+
+---
+
 ## Key files to know
 
 **Every time you edit `scripts/dashboard.mjs`:** run `node scripts/check-dashboard.mjs` before you're done. Dashboard edits often break the inline script (quotes, template literals); the check shows the exact line that breaks. Run it after every dashboard change — not just before commit. Use `--source-only` if the full check times out.
@@ -657,9 +720,9 @@ gh auth login   # follow prompts — authenticates gh with GitHub
 
 ## MCP Integration — use CrewSwarm agents in any project
 
-CrewSwarm runs an MCP server on port **5020**. Wire it into Cursor, Claude Code, or OpenCode and all 20 agents become available as callable tools in any project — no AGENTS.md copy needed.
+CrewSwarm runs an MCP server on port **5020**. Wire it into Cursor, Claude Code, OpenCode, Codex CLI, or Gemini CLI and all 20 agents become available as callable tools in any project — no AGENTS.md copy needed.
 
-**Auto-setup (recommended):** run `bash install.sh` and answer `y` to the MCP prompt. It configures all four tools automatically.
+**Auto-setup (recommended):** run `bash install.sh` and answer `y` to the MCP prompt. It configures Cursor, Claude Code, and OpenCode automatically.
 
 **Manual setup:** get your auth token, then add the crewswarm entry to each tool's MCP config:
 
@@ -683,6 +746,16 @@ Restart Cursor after saving.
 **Claude Code** — `~/.claude/mcp.json`: same format as above.
 
 **OpenCode** — `~/.config/opencode/mcp.json`: same format as above.
+
+**Gemini CLI** — uses command-line registration:
+```bash
+gemini mcp add crewswarm "http://127.0.0.1:5020/mcp" \
+  --transport http \
+  --header "Authorization: Bearer $TOKEN" \
+  --description "CrewSwarm - 20 agents + 46 skills" \
+  --trust
+```
+Config is stored in `.gemini/settings.json` (project-level).
 
 **Codex CLI** — uses its own MCP config via CLI:
 ```bash
@@ -737,6 +810,7 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 | `CREWSWARM_ENGINE_LOOP_MAX_ROUNDS` | `10` | Max STEP iterations per Ouroboros loop run. |
 | `CREWSWARM_GEMINI_CLI_ENABLED` | `off` | Route agents through Gemini CLI. |
 | `CREWSWARM_GEMINI_CLI_MODEL` | — | Which Gemini model (e.g. `gemini-2.0-flash`). |
+| `CREW_CLAUDE_SKIP_PERMISSIONS` | `off` | ⚠️ **SECURITY RISK:** Bypass Claude CLI permission checks. Allows agents to execute arbitrary host commands via prompt injection. Only enable in sandboxed/trusted environments. |
 
 ### Background consciousness
 

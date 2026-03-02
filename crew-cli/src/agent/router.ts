@@ -20,7 +20,7 @@ export class AgentRouter extends EventEmitter {
 
     this.logger.info(`Routing task to agent: ${agentName}`);
 
-    const timeout = parseInt(options.timeout || '300000', 10);
+    const timeout = parseInt(options.timeout || '600000', 10);
     const crewLeadUrl = options.gateway || this.config.get('crewLeadUrl') || 'http://localhost:5010';
     const projectDir = options.project || process.cwd();
 

@@ -73,6 +73,12 @@
       <button class="nav-item" id="navToolMatrix" data-view="tool-matrix">
         <span class="nav-icon">📋</span> Tool Matrix
       </button>
+      <button class="nav-item" id="navMemory" data-view="memory">
+        <span class="nav-icon">🧠</span> Memory
+      </button>
+      <button class="nav-item" id="navCLI" data-view="cli-process">
+        <span class="nav-icon">⚙️</span> CLI Process
+      </button>
       <button class="nav-item" id="navServices" data-view="services">
         <span class="nav-icon">🔧</span> Services
         <span class="nav-badge hidden" id="servicesBadge">!</span>
@@ -160,6 +166,63 @@
         </div>
       </div>
       
+      <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
+        <!-- Active Tasks Panel -->
+        <div id="activeTasksPanel" style="display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
+        
+        <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
+        <div class="chat-input-row" style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
+          <div style="flex:1;position:relative;min-width:0;overflow:visible;">
+            <textarea id="chatInput" aria-label="Chat message" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
+              style="width:100%;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;min-width:0;box-sizing:border-box;"
+              ></textarea>
+            <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
+            <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
+          </div>
+          <button data-action="sendChat" class="btn-green" aria-label="Send message" style="height:56px;padding:0 24px;font-size:15px;">Send</button>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-shrink:0;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border-light);">
+          <select id="chatProjectSelect" style="flex:1;min-width:180px;max-width:250px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" data-onchange="onChatProjectChange" title="Active project for dispatch context">
+            <option value="">📁 Select Project...</option>
+          </select>
+          <select id="passthroughEngine" style="flex:1;min-width:160px;max-width:220px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" title="Route chat directly to a coding engine (bypasses crew-lead LLM)">
+            <option value="">🧠 Crew Lead (Commander)</option>
+            <option value="claude">🟢 Claude Code</option>
+            <option value="cursor">⚫ Cursor CLI</option>
+            <option value="opencode">🟣 OpenCode</option>
+            <option value="codex">🔵 Codex CLI</option>
+            <option value="gemini">🔷 Gemini CLI</option>
+          </select>
+          <select id="passthroughModel" style="display:none;flex:1;min-width:140px;max-width:180px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" title="Model for the selected engine">
+            <option value="">Model: Default</option>
+          </select>
+          <label title="Inject recent Cursor agent chat history as context" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);cursor:pointer;white-space:nowrap;padding:6px 10px;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;">
+            <input type="checkbox" id="passthroughInjectHistory" style="cursor:pointer;"> 📋 History
+          </label>
+          <span id="passthroughSessionIndicator" title="Active session — context is retained between messages. Click to clear." style="display:none;font-size:11px;padding:6px 12px;border-radius:12px;background:var(--green-hi);color:#000;cursor:pointer;font-weight:600;white-space:nowrap;" data-action="clearPassthroughSession">● Session</span>
+          <button data-action="stopPassthrough" title="Kill the running CLI process" style="display:none;font-size:12px;padding:6px 14px;border-radius:6px;border:1px solid var(--red-hi);background:transparent;color:var(--red-hi);cursor:pointer;font-weight:600;">⏹ Kill CLI</button>
+          <div style="margin-left:auto;display:flex;gap:6px;">
+            <button data-action="stopAll" title="Stop all running pipelines (agents stay online)" style="font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card2);color:var(--text-2);cursor:pointer;white-space:nowrap;">⏹ Stop All</button>
+            <button data-action="killAll" title="Emergency: kill all agent processes" style="font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--red-hi);background:transparent;color:var(--red-hi);cursor:pointer;font-weight:600;white-space:nowrap;">☠️ Kill Agents</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- CLI Process Configuration -->
+    <div class="view" id="cliProcessView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">⚙️ CLI Process</div>
+          <div class="page-sub">Orchestration status, model configuration, and pipeline controls</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="cliProcessMode" data-action="toggleCLIProcessMode" class="btn-ghost" style="font-size:12px;">🔌 Connected Mode</button>
+          <button data-action="refreshCLIProcess" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+        </div>
+      </div>
+
       <!-- Orchestration Status Panel -->
       <div id="orchestrationStatus" style="background:linear-gradient(135deg, rgba(59,130,246,0.05) 0%, rgba(147,51,234,0.05) 100%); border:1px solid rgba(59,130,246,0.2); border-radius:12px; padding:20px; margin-bottom:16px; font-family:monospace; font-size:13px; line-height:1.6;">
         <div style="border:2px solid rgba(59,130,246,0.3); border-radius:8px; padding:16px; background:rgba(0,0,0,0.3);">
@@ -204,46 +267,134 @@
           </div>
         </div>
       </div>
-      
-      <div style="display:flex;flex-direction:column;height:calc(100vh - 160px);gap:10px;">
-        <!-- Active Tasks Panel -->
-        <div id="activeTasksPanel" style="display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
-        
-        <div id="chatMessages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
-        <div class="chat-input-row" style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:relative;overflow:visible;">
-          <div style="flex:1;position:relative;min-width:0;overflow:visible;">
-            <textarea id="chatInput" aria-label="Chat message" placeholder="Talk to crew-lead... (Shift+Enter for newline, Enter to send). Type @@ for commands."
-              style="width:100%;resize:none;height:56px;padding:12px;font-size:14px;line-height:1.4;min-width:0;box-sizing:border-box;"
-              ></textarea>
-            <div id="chatAtAtMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;"></div>
-            <div id="chatAtAtTemplate" style="display:none;margin-top:4px;padding:8px 10px;font-size:11px;font-family:monospace;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;color:var(--text-2);white-space:pre-wrap;word-break:break-all;"></div>
-          </div>
-          <button data-action="sendChat" class="btn-green" aria-label="Send message" style="height:56px;padding:0 24px;font-size:15px;">Send</button>
+
+      <!-- Model Configuration -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px;">
+        <div style="font-size:14px;font-weight:600;color:var(--text-1);margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+          <span>🧠 Model Configuration</span>
+          <span style="font-size:11px;color:var(--text-3);font-weight:400;">(CLI Environment Variables)</span>
         </div>
-        <div style="display:flex;gap:10px;align-items:center;flex-shrink:0;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border-light);">
-          <select id="chatProjectSelect" style="flex:1;min-width:180px;max-width:250px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" data-onchange="onChatProjectChange" title="Active project for dispatch context">
-            <option value="">📁 Select Project...</option>
-          </select>
-          <select id="passthroughEngine" style="flex:1;min-width:160px;max-width:220px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" title="Route chat directly to a coding engine (bypasses crew-lead LLM)">
-            <option value="">🧠 Crew Lead (Commander)</option>
-            <option value="claude">🟢 Claude Code</option>
-            <option value="cursor">⚫ Cursor CLI</option>
-            <option value="opencode">🟣 OpenCode</option>
-            <option value="codex">🔵 Codex CLI</option>
-            <option value="gemini">🔷 Gemini CLI</option>
-          </select>
-          <select id="passthroughModel" style="display:none;flex:1;min-width:140px;max-width:180px;font-size:12px;padding:8px 10px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;" title="Model for the selected engine">
-            <option value="">Model: Default</option>
-          </select>
-          <label title="Inject recent Cursor agent chat history as context" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);cursor:pointer;white-space:nowrap;padding:6px 10px;background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;">
-            <input type="checkbox" id="passthroughInjectHistory" style="cursor:pointer;"> 📋 History
-          </label>
-          <span id="passthroughSessionIndicator" title="Active session — context is retained between messages. Click to clear." style="display:none;font-size:11px;padding:6px 12px;border-radius:12px;background:var(--green-hi);color:#000;cursor:pointer;font-weight:600;white-space:nowrap;" data-action="clearPassthroughSession">● Session</span>
-          <button data-action="stopPassthrough" title="Kill the running CLI process" style="display:none;font-size:12px;padding:6px 14px;border-radius:6px;border:1px solid var(--red-hi);background:transparent;color:var(--red-hi);cursor:pointer;font-weight:600;">⏹ Kill CLI</button>
-          <div style="margin-left:auto;display:flex;gap:6px;">
-            <button data-action="stopAll" title="Stop all running pipelines (agents stay online)" style="font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card2);color:var(--text-2);cursor:pointer;white-space:nowrap;">⏹ Stop All</button>
-            <button data-action="killAll" title="Emergency: kill all agent processes" style="font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--red-hi);background:transparent;color:var(--red-hi);cursor:pointer;font-weight:600;white-space:nowrap;">☠️ Kill Agents</button>
+        <div style="font-size:11px;color:var(--text-3);margin-bottom:16px;padding:8px 12px;background:var(--bg-2);border-left:3px solid var(--accent);border-radius:6px;">
+          <strong>Note:</strong> L1 (Chat Interface) uses <code style="background:var(--bg-1);padding:1px 4px;border-radius:3px;">CREW_CHAT_MODEL</code> — configured in Settings → Engines
+        </div>
+
+        <div style="display:grid;gap:12px;">
+          <!-- Router Model -->
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-2);margin-bottom:4px;font-weight:500;">
+              CREW_ROUTER_MODEL <span style="color:var(--text-3);">(L2 Router - Task Classification)</span>
+            </label>
+            <select id="configRouterModel" class="config-select" style="width:100%;padding:8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+              <option value="">Default</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="deepseek-chat">DeepSeek Chat</option>
+              <option value="grok-4-fast">Grok 4 Fast</option>
+            </select>
           </div>
+
+          <!-- Reasoning Model -->
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-2);margin-bottom:4px;font-weight:500;">
+              CREW_REASONING_MODEL <span style="color:var(--text-3);">(L2 Reasoning - Deep Analysis)</span>
+            </label>
+            <select id="configReasoningModel" class="config-select" style="width:100%;padding:8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+              <option value="">Default</option>
+              <option value="deepseek-reasoner">DeepSeek Reasoner (R1)</option>
+              <option value="gemini-2.0-flash-thinking-exp">Gemini 2.0 Flash Thinking</option>
+              <option value="grok-4-1-turbo">Grok 4.1 Turbo (Fast Reasoning)</option>
+              <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+              <option value="o1">OpenAI o1</option>
+              <option value="o1-mini">OpenAI o1-mini</option>
+            </select>
+          </div>
+
+          <!-- L2A Model -->
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-2);margin-bottom:4px;font-weight:500;">
+              CREW_L2A_MODEL <span style="color:var(--text-3);">(L2A Decomposer - Planning & Work Units)</span>
+            </label>
+            <select id="configL2AModel" class="config-select" style="width:100%;padding:8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+              <option value="">Default</option>
+              <option value="deepseek-chat">DeepSeek Chat</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="grok-4-fast">Grok 4 Fast</option>
+            </select>
+          </div>
+
+          <!-- L2B Model -->
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-2);margin-bottom:4px;font-weight:500;">
+              CREW_L2B_MODEL <span style="color:var(--text-3);">(L2B Validator - Cost/Risk Gates)</span>
+            </label>
+            <select id="configL2BModel" class="config-select" style="width:100%;padding:8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+              <option value="">Default</option>
+              <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="deepseek-chat">DeepSeek Chat</option>
+            </select>
+          </div>
+
+          <!-- Execution Model -->
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-2);margin-bottom:4px;font-weight:500;">
+              CREW_EXECUTION_MODEL <span style="color:var(--text-3);">(L3 Workers - Code/Content Generation)</span>
+            </label>
+            <select id="configExecutionModel" class="config-select" style="width:100%;padding:8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+              <option value="">Default</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fast & Cheap)</option>
+              <option value="deepseek-chat">DeepSeek Chat</option>
+              <option value="grok-4-fast">Grok 4 Fast</option>
+              <option value="claude-sonnet-4.5">Claude Sonnet 4.5 (Premium)</option>
+              <option value="llama-3.3-70b">Llama 3.3 70B (Groq - Fast)</option>
+              <option value="qwen-2.5-coder-32b">Qwen 2.5 Coder 32B</option>
+            </select>
+          </div>
+
+          <!-- QA Model -->
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-2);margin-bottom:4px;font-weight:500;">
+              CREW_QA_MODEL <span style="color:var(--text-3);">(QA Auditor - Quality & Bug Detection)</span>
+            </label>
+            <select id="configQAModel" class="config-select" style="width:100%;padding:8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+              <option value="">Default</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fast QA)</option>
+              <option value="claude-sonnet-4.5">Claude Sonnet 4.5 (Premium QA)</option>
+              <option value="deepseek-chat">DeepSeek Chat</option>
+              <option value="gpt-4o-mini">GPT-4o Mini</option>
+            </select>
+          </div>
+
+          <!-- Max Parallel Workers -->
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-2);margin-bottom:4px;font-weight:500;">
+              CREW_MAX_PARALLEL_WORKERS <span style="color:var(--text-3);">(Concurrency Cap: 1-32)</span>
+            </label>
+            <input type="number" id="configMaxWorkers" min="1" max="32" value="6" style="width:100%;padding:8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+          </div>
+
+          <!-- Extra Validators -->
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-2);margin-bottom:4px;font-weight:500;">
+              CREW_L2_EXTRA_VALIDATORS <span style="color:var(--text-3);">(CSV: model1,model2,...)</span>
+            </label>
+            <input type="text" id="configExtraValidators" placeholder="gpt-4o,claude-sonnet-4.5" style="width:100%;padding:8px;background:var(--bg-card2);color:var(--text-1);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button data-action="saveCLIProcessConfig" class="btn-green" style="flex:1;">💾 Save Configuration</button>
+            <button data-action="resetCLIProcessConfig" class="btn-ghost">↻ Reset to Defaults</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline Status -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;">
+        <div style="font-size:14px;font-weight:600;color:var(--text-1);margin-bottom:16px;">
+          ⚡ Pipeline Status
+        </div>
+        <div id="cliProcessPipelineStatus" style="font-size:13px;color:var(--text-2);font-family:monospace;">
+          Loading pipeline status...
         </div>
       </div>
     </div>
@@ -422,7 +573,7 @@
         <span style="font-size:11px; font-weight:600; color:var(--text-3); margin-right:4px;">BULK SET CODING AGENTS →</span>
         <button data-action="bulkSetRoute" data-arg="direct" class="btn-ghost" style="font-size:11px; padding:4px 10px;">💬 Direct API</button>
         <button data-action="bulkSetRoute" data-arg="opencode" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--green-hi); border-color:rgba(34,197,94,0.3);">⚡ OpenCode</button>
-        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="sonnet-4.6" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--accent); border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.6</button>
+        <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="sonnet-4.5-thinking" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:var(--accent); border-color:rgba(56,189,248,0.3);">🖱 Cursor CLI · sonnet-4.5 reasoning</button>
         <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="gpt-5-codex" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#8b5cf6; border-color:rgba(139,92,246,0.3);">🖱 Cursor CLI · gpt-5-codex</button>
         <button data-action="bulkSetRoute" data-arg="cursor" data-arg2="opus-thinking" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#a78bfa; border-color:rgba(167,139,250,0.3);">🖱 Cursor CLI · opus thinking</button>
         <button data-action="bulkSetRoute" data-arg="claudecode" data-arg2="claude-sonnet-4-5" class="btn-ghost" style="font-size:11px; padding:4px 10px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">📜 Claude Code · 4.5</button>
@@ -1107,6 +1258,59 @@
       </div>
       <div id="taskLifecycleContainer" style="padding:0 16px 12px;"></div>
       <div id="toolMatrixContainer" style="padding:16px;"></div>
+    </div>
+
+    <!-- Memory — Shared memory visualization and management -->
+    <div class="view" id="memoryView">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Shared Memory</div>
+          <div class="page-sub">Unified memory across CLI, Gateway, Cursor, and all agents — AgentKeeper (task memory) + AgentMemory (cognitive facts) + Collections (RAG)</div>
+        </div>
+        <button data-action="loadMemoryStats" class="btn-ghost" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      
+      <div style="padding:16px;display:flex;flex-direction:column;gap:16px;">
+        <!-- Stats cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+          <div class="card">
+            <h3 style="margin-bottom:8px;font-size:13px;">AgentMemory (Facts)</h3>
+            <div id="memoryFactStats" style="font-size:12px;color:var(--text-2);line-height:1.6;">Loading...</div>
+          </div>
+          <div class="card">
+            <h3 style="margin-bottom:8px;font-size:13px;">AgentKeeper (Tasks)</h3>
+            <div id="memoryKeeperStats" style="font-size:12px;color:var(--text-2);line-height:1.6;">Loading...</div>
+          </div>
+          <div class="card">
+            <h3 style="margin-bottom:8px;font-size:13px;">Storage</h3>
+            <div id="memoryStorageInfo" style="font-size:12px;color:var(--text-2);line-height:1.6;">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Search panel -->
+        <div class="card">
+          <h3 style="margin-bottom:12px;font-size:14px;">Search Memory</h3>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <input id="memorySearchQuery" type="text" placeholder="Search query (e.g. authentication flow, deployment steps)" style="flex:1;padding:8px 12px;font-size:13px;" />
+            <button data-action="searchMemory" class="btn" style="padding:8px 18px;font-size:13px;">Search</button>
+          </div>
+          <div id="memorySearchResults" style="display:none;max-height:500px;overflow:auto;"></div>
+        </div>
+
+        <!-- Actions -->
+        <div class="card">
+          <h3 style="margin-bottom:12px;font-size:14px;">Actions</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button data-action="migrateMemory" class="btn-ghost" style="font-size:13px;">
+              📦 Migrate brain.md to Shared Memory
+            </button>
+            <button data-action="compactMemory" class="btn-ghost" style="font-size:13px;">
+              🗜️ Compact AgentKeeper
+            </button>
+          </div>
+          <div id="memoryActionResult" style="display:none;margin-top:12px;padding:10px;background:var(--bg-2);border-radius:6px;font-size:12px;"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Build -->

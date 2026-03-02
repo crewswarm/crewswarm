@@ -2,6 +2,13 @@
   "id": "codex",
   "label": "Codex CLI",
   "description": "OpenAI Codex CLI — non-interactive agentic coding with workspace-write sandbox. No approval prompts. Works with OpenAI models out of the box.",
+  "priority": 80,
+  "shouldUse": {
+    "runtime": ["codex", "codex-cli"],
+    "payloadKey": "useCodex",
+    "agentConfigKey": "useCodex",
+    "envVar": "CREWSWARM_CODEX"
+  },
   "bin": "codex",
   "installCmd": "npm install -g @openai/codex",
   "installUrl": "https://github.com/openai/codex",

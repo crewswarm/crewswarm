@@ -30,6 +30,9 @@ node bin/crew.js --help
 ```bash
 crew chat "refactor auth middleware"
 crew dispatch crew-coder "fix failing tests"
+crew run -t "build auth API with tests"     # unified pipeline (resumable)
+crew run --resume pipeline-<trace-id>       # resume/replay from checkpoint trace
+crew run --resume pipeline-<trace-id> --from-phase execute
 crew explore "refactor database layer" # parallel speculative execution
 crew plan "add OAuth login" --parallel
 crew preview
@@ -44,6 +47,7 @@ crew map --graph                     # visual dependency graph
 crew shell "list large files"        # NL to shell command translation
 crew docs "how does auth work"       # RAG search over docs/markdown
 crew blast-radius                    # impact analysis of current changes
+crew capabilities                    # runtime capability handshake
 crew memory "auth login"             # recall prior task memory
 crew lsp check src/cli/index.ts      # TypeScript diagnostics
 crew lsp complete src/cli/index.ts 10 5
@@ -66,6 +70,25 @@ crew browser-debug --url http://127.0.0.1:4319
 crew ci-fix --check "npm test"
 crew doctor
 ```
+
+### Pipeline Runtime Flags
+
+- `CREW_USE_UNIFIED_ROUTER=false` - force-disable UnifiedPipeline routing path
+- `CREW_LEGACY_ROUTER=true` - use legacy router/legacy standalone execution path
+- `CREW_DUAL_L2_ENABLED=true` - enable Dual-L2 planning/decomposition
+- `CREW_QA_LOOP_ENABLED=true` - run QA -> fixer -> final QA gate before completion
+- `CREW_QA_MAX_ROUNDS=2` - max fixer rounds in QA loop
+- `CREW_CONTEXT_BUDGET_CHARS=7000` - per-worker retrieved artifact context budget
+- `CREW_CONTEXT_MAX_CHUNKS=8` - max retrieved artifact chunks per worker
+- `CREW_CONTEXT_PACK_TTL_HOURS=24` - TTL for persisted context-pack cache in `.crew/context-packs`
+
+Standalone default:
+- standalone mode now uses UnifiedPipeline by default.
+- pass `--legacy-router` to any command for temporary legacy fallback.
+
+`crew cost` now includes pipeline observability counters:
+- `qa_approved`, `qa_rejected`, `qa_rounds_avg`
+- `context_chunks_used`, `context_chars_saved_est`
 
 ## Context Flags
 
@@ -98,18 +121,21 @@ npm test
 Latest local QA pass (2026-03-01):
 - Build: passing
 - Check: passing
-- Tests: 78 passing, 0 failing
+- Tests: 178 passing, 0 failing
 
 ## Documentation
 
 - [QUICKSTART.md](docs/QUICKSTART.md)
 - [EXAMPLES.md](docs/EXAMPLES.md)
+- [SHARED-MEMORY.md](docs/SHARED-MEMORY.md) - 🧠 Shared memory & team sync
+- [REPL-MODES-AND-RELIABILITY.md](docs/REPL-MODES-AND-RELIABILITY.md) - mode contract + JSON hardening + tool boundary
 - [VIDEO-SCRIPT.md](docs/VIDEO-SCRIPT.md) - 🎬 Demo script & shot list
 - [DEMO-SCENARIO.md](docs/DEMO-SCENARIO.md) - 🏁 Deterministic demo scenario
 - [demo.mp4](docs/marketing/demo.mp4) - 🎥 **Watch the Demo Video**
 - [BENCHMARK-RESULTS.md](docs/BENCHMARK-RESULTS.md) - 📊 Performance metrics
 - [API.md](docs/API.md)
 - [API-UNIFIED-v1.md](docs/API-UNIFIED-v1.md) - Unified dashboard/CLI/headless contract
+- [CLI-JSON-CONTRACTS.md](docs/CLI-JSON-CONTRACTS.md) - Stable JSON envelopes for automation
 - [MCP-CLI-INTEGRATION.md](docs/MCP-CLI-INTEGRATION.md) - Codex/Cursor/Claude MCP setup + CLI boundary
 - [openapi.unified.v1.json](docs/openapi.unified.v1.json) - OpenAPI spec for unified endpoints
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)

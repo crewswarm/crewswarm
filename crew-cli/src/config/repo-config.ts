@@ -6,6 +6,7 @@ export interface RepoConfig {
   cli?: {
     model?: string;
     engine?: string;
+    preferredEngines?: string[];
     fallbackModels?: string[];
     docsCode?: boolean;
     memoryMax?: number;
@@ -27,6 +28,7 @@ const DEFAULT_CONFIG: Required<RepoConfig> = {
   cli: {
     model: '',
     engine: '',
+    preferredEngines: [],
     fallbackModels: [],
     docsCode: false,
     memoryMax: 3

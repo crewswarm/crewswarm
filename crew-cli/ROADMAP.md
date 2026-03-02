@@ -421,37 +421,10 @@ Reference design: `docs/THREE-TIER-IMPLEMENTATION.md`
   - [x] REPL emits deterministic, queryable mode/audit events.
   - [x] Model policy is loaded once, validated, and can override per-command defaults safely.
 
----
-
-## Success Metrics
-
-| Metric | Week 2 | Month 1 | Month 3 | Month 6 |
-|---|---|---|---|---|
-| GitHub stars | 10 | 100 | 500 | 1000 |
-| npm downloads/week | 20 | 100 | 500 | 1000 |
-| Daily active users | 5 | 20 | 100 | 300 |
-| Tasks completed | 50 | 500 | 5000 | 20000 |
-| Cost saved (cumulative) | $100 | $1000 | $10000 | $50000 |
-
----
-
-## Dependencies
-
-**Blocked by:** None (can start immediately)
-
-**Blocks:**
-- crew-action (GitHub Action variant)
-- crew-gui (desktop app)
-- crew-vscode (IDE extension)
-
-**Related:**
-- CrewSwarm core (provides gateway + agents)
-- Aider (provides edit strategy concepts)
-- Plandex (provides sandbox concept)
-
----
-
-**Roadmap version:** 1.1  
-**Last updated:** 2026-03-01  
-**Owner:** CrewSwarm team  
-**Output directory:** `/Users/jeffhobbs/Desktop/CrewSwarm/crew-cli`
+### [x] 10. Pipeline Quality Gates (Scaffold + Contracts + DoD + Golden Benchmarks) ✓ 2026-03-01
+- Source:
+  - [x] User-requested quality hardening for L1->L2->L3 flow and prompt upgrades.
+- [x] Mandatory scaffold phase before L3 execution:
+  - [x] Added planning artifact output `SCAFFOLD.md`.
+  - [x] Injected required execution unit `scaffold-bootstrap` before implementation units.
+- [x] Contract tests generated from PDD acceptance criteria:

@@ -8,6 +8,33 @@
  *
  * Override port: SWARM_DASH_PORT=4320 node scripts/dashboard.mjs
  */
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SINGLETON GUARD — Prevent multiple dashboard instances
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+import { execSync } from "node:child_process";
+
+const MY_PID = process.pid;
+
+try {
+  // Check if ANOTHER dashboard.mjs process is already running (exclude our own PID)
+  const existing = execSync(`ps aux | grep "node.*dashboard.mjs" | grep -v grep | awk '{print $2}' || true`, { encoding: 'utf8' }).trim();
+  
+  if (existing) {
+    const pids = existing.split('\n').filter(Boolean).map(Number).filter(p => p !== MY_PID);
+    
+    if (pids.length > 0) {
+      console.error(`❌ Dashboard already running (PIDs: ${pids.join(', ')})`);
+      console.error(`   To restart: pkill -9 -f "dashboard.mjs" && node scripts/dashboard.mjs`);
+      process.exit(1);
+    }
+  }
+} catch (err) {
+  // Continue if check fails
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
@@ -1886,11 +1913,15 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: true, models: knownModels.map(m => m.id), count: knownModels.length, note: "xAI built-in Grok model list used." }));
         return;
       }
+      const isGoogle = providerId === "google" || baseUrl.includes("googleapis.com");
       const fetchHeaders = isFetchAnthropic
         ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
+        : isGoogle
+        ? { "x-goog-api-key": key, "content-type": "application/json" }
         : { authorization: `Bearer ${key}`, "content-type": "application/json" };
+      const modelsUrl = isGoogle ? `${baseUrl}/models?key=${key}` : `${baseUrl}/models`;
       try {
-        const modelsRes = await fetch(`${baseUrl}/models`, {
+        const modelsRes = await fetch(modelsUrl, {
           headers: fetchHeaders,
           signal: AbortSignal.timeout(isSlowProvider ? 30000 : 12000),
         });
@@ -2063,6 +2094,7 @@ const server = http.createServer(async (req, res) => {
       const keys = {};
       keys.parallel = !!(savedCs.parallel?.apiKey || savedOc.parallel?.apiKey || process.env.PARALLEL_API_KEY);
       keys.brave    = !!(savedCs.brave?.apiKey    || savedOc.brave?.apiKey    || process.env.BRAVE_API_KEY);
+      keys.greptile = !!(savedCs.greptile?.apiKey || savedOc.greptile?.apiKey || process.env.GREPTILE_API_KEY);
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ keys }));
       return;
@@ -2081,7 +2113,7 @@ const server = http.createServer(async (req, res) => {
       await fs.promises.mkdir(path.dirname(ocTools), { recursive: true }).catch(() => {});
       await fs.promises.writeFile(ocTools, JSON.stringify(savedOc, null, 2));
       // Also persist to ~/.zshrc so agents and shells pick it up
-      const envKey = toolId === "parallel" ? "PARALLEL_API_KEY" : toolId === "brave" ? "BRAVE_API_KEY" : null;
+      const envKey = toolId === "parallel" ? "PARALLEL_API_KEY" : toolId === "brave" ? "BRAVE_API_KEY" : toolId === "greptile" ? "GREPTILE_API_KEY" : null;
       if (envKey) {
         const zshrc = path.join(os.homedir(), ".zshrc");
         let content = await fs.promises.readFile(zshrc, "utf8").catch(() => "");
@@ -2101,7 +2133,7 @@ const server = http.createServer(async (req, res) => {
       const ocTools = path.join(os.homedir(), ".openclaw", "search-tools.json");
       const savedCs = await fs.promises.readFile(csTools, "utf8").catch(() => "{}").then(d => { try { return JSON.parse(d); } catch { return {}; } });
       const savedOc = await fs.promises.readFile(ocTools, "utf8").catch(() => "{}").then(d => { try { return JSON.parse(d); } catch { return {}; } });
-      const key = savedCs[toolId]?.apiKey || savedOc[toolId]?.apiKey || process.env[toolId === "parallel" ? "PARALLEL_API_KEY" : "BRAVE_API_KEY"];
+      const key = savedCs[toolId]?.apiKey || savedOc[toolId]?.apiKey || process.env[toolId === "parallel" ? "PARALLEL_API_KEY" : toolId === "brave" ? "BRAVE_API_KEY" : "GREPTILE_API_KEY"];
       if (!key) { res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify({ok:false,error:"No key saved"})); return; }
       try {
         let ok, message, error;
@@ -2123,6 +2155,14 @@ const server = http.createServer(async (req, res) => {
           });
           ok = r.ok;
           message = ok ? "Connected — Brave Search ready" : null;
+          error = ok ? undefined : `${r.status} ${r.statusText}`;
+        } else if (toolId === "greptile") {
+          const r = await fetch("https://api.greptile.com/v2/repositories", {
+            headers: { "Authorization": `Bearer ${key}`, "X-GitHub-Token": "dummy" },
+            signal: AbortSignal.timeout(10000),
+          });
+          ok = r.ok || r.status === 401;
+          message = ok ? "Connected — Greptile ready" : null;
           error = ok ? undefined : `${r.status} ${r.statusText}`;
         }
         res.writeHead(200, { "content-type": "application/json" });
@@ -2378,6 +2418,92 @@ ORDER BY day DESC, cost DESC;`;
       res.end(JSON.stringify({ ok: true, agents: agentList, allModels, modelsByProvider, roleToolDefaults }));
       return;
     }
+    
+    // ── Memory API ──────────────────────────────────────────────────────────
+    if (url.pathname === "/api/memory/stats" && req.method === "GET") {
+      const { 
+        getMemoryStats, 
+        getKeeperStats, 
+        CREW_MEMORY_DIR, 
+        isSharedMemoryAvailable 
+      } = await import("../lib/memory/shared-adapter.mjs");
+      
+      try {
+        const agentMemoryStats = getMemoryStats('crew-lead');
+        const keeperStats = await getKeeperStats(process.cwd());
+        
+        res.end(JSON.stringify({
+          agentMemory: agentMemoryStats || {},
+          agentKeeper: keeperStats || {},
+          storageDir: CREW_MEMORY_DIR,
+          available: isSharedMemoryAvailable()
+        }));
+      } catch (err) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+    
+    if (url.pathname === "/api/memory/search" && req.method === "POST") {
+      const { searchMemory } = await import("../lib/memory/shared-adapter.mjs");
+      let body = ""; for await (const chunk of req) body += chunk;
+      const { query, maxResults } = JSON.parse(body);
+      
+      if (!query) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: "query required" }));
+        return;
+      }
+      
+      try {
+        const hits = await searchMemory(process.cwd(), query, { maxResults: maxResults || 20 });
+        res.end(JSON.stringify({ hits }));
+      } catch (err) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+    
+    if (url.pathname === "/api/memory/migrate" && req.method === "POST") {
+      const { migrateBrainToMemory } = await import("../lib/memory/shared-adapter.mjs");
+      const brainPath = path.join(OPENCLAW_DIR, 'memory', 'brain.md');
+      
+      if (!fs.existsSync(brainPath)) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ ok: false, error: "brain.md not found" }));
+        return;
+      }
+      
+      try {
+        const result = await migrateBrainToMemory(brainPath, 'crew-lead');
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+      return;
+    }
+    
+    if (url.pathname === "/api/memory/compact" && req.method === "POST") {
+      const { compactKeeperStore } = await import("../lib/memory/shared-adapter.mjs");
+      
+      try {
+        const result = await compactKeeperStore(process.cwd());
+        if (!result) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: "AgentKeeper not available" }));
+          return;
+        }
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+    
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
@@ -3232,14 +3358,13 @@ ORDER BY day DESC, cost DESC;`;
           try { execSync(`open -a OpenClaw`, { stdio: "ignore" }); } catch {}
         }
       } else if (id === "dashboard") {
-        // Restart dashboard: spawn a new process then exit this one
+        // Dashboard cannot restart itself - race condition between spawn and exit
+        // Manual restart: pkill -9 -f dashboard.mjs && npm run dashboard
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: true, message: "Restarting dashboard..." }));
-        await new Promise(r => setTimeout(r, 300));
-        spawnProc("node", [path.join(OPENCLAW_DIR, "scripts", "dashboard.mjs")], {
-          cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
-        }).unref();
-        process.exit(0);
+        res.end(JSON.stringify({ 
+          ok: false, 
+          message: "Dashboard cannot restart itself (prevents race condition). Manual restart: pkill -9 -f dashboard.mjs && npm run dashboard" 
+        }));
         return;
       } else if (id === "telegram") {
         // Restart already handled above — if we reach here it means no token was found
@@ -3271,8 +3396,19 @@ ORDER BY day DESC, cost DESC;`;
           if (pid) process.kill(pid, "SIGTERM");
         } catch {}
       } else if (id === "crew-lead") {
-        // Kill ALL crew-lead processes with SIGKILL for immediate termination
-        try { execSync(`pkill -9 -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
+        // Kill crew-lead by PID file first, then fallback to pattern match
+        try {
+          const pidFile = path.join(os.homedir(), ".crewswarm", "logs", "crew-lead.pid");
+          if (fs.existsSync(pidFile)) {
+            const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+            if (pid) {
+              process.kill(pid, "SIGTERM");
+              await new Promise(r => setTimeout(r, 500));
+            }
+          }
+        } catch {}
+        // Fallback: kill by exact process match (node crew-lead.mjs, not just any process with that string)
+        try { execSync(`pgrep -f "^node.*crew-lead\\.mjs$" | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
         // Also kill any process holding the port
         const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
         try { execSync(`lsof -ti :${crewLeadPort} | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
@@ -3288,14 +3424,13 @@ ORDER BY day DESC, cost DESC;`;
         try { execSync(`pkill -f "mcp-server.mjs"`, { stdio: "ignore" }); } catch {}
         try { execSync(`lsof -ti :5020 | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
       } else if (id === "dashboard") {
+        // Dashboard cannot restart/stop itself - race condition between spawn and exit
+        // Use: pkill -9 -f dashboard.mjs to stop manually
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: true, message: "Restarting dashboard..." }));
-        await new Promise(r => setTimeout(r, 300));
-        const { spawn: sp } = await import("node:child_process");
-        sp("node", [path.join(OPENCLAW_DIR, "scripts", "dashboard.mjs")], {
-          cwd: OPENCLAW_DIR, detached: true, stdio: "ignore",
-        }).unref();
-        process.exit(0);
+        res.end(JSON.stringify({ 
+          ok: false, 
+          message: "Dashboard cannot stop/restart itself. Use: pkill -9 -f dashboard.mjs" 
+        }));
         return;
       }
 
@@ -3318,9 +3453,21 @@ ORDER BY day DESC, cost DESC;`;
       const token = getCLToken();
       const opts = { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, signal: AbortSignal.timeout(15000) };
       if (body) opts.body = body;
-      const r = await fetch(CREW_LEAD_URL + path_, opts);
-      const text = await r.text();
-      return { status: r.status, body: text };
+      try {
+        const r = await fetch(CREW_LEAD_URL + path_, opts);
+        const text = await r.text();
+        return { status: r.status, body: text };
+      } catch (err) {
+        // crew-lead is down or unreachable - return 503 instead of crashing
+        return { 
+          status: 503, 
+          body: JSON.stringify({ 
+            error: "crew-lead unreachable", 
+            detail: String(err?.message || err),
+            hint: "Start crew-lead: npm run restart-all"
+          })
+        };
+      }
     }
 
     // ── ZeroEval / llm-stats benchmark API proxy ────────────────────────────────

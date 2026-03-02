@@ -1,0 +1,21 @@
+{
+  "name": "crewswarm-template",
+  "version": "1.0.0",
+  "description": "CrewSwarm Docker deployment template with sample agents",
+  "type": "module",
+  "scripts": {
+    "start": "node app/main.mjs",
+    "dev": "NODE_ENV=development node app/main.mjs",
+    "load-knowledge": "node agents/knowledge_agent.mjs --load"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "pg": "^8.11.3",
+    "pgvector": "^0.2.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "Apache-2.0"
+}

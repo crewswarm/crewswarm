@@ -233,10 +233,13 @@ Examples:
 
 **What to use for testing**:
 ```bash
-# Best choice - fast and reliable
+# Best choice - fast and reliable (free tier friendly)
 export CREWSWARM_CURSOR_MODEL="gemini-3-flash"
 
-# OR for higher quality
+# OR for reasoning/complex tasks - Sonnet 4.5 with thinking
+export CREWSWARM_CURSOR_MODEL="sonnet-4.5-thinking"
+
+# OR for higher quality without reasoning
 export CREWSWARM_CURSOR_MODEL="gemini-3-pro"
 ```
 

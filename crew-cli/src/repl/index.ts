@@ -15,7 +15,13 @@ import { Logger } from '../utils/logger.js';
 import { getProjectContext } from '../context/git.js';
 import { collectMultiRepoContext } from '../multirepo/index.js';
 import { AgentKeeper } from '../memory/agentkeeper.js';
+import { MemoryBroker } from '../memory/broker.js';
 import { CheckpointStore } from '../checkpoint/store.js';
+import { loadPipelineMetricsSummary } from '../metrics/pipeline.js';
+import { estimateCost } from '../cost/predictor.js';
+import { getExecutionPolicy, isRiskBlocked, withRetries } from '../runtime/execution-policy.js';
+import { analyzeBlastRadius } from '../blast-radius/index.js';
+import { scorePatchRisk } from '../risk/score.js';
 
 const BANNER = `
  ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -48,6 +54,8 @@ export interface ReplOptions {
   projectDir?: string;
   repoConfig?: Required<RepoConfig>;
   initialMode?: 'manual' | 'assist' | 'autopilot';
+  initialInterfaceMode?: 'connected' | 'standalone';
+  promptInterfaceMode?: boolean;
   uiMode?: 'repl' | 'tui';
 }
 
@@ -336,6 +344,7 @@ function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
   console.log('    /engines           Interactive engine selector (use arrow keys)');
   console.log('    /engine <name>     Switch engine directly (cursor|claude|gemini|auto)');
   console.log('    /mode [name]       Interactive mode selector or set directly');
+  console.log('    /mode-info         Explain manual/assist/autopilot execution semantics');
   console.log('    Shift+Tab          Cycle REPL mode');
   console.log('    /auto-apply        Toggle auto-apply sandbox changes');
   console.log('    /verbose           Toggle verbose routing output');
@@ -343,6 +352,7 @@ function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
 
   console.log(chalk.green.bold('  🧠 Memory & LSP:'));
   console.log('    /memory [query]    Show memory stats or recall');
+  console.log('    /tools             Show tool capability matrix by mode/path');
   console.log('    /lsp check [files] Run TypeScript diagnostics');
   console.log('    /lsp complete <file> <line> <column> [prefix]  Get completions\n');
 
@@ -359,6 +369,31 @@ function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
   if (uiMode === 'tui') {
     console.log(chalk.gray('  TUI mode uses the same runtime/controller as REPL with a denser terminal layout.\n'));
   }
+}
+
+function modeBehavior(mode: ReplMode) {
+  if (mode === 'manual') {
+    return {
+      memoryInject: false,
+      executionConfirm: false,
+      autoApply: false,
+      autopilotPipeline: false
+    };
+  }
+  if (mode === 'assist') {
+    return {
+      memoryInject: true,
+      executionConfirm: true,
+      autoApply: false,
+      autopilotPipeline: false
+    };
+  }
+  return {
+    memoryInject: true,
+    executionConfirm: false,
+    autoApply: true,
+    autopilotPipeline: true
+  };
 }
 
 function applySlashAlias(input: string, aliases: Record<string, string>): string {
@@ -407,6 +442,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   const repoConfig = options.repoConfig;
   const uiMode: 'repl' | 'tui' = options.uiMode || 'repl';
   const keeper = new AgentKeeper(projectDir);
+  const memoryBroker = new MemoryBroker(projectDir);
   const checkpoints = new CheckpointStore(projectDir);
   const sessionId = await session.getSessionId();
   const replRunId = `repl-${randomUUID()}`;
@@ -449,6 +485,43 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     }
   }
 
+  const envInterfaceMode = String(process.env.CREW_INTERFACE_MODE || '').toLowerCase();
+  const repoDefaultInterface: 'connected' | 'standalone' =
+    Boolean(repoConfig?.repl?.useGateway) ? 'connected' : 'standalone';
+  let selectedInterfaceMode: 'connected' | 'standalone' =
+    options.initialInterfaceMode
+    || (envInterfaceMode === 'connected' ? 'connected' : envInterfaceMode === 'standalone' ? 'standalone' : repoDefaultInterface);
+
+  if (options.promptInterfaceMode && process.stdin.isTTY) {
+    try {
+      const ifaceAnswer = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'interfaceMode',
+          message: 'Select interface mode:',
+          choices: [
+            {
+              name: 'standalone - Local unified pipeline (no gateway required)',
+              value: 'standalone',
+              short: 'standalone'
+            },
+            {
+              name: 'connected - Route via crew-lead/gateway specialists',
+              value: 'connected',
+              short: 'connected'
+            }
+          ],
+          default: selectedInterfaceMode,
+          loop: false
+        }
+      ]);
+      selectedInterfaceMode = ifaceAnswer.interfaceMode as 'connected' | 'standalone';
+    } catch {
+      // Keep selectedInterfaceMode fallback.
+    }
+  }
+  process.env.CREW_INTERFACE_MODE = selectedInterfaceMode;
+
   const replState: ReplState = {
     model: String(repoConfig?.repl?.model || 'deepseek-chat'),
     engine: String(repoConfig?.repl?.engine || 'auto'),
@@ -458,8 +531,11 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     verbose: Boolean(repoConfig?.repl?.verbose || false),
     routerProvider: String(repoConfig?.repl?.routerProvider || 'grok'),
     executorProvider: String(repoConfig?.repl?.executorProvider || 'grok'),
-    useGateway: Boolean(repoConfig?.repl?.useGateway || false)
+    useGateway: selectedInterfaceMode === 'connected'
   };
+  // Enforce deterministic mode defaults on startup.
+  if (replState.mode === 'manual') replState.autoApply = false;
+  if (replState.mode === 'autopilot') replState.autoApply = true;
   const slashAliases = repoConfig?.slashAliases || {};
   const bannerEnabled = repoConfig?.repl?.bannerEnabled !== false;
   const bannerAnimated = repoConfig?.repl?.animatedBanner !== false;
@@ -496,6 +572,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
   let isProcessing = false;
   let isClosing = false;
+  let isCommandProcessing = false;
+  let pendingExit = false;
 
   const recordReplEvent = async (type: string, payload: Record<string, unknown>) => {
     auditSeq += 1;
@@ -599,17 +677,52 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     }
 
     if (command === '/info') {
+      const summary = buildModelSummary(projectDir, replState);
+      const configuredCliEngine = String((repoConfig as any)?.cli?.engine || '(not set)');
+      const configuredReplEngine = String((repoConfig as any)?.repl?.engine || '(not set)');
+      const preferredEngines = Array.isArray((repoConfig as any)?.cli?.preferredEngines)
+        ? (repoConfig as any).cli.preferredEngines.map((x: unknown) => String(x)).filter(Boolean)
+        : [];
+      const chatModel = String(process.env.CREW_CHAT_MODEL || '(env not set)');
+      const routerModel = String(process.env.CREW_ROUTER_MODEL || '(env not set)');
+      const reasoningModel = String(process.env.CREW_REASONING_MODEL || '(env not set)');
+      const l2aModel = String(process.env.CREW_L2A_MODEL || '(env not set)');
+      const l2bModel = String(process.env.CREW_L2B_MODEL || '(env not set)');
+      const qaModel = String(process.env.CREW_QA_MODEL || '(env not set)');
+      const extraValidators = String(process.env.CREW_L2_EXTRA_VALIDATORS || '(env not set)');
+      const executionModel = String(process.env.CREW_EXECUTION_MODEL || '(env not set)');
+      const maxParallelWorkers = String(process.env.CREW_MAX_PARALLEL_WORKERS || '(env not set)');
+
       console.log(chalk.blue('\n╔══════════════════════════════════════════════════════════════╗'));
       console.log(chalk.blue('║                    CURRENT SETTINGS                          ║'));
       console.log(chalk.blue('╚══════════════════════════════════════════════════════════════╝\n'));
-      console.log(chalk.cyan('  3-Tier Stack:'));
-      console.log(`    Tier 1 (Router)  : ${chalk.green(replState.routerProvider)}`);
-      console.log(`    Tier 2 (Executor): ${chalk.green(replState.executorProvider)}`);
-      console.log(`    Tier 3 (Gateway) : ${replState.useGateway ? chalk.green('ENABLED') : chalk.gray('disabled')}\n`);
+      console.log(chalk.cyan('  Engine Routing (dispatch/runtime):'));
+      console.log(`    Active REPL engine: ${chalk.blue(replState.engine)}`);
+      console.log(`    Config default (repl.engine): ${chalk.blue(configuredReplEngine)}`);
+      console.log(`    Config default (cli.engine) : ${chalk.blue(configuredCliEngine)}`);
+      console.log(`    Preferred engines           : ${preferredEngines.length ? preferredEngines.join(' -> ') : chalk.gray('(none configured)')}\n`);
+
+      console.log(chalk.cyan('  Tier Stack (model/providers):'));
+      console.log(`    Tier 1 provider (Router)  : ${chalk.green(replState.routerProvider)}`);
+      console.log(`    Tier 2 provider (Executor): ${chalk.green(replState.executorProvider)}`);
+      console.log(`    Tier 3 gateway            : ${replState.useGateway ? chalk.green('ENABLED') : chalk.gray('disabled')}`);
+      console.log(`    CREW_CHAT_MODEL           : ${chatModel}`);
+      console.log(`    CREW_ROUTER_MODEL         : ${routerModel}`);
+      console.log(`    CREW_REASONING_MODEL      : ${reasoningModel}`);
+      console.log(`    CREW_L2A_MODEL            : ${l2aModel}`);
+      console.log(`    CREW_L2B_MODEL            : ${l2bModel}`);
+      console.log(`    CREW_QA_MODEL             : ${qaModel}`);
+      console.log(`    CREW_L2_EXTRA_VALIDATORS  : ${extraValidators}`);
+      console.log(`    CREW_EXECUTION_MODEL      : ${executionModel}`);
+      console.log(`    CREW_MAX_PARALLEL_WORKERS : ${maxParallelWorkers}`);
+      console.log(`    Policy-tier models        : ${summary.policyTierModels.length ? summary.policyTierModels.join(', ') : chalk.gray('(none set)')}\n`);
+
       console.log(chalk.cyan('  Session:'));
       console.log(`    Model: ${chalk.green(replState.model)}`);
       console.log(`    Engine: ${chalk.blue(replState.engine)}`);
       console.log(`    Mode: ${chalk.magenta(replState.mode)}`);
+      const behavior = modeBehavior(replState.mode);
+      console.log(`    Mode behavior: memoryInject=${behavior.memoryInject ? 'on' : 'off'}, executionConfirm=${behavior.executionConfirm ? 'on' : 'off'}, autoApply=${behavior.autoApply ? 'on' : 'off'}, autopilotPipeline=${behavior.autopilotPipeline ? 'on' : 'off'}`);
       console.log(`    Auto-apply: ${replState.autoApply ? chalk.green('ON') : chalk.gray('off')}`);
       console.log(`    Verbose: ${replState.verbose ? chalk.green('ON') : chalk.gray('off')}`);
       console.log(`    Memory max: ${replState.memoryMax}`);
@@ -623,6 +736,24 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       return true;
     }
 
+    if (command === '/mode-info') {
+      console.log(chalk.blue('\n--- REPL Mode Semantics ---\n'));
+      console.log('  manual');
+      console.log('    - Chat + dispatch normally');
+      console.log('    - No memory context injection');
+      console.log('    - No execute confirmation prompt');
+      console.log('    - No auto-apply');
+      console.log('  assist');
+      console.log('    - Memory/RAG context injection enabled');
+      console.log('    - Confirm before non-chat execution');
+      console.log('    - No auto-apply');
+      console.log('  autopilot');
+      console.log('    - Memory/RAG context injection enabled');
+      console.log('    - Runs full unified pipeline in standalone mode');
+      console.log('    - Auto-apply sandbox changes by default\n');
+      return true;
+    }
+
     if (command === '/models-config') {
       const summary = buildModelSummary(projectDir, replState);
       printModelSummary(summary);
@@ -630,6 +761,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     }
 
     if (command === '/models') {
+      if (!process.stdin.isTTY) {
+        console.log(chalk.yellow('\n  /models requires an interactive TTY.\n'));
+        return true;
+      }
       try {
         const answer = await inquirer.prompt([
           {
@@ -670,6 +805,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     }
 
     if (command === '/engines') {
+      if (!process.stdin.isTTY) {
+        console.log(chalk.yellow('\n  /engines requires an interactive TTY.\n'));
+        return true;
+      }
       try {
         const answer = await inquirer.prompt([
           {
@@ -728,6 +867,23 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     }
 
     if (command === '/stack') {
+      if (args[0] === 'show') {
+        console.log(chalk.blue('\n--- Stack (session) ---\n'));
+        console.log(`  Tier 1 router provider : ${replState.routerProvider}`);
+        console.log(`  Tier 2 executor provider: ${replState.executorProvider}`);
+        console.log(`  Tier 3 gateway         : ${replState.useGateway ? 'enabled' : 'disabled'}`);
+        console.log(`  CREW_ROUTER_MODEL      : ${process.env.CREW_ROUTER_MODEL || '(unset)'}`);
+        console.log(`  CREW_REASONING_MODEL   : ${process.env.CREW_REASONING_MODEL || '(unset)'}`);
+        console.log(`  CREW_L2A_MODEL         : ${process.env.CREW_L2A_MODEL || '(unset)'}`);
+        console.log(`  CREW_L2B_MODEL         : ${process.env.CREW_L2B_MODEL || '(unset)'}`);
+        console.log(`  CREW_QA_MODEL          : ${process.env.CREW_QA_MODEL || '(unset)'}`);
+        console.log(`  CREW_MAX_PARALLEL_WORKERS: ${process.env.CREW_MAX_PARALLEL_WORKERS || '(unset)'}\n`);
+        return true;
+      }
+      if (!process.stdin.isTTY) {
+        console.log(chalk.yellow('\n  /stack requires an interactive TTY.\n'));
+        return true;
+      }
       try {
         console.log(chalk.blue('\n╔══════════════════════════════════════════════════════════════╗'));
         console.log(chalk.blue('║           3-TIER LLM STACK CONFIGURATION                     ║'));
@@ -763,6 +919,54 @@ export async function startRepl(options: ReplOptions): Promise<void> {
             name: 'useGateway',
             message: 'Tier 3: Enable gateway for specialists (crew-qa, crew-pm, etc)?',
             default: replState.useGateway
+          },
+          {
+            type: 'input',
+            name: 'routerModel',
+            message: 'L2 router model (CREW_ROUTER_MODEL, optional):',
+            default: String(process.env.CREW_ROUTER_MODEL || '')
+          },
+          {
+            type: 'input',
+            name: 'reasoningModel',
+            message: 'L2 planner baseline model (CREW_REASONING_MODEL, optional):',
+            default: String(process.env.CREW_REASONING_MODEL || '')
+          },
+          {
+            type: 'input',
+            name: 'l2aModel',
+            message: 'L2A decomposer model (CREW_L2A_MODEL, optional):',
+            default: String(process.env.CREW_L2A_MODEL || '')
+          },
+          {
+            type: 'input',
+            name: 'l2bModel',
+            message: 'L2B validator model (CREW_L2B_MODEL, optional):',
+            default: String(process.env.CREW_L2B_MODEL || '')
+          },
+          {
+            type: 'input',
+            name: 'qaModel',
+            message: 'QA gate model (CREW_QA_MODEL, optional):',
+            default: String(process.env.CREW_QA_MODEL || '')
+          },
+          {
+            type: 'input',
+            name: 'extraL2Validators',
+            message: 'Extra L2 validator models CSV (CREW_L2_EXTRA_VALIDATORS, optional):',
+            default: String(process.env.CREW_L2_EXTRA_VALIDATORS || '')
+          },
+          {
+            type: 'input',
+            name: 'maxParallelWorkers',
+            message: 'Tier 3 max parallel workers (CREW_MAX_PARALLEL_WORKERS):',
+            default: String(process.env.CREW_MAX_PARALLEL_WORKERS || '6'),
+            validate: (value: string) => {
+              const n = Number.parseInt(String(value || ''), 10);
+              return (Number.isFinite(n) && n >= 1 && n <= 32)
+                ? true
+                : 'Enter a number between 1 and 32';
+            }
           }
         ]);
 
@@ -778,6 +982,13 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
         // Update environment for this session
         process.env.CREW_ROUTING_ORDER = `${replState.routerProvider},${replState.executorProvider}`;
+        process.env.CREW_ROUTER_MODEL = String(answers.routerModel || '').trim();
+        process.env.CREW_REASONING_MODEL = String(answers.reasoningModel || '').trim();
+        process.env.CREW_L2A_MODEL = String(answers.l2aModel || '').trim();
+        process.env.CREW_L2B_MODEL = String(answers.l2bModel || '').trim();
+        process.env.CREW_QA_MODEL = String(answers.qaModel || '').trim();
+        process.env.CREW_L2_EXTRA_VALIDATORS = String(answers.extraL2Validators || '').trim();
+        process.env.CREW_MAX_PARALLEL_WORKERS = String(Math.max(1, Math.min(32, Number.parseInt(String(answers.maxParallelWorkers || '6'), 10) || 6)));
       } catch (err) {
         console.log(chalk.gray('\n  Cancelled.\n'));
       }
@@ -795,6 +1006,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       
       // If no argument provided, show interactive picker
       if (!requested) {
+        if (!process.stdin.isTTY) {
+          console.log(chalk.yellow('\n  /mode (interactive) requires an interactive TTY. Use /mode <manual|assist|autopilot>.\n'));
+          return true;
+        }
         try {
           const answer = await inquirer.prompt([
             {
@@ -831,6 +1046,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           if (answer.mode !== replState.mode) {
             const from = replState.mode;
             replState.mode = answer.mode as ReplMode;
+            if (replState.mode === 'manual') replState.autoApply = false;
+            if (replState.mode === 'autopilot') replState.autoApply = true;
             rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
             await recordReplEvent('mode_change', { from, to: replState.mode, source: 'interactive' });
             console.log(chalk.green(`\n  ✓ Mode set to: ${replState.mode}\n`));
@@ -850,15 +1067,34 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       }
       const from = replState.mode;
       replState.mode = requested as ReplMode;
+      if (replState.mode === 'manual') replState.autoApply = false;
+      if (replState.mode === 'autopilot') replState.autoApply = true;
       rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
       await recordReplEvent('mode_change', { from, to: replState.mode, source: 'slash' });
       console.log(chalk.green(`\n  ✓ Mode set to: ${replState.mode}\n`));
       return true;
     }
 
+    if (command === '/tools') {
+      const summary = buildModelSummary(projectDir, replState);
+      const mode = summary.mode;
+      const behavior = modeBehavior(replState.mode);
+      console.log(chalk.blue('\n--- Tool Capability Matrix ---\n'));
+      console.log(`  Interface mode: ${mode}`);
+      console.log(`  REPL mode: ${replState.mode}`);
+      console.log(`  Local sandbox edits: ${mode === 'standalone' ? 'yes' : 'staged via response parsing'}`);
+      console.log(`  Gateway agent tools: ${mode === 'connected' ? 'yes (dispatch path)' : 'no (unless explicitly connected)'}`);
+      console.log(`  Memory/RAG injection: ${behavior.memoryInject ? 'enabled' : 'disabled'}`);
+      console.log('  LSP checks/completion: enabled');
+      console.log('  PTY tooling: available via `crew exec`');
+      console.log('  Notes: actual tool usage depends on routing, permissions, and parser acceptance.\n');
+      return true;
+    }
+
     if (command === '/status') {
       const sess = await session.loadSession();
       const cost = await session.loadCost();
+      const pipeline = await loadPipelineMetricsSummary(projectDir);
       const activeBranch = sandbox.getActiveBranch();
       const hasChanges = sandbox.hasChanges(activeBranch);
 
@@ -869,6 +1105,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       console.log(`│  Model: ${chalk.green(replState.model)}`);
       console.log(`│  Engine: ${chalk.blue(replState.engine)}`);
       console.log(`│  Mode: ${chalk.magenta(replState.mode)}`);
+      console.log(`│  Pipeline runs: ${pipeline.runs} | QA approved: ${pipeline.qaApproved} | QA rejected: ${pipeline.qaRejected}`);
+      console.log(`│  Context chunks: ${pipeline.contextChunksUsed} | Chars saved(est): ${pipeline.contextCharsSaved}`);
       console.log('└─\n');
       return true;
     }
@@ -929,6 +1167,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     }
 
     if (command === '/branches' || command === '/branch') {
+      if (!process.stdin.isTTY) {
+        console.log(chalk.yellow('\n  /branch requires an interactive TTY.\n'));
+        return true;
+      }
       const active = sandbox.getActiveBranch();
       const branches = sandbox.getBranches();
       
@@ -1097,15 +1339,20 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         console.log(`  Approx bytes: ${stats.bytes}`);
         return true;
       }
-      const matches = await keeper.recall(query, replState.memoryMax, { preferSuccessful: true });
-      if (matches.length === 0) {
-        console.log(chalk.yellow(`\n  No memory matches for "${query}".\n`));
+      const hits = await memoryBroker.recall(query, {
+        maxResults: replState.memoryMax,
+        includeDocs: true,
+        includeCode: false,
+        preferSuccessful: true
+      });
+      if (hits.length === 0) {
+        console.log(chalk.yellow(`\n  No memory/RAG matches for "${query}".\n`));
         return true;
       }
-      console.log(chalk.blue(`\n--- Memory Recall: "${query}" (${matches.length} matches) ---\n`));
-      for (const m of matches) {
-        console.log(chalk.yellow(`[${m.score}] ${m.entry.tier} — ${m.entry.task.slice(0, 80)}`));
-        const preview = m.entry.result.length > 120 ? `${m.entry.result.slice(0, 120)}...` : m.entry.result;
+      console.log(chalk.blue(`\n--- Shared Memory + RAG Recall: "${query}" (${hits.length} hits) ---\n`));
+      for (const h of hits) {
+        console.log(chalk.yellow(`[${h.score.toFixed(3)}] ${h.source} — ${h.title.slice(0, 80)}`));
+        const preview = h.text.length > 120 ? `${h.text.slice(0, 120)}...` : h.text;
         console.log(chalk.gray(`  ${preview}`));
       }
       console.log();
@@ -1175,12 +1422,40 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       return;
     }
 
+    if (isCommandProcessing) {
+      const isExitCmd = /^\/(?:exit|quit)\b/i.test(trimmed);
+      if (isExitCmd) {
+        pendingExit = true;
+        if (process.stdin.isTTY) {
+          console.log(chalk.gray('\n  Exiting after current command completes...\n'));
+        }
+        return;
+      }
+      if (!process.stdin.isTTY) {
+        // In piped/script mode, ignore overlapping non-exit input quietly.
+        return;
+      }
+      console.log(chalk.yellow('\n  ⏳ A command prompt is already active. Finish/cancel it first.\n'));
+      rl.prompt();
+      return;
+    }
+
     let handled = false;
     try {
+      isCommandProcessing = true;
       handled = await handleSlashCommand(trimmed);
     } catch (err) {
       console.log(chalk.red(`\n  ✗ Command failed: ${(err as Error).message}\n`));
+      isCommandProcessing = false;
       if (!isClosing) rl.prompt();
+      return;
+    }
+    isCommandProcessing = false;
+    if (pendingExit && !isClosing) {
+      pendingExit = false;
+      isClosing = true;
+      console.log(chalk.cyan('\n  👋 Goodbye! Session saved to .crew/\n'));
+      rl.close();
       return;
     }
     if (handled) {
@@ -1254,10 +1529,21 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         return;
       }
 
-      if (replState.mode !== 'manual') {
-        const recalls = await keeper.recall(trimmed, replState.memoryMax, { preferSuccessful: true });
+      const behavior = modeBehavior(replState.mode);
+      if (behavior.memoryInject) {
+        const recalls = await memoryBroker.recall(trimmed, {
+          maxResults: replState.memoryMax,
+          includeDocs: true,
+          includeCode: false,
+          preferSuccessful: true
+        });
         if (recalls.length > 0) {
-          const memoryContext = await keeper.recallAsContext(trimmed, replState.memoryMax, { preferSuccessful: true });
+          const memoryContext = await memoryBroker.recallAsContext(trimmed, {
+            maxResults: replState.memoryMax,
+            includeDocs: true,
+            includeCode: false,
+            preferSuccessful: true
+          });
           taskInput = `${trimmed}\n\n${memoryContext}`;
         }
       }
@@ -1294,6 +1580,24 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         return;
       }
 
+      if (behavior.executionConfirm && process.stdin.isTTY) {
+        const estimate = estimateCost(taskInput, replState.model || undefined, 1800);
+        const answer = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'ok',
+            message: `Execute ${route.decision} via ${agent}? est ~$${estimate.totalUsd.toFixed(4)}`,
+            default: true
+          }
+        ]);
+        if (!answer.ok) {
+          console.log(chalk.yellow('\n  Skipped execution.\n'));
+          isProcessing = false;
+          rl.prompt();
+          return;
+        }
+      }
+
       const dispatchOpts: any = {
         project: projectDir,
         sessionId: await session.getSessionId()
@@ -1302,11 +1606,24 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       if (replState.engine && replState.engine !== 'auto') dispatchOpts.engine = replState.engine;
 
       const standaloneMode = modelSummary.mode === 'standalone';
+      const useLegacyStandalone = String(process.env.CREW_LEGACY_ROUTER || '').toLowerCase() === 'true';
+      const policy = getExecutionPolicy();
       const result = standaloneMode
-        ? await orchestrator.executeLocally(route.task || taskInput, {
-            model: dispatchOpts.model
-          })
-        : await router.dispatch(agent, taskInput, dispatchOpts);
+        ? (useLegacyStandalone
+          ? await withRetries(
+              async () => orchestrator.executeLocally(route.task || taskInput, {
+                model: dispatchOpts.model
+              }),
+              policy
+            )
+          : await withRetries(
+              async () => orchestrator.executePipeline(route.task || taskInput, '', dispatchOpts.sessionId),
+              policy
+            ))
+        : await withRetries(
+            async () => router.dispatch(agent, taskInput, dispatchOpts),
+            policy
+          );
 
       await session.appendHistory({
         type: 'repl_request',
@@ -1338,16 +1655,22 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         });
       }
 
-      const responseText = String(result.result || '');
+      const responseText = String(result.response || result.result || '');
       console.log(chalk.cyan('\n  ┌─ Response'));
       logger.printWithHighlight(responseText);
       console.log('  └─');
+      if (Array.isArray((result as any).timeline) && (result as any).timeline.length > 0) {
+        console.log(chalk.gray('\n  Timeline'));
+        for (const step of (result as any).timeline) {
+          console.log(chalk.gray(`  - ${step.phase} @ ${step.ts}`));
+        }
+      }
 
       const edits = await orchestrator.parseAndApplyToSandbox(responseText);
       if (edits.length > 0) {
         console.log(chalk.yellow(`\n  ✓ ${edits.length} file(s) changed in sandbox`));
 
-        const shouldAutoApply = replState.autoApply || replState.mode === 'autopilot';
+        const shouldAutoApply = replState.autoApply || behavior.autoApply;
         await recordReplEvent('autopilot_decision', {
           mode: replState.mode,
           enabled: shouldAutoApply,
@@ -1358,6 +1681,28 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           try {
             const activeBranch = sandbox.getActiveBranch();
             const paths = sandbox.getPendingPaths(activeBranch);
+            const policy = getExecutionPolicy();
+            const report = await analyzeBlastRadius(projectDir, { changedFiles: paths });
+            if (isRiskBlocked(report.risk, policy.riskThreshold, policy.forceAutoApply)) {
+              const patchRisk = scorePatchRisk({
+                blastRadius: report,
+                changedFiles: paths.length
+              });
+              await recordReplEvent('autopilot_apply', {
+                mode: replState.mode,
+                success: false,
+                blockedByRisk: true,
+                risk: report.risk,
+                threshold: policy.riskThreshold,
+                confidence: patchRisk.confidence
+              });
+              console.log(chalk.red(`  ✗ Auto-apply blocked by risk gate (${report.risk} >= ${policy.riskThreshold})`));
+              console.log(chalk.gray('  Use /preview and /apply, or set CREW_FORCE_AUTO_APPLY=true to override.'));
+              console.log();
+              isProcessing = false;
+              rl.prompt();
+              return;
+            }
             await sandbox.apply(activeBranch);
             await recordReplEvent('autopilot_apply', {
               mode: replState.mode,
@@ -1411,6 +1756,6 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       process.stdin.off('keypress', keypressListener as any);
     }
     console.log(chalk.cyan('\n  Session saved to .crew/ — run "crew repl" to continue.\n'));
-    process.exit(0);
+    // Allow readline/inquirer handles to close naturally; avoid forced exit races.
   });
 }

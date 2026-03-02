@@ -85,6 +85,15 @@ const activeOpenCodeAgents = new Map(); // agentId → { model, since }
 const SSE_THROTTLE_MS = 500; // Only send same agent_working/idle once per 500ms
 const sseThrottle = new Map(); // key → lastSentMs
 
+// Cleanup throttle map every 5 minutes to prevent unbounded growth
+setInterval(() => {
+  const now = Date.now();
+  const stale = 5 * 60 * 1000; // 5 min
+  for (const [key, ts] of sseThrottle.entries()) {
+    if (now - ts > stale) sseThrottle.delete(key);
+  }
+}, 5 * 60 * 1000);
+
 function broadcastSSE(payload) {
   // Throttle high-frequency agent status updates to prevent dashboard flashing
   if (payload?.type === "agent_working" || payload?.type === "agent_idle") {
@@ -260,6 +269,30 @@ function pushRtActivity(entry) {
 }
 
 const autonomousPmLoopSessions = new Set();
+
+// Auto-retry tracking — prevents infinite retry loops
+const autoRetryAttempts = new Map(); // taskId → { questionRetry, planRetry, bailRetry, timestamp }
+const AUTO_RETRY_TTL = 10 * 60 * 1000; // 10 min
+
+// Cleanup stale retry tracking every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [taskId, data] of autoRetryAttempts.entries()) {
+    if (now - data.timestamp > AUTO_RETRY_TTL) autoRetryAttempts.delete(taskId);
+  }
+}, 5 * 60 * 1000);
+
+function shouldAutoRetry(taskId, retryType) {
+  const existing = autoRetryAttempts.get(taskId);
+  if (!existing) {
+    autoRetryAttempts.set(taskId, { [retryType]: true, timestamp: Date.now() });
+    return true;
+  }
+  if (existing[retryType]) return false; // Already retried this type
+  existing[retryType] = true;
+  existing.timestamp = Date.now();
+  return true;
+}
 
 async function isAgentOnRtBus(agentId) {
   try {
@@ -439,7 +472,18 @@ const bgConsciousnessRef = {
   get enabled() { return _bgConsciousnessEnabled; },
   set enabled(v) { _bgConsciousnessEnabled = v; },
   get model() { return BG_CONSCIOUSNESS_MODEL; },
-  set model(v) { BG_CONSCIOUSNESS_MODEL = v; },
+  set model(v) { 
+    BG_CONSCIOUSNESS_MODEL = v;
+    // Persist to config so it survives restart
+    try {
+      const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+      cfg.bgConsciousnessModel = v;
+      fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), "utf8");
+    } catch (e) {
+      console.error(`[crew-lead] Failed to persist bgConsciousnessModel: ${e.message}`);
+    }
+  },
   get lastActivityAt() { return _lastBgConsciousnessAt; },
   set lastActivityAt(v) { _lastBgConsciousnessAt = v; },
 };
@@ -642,7 +686,7 @@ function connectRT() {
             pendingDispatches.delete(failedTaskId);
             const newTaskId = dispatchTask(fallback, dispatch.task, targetSession, { ...dispatch, pipelineId: dispatch.pipelineId, waveIndex: dispatch.waveIndex });
             if (newTaskId) {
-              appendHistory(targetSession, "system", `[crew-lead] ${failedAgent} hit rate limit (${errMsg.slice(0, 80)}). Re-dispatched same task to ${fallback}.`);
+              appendHistory("default", targetSession, "system", `[crew-lead] ${failedAgent} hit rate limit (${errMsg.slice(0, 80)}). Re-dispatched same task to ${fallback}.`);
               broadcastSSE({ type: "agent_reply", from: "crew-lead", content: `Rate limit: retried task with ${fallback}.`, sessionId: targetSession, taskId: failedTaskId, ts: Date.now() });
               console.log(`[crew-lead] Rate limit fallback: ${failedAgent} → ${fallback} (task re-dispatched)`);
             }
@@ -676,7 +720,7 @@ function connectRT() {
           const _retryTask = (_originalTask.slice(0, 2000) || content.slice(0, 500)) +
             "\n\nDo NOT ask for permission or confirmation. Proceed immediately with your best judgment. Just do it.";
           console.log(`[crew-lead] Agent ${from} asked a question instead of working — auto-retrying`);
-          appendHistory(targetSession, "system", `${from} asked a question instead of acting — auto-retrying with explicit instruction.`);
+          appendHistory("default", targetSession, "system", `${from} asked a question instead of acting — auto-retrying with explicit instruction.`);
           dispatchTask(from, _retryTask, targetSession);
           return;
         }
@@ -693,7 +737,7 @@ function connectRT() {
           const _originalTask = dispatch?.task || "";
           const _retryTask = `STOP PLANNING. Your last response was a plan/analysis with no code written.\n\nOriginal task: ${_originalTask.slice(0, 1500)}\n\nNow WRITE THE CODE. Use @@WRITE_FILE for every file. Do not describe what you will do — do it.`;
           console.log(`[crew-lead] Agent ${from} returned a plan instead of code — auto-retrying`);
-          appendHistory(targetSession, "system", `${from} returned a plan with no code — auto-retrying with explicit execute instruction.`);
+          appendHistory("default", targetSession, "system", `${from} returned a plan with no code — auto-retrying with explicit execute instruction.`);
           dispatchTask(from, _retryTask, targetSession, dispatch?.pipelineId ? { pipelineId: dispatch.pipelineId } : null);
           return;
         }
@@ -707,16 +751,16 @@ function connectRT() {
           const fallbackAgent = _isCoderAgent ? from : (getRateLimitFallback(from) || from);
           const _retryTask = `Your previous attempt at this task was incomplete. You said you couldn't finish.\n\nOriginal task:\n${_originalTask.slice(0, 2000)}\n\nDo not apologize. Do not explain why you couldn't finish. Just complete the remaining work now. Use @@WRITE_FILE for every file you change. If the task is too large, complete the most critical items first.`;
           console.log(`[crew-lead] Agent ${from} bailed out mid-task — auto-retrying with ${fallbackAgent}`);
-          appendHistory(targetSession, "system", `${from} bailed mid-task — auto-retrying with ${fallbackAgent}.`);
+          appendHistory("default", targetSession, "system", `${from} bailed mid-task — auto-retrying with ${fallbackAgent}.`);
           dispatchTask(fallbackAgent, _retryTask, targetSession, dispatch?.pipelineId ? { pipelineId: dispatch.pipelineId, projectDir: dispatch.projectDir } : null);
           return;
         }
 
-        appendHistory(targetSession, "system", `[${from} completed task]: ${content.slice(0, 4000)}`);
+        appendHistory("default", targetSession, "system", `[${from} completed task]: ${content.slice(0, 4000)}`);
         // Surface background consciousness to owner so the user sees crew-main managing the process
         if (targetSession === "bg-consciousness" && from === "crew-main") {
           const short = content.slice(0, 800).replace(/\n+/g, " ").trim();
-          appendHistory("owner", "system", `[crew-main — background]: ${short}`);
+          appendHistory("default", "owner", "system", `[crew-main — background]: ${short}`);
           broadcastSSE({ type: "agent_reply", from: "crew-main", content: short, sessionId: "owner", taskId, _bg: true, ts: Date.now() });
           try {
             const statusPath = path.join(os.homedir(), ".crewswarm", "process-status.md");
@@ -787,12 +831,12 @@ function connectRT() {
               sessionId: targetSession,
             });
             dispatchPipelineWave(pipelineId);
-            appendHistory(targetSession, "system", `PM pipeline started (${pipelineSpec.steps.length} steps).`);
+            appendHistory("default", targetSession, "system", `PM pipeline started (${pipelineSpec.steps.length} steps).`);
           } else {
             const dispatches = parseDispatches(content);
             for (const d of dispatches) {
               const ok = dispatchTask(d.agent, d, targetSession);
-              if (ok) appendHistory(targetSession, "system", `PM dispatched to ${d.agent}: "${(d.task || "").slice(0, 120)}".`);
+              if (ok) appendHistory("default", targetSession, "system", `PM dispatched to ${d.agent}: "${(d.task || "").slice(0, 120)}".`);
             }
           }
           // PM can register a new project so it appears in the dashboard Projects tab
@@ -808,13 +852,13 @@ function connectRT() {
                 });
                 const proj = await createRes.json();
                 if (proj.ok && proj.project) {
-                  appendHistory(targetSession, "system", `PM registered project "${registerProj.name}" in dashboard Projects tab (${registerProj.outputDir}).`);
+                  appendHistory("default", targetSession, "system", `PM registered project "${registerProj.name}" in dashboard Projects tab (${registerProj.outputDir}).`);
                   console.log(`[crew-lead] PM registered project: ${registerProj.name} → ${registerProj.outputDir}`);
                 } else {
-                  appendHistory(targetSession, "system", `PM project registration failed: ${proj.error || "unknown"}.`);
+                  appendHistory("default", targetSession, "system", `PM project registration failed: ${proj.error || "unknown"}.`);
                 }
               } catch (e) {
-                appendHistory(targetSession, "system", `PM project registration failed: ${e.message}.`);
+                appendHistory("default", targetSession, "system", `PM project registration failed: ${e.message}.`);
               }
             })();
           }
@@ -825,7 +869,7 @@ function connectRT() {
           const handbackTask = `Handback from ${from}: ${content.slice(0, 600)}. Update the roadmap (mark that item done), then dispatch the next task(s) with @@DISPATCH. Keep the pipeline moving until the plan is done or blocked. If no more items, reply "All done." and do not emit @@DISPATCH.`;
           const pmTaskId = dispatchTask("crew-pm", handbackTask, targetSession);
           if (pmTaskId) {
-            appendHistory(targetSession, "system", `Autonomous: sent handback to crew-pm to update plan and dispatch next.`);
+            appendHistory("default", targetSession, "system", `Autonomous: sent handback to crew-pm to update plan and dispatch next.`);
           }
         }
       }

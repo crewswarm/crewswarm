@@ -140,12 +140,12 @@ for AGENT in "${AGENTS[@]}"; do
     echo "----🔴 $AGENT | bash='/bin/bash' param1='$CTL' param2=start-agent param3='$AGENT' terminal=false refresh=true"
   fi
 done
-echo "--$(_svc_icon $SVC_TG) Telegram Bridge         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=telegram terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_WA) WhatsApp Bridge         | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=whatsapp terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_CL) crew-lead               | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=crew-lead terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_OC) Code Engine             | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=opencode terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_MCP) MCP + OpenAI API        | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=mcp terminal=false refresh=true"
-echo "--$(_svc_icon $SVC_DB) Dashboard               | bash='$CREWSWARM_DIR/scripts/restart-service.sh' param1=dashboard terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_TG) Telegram Bridge         | bash='$CREWSWARM_DIR/scripts/swiftbar-restart-service.sh' param1=telegram terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_WA) WhatsApp Bridge         | bash='$CREWSWARM_DIR/scripts/swiftbar-restart-service.sh' param1=whatsapp terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_CL) crew-lead               | bash='$CREWSWARM_DIR/scripts/swiftbar-restart-service.sh' param1=crew-lead terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_OC) Code Engine             | bash='$CREWSWARM_DIR/scripts/swiftbar-restart-service.sh' param1=opencode terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_MCP) MCP + OpenAI API        | bash='$CREWSWARM_DIR/scripts/swiftbar-restart-service.sh' param1=mcp terminal=false refresh=true"
+echo "--$(_svc_icon $SVC_DB) Dashboard               | bash='$CREWSWARM_DIR/scripts/swiftbar-restart-service.sh' param1=dashboard terminal=false refresh=true"
 if [[ "$SVC_CM" == "up" ]]; then
   echo "--🟢 ChatMock (port 8000) | bash='/bin/bash' param1='-c' param2='pkill -f chatmock.py' terminal=false refresh=true"
 else

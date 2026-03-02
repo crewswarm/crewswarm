@@ -1,0 +1,76 @@
+services:
+  crewswarm-db:
+    image: postgres:16-alpine
+    container_name: crewswarm-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=crewswarm
+      - POSTGRES_PASSWORD=crewswarm
+      - POSTGRES_DB=crewswarm
+    ports:
+      - "5432:5432"
+    volumes:
+      - crewswarm-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crewswarm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  crewswarm-api:
+    build: .
+    image: crewswarm-template:latest
+    container_name: crewswarm-api
+    restart: unless-stopped
+    depends_on:
+      crewswarm-db:
+        condition: service_healthy
+    ports:
+      - "4319:4319"   # Dashboard
+      - "5010:5010"   # crew-lead
+      - "18889:18889" # RT message bus
+      - "4096:4096"   # Code engine (optional)
+      - "5020:5020"   # MCP server (optional)
+    volumes:
+      # Persistent config and state
+      - crewswarm-config:/root/.crewswarm
+      
+      # Optional: Mount your local documents for knowledge agent
+      - ./data:/app/data:ro
+    environment:
+      # Node environment
+      - NODE_ENV=production
+
+      # Bind to 0.0.0.0 for Docker port mapping
+      - CREWSWARM_BIND_HOST=0.0.0.0
+      - CREWSWARM_RT_HOST=0.0.0.0
+
+      # Database connection
+      - DB_HOST=crewswarm-db
+      - DB_PORT=5432
+      - DB_USER=crewswarm
+      - DB_PASS=crewswarm
+      - DB_DATABASE=crewswarm
+
+      # API keys (set in .env)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+
+      # Optional: Enable background consciousness
+      # - CREWSWARM_BG_CONSCIOUSNESS=1
+
+      # Optional: Enable engine routing
+      # - CREWSWARM_OPENCODE_ENABLED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4319/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  crewswarm-db-data:
+  crewswarm-config:

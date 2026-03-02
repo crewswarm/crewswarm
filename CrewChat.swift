@@ -96,7 +96,7 @@ class SSEDelegate: NSObject, URLSessionDataDelegate {
 // ── Floating window app (no menu bar icon — launched via SwiftBar) ────────────
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
 
-    var window: NSWindow!
+    var window: NSWindow?  // Changed from NSWindow! to NSWindow? for safer nil handling
     var scrollView: NSScrollView!
     var stack: NSStackView!
     var inputField: NSTextField!
@@ -137,6 +137,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
 
     func bringToFront() {
+        // CRITICAL FIX: Check if window exists before accessing
+        // Prevents crash when dock icon clicked after window closed
+        guard let window = window else {
+            // Window was deallocated - recreate it
+            buildWindow()
+            return
+        }
+        
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         inputField.window?.makeFirstResponder(inputField)
@@ -149,13 +157,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             contentRect: NSRect(x: 0, y: 0, width: W, height: H),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
             backing: .buffered, defer: false)
-        window.title = ""
-        window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = NSColor.crewBg
-        window.center()
+        window!.title = ""
+        window!.titlebarAppearsTransparent = true
+        window!.isMovableByWindowBackground = true
+        window!.backgroundColor = NSColor.crewBg
+        window!.center()
 
-        let root = window.contentView!
+        let root = window!.contentView!
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor.crewBg.cgColor
 
@@ -335,7 +343,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
             stack.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
         ])
 
-        window.makeKeyAndOrderFront(nil)
+        window!.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         addNote("Connected. Type anything to start.", color: .crewMuted)
     }

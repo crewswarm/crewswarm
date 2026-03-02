@@ -138,7 +138,15 @@ Response:
     "unifiedRouter": true,
     "dualL2": true
   },
-  "queueDepth": 0
+  "queueDepth": 0,
+  "pipeline": {
+    "runs": 12,
+    "qaApproved": 10,
+    "qaRejected": 2,
+    "qaRoundsAvg": 1.4,
+    "contextChunksUsed": 184,
+    "contextCharsSavedEst": 91234
+  }
 }
 ```
 

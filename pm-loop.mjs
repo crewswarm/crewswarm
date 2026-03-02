@@ -64,6 +64,11 @@ const TASK_TIMEOUT        = Number(process.env.PHASED_TASK_TIMEOUT_MS  || "60000
 const PM_AGENT_IDLE_TIMEOUT_MS = Number(process.env.PM_AGENT_IDLE_TIMEOUT_MS || "900000");
 const MAX_CONCURRENT_TASKS = Number(process.env.PM_MAX_CONCURRENT || "20");
 const GROQ_API_KEY   = process.env.GROQ_API_KEY || ""; // kept for backwards compat
+const ONE_SHOT_MODE  = process.env.PM_ONE_SHOT === "1"; // Fresh context per task
+
+if (ONE_SHOT_MODE) {
+  console.log("[PM-LOOP] One-shot mode enabled: gateway-bridge will exit after each task (fresh context)");
+}
 
 // ── Search Tools ──────────────────────────────────────────────────────────
 function getSearchToolsConfig() {
@@ -71,7 +76,11 @@ function getSearchToolsConfig() {
     homedir() + "/.crewswarm/search-tools.json",
   ];
   for (const p of candidates) {
-    try { return JSON.parse(readFileSync(p, "utf8")); } catch {}
+    try { 
+      return JSON.parse(readFileSync(p, "utf8")); 
+    } catch (e) {
+      console.error(`[PM-LOOP] Failed to parse search-tools config ${p}: ${e.message}`);
+    }
   }
   return {};
 }
@@ -89,15 +98,21 @@ async function searchWithBrave(query) {
     const results = (data.web?.results || []).slice(0, 5);
     if (!results.length) return null;
     return results.map((r, i) => `${i+1}. ${r.title}\n   ${r.description || ""}\n   ${r.url}`).join("\n\n");
-  } catch { return null; }
+  } catch (e) {
+    console.error(`[PM-LOOP] Brave search failed for query "${query}": ${e.message}`);
+    return null;
+  }
 }
 
 // Perplexity Sonar Pro — PM orchestrator model with real-time web search
 let _ocCfg = null;
 let _rosterCache = null; // Cache for buildActiveAgentRoster()
+let _lastConfigRead = 0;
+const CONFIG_CACHE_TTL = 60_000; // Reload config every 60s to pick up changes
 
 function getOCConfig() {
-  if (_ocCfg) return _ocCfg;
+  const now = Date.now();
+  if (_ocCfg && now - _lastConfigRead < CONFIG_CACHE_TTL) return _ocCfg;
   const candidates = [
     homedir() + "/.crewswarm/crewswarm.json",
   ];
@@ -106,10 +121,13 @@ function getOCConfig() {
       const cfg = JSON.parse(readFileSync(p, "utf8"));
       if (cfg && typeof cfg === "object") { 
         _ocCfg = cfg;
-        _rosterCache = null; // Invalidate roster cache when config changes
+        _rosterCache = null;
+        _lastConfigRead = Date.now();
         return _ocCfg; 
       }
-    } catch {}
+    } catch (e) {
+      console.error(`[PM-LOOP] Failed to parse crewswarm config ${p}: ${e.message}`);
+    }
   }
   return {};
 }
@@ -281,6 +299,7 @@ function buildAgentRoster() {
 // Route task to the right specialist agent
 // First tries LLM routing (if PM LLM is available), falls back to keyword regex
 const _routeCache = new Map();
+const ROUTE_CACHE_MAX = 100; // Prevent unbounded growth
 
 async function routeAgent(itemText) {
   if (!USE_SPECIALISTS) return CODER_AGENT;
@@ -321,11 +340,16 @@ Rules:
 
       const agent = (result || "").trim().toLowerCase().replace(/[^a-z-]/g, "");
       if (valid.includes(agent)) {
+        // Evict oldest entry if cache is full
+        if (_routeCache.size >= ROUTE_CACHE_MAX) {
+          const firstKey = _routeCache.keys().next().value;
+          _routeCache.delete(firstKey);
+        }
         _routeCache.set(itemText, agent);
         return agent;
       }
-    } catch {
-      // fall through to keyword routing
+    } catch (e) {
+      console.error(`[PM-LOOP] Agent routing via LLM failed: ${e.message}`);
     }
   }
 
@@ -366,7 +390,11 @@ async function runCopywriterPass(itemText, task) {
 
   const agentPrompts = (() => {
     for (const p of [homedir() + "/.crewswarm/agent-prompts.json"]) {
-      try { return JSON.parse(readFileSync(p, "utf8")); } catch {}
+      try { 
+        return JSON.parse(readFileSync(p, "utf8")); 
+      } catch (e) {
+        console.error(`[PM-LOOP] Failed to parse agent prompts ${p}: ${e.message}`);
+      }
     }
     return {};
   })();
@@ -420,7 +448,7 @@ async function clearPid() {
   await unlink(PID_FILE).catch(() => {});
 }
 // Clean up PID on any exit
-process.on("exit",    () => { try { unlinkSync(PID_FILE); } catch {} });
+process.on("exit",    () => { try { unlinkSync(PID_FILE); } catch (e) { console.error(`[PM-LOOP] Failed to remove PID file: ${e.message}`); } });
 process.on("SIGTERM", async () => { await clearPid(); process.exit(0); });
 process.on("SIGINT",  async () => { await clearPid(); process.exit(0); });
 
@@ -547,7 +575,20 @@ WORKFLOW — follow this every time:
     return { targetAgent: null, task: item, files: null, successCriteria: null, raw: fallbackTask, taskText: fallbackTask };
   }
 
-  const featuresSnippet = FEATURES_DOC ? (() => { try { return readFileSync(FEATURES_DOC, "utf8").slice(0, 800); } catch { return ""; } })() : "";
+  // Load recent progress for context
+  const progressFile = join(OUTPUT_DIR, '.crewswarm', 'progress.txt');
+  const recentProgress = existsSync(progressFile)
+    ? readFileSync(progressFile, 'utf8').slice(-5000)  // Last 5KB
+    : '';
+
+  const featuresSnippet = FEATURES_DOC ? (() => { 
+    try { 
+      return readFileSync(FEATURES_DOC, "utf8").slice(0, 800); 
+    } catch (e) { 
+      console.error(`[PM-LOOP] Failed to read features doc ${FEATURES_DOC}: ${e.message}`);
+      return ""; 
+    } 
+  })() : "";
 
   // Brave search for non-Perplexity providers — gives Groq/Cerebras fresh web context
   let webSnippet = "";
@@ -664,13 +705,39 @@ async function getProjectContext() {
           if (st) files.push({ path: full.replace(OUTPUT_DIR + "/", ""), size: st.size });
         }
       }
-    } catch { /* skip unreadable dirs */ }
+    } catch (e) {
+      console.error(`[PM-LOOP] Failed to scan directory ${dir}: ${e.message}`);
+    }
   }
   await scan(OUTPUT_DIR);
   if (!files.length) return `(output dir exists but contains no tracked files yet)`;
   const summary = files.slice(0, 20).map(f => `${f.path} (${Math.round(f.size/1024)}KB)`).join(", ");
   return `${files.length} file(s) in ${OUTPUT_DIR}: ${summary}${files.length > 20 ? ` ... and ${files.length-20} more` : ""}`;
 }
+
+// ── Record progress for learning across iterations ────────────────────────
+async function recordProgress(task, result, iteration) {
+  try {
+    const progressDir = join(OUTPUT_DIR, '.crewswarm');
+    if (!existsSync(progressDir)) {
+      await mkdir(progressDir, { recursive: true });
+    }
+    
+    const progressFile = join(progressDir, 'progress.txt');
+    const entry = `
+### Iteration ${iteration} - ${new Date().toISOString()}
+**Task:** ${task.description || task}
+**Outcome:** ${result.status || 'completed'}
+**Learnings:** ${result.learnings || result.reply?.slice(0, 200) || 'Task completed'}
+
+---
+`;
+    await appendFile(progressFile, entry);
+  } catch (e) {
+    console.error(`[PM-LOOP] Failed to record progress: ${e.message}`);
+  }
+}
+
 
 /** Infer main user-facing HTML file so PM can require styling/animations there (not only in templates). */
 function getMainDeliverableHint() {
@@ -687,7 +754,9 @@ function getMainDeliverableHint() {
       const first = sub.find(e => e.isFile() && e.name.endsWith(".html"));
       if (first) return join(OUTPUT_DIR, "test-output", first.name);
     }
-  } catch {}
+  } catch (e) {
+    console.error(`[PM-LOOP] Failed to infer main deliverable from ${OUTPUT_DIR}: ${e.message}`);
+  }
   return null;
 }
 
@@ -707,7 +776,9 @@ async function getOutputDirFilePaths() {
         if (e.isDirectory()) await scan(full, depth + 1);
         else if (TRACKED_EXT.has(e.name.slice(e.name.lastIndexOf(".")))) out.push(full);
       }
-    } catch {}
+    } catch (e) {
+      console.error(`[PM-LOOP] Failed to scan ${dir}: ${e.message}`);
+    }
   }
   await scan(OUTPUT_DIR);
   return out;
@@ -790,10 +861,35 @@ ${isPerplexity ? "Search for relevant best practices, then generate" : "Generate
     const raw = data.choices?.[0]?.message?.content?.trim() || "";
     const items = raw.split("\n").map(l => l.trim()).filter(l => l.length > 10 && !l.startsWith("#"));
     const exactly4 = items.slice(0, 4);
-    if (exactly4.length !== 4) {
-      console.warn(`  ⚠ PM self-extend returned ${exactly4.length} items (expected 4); using ${exactly4.length} item(s)`);
+    
+    // Duplicate detection: filter out items too similar to existing
+    const existingRoadmap = await readFile(ROADMAP_FILE, "utf8");
+    const filtered = exactly4.filter(newItem => {
+      // Check if this item is too similar to any line in existing roadmap
+      const normalized = newItem.toLowerCase().replace(/[^a-z0-9\s]/g, "");
+      const words = normalized.split(/\s+/).filter(w => w.length > 3);
+      
+      // If 80% of words appear in existing roadmap, it's likely a duplicate
+      const matchCount = words.filter(w => existingRoadmap.toLowerCase().includes(w)).length;
+      const similarity = words.length > 0 ? matchCount / words.length : 0;
+      
+      if (similarity > 0.8) {
+        console.log(`  🔄 Skipping duplicate: "${newItem.slice(0, 60)}..."`);
+        return false;
+      }
+      return true;
+    });
+    
+    if (filtered.length === 0 && exactly4.length > 0) {
+      console.log(`  ⚠️  All ${exactly4.length} generated items were duplicates, skipping self-extend`);
+      return [];
     }
-    return exactly4;
+    
+    if (filtered.length !== exactly4.length) {
+      console.warn(`  ⚠ PM self-extend returned ${exactly4.length} items, ${filtered.length} unique after duplicate filter`);
+    }
+    
+    return filtered;
   } catch (e) {
     console.warn(`  ⚠ PM LLM self-extend failed (${e.message})`);
     return [];
@@ -816,7 +912,11 @@ async function finalSynthesis(opId, completedItems, doneCount, failedCount) {
   banner("🦊 crew-main (Quill) — Phase 1: Audit");
 
   let filePaths = [];
-  try { filePaths = await getOutputDirFilePaths(); } catch {}
+  try { 
+    filePaths = await getOutputDirFilePaths(); 
+  } catch (e) {
+    console.error(`[PM-LOOP] Failed to get output dir file paths: ${e.message}`);
+  }
   const fileManifest = filePaths.length > 0
     ? filePaths.map(f => `  - ${f}`).join("\n")
     : "(no output files found)";
@@ -1033,7 +1133,12 @@ async function main() {
 
   // Auto-clean stale stop file from any previous run so we don't exit immediately
   if (existsSync(STOP_FILE)) {
-    try { unlinkSync(STOP_FILE); console.log(`🧹 Removed stale stop file: ${STOP_FILE}`); } catch {}
+    try { 
+      unlinkSync(STOP_FILE); 
+      console.log(`🧹 Removed stale stop file: ${STOP_FILE}`); 
+    } catch (e) {
+      console.error(`[PM-LOOP] Failed to remove stop file ${STOP_FILE}: ${e.message}`);
+    }
   }
 
   if (!existsSync(ROADMAP_FILE)) {
@@ -1069,7 +1174,10 @@ async function main() {
     console.log(`\n📋 Roadmap: ${done}/${total} done, ${failed} failed, ${pending} pending`);
 
     // ── Self-extend: roadmap exhausted or every N completions ────────────
-    if (SELF_EXTEND && !DRY_RUN && (!item || (doneCount > 0 && doneCount % EXTEND_EVERY_N === 0 && pending === 0))) {
+    // Stop self-extending if too many failures (something is broken)
+    if (failed >= 10) {
+      console.log(`\n⚠️  Self-extend disabled: ${failed} failed tasks (fix issues before extending)`);
+    } else if (SELF_EXTEND && !DRY_RUN && (!item || (doneCount > 0 && doneCount % EXTEND_EVERY_N === 0 && pending === 0))) {
       extendRound++;
       console.log(`\n🧠 PM self-extend round ${extendRound} — generating new roadmap items...`);
       const context = await getProjectContext();
@@ -1198,6 +1306,18 @@ async function main() {
       await log({ op_id: opId, item: item.text, task: task.substring(0, 120), agent: targetAgent, status: "done", duration_s: parseFloat(dur) });
       doneCount++;
       completedItems.push(item.text);
+      
+      // Record progress for learning across iterations
+      await recordProgress(
+        { description: item.text },
+        { status: 'success', reply: `Completed by ${targetAgent} in ${dur}s` },
+        itemCount
+      );
+      
+      // One-shot mode: set env for next gateway spawn
+      if (ONE_SHOT_MODE) {
+        process.env.CREWSWARM_ONE_SHOT = '1';
+      }
     } catch (e) {
       const dur = ((Date.now() - start) / 1000).toFixed(1);
       console.log(`  ❌ Failed in ${dur}s: ${e.message}`);
@@ -1213,6 +1333,13 @@ async function main() {
         await log({ op_id: opId, item: item.text, task: task.substring(0, 120), agent: "crew-fixer", status: "fixed", duration_s: parseFloat(dur) });
         doneCount++;
         completedItems.push(item.text);
+        
+        // Record progress for failed->fixed items
+        await recordProgress(
+          { description: item.text },
+          { status: 'fixed', learnings: `Initially failed, fixed by crew-fixer: ${e.message.slice(0, 100)}` },
+          itemCount
+        );
       } catch (fixErr) {
         console.log(`  ❌ Fixer also failed: ${fixErr.message.slice(0, 60)}`);
         await log({ op_id: opId, item: item.text, task: task.substring(0, 120), agent: CODER_AGENT, status: "failed", duration_s: parseFloat(dur), error: e.message });

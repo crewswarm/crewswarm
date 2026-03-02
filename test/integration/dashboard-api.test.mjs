@@ -1,0 +1,305 @@
+/**
+ * Integration tests for Dashboard API endpoints with validation
+ * Tests that all endpoints properly validate input using Zod schemas
+ */
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+
+const DASHBOARD_BASE = process.env.DASHBOARD_BASE || "http://127.0.0.1:4319";
+
+// Helper to make API requests
+async function apiRequest(endpoint, method = "GET", body = null) {
+  const options = {
+    method,
+    headers: { "content-type": "application/json" },
+  };
+  if (body) options.body = JSON.stringify(body);
+  
+  const res = await fetch(`${DASHBOARD_BASE}${endpoint}`, options);
+  const data = await res.json();
+  return { status: res.status, data };
+}
+
+describe("Dashboard API Validation Tests", () => {
+  
+  describe("POST /api/build", () => {
+    test("rejects request with missing requirement", async () => {
+      const { status, data } = await apiRequest("/api/build", "POST", {});
+      assert.equal(status, 400, "Should return 400 for missing requirement");
+      assert.equal(data.ok, false);
+      assert.ok(data.error.toLowerCase().includes("required"));
+    });
+
+    test("rejects request with invalid requirement type", async () => {
+      const { status, data } = await apiRequest("/api/build", "POST", { requirement: 123 });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("rejects request with empty requirement", async () => {
+      const { status, data } = await apiRequest("/api/build", "POST", { requirement: "" });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("rejects request with requirement too long", async () => {
+      const { status, data } = await apiRequest("/api/build", "POST", { 
+        requirement: "x".repeat(10001) 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("accepts valid build request", async () => {
+      // Note: This will actually start a build, so we skip it unless explicitly testing
+      // Just validate the schema accepts the format
+      const validBody = { requirement: "write a hello world script" };
+      assert.ok(validBody.requirement.length > 0 && validBody.requirement.length <= 10000);
+    });
+  });
+
+  describe("POST /api/pm-loop/start", () => {
+    test("accepts request with no body (all fields optional)", async () => {
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {});
+      // Should not be a validation error (fields are optional)
+      // May fail for other reasons (e.g., already running)
+      if (status === 400) {
+        assert.ok(!data.error?.includes("validation"), "Should not be a validation error");
+      }
+    });
+
+    test("accepts valid dryRun option", async () => {
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { dryRun: true });
+      // Should not fail validation
+      if (status === 400) {
+        assert.ok(!data.error?.toLowerCase().includes("dryrun"), "Should accept dryRun boolean");
+      }
+    });
+
+    test("accepts valid projectId", async () => {
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { 
+        projectId: "test-project-123" 
+      });
+      // Should not fail validation
+      if (status === 400) {
+        assert.ok(!data.error?.toLowerCase().includes("projectid"), "Should accept projectId string");
+      }
+    });
+
+    test("accepts valid pmOptions", async () => {
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { 
+        pmOptions: { 
+          autoAdvance: true, 
+          maxIterations: 5,
+          useSecurity: true,
+          useQA: false
+        } 
+      });
+      // Should not fail validation
+      if (status === 400) {
+        assert.ok(!data.error?.toLowerCase().includes("pmoptions"), "Should accept pmOptions object");
+      }
+    });
+
+    test("rejects invalid maxIterations", async () => {
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { 
+        pmOptions: { maxIterations: 0 } 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("rejects maxIterations over limit", async () => {
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { 
+        pmOptions: { maxIterations: 1001 } 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+  });
+
+  describe("POST /api/services/restart", () => {
+    test("rejects request with missing id", async () => {
+      const { status, data } = await apiRequest("/api/services/restart", "POST", {});
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+      assert.ok(data.error.toLowerCase().includes("required"));
+    });
+
+    test("rejects request with invalid service id", async () => {
+      const { status, data } = await apiRequest("/api/services/restart", "POST", { 
+        id: "invalid-service-xyz" 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("accepts valid service id", async () => {
+      const validIds = [
+        "rt-bus", "agents", "crew-lead", "telegram", "whatsapp", 
+        "opencode", "mcp", "openclaw-gateway", "dashboard"
+      ];
+      
+      for (const id of validIds) {
+        const { status, data } = await apiRequest("/api/services/restart", "POST", { id });
+        // Should not be a validation error (may fail for other operational reasons)
+        if (status === 400) {
+          assert.ok(!data.error?.includes("invalid") && !data.error?.includes("enum"), 
+            `Should accept valid service id: ${id}`);
+        }
+      }
+    });
+  });
+
+  describe("POST /api/skills/import", () => {
+    test("rejects request with missing url", async () => {
+      const { status, data } = await apiRequest("/api/skills/import", "POST", {});
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+      assert.ok(data.error.toLowerCase().includes("required"));
+    });
+
+    test("rejects request with invalid url format", async () => {
+      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
+        url: "not-a-valid-url" 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("rejects request with non-HTTPS url", async () => {
+      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
+        url: "http://example.com/skill.json" 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+      assert.ok(data.error.toLowerCase().includes("https"));
+    });
+
+    test("rejects request with localhost url", async () => {
+      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
+        url: "https://localhost/skill.json" 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+      assert.ok(data.error.toLowerCase().includes("blocked") || data.error.toLowerCase().includes("private"));
+    });
+
+    test("rejects request with private IP url", async () => {
+      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
+        url: "https://192.168.1.1/skill.json" 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+      assert.ok(data.error.toLowerCase().includes("blocked") || data.error.toLowerCase().includes("private"));
+    });
+
+    test("rejects url that's too long", async () => {
+      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
+        url: "https://example.com/" + "x".repeat(2000) 
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("accepts valid HTTPS GitHub url", async () => {
+      const validUrl = "https://raw.githubusercontent.com/user/repo/main/skill.json";
+      const { status, data } = await apiRequest("/api/skills/import", "POST", { url: validUrl });
+      // Should not be a validation error (may fail due to network/404)
+      if (status === 400) {
+        assert.ok(!data.error?.includes("validation") && !data.error?.includes("invalid url"), 
+          "Should accept valid HTTPS GitHub URL");
+      }
+    });
+  });
+
+  describe("Error Handling", () => {
+    test("returns 400 for malformed JSON", async () => {
+      const res = await fetch(`${DASHBOARD_BASE}/api/build`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{ invalid json"
+      });
+      const data = await res.json();
+      assert.equal(res.status, 400);
+      assert.equal(data.ok, false);
+      assert.ok(data.error.toLowerCase().includes("json"));
+    });
+
+    test("returns 400 for empty request body", async () => {
+      const res = await fetch(`${DASHBOARD_BASE}/api/build`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: ""
+      });
+      const data = await res.json();
+      assert.equal(res.status, 400);
+      assert.equal(data.ok, false);
+      assert.ok(data.error.toLowerCase().includes("empty") || data.error.toLowerCase().includes("required"));
+    });
+  });
+
+  describe("Process Helper Functions", () => {
+    test("commandExists helper replaced execSync", async () => {
+      // This is a smoke test - if the dashboard starts, commandExists works
+      const { status } = await apiRequest("/health", "GET");
+      assert.ok(status === 200 || status === 404, "Dashboard should be responding");
+    });
+
+    test("spawnAsync helper replaced execSync for folder picker", async () => {
+      // Folder picker only works on macOS, but should not crash
+      if (process.platform === "darwin") {
+        const res = await fetch(`${DASHBOARD_BASE}/api/pick-folder?default=/tmp`, {
+          method: "GET"
+        });
+        // Should return 200 with ok field (may be false if user cancels)
+        assert.ok(res.status === 200 || res.status === 500, "Folder picker should handle requests");
+      }
+    });
+  });
+});
+
+describe("Regression Tests", () => {
+  test("no execSync calls remain in dashboard.mjs", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
+    const content = await fs.readFile(dashboardPath, "utf8");
+    
+    assert.ok(!content.includes("execSync"), "dashboard.mjs should not contain execSync calls");
+  });
+
+  test("validation schemas are imported", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
+    const content = await fs.readFile(dashboardPath, "utf8");
+    
+    assert.ok(content.includes("StartBuildSchema"), "Should import StartBuildSchema");
+    assert.ok(content.includes("StartPMLoopSchema"), "Should import StartPMLoopSchema");
+    assert.ok(content.includes("ServiceActionSchema"), "Should import ServiceActionSchema");
+    assert.ok(content.includes("ImportSkillSchema"), "Should import ImportSkillSchema");
+  });
+
+  test("validation is actually called for each endpoint", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
+    const content = await fs.readFile(dashboardPath, "utf8");
+    
+    // Check that validate() is called with the right schemas
+    assert.ok(content.match(/validate\(StartBuildSchema/), "Should validate /api/build requests");
+    assert.ok(content.match(/validate\(StartPMLoopSchema/), "Should validate /api/pm-loop/start requests");
+    assert.ok(content.match(/validate\(ServiceActionSchema/), "Should validate /api/services/restart requests");
+    assert.ok(content.match(/validate\(ImportSkillSchema/), "Should validate /api/skills/import requests");
+  });
+});

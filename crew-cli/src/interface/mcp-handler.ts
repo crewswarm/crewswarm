@@ -26,6 +26,26 @@ export async function handleMcpRequest(
 
   try {
     switch (method) {
+      case 'initialize':
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            protocolVersion: '2024-11-05',
+            capabilities: { tools: {} },
+            serverInfo: {
+              name: 'crew-cli',
+              version: '1.0.0',
+              description: 'crew-cli unified orchestration and sandbox tools'
+            }
+          }
+        };
+
+      case 'notifications/initialized':
+      case 'initialized':
+        // Notification - no response needed
+        return { _skip: true } as any;
+
       case 'tools/list':
         return {
           jsonrpc: '2.0',
@@ -253,13 +273,29 @@ async function handleToolCall(
       case 'crew_search_code': {
         const query = String(args?.query || '').trim();
         const limit = parseInt(String(args?.limit || '10'), 10);
-        
-        // TODO: Integrate with actual search implementation
-        result = {
-          query,
-          results: [],
-          message: 'Search functionality coming soon'
-        };
+
+        if (!query) {
+          result = { query, results: [], message: 'Empty query' };
+          break;
+        }
+
+        try {
+          const { buildCollectionIndex, searchCollection } = await import('../collections/index.js');
+          const idx = await buildCollectionIndex(options.projectDir, { includeCode: true });
+          const hits = searchCollection(idx, query, limit);
+          result = {
+            query,
+            results: hits.results.map(r => ({
+              file: r.source,
+              line: r.startLine,
+              text: r.text.slice(0, 500),
+              score: r.score
+            })),
+            total: hits.total
+          };
+        } catch (err) {
+          result = { query, results: [], message: `Search error: ${(err as Error).message}` };
+        }
         break;
       }
 

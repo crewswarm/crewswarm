@@ -25,8 +25,8 @@
 - **Advanced Workflows**: 
   - **Token Caching**: Avoids repeated model calls for unchanged tasks/context (`crew cost` for stats).
   - **Blast Radius**: Predicts and gates high-risk refactors before apply.
-  - **Collections Search**: Local RAG over `docs/` and markdown files (`crew docs`).
-  - **AgentKeeper Memory**: Shared cross-run persistence to reuse successful patterns.
+  - **Collections Search**: Local RAG over \`docs/\` and markdown files (\`crew docs\`).
+  - **AgentKeeper Memory**: Shared cross-run persistence to reuse successful patterns. [Learn more about shared memory](SHARED-MEMORY.md).
   - **Voice Mode**: STT/TTS integration for hands-free orchestration.
 
 ## 📦 Zero-Config Architecture

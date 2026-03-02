@@ -100,3 +100,6 @@ export class Logger {
     console.log(`${color.blue(label)} [${bar}] ${pct}% (${clamped}/${safeTotal})`);
   }
 }
+
+/** Shared singleton logger instance for modules that need lightweight logging without injection. */
+export const logger = new Logger({ level: process.env.CREW_LOG_LEVEL || 'info' });

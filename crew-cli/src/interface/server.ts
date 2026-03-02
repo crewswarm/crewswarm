@@ -7,8 +7,10 @@ import type { AgentRouter } from '../agent/router.js';
 import type { Orchestrator } from '../orchestrator/index.js';
 import type { Sandbox } from '../sandbox/index.js';
 import type { SessionManager } from '../session/manager.js';
-import { buildCollectionIndex, searchCollection } from '../collections/index.js';
+import { buildCollectionIndex, searchCollection, type CollectionIndex, type CollectionChunk } from '../collections/index.js';
 import { handleMcpRequest } from './mcp-handler.js';
+import { loadPipelineMetricsSummary } from '../metrics/pipeline.js';
+import { runEngine } from '../engines/index.js';
 
 type InterfaceMode = 'connected' | 'standalone';
 
@@ -22,21 +24,35 @@ export interface UnifiedServerOptions {
   sandbox: Sandbox;
   session: SessionManager;
   projectDir: string;
-  logger?: { info?: (...args: any[]) => void; warn?: (...args: any[]) => void; error?: (...args: any[]) => void };
+  logger?: { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void; error?: (...args: unknown[]) => void };
 }
 
 interface TaskRecord {
   id: string;
   status: 'queued' | 'running' | 'done' | 'error';
-  result?: any;
+  result?: unknown;
   error?: string;
   traceId?: string;
   costUsd?: number;
+  createdAt: number;
 }
 
 const taskStore = new Map<string, TaskRecord>();
 
-let latestIndex: any = null;
+function evictStaleTasks() {
+  const maxAge = 3_600_000; // 1 hour
+  const now = Date.now();
+  for (const [id, task] of taskStore) {
+    if ((task.status === 'done' || task.status === 'error') && now - task.createdAt > maxAge) {
+      taskStore.delete(id);
+    }
+  }
+}
+
+// Run eviction every 10 minutes
+setInterval(evictStaleTasks, 600_000).unref();
+
+let latestIndex: CollectionIndex | null = null;
 let latestIndexStats: { files: number; chunks: number } = { files: 0, chunks: 0 };
 let latestIndexId = '';
 
@@ -62,6 +78,15 @@ function readRtToken(): string {
   }
 }
 
+function checkAuth(req: IncomingMessage, res: ServerResponse): boolean {
+  const token = readRtToken();
+  if (!token) return true; // No token configured = no auth required
+  const auth = req.headers['authorization'];
+  if (auth === `Bearer ${token}`) return true;
+  json(res, 401, { error: 'Unauthorized' });
+  return false;
+}
+
 function json(res: ServerResponse, code: number, payload: unknown) {
   res.writeHead(code, {
     'content-type': 'application/json; charset=utf-8',
@@ -72,7 +97,7 @@ function json(res: ServerResponse, code: number, payload: unknown) {
   res.end(JSON.stringify(payload));
 }
 
-async function readJson(req: IncomingMessage): Promise<any> {
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -144,12 +169,17 @@ function composeChatPayloadFromOpenAI(messages: unknown): {
   };
 }
 
+interface ChatCompletionResponse {
+  status: number;
+  data: Record<string, unknown>;
+}
+
 function buildToolCallResponse(params: {
   model: string;
   stream: boolean;
   toolName: string;
   message: string;
-}): { status: number; data: any } {
+}): ChatCompletionResponse {
   const completionId = `chatcmpl-${randomUUID()}`;
   const created = Math.floor(Date.now() / 1000);
   const toolCallId = `call_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
@@ -213,11 +243,11 @@ function buildToolCallResponse(params: {
   };
 }
 
-function selectToolCallName(body: any, userMessage: string): string | null {
+function selectToolCallName(body: Record<string, unknown>, userMessage: string): string | null {
   const tools = Array.isArray(body?.tools) ? body.tools : [];
   if (tools.length === 0) return null;
   const names = tools
-    .map((t: any) => String(t?.function?.name || '').trim())
+    .map((t: Record<string, unknown>) => String((t?.function as Record<string, unknown>)?.name || '').trim())
     .filter(Boolean);
   if (names.length === 0) return null;
 
@@ -240,7 +270,7 @@ async function forwardJson(
   path: string,
   method: 'GET' | 'POST',
   body?: unknown
-): Promise<{ status: number; ok: boolean; data: any }> {
+): Promise<{ status: number; ok: boolean; data: Record<string, unknown> }> {
   const token = readRtToken();
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (token) headers.authorization = `Bearer ${token}`;
@@ -250,9 +280,9 @@ async function forwardJson(
     body: body ? JSON.stringify(body) : undefined
   });
   const text = await res.text();
-  let data: any = { raw: text };
+  let data: Record<string, unknown> = { raw: text };
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(text) as Record<string, unknown>;
   } catch {
     data = { raw: text };
   }
@@ -266,11 +296,91 @@ function executionPathForDecision(decision?: string): string[] {
   return ['l1-interface', 'l2-orchestrator'];
 }
 
-async function handleStandaloneChat(options: UnifiedServerOptions, body: any) {
+function getChatControl(body: Record<string, unknown>): {
+  mode: string;
+  model: string;
+  engine: string;
+  direct: boolean;
+  bypass: boolean;
+  passthroughRequested: boolean;
+} {
+  const options = (body?.options && typeof body.options === 'object')
+    ? body.options as Record<string, unknown>
+    : {} as Record<string, unknown>;
+  const mode = String(body?.mode || options?.mode || '').trim().toLowerCase();
+  const model = String(options?.model || body?.model || '').trim();
+  const engine = String(options?.engine || body?.engine || '').trim().toLowerCase();
+  const direct = Boolean(
+    body?.direct === true ||
+    options?.direct === true ||
+    mode === 'direct'
+  );
+  const bypass = Boolean(
+    body?.bypass === true ||
+    options?.bypass === true ||
+    mode === 'bypass'
+  );
+  return {
+    mode,
+    model,
+    engine,
+    direct,
+    bypass,
+    passthroughRequested: direct || bypass
+  };
+}
+
+function normalizeStandaloneEngine(rawEngine: string): string {
+  const e = String(rawEngine || '').trim().toLowerCase();
+  if (!e) return '';
+  if (e === 'claude' || e === 'claude-code' || e === 'claude-cli') return 'claude-cli';
+  if (e === 'codex' || e === 'codex-cli') return 'codex-cli';
+  if (e === 'gemini' || e === 'gemini-cli') return 'gemini-cli';
+  if (e === 'gemini-api') return 'gemini-api';
+  if (e === 'claude-api') return 'claude-api';
+  return e;
+}
+
+async function handleStandaloneChat(options: UnifiedServerOptions, body: Record<string, unknown>) {
   const message = String(body?.message || '').trim();
   if (!message) return { status: 400, data: { error: 'message is required' } };
   const context = String(body?.context || '').trim();
   const mergedInput = context ? `${message}\n\n${context}` : message;
+  const control = getChatControl(body);
+
+  if (control.passthroughRequested || control.engine) {
+    const engine = normalizeStandaloneEngine(control.engine || '');
+    if (!engine) {
+      return { status: 400, data: { error: 'engine is required for direct/bypass mode in standalone' } };
+    }
+    const run = await runEngine(engine, mergedInput, {
+      model: control.model || undefined,
+      cwd: String(body?.projectDir || options.projectDir || process.cwd()),
+      timeoutMs: Number(body?.options?.timeoutMs || body?.timeoutMs || 600000)
+    });
+    if (!run.success) {
+      return {
+        status: 502,
+        data: {
+          error: run.stderr || `engine ${engine} failed`,
+          engine,
+          exitCode: run.exitCode
+        }
+      };
+    }
+    return {
+      status: 200,
+      data: {
+        reply: String(run.stdout || ''),
+        traceId: body?.traceId || '',
+        executionPath: ['l1-interface', 'engine-passthrough', engine],
+        costUsd: 0,
+        pendingChanges: options.sandbox.getPendingPaths(options.sandbox.getActiveBranch()).length,
+        engine,
+        exitCode: run.exitCode
+      }
+    };
+  }
 
   const route = await options.orchestrator.route(mergedInput);
   const decision = String(route?.decision || '');
@@ -304,12 +414,51 @@ async function handleStandaloneChat(options: UnifiedServerOptions, body: any) {
   };
 }
 
-async function handleConnectedChat(options: UnifiedServerOptions, body: any) {
+async function handleConnectedChat(options: UnifiedServerOptions, body: Record<string, unknown>) {
   const message = String(body?.message || '').trim();
   if (!message) return { status: 400, data: { error: 'message is required' } };
+  const context = String(body?.context || '').trim();
+  const mergedInput = context ? `${message}\n\n${context}` : message;
+  const control = getChatControl(body);
   const gateway = body?.gateway || options.gateway || 'http://127.0.0.1:5010';
+
+  if (control.passthroughRequested || control.engine) {
+    try {
+      const agent = String(body?.agent || 'crew-main');
+      const dispatched = await options.router.dispatch(agent, mergedInput, {
+        gateway,
+        sessionId: body?.sessionId || 'api',
+        model: control.model || undefined,
+        engine: control.engine || undefined,
+        direct: control.direct,
+        bypass: control.bypass,
+        skipPreamble: true,
+        injectGitContext: false,
+        project: String(body?.projectDir || options.projectDir || process.cwd())
+      });
+      const reply = String(dispatched?.result || '');
+      return {
+        status: 200,
+        data: {
+          reply,
+          traceId: String(body?.traceId || ''),
+          executionPath: ['l1-interface', 'gateway-dispatch', control.engine || 'direct'],
+          costUsd: 0,
+          pendingChanges: options.sandbox.getPendingPaths(options.sandbox.getActiveBranch()).length
+        }
+      };
+    } catch (err) {
+      return {
+        status: 502,
+        data: {
+          error: String((err as Error)?.message || err)
+        }
+      };
+    }
+  }
+
   const forwarded = await forwardJson(gateway, '/chat', 'POST', {
-    message,
+    message: mergedInput,
     sessionId: body?.sessionId || 'api'
   });
   const reply =
@@ -330,7 +479,7 @@ async function handleConnectedChat(options: UnifiedServerOptions, body: any) {
   };
 }
 
-async function handleOpenAIChatCompletions(options: UnifiedServerOptions, body: any) {
+async function handleOpenAIChatCompletions(options: UnifiedServerOptions, body: Record<string, unknown>) {
   const model = String(body?.model || 'crewswarm');
   const stream = Boolean(body?.stream);
   const composed = composeChatPayloadFromOpenAI(body?.messages);
@@ -418,7 +567,7 @@ async function enqueueStandaloneTask(options: UnifiedServerOptions, body: any) {
   const taskText = String(body?.task || '').trim();
   if (!taskText) return { status: 400, data: { error: 'task is required' } };
   const taskId = randomUUID();
-  taskStore.set(taskId, { id: taskId, status: 'queued' });
+  taskStore.set(taskId, { id: taskId, status: 'queued', createdAt: Date.now() });
   queueMicrotask(async () => {
     const rec = taskStore.get(taskId);
     if (!rec) return;
@@ -472,11 +621,85 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       const path = getPath(req);
 
       if (req.method === 'POST' && path === '/v1/chat') {
+        if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const out = options.mode === 'connected'
           ? await handleConnectedChat(options, body)
           : await handleStandaloneChat(options, body);
         return json(res, out.status, out.data);
+      }
+
+      // Dashboard compatibility: direct engine passthrough stream API.
+      if (req.method === 'POST' && path === '/api/engine-passthrough') {
+        if (!checkAuth(req, res)) return;
+        const body = await readJson(req);
+        const message = String(body?.message || '').trim();
+        const requestedEngine = String(body?.engine || '').trim().toLowerCase();
+        if (!message) return json(res, 400, { error: 'message is required' });
+        if (!requestedEngine) return json(res, 400, { error: 'engine is required' });
+
+        res.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+          'connection': 'keep-alive',
+          'access-control-allow-origin': '*',
+          'access-control-allow-headers': 'content-type, authorization',
+          'access-control-allow-methods': 'GET,POST,OPTIONS'
+        });
+
+        if (options.mode === 'connected') {
+          const gateway = body?.gateway || options.gateway || 'http://127.0.0.1:5010';
+          const token = readRtToken();
+          const headers: Record<string, string> = { 'content-type': 'application/json' };
+          if (token) headers.authorization = `Bearer ${token}`;
+          const upstream = await fetch(`${gateway}/api/engine-passthrough`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              engine: requestedEngine,
+              message,
+              model: body?.model,
+              sessionId: body?.sessionId,
+              projectDir: body?.projectDir
+            })
+          });
+          if (!upstream.ok || !upstream.body) {
+            const text = await upstream.text().catch(() => '');
+            res.write(`data: ${JSON.stringify({ type: 'chunk', text: `Error ${upstream.status}: ${text || 'upstream failure'}` })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'done', exitCode: 1 })}\n\n`);
+            res.end();
+            return;
+          }
+          const reader = upstream.body.getReader();
+          const decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(decoder.decode(value, { stream: true }));
+          }
+          res.end();
+          return;
+        }
+
+        const engine = normalizeStandaloneEngine(requestedEngine);
+        const run = await runEngine(engine, message, {
+          model: String(body?.model || '').trim() || undefined,
+          cwd: String(body?.projectDir || options.projectDir || process.cwd()),
+          timeoutMs: Number(body?.timeoutMs || 300000)
+        });
+        const chunkText = run.success ? (run.stdout || '') : (run.stderr || `engine ${engine} failed`);
+        res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunkText })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'done', exitCode: run.exitCode })}\n\n`);
+        res.end();
+        return;
+      }
+
+      // Dashboard compatibility: passthrough session presence checks.
+      if (req.method === 'GET' && path === '/api/passthrough-sessions') {
+        return json(res, 200, { sessions: {} });
+      }
+      if (req.method === 'DELETE' && path === '/api/passthrough-sessions') {
+        return json(res, 200, { ok: true });
       }
 
       if (req.method === 'GET' && path === '/v1/models') {
@@ -496,6 +719,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       }
 
       if (req.method === 'POST' && path === '/v1/chat/completions') {
+        if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const out = await handleOpenAIChatCompletions(options, body);
         if ((out.data as any)?._sse) {
@@ -519,6 +743,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       }
 
       if (req.method === 'POST' && path === '/v1/tasks') {
+        if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const out = options.mode === 'connected'
           ? await enqueueConnectedTask(options, body)
@@ -574,6 +799,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       if (req.method === 'GET' && path === '/v1/status') {
         let gatewayStatus = 'local';
         let queueDepth = 0;
+        const pipelineMetrics = await loadPipelineMetricsSummary(options.projectDir);
         if (options.mode === 'connected') {
           try {
             const status = await options.router.getStatus();
@@ -593,7 +819,17 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
             unifiedRouter: process.env.CREW_USE_UNIFIED_ROUTER === 'true',
             dualL2: process.env.CREW_DUAL_L2_ENABLED === 'true'
           },
-          queueDepth
+          queueDepth,
+          pipeline: {
+            runs: pipelineMetrics.runs,
+            qaApproved: pipelineMetrics.qaApproved,
+            qaRejected: pipelineMetrics.qaRejected,
+            qaRoundsAvg: pipelineMetrics.runs > 0
+              ? Number((pipelineMetrics.qaRoundsTotal / pipelineMetrics.runs).toFixed(2))
+              : 0,
+            contextChunksUsed: pipelineMetrics.contextChunksUsed,
+            contextCharsSavedEst: pipelineMetrics.contextCharsSaved
+          }
         });
       }
 
@@ -608,6 +844,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       }
 
       if (req.method === 'POST' && path === '/v1/sandbox/apply') {
+        if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const branch = body?.branch || options.sandbox.getActiveBranch();
         const files = options.sandbox.getPendingPaths(branch);
@@ -619,6 +856,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       }
 
       if (req.method === 'POST' && path === '/v1/sandbox/rollback') {
+        if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const branch = body?.branch || options.sandbox.getActiveBranch();
         await options.sandbox.rollback(branch);
@@ -636,6 +874,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       }
 
       if (req.method === 'POST' && path === '/v1/index/rebuild') {
+        if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const paths = Array.isArray(body?.paths) && body.paths.length > 0
           ? body.paths
@@ -679,9 +918,17 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
 
       // MCP endpoint
       if (req.method === 'POST' && path === '/mcp') {
+        if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const mcpResponse = await handleMcpRequest(options, body);
-        return json(res, 200, mcpResponse);
+        if (mcpResponse && !(mcpResponse as any)._skip) {
+          return json(res, 200, mcpResponse);
+        } else {
+          // No response for notifications
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end();
+          return;
+        }
       }
 
       // MCP health check  

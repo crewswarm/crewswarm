@@ -23,6 +23,7 @@ pkill -9 -f "scripts/crew-scribe.mjs" 2>/dev/null; true  # was never killed; acc
 pkill -9 -f "telegram-bridge.mjs"     2>/dev/null; true  # catches all node binary path variants
 pkill -9 -f "whatsapp-bridge.mjs"     2>/dev/null; true  # ditto
 pkill -9 -f "opencode serve"          2>/dev/null; true
+pkill -9 -f "pm-loop.mjs"             2>/dev/null; true  # NEVER auto-start PM loop
 
 # ── Kill by port (catches anything that survived above — e.g. launchd-managed dashboard)
 lsof -ti :5010  2>/dev/null | xargs kill -9 2>/dev/null; true

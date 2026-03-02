@@ -103,6 +103,53 @@ function composeChatPayloadFromOpenAI(messages, { maxContextChars = 12000 } = {}
   };
 }
 
+function loadPipelineMetricsSummary(baseDir = process.cwd()) {
+  const file = path.join(baseDir, ".crew", "pipeline-metrics.jsonl");
+  try {
+    if (!fs.existsSync(file)) {
+      return {
+        runs: 0,
+        qaApproved: 0,
+        qaRejected: 0,
+        qaRoundsTotal: 0,
+        contextChunksUsed: 0,
+        contextCharsSaved: 0,
+      };
+    }
+    const raw = fs.readFileSync(file, "utf8");
+    const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
+    let runs = 0;
+    let qaApproved = 0;
+    let qaRejected = 0;
+    let qaRoundsTotal = 0;
+    let contextChunksUsed = 0;
+    let contextCharsSaved = 0;
+    for (const line of lines) {
+      try {
+        const rec = JSON.parse(line);
+        runs += 1;
+        if (rec.qaApproved === true) qaApproved += 1;
+        if (rec.qaApproved === false) qaRejected += 1;
+        qaRoundsTotal += Number(rec.qaRounds || 0);
+        contextChunksUsed += Number(rec.contextChunksUsed || 0);
+        contextCharsSaved += Number(rec.contextCharsSaved || 0);
+      } catch {
+        // ignore malformed rows
+      }
+    }
+    return { runs, qaApproved, qaRejected, qaRoundsTotal, contextChunksUsed, contextCharsSaved };
+  } catch {
+    return {
+      runs: 0,
+      qaApproved: 0,
+      qaRejected: 0,
+      qaRoundsTotal: 0,
+      contextChunksUsed: 0,
+      contextCharsSaved: 0,
+    };
+  }
+}
+
 function selectToolCallName(payload, userMessage) {
   const tools = Array.isArray(payload?.tools) ? payload.tools : [];
   if (tools.length === 0) return null;
@@ -321,6 +368,11 @@ function buildToolList() {
         required: ["task"],
       },
     },
+    {
+      name: "pipeline_metrics",
+      description: "Return aggregated pipeline QA/context metrics from .crew/pipeline-metrics.jsonl.",
+      inputSchema: { type: "object", properties: {} },
+    },
   ];
 
   // ── One tool per skill ─────────────────────────────────────────────────────
@@ -511,6 +563,20 @@ async function callTool(name, args) {
     }
   }
 
+  if (name === "pipeline_metrics") {
+    const metrics = loadPipelineMetricsSummary(process.cwd());
+    const avgRounds = metrics.runs > 0 ? (metrics.qaRoundsTotal / metrics.runs) : 0;
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ...metrics,
+          qaRoundsAvg: Number(avgRounds.toFixed(2)),
+        }, null, 2),
+      }],
+    };
+  }
+
   // skill_* tools
   if (name.startsWith("skill_")) {
     const skillName = name.replace(/^skill_/, "").replace(/_/g, "-");
@@ -548,7 +614,8 @@ async function handleMcpMessage(msg) {
   }
 
   if (method === "notifications/initialized" || method === "initialized") {
-    return null; // no response needed
+    // Notification - no response required
+    return { _skip: true };
   }
 
   if (method === "tools/list") {
@@ -628,8 +695,24 @@ if (STDIO_MODE) {
 
     // Health check
     if (url.pathname === "/health" || url.pathname === "/") {
+      const metrics = loadPipelineMetricsSummary(process.cwd());
+      const qaRoundsAvg = metrics.runs > 0 ? Number((metrics.qaRoundsTotal / metrics.runs).toFixed(2)) : 0;
       res.writeHead(200, { "content-type": "application/json", ...corsHeaders });
-      res.end(JSON.stringify({ ok: true, server: "crewswarm-mcp", version: "1.0.0", agents: loadAgents().length, skills: loadSkills().length }));
+      res.end(JSON.stringify({
+        ok: true,
+        server: "crewswarm-mcp",
+        version: "1.0.0",
+        agents: loadAgents().length,
+        skills: loadSkills().length,
+        pipeline: {
+          runs: metrics.runs,
+          qaApproved: metrics.qaApproved,
+          qaRejected: metrics.qaRejected,
+          qaRoundsAvg,
+          contextChunksUsed: metrics.contextChunksUsed,
+          contextCharsSavedEst: metrics.contextCharsSaved,
+        }
+      }));
       return;
     }
 
@@ -838,7 +921,11 @@ if (STDIO_MODE) {
       try {
         const msg = JSON.parse(body);
         const resp = await handleMcpMessage(msg);
-        res.end(resp ? JSON.stringify(resp) : "{}");
+        if (resp && !resp._skip) {
+          res.end(JSON.stringify(resp));
+        } else {
+          res.end(); // No response for notifications
+        }
       } catch (e) {
         res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: " + e.message } }));
       }
