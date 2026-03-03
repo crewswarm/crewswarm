@@ -108,14 +108,22 @@ function broadcastSSE(payload) {
   }
   
   const event = JSON.stringify(payload);
+  const clientCount = sseClients.size;
+  if (clientCount === 0 && payload?.type === "chat_message") {
+    console.log(`[crew-lead] ⚠️ broadcastSSE called but no SSE clients connected (type=${payload.type})`);
+  }
   for (const client of sseClients) {
     try { client.write(`data: ${event}\n\n`); } catch {}
+  }
+  if (clientCount > 0 && payload?.type === "chat_message") {
+    console.log(`[crew-lead] SSE broadcast to ${clientCount} client(s): ${payload.role} message sessionId=${payload.sessionId} (${event.length} bytes)`);
   }
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const PORT        = Number(process.env.CREW_LEAD_PORT || 5010);
+const PID_PATH    = path.join(os.homedir(), ".crewswarm", "logs", "crew-lead.pid");
 
 // ── Startup Guard: Ensure only one crew-lead instance ────────────────────────
 const lockResult = acquireStartupLock("crew-lead", { port: PORT, killStale: true });
@@ -123,6 +131,16 @@ if (!lockResult.ok) {
   console.error(`[crew-lead] ${lockResult.message}`);
   process.exit(1);
 }
+
+// Write PID file for reliable process management (prevents collateral dashboard kills)
+fs.mkdirSync(path.dirname(PID_PATH), { recursive: true });
+fs.writeFileSync(PID_PATH, String(process.pid));
+console.log(`[crew-lead] PID ${process.pid} written to ${PID_PATH}`);
+
+// Clear PID file on exit
+process.on("exit", () => { try { fs.writeFileSync(PID_PATH, ""); } catch {} });
+process.on("SIGTERM", () => { try { fs.writeFileSync(PID_PATH, ""); process.exit(0); } catch {} });
+process.on("SIGINT", () => { try { fs.writeFileSync(PID_PATH, ""); process.exit(0); } catch {} });
 
 const HISTORY_DIR = path.join(os.homedir(), ".crewswarm", "chat-history");
 // Shared projects registry (same file dashboard writes to for autoAdvance toggle)
@@ -498,6 +516,7 @@ initHttpServer({
   appendHistory,
   broadcastSSE,
   handleChat,
+  callLLM,
   confirmProject,
   pendingProjects,
   dispatchTask,
@@ -529,12 +548,32 @@ initHttpServer({
 });
 createAndStartServer(PORT);
 
-// Keep alive — don't crash on unhandled promise rejections or async errors
+// Graceful error handling — log but allow critical errors to kill the process
 process.on("unhandledRejection", (reason) => {
-  console.error("[crew-lead] unhandled rejection (kept alive):", reason?.message || reason);
+  const msg = reason?.message || String(reason);
+  
+  // Benign errors: SSE/fetch aborted, client disconnects — keep alive
+  if (msg === "terminated" || msg === "aborted" || /client.*disconnect/i.test(msg)) {
+    return; // Silent — normal operation
+  }
+  
+  console.error("[crew-lead] unhandled rejection:", msg);
+  console.error("Stack:", reason?.stack);
+  
+  // Critical errors: DB corruption, port conflicts, OOM — die gracefully
+  if (/EADDRINUSE|EACCES|out of memory|cannot allocate/i.test(msg)) {
+    console.error("[crew-lead] FATAL — exiting");
+    process.exit(1);
+  }
+  // Non-critical: keep alive but warn
 });
+
 process.on("uncaughtException", (err) => {
-  console.error("[crew-lead] uncaught exception (kept alive):", err.message);
+  console.error("[crew-lead] uncaught exception:", err?.stack || err?.message);
+  
+  // Always exit on uncaught exceptions — they leave process in undefined state
+  console.error("[crew-lead] FATAL — exiting due to uncaught exception");
+  process.exit(1);
 });
 
 // ── RT Bus listener — receives replies from agents ────────────────────────────

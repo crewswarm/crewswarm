@@ -1,6 +1,6 @@
 import { getJSON, postJSON } from './core/api.js';
 import { escHtml, showNotification, fmt, createdAt, appendChatBubble, showLoading, showEmpty, showError, renderStatusBadge } from './core/dom.js';
-import { sortAgents, state } from './core/state.js';
+import { sortAgents, state, persistState, saveScrollPosition, restoreScrollPosition } from './core/state.js';
 import { initActiveTasksPanel } from './components/active-tasks-panel.js';
 import { startOrchestrationStatusUpdates } from './orchestration-status.js';
 import './cli-process.js';
@@ -46,6 +46,7 @@ import {
   applyNewAgentToolPreset,
   applyPromptPreset,
 } from './tabs/agents-tab.js';
+import { initPromptsTab } from './tabs/prompts-tab.js';
 import {
   showSkills,
   showRunSkills,
@@ -109,6 +110,7 @@ import {
   saveRTToken,
   loadOpencodeProject,
   saveOpencodeSettings,
+  saveOpencodeModel,
   loadBgConsciousness,
   toggleBgConsciousness,
   saveBgConsciousnessModel,
@@ -120,6 +122,8 @@ import {
   toggleCodexExecutor,
   loadGeminiCliExecutor,
   toggleGeminiCliExecutor,
+  loadCrewCliExecutor,
+  toggleCrewCliExecutor,
   loadGlobalFallback,
   saveGlobalFallback,
   loadGlobalOcLoop,
@@ -237,7 +241,13 @@ function setNavActive(navId){
   const el = document.getElementById(navId); if (el) el.classList.add('active');
 }
 function hideAllViews(){
-  document.querySelectorAll('.view, .view-sessions').forEach(el => el.classList.remove('active'));
+  // Save scroll position of the current active view before hiding
+  saveScrollPosition(state.activeTab);
+  document.querySelectorAll('.view, .view-sessions').forEach(el => {
+    el.classList.remove('active');
+    // Also clear any inline display styles that might interfere
+    if (el.style.display) el.style.display = '';
+  });
   const mb = document.querySelector('.msg-bar');
   if (mb) mb.style.display = '';
 }
@@ -270,37 +280,51 @@ async function showChat(){
   hideAllViews();
   document.getElementById('chatView').classList.add('active');
   setNavActive('navChat');
+  state.activeTab = 'chat';
+  persistState();
   const mb = document.querySelector('.msg-bar');
   if (mb) mb.style.display = 'none';
-  
+
   // Start orchestration status updates
   startOrchestrationStatusUpdates();
-  
-  // Refresh project dropdown to ensure it's up-to-date
+
+  // Check if chat content is already loaded (DOM preserved from last visit)
+  const chatBox = document.getElementById('chatBox');
+  const alreadyLoaded = chatBox && chatBox.dataset.historyLoaded === 'true' && chatBox.children.length > 0;
+
+  // Refresh project dropdown (uses TTL cache so fast on re-visits)
   try {
     const data = await getJSON('/api/projects');
     const projects = data.projects || [];
     state.projectsData = {};
     projects.forEach(p => { state.projectsData[p.id] = p; });
+    persistState();
     populateChatProjectDropdown(projects);
   } catch (e) {
     console.warn('Failed to refresh projects dropdown:', e);
   }
-  
+
   try { state.chatActiveProjectId = localStorage.getItem('crewswarm_chat_active_project_id') || ''; } catch { state.chatActiveProjectId = ''; }
   const sel = document.getElementById('chatProjectSelect');
   if (sel && state.chatActiveProjectId && sel.querySelector('option[value="' + state.chatActiveProjectId + '"]')) sel.value = state.chatActiveProjectId;
   checkCrewLeadStatus();
   startAgentReplyListener();
   loadCrewLeadInfo();
-  await loadChatHistory();
-  // Note: loadChatHistory() now handles both crew-lead history AND passthrough logs
-  // restorePassthroughLog(); // REMOVED: redundant, causes duplicate loading
+
+  // Only reload history if the chat box is empty (first visit or after clear)
+  if (!alreadyLoaded) {
+    await loadChatHistory();
+  } else {
+    // Restore scroll position from previous visit
+    restoreScrollPosition('chat');
+  }
 }
 function showFiles(){
   hideAllViews();
   document.getElementById('filesView').classList.add('active');
   setNavActive('navFiles');
+  state.activeTab = 'files';
+  persistState();
   loadFiles();
 }
 
@@ -311,10 +335,13 @@ let agentReplySSE = null;
 
 function startAgentReplyListener() {
   if (agentReplySSE) return; // already listening
+  console.log('[CrewSwarm] Starting EventSource listener for /api/crew-lead/events');
   agentReplySSE = new EventSource('/api/crew-lead/events');
   agentReplySSE.onmessage = (e) => {
+    console.log('[CrewSwarm] SSE message received:', e.data.slice(0, 200));
     try {
       const d = JSON.parse(e.data);
+      console.log('[CrewSwarm] Parsed SSE event:', { type: d.type, sessionId: d.sessionId, role: d.role });
       const box = document.getElementById('chatMessages');
       if (d.type === 'draft_discarded' && d.draftId) {
         const el = document.querySelector('[data-draft-id="' + d.draftId + '"]');
@@ -510,8 +537,12 @@ function startAgentReplyListener() {
       }
     } catch {}
   };
-  agentReplySSE.onopen = () => { window._sseReconnectDelay = 2000; };
-  agentReplySSE.onerror = () => {
+  agentReplySSE.onopen = () => { 
+    console.log('[CrewSwarm] SSE connection opened');
+    window._sseReconnectDelay = 2000; 
+  };
+  agentReplySSE.onerror = (err) => {
+    console.error('[CrewSwarm] SSE error:', err);
     agentReplySSE.close();
     agentReplySSE = null;
     // Reconnect with exponential backoff (2s → 4s → 8s → 30s max)
@@ -902,6 +933,8 @@ function showSettings(){
   hideAllViews();
   document.getElementById('settingsView').classList.add('active');
   setNavActive('navSettings');
+  state.activeTab = 'settings';
+  persistState();
   // Restore last active sub-tab from hash (e.g. #settings/telegram → telegram)
   const hashSubtab = (location.hash || '').replace('#settings/', '');
   // Support legacy deep-link aliases
@@ -920,7 +953,7 @@ function showSettingsTab(tab){
     btn.classList.toggle('active', t === tab);
   });
   if (tab === 'usage')    { loadTokenUsage(); loadAllUsage(); }
-  if (tab === 'engines')  { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadCodexExecutor(); loadGeminiCliExecutor(); loadGlobalOcLoop(); loadLoopBrain(); loadPassthroughNotify(); }
+  if (tab === 'engines')  { loadOpencodeProject(); loadBgConsciousness(); loadGlobalFallback(); loadCursorWaves(); loadClaudeCode(); loadCodexExecutor(); loadGeminiCliExecutor(); loadCrewCliExecutor(); loadGlobalOcLoop(); loadLoopBrain(); loadPassthroughNotify(); }
   if (tab === 'comms')    { loadCommsTabData(); }
   if (tab === 'security') { loadCmdAllowlist(); loadEnvAdvanced(); }
   if (tab === 'webhooks') { /* static */ }
@@ -1222,12 +1255,14 @@ const ACTION_REGISTRY = {
   saveWaConfig,
   loadWaMessages,
   saveOpencodeSettings,
+  saveOpencodeModel,
   saveGlobalFallback,
   toggleBgConsciousness,
   toggleCursorWaves,
   toggleClaudeCode,
   toggleCodexExecutor,
   toggleGeminiCliExecutor,
+  toggleCrewCliExecutor,
   saveGlobalOcLoop,
   saveGlobalOcLoopRounds,
   savePassthroughNotify,
@@ -1372,6 +1407,40 @@ document.addEventListener('DOMContentLoaded', () => {
     dashLink.href = window.location.origin;
     dashLink.textContent = window.location.host;
   }
+
+  // Wire nav buttons for all tabs
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      hideAllViews();
+      setNavActive(btn.id);
+      state.activeTab = view;
+      persistState();
+
+      // Show the appropriate view
+      const viewMap = {
+        chat: () => { showChat(); document.querySelector('.msg-bar').style.display = 'flex'; },
+        agents: showAgents,
+        swarm: showSwarm,
+        skills: showSkills,
+        runSkills: showRunSkills,
+        memory: () => { initMemoryTab(); showMemoryView(); },
+        build: () => showBuild(),
+        projects: () => showProjects(),
+        services: () => { initServicesTab(); showServices(); },
+        models: showModels,
+        rt: showRT,
+        dlq: showDLQ,
+        files: showFiles,
+        toolMatrix: showToolMatrix,
+        benchmarks: showBenchmarks,
+        prompts: initPromptsTab,
+        settings: showSettings,
+      };
+      const fn = viewMap[view];
+      if (fn) fn();
+    });
+  });
 
   const chatInput = document.getElementById('chatInput');
   if (chatInput) {
@@ -1538,7 +1607,7 @@ const NAV_VIEW_MAP = {
   benchmarks: showBenchmarks, 'tool-matrix': showToolMatrix,
   memory: showMemoryView,
   'cli-process': showCLIProcess,
-  services: showServices, settings: showSettings,
+  services: showServices, prompts: initPromptsTab, settings: showSettings,
 };
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-view]');
