@@ -75,6 +75,6 @@ describe("COORDINATOR_AGENT_IDS", () => {
   test("contains expected coordinator IDs", () => {
     assert.ok(COORDINATOR_AGENT_IDS.includes("crew-pm"));
     assert.ok(COORDINATOR_AGENT_IDS.includes("crew-main"));
-    assert.ok(COORDINATOR_AGENT_IDS.includes("orchestrator"));
+    assert.ok(COORDINATOR_AGENT_IDS.includes("crew-orchestrator"));
   });
 });
