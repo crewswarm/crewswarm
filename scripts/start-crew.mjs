@@ -12,7 +12,7 @@ import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { BUILT_IN_RT_AGENTS, normalizeRtAgentId } from "../lib/agent-registry.mjs";
+import { BUILT_IN_RT_AGENTS, normalizeRtAgentId, validateRequiredAgents, REQUIRED_AGENTS } from "../lib/agent-registry.mjs";
 
 const CREWSWARM_DIR = path.resolve(process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || process.cwd());
 // Config search order (same as gateway-bridge + RT daemon):
@@ -134,6 +134,18 @@ const singleAgentId = agentFlagIdx !== -1 ? args[agentFlagIdx + 1] : null;
 // ── Start ────────────────────────────────────────────────────────────────────
 const { raw, rtToken, agents } = loadConfig();
 
+// Validate required agents
+const validation = validateRequiredAgents(agents);
+if (!validation.valid) {
+  console.error(`\n❌ FATAL: Required agents missing from ~/.crewswarm/crewswarm.json:`);
+  for (const missing of validation.missing) {
+    console.error(`  - ${missing}`);
+  }
+  console.error(`\nThese agents are essential for CrewSwarm to function.`);
+  console.error(`Fix: Add them to ~/.crewswarm/crewswarm.json or run: bash install.sh\n`);
+  process.exit(1);
+}
+
 // Build full agent RT-id list: all from config (canonical), fallback to built-ins if config empty
 const allRtIds = new Set();
 for (const a of agents) allRtIds.add(getAgentRtId(a.id));
@@ -165,7 +177,7 @@ if (toStart.length === 0) {
 }
 
 // ── Hard bridge cap (runaway protection) ────────────────────────────────────
-const MAX_BRIDGES = parseInt(process.env.CREWSWARM_MAX_BRIDGES || "20", 10);
+const MAX_BRIDGES = parseInt(process.env.CREWSWARM_MAX_BRIDGES || "30", 10);
 const totalAfterStart = already.size + toStart.length;
 if (totalAfterStart > MAX_BRIDGES) {
   const cap = Math.max(0, MAX_BRIDGES - already.size);
@@ -213,7 +225,6 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
     CREWSWARM_RT_AGENT: rtId,
     CREWSWARM_RT_AUTH_TOKEN: rtToken,
     CREWSWARM_RT_CHANNELS: process.env.CREWSWARM_RT_CHANNELS || "command,assign,handoff,reassign,events",
-    CREWSWARM_OPENCODE_ENABLED: process.env.CREWSWARM_OPENCODE_ENABLED ?? "1",
     CREWSWARM_OPENCODE_MODEL: process.env.CREWSWARM_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905",
     CREWSWARM_OPENCODE_PROJECT: process.env.CREWSWARM_OPENCODE_PROJECT || CREWSWARM_DIR,
     CREWSWARM_DIR,

@@ -1,21 +1,27 @@
 {
   "name": "crewswarm",
-  "version": "0.5.0",
+  "version": "0.8.0-beta",
   "description": "Multi-agent AI orchestration platform",
   "type": "module",
   "main": "gateway-bridge.mjs",
   "scripts": {
     "start": "node crew-lead.mjs",
     "test": "node --test test/unit/*.mjs test/integration/*.mjs",
+    "screenshots": "node scripts/capture-dashboard-hero.mjs",
     "validate-config": "node scripts/validate-config.mjs",
     "restart-all": "bash scripts/restart-all-from-repo.sh",
     "dashboard": "node scripts/dashboard.mjs",
+    "restart-dashboard": "bash scripts/restart-dashboard.sh",
+    "restart-crew-lead": "bash scripts/restart-crew-lead.sh",
+    "start-crew": "node scripts/start-crew.mjs",
     "mcp-server": "node scripts/mcp-server.mjs",
     "telegram": "node telegram-bridge.mjs",
     "whatsapp": "node whatsapp-bridge.mjs"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "better-sqlite3": "^12.6.2",
+    "busboy": "^1.6.0",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0",
     "ws": "^8.16.0",
@@ -29,5 +35,8 @@
     "llm"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.58.2"
+  }
 }

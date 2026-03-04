@@ -45,14 +45,10 @@ import { acquireStartupLock } from "../lib/runtime/startup-guard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPENCLAW_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || path.resolve(__dirname, "..");
-// Config dir: ~/.crewswarm is canonical; falls back to ~/.openclaw for legacy installs (not repo root)
-const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR
-  || (fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
-      ? path.join(os.homedir(), ".crewswarm")
-      : path.join(os.homedir(), ".openclaw"));
-// Config filename within CFG_DIR — crewswarm.json for new installs, openclaw.json for legacy
-const CFG_FILE = path.join(CFG_DIR,
-  fs.existsSync(path.join(CFG_DIR, "crewswarm.json")) ? "crewswarm.json" : "openclaw.json");
+// Config dir: ~/.crewswarm is canonical
+const CFG_DIR = process.env.CREWSWARM_CONFIG_DIR || path.join(os.homedir(), ".crewswarm");
+// Config filename within CFG_DIR
+const CFG_FILE = path.join(CFG_DIR, "crewswarm.json");
 // Load crewswarm.json env block into process.env on startup (so dashboard reads them)
 // Credentials are excluded — only operational config vars are applied this way.
 const ENV_CREDENTIAL_KEYS = new Set([
@@ -425,6 +421,22 @@ const server = http.createServer(async (req, res) => {
       } catch { res.writeHead(404); res.end("Not found"); }
       return;
     }
+    if (url.pathname === "/signup" || url.pathname === "/signup.html") {
+      const signupFile = path.join(OPENCLAW_DIR, "public", "signup.html");
+      try {
+        const signupHtml = fs.readFileSync(signupFile, "utf8");
+        res.writeHead(200, { 
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store, no-cache, must-revalidate"
+        });
+        res.end(signupHtml);
+      } catch (e) { 
+        console.error("[dashboard] Signup page not found:", signupFile);
+        res.writeHead(404); 
+        res.end("Signup page not found"); 
+      }
+      return;
+    }
     if (url.pathname === "/api/sessions") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(await proxyJSON("/session")));
@@ -688,6 +700,243 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify(await getAgentList()));
       return;
     }
+    
+    // ── Public Signup ─────────────────────────────────────────────────────────────
+    if (url.pathname === "/api/signup" && req.method === "POST") {
+      try {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw || "{}");
+        
+        // Sanitize and validate inputs (prevent injection attacks)
+        const sanitize = (str, maxLen = 100) => {
+          if (!str) return "";
+          return String(str).trim().slice(0, maxLen).replace(/[<>]/g, "");
+        };
+        
+        const name = sanitize(body.name, 100);
+        const phone = sanitize(body.phone, 20);
+        const email = sanitize(body.email, 100);
+        const preferences = body.preferences || {};
+        
+        // Validate required fields
+        if (!name || name.length < 2) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "Name is required (min 2 characters)" }));
+          return;
+        }
+        
+        // Validate phone format (E.164: +[1-9][0-9]{1,14})
+        const phoneRegex = /^\+[1-9]\d{1,14}$/;
+        if (!phone || !phoneRegex.test(phone)) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "Valid phone number with country code required (e.g., +1234567890)" }));
+          return;
+        }
+        
+        // Validate email if provided
+        if (email) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(email)) {
+            res.writeHead(400, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid email address" }));
+            return;
+          }
+        }
+        
+        // Sanitize preferences
+        const cleanPrefs = {};
+        const allowedPrefs = ["diet", "spiceLevel", "budget", "allergies", "favCuisines"];
+        for (const key of allowedPrefs) {
+          if (preferences[key]) {
+            if (Array.isArray(preferences[key])) {
+              cleanPrefs[key] = preferences[key].map(v => sanitize(String(v), 50)).filter(Boolean);
+            } else {
+              cleanPrefs[key] = sanitize(String(preferences[key]), 50);
+            }
+          }
+        }
+        
+        // Convert phone to WhatsApp JID format
+        const jid = phone.replace(/[^\d]/g, "") + "@s.whatsapp.net";
+        
+        // Store in contacts database
+        const { trackContact, updateContact } = await import("../lib/contacts/index.mjs");
+        trackContact(jid, "whatsapp", name, { phone, email });
+        
+        if (Object.keys(cleanPrefs).length > 0 || email) {
+          const updates = { preferences: cleanPrefs };
+          if (email) updates.email = email;
+          updateContact(jid, updates);
+        }
+        
+        console.log(`[dashboard] New signup: ${name} (${phone})`);
+        
+        // Return success with WhatsApp number
+        const whatsappNumber = process.env.CREWSWARM_WHATSAPP_NUMBER || "+1234567890";
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ 
+          success: true, 
+          message: "Account created successfully!",
+          whatsappNumber 
+        }));
+        
+      } catch (e) {
+        console.error("[dashboard] Signup error:", e);
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message || "Internal server error" }));
+      }
+      return;
+    }
+    
+    // ── Agent Direct Chat ────────────────────────────────────────────────────────
+    if (url.pathname === "/api/agent-chat" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const { agentId, message, sessionId } = JSON.parse(body || "{}");
+      
+      if (!agentId || !message) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "agentId and message required" }));
+        return;
+      }
+      
+      try {
+        // Load agent config
+        const csSwarm = JSON.parse(fs.readFileSync(CFG_FILE, "utf8"));
+        const agentCfg = csSwarm.agents?.find(a => a.id === agentId);
+        if (!agentCfg?.model) {
+          res.writeHead(404, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: `Agent ${agentId} not found or no model configured` }));
+          return;
+        }
+        
+        // Parse model string
+        const [providerKey, ...modelParts] = agentCfg.model.split("/");
+        const modelId = modelParts.join("/");
+        const provider = csSwarm.providers?.[providerKey];
+        if (!provider?.apiKey) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: `No API key for provider ${providerKey}` }));
+          return;
+        }
+        
+        // Load system prompt
+        const agentPromptsPath = path.join(CFG_DIR, "agent-prompts.json");
+        let systemPrompt = `You are ${agentId}.`;
+        try {
+          const agentPrompts = JSON.parse(fs.readFileSync(agentPromptsPath, "utf8"));
+          const bareId = agentId.replace(/^crew-/, "");
+          systemPrompt = agentPrompts[bareId] || agentPrompts[agentId] || systemPrompt;
+        } catch {}
+        
+        // Add CLI tool instructions
+        systemPrompt += `\n\n**Available coding CLIs:**\n- @@CLI opencode <task> — Full workspace context, file editing\n- @@CLI cursor <task> — Complex reasoning, multi-file refactors\n- @@CLI crew-cli <task> — TypeScript specialist\n\nUse these for file operations. Use direct LLM for conversation.`;
+        
+        // Build messages (TODO: load history from session)
+        const messages = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message }
+        ];
+        
+        // Call LLM
+        const fetch = (await import("node-fetch")).default;
+        const baseUrl = provider.baseUrl || "https://api.openai.com/v1";
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${provider.apiKey}`
+          },
+          body: JSON.stringify({
+            model: modelId,
+            messages,
+            temperature: 0.7
+          })
+        });
+        
+        if (!response.ok) {
+          const error = await response.text();
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: `LLM API error: ${error.slice(0, 200)}` }));
+          return;
+        }
+        
+        const data = await response.json();
+        let reply = data.choices?.[0]?.message?.content || "(no response)";
+        
+        // Check if agent wants to use @@CLI
+        const cliMatch = reply.match(/@@CLI\s+(\w+)\s+(.+)/s);
+        if (cliMatch) {
+          const cli = cliMatch[1].toLowerCase();
+          const task = cliMatch[2].trim();
+          const preText = reply.slice(0, cliMatch.index).trim();
+          
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            reply: preText || `⚡ Running ${cli}...`,
+            cliInvoked: cli
+          }));
+          
+          // TODO: Execute CLI in background via cli-executor
+          // For now, just notify that CLI was invoked
+          return;
+        }
+        
+        // Normal LLM response
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ reply }));
+      } catch (err) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+    
+    // ── CLI Processes Status ──────────────────────────────────────────────────────
+    if (url.pathname === "/api/cli-processes" && req.method === "GET") {
+      try {
+        // Import process tracker (dynamic to avoid startup errors if file missing)
+        const { getActiveProcesses, getAgentProcesses } = await import("../lib/cli-process-tracker.mjs");
+        const agent = url.searchParams.get("agent");
+        
+        const processes = agent
+          ? getAgentProcesses(agent)
+          : getActiveProcesses();
+        
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ processes }));
+      } catch (err) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ processes: [], error: err.message }));
+      }
+      return;
+    }
+    
+    // ── Agent Chat History ────────────────────────────────────────────────────────
+    if (url.pathname.startsWith("/api/agent-chat-history/") && req.method === "GET") {
+      const agentId = url.pathname.split("/").pop();
+      const historyPath = path.join(CFG_DIR, "agent-chat-history", `${agentId}.jsonl`);
+      
+      try {
+        if (!fs.existsSync(historyPath)) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ history: [] }));
+          return;
+        }
+        
+        const lines = fs.readFileSync(historyPath, "utf8").split("\n").filter(Boolean);
+        const history = lines.map(line => JSON.parse(line));
+        
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ history: history.slice(-50) })); // Last 50 messages
+      } catch (err) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+    
     if (url.pathname === "/api/dlq") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(await getDLQEntries()));
@@ -859,6 +1108,112 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, lines }));
       return;
     }
+
+    // ── Waves Configuration APIs ──────────────────────────────────────────
+    if (url.pathname === "/api/waves/config" && req.method === "GET") {
+      const { existsSync } = await import("node:fs");
+      const { readFile: rf } = await import("node:fs/promises");
+      const wavesConfigPath = path.join(OPENCLAW_DIR, "lib", "crew-lead", "waves-config.json");
+      
+      if (!existsSync(wavesConfigPath)) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Waves config not found" }));
+        return;
+      }
+      
+      try {
+        const config = JSON.parse(await rf(wavesConfigPath, "utf8"));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(config));
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/waves/config" && req.method === "POST") {
+      const { writeFile: wf } = await import("node:fs/promises");
+      const wavesConfigPath = path.join(OPENCLAW_DIR, "lib", "crew-lead", "waves-config.json");
+      
+      let body = "";
+      req.on("data", chunk => body += chunk);
+      req.on("end", async () => {
+        try {
+          const config = JSON.parse(body);
+          await wf(wavesConfigPath, JSON.stringify(config, null, 2), "utf8");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: e.message }));
+        }
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/waves/config/reset" && req.method === "POST") {
+      const { readFile: rf, writeFile: wf } = await import("node:fs/promises");
+      const wavesConfigPath = path.join(OPENCLAW_DIR, "lib", "crew-lead", "waves-config.json");
+      const wavesConfigBackup = wavesConfigPath + ".default";
+      
+      try {
+        // Check if we have a backup
+        const { existsSync } = await import("node:fs");
+        if (existsSync(wavesConfigBackup)) {
+          const defaultConfig = await rf(wavesConfigBackup, "utf8");
+          await wf(wavesConfigPath, defaultConfig, "utf8");
+        } else {
+          // Restore from embedded default (same as current waves-config.json)
+          const defaultWaves = {
+            "_note": "Planning pipeline wave configuration. Edit via dashboard Waves tab.",
+            "waves": [
+              {
+                "id": 1,
+                "name": "Scope + Research",
+                "description": "Define project scope and research context",
+                "agents": [
+                  {"id": "crew-pm", "task": "[SCOPE] Project: {{projectName}} at {{projectPath}}. User brief: {{userBrief}}. Use @@SKILL problem-statement {} to run a problem framing canvas, then write an initial scope doc covering: who the user is, what problem is solved, proposed features/sections, rough IA, key decisions. @@WRITE_FILE {{projectPath}}/scope-draft.md"},
+                  {"id": "crew-copywriter", "task": "[RESEARCH] Project: {{projectName}} at {{projectPath}}. User request: {{userRequest}}. Research the topic, brainstorm content angles, develop initial content strategy and section ideas. Use @@WEB_SEARCH if helpful. Reply with your findings and recommendations."},
+                  {"id": "crew-main", "task": "[RESEARCH] Project: {{projectName}} at {{projectPath}}. User request: {{userRequest}}. Explore similar projects/pages, identify best practices and patterns. Reply with competitive landscape and recommendations."}
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Technical Consultation",
+                "description": "Specialists provide architecture, design, security input",
+                "agents": [
+                  {"id": "crew-architect", "task": "[CONSULT] Review the scope from wave 1. Provide: system architecture (mermaid diagram if applicable), tech stack with versions, file/directory structure, data models/schema, API contracts, deployment strategy. Be specific and technical."},
+                  {"id": "crew-coder-front", "task": "[CONSULT] Review the scope and content research from wave 1. Provide: component breakdown, file structure, tech stack, responsive strategy for this project."},
+                  {"id": "crew-frontend", "task": "[CONSULT] Review the scope from wave 1. Provide: design system proposal (color tokens, typography, spacing, animation strategy, theme approach) for this project."},
+                  {"id": "crew-qa", "task": "[CONSULT] Review the scope from wave 1. Provide: test strategy, acceptance criteria per feature, performance budgets, a11y requirements."},
+                  {"id": "crew-security", "task": "[CONSULT] Review the scope from wave 1. Provide: security considerations (CSP, CORS, dependencies, auth if needed)."}
+                ]
+              },
+              {
+                "id": 3,
+                "name": "PM Compiles",
+                "description": "PM synthesizes all input into planning documents",
+                "agents": [
+                  {"id": "crew-pm", "task": "Compile ALL specialist input from previous waves. Use @@SKILL roadmap-planning {} to structure the output. Write THREE files: (1) {{projectPath}}/PDD.md (product design doc: persona, problem, success metrics, constraints, non-goals, technical decisions), (2) {{projectPath}}/TECH-SPEC.md (technical specification: architecture diagram from crew-architect, tech stack, data models, API contracts, file structure, deployment, security), (3) {{projectPath}}/ROADMAP.md (phased tasks with agents, file paths, acceptance criteria). @@WRITE_FILE all three files. Do NOT dispatch build tasks — present for user approval."}
+                ]
+              }
+            ],
+            "templates": {
+              "default": {"name": "Default Planning Pipeline", "description": "Standard 3-wave planning for general projects", "waves": [1, 2, 3]}
+            }
+          };
+          await wf(wavesConfigPath, JSON.stringify(defaultWaves, null, 2), "utf8");
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+
     // ── Project management APIs ───────────────────────────────────────────
     if (url.pathname === "/api/projects" && req.method === "GET") {
       const { existsSync } = await import("node:fs");
@@ -1158,19 +1513,23 @@ const server = http.createServer(async (req, res) => {
       const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
       let dir = process.env.CREWSWARM_OPENCODE_PROJECT || "";
       let fallbackModel = process.env.CREWSWARM_OPENCODE_FALLBACK_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+      let opencodeModel = process.env.CREWSWARM_OPENCODE_MODEL || "groq/moonshotai/kimi-k2-instruct-0905";
+      let crewLeadModel = process.env.CREWSWARM_CREW_LEAD_MODEL || "";
       try {
         const c = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
         if (c.opencodeProject) dir = c.opencodeProject;
         if (c.opencodeFallbackModel) fallbackModel = c.opencodeFallbackModel;
+        if (c.opencodeModel) opencodeModel = c.opencodeModel;
+        if (c.crewLeadModel) crewLeadModel = c.crewLeadModel;
       } catch {}
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ dir, fallbackModel }));
+      res.end(JSON.stringify({ dir, fallbackModel, opencodeModel, crewLeadModel }));
       return;
     }
     if (url.pathname === "/api/settings/opencode-project" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      let { dir, fallbackModel } = JSON.parse(body);
+      let { dir, fallbackModel, opencodeModel, crewLeadModel } = JSON.parse(body);
       // Normalize: expand ~, ensure absolute path
       if (dir !== undefined) {
         if (dir) {
@@ -1187,9 +1546,19 @@ const server = http.createServer(async (req, res) => {
       try { cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8")); } catch {}
       if (dir !== undefined) { if (dir) cfg.opencodeProject = dir; else delete cfg.opencodeProject; process.env.CREWSWARM_OPENCODE_PROJECT = dir || ""; }
       if (fallbackModel !== undefined) { if (fallbackModel && String(fallbackModel).trim()) cfg.opencodeFallbackModel = String(fallbackModel).trim(); else delete cfg.opencodeFallbackModel; }
+      if (opencodeModel !== undefined) { 
+        if (opencodeModel && String(opencodeModel).trim()) {
+          cfg.opencodeModel = String(opencodeModel).trim();
+          process.env.CREWSWARM_OPENCODE_MODEL = cfg.opencodeModel;
+        } else {
+          delete cfg.opencodeModel;
+          delete process.env.CREWSWARM_OPENCODE_MODEL;
+        }
+      }
+      if (crewLeadModel !== undefined) { if (crewLeadModel && String(crewLeadModel).trim()) cfg.crewLeadModel = String(crewLeadModel).trim(); else delete cfg.crewLeadModel; }
       fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, dir: cfg.opencodeProject, fallbackModel: cfg.opencodeFallbackModel }));
+      res.end(JSON.stringify({ ok: true, dir: cfg.opencodeProject, fallbackModel: cfg.opencodeFallbackModel, opencodeModel: cfg.opencodeModel, crewLeadModel: cfg.crewLeadModel }));
       return;
     }
     // ── Built-in providers (crewswarm standalone config) ─────────────────
@@ -1415,6 +1784,34 @@ const server = http.createServer(async (req, res) => {
         process.env.CREWSWARM_GEMINI_CLI_ENABLED = enabled ? "1" : "0";
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, enabled: cfg.geminiCli }));
+        return;
+      }
+    }
+    // ── Crew CLI executor toggle ─────────────────────────────────────────────────
+    if (url.pathname === "/api/settings/crew-cli") {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const cfgPath = CFG_FILE;
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+          const enabled = cfg.crewCli === true || process.env.CREWSWARM_CREW_CLI_ENABLED === "1";
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled, installed: true }));
+        } catch {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ enabled: false, installed: true }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = ""; for await (const chunk of req) body += chunk;
+        const { enabled } = JSON.parse(body || "{}");
+        const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
+        cfg.crewCli = enabled === true;
+        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        process.env.CREWSWARM_CREW_CLI_ENABLED = enabled ? "1" : "0";
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, enabled: cfg.crewCli }));
         return;
       }
     }
@@ -1676,6 +2073,50 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    
+    // ── Multimodal API endpoints ───────────────────────────────────────────
+    if (url.pathname === "/api/analyze-image" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      try {
+        const { image, prompt } = JSON.parse(body);
+        const { analyzeImage } = await import("../lib/integrations/multimodal.mjs");
+        const result = await analyzeImage(image, prompt || "Describe this image in detail.");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, result }));
+      } catch (err) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+      return;
+    }
+    
+    if (url.pathname === "/api/transcribe-audio" && req.method === "POST") {
+      // Expects multipart/form-data with audio file
+      const busboy = await import("busboy");
+      const chunks = [];
+      return new Promise((resolve) => {
+        const bb = busboy.default({ headers: req.headers });
+        bb.on("file", (name, file, info) => {
+          file.on("data", (data) => chunks.push(data));
+        });
+        bb.on("finish", async () => {
+          try {
+            const audioBuffer = Buffer.concat(chunks);
+            const { transcribeAudio } = await import("../lib/integrations/multimodal.mjs");
+            const transcription = await transcribeAudio(audioBuffer);
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: true, transcription }));
+          } catch (err) {
+            res.writeHead(500, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: err.message }));
+          }
+          resolve();
+        });
+        req.pipe(bb);
+      });
+    }
+    
     if (url.pathname === "/api/crew-lead/chat" && req.method === "POST") {
       let body = ""; for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
@@ -1731,11 +2172,33 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/crew-lead/history" && req.method === "GET") {
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
       const sessionId = url.searchParams.get("sessionId") || "owner";
-      const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/history?sessionId=${encodeURIComponent(sessionId)}`, {
+      const projectId = url.searchParams.get("projectId");
+      
+      console.log('[dashboard] /api/crew-lead/history - sessionId:', sessionId, 'projectId:', projectId || '(none)');
+      
+      // Get auth token
+      const token = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"))?.rt?.authToken || ""; } catch { return ""; } })();
+      
+      // Build crew-lead URL with both sessionId and projectId
+      let clUrl = `http://127.0.0.1:${crewLeadPort}/api/crew-lead/history?sessionId=${encodeURIComponent(sessionId)}`;
+      if (projectId) {
+        clUrl += `&projectId=${encodeURIComponent(projectId)}`;
+      }
+      
+      console.log('[dashboard] Forwarding to crew-lead:', clUrl);
+      
+      const clRes = await fetch(clUrl, {
+        headers: { "Authorization": `Bearer ${token}` },
         signal: AbortSignal.timeout(5000),
       }).catch(() => null);
-      if (!clRes || !clRes.ok) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, history: [] })); return; }
+      if (!clRes || !clRes.ok) { 
+        console.log('[dashboard] crew-lead request failed, status:', clRes?.status || 'timeout');
+        res.writeHead(200, { "content-type": "application/json" }); 
+        res.end(JSON.stringify({ ok: true, history: [] })); 
+        return; 
+      }
       const clData = await clRes.json();
+      console.log('[dashboard] Got response, history count:', clData.history?.length || 0, 'projectId:', clData.projectId);
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(clData));
       return;
@@ -2507,7 +2970,7 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/agents-config/update" && req.method === "POST") {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = ""; for await (const chunk of req) body += chunk;
-      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, useCodex, useGeminiCli, geminiCliModel, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
+      const { agentId, model, fallbackModel, systemPrompt, name, emoji, theme, toolProfile, alsoAllow, useOpenCode, opencodeModel, opencodeFallbackModel, useCursorCli, cursorCliModel, useClaudeCode, claudeCodeModel, useCodex, useGeminiCli, geminiCliModel, useCrewCLI, useDockerSandbox, role, opencodeLoop, opencodeLoopMaxRounds, workspace } = JSON.parse(body);
       if (!agentId) throw new Error("agentId required");
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
@@ -2554,10 +3017,27 @@ ORDER BY day DESC, cost DESC;`;
       if (useCodex !== undefined) agent.useCodex = useCodex;
       if (useGeminiCli !== undefined) agent.useGeminiCli = useGeminiCli;
       if (geminiCliModel !== undefined) agent.geminiCliModel = geminiCliModel || undefined;
+      if (useCrewCLI !== undefined) agent.useCrewCLI = useCrewCLI;
+      if (useDockerSandbox !== undefined) agent.useDockerSandbox = useDockerSandbox;
       if (role !== undefined) agent._role = role || undefined;
       if (opencodeLoop !== undefined) agent.opencodeLoop = opencodeLoop || undefined;
       if (opencodeLoopMaxRounds !== undefined) agent.opencodeLoopMaxRounds = opencodeLoopMaxRounds > 0 ? opencodeLoopMaxRounds : undefined;
       if (workspace !== undefined) agent.workspace = workspace || undefined;
+      
+      // Create timestamped backup before writing
+      const backupPath = path.join(CFG_DIR, `crewswarm.json.backup.${Date.now()}`);
+      await writeFile(backupPath, await readFile(cfgPath, "utf8"), "utf8");
+      
+      // Keep only last 10 backups
+      const { readdir, unlink } = await import("node:fs/promises");
+      try {
+        const files = await readdir(CFG_DIR);
+        const backups = files.filter(f => f.startsWith('crewswarm.json.backup.')).sort().reverse();
+        for (const old of backups.slice(10)) {
+          await unlink(path.join(CFG_DIR, old)).catch(() => {});
+        }
+      } catch {}
+      
       await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
       // System prompts live in agent-prompts.json, not crewswarm.json
       if (systemPrompt !== undefined) {
@@ -2735,6 +3215,55 @@ ORDER BY day DESC, cost DESC;`;
       }
       return;
     }
+    
+    // ── Agent Prompts API ─────────────────────────────────────────────────────
+    // GET /api/prompts — read all agent prompts from ~/.crewswarm/agent-prompts.json
+    if (url.pathname === "/api/prompts" && req.method === "GET") {
+      const promptsFile = path.join(os.homedir(), ".crewswarm", "agent-prompts.json");
+      try {
+        const prompts = JSON.parse(fs.readFileSync(promptsFile, "utf8"));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, prompts }));
+      } catch (e) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+
+    // POST /api/prompts — update a single agent's prompt
+    // Body: { agent: "crew-coder", prompt: "You are..." }
+    if (url.pathname === "/api/prompts" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const { agent, prompt } = JSON.parse(body);
+      
+      if (!agent || prompt === undefined) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "agent and prompt required" }));
+        return;
+      }
+      
+      const promptsFile = path.join(os.homedir(), ".crewswarm", "agent-prompts.json");
+      try {
+        let prompts = {};
+        try { prompts = JSON.parse(fs.readFileSync(promptsFile, "utf8")); } catch {}
+        
+        // Update the specific agent's prompt
+        prompts[agent] = prompt;
+        
+        fs.writeFileSync(promptsFile, JSON.stringify(prompts, null, 2), "utf8");
+        console.log(`[dashboard] Prompt updated for ${agent} (${prompt.length} chars)`);
+        
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, agent, length: prompt.length }));
+      } catch (e) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+    
     // Files API — scan a directory and return file metadata
     if (url.pathname === "/api/files" && req.method === "GET") {
       const scanDir = url.searchParams.get("dir") || os.homedir();
@@ -2822,6 +3351,8 @@ ORDER BY day DESC, cost DESC;`;
         targetAgent: cfg.targetAgent || "crew-main",
         allowedChatIds: cfg.allowedChatIds || [],
         contactNames: cfg.contactNames || {},
+        userRouting: cfg.userRouting || {},
+        topicRouting: cfg.topicRouting || {},
       }));
       return;
     }
@@ -2888,6 +3419,41 @@ ORDER BY day DESC, cost DESC;`;
       return;
     }
 
+    if (url.pathname === "/api/telegram/discover-topics") {
+      try {
+        const TG_LOG_PATH = path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.jsonl");
+        const raw = fs.readFileSync(TG_LOG_PATH, "utf8");
+        const lines = raw.trim().split("\n").filter(Boolean);
+        const topics = new Map(); // chatId:threadId -> {chatId, threadId, lastSeen, text}
+        
+        lines.slice(-500).forEach(line => {
+          try {
+            const entry = JSON.parse(line);
+            if (entry.threadId && entry.chatId) {
+              const key = `${entry.chatId}:${entry.threadId}`;
+              topics.set(key, {
+                chatId: entry.chatId,
+                threadId: entry.threadId,
+                lastSeen: entry.ts || new Date().toISOString(),
+                text: (entry.text || '').slice(0, 50)
+              });
+            }
+          } catch {}
+        });
+        
+        const result = Array.from(topics.values()).sort((a, b) => 
+          new Date(b.lastSeen) - new Date(a.lastSeen)
+        );
+        
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end("[]");
+      }
+      return;
+    }
+
     // ── WhatsApp API ──────────────────────────────────────────────────────────
     const WA_CONFIG_PATH = path.join(os.homedir(), ".crewswarm", "whatsapp-bridge.json");
     const WA_PID_PATH    = path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid");
@@ -2922,6 +3488,7 @@ ORDER BY day DESC, cost DESC;`;
         allowedNumbers: cfg.allowedNumbers || [],
         targetAgent: cfg.targetAgent || "crew-lead",
         contactNames: cfg.contactNames || {},
+        userRouting: cfg.userRouting || {},
       }));
       return;
     }
@@ -2989,6 +3556,110 @@ ORDER BY day DESC, cost DESC;`;
       } catch {
         res.writeHead(200, { "content-type": "application/json" });
         res.end("[]");
+      }
+      return;
+    }
+
+    // ── Contacts API ──────────────────────────────────────────────────────────────
+    if (url.pathname === "/api/contacts" && req.method === "GET") {
+      try {
+        const { listContacts } = await import("../lib/contacts/index.mjs");
+        const platform = url.searchParams.get("platform");
+        const search = url.searchParams.get("search");
+        const tags = url.searchParams.get("tags");
+        const contacts = listContacts({ platform, search, tags });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ contacts }));
+      } catch (e) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/contacts/update" && req.method === "POST") {
+      try {
+        let raw = ""; for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw || "{}");
+        const { contactId, ...updates } = body;
+        if (!contactId) throw new Error("contactId required");
+        console.log("[dashboard] Updating contact:", contactId, "with:", JSON.stringify(updates).slice(0, 200));
+        const { updateContact } = await import("../lib/contacts/index.mjs");
+        updateContact(contactId, updates);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        console.error("[dashboard] Contact update error:", e.message, e.stack);
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/contacts/delete" && req.method === "POST") {
+      try {
+        let raw = ""; for await (const chunk of req) raw += chunk;
+        const { contactId } = JSON.parse(raw || "{}");
+        if (!contactId) throw new Error("contactId required");
+        const { deleteContact } = await import("../lib/contacts/index.mjs");
+        deleteContact(contactId);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/contacts/send" && req.method === "POST") {
+      try {
+        let raw = ""; for await (const chunk of req) raw += chunk;
+        const { contactId, platform, message } = JSON.parse(raw || "{}");
+        if (!contactId || !message) throw new Error("contactId and message required");
+        
+        const { getContact } = await import("../lib/contacts/index.mjs");
+        const contact = getContact(contactId);
+        if (!contact) throw new Error("Contact not found");
+        
+        const platformLinks = JSON.parse(contact.platform_links || "{}");
+        
+        // Send to WhatsApp
+        if (platform === "whatsapp" || platform === "both") {
+          const waJid = contact.platform === "whatsapp" ? contact.contact_id : platformLinks.whatsapp;
+          if (waJid) {
+            // Call WhatsApp bridge's sendMessage function
+            const waUrl = `http://127.0.0.1:${process.env.WA_HTTP_PORT || 3000}/send`;
+            await fetch(waUrl, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ jid: waJid, message })
+            });
+          }
+        }
+        
+        // Send to Telegram
+        if (platform === "telegram" || platform === "both") {
+          const tgChatId = contact.platform === "telegram" ? contact.contact_id.replace("telegram:", "") : platformLinks.telegram;
+          if (tgChatId) {
+            const TG_CONFIG_PATH = path.join(os.homedir(), ".crewswarm", "telegram-bridge.json");
+            const tgCfg = JSON.parse(fs.readFileSync(TG_CONFIG_PATH, "utf8"));
+            const botToken = tgCfg.token;
+            if (botToken) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ chat_id: tgChatId, text: message })
+              });
+            }
+          }
+        }
+        
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
       }
       return;
     }
@@ -3216,9 +3887,15 @@ ORDER BY day DESC, cost DESC;`;
         }
         return "";
       })();
-      // Build agent allowlist dynamically from crewswarm.json + permanent baseline
-      const CREW_AGENTS_BASE = "main,admin,build,coder,researcher,architect,reviewer,qa,fixer,pm,orchestrator,openclaw,openclaw-main,opencode-pm,opencode-qa,opencode-fixer,opencode-coder,opencode-coder-2,security,crew-main,crew-pm,crew-qa,crew-fixer,crew-coder,crew-coder-2,crew-coder-front,crew-coder-back,crew-github,crew-security,crew-frontend,crew-copywriter,crew-telegram,crew-lead";
+      // Build agent allowlist dynamically from crewswarm.json
+      // Uses agent-registry.mjs logic for consistent agent discovery
       const CREW_AGENTS = (() => {
+        const agentSet = new Set();
+        
+        // Legacy baseline (for backward compat with old RT daemon)
+        const legacyAgents = ["main", "admin", "build", "coder", "researcher", "architect", "reviewer", "qa", "fixer", "pm", "orchestrator", "openclaw", "openclaw-main", "opencode-pm", "opencode-qa", "opencode-fixer", "opencode-coder", "opencode-coder-2", "security", "crew-lead"];
+        legacyAgents.forEach(id => agentSet.add(id));
+        
         try {
           for (const p of [
             path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
@@ -3227,15 +3904,25 @@ ORDER BY day DESC, cost DESC;`;
             if (fs.existsSync(p)) {
               const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
               const agentArr = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
-              const ids = agentArr.map(a => a.id).filter(Boolean);
-              if (ids.length) {
-                const merged = new Set([...CREW_AGENTS_BASE.split(","), ...ids]);
-                return [...merged].join(",");
+              
+              for (const agent of agentArr) {
+                const rawId = String(agent.id || "").trim();
+                if (!rawId) continue;
+                
+                // Add both crew-xxx format and bare format
+                const bareId = rawId.replace(/^crew-/, "");
+                const rtId = rawId.startsWith("crew-") ? rawId : `crew-${bareId}`;
+                
+                agentSet.add(rtId);
+                agentSet.add(bareId);
               }
             }
           }
-        } catch {}
-        return CREW_AGENTS_BASE;
+        } catch (err) {
+          console.warn(`[dashboard] Could not load agent config: ${err.message}`);
+        }
+        
+        return [...agentSet].sort().join(",");
       })();
 
       if (id === "rt-bus") {
@@ -3281,7 +3968,7 @@ ORDER BY day DESC, cost DESC;`;
           const tgCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8")); } catch { return {}; } })();
           spawnProc("node", [path.join(OPENCLAW_DIR, "telegram-bridge.mjs")], {
             cwd: OPENCLAW_DIR,
-            env: { ...process.env, TELEGRAM_BOT_TOKEN: tgToken, TELEGRAM_TARGET_AGENT: tgCfg.targetAgent || "crew-main" },
+            env: { ...process.env, TELEGRAM_BOT_TOKEN: tgToken, TELEGRAM_TARGET_AGENT: tgCfg.targetAgent || "crew-main", CREWSWARM_RT_AUTH_TOKEN: RT_TOKEN },
             detached: true, stdio: "ignore",
           }).unref();
         } else {
@@ -3300,12 +3987,41 @@ ORDER BY day DESC, cost DESC;`;
         const waEnv = waCfg.env || {};
         spawnProc("node", [path.join(OPENCLAW_DIR, "whatsapp-bridge.mjs")], {
           cwd: OPENCLAW_DIR,
-          env: { ...process.env, ...(waEnv.WA_ALLOWED_NUMBERS ? { WA_ALLOWED_NUMBERS: waEnv.WA_ALLOWED_NUMBERS } : {}) },
+          env: { ...process.env, ...(waEnv.WA_ALLOWED_NUMBERS ? { WA_ALLOWED_NUMBERS: waEnv.WA_ALLOWED_NUMBERS } : {}), CREWSWARM_RT_AUTH_TOKEN: RT_TOKEN },
           detached: true, stdio: "ignore",
         }).unref();
       } else if (id === "crew-lead") {
-        // Kill ALL crew-lead processes, even if multiple exist
-        try { execSync(`pkill -9 -f "crew-lead.mjs"`, { stdio: "ignore" }); } catch {}
+        // Use PID file for reliable killing (prevents collateral dashboard deaths)
+        const pidFile = path.join(os.homedir(), ".crewswarm", "logs", "crew-lead.pid");
+        let killed = false;
+        
+        try {
+          if (fs.existsSync(pidFile)) {
+            const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+            if (pid && !isNaN(pid)) {
+              try {
+                process.kill(pid, 0); // Check if process exists
+                execSync(`kill -9 ${pid}`, { stdio: "ignore" });
+                killed = true;
+                console.log(`[dashboard] Killed crew-lead via PID file (pid ${pid})`);
+              } catch (e) {
+                // Process doesn't exist, clean up stale PID file
+                fs.writeFileSync(pidFile, "");
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[dashboard] PID file method failed: ${e.message}`);
+        }
+        
+        // Fallback: pattern-based kill only if PID method didn't work
+        if (!killed) {
+          try { 
+            execSync(`pkill -9 -f "crew-lead.mjs"`, { stdio: "ignore" });
+            console.log(`[dashboard] Killed crew-lead via pattern match (fallback)`);
+          } catch {}
+        }
+        
         // Also kill any process holding the port
         const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
         try { execSync(`lsof -ti :${crewLeadPort} | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
@@ -3396,19 +4112,38 @@ ORDER BY day DESC, cost DESC;`;
           if (pid) process.kill(pid, "SIGTERM");
         } catch {}
       } else if (id === "crew-lead") {
-        // Kill crew-lead by PID file first, then fallback to pattern match
+        // Use PID file for reliable killing (prevents collateral dashboard deaths)
+        const pidFile = path.join(os.homedir(), ".crewswarm", "logs", "crew-lead.pid");
+        let killed = false;
+        
         try {
-          const pidFile = path.join(os.homedir(), ".crewswarm", "logs", "crew-lead.pid");
           if (fs.existsSync(pidFile)) {
             const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
-            if (pid) {
-              process.kill(pid, "SIGTERM");
-              await new Promise(r => setTimeout(r, 500));
+            if (pid && !isNaN(pid)) {
+              try {
+                process.kill(pid, 0); // Check if process exists
+                process.kill(pid, "SIGTERM");
+                await new Promise(r => setTimeout(r, 500));
+                killed = true;
+                console.log(`[dashboard] Stopped crew-lead via PID file (pid ${pid})`);
+              } catch (e) {
+                // Process doesn't exist, clean up stale PID file
+                fs.writeFileSync(pidFile, "");
+              }
             }
           }
-        } catch {}
-        // Fallback: kill by exact process match (node crew-lead.mjs, not just any process with that string)
-        try { execSync(`pgrep -f "^node.*crew-lead\\.mjs$" | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
+        } catch (e) {
+          console.warn(`[dashboard] PID file method failed: ${e.message}`);
+        }
+        
+        // Fallback: pattern-based kill only if PID method didn't work
+        if (!killed) {
+          try { 
+            execSync(`pgrep -f "^node.*crew-lead\\.mjs$" | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true });
+            console.log(`[dashboard] Stopped crew-lead via pattern match (fallback)`);
+          } catch {}
+        }
+        
         // Also kill any process holding the port
         const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
         try { execSync(`lsof -ti :${crewLeadPort} | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: true }); } catch {}
@@ -3840,15 +4575,28 @@ server.listen(listenPort, listenHost, () => {
 }
 
 process.on("uncaughtException", (err) => {
-  if (err?.code === "EADDRINUSE") {
-    // Already handled by server.on("error") — don't loop forever
-    console.error(`[dashboard] EADDRINUSE on port ${listenPort} — exiting`);
-    process.exit(1);
-  }
-  console.error("[dashboard] uncaughtException (kept alive):", err?.stack || err?.message || err);
+  console.error("[dashboard] uncaughtException:", err?.stack || err?.message || err);
+  
+  // Always exit on uncaught exceptions — process is in undefined state
+  console.error("[dashboard] FATAL — exiting due to uncaught exception");
+  process.exit(1);
 });
+
 process.on("unhandledRejection", (reason) => {
   const msg = reason?.message || String(reason);
-  if (msg === "terminated" || msg === "aborted") return; // SSE/fetch aborted when client disconnects
-  console.error("[dashboard] unhandledRejection (kept alive):", msg);
+  
+  // Benign errors: SSE/fetch aborted when client disconnects — keep alive
+  if (msg === "terminated" || msg === "aborted" || /client.*disconnect/i.test(msg)) {
+    return; // Silent — normal operation
+  }
+  
+  console.error("[dashboard] unhandledRejection:", msg);
+  console.error("Stack:", reason?.stack);
+  
+  // Critical errors: die gracefully
+  if (/EADDRINUSE|EACCES|out of memory|cannot allocate/i.test(msg)) {
+    console.error("[dashboard] FATAL — exiting");
+    process.exit(1);
+  }
+  // Non-critical: keep alive but warn
 });

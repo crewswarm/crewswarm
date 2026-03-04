@@ -60,6 +60,16 @@ echo "Starting RT daemon (port 18889)..."
 nohup "$NODE" scripts/opencrew-rt-daemon.mjs >> /tmp/opencrew-rt-daemon.log 2>&1 &
 sleep 2
 
+# Wait for RT daemon to be ready (accepts connections properly)
+echo "  Waiting for RT daemon to be ready..."
+for i in {1..10}; do
+  if curl -s -m 1 http://127.0.0.1:18889/status >/dev/null 2>&1; then
+    echo "  ✓ RT daemon ready"
+    break
+  fi
+  sleep 1
+done
+
 echo "Starting gateway bridges (crew-main, crew-pm, crew-coder, etc.)..."
 "$NODE" scripts/start-crew.mjs
 sleep 1
@@ -98,6 +108,10 @@ for arg in "$@"; do
 done
 
 if [[ "$START_BRIDGES" -eq 1 ]]; then
+  # Give RT daemon and crew-lead extra time to fully initialize
+  echo "Waiting for RT bus and crew-lead to be fully ready..."
+  sleep 3
+  
   echo "Starting Telegram bridge..."
   # Pattern without leading "node " to catch any node binary path variant
   pkill -9 -f "telegram-bridge.mjs" 2>/dev/null; sleep 1

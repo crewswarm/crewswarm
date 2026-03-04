@@ -19,6 +19,9 @@ const DRY            = process.argv.includes("--dry");
 const FILE_TO_KEY = {
   "main.md":         "main",
   "pm.md":           "pm",
+  "pm-cli.md":       "pm-cli",
+  "pm-frontend.md":  "pm-frontend",
+  "pm-core.md":      "pm-core",
   "coder.md":        "coder",
   "coder-front.md":  "coder-front",
   "coder-back.md":   "coder-back",

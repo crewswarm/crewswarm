@@ -12,6 +12,14 @@ CrewSwarm is an open-source, PM-led multi-agent orchestration platform for softw
 
 ---
 
+## Dashboard
+
+![CrewSwarm Dashboard](docs/images/dashboard-chat.png)
+
+Chat with your crew naturally. crew-lead understands intent, dispatches to specialists, retries failures. Real files written to disk.
+
+---
+
 ## How it works
 
 ```
