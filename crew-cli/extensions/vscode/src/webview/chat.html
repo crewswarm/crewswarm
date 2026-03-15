@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>crewswarm Chat</title>
+  <link rel="stylesheet" href="${styles}">
+</head>
+<body>
+  <div id="chat-container">
+    <div id="header">
+      <div id="status-indicator" class="status-disconnected">
+        <span id="status-text">Connecting...</span>
+      </div>
+      <div id="mode-indicator">
+        <span id="mode-text">Mode: Connected</span>
+      </div>
+    </div>
+    
+    <div id="messages"></div>
+    
+    <div id="input-area">
+      <div id="context-chips" style="display: none;">
+        <span class="chip">Selected text</span>
+        <button id="clear-context" class="chip-remove">×</button>
+      </div>
+      <div id="input-container">
+        <textarea id="message-input" placeholder="Type your message to crewswarm..." rows="1"></textarea>
+        <button id="send-btn" title="Send message">Send</button>
+      </div>
+    </div>
+  </div>
+  <script src="${script}"></script>
+</body>
+</html>

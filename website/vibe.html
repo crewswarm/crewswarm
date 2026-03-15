@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-0QSG6Y9DHT');
+  </script>
+  <!-- End Google Analytics -->
+  <title>crewswarm Vibe — AI-Powered Browser IDE with Monaco Editor and Multi-Engine Chat</title>
+  <meta name="description" content="Vibe is an AI coding studio in your browser. Monaco editor, 6 CLI engines (Claude Code, Cursor, crew-cli, Gemini, OpenCode, Codex CLI), integrated terminal, and file explorer." />
+  <meta name="keywords" content="AI IDE, browser IDE, AI coding, Monaco editor, Claude Code, Cursor CLI, crew-cli, Gemini CLI, OpenCode, multi-engine AI, code editor, crewswarm, Vibe IDE" />
+
+  <!-- Open Graph -->
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:title" content="crewswarm Vibe — AI-Powered Browser IDE" />
+  <meta property="og:description" content="Monaco editor, 6 AI CLI engines, integrated terminal, and file explorer in one browser-native coding studio. No Electron. No installs." />
+  <meta property="og:url" content="https://crewswarm.ai/vibe.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="crewswarm Vibe — AI-powered browser IDE with Monaco editor and multi-engine chat" />
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@crewswarm" />
+  <meta name="twitter:title" content="crewswarm Vibe — AI-Powered Browser IDE" />
+  <meta name="twitter:description" content="Monaco editor, 6 AI CLI engines, integrated terminal, and file explorer in one browser-native coding studio." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <meta name="twitter:image:alt" content="crewswarm Vibe IDE" />
+
+  <!-- Misc SEO -->
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#060a10" />
+  <meta name="author" content="crewswarm" />
+  <link rel="canonical" href="https://crewswarm.ai/vibe.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+
+  <!-- Schema.org JSON-LD -->
+  <script type="application/ld+json">
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://crewswarm.ai/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Vibe IDE",
+          "item": "https://crewswarm.ai/vibe.html"
+        }
+      ]
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "crewswarm Vibe",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Browser, macOS, Linux, Windows",
+      "description": "An AI-powered browser IDE with Monaco editor, multi-engine CLI chat supporting Claude Code, Cursor, crew-cli, Gemini, OpenCode, and Codex CLI, integrated terminal, file explorer, and project management.",
+      "url": "https://crewswarm.ai/vibe.html",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "crewswarm",
+        "url": "https://crewswarm.ai/"
+      },
+      "featureList": "Monaco Editor, Multi-Engine AI Chat, Integrated Terminal, File Explorer, Find and Replace, Project Management"
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Do I need VS Code or Cursor installed to use Vibe?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Vibe is a standalone web application that uses the Monaco editor engine but runs entirely in your browser. No Electron, no native install required."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which AI engines does Vibe support?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Vibe supports six CLI engines: Claude Code, Cursor CLI, OpenCode, crew-cli, Codex CLI, and Gemini CLI. Switch between them from the chat dropdown without restarting."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does file sync work?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Vibe uses Node.js fs.watch to detect file changes instantly. When an agent writes a file, the update appears in Monaco within 500ms automatically, preserving your cursor position."
+          }
+        }
+      ]
+    }
+  ]
+  </script>
+
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* ── Vibe-specific styles ────────────────────────────────────────────── */
+    .vibe-hero {
+      padding-top: 120px;
+      padding-bottom: 80px;
+      text-align: center;
+      background: radial-gradient(ellipse 80% 60% at 50% 20%, rgba(56, 189, 248, 0.12), transparent 70%),
+                  radial-gradient(ellipse 60% 40% at 30% 70%, rgba(129, 140, 248, 0.06), transparent 60%);
+      position: relative;
+      overflow: hidden;
+      min-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .vibe-hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent 60%, var(--bg) 100%);
+      pointer-events: none;
+    }
+    .vibe-hero > * { position: relative; z-index: 1; }
+
+    .vibe-hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 1.5rem;
+    }
+    .vibe-hero .hero-sub {
+      max-width: 640px;
+      margin: 0 auto;
+      font-size: 1.15rem;
+      line-height: 1.65;
+      color: var(--text-2);
+    }
+    .hero-cta-row {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      margin-top: 2rem;
+      flex-wrap: wrap;
+    }
+    .hero-cta-row .btn-primary {
+      background: var(--accent);
+      color: #060a10;
+      padding: 0.75rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .hero-cta-row .btn-primary:hover {
+      background: #7dd3fa;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(56,189,248,0.35);
+    }
+
+    .vibe-preview {
+      margin-top: 3.5rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+      background: var(--bg-card);
+      overflow: hidden;
+      max-width: 1000px;
+      width: 90%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .vibe-preview-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      text-align: left;
+    }
+    .vibe-preview-copy {
+      font-size: 0.9rem;
+      color: var(--text-2);
+    }
+
+    .engine-pills {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 1.75rem;
+    }
+    .engine-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.4rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.03);
+      color: var(--text-2);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .engine-pill:hover {
+      border-color: var(--border-hi);
+      color: var(--text);
+    }
+    .engine-pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+    }
+
+    /* ── Feature grid ────────────────────────────────────────────────────── */
+    .vibe-features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    @media (max-width: 1024px) {
+      .vibe-features-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .vibe-features-grid { grid-template-columns: 1fr; }
+    }
+    .vf-card {
+      padding: 2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color 0.25s, box-shadow 0.25s;
+    }
+    .vf-card:hover {
+      border-color: var(--border-hi);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    }
+    .vf-card-num {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+    .vf-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      line-height: 1.3;
+    }
+    .vf-card p {
+      font-size: 0.9rem;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+    .vf-card ul {
+      margin-top: 0.75rem;
+      padding-left: 1.25rem;
+      font-size: 0.85rem;
+      color: var(--text-2);
+      line-height: 1.8;
+    }
+
+    /* ── How it works ────────────────────────────────────────────────────── */
+    .hiw-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    @media (max-width: 1024px) {
+      .hiw-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .hiw-grid { grid-template-columns: 1fr; }
+    }
+    .hiw-step {
+      position: relative;
+      padding: 2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      text-align: center;
+    }
+    .hiw-step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(56,189,248,0.1);
+      border: 1px solid rgba(56,189,248,0.2);
+      color: var(--accent);
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+    .hiw-step h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .hiw-step p {
+      font-size: 0.875rem;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    /* ── Engine comparison ────────────────────────────────────────────────── */
+    .engine-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    @media (max-width: 1024px) {
+      .engine-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .engine-grid { grid-template-columns: 1fr; }
+    }
+    .engine-card {
+      padding: 1.75rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color 0.25s;
+    }
+    .engine-card:hover { border-color: var(--border-hi); }
+    .engine-card-name {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .engine-card-provider {
+      font-size: 0.75rem;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .engine-card p {
+      font-size: 0.875rem;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+    .engine-card-tag {
+      display: inline-block;
+      margin-top: 0.75rem;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      border-radius: 6px;
+      background: rgba(56,189,248,0.08);
+      color: var(--accent);
+      border: 1px solid rgba(56,189,248,0.15);
+    }
+
+    /* ── Misc ─────────────────────────────────────────────────────────────── */
+    .compat-badge {
+      display: inline-block;
+      padding: 0.3rem 0.85rem;
+      background: rgba(52, 211, 153, 0.08);
+      border: 1px solid rgba(52, 211, 153, 0.25);
+      color: var(--green);
+      border-radius: 99px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-top: 2rem;
+    }
+
+    @media (max-width: 768px) {
+      .vibe-preview-meta {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .vibe-hero { padding-top: 100px; min-height: 70vh; }
+    }
+  </style>
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+    </a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item active">Vibe IDE</a></li>
+      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+      <li role="none" class="nav-mobile-cta"><a href="#get-started" class="btn btn-sm">Get started</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero vibe-hero">
+    <div class="hero-badge">crewswarm Vibe</div>
+    <h1 class="gradient-text">Your AI-powered<br/>coding studio</h1>
+    <p class="hero-sub">Monaco editor, six CLI engines, integrated terminal, file explorer, and project management in one browser-native surface. No Electron. No extensions. Just open localhost:3333 and build.</p>
+
+    <div class="engine-pills" aria-label="Supported AI engines">
+      <span class="engine-pill"><span class="engine-pill-dot"></span>Claude Code</span>
+      <span class="engine-pill"><span class="engine-pill-dot"></span>Cursor CLI</span>
+      <span class="engine-pill"><span class="engine-pill-dot"></span>OpenCode</span>
+      <span class="engine-pill"><span class="engine-pill-dot"></span>crew-cli</span>
+      <span class="engine-pill"><span class="engine-pill-dot"></span>Gemini CLI</span>
+      <span class="engine-pill"><span class="engine-pill-dot"></span>Codex CLI</span>
+    </div>
+
+    <div class="hero-cta-row">
+      <a href="#get-started" class="btn btn-primary">Get started</a>
+      <a href="#features" class="btn btn-ghost">See features</a>
+    </div>
+
+    <div class="vibe-preview">
+      <img src="vibe-ide-real.webp?v=1" alt="Real crewswarm Vibe screenshot showing file tree, editor workspace, agent chat, and activity trace" loading="eager" width="1440" height="900" style="width:100%; height:auto; display:block; background:#000;" />
+      <div class="vibe-preview-meta">
+        <div class="vibe-preview-copy">
+          Monaco editor, project tree, agent chat, and terminal running in the browser.
+        </div>
+      </div>
+    </div>
+
+    <div class="compat-badge">Browser-native, local-first, open source</div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Core Features</div>
+        <h2>Everything you need to build with AI</h2>
+        <p class="section-desc">Six integrated panels that work together. No context-switching, no tab juggling, no waiting for extensions to load.</p>
+      </div>
+      <div class="vibe-features-grid">
+        <article class="vf-card">
+          <div class="vf-card-num">01 &mdash; Editor</div>
+          <h3>Monaco Editor</h3>
+          <p>The same editing engine that powers VS Code. Full syntax highlighting for 20+ languages, IntelliSense autocomplete, multi-cursor editing, and minimap navigation.</p>
+          <ul>
+            <li>JavaScript, TypeScript, Python, Go, Rust, HTML, CSS, JSON</li>
+            <li>Multi-cursor with Cmd+Click and Cmd+D</li>
+            <li>10+ color themes (VS Code Dark, Monokai, Solarized)</li>
+            <li>Real-time sync when agents write files</li>
+          </ul>
+        </article>
+        <article class="vf-card">
+          <div class="vf-card-num">02 &mdash; AI Chat</div>
+          <h3>Multi-Engine Chat</h3>
+          <p>Talk to six different AI coding engines from one chat panel. Smart routing picks the best engine for each task, or select manually from the dropdown.</p>
+          <ul>
+            <li>Claude Code for deep reasoning and refactoring</li>
+            <li>Cursor CLI for fast inline edits</li>
+            <li>OpenCode for open-model flexibility</li>
+            <li>crew-cli, Gemini, and Codex CLI also supported</li>
+          </ul>
+        </article>
+        <article class="vf-card">
+          <div class="vf-card-num">03 &mdash; Terminal</div>
+          <h3>Integrated Terminal</h3>
+          <p>A PTY-backed real shell running inside the IDE. Run builds, tests, git commands, and scripts without leaving Vibe. Activity trace shows every agent operation in real time.</p>
+          <ul>
+            <li>Full bash/zsh with proper ANSI colors</li>
+            <li>Activity trace for agent file writes</li>
+            <li>Scrollback history and search</li>
+            <li>Runs in the project working directory</li>
+          </ul>
+        </article>
+        <article class="vf-card">
+          <div class="vf-card-num">04 &mdash; Files</div>
+          <h3>File Explorer</h3>
+          <p>Navigate your project with a tree view that stays in sync with the filesystem. Create, rename, and delete files directly. Watch new files appear as agents generate code.</p>
+          <ul>
+            <li>Collapsible directory tree with icons</li>
+            <li>Create, rename, delete files and folders</li>
+            <li>Real-time updates via fs.watch</li>
+            <li>Gitignore-aware filtering</li>
+          </ul>
+        </article>
+        <article class="vf-card">
+          <div class="vf-card-num">05 &mdash; Search</div>
+          <h3>Find &amp; Replace</h3>
+          <p>Project-wide search across all files with regex support. Find occurrences, preview matches in context, and replace across the codebase in a single operation.</p>
+          <ul>
+            <li>Full regex pattern matching</li>
+            <li>Case-sensitive and whole-word options</li>
+            <li>Preview matches with surrounding context</li>
+            <li>Batch replace across multiple files</li>
+          </ul>
+        </article>
+        <article class="vf-card">
+          <div class="vf-card-num">06 &mdash; Projects</div>
+          <h3>Project Management</h3>
+          <p>Manage multiple projects from the sidebar. Auto-discovery scans for existing projects on disk. Switch between projects instantly without restarting the server.</p>
+          <ul>
+            <li>Multi-project support with instant switching</li>
+            <li>Auto-discovery of local project directories</li>
+            <li>Per-project chat history and context</li>
+            <li>Project-scoped terminal and file tree</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section bg-gray-50" id="how-it-works">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Workflow</div>
+        <h2>How Vibe works</h2>
+        <p class="section-desc">From project setup to shipping code, Vibe keeps the full workflow in one surface.</p>
+      </div>
+      <div class="hiw-grid">
+        <div class="hiw-step">
+          <div class="hiw-step-num">1</div>
+          <h3>Select a project</h3>
+          <p>Open an existing project from the sidebar or create a new one. Vibe auto-discovers local directories and loads the file tree.</p>
+        </div>
+        <div class="hiw-step">
+          <div class="hiw-step-num">2</div>
+          <h3>Code or ask AI</h3>
+          <p>Edit files directly in Monaco, or describe what you need in the chat panel. Pick an engine or let smart routing choose the best one.</p>
+        </div>
+        <div class="hiw-step">
+          <div class="hiw-step-num">3</div>
+          <h3>See results live</h3>
+          <p>Agent file writes appear in the editor within 500ms. The terminal shows build output and activity trace in real time.</p>
+        </div>
+        <div class="hiw-step">
+          <div class="hiw-step-num">4</div>
+          <h3>Ship it</h3>
+          <p>Run tests, commit with git, and deploy from the integrated terminal. Everything stays in context, nothing gets lost.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VISUAL DEMO -->
+  <section class="section" id="visual-demo">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Interface</div>
+        <h2>Full IDE in your browser</h2>
+        <p class="section-desc">No Electron shell. No second editor. The complete development surface runs at localhost:3333.</p>
+      </div>
+      <div class="preview-frame" style="max-width: 1100px; margin: 0 auto;">
+        <div class="preview-chrome">
+          <div class="preview-chrome-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="preview-chrome-url">http://localhost:3333</div>
+        </div>
+        <img class="preview-img" src="vibe-ide-real.webp?v=1" alt="crewswarm Vibe IDE showing Monaco editor, file explorer, multi-engine chat, and integrated terminal" loading="lazy" width="1440" height="900" style="width:100%; height:auto; display:block;" />
+      </div>
+    </div>
+  </section>
+
+  <!-- ENGINE COMPARISON -->
+  <section class="section bg-gray-50" id="engines">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">AI Engines</div>
+        <h2>Six engines, one chat panel</h2>
+        <p class="section-desc">Each engine has different strengths. Vibe lets you switch between them in one click, or rely on smart routing to pick the right one.</p>
+      </div>
+      <div class="engine-grid">
+        <article class="engine-card">
+          <div class="engine-card-name">Claude Code</div>
+          <div class="engine-card-provider">Anthropic</div>
+          <p>Deep reasoning and large-context understanding. Best for complex refactoring, architecture decisions, and multi-file changes that require understanding the full codebase.</p>
+          <span class="engine-card-tag">Deep reasoning</span>
+        </article>
+        <article class="engine-card">
+          <div class="engine-card-name">Cursor CLI</div>
+          <div class="engine-card-provider">Anysphere</div>
+          <p>Fast inline edits with strong code completion. Optimized for quick changes, single-file fixes, and iterative development where speed matters most.</p>
+          <span class="engine-card-tag">Fast edits</span>
+        </article>
+        <article class="engine-card">
+          <div class="engine-card-name">OpenCode</div>
+          <div class="engine-card-provider">Open Source</div>
+          <p>Flexible open-model CLI that works with any provider. Bring your own model and API key for full control over which LLM handles your code.</p>
+          <span class="engine-card-tag">Model flexibility</span>
+        </article>
+        <article class="engine-card">
+          <div class="engine-card-name">crew-cli</div>
+          <div class="engine-card-provider">Autonomous</div>
+          <p>High-performance execution engine with 3-Tier AI architecture. 3x parallel speedup, ATAT Protocol, and LSP self-healing for reliable, zero-risk local file operations.</p>
+          <span class="engine-card-tag">3x speedup</span>
+        </article>
+        <article class="engine-card">
+          <div class="engine-card-name">Gemini CLI</div>
+          <div class="engine-card-provider">Google</div>
+          <p>Google's multimodal CLI with large context windows. Handles long files and complex prompts that exceed other engines' token limits.</p>
+          <span class="engine-card-tag">Large context</span>
+        </article>
+        <article class="engine-card">
+          <div class="engine-card-name">Codex CLI</div>
+          <div class="engine-card-provider">OpenAI</div>
+          <p>OpenAI's Codex CLI with direct GPT model access. Optimized for code generation, file editing, and autonomous task completion with built-in sandboxing.</p>
+          <span class="engine-card-tag">Code generation</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON TABLE -->
+  <section class="section" id="comparison">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Comparison</div>
+        <h2>How Vibe stacks up</h2>
+      </div>
+      <div class="orch-comparison">
+        <h4>Platform comparison</h4>
+        <table class="orch-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Vibe</th>
+              <th>VS Code</th>
+              <th>Cursor IDE</th>
+              <th>Terminal CLIs</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Multi-engine AI chat</strong></td>
+              <td><span class="check">&#10003;</span> 6 engines</td>
+              <td><span class="x">&#10007;</span> Extension only</td>
+              <td><span class="check">&#10003;</span> Built-in</td>
+              <td><span class="x">&#10007;</span> One at a time</td>
+            </tr>
+            <tr>
+              <td><strong>Browser-native</strong></td>
+              <td><span class="check">&#10003;</span> localhost:3333</td>
+              <td><span class="x">&#10007;</span> Electron</td>
+              <td><span class="x">&#10007;</span> Electron</td>
+              <td><span class="x">&#10007;</span> No UI</td>
+            </tr>
+            <tr>
+              <td><strong>Real-time file sync</strong></td>
+              <td><span class="check">&#10003;</span> 500ms auto</td>
+              <td><span class="x">&#10007;</span> Manual refresh</td>
+              <td><span class="x">&#10007;</span> Manual refresh</td>
+              <td><span class="x">&#10007;</span> No visual</td>
+            </tr>
+            <tr>
+              <td><strong>Intel Mac support</strong></td>
+              <td><span class="check">&#10003;</span> Universal</td>
+              <td><span class="check">&#10003;</span> Yes</td>
+              <td><span class="x">&#10007;</span> ARM only</td>
+              <td><span class="check">&#10003;</span> Yes</td>
+            </tr>
+            <tr>
+              <td><strong>Resource footprint</strong></td>
+              <td><span class="check">&#10003;</span> ~200MB</td>
+              <td>500MB+</td>
+              <td>800MB+</td>
+              <td><span class="check">&#10003;</span> ~50MB</td>
+            </tr>
+            <tr>
+              <td><strong>Installation</strong></td>
+              <td><span class="check">&#10003;</span> bash install.sh</td>
+              <td>DMG / installer</td>
+              <td>DMG / installer</td>
+              <td>npm / pip</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE -->
+  <section class="section bg-gray-50">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Architecture</div>
+        <h2>How Vibe connects to crewswarm</h2>
+      </div>
+      <div class="rt-flow-diagram">
+        <div class="rt-flow-row">
+          <div class="rt-flow-node rt-flow-pm-node">
+            <span class="rt-flow-label">Vibe Browser UI</span>
+            <span class="rt-flow-detail">Monaco Editor + File Tree + Chat</span>
+          </div>
+        </div>
+        <div class="rt-flow-arrow" aria-hidden="true">&#8595;</div>
+        <div class="rt-flow-row">
+          <div class="rt-flow-node rt-flow-pm-node">
+            <span class="rt-flow-label">WebSocket Connection</span>
+            <span class="rt-flow-detail">Bidirectional real-time channel</span>
+          </div>
+        </div>
+        <div class="rt-flow-arrow" aria-hidden="true">&#8595;</div>
+        <div class="rt-flow-row">
+          <div class="rt-flow-node">
+            <span class="rt-flow-label">Vite Dev Server</span>
+            <span class="rt-flow-ch">:3333</span>
+          </div>
+          <div class="rt-flow-node">
+            <span class="rt-flow-label">File Watcher</span>
+            <span class="rt-flow-ch">fs.watch</span>
+          </div>
+          <div class="rt-flow-node">
+            <span class="rt-flow-label">RT Bus</span>
+            <span class="rt-flow-ch">:18889</span>
+          </div>
+        </div>
+        <div class="rt-flow-arrow" aria-hidden="true">&#8595;</div>
+        <div class="rt-flow-row">
+          <div class="rt-flow-node rt-flow-synth-node">
+            <span class="rt-flow-label">CLI Engine Bridges</span>
+            <span class="rt-flow-detail">Claude Code, Cursor, OpenCode, crew-cli, Gemini, Codex CLI</span>
+          </div>
+        </div>
+        <p class="rt-flow-caption">Vibe sits between the developer and the engine layer, providing visual feedback for every file write, agent dispatch, and RT bus event.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- GETTING STARTED -->
+  <section class="section" id="get-started">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Install</div>
+        <h2>Up and running in 60 seconds</h2>
+      </div>
+      <div class="gs-terminal">
+        <div class="gs-terminal-bar">
+          <div class="gs-terminal-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <span class="gs-terminal-title">Terminal</span>
+        </div>
+        <div class="gs-steps">
+          <div class="gs-step">
+            <div class="gs-step-num">Step 01</div>
+            <div class="gs-step-label">Clone and install</div>
+            <div class="code-line">
+              <span class="code-prompt">$</span>
+              <span class="code-cmd">git clone https://github.com/crewswarm/crewswarm.git && cd crewswarm</span>
+            </div>
+            <div class="code-line">
+              <span class="code-prompt">$</span>
+              <span class="code-cmd">bash install.sh</span>
+            </div>
+          </div>
+          <div class="gs-step">
+            <div class="gs-step-num">Step 02</div>
+            <div class="gs-step-label">Start Vibe</div>
+            <div class="code-line">
+              <span class="code-prompt">$</span>
+              <span class="code-cmd">bash start-studio.sh</span>
+            </div>
+          </div>
+          <div class="gs-step">
+            <div class="gs-step-num">Step 03</div>
+            <div class="gs-step-label">Open in browser</div>
+            <div class="code-line">
+              <span class="code-cmd">http://localhost:3333</span>
+            </div>
+            <div class="code-line">
+              <span class="code-comment"># Works on Chrome, Firefox, Safari</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="gs-prereqs" style="margin-top: 2rem;">
+        <span class="gs-prereq"><span class="gs-prereq-check">&#10003;</span> Node.js 20+</span>
+        <span class="gs-prereq-sep">&bull;</span>
+        <span class="gs-prereq"><span class="gs-prereq-check">&#10003;</span> Port <span class="gs-prereq-port">3333</span> available</span>
+        <span class="gs-prereq-sep">&bull;</span>
+        <span class="gs-prereq"><span class="gs-prereq-check">&#10003;</span> Modern browser</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section bg-gray-50" id="faq">
+    <div class="container">
+      <div class="faq-accordion">
+        <h2>Frequently asked questions</h2>
+        <p class="faq-intro">Common questions about crewswarm Vibe.</p>
+        <div class="faq-list">
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false" onclick="this.setAttribute('aria-expanded', this.getAttribute('aria-expanded') === 'true' ? 'false' : 'true'); this.nextElementSibling.classList.toggle('open');">
+              <span>Do I need VS Code or Cursor installed to use Vibe?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <div class="faq-answer-inner">
+                <p>No. Vibe is a standalone web application. It uses the Monaco editor (the same engine as VS Code) but runs entirely in your browser. No Electron, no native install required.</p>
+              </div>
+            </div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false" onclick="this.setAttribute('aria-expanded', this.getAttribute('aria-expanded') === 'true' ? 'false' : 'true'); this.nextElementSibling.classList.toggle('open');">
+              <span>Which AI engines does Vibe support?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <div class="faq-answer-inner">
+                <p>Vibe supports six CLI engines: Claude Code, Cursor CLI, OpenCode, crew-cli, Codex CLI, and Gemini CLI. Select an engine from the chat dropdown, or let smart routing choose the best engine for each task.</p>
+              </div>
+            </div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false" onclick="this.setAttribute('aria-expanded', this.getAttribute('aria-expanded') === 'true' ? 'false' : 'true'); this.nextElementSibling.classList.toggle('open');">
+              <span>How does file sync work? Do I need to manually refresh?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <div class="faq-answer-inner">
+                <p>No manual refresh needed. Vibe uses Node.js <code>fs.watch</code> to detect file changes instantly. When an agent writes a file, the update appears in Monaco within 500ms, preserving your cursor position and undo history.</p>
+              </div>
+            </div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false" onclick="this.setAttribute('aria-expanded', this.getAttribute('aria-expanded') === 'true' ? 'false' : 'true'); this.nextElementSibling.classList.toggle('open');">
+              <span>Will Vibe work on my Intel Mac?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <div class="faq-answer-inner">
+                <p>Yes. Vibe runs in the browser backed by Node.js, so it works on both Intel x86 and Apple ARM chips. Unlike Cursor, which requires ARM, Vibe runs the same on a 2019 MacBook Pro and a 2026 M-series Mac.</p>
+              </div>
+            </div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false" onclick="this.setAttribute('aria-expanded', this.getAttribute('aria-expanded') === 'true' ? 'false' : 'true'); this.nextElementSibling.classList.toggle('open');">
+              <span>What is the resource footprint compared to VS Code?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <div class="faq-answer-inner">
+                <p>Vibe uses roughly 200MB of RAM versus VS Code's 500MB+ and Cursor's 800MB+. It is a lightweight web app with no Electron shell and no extension overhead.</p>
+              </div>
+            </div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false" onclick="this.setAttribute('aria-expanded', this.getAttribute('aria-expanded') === 'true' ? 'false' : 'true'); this.nextElementSibling.classList.toggle('open');">
+              <span>Can I run Vibe on a remote server?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <div class="faq-answer-inner">
+                <p>Yes. Start Vibe on a cloud VM, expose port 3333, and access it from any device with a browser. No local install needed.</p>
+                <pre><code>bash start-studio.sh --host 0.0.0.0</code></pre>
+              </div>
+            </div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false" onclick="this.setAttribute('aria-expanded', this.getAttribute('aria-expanded') === 'true' ? 'false' : 'true'); this.nextElementSibling.classList.toggle('open');">
+              <span>Is Vibe open source?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <div class="faq-answer-inner">
+                <p>Yes. Vibe is part of the crewswarm open-source project. The source code is available on <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script>
+    // Mobile nav toggle
+    if (!window.__crewswarmNavInit) {
+    const hamburger = document.getElementById('navHamburger');
+    const navLinks = document.getElementById('navLinks');
+    if (hamburger && navLinks) {
+      hamburger.addEventListener('click', () => {
+        const expanded = hamburger.getAttribute('aria-expanded') === 'true';
+        hamburger.setAttribute('aria-expanded', String(!expanded));
+        navLinks.classList.toggle('open');
+      });
+    }
+    }
+
+    // Scroll-reveal — sections start at opacity:0 in CSS, fade in on scroll
+    document.addEventListener('DOMContentLoaded', function() {
+      const sections = document.querySelectorAll('section.section, .proof-bar');
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) entry.target.classList.add('visible');
+        });
+      }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+      sections.forEach(s => observer.observe(s));
+    });
+  </script>
+</body>
+</html>

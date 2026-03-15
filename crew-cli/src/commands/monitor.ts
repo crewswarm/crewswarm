@@ -1,0 +1,45 @@
+import { Command } from 'commander';
+import { logger } from '../../lib/logger';
+import { healthCheck } from '../../lib/health-check';
+
+export function createMonitorCommand(): Command {
+  const monitor = new Command('monitor');
+  
+  monitor
+    .description('Monitor system health and agent status')
+    .option('-i, --interval <ms>', 'Check interval in milliseconds', '5000')
+    .option('-v, --verbose', 'Verbose output')
+    .action(async (options) => {
+      const interval = parseInt(options.interval, 10);
+      const verbose = options.verbose;
+      
+      logger.info('Starting system monitor...');
+      
+      const monitorLoop = async () => {
+        try {
+          const status = await healthCheck();
+          
+          if (verbose) {
+            logger.info('Health check results:', status);
+          } else {
+            const { agents, services } = status;
+            const agentCount = Object.keys(agents).length;
+            const healthyAgents = Object.values(agents).filter((a: any) => a.status === 'online').length;
+            const healthyServices = Object.values(services).filter((s: any) => s.status === 'healthy').length;
+            
+            logger.info(`Agents: ${healthyAgents}/${agentCount} online | Services: ${healthyServices}/${Object.keys(services).length} healthy`);
+          }
+        } catch (error) {
+          logger.error('Health check failed:', error);
+        }
+      };
+      
+      // Initial check
+      await monitorLoop();
+      
+      // Set up interval monitoring
+      setInterval(monitorLoop, interval);
+    });
+    
+  return monitor;
+}

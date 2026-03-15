@@ -1,0 +1,27 @@
+name: Crew CI Fix Example
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ci-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run ci-fix loop (example)
+        env:
+          CREW_LEAD_URL: http://127.0.0.1:5010
+        run: |
+          echo "This is an integration example. Ensure crew-lead + agents are running if using dispatch."
+          node bin/crew.js ci-fix --command "npm test" --max-attempts 3 || true

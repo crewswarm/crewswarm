@@ -1,0 +1,41 @@
+{
+  "id": "cursor",
+  "label": "Cursor CLI",
+  "description": "Route agent tasks through Cursor's native subagent system. Parallel waves, isolated context windows per agent, no queuing. Best for complex reasoning and architectural work.",
+  "priority": 100,
+  "shouldUse": {
+    "runtime": ["cursor", "cursor-cli"],
+    "payloadKey": "useCursorCli",
+    "agentConfigKey": "useCursorCli",
+    "envVar": "CREWSWARM_CURSOR_ENABLED",
+    "specialLogic": "orchestrator-waves"
+  },
+  "bin": "cursor",
+  "binAlternate": "~/.local/bin/agent",
+  "installCmd": "# Install Cursor from https://cursor.sh then enable CLI from Command Palette → Install cursor command",
+  "installUrl": "https://cursor.sh",
+  "docsUrl": "https://docs.cursor.com/advanced/cli",
+  "color": "#818cf8",
+  "icon": "cursor",
+  "agentConfigKey": "useCursorCli",
+  "envToggle": "CREWSWARM_CURSOR_ENABLED",
+  "authNote": "Uses your Cursor IDE login — no separate API key needed.",
+  "modelEnvVar": "CREWSWARM_CURSOR_MODEL",
+  "modelKey": "cursorModel",
+  "defaultModel": "sonnet-4",
+  "bestFor": ["crew-main", "crew-architect", "crew-orchestrator"],
+  "traits": [
+    "Parallel waves via crew-orchestrator subagent",
+    "Isolated context windows — no cross-agent bleed",
+    "Access to Cursor's reasoning models (sonnet-4, gpt-5, gemini-2.5-flash)",
+    "Requires Cursor IDE installed",
+    "Rate limited on some models (claude-sonnet-4 may return Exit 1)"
+  ],
+  "args": {
+    "run": ["agent", "--print", "--yolo", "--output-format", "stream-json", "{prompt}"],
+    "run_with_model": ["agent", "--print", "--yolo", "--output-format", "stream-json", "--model", "{model}", "{prompt}"]
+  },
+  "outputMode": "streaming",
+  "timeoutMs": 300000,
+  "timeoutEnv": "CREWSWARM_CURSOR_TIMEOUT_MS"
+}

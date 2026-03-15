@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Security Architecture — Defense-in-Depth for AI Agents | crewswarm</title>
+  <meta name="description" content="crewswarm security guide: Docker isolation, AppArmor, firewall, command allowlist. Learn how we prevent ClawJacked, prompt injection, and filesystem escapes." />
+  <!-- Open Graph -->
+  <meta property="og:title" content="crewswarm Security — Defense-in-Depth" />
+  <meta property="og:description" content="5-layer security for AI agents: Docker, AppArmor, firewall, allowlist, read-only FS" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:url" content="https://crewswarm.ai/security.html" />
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:locale" content="en_US" />
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="crewswarm Security — Defense-in-Depth" />
+  <meta name="twitter:description" content="Bank-grade security for AI agents. No ClawJacked vulnerability." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- SEO -->
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#818cf8" />
+  <link rel="canonical" href="https://crewswarm.ai/security.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://crewswarm.ai/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Security Architecture",
+        "item": "https://crewswarm.ai/security.html"
+      }
+    ]
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+    </a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item active">Security</a></li>
+      <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section id="hero" class="hero">
+    <div class="hero-glow"></div>
+    <div class="container">
+      <h1>🔒 Security Architecture</h1>
+      <p class="hero-sub" style="max-width: 600px; margin-left: auto; margin-right: auto;">
+        Bank-grade security for AI agents. Five layers of defense 
+        prevent prompt injection, filesystem escapes, and credential theft.
+      </p>
+      <p class="hero-badge">
+        🛡️ No ClawJacked  •  🔐 Defense-in-Depth  •  ✅ Auditable
+      </p>
+      <div class="hero-cta">
+        <a href="#security-layers" class="btn btn-lg btn-primary">
+          How it works →
+        </a>
+        <a href="https://github.com/crewswarm/crewswarm/blob/main/SECURITY.md" class="btn btn-lg btn-secondary">
+          Security Policy
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- THREAT MODEL -->
+  <section id="threat-model" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2>What We're Defending Against</h2>
+        <p class="section-desc">AI agents have full shell access and LLM decision-making. Here are the attack vectors we protect against.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="threat-card high">
+          <div class="threat-badge">🔴 Critical</div>
+          <h3>Prompt Injection</h3>
+          <p><strong>Attack:</strong> Malicious instructions in tool output control the agent's next action</p>
+          <p><strong>Example:</strong> <code>README.md</code> contains <code>@@DELETE_ALL_FILES</code></p>
+          <p><strong>Defense:</strong> Command allowlist + approval required + read-only FS</p>
+        </div>
+
+        <div class="threat-card high">
+          <div class="threat-badge">🔴 Critical</div>
+          <h3>Filesystem Escape</h3>
+          <p><strong>Attack:</strong> Agent writes to <code>/etc</code>, <code>/usr</code>, or accesses host system</p>
+          <p><strong>Example:</strong> <code>@@WRITE_FILE /etc/passwd</code> or mount Docker socket</p>
+          <p><strong>Defense:</strong> Read-only root FS + tmpfs for /tmp + no host mounts</p>
+        </div>
+
+        <div class="threat-card high">
+          <div class="threat-badge">🟡 High</div>
+          <h3>Cloud Metadata Exfiltration</h3>
+          <p><strong>Attack:</strong> Agent reads AWS IAM credentials via <code>169.254.169.254</code></p>
+          <p><strong>Example:</strong> <code>curl http://169.254.169.254/latest/meta-data/iam/security-credentials/</code></p>
+          <p><strong>Defense:</strong> iptables blocks cloud metadata endpoints</p>
+        </div>
+
+        <div class="threat-card high">
+          <div class="threat-badge">🟡 High</div>
+          <h3>Malicious Package Installation</h3>
+          <p><strong>Attack:</strong> Agent runs <code>npm install evil-pkg</code> with postinstall script</p>
+          <p><strong>Example:</strong> npm package with hidden malware</p>
+          <p><strong>Defense:</strong> Command allowlist + AppArmor network restrictions</p>
+        </div>
+
+        <div class="threat-card medium">
+          <div class="threat-badge">🟢 Medium</div>
+          <h3>Resource Exhaustion</h3>
+          <p><strong>Attack:</strong> Agent spawns infinite processes or fills disk</p>
+          <p><strong>Example:</strong> <code>:(){ :|:& };:</code> (fork bomb)</p>
+          <p><strong>Defense:</strong> Docker resource limits (CPU, memory, PIDs)</p>
+        </div>
+
+        <div class="threat-card medium">
+          <div class="threat-badge">🟢 Medium</div>
+          <h3>Privilege Escalation</h3>
+          <p><strong>Attack:</strong> Agent tries to gain root via <code>sudo</code> or SUID binaries</p>
+          <p><strong>Example:</strong> <code>sudo su -</code></p>
+          <p><strong>Defense:</strong> Non-root user (UID 1000) + no new privileges</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 LAYERS -->
+  <section id="security-layers" class="section bg-card">
+    <div class="container">
+      <div class="section-header">
+        <h2>Five Layers of Defense</h2>
+        <p class="section-desc">No single layer is perfect. Defense-in-depth means an attacker must break through all five.</p>
+      </div>
+
+      <div class="security-layers">
+        <div class="layer">
+          <div class="layer-number">1</div>
+          <div class="layer-content">
+            <h3>🐳 Docker Isolation</h3>
+            <p><strong>What it does:</strong> Container isolation with read-only root filesystem</p>
+            <div class="code-block">
+              <pre><code>read_only: true
+tmpfs:
+  - /tmp:mode=1777,size=1G,noexec,nosuid,nodev
+  - /app/.npm:mode=755,size=512M</code></pre>
+            </div>
+            <p class="layer-detail">
+              ✓ Agents can't modify system files<br>
+              ✓ Temporary writes go to in-memory tmpfs (cleared on restart)<br>
+              ✓ No persistence = no malware installation
+            </p>
+          </div>
+        </div>
+
+        <div class="layer">
+          <div class="layer-number">2</div>
+          <div class="layer-content">
+            <h3>🔒 AppArmor Profile</h3>
+            <p><strong>What it does:</strong> Kernel-enforced mandatory access control</p>
+            <div class="code-block">
+              <pre><code>deny /etc/** w,
+deny /usr/** w,
+deny /var/** w,
+deny /proc/sys/** w,
+deny @{PROC}/kcore r,</code></pre>
+            </div>
+            <p class="layer-detail">
+              ✓ Blocks writes to critical system paths<br>
+              ✓ Prevents kernel memory access<br>
+              ✓ Enforced at kernel level (can't be bypassed from userspace)
+            </p>
+          </div>
+        </div>
+
+        <div class="layer">
+          <div class="layer-number">3</div>
+          <div class="layer-content">
+            <h3>🔥 Network Firewall</h3>
+            <p><strong>What it does:</strong> iptables rules block malicious endpoints</p>
+            <div class="code-block">
+              <pre><code># Block AWS IAM credential theft
+iptables -A OUTPUT -d 169.254.169.254 -j DROP
+
+# Block GCP metadata
+iptables -A OUTPUT -d 169.254.169.254/32 -p tcp --dport 80 -j DROP</code></pre>
+            </div>
+            <p class="layer-detail">
+              ✓ Blocks cloud metadata endpoints (AWS, GCP, Azure)<br>
+              ✓ Allowlist-only LLM API domains<br>
+              ✓ Prevents credential exfiltration
+            </p>
+          </div>
+        </div>
+
+        <div class="layer">
+          <div class="layer-number">4</div>
+          <div class="layer-content">
+            <h3>✅ Command Allowlist</h3>
+            <p><strong>What it does:</strong> Application-level command validation</p>
+            <div class="code-block">
+              <pre><code>// ~/.crewswarm/cmd-allowlist.json
+{
+  "allowedCommands": [
+    "git status", "git add", "git commit",
+    "npm install", "npm test",
+    "ls", "pwd", "cat"
+  ]
+}</code></pre>
+            </div>
+            <p class="layer-detail">
+              ✓ Only pre-approved commands can run<br>
+              ✓ Dashboard approval for new commands<br>
+              ✓ Regex support for dynamic arguments (e.g., <code>npm install .*</code>)
+            </p>
+          </div>
+        </div>
+
+        <div class="layer">
+          <div class="layer-number">5</div>
+          <div class="layer-content">
+            <h3>👤 Non-Root Execution</h3>
+            <p><strong>What it does:</strong> Run container as unprivileged user</p>
+            <div class="code-block">
+              <pre><code>user: "1000:1000"
+cap_drop:
+  - ALL
+security_opt:
+  - no-new-privileges:true</code></pre>
+            </div>
+            <p class="layer-detail">
+              ✓ No sudo or root access<br>
+              ✓ Drops all Linux capabilities<br>
+              ✓ Prevents privilege escalation
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section id="comparison" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2>How crewswarm Compares</h2>
+        <p class="section-desc">Security comparison with other AI agent frameworks.</p>
+      </div>
+
+      <div class="comparison-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Security Feature</th>
+              <th>OpenClaw</th>
+              <th>Cursor</th>
+              <th class="highlight">crewswarm</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Docker isolation</td>
+              <td>❌ Native Node.js only</td>
+              <td>❌ Native process</td>
+              <td class="highlight">✅ Secure by default</td>
+            </tr>
+            <tr>
+              <td>Read-only filesystem</td>
+              <td>❌ No</td>
+              <td>❌ No</td>
+              <td class="highlight">✅ Yes</td>
+            </tr>
+            <tr>
+              <td>AppArmor/SELinux</td>
+              <td>❌ No</td>
+              <td>❌ No</td>
+              <td class="highlight">✅ AppArmor profile</td>
+            </tr>
+            <tr>
+              <td>Network firewall</td>
+              <td>❌ No</td>
+              <td>❌ No</td>
+              <td class="highlight">✅ Blocks metadata endpoints</td>
+            </tr>
+            <tr>
+              <td>Command allowlist</td>
+              <td>❌ No</td>
+              <td>⚠️ User approval only</td>
+              <td class="highlight">✅ Allowlist + approval</td>
+            </tr>
+            <tr>
+              <td>Non-root execution</td>
+              <td>⚠️ Optional</td>
+              <td>❌ Runs as user</td>
+              <td class="highlight">✅ UID 1000 enforced</td>
+            </tr>
+            <tr>
+              <td>Known vulnerabilities</td>
+              <td>❌ ClawJacked (critical)</td>
+              <td>⚠️ Prompt injection possible</td>
+              <td class="highlight">✅ None</td>
+            </tr>
+            <tr>
+              <td>Defense layers</td>
+              <td>1 (user approval)</td>
+              <td>2 (sandbox + approval)</td>
+              <td class="highlight"><strong>5 layers</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="info-box">
+        <h4>OpenClaw's ClawJacked vulnerability:</h4>
+        <p>
+          OpenClaw's WebSocket server lacked authentication, allowing attackers to inject malicious tasks.
+          In December 2025, an attacker transferred <strong>$450,000 in tokens</strong> via prompt injection.
+          Meta banned OpenClaw from all platforms. <strong>crewswarm has no WebSocket injection vulnerability.</strong>
+        </p>
+        <p><a href="openclaw-comparison.html">Full comparison →</a></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEPLOYMENT CHECKLIST -->
+  <section id="deployment-checklist" class="section bg-card">
+    <div class="container">
+      <div class="section-header">
+        <h2>Production Security Checklist</h2>
+        <p class="section-desc">Use this checklist when deploying to production.</p>
+      </div>
+
+      <div class="checklist">
+        <div class="checklist-item">
+          <input type="checkbox" id="c1" />
+          <label for="c1">
+            <strong>Use secure Docker Compose:</strong> <code>docker-compose.secure.yml</code>
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c2" />
+          <label for="c2">
+            <strong>Load AppArmor profile:</strong> <code>sudo apparmor_parser -r apparmor/crewswarm-restricted.profile</code>
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c3" />
+          <label for="c3">
+            <strong>Run firewall setup:</strong> <code>sudo bash scripts/setup-firewall.sh</code>
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c4" />
+          <label for="c4">
+            <strong>Review command allowlist:</strong> <code>~/.crewswarm/cmd-allowlist.json</code> — only allow necessary commands
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c5" />
+          <label for="c5">
+            <strong>Enable approval mode:</strong> <code>CREWSWARM_REQUIRE_APPROVAL=true</code> in <code>crewswarm.json</code>
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c6" />
+          <label for="c6">
+            <strong>Bind to localhost only:</strong> Ports should be <code>127.0.0.1:4319</code> (not <code>0.0.0.0:4319</code>)
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c7" />
+          <label for="c7">
+            <strong>Use reverse proxy:</strong> nginx or Caddy with TLS for HTTPS
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c8" />
+          <label for="c8">
+            <strong>Set API key restrictions:</strong> Restrict provider API keys to specific IPs/CIDRs
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c9" />
+          <label for="c9">
+            <strong>Enable audit logging:</strong> Check <code>~/.crewswarm/logs/</code> for suspicious activity
+          </label>
+        </div>
+
+        <div class="checklist-item">
+          <input type="checkbox" id="c10" />
+          <label for="c10">
+            <strong>Test escapes:</strong> Try writing to <code>/etc/passwd</code>, accessing cloud metadata, running unapproved commands
+          </label>
+        </div>
+      </div>
+
+      <div class="cta-box">
+        <h3>Full security guide with testing instructions:</h3>
+        <a href="https://github.com/crewswarm/crewswarm/blob/main/SECURITY.md" class="btn btn-lg btn-primary">
+          Read Full Guide →
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- INCIDENT RESPONSE -->
+  <section id="incident-response" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2>Incident Response</h2>
+        <p class="section-desc">If you suspect a security breach, follow these steps.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="response-card">
+          <h3>1. Immediate Actions</h3>
+          <ol>
+            <li><strong>Stop all agents:</strong> <code>npm run stop-all</code></li>
+            <li><strong>Kill Docker containers:</strong> <code>docker-compose down</code></li>
+            <li><strong>Revoke API keys:</strong> Dashboard → Providers → Regenerate all keys</li>
+            <li><strong>Check logs:</strong> <code>~/.crewswarm/logs/*.jsonl</code> for suspicious activity</li>
+          </ol>
+        </div>
+
+        <div class="response-card">
+          <h3>2. Investigation</h3>
+          <ol>
+            <li><strong>Review command history:</strong> Check <code>~/.crewswarm/logs/gateway-bridge.jsonl</code></li>
+            <li><strong>Check file changes:</strong> <code>git diff</code> in project directories</li>
+            <li><strong>Audit API calls:</strong> Check provider dashboards for unauthorized usage</li>
+            <li><strong>Network traffic:</strong> Review firewall logs (<code>/var/log/iptables.log</code>)</li>
+          </ol>
+        </div>
+
+        <div class="response-card">
+          <h3>3. Recovery</h3>
+          <ol>
+            <li><strong>Update to latest:</strong> <code>git pull && docker-compose build</code></li>
+            <li><strong>Re-deploy with secure config:</strong> Use <code>docker-compose.secure.yml</code></li>
+            <li><strong>Rotate credentials:</strong> New API keys, new RT auth token</li>
+            <li><strong>Verify security layers:</strong> Run <code>scripts/test-docker-p0-p1.sh</code></li>
+          </ol>
+        </div>
+
+        <div class="response-card">
+          <h3>4. Reporting</h3>
+          <ol>
+            <li><strong>File GitHub issue:</strong> <a href="https://github.com/crewswarm/crewswarm/issues/new">New Security Issue</a></li>
+            <li><strong>Email security team:</strong> <code>info@crewswarm.ai</code></li>
+            <li><strong>Provide logs:</strong> Sanitized logs from <code>~/.crewswarm/logs/</code></li>
+            <li><strong>Timeline:</strong> When did you first notice the issue?</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

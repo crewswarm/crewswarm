@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>crew-cli — The High-Performance AI Engineering Terminal | crewswarm</title>
+  <meta name="description" content="crew-cli is the high-performance engine for crewswarm. 3-tier LLM architecture, parallel speculative execution, and ATAT protocol for zero-risk autonomous coding." />
+  <meta name="keywords" content="crew-cli, multi-agent CLI, AI coding, terminal AI, parallel execution, LLM routing, ATAT protocol" />
+  <!-- Open Graph -->
+  <meta property="og:title" content="crew-cli — High-Performance AI Engineering Terminal" />
+  <meta property="og:description" content="3-tier LLM architecture, 3x parallel speedup, and ATAT protocol. The professional terminal for autonomous coding." />
+  <meta property="og:url" content="https://crewswarm.ai/cli.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:locale" content="en_US" />
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="crew-cli — High-Performance AI Engineering Terminal" />
+  <meta name="twitter:description" content="3-tier LLM architecture, 3x parallel speedup, and ATAT protocol. The professional terminal for autonomous coding." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- SEO -->
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#818cf8" />
+  <link rel="canonical" href="https://crewswarm.ai/cli.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://crewswarm.ai/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "crew-cli",
+        "item": "https://crewswarm.ai/cli.html"
+      }
+    ]
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .terminal-window {
+      background: #060a10; 
+      border-radius: 12px; 
+      padding: 24px; 
+      max-width: 850px; 
+      margin: 3rem auto; 
+      text-align: left; 
+      border: 1px solid var(--border);
+      font-family: "SF Mono", "Fira Code", monospace;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      overflow-x: auto;
+    }
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 4rem;
+    }
+    .spec-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 2rem;
+      border-radius: var(--radius-lg);
+      transition: border-color 0.2s;
+    }
+    .spec-card:hover { border-color: var(--accent); }
+    .protocol-tag {
+      color: var(--accent);
+      font-weight: 800;
+      background: rgba(56, 189, 248, 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    @media (max-width: 900px) {
+      .hero h1 { font-size: 2.25rem !important; }
+      .terminal-window { font-size: 0.75rem; padding: 1rem; margin: 2rem 0; }
+      .spec-grid { grid-template-columns: 1fr !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+    </a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+      <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="container">
+    <div class="hero-badge">Architecture: 3-Tier AI v2.0</div>
+    <h1 class="gradient-text">High-Performance Swarms.<br/>Zero Context Waste.</h1>
+    <p class="hero-sub">
+      The <strong>crew-cli</strong> is the high-fidelity execution engine for crewswarm. Built for professional engineers who need multi-agent parallelism and 100% reliable local file operations.
+    </p>
+
+    <div class="terminal-window">
+      <div style="color: #58a6ff; margin-bottom: 8px;">$ crew chat "Implement a standard service layer with custom error handling"</div>
+      <div style="color: #8b949e;">[14:30:01] 🚦 Tier 1 (Router): Classifying intent → CODE_ARCH</div>
+      <div style="color: #8b949e;">[14:30:02] 🗺️ Tier 2 (Planner): 5-step implementation roadmap created.</div>
+      <div style="color: #8b949e;">[14:30:03] 🚀 Tier 3 (Pool): Launching 3 parallel workers...</div>
+      <div style="color: #7ee787;">[14:30:15] ⚙️ Worker 1: @@WRITE_FILE lib/services/user.js</div>
+      <div style="color: #7ee787;">[14:30:16] ⚙️ Worker 2: @@WRITE_FILE lib/utils/errors.js</div>
+      <div style="color: #7ee787;">[14:30:18] 🩺 LSP Check: Fix applied to user.js (missing import)</div>
+      <div style="color: #3fb950;">[14:30:22] ✅ Success. Wall-clock: 21s (3.1x speedup)</div>
+    </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Technical Manual</div>
+        <h2>Engineering-First Terminals</h2>
+      </div>
+      
+      <div class="spec-grid">
+        <div class="spec-card">
+          <h3>The <a href="atat.html" class="protocol-tag">ATAT</a> Protocol</h3>
+          <p>The CLI uses the proprietary <strong>ATAT Protocol</strong>. It's 10x more token-efficient than JSON-RPC, reducing context window bloat and eliminating the escaping errors that crash sequential AI agents.</p>
+          <a href="atat.html" style="color: var(--accent); font-size: 0.85rem; text-decoration: none; margin-top: 1rem; display: inline-block;">Read the Spec &rarr;</a>
+        </div>
+        <div class="spec-card">
+          <h3>3-Tier LLM Routing</h3>
+          <p>Bypass the "one model fits all" trap. crew-cli uses <strong>Gemini 2.5 Flash</strong> for cheap routing, <strong>Claude Sonnet 4.6</strong> for architecture planning, and a pool of <strong>Grok 3/DeepSeek V3</strong> workers for parallel execution.</p>
+        </div>
+        <div class="spec-card">
+          <h3>Parallel Worker Pool</h3>
+          <p>Why wait for one agent to finish? crew-cli executes independent tasks concurrently. In benchmarks, we achieve a <strong>2.96x wall-clock speedup</strong> over sequential implementation cycles.</p>
+        </div>
+        <div class="spec-card">
+          <h3>LSP Self-Healing</h3>
+          <p>The CLI integrates the <strong>Language Server Protocol</strong> directly into the sandbox. Agents receive real-time compiler errors and fix their own syntax/type issues before you ever see the code.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section bg-dark">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Quick Start</div>
+        <h2>One command to launch the crew</h2>
+      </div>
+      <div style="background:#000; padding:2rem; border-radius:12px; font-family:monospace; color:var(--accent); border:1px solid var(--border); overflow-x: auto;">
+        # Install the high-performance CLI<br/>
+        <span style="color:#fff;">npm install -g @crewswarm/crew-cli</span><br/><br/>
+        # Or run from the main repo installer<br/>
+        <span style="color:#fff;">git clone https://github.com/crewswarm/crewswarm && cd crewswarm && bash install.sh</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

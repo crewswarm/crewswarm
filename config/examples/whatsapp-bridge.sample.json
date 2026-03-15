@@ -1,0 +1,14 @@
+{
+  "allowedNumbers": [
+    "+1234567890"
+  ],
+  "contactNames": {
+    "1234567890@s.whatsapp.net": "User Name"
+  },
+  "userRouting": {},
+  "tts": {
+    "enabled": false,
+    "provider": "auto",
+    "perUserOverrides": {}
+  }
+}

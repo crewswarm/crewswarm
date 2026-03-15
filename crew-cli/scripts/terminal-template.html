@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&display=swap');
+        
+        body {
+            background-color: #060a10;
+            color: #f0f6ff;
+            font-family: 'Fira Code', monospace;
+            padding: 40px;
+            margin: 0;
+            overflow: hidden;
+            font-size: 18px;
+            line-height: 1.4;
+        }
+        .container {
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            background: #0d1420;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+            min-height: 700px;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: rgba(255,255,255,0.03);
+            padding: 12px 20px;
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .red { background: #ff5f56; }
+        .yellow { background: #ffbd2e; }
+        .green { background: #27c93f; }
+        .content {
+            padding: 25px;
+            flex-grow: 1;
+            white-space: pre;
+            overflow-y: auto;
+        }
+        .prompt { color: #38bdf8; font-weight: bold; }
+        .cmd { color: #fff; }
+        .success { color: #34d399; }
+        .info { color: #38bdf8; }
+        .warn { color: #fbbf24; }
+        .error { color: #f87171; }
+        .gray { color: #8b9db3; }
+        .blue { color: #818cf8; }
+        .magenta { color: #c084fc; }
+        .cursor {
+            display: inline-block;
+            width: 10px;
+            height: 20px;
+            background: #38bdf8;
+            vertical-align: middle;
+            margin-left: 2px;
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+            from, to { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        b { font-weight: 700; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="dot red"></div>
+            <div class="dot yellow"></div>
+            <div class="dot green"></div>
+        </div>
+        <div id="terminal" class="content"></div>
+    </div>
+
+    <script>
+        const terminal = document.getElementById('terminal');
+        
+        window.clearTerminal = () => {
+            terminal.innerHTML = '';
+        };
+
+        window.appendLine = (html) => {
+            const div = document.createElement('div');
+            div.innerHTML = html;
+            terminal.appendChild(div);
+            terminal.scrollTop = terminal.scrollHeight;
+        };
+
+        window.typeCommand = async (prompt, text) => {
+            const line = document.createElement('div');
+            line.innerHTML = `<span class="prompt">${prompt}</span><span class="cmd"></span><span class="cursor"></span>`;
+            terminal.appendChild(line);
+            const cmdSpan = line.querySelector('.cmd');
+            const cursor = line.querySelector('.cursor');
+
+            for (let i = 0; i < text.length; i++) {
+                cmdSpan.textContent += text[i];
+                terminal.scrollTop = terminal.scrollHeight;
+                await new Promise(r => setTimeout(r, 40));
+            }
+            cursor.remove();
+        };
+    </script>
+</body>
+</html>

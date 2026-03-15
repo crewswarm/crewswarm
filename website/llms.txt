@@ -1,0 +1,36 @@
+# crewswarm — local-first AI workspace
+
+crewswarm is an open-source local-first AI workspace for software development.
+It combines:
+- a multi-agent runtime
+- a browser control plane dashboard
+- the Vibe browser IDE
+- the crewchat native app
+- direct CLI routing for crew-cli, Claude Code, Cursor, Gemini, OpenCode, and crew-cli
+
+## What it does
+- Turns one requirement into planned, executed, and testable work
+- Routes tasks to specialist agents with persistent project context
+- Exposes a visual IDE surface with file tree, Monaco editor, agent chat, diffs, and terminal
+- Keeps services, agents, memory, and project history in one inspectable local stack
+
+## Primary pages
+- Main website: https://crewswarm.ai/
+- Vibe IDE: https://crewswarm.ai/vibe.html
+- Deploy: https://crewswarm.ai/deploy.html
+- Security: https://crewswarm.ai/security.html
+- GitHub repo: https://github.com/crewswarm/crewswarm
+
+## Search-oriented summary
+Useful search phrases:
+- local-first AI workspace
+- multi-agent developer platform
+- browser IDE for AI agents
+- codex claude cursor gemini opencode in one stack
+- open source agent runtime dashboard vibe ide
+
+## Best-fit use cases
+- AI-native software teams that want more than one editor chat sidebar
+- Solo builders who want orchestration, memory, and runtime control
+- Local-first developers who do not want SaaS lock-in
+- Teams that want dashboard + IDE + native chat on top of one shared agent stack

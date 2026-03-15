@@ -1,0 +1,19 @@
+{
+  "description": "Place a Polymarket CLOB trade (limit or market order)",
+  "url": "https://clob.polymarket.com/order",
+  "method": "POST",
+  "auth": {
+    "type": "header",
+    "header": "POLY_API_KEY",
+    "keyFrom": "providers.polymarket.apiKey"
+  },
+  "headers": {},
+  "defaultParams": {
+    "type": "FOK",
+    "side": "BUY",
+    "expiration": 0
+  },
+  "paramNotes": "Required: token_id (market outcome token), price (0-1), size (USDC amount). Optional: type (FOK|GTC|GTD), side (BUY|SELL).",
+  "requiresApproval": true,
+  "timeout": 20000
+}

@@ -1,0 +1,15 @@
+{
+  "description": "POST a JSON payload to any webhook URL — generic outbound integration",
+  "url": "{url}",
+  "method": "POST",
+  "auth": {
+    "type": "header",
+    "header": "X-Webhook-Secret",
+    "token": ""
+  },
+  "headers": {},
+  "defaultParams": {},
+  "paramNotes": "Required: url (the webhook endpoint). Pass any additional fields as params and they will be sent as the JSON body.",
+  "requiresApproval": false,
+  "timeout": 15000
+}

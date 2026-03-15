@@ -1,0 +1,220 @@
+{
+  "agents": [
+    {
+      "id": "crew-coder",
+      "name": "crew-coder",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd", "dispatch"],
+        "timeout": 600000
+      },
+      "opencodeLoop": true,
+      "opencodeLoopMaxRounds": 10
+    },
+    {
+      "id": "crew-qa",
+      "name": "crew-qa",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "run_cmd"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-fixer",
+      "name": "crew-fixer",
+      "model": "groq/moonshotai/kimi-k2-instruct-0905",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd", "dispatch"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-main",
+      "name": "crew-main",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd", "dispatch"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-pm",
+      "name": "crew-pm",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "dispatch"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-pm-cli",
+      "name": "crew-pm-cli",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "dispatch"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-pm-frontend",
+      "name": "crew-pm-frontend",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "dispatch"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-pm-core",
+      "name": "crew-pm-core",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "dispatch"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-github",
+      "name": "crew-github",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "run_cmd", "git"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-security",
+      "name": "crew-security",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "run_cmd"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-coder-front",
+      "name": "crew-coder-front",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd"],
+        "timeout": 600000
+      },
+      "opencodeLoop": true,
+      "opencodeLoopMaxRounds": 10
+    },
+    {
+      "id": "crew-coder-back",
+      "name": "crew-coder-back",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd"],
+        "timeout": 600000
+      },
+      "opencodeLoop": true,
+      "opencodeLoopMaxRounds": 10
+    },
+    {
+      "id": "crew-copywriter",
+      "name": "crew-copywriter",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-telegram",
+      "name": "crew-telegram",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "telegram"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-frontend",
+      "name": "crew-frontend",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-lead",
+      "name": "crew-lead",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd", "dispatch"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-orchestrator",
+      "name": "crew-orchestrator",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "dispatch"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-seo",
+      "name": "crew-seo",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-researcher",
+      "name": "crew-researcher",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file", "run_cmd", "web_search"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-architect",
+      "name": "crew-architect",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-whatsapp",
+      "name": "crew-whatsapp",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd"],
+        "timeout": 600000
+      }
+    },
+    {
+      "id": "crew-ml",
+      "name": "crew-ml",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["write_file", "read_file", "run_cmd"],
+        "timeout": 600000
+      },
+      "opencodeLoop": true,
+      "opencodeLoopMaxRounds": 10
+    },
+    {
+      "id": "crew-judge",
+      "name": "crew-judge",
+      "model": "groq/llama-3.3-70b-versatile",
+      "tools": {
+        "crewswarmAllow": ["read_file"],
+        "timeout": 600000
+      }
+    }
+  ],
+  "loopBrain": "groq/llama-3.3-70b-versatile"
+}

@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>crewswarm vs Cloud AI Tools — Why Local-First AI Orchestration Wins</title>
+  <meta name="description" content="Compare crewswarm to cloud-based AI orchestration platforms. Local-first, open source, multi-engine AI coding with Claude, Cursor, crew-cli, Codex, Gemini — no subscriptions, no vendor lock-in, your code never leaves your machine." />
+  <meta name="keywords" content="local AI orchestration, self-hosted AI agents, AI coding tools comparison, open source AI orchestration, local-first AI, multi-agent AI tools, AI coding assistant comparison, self-hosted AI coding" />
+  <!-- Open Graph -->
+  <meta property="og:title" content="crewswarm vs Cloud AI Tools — Why Local-First Wins" />
+  <meta property="og:description" content="Compare local-first AI orchestration to cloud platforms. Open source, multi-engine, no subscriptions — your API keys and code stay on your machine." />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:url" content="https://crewswarm.ai/openclaw-comparison.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:locale" content="en_US" />
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@crewswarm" />
+  <meta name="twitter:title" content="crewswarm vs Cloud AI Tools — Why Local-First Wins" />
+  <meta name="twitter:description" content="Open source, local-first AI orchestration. Run Claude, Cursor, crew-cli, Codex, Gemini simultaneously — no subscriptions, no vendor lock-in." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- SEO -->
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#060a10" />
+  <link rel="canonical" href="https://crewswarm.ai/openclaw-comparison.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Is crewswarm free?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. crewswarm is fully open source under the MIT license. You bring your own API keys and pay providers directly — no subscription fees, no middleman markup."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I use crewswarm without internet?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. crewswarm works with local models like Ollama and LM Studio. Run agents fully offline for air-gapped or privacy-sensitive environments."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How does crewswarm compare to using Claude Code alone?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "crewswarm orchestrates multiple engines simultaneously — Claude Code, Cursor, crew-cli, Codex CLI, Gemini CLI, OpenCode — with a PM loop that plans, delegates, and ships autonomously. A single CLI tool handles one task at a time; crewswarm runs a full engineering crew."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is my code safe with crewswarm?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. crewswarm is local-first — your code never leaves your machine. API keys are stored locally, not on any third-party server. Optional Docker isolation adds filesystem sandboxing, AppArmor profiles, and network firewall rules."
+        }
+      }
+    ]
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* ── Page-specific styles ── */
+    .compare-hero {
+      text-align: center;
+    }
+
+    .compare-table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 2rem 0;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+    }
+    .compare-table {
+      width: 100%;
+      min-width: 640px;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .compare-table th,
+    .compare-table td {
+      padding: 0.875rem 1.25rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .compare-table thead th {
+      background: rgba(255,255,255,0.03);
+      font-weight: 700;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-2);
+      position: sticky;
+      top: 0;
+    }
+    .compare-table thead th.col-crew {
+      color: var(--accent);
+    }
+    .compare-table tbody tr:last-child td { border-bottom: none; }
+    .compare-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+    .compare-table .cell-good { color: #34d399; }
+    .compare-table .cell-neutral { color: var(--text-2); }
+    .compare-table .cell-weak { color: #f59e0b; }
+
+    .advantage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    .advantage-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      transition: border-color 0.2s;
+    }
+    .advantage-card:hover { border-color: var(--accent); }
+    .advantage-card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+    .advantage-card p {
+      font-size: 0.9rem;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+    .advantage-icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.75rem;
+      display: block;
+      width: 2.5rem;
+      height: 2.5rem;
+      line-height: 2.5rem;
+      text-align: center;
+      background: rgba(56, 189, 248, 0.08);
+      border-radius: 0.5rem;
+    }
+
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      max-width: 800px;
+      margin: 2rem auto 0;
+    }
+    .faq-entry {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem 2rem;
+    }
+    .faq-entry h3 {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .faq-entry p,
+    .faq-entry ul {
+      font-size: 0.9rem;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+    .faq-entry ul {
+      margin-top: 0.5rem;
+      padding-left: 1.25rem;
+    }
+    .faq-entry li { margin-bottom: 0.25rem; }
+
+    .install-block {
+      max-width: 700px;
+      margin: 2rem auto 0;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem 2rem;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 0.9rem;
+      position: relative;
+      overflow-x: auto;
+    }
+    .install-block code { color: #e2e8f0; }
+    .install-block .copy-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--text-2);
+      padding: 0.35rem 0.75rem;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .install-block .copy-btn:hover { background: rgba(255,255,255,0.14); }
+
+    .cta-stats {
+      margin-top: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--text-3);
+    }
+    .cta-links {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+    }
+    .cta-links a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .cta-links a:hover { text-decoration: underline; }
+
+    .section-label {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .how-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    .how-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+    .how-card:hover { border-color: var(--accent); }
+    .how-card h3 { font-size: 1.05rem; margin-bottom: 0.5rem; }
+    .how-card p { font-size: 0.9rem; color: var(--text-2); line-height: 1.6; }
+    .how-number {
+      display: block;
+      width: 2.5rem;
+      height: 2.5rem;
+      line-height: 2.5rem;
+      text-align: center;
+      margin: 0 auto 0.75rem;
+      font-size: 1rem;
+      font-weight: 700;
+      background: rgba(56, 189, 248, 0.08);
+      color: var(--accent);
+      border-radius: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+    </a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+      <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started &rarr;</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero compare-hero">
+    <div class="hero-glow"></div>
+    <div class="container">
+      <div class="hero-badge">Comparison</div>
+      <h1>Local-First AI Orchestration<br>vs. Cloud Platforms</h1>
+      <p class="hero-sub">
+        Your code stays on your machine. Your API keys stay in your hands.<br>
+        No subscriptions. No vendor lock-in. No data uploaded to the cloud.
+      </p>
+      <div class="hero-cta">
+        <a href="#comparison-table" class="btn btn-lg btn-primary">See the comparison &darr;</a>
+        <a href="#faq" class="btn btn-lg btn-secondary">FAQ</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHY LOCAL-FIRST -->
+  <section id="why-local" class="section">
+    <div class="container">
+      <span class="section-label">Why local-first</span>
+      <h2>The Case for Running AI on Your Machine</h2>
+      <p class="hero-sub" style="max-width:680px;margin:0 auto 1rem;">
+        Cloud AI orchestration platforms route your code through third-party servers, add subscription costs,
+        and lock you into a single provider. There is a better way.
+      </p>
+
+      <div class="advantage-grid">
+        <div class="advantage-card">
+          <span class="advantage-icon" aria-hidden="true">&#x1f512;</span>
+          <h3>Privacy by default</h3>
+          <p>Your source code never leaves your machine. API keys are stored locally, not on any third-party server. Audit everything yourself.</p>
+        </div>
+        <div class="advantage-card">
+          <span class="advantage-icon" aria-hidden="true">&#x1f504;</span>
+          <h3>No vendor lock-in</h3>
+          <p>Swap models and providers freely. Use Anthropic today, switch to Groq tomorrow, run Ollama offline. One config change, zero migration.</p>
+        </div>
+        <div class="advantage-card">
+          <span class="advantage-icon" aria-hidden="true">&#x1f4b0;</span>
+          <h3>No subscription fees</h3>
+          <p>Bring your own API keys and pay providers directly. No middleman markup, no per-seat pricing, no surprise invoices.</p>
+        </div>
+        <div class="advantage-card">
+          <span class="advantage-icon" aria-hidden="true">&#x1f527;</span>
+          <h3>Multi-engine orchestration</h3>
+          <p>Run Claude Code, Cursor, crew-cli, Gemini CLI, and OpenCode simultaneously. A PM loop plans and delegates across all engines.</p>
+        </div>
+        <div class="advantage-card">
+          <span class="advantage-icon" aria-hidden="true">&#x1f310;</span>
+          <h3>Offline capable</h3>
+          <p>Works without internet when paired with local models via Ollama or LM Studio. Ideal for air-gapped or privacy-sensitive environments.</p>
+        </div>
+        <div class="advantage-card">
+          <span class="advantage-icon" aria-hidden="true">&#x1f4dc;</span>
+          <h3>Fully open source</h3>
+          <p>MIT licensed. Read every line, fork it, self-host it, extend it. No telemetry, no tracking, no proprietary backend.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON TABLE -->
+  <section id="comparison-table" class="section bg-dark">
+    <div class="container">
+      <span class="section-label">Feature comparison</span>
+      <h2>crewswarm vs. Cloud Platforms vs. Single-Tool CLIs</h2>
+      <p class="hero-sub" style="max-width:680px;margin:0 auto;">
+        A side-by-side look at the three approaches to AI-assisted development.
+      </p>
+
+      <div class="compare-table-wrap">
+        <table class="compare-table" role="table">
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col" class="col-crew">crewswarm</th>
+              <th scope="col">Cloud Platforms</th>
+              <th scope="col">Single-Tool CLIs</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Code privacy</strong></td>
+              <td class="cell-good">Local-first &mdash; code never uploaded</td>
+              <td class="cell-weak">Code sent to third-party servers</td>
+              <td class="cell-neutral">Varies by tool</td>
+            </tr>
+            <tr>
+              <td><strong>API key storage</strong></td>
+              <td class="cell-good">Local only &mdash; your machine, your keys</td>
+              <td class="cell-weak">Stored on provider servers</td>
+              <td class="cell-good">Local</td>
+            </tr>
+            <tr>
+              <td><strong>Subscription cost</strong></td>
+              <td class="cell-good">Free &mdash; bring your own API keys</td>
+              <td class="cell-weak">$20&ndash;$200+/mo per seat</td>
+              <td class="cell-good">Free or pay-per-use</td>
+            </tr>
+            <tr>
+              <td><strong>Vendor lock-in</strong></td>
+              <td class="cell-good">None &mdash; swap providers any time</td>
+              <td class="cell-weak">Tied to one platform</td>
+              <td class="cell-weak">Tied to one model vendor</td>
+            </tr>
+            <tr>
+              <td><strong>Multi-engine support</strong></td>
+              <td class="cell-good">Claude, Cursor, crew-cli, Codex, Gemini, OpenCode</td>
+              <td class="cell-weak">Usually one engine</td>
+              <td class="cell-weak">Single engine only</td>
+            </tr>
+            <tr>
+              <td><strong>Autonomous PM loop</strong></td>
+              <td class="cell-good">ROADMAP.md &rarr; plan &rarr; delegate &rarr; ship &rarr; repeat</td>
+              <td class="cell-neutral">Manual task management</td>
+              <td class="cell-weak">No orchestration</td>
+            </tr>
+            <tr>
+              <td><strong>Agent count</strong></td>
+              <td class="cell-good">20+ specialized agents</td>
+              <td class="cell-neutral">Varies</td>
+              <td class="cell-weak">1 agent</td>
+            </tr>
+            <tr>
+              <td><strong>Persistent memory</strong></td>
+              <td class="cell-good">brain.md + shared memory + JSONL history</td>
+              <td class="cell-neutral">Cloud-managed context</td>
+              <td class="cell-weak">Session-only</td>
+            </tr>
+            <tr>
+              <td><strong>Offline mode</strong></td>
+              <td class="cell-good">Yes &mdash; local models via Ollama / LM Studio</td>
+              <td class="cell-weak">No &mdash; requires internet</td>
+              <td class="cell-neutral">Some support local models</td>
+            </tr>
+            <tr>
+              <td><strong>Docker isolation</strong></td>
+              <td class="cell-good">Optional secure sandbox (AppArmor + firewall)</td>
+              <td class="cell-neutral">Server-side isolation</td>
+              <td class="cell-weak">No sandboxing</td>
+            </tr>
+            <tr>
+              <td><strong>Dashboard UI</strong></td>
+              <td class="cell-good">Full web dashboard + Vibe browser IDE</td>
+              <td class="cell-good">Web UI included</td>
+              <td class="cell-weak">Terminal only</td>
+            </tr>
+            <tr>
+              <td><strong>LLM providers</strong></td>
+              <td class="cell-good">10+ (OpenAI, Anthropic, Groq, Cerebras, DeepSeek, xAI, etc.)</td>
+              <td class="cell-weak">1&ndash;3 typically</td>
+              <td class="cell-weak">1</td>
+            </tr>
+            <tr>
+              <td><strong>MCP integration</strong></td>
+              <td class="cell-good">Cursor, Claude Code, OpenCode</td>
+              <td class="cell-neutral">Varies</td>
+              <td class="cell-neutral">Some support</td>
+            </tr>
+            <tr>
+              <td><strong>Messaging bridges</strong></td>
+              <td class="cell-good">Telegram + WhatsApp</td>
+              <td class="cell-neutral">Slack / Teams common</td>
+              <td class="cell-weak">None</td>
+            </tr>
+            <tr>
+              <td><strong>License</strong></td>
+              <td class="cell-good">MIT &mdash; fully open source</td>
+              <td class="cell-weak">Proprietary</td>
+              <td class="cell-neutral">Varies</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="how-it-works" class="section">
+    <div class="container">
+      <span class="section-label">How it works</span>
+      <h2>From Idea to Shipped Code in One Command</h2>
+      <p class="hero-sub" style="max-width:680px;margin:0 auto;">
+        crewswarm replaces the manual cycle of prompting, reviewing, and re-prompting across scattered tools.
+      </p>
+
+      <div class="how-grid">
+        <div class="how-card">
+          <span class="how-number" aria-hidden="true">1</span>
+          <h3>Describe the idea</h3>
+          <p>Write a requirement in plain language. The PM agent turns it into a roadmap.</p>
+        </div>
+        <div class="how-card">
+          <span class="how-number" aria-hidden="true">2</span>
+          <h3>Agents plan and build</h3>
+          <p>Domain PMs delegate tasks to the best engine for each job &mdash; Claude for architecture, Codex for implementation, Gemini for breadth.</p>
+        </div>
+        <div class="how-card">
+          <span class="how-number" aria-hidden="true">3</span>
+          <h3>Review and ship</h3>
+          <p>The judge agent evaluates output. Good work ships. Bad work gets retried. You stay in control.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="section bg-dark">
+    <div class="container">
+      <span class="section-label">FAQ</span>
+      <h2>Frequently Asked Questions</h2>
+
+      <div class="faq-list">
+        <article class="faq-entry">
+          <h3>Is crewswarm free?</h3>
+          <p>
+            Yes. crewswarm is fully open source under the MIT license. You bring your own API keys
+            and pay providers directly &mdash; no subscription fees, no middleman markup, no per-seat pricing.
+          </p>
+        </article>
+
+        <article class="faq-entry">
+          <h3>Can I use crewswarm without internet?</h3>
+          <p>
+            Yes. Pair crewswarm with local models through Ollama or LM Studio and run agents entirely offline.
+            This is ideal for air-gapped environments, sensitive codebases, or travel.
+          </p>
+        </article>
+
+        <article class="faq-entry">
+          <h3>How does crewswarm compare to using Claude Code alone?</h3>
+          <p>
+            Claude Code is one of the engines crewswarm can orchestrate. The difference is scope:
+          </p>
+          <ul>
+            <li><strong>Single CLI</strong> &mdash; one model, one task at a time, session-only memory.</li>
+            <li><strong>crewswarm</strong> &mdash; multiple engines in parallel, autonomous PM loop, persistent memory, domain-aware planning, and a web dashboard.</li>
+          </ul>
+          <p>Think of it as the difference between a single developer and a full engineering team.</p>
+        </article>
+
+        <article class="faq-entry">
+          <h3>Is my code safe with crewswarm?</h3>
+          <p>
+            Yes. crewswarm is local-first &mdash; your source code never leaves your machine. API keys are stored locally.
+            For additional hardening, enable Docker isolation which adds read-only filesystem, AppArmor profiles,
+            network firewall rules, and non-root execution.
+            <a href="security.html">Read the full security guide.</a>
+          </p>
+        </article>
+
+        <article class="faq-entry">
+          <h3>What LLM providers does crewswarm support?</h3>
+          <p>
+            OpenAI, Anthropic, Groq, Cerebras, DeepSeek, xAI (Grok), Mistral, Perplexity, Google (Gemini),
+            and any OpenAI-compatible API. Switch providers with a single config change.
+          </p>
+        </article>
+
+        <article class="faq-entry">
+          <h3>Can I self-host crewswarm?</h3>
+          <p>
+            That is the default. crewswarm runs entirely on your machine or your own server.
+            Deploy to any cloud (AWS, GCP, DigitalOcean), bare metal, or localhost.
+            No external dependencies, no telemetry, no phone-home behavior.
+          </p>
+        </article>
+
+        <article class="faq-entry">
+          <h3>What makes crewswarm different from other AI coding tools?</h3>
+          <p>
+            Most tools give you one model behind a subscription. crewswarm gives you:
+          </p>
+          <ul>
+            <li>Multi-engine orchestration &mdash; six coding engines running simultaneously</li>
+            <li>An autonomous PM loop that plans, delegates, evaluates, and iterates</li>
+            <li>Persistent shared memory across all agents</li>
+            <li>A real control-plane dashboard and browser IDE</li>
+            <li>Full local ownership &mdash; open source, no cloud dependency</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section id="get-started" class="section">
+    <div class="container" style="text-align:center;">
+      <span class="section-label">Get started</span>
+      <h2>Try crewswarm in 5 Minutes</h2>
+      <p class="hero-sub" style="max-width:560px;margin:0 auto;">
+        One command. No sign-up. No subscription. Just clone, install, and start building.
+      </p>
+
+      <div class="install-block" role="region" aria-label="Install command">
+        <code>git clone https://github.com/crewswarm/crewswarm && cd crewswarm && bash install.sh</code>
+        <button class="copy-btn" aria-label="Copy install command">Copy</button>
+      </div>
+
+      <p class="cta-stats">
+        Open source &middot; MIT license &middot; Multi-engine &middot; Local-first &middot; No subscriptions
+      </p>
+      <p class="cta-links">
+        <a href="https://github.com/crewswarm/crewswarm">GitHub</a> &middot;
+        <a href="security.html">Security</a> &middot;
+        <a href="deploy.html">Deploy Docs</a> &middot;
+        <a href="https://github.com/crewswarm/crewswarm/discussions">Community</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+  <script>
+    // Copy button
+    document.querySelectorAll('.copy-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var code = btn.closest('.install-block').querySelector('code');
+        if (!code) return;
+        navigator.clipboard.writeText(code.textContent.trim()).then(function() {
+          btn.textContent = 'Copied';
+          setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

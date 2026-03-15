@@ -1,0 +1,168 @@
+# crewswarm Secure Docker Deployment
+# Based on OpenCode RCE (CVE-2026-22812), AI agent security research, and Docker best practices
+
+services:
+  crewswarm:
+    build: .
+    image: crewswarm/crewswarm:latest
+    container_name: crewswarm
+    restart: unless-stopped
+
+    # ── Security: Read-Only Root Filesystem ───────────────────────────────
+    # Prevents persistent backdoors from being installed
+    read_only: true
+    
+    # Writable tmpfs for runtime data only (ephemeral)
+    tmpfs:
+      - /tmp:mode=1777,size=1G,noexec,nosuid,nodev
+      - /app/.npm:mode=755,size=512M  # npm cache
+      - /app/.cache:mode=755,size=512M  # generic cache
+
+    # ── Security: Drop All Capabilities ────────────────────────────────────
+    # Agents don't need ANY special Linux capabilities
+    cap_drop:
+      - ALL
+    
+    # ── Security: No New Privileges ────────────────────────────────────────
+    # Prevents privilege escalation inside container
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=crewswarm-restricted  # Custom AppArmor profile
+
+    # ── Security: Non-Root User ────────────────────────────────────────────
+    # Run as UID 1000 (non-root)
+    user: "1000:1000"
+
+    # ── Ports ──────────────────────────────────────────────────────────────
+    ports:
+      - "127.0.0.1:4319:4319"   # Dashboard (localhost only)
+      - "127.0.0.1:5010:5010"   # crew-lead (localhost only)
+      - "127.0.0.1:18889:18889" # RT bus (localhost only)
+      # Do NOT expose 4096 (OpenCode RCE port) to network
+      # Do NOT expose 5020 (MCP) to network unless behind auth
+
+    # ── Volumes ────────────────────────────────────────────────────────────
+    volumes:
+      # Config (read-write, required)
+      - type: volume
+        source: crewswarm-config
+        target: /home/crewswarm/.crewswarm
+        read_only: false
+
+      # Project directory (read-write, sandboxed)
+      # IMPORTANT: Only mount the specific project you're working on
+      - type: bind
+        source: ${PROJECT_DIR:-./workspace}
+        target: /workspace
+        read_only: false
+        bind:
+          propagation: rprivate  # Don't leak mounts to host
+
+      # Engine binaries (read-only, optional)
+      # Comment out if not using engine CLIs
+      - type: bind
+        source: /usr/local/bin/claude
+        target: /usr/local/bin/claude
+        read_only: true
+      - type: bind
+        source: /usr/local/bin/cursor
+        target: /usr/local/bin/cursor
+        read_only: true
+
+      # Engine auth tokens (read-only)
+      # SECURITY: Only mount if you trust the agents completely
+      # Better: Use API keys in crewswarm.json instead
+      # - ${HOME}/.claude:/home/crewswarm/.claude:ro
+      # - ${HOME}/.cursor:/home/crewswarm/.cursor:ro
+
+    # ── Environment ────────────────────────────────────────────────────────
+    environment:
+      - NODE_ENV=production
+      - CREWSWARM_BIND_HOST=0.0.0.0
+      - CREWSWARM_RT_HOST=0.0.0.0
+      
+      # Security: Disable features that could be exploited
+      - CREWSWARM_OPENCODE_DISABLE_SERVER=true  # Blocks CVE-2026-22812
+      - CREWSWARM_REQUIRE_APPROVAL=true         # Force command approval
+      - CREWSWARM_NETWORK_ISOLATION=strict      # Block metadata endpoints
+
+    # ── Resource Limits ────────────────────────────────────────────────────
+    # Prevent DoS from runaway agents
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'      # Max 4 CPU cores
+          memory: 8G       # Max 8GB RAM
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    
+    # Limit PIDs (prevent fork bombs)
+    pids_limit: 512
+
+    # ── Network ────────────────────────────────────────────────────────────
+    networks:
+      - crewswarm_net
+
+    # ── Health Check ───────────────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4319/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+# ── Network Configuration ──────────────────────────────────────────────────
+networks:
+  crewswarm_net:
+    driver: bridge
+    internal: false  # Allow outbound, but restrict with firewall
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ── Volumes ────────────────────────────────────────────────────────────────
+volumes:
+  crewswarm-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind,uid=1000,gid=1000
+      device: ${HOME}/.crewswarm
+
+# ── Security Notes ─────────────────────────────────────────────────────────
+# 
+# 1. OpenCode RCE (CVE-2026-22812):
+#    - Port 4096 is NOT exposed to network
+#    - CREWSWARM_OPENCODE_DISABLE_SERVER=true blocks the vulnerable server
+#    - If you must use OpenCode server, add authentication
+#
+# 2. Filesystem Isolation:
+#    - Only /workspace and ~/.crewswarm are writable
+#    - Root filesystem is read-only (prevents persistent backdoors)
+#    - No access to /home, /etc, /root, other projects
+#
+# 3. Network Isolation:
+#    - Ports bound to 127.0.0.1 only (not accessible from network)
+#    - Use reverse proxy (nginx, Caddy) with TLS for external access
+#    - Add firewall rules to block cloud metadata (169.254.169.254)
+#
+# 4. Privilege Escalation:
+#    - Runs as non-root (UID 1000)
+#    - no-new-privileges prevents setuid exploits
+#    - All capabilities dropped
+#
+# 5. Approval Fatigue:
+#    - Command allowlist required (~/.crewswarm/cmd-allowlist.json)
+#    - Dashboard shows approval UI for unknown commands
+#    - Rate limiting prevents rapid-fire attacks
+#
+# 6. AppArmor Profile:
+#    - See apparmor/crewswarm-restricted.profile
+#    - Enforces container escape prevention
+#    - Restricts ptrace, mount, raw sockets
+#
+# 7. Secrets Management:
+#    - API keys should be in ~/.crewswarm/crewswarm.json (mounted volume)
+#    - Do NOT mount ~/.ssh, ~/.aws, ~/.docker (contains credentials)
+#    - Do NOT mount engine OAuth tokens unless absolutely necessary

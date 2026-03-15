@@ -1,0 +1,35 @@
+{
+  "// CREWSWARM + ZED CONFIGURATION": "Copy this to ~/.config/zed/settings.json and replace the placeholder token.",
+
+  "assistant": {
+    "enabled": true,
+    "version": "2",
+    "default_model": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4"
+    }
+  },
+
+  "mcp_servers": {
+    "crewswarm": {
+      "transport": "http",
+      "url": "http://127.0.0.1:5020/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_CREWSWARM_TOKEN"
+      }
+    }
+  },
+
+  "// FILE WATCHER": "Auto-reload when crew agents modify files",
+  "file_watchers": {
+    "enabled": true
+  },
+
+  "// OPTIONAL": "Auto-format on save",
+  "format_on_save": "on",
+
+  "// OPTIONAL": "Enable collaboration features",
+  "collaboration": {
+    "enabled": false
+  }
+}

@@ -1,0 +1,40 @@
+name: Release Binaries
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          NAME="crew-cli-${{ github.ref_name }}-${{ runner.os }}"
+          mkdir -p out/"$NAME"
+          cp -R dist bin package.json README.md LICENSE* out/"$NAME" 2>/dev/null || true
+          tar -czf "$NAME.tar.gz" -C out "$NAME"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.tar.gz"

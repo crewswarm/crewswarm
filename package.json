@@ -1,0 +1,50 @@
+{
+  "name": "crewswarm",
+  "version": "0.5.0",
+  "type": "module",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "better-sqlite3": "^12.6.2",
+    "pino": "^10.3.1",
+    "playwright": "^1.53.2",
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.16.0",
+    "zod": "^4.3.6"
+  },
+  "scripts": {
+    "test": "node --test test/unit/*.test.mjs",
+    "test:unit": "node --test test/unit/*.test.mjs",
+    "test:integration": "PM_LOOP_TEST_MODE=1 node --test test/integration/*.test.mjs",
+    "test:e2e": "node --test test/e2e/*.test.mjs",
+    "test:all": "PM_LOOP_TEST_MODE=1 node --test test/unit/*.test.mjs test/integration/*.test.mjs test/e2e/*.test.mjs",
+    "docs:api": "node scripts/generate-api-docs.mjs",
+    "changelog:generate": "node scripts/generate-changelog.mjs",
+    "changelog:release": "node scripts/generate-changelog.mjs --release",
+    "accessibility:audit": "node scripts/run-accessibility-audit.mjs",
+    "load:test": "node scripts/bench/load-testing.js",
+    "perf:load": "node scripts/bench/load-testing.js",
+    "perf:analyze": "python3 scripts/bench/performance_optimization.py --url http://127.0.0.1:4319/api/health --profile all",
+    "perf:analyze:offline": "python3 scripts/bench/performance_optimization.py --url http://127.0.0.1:4319/api/health --profile all --force-synthetic",
+    "test:performance:tooling": "node test/performance-tooling.test.mjs",
+    "restart-all": "bash scripts/restart-all-from-repo.sh",
+    "restart-dashboard": "bash scripts/restart-dashboard.sh",
+    "start-crew": "node scripts/start-crew.mjs",
+    "restart-crew": "node scripts/start-crew.mjs --force",
+    "stop-crew": "node scripts/start-crew.mjs --stop",
+    "dashboard": "node scripts/dashboard.mjs",
+    "vibe": "node apps/vibe/server.mjs",
+    "vibe:watch": "node apps/vibe/watch-server.mjs",
+    "crew-lead": "node crew-lead.mjs",
+    "mcp": "node scripts/mcp-server.mjs",
+    "studio": "cd apps/vibe && npm run dev",
+    "studio:build": "cd apps/vibe && npm run build",
+    "studio:start": "cd apps/vibe && npm start",
+    "studio:watch": "node apps/vibe/watch-server.mjs",
+    "studio:full": "bash scripts/start-studio-full.sh",
+    "test:e2e:studio": "node node_modules/playwright/cli.js test --config=playwright.config.js",
+    "test:e2e:studio:headed": "node node_modules/playwright/cli.js test --config=playwright.config.js --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

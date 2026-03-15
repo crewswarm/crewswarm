@@ -1,0 +1,39 @@
+{
+  "id": "docker-sandbox",
+  "label": "Docker Sandbox",
+  "description": "Run any crewswarm engine inside an isolated Docker microVM. Filesystem and network are sandboxed — API keys are injected by the network proxy and never exposed to the agent.",
+  "priority": 70,
+  "shouldUse": {
+    "runtime": ["docker-sandbox", "docker"],
+    "payloadKey": "useDockerSandbox",
+    "agentConfigKey": "useDockerSandbox",
+    "envVar": "CREWSWARM_DOCKER_SANDBOX"
+  },
+  "bin": "docker",
+  "installCmd": "brew install --cask docker",
+  "installUrl": "https://www.docker.com/products/docker-desktop/",
+  "docsUrl": "https://www.docker.com/blog/run-openclaw-securely-in-docker-sandboxes/",
+  "color": "#2496ed",
+  "icon": "docker-sandbox",
+  "agentConfigKey": "useDockerSandbox",
+  "envToggle": "CREWSWARM_DOCKER_SANDBOX",
+  "authNote": "Requires Docker Desktop with Sandboxes enabled. Set CREWSWARM_DOCKER_SANDBOX_NAME to your sandbox name (default: crewswarm). Create once with: docker sandbox create --name crewswarm shell <workspace>",
+  "bestFor": ["crew-coder", "crew-coder-back", "crew-coder-front", "crew-fixer", "crew-security"],
+  "traits": [
+    "Isolated microVM — agent cannot touch host filesystem outside workspace",
+    "Network proxy injects API keys — keys never exposed inside sandbox",
+    "Wraps any inner engine: Claude Code, OpenCode, Cursor CLI, or Codex",
+    "Inner engine configurable via CREWSWARM_DOCKER_SANDBOX_INNER_ENGINE"
+  ],
+  "requiresEnv": [],
+  "setupSteps": [
+    "Enable Docker Sandboxes in Docker Desktop → Settings → Sandboxes",
+    "Create a sandbox: docker sandbox create --name crewswarm shell <your-project-dir>",
+    "Allow localhost access: docker sandbox network proxy crewswarm --allow-host localhost",
+    "Set CREWSWARM_DOCKER_SANDBOX_NAME=crewswarm in dashboard → Security → Env Vars"
+  ],
+  "args": {
+    "run": ["sandbox", "exec", "{sandboxName}", "--", "{innerEngine}", "{prompt}"]
+  },
+  "outputMode": "streaming"
+}

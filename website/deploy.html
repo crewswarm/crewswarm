@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deploy crewswarm — One-Line Docker Install | crewswarm</title>
+  <meta name="description" content="Deploy crewswarm via Docker, npm, or git clone. One-line Docker install with AppArmor and firewall isolation. Works on Linux, macOS, Windows, and any cloud VM." />
+  <!-- Open Graph -->
+  <meta property="og:title" content="Deploy crewswarm — Docker, npm, or git clone" />
+  <meta property="og:description" content="Deploy crewswarm anywhere: Docker with security isolation, local dev via git clone, or cloud VM. Linux, macOS, Windows." />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:url" content="https://crewswarm.ai/deploy.html" />
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:locale" content="en_US" />
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Deploy crewswarm — One-Line Docker Install" />
+  <meta name="twitter:description" content="Deploy crewswarm via Docker, npm, or git clone. Works on Linux, macOS, Windows, and any cloud VM." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- SEO -->
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://crewswarm.ai/deploy.html" />
+  <meta name="theme-color" content="#818cf8" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <link rel="stylesheet" href="styles.css" />
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://crewswarm.ai/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Deploy",
+        "item": "https://crewswarm.ai/deploy.html"
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+    </a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item active">Deploy</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+      <li role="none" class="nav-mobile-cta"><a href="#docker-install" class="btn btn-sm">Deploy Now</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="#docker-install" class="btn btn-sm nav-desktop-cta">Deploy Now</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section id="hero" class="hero">
+    <div class="hero-glow"></div>
+    <div class="container">
+      <h1>Deploy crewswarm Anywhere</h1>
+      <p class="hero-sub">
+        From local development to enterprise Kubernetes — secure,
+        one-line deployment with Docker isolation.
+      </p>
+      <p class="hero-badge">
+        ⚡ 3 minutes  •  🔒 Bank-grade security  •  🌍 Linux, macOS, Windows
+      </p>
+      <div class="hero-cta">
+        <a href="#docker-install" class="btn btn-lg btn-primary">
+          Deploy Now (3 min) →
+        </a>
+        <a href="https://github.com/crewswarm/crewswarm" class="btn btn-lg btn-secondary">
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEPLOYMENT OPTIONS -->
+  <section id="deploy-options" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2>Choose Your Deployment</h2>
+        <p class="section-desc">crewswarm runs anywhere. Pick the method that fits your workflow.</p>
+      </div>
+
+      <div class="grid-3">
+        <!-- Docker (Recommended) -->
+        <div class="card highlight">
+          <div class="card-badge">🐳 Recommended</div>
+          <h3>Docker (Secure)</h3>
+          <p class="card-time">⚡ 3 minutes</p>
+          <p>One-line install with Docker + AppArmor + firewall. Secure by default.</p>
+          <div class="code-block">
+            <pre><code>git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
+            <button class="copy-btn" data-copy="git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d">Copy</button>
+          </div>
+          <ul class="feature-list">
+            <li>✅ Docker + AppArmor + firewall</li>
+            <li>✅ Multi-arch (amd64 + arm64)</li>
+            <li>✅ Secure by default</li>
+            <li>✅ No ClawJacked vulnerability</li>
+          </ul>
+          <a href="#docker-install" class="btn btn-primary">Learn more →</a>
+        </div>
+
+        <!-- Local Development -->
+        <div class="card">
+          <h3>💻 Local Development</h3>
+          <p class="card-time">⚡ 5 minutes</p>
+          <p>Run natively on your machine. Best for development.</p>
+          <div class="code-block">
+            <pre><code>git clone https://github.com/crewswarm/crewswarm.git
+cd crewswarm
+bash install.sh</code></pre>
+            <button class="copy-btn">Copy</button>
+          </div>
+          <ul class="feature-list">
+            <li>✅ Native performance (0% overhead)</li>
+            <li>✅ Easy debugging</li>
+            <li>⚠️ Manual security setup</li>
+          </ul>
+          <a href="https://github.com/crewswarm/crewswarm#setup" class="btn">Learn more →</a>
+        </div>
+
+        <!-- Cloud -->
+        <div class="card">
+          <h3>☁️ Cloud (AWS/GCP/DO)</h3>
+          <p class="card-time">⚡ 5 minutes</p>
+          <p>Deploy to any cloud VM with one command.</p>
+          <div class="code-block">
+            <pre><code># SSH into your VM, then:
+git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
+            <button class="copy-btn">Copy</button>
+          </div>
+          <ul class="feature-list">
+            <li>✅ Works on any cloud provider</li>
+            <li>✅ Auto-configures firewall</li>
+            <li>✅ Production-ready</li>
+          </ul>
+          <a href="#cloud-deploy" class="btn">Learn more →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOCKER INSTALL (Detailed) -->
+  <section id="docker-install" class="section bg-card">
+    <div class="container">
+      <div class="section-header">
+        <h2>Docker Deployment (Recommended)</h2>
+        <p class="section-desc">Secure, one-line install. Auto-configures Docker + AppArmor + firewall.</p>
+      </div>
+
+      <div class="install-steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Run the installer</h3>
+            <div class="code-block">
+              <pre><code>curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash</code></pre>
+              <button class="copy-btn">Copy</button>
+            </div>
+            <p class="step-detail">
+              ✓ Auto-installs Docker (if missing)<br>
+              ✓ Clones repo<br>
+              ✓ Builds image (or pulls pre-built)<br>
+              ✓ Configures security<br>
+              ✓ Starts all services
+            </p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Add an API key</h3>
+            <p>Open dashboard → <strong>Providers</strong> tab → Add Groq key (free)</p>
+            <p class="step-detail">
+              Get free key: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a>
+            </p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Start building</h3>
+            <p>Dashboard → <strong>Chat</strong> tab → Try:</p>
+            <div class="code-block">
+              <pre><code>"build me a REST API with JWT auth and tests"</code></pre>
+            </div>
+            <p class="step-detail">
+              Watch crew-pm plan → crew-coder write → crew-qa audit → crew-github commit<br>
+              <strong>Time: ~3 minutes on Groq free tier</strong>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box">
+        <h4>What's included:</h4>
+        <ul>
+          <li>✅ <strong>5-layer security:</strong> Docker + AppArmor + firewall + allowlist + read-only FS</li>
+          <li>✅ <strong>Pre-built images:</strong> Docker Hub + GitHub Container Registry</li>
+          <li>✅ <strong>Multi-arch:</strong> amd64 (Intel/AMD) + arm64 (Apple Silicon, Graviton, Raspberry Pi)</li>
+          <li>✅ <strong>Auto-restart:</strong> systemd service (optional)</li>
+          <li>✅ <strong>Health checks:</strong> Automatic verification</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- VS OPENCLAW -->
+  <section id="vs-openclaw" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2>Why Teams Switch from OpenClaw</h2>
+        <p class="section-desc">OpenClaw's security issues led to Meta bans and $450K losses. crewswarm provides enterprise-grade security.</p>
+      </div>
+
+      <div class="comparison-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>OpenClaw</th>
+              <th class="highlight">crewswarm</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Setup time</td>
+              <td>30+ minutes (manual Node.js)</td>
+              <td class="highlight"><strong>3 minutes</strong> (one-line Docker)</td>
+            </tr>
+            <tr>
+              <td>Security</td>
+              <td>❌ ClawJacked vulnerability</td>
+              <td class="highlight">✅ Docker + AppArmor + firewall</td>
+            </tr>
+            <tr>
+              <td>Production-ready</td>
+              <td>❌ Banned by Meta</td>
+              <td class="highlight">✅ Enterprise-grade</td>
+            </tr>
+            <tr>
+              <td>Known vulnerabilities</td>
+              <td>❌ Critical (WebSocket hijacking)</td>
+              <td class="highlight">✅ None</td>
+            </tr>
+            <tr>
+              <td>Deployment security</td>
+              <td>❌ Weak defaults, manual config</td>
+              <td class="highlight">✅ Secure by default</td>
+            </tr>
+            <tr>
+              <td>Financial safeguards</td>
+              <td>❌ None ($450K incident)</td>
+              <td class="highlight">✅ Approval required</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cta-box">
+        <p><strong>Read the full comparison:</strong> Security incidents, feature comparison, migration guide</p>
+        <a href="openclaw-comparison.html" class="btn btn-lg btn-primary">
+          crewswarm vs OpenClaw →
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOUD DEPLOYMENT -->
+  <section id="cloud-deploy" class="section bg-card">
+    <div class="container">
+      <div class="section-header">
+        <h2>Cloud Deployment</h2>
+        <p class="section-desc">Deploy to AWS, GCP, DigitalOcean, or any cloud provider.</p>
+      </div>
+
+      <div class="cloud-providers">
+        <div class="cloud-card">
+          <h3>AWS EC2</h3>
+          <div class="code-block">
+            <pre><code># Launch Ubuntu 22.04 instance, then:
+ssh ubuntu@your-ec2-ip
+git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
+          </div>
+          <p>Access at: <code>http://your-ec2-ip:4319</code></p>
+        </div>
+
+        <div class="cloud-card">
+          <h3>Google Cloud</h3>
+          <div class="code-block">
+            <pre><code># Launch Compute Engine instance, then:
+ssh your-gcp-vm
+git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
+          </div>
+          <p>Access at: <code>http://your-vm-ip:4319</code></p>
+        </div>
+
+        <div class="cloud-card">
+          <h3>DigitalOcean</h3>
+          <div class="code-block">
+            <pre><code># Launch Droplet (Ubuntu), then:
+ssh root@your-droplet-ip
+git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
+          </div>
+          <p>Access at: <code>http://your-droplet-ip:4319</code></p>
+        </div>
+      </div>
+
+      <div class="info-box">
+        <h4>Cloud deployment includes:</h4>
+        <ul>
+          <li>✅ Auto-configured firewall (blocks cloud metadata endpoints)</li>
+          <li>✅ Production-ready security (5 defense layers)</li>
+          <li>✅ Health checks and auto-restart</li>
+          <li>✅ Ready for reverse proxy (nginx, Caddy)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- KUBERNETES & ENTERPRISE (Roadmap) -->
+  <section id="kubernetes" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2>Kubernetes &amp; Enterprise (Roadmap)</h2>
+        <p class="section-desc">Helm charts and Terraform modules are planned but not yet available. Today, crewswarm deploys via Docker, git clone, or npm on any VM or local machine.</p>
+      </div>
+
+      <div class="cta-box">
+        <h3>Enterprise and Kubernetes support is on the roadmap</h3>
+        <p>
+          We are planning Helm charts, Terraform modules (AWS ECS/EKS, GCP GKE, Azure ACI),
+          and managed enterprise features. Star the repo to get notified when these ship.
+        </p>
+        <a href="https://github.com/crewswarm/crewswarm" class="btn btn-lg btn-secondary" target="_blank" rel="noopener">
+          Star on GitHub to follow progress
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- NEXT STEPS -->
+  <section id="next-steps" class="section bg-dark">
+    <div class="container">
+      <div class="section-header">
+        <h2>What's Next?</h2>
+        <p class="section-desc">After deploying, try these features:</p>
+      </div>
+
+      <div class="grid-3">
+        <div class="next-card">
+          <h3>🤖 Try the PM Loop</h3>
+          <p>Chat tab → "build me a todo app with React frontend and Express backend"</p>
+          <p class="next-detail">Watch crew-pm break it into phases automatically</p>
+        </div>
+
+        <div class="next-card">
+          <h3>🔐 Review Security</h3>
+          <p>Settings → Engines → Enable secure Docker config</p>
+          <p class="next-detail">AppArmor + firewall + read-only FS</p>
+        </div>
+
+        <div class="next-card">
+          <h3>📱 Connect Telegram</h3>
+          <p>Dashboard → Communications → Setup bot</p>
+          <p class="next-detail">Control your crew from mobile</p>
+        </div>
+      </div>
+
+      <div class="cta-box">
+        <h3>Ready to deploy?</h3>
+        <div class="code-block">
+          <pre><code>git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p class="cta-links">
+          <a href="https://github.com/crewswarm/crewswarm">GitHub</a> •
+          <a href="security.html">Security Guide</a> •
+          <a href="https://github.com/crewswarm/crewswarm/blob/main/docs/CANONICAL/INSTALL.md">Full Docs</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

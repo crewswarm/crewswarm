@@ -1,0 +1,174 @@
+# crewswarm CI
+# Job 1 (static): syntax + build + dashboard check - no secrets, always runs, ~2 min
+# Job 2 (integration): full stack smoke with LLM dispatch - needs GROQ_API_KEY, push only
+#
+# Secrets required for integration job:
+#   CREWSWARM_RT_TOKEN  - any random string for the RT bus auth token
+#   GROQ_API_KEY        - Groq API key (free at console.groq.com/keys)
+
+name: Smoke
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build dashboard
+        run: cd apps/dashboard && npm ci && npm run build
+
+      - name: Syntax check main entrypoints
+        run: |
+          node --check crew-lead.mjs
+          node --check gateway-bridge.mjs
+          node --check scripts/dashboard.mjs
+
+      - name: Syntax check lib modules
+        run: find lib -name "*.mjs" | xargs -I{} node --check {}
+
+      - name: Check dashboard source
+        run: node scripts/check-dashboard.mjs --source-only
+
+      - name: Bootstrap minimal CI config
+        run: |
+          mkdir -p ~/.crewswarm
+          echo '{"rt":{"authToken":"ci-static-token"}}' > ~/.crewswarm/config.json
+          echo '{"agents":[],"providers":{}}' > ~/.crewswarm/crewswarm.json
+          echo '[]' > ~/.crewswarm/cmd-allowlist.json
+          echo '{}' > ~/.crewswarm/agent-prompts.json
+
+      - name: Health check static mode
+        run: node scripts/health-check.mjs --no-services
+
+      - name: Run unit and integration tests
+        run: node --test test/unit/*.test.mjs test/integration/*.test.mjs
+
+  integration:
+    name: Integration smoke
+    runs-on: ubuntu-latest
+    needs: static
+    if: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dashboard
+        run: cd apps/dashboard && npm ci && npm run build
+
+      - name: Bootstrap CI config
+        env:
+          CREWSWARM_RT_TOKEN: ${{ secrets.CREWSWARM_RT_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          mkdir -p ~/.crewswarm
+          TOKEN=$(echo -n "${CREWSWARM_RT_TOKEN:-ci-test-token}" | tr -d ' ')
+          echo "{\"rt\":{\"authToken\":\"$TOKEN\"}}" > ~/.crewswarm/config.json
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const groqKey = (process.env.GROQ_API_KEY || '').trim();
+            const cfg = {
+              agents: [
+                { id: 'crew-main',  model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-coder', model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-qa',    model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-fixer', model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-pm',    model: 'groq/llama-3.3-70b-versatile' }
+              ],
+              providers: { groq: { apiKey: groqKey, baseUrl: 'https://api.groq.com/openai/v1' } }
+            };
+            fs.writeFileSync(path.join(process.env.HOME, '.crewswarm', 'crewswarm.json'), JSON.stringify(cfg, null, 2));
+          "
+          echo '["npm *","node *","npx *"]' > ~/.crewswarm/cmd-allowlist.json
+          echo '{}' > ~/.crewswarm/agent-prompts.json
+
+      - name: Start stack
+        env:
+          CREWSWARM_OPENCODE_ENABLED: "0"
+          CREWSWARM_RT_URL: "ws://127.0.0.1:18889"
+        run: |
+          export CREWSWARM_RT_AUTH_TOKEN=$(node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/config.json')); console.log((c.rt&&c.rt.authToken||'').trim())")
+          export CREWSWARM_RT_REQUIRE_TOKEN=1
+          node scripts/opencrew-rt-daemon.mjs &
+          sleep 3
+          node crew-lead.mjs >> /tmp/crew-lead.log 2>&1 &
+          sleep 2
+          node scripts/dashboard.mjs >> /tmp/dashboard.log 2>&1 &
+          sleep 2
+          node scripts/start-crew.mjs >> /tmp/start-crew.log 2>&1
+          sleep 30
+
+      - name: Wait for crew-lead
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5010/health >/dev/null; then
+              echo "crew-lead healthy after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: crew-lead never became healthy"
+              cat /tmp/crew-lead.log || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Wait for agents to connect
+        run: |
+          for i in $(seq 1 60); do
+            s=$(curl -s http://127.0.0.1:18889/status || true)
+            [ $((i % 10)) -eq 0 ] && echo "RT status (attempt $i): $s"
+            if echo "$s" | grep -q '"crew-coder"' && echo "$s" | grep -q '"crew-main"'; then
+              echo "Agents connected: $s"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "ERROR: agents did not connect to RT"
+              echo "Final RT status: $(curl -s http://127.0.0.1:18889/status || true)"
+              for f in /tmp/bridge-crew-*.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log; do
+                [ -f "$f" ] && echo "=== $f ===" && tail -100 "$f"
+              done
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Run smoke tests
+        env:
+          CREW_LEAD_URL: "http://127.0.0.1:5010"
+          CREWSWARM_SMOKE_TIMEOUT_MS: "180000"
+        run: |
+          npm run smoke || {
+            echo "--- Bridge logs (failure) ---"
+            for f in /tmp/bridge-crew-*.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log; do
+              [ -f "$f" ] && echo "=== $f ===" && tail -200 "$f"
+            done
+            exit 1
+          }
+
+      - name: Run health check full
+        run: node scripts/health-check.mjs --quiet
