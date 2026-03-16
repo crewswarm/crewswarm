@@ -7944,10 +7944,10 @@ ORDER BY day DESC, cost DESC;`;
           },
           {
             id: "studio-watch",
-            label: "Studio Watch Server",
+            label: "Vibe Watch Server",
             description: watchUp
-              ? "CLI → Studio live reload WebSocket relay (port 3334)"
-              : "Run: npm run studio:watch — enables live file reload in Studio",
+              ? "CLI → Vibe live reload WebSocket relay (port 3334)"
+              : "Run: npm run studio:watch — enables live file reload in Vibe",
             port: 3334,
             running: watchUp,
             canRestart: true,

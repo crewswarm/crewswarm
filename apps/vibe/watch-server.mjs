@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * CrewSwarm Studio Watch Server
- * WebSocket server for CLI → Studio file change broadcasts
+ * CrewSwarm Vibe Watch Server
+ * WebSocket server for CLI → Vibe file change broadcasts
  * 
  * Listens on ws://127.0.0.1:3334/ws
  * CLI connects and broadcasts file changes
- * Studio UI connects and receives live updates
+ * Vibe UI connects and receives live updates
  * 
  * Usage:
  *   node apps/vibe/watch-server.mjs
@@ -83,17 +83,17 @@ wss.on('connection', (ws, req) => {
   // Send welcome message
   ws.send(JSON.stringify({
     type: 'connected',
-    message: 'Connected to Studio watch server',
+    message: 'Connected to Vibe watch server',
     clients: wss.clients.size
   }));
 });
 
 httpServer.listen(PORT, '127.0.0.1', () => {
-  console.log(`🔗 Studio Watch Server running:`);
+  console.log(`🔗 Vibe Watch Server running:`);
   console.log(`   WebSocket: ws://127.0.0.1:${PORT}/ws`);
   console.log(`   Health: http://127.0.0.1:${PORT}/health`);
   console.log('');
-  console.log('Waiting for CLI and Studio connections...');
+  console.log('Waiting for CLI and Vibe connections...');
 });
 
 // Graceful shutdown
