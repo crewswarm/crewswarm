@@ -131,7 +131,13 @@ function resolveRequestPath(url = "/") {
   }
 
   const relativePath = pathname.replace(/^\/+/, "");
-  return path.join(DIST_DIR, relativePath);
+  const distPath = path.join(DIST_DIR, relativePath);
+  // Fall back to source directory if file doesn't exist in dist (e.g. unbundled dev mode)
+  if (!fs.existsSync(distPath)) {
+    const srcPath = path.join(__dirname, relativePath);
+    if (fs.existsSync(srcPath)) return srcPath;
+  }
+  return distPath;
 }
 
 function getCacheControlHeader(filePath) {

@@ -10,11 +10,11 @@ crewswarm is an open-source local-first AI workspace for software development. I
 
 ---
 
-## crewswarm vibe
+## crewswarm
 
-![crewswarm Dashboard — Agent management with multi-model support](docs/images/dashboard-hero.png)
+![crewswarm Dashboard — Agent management with multi-model support](website/dashboard-chat.webp)
 
-**The browser IDE for crewswarm.** File tree, Monaco editor, direct agent chat, diff preview, and terminal in one surface.
+**The local-first AI workspace.** Dashboard, multi-agent orchestration, project-aware chat, real-time service monitoring, and multi-engine execution in one stack.
 
 - **Local-first control plane:** Dashboard, Vibe, crewchat, and the same shared runtime.
 - **Multi-engine execution:** Codex, Claude Code, Cursor, Gemini, OpenCode, and `crew-cli`.

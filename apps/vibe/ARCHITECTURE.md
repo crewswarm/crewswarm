@@ -1,324 +1,3405 @@
-# crewswarm Vibe — Architecture Overview
-
-## System Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         USER INTERFACES                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │  Dashboard   │  │    Vibe      │  │  CrewChat    │          │
-│  │  :4319       │  │   :3333      │  │  (Native)    │          │
-│  │              │  │              │  │              │          │
-│  │  • Config    │  │  • Monaco    │  │  • Quick     │          │
-│  │  • Agents    │  │  • File Tree │  │    Mode      │          │
-│  │  • Chat      │  │  • Chat      │  │  • Advanced  │          │
-│  │  • Services  │  │  • Terminal  │  │    Mode      │          │
-│  └──────────────┘  └──────────────┘  └──────────────┘          │
-│         │                  │                  │                  │
-└─────────┼──────────────────┼──────────────────┼─────────────────┘
-          │                  │                  │
-          │    REST API      │    REST API      │    REST API
-          │    WebSocket     │    WebSocket     │    WebSocket
-          ▼                  ▼                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         BACKEND LAYER                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  crew-lead (:5010)                                       │   │
-│  │  • Chat handler                                          │   │
-│  │  • Task dispatch                                         │   │
-│  │  • REST API                                              │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                            │                                     │
-│                            ▼                                     │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  RT Message Bus (:18889)                                 │   │
-│  │  • WebSocket pub/sub                                     │   │
-│  │  • Agent coordination                                    │   │
-│  │  • Real-time updates                                     │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                            │                                     │
-│                            ▼                                     │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Agent Bridges (gateway-bridge.mjs × 20)                 │   │
-│  │                                                           │   │
-│  │  crew-coder    crew-qa     crew-pm     crew-fixer       │   │
-│  │  crew-frontend crew-security crew-main crew-github      │   │
-│  │  crew-architect crew-seo   crew-ml     crew-copywriter  │   │
-│  │  ...                                                     │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                            │                                     │
-│                            ▼                                     │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Execution Engines                                       │   │
-│  │                                                           │   │
-│  │  OpenCode CLI    Cursor CLI    Claude Code    Codex     │   │
-│  │  Gemini CLI      Direct API                              │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                   │
-└───────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Data Flow: User Message → Agent Response
-
-### Vibe Example
-
-```
-1. USER types in Vibe chat: "Add login validation"
-
-2. Vibe → local Studio API
-   POST http://127.0.0.1:3333/api/studio/chat/unified
-   { mode: "cli", engine: "codex", message: "Add login validation", projectId: "my-app" }
-
-3. local server runs the selected CLI
-   → Executes Codex in the selected project directory
-   → Streams chunks back to the client
-   → Saves the exchange to local project messages
-
-4. Vibe updates the editor + chat state
-   → Chat shows the CLI transcript
-   → File tree can be refreshed from local fs APIs
-
-5. File tree updates (future: watch fs events)
-   → validation.js appears in tree
-   → Click to open in Monaco editor
-```
-
----
-
-## Vibe-Specific Components
-
-### File Tree
-- **Current:** Real filesystem-backed file list from the local Studio server
-- **Next:** Add fs watchers for live refresh
-- **Future:** Git status indicators (M, A, D)
-
-### Monaco Editor
-- **Current:** Edit + auto-save (1s debounce)
-- **Next:** Multi-cursor, find/replace, inline diffs
-- **Future:** Agent inline suggestions (Copilot-style)
-
-### Chat Panel
-- **Current:** Send local CLI requests and dashboard-backed chat requests, then render streamed responses
-- **Next:** Expand direct specialist routing from the Studio surface
-- **Future:** Thread support, context injection
-
-### Terminal
-- **Current:** Local shell session over WebSocket
-- **Next:** Filter logs and improve shell controls
-- **Future:** Interactive commands (stop task, retry)
-
----
-
-## API Endpoints Used by Vibe
-
-### Local Studio API (:3333)
-
-```
-POST /api/studio/chat/unified
-Body: { mode: "cli", engine: string, message: string, projectId?: string, projectDir?: string }
-Response: Server-sent events with streamed chunks + done event
-
-GET /api/studio/projects
-Response: { ok: true, projects: [{ id, name, outputDir, description }] }
-
-GET /api/studio/files?dir=/absolute/project/path
-Response: { files: [{ path, name, ext, size, modifiedAt }] }
-
-GET /api/studio/file-content?path=/absolute/file/path
-Response: { content: string, lines: number }
-
-POST /api/studio/file-content
-Body: { path: string, content: string }
-Response: { ok: true, path: string, size: number }
-
-GET /api/studio/project-messages?projectId=:projectId
-Response: { messages: [...] }
-```
-
-### RT Message Bus (:18889)
-
-```
-WebSocket connection
-→ Receive all agent activity events
-→ No auth required (localhost only)
-
-Event types:
-- task_claimed
-- task_completed
-- tool_call
-- agent_status_change
-```
-
----
-
-## Deployment Scenarios
-
-### Scenario 1: Local Development
-```
-localhost:4319  → Dashboard (config + management)
-localhost:3333  → Vibe (coding interface)
-localhost:5010  → crew-lead (backend)
-localhost:18889 → RT bus (coordination)
-```
-
-All services on one machine. Fast, no network latency.
-
-### Scenario 2: Shared Team Server
-```
-server:4319     → Dashboard (team access)
-server:3333     → Vibe (optional, for web-based coding)
-server:5010     → crew-lead
-server:18889    → RT bus
-
-Users connect from:
-- Cursor (via MCP) → calls :5010
-- Vibe (browser) → :3333
-- Dashboard (browser) → :4319
-```
-
-Central server, multiple users. Add auth/multi-tenancy.
-
-### Scenario 3: Docker Container
-```
-Container ports:
-- 4319 (dashboard)
-- 3333 (Vibe)
-- 5010 (crew-lead)
-- 18889 (RT bus)
-
-Docker Compose:
-services:
-  crewswarm:
-    image: crewswarm/crewswarm
-    ports:
-      - "4319:4319"
-      - "3333:3333"
-      - "5010:5010"
-      - "18889:18889"
-    volumes:
-      - ~/.crewswarm:/root/.crewswarm
-```
-
-Isolated, portable, easy deployment.
-
----
-
-## Security Considerations
-
-### Current (localhost only)
-- No auth on RT bus (WebSocket)
-- Dashboard API partially protected (RT token)
-- Vibe assumes trusted localhost environment
-
-### Production Recommendations
-1. **Add authentication:**
-   - JWT tokens for all APIs
-   - WebSocket auth handshake
-   - Rate limiting per user
-
-2. **Restrict file access:**
-   - Sandbox agents to project directories
-   - Validate all file paths (no ../)
-   - Audit log for file operations
-
-3. **Network isolation:**
-   - RT bus on internal network only
-   - Dashboard/Vibe behind reverse proxy
-   - TLS for all external connections
-
-4. **Multi-tenancy:**
-   - User-scoped projects
-   - Agent resource quotas
-   - Billing/usage tracking
-
----
-
-## Performance Characteristics
-
-### Vibe Load Times
-- **Initial:** ~500ms (Monaco bundle)
-- **File open:** ~50ms (mock data) / ~200ms (real fs)
-- **Chat message:** ~100ms (REST) + LLM time
-- **RT update:** ~10ms (WebSocket latency)
-
-### Scalability
-- **Agents:** 20 concurrent bridges (1 per agent)
-- **Chat messages:** ~1000/min (crew-lead)
-- **RT events:** ~10k/min (bus capacity)
-- **File operations:** Limited by fs (future: cache)
-
-### Resource Usage
-- **Vibe (dev):** ~100MB RAM, 1 CPU core (Vite)
-- **Vibe (prod):** ~20MB RAM, 0.1 CPU core (static)
-- **Monaco:** ~30MB RAM per editor instance
-
----
-
-## Future Enhancements
-
-### Phase 2 (File Operations)
-- Real fs integration (dashboard API)
-- Multi-file editing (split editor)
-- Diff view (compare before/after)
-
-### Phase 3 (Advanced Features)
-- Desktop app (Electron/Tauri)
-- Git operations (commit, push, PR)
-- Collaborative mode (multiple users)
-- Plugin system (extensions)
-
-### Phase 4 (Enterprise)
-- SSO authentication
-- Role-based access control
-- Audit logging
-- Usage analytics
-
----
-
-## Testing Strategy
-
-### Unit Tests
-```bash
-cd apps/vibe
-npm test
-```
-Test editor ops, chat handlers, file tree rendering.
-
-### Integration Tests
-```bash
-cd apps/vibe
-npm run test:e2e
-```
-Test the shipped server routes, local file APIs, and built runtime assets.
-
-### Manual Testing
-1. Open Vibe: `bash start-studio.sh`
-2. Send chat message
-3. Verify terminal shows agent activity
-4. Open file from tree
-5. Edit + save
-6. Verify the local file save shows up on refresh
-
----
-
-## Troubleshooting
-
-See `STUDIO-SETUP-COMPLETE.md` → Troubleshooting section.
-
-Common issues:
-- Port conflicts (3333 in use)
-- Auth token missing (dashboard not running)
-- RT bus disconnected (daemon not started)
-- File operations fail (API not implemented yet)
-
----
-
-**Last Updated:** March 2026  
-**Version:** 1.0.0  
-**Status:** Phase 1 Complete (editor + chat + terminal)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>crewswarm vibe</title>
+  <link rel="icon" type="image/png" href="./favicon.png" />
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const storedTheme = localStorage.getItem("theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const resolvedTheme =
+        storedTheme === "light" || storedTheme === "dark"
+          ? storedTheme
+          : prefersDark
+            ? "dark"
+            : "light";
+
+      root.classList.toggle("dark", resolvedTheme === "dark");
+      root.setAttribute("data-theme", storedTheme || "system");
+      root.style.colorScheme = resolvedTheme;
+    })();
+  </script>
+  <!-- System font stack only to avoid CORS when dashboard (4319) and studio (3333) both load Inter from Google -->
+  <style>
+    /* crewswarm Brand Colors (from dashboard) */
+    :root {
+      /* Backgrounds */
+      --bg:       #060a10;
+      --bg-0:     #040810;
+      --bg-1:     #0d1420;
+      --bg-2:     #111827;
+      --bg-card:  #0d1420;
+      --bg-card2: #111827;
+      --bg-hover: #141e2e;
+      --surface-2:#16202e;
+
+      /* Borders */
+      --border:   rgba(255,255,255,0.07);
+      --border-hi:rgba(56,189,248,0.35);
+
+      /* Text */
+      --text:     #f0f6ff;
+      --text-1:   #f0f6ff;
+      --text-2:   #8b9db3;
+      --text-3:   #4a5568;
+
+      /* Accent */
+      --accent:   #38bdf8;
+      --accent2:  #818cf8;
+      --purple:   #818cf8;
+
+      /* Semantic colors */
+      --green:    #34d399;
+      --red:      #f87171;
+      --yellow:   #fbbf24;
+      --amber:    #f59e0b;
+      --green-hi: #22c55e;
+      --red-hi:   #ef4444;
+      --sky:      #38bdf8;
+      --blue:     #4a7ab5;
+      --teal:     #0f766e;
+      --warning:  #f59e0b;
+      --radius:   10px;
+    }
+
+    html {
+      color-scheme: dark;
+    }
+
+    html.dark {
+      color-scheme: dark;
+    }
+
+    html:not(.dark) {
+      color-scheme: light;
+      --bg:       #f4f7fb;
+      --bg-0:     #eef3f9;
+      --bg-1:     #f8fbff;
+      --bg-2:     #ffffff;
+      --bg-card:  rgba(255, 255, 255, 0.96);
+      --bg-card2: #ffffff;
+      --bg-hover: #eef4fb;
+      --surface-2:#e6edf6;
+      --border:   rgba(15, 23, 42, 0.10);
+      --border-hi:rgba(14, 165, 233, 0.30);
+      --text:     #0f172a;
+      --text-1:   #0f172a;
+      --text-2:   #475569;
+      --text-3:   #64748b;
+      --accent:   #0ea5e9;
+      --accent2:  #4f46e5;
+      --purple:   #4f46e5;
+      --green:    #10b981;
+      --red:      #ef4444;
+      --yellow:   #f59e0b;
+      --amber:    #d97706;
+      --green-hi: #059669;
+      --red-hi:   #dc2626;
+      --sky:      #0284c7;
+      --blue:     #2563eb;
+      --teal:     #0f766e;
+      --warning:  #d97706;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      height: 100vh;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    #app {
+      display: grid;
+      --sidebar-width: 250px;
+      --chat-width: 400px;
+      --output-height: 220px;
+      grid-template-columns: var(--sidebar-width) 8px minmax(100px, 1fr) 8px var(--chat-width);
+      grid-template-rows: 50px minmax(100px, 1fr) 8px var(--output-height) 30px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Titlebar */
+    #titlebar {
+      grid-column: 1 / -1;
+      background: var(--bg-card);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+
+    #titlebar .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #titlebar .brand-icon {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+    }
+
+    #titlebar .brand-name {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    #titlebar .brand-name span {
+      color: var(--accent);
+    }
+
+    #titlebar .project-picker {
+      margin-left: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #titlebar select {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      outline: none;
+    }
+
+    #titlebar select:focus {
+      border-color: var(--accent);
+    }
+
+    #titlebar .status-indicator {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-3);
+    }
+
+    #titlebar .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    #titlebar .titlebar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: 10px;
+    }
+
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 34px;
+      min-height: 34px;
+      padding: 0 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(13, 20, 32, 0.96));
+      color: var(--text-2);
+      cursor: pointer;
+      transition: border-color 0.18s ease, transform 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .icon-btn:hover,
+    .icon-btn:focus-visible {
+      border-color: var(--border-hi);
+      color: var(--text);
+      box-shadow: 0 10px 30px rgba(56, 189, 248, 0.12);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    .icon-btn .icon-btn-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .theme-toggle {
+      min-width: 42px;
+      padding: 0 12px;
+    }
+
+    .theme-toggle-icon {
+      position: relative;
+      width: 18px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: currentColor;
+    }
+
+    .theme-toggle-icon svg {
+      position: absolute;
+      inset: 0;
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .theme-toggle-icon .moon-icon {
+      opacity: 0;
+      transform: scale(0.8) rotate(-18deg);
+    }
+
+    html.dark .theme-toggle-icon .sun-icon {
+      opacity: 0;
+      transform: scale(0.8) rotate(18deg);
+    }
+
+    html.dark .theme-toggle-icon .moon-icon {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+
+    html:not(.dark) .theme-toggle-icon .sun-icon {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+
+    html:not(.dark) .theme-toggle-icon .moon-icon {
+      opacity: 0;
+      transform: scale(0.8) rotate(-18deg);
+    }
+
+    html:not(.dark) .icon-btn {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.98));
+      box-shadow: 0 6px 18px rgba(148, 163, 184, 0.12);
+    }
+
+    #settings-panel {
+      position: fixed;
+      top: 66px;
+      right: 24px;
+      width: min(360px, calc(100vw - 32px));
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      background:
+        radial-gradient(circle at top right, rgba(56, 189, 248, 0.14), transparent 42%),
+        linear-gradient(180deg, rgba(13, 20, 32, 0.98), rgba(6, 10, 16, 0.98));
+      box-shadow: 0 28px 80px rgba(2, 8, 20, 0.55);
+      backdrop-filter: blur(18px);
+      z-index: 950;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-10px) scale(0.98);
+      transform-origin: top right;
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+    }
+
+    #settings-panel.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    html:not(.dark) #settings-panel {
+      border-color: rgba(14, 165, 233, 0.18);
+      background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 42%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.98));
+      box-shadow: 0 28px 80px rgba(148, 163, 184, 0.24);
+    }
+
+    .settings-panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .settings-panel-header h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .settings-panel-header p {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-2);
+    }
+
+    .settings-panel-close {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+    }
+
+    .settings-panel-section {
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(17, 24, 39, 0.76);
+    }
+
+    .settings-panel-section-label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    .settings-panel-section strong {
+      display: block;
+      font-size: 14px;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .settings-panel-section p {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-2);
+    }
+
+    .settings-dashboard-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(56, 189, 248, 0.34);
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(129, 140, 248, 0.16));
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .settings-dashboard-link:hover,
+    .settings-dashboard-link:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 40px rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.5);
+      outline: none;
+    }
+
+    #shortcuts-panel {
+      position: fixed;
+      top: 66px;
+      left: 24px;
+      width: min(380px, calc(100vw - 32px));
+      max-height: min(76vh, 720px);
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 38%),
+        linear-gradient(180deg, rgba(13, 20, 32, 0.98), rgba(6, 10, 16, 0.98));
+      box-shadow: 0 28px 80px rgba(2, 8, 20, 0.5);
+      backdrop-filter: blur(18px);
+      z-index: 960;
+      overflow: auto;
+      pointer-events: auto;
+      transform-origin: top left;
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+    }
+
+    #shortcuts-panel:not(.hidden) {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    html:not(.dark) #shortcuts-panel {
+      border-color: rgba(14, 165, 233, 0.2);
+      background:
+        radial-gradient(circle at top left, rgba(14, 165, 233, 0.14), transparent 38%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.98));
+      box-shadow: 0 28px 80px rgba(148, 163, 184, 0.2);
+    }
+
+    #shortcuts-panel.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(-10px) scale(0.98);
+    }
+
+
+
+    .shortcuts-panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .shortcuts-panel-header h3 {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .shortcuts-panel-header p {
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--text-2);
+    }
+
+    .shortcuts-panel-close {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .shortcuts-callout {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(56, 189, 248, 0.24);
+      background: rgba(56, 189, 248, 0.08);
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .shortcuts-callout strong {
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    .shortcuts-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .shortcut-card {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(17, 24, 39, 0.7);
+    }
+
+    html:not(.dark) .shortcut-card {
+      background: rgba(255, 255, 255, 0.8);
+    }
+
+    .shortcut-card kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      padding: 4px 8px;
+      border-radius: 9px;
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .shortcut-card kbd + kbd {
+      margin-left: 6px;
+    }
+
+    .shortcut-card strong {
+      display: block;
+      margin-top: 10px;
+      margin-bottom: 4px;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .shortcut-card p {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-2);
+    }
+
+    .shortcuts-practices {
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: rgba(17, 24, 39, 0.56);
+    }
+
+    html:not(.dark) .shortcuts-practices {
+      background: rgba(255, 255, 255, 0.74);
+    }
+
+    .shortcuts-practices h4 {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 10px;
+    }
+
+    .shortcuts-practices ul {
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+
+    .shortcuts-practices li {
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--text-2);
+      padding-left: 14px;
+      position: relative;
+    }
+
+    .shortcuts-practices li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.55em;
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12);
+    }
+
+    /* Sidebar - File Tree */
+    #sidebar {
+      grid-row: 2;
+      grid-column: 1;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 12px 0;
+      min-width: 0;
+    }
+
+    #sidebar h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-3);
+      padding: 8px 16px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .file-tree {
+      list-style: none;
+    }
+
+    .file-tree li {
+      padding: 6px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      transition: background 0.1s;
+      color: var(--text-2);
+    }
+
+    .file-tree li:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+
+    .file-tree li.active {
+      background: var(--surface-2);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .file-tree .icon {
+      margin-right: 6px;
+      opacity: 0.7;
+    }
+
+    /* Editor Panel */
+    #editor-panel {
+      grid-row: 2;
+      grid-column: 3;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      min-height: 0;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    #editor-tabs {
+      display: flex;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 8px;
+      gap: 2px;
+    }
+
+    .editor-tab {
+      padding: 8px 16px;
+      font-size: 13px;
+      background: transparent;
+      border: none;
+      color: var(--text-3);
+      cursor: pointer;
+      border-radius: 0;
+      transition: all 0.1s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .editor-tab:hover {
+      background: var(--bg-hover);
+      color: var(--text-2);
+    }
+
+    .editor-tab.active {
+      background: var(--bg);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .editor-tab .close {
+      opacity: 0.5;
+      font-size: 16px;
+      line-height: 1;
+      color: var(--text-3);
+    }
+
+    .editor-tab .close:hover {
+      opacity: 1;
+      color: var(--red);
+    }
+
+    #editor-container {
+      flex: 1;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    #editor-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg-card) 92%, var(--bg) 8%);
+      flex-wrap: wrap;
+    }
+
+    .editor-toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .editor-toolbar-spacer {
+      flex: 1;
+    }
+
+    .editor-toolbar-btn {
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-2);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition:
+        background 0.12s ease,
+        border-color 0.12s ease,
+        color 0.12s ease,
+        transform 0.12s ease;
+    }
+
+    .editor-toolbar-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--border-hi);
+      color: var(--text-1);
+      transform: translateY(-1px);
+    }
+
+    .editor-toolbar-btn:focus-visible {
+      outline: none;
+      border-color: var(--border-hi);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
+    }
+
+    .editor-toolbar-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .editor-toolbar-hint {
+      font-size: 11px;
+      color: var(--text-3);
+      white-space: nowrap;
+    }
+
+    #editor-status {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg-card) 88%, var(--accent) 12%);
+      color: var(--text-1);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    #editor-status.visible {
+      display: flex;
+    }
+
+    #editor-status[data-tone="success"] {
+      background: color-mix(in srgb, var(--bg-card) 82%, var(--green) 18%);
+      color: var(--green-hi);
+    }
+
+    #editor-status[data-tone="warning"] {
+      background: color-mix(in srgb, var(--bg-card) 80%, var(--yellow) 20%);
+      color: var(--warning);
+    }
+
+    #editor-status[data-tone="error"] {
+      background: color-mix(in srgb, var(--bg-card) 80%, var(--red) 20%);
+      color: var(--red);
+    }
+
+    #editor-status strong {
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    html:not(.dark) #editor-container,
+    html:not(.dark) .monaco-editor,
+    html:not(.dark) .monaco-editor-background,
+    html:not(.dark) .monaco-editor .margin,
+    html:not(.dark) .monaco-diff-editor,
+    html:not(.dark) .monaco-diff-editor .editor,
+    html:not(.dark) .monaco-diff-editor .margin {
+      background: #f8fbff !important;
+    }
+
+    html:not(.dark) .monaco-editor,
+    html:not(.dark) .monaco-editor .view-lines,
+    html:not(.dark) .monaco-editor .inputarea,
+    html:not(.dark) .monaco-diff-editor {
+      color: #0f172a !important;
+    }
+
+    #editor-workspace {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #editor-main {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    #bottom-terminal-panel {
+      flex: 0 0 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-top: 1px solid rgba(56, 189, 248, 0.12);
+      background:
+        linear-gradient(180deg, rgba(3, 7, 14, 0.96), rgba(6, 10, 16, 0.98));
+      transition:
+        flex-basis 220ms ease,
+        min-height 220ms ease,
+        border-color 220ms ease;
+    }
+
+    html:not(.dark) #bottom-terminal-panel {
+      border-top-color: rgba(14, 165, 233, 0.12);
+      background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.98));
+    }
+
+    #bottom-terminal-panel.visible {
+      flex-basis: 30%;
+      min-height: 180px;
+      border-top-color: rgba(56, 189, 248, 0.2);
+    }
+
+    #bottom-terminal-panel.dragging {
+      transition: none;
+    }
+
+    #terminal-resizer {
+      height: 8px;
+      flex-shrink: 0;
+      cursor: row-resize;
+      position: relative;
+      background: linear-gradient(180deg, transparent, rgba(56, 189, 248, 0.08), transparent);
+      display: none;
+    }
+
+    #bottom-terminal-panel.visible #terminal-resizer {
+      display: block;
+    }
+
+    #terminal-resizer::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 72px;
+      height: 3px;
+      border-radius: 999px;
+      transform: translate(-50%, -50%);
+      background: rgba(139, 157, 179, 0.5);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    #bottom-terminal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(13, 20, 32, 0.92);
+    }
+
+    .bottom-terminal-meta {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .bottom-terminal-meta strong {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .bottom-terminal-meta span {
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    .bottom-terminal-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    #terminal-instance {
+      flex: 1;
+      min-height: 0;
+      padding: 10px 12px 12px;
+      overflow: hidden;
+    }
+
+    #terminal-instance .xterm {
+      height: 100%;
+      position: relative;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #terminal-instance .xterm-viewport {
+      border-radius: 12px;
+      overflow-y: auto;
+    }
+
+    #terminal-instance .xterm-screen {
+      position: relative;
+    }
+
+    #terminal-instance .xterm-helpers,
+    #terminal-instance .xterm-accessibility,
+    .xterm-char-measure-element {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      visibility: hidden;
+    }
+
+    #terminal-instance .xterm-scroll-area {
+      visibility: hidden;
+    }
+
+    /* Chat Panel */
+    #chat-panel {
+      grid-row: 2;
+      grid-column: 5;
+      background: var(--bg-card);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .panel-resizer {
+      position: relative;
+      background:
+        linear-gradient(180deg, transparent, rgba(56, 189, 248, 0.08), transparent);
+      user-select: none;
+      touch-action: none;
+      transition: background 0.18s ease;
+    }
+
+    .panel-resizer::after {
+      content: "";
+      position: absolute;
+      inset: 50% auto auto 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 999px;
+      background: rgba(139, 157, 179, 0.5);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    .panel-resizer:hover,
+    .panel-resizer:focus-visible,
+    .panel-resizer.dragging {
+      background:
+        linear-gradient(180deg, transparent, rgba(56, 189, 248, 0.18), transparent);
+      outline: none;
+    }
+
+    .panel-resizer.vertical {
+      cursor: col-resize;
+    }
+
+    .panel-resizer.vertical::after {
+      width: 3px;
+      height: 88px;
+    }
+
+    .panel-resizer.horizontal {
+      grid-column: 1 / -1;
+      cursor: row-resize;
+      background:
+        linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.08), transparent);
+    }
+
+    .panel-resizer.horizontal::after {
+      width: 96px;
+      height: 3px;
+    }
+
+    .panel-resizer.horizontal:hover,
+    .panel-resizer.horizontal:focus-visible,
+    .panel-resizer.horizontal.dragging {
+      background:
+        linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.18), transparent);
+    }
+
+    #sidebar-resizer {
+      grid-row: 2;
+      grid-column: 2;
+    }
+
+    #chat-resizer {
+      grid-row: 2;
+      grid-column: 4;
+    }
+
+    #chat-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #chat-header .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #chat-header h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+    }
+
+    #chat-header .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #chat-header select {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      outline: none;
+    }
+
+    #chat-header select:focus {
+      border-color: var(--accent);
+    }
+
+    #chat-header button {
+      background: var(--accent);
+      border: none;
+      color: #0a0a12;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.1s;
+    }
+
+    #chat-header button:hover {
+      opacity: 0.9;
+    }
+
+    #chat-header button.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+    }
+
+    #chat-header .agent-status {
+      display: flex;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    #chat-messages {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .message-header {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-3);
+    }
+
+    .message-content {
+      background: var(--bg-2);
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+
+    .message.user .message-content {
+      background: var(--accent);
+      color: #0a0a12;
+      font-weight: 500;
+    }
+
+    .message.agent .message-content {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+    }
+
+    .message-transcript {
+      margin-top: 2px;
+      align-self: stretch;
+      background: color-mix(in srgb, var(--bg-card2) 88%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .message-transcript summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-3);
+      background: color-mix(in srgb, var(--bg-2) 75%, transparent);
+    }
+
+    .message-transcript summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .message-transcript pre {
+      margin: 0;
+      padding: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text-2);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    #chat-input-container {
+      border-top: 1px solid var(--border);
+      padding: 12px;
+      background: var(--bg-card2);
+      flex-shrink: 0;
+    }
+
+    #chat-input {
+      width: 100%;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      transition: border-color 0.1s;
+    }
+
+    #chat-input:focus {
+      border-color: var(--accent);
+    }
+
+    /* Terminal Panel */
+    #terminal {
+      grid-row: 4;
+      grid-column: 1 / -1;
+      background: var(--bg-0);
+      border-top: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 12px;
+      font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      min-height: 100px;
+    }
+    
+    /* Status Bar */
+    #status-bar {
+      grid-row: 5;
+      grid-column: 1 / -1;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 11px;
+      color: var(--text-3);
+    }
+    
+    #status-bar a {
+      color: var(--accent);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: background 0.1s;
+    }
+    
+    #status-bar a:hover {
+      background: var(--bg-2);
+    }
+
+    #terminal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 0 8px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    #terminal-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-3);
+      font-weight: 600;
+    }
+
+    .terminal-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .terminal-btn {
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      background:
+        linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(129, 140, 248, 0.12));
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition:
+        transform 180ms ease,
+        border-color 180ms ease,
+        box-shadow 180ms ease,
+        background 180ms ease;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    }
+
+    .terminal-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(56, 189, 248, 0.42);
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+    }
+
+    .terminal-line {
+      margin-bottom: 4px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .terminal-line.info {
+      color: var(--sky);
+    }
+
+    .terminal-line.success {
+      color: var(--green);
+    }
+
+    .terminal-line.error {
+      color: var(--red);
+    }
+
+    .terminal-line.warning {
+      color: var(--yellow);
+    }
+
+    .terminal-trace {
+      margin: 10px 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--bg-card2) 82%, transparent);
+      overflow: hidden;
+    }
+
+    .terminal-trace summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 9px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-2);
+      background: color-mix(in srgb, var(--bg-2) 75%, transparent);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-trace summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .terminal-trace-body {
+      margin: 0;
+      padding: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-0);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--bg-2);
+      border-radius: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--surface-2);
+    }
+
+    /* Loading state */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-3);
+      font-size: 13px;
+    }
+
+    /* Inline Chat (Cmd+K) */
+    #inline-chat-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    #inline-chat-overlay.visible {
+      display: block;
+    }
+
+    #inline-chat-box {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: min(420px, calc(100vw - 24px));
+      max-height: min(420px, calc(100vh - 24px));
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background:
+        linear-gradient(180deg, rgba(17, 24, 39, 0.78), rgba(13, 20, 32, 0.92));
+      box-shadow:
+        0 22px 60px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(56, 189, 248, 0.08) inset;
+      backdrop-filter: blur(24px) saturate(1.2);
+      -webkit-backdrop-filter: blur(24px) saturate(1.2);
+      pointer-events: auto;
+      opacity: 0;
+      transform: translate3d(0, 18px, 0) scale(0.98);
+      transform-origin: top left;
+      transition:
+        opacity 180ms ease,
+        transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+      overflow: hidden;
+    }
+
+    #inline-chat-overlay.visible #inline-chat-box {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    .inline-chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .inline-chat-title {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .inline-chat-title strong {
+      font-size: 13px;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+
+    .inline-chat-title span {
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    .inline-chat-close {
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-2);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .inline-chat-controls {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    #inline-chat-model {
+      min-width: 0;
+      background: rgba(6, 10, 16, 0.55);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+
+    .inline-chat-shortcut {
+      font-size: 11px;
+      color: var(--text-3);
+      white-space: nowrap;
+    }
+
+    #inline-chat-input {
+      width: 100%;
+      min-height: 88px;
+      max-height: 140px;
+      background: rgba(6, 10, 16, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.5;
+      font-family: inherit;
+      border-radius: 14px;
+      resize: vertical;
+      outline: none;
+    }
+
+    #inline-chat-input:focus,
+    #inline-chat-model:focus {
+      border-color: var(--border-hi);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
+    }
+
+    #inline-chat-response {
+      display: none;
+      padding: 0;
+      border-radius: 14px;
+      background: rgba(129, 140, 248, 0.08);
+      border: 1px solid rgba(129, 140, 248, 0.18);
+      overflow-y: auto;
+    }
+
+    #inline-chat-response.visible {
+      display: block;
+    }
+
+    .inline-chat-answer {
+      min-height: 72px;
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--text-1);
+      white-space: pre-wrap;
+    }
+
+    .inline-chat-answer[data-empty="true"] {
+      color: var(--text-3);
+    }
+
+    .inline-chat-transcript {
+      border-top: 1px solid rgba(129, 140, 248, 0.16);
+    }
+
+    .inline-chat-transcript summary {
+      padding: 10px 16px;
+      font-size: 12px;
+      color: var(--text-2);
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+
+    .inline-chat-transcript summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .inline-chat-transcript summary::before {
+      content: "+";
+      display: inline-block;
+      width: 14px;
+      margin-right: 6px;
+      color: var(--text-3);
+    }
+
+    .inline-chat-transcript[open] summary::before {
+      content: "-";
+    }
+
+    .inline-chat-transcript pre {
+      margin: 0;
+      padding: 0 16px 14px;
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--text-2);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    #inline-chat-box .actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .inline-chat-meta {
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    #inline-chat-box .action-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    #inline-chat-box button {
+      background: var(--accent);
+      border: none;
+      color: #0a0a12;
+      padding: 9px 14px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition:
+        opacity 0.15s ease,
+        transform 0.15s ease;
+    }
+
+    #inline-chat-box button:hover {
+      opacity: 0.94;
+      transform: translateY(-1px);
+    }
+
+    #inline-chat-box button.secondary {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+    }
+
+    /* Diff Preview Modal */
+    #diff-preview-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background:
+        radial-gradient(circle at top, rgba(56, 189, 248, 0.1), transparent 38%),
+        rgba(6, 10, 16, 0.82);
+      backdrop-filter: blur(14px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 180ms ease;
+    }
+
+    #diff-preview-overlay.visible {
+      display: flex;
+      opacity: 1;
+    }
+
+    #diff-preview-box {
+      background:
+        linear-gradient(180deg, rgba(13, 20, 32, 0.96), rgba(6, 10, 16, 0.94));
+      border: 1px solid rgba(129, 140, 248, 0.2);
+      border-radius: 24px;
+      width: min(1180px, 100%);
+      min-height: min(720px, calc(100vh - 48px));
+      max-height: calc(100vh - 48px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow:
+        0 34px 90px rgba(0, 0, 0, 0.58),
+        0 0 0 1px rgba(56, 189, 248, 0.08) inset;
+      transform: translateY(26px) scale(0.98);
+      transition:
+        transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 180ms ease;
+    }
+
+    #diff-preview-overlay.visible #diff-preview-box {
+      transform: translateY(0) scale(1);
+    }
+
+    #diff-preview-box .header {
+      padding: 22px 24px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    #diff-preview-box .header h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    #diff-preview-box .header .file-path {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: 4px;
+    }
+
+    #diff-preview-box #diff-editor {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      background:
+        linear-gradient(180deg, rgba(4, 8, 16, 0.45), rgba(4, 8, 16, 0.18));
+    }
+
+    .diff-preview-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .diff-preview-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-2);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .diff-preview-view-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .diff-preview-view-toggle button {
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: transparent;
+      border: none;
+      color: var(--text-2);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .diff-preview-view-toggle button.active {
+      background: rgba(56, 189, 248, 0.14);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.16);
+    }
+
+    .diff-preview-close {
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-2);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .diff-preview-shell {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .diff-preview-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      padding: 18px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .diff-preview-stat {
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(6, 10, 16, 0.28);
+    }
+
+    .diff-preview-stat .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-3);
+      margin-bottom: 8px;
+    }
+
+    .diff-preview-stat .value {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .diff-preview-render {
+      padding: 18px 24px 24px;
+    }
+
+    .diff-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .diff-panel {
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 18px;
+      background: rgba(6, 10, 16, 0.42);
+      overflow: hidden;
+    }
+
+    .diff-panel-title {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    .diff-lines {
+      font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .diff-line {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 14px;
+      padding: 8px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .diff-line:last-child {
+      border-bottom: none;
+    }
+
+    .diff-line-number {
+      color: var(--text-3);
+      user-select: none;
+      text-align: right;
+    }
+
+    .diff-line-code {
+      min-width: 0;
+      color: var(--text-1);
+    }
+
+    .diff-line.addition {
+      background: rgba(52, 211, 153, 0.12);
+    }
+
+    .diff-line.deletion {
+      background: rgba(248, 113, 113, 0.12);
+    }
+
+    .diff-line.replacement {
+      background: rgba(251, 191, 36, 0.12);
+    }
+
+    .diff-line.placeholder {
+      opacity: 0.4;
+    }
+
+    .diff-inline {
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 18px;
+      overflow: hidden;
+      background: rgba(6, 10, 16, 0.42);
+      font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .diff-inline .diff-line-code::before {
+      display: inline-block;
+      width: 18px;
+      margin-right: 10px;
+      font-weight: 700;
+      color: inherit;
+    }
+
+    .diff-inline .diff-line.addition .diff-line-code::before {
+      content: "+";
+    }
+
+    .diff-inline .diff-line.deletion .diff-line-code::before {
+      content: "-";
+    }
+
+    .diff-inline .diff-line.replacement .diff-line-code::before {
+      content: "±";
+    }
+
+    .diff-inline .diff-line.equal .diff-line-code::before {
+      content: " ";
+    }
+
+    #diff-preview-box .actions {
+      padding: 18px 24px 22px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    #diff-preview-box button {
+      background: var(--accent);
+      border: none;
+      color: #0a0a12;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.1s;
+    }
+
+    #diff-preview-box button:hover {
+      opacity: 0.9;
+    }
+
+    #diff-preview-box button.danger {
+      background: var(--red);
+      color: white;
+    }
+
+    #diff-preview-box button.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+    }
+
+    @media (max-width: 900px) {
+      #app {
+        grid-template-columns: 220px minmax(0, 1fr);
+        grid-template-rows: 50px minmax(0, 1fr) minmax(180px, auto) 30px;
+      }
+
+      #titlebar {
+        padding: 0 12px;
+      }
+
+      #titlebar .project-picker,
+      #titlebar .status-indicator {
+        display: none;
+      }
+
+      #titlebar .titlebar-actions {
+        margin-left: auto;
+      }
+
+      .icon-btn .icon-btn-label {
+        display: none;
+      }
+
+      #settings-panel {
+        top: 60px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+      }
+
+      #shortcuts-panel {
+        top: auto;
+        bottom: 44px;
+        left: 12px;
+        right: 12px;
+        width: auto;
+        max-height: min(60vh, 560px);
+      }
+
+      .shortcuts-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #sidebar-resizer,
+      #chat-resizer,
+      #output-resizer {
+        display: none;
+      }
+
+      #editor-panel {
+        grid-column: 2;
+      }
+
+      #chat-panel {
+        grid-row: 3;
+        grid-column: 1 / -1;
+        border-left: none;
+        border-top: 1px solid var(--border);
+      }
+
+      #terminal {
+        display: none;
+      }
+
+      #bottom-terminal-panel.visible {
+        flex-basis: 42%;
+      }
+
+      #diff-preview-overlay {
+        padding: 14px;
+      }
+
+      #diff-preview-box {
+        min-height: calc(100vh - 28px);
+        max-height: calc(100vh - 28px);
+        border-radius: 20px;
+      }
+
+      #diff-preview-box .header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .diff-preview-toolbar {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .diff-preview-summary {
+        grid-template-columns: 1fr;
+      }
+
+      .diff-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Titlebar -->
+    <div id="titlebar">
+      <div class="brand-section">
+        <img class="brand-icon" src="./favicon.png" alt="crewswarm" />
+        <span class="brand-name">crew<span>swarm</span></span>
+        <span style="font-size: 11px; color: var(--text-3); margin-left: 4px;">vibe</span>
+      </div>
+      
+      <div class="project-picker">
+        <span style="font-size: 11px; color: var(--text-3);">Project:</span>
+        <select id="projectSelector">
+          <option value="">Loading...</option>
+        </select>
+      </div>
+
+      <div class="status-indicator">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">RT Bus</span>
+      </div>
+      
+      <div class="status-indicator" style="margin-left: 10px;">
+        <span class="status-dot" id="watchStatusDot" style="background: var(--yellow);"></span>
+        <span id="watchStatusText">Watch Server</span>
+        <button id="watchToggle" class="icon-btn" type="button" style="margin-left: 8px; font-size: 12px; padding: 2px 8px;">
+          🔄
+        </button>
+      </div>
+
+      <div class="titlebar-actions">
+        <button
+          id="theme-toggle"
+          class="icon-btn theme-toggle"
+          type="button"
+          aria-label="Toggle color theme"
+          aria-pressed="true"
+          title="Toggle color theme"
+        >
+          <span class="theme-toggle-icon" aria-hidden="true">
+            <svg class="sun-icon" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2.75v2.5M12 18.75v2.5M21.25 12h-2.5M5.25 12h-2.5M18.54 5.46l-1.77 1.77M7.23 16.77l-1.77 1.77M18.54 18.54l-1.77-1.77M7.23 7.23 5.46 5.46"></path>
+            </svg>
+            <svg class="moon-icon" viewBox="0 0 24 24">
+              <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"></path>
+            </svg>
+          </span>
+          <span class="icon-btn-label">Theme</span>
+        </button>
+        <button
+          id="settings-toggle"
+          class="icon-btn"
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="settings-panel"
+          aria-label="Open settings panel"
+        >
+          <span aria-hidden="true">⚙️</span>
+          <span class="icon-btn-label">Settings</span>
+        </button>
+        <button
+          id="shortcuts-toggle"
+          class="icon-btn"
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded="true"
+          aria-controls="shortcuts-panel"
+          aria-label="Toggle keyboard shortcuts guide"
+        >
+          <span aria-hidden="true">⌨️</span>
+          <span class="icon-btn-label">Shortcuts</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Sidebar - File Tree -->
+    <div id="sidebar">
+      <h3>Explorer</h3>
+      <ul class="file-tree" id="file-tree">
+        <li class="loading">Loading files...</li>
+      </ul>
+    </div>
+
+    <div
+      id="sidebar-resizer"
+      class="panel-resizer vertical"
+      role="separator"
+      aria-label="Resize explorer panel"
+      aria-orientation="vertical"
+      tabindex="0"
+    ></div>
+
+    <!-- Editor Panel -->
+    <div id="editor-panel">
+      <div id="editor-tabs"></div>
+      <div id="editor-workspace">
+        <div id="editor-main">
+          <div id="editor-toolbar" aria-label="Editor actions">
+            <div class="editor-toolbar-group" role="group" aria-label="History">
+              <button id="editor-undo" class="editor-toolbar-btn" type="button">Undo</button>
+              <button id="editor-redo" class="editor-toolbar-btn" type="button">Redo</button>
+            </div>
+            <div class="editor-toolbar-group" role="group" aria-label="Document">
+              <button id="editor-save" class="editor-toolbar-btn" type="button">Save</button>
+              <button id="editor-find" class="editor-toolbar-btn" type="button">Find</button>
+              <button id="editor-replace" class="editor-toolbar-btn" type="button">Replace</button>
+              <button id="editor-comment" class="editor-toolbar-btn" type="button">Comment</button>
+              <button id="editor-format" class="editor-toolbar-btn" type="button">Format</button>
+            </div>
+            <div class="editor-toolbar-spacer" aria-hidden="true"></div>
+            <div class="editor-toolbar-hint">Monaco actions</div>
+          </div>
+          <div id="editor-status" role="status" aria-live="polite"></div>
+          <div id="editor-container"></div>
+        </div>
+        <div id="bottom-terminal-panel" aria-hidden="true">
+          <div
+            id="terminal-resizer"
+            role="separator"
+            aria-label="Resize terminal panel"
+            aria-orientation="horizontal"
+            tabindex="0"
+          ></div>
+          <div id="bottom-terminal-header">
+            <div class="bottom-terminal-meta">
+              <strong>Workspace Terminal</strong>
+              <span id="bottom-terminal-status">Local shell for the selected project</span>
+            </div>
+            <div class="bottom-terminal-actions">
+              <button id="clear-bottom-terminal" class="terminal-btn" type="button">Clear</button>
+              <button id="close-bottom-terminal" class="terminal-btn" type="button">Hide</button>
+            </div>
+          </div>
+          <div id="terminal-instance" tabindex="0" aria-label="Interactive terminal"></div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="chat-resizer"
+      class="panel-resizer vertical"
+      role="separator"
+      aria-label="Resize chat panel"
+      aria-orientation="vertical"
+      tabindex="0"
+    ></div>
+
+    <!-- Chat Panel -->
+    <div id="chat-panel">
+      <div id="chat-header">
+        <div class="title-row">
+          <h3>Chat</h3>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="toggle-bottom-terminal" class="secondary" type="button">Terminal</button>
+            <button class="secondary" onclick="showNewProjectModal()">+ New Project</button>
+          </div>
+        </div>
+        <div class="controls">
+          <label for="chat-mode-selector" style="font-size: 11px; color: var(--text-3);">Mode:</label>
+          <select id="chat-mode-selector" onchange="switchChatMode()">
+            <option value="crew-lead">🧠 crew-lead (Smart Routing)</option>
+            <optgroup label="───── Direct CLIs ─────">
+              <option value="cli:opencode">⚡ OpenCode — Full workspace context</option>
+              <option value="cli:cursor">🖱 Cursor CLI — Complex reasoning</option>
+              <option value="cli:crew-cli">🔧 Crew CLI — TypeScript specialist</option>
+              <option value="cli:codex">🟣 Codex CLI — OpenAI Codex</option>
+              <option value="cli:gemini">✨ Gemini CLI — Google Gemini</option>
+              <option value="cli:claude">🤖 Claude Code — Anthropic Claude</option>
+            </optgroup>
+            <optgroup label="───── Agents ─────" id="agentsOptgroup">
+              <!-- Populated dynamically -->
+            </optgroup>
+          </select>
+        </div>
+        <div id="project-context-hint" style="display: none; font-size: 11px; color: var(--text-3); margin-top: 4px; padding: 6px 8px; background: var(--bg-2); border-radius: 4px; border: 1px solid var(--border);">
+          <strong style="color: var(--accent);">📁</strong> <span id="project-context-name"></span>
+          <div style="font-size: 10px; color: var(--text-3); margin-top: 2px; font-family: monospace;" id="project-context-path"></div>
+        </div>
+      </div>
+      <div id="chat-messages"></div>
+      <div id="chat-input-container">
+        <textarea 
+          id="chat-input" 
+          placeholder="Ask the crew anything... (Enter to send, Shift+Enter for new line)"
+          rows="3"
+        ></textarea>
+      </div>
+    </div>
+
+    <div
+      id="output-resizer"
+      class="panel-resizer horizontal"
+      role="separator"
+      aria-label="Resize activity panel"
+      aria-orientation="horizontal"
+      tabindex="0"
+    ></div>
+
+    <!-- Terminal Panel -->
+    <div id="terminal">
+      <div id="terminal-header">
+        <div id="terminal-title">Activity Trace</div>
+        <div class="terminal-actions">
+          <button id="preview-diff-trigger" class="terminal-btn" type="button">Preview Diff</button>
+        </div>
+      </div>
+      <div id="terminal-content"></div>
+    </div>
+
+    <!-- Status Bar -->
+    <div id="status-bar">
+      <div>
+        <span id="status-text">Ready</span>
+      </div>
+      <div style="display: flex; gap: 16px; align-items: center;">
+        <span id="connection-status" style="display: flex; align-items: center; gap: 4px;">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green);"></span>
+          Connected
+        </span>
+        <a href="http://127.0.0.1:4319" target="_blank">
+          ⚙️ Dashboard
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-panel" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="settings-panel-title">
+    <div class="settings-panel-header">
+      <div>
+        <h3 id="settings-panel-title">Vibe Settings</h3>
+        <p>Quick access to workspace controls and the main crewswarm dashboard.</p>
+      </div>
+      <button
+        id="settings-close"
+        class="icon-btn settings-panel-close"
+        type="button"
+        aria-label="Close settings panel"
+      >
+        ×
+      </button>
+    </div>
+    <div class="settings-panel-section">
+      <span class="settings-panel-section-label">Navigation</span>
+      <strong>Main Dashboard</strong>
+      <p>Open the dashboard for providers, services, agents, and runtime controls.</p>
+      <a
+        class="settings-dashboard-link"
+        href="http://127.0.0.1:4319"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Link to Main Dashboard
+      </a>
+    </div>
+  </div>
+
+  <aside id="shortcuts-panel" class="hidden" role="complementary" aria-hidden="true" aria-labelledby="shortcuts-panel-title">
+    <div class="shortcuts-panel-header">
+      <div>
+        <h3 id="shortcuts-panel-title">Keyboard Shortcuts Guide</h3>
+        <p>Keep the core editing and navigation actions one keystroke away. Reopen this panel anytime from the title bar.</p>
+      </div>
+      <button
+        id="shortcuts-close"
+        class="icon-btn shortcuts-panel-close"
+        type="button"
+        aria-label="Hide keyboard shortcuts guide"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="shortcuts-callout">
+      <strong>Tip</strong>
+      <span>Prefer familiar conventions, avoid overriding browser defaults unless the payoff is clear, and always keep a clickable UI path alongside the shortcut.</span>
+    </div>
+
+    <div class="shortcuts-grid" aria-label="Essential keyboard shortcuts">
+      <article class="shortcut-card"><kbd>Cmd/Ctrl</kbd><kbd>K</kbd><strong>Inline AI</strong><p>Open the Monaco inline assistant from the current cursor position.</p></article>
+      <article class="shortcut-card"><kbd>Enter</kbd><strong>Send chat</strong><p>Submit the main chat input without leaving the keyboard.</p></article>
+      <article class="shortcut-card"><kbd>Shift</kbd><kbd>Enter</kbd><strong>New line</strong><p>Insert a line break in chat instead of sending immediately.</p></article>
+      <article class="shortcut-card"><kbd>Esc</kbd><strong>Dismiss overlays</strong><p>Close inline chat, diff review, or any temporary modal state.</p></article>
+      <article class="shortcut-card"><kbd>Cmd/Ctrl</kbd><kbd>Z</kbd><strong>Undo</strong><p>Use Monaco's built-in undo stack while editing the current file.</p></article>
+      <article class="shortcut-card"><kbd>Cmd/Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd><strong>Redo</strong><p>Replay an undone change in the active Monaco editor.</p></article>
+      <article class="shortcut-card"><kbd>Cmd/Ctrl</kbd><kbd>/</kbd><strong>Toggle comment</strong><p>Comment the current line or selected block while editing.</p></article>
+      <article class="shortcut-card"><kbd>Cmd/Ctrl</kbd><kbd>S</kbd><strong>Save file</strong><p>Commit the current edit to disk before switching context.</p></article>
+    </div>
+
+    <section class="shortcuts-practices" aria-label="Keyboard shortcut design best practices">
+      <h4>Best Practices</h4>
+      <ul>
+        <li>Reserve the easiest shortcuts for high-frequency actions such as opening files, saving, and invoking AI help.</li>
+        <li>Match platform habits when possible so users can transfer muscle memory from editors like VS Code.</li>
+        <li>Keep destructive commands out of single-key bindings unless there is a clear confirmation step.</li>
+        <li>Expose every shortcut in tooltips, menus, or guides so discoverability does not depend on memory alone.</li>
+        <li>Design shortcuts to work with one hand where practical, especially for actions users repeat dozens of times per session.</li>
+      </ul>
+    </section>
+  </aside>
+
+  <!-- Inline Chat Overlay (Cmd+K) -->
+  <div id="inline-chat-overlay">
+    <div id="inline-chat-box">
+      <div class="inline-chat-header">
+        <div class="inline-chat-title">
+          <strong>Ask Monaco inline</strong>
+          <span id="inline-chat-context">Anchored to the current cursor position</span>
+        </div>
+        <button
+          type="button"
+          class="inline-chat-close"
+          aria-label="Close inline chat"
+          onclick="hideInlineChat()"
+        >
+          ×
+        </button>
+      </div>
+      <div class="inline-chat-controls">
+        <select id="inline-chat-model" aria-label="AI model">
+          <option value="codex">Codex</option>
+          <option value="gpt-5">GPT-5 (Unavailable in local mode)</option>
+          <option value="gpt-5-mini">GPT-5 Mini (Unavailable in local mode)</option>
+        </select>
+        <div class="inline-chat-shortcut">Enter to send • Esc to close</div>
+      </div>
+      <textarea id="inline-chat-input" placeholder="Ask for a refactor, explanation, or quick edit suggestion..."></textarea>
+      <div id="inline-chat-response" aria-live="polite">
+        <div
+          id="inline-chat-answer"
+          class="inline-chat-answer"
+          data-empty="true"
+        >No response yet.</div>
+        <details
+          id="inline-chat-transcript"
+          class="inline-chat-transcript"
+          hidden
+        >
+          <summary>Show transcript</summary>
+          <pre id="inline-chat-transcript-body"></pre>
+        </details>
+      </div>
+      <div class="actions">
+        <div class="inline-chat-meta" id="inline-chat-meta">No response yet</div>
+        <div class="action-buttons">
+          <button class="secondary" onclick="hideInlineChat()">Cancel</button>
+          <button onclick="sendInlineChat()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diff Preview Modal -->
+  <div id="diff-preview-overlay" class="diff-preview-modal" aria-hidden="true">
+    <div id="diff-preview-box" role="dialog" aria-modal="true" aria-labelledby="diff-preview-title">
+      <div class="header">
+        <div>
+          <h3 id="diff-preview-title">Review Proposed Changes</h3>
+          <div class="file-path" id="diff-file-path"></div>
+        </div>
+        <div class="diff-preview-toolbar">
+          <div class="diff-preview-pill" id="diff-preview-badge">Sample agent patch</div>
+          <div class="diff-preview-view-toggle" role="tablist" aria-label="Diff view mode">
+            <button type="button" class="active" data-diff-view="side-by-side">Side by side</button>
+            <button type="button" data-diff-view="inline">Inline</button>
+          </div>
+          <button type="button" class="diff-preview-close" aria-label="Close diff preview">×</button>
+        </div>
+      </div>
+      <div id="diff-editor">
+        <div class="diff-preview-shell">
+          <div class="diff-preview-summary">
+            <div class="diff-preview-stat">
+              <div class="label">Additions</div>
+              <div class="value" id="diff-summary-additions">0</div>
+            </div>
+            <div class="diff-preview-stat">
+              <div class="label">Deletions</div>
+              <div class="value" id="diff-summary-deletions">0</div>
+            </div>
+            <div class="diff-preview-stat">
+              <div class="label">Substitutions</div>
+              <div class="value" id="diff-summary-substitutions">0</div>
+            </div>
+          </div>
+          <div style="padding:0 22px 16px;color:var(--text-2);font-size:12px;">
+            Review first, then click <strong>Looks Good</strong> to write the proposed file content to disk.
+          </div>
+          <div class="diff-preview-render" id="diff-preview-render"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="secondary" onclick="rejectDiff()">Dismiss</button>
+        <button onclick="acceptDiff()">Looks Good</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Project Modal -->
+  <div id="new-project-overlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(6,10,16,0.9);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:1000;">
+    <div style="background:var(--bg-card);border:1px solid var(--border-hi);border-radius:var(--radius);width:500px;max-width:90vw;">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+        <h3 style="font-size:14px;font-weight:600;color:var(--text);margin:0;">Create New Project</h3>
+      </div>
+      <div style="padding:20px;">
+        <div style="margin-bottom:16px;">
+          <label for="new-project-name" style="display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px;">Project Name</label>
+          <input id="new-project-name" type="text" placeholder="My Awesome Project" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:13px;font-family:inherit;outline:none;">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label for="new-project-desc" style="display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px;">Description</label>
+          <textarea id="new-project-desc" placeholder="What are you building?" rows="3" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:13px;font-family:inherit;outline:none;resize:vertical;"></textarea>
+        </div>
+        <div>
+          <label for="new-project-dir" style="display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px;">Output Directory</label>
+          <input id="new-project-dir" type="text" placeholder="/Users/you/projects/my-project" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:13px;font-family:inherit;outline:none;">
+        </div>
+      </div>
+      <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:12px;justify-content:flex-end;">
+        <button class="secondary" onclick="hideNewProjectModal()" style="background:transparent;border:1px solid var(--border);color:var(--text-2);padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>
+        <button onclick="createNewProject()" style="background:var(--accent);border:none;color:#0a0a12;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Create Project</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+  <script>
+    window.addEventListener("DOMContentLoaded", () => {
+      const root = document.documentElement;
+      const toggleButton = document.getElementById("toggle-bottom-terminal");
+      const themeToggle = document.getElementById("theme-toggle");
+      const terminalPanel = document.getElementById("bottom-terminal-panel");
+      const terminalMount = document.getElementById("terminal-instance");
+      const terminalResizer = document.getElementById("terminal-resizer");
+      const terminalCloseButton = document.getElementById("close-bottom-terminal");
+      const terminalClearButton = document.getElementById("clear-bottom-terminal");
+      const terminalStatus = document.getElementById("bottom-terminal-status");
+      const editorWorkspace = document.getElementById("editor-workspace");
+      const editorMain = document.getElementById("editor-main");
+      const app = document.getElementById("app");
+      const sidebarResizer = document.getElementById("sidebar-resizer");
+      const chatResizer = document.getElementById("chat-resizer");
+      const outputResizer = document.getElementById("output-resizer");
+      const compactLayout = window.matchMedia("(max-width: 900px)");
+      const systemColorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+      let bottomTerminal = null;
+      let terminalReady = false;
+      let terminalOpen = false;
+      let terminalSessionId = null;
+      let terminalSocket = null;
+      let terminalProjectDir =
+        typeof window.__studioGetCurrentProjectDir === "function"
+          ? window.__studioGetCurrentProjectDir()
+          : "apps/vibe";
+      let dragState = null;
+      let panelDragState = null;
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function getResolvedTheme() {
+        const storedTheme = localStorage.getItem("theme");
+        if (storedTheme === "light" || storedTheme === "dark") {
+          return storedTheme;
+        }
+        return systemColorScheme.matches ? "dark" : "light";
+      }
+
+      function getTerminalTheme(mode) {
+        if (mode === "light") {
+          return {
+            background: "#f8fbff",
+            foreground: "#0f172a",
+            cursor: "#0ea5e9",
+            black: "#e2e8f0",
+            brightBlack: "#94a3b8",
+            red: "#ef4444",
+            brightRed: "#dc2626",
+            green: "#10b981",
+            brightGreen: "#059669",
+            yellow: "#f59e0b",
+            brightYellow: "#d97706",
+            blue: "#2563eb",
+            brightBlue: "#0ea5e9",
+            magenta: "#4f46e5",
+            brightMagenta: "#6366f1",
+            cyan: "#0891b2",
+            brightCyan: "#06b6d4",
+            white: "#334155",
+            brightWhite: "#0f172a",
+          };
+        }
+
+        return {
+          background: "#040810",
+          foreground: "#f0f6ff",
+          cursor: "#38bdf8",
+          black: "#060a10",
+          brightBlack: "#4a5568",
+          red: "#f87171",
+          brightRed: "#ef4444",
+          green: "#34d399",
+          brightGreen: "#22c55e",
+          yellow: "#fbbf24",
+          brightYellow: "#f59e0b",
+          blue: "#4a7ab5",
+          brightBlue: "#38bdf8",
+          magenta: "#818cf8",
+          brightMagenta: "#a5b4fc",
+          cyan: "#38bdf8",
+          brightCyan: "#67e8f9",
+          white: "#cbd5e1",
+          brightWhite: "#f8fafc",
+        };
+      }
+
+      function applyTheme(nextTheme, source = "saved") {
+        const mode = nextTheme === "dark" ? "dark" : "light";
+        const storageValue = source === "system" ? null : mode;
+
+        root.classList.toggle("dark", mode === "dark");
+        root.setAttribute("data-theme", storageValue || "system");
+        root.style.colorScheme = mode;
+
+        if (storageValue) {
+          localStorage.setItem("theme", storageValue);
+        } else {
+          localStorage.removeItem("theme");
+        }
+
+        themeToggle?.setAttribute("aria-pressed", String(mode === "dark"));
+        themeToggle?.setAttribute(
+          "aria-label",
+          mode === "dark" ? "Switch to light theme" : "Switch to dark theme",
+        );
+        themeToggle?.setAttribute(
+          "title",
+          mode === "dark" ? "Switch to light theme" : "Switch to dark theme",
+        );
+
+        if (bottomTerminal) {
+          bottomTerminal.options.theme = getTerminalTheme(mode);
+          requestAnimationFrame(() => {
+            fitBottomTerminal();
+            bottomTerminal.refresh(0, bottomTerminal.rows - 1);
+          });
+        }
+
+        if (window.monaco?.editor?.setTheme) {
+          window.monaco.editor.setTheme(mode === "dark" ? "vs-dark" : "vs");
+        }
+
+        window.dispatchEvent(
+          new CustomEvent("studio-themechange", {
+            detail: { theme: mode, source },
+          }),
+        );
+      }
+
+      function setHorizontalPanelWidths(sidebarWidth, chatWidth) {
+        if (!app || compactLayout.matches) return;
+        const totalWidth = app.clientWidth;
+        const reserved = 16;
+        const maxSidebar = Math.max(100, Math.floor((totalWidth - reserved) * 0.4));
+        const maxChat = Math.max(100, Math.floor((totalWidth - reserved) * 0.45));
+        const nextSidebar = clamp(sidebarWidth, 100, maxSidebar);
+        const remainingForCenter = totalWidth - reserved - nextSidebar - 100;
+        const nextChat = clamp(chatWidth, 100, Math.min(maxChat, remainingForCenter));
+        app.style.setProperty("--sidebar-width", `${nextSidebar}px`);
+        app.style.setProperty("--chat-width", `${nextChat}px`);
+      }
+
+      function setOutputPanelHeight(height) {
+        if (!app || compactLayout.matches) return;
+        const totalHeight = app.clientHeight;
+        const reserved = 88;
+        const maxHeight = Math.max(100, totalHeight - reserved - 100);
+        const nextHeight = clamp(height, 100, maxHeight);
+        app.style.setProperty("--output-height", `${nextHeight}px`);
+      }
+
+      function syncPanelLayout() {
+        if (!app || compactLayout.matches) return;
+        const computed = window.getComputedStyle(app);
+        const sidebarWidth = parseFloat(computed.getPropertyValue("--sidebar-width")) || 250;
+        const chatWidth = parseFloat(computed.getPropertyValue("--chat-width")) || 400;
+        const outputHeight = parseFloat(computed.getPropertyValue("--output-height")) || 220;
+        setHorizontalPanelWidths(sidebarWidth, chatWidth);
+        setOutputPanelHeight(outputHeight);
+      }
+
+      function fitBottomTerminal() {
+        if (!bottomTerminal || !terminalOpen) return;
+        const viewport = terminalMount?.querySelector(".xterm-viewport");
+        const screen = terminalMount?.querySelector(".xterm-screen");
+        if (!viewport || !screen) return;
+        const style = window.getComputedStyle(terminalMount);
+        const paddingX =
+          parseFloat(style.paddingLeft || "0") + parseFloat(style.paddingRight || "0");
+        const paddingY =
+          parseFloat(style.paddingTop || "0") + parseFloat(style.paddingBottom || "0");
+        const availableWidth = Math.max(terminalMount.clientWidth - paddingX, 120);
+        const availableHeight = Math.max(terminalMount.clientHeight - paddingY, 72);
+        const cellWidth = screen.clientWidth / Math.max(bottomTerminal.cols || 1, 1) || 9;
+        const cellHeight = screen.clientHeight / Math.max(bottomTerminal.rows || 1, 1) || 18;
+        const cols = clamp(Math.floor(availableWidth / Math.max(cellWidth, 7)), 20, 240);
+        const rows = clamp(Math.floor(availableHeight / Math.max(cellHeight, 14)), 5, 80);
+        bottomTerminal.resize(cols, rows);
+      }
+
+      function ensureBottomTerminal() {
+        if (terminalReady || !terminalMount) return;
+        if (!window.Terminal) {
+          throw new Error("Terminal UI failed to load");
+        }
+        bottomTerminal = new window.Terminal({
+          cursorBlink: true,
+          convertEol: true,
+          fontFamily: "SF Mono, Menlo, Monaco, Consolas, monospace",
+          fontSize: 13,
+          lineHeight: 1.3,
+          theme: getTerminalTheme(getResolvedTheme()),
+        });
+        bottomTerminal.open(terminalMount);
+        bottomTerminal.onData((data) => {
+          if (terminalSocket?.readyState === WebSocket.OPEN) {
+            terminalSocket.send(JSON.stringify({ type: "input", data }));
+          }
+        });
+        bottomTerminal.onResize(({ cols, rows }) => {
+          if (terminalSocket?.readyState === WebSocket.OPEN) {
+            terminalSocket.send(JSON.stringify({ type: "resize", cols, rows }));
+          }
+        });
+        terminalReady = true;
+        requestAnimationFrame(fitBottomTerminal);
+      }
+
+      function updateTerminalStatus(text) {
+        if (terminalStatus) {
+          terminalStatus.textContent = text;
+        }
+      }
+
+      async function connectBottomTerminal() {
+        ensureBottomTerminal();
+        if (terminalSocket?.readyState === WebSocket.OPEN) {
+          return;
+        }
+
+        if (terminalSocket) {
+          terminalSocket.close();
+          terminalSocket = null;
+        }
+
+        updateTerminalStatus(`Starting shell in ${terminalProjectDir}`);
+        bottomTerminal?.clear();
+        bottomTerminal?.writeln("Starting workspace shell...");
+
+        const response = await fetch(`${window.location.origin}/api/studio/terminal/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectDir: terminalProjectDir,
+            cols: bottomTerminal?.cols || 120,
+            rows: bottomTerminal?.rows || 32,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || `HTTP ${response.status}`);
+        }
+
+        terminalSessionId = payload.sessionId;
+        terminalProjectDir = payload.cwd || terminalProjectDir;
+        updateTerminalStatus(terminalProjectDir);
+
+        const socketProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const socketUrl = new URL(`${socketProtocol}//${window.location.host}/ws/studio/terminal`);
+        socketUrl.searchParams.set("sessionId", terminalSessionId);
+        terminalSocket = new WebSocket(socketUrl);
+
+        terminalSocket.addEventListener("message", (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message.type === "output" && typeof message.data === "string") {
+              bottomTerminal?.write(message.data);
+              return;
+            }
+            if (message.type === "ready") {
+              updateTerminalStatus(message.cwd || terminalProjectDir);
+              requestAnimationFrame(fitBottomTerminal);
+              return;
+            }
+            if (message.type === "exit") {
+              bottomTerminal?.writeln(`\r\n[process exited ${message.exitCode}]`);
+              updateTerminalStatus(`Shell exited in ${terminalProjectDir}`);
+              terminalSocket = null;
+              terminalSessionId = null;
+              return;
+            }
+            if (message.type === "error") {
+              bottomTerminal?.writeln(`\r\n[error] ${message.message}`);
+            }
+          } catch (error) {
+            bottomTerminal?.writeln(`\r\n[terminal parse error] ${error.message}`);
+          }
+        });
+
+        terminalSocket.addEventListener("open", () => {
+          requestAnimationFrame(() => {
+            fitBottomTerminal();
+            if (terminalSocket?.readyState === WebSocket.OPEN && bottomTerminal) {
+              terminalSocket.send(
+                JSON.stringify({
+                  type: "resize",
+                  cols: bottomTerminal.cols,
+                  rows: bottomTerminal.rows,
+                }),
+              );
+            }
+            bottomTerminal?.focus();
+          });
+        });
+
+        terminalSocket.addEventListener("close", () => {
+          terminalSocket = null;
+          terminalSessionId = null;
+        });
+      }
+
+      async function restartBottomTerminal(projectDir) {
+        terminalProjectDir = projectDir || terminalProjectDir;
+        if (terminalSessionId) {
+          fetch(
+            `${window.location.origin}/api/studio/terminal?sessionId=${encodeURIComponent(terminalSessionId)}`,
+            { method: "DELETE" },
+          ).catch(() => {});
+          terminalSessionId = null;
+        }
+        if (terminalSocket) {
+          terminalSocket.close();
+          terminalSocket = null;
+        }
+        if (terminalOpen) {
+          await connectBottomTerminal();
+        } else {
+          updateTerminalStatus(`Local shell for ${terminalProjectDir}`);
+        }
+      }
+
+      function setBottomTerminalOpen(nextOpen) {
+        terminalOpen = Boolean(nextOpen);
+        if (terminalOpen) {
+          connectBottomTerminal().catch((error) => {
+            bottomTerminal?.writeln(`\r\n[terminal error] ${error.message}`);
+            updateTerminalStatus("Failed to start shell");
+          });
+          terminalPanel.classList.add("visible");
+          terminalPanel.setAttribute("aria-hidden", "false");
+          toggleButton.textContent = "Hide Terminal";
+          requestAnimationFrame(() => {
+            fitBottomTerminal();
+            bottomTerminal?.focus();
+          });
+          return;
+        }
+        terminalPanel.classList.remove("visible");
+        terminalPanel.setAttribute("aria-hidden", "true");
+        terminalPanel.style.flexBasis = "";
+        toggleButton.textContent = "Terminal";
+      }
+
+      function setTerminalHeight(nextHeightPx) {
+        if (!editorWorkspace || !editorMain) return;
+        const workspaceHeight = editorWorkspace.clientHeight;
+        const clamped = clamp(nextHeightPx, 180, Math.max(workspaceHeight - 160, 180));
+        terminalPanel.style.flexBasis = `${clamped}px`;
+        requestAnimationFrame(fitBottomTerminal);
+      }
+
+      toggleButton?.addEventListener("click", () => {
+        setBottomTerminalOpen(!terminalOpen);
+      });
+
+      terminalCloseButton?.addEventListener("click", () => {
+        setBottomTerminalOpen(false);
+      });
+
+      terminalClearButton?.addEventListener("click", () => {
+        if (!bottomTerminal) return;
+        bottomTerminal.clear();
+        bottomTerminal.focus();
+      });
+
+      terminalMount?.addEventListener("pointerdown", () => {
+        bottomTerminal?.focus();
+      });
+
+      terminalResizer?.addEventListener("pointerdown", (event) => {
+        if (!terminalOpen) return;
+        dragState = {
+          startY: event.clientY,
+          startHeight: terminalPanel.getBoundingClientRect().height,
+        };
+        terminalPanel.classList.add("dragging");
+        terminalResizer.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+
+      terminalResizer?.addEventListener("pointermove", (event) => {
+        if (!dragState) return;
+        const delta = dragState.startY - event.clientY;
+        setTerminalHeight(dragState.startHeight + delta);
+      });
+
+      function stopTerminalDrag(event) {
+        if (!dragState) return;
+        dragState = null;
+        terminalPanel.classList.remove("dragging");
+        if (event?.pointerId !== undefined) {
+          terminalResizer?.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      terminalResizer?.addEventListener("pointerup", stopTerminalDrag);
+      terminalResizer?.addEventListener("pointercancel", stopTerminalDrag);
+
+      terminalResizer?.addEventListener("keydown", (event) => {
+        if (!terminalOpen) return;
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        const direction = event.key === "ArrowUp" ? 24 : -24;
+        const currentHeight = terminalPanel.getBoundingClientRect().height || 0;
+        setTerminalHeight(currentHeight + direction);
+      });
+
+      window.addEventListener("resize", fitBottomTerminal);
+      window.addEventListener("studio-projectchange", (event) => {
+        const nextProjectDir = event.detail?.projectDir;
+        if (!nextProjectDir || nextProjectDir === terminalProjectDir) return;
+        restartBottomTerminal(nextProjectDir).catch((error) => {
+          updateTerminalStatus(`Failed to switch shell: ${error.message}`);
+        });
+      });
+
+      function startPanelDrag(event, nextState) {
+        if (compactLayout.matches) return;
+        panelDragState = nextState;
+        nextState.handle.classList.add("dragging");
+        nextState.handle.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      }
+
+      function stopPanelDrag(event) {
+        if (!panelDragState) return;
+        panelDragState.handle.classList.remove("dragging");
+        if (event?.pointerId !== undefined) {
+          panelDragState.handle.releasePointerCapture(event.pointerId);
+        }
+        panelDragState = null;
+      }
+
+      sidebarResizer?.addEventListener("pointerdown", (event) => {
+        startPanelDrag(event, {
+          type: "sidebar",
+          startX: event.clientX,
+          startWidth:
+            document.getElementById("sidebar")?.getBoundingClientRect().width || 250,
+          handle: sidebarResizer,
+        });
+      });
+
+      chatResizer?.addEventListener("pointerdown", (event) => {
+        startPanelDrag(event, {
+          type: "chat",
+          startX: event.clientX,
+          startWidth:
+            document.getElementById("chat-panel")?.getBoundingClientRect().width || 400,
+          handle: chatResizer,
+        });
+      });
+
+      outputResizer?.addEventListener("pointerdown", (event) => {
+        startPanelDrag(event, {
+          type: "output",
+          startY: event.clientY,
+          startHeight:
+            document.getElementById("terminal")?.getBoundingClientRect().height || 220,
+          handle: outputResizer,
+        });
+      });
+
+      function handlePanelDrag(event) {
+        if (!panelDragState) return;
+        if (panelDragState.type === "sidebar") {
+          const delta = event.clientX - panelDragState.startX;
+          const chatWidth =
+            document.getElementById("chat-panel")?.getBoundingClientRect().width || 400;
+          setHorizontalPanelWidths(panelDragState.startWidth + delta, chatWidth);
+          return;
+        }
+
+        if (panelDragState.type === "chat") {
+          const delta = panelDragState.startX - event.clientX;
+          const sidebarWidth =
+            document.getElementById("sidebar")?.getBoundingClientRect().width || 250;
+          setHorizontalPanelWidths(sidebarWidth, panelDragState.startWidth + delta);
+          return;
+        }
+
+        const delta = panelDragState.startY - event.clientY;
+        setOutputPanelHeight(panelDragState.startHeight + delta);
+      }
+
+      [sidebarResizer, chatResizer, outputResizer].forEach((handle) => {
+        handle?.addEventListener("pointermove", handlePanelDrag);
+        handle?.addEventListener("pointerup", stopPanelDrag);
+        handle?.addEventListener("pointercancel", stopPanelDrag);
+      });
+
+      sidebarResizer?.addEventListener("keydown", (event) => {
+        if (compactLayout.matches) return;
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 24 : -24;
+        const sidebarWidth =
+          document.getElementById("sidebar")?.getBoundingClientRect().width || 250;
+        const chatWidth =
+          document.getElementById("chat-panel")?.getBoundingClientRect().width || 400;
+        setHorizontalPanelWidths(sidebarWidth + direction, chatWidth);
+      });
+
+      chatResizer?.addEventListener("keydown", (event) => {
+        if (compactLayout.matches) return;
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        const direction = event.key === "ArrowLeft" ? 24 : -24;
+        const sidebarWidth =
+          document.getElementById("sidebar")?.getBoundingClientRect().width || 250;
+        const chatWidth =
+          document.getElementById("chat-panel")?.getBoundingClientRect().width || 400;
+        setHorizontalPanelWidths(sidebarWidth, chatWidth + direction);
+      });
+
+      outputResizer?.addEventListener("keydown", (event) => {
+        if (compactLayout.matches) return;
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        const direction = event.key === "ArrowUp" ? 24 : -24;
+        const height =
+          document.getElementById("terminal")?.getBoundingClientRect().height || 220;
+        setOutputPanelHeight(height + direction);
+      });
+
+      if (typeof compactLayout.addEventListener === "function") {
+        compactLayout.addEventListener("change", syncPanelLayout);
+      } else if (typeof compactLayout.addListener === "function") {
+        compactLayout.addListener(syncPanelLayout);
+      }
+      syncPanelLayout();
+      applyTheme(getResolvedTheme(), localStorage.getItem("theme") ? "saved" : "system");
+
+      themeToggle?.addEventListener("click", () => {
+        const nextTheme = root.classList.contains("dark") ? "light" : "dark";
+        applyTheme(nextTheme, "saved");
+      });
+
+      const handleSystemThemeChange = () => {
+        if (localStorage.getItem("theme")) return;
+        applyTheme(getResolvedTheme(), "system");
+      };
+
+      if (typeof systemColorScheme.addEventListener === "function") {
+        systemColorScheme.addEventListener("change", handleSystemThemeChange);
+      } else if (typeof systemColorScheme.addListener === "function") {
+        systemColorScheme.addListener(handleSystemThemeChange);
+      }
+
+      const settingsToggle = document.getElementById("settings-toggle");
+      const settingsPanel = document.getElementById("settings-panel");
+      const settingsClose = document.getElementById("settings-close");
+      const shortcutsToggle = document.getElementById("shortcuts-toggle");
+      const shortcutsPanel = document.getElementById("shortcuts-panel");
+      const shortcutsClose = document.getElementById("shortcuts-close");
+      function setSettingsPanelOpen(nextOpen) {
+        if (!settingsToggle || !settingsPanel) return;
+        const open = Boolean(nextOpen);
+        settingsPanel.classList.toggle("visible", open);
+        settingsPanel.setAttribute("aria-hidden", open ? "false" : "true");
+        settingsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+
+      settingsToggle?.addEventListener("click", () => {
+        const isOpen = settingsPanel?.classList.contains("visible");
+        setSettingsPanelOpen(!isOpen);
+      });
+
+      settingsClose?.addEventListener("click", () => {
+        setSettingsPanelOpen(false);
+        settingsToggle?.focus();
+      });
+
+      function setShortcutsPanelOpen(nextOpen) {
+        if (!shortcutsToggle || !shortcutsPanel) return;
+        const open = Boolean(nextOpen);
+        shortcutsPanel.classList.toggle("hidden", !open);
+        shortcutsPanel.setAttribute("aria-hidden", open ? "false" : "true");
+        shortcutsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+
+      shortcutsToggle?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const isHidden = shortcutsPanel?.classList.contains("hidden");
+        setShortcutsPanelOpen(isHidden);
+      });
+
+      shortcutsClose?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setShortcutsPanelOpen(false);
+        shortcutsToggle?.focus();
+      });
+
+      document.addEventListener("mousedown", (event) => {
+        if (shortcutsPanel?.classList.contains("hidden")) return;
+        if (shortcutsPanel?.contains(event.target) || shortcutsToggle?.contains(event.target)) {
+          return;
+        }
+        setShortcutsPanelOpen(false);
+      });
+
+      document.addEventListener("mousedown", (event) => {
+        if (!settingsPanel?.classList.contains("visible")) return;
+        if (settingsPanel.contains(event.target) || settingsToggle?.contains(event.target)) {
+          return;
+        }
+        setSettingsPanelOpen(false);
+      });
+
+      document.addEventListener("mousedown", (event) => {
+        if (shortcutsPanel?.classList.contains("hidden")) return;
+        if (shortcutsPanel.contains(event.target) || shortcutsToggle?.contains(event.target)) {
+          return;
+        }
+        setShortcutsPanelOpen(false);
+      });
+
+      const overlay = document.getElementById("diff-preview-overlay");
+      const box = document.getElementById("diff-preview-box");
+      const renderRoot = document.getElementById("diff-preview-render");
+      const filePathEl = document.getElementById("diff-file-path");
+      const badgeEl = document.getElementById("diff-preview-badge");
+      const previewButton = document.getElementById("preview-diff-trigger");
+      const closeButton = box?.querySelector(".diff-preview-close");
+      const viewButtons = Array.from(
+        box?.querySelectorAll("[data-diff-view]") || [],
+      );
+      const statEls = {
+        additions: document.getElementById("diff-summary-additions"),
+        deletions: document.getElementById("diff-summary-deletions"),
+        substitutions: document.getElementById("diff-summary-substitutions"),
+      };
+
+      if (!overlay || !box || !renderRoot || !previewButton) return;
+
+      const sampleChange = {
+        path: "src/components/AgentPanel.jsx",
+        label: "Sample agent patch",
+        oldContent: [
+          "export function AgentPanel({ agents }) {",
+          "  return (",
+          "    <section className=\"agent-panel\">",
+          "      <h2>Active Agents</h2>",
+          "      <ul>{agents.map((agent) => <li key={agent.id}>{agent.name}</li>)}</ul>",
+          "    </section>",
+          "  );",
+          "}",
+        ].join("\\n"),
+        newContent: [
+          "export function AgentPanel({ agents, status }) {",
+          "  return (",
+          "    <section className=\"agent-panel agent-panel--elevated\">",
+          "      <header className=\"agent-panel__header\">",
+          "        <h2>Active Agents</h2>",
+          "        <span className=\"agent-panel__status\">{status}</span>",
+          "      </header>",
+          "      <ul>{agents.map((agent) => <li key={agent.id}>{agent.name}</li>)}</ul>",
+          "    </section>",
+          "  );",
+          "}",
+        ].join("\\n"),
+      };
+
+      const state = {
+        mode: "sample",
+        activeView: "side-by-side",
+        currentChange: sampleChange,
+        originalAcceptDiff: window.acceptDiff,
+        originalRejectDiff: window.rejectDiff,
+      };
+
+      function escapeHtml(value) {
+        return value
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function diffLines(oldText, newText) {
+        const oldLines = oldText.split("\\n");
+        const newLines = newText.split("\\n");
+        const rows = [];
+        const max = Math.max(oldLines.length, newLines.length);
+        let additions = 0;
+        let deletions = 0;
+        let substitutions = 0;
+
+        for (let index = 0; index < max; index += 1) {
+          const oldLine = oldLines[index];
+          const newLine = newLines[index];
+
+          if (oldLine === newLine && oldLine !== undefined) {
+            rows.push({
+              type: "equal",
+              oldNumber: index + 1,
+              newNumber: index + 1,
+              oldLine,
+              newLine,
+            });
+            continue;
+          }
+
+          if (oldLine !== undefined && newLine !== undefined) {
+            substitutions += 1;
+            rows.push({
+              type: "replacement",
+              oldNumber: index + 1,
+              newNumber: index + 1,
+              oldLine,
+              newLine,
+            });
+            continue;
+          }
+
+          if (oldLine === undefined) {
+            additions += 1;
+            rows.push({
+              type: "addition",
+              oldNumber: "",
+              newNumber: index + 1,
+              oldLine: "",
+              newLine,
+            });
+            continue;
+          }
+
+          deletions += 1;
+          rows.push({
+            type: "deletion",
+            oldNumber: index + 1,
+            newNumber: "",
+            oldLine,
+            newLine: "",
+          });
+        }
+
+        return { rows, summary: { additions, deletions, substitutions } };
+      }
+
+      function updateViewButtons() {
+        viewButtons.forEach((button) => {
+          button.classList.toggle(
+            "active",
+            button.dataset.diffView === state.activeView,
+          );
+        });
+      }
+
+      function updateSummary(summary) {
+        statEls.additions.textContent = summary.additions;
+        statEls.deletions.textContent = summary.deletions;
+        statEls.substitutions.textContent = summary.substitutions;
+      }
+
+      function sideBySideMarkup(rows) {
+        const left = [];
+        const right = [];
+
+        rows.forEach((row) => {
+          const leftType =
+            row.type === "addition" ? "placeholder" : row.type;
+          const rightType =
+            row.type === "deletion" ? "placeholder" : row.type;
+
+          left.push(
+            `<div class="diff-line ${leftType}"><div class="diff-line-number">${row.oldNumber}</div><div class="diff-line-code">${escapeHtml(row.oldLine || " ")}</div></div>`,
+          );
+          right.push(
+            `<div class="diff-line ${rightType}"><div class="diff-line-number">${row.newNumber}</div><div class="diff-line-code">${escapeHtml(row.newLine || " ")}</div></div>`,
+          );
+        });
+
+        return `
+          <div class="diff-grid">
+            <section class="diff-panel">
+              <div class="diff-panel-title">Before</div>
+              <div class="diff-lines">${left.join("")}</div>
+            </section>
+            <section class="diff-panel">
+              <div class="diff-panel-title">After</div>
+              <div class="diff-lines">${right.join("")}</div>
+            </section>
+          </div>
+        `;
+      }
+
+      function inlineMarkup(rows) {
+        const lines = rows.map((row) => {
+          const content =
+            row.type === "addition"
+              ? row.newLine
+              : row.type === "deletion"
+                ? row.oldLine
+                : row.newLine;
+
+          return `<div class="diff-line ${row.type}"><div class="diff-line-number">${row.newNumber || row.oldNumber}</div><div class="diff-line-code">${escapeHtml(content || " ")}</div></div>`;
+        });
+
+        return `<section class="diff-inline">${lines.join("")}</section>`;
+      }
+
+      function renderDiff(change) {
+        const { rows, summary } = diffLines(change.oldContent, change.newContent);
+        updateSummary(summary);
+        renderRoot.innerHTML =
+          state.activeView === "inline"
+            ? inlineMarkup(rows)
+            : sideBySideMarkup(rows);
+      }
+
+      function openSampleDiff(change = sampleChange) {
+        state.mode = "sample";
+        state.currentChange = change;
+        filePathEl.textContent = change.path;
+        badgeEl.textContent = change.label || "Sample agent patch";
+        renderDiff(change);
+        overlay.classList.add("visible");
+        overlay.setAttribute("aria-hidden", "false");
+      }
+
+      function closeDiffPreviewModal() {
+        overlay.classList.remove("visible");
+        overlay.setAttribute("aria-hidden", "true");
+      }
+
+      previewButton.addEventListener("click", () => {
+        openSampleDiff();
+      });
+
+      closeButton?.addEventListener("click", closeDiffPreviewModal);
+
+      overlay.addEventListener("mousedown", (event) => {
+        if (event.target === overlay) {
+          closeDiffPreviewModal();
+        }
+      });
+
+      viewButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          state.activeView = button.dataset.diffView;
+          updateViewButtons();
+          renderDiff(state.currentChange);
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && settingsPanel?.classList.contains("visible")) {
+          setSettingsPanelOpen(false);
+          settingsToggle?.focus();
+        }
+
+        if (event.key === "Escape" && !shortcutsPanel?.classList.contains("hidden")) {
+          setShortcutsPanelOpen(false);
+          shortcutsToggle?.focus();
+        }
+
+        if (event.key === "Escape" && overlay.classList.contains("visible")) {
+          event.preventDefault();
+          closeDiffPreviewModal();
+        }
+      });
+
+      window.acceptDiff = async function () {
+        if (overlay.classList.contains("visible")) {
+          closeDiffPreviewModal();
+        }
+
+        if (
+          state.mode !== "sample" &&
+          typeof state.originalAcceptDiff === "function"
+        ) {
+          return state.originalAcceptDiff();
+        }
+      };
+
+      window.rejectDiff = function () {
+        closeDiffPreviewModal();
+
+        if (
+          state.mode !== "sample" &&
+          typeof state.originalRejectDiff === "function"
+        ) {
+          return state.originalRejectDiff();
+        }
+      };
+
+      window.__studioDiffPreview = {
+        open(change) {
+          const normalized = {
+            path: change?.path || sampleChange.path,
+            label: change?.label || "Agent change preview",
+            oldContent: change?.oldContent || sampleChange.oldContent,
+            newContent: change?.newContent || sampleChange.newContent,
+          };
+          openSampleDiff(normalized);
+        },
+        close: closeDiffPreviewModal,
+      };
+
+      updateViewButtons();
+      renderDiff(sampleChange);
+    });
+  </script>
+</body>
+</html>

@@ -953,7 +953,7 @@
     #terminal-instance {
       flex: 1;
       min-height: 0;
-      padding: 10px 12px 12px;
+      padding: 4px 6px 6px;
       overflow: hidden;
     }
 
@@ -973,8 +973,8 @@
       position: relative;
     }
 
-    #terminal-instance .xterm-helpers,
-    #terminal-instance .xterm-accessibility,
+    /* xterm helpers/textarea must remain accessible for keyboard input.
+       Only hide the char-measure element used for font metrics. */
     .xterm-char-measure-element {
       position: absolute;
       left: -9999px;
@@ -982,10 +982,6 @@
       width: 1px;
       height: 1px;
       overflow: hidden;
-      visibility: hidden;
-    }
-
-    #terminal-instance .xterm-scroll-area {
       visibility: hidden;
     }
 
@@ -1247,10 +1243,10 @@
       background: var(--bg-0);
       border-top: 1px solid var(--border);
       overflow-y: auto;
-      padding: 12px;
+      padding: 8px 12px;
       font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
-      font-size: 12px;
-      line-height: 1.6;
+      font-size: 11px;
+      line-height: 1.35;
       min-height: 100px;
     }
     
@@ -1331,7 +1327,7 @@
     }
 
     .terminal-line {
-      margin-bottom: 4px;
+      margin-bottom: 2px;
       white-space: pre-wrap;
       word-wrap: break-word;
     }
@@ -1377,12 +1373,12 @@
 
     .terminal-trace-body {
       margin: 0;
-      padding: 12px;
+      padding: 8px 12px;
       white-space: pre-wrap;
       word-break: break-word;
       color: var(--text);
       font-size: 11px;
-      line-height: 1.6;
+      line-height: 1.35;
     }
 
     /* Scrollbars */
@@ -2688,7 +2684,7 @@
           convertEol: true,
           fontFamily: "SF Mono, Menlo, Monaco, Consolas, monospace",
           fontSize: 13,
-          lineHeight: 1.3,
+          lineHeight: 1.1,
           theme: getTerminalTheme(getResolvedTheme()),
         });
         bottomTerminal.open(terminalMount);
