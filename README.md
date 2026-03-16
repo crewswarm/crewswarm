@@ -12,7 +12,7 @@ crewswarm is an open-source local-first AI workspace for software development. I
 
 ## crewswarm
 
-![crewswarm Dashboard — Agent management with multi-model support](website/dashboard-chat.webp)
+![crewswarm Dashboard — Chat, agents, and multi-engine orchestration](website/dashboard-agents.webp)
 
 **The local-first AI workspace.** Dashboard, multi-agent orchestration, project-aware chat, real-time service monitoring, and multi-engine execution in one stack.
 
