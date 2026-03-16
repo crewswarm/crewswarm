@@ -28,10 +28,12 @@ function skipIfDown(t) {
 
 async function gotoDashboard(hash = "#chat") {
   await page.goto(`${DASHBOARD_URL}/${hash}`, {
-    waitUntil: "networkidle2",
-    timeout: 20000,
+    waitUntil: "domcontentloaded",
+    timeout: 15000,
   });
-  await page.waitForSelector("body");
+  // Wait for chat input to be ready (SSE connections prevent networkidle2)
+  const inputId = hash === "#swarm-chat" ? "swarmChatInput" : "chatInput";
+  await page.waitForSelector(`#${inputId}`, { timeout: 10000 });
 }
 
 async function clearAndType(selector, text) {

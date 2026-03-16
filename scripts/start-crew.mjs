@@ -14,36 +14,26 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { BUILT_IN_RT_AGENTS, normalizeRtAgentId, validateRequiredAgents, REQUIRED_AGENTS } from "../lib/agent-registry.mjs";
+import { loadSystemConfig, loadSwarmConfig, loadAgentList as loadAgentListFromConfig } from "../lib/runtime/config.mjs";
 
 const CREWSWARM_DIR = path.resolve(process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || process.cwd());
-// Config search order (same as gateway-bridge + RT daemon):
-// 1. ~/.crewswarm/config.json  (dashboard saves rt.authToken here)
-// 2. ~/.crewswarm/crewswarm.json
-// 3. ~/.openclaw/openclaw.json
-const CREW_CONFIG  = path.join(os.homedir(), ".crewswarm", "config.json");
-const CREW_SWARM   = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 const OPENCLAW_CFG = path.join(os.homedir(), ".openclaw", "openclaw.json");
 const BRIDGE = path.join(CREWSWARM_DIR, "gateway-bridge.mjs");
 
 function loadConfig() {
-  // Load agent list from first available config
-  const agentCfgPath = fs.existsSync(CREW_SWARM) ? CREW_SWARM
-    : fs.existsSync(OPENCLAW_CFG) ? OPENCLAW_CFG : null;
-  const raw = agentCfgPath ? JSON.parse(fs.readFileSync(agentCfgPath, "utf8")) : {};
-  const agents = Array.isArray(raw.agents)
-    ? raw.agents
-    : Array.isArray(raw.agents?.list)
-    ? raw.agents.list
-    : [];
+  const raw = loadSwarmConfig();
+  const agents = loadAgentListFromConfig();
 
-  // RT token: check all config files in priority order
-  let rtToken = "";
-  for (const p of [CREW_CONFIG, CREW_SWARM, OPENCLAW_CFG]) {
-    if (!fs.existsSync(p)) continue;
+  // RT token: check system config first, then swarm config
+  const sys = loadSystemConfig();
+  let rtToken = sys?.rt?.authToken || sys?.env?.CREWSWARM_RT_AUTH_TOKEN
+    || raw?.rt?.authToken || raw?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
+
+  // Legacy fallback
+  if (!rtToken) {
     try {
-      const c = JSON.parse(fs.readFileSync(p, "utf8"));
-      rtToken = c?.rt?.authToken || c?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
-      if (rtToken) break;
+      const legacy = JSON.parse(fs.readFileSync(OPENCLAW_CFG, "utf8"));
+      rtToken = legacy?.rt?.authToken || legacy?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
     } catch {}
   }
 
@@ -146,7 +136,9 @@ if (!validation.valid) {
     console.error(`  - ${missing}`);
   }
   console.error(`\nThese agents are essential for crewswarm to function.`);
-  console.error(`Fix: Add them to ~/.crewswarm/crewswarm.json or run: bash install.sh\n`);
+  console.error(`Fix: Run the installer to populate the config:\n`);
+  console.error(`  bash install.sh\n`);
+  console.error(`Or add the missing agents manually to ~/.crewswarm/crewswarm.json\n`);
   process.exit(1);
 }
 

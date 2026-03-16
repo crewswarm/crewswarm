@@ -101,7 +101,7 @@ try {
       process.env[k] = String(v);
     }
   }
-} catch {}
+} catch { }
 
 // Default 4319 so we don't conflict with crewswarm RT Messages dashboard on 4318
 const listenPort = Number(process.env.SWARM_DASH_PORT || 4319);
@@ -131,6 +131,29 @@ const pass =
   process.env.OPENCODE_SERVER_PASSWORD ||
   process.env.SWARM_PASSWORD ||
   "opencode";
+
+// ── Safe config writer: centralised EPERM / uchg handling ───────────────────
+// Returns null on success, or { status, message } on error.
+async function safeWriteConfig(cfg, indent = 4) {
+  try {
+    await fs.promises.writeFile(
+      CFG_FILE,
+      JSON.stringify(cfg, null, indent),
+      "utf8",
+    );
+    return null;
+  } catch (err) {
+    if (err.code === "EPERM") {
+      return {
+        status: 403,
+        message:
+          "Config file is locked. Unlock it in Settings → Config Lock before making changes.",
+      };
+    }
+    return { status: 500, message: err.message };
+  }
+}
+
 // ── crewswarm tool definitions (server-side, also injected into client) ────
 const CREWSWARM_TOOLS = [
   { id: "write_file", desc: "Write files to disk (@@WRITE_FILE)" },
@@ -206,9 +229,9 @@ function refreshHeartbeats() {
         ) {
           agentHeartbeats.set(agentId, ts);
         }
-      } catch {}
+      } catch { }
     }
-  } catch {}
+  } catch { }
 }
 
 // Prime the map immediately, then refresh every 30s
@@ -224,10 +247,10 @@ const workflowRuntime = {
 function ensureWorkflowDirs() {
   try {
     fs.mkdirSync(workflowsDir, { recursive: true });
-  } catch {}
+  } catch { }
   try {
     fs.mkdirSync(workflowLogsDir, { recursive: true });
-  } catch {}
+  } catch { }
 }
 
 function isValidWorkflowName(name) {
@@ -398,7 +421,7 @@ async function listWorkflows() {
         updatedAt: wf.updatedAt || item.mtime,
         runState: run,
       });
-    } catch {}
+    } catch { }
   }
   return out;
 }
@@ -409,7 +432,7 @@ function appendWorkflowLog(name, message) {
   const fp = path.join(workflowLogsDir, `${name}.log`);
   try {
     fs.appendFileSync(fp, line, "utf8");
-  } catch {}
+  } catch { }
   return fp;
 }
 
@@ -545,10 +568,10 @@ async function tickWorkflowScheduler() {
 
 ensureWorkflowDirs();
 setInterval(() => {
-  tickWorkflowScheduler().catch(() => {});
+  tickWorkflowScheduler().catch(() => { });
 }, workflowRuntime.tickMs);
 setTimeout(() => {
-  tickWorkflowScheduler().catch(() => {});
+  tickWorkflowScheduler().catch(() => { });
 }, 4000);
 
 async function proxyJSON(pathname) {
@@ -602,7 +625,7 @@ async function getAgentList() {
         const rtName = normalizeRtAgentId(a);
         if (rtName) merged.add(rtName);
       });
-  } catch {}
+  } catch { }
 
   // 2. All agents defined in crewswarm.json / openclaw.json (online or not) — shown with [offline] indicator handled client-side
   try {
@@ -617,7 +640,7 @@ async function getAgentList() {
       const rtName = normalizeRtAgentId(a.id);
       if (rtName) merged.add(rtName);
     });
-  } catch {}
+  } catch { }
 
   // 3. Hard fallback if both fail
   if (!merged.size) {
@@ -659,7 +682,7 @@ async function getRecentRTMessages(limit = 100) {
       for (let i = lines.length - 1; i >= 0 && out.length < n; i--) {
         try {
           out.push(JSON.parse(lines[i]));
-        } catch {}
+        } catch { }
       }
       return out.reverse();
     } catch {
@@ -735,7 +758,7 @@ async function getDLQEntries() {
         try {
           const content = await readFile(path.join(dlqDir, file), "utf8");
           entries.push({ ...JSON.parse(content), filename: file });
-        } catch {}
+        } catch { }
       }
       return entries.sort((a, b) =>
         (b.failedAt || "").localeCompare(a.failedAt || ""),
@@ -1013,11 +1036,7 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
-    if (url.pathname === "/api/health") {
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, version: "0.8.0-beta" }));
-      return;
-    }
+    // /api/health handled by crew-lead proxy below (line ~8423)
     if (url.pathname === "/api/sessions") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(await proxyJSON("/session")));
@@ -1034,9 +1053,9 @@ const server = http.createServer(async (req, res) => {
       );
       return;
     }
-    
+
     // ── Multi-CLI Session APIs ─────────────────────────────────────────────────
-    
+
     if (url.pathname === "/api/codex-sessions") {
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
       const sessionsBase = path.join(os.homedir(), ".codex", "sessions");
@@ -1059,7 +1078,7 @@ const server = http.createServer(async (req, res) => {
                 if (sessions.length >= limit) break;
                 const sessionId = f.replace(".jsonl", "");
                 const filePath = path.join(dayDir, f);
-                
+
                 // Skip files larger than 10MB to avoid memory issues
                 const stats = fs.statSync(filePath);
                 if (stats.size > 10 * 1024 * 1024) {
@@ -1071,7 +1090,7 @@ const server = http.createServer(async (req, res) => {
                   });
                   continue;
                 }
-                
+
                 const messages = [];
                 const allLines = fs.readFileSync(filePath, "utf8").trim().split("\n");
                 const lines = allLines.slice(-100); // Last 100 lines only
@@ -1085,7 +1104,7 @@ const server = http.createServer(async (req, res) => {
                       if (role === "user" && !firstUserMsg) firstUserMsg = text.slice(0, 80);
                       if (text) messages.push({ role, text: text.slice(0, 2000), ts: ev.timestamp });
                     }
-                  } catch {}
+                  } catch { }
                 }
                 if (messages.length || firstUserMsg) {
                   sessions.push({
@@ -1107,7 +1126,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, sessions }));
       return;
     }
-    
+
     if (url.pathname === "/api/claude-sessions") {
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
       const qDir = url.searchParams.get("dir") || process.cwd();
@@ -1138,7 +1157,7 @@ const server = http.createServer(async (req, res) => {
                 ? content.filter(c => c.type === "text").map(c => c.text).join("")
                 : typeof content === "string" ? content : "";
               if (text) messages.push({ role: d.type, text: text.slice(0, 2000), ts: d.timestamp });
-            } catch {}
+            } catch { }
           }
           if (messages.length) sessions.push({ sessionId, file, messages });
         }
@@ -1147,7 +1166,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, dir: qDir, sessions }));
       return;
     }
-    
+
     if (url.pathname === "/api/gemini-sessions") {
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
       const historyBase = path.join(os.homedir(), ".gemini", "history");
@@ -1169,7 +1188,7 @@ const server = http.createServer(async (req, res) => {
                   if (role === "user" && !firstUserMsg) firstUserMsg = text.slice(0, 80);
                   if (text) messages.push({ role, text: text.slice(0, 2000), ts: ev.timestamp });
                 }
-              } catch {}
+              } catch { }
             }
             if (messages.length) {
               const stat = fs.statSync(sessionFile);
@@ -1189,7 +1208,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, sessions: sessions.slice(0, limit) }));
       return;
     }
-    
+
     if (url.pathname === "/api/crew-cli-sessions") {
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
       const sessionsBase = path.join(process.cwd(), ".crew", "sessions");
@@ -1232,7 +1251,7 @@ const server = http.createServer(async (req, res) => {
                           if (role === "user" && !firstUserMsg) firstUserMsg = text.slice(0, 80);
                           if (text) messages.push({ role, text: text.slice(0, 2000), ts: ev.timestamp });
                         }
-                      } catch {}
+                      } catch { }
                     }
                     if (messages.length) {
                       sessions.push({
@@ -1350,7 +1369,7 @@ const server = http.createServer(async (req, res) => {
       let usage = { calls: 0, prompt: 0, completion: 0, byModel: {} };
       try {
         usage = JSON.parse(fs.readFileSync(usageFile, "utf8"));
-      } catch {}
+      } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(usage));
       return;
@@ -1472,7 +1491,7 @@ const server = http.createServer(async (req, res) => {
             messages: msgs.slice(-20),
           });
         }
-      } catch {}
+      } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(sessions));
       return;
@@ -1549,7 +1568,7 @@ const server = http.createServer(async (req, res) => {
       let cfgEnv = {};
       try {
         cfgEnv = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")).env || {};
-      } catch {}
+      } catch { }
       const result = {};
       for (const v of vars) {
         if (ENV_CREDENTIAL_KEYS.has(v)) continue;
@@ -1592,7 +1611,12 @@ const server = http.createServer(async (req, res) => {
             process.env[k] = String(v);
           }
         }
-        fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
       } catch (err) {
@@ -1811,7 +1835,7 @@ const server = http.createServer(async (req, res) => {
           const bareId = agentId.replace(/^crew-/, "");
           systemPrompt =
             agentPrompts[agentId] || agentPrompts[bareId] || systemPrompt;
-        } catch {}
+        } catch { }
 
         // Build intelligent tool instructions
         const hasEngine = hasEngineConfigured(agentCfg);
@@ -1831,8 +1855,7 @@ const server = http.createServer(async (req, res) => {
           { role: "user", content: message },
         ];
 
-        // Call LLM
-        const fetch = (await import("node-fetch")).default;
+        // Call LLM (uses built-in fetch, available since Node 18)
         const baseUrl = provider.baseUrl || "https://api.openai.com/v1";
         const response = await fetch(`${baseUrl}/chat/completions`, {
           method: "POST",
@@ -2120,7 +2143,7 @@ const server = http.createServer(async (req, res) => {
       );
       await import("node:fs/promises")
         .then((m) => m.writeFile(pidFile, String(proc.pid), "utf8"))
-        .catch(() => {});
+        .catch(() => { });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({ ok: true, pid: proc.pid, message: "Build started" }),
@@ -2205,7 +2228,7 @@ const server = http.createServer(async (req, res) => {
       );
       await import("node:fs/promises")
         .then((m) => m.writeFile(pidFile, String(proc.pid), "utf8"))
-        .catch(() => {});
+        .catch(() => { });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
@@ -2494,21 +2517,21 @@ const server = http.createServer(async (req, res) => {
             : parsed;
         const stages = Array.isArray(inWf.stages)
           ? inWf.stages
-              .map((s) => ({
-                agent: String(s?.agent || "").trim(),
-                task: String(s?.task || s?.taskText || "").trim(),
-                ...(s?.tool ? { tool: String(s.tool).trim() } : {}),
-              }))
-              .filter((s) => s.agent && s.task)
+            .map((s) => ({
+              agent: String(s?.agent || "").trim(),
+              task: String(s?.task || s?.taskText || "").trim(),
+              ...(s?.tool ? { tool: String(s.tool).trim() } : {}),
+            }))
+            .filter((s) => s.agent && s.task)
           : [];
         const steps = Array.isArray(inWf.steps)
           ? inWf.steps
-              .map((s) => ({
-                skill: String(s?.skill || s?.name || "").trim(),
-                params:
-                  s?.params && typeof s.params === "object" ? s.params : {},
-              }))
-              .filter((s) => s.skill)
+            .map((s) => ({
+              skill: String(s?.skill || s?.name || "").trim(),
+              params:
+                s?.params && typeof s.params === "object" ? s.params : {},
+            }))
+            .filter((s) => s.skill)
           : [];
         if (!stages.length && !steps.length) {
           throw new Error(
@@ -2764,23 +2787,23 @@ const server = http.createServer(async (req, res) => {
           try {
             process.kill(pid, "SIGTERM");
             stoppedPmLoop = true;
-          } catch {}
+          } catch { }
         }
       }
       try {
         writeFileSync(stopPath, new Date().toISOString());
-      } catch {}
+      } catch { }
       for (const cleanupPath of [pidPath, stopPath, logPath]) {
         if (!existsSync(cleanupPath)) continue;
         try {
           unlinkSync(cleanupPath);
-        } catch {}
+        } catch { }
       }
       const projectMessageDir = path.join(CFG_DIR, "project-messages", projectId);
       if (existsSync(projectMessageDir)) {
         try {
           rmSync(projectMessageDir, { recursive: true, force: true });
-        } catch {}
+        } catch { }
       }
       delete projects[projectId];
       await wf(registryFile, JSON.stringify(projects, null, 2));
@@ -2905,7 +2928,7 @@ const server = http.createServer(async (req, res) => {
       if (existsSync(stopFilePath)) {
         try {
           unlinkSync(stopFilePath);
-        } catch {}
+        } catch { }
       }
       const logsDir = path.join(CREWSWARM_DIR, "orchestrator-logs");
       if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
@@ -2924,7 +2947,7 @@ const server = http.createServer(async (req, res) => {
             const c = JSON.parse(await rf(p, "utf8"));
             rtToken = c?.rt?.authToken || c?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
             if (rtToken) break;
-          } catch {}
+          } catch { }
         }
       }
       if (!rtToken) {
@@ -2977,10 +3000,10 @@ const server = http.createServer(async (req, res) => {
       };
       // Generate correlation ID for tracing
       const correlationId = `pm-${projectId || "default"}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
+
       // Add correlation ID to environment
       spawnEnv.PM_CORRELATION_ID = correlationId;
-      
+
       const proc = spawn("node", spawnArgs, {
         cwd: CREWSWARM_DIR,
         stdio: "ignore",
@@ -2988,21 +3011,10 @@ const server = http.createServer(async (req, res) => {
         env: spawnEnv,
       });
       proc.unref();
-      
+
       // Log PM loop start
       console.log(`[dashboard] PM loop started: projectId=${projectId || "(default)"} pid=${proc.pid} correlation=${correlationId}`);
-      
-      // Broadcast to RT bus
-      broadcastSSE({
-        type: "pm.loop.started",
-        projectId: projectId || "default",
-        correlationId,
-        pid: proc.pid,
-        projectDir,
-        dryRun: !!dryRun,
-        ts: Date.now(),
-      });
-      
+
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, pid: proc.pid, correlationId, dryRun: !!dryRun }));
       return;
@@ -3100,7 +3112,7 @@ const server = http.createServer(async (req, res) => {
         token =
           JSON.parse(fs.readFileSync(csConfigPath, "utf8"))?.rt?.authToken ||
           "";
-      } catch {}
+      } catch { }
       if (!token) token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ token: token ? "SET" : "" }));
@@ -3116,7 +3128,7 @@ const server = http.createServer(async (req, res) => {
       let cfg = {};
       try {
         cfg = JSON.parse(fs.readFileSync(csConfigPath, "utf8"));
-      } catch {}
+      } catch { }
       cfg.rt = { ...(cfg.rt || {}), authToken: token };
       fs.writeFileSync(csConfigPath, JSON.stringify(cfg, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
@@ -3137,7 +3149,7 @@ const server = http.createServer(async (req, res) => {
         try {
           const output2 = execSync(`ls -lO "${cfgPath}"`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
           locked = output2.includes('uchg');
-        } catch {}
+        } catch { }
       }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ locked }));
@@ -3187,7 +3199,7 @@ const server = http.createServer(async (req, res) => {
         if (c.opencodeFallbackModel) fallbackModel = c.opencodeFallbackModel;
         if (c.opencodeModel) opencodeModel = c.opencodeModel;
         if (c.crewLeadModel) crewLeadModel = c.crewLeadModel;
-      } catch {}
+      } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({ dir, fallbackModel, opencodeModel, crewLeadModel }),
@@ -3217,7 +3229,7 @@ const server = http.createServer(async (req, res) => {
       let cfg = {};
       try {
         cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-      } catch {}
+      } catch { }
       if (dir !== undefined) {
         if (dir) cfg.opencodeProject = dir;
         else delete cfg.opencodeProject;
@@ -3242,7 +3254,12 @@ const server = http.createServer(async (req, res) => {
           cfg.crewLeadModel = String(crewLeadModel).trim();
         else delete cfg.crewLeadModel;
       }
-      fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+      const writeErr = await safeWriteConfig(cfg, 2);
+      if (writeErr) {
+        res.writeHead(writeErr.status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: writeErr.message }));
+        return;
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
@@ -3462,10 +3479,10 @@ const server = http.createServer(async (req, res) => {
         const rawBody =
           req.method === "POST"
             ? await (async () => {
-                let b = "";
-                for await (const c of req) b += c;
-                return b;
-              })()
+              let b = "";
+              for await (const c of req) b += c;
+              return b;
+            })()
             : null;
         const token = (() => {
           try {
@@ -3512,10 +3529,10 @@ const server = http.createServer(async (req, res) => {
         const rawBody =
           req.method === "POST"
             ? await (async () => {
-                let b = "";
-                for await (const c of req) b += c;
-                return b;
-              })()
+              let b = "";
+              for await (const c of req) b += c;
+              return b;
+            })()
             : null;
         const token = (() => {
           try {
@@ -3562,10 +3579,10 @@ const server = http.createServer(async (req, res) => {
         const rawBody =
           req.method === "POST"
             ? await (async () => {
-                let b = "";
-                for await (const c of req) b += c;
-                return b;
-              })()
+              let b = "";
+              for await (const c of req) b += c;
+              return b;
+            })()
             : null;
         const token = (() => {
           try {
@@ -3629,7 +3646,12 @@ const server = http.createServer(async (req, res) => {
         const { enabled } = JSON.parse(body || "{}");
         const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
         cfg.codex = enabled === true;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         process.env.CREWSWARM_CODEX = enabled ? "1" : "0";
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, enabled: cfg.codex }));
@@ -3668,7 +3690,12 @@ const server = http.createServer(async (req, res) => {
         const { enabled } = JSON.parse(body || "{}");
         const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
         cfg.geminiCli = enabled === true;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         process.env.CREWSWARM_GEMINI_CLI_ENABLED = enabled ? "1" : "0";
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, enabled: cfg.geminiCli }));
@@ -3699,7 +3726,12 @@ const server = http.createServer(async (req, res) => {
         const { enabled } = JSON.parse(body || "{}");
         const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
         cfg.crewCli = enabled === true;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         process.env.CREWSWARM_CREW_CLI_ENABLED = enabled ? "1" : "0";
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, enabled: cfg.crewCli }));
@@ -3742,7 +3774,12 @@ const server = http.createServer(async (req, res) => {
         const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
         if (!cfg.env) cfg.env = {};
         cfg.env.CREWSWARM_OPENCODE_ENABLED = enabled ? "on" : "off";
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         process.env.CREWSWARM_OPENCODE_ENABLED = enabled ? "on" : "off";
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, enabled }));
@@ -3776,7 +3813,12 @@ const server = http.createServer(async (req, res) => {
         const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
         if (enabled !== undefined) cfg.opencodeLoop = enabled;
         if (maxRounds !== undefined) cfg.opencodeLoopMaxRounds = maxRounds;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
         return;
@@ -3805,7 +3847,12 @@ const server = http.createServer(async (req, res) => {
         const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
         if (!cfg.settings) cfg.settings = {};
         cfg.settings.autonomousMentionsEnabled = enabled !== false;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         process.env.CREWSWARM_AUTONOMOUS_MENTIONS =
           enabled === false ? "off" : "on";
         res.writeHead(200, { "content-type": "application/json" });
@@ -3843,7 +3890,12 @@ const server = http.createServer(async (req, res) => {
         const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
         if (!cfg.env) cfg.env = {};
         cfg.env.PASSTHROUGH_NOTIFY = safe;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         // Also set in process.env so it takes effect without crew-lead restart
         process.env.PASSTHROUGH_NOTIFY = safe;
         res.writeHead(200, { "content-type": "application/json" });
@@ -3873,7 +3925,12 @@ const server = http.createServer(async (req, res) => {
           const { roles } = JSON.parse(body || "{}");
           const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
           cfg.roleToolDefaults = roles || {};
-          fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+          const writeErr = await safeWriteConfig(cfg);
+          if (writeErr) {
+            res.writeHead(writeErr.status, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: writeErr.message }));
+            return;
+          }
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
         } catch (e) {
@@ -3920,7 +3977,12 @@ const server = http.createServer(async (req, res) => {
             delete cfg.globalSpendingCaps.dailyTokenLimit;
           if (cfg.globalSpendingCaps.dailyCostLimitUSD === undefined)
             delete cfg.globalSpendingCaps.dailyCostLimitUSD;
-          fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+          const writeErr = await safeWriteConfig(cfg);
+          if (writeErr) {
+            res.writeHead(writeErr.status, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: writeErr.message }));
+            return;
+          }
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
         } catch (e) {
@@ -3982,7 +4044,12 @@ const server = http.createServer(async (req, res) => {
         const cfg = JSON.parse(await readFile(CFG_FILE, "utf8"));
         if (loopBrain) cfg.loopBrain = loopBrain;
         else delete cfg.loopBrain;
-        await writeFile(CFG_FILE, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
         return;
@@ -4036,7 +4103,7 @@ const server = http.createServer(async (req, res) => {
               if (done) {
                 try {
                   res.end();
-                } catch {}
+                } catch { }
                 break;
               }
               try {
@@ -4046,13 +4113,13 @@ const server = http.createServer(async (req, res) => {
                 break;
               }
             }
-          } catch {}
+          } catch { }
         };
         pump();
         req.on("close", () => {
           try {
             reader.cancel();
-          } catch {}
+          } catch { }
         });
       } catch (e) {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -4069,10 +4136,10 @@ const server = http.createServer(async (req, res) => {
         const rawBody =
           req.method === "POST"
             ? await (async () => {
-                let b = "";
-                for await (const c of req) b += c;
-                return b;
-              })()
+              let b = "";
+              for await (const c of req) b += c;
+              return b;
+            })()
             : null;
         const token = (() => {
           try {
@@ -4139,7 +4206,7 @@ const server = http.createServer(async (req, res) => {
             signal: AbortSignal.timeout(1500),
           });
           online = health.ok;
-        } catch {}
+        } catch { }
         if (!online) {
           const { execSync: es } = await import("node:child_process");
           es("pgrep -f 'crew-lead.mjs'", {
@@ -4274,7 +4341,7 @@ const server = http.createServer(async (req, res) => {
                   "utf8",
                 ),
               )?.rt?.authToken || "";
-          } catch {}
+          } catch { }
         }
 
         let projectDir = null;
@@ -4285,7 +4352,7 @@ const server = http.createServer(async (req, res) => {
               ? JSON.parse(fs.readFileSync(registryFile, "utf8"))
               : {};
             projectDir = projects?.[projectId]?.outputDir || null;
-          } catch {}
+          } catch { }
         }
 
         const clRes = await fetch(
@@ -4347,7 +4414,7 @@ const server = http.createServer(async (req, res) => {
               } else if (payload.type === "done") {
                 exitCode = Number(payload.exitCode || 0);
               }
-            } catch {}
+            } catch { }
           }
         }
 
@@ -4422,7 +4489,7 @@ const server = http.createServer(async (req, res) => {
           const prompts = JSON.parse(fs.readFileSync(promptPath, "utf8"));
           const bareId = agentId.replace(/^crew-/, "");
           systemPrompt = prompts[agentId] || prompts[bareId] || systemPrompt;
-        } catch {}
+        } catch { }
 
         // Call LLM
         const messages = [
@@ -4512,7 +4579,7 @@ const server = http.createServer(async (req, res) => {
                 "utf8",
               ),
             )?.rt?.authToken || "";
-        } catch {}
+        } catch { }
       }
 
       try {
@@ -4572,7 +4639,7 @@ const server = http.createServer(async (req, res) => {
                 "utf8",
               ),
             )?.rt?.authToken || "";
-        } catch {}
+        } catch { }
       }
 
       try {
@@ -4712,7 +4779,7 @@ const server = http.createServer(async (req, res) => {
                 "utf8",
               ),
             )?.rt?.authToken || "";
-        } catch {}
+        } catch { }
       }
 
       if (mode === "cli" || String(mode).startsWith("cli:")) {
@@ -4770,7 +4837,7 @@ const server = http.createServer(async (req, res) => {
             "access-control-allow-origin": "*",
           });
           const reader = upstream.body.getReader();
-          req.on("close", () => reader.cancel().catch(() => {}));
+          req.on("close", () => reader.cancel().catch(() => { }));
           (async () => {
             try {
               while (true) {
@@ -4920,7 +4987,7 @@ const server = http.createServer(async (req, res) => {
                 "utf8",
               ),
             )?.rt?.authToken || "";
-        } catch {}
+        } catch { }
       }
       const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/clear`, {
         method: "POST",
@@ -5190,8 +5257,8 @@ const server = http.createServer(async (req, res) => {
         const masked =
           key.length > 8
             ? key.slice(0, 4) +
-              "•".repeat(Math.min(key.length - 8, 20)) +
-              key.slice(-4)
+            "•".repeat(Math.min(key.length - 8, 20)) +
+            key.slice(-4)
             : key.length > 0
               ? "•".repeat(key.length)
               : "";
@@ -5235,7 +5302,12 @@ const server = http.createServer(async (req, res) => {
           apiKey,
         };
       }
-      await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+      const writeErr = await safeWriteConfig(cfg);
+      if (writeErr) {
+        res.writeHead(writeErr.status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: writeErr.message }));
+        return;
+      }
       // Sync to ~/.crewswarm/config.json
       try {
         const cs = readCSConfig();
@@ -5248,7 +5320,7 @@ const server = http.createServer(async (req, res) => {
           baseUrl,
         };
         writeCSConfig(cs);
-      } catch {}
+      } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -5269,7 +5341,12 @@ const server = http.createServer(async (req, res) => {
         api: api || "openai-completions",
         models: [],
       };
-      await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+      const writeErr = await safeWriteConfig(cfg);
+      if (writeErr) {
+        res.writeHead(writeErr.status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: writeErr.message }));
+        return;
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -5305,12 +5382,12 @@ const server = http.createServer(async (req, res) => {
               cfg.models.providers[providerId].models = models;
             if (cfg.providers?.[providerId])
               cfg.providers[providerId].models = models;
-            const { writeFile } = await import("node:fs/promises");
-            await writeFile(
-              CFG_FILE,
-              JSON.stringify(cfg, null, 4),
-              "utf8",
-            ).catch(() => {});
+            const cfgWriteErr = await safeWriteConfig(cfg);
+            if (cfgWriteErr) {
+              res.writeHead(cfgWriteErr.status, { "content-type": "application/json" });
+              res.end(JSON.stringify({ error: cfgWriteErr.message }));
+              return;
+            }
           }
           res.writeHead(200, { "content-type": "application/json" });
           res.end(
@@ -5360,7 +5437,12 @@ const server = http.createServer(async (req, res) => {
           cfg.models.providers[providerId].models = knownModels;
         if (cfg.providers?.[providerId])
           cfg.providers[providerId].models = knownModels;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
@@ -5396,7 +5478,12 @@ const server = http.createServer(async (req, res) => {
           cfg.models.providers[providerId].models = knownModels;
         if (cfg.providers?.[providerId])
           cfg.providers[providerId].models = knownModels;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
@@ -5415,9 +5502,9 @@ const server = http.createServer(async (req, res) => {
         : isGoogle
           ? { "x-goog-api-key": key, "content-type": "application/json" }
           : {
-              authorization: `Bearer ${key}`,
-              "content-type": "application/json",
-            };
+            authorization: `Bearer ${key}`,
+            "content-type": "application/json",
+          };
       const modelsUrl = isGoogle
         ? `${baseUrl}/models?key=${key}`
         : `${baseUrl}/models`;
@@ -5482,7 +5569,12 @@ const server = http.createServer(async (req, res) => {
               cfg.models.providers[providerId].models = knownModels;
             if (cfg.providers?.[providerId])
               cfg.providers[providerId].models = knownModels;
-            await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+            const writeErr = await safeWriteConfig(cfg);
+            if (writeErr) {
+              res.writeHead(writeErr.status, { "content-type": "application/json" });
+              res.end(JSON.stringify({ error: writeErr.message }));
+              return;
+            }
             res.writeHead(200, { "content-type": "application/json" });
             res.end(
               JSON.stringify({
@@ -5520,7 +5612,12 @@ const server = http.createServer(async (req, res) => {
               cfg.models.providers[providerId].models = knownModels;
             if (cfg.providers?.[providerId])
               cfg.providers[providerId].models = knownModels;
-            await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+            const writeErr = await safeWriteConfig(cfg);
+            if (writeErr) {
+              res.writeHead(writeErr.status, { "content-type": "application/json" });
+              res.end(JSON.stringify({ error: writeErr.message }));
+              return;
+            }
             res.writeHead(200, { "content-type": "application/json" });
             res.end(
               JSON.stringify({
@@ -5542,7 +5639,12 @@ const server = http.createServer(async (req, res) => {
           cfg.models.providers[providerId].models = models;
         if (cfg.providers?.[providerId])
           cfg.providers[providerId].models = models;
-        await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: writeErr.message }));
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
@@ -5767,7 +5869,7 @@ const server = http.createServer(async (req, res) => {
       savedCs[toolId] = { apiKey: key };
       await fs.promises
         .mkdir(path.dirname(csTools), { recursive: true })
-        .catch(() => {});
+        .catch(() => { });
       await fs.promises.writeFile(csTools, JSON.stringify(savedCs, null, 2));
       const savedOc = await fs.promises
         .readFile(ocTools, "utf8")
@@ -5782,7 +5884,7 @@ const server = http.createServer(async (req, res) => {
       savedOc[toolId] = { apiKey: key };
       await fs.promises
         .mkdir(path.dirname(ocTools), { recursive: true })
-        .catch(() => {});
+        .catch(() => { });
       await fs.promises.writeFile(ocTools, JSON.stringify(savedOc, null, 2));
       // Also persist to ~/.zshrc so agents and shells pick it up
       const envKey =
@@ -5841,11 +5943,11 @@ const server = http.createServer(async (req, res) => {
         savedCs[toolId]?.apiKey ||
         savedOc[toolId]?.apiKey ||
         process.env[
-          toolId === "parallel"
-            ? "PARALLEL_API_KEY"
-            : toolId === "brave"
-              ? "BRAVE_API_KEY"
-              : "GREPTILE_API_KEY"
+        toolId === "parallel"
+          ? "PARALLEL_API_KEY"
+          : toolId === "brave"
+            ? "BRAVE_API_KEY"
+            : "GREPTILE_API_KEY"
         ];
       if (!key) {
         res.writeHead(200, { "content-type": "application/json" });
@@ -6557,11 +6659,16 @@ ORDER BY day DESC, cost DESC;`;
           .sort()
           .reverse();
         for (const old of backups.slice(10)) {
-          await unlink(path.join(CFG_DIR, old)).catch(() => {});
+          await unlink(path.join(CFG_DIR, old)).catch(() => { });
         }
-      } catch {}
+      } catch { }
 
-      await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+      const writeErr = await safeWriteConfig(cfg);
+      if (writeErr) {
+        res.writeHead(writeErr.status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: writeErr.message }));
+        return;
+      }
       // System prompts live in agent-prompts.json, not crewswarm.json
       if (systemPrompt !== undefined) {
         const prompts = JSON.parse(
@@ -6624,11 +6731,11 @@ ORDER BY day DESC, cost DESC;`;
       const defaultTools = reqAlsoAllow?.length
         ? reqAlsoAllow
         : ROLE_DEFAULTS[normalizedId] || [
-            "write_file",
-            "read_file",
-            "mkdir",
-            "run_cmd",
-          ];
+          "write_file",
+          "read_file",
+          "mkdir",
+          "run_cmd",
+        ];
       list.push({
         id: normalizedId,
         model,
@@ -6640,13 +6747,18 @@ ORDER BY day DESC, cost DESC;`;
         tools: { profile: "crewswarm", alsoAllow: defaultTools },
         workspace: defaultWorkspace,
       });
-      await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+      const writeErr = await safeWriteConfig(cfg);
+      if (writeErr) {
+        res.writeHead(writeErr.status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: writeErr.message }));
+        return;
+      }
       // Save system prompt to agent-prompts.json
       const defaultPrompt =
         systemPrompt ||
         "You are " +
-          (name || normalizedId) +
-          ". You are a coding specialist in the crewswarm crew. Always read files before editing. Never replace entire files — only patch.";
+        (name || normalizedId) +
+        ". You are a coding specialist in the crewswarm crew. Always read files before editing. Never replace entire files — only patch.";
       const prompts = JSON.parse(
         await readFile(promptsPath, "utf8").catch(() => "{}"),
       );
@@ -6659,10 +6771,10 @@ ORDER BY day DESC, cost DESC;`;
             "node",
             [new URL("./sync-agents.mjs", import.meta.url).pathname],
             { cwd: path.dirname(new URL(".", import.meta.url).pathname) },
-            () => {},
+            () => { },
           ),
         )
-        .catch(() => {});
+        .catch(() => { });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, id: normalizedId }));
       return;
@@ -6684,7 +6796,12 @@ ORDER BY day DESC, cost DESC;`;
       const idx = list.findIndex((a) => a.id === agentId);
       if (idx === -1) throw new Error("Agent not found: " + agentId);
       list.splice(idx, 1);
-      await writeFile(cfgPath, JSON.stringify(cfg, null, 4), "utf8");
+      const writeErr = await safeWriteConfig(cfg);
+      if (writeErr) {
+        res.writeHead(writeErr.status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: writeErr.message }));
+        return;
+      }
       // Also remove from agent-prompts.json
       try {
         const prompts = JSON.parse(
@@ -6692,7 +6809,7 @@ ORDER BY day DESC, cost DESC;`;
         );
         delete prompts[agentId];
         await writeFile(promptsPath, JSON.stringify(prompts, null, 2), "utf8");
-      } catch {}
+      } catch { }
       // Auto-sync agent registry in shared memory
       import("node:child_process")
         .then(({ execFile }) =>
@@ -6700,10 +6817,10 @@ ORDER BY day DESC, cost DESC;`;
             "node",
             [new URL("./sync-agents.mjs", import.meta.url).pathname],
             { cwd: path.dirname(new URL(".", import.meta.url).pathname) },
-            () => {},
+            () => { },
           ),
         )
-        .catch(() => {});
+        .catch(() => { });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -6728,7 +6845,7 @@ ORDER BY day DESC, cost DESC;`;
         "node",
         [bridgePath, "--reset-session", agentId],
         { cwd: CREWSWARM_DIR, timeout: 15000 },
-        () => {},
+        () => { },
       );
       // 2. After reset, re-inject shared memory as first message so agent has context
       setTimeout(() => {
@@ -6739,11 +6856,11 @@ ORDER BY day DESC, cost DESC;`;
             "--send",
             agentId,
             "[SYSTEM] Session reset by operator. You are " +
-              agentId +
-              ". Read memory/current-state.md and memory/agent-handoff.md to restore context. Confirm with a one-line status.",
+            agentId +
+            ". Read memory/current-state.md and memory/agent-handoff.md to restore context. Confirm with a one-line status.",
           ],
           { cwd: CREWSWARM_DIR, timeout: 15000 },
-          () => {},
+          () => { },
         );
       }, 2000);
       res.writeHead(200, { "content-type": "application/json" });
@@ -6869,7 +6986,7 @@ ORDER BY day DESC, cost DESC;`;
               ? cfg.agents.list
               : [];
           agents = list.map((a) => a.id).filter(Boolean);
-        } catch {}
+        } catch { }
 
         const shouldCanonicalize = (key, allKeys) => {
           if (!key || key.startsWith("crew-")) return false;
@@ -6926,7 +7043,7 @@ ORDER BY day DESC, cost DESC;`;
         let prompts = {};
         try {
           prompts = JSON.parse(fs.readFileSync(promptsFile, "utf8"));
-        } catch {}
+        } catch { }
 
         const keySet = new Set(Object.keys(prompts));
         let agentIds = [];
@@ -6938,7 +7055,7 @@ ORDER BY day DESC, cost DESC;`;
               ? cfg.agents.list
               : [];
           agentIds = list.map((a) => a.id).filter(Boolean);
-        } catch {}
+        } catch { }
         const canonicalAgent = normalizeRtAgentId(agent);
 
         // Update canonical key and remove obvious legacy alias
@@ -7038,7 +7155,7 @@ ORDER BY day DESC, cost DESC;`;
         const content =
           lines.length > 300
             ? lines.slice(0, 300).join("\n") +
-              `\n\n... (${lines.length - 300} more lines)`
+            `\n\n... (${lines.length - 300} more lines)`
             : raw;
         res.writeHead(200, {
           "content-type": "application/json",
@@ -7173,7 +7290,7 @@ ORDER BY day DESC, cost DESC;`;
       try {
         const pid = parseInt(fs.readFileSync(TG_PID_PATH, "utf8").trim(), 10);
         if (pid) process.kill(pid, "SIGTERM");
-      } catch {}
+      } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -7227,7 +7344,7 @@ ORDER BY day DESC, cost DESC;`;
                 text: (entry.text || "").slice(0, 50),
               });
             }
-          } catch {}
+          } catch { }
         });
 
         const result = Array.from(topics.values()).sort(
@@ -7336,7 +7453,7 @@ ORDER BY day DESC, cost DESC;`;
         }
         if (body.targetAgent) swarm.env.WA_TARGET_AGENT = body.targetAgent;
         fs.writeFileSync(swarmPath, JSON.stringify(swarm, null, 2));
-      } catch {}
+      } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -7400,7 +7517,7 @@ ORDER BY day DESC, cost DESC;`;
       try {
         const pid = parseInt(fs.readFileSync(WA_PID_PATH, "utf8").trim(), 10);
         if (pid) process.kill(pid, "SIGTERM");
-      } catch {}
+      } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -7716,7 +7833,7 @@ ORDER BY day DESC, cost DESC;`;
           agentsTotal = (swarmCfg.agents || []).filter(
             (a) => a.id && String(a.id).toLowerCase() !== "crew-lead",
           ).length;
-        } catch {}
+        } catch { }
         if (agentsTotal === 0) agentsTotal = 14;
         agentsTotal = Math.max(agentsTotal, agentsOnline);
 
@@ -8016,7 +8133,7 @@ ORDER BY day DESC, cost DESC;`;
           execSync(`pkill -f "gateway-bridge.mjs --rt-daemon"`, {
             stdio: "ignore",
           });
-        } catch {}
+        } catch { }
       } else if (id === "telegram") {
         try {
           const pid = parseInt(
@@ -8034,7 +8151,7 @@ ORDER BY day DESC, cost DESC;`;
             10,
           );
           if (pid) process.kill(pid, "SIGTERM");
-        } catch {}
+        } catch { }
       } else if (id === "whatsapp") {
         try {
           const pid = parseInt(
@@ -8052,7 +8169,7 @@ ORDER BY day DESC, cost DESC;`;
             10,
           );
           if (pid) process.kill(pid, "SIGTERM");
-        } catch {}
+        } catch { }
       } else if (id === "crew-lead") {
         // Use PID file for reliable killing (prevents collateral dashboard deaths)
         const pidFile = path.join(
@@ -8095,7 +8212,7 @@ ORDER BY day DESC, cost DESC;`;
             console.log(
               `[dashboard] Stopped crew-lead via pattern match (fallback)`,
             );
-          } catch {}
+          } catch { }
         }
 
         // NOTE: We do NOT kill by port here - that can kill dashboard's connection to crew-lead
@@ -8103,58 +8220,58 @@ ORDER BY day DESC, cost DESC;`;
       } else if (id === "rt-bus") {
         try {
           execSync(`pkill -f "opencrew-rt-daemon"`, { stdio: "ignore" });
-        } catch {}
+        } catch { }
       } else if (id === "openclaw-gateway") {
         try {
           execSync(`pkill -f "openclaw-gateway"`, { stdio: "ignore" });
-        } catch {}
+        } catch { }
         await new Promise((r) => setTimeout(r, 1000));
         try {
           execSync(`open -a OpenClaw`, { stdio: "ignore" });
-        } catch {}
+        } catch { }
       } else if (id === "studio") {
         try {
           execSync(`pkill -f "apps/vibe/server.mjs"`, { stdio: "ignore" });
-        } catch {}
+        } catch { }
         try {
           execSync(`pkill -f "vite.*studio"`, { stdio: "ignore" });
-        } catch {}
+        } catch { }
         try {
           execSync(`lsof -ti :3333 | xargs kill -9 2>/dev/null`, {
             stdio: "ignore",
             shell: true,
           });
-        } catch {}
+        } catch { }
         try {
           execSync(`lsof -ti :3335 | xargs kill -9 2>/dev/null`, {
             stdio: "ignore",
             shell: true,
           });
-        } catch {}
+        } catch { }
       } else if (id === "studio-watch") {
         try {
           execSync(`pkill -f "watch-server.mjs"`, { stdio: "ignore" });
-        } catch {}
+        } catch { }
         try {
           execSync(`lsof -ti :3334 | xargs kill -9 2>/dev/null`, {
             stdio: "ignore",
             shell: true,
           });
-        } catch {}
+        } catch { }
       } else if (id === "opencode") {
         try {
           execSync(`pkill -f "opencode serve"`, { stdio: "ignore" });
-        } catch {}
+        } catch { }
       } else if (id === "mcp") {
         try {
           execSync(`pkill -f "mcp-server.mjs"`, { stdio: "ignore" });
-        } catch {}
+        } catch { }
         try {
           execSync(`lsof -ti :5020 | xargs kill -9 2>/dev/null`, {
             stdio: "ignore",
             shell: true,
           });
-        } catch {}
+        } catch { }
       } else if (id === "dashboard") {
         // Dashboard cannot restart/stop itself - race condition between spawn and exit
         // Use: pkill -9 -f dashboard.mjs to stop manually
@@ -8374,7 +8491,7 @@ ORDER BY day DESC, cost DESC;`;
               if (done) {
                 try {
                   res.end();
-                } catch {}
+                } catch { }
                 break;
               }
               try {
@@ -8384,13 +8501,13 @@ ORDER BY day DESC, cost DESC;`;
                 break;
               }
             }
-          } catch {}
+          } catch { }
         };
         pump();
         req.on("close", () => {
           try {
             reader.cancel();
-          } catch {}
+          } catch { }
         });
       } catch (e) {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -8471,7 +8588,7 @@ ORDER BY day DESC, cost DESC;`;
                   ...eng,
                   source: dir === userDir ? "user" : "bundled",
                 };
-            } catch {}
+            } catch { }
           }
         }
         // Load env vars to check enabled status
@@ -8480,8 +8597,8 @@ ORDER BY day DESC, cost DESC;`;
         try {
           const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
           envVars = cfg.env || {};
-        } catch {}
-        
+        } catch { }
+
         const engines = Object.values(enginesMap).map((eng) => {
           let installed = false;
           try {
@@ -8497,14 +8614,14 @@ ORDER BY day DESC, cost DESC;`;
           const missingEnv = eng.requiresAuth
             ? []
             : (eng.requiresEnv || []).filter((k) => !process.env[k]);
-          
+
           // Check if globally enabled
           let enabled = false;
           if (eng.envToggle) {
             const val = envVars[eng.envToggle];
             enabled = val === "1" || val === "true" || val === "yes";
           }
-          
+
           return {
             ...eng,
             installed,
@@ -8558,10 +8675,10 @@ ORDER BY day DESC, cost DESC;`;
       try {
         const { engineId, enabled } = JSON.parse(body || "{}");
         if (!engineId) throw new Error("engineId required");
-        
+
         const bundledDir = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "engines");
         const userDir = path.join(os.homedir(), ".crewswarm", "engines");
-        
+
         let engineDef = null;
         for (const dir of [bundledDir, userDir]) {
           const p = path.join(dir, `${engineId}.json`);
@@ -8570,20 +8687,20 @@ ORDER BY day DESC, cost DESC;`;
             break;
           }
         }
-        
+
         if (!engineDef || !engineDef.envToggle) {
           throw new Error(`Engine ${engineId} not found or has no envToggle`);
         }
-        
+
         const envVarName = engineDef.envToggle;
         const configPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
         const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
-        
+
         if (!cfg.env) cfg.env = {};
         cfg.env[envVarName] = enabled ? "1" : "off";
-        
+
         fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), "utf8");
-        
+
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, engineId, enabled, envVar: envVarName }));
       } catch (err) {
@@ -8604,7 +8721,7 @@ ORDER BY day DESC, cost DESC;`;
       }
       try {
         fs.unlinkSync(target);
-      } catch {}
+      } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restart a named crewswarm service using the canonical service-control path.
+# Restart a named CrewSwarm service using the canonical service-control path.
 # This is the shared entrypoint used by SwiftBar and the dashboard API.
 
 set -euo pipefail
@@ -170,13 +170,10 @@ case "$SERVICE_ID" in
     echo "✅ telegram restart requested"
     ;;
   whatsapp)
-    if _launchctl_restart com.crewswarm.whatsapp; then
-      echo "✅ whatsapp restarted via launchd"
-      exit 0
-    fi
+    # Skip launchd — EAGAIN errors under launchd sandboxing; use nohup instead
     pkill -f "whatsapp-bridge.mjs" 2>/dev/null || true
     sleep 1
-    _start_detached /tmp/whatsapp-bridge.log \
+    _start_detached "$HOME/.crewswarm/logs/whatsapp-bridge-stdout.log" \
       env \
       WA_ALLOWED_NUMBERS="$(_config_value "$HOME/.crewswarm/crewswarm.json" "env.WA_ALLOWED_NUMBERS")" \
       CREWSWARM_RT_AUTH_TOKEN="$(_rt_token)" \

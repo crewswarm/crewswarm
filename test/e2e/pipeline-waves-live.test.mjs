@@ -97,7 +97,7 @@ before(async () => {
   }
 });
 
-describe("pipeline-waves E2E", () => {
+describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipelines now go through /api/dispatch or MCP run_pipeline" }, () => {
   it("runs 2-agent wave in parallel", async (t) => {
     const healthy = await checkCrewLeadHealth();
     if (!healthy) {

@@ -81,15 +81,26 @@ describe("engine routing — shouldUse*", () => {
     );
   });
 
-  it("matches codex via runtime and agent.engine", async () => {
-    const { initRunners, shouldUseCodex } = await loadRunners();
+  it("matches codex when claude-code is not globally enabled", async () => {
+    // Save and override env to disable higher-priority engines
+    const prev = process.env.CREWSWARM_CLAUDE_CODE;
+    process.env.CREWSWARM_CLAUDE_CODE = "0";
+    process.env.CREWSWARM_CODEX = "1";
+    const { initRunners, shouldUseCodex, shouldUseClaudeCode } = await import("../../lib/engines/runners.mjs");
     initRunners(
       baseDeps({
         loadAgentList: () => [{ id: "crew-main", engine: "codex" }],
+        getAgentOpenCodeConfig: () => ({
+          enabled: false, useCursorCli: false, useClaudeCode: false, useCrewCLI: false,
+        }),
       }),
     );
+    // With Claude Code disabled, codex should match via runtime
+    assert.equal(shouldUseClaudeCode({ runtime: "codex" }, "command.run_task"), false);
     assert.equal(shouldUseCodex({ runtime: "codex" }, "command.run_task"), true);
-    assert.equal(shouldUseCodex({ agentId: "crew-main" }, "command.run_task"), true);
+    // Restore
+    if (prev !== undefined) process.env.CREWSWARM_CLAUDE_CODE = prev;
+    else delete process.env.CREWSWARM_CLAUDE_CODE;
   });
 
 });

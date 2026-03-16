@@ -1,11 +1,26 @@
 /**
  * Integration tests for Dashboard API endpoints with validation
  * Tests that all endpoints properly validate input using Zod schemas
+ * Requires dashboard running on :4319 — skipped gracefully if not available.
  */
-import { test, describe } from "node:test";
+import { test, describe, before } from "node:test";
 import assert from "node:assert/strict";
 
 const DASHBOARD_BASE = process.env.DASHBOARD_BASE || "http://127.0.0.1:4319";
+
+let dashboardUp = false;
+
+async function checkDashboard() {
+  try {
+    const res = await fetch(`${DASHBOARD_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+    return res.ok;
+  } catch { return false; }
+}
+
+function skipIfDown(t) {
+  if (!dashboardUp) { t.skip("dashboard not running on :4319"); return true; }
+  return false;
+}
 
 // Helper to make API requests
 async function apiRequest(endpoint, method = "GET", body = null) {
@@ -14,37 +29,46 @@ async function apiRequest(endpoint, method = "GET", body = null) {
     headers: { "content-type": "application/json" },
   };
   if (body) options.body = JSON.stringify(body);
-  
+
   const res = await fetch(`${DASHBOARD_BASE}${endpoint}`, options);
   const data = await res.json();
   return { status: res.status, data };
 }
 
+before(async () => {
+  dashboardUp = await checkDashboard();
+  if (!dashboardUp) console.log("⚠️ Dashboard not running on :4319 — skipping API validation tests");
+});
+
 describe("Dashboard API Validation Tests", () => {
-  
+
   describe("POST /api/build", () => {
-    test("rejects request with missing requirement", async () => {
+    test("rejects request with missing requirement", async (t) => {
+      if (skipIfDown(t)) return;
       const { status, data } = await apiRequest("/api/build", "POST", {});
       assert.equal(status, 400, "Should return 400 for missing requirement");
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("required"));
     });
 
-    test("rejects request with invalid requirement type", async () => {
+    test("rejects request with invalid requirement type", async (t) => {
+      if (skipIfDown(t)) return;
       const { status, data } = await apiRequest("/api/build", "POST", { requirement: 123 });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
-    test("rejects request with empty requirement", async () => {
+    test("rejects request with empty requirement", async (t) => {
+      if (skipIfDown(t)) return;
       const { status, data } = await apiRequest("/api/build", "POST", { requirement: "" });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
-    test("rejects request with requirement too long", async () => {
-      const { status, data } = await apiRequest("/api/build", "POST", { 
-        requirement: "x".repeat(10001) 
+    test("rejects request with requirement too long", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/build", "POST", {
+        requirement: "x".repeat(10001)
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
@@ -59,7 +83,8 @@ describe("Dashboard API Validation Tests", () => {
   });
 
   describe("POST /api/pm-loop/start", () => {
-    test("accepts request with no body (all fields optional)", async () => {
+    test("accepts request with no body (all fields optional)", async (t) => {
+      if (skipIfDown(t)) return;
       const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {});
       // Should not be a validation error (fields are optional)
       // May fail for other reasons (e.g., already running)
@@ -68,7 +93,8 @@ describe("Dashboard API Validation Tests", () => {
       }
     });
 
-    test("accepts valid dryRun option", async () => {
+    test("accepts valid dryRun option", async (t) => {
+      if (skipIfDown(t)) return;
       const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { dryRun: true });
       // Should not fail validation
       if (status === 400) {
@@ -76,9 +102,10 @@ describe("Dashboard API Validation Tests", () => {
       }
     });
 
-    test("accepts valid projectId", async () => {
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { 
-        projectId: "test-project-123" 
+    test("accepts valid projectId", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {
+        projectId: "test-project-123"
       });
       // Should not fail validation
       if (status === 400) {
@@ -86,14 +113,15 @@ describe("Dashboard API Validation Tests", () => {
       }
     });
 
-    test("accepts valid pmOptions", async () => {
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { 
-        pmOptions: { 
-          autoAdvance: true, 
+    test("accepts valid pmOptions", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {
+        pmOptions: {
+          autoAdvance: true,
           maxIterations: 5,
           useSecurity: true,
           useQA: false
-        } 
+        }
       });
       // Should not fail validation
       if (status === 400) {
@@ -101,17 +129,19 @@ describe("Dashboard API Validation Tests", () => {
       }
     });
 
-    test("rejects invalid maxIterations", async () => {
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { 
-        pmOptions: { maxIterations: 0 } 
+    test("rejects invalid maxIterations", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {
+        pmOptions: { maxIterations: 0 }
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
-    test("rejects maxIterations over limit", async () => {
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { 
-        pmOptions: { maxIterations: 1001 } 
+    test("rejects maxIterations over limit", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {
+        pmOptions: { maxIterations: 1001 }
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
@@ -119,32 +149,35 @@ describe("Dashboard API Validation Tests", () => {
   });
 
   describe("POST /api/services/restart", () => {
-    test("rejects request with missing id", async () => {
+    test("rejects request with missing id", async (t) => {
+      if (skipIfDown(t)) return;
       const { status, data } = await apiRequest("/api/services/restart", "POST", {});
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("required"));
     });
 
-    test("rejects request with invalid service id", async () => {
-      const { status, data } = await apiRequest("/api/services/restart", "POST", { 
-        id: "invalid-service-xyz" 
+    test("rejects request with invalid service id", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/services/restart", "POST", {
+        id: "invalid-service-xyz"
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
-    test("accepts valid service id", async () => {
+    test("accepts valid service id", async (t) => {
+      if (skipIfDown(t)) return;
       const validIds = [
-        "rt-bus", "agents", "crew-lead", "telegram", "whatsapp", 
+        "rt-bus", "agents", "crew-lead", "telegram", "whatsapp",
         "opencode", "mcp", "openclaw-gateway", "dashboard"
       ];
-      
+
       for (const id of validIds) {
         const { status, data } = await apiRequest("/api/services/restart", "POST", { id });
         // Should not be a validation error (may fail for other operational reasons)
         if (status === 400) {
-          assert.ok(!data.error?.includes("invalid") && !data.error?.includes("enum"), 
+          assert.ok(!data.error?.includes("invalid") && !data.error?.includes("enum"),
             `Should accept valid service id: ${id}`);
         }
       }
@@ -152,69 +185,77 @@ describe("Dashboard API Validation Tests", () => {
   });
 
   describe("POST /api/skills/import", () => {
-    test("rejects request with missing url", async () => {
+    test("rejects request with missing url", async (t) => {
+      if (skipIfDown(t)) return;
       const { status, data } = await apiRequest("/api/skills/import", "POST", {});
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("required"));
     });
 
-    test("rejects request with invalid url format", async () => {
-      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
-        url: "not-a-valid-url" 
+    test("rejects request with invalid url format", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+        url: "not-a-valid-url"
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
-    test("rejects request with non-HTTPS url", async () => {
-      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
-        url: "http://example.com/skill.json" 
+    test("rejects request with non-HTTPS url", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+        url: "http://example.com/skill.json"
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("https"));
     });
 
-    test("rejects request with localhost url", async () => {
-      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
-        url: "https://localhost/skill.json" 
+    test("rejects request with localhost url", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+        url: "https://localhost/skill.json"
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("blocked") || data.error.toLowerCase().includes("private"));
     });
 
-    test("rejects request with private IP url", async () => {
-      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
-        url: "https://192.168.1.1/skill.json" 
+    test("rejects request with private IP url", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+        url: "https://192.168.1.1/skill.json"
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("blocked") || data.error.toLowerCase().includes("private"));
     });
 
-    test("rejects url that's too long", async () => {
-      const { status, data } = await apiRequest("/api/skills/import", "POST", { 
-        url: "https://example.com/" + "x".repeat(2000) 
+    test("rejects url that's too long", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+        url: "https://example.com/" + "x".repeat(2000)
       });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
-    test("accepts valid HTTPS GitHub url", async () => {
+    test("accepts valid HTTPS GitHub url", async (t) => {
+      if (skipIfDown(t)) return;
       const validUrl = "https://raw.githubusercontent.com/user/repo/main/skill.json";
       const { status, data } = await apiRequest("/api/skills/import", "POST", { url: validUrl });
       // Should not be a validation error (may fail due to network/404)
       if (status === 400) {
-        assert.ok(!data.error?.includes("validation") && !data.error?.includes("invalid url"), 
+        assert.ok(!data.error?.includes("validation") && !data.error?.includes("invalid url"),
           "Should accept valid HTTPS GitHub URL");
       }
     });
   });
 
   describe("Error Handling", () => {
-    test("returns 400 for malformed JSON", async () => {
+    test("returns 400 for malformed JSON", async (t) => {
+      if (skipIfDown(t)) return;
       const res = await fetch(`${DASHBOARD_BASE}/api/build`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -226,7 +267,8 @@ describe("Dashboard API Validation Tests", () => {
       assert.ok(data.error.toLowerCase().includes("json"));
     });
 
-    test("returns 400 for empty request body", async () => {
+    test("returns 400 for empty request body", async (t) => {
+      if (skipIfDown(t)) return;
       const res = await fetch(`${DASHBOARD_BASE}/api/build`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -240,13 +282,15 @@ describe("Dashboard API Validation Tests", () => {
   });
 
   describe("Process Helper Functions", () => {
-    test("commandExists helper replaced execSync", async () => {
+    test("commandExists helper replaced execSync", async (t) => {
+      if (skipIfDown(t)) return;
       // This is a smoke test - if the dashboard starts, commandExists works
       const { status } = await apiRequest("/health", "GET");
       assert.ok(status === 200 || status === 404, "Dashboard should be responding");
     });
 
-    test("spawnAsync helper replaced execSync for folder picker", async () => {
+    test("spawnAsync helper replaced execSync for folder picker", async (t) => {
+      if (skipIfDown(t)) return;
       // Folder picker only works on macOS, but should not crash
       if (process.platform === "darwin") {
         const res = await fetch(`${DASHBOARD_BASE}/api/pick-folder?default=/tmp`, {
@@ -264,11 +308,11 @@ describe("Regression Tests", () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const { fileURLToPath } = await import("node:url");
-    
+
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
     const content = await fs.readFile(dashboardPath, "utf8");
-    
+
     assert.ok(!content.includes("execSync"), "dashboard.mjs should not contain execSync calls");
   });
 
@@ -276,11 +320,11 @@ describe("Regression Tests", () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const { fileURLToPath } = await import("node:url");
-    
+
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
     const content = await fs.readFile(dashboardPath, "utf8");
-    
+
     assert.ok(content.includes("StartBuildSchema"), "Should import StartBuildSchema");
     assert.ok(content.includes("StartPMLoopSchema"), "Should import StartPMLoopSchema");
     assert.ok(content.includes("ServiceActionSchema"), "Should import ServiceActionSchema");
@@ -291,11 +335,11 @@ describe("Regression Tests", () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const { fileURLToPath } = await import("node:url");
-    
+
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
     const content = await fs.readFile(dashboardPath, "utf8");
-    
+
     // Check that validate() is called with the right schemas
     assert.ok(content.match(/validate\(StartBuildSchema/), "Should validate /api/build requests");
     assert.ok(content.match(/validate\(StartPMLoopSchema/), "Should validate /api/pm-loop/start requests");

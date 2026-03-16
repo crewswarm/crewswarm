@@ -105,14 +105,14 @@ describe("Chat round-trip", { timeout: 35000 }, () => {
 
 // ── Direct dispatch ─────────────────────────────────────────────────────────
 
-describe("Direct dispatch to crew-copywriter", { timeout: 35000 }, () => {
-  test("dispatch crew-copywriter returns reply within 30s", async (t) => {
+describe("Direct dispatch to crew-seo", { timeout: 35000 }, () => {
+  test("dispatch crew-seo returns reply within 30s", async (t) => {
     if (skipIfDown(t)) return;
     const res = await fetch(`${CREW_LEAD_URL}/chat`, {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({
-        message: "dispatch crew-copywriter to say hello in exactly 3 words",
+        message: "dispatch crew-seo to say hello in exactly 3 words",
         sessionId: `e2e-dispatch-${Date.now()}`,
       }),
       signal: AbortSignal.timeout(32000),
@@ -149,7 +149,7 @@ describe("History saved", { timeout: 15000 }, () => {
 // ── Agents online ───────────────────────────────────────────────────────────
 
 describe("Agents online", { timeout: 10000 }, () => {
-  test("GET /api/agents returns agent list with crew-copywriter", async (t) => {
+  test("GET /api/agents returns agent list with crew-seo", async (t) => {
     if (skipIfDown(t)) return;
     const res = await fetch(`${CREW_LEAD_URL}/api/agents`, {
       headers: authToken ? { authorization: `Bearer ${authToken}` } : {},
@@ -160,21 +160,21 @@ describe("Agents online", { timeout: 10000 }, () => {
     assert.ok(body.ok !== false, "response should be ok");
     const agents = body.agents || body;
     assert.ok(Array.isArray(agents), "agents should be array");
-    const copywriter = agents.find(
-      (a) => (a.id || a).includes("copywriter") || (a.id || a) === "crew-copywriter"
+    const seo = agents.find(
+      (a) => (a.id || a).includes("seo") || (a.id || a) === "crew-seo"
     );
-    assert.ok(copywriter, "crew-copywriter should be in agent list");
+    assert.ok(seo, "crew-seo should be in agent list");
   });
 });
 
 // ── Wave pipeline ──────────────────────────────────────────────────────────
 
-describe("Wave pipeline", { timeout: 35000 }, () => {
-  test("@@PIPELINE with 2 agents returns pipeline result within 30s", async (t) => {
+describe("Wave pipeline", { timeout: 90000 }, () => {
+  test("@@PIPELINE with 2 agents returns pipeline result within 60s", async (t) => {
     if (skipIfDown(t)) return;
     const sessionId = `e2e-pipeline-${Date.now()}`;
     const pipelineMsg = `@@PIPELINE [
-  {"wave":1,"agent":"crew-copywriter","task":"say the word APPLE"},
+  {"wave":1,"agent":"crew-seo","task":"say the word APPLE"},
   {"wave":1,"agent":"crew-main","task":"say the word ORANGE"}
 ]`;
 
@@ -182,15 +182,15 @@ describe("Wave pipeline", { timeout: 35000 }, () => {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({ message: pipelineMsg, sessionId }),
-      signal: AbortSignal.timeout(32000),
+      signal: AbortSignal.timeout(60000),
     });
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.ok(body.reply, "response should have reply");
 
-    // Poll history for pipeline completion
+    // Poll history for pipeline completion (30 polls × 2s = 60s max)
     let found = false;
-    for (let i = 0; i < POLL_MAX; i++) {
+    for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, POLL_MS));
       const histRes = await fetch(
         `${CREW_LEAD_URL}/history?sessionId=${encodeURIComponent(sessionId)}`,

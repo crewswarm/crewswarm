@@ -186,13 +186,17 @@ describe("PM loop — stop file halts execution", { skip: SKIP_FULL }, () => {
     // Write stop file
     await writeFile(stopFile, "stop", "utf8").catch(() => {});
 
-    // Give the loop a moment to detect it
-    await new Promise(r => setTimeout(r, 1500));
-
-    // Status should be not running
-    const { body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
-    // Either it stopped (running: false) or it was already done (dry-run)
-    assert.ok(body.running === false || body.pid === undefined || body.alreadyStopped, `Expected stopped: ${JSON.stringify(body)}`);
+    // Poll until the loop detects the stop file (up to 10s)
+    let stopped = false;
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      const { body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
+      if (body.running === false || body.pid === undefined) {
+        stopped = true;
+        break;
+      }
+    }
+    assert.ok(stopped, "PM loop should stop within 10 seconds of stop file being created");
   });
 });
 
