@@ -17,7 +17,7 @@ We strongly recommend always running the latest commit on `main`.
 
 Report privately via email:
 
-**security@crewswarm.ai**
+**info@crewswarm.ai**
 
 Include:
 - A description of the vulnerability and its potential impact
