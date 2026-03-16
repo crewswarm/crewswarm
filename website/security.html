@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Security Architecture — Defense-in-Depth for AI Agents | crewswarm</title>
-  <meta name="description" content="crewswarm security guide: Docker isolation, AppArmor, firewall, command allowlist. Learn how we prevent ClawJacked, prompt injection, and filesystem escapes." />
+  <meta name="description"
+    content="crewswarm security guide: Docker isolation, AppArmor, firewall, command allowlist. Learn how we prevent ClawJacked, prompt injection, and filesystem escapes." />
   <!-- Open Graph -->
   <meta property="og:title" content="crewswarm Security — Defense-in-Depth" />
-  <meta property="og:description" content="5-layer security for AI agents: Docker, AppArmor, firewall, allowlist, read-only FS" />
+  <meta property="og:description"
+    content="5-layer security for AI agents: Docker, AppArmor, firewall, allowlist, read-only FS" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
   <meta property="og:url" content="https://crewswarm.ai/security.html" />
   <meta property="og:site_name" content="crewswarm" />
@@ -45,47 +48,61 @@
   }
   </script>
   <link rel="stylesheet" href="styles.css" />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+
 </head>
+
 <body>
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
-    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
-      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
-      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
-    </a>
-    <ul class="nav-links" id="navLinks" role="menubar">
-      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
-      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
-      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
-      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
-      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item active">Security</a></li>
-      <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
-    </ul>
-    <div class="nav-actions">
-      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
-      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
-        <span></span><span></span><span></span>
-      </button>
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks" role="menubar">
+        <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+        <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+        <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+        <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+        <li role="none"><a href="security.html" role="menuitem" class="nav-link-item active">Security</a></li>
+        <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+        <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false"
+          aria-controls="navLinks">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
     </div>
   </nav>
 
   <!-- HERO -->
   <section id="hero" class="hero">
     <div class="hero-glow"></div>
-    <div class="container">
+    <div class="container" style="text-align: center;">
       <h1>🔒 Security Architecture</h1>
-      <p class="hero-sub" style="max-width: 600px; margin-left: auto; margin-right: auto;">
-        Bank-grade security for AI agents. Five layers of defense 
+      <p class="hero-sub" style="margin: 0 auto; max-width: 700px;">
+        Bank-grade security for AI agents. Five layers of defense
         prevent prompt injection, filesystem escapes, and credential theft.
       </p>
-      <p class="hero-badge">
-        🛡️ No ClawJacked  •  🔐 Defense-in-Depth  •  ✅ Auditable
-      </p>
-      <div class="hero-cta">
-        <a href="#security-layers" class="btn btn-lg btn-primary">
-          How it works →
+      <div class="hero-badge" style="margin: 1.5rem auto;">
+        🛡️ No ClawJacked • 🔐 Defense-in-Depth • ✅ Auditable
+      </div>
+      <div class="hero-cta-row" style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
+        <a href="#security-layers" class="btn btn-primary">
+          How it works &rarr;
         </a>
-        <a href="https://github.com/crewswarm/crewswarm/blob/main/SECURITY.md" class="btn btn-lg btn-secondary">
+        <a href="https://github.com/crewswarm/crewswarm/blob/main/SECURITY.md" class="btn btn-ghost" target="_blank"
+          rel="noopener">
           Security Policy
         </a>
       </div>
@@ -97,7 +114,8 @@
     <div class="container">
       <div class="section-header">
         <h2>What We're Defending Against</h2>
-        <p class="section-desc">AI agents have full shell access and LLM decision-making. Here are the attack vectors we protect against.</p>
+        <p class="section-desc">AI agents have full shell access and LLM decision-making. Here are the attack vectors we
+          protect against.</p>
       </div>
 
       <div class="grid-2">
@@ -121,7 +139,8 @@
           <div class="threat-badge">🟡 High</div>
           <h3>Cloud Metadata Exfiltration</h3>
           <p><strong>Attack:</strong> Agent reads AWS IAM credentials via <code>169.254.169.254</code></p>
-          <p><strong>Example:</strong> <code>curl http://169.254.169.254/latest/meta-data/iam/security-credentials/</code></p>
+          <p><strong>Example:</strong>
+            <code>curl http://169.254.169.254/latest/meta-data/iam/security-credentials/</code></p>
           <p><strong>Defense:</strong> iptables blocks cloud metadata endpoints</p>
         </div>
 
@@ -157,7 +176,8 @@
     <div class="container">
       <div class="section-header">
         <h2>Five Layers of Defense</h2>
-        <p class="section-desc">No single layer is perfect. Defense-in-depth means an attacker must break through all five.</p>
+        <p class="section-desc">No single layer is perfect. Defense-in-depth means an attacker must break through all
+          five.</p>
       </div>
 
       <div class="security-layers">
@@ -368,7 +388,8 @@ security_opt:
         <div class="checklist-item">
           <input type="checkbox" id="c2" />
           <label for="c2">
-            <strong>Load AppArmor profile:</strong> <code>sudo apparmor_parser -r apparmor/crewswarm-restricted.profile</code>
+            <strong>Load AppArmor profile:</strong>
+            <code>sudo apparmor_parser -r apparmor/crewswarm-restricted.profile</code>
           </label>
         </div>
 
@@ -382,21 +403,24 @@ security_opt:
         <div class="checklist-item">
           <input type="checkbox" id="c4" />
           <label for="c4">
-            <strong>Review command allowlist:</strong> <code>~/.crewswarm/cmd-allowlist.json</code> — only allow necessary commands
+            <strong>Review command allowlist:</strong> <code>~/.crewswarm/cmd-allowlist.json</code> — only allow
+            necessary commands
           </label>
         </div>
 
         <div class="checklist-item">
           <input type="checkbox" id="c5" />
           <label for="c5">
-            <strong>Enable approval mode:</strong> <code>CREWSWARM_REQUIRE_APPROVAL=true</code> in <code>crewswarm.json</code>
+            <strong>Enable approval mode:</strong> <code>CREWSWARM_REQUIRE_APPROVAL=true</code> in
+            <code>crewswarm.json</code>
           </label>
         </div>
 
         <div class="checklist-item">
           <input type="checkbox" id="c6" />
           <label for="c6">
-            <strong>Bind to localhost only:</strong> Ports should be <code>127.0.0.1:4319</code> (not <code>0.0.0.0:4319</code>)
+            <strong>Bind to localhost only:</strong> Ports should be <code>127.0.0.1:4319</code> (not
+            <code>0.0.0.0:4319</code>)
           </label>
         </div>
 
@@ -424,7 +448,8 @@ security_opt:
         <div class="checklist-item">
           <input type="checkbox" id="c10" />
           <label for="c10">
-            <strong>Test escapes:</strong> Try writing to <code>/etc/passwd</code>, accessing cloud metadata, running unapproved commands
+            <strong>Test escapes:</strong> Try writing to <code>/etc/passwd</code>, accessing cloud metadata, running
+            unapproved commands
           </label>
         </div>
       </div>
@@ -480,7 +505,8 @@ security_opt:
         <div class="response-card">
           <h3>4. Reporting</h3>
           <ol>
-            <li><strong>File GitHub issue:</strong> <a href="https://github.com/crewswarm/crewswarm/issues/new">New Security Issue</a></li>
+            <li><strong>File GitHub issue:</strong> <a href="https://github.com/crewswarm/crewswarm/issues/new">New
+                Security Issue</a></li>
             <li><strong>Email security team:</strong> <code>info@crewswarm.ai</code></li>
             <li><strong>Provide logs:</strong> Sanitized logs from <code>~/.crewswarm/logs/</code></li>
             <li><strong>Timeline:</strong> When did you first notice the issue?</li>
@@ -495,8 +521,9 @@ security_opt:
     <div class="container footer-inner">
       <div class="footer-brand">
         <div class="footer-logo">crewswarm</div>
-        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
-        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a
+            href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
       </div>
       <div class="footer-links">
         <div class="footer-col">
@@ -505,6 +532,8 @@ security_opt:
           <a href="vibe.html">Vibe IDE</a>
           <a href="deploy.html">Deploy</a>
           <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Company</div>
@@ -520,10 +549,14 @@ security_opt:
       </div>
     </div>
     <div class="footer-bottom">
+      <div class="container">
       <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    
+      </div>
     </div>
   </footer>
 
   <script src="script.js"></script>
 </body>
+
 </html>

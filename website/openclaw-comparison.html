@@ -260,14 +260,24 @@
       border-radius: 0.5rem;
     }
   </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+
 </head>
 <body>
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
-    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
-      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
-      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
-    </a>
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+      </a>
     <ul class="nav-links" id="navLinks" role="menubar">
       <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
       <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
@@ -282,23 +292,22 @@
         <span></span><span></span><span></span>
       </button>
     </div>
+    </div>
   </nav>
 
   <!-- HERO -->
   <section class="hero compare-hero">
     <div class="hero-glow"></div>
-    <div class="container">
-      <div class="hero-badge">Comparison</div>
-      <h1>Local-First AI Orchestration<br>vs. Cloud Platforms</h1>
-      <p class="hero-sub">
-        Your code stays on your machine. Your API keys stay in your hands.<br>
-        No subscriptions. No vendor lock-in. No data uploaded to the cloud.
-      </p>
-      <div class="hero-cta">
+    <div class="hero-badge">Comparison</div>
+    <h1>Local-First AI Orchestration<br>vs. Cloud Platforms</h1>
+    <p class="hero-sub">
+      Your code stays on your machine. Your API keys stay in your hands.<br>
+      No subscriptions. No vendor lock-in. No data uploaded to the cloud.
+    </p>
+    <div class="hero-cta">
         <a href="#comparison-table" class="btn btn-lg btn-primary">See the comparison &darr;</a>
         <a href="#faq" class="btn btn-lg btn-secondary">FAQ</a>
       </div>
-    </div>
   </section>
 
   <!-- WHY LOCAL-FIRST -->
@@ -590,6 +599,8 @@
       <p class="cta-links">
         <a href="https://github.com/crewswarm/crewswarm">GitHub</a> &middot;
         <a href="security.html">Security</a> &middot;
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
         <a href="deploy.html">Deploy Docs</a> &middot;
         <a href="https://github.com/crewswarm/crewswarm/discussions">Community</a>
       </p>
@@ -611,11 +622,14 @@
           <a href="vibe.html">Vibe IDE</a>
           <a href="deploy.html">Deploy</a>
           <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Company</div>
           <a href="about.html">About Us</a>
           <a href="contact.html">Contact</a>
+          <a href="openclaw-comparison.html">Compare</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Community</div>
@@ -626,7 +640,10 @@
       </div>
     </div>
     <div class="footer-bottom">
+      <div class="container">
       <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    
+      </div>
     </div>
   </footer>
 

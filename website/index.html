@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,19 +8,22 @@
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
+    function gtag() { dataLayer.push(arguments); }
     gtag('js', new Date());
     gtag('config', 'G-0QSG6Y9DHT');
   </script>
   <!-- End Google Analytics -->
   <title>crewswarm — Local-First AI Workspace with Dashboard, Vibe IDE, and Agent Runtime</title>
-  <meta name="description" content="Open-source local-first AI workspace with a control-plane dashboard, Vibe browser IDE, crewchat native app, and multi-agent runtime. Run crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI in one stack." />
-  <meta name="keywords" content="local-first AI workspace, multi-agent AI, AI IDE, browser IDE, developer control plane, agent runtime, Vibe IDE, crew-cli, Cursor CLI, Claude Code, Gemini CLI, OpenCode, crewchat, crewswarm" />
+  <meta name="description"
+    content="Open-source local-first AI workspace with a control-plane dashboard, Vibe browser IDE, crewchat native app, and multi-agent runtime. Run crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI in one stack." />
+  <meta name="keywords"
+    content="local-first AI workspace, multi-agent AI, AI IDE, browser IDE, developer control plane, agent runtime, Vibe IDE, crew-cli, Cursor CLI, Claude Code, Gemini CLI, OpenCode, crewchat, crewswarm" />
   <!-- Open Graph -->
   <meta property="og:site_name" content="crewswarm" />
   <meta property="og:locale" content="en_US" />
   <meta property="og:title" content="crewswarm — Local-First AI Workspace for Building with Agents" />
-  <meta property="og:description" content="Dashboard, Vibe IDE, crewchat, and a real multi-agent runtime in one open-source stack. Build with crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI." />
+  <meta property="og:description"
+    content="Dashboard, Vibe IDE, crewchat, and a real multi-agent runtime in one open-source stack. Build with crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI." />
   <meta property="og:url" content="https://crewswarm.ai/" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -30,7 +34,8 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@crewswarm" />
   <meta name="twitter:title" content="crewswarm — Local-First AI Workspace for Building with Agents" />
-  <meta name="twitter:description" content="Open-source dashboard, Vibe IDE, native chat, and agent runtime. Run crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI in one stack." />
+  <meta name="twitter:description"
+    content="Open-source dashboard, Vibe IDE, native chat, and agent runtime. Run crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI in one stack." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <meta name="twitter:image:alt" content="crewswarm — multi-agent AI orchestration" />
   <!-- Misc SEO -->
@@ -120,29 +125,36 @@
   </script>
   <link rel="stylesheet" href="styles.css" />
   <style id="hero-styles">
-    #hero.hero > * { position: relative; z-index: 1; }
+    #hero.hero>* {
+      position: relative;
+      z-index: 1;
+    }
   </style>
 </head>
+
 <body>
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
-    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
-      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
-      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
-    </a>
-    <ul class="nav-links" id="navLinks" role="menubar">
-      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
-      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
-      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
-      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
-      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
-      <li role="none" class="nav-mobile-cta"><a href="#get-started" class="btn btn-sm">Get started →</a></li>
-    </ul>
-    <div class="nav-actions">
-      <a href="#get-started" class="btn btn-sm nav-desktop-cta">Get started →</a>
-      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
-        <span></span><span></span><span></span>
-      </button>
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks" role="menubar">
+        <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+        <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+        <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+        <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+        <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+        <li role="none" class="nav-mobile-cta"><a href="#get-started" class="btn btn-sm">Get started →</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="#get-started" class="btn btn-sm nav-desktop-cta">Get started →</a>
+        <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false"
+          aria-controls="navLinks">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
     </div>
   </nav>
 
@@ -156,16 +168,20 @@
         <img src="stinky.png?v=2" alt="Stinki — crewswarm mascot" class="hero-mascot" width="512" height="512" />
       </picture>
     </div>
-    <h1>One idea.<br/>One build.<br/><span class="gradient-text">One crew.</span></h1>
-    <p class="hero-sub">The <a href="#how-it-works" style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">local-first AI workspace</a> for <strong>Codex</strong>, <strong>Claude Code</strong>, <strong>Cursor</strong>, <strong>Gemini</strong>, <strong>OpenCode</strong>, and <strong>crew-cli</strong>. Dashboard, Vibe, and your runtime in one stack.</p>
+    <h1>One idea.<br />One build.<br /><span class="gradient-text">One crew.</span></h1>
+    <p class="hero-sub">The <a href="#how-it-works"
+        style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">local-first AI
+        workspace</a> for <strong>OpenCode</strong>, <strong>Claude Code</strong>, <strong>Cursor</strong>,
+      and <strong>crew-cli</strong>. Dashboard, Vibe, and your
+      runtime in one stack.</p>
     <div class="proof-bar visible">
       <span class="proof-item">Local-first runtime</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">Dashboard + Vibe IDE</span>
       <span class="proof-sep" aria-hidden="true">•</span>
-      <span class="proof-item">Claude + crew-cli + Cursor</span>
+      <span class="proof-item">crew-cli + Cursor</span>
       <span class="proof-sep" aria-hidden="true">•</span>
-      <span class="proof-item">Gemini + OpenCode + Codex</span>
+      <span class="proof-item">Claude Code + OpenCode</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">MCP server</span>
       <span class="proof-sep" aria-hidden="true">•</span>
@@ -182,20 +198,23 @@
         <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
         <span class="terminal-title">pm-loop — crewswarm</span>
         <div class="terminal-bar-actions">
-          <button class="lt-restart-btn" onclick="restartHeroTerminal()" aria-label="Replay build animation" title="Replay">↻</button>
-          <button class="lt-skip-btn" onclick="skipHeroTerminal()" aria-label="Skip to end" title="Skip to end">⏭</button>
+          <button class="lt-restart-btn" onclick="restartHeroTerminal()" aria-label="Replay build animation"
+            title="Replay">↻</button>
+          <button class="lt-skip-btn" onclick="skipHeroTerminal()" aria-label="Skip to end"
+            title="Skip to end">⏭</button>
         </div>
       </div>
       <div class="hero-terminal-input-row">
         <span class="lt-prompt">$</span>
-        <input id="hero-input" class="hero-terminal-input" placeholder='node pm-loop.mjs "your requirement here"' spellcheck="false" autocomplete="off" aria-label="Enter your build requirement" />
+        <input id="hero-input" class="hero-terminal-input" placeholder='node pm-loop.mjs "your requirement here"'
+          spellcheck="false" autocomplete="off" aria-label="Enter your build requirement" />
         <button class="hero-run-btn" onclick="runCustomHeroTerminal()" aria-label="Run">▶ Run</button>
       </div>
       <div class="live-terminal-body" id="hero-terminal-content"></div>
     </div>
     <script>
-      const AGENTS = ['crew-pm','crew-coder-back','crew-coder-front','crew-qa','crew-fixer','crew-github'];
-      const PHASES = ['MVP','Phase 1','Phase 2'];
+      const AGENTS = ['crew-pm', 'crew-coder-back', 'crew-coder-front', 'crew-qa', 'crew-fixer', 'crew-github'];
+      const PHASES = ['MVP', 'Phase 1', 'Phase 2'];
 
       function makeLines(requirement) {
         const req = requirement || 'Build a todo API with tests';
@@ -278,10 +297,10 @@
         runHeroLines(makeLines(val || 'Build a todo API with tests'));
       }
 
-      document.addEventListener('DOMContentLoaded', function() {
+      document.addEventListener('DOMContentLoaded', function () {
         const input = document.getElementById('hero-input');
         if (input) {
-          input.addEventListener('keydown', function(e) {
+          input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') { e.preventDefault(); runCustomHeroTerminal(); }
           });
         }
@@ -318,19 +337,26 @@
         <div style="flex:1; min-width:300px;">
           <div class="hero-badge">The Product</div>
           <h2 class="gradient-text">One stack. Three surfaces.</h2>
-          <p>Use the Dashboard as the control plane, Vibe as the browser IDE, and crewchat as the native chat client. All three talk to the same agents, memory, and runtime.</p>
+          <p>Use the Dashboard as the control plane, Vibe as the browser IDE, and crewchat as the native chat client.
+            All three talk to the same agents, memory, and runtime.</p>
           <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:1.5rem;">
-            <div style="padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
+            <div
+              style="padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
               <strong style="display:block;color:var(--text);margin-bottom:4px;">Dashboard</strong>
-              <span style="font-size:0.85rem;color:var(--text-2);">Services, agents, models, memory, and build control.</span>
+              <span style="font-size:0.85rem;color:var(--text-2);">Services, agents, models, memory, and build
+                control.</span>
             </div>
-            <div style="padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
+            <div
+              style="padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
               <strong style="display:block;color:var(--text);margin-bottom:4px;">Vibe</strong>
-              <span style="font-size:0.85rem;color:var(--text-2);">File tree, Monaco editor, chat, diffs, and terminal.</span>
+              <span style="font-size:0.85rem;color:var(--text-2);">File tree, Monaco editor, chat, diffs, and
+                terminal.</span>
             </div>
-            <div style="padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
+            <div
+              style="padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
               <strong style="display:block;color:var(--text);margin-bottom:4px;">crewchat</strong>
-              <span style="font-size:0.85rem;color:var(--text-2);">Native chat surface for quick routing and project context.</span>
+              <span style="font-size:0.85rem;color:var(--text-2);">Native chat surface for quick routing and project
+                context.</span>
             </div>
           </div>
         </div>
@@ -341,7 +367,9 @@
               <div class="preview-chrome-url">vibe.html</div>
               <div class="preview-chrome-actions"><a href="vibe.html" class="preview-open-btn">Open Vibe →</a></div>
             </div>
-            <img src="vibe-ide-real.webp?v=1" alt="Real Vibe browser IDE screenshot with file explorer, editor workspace, agent chat, and activity trace" class="preview-img" />
+            <img src="vibe-ide-real.webp?v=1"
+              alt="Real Vibe browser IDE screenshot with file explorer, editor workspace, agent chat, and activity trace"
+              class="preview-img" />
           </div>
         </div>
       </div>
@@ -352,7 +380,7 @@
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">How it works</div>
-        <h2>From requirement to reality<br/>in one command</h2>
+        <h2>From requirement to reality<br />in one command</h2>
         <p class="section-desc">No orchestration expertise required. Write what you need in plain English.</p>
       </div>
       <div class="flow">
@@ -397,7 +425,9 @@
       <div class="section-header">
         <div class="eyebrow">Architecture</div>
         <h2>Code Engine, control plane, and agent runtime</h2>
-        <p class="section-desc">crewswarm runs as one stack: a <strong>Code Engine</strong> for direct CLI execution, a realtime control plane for targeted dispatch, and product surfaces like the dashboard, Vibe, Telegram, WhatsApp, and crewchat on top.</p>
+        <p class="section-desc">crewswarm runs as one stack: a <strong>Code Engine</strong> for direct CLI execution, a
+          realtime control plane for targeted dispatch, and product surfaces like the dashboard, Vibe, Telegram,
+          WhatsApp, and crewchat on top.</p>
       </div>
       <div class="rt-flow-diagram" aria-label="Architecture flow: PM to specialists to synthesizer over RT channels">
         <div class="rt-flow-row rt-flow-pm">
@@ -421,7 +451,8 @@
             <span class="rt-flow-detail">crew-main · audit &amp; assemble</span>
           </div>
         </div>
-        <p class="rt-flow-caption">The RT channels (`command`, `assign`, `done`, `issues`) coordinate targeted dispatch while the Code Engine handles real execution. Same stack, different layers.</p>
+        <p class="rt-flow-caption">The RT channels (`command`, `assign`, `done`, `issues`) coordinate targeted dispatch
+          while the Code Engine handles real execution. Same stack, different layers.</p>
       </div>
       <div class="section-header" style="margin-top: 2.5rem;">
         <h2 style="font-size: 1.35rem;">Three layers, one stack</h2>
@@ -433,7 +464,8 @@
           <div class="layer-content">
             <h3>Code Engine</h3>
             <span class="layer-tag">OpenCode · Cursor CLI · Claude Code · crew-cli · Gemini · Codex CLI</span>
-            <p>This is the execution layer. It is the part that writes files, runs commands, streams output, and gives each agent a real working environment.</p>
+            <p>This is the execution layer. It is the part that writes files, runs commands, streams output, and gives
+              each agent a real working environment.</p>
           </div>
         </div>
         <div class="layer-arrow">↓</div>
@@ -442,7 +474,8 @@
           <div class="layer-content">
             <h3>Realtime control plane</h3>
             <span class="layer-tag">RT bus · targeted dispatch · retries · issues</span>
-            <p>The RT layer coordinates agent daemons, targeted dispatch, retries, fanout, and bridge traffic. It is infrastructure, not a fake animation layer.</p>
+            <p>The RT layer coordinates agent daemons, targeted dispatch, retries, fanout, and bridge traffic. It is
+              infrastructure, not a fake animation layer.</p>
           </div>
         </div>
         <div class="layer-arrow">↓</div>
@@ -451,7 +484,8 @@
           <div class="layer-content">
             <h3>Orchestration layer</h3>
             <span class="layer-tag">crewswarm</span>
-            <p>PM planning, phased builds, PM Loop, shared memory, fault recovery, dashboard, Vibe, SwiftBar, Telegram, WhatsApp, MCP, and crewchat all sit here as one coordinated product.</p>
+            <p>PM planning, phased builds, PM Loop, shared memory, fault recovery, dashboard, Vibe, SwiftBar, Telegram,
+              WhatsApp, MCP, and crewchat all sit here as one coordinated product.</p>
           </div>
         </div>
       </div>
@@ -464,28 +498,40 @@
       <div class="section-header">
         <div class="eyebrow">Built different</div>
         <h2>How crewswarm differs from framework-only stacks</h2>
-        <p class="section-desc">crewswarm is a <a href="#system-diagram">runtime</a>, not just a library. You get a realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, Claude Code, and crew-cli out of the box.</p>
+        <p class="section-desc">crewswarm is a <a href="#system-diagram">runtime</a>, not just a library. You get a
+          realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, Claude Code, and
+          crew-cli out of the box.</p>
       </div>
       <div class="differs-grid">
         <div class="differs-card">
           <h3>Four execution engines, first-class</h3>
-          <p>Every agent can run inside <strong>OpenCode</strong> (persistent sessions, full file editing), <strong>Cursor CLI</strong> (opus-thinking, sonnet-4.6), <strong>Claude Code</strong> (full workspace context, native tool use), or <strong>crew-cli</strong> (High-performance execution). Switch per agent from the dashboard — no config files, no restarts.</p>
+          <p>Every agent can run inside <strong>OpenCode</strong> (persistent sessions, full file editing),
+            <strong>Cursor CLI</strong> (opus-thinking, sonnet-4.6), <strong>Claude Code</strong> (full workspace
+            context, native tool use), or <strong>crew-cli</strong> (High-performance execution). Switch per agent from
+            the dashboard — no config files, no restarts.
+          </p>
         </div>
         <div class="differs-card">
           <h3>Realtime bus + daemons</h3>
-          <p>Agents run as long-lived daemons connected to an RT message bus. Tasks flow over <code>command</code>, <code>assign</code>, <code>done</code>, <code>issues</code> — no in-process-only simulation. Real dispatch, real replies.</p>
+          <p>Agents run as long-lived daemons connected to an RT message bus. Tasks flow over <code>command</code>,
+            <code>assign</code>, <code>done</code>, <code>issues</code> — no in-process-only simulation. Real dispatch,
+            real replies.
+          </p>
         </div>
         <div class="differs-card">
           <h3>Execution layer included</h3>
-          <p>Tool calls (<code>@@WRITE_FILE</code>, <code>@@RUN_CMD</code>, etc.) are executed by the gateway with allowlists and path sandboxing. You don’t have to build a runner or wire a framework to one.</p>
+          <p>Tool calls (<code>@@WRITE_FILE</code>, <code>@@RUN_CMD</code>, etc.) are executed by the gateway with
+            allowlists and path sandboxing. You don’t have to build a runner or wire a framework to one.</p>
         </div>
         <div class="differs-card">
           <h3>DLQ and fault recovery</h3>
-          <p>Failed tasks go to a Dead Letter Queue. Retry with backoff, replay from the dashboard. Framework-only stacks leave retries and observability to you.</p>
+          <p>Failed tasks go to a Dead Letter Queue. Retry with backoff, replay from the dashboard. Framework-only
+            stacks leave retries and observability to you.</p>
         </div>
         <div class="differs-card">
           <h3>Your models, your machine</h3>
-          <p>Each agent calls its LLM directly with your API key. No proxy, no vendor lock-in. Run fully local with Ollama. Compare options in the <a href="#comparison">comparison section</a>.</p>
+          <p>Each agent calls its LLM directly with your API key. No proxy, no vendor lock-in. Run fully local with
+            Ollama. Compare options in the <a href="#comparison">comparison section</a>.</p>
         </div>
       </div>
     </div>
@@ -496,7 +542,8 @@
       <div class="section-header">
         <div class="eyebrow">Why not just Cursor?</div>
         <h2>Because a single editor is not a runtime</h2>
-        <p class="section-desc">Cursor is an editor. crewswarm is the control plane, runtime, and memory layer around your editors and CLIs.</p>
+        <p class="section-desc">Cursor is an editor. crewswarm is the control plane, runtime, and memory layer around
+          your editors and CLIs.</p>
       </div>
       <div class="features-grid" style="grid-template-columns: repeat(3, 1fr);">
         <div class="feature-card">
@@ -507,7 +554,8 @@
         <div class="feature-card">
           <div class="feature-icon">🛠️</div>
           <h3>Runtime control</h3>
-          <p>Start, stop, inspect, and route the whole stack from the dashboard instead of gluing scripts together manually.</p>
+          <p>Start, stop, inspect, and route the whole stack from the dashboard instead of gluing scripts together
+            manually.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🔁</div>
@@ -523,13 +571,14 @@
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Features</div>
-        <h2>Everything a dev crew needs,<br/>minus the meetings</h2>
+        <h2>Everything a dev crew needs,<br />minus the meetings</h2>
       </div>
       <div class="features-grid">
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">⚡</div>
           <h3>PM-led orchestration</h3>
-          <p>Natural-language requirement → PM breaks it into tasks → targeted dispatch to the right agent. No broadcast races. No duplicate work.</p>
+          <p>Natural-language requirement → PM breaks it into tasks → targeted dispatch to the right agent. No broadcast
+            races. No duplicate work.</p>
           <div class="feature-code">crew-pm → crew-coder → crew-qa → crew-fixer</div>
         </div>
         <div class="feature-card">
@@ -545,12 +594,16 @@
         <div class="feature-card">
           <div class="feature-icon">🧩</div>
           <h3>Domain-Aware Planning</h3>
-          <p>Large codebases (100K+ lines) get subsystem-specific PM agents. crew-pm-cli handles CLI tasks, crew-pm-frontend owns dashboard, crew-pm-core manages orchestration. No more hallucinated file paths.</p>
+          <p>Large codebases (100K+ lines) get subsystem-specific PM agents. crew-pm-cli handles CLI tasks,
+            crew-pm-frontend owns dashboard, crew-pm-core manages orchestration. No more hallucinated file paths.</p>
         </div>
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🧠</div>
           <h3>Shared Memory + Project Message RAG</h3>
-          <p>Every agent reads shared memory (brain.md, decisions, handoff notes). All project messages auto-save to <code>~/.crewswarm/project-messages/</code> and are <strong>automatically indexed for semantic search</strong> using local TF-IDF + cosine similarity — no API calls, all local.</p>
+          <p>Every agent reads shared memory (brain.md, decisions, handoff notes). All project messages auto-save to
+            <code>~/.crewswarm/project-messages/</code> and are <strong>automatically indexed for semantic
+              search</strong> using local TF-IDF + cosine similarity — no API calls, all local.
+          </p>
           <div class="engines-grid" style="margin-top: 1rem; grid-template-columns: repeat(3, 1fr);">
             <div class="engine-card">
               <div class="engine-header"><strong>AgentMemory</strong></div>
@@ -577,17 +630,21 @@
               </ul>
             </div>
           </div>
-          <div class="feature-code" style="margin-top: 1rem;">Cache headers prevent stale data. Messages persist across tab switches. Zero configuration needed.</div>
+          <div class="feature-code" style="margin-top: 1rem;">Cache headers prevent stale data. Messages persist across
+            tab switches. Zero configuration needed.</div>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🔌</div>
           <h3>Skill-powered</h3>
-          <p>Extend agents with data-driven <code>SKILL.md</code> or JSON plugins. Add Twitter, Fly.io, or custom API tools without writing JS code.</p>
+          <p>Extend agents with data-driven <code>SKILL.md</code> or JSON plugins. Add Twitter, Fly.io, or custom API
+            tools without writing JS code.</p>
         </div>
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🎤</div>
           <h3>Multimodal Support — Images + Voice across all platforms</h3>
-          <p>Send images or voice messages from any surface. Dashboard, Telegram, WhatsApp, and crewchat all support image recognition and voice transcription. Powered by Groq (fast/cheap ~$3/month) or Gemini 2.0 Flash (best quality).</p>
+          <p>Send images or voice messages from any surface. Dashboard, Telegram, WhatsApp, and crewchat all support
+            image recognition and voice transcription. Powered by Groq (fast/cheap ~$3/month) or Gemini 2.0 Flash (best
+            quality).</p>
           <div class="control-surfaces" style="margin-top: 1rem;">
             <div class="cs-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
               <div class="cs-item cs-native">
@@ -608,7 +665,9 @@
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🐦</div>
           <h3>Real-time X/Twitter Intelligence with Grok</h3>
-          <p>The only AI coding platform with live X/Twitter search. Use <code>@@SKILL grok.x-search</code> to search recent tweets, get citations with X post URLs, filter by date ranges, handles, and media types. Powered by xAI's Grok 3 with real-time X data access.</p>
+          <p>The only AI coding platform with live X/Twitter search. Use <code>@@SKILL grok.x-search</code> to search
+            recent tweets, get citations with X post URLs, filter by date ranges, handles, and media types. Powered by
+            xAI's Grok 3 with real-time X data access.</p>
           <div class="engines-grid" style="margin-top: 1rem; grid-template-columns: repeat(2, 1fr);">
             <div class="engine-card">
               <div class="engine-header"><strong>grok.x-search</strong></div>
@@ -627,14 +686,17 @@
               </ul>
             </div>
           </div>
-          <div class="feature-code" style="margin-top: 1rem;">Competitive edge: GitHub Copilot can't search X. Claude can't search X. Only crewswarm has real-time X intelligence.</div>
+          <div class="feature-code" style="margin-top: 1rem;">Competitive edge: GitHub Copilot can't search X. Claude
+            can't search X. Only crewswarm has real-time X intelligence.</div>
         </div>
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🐳</div>
           <h3>Docker-First Deployment — Multi-Arch Images</h3>
-          <p>One-line install on any Linux machine. Multi-arch images (AMD64 + ARM64) for servers, VMs, Raspberry Pi, cloud deployments, and CI/CD. Perfect for team shared instances, GitHub Actions, or self-hosted setups.</p>
+          <p>One-line install on any Linux machine. Multi-arch images (AMD64 + ARM64) for servers, VMs, Raspberry Pi,
+            cloud deployments, and CI/CD. Perfect for team shared instances, GitHub Actions, or self-hosted setups.</p>
           <div style="background: rgba(0,0,0,0.3); padding: 1.25rem; border-radius: var(--radius); margin-top: 1rem;">
-            <pre style="font-family: 'SF Mono', monospace; font-size: 0.82rem; color: var(--accent); margin: 0;">curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash</pre>
+            <pre
+              style="font-family: 'SF Mono', monospace; font-size: 0.82rem; color: var(--accent); margin: 0;">curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash</pre>
           </div>
           <div class="engines-grid" style="margin-top: 1rem; grid-template-columns: repeat(4, 1fr);">
             <div class="engine-card">
@@ -654,23 +716,30 @@
               <span style="font-size: 0.75rem; color: var(--text-2);">Shared crew for entire team</span>
             </div>
           </div>
-          <div class="feature-code" style="margin-top: 1rem;">Local dev setup also available for contributors. Pick the deployment that fits your workflow.</div>
+          <div class="feature-code" style="margin-top: 1rem;">Local dev setup also available for contributors. Pick the
+            deployment that fits your workflow.</div>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🔄</div>
           <h3>Fault tolerance</h3>
-          <p>Retry with backoff and task leases. After max retries, tasks hit the Dead Letter Queue for manual replay from the dashboard.</p>
+          <p>Retry with backoff and task leases. After max retries, tasks hit the Dead Letter Queue for manual replay
+            from the dashboard.</p>
         </div>
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🚀</div>
           <h3>Five execution engines — your choice per agent</h3>
-          <p>Your crew runs specialist AI agents (PM, coder, QA, fixer…) — each one calling its LLM directly. For heavy coding tasks, agents can go deeper: route them into <strong>OpenCode</strong>, <strong>Cursor CLI</strong>, <strong>Claude Code</strong>, <strong>crew-cli</strong>, or <strong>Gemini CLI</strong> for full file editing, bash access, and persistent sessions. Switch per agent from the dashboard. No restarts, no config files.</p>
+          <p>Your crew runs specialist AI agents (PM, coder, QA, fixer…) — each one calling its LLM directly. For heavy
+            coding tasks, agents can go deeper: route them into <strong>OpenCode</strong>, <strong>Cursor CLI</strong>,
+            <strong>Claude Code</strong>, <strong>crew-cli</strong>, or <strong>Gemini CLI</strong> for full file
+            editing, bash access, and persistent sessions. Switch per agent from the dashboard. No restarts, no config
+            files.
+          </p>
           <div class="engines-grid">
             <div class="engine-card">
               <div class="engine-header">
                 <svg viewBox="0 0 24 30" width="18" height="22" aria-label="OpenCode" style="flex-shrink:0;">
-                  <rect width="24" height="30" fill="#3a3836"/>
-                  <rect x="6" y="12" width="12" height="12" fill="#CFCECD"/>
+                  <rect width="24" height="30" fill="#3a3836" />
+                  <rect x="6" y="12" width="12" height="12" fill="#CFCECD" />
                 </svg>
                 <strong>OpenCode</strong>
               </div>
@@ -683,7 +752,8 @@
             </div>
             <div class="engine-card">
               <div class="engine-header">
-                <img src="https://cdn.simpleicons.org/cursor/ffffff" alt="Cursor" width="18" height="18" style="flex-shrink:0;opacity:0.9;" loading="lazy"/>
+                <img src="https://cdn.simpleicons.org/cursor/ffffff" alt="Cursor" width="18" height="18"
+                  style="flex-shrink:0;opacity:0.9;" loading="lazy" />
                 <strong>Cursor CLI</strong>
               </div>
               <ul class="engine-traits">
@@ -695,7 +765,11 @@
             </div>
             <div class="engine-card">
               <div class="engine-header">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="#d4a853" style="flex-shrink:0;" aria-label="Claude Code"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="#d4a853" style="flex-shrink:0;"
+                  aria-label="Claude Code">
+                  <path
+                    d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
+                </svg>
                 <strong>Claude Code</strong>
               </div>
               <ul class="engine-traits">
@@ -707,19 +781,29 @@
             </div>
             <div class="engine-card">
               <div class="engine-header">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-label="crew-cli" style="flex-shrink:0;"><circle cx="12" cy="12" r="10" stroke="#a78bfa" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-label="crew-cli"
+                  style="flex-shrink:0;">
+                  <circle cx="12" cy="12" r="10" stroke="#a78bfa" stroke-width="1.5" />
+                  <path d="M8 12l3 3 5-5" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
                 <strong>crew-cli</strong>
               </div>
               <ul class="engine-traits">
                 <li>3-Tier AI Architecture (Router/Planner/Worker)</li>
                 <li>3x Parallel Speedup over sequential cycles</li>
-                <li><a href="atat.html" style="color:var(--accent);text-decoration:underline;">ATAT Protocol</a> & LSP Self-Healing enabled</li>
+                <li><a href="atat.html" style="color:var(--accent);text-decoration:underline;">ATAT Protocol</a> & LSP
+                  Self-Healing enabled</li>
               </ul>
               <div class="engine-tag">Best for: High-performance terminal engineering</div>
             </div>
             <div class="engine-card">
               <div class="engine-header">
-                <svg viewBox="0 0 24 24" width="18" height="18" aria-label="Gemini" style="flex-shrink:0;"><circle cx="12" cy="12" r="9" fill="#4285F4"/><circle cx="12" cy="12" r="6" fill="#34A853"/><circle cx="12" cy="12" r="3" fill="#FBBC04"/></svg>
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-label="Gemini" style="flex-shrink:0;">
+                  <circle cx="12" cy="12" r="9" fill="#4285F4" />
+                  <circle cx="12" cy="12" r="6" fill="#34A853" />
+                  <circle cx="12" cy="12" r="3" fill="#FBBC04" />
+                </svg>
                 <strong>Gemini CLI</strong>
               </div>
               <ul class="engine-traits">
@@ -734,7 +818,11 @@
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">🔌</div>
           <h3>MCP server — your crew in any AI tool</h3>
-          <p>crewswarm exposes your entire crew as an <strong>MCP server on port 5020</strong>. Add one line to <code>~/.cursor/mcp.json</code> (or Claude Code, OpenCode, Codex) and every project gets your full persistent agent fleet — not session-scoped generics, but your crew with memory, custom models, and cross-agent coordination.</p>
+          <p>crewswarm exposes your entire crew as an <strong>MCP server on port 5020</strong>. Add one line to
+            <code>~/.cursor/mcp.json</code> (or Claude Code, OpenCode, Codex) and every project gets your full
+            persistent agent fleet — not session-scoped generics, but your crew with memory, custom models, and
+            cross-agent coordination.
+          </p>
           <div class="engines-grid" style="margin-top:16px;">
             <div class="engine-card">
               <div class="engine-header"><strong>dispatch_agent</strong></div>
@@ -761,35 +849,46 @@
               </ul>
             </div>
           </div>
-          <div class="feature-code" style="margin-top:14px;">~/.cursor/mcp.json → {"mcpServers":{"crewswarm":{"url":"http://127.0.0.1:5020/mcp"}}}</div>
+          <div class="feature-code" style="margin-top:14px;">~/.cursor/mcp.json →
+            {"mcpServers":{"crewswarm":{"url":"http://127.0.0.1:5020/mcp"}}}</div>
         </div>
 
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">⚙️</div>
           <h3>@@ Protocol — 10x more efficient than JSON-RPC</h3>
-          <p>While others use verbose JSON-RPC or natural language, crewswarm agents communicate via a proprietary <strong>@@</strong> syntax that's <strong>10x more token-efficient</strong>, unambiguous, and easy for LLMs to generate. MCP-compatible via translation layer.</p>
+          <p>While others use verbose JSON-RPC or natural language, crewswarm agents communicate via a proprietary
+            <strong>@@</strong> syntax that's <strong>10x more token-efficient</strong>, unambiguous, and easy for LLMs
+            to generate. MCP-compatible via translation layer.
+          </p>
           <div class="engines-grid" style="margin-top:16px;">
             <div class="engine-card">
               <div class="engine-header"><strong>Standard JSON-RPC</strong></div>
-              <pre style="font-size:11px;line-height:1.3;color:#fca5a5;margin:8px 0 0;background:rgba(220,38,38,0.05);padding:8px;border-radius:4px;border:1px solid rgba(220,38,38,0.1);">{"tool": "write", 
+              <pre
+                style="font-size:11px;line-height:1.3;color:#fca5a5;margin:8px 0 0;background:rgba(220,38,38,0.05);padding:8px;border-radius:4px;border:1px solid rgba(220,38,38,0.1);">{"tool": "write", 
  "params": {
   "path": "app.ts",
   "content": "import express..."
 }}</pre>
-              <div class="engine-tag" style="background:rgba(220,38,38,0.1);color:#fca5a5;border-color:rgba(220,38,38,0.2);">~80 tokens • Fragile</div>
+              <div class="engine-tag"
+                style="background:rgba(220,38,38,0.1);color:#fca5a5;border-color:rgba(220,38,38,0.2);">~80 tokens •
+                Fragile</div>
             </div>
             <div class="engine-card">
               <div class="engine-header"><strong>@@ Protocol (CAP)</strong></div>
-              <pre style="font-size:11px;line-height:1.3;color:#a3e635;margin:8px 0 0;background:rgba(132,204,22,0.05);padding:8px;border-radius:4px;border:1px solid rgba(132,204,22,0.1);">@@WRITE_FILE app.ts
+              <pre
+                style="font-size:11px;line-height:1.3;color:#a3e635;margin:8px 0 0;background:rgba(132,204,22,0.05);padding:8px;border-radius:4px;border:1px solid rgba(132,204,22,0.1);">@@WRITE_FILE app.ts
 import express from 'express';
 const app = express();
 ...
 @@END_FILE</pre>
-              <div class="engine-tag" style="background:rgba(132,204,22,0.1);color:#a3e635;border-color:rgba(132,204,22,0.2);">~8 tokens • 10x less overhead</div>
+              <div class="engine-tag"
+                style="background:rgba(132,204,22,0.1);color:#a3e635;border-color:rgba(132,204,22,0.2);">~8 tokens • 10x
+                less overhead</div>
             </div>
           </div>
           <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div style="padding:12px;background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.1);border-radius:8px;">
+            <div
+              style="padding:12px;background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.1);border-radius:8px;">
               <strong style="color:#c4b5fd;font-size:14px;">Why @@ wins:</strong>
               <ul style="margin:8px 0 0;padding-left:20px;font-size:12px;line-height:1.6;color:var(--text-secondary);">
                 <li><strong>Zero ambiguity</strong> — Regex-parseable, no JSON errors</li>
@@ -798,12 +897,16 @@ const app = express();
                 <li><strong>Cost savings</strong> — 10x fewer tokens = cheaper API bills</li>
               </ul>
             </div>
-            <div style="padding:12px;background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.1);border-radius:8px;">
+            <div
+              style="padding:12px;background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.1);border-radius:8px;">
               <strong style="color:#7dd3fc;font-size:14px;">Graceful Failure:</strong>
-              <p style="margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--text-secondary);">Unlike JSON, CAP is stream-parseable. If a model hits a context limit halfway through writing 4 files, the first 3 are still valid and executed. In JSON, you lose the whole turn.</p>
+              <p style="margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--text-secondary);">Unlike JSON, CAP is
+                stream-parseable. If a model hits a context limit halfway through writing 4 files, the first 3 are still
+                valid and executed. In JSON, you lose the whole turn.</p>
             </div>
           </div>
-          <div class="feature-code" style="margin-top:12px;">Available commands: @@READ_FILE • @@WRITE_FILE • @@RUN_CMD • @@DISPATCH • @@PIPELINE • @@SKILL • @@WEB_SEARCH • @@MEMORY</div>
+          <div class="feature-code" style="margin-top:12px;">Available commands: @@READ_FILE • @@WRITE_FILE • @@RUN_CMD
+            • @@DISPATCH • @@PIPELINE • @@SKILL • @@WEB_SEARCH • @@MEMORY</div>
         </div>
 
         <div class="feature-card feature-card-wide">
@@ -837,14 +940,20 @@ const app = express();
               <div class="cs-group-items">
                 <div class="cs-item cs-messenger">
                   <div class="cs-messenger-icons">
-                    <svg viewBox="0 0 24 24" fill="#2AABEE" width="16" height="16"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                    <svg viewBox="0 0 24 24" fill="#2AABEE" width="16" height="16">
+                      <path
+                        d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+                    </svg>
                   </div>
                   <strong>Telegram</strong>
                   <span>Message Stinki from your phone — same conversation as Dashboard</span>
                 </div>
                 <div class="cs-item cs-messenger">
                   <div class="cs-messenger-icons">
-                    <svg viewBox="0 0 24 24" fill="#25D366" width="16" height="16"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                    <svg viewBox="0 0 24 24" fill="#25D366" width="16" height="16">
+                      <path
+                        d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
+                    </svg>
                   </div>
                   <strong>WhatsApp</strong>
                   <span>Personal bot via Baileys — QR scan once, then chat from WhatsApp</span>
@@ -876,7 +985,9 @@ const app = express();
       <div class="section-header">
         <div class="eyebrow">Wave Orchestration</div>
         <h2>Parallel execution with wave-based dispatch</h2>
-        <p class="section-desc">Run multiple agents simultaneously. Tasks in the same wave execute in parallel — no queuing, no waiting, true concurrent multi-agent execution. Significantly faster than sequential task processing.</p>
+        <p class="section-desc">Run multiple agents simultaneously. Tasks in the same wave execute in parallel — no
+          queuing, no waiting, true concurrent multi-agent execution. Significantly faster than sequential task
+          processing.</p>
       </div>
       <div class="flow" style="grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 3rem;">
         <div class="flow-step">
@@ -890,7 +1001,8 @@ const app = express();
           <div class="flow-num">Wave 2</div>
           <div class="flow-content">
             <h3>Parallel Execution</h3>
-            <p>Wave 2 tasks run <strong>simultaneously</strong> — crew-coder + crew-qa + crew-security all working at once.</p>
+            <p>Wave 2 tasks run <strong>simultaneously</strong> — crew-coder + crew-qa + crew-security all working at
+              once.</p>
           </div>
         </div>
         <div class="flow-step">
@@ -901,32 +1013,38 @@ const app = express();
           </div>
         </div>
       </div>
-      <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 2rem; margin-bottom: 2rem;">
+      <div
+        style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 2rem; margin-bottom: 2rem;">
         <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--accent);">@@PIPELINE Wave Syntax</h3>
-        <pre style="background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: var(--radius); overflow-x: auto; font-family: 'SF Mono', monospace; font-size: 0.85rem; line-height: 1.6; color: #e2e8f0;">@@PIPELINE [
+        <pre
+          style="background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: var(--radius); overflow-x: auto; font-family: 'SF Mono', monospace; font-size: 0.85rem; line-height: 1.6; color: #e2e8f0;">@@PIPELINE [
   {"wave":1, "agent":"crew-pm", "task":"Plan the build and create roadmap"},
   {"wave":2, "agent":"crew-coder", "task":"Implement backend API"},
   {"wave":2, "agent":"crew-qa", "task":"Write integration tests"},
   {"wave":2, "agent":"crew-security", "task":"Security audit"},
   {"wave":3, "agent":"crew-main", "task":"Synthesize results and validate"}
 ]</pre>
-        <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-2);">Wave 1 runs first. All wave 2 tasks execute <strong>in parallel</strong>. Wave 3 waits for wave 2 completion before starting.</p>
+        <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-2);">Wave 1 runs first. All wave 2 tasks
+          execute <strong>in parallel</strong>. Wave 3 waits for wave 2 completion before starting.</p>
       </div>
       <div class="features-grid" style="grid-template-columns: repeat(3, 1fr);">
         <div class="feature-card">
           <div class="feature-icon">⚡</div>
           <h3>Significantly Faster Builds</h3>
-          <p>Parallel execution means crew-coder, crew-qa, and crew-security run simultaneously instead of sequentially — cutting build time proportional to agents in each wave (3 parallel agents = ~3x faster).</p>
+          <p>Parallel execution means crew-coder, crew-qa, and crew-security run simultaneously instead of sequentially
+            — cutting build time proportional to agents in each wave (3 parallel agents = ~3x faster).</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🎯</div>
           <h3>No Race Conditions</h3>
-          <p>Wave dependencies prevent file conflicts and duplicate work. Each wave waits for the previous wave to complete before starting.</p>
+          <p>Wave dependencies prevent file conflicts and duplicate work. Each wave waits for the previous wave to
+            complete before starting.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🔄</div>
           <h3>Auto-Retry</h3>
-          <p>Failed wave tasks retry independently without blocking other waves. Builds keep moving even when individual agents hit errors.</p>
+          <p>Failed wave tasks retry independently without blocking other waves. Builds keep moving even when individual
+            agents hit errors.</p>
         </div>
       </div>
     </div>
@@ -938,12 +1056,18 @@ const app = express();
       <div class="section-header">
         <div class="eyebrow">Models</div>
         <h2 id="models-heading">Bring your own model</h2>
-        <p class="section-desc">Every agent calls its LLM directly — no proxy, no middleware. Mix and match freely: PM on Perplexity for web search, coders on Mistral or DeepSeek, coordinator on Cerebras for instant replies. Add Brave Search and Parallel in the dashboard for crew-lead and PM lookups. Or run everything local with Ollama.</p>
+        <p class="section-desc">Every agent calls its LLM directly — no proxy, no middleware. Mix and match freely: PM
+          on Perplexity for web search, coders on Mistral or DeepSeek, coordinator on Cerebras for instant replies. Add
+          Brave Search and Parallel in the dashboard for crew-lead and PM lookups. Or run everything local with Ollama.
+        </p>
       </div>
       <div class="providers-grid">
         <div class="provider-card" style="--p-color:#10a37f;">
           <div class="provider-icon">
-            <svg viewBox="0 0 24 24" fill="#10a37f" xmlns="http://www.w3.org/2000/svg"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654 2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>
+            <svg viewBox="0 0 24 24" fill="#10a37f" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654 2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" />
+            </svg>
           </div>
           <div class="provider-info">
             <h3>OpenAI</h3>
@@ -953,7 +1077,10 @@ const app = express();
         </div>
         <div class="provider-card" style="--p-color:#d4a853;">
           <div class="provider-icon">
-            <svg viewBox="0 0 24 24" fill="#d4a853" xmlns="http://www.w3.org/2000/svg"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>
+            <svg viewBox="0 0 24 24" fill="#d4a853" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
+            </svg>
           </div>
           <div class="provider-info">
             <h3>Anthropic</h3>
@@ -962,7 +1089,8 @@ const app = express();
           </div>
         </div>
         <div class="provider-card" style="--p-color:#f55036;">
-          <div class="provider-icon provider-icon-text" style="color:#f55036; font-size:1rem; font-weight:900; letter-spacing:-0.04em;">GQ</div>
+          <div class="provider-icon provider-icon-text"
+            style="color:#f55036; font-size:1rem; font-weight:900; letter-spacing:-0.04em;">GQ</div>
           <div class="provider-info">
             <h3>Groq</h3>
             <div class="provider-models">Llama 4 Scout · Llama 3.3 70B · Gemma 2 9B</div>
@@ -971,7 +1099,10 @@ const app = express();
         </div>
         <div class="provider-card" style="--p-color:#ff7000;">
           <div class="provider-icon">
-            <svg viewBox="0 0 24 24" fill="#ff7000" xmlns="http://www.w3.org/2000/svg"><path d="M17.143 3.429v3.428h-3.429v3.429h-3.428V6.857H6.857V3.43H3.43v13.714H0v3.428h10.286v-3.428H6.857v-3.429h3.429v3.429h3.429v-3.429h3.428v3.429h-3.428v3.428H24v-3.428h-3.43V3.429z"/></svg>
+            <svg viewBox="0 0 24 24" fill="#ff7000" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M17.143 3.429v3.428h-3.429v3.429h-3.428V6.857H6.857V3.43H3.43v13.714H0v3.428h10.286v-3.428H6.857v-3.429h3.429v3.429h3.429v-3.429h3.428v3.429h-3.428v3.428H24v-3.428h-3.43V3.429z" />
+            </svg>
           </div>
           <div class="provider-info">
             <h3>Mistral</h3>
@@ -980,7 +1111,8 @@ const app = express();
           </div>
         </div>
         <div class="provider-card" style="--p-color:#4d9fff;">
-          <div class="provider-icon provider-icon-text" style="color:#4d9fff; font-size:0.85rem; font-weight:900; letter-spacing:-0.04em;">DS</div>
+          <div class="provider-icon provider-icon-text"
+            style="color:#4d9fff; font-size:0.85rem; font-weight:900; letter-spacing:-0.04em;">DS</div>
           <div class="provider-info">
             <h3>DeepSeek</h3>
             <div class="provider-models">DeepSeek V3 · DeepSeek R1</div>
@@ -989,7 +1121,10 @@ const app = express();
         </div>
         <div class="provider-card" style="--p-color:#20b2aa;">
           <div class="provider-icon">
-            <svg viewBox="0 0 24 24" fill="#20b2aa" xmlns="http://www.w3.org/2000/svg"><path d="M22.3977 7.0896h-2.3106V.0676l-7.5094 6.3542V.1577h-1.1554v6.1966L4.4904 0v7.0896H1.6023v10.3976h2.8882V24l6.932-6.3591v6.2005h1.1554v-6.0469l6.9318 6.1807v-6.4879h2.8882V7.0896zm-3.4657-4.531v4.531h-5.355l5.355-4.531zm-13.2862.0676 4.8691 4.4634H5.6458V2.6262zM2.7576 16.332V8.245h7.8476l-6.1149 6.1147v1.9723H2.7576zm2.8882 5.0404v-3.8852h.0001v-2.6488l5.7763-5.7764v7.0111l-5.7764 5.2993zm12.7086.0248-5.7766-5.1509V9.0618l5.7766 5.7766v6.5588zm2.8882-5.0652h-1.733v-1.9723L13.3948 8.245h7.8478v8.087z"/></svg>
+            <svg viewBox="0 0 24 24" fill="#20b2aa" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M22.3977 7.0896h-2.3106V.0676l-7.5094 6.3542V.1577h-1.1554v6.1966L4.4904 0v7.0896H1.6023v10.3976h2.8882V24l6.932-6.3591v6.2005h1.1554v-6.0469l6.9318 6.1807v-6.4879h2.8882V7.0896zm-3.4657-4.531v4.531h-5.355l5.355-4.531zm-13.2862.0676 4.8691 4.4634H5.6458V2.6262zM2.7576 16.332V8.245h7.8476l-6.1149 6.1147v1.9723H2.7576zm2.8882 5.0404v-3.8852h.0001v-2.6488l5.7763-5.7764v7.0111l-5.7764 5.2993zm12.7086.0248-5.7766-5.1509V9.0618l5.7766 5.7766v6.5588zm2.8882-5.0652h-1.733v-1.9723L13.3948 8.245h7.8478v8.087z" />
+            </svg>
           </div>
           <div class="provider-info">
             <h3>Perplexity</h3>
@@ -999,16 +1134,21 @@ const app = express();
         </div>
         <div class="provider-card" style="--p-color:#4285f4;">
           <div class="provider-icon">
-            <svg viewBox="0 0 24 24" fill="#4285f4" xmlns="http://www.w3.org/2000/svg"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>
+            <svg viewBox="0 0 24 24" fill="#4285f4" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" />
+            </svg>
           </div>
           <div class="provider-info">
             <h3>Google Gemini</h3>
             <div class="provider-models">Gemini 2.5 Pro · Gemini 2.5 Flash · Gemini 2.0 Flash</div>
-            <p>Multimodal and fast. Free tier via Gemini CLI — 60 req/min with any Google account, no API key needed.</p>
+            <p>Multimodal and fast. Free tier via Gemini CLI — 60 req/min with any Google account, no API key needed.
+            </p>
           </div>
         </div>
         <div class="provider-card" style="--p-color:#a3e635;">
-          <div class="provider-icon provider-icon-text" style="color:#a3e635; font-size:0.85rem; font-weight:900; letter-spacing:-0.04em;">CB</div>
+          <div class="provider-icon provider-icon-text"
+            style="color:#a3e635; font-size:0.85rem; font-weight:900; letter-spacing:-0.04em;">CB</div>
           <div class="provider-info">
             <h3>Cerebras</h3>
             <div class="provider-models">Llama 4 Scout · Llama 3.3 70B</div>
@@ -1016,7 +1156,8 @@ const app = express();
           </div>
         </div>
         <div class="provider-card" style="--p-color:#c8c8c8;">
-          <div class="provider-icon provider-icon-text" style="color:#c8c8c8; font-size:1rem; font-weight:900; letter-spacing:-0.04em;">xAI</div>
+          <div class="provider-icon provider-icon-text"
+            style="color:#c8c8c8; font-size:1rem; font-weight:900; letter-spacing:-0.04em;">xAI</div>
           <div class="provider-info">
             <h3>xAI / Grok</h3>
             <div class="provider-models">Grok 3 · Grok 3 Mini · Grok 3 Vision</div>
@@ -1038,21 +1179,27 @@ const app = express();
           <div class="provider-info">
             <h3>Brave Search</h3>
             <div class="provider-models">Web Search API</div>
-            <p>Fast web search. crew-lead and the PM loop use it for lookups when you ask questions — add your key in the dashboard Search &amp; Research Tools.</p>
+            <p>Fast web search. crew-lead and the PM loop use it for lookups when you ask questions — add your key in
+              the dashboard Search &amp; Research Tools.</p>
           </div>
         </div>
         <div class="provider-card" style="--p-color:#6366f1;">
-          <div class="provider-icon provider-icon-text" style="color:#6366f1; font-size:0.9rem; font-weight:900; letter-spacing:-0.02em;">∥</div>
+          <div class="provider-icon provider-icon-text"
+            style="color:#6366f1; font-size:0.9rem; font-weight:900; letter-spacing:-0.02em;">∥</div>
           <div class="provider-info">
             <h3>Parallel</h3>
             <div class="provider-models">Deep research · Web synthesis</div>
-            <p>Multi-step research and synthesis. Used by the PM for project planning and deep lookups. Configure in the dashboard alongside Brave.</p>
+            <p>Multi-step research and synthesis. Used by the PM for project planning and deep lookups. Configure in the
+              dashboard alongside Brave.</p>
           </div>
         </div>
       </div>
       <div class="providers-note">
         <span class="providers-note-icon">💡</span>
-        <p>Each agent can use a different provider. Add API keys and assign models from the <strong>Providers tab</strong>; add <strong>Brave</strong> and <strong>Parallel</strong> keys in <strong>Search &amp; Research Tools</strong> for crew-lead and PM lookups. Or edit the config JSON directly. Switch at any time, no restarts needed.</p>
+        <p>Each agent can use a different provider. Add API keys and assign models from the <strong>Providers
+            tab</strong>; add <strong>Brave</strong> and <strong>Parallel</strong> keys in <strong>Search &amp; Research
+            Tools</strong> for crew-lead and PM lookups. Or edit the config JSON directly. Switch at any time, no
+          restarts needed.</p>
       </div>
     </div>
   </section>
@@ -1063,14 +1210,16 @@ const app = express();
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Open Source</div>
-        <h2>Free forever.<br/><span class="gradient-text">MIT licensed.</span></h2>
+        <h2>Free forever.<br /><span class="gradient-text">MIT licensed.</span></h2>
         <p class="section-desc">crewswarm is open-source software. Use it, modify it, contribute to it.</p>
       </div>
       <div class="oss-grid">
         <div class="oss-card">
           <div class="oss-badge">
             <svg width="32" height="32" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+              </path>
             </svg>
           </div>
           <h3>MIT License</h3>
@@ -1089,8 +1238,11 @@ const app = express();
       </div>
       <div class="oss-cta">
         <a href="https://github.com/crewswarm/crewswarm" class="btn btn-primary" aria-label="View crewswarm on GitHub">
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; margin-right: 8px;" aria-hidden="true">
-            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"
+            style="vertical-align: middle; margin-right: 8px;" aria-hidden="true">
+            <path
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+            </path>
           </svg>
           View on GitHub
         </a>
@@ -1104,7 +1256,8 @@ const app = express();
       <div class="section-header">
         <div class="eyebrow">90-second walkthrough</div>
         <h2>See the product in one fast pass</h2>
-        <p class="section-desc">This is the fastest way to understand crewswarm: launch the stack, build in Vibe, and control the runtime from the dashboard.</p>
+        <p class="section-desc">This is the fastest way to understand crewswarm: launch the stack, build in Vibe, and
+          control the runtime from the dashboard.</p>
       </div>
       <div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,0.9fr);gap:24px;align-items:start;">
         <div class="preview-frame" style="margin:0;">
@@ -1112,26 +1265,32 @@ const app = express();
             <div class="preview-chrome-dots"><span></span><span></span><span></span></div>
             <span class="preview-chrome-url">crewswarm.ai/vibe.html</span>
           </div>
-          <img class="preview-img" src="vibe-ide-real.webp?v=1" alt="crewswarm Vibe IDE — Monaco editor, file explorer, agent chat, and terminal" loading="lazy" width="1440" height="900" style="width:100%; height:auto; display:block;" />
+          <img class="preview-img" src="vibe-ide-real.webp?v=1"
+            alt="crewswarm Vibe IDE — Monaco editor, file explorer, agent chat, and terminal" loading="lazy"
+            width="1440" height="900" style="width:100%; height:auto; display:block;" />
         </div>
         <div style="display:grid;gap:14px;">
           <div style="padding:18px;border:1px solid var(--border);border-radius:16px;background:var(--bg-card);">
             <strong style="display:block;color:var(--accent);margin-bottom:6px;">0:00–0:20</strong>
             <h3 style="font-size:1.05rem;margin-bottom:6px;">Launch the stack</h3>
-            <p style="color:var(--text-2);font-size:0.95rem;">Show the one-line install or local quickstart, then open the Dashboard and Vibe side by side.</p>
+            <p style="color:var(--text-2);font-size:0.95rem;">Show the one-line install or local quickstart, then open
+              the Dashboard and Vibe side by side.</p>
           </div>
           <div style="padding:18px;border:1px solid var(--border);border-radius:16px;background:var(--bg-card);">
             <strong style="display:block;color:var(--accent);margin-bottom:6px;">0:20–0:55</strong>
             <h3 style="font-size:1.05rem;margin-bottom:6px;">Build in Vibe</h3>
-            <p style="color:var(--text-2);font-size:0.95rem;">Send one prompt, show the file tree updating, open the written file, preview the diff, and pop the terminal.</p>
+            <p style="color:var(--text-2);font-size:0.95rem;">Send one prompt, show the file tree updating, open the
+              written file, preview the diff, and pop the terminal.</p>
           </div>
           <div style="padding:18px;border:1px solid var(--border);border-radius:16px;background:var(--bg-card);">
             <strong style="display:block;color:var(--accent);margin-bottom:6px;">0:55–1:30</strong>
             <h3 style="font-size:1.05rem;margin-bottom:6px;">Control the runtime</h3>
-            <p style="color:var(--text-2);font-size:0.95rem;">Switch to the dashboard, show Services and Agents, then land on the install CTA while the stack is still visibly running.</p>
+            <p style="color:var(--text-2);font-size:0.95rem;">Switch to the dashboard, show Services and Agents, then
+              land on the install CTA while the stack is still visibly running.</p>
           </div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
-            <a href="https://github.com/crewswarm/crewswarm/blob/main/docs/CANONICAL/DEMO-SCRIPT.md" class="btn btn-ghost" target="_blank" rel="noopener">Read demo script</a>
+            <a href="https://github.com/crewswarm/crewswarm/blob/main/docs/CANONICAL/DEMO-SCRIPT.md"
+              class="btn btn-ghost" target="_blank" rel="noopener">Read demo script</a>
             <a href="#get-started" class="btn btn-primary">Run it yourself</a>
           </div>
         </div>
@@ -1144,8 +1303,9 @@ const app = express();
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">The crew</div>
-        <h2>Specialized agents,<br/>targeted tasks</h2>
-        <p class="section-desc">A crew of specialists, each with a role, a model, and a set of tools. The PM decides who gets what — no broadcast racing.</p>
+        <h2>Specialized agents,<br />targeted tasks</h2>
+        <p class="section-desc">A crew of specialists, each with a role, a model, and a set of tools. The PM decides who
+          gets what — no broadcast racing.</p>
       </div>
 
       <!-- ── Stinki featured bio ── -->
@@ -1153,13 +1313,17 @@ const app = express();
         <div class="stinki-bio-left">
           <picture>
             <source srcset="stinki-avatar.webp?v=2" type="image/webp" />
-            <img src="stinki-avatar.png?v=2" alt="Stinki — Chat Commander" class="stinki-avatar" width="300" height="300" />
+            <img src="stinki-avatar.png?v=2" alt="Stinki — Chat Commander" class="stinki-avatar" width="300"
+              height="300" />
           </picture>
         </div>
         <div class="stinki-bio-right">
           <div class="stinki-eyebrow">crew-lead · Chat Commander</div>
           <h3 class="stinki-name">🧠 Stinki ☠️</h3>
-          <p class="stinki-desc">The pirate captain of this AI swarm. Stinki orchestrates dispatches, drafts roadmaps, and answers your questions with web search or codebase dives. Talk to him from the dashboard, Telegram, or WhatsApp. If you're talking shit, he'll roast back — while keeping the ship afloat. No prisoners. Just results.</p>
+          <p class="stinki-desc">The pirate captain of this AI swarm. Stinki orchestrates dispatches, drafts roadmaps,
+            and answers your questions with web search or codebase dives. Talk to him from the dashboard, Telegram, or
+            WhatsApp. If you're talking shit, he'll roast back — while keeping the ship afloat. No prisoners. Just
+            results.</p>
           <div class="stinki-traits">
             <span class="stinki-trait">🔥 Talks back</span>
             <span class="stinki-trait">🗺️ Roadmaps on demand</span>
@@ -1351,25 +1515,29 @@ const app = express();
         <div class="case-card">
           <div class="case-num">01</div>
           <h3>Build a feature from one sentence</h3>
-          <p>Type a requirement in the Build tab, click Run. PM plans it, coder builds it, QA tests it. Watch it happen in RT Messages.</p>
+          <p>Type a requirement in the Build tab, click Run. PM plans it, coder builds it, QA tests it. Watch it happen
+            in RT Messages.</p>
           <div class="case-tag">Phased builds</div>
         </div>
         <div class="case-card">
           <div class="case-num">02</div>
           <h3>Fix a bug and add tests</h3>
-          <p>crew-fixer diagnoses and patches, crew-qa writes the test suite. Targeted dispatch means each agent does exactly one thing.</p>
+          <p>crew-fixer diagnoses and patches, crew-qa writes the test suite. Targeted dispatch means each agent does
+            exactly one thing.</p>
           <div class="case-tag">Targeted dispatch</div>
         </div>
         <div class="case-card">
           <div class="case-num">03</div>
           <h3>Ship a small API with CRUD + tests</h3>
-          <p>"Build a todo API with Express, CRUD endpoints, and a test file." One sentence. Real files on disk in minutes.</p>
+          <p>"Build a todo API with Express, CRUD endpoints, and a test file." One sentence. Real files on disk in
+            minutes.</p>
           <div class="case-tag">Single-shot build</div>
         </div>
         <div class="case-card">
           <div class="case-num">04</div>
           <h3>Automate your workflows with Skills</h3>
-          <p>Drop a <code>SKILL.md</code> in your config folder. Agents immediately gain the ability to deploy to Fly.io, send tweets, or hit any custom API.</p>
+          <p>Drop a <code>SKILL.md</code> in your config folder. Agents immediately gain the ability to deploy to
+            Fly.io, send tweets, or hit any custom API.</p>
           <div class="case-tag">Extensibility</div>
         </div>
         <div class="case-card">
@@ -1381,25 +1549,29 @@ const app = express();
         <div class="case-card">
           <div class="case-num">06</div>
           <h3>Recover from failures</h3>
-          <p>Max retries hit? Task goes to the DLQ. Open the dashboard, see the error, replay with one click — or fix and rerun.</p>
+          <p>Max retries hit? Task goes to the DLQ. Open the dashboard, see the error, replay with one click — or fix
+            and rerun.</p>
           <div class="case-tag">DLQ + replay</div>
         </div>
         <div class="case-card">
           <div class="case-num">07</div>
           <h3>Keep agents aligned across sessions</h3>
-          <p>Shared memory files — current state, decisions, handoff — are injected into every agent. Resume tomorrow exactly where you left off.</p>
+          <p>Shared memory files — current state, decisions, handoff — are injected into every agent. Resume tomorrow
+            exactly where you left off.</p>
           <div class="case-tag">Shared memory</div>
         </div>
         <div class="case-card">
           <div class="case-num">08</div>
           <h3>Route through any CLI engine</h3>
-          <p>One click in the dashboard switches agents between Claude Code, Cursor, OpenCode, Gemini, or crew-cli. Each agent maintains its own persistent session — context survives across tasks.</p>
+          <p>One click in the dashboard switches agents between Claude Code, Cursor, OpenCode, Gemini, or crew-cli. Each
+            agent maintains its own persistent session — context survives across tasks.</p>
           <div class="case-tag">Multi-engine routing</div>
         </div>
         <div class="case-card">
           <div class="case-num">09</div>
           <h3>Mix models and engines per agent</h3>
-          <p>Send your architect to Claude for deep reasoning, your coders to Cursor for fast edits, your QA to Gemini for breadth. Mix execution modes per agent — no restarts, no config files.</p>
+          <p>Send your architect to Claude for deep reasoning, your coders to Cursor for fast edits, your QA to Gemini
+            for breadth. Mix execution modes per agent — no restarts, no config files.</p>
           <div class="case-tag">Per-agent engine config</div>
         </div>
       </div>
@@ -1412,7 +1584,8 @@ const app = express();
       <div class="section-header">
         <div class="eyebrow">Dashboard</div>
         <h2>Everything in one place</h2>
-        <p class="section-desc">Build, dispatch, replay, monitor — and open any file the crew wrote directly in Cursor or OpenCode.</p>
+        <p class="section-desc">Build, dispatch, replay, monitor — and open any file the crew wrote directly in Cursor
+          or OpenCode.</p>
       </div>
       <div class="preview-rail-wrap">
         <div class="preview-rail horizontal-scroll" id="dashboardPreviewRail" aria-label="Dashboard screenshots">
@@ -1425,7 +1598,9 @@ const app = express();
               </div>
             </div>
             <div id="tab-dashboard" class="preview-panel active">
-              <img src="dashboard-build.webp" alt="crewswarm dashboard showing the Build tab with live PM Loop output and task progress" loading="lazy" class="preview-img" />
+              <img src="dashboard-build.webp"
+                alt="crewswarm dashboard showing the Build tab with live PM Loop output and task progress"
+                loading="lazy" class="preview-img" />
             </div>
           </article>
           <article class="preview-frame preview-slide" data-preview-panel="tab-agents">
@@ -1437,7 +1612,9 @@ const app = express();
               </div>
             </div>
             <div id="tab-agents" class="preview-panel active">
-              <img src="dashboard-agents.webp" alt="crewswarm agents tab showing the 21+ specialist agent crew with their roles and model assignments" loading="lazy" class="preview-img" />
+              <img src="dashboard-agents.webp"
+                alt="crewswarm agents tab showing the 21+ specialist agent crew with their roles and model assignments"
+                loading="lazy" class="preview-img" />
             </div>
           </article>
           <article class="preview-frame preview-slide">
@@ -1449,13 +1626,16 @@ const app = express();
               </div>
             </div>
             <div class="preview-panel active">
-              <img src="dashboard-benchmarks.webp" alt="crewswarm benchmarks tab comparing coding and reasoning model scores" loading="lazy" class="preview-img" />
+              <img src="dashboard-benchmarks.webp"
+                alt="crewswarm benchmarks tab comparing coding and reasoning model scores" loading="lazy"
+                class="preview-img" />
             </div>
           </article>
         </div>
         <div class="preview-scroll-hint">
           <span>Swipe or shift-scroll to explore the dashboard surfaces.</span>
-          <button type="button" class="preview-scroll-btn" data-scroll-target="dashboardPreviewRail" data-scroll-direction="next">Next panel</button>
+          <button type="button" class="preview-scroll-btn" data-scroll-target="dashboardPreviewRail"
+            data-scroll-direction="next">Next panel</button>
         </div>
       </div>
     </div>
@@ -1467,43 +1647,56 @@ const app = express();
       <div class="section-header">
         <div class="eyebrow">Compare</div>
         <h2 id="wwd-heading">What crewswarm does</h2>
-        <p class="section-desc">The only fully open-source platform where a PM agent runs the build — not just a single autocomplete suggestion. For comparison with CrewAI and other frameworks, this section outlines what crewswarm does differently.</p>
+        <p class="section-desc">The only fully open-source platform where a PM agent runs the build — not just a single
+          autocomplete suggestion. For comparison with CrewAI and other frameworks, this section outlines what crewswarm
+          does differently.</p>
       </div>
       <div class="wwd-grid">
         <div class="wwd-card wwd-card-wide">
           <div class="wwd-icon">🎓</div>
           <h3>Research-driven orchestration</h3>
-          <p>crewswarm implements structural and content markers identified in <a href="https://arxiv.org/abs/2402.14207" target="_blank" rel="noopener" style="text-decoration: underline;">Princeton GEO (Generative Engine Optimization)</a> research to maximize AI visibility and authority. Our agents also utilize iterative reasoning loops inspired by the <strong>Reflexion</strong> framework to ensure code quality.</p>
+          <p>crewswarm implements structural and content markers identified in <a
+              href="https://arxiv.org/abs/2402.14207" target="_blank" rel="noopener"
+              style="text-decoration: underline;">Princeton GEO (Generative Engine Optimization)</a> research to
+            maximize AI visibility and authority. Our agents also utilize iterative reasoning loops inspired by the
+            <strong>Reflexion</strong> framework to ensure code quality.
+          </p>
         </div>
         <div class="wwd-card">
           <div class="wwd-icon">🧠</div>
           <h3>PM-led phased builds</h3>
-          <p>A dedicated Project Manager agent reads your ROADMAP, breaks work into phases, dispatches tasks to the right specialists, and writes handoff notes between sessions — automatically.</p>
+          <p>A dedicated Project Manager agent reads your ROADMAP, breaks work into phases, dispatches tasks to the
+            right specialists, and writes handoff notes between sessions — automatically.</p>
         </div>
         <div class="wwd-card">
           <div class="wwd-icon">🤝</div>
           <h3>Shared memory across agents</h3>
-          <p>Every agent reads and writes to a shared memory layer — decisions, context, and progress persist across sessions so nothing gets lost between runs.</p>
+          <p>Every agent reads and writes to a shared memory layer — decisions, context, and progress persist across
+            sessions so nothing gets lost between runs.</p>
         </div>
         <div class="wwd-card">
           <div class="wwd-icon">⚡</div>
           <h3>Real-time agent mesh</h3>
-          <p>Agents communicate over an RT message bus. Any agent can broadcast, any agent can listen — parallel work happens naturally without a central bottleneck.</p>
+          <p>Agents communicate over an RT message bus. Any agent can broadcast, any agent can listen — parallel work
+            happens naturally without a central bottleneck.</p>
         </div>
         <div class="wwd-card">
           <div class="wwd-icon">🔁</div>
           <h3>Automatic fault recovery</h3>
-          <p>Failed tasks land in a Dead Letter Queue and are automatically retried. Builds keep moving even when individual agents hit errors or timeouts.</p>
+          <p>Failed tasks land in a Dead Letter Queue and are automatically retried. Builds keep moving even when
+            individual agents hit errors or timeouts.</p>
         </div>
         <div class="wwd-card">
           <div class="wwd-icon">🔑</div>
           <h3>Bring your own model</h3>
-          <p>Configure any model per agent — Groq, Anthropic, OpenAI, NVIDIA, or fully local via Ollama. No vendor lock-in, no forced subscriptions.</p>
+          <p>Configure any model per agent — Groq, Anthropic, OpenAI, NVIDIA, or fully local via Ollama. No vendor
+            lock-in, no forced subscriptions.</p>
         </div>
         <div class="wwd-card">
           <div class="wwd-icon">📡</div>
           <h3>Control from anywhere</h3>
-          <p>Manage your crew from the web dashboard, the CLI, crewchat, SwiftBar, or Telegram. One build, every surface covered.</p>
+          <p>Manage your crew from the web dashboard, the CLI, crewchat, SwiftBar, or Telegram. One build, every surface
+            covered.</p>
         </div>
       </div>
     </div>
@@ -1521,24 +1714,26 @@ const app = express();
         <div class="testimonial-card">
           <div class="testimonial-body">
             <div class="testimonial-tag">✦ Beta builder</div>
-            <div class="testimonial-quote">"One sentence in. Working API out. No standups, no tickets, no back-and-forth."</div>
+            <div class="testimonial-quote">"One sentence in. Working API out. No standups, no tickets, no
+              back-and-forth."</div>
           </div>
           <div class="testimonial-author">
             <div class="testimonial-avatar">
               <svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
-                <rect width="44" height="44" fill="#0d1e30"/>
-                <ellipse cx="22" cy="36" rx="13" ry="7" fill="#0f3460"/>
-                <rect x="16" y="28" width="12" height="9" rx="3" fill="#0f3460"/>
-                <rect x="19" y="24" width="6" height="5" fill="#c9a87c"/>
-                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#c9a87c"/>
-                <ellipse cx="22" cy="12" rx="8" ry="4.5" fill="#1a0c06"/>
-                <rect x="14" y="12" width="2.5" height="7" rx="1.5" fill="#1a0c06"/>
-                <rect x="27.5" y="12" width="2.5" height="7" rx="1.5" fill="#1a0c06"/>
-                <circle cx="19" cy="19" r="1.4" fill="#0d1e30"/>
-                <circle cx="25" cy="19" r="1.4" fill="#0d1e30"/>
-                <circle cx="19.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6"/>
-                <circle cx="25.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6"/>
-                <path d="M19.5 23 Q22 24.5 24.5 23" stroke="#8a6040" stroke-width="1" fill="none" stroke-linecap="round"/>
+                <rect width="44" height="44" fill="#0d1e30" />
+                <ellipse cx="22" cy="36" rx="13" ry="7" fill="#0f3460" />
+                <rect x="16" y="28" width="12" height="9" rx="3" fill="#0f3460" />
+                <rect x="19" y="24" width="6" height="5" fill="#c9a87c" />
+                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#c9a87c" />
+                <ellipse cx="22" cy="12" rx="8" ry="4.5" fill="#1a0c06" />
+                <rect x="14" y="12" width="2.5" height="7" rx="1.5" fill="#1a0c06" />
+                <rect x="27.5" y="12" width="2.5" height="7" rx="1.5" fill="#1a0c06" />
+                <circle cx="19" cy="19" r="1.4" fill="#0d1e30" />
+                <circle cx="25" cy="19" r="1.4" fill="#0d1e30" />
+                <circle cx="19.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6" />
+                <circle cx="25.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6" />
+                <path d="M19.5 23 Q22 24.5 24.5 23" stroke="#8a6040" stroke-width="1" fill="none"
+                  stroke-linecap="round" />
               </svg>
             </div>
             <div>
@@ -1550,28 +1745,32 @@ const app = express();
         <div class="testimonial-card">
           <div class="testimonial-body">
             <div class="testimonial-tag">✦ Beta builder</div>
-            <div class="testimonial-quote">"I start the PM Loop, go eat dinner, come back to a finished feature. It's genuinely autonomous."</div>
+            <div class="testimonial-quote">"I start the PM Loop, go eat dinner, come back to a finished feature. It's
+              genuinely autonomous."</div>
           </div>
           <div class="testimonial-author">
             <div class="testimonial-avatar">
               <svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
-                <rect width="44" height="44" fill="#0d200d"/>
-                <ellipse cx="22" cy="36" rx="13" ry="7" fill="#1a3d1a"/>
-                <rect x="16" y="28" width="12" height="9" rx="3" fill="#1a3d1a"/>
-                <rect x="19" y="24" width="6" height="5" fill="#b88c60"/>
-                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#b88c60"/>
-                <ellipse cx="22" cy="12" rx="8" ry="3.5" fill="#0f0903"/>
-                <rect x="14" y="12" width="2" height="5" rx="1" fill="#0f0903"/>
-                <rect x="28" y="12" width="2" height="5" rx="1" fill="#0f0903"/>
+                <rect width="44" height="44" fill="#0d200d" />
+                <ellipse cx="22" cy="36" rx="13" ry="7" fill="#1a3d1a" />
+                <rect x="16" y="28" width="12" height="9" rx="3" fill="#1a3d1a" />
+                <rect x="19" y="24" width="6" height="5" fill="#b88c60" />
+                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#b88c60" />
+                <ellipse cx="22" cy="12" rx="8" ry="3.5" fill="#0f0903" />
+                <rect x="14" y="12" width="2" height="5" rx="1" fill="#0f0903" />
+                <rect x="28" y="12" width="2" height="5" rx="1" fill="#0f0903" />
                 <!-- glasses frames -->
-                <rect x="15.5" y="17.5" width="5.5" height="3.5" rx="1.8" fill="none" stroke="#38bdf8" stroke-width="1.1"/>
-                <rect x="23" y="17.5" width="5.5" height="3.5" rx="1.8" fill="none" stroke="#38bdf8" stroke-width="1.1"/>
-                <line x1="21" y1="19.2" x2="23" y2="19.2" stroke="#38bdf8" stroke-width="1.1"/>
-                <circle cx="18.5" cy="19.2" r="1" fill="#0d200d"/>
-                <circle cx="26" cy="19.2" r="1" fill="#0d200d"/>
-                <circle cx="18.9" cy="18.8" r="0.35" fill="#fff" opacity="0.6"/>
-                <circle cx="26.4" cy="18.8" r="0.35" fill="#fff" opacity="0.6"/>
-                <path d="M19.5 23.5 Q22 25 24.5 23.5" stroke="#7a5830" stroke-width="1" fill="none" stroke-linecap="round"/>
+                <rect x="15.5" y="17.5" width="5.5" height="3.5" rx="1.8" fill="none" stroke="#38bdf8"
+                  stroke-width="1.1" />
+                <rect x="23" y="17.5" width="5.5" height="3.5" rx="1.8" fill="none" stroke="#38bdf8"
+                  stroke-width="1.1" />
+                <line x1="21" y1="19.2" x2="23" y2="19.2" stroke="#38bdf8" stroke-width="1.1" />
+                <circle cx="18.5" cy="19.2" r="1" fill="#0d200d" />
+                <circle cx="26" cy="19.2" r="1" fill="#0d200d" />
+                <circle cx="18.9" cy="18.8" r="0.35" fill="#fff" opacity="0.6" />
+                <circle cx="26.4" cy="18.8" r="0.35" fill="#fff" opacity="0.6" />
+                <path d="M19.5 23.5 Q22 25 24.5 23.5" stroke="#7a5830" stroke-width="1" fill="none"
+                  stroke-linecap="round" />
               </svg>
             </div>
             <div>
@@ -1583,25 +1782,27 @@ const app = express();
         <div class="testimonial-card">
           <div class="testimonial-body">
             <div class="testimonial-tag">✦ Beta builder</div>
-            <div class="testimonial-quote">"Shared memory is the killer feature. I can stop mid-project and pick it up days later — agents just know where we left off."</div>
+            <div class="testimonial-quote">"Shared memory is the killer feature. I can stop mid-project and pick it up
+              days later — agents just know where we left off."</div>
           </div>
           <div class="testimonial-author">
             <div class="testimonial-avatar">
               <svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
-                <rect width="44" height="44" fill="#130f20"/>
-                <ellipse cx="22" cy="36" rx="14" ry="7" fill="#2d1f55"/>
-                <rect x="15" y="28" width="14" height="9" rx="3" fill="#2d1f55"/>
-                <path d="M15 30 Q22 25.5 29 30" fill="#3a2870" stroke="none"/>
-                <rect x="19" y="24" width="6" height="5" fill="#d4a068"/>
-                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#d4a068"/>
-                <ellipse cx="22" cy="12" rx="8" ry="4.5" fill="#2e1c08"/>
-                <path d="M14 14 Q16 9.5 19 11.5 Q21 8.5 22 10 Q23 8.5 25 11.5 Q28 9.5 30 14" fill="#2e1c08"/>
-                <circle cx="19" cy="19" r="1.4" fill="#130f20"/>
-                <circle cx="25" cy="19" r="1.4" fill="#130f20"/>
-                <circle cx="19.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6"/>
-                <circle cx="25.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6"/>
-                <ellipse cx="22" cy="24" rx="3.5" ry="1.2" fill="#b07838" opacity="0.35"/>
-                <path d="M19.5 23 Q22 24.5 24.5 23" stroke="#956030" stroke-width="1" fill="none" stroke-linecap="round"/>
+                <rect width="44" height="44" fill="#130f20" />
+                <ellipse cx="22" cy="36" rx="14" ry="7" fill="#2d1f55" />
+                <rect x="15" y="28" width="14" height="9" rx="3" fill="#2d1f55" />
+                <path d="M15 30 Q22 25.5 29 30" fill="#3a2870" stroke="none" />
+                <rect x="19" y="24" width="6" height="5" fill="#d4a068" />
+                <ellipse cx="22" cy="19" rx="8" ry="9" fill="#d4a068" />
+                <ellipse cx="22" cy="12" rx="8" ry="4.5" fill="#2e1c08" />
+                <path d="M14 14 Q16 9.5 19 11.5 Q21 8.5 22 10 Q23 8.5 25 11.5 Q28 9.5 30 14" fill="#2e1c08" />
+                <circle cx="19" cy="19" r="1.4" fill="#130f20" />
+                <circle cx="25" cy="19" r="1.4" fill="#130f20" />
+                <circle cx="19.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6" />
+                <circle cx="25.4" cy="18.6" r="0.4" fill="#fff" opacity="0.6" />
+                <ellipse cx="22" cy="24" rx="3.5" ry="1.2" fill="#b07838" opacity="0.35" />
+                <path d="M19.5 23 Q22 24.5 24.5 23" stroke="#956030" stroke-width="1" fill="none"
+                  stroke-linecap="round" />
               </svg>
             </div>
             <div>
@@ -1629,7 +1830,8 @@ const app = express();
             <h3>PM Loop</h3>
             <div class="orch-tag">Recommended for most builds</div>
           </div>
-          <p class="orch-desc">Break large work into MVP → Phase 1 → Phase 2. Auto-phases ambiguous requirements, auto-retries failed tasks, and breaks them into subtasks if needed.</p>
+          <p class="orch-desc">Break large work into MVP → Phase 1 → Phase 2. Auto-phases ambiguous requirements,
+            auto-retries failed tasks, and breaks them into subtasks if needed.</p>
           <div class="orch-features">
             <span class="orch-feature">Auto-phasing</span>
             <span class="orch-feature">Auto-retry</span>
@@ -1647,7 +1849,8 @@ const app = express();
             <h3>Unified</h3>
             <div class="orch-tag">Single-shot structured runs</div>
           </div>
-          <p class="orch-desc">One command, structured execution. PM plans it once, crew executes in sequence. No phasing overhead — good for well-defined tasks.</p>
+          <p class="orch-desc">One command, structured execution. PM plans it once, crew executes in sequence. No
+            phasing overhead — good for well-defined tasks.</p>
           <div class="orch-features">
             <span class="orch-feature">Single pass</span>
             <span class="orch-feature">Targeted dispatch</span>
@@ -1664,7 +1867,8 @@ const app = express();
             <h3>Single-task</h3>
             <div class="orch-tag">One agent, right now</div>
           </div>
-          <p class="orch-desc">Send one task directly to one agent. No PM, no planning. Fastest path from intent to execution for simple, well-scoped work.</p>
+          <p class="orch-desc">Send one task directly to one agent. No PM, no planning. Fastest path from intent to
+            execution for simple, well-scoped work.</p>
           <div class="orch-features">
             <span class="orch-feature">Direct send</span>
             <span class="orch-feature">No orchestration</span>
@@ -1733,15 +1937,17 @@ const app = express();
           </div>
         </div>
         <div class="tech-badge">
-          <img src="https://cdn.simpleicons.org/typescript/3178C6" alt="TypeScript" width="28" height="28" loading="lazy">
+          <img src="https://cdn.simpleicons.org/typescript/3178C6" alt="TypeScript" width="28" height="28"
+            loading="lazy">
           <div>
             <strong>TypeScript</strong>
             <span>RT daemon and plugin suite compiled to JS</span>
           </div>
         </div>
         <div class="tech-badge">
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="WebSocket">
-            <rect width="24" height="24" rx="5" fill="rgba(99,102,241,0.15)"/>
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg"
+            aria-label="WebSocket">
+            <rect width="24" height="24" rx="5" fill="rgba(99,102,241,0.15)" />
             <text x="4" y="16" font-family="monospace" font-size="9" font-weight="700" fill="#818cf8">WS</text>
           </svg>
           <div>
@@ -1847,7 +2053,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-1" role="region" aria-labelledby="faq-heading-1">
-              <div class="faq-answer-inner"><p>The tagline is literal: describe an idea once and a PM-led crew handles the rest — planning, coding, QA, and fixes — until real files land on disk. Ideate, build &amp; ship.</p></div>
+              <div class="faq-answer-inner">
+                <p>The tagline is literal: describe an idea once and a PM-led crew handles the rest — planning, coding,
+                  QA, and fixes — until real files land on disk. Ideate, build &amp; ship.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="pm loop autonomous roadmap self extending">
@@ -1856,7 +2065,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-2" role="region" aria-labelledby="faq-heading-2">
-              <div class="faq-answer-inner"><p>The PM Loop reads <code>ROADMAP.md</code>, ships every pending item, then calls Groq as a product strategist to append fresh roadmap items based on the live output. It repeats forever until you stop it.</p></div>
+              <div class="faq-answer-inner">
+                <p>The PM Loop reads <code>ROADMAP.md</code>, ships every pending item, then calls Groq as a product
+                  strategist to append fresh roadmap items based on the live output. It repeats forever until you stop
+                  it.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="shared memory files current-state decisions handoff protocol">
@@ -1865,7 +2078,12 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-3" role="region" aria-labelledby="faq-heading-3">
-              <div class="faq-answer-inner"><p>Four files are always injected: <code>current-state.md</code>, <code>decisions.md</code>, <code>agent-handoff.md</code>, and <code>orchestration-protocol.md</code>. The wrapper auto-bootstraps them and enforces token budgets so no agent runs blind.</p></div>
+              <div class="faq-answer-inner">
+                <p>Four files are always injected: <code>current-state.md</code>, <code>decisions.md</code>,
+                  <code>agent-handoff.md</code>, and <code>orchestration-protocol.md</code>. The wrapper auto-bootstraps
+                  them and enforces token budgets so no agent runs blind.
+                </p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="targeted dispatch send single agent difference broadcast">
@@ -1874,7 +2092,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-4" role="region" aria-labelledby="faq-heading-4">
-              <div class="faq-answer-inner"><p>crewswarm never shouts into a swarm. Each task goes to one named agent, eliminating race conditions and duplicate work. You send a command, the gateway routes it to exactly the right specialist, and only that agent replies.</p></div>
+              <div class="faq-answer-inner">
+                <p>crewswarm never shouts into a swarm. Each task goes to one named agent, eliminating race conditions
+                  and duplicate work. You send a command, the gateway routes it to exactly the right specialist, and
+                  only that agent replies.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="phased build mvp phase1 phase2 structure">
@@ -1883,7 +2105,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-5" role="region" aria-labelledby="faq-heading-5">
-              <div class="faq-answer-inner"><p>Everything ships in three passes: MVP for the smallest viable outcome, Phase 1 for depth, and Phase 2 for polish. Each phase carries 3–5 tightly scoped tasks so agents never time out.</p></div>
+              <div class="faq-answer-inner">
+                <p>Everything ships in three passes: MVP for the smallest viable outcome, Phase 1 for depth, and Phase 2
+                  for polish. Each phase carries 3–5 tightly scoped tasks so agents never time out.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="dlq dead letter queue replay retries fault tolerance">
@@ -1892,7 +2117,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-6" role="region" aria-labelledby="faq-heading-6">
-              <div class="faq-answer-inner"><p>Failures trigger automatic retries. If attempts are exhausted, the task lands in the Dead Letter Queue (DLQ) for replay from the dashboard or handoff to <code>crew-fixer</code>.</p></div>
+              <div class="faq-answer-inner">
+                <p>Failures trigger automatic retries. If attempts are exhausted, the task lands in the Dead Letter
+                  Queue (DLQ) for replay from the dashboard or handoff to <code>crew-fixer</code>.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="safety docker sandbox execution secure machine">
@@ -1901,7 +2129,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-s1" role="region" aria-labelledby="faq-heading-s1">
-              <div class="faq-answer-inner"><p>Yes. You can route any agent into a <strong>Docker sandbox</strong> so they have no access to your host files. crewswarm also uses path-based allowlists and permission layers to restrict tool usage.</p></div>
+              <div class="faq-answer-inner">
+                <p>Yes. You can route any agent into a <strong>Docker sandbox</strong> so they have no access to your
+                  host files. crewswarm also uses path-based allowlists and permission layers to restrict tool usage.
+                </p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="add tools skills plugin json md">
@@ -1910,7 +2142,12 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-s2" role="region" aria-labelledby="faq-heading-s2">
-              <div class="faq-answer-inner"><p>Absolutely. You can add "Skills" by dropping a simple JSON or <code>SKILL.md</code> file into <code>~/.crewswarm/skills/</code>. No custom JavaScript is required to extend your crew's capabilities.</p></div>
+              <div class="faq-answer-inner">
+                <p>Absolutely. You can add "Skills" by dropping a simple JSON or <code>SKILL.md</code> file into
+                  <code>~/.crewswarm/skills/</code>. No custom JavaScript is required to extend your crew's
+                  capabilities.
+                </p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="dashboard command start gui">
@@ -1919,9 +2156,12 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-7" role="region" aria-labelledby="faq-heading-7">
-              <div class="faq-answer-inner"><p>From your crewswarm directory run:</p>
-              <pre><code>$ node scripts/dashboard.mjs</code></pre>
-              <p>That gives you Build, Chat (crew-lead), Services, RT Messages, DLQ, Projects, Send, and Messaging tabs in one place.</p></div>
+              <div class="faq-answer-inner">
+                <p>From your crewswarm directory run:</p>
+                <pre><code>$ node scripts/dashboard.mjs</code></pre>
+                <p>That gives you Build, Chat (crew-lead), Services, RT Messages, DLQ, Projects, Send, and Messaging
+                  tabs in one place.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="phased orchestrator command run build">
@@ -1930,9 +2170,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-8" role="region" aria-labelledby="faq-heading-8">
-              <div class="faq-answer-inner"><p>From the dashboard Chat tab, just type your requirement. From the CLI:</p>
-              <pre><code>$ node scripts/run.mjs "Build a todo API"</code></pre>
-              <p>That single command triggers PM planning plus all subsequent coding, QA, and fixing phases.</p></div>
+              <div class="faq-answer-inner">
+                <p>From the dashboard Chat tab, just type your requirement. From the CLI:</p>
+                <pre><code>$ node scripts/run.mjs "Build a todo API"</code></pre>
+                <p>That single command triggers PM planning plus all subsequent coding, QA, and fixing phases.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="targeted send example crew coder command">
@@ -1941,9 +2183,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-9" role="region" aria-labelledby="faq-heading-9">
-              <div class="faq-answer-inner"><p>Send straight to one agent:</p>
-              <pre><code>$ node gateway-bridge.mjs --send crew-coder "Create server.js with Express and GET /health"</code></pre>
-              <p>Only <code>crew-coder</code> receives that instruction, so there is zero broadcast noise.</p></div>
+              <div class="faq-answer-inner">
+                <p>Send straight to one agent:</p>
+                <pre><code>$ node gateway-bridge.mjs --send crew-coder "Create server.js with Express and GET /health"</code></pre>
+                <p>Only <code>crew-coder</code> receives that instruction, so there is zero broadcast noise.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="mix models per agent providers groq openai anthropic">
@@ -1952,7 +2196,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-10" role="region" aria-labelledby="faq-heading-10">
-              <div class="faq-answer-inner"><p>Yes. Every agent has its own model assignment — Anthropic for coding, Perplexity for planning, Cerebras for fast coordination, Groq for QA speed. Configure from the dashboard Providers tab or edit the config JSON directly. No code changes, no restarts.</p></div>
+              <div class="faq-answer-inner">
+                <p>Yes. Every agent has its own model assignment — Anthropic for coding, Perplexity for planning,
+                  Cerebras for fast coordination, Groq for QA speed. Configure from the dashboard Providers tab or edit
+                  the config JSON directly. No code changes, no restarts.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="resume project roadmap dashboard projects tab">
@@ -1961,7 +2209,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-11" role="region" aria-labelledby="faq-heading-11">
-              <div class="faq-answer-inner"><p>Use the Projects tab in the dashboard. Every project stores its roadmap path; click “Resume PM Loop” and it picks up right where the roadmap last stopped.</p></div>
+              <div class="faq-answer-inner">
+                <p>Use the Projects tab in the dashboard. Every project stores its roadmap path; click “Resume PM Loop”
+                  and it picks up right where the roadmap last stopped.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="roadmap exhaustion new items strategist">
@@ -1970,7 +2221,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-12" role="region" aria-labelledby="faq-heading-12">
-              <div class="faq-answer-inner"><p>The PM Loop inspects the live output, asks Groq-as-strategist for 3–5 fresh items, appends them to <code>ROADMAP.md</code>, and keeps shipping. You never need to re-seed work manually.</p></div>
+              <div class="faq-answer-inner">
+                <p>The PM Loop inspects the live output, asks Groq-as-strategist for 3–5 fresh items, appends them to
+                  <code>ROADMAP.md</code>, and keeps shipping. You never need to re-seed work manually.
+                </p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="memory bootstrap auto missing files decisions">
@@ -1979,7 +2234,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-13" role="region" aria-labelledby="faq-heading-13">
-              <div class="faq-answer-inner"><p>The gateway wrapper auto-creates any missing memory files from templates, logs the bootstrap event, and refuses to run a task if memory cannot load. That policy came from DEC-004/005.</p></div>
+              <div class="faq-answer-inner">
+                <p>The gateway wrapper auto-creates any missing memory files from templates, logs the bootstrap event,
+                  and refuses to run a task if memory cannot load. That policy came from DEC-004/005.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="telemetry events log what recorded">
@@ -1988,34 +2246,61 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-14" role="region" aria-labelledby="faq-heading-14">
-              <div class="faq-answer-inner"><p>A JSONL feed at <code>~/.crewswarm/logs/events.jsonl</code> stores bootstrap events, memory load failures, protocol violations, retries, and RT events for later auditing.</p></div>
+              <div class="faq-answer-inner">
+                <p>A JSONL feed at <code>~/.crewswarm/logs/events.jsonl</code> stores bootstrap events, memory load
+                  failures, protocol violations, retries, and RT events for later auditing.</p>
+              </div>
             </div>
           </div>
-          <div class="faq-item" data-question="agent roster roles crew-main crew-pm crew-coder crew-qa crew-fixer crew-security crew-github crew-researcher crew-architect crew-seo crew-ml crew-orchestrator crew-frontend crew-copywriter crew-telegram crew-whatsapp crew-mega 21 agents domain pm">
+          <div class="faq-item"
+            data-question="agent roster roles crew-main crew-pm crew-coder crew-qa crew-fixer crew-security crew-github crew-researcher crew-architect crew-seo crew-ml crew-orchestrator crew-frontend crew-copywriter crew-telegram crew-whatsapp crew-mega 21 agents domain pm">
             <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-15" id="faq-heading-15">
               <span>Which agents ship with the default crew?</span>
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-15" role="region" aria-labelledby="faq-heading-15">
-              <div class="faq-answer-inner"><p>You get <strong>21+ specialist agents</strong>: crew-lead (chat commander), crew-main (coordination), crew-pm (planning), crew-coder (implementation), crew-qa (testing), crew-fixer (debugging), crew-security (audits), crew-github (git/PRs), crew-researcher (web research), crew-architect (system design), crew-copywriter (docs/copy), crew-frontend (CSS/UI), crew-seo, crew-ml, crew-orchestrator (wave dispatch), and domain PM specialists (crew-pm-cli, crew-pm-frontend, crew-pm-core) for large codebases.</p></div>
+              <div class="faq-answer-inner">
+                <p>You get <strong>21+ specialist agents</strong>: crew-lead (chat commander), crew-main (coordination),
+                  crew-pm (planning), crew-coder (implementation), crew-qa (testing), crew-fixer (debugging),
+                  crew-security (audits), crew-github (git/PRs), crew-researcher (web research), crew-architect (system
+                  design), crew-copywriter (docs/copy), crew-frontend (CSS/UI), crew-seo, crew-ml, crew-orchestrator
+                  (wave dispatch), and domain PM specialists (crew-pm-cli, crew-pm-frontend, crew-pm-core) for large
+                  codebases.</p>
+              </div>
             </div>
           </div>
-          <div class="faq-item" data-question="orchestration modes phased pm loop continuous unified single task waves parallel">
+          <div class="faq-item"
+            data-question="orchestration modes phased pm loop continuous unified single task waves parallel">
             <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-16" id="faq-heading-16">
               <span>What are waves and how do they work?</span>
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-16" role="region" aria-labelledby="faq-heading-16">
-              <div class="faq-answer-inner"><p>Waves let you run tasks in parallel. Tasks in the same wave execute simultaneously, higher waves wait for lower waves to complete. Example: <code>{"wave":2, "agent":"crew-coder"}</code> and <code>{"wave":2, "agent":"crew-qa"}</code> run at the same time. Wave 3 waits for all wave 2 tasks before starting. This is <strong>significantly faster</strong> than sequential execution (speedup proportional to number of parallel agents).</p></div>
+              <div class="faq-answer-inner">
+                <p>Waves let you run tasks in parallel. Tasks in the same wave execute simultaneously, higher waves wait
+                  for lower waves to complete. Example: <code>{"wave":2, "agent":"crew-coder"}</code> and
+                  <code>{"wave":2, "agent":"crew-qa"}</code> run at the same time. Wave 3 waits for all wave 2 tasks
+                  before starting. This is <strong>significantly faster</strong> than sequential execution (speedup
+                  proportional to number of parallel agents).
+                </p>
+              </div>
             </div>
           </div>
-          <div class="faq-item" data-question="orchestration modes phased pm loop continuous unified single task workflow cron scheduled">
-            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-workflow" id="faq-heading-workflow">
+          <div class="faq-item"
+            data-question="orchestration modes phased pm loop continuous unified single task workflow cron scheduled">
+            <button class="faq-question" aria-expanded="false" aria-controls="faq-panel-workflow"
+              id="faq-heading-workflow">
               <span>Can I schedule workflows to run automatically?</span>
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-workflow" role="region" aria-labelledby="faq-heading-workflow">
-              <div class="faq-answer-inner"><p>Yes. Create workflows in <code>~/.crewswarm/pipelines/&lt;name&gt;.json</code> with multi-stage agent chains or skill-only pipelines. Run via cron: <code>node scripts/run-scheduled-pipeline.mjs social</code>. Each stage's output passes to the next. Perfect for daily builds, automated testing, or scheduled deployments.</p></div>
+              <div class="faq-answer-inner">
+                <p>Yes. Create workflows in <code>~/.crewswarm/pipelines/&lt;name&gt;.json</code> with multi-stage agent
+                  chains or skill-only pipelines. Run via cron:
+                  <code>node scripts/run-scheduled-pipeline.mjs social</code>. Each stage's output passes to the next.
+                  Perfect for daily builds, automated testing, or scheduled deployments.
+                </p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="background consciousness autonomous reflection idle">
@@ -2024,7 +2309,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-bg" role="region" aria-labelledby="faq-heading-bg">
-              <div class="faq-answer-inner"><p>An optional feature where crew-main runs periodic reflection when idle — reading brain.md, suggesting follow-ups, managing system health. Enable with <code>CREWSWARM_BG_CONSCIOUSNESS=1</code>. Cheap Groq mode costs ~$0.01/day. Keeps the crew proactive between tasks.</p></div>
+              <div class="faq-answer-inner">
+                <p>An optional feature where crew-main runs periodic reflection when idle — reading brain.md, suggesting
+                  follow-ups, managing system health. Enable with <code>CREWSWARM_BG_CONSCIOUSNESS=1</code>. Cheap Groq
+                  mode costs ~$0.01/day. Keeps the crew proactive between tasks.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="continuous build websites required sections">
@@ -2033,7 +2322,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-17" role="region" aria-labelledby="faq-heading-17">
-              <div class="faq-answer-inner"><p>It inspects the target directory for required sections (hero, features, testimonials, etc.), dispatches tasks for anything missing, and loops until every section exists.</p></div>
+              <div class="faq-answer-inner">
+                <p>It inspects the target directory for required sections (hero, features, testimonials, etc.),
+                  dispatches tasks for anything missing, and loops until every section exists.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="swiftbar menu bar control start stop agents">
@@ -2042,7 +2334,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-18" role="region" aria-labelledby="faq-heading-18">
-              <div class="faq-answer-inner"><p>SwiftBar shows stack health, lets you start/stop/restart agents (including crew-lead and the dashboard), open the dashboard, and send targeted messages. crewchat is a separate menu bar app for talking to crew-lead in a popover — same conversation as the dashboard and Telegram.</p></div>
+              <div class="faq-answer-inner">
+                <p>SwiftBar shows stack health, lets you start/stop/restart agents (including crew-lead and the
+                  dashboard), open the dashboard, and send targeted messages. crewchat is a separate menu bar app for
+                  talking to crew-lead in a popover — same conversation as the dashboard and Telegram.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="project registry multiple projects roadmap tracking">
@@ -2051,7 +2347,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-19" role="region" aria-labelledby="faq-heading-19">
-              <div class="faq-answer-inner"><p>Each project is registered with its output path and roadmap. The dashboard’s Projects tab and <code>orchestrator-logs/projects.json</code> keep everything resume-ready.</p></div>
+              <div class="faq-answer-inner">
+                <p>Each project is registered with its output path and roadmap. The dashboard’s Projects tab and
+                  <code>orchestrator-logs/projects.json</code> keep everything resume-ready.
+                </p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="token budget shared memory 2500 chars each">
@@ -2060,7 +2360,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-20" role="region" aria-labelledby="faq-heading-20">
-              <div class="faq-answer-inner"><p>The loader trims each file to 2,500 characters and caps the combined memory payload at 12,000 characters, guaranteeing agents never blow their context windows.</p></div>
+              <div class="faq-answer-inner">
+                <p>The loader trims each file to 2,500 characters and caps the combined memory payload at 12,000
+                  characters, guaranteeing agents never blow their context windows.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="failed tasks auto breakdown subtasks">
@@ -2069,7 +2372,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-21" role="region" aria-labelledby="faq-heading-21">
-              <div class="faq-answer-inner"><p>When a task fails, the orchestrator automatically breaks it into 2–4 smaller subtasks so follow-up attempts stay within safe execution windows.</p></div>
+              <div class="faq-answer-inner">
+                <p>When a task fails, the orchestrator automatically breaks it into 2–4 smaller subtasks so follow-up
+                  attempts stay within safe execution windows.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="architecture layers crewswarm rt gateway orchestration">
@@ -2078,7 +2384,11 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-22" role="region" aria-labelledby="faq-heading-22">
-              <div class="faq-answer-inner"><p>Layer 1: crewswarm RT — your own WebSocket message bus (port 18889). Layer 2: Direct LLM calls — each agent calls its configured provider API with your key, no proxy. Layer 3: crewswarm orchestration — planner, phased builds, shared memory, dashboard, and SwiftBar.</p></div>
+              <div class="faq-answer-inner">
+                <p>Layer 1: crewswarm RT — your own WebSocket message bus (port 18889). Layer 2: Direct LLM calls — each
+                  agent calls its configured provider API with your key, no proxy. Layer 3: crewswarm orchestration —
+                  planner, phased builds, shared memory, dashboard, and SwiftBar.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="local first offline control run locally">
@@ -2087,7 +2397,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-23" role="region" aria-labelledby="faq-heading-23">
-              <div class="faq-answer-inner"><p>Yes. The orchestrator, dashboard, SwiftBar plugin, and memory system all run on your Mac. The only external calls are to the LLM providers you configure.</p></div>
+              <div class="faq-answer-inner">
+                <p>Yes. The orchestrator, dashboard, SwiftBar plugin, and memory system all run on your Mac. The only
+                  external calls are to the LLM providers you configure.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="monitor rt messages dashboard tab">
@@ -2096,7 +2409,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-24" role="region" aria-labelledby="faq-heading-24">
-              <div class="faq-answer-inner"><p>The RT Messages tab in the dashboard mirrors every command, agent reply, and issue. It’s the best place to verify what each agent just did.</p></div>
+              <div class="faq-answer-inner">
+                <p>The RT Messages tab in the dashboard mirrors every command, agent reply, and issue. It’s the best
+                  place to verify what each agent just did.</p>
+              </div>
             </div>
           </div>
           <div class="faq-item" data-question="restart single agent openswitch swiftbar">
@@ -2105,7 +2421,10 @@ const app = express();
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer" id="faq-panel-25" role="region" aria-labelledby="faq-heading-25">
-              <div class="faq-answer-inner"><p>From the dashboard’s Services tab, hit Restart next to any agent. You can also use SwiftBar’s per-agent controls from the macOS menu bar. Either path keeps the rest of the crew running.</p></div>
+              <div class="faq-answer-inner">
+                <p>From the dashboard’s Services tab, hit Restart next to any agent. You can also use SwiftBar’s
+                  per-agent controls from the macOS menu bar. Either path keeps the rest of the crew running.</p>
+              </div>
             </div>
           </div>
 
@@ -2121,7 +2440,8 @@ const app = express();
       <div class="gs-prereqs">
         <span class="gs-prereq"><span class="gs-prereq-check">✓</span> Node.js 20+</span>
         <span class="gs-prereq-sep">·</span>
-        <span class="gs-prereq"><span class="gs-prereq-check">✓</span> RT server <span class="gs-prereq-port">:18889</span></span>
+        <span class="gs-prereq"><span class="gs-prereq-check">✓</span> RT server <span
+            class="gs-prereq-port">:18889</span></span>
         <span class="gs-prereq-sep">·</span>
         <span class="gs-prereq"><span class="gs-prereq-check">✓</span> Agent daemons</span>
         <span class="gs-prereq-sep">·</span>
@@ -2147,7 +2467,8 @@ const app = express();
               <div class="gs-step-num">01</div>
               <div class="gs-step-content">
                 <div class="gs-step-label">Check the stack</div>
-                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> openswitchctl status</span></div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> openswitchctl
+                    status</span></div>
               </div>
             </div>
             <div class="gs-step-divider"></div>
@@ -2155,7 +2476,8 @@ const app = express();
               <div class="gs-step-num">02</div>
               <div class="gs-step-content">
                 <div class="gs-step-label">Launch the dashboard</div>
-                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node scripts/dashboard.mjs</span></div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node
+                    scripts/dashboard.mjs</span></div>
               </div>
             </div>
             <div class="gs-step-divider"></div>
@@ -2163,7 +2485,9 @@ const app = express();
               <div class="gs-step-num">03</div>
               <div class="gs-step-content">
                 <div class="gs-step-label">Start building</div>
-                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> <span class="code-str">open http://127.0.0.1:4319 — or —</span> node scripts/run.mjs <span class="code-str">"Build a todo API"</span></span></div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> <span
+                      class="code-str">open http://127.0.0.1:4319 — or —</span> node scripts/run.mjs <span
+                      class="code-str">"Build a todo API"</span></span></div>
               </div>
             </div>
             <div class="gs-step-divider"></div>
@@ -2171,7 +2495,8 @@ const app = express();
               <div class="gs-step-num">04</div>
               <div class="gs-step-content">
                 <div class="gs-step-label">Or target one agent directly</div>
-                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node gateway-bridge.mjs <span class="code-str">--send crew-coder "Add auth middleware"</span></span></div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node gateway-bridge.mjs
+                    <span class="code-str">--send crew-coder "Add auth middleware"</span></span></div>
               </div>
             </div>
           </div>
@@ -2180,15 +2505,18 @@ const app = express();
 
       <!-- Doc links: horizontal row -->
       <div class="gs-docrow">
-        <a href="https://github.com/crewswarm/crewswarm/blob/main/docs/SYSTEM-ARCHITECTURE.md" class="gs-docitem" target="_blank" rel="noopener">
+        <a href="https://github.com/crewswarm/crewswarm/blob/main/docs/SYSTEM-ARCHITECTURE.md" class="gs-docitem"
+          target="_blank" rel="noopener">
           <span class="gs-docitem-label">System Architecture</span>
           <span class="gs-docitem-arrow">→</span>
         </a>
-        <a href="https://github.com/crewswarm/crewswarm/blob/main/AGENTS.md" class="gs-docitem" target="_blank" rel="noopener">
+        <a href="https://github.com/crewswarm/crewswarm/blob/main/AGENTS.md" class="gs-docitem" target="_blank"
+          rel="noopener">
           <span class="gs-docitem-label">Agent Setup Guide</span>
           <span class="gs-docitem-arrow">→</span>
         </a>
-        <a href="https://github.com/crewswarm/crewswarm/blob/main/contrib/swiftbar/README.md" class="gs-docitem" target="_blank" rel="noopener">
+        <a href="https://github.com/crewswarm/crewswarm/blob/main/contrib/swiftbar/README.md" class="gs-docitem"
+          target="_blank" rel="noopener">
           <span class="gs-docitem-label">SwiftBar Setup</span>
           <span class="gs-docitem-arrow">→</span>
         </a>
@@ -2204,7 +2532,8 @@ const app = express();
       <div class="section-header">
         <div class="eyebrow">Documentation</div>
         <h2>Everything you need to know</h2>
-        <p class="section-desc">From quick starts to deep dives — comprehensive guides for every part of the crewswarm stack.</p>
+        <p class="section-desc">From quick starts to deep dives — comprehensive guides for every part of the crewswarm
+          stack.</p>
       </div>
       <div class="docs-infinite-shell">
         <div class="docs-grid docs-feed" id="docsFeed">
@@ -2213,9 +2542,12 @@ const app = express();
             <h3>Architecture & Reference</h3>
             <p>How the stack fits together — RT bus, agent bridges, pipelines, MCP API, and tool execution.</p>
             <ul class="docs-links">
-              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/SYSTEM-ARCHITECTURE.md" target="_blank" rel="noopener">System Architecture</a></li>
-              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/AGENTS.md" target="_blank" rel="noopener">Agent Setup Guide (AGENTS.md)</a></li>
-              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/ORCHESTRATOR-GUIDE.md" target="_blank" rel="noopener">Orchestrator Guide</a></li>
+              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/SYSTEM-ARCHITECTURE.md" target="_blank"
+                  rel="noopener">System Architecture</a></li>
+              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/AGENTS.md" target="_blank"
+                  rel="noopener">Agent Setup Guide (AGENTS.md)</a></li>
+              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/ORCHESTRATOR-GUIDE.md" target="_blank"
+                  rel="noopener">Orchestrator Guide</a></li>
             </ul>
           </div>
           <div class="docs-card">
@@ -2223,9 +2555,12 @@ const app = express();
             <h3>Technical Guides</h3>
             <p>Step-by-step guides for configuration, deployment, and advanced usage patterns.</p>
             <ul class="docs-links">
-              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/KEEP-AGENTS-WORKING.md" target="_blank" rel="noopener">Keep Agents Working</a></li>
-              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/contrib/swiftbar/README.md" target="_blank" rel="noopener">SwiftBar Setup</a></li>
-              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">Troubleshooting</a></li>
+              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/KEEP-AGENTS-WORKING.md" target="_blank"
+                  rel="noopener">Keep Agents Working</a></li>
+              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/contrib/swiftbar/README.md" target="_blank"
+                  rel="noopener">SwiftBar Setup</a></li>
+              <li><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/TROUBLESHOOTING.md" target="_blank"
+                  rel="noopener">Troubleshooting</a></li>
             </ul>
           </div>
           <div class="docs-card">
@@ -2239,7 +2574,8 @@ const app = express();
             </ul>
           </div>
         </div>
-        <div class="docs-feed-status" id="docsFeedStatus" aria-live="polite">Scroll for more guides. New cards load as the section enters view.</div>
+        <div class="docs-feed-status" id="docsFeedStatus" aria-live="polite">Scroll for more guides. New cards load as
+          the section enters view.</div>
         <div class="docs-feed-sentinel" id="docsFeedSentinel" aria-hidden="true">
           <div class="docs-feed-loader">
             <span></span><span></span><span></span>
@@ -2248,7 +2584,8 @@ const app = express();
       </div>
       <div class="docs-cta">
         <p>All models and agents configurable via JSON. No code changes required to switch LLMs.</p>
-        <a href="https://github.com/crewswarm/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">View full docs on GitHub →</a>
+        <a href="https://github.com/crewswarm/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">View full
+          docs on GitHub →</a>
       </div>
     </div>
   </section>
@@ -2258,8 +2595,9 @@ const app = express();
     <div class="container footer-inner">
       <div class="footer-brand">
         <div class="footer-logo">crewswarm</div>
-        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
-        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a
+            href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
       </div>
       <div class="footer-links">
         <div class="footer-col">
@@ -2268,11 +2606,14 @@ const app = express();
           <a href="vibe.html">Vibe IDE</a>
           <a href="deploy.html">Deploy</a>
           <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Company</div>
           <a href="about.html">About Us</a>
           <a href="contact.html">Contact</a>
+          <a href="openclaw-comparison.html">Compare</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Community</div>
@@ -2283,7 +2624,10 @@ const app = express();
       </div>
     </div>
     <div class="footer-bottom">
-      <span>&copy; 2026 crewswarm. All rights reserved.</span>
+      <div class="container">
+        <span>&copy; 2026 crewswarm. All rights reserved.</span>
+
+      </div>
     </div>
   </footer>
 
@@ -2291,7 +2635,7 @@ const app = express();
 
 
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
       const faqList = document.getElementById('faqList');
       if (!faqList) return;
       const faqItems = Array.from(faqList.querySelectorAll('.faq-item'));
@@ -2332,7 +2676,7 @@ const app = express();
           filterFaq(event.target.value);
         });
       }
-      
+
       // Initialize FAQ on load
       filterFaq('');
     });
@@ -2340,7 +2684,7 @@ const app = express();
 
 
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
       const sections = document.querySelectorAll('section.section, .proof-bar');
       const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
@@ -2367,8 +2711,8 @@ const app = express();
 
     });
 
-    (function() {
-      const minifyCSS = function(css) {
+    (function () {
+      const minifyCSS = function (css) {
         return css
           .replace(/\/\*[\s\S]*?\*\//g, '')
           .replace(/\s+/g, ' ')
@@ -2383,26 +2727,26 @@ const app = express();
 
   <script>
     // Hamburger nav toggle
-    (function() {
+    (function () {
       if (window.__crewswarmNavInit) return;
       const btn = document.getElementById('navHamburger');
       const links = document.getElementById('navLinks');
       if (!btn || !links) return;
-      btn.addEventListener('click', function() {
+      btn.addEventListener('click', function () {
         const open = links.classList.toggle('open');
         btn.classList.toggle('open', open);
         btn.setAttribute('aria-expanded', String(open));
       });
       // Close on nav link click
-      links.querySelectorAll('.nav-link-item').forEach(function(a) {
-        a.addEventListener('click', function() {
+      links.querySelectorAll('.nav-link-item').forEach(function (a) {
+        a.addEventListener('click', function () {
           links.classList.remove('open');
           btn.classList.remove('open');
           btn.setAttribute('aria-expanded', 'false');
         });
       });
       // Close on outside click
-      document.addEventListener('click', function(e) {
+      document.addEventListener('click', function (e) {
         if (!btn.contains(e.target) && !links.contains(e.target)) {
           links.classList.remove('open');
           btn.classList.remove('open');
@@ -2413,4 +2757,5 @@ const app = express();
   </script>
   <script src="script.js"></script>
 </body>
+
 </html>

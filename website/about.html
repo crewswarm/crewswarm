@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>About crewswarm — Mission & Expertise</title>
-  <meta name="description" content="Learn about the team and mission behind crewswarm, the multi-agent AI orchestrator. Building the future of autonomous software engineering." />
+  <meta name="description"
+    content="Learn about the team and mission behind crewswarm, the multi-agent AI orchestrator. Building the future of autonomous software engineering." />
   <!-- Open Graph -->
   <meta property="og:title" content="About crewswarm — Mission & Expertise" />
-  <meta property="og:description" content="The team behind crewswarm — building local-first, multi-agent AI orchestration for developers." />
+  <meta property="og:description"
+    content="The team behind crewswarm — building local-first, multi-agent AI orchestration for developers." />
   <meta property="og:url" content="https://crewswarm.ai/about.html" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -16,7 +19,8 @@
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="About crewswarm — Mission & Expertise" />
-  <meta name="twitter:description" content="The team behind crewswarm — building local-first, multi-agent AI orchestration for developers." />
+  <meta name="twitter:description"
+    content="The team behind crewswarm — building local-first, multi-agent AI orchestration for developers." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <!-- SEO -->
   <meta name="robots" content="index, follow" />
@@ -24,66 +28,105 @@
   <link rel="canonical" href="https://crewswarm.ai/about.html" />
   <link rel="icon" type="image/png" href="favicon.png?v=3" />
   <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://crewswarm.ai/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "About",
+        "item": "https://crewswarm.ai/about.html"
+      }
+    ]
+  }
+  </script>
   <link rel="stylesheet" href="styles.css" />
-  <style>
-    .about-section { margin-bottom: 3rem; color: var(--text-2); }
-    .about-section h2 { color: var(--text); margin-bottom: 1rem; }
-    .about-section p { margin-bottom: 1.25rem; font-size: 1.125rem; }
-    .about-section ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 1.5rem; }
-    .about-section li { margin-bottom: 0.75rem; font-size: 1.125rem; }
-  </style>
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+
 </head>
+
 <body>
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
-    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
-      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
-      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
-    </a>
-    <ul class="nav-links" id="navLinks" role="menubar">
-      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
-      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
-      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
-      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
-      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
-      <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
-    </ul>
-    <div class="nav-actions">
-      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
-      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
-        <span></span><span></span><span></span>
-      </button>
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks" role="menubar">
+        <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+        <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+        <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+        <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+        <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+        <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+        <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false"
+          aria-controls="navLinks">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
     </div>
   </nav>
 
   <section class="hero">
     <div class="hero-glow"></div>
-    <div class="container">
+    
       <div class="hero-badge">Our Mission</div>
-      <h1>Autonomous engineering<br/><span class="gradient-text">for everyone.</span></h1>
-    </div>
+      <h1>Autonomous engineering<br /><span class="gradient-text">for everyone.</span></h1>
+    
   </section>
 
   <section class="section subpage-content visible">
     <div class="container">
-      <section class="about-section">
-        <p>crewswarm was born from a simple observation: LLMs are incredible coders, but they struggle with project management, testing, and long-term architectural consistency. To build real software, you don't just need a model—you need a crew.</p>
-        <p>We built the orchestration layer that brings specialist AI agents together under a unified PM-led workflow. By coordinating planners, builders, and testers, crewswarm transforms a single requirement into a fully realized build on your local disk.</p>
-      </section>
+      <div class="grid-2">
+        <section class="page-card" style="grid-column: 1 / -1;">
+          <p style="font-size: 1.125rem;">crewswarm was born from a simple observation: LLMs are incredible coders, but
+            they struggle with project management, testing, and long-term architectural consistency. To build real
+            software, you don't just need a model—you need a crew.</p>
+          <p style="font-size: 1.125rem;">We built the orchestration layer that brings specialist AI agents together
+            under a unified PM-led workflow. By coordinating planners, builders, and testers, crewswarm transforms a
+            single requirement into a fully realized build on your local disk.</p>
+        </section>
 
-      <section class="about-section">
-        <h2>Research-Driven Foundations</h2>
-        <p>Our approach is grounded in leading AI research to ensure that autonomous development is both factual and robust. We incorporate key findings from:</p>
-        <ul>
-          <li><strong>Generative Engine Optimization (GEO):</strong> Based on research from Princeton and Georgia Tech, we prioritize authoritative content and structural markers that improve AI citation and factual accuracy.</li>
-          <li><strong>Agentic Reasoning:</strong> Our loops are inspired by frameworks like <em>Reflexion</em>, allowing agents to self-correct and iterate before shipping code.</li>
-        </ul>
-      </section>
+        <section class="page-card">
+          <h2>Research-Driven Foundations</h2>
+          <p>Our approach is grounded in leading AI research to ensure that autonomous development is both factual and
+            robust. We incorporate key findings from:</p>
+          <ul>
+            <li><strong>Generative Engine Optimization (GEO):</strong> Based on research from Princeton and Georgia
+              Tech, we prioritize authoritative content and structural markers that improve AI citation and factual
+              accuracy.</li>
+            <li><strong>Agentic Reasoning:</strong> Our loops are inspired by frameworks like <em>Reflexion</em>,
+              allowing agents to self-correct and iterate before shipping code.</li>
+          </ul>
+        </section>
 
-      <section class="about-section">
-        <h2>Local-First AI</h2>
-        <p>We believe your intellectual property belongs to you. crewswarm is a "local-first" orchestrator—your models, your keys, and your files stay on your machine. We provide the glue, you provide the vision.</p>
-      </section>
+        <section class="page-card">
+          <h2>Local-First AI</h2>
+          <p>We believe your intellectual property belongs to you. crewswarm is a "local-first" orchestrator—your
+            models, your keys, and your files stay on your machine. We provide the glue, you provide the vision.</p>
+        </section>
+      </div>
     </div>
   </section>
 
@@ -91,8 +134,9 @@
     <div class="container footer-inner">
       <div class="footer-brand">
         <div class="footer-logo">crewswarm</div>
-        <p>Multi-agent AI orchestration.<br/>Your models. Your keys. Your machine.</p>
-        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a
+            href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
       </div>
       <div class="footer-links">
         <div class="footer-col">
@@ -101,11 +145,14 @@
           <a href="vibe.html">Vibe IDE</a>
           <a href="deploy.html">Deploy</a>
           <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Company</div>
           <a href="about.html">About Us</a>
           <a href="contact.html">Contact</a>
+          <a href="openclaw-comparison.html">Compare</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Community</div>
@@ -116,10 +163,14 @@
       </div>
     </div>
     <div class="footer-bottom">
+      <div class="container">
       <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    
+      </div>
     </div>
   </footer>
 
   <script src="script.js"></script>
 </body>
+
 </html>

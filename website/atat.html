@@ -84,10 +84,20 @@
       table { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     }
   </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+
 </head>
 <body>
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
     <a class="nav-logo" href="index.html" aria-label="crewswarm home">
       <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
       <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
@@ -106,12 +116,13 @@
         <span></span><span></span><span></span>
       </button>
     </div>
+      </div>
   </nav>
 
   <!-- HERO -->
   <section class="hero">
     <div class="hero-glow"></div>
-    <div class="container">
+    
       <h1 class="atat-title">@@PROTOCOL</h1>
       <div class="subtitle">The At-At Protocol</div>
       <div class="agent-badge">SPECIAL AGENT DOUBLE @@</div>
@@ -119,7 +130,7 @@
         Token-efficient LLM commands using <code style="color: var(--accent);">@@</code> markers.<br/>
         Licensed to build, not to JSON.
       </p>
-    </div>
+    
   </section>
 
   <!-- STATS -->
@@ -361,11 +372,14 @@ app.listen(3000);
           <a href="vibe.html">Vibe IDE</a>
           <a href="deploy.html">Deploy</a>
           <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Company</div>
           <a href="about.html">About Us</a>
           <a href="contact.html">Contact</a>
+          <a href="openclaw-comparison.html">Compare</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Community</div>
@@ -376,7 +390,10 @@ app.listen(3000);
       </div>
     </div>
     <div class="footer-bottom">
+      <div class="container">
       <span>&copy; 2026 crewswarm. All rights reserved.</span>
+    
+      </div>
     </div>
   </footer>
 
