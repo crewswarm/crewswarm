@@ -18,6 +18,23 @@ import { execSync, spawnSync } from "node:child_process";
 import WebSocket from "ws";
 import { acquireStartupLock } from "./lib/runtime/startup-guard.mjs";
 import {
+  loadSystemConfig, loadSwarmConfig, loadAgentList as loadAgentListFromConfig, resolveProvider,
+  CREW_LEAD_PORT as PORT,
+  CREW_LEAD_PID_PATH as PID_PATH,
+  CREW_LEAD_HISTORY_DIR as HISTORY_DIR,
+  PROJECTS_REGISTRY,
+  MAX_HISTORY,
+  LLM_TIMEOUT,
+  CTL_PATH,
+  DASH_PORT,
+  DASH_HOST,
+  DASHBOARD,
+  DISPATCH_TIMEOUT_MS,
+  DISPATCH_CLAIMED_TIMEOUT_MS,
+  loadCursorWavesEnabled,
+  loadClaudeCodeEnabled
+} from "./lib/runtime/config.mjs";
+import {
   CREWSWARM_TOOL_NAMES,
   readAgentTools,
   writeAgentTools,
@@ -61,6 +78,7 @@ import {
 } from "./lib/crew-lead/llm-caller.mjs";
 import { initChatHandler, handleChat } from "./lib/crew-lead/chat-handler.mjs";
 import { initHttpServer, createAndStartServer } from "./lib/crew-lead/http-server.mjs";
+import { initWsRouter } from "./lib/crew-lead/ws-router.mjs";
 import {
   initWaveDispatcher,
   pendingDispatches,
@@ -79,38 +97,18 @@ import {
 } from "./lib/crew-lead/wave-dispatcher.mjs";
 import { normalizeRtAgentId } from "./lib/agent-registry.mjs";
 import { handleAutonomousMentions } from "./lib/chat/autonomous-mentions.mjs";
+import { initIntervalManagers } from "./lib/crew-lead/interval-manager.mjs";
 
 // ── Global state (declared early — referenced throughout) ────────────────────
 const sseClients = new Set();
 const activeOpenCodeAgents = new Map(); // agentId → { model, since }
+const agentLastHeartbeat = new Map();   // agentId → timestamp (ms) — tracks RT bus heartbeats
 
 // SSE message throttling to prevent dashboard flashing
 const SSE_THROTTLE_MS = 500; // Only send same agent_working/idle once per 500ms
 const sseThrottle = new Map(); // key → lastSentMs
 
-// Cleanup throttle map every 5 minutes to prevent unbounded growth
-setInterval(() => {
-  const now = Date.now();
-  const stale = 5 * 60 * 1000; // 5 min
-  for (const [key, ts] of sseThrottle.entries()) {
-    if (now - ts > stale) sseThrottle.delete(key);
-  }
-}, 5 * 60 * 1000);
 
-// ✅ FIX: Auto-clear stale inOpenCode sessions (prevents agents stuck as "busy")
-// If an agent emits agent_working but never emits agent_idle (crash/timeout),
-// this cleanup will mark it idle after 15 minutes
-setInterval(() => {
-  const staleThresholdMs = 15 * 60 * 1000; // 15 min
-  const now = Date.now();
-  for (const [agentId, { since }] of activeOpenCodeAgents.entries()) {
-    if (now - since > staleThresholdMs) {
-      console.warn(`[crew-lead] Clearing stale inOpenCode for ${agentId} (active for ${Math.round((now - since) / 60000)}m)`);
-      activeOpenCodeAgents.delete(agentId);
-      broadcastSSE({ type: "agent_idle", agent: agentId, ts: now, stale: true });
-    }
-  }
-}, 60000); // Check every 60 seconds
 
 function broadcastSSE(payload) {
   // Throttle high-frequency agent status updates to prevent dashboard flashing
@@ -118,106 +116,42 @@ function broadcastSSE(payload) {
     const throttleKey = `${payload.type}:${payload.agent}`;
     const now = Date.now();
     const lastSent = sseThrottle.get(throttleKey) || 0;
-    
+
     if (now - lastSent < SSE_THROTTLE_MS) {
       return; // Throttle: skip this update
     }
     sseThrottle.set(throttleKey, now);
   }
-  
+
   const event = JSON.stringify(payload);
   const clientCount = sseClients.size;
   if (clientCount === 0 && payload?.type === "chat_message") {
     console.log(`[crew-lead] ⚠️ broadcastSSE called but no SSE clients connected (type=${payload.type})`);
   }
   for (const client of sseClients) {
-    try { client.write(`data: ${event}\n\n`); } catch {}
+    try { client.write(`data: ${event}\n\n`); } catch { }
   }
   if (clientCount > 0 && payload?.type === "chat_message") {
     console.log(`[crew-lead] SSE broadcast to ${clientCount} client(s): ${payload.role} message sessionId=${payload.sessionId} (${event.length} bytes)`);
   }
 }
 
-// ── Config ────────────────────────────────────────────────────────────────────
-
-const PORT        = Number(process.env.CREW_LEAD_PORT || 5010);
-const PID_PATH    = path.join(os.homedir(), ".crewswarm", "logs", "crew-lead.pid");
-
-// ── Startup Guard: Ensure only one crew-lead instance ────────────────────────
-const lockResult = acquireStartupLock("crew-lead", { port: PORT, killStale: true });
-if (!lockResult.ok) {
-  console.error(`[crew-lead] ${lockResult.message}`);
-  process.exit(1);
-}
-
-// Write PID file for reliable process management (prevents collateral dashboard kills)
-fs.mkdirSync(path.dirname(PID_PATH), { recursive: true });
-fs.writeFileSync(PID_PATH, String(process.pid));
-console.log(`[crew-lead] PID ${process.pid} written to ${PID_PATH}`);
-
-// Clear PID file on exit
-process.on("exit", () => { try { fs.writeFileSync(PID_PATH, ""); } catch {} });
-process.on("SIGTERM", () => { try { fs.writeFileSync(PID_PATH, ""); process.exit(0); } catch {} });
-process.on("SIGINT", () => { try { fs.writeFileSync(PID_PATH, ""); process.exit(0); } catch {} });
-
-const HISTORY_DIR = path.join(os.homedir(), ".crewswarm", "chat-history");
-// Shared projects registry (same file dashboard writes to for autoAdvance toggle)
-const PROJECTS_REGISTRY = path.join(path.dirname(new URL(import.meta.url).pathname), "orchestrator-logs", "projects.json");
-const MAX_HISTORY    = 2000; // disk storage cap — effectively unlimited for normal usage
-// No LLM_WINDOW cap — models handle 64k–1M tokens. Send full history each call.
-const LLM_TIMEOUT = 180000; // 3 min — reasoning models (e.g. gpt-5.1-codex) can take 1–2+ min for complex prompts
-const CTL_PATH    = (() => {
-  const homeBin = path.join(os.homedir(), "bin", "openswitchctl");
-  if (fs.existsSync(homeBin)) return homeBin;
-  return path.join(process.cwd(), "scripts", "openswitchctl");
-})();
-const DASH_PORT   = Number(process.env.SWARM_DASH_PORT || 4319);
-const DASH_HOST   = process.env.CREWSWARM_RT_HOST || "127.0.0.1";
-const DASHBOARD   = `http://${DASH_HOST}:${DASH_PORT}`;
-const DISPATCH_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_TIMEOUT_MS) || 300_000; // 5 min — unclaimed dispatches (OpenCode tasks need time to spin up)
-const DISPATCH_CLAIMED_TIMEOUT_MS = Number(process.env.CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS) || 900_000; // 15 min — agent claimed, working (OpenCode CLI can be slow)
-// CREWSWARM_CURSOR_WAVES=1 — route multi-agent waves through the Cursor
-// crew-orchestrator subagent. All tasks in a wave are fanned out to
-// /crew-* Cursor subagents in parallel and results are collected together.
-// Runtime-mutable — togglable via dashboard without restart.
-function loadCursorWavesEnabled() {
-  if (process.env.CREWSWARM_CURSOR_WAVES) return /^1|true|yes$/i.test(String(process.env.CREWSWARM_CURSOR_WAVES));
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
-    if (typeof cfg.cursorWaves === "boolean") return cfg.cursorWaves;
-  } catch {}
-  return false;
-}
 let _cursorWavesEnabled = loadCursorWavesEnabled();
-
-// Claude Code — runtime-mutable executor toggle
-function loadClaudeCodeEnabled() {
-  if (process.env.CREWSWARM_CLAUDE_CODE) return /^1|true|yes$/i.test(String(process.env.CREWSWARM_CLAUDE_CODE));
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
-    if (typeof cfg.claudeCode === "boolean") return cfg.claudeCode;
-  } catch {}
-  return false;
-}
 let _claudeCodeEnabled = loadClaudeCodeEnabled();
 
 const BG_CONSCIOUSNESS_INTERVAL_MS = Number(process.env.CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS) || 15 * 60 * 1000;
 let BG_CONSCIOUSNESS_MODEL = (() => {
   if (process.env.CREWSWARM_BG_CONSCIOUSNESS_MODEL) return process.env.CREWSWARM_BG_CONSCIOUSNESS_MODEL;
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
-    if (cfg.bgConsciousnessModel) return cfg.bgConsciousnessModel;
-  } catch {}
+  const cfg = loadSystemConfig();
+  if (cfg.bgConsciousnessModel) return cfg.bgConsciousnessModel;
   return "groq/llama-3.1-8b-instant";
 })();
 // Runtime-mutable — can be toggled via dashboard without restart.
 // Reads from env first, then from ~/.crewswarm/config.json bgConsciousness field.
 function loadBgConsciousnessEnabled() {
   if (process.env.CREWSWARM_BG_CONSCIOUSNESS) return /^1|true|yes$/i.test(String(process.env.CREWSWARM_BG_CONSCIOUSNESS));
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
-    if (typeof cfg.bgConsciousness === "boolean") return cfg.bgConsciousness;
-  } catch {}
+  const cfg = loadSystemConfig();
+  if (typeof cfg.bgConsciousness === "boolean") return cfg.bgConsciousness;
   return false;
 }
 let _bgConsciousnessEnabled = loadBgConsciousnessEnabled();
@@ -226,8 +160,8 @@ let _lastBgConsciousnessAt = 0;
 const BG_CONSCIOUSNESS_ENABLED_REF = { get enabled() { return _bgConsciousnessEnabled; } };
 
 function loadConfig() {
-  const cs      = tryRead(path.join(os.homedir(), ".crewswarm", "config.json"))    || {};
-  const csSwarm = tryRead(path.join(os.homedir(), ".crewswarm", "crewswarm.json")) || {};
+  const cs = loadSystemConfig();
+  const csSwarm = loadSwarmConfig();
 
   const agents = Array.isArray(csSwarm.agents) ? csSwarm.agents : [];
   const agentCfg = agents.find(a => a.id === "crew-lead");
@@ -256,15 +190,15 @@ function loadConfig() {
 
   // Full roster: id, display name, emoji, role/theme, model
   const agentRoster = teamAgents.map(a => ({
-    id:    a.id,
-    name:  a.identity?.name  || a.name  || a.id,
+    id: a.id,
+    name: a.identity?.name || a.name || a.id,
     emoji: a.identity?.emoji || a.emoji || "",
-    role:  a.identity?.theme || "",
+    role: a.identity?.theme || "",
     model: a.model || "",
   }));
 
   const displayName = agentCfg?.identity?.name || "crew-lead";
-  const emoji       = agentCfg?.identity?.emoji || "🦊";
+  const emoji = agentCfg?.identity?.emoji || "🦊";
 
   let fallbackProvider = null, fallbackModelId = null, fallbackProviderKey = null;
   if (agentCfg?.fallbackModel) {
@@ -312,14 +246,6 @@ const autonomousPmLoopSessions = new Set();
 const autoRetryAttempts = new Map(); // taskId → { questionRetry, planRetry, bailRetry, timestamp }
 const AUTO_RETRY_TTL = 10 * 60 * 1000; // 10 min
 
-// Cleanup stale retry tracking every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [taskId, data] of autoRetryAttempts.entries()) {
-    if (now - data.timestamp > AUTO_RETRY_TTL) autoRetryAttempts.delete(taskId);
-  }
-}, 5 * 60 * 1000);
-
 function shouldAutoRetry(taskId, retryType) {
   const existing = autoRetryAttempts.get(taskId);
   if (!existing) {
@@ -349,6 +275,12 @@ initPrompts({ crewswarmCfgFile: CREWSWARM_CFG_FILE, historyDir: HISTORY_DIR, get
 initClassifier({ loadConfig });
 initIntent({ loadConfig, classifyTask });
 initTelemetry({ broadcastSSE });
+initIntervalManagers({
+  sseThrottle,
+  activeOpenCodeAgents,
+  broadcastSSE,
+  autoRetryAttempts,
+});
 
 
 function resolveSkillAlias(skillName) {
@@ -363,7 +295,7 @@ function resolveSkillAlias(skillName) {
       const aliases = def.aliases || [];
       if (aliases.includes(skillName)) return real;
     }
-  } catch {}
+  } catch { }
   return skillName;
 }
 
@@ -511,12 +443,12 @@ const bgConsciousnessRef = {
   get enabled() { return _bgConsciousnessEnabled; },
   set enabled(v) { _bgConsciousnessEnabled = v; },
   get model() { return BG_CONSCIOUSNESS_MODEL; },
-  set model(v) { 
+  set model(v) {
     BG_CONSCIOUSNESS_MODEL = v;
     // Persist to config so it survives restart
     try {
       const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
-      const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+      const cfg = loadSystemConfig();
       cfg.bgConsciousnessModel = v;
       fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), "utf8");
     } catch (e) {
@@ -528,6 +460,9 @@ const bgConsciousnessRef = {
 };
 const cursorWavesRef = { get enabled() { return _cursorWavesEnabled; }, set enabled(v) { _cursorWavesEnabled = v; } };
 const claudeCodeRef = { get enabled() { return _claudeCodeEnabled; }, set enabled(v) { _claudeCodeEnabled = v; } };
+
+// connectRT is initialized after RT_URL/RT_TOKEN — use a mutable ref so HTTP server can call it
+let _connectRT = () => { throw new Error("connectRT not initialized yet"); };
 
 initHttpServer({
   sseClients,
@@ -547,12 +482,13 @@ initHttpServer({
   readAgentTools,
   writeAgentTools,
   activeOpenCodeAgents,
+  agentLastHeartbeat,
   agentTimeoutCounts: _agentTimeoutCounts, // from background.mjs
   crewswarmToolNames: CREWSWARM_TOOL_NAMES,
   classifyTask,
   tryRead,
   resolveSkillAlias,
-  connectRT,
+  connectRT: () => _connectRT(),
   historyDir: HISTORY_DIR,
   dispatchTimeoutMs: DISPATCH_TIMEOUT_MS,
   dispatchTimeoutInterval,
@@ -572,15 +508,15 @@ createAndStartServer(PORT);
 // Graceful error handling — log but allow critical errors to kill the process
 process.on("unhandledRejection", (reason) => {
   const msg = reason?.message || String(reason);
-  
+
   // Benign errors: SSE/fetch aborted, client disconnects — keep alive
   if (msg === "terminated" || msg === "aborted" || /client.*disconnect/i.test(msg)) {
     return; // Silent — normal operation
   }
-  
+
   console.error("[crew-lead] unhandled rejection:", msg);
   console.error("Stack:", reason?.stack);
-  
+
   // Critical errors: DB corruption, port conflicts, OOM — die gracefully
   if (/EADDRINUSE|EACCES|out of memory|cannot allocate/i.test(msg)) {
     console.error("[crew-lead] FATAL — exiting");
@@ -591,7 +527,7 @@ process.on("unhandledRejection", (reason) => {
 
 process.on("uncaughtException", (err) => {
   console.error("[crew-lead] uncaught exception:", err?.stack || err?.message);
-  
+
   // Always exit on uncaught exceptions — they leave process in undefined state
   console.error("[crew-lead] FATAL — exiting due to uncaught exception");
   process.exit(1);
@@ -599,17 +535,11 @@ process.on("uncaughtException", (err) => {
 
 // ── RT Bus listener — receives replies from agents ────────────────────────────
 
-const RT_URL   = process.env.CREWSWARM_RT_URL   || "ws://127.0.0.1:18889";
+const RT_URL = process.env.CREWSWARM_RT_URL || "ws://127.0.0.1:18889";
 const RT_TOKEN = process.env.CREWSWARM_RT_AUTH_TOKEN || (() => {
-  try {
-    const cs = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
-    if (cs?.rt?.authToken) return cs.rt.authToken;
-  } catch {}
-  return "";
+  const cs = loadSystemConfig();
+  return cs?.rt?.authToken || "";
 })();
-
-let reconnectTimer = null;
-let isConnecting = false;
 
 initWaveDispatcher({
   appendHistory,
@@ -617,7 +547,7 @@ initWaveDispatcher({
   emitTaskLifecycle,
   recordAgentTimeout,
   isAgentOnRtBus,
-  loadConfig,
+  loadSystemConfig,
   resolveAgentId,
   writeTaskBrief,
   buildTaskText,
@@ -640,406 +570,36 @@ initWaveDispatcher({
 // dashboard via SSE.  No polling, no subprocess — push-only.
 // Endpoint: POST /api/opencode-event  (no auth required — loopback only)
 
-function connectRT() {
-  if (isConnecting) {
-    console.log("[crew-lead] Already connecting to RT, skipping duplicate call");
-    return;
-  }
-  
-  // Clear any pending reconnect timer
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  
-  isConnecting = true;
-  const ws = new WebSocket(RT_URL);
-  let ready = false;
-
-  ws.on("open", () => {
-    console.log("[crew-lead] RT socket open");
-    isConnecting = false;
-  });
-
-  ws.on("message", (raw) => {
-    let p;
-    try { p = JSON.parse(raw.toString()); } catch { return; }
-
-    if (p.type === "server.hello") {
-      ws.send(JSON.stringify({ type: "hello", agent: "crew-lead", token: RT_TOKEN }));
-      return;
-    }
-    if (p.type === "hello.ack") {
-      ws.send(JSON.stringify({ type: "subscribe", channels: ["done", "events", "command", "issues", "status"] }));
-      ready = true;
-      // Expose publish function for dispatchTask
-      rtPublish = ({ channel, type, to, payload }) => {
-        const taskId = crypto.randomUUID();
-        ws.send(JSON.stringify({ type: "publish", channel, messageType: type, to, taskId, priority: "high", payload }));
-        return taskId;
-      };
-      console.log("[crew-lead] RT connected — listening for done, events, command, issues");
-      // Resume any in-progress pipelines from before restart
-      setTimeout(resumePipelines, 2000);
-      startBackgroundLoop();
-      // Send heartbeat every 30s so monitoring sees crew-lead as up
-      if (crewLeadHeartbeat) clearInterval(crewLeadHeartbeat);
-      crewLeadHeartbeat = setInterval(() => {
-        try {
-          const taskId = crypto.randomUUID();
-          ws.send(JSON.stringify({
-            type: "publish", channel: "status", messageType: "agent.heartbeat",
-            to: "broadcast", taskId, priority: "low",
-            payload: { agent: "crew-lead", ts: new Date().toISOString() },
-          }));
-        } catch {}
-      }, 30000);
-      return;
-    }
-    if (p.type === "error") {
-      console.error("[crew-lead] RT error:", p.message);
-      if (/token|auth|unauthorized/i.test(String(p.message))) {
-        console.error("[crew-lead] Tip: Set RT token in dashboard Settings (RT Bus) or in ~/.crewswarm/config.json (rt.authToken) so agent replies show in chat.");
-      }
-      return;
-    }
-
-    if (p.type === "message" && p.envelope) {
-      const env = p.envelope;
-      if (env.id) ws.send(JSON.stringify({ type: "ack", messageId: env.id, status: "received" }));
-
-      const from    = env.from || env.sender_agent_id || env.payload?.source || "";
-      const msgType = env.messageType || env.type || "";
-      const reply   = env.payload?.reply != null ? String(env.payload.reply).trim() : "";
-      const content = reply || (env.payload?.content ? String(env.payload.content).trim() : "");
-
-      // DEBUG: Log all status messages
-      if (env.channel === "status") {
-        console.log(`[crew-lead] DEBUG: received status msg from ${from}: type=${msgType}`);
-      }
-
-      // Log all RT traffic so crew-lead has eyes on the system
-      const time = new Date().toISOString().slice(11, 19);
-      let summary = "";
-      if (env.channel === "done" && content) summary = `${from} done: ${content.slice(0, 70)}…`;
-      else if (env.channel === "command") summary = `${from} → ${env.to || "?"} ${msgType} ${(env.payload?.content || env.payload?.prompt || "").slice(0, 50)}…`;
-      else if (env.channel === "issues") summary = `${from} issue: ${(env.payload?.error || env.payload?.note || "—").slice(0, 60)}`;
-      else summary = `${from} ${msgType} ${env.to ? `→ ${env.to}` : ""}`.trim();
-      pushRtActivity({ ts: Date.now(), time, channel: env.channel, type: msgType, from, to: env.to, taskId: env.taskId || env.correlationId, summary });
-
-      // Clear stale inOpenCode state when a bridge comes back online after a crash
-      if (msgType === "agent.online") {
-        const onlineAgent = env.payload?.agent || from;
-        if (onlineAgent && activeOpenCodeAgents.has(onlineAgent)) {
-          activeOpenCodeAgents.delete(onlineAgent);
-          broadcastSSE({ type: "agent_idle", agent: onlineAgent, stalled: false, ts: Date.now() });
-        }
-      }
-
-      // Forward agent_working / agent_idle events from bridges to SSE clients + SwiftBar
-      if (msgType === "agent_working" || msgType === "agent_idle") {
-        const agent = env.payload?.agent || from;
-        const model = env.payload?.model || "";
-        const stalled = env.payload?.stalled || false;
-        if (msgType === "agent_working") {
-          activeOpenCodeAgents.set(agent, { model, since: Date.now() });
-        } else {
-          activeOpenCodeAgents.delete(agent);
-        }
-        broadcastSSE({ type: msgType, agent, model, stalled, ts: Date.now() });
-      }
-
-      // On task.in_progress (agent claimed the task), extend timeout so long-running tasks survive
-      if (env.channel === "status" && (msgType === "task.in_progress" || msgType === "task.claimed")) {
-        const claimedTaskId = env.taskId || env.correlationId || "";
-        if (claimedTaskId) markDispatchClaimed(claimedTaskId, from);
-      }
-
-      // On task.failed (e.g. rate limit), re-dispatch to a fallback agent so the task still gets done
-      if (env.channel === "issues" && (msgType === "task.failed" || env.type === "task.failed")) {
-        const failedTaskId = env.taskId || env.correlationId || "";
-        const errMsg = String(env.payload?.error || env.payload?.note || "").trim();
-        const failedAgent = env.payload?.source || from || "";
-        emitTaskLifecycle("failed", { taskId: failedTaskId, agentId: failedAgent, taskType: "task", error: { message: errMsg } });
-        const dispatch = pendingDispatches.get(failedTaskId);
-        if (dispatch && RATE_LIMIT_PATTERN.test(errMsg)) {
-          const fallback = getRateLimitFallback(failedAgent);
-          const targetSession = dispatch.sessionId || "owner";
-          if (fallback !== failedAgent) {
-            pendingDispatches.delete(failedTaskId);
-            const newTaskId = dispatchTask(fallback, dispatch.task, targetSession, { ...dispatch, pipelineId: dispatch.pipelineId, waveIndex: dispatch.waveIndex });
-            if (newTaskId) {
-              appendHistory("default", targetSession, "system", `[crew-lead] ${failedAgent} hit rate limit (${errMsg.slice(0, 80)}). Re-dispatched same task to ${fallback}.`);
-              broadcastSSE({ type: "agent_reply", from: "crew-lead", content: `Rate limit: retried task with ${fallback}.`, sessionId: targetSession, taskId: failedTaskId, ts: Date.now() });
-              console.log(`[crew-lead] Rate limit fallback: ${failedAgent} → ${fallback} (task re-dispatched)`);
-            }
-          }
-        }
-      }
-
-      const isDone = msgType === "task.done" || env.channel === "done";
-
-      if (isDone && content && from && from !== "crew-lead") {
-        console.log(`[crew-lead] ✅ Agent reply from ${from}: ${content.slice(0, 120)}`);
-
-        const taskId = env.taskId || env.correlationId || "";
-        const dispatch = pendingDispatches.get(taskId);
-        const targetSession = dispatch?.sessionId || "owner";
-        // Mark done (keep for /api/status polling) but schedule cleanup after 10 min
-        if (dispatch) {
-          dispatch.done = true;
-          dispatch.result = content.slice(0, 4000);
-          dispatch.engineUsed = env.payload?.engineUsed || null;
-          setTimeout(() => pendingDispatches.delete(taskId), 600_000);
-        }
-
-        // ── Auto-retry if agent asked a question instead of doing the work ──────
-        const _autoRetryKey = `_question_retried_${taskId}`;
-        const _askedQuestion = /(?:would you like|shall i|should i|do you want|want me to|may i|can i proceed|would it help|do you need|is that correct|shall we|ready to proceed|would you prefer|let me know|please (?:confirm|clarify|specify|advise))\??/i.test(content);
-        const _didWork = /@@WRITE_FILE|@@RUN_CMD|wrote|created|updated|fixed|patched|done\.|complete/i.test(content);
-        if (_askedQuestion && !_didWork && !pendingPipelines.has(dispatch?.pipelineId) && !global[_autoRetryKey]) {
-          global[_autoRetryKey] = true;
-          const _originalTask = dispatch?.task || "";
-          const _retryTask = (_originalTask.slice(0, 2000) || content.slice(0, 500)) +
-            "\n\nDo NOT ask for permission or confirmation. Proceed immediately with your best judgment. Just do it.";
-          console.log(`[crew-lead] Agent ${from} asked a question instead of working — auto-retrying`);
-          appendHistory("default", targetSession, "system", `${from} asked a question instead of acting — auto-retrying with explicit instruction.`);
-          dispatchTask(from, _retryTask, targetSession, dispatch ? {
-            originProjectId: dispatch.originProjectId,
-            originChannel: dispatch.originChannel,
-            originThreadId: dispatch.originThreadId,
-            originMessageId: dispatch.originMessageId,
-            triggeredBy: "auto-retry-question",
-          } : null);
-          return;
-        }
-
-        // ── Auto-retry if a coder returned a plan instead of writing code ────────
-        const _planRetryKey = `_plan_retried_${taskId}`;
-        const _isCoderAgent = /crew-coder|crew-frontend|crew-fixer|crew-ml|crew-coder-back|crew-coder-front/.test(from);
-        const _returnedPlan = !_didWork && content.length > 300 && (
-          /##\s+(component|feature|file structure|design|breakdown|overview|plan|approach|implementation plan|technical spec)/i.test(content) ||
-          /here'?s? (?:the|my|a|what|how)/i.test(content.slice(0, 200))
-        );
-        if (_isCoderAgent && _returnedPlan && !global[_planRetryKey]) {
-          global[_planRetryKey] = true;
-          const _originalTask = dispatch?.task || "";
-          const _retryTask = `STOP PLANNING. Your last response was a plan/analysis with no code written.\n\nOriginal task: ${_originalTask.slice(0, 1500)}\n\nNow WRITE THE CODE. Use @@WRITE_FILE for every file. Do not describe what you will do — do it.`;
-          console.log(`[crew-lead] Agent ${from} returned a plan instead of code — auto-retrying`);
-          appendHistory("default", targetSession, "system", `${from} returned a plan with no code — auto-retrying with explicit execute instruction.`);
-          dispatchTask(from, _retryTask, targetSession, {
-            ...(dispatch?.pipelineId ? { pipelineId: dispatch.pipelineId } : {}),
-            ...(dispatch?.projectDir ? { projectDir: dispatch.projectDir } : {}),
-            originProjectId: dispatch?.originProjectId,
-            originChannel: dispatch?.originChannel,
-            originThreadId: dispatch?.originThreadId,
-            originMessageId: dispatch?.originMessageId,
-            triggeredBy: "auto-retry-plan",
-          });
-          return;
-        }
-
-        // ── Auto-retry if agent bailed out mid-task ("couldn't complete", "I'm sorry") ──
-        const _bailRetryKey = `_bail_retried_${taskId}`;
-        const _bailed = /couldn'?t complete|could not complete|i'?m sorry[,.]? but|i was unable to|i'?m unable to|session (?:limit|ended|expired)|ran out of|context (?:limit|window)|i (?:apologize|regret)|partial(?:ly)? complete|not (?:all|every|fully) (?:changes?|tasks?|items?|fixes?)/i.test(content);
-        if (_bailed && !global[_bailRetryKey]) {
-          global[_bailRetryKey] = true;
-          const _originalTask = dispatch?.task || "";
-          const fallbackAgent = _isCoderAgent ? from : (getRateLimitFallback(from) || from);
-          const _retryTask = `Your previous attempt at this task was incomplete. You said you couldn't finish.\n\nOriginal task:\n${_originalTask.slice(0, 2000)}\n\nDo not apologize. Do not explain why you couldn't finish. Just complete the remaining work now. Use @@WRITE_FILE for every file you change. If the task is too large, complete the most critical items first.`;
-          console.log(`[crew-lead] Agent ${from} bailed out mid-task — auto-retrying with ${fallbackAgent}`);
-          appendHistory("default", targetSession, "system", `${from} bailed mid-task — auto-retrying with ${fallbackAgent}.`);
-          dispatchTask(fallbackAgent, _retryTask, targetSession, {
-            ...(dispatch?.pipelineId ? { pipelineId: dispatch.pipelineId } : {}),
-            ...(dispatch?.projectDir ? { projectDir: dispatch.projectDir } : {}),
-            originProjectId: dispatch?.originProjectId,
-            originChannel: dispatch?.originChannel,
-            originThreadId: dispatch?.originThreadId,
-            originMessageId: dispatch?.originMessageId,
-            triggeredBy: "auto-retry-bail",
-          });
-          return;
-        }
-
-        appendHistory("default", targetSession, "system", `[${from} completed task]: ${content.slice(0, 4000)}`);
-        // Surface background consciousness to owner so the user sees crew-main managing the process
-        if (targetSession === "bg-consciousness" && from === "crew-main") {
-          const short = content.slice(0, 800).replace(/\n+/g, " ").trim();
-          appendHistory("default", "owner", "system", `[crew-main — background]: ${short}`);
-          broadcastSSE({ type: "agent_reply", from: "crew-main", content: short, sessionId: "owner", taskId, _bg: true, ts: Date.now() });
-          try {
-            const statusPath = path.join(os.homedir(), ".crewswarm", "process-status.md");
-            const stamp = new Date().toISOString().slice(0, 19).replace("T", " ");
-            const safe = content.slice(0, 2000).replace(/@@/g, "");
-            fs.writeFileSync(statusPath, `# Process status (crew-main)\nLast updated: ${stamp}\n\n${safe}\n`, "utf8");
-          } catch (_) {}
-        }
-        broadcastSSE({ 
-          type: "agent_reply", 
-          from, 
-          content: content.slice(0, 2000), 
-          sessionId: targetSession, 
-          taskId, 
-          engineUsed: env.payload?.engineUsed || null, // Track which coding engine was used
-          ts: Date.now() 
-        });
-        if (dispatch?.ts) {
-          emitTaskLifecycle("completed", {
-            taskId,
-            agentId: from,
-            taskType: "task",
-            durationMs: Date.now() - dispatch.ts,
-            result: { summary: content.slice(0, 200) },
-          });
-        }
-
-        const originChannel = dispatch?.originChannel || dispatch?.originProjectId || null;
-        if (originChannel) {
-          void handleAutonomousMentions({
-            message: { content },
-            sender: from,
-            channel: originChannel,
-            projectId: dispatch?.originProjectId || originChannel,
-            sessionId: targetSession,
-            projectDir: dispatch?.projectDir || null,
-            originMessageId: dispatch?.originMessageId || null,
-            originThreadId:
-              dispatch?.originThreadId || `${originChannel}:${targetSession}`,
-            broadcastSSE,
-          }).catch((err) => {
-            console.warn(
-              `[crew-lead] Autonomous mention routing failed for ${from}: ${err.message}`,
-            );
-          });
-        }
-
-        // Advance pipeline if this task was part of one (wave-aware)
-        if (dispatch?.pipelineId) {
-          const pipeline = pendingPipelines.get(dispatch.pipelineId);
-          if (pipeline) {
-            // Record this task's result and mark it done in the current wave
-            pipeline.waveResults.push(content);
-            pipeline.pendingTaskIds.delete(taskId);
-            pipeline._lastActivity = Date.now();
-
-            console.log(`[crew-lead] Pipeline ${dispatch.pipelineId} wave ${pipeline.currentWave + 1}: ${pipeline.pendingTaskIds.size} task(s) still pending`);
-
-            if (pipeline.pendingTaskIds.size === 0) {
-              // Accumulate completed wave results before advancing
-              if (!pipeline.completedWaveResults) pipeline.completedWaveResults = [];
-              pipeline.completedWaveResults.push([...pipeline.waveResults]);
-              // All tasks in this wave are done — run quality gate before advancing
-              const gateResult = checkWaveQualityGate(pipeline, dispatch.pipelineId);
-              if (gateResult.pass) {
-                pipeline.currentWave++;
-                savePipelineState(dispatch.pipelineId);
-                dispatchPipelineWave(dispatch.pipelineId);
-              } else {
-                savePipelineState(dispatch.pipelineId);
-              }
-              // If gate fails, checkWaveQualityGate handles re-dispatch or user notification
-            }
-          }
-        }
-
-        // When PM replies, execute its @@DISPATCH / @@PIPELINE and @@REGISTER_PROJECT
-        if (from === "crew-pm") {
-          const pipelineSpec = parsePipeline(content);
-          if (pipelineSpec) {
-            const pipelineId = `pm-${Date.now()}`;
-            pendingPipelines.set(pipelineId, {
-              steps: pipelineSpec.steps,
-              waves: pipelineSpec.waves,
-              currentWave: 0,
-              pendingTaskIds: new Set(),
-              waveResults: [],
-              sessionId: targetSession,
-              originProjectId: dispatch?.originProjectId || dispatch?.projectId || "general",
-              originChannel: dispatch?.originChannel || dispatch?.projectId || "general",
-              originThreadId: dispatch?.originThreadId || `${dispatch?.originProjectId || dispatch?.projectId || "general"}:${targetSession}`,
-              originMessageId: dispatch?.originMessageId || null,
-              triggeredBy: "pm-pipeline",
-            });
-            dispatchPipelineWave(pipelineId);
-            appendHistory("default", targetSession, "system", `PM pipeline started (${pipelineSpec.steps.length} steps).`);
-          } else {
-            const dispatches = parseDispatches(content);
-            for (const d of dispatches) {
-              const ok = dispatchTask(d.agent, d, targetSession, {
-                originProjectId: dispatch?.originProjectId || dispatch?.projectId || "general",
-                originChannel: dispatch?.originChannel || dispatch?.projectId || "general",
-                originThreadId: dispatch?.originThreadId || `${dispatch?.originProjectId || dispatch?.projectId || "general"}:${targetSession}`,
-                originMessageId: dispatch?.originMessageId || null,
-                triggeredBy: "pm-dispatch",
-              });
-              if (ok) appendHistory("default", targetSession, "system", `PM dispatched to ${d.agent}: "${(d.task || "").slice(0, 120)}".`);
-            }
-          }
-          // PM can register a new project so it appears in the dashboard Projects tab
-          const registerProj = parseRegisterProject(content);
-          if (registerProj) {
-            (async () => {
-              try {
-                const createRes = await fetch(`${DASHBOARD}/api/projects`, {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ name: registerProj.name, description: registerProj.description || "", outputDir: registerProj.outputDir }),
-                  signal: AbortSignal.timeout(10000),
-                });
-                const proj = await createRes.json();
-                if (proj.ok && proj.project) {
-                  appendHistory("default", targetSession, "system", `PM registered project "${registerProj.name}" in dashboard Projects tab (${registerProj.outputDir}).`);
-                  console.log(`[crew-lead] PM registered project: ${registerProj.name} → ${registerProj.outputDir}`);
-                } else {
-                  appendHistory("default", targetSession, "system", `PM project registration failed: ${proj.error || "unknown"}.`);
-                }
-              } catch (e) {
-                appendHistory("default", targetSession, "system", `PM project registration failed: ${e.message}.`);
-              }
-            })();
-          }
-        }
-
-        // Autonomous PM loop: on any non-PM agent completion, ping PM to update and dispatch next (if session is in autonomous mode)
-        if (from !== "crew-pm" && autonomousPmLoopSessions.has(targetSession)) {
-          const handbackTask = `Handback from ${from}: ${content.slice(0, 600)}. Update the roadmap (mark that item done), then dispatch the next task(s) with @@DISPATCH. Keep the pipeline moving until the plan is done or blocked. If no more items, reply "All done." and do not emit @@DISPATCH.`;
-          const pmTaskId = dispatchTask("crew-pm", handbackTask, targetSession, {
-            originProjectId: dispatch?.originProjectId || dispatch?.projectId || "general",
-            originChannel: dispatch?.originChannel || dispatch?.projectId || "general",
-            originThreadId: dispatch?.originThreadId || `${dispatch?.originProjectId || dispatch?.projectId || "general"}:${targetSession}`,
-            originMessageId: dispatch?.originMessageId || null,
-            triggeredBy: "pm-handback",
-          });
-          if (pmTaskId) {
-            appendHistory("default", targetSession, "system", `Autonomous: sent handback to crew-pm to update plan and dispatch next.`);
-          }
-        }
-      }
-
-      // ── cmd approval relay ─────────────────────────────────────────────────
-      if (msgType === "cmd.needs_approval" && env.payload?.approvalId) {
-        const { approvalId, agent: approvalAgent, cmd } = env.payload;
-        console.log(`[crew-lead] 🔐 cmd approval needed — ${approvalAgent}: ${cmd}`);
-        broadcastSSE({ type: "confirm_run_cmd", approvalId, agent: approvalAgent, cmd, ts: Date.now() });
-      }
-    }
-  });
-
-  ws.on("close", () => {
-    ready = false;
-    rtPublish = null;
-    isConnecting = false;
-    if (crewLeadHeartbeat) { clearInterval(crewLeadHeartbeat); crewLeadHeartbeat = null; }
-    console.log("[crew-lead] RT disconnected — reconnecting in 5s");
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connectRT, 5000);
-  });
-
-  ws.on("error", (e) => {
-    console.error("[crew-lead] RT socket error:", e.message);
-    isConnecting = false;
-  });
-}
+const connectRT = initWsRouter({
+  WebSocket,
+  RT_URL,
+  RT_TOKEN,
+  setRtPublish: (fn) => { rtPublish = fn; },
+  startBackgroundLoop,
+  resumePipelines,
+  agentLastHeartbeat,
+  pushRtActivity,
+  activeOpenCodeAgents,
+  broadcastSSE,
+  markDispatchClaimed,
+  emitTaskLifecycle,
+  pendingDispatches,
+  getRateLimitFallback,
+  RATE_LIMIT_PATTERN,
+  dispatchTask,
+  appendHistory,
+  pendingPipelines,
+  handleAutonomousMentions,
+  checkWaveQualityGate,
+  savePipelineState,
+  dispatchPipelineWave,
+  parsePipeline,
+  parseDispatches,
+  parseRegisterProject,
+  DASHBOARD,
+  autonomousPmLoopSessions
+});
+_connectRT = connectRT;
 
 // Connect to RT bus on startup
 connectRT();

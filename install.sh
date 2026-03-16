@@ -111,7 +111,7 @@ header "4/7  Bootstrapping config files"
 
 CONFIG_FILE="$CREWSWARM_DIR/config.json"
 if [[ ! -f "$CONFIG_FILE" ]]; then
-  RT_TOKEN="crewswarm-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 16)"
+  RT_TOKEN="crewswarm-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 16 || true)"
   cat > "$CONFIG_FILE" <<EOF
 {
   "_note": "RT bus auth token — do not share. Providers and agents are in crewswarm.json",

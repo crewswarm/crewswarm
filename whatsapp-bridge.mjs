@@ -803,6 +803,14 @@ async function main() {
       // Block outgoing messages that aren't self-chat (i.e. bot's own replies going out)
       if (msg.key.fromMe && !isSelfChatLid && !isSelfChatOwn) continue;
 
+      // ── Allowlist check (before any media processing) ─────────────────
+      if (!isSelfChatLid && !isSelfChatOwn) {
+        if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
+          log("warn", "Silently ignored unauthorized sender", { jid });
+          continue;
+        }
+      }
+
       // ── Handle Image Messages ───────────────────────────────────────────
       if (msg.message?.imageMessage && hasVisionProvider()) {
         try {
@@ -942,15 +950,6 @@ async function main() {
       ).trim();
 
       if (!text) continue;
-
-      // Self-chat via @lid is implicitly trusted (it's the linked number's own messages).
-      // For regular DMs, check the allowlist against the sender's JID.
-      if (!isSelfChatLid && !isSelfChatOwn) {
-        if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
-          log("warn", "Silently ignored unauthorized sender", { jid });
-          continue;
-        }
-      }
 
       log("info", "Incoming WhatsApp message", { jid, fromMe: msg.key.fromMe, preview: text.slice(0, 80) });
       logMessage({ direction: "inbound", jid, text });

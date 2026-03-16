@@ -96,6 +96,8 @@ import {
   ED25519_SPKI_PREFIX,
   REQUEST_TIMEOUT_MS,
   CHAT_TIMEOUT_MS,
+  loadSystemConfig,
+  loadSwarmConfig,
 } from "./lib/runtime/config.mjs";
 import {
   TELEMETRY_LOG,
@@ -195,11 +197,14 @@ import {
 import { initCrewCLI, runCrewCLITask } from "./lib/engines/crew-cli.mjs";
 import { initLlmDirect, callLLMDirect } from "./lib/engines/llm-direct.mjs";
 import { initOpenCode, runOpenCodeTask } from "./lib/engines/opencode.mjs";
+import { initGatewayWs } from "./lib/bridges/gateway-ws.mjs";
 
 // Wire injected deps into extracted modules
 initTaskLease({ telemetry, sleep, parseJsonSafe });
-initTools({ resolveConfig, resolveTelegramBridgeConfig, loadAgentList, getOpencodeProjectDir,
-  loadSkillDef, loadPendingSkills, savePendingSkills, notifyTelegramSkillApproval, executeSkill });
+initTools({
+  resolveConfig, resolveTelegramBridgeConfig, loadAgentList, getOpencodeProjectDir,
+  loadSkillDef, loadPendingSkills, savePendingSkills, notifyTelegramSkillApproval, executeSkill
+});
 initSpending({ resolveConfig, resolveTelegramBridgeConfig });
 initSkills({ resolveConfig, resolveTelegramBridgeConfig });
 initMemory({ telemetry, ensureSharedMemoryFiles, loadAgentList, loadAgentToolPermissions, buildToolInstructions, getOpencodeProjectDir });
@@ -296,18 +301,10 @@ function isOpencodeRateLimitBanner(output) {
 
 function getOpencodeFallbackModel() {
   if (process.env.CREWSWARM_OPENCODE_FALLBACK_MODEL) return process.env.CREWSWARM_OPENCODE_FALLBACK_MODEL;
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "config.json"), "utf8"));
-    if (cfg.opencodeFallbackModel && String(cfg.opencodeFallbackModel).trim()) return String(cfg.opencodeFallbackModel).trim();
-  } catch (e) {
-    console.error(`[gateway-bridge] Failed to read config.json for fallback model: ${e.message}`);
-  }
-  try {
-    const swarm = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
-    if (swarm.globalFallbackModel && String(swarm.globalFallbackModel).trim()) return String(swarm.globalFallbackModel).trim();
-  } catch (e) {
-    console.error(`[gateway-bridge] Failed to read crewswarm.json for global fallback model: ${e.message}`);
-  }
+  const cfg = loadSystemConfig();
+  if (cfg.opencodeFallbackModel && String(cfg.opencodeFallbackModel).trim()) return String(cfg.opencodeFallbackModel).trim();
+  const swarm = loadSwarmConfig();
+  if (swarm.globalFallbackModel && String(swarm.globalFallbackModel).trim()) return String(swarm.globalFallbackModel).trim();
   return CREWSWARM_OPENCODE_FALLBACK_DEFAULT;
 }
 console.log(`[bridge] Registered ${CREWSWARM_RT_SWARM_AGENTS.length} RT agents: ${CREWSWARM_RT_SWARM_AGENTS.join(", ")}`);
@@ -315,7 +312,7 @@ console.log(`[bridge] Registered ${CREWSWARM_RT_SWARM_AGENTS.length} RT agents: 
 // callLLMDirect → lib/engines/llm-direct.mjs
 
 // ─── Crypto helpers ─────────────────────────────────────────────────────────
-function b64url(buf) { return buf.toString("base64").replaceAll("+","-").replaceAll("/","_").replace(/=+$/g,""); }
+function b64url(buf) { return buf.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, ""); }
 function deriveRaw(pem) {
   const spki = crypto.createPublicKey(pem).export({ type: "spki", format: "der" });
   return spki.length === ED25519_SPKI_PREFIX.length + 32 &&
@@ -371,22 +368,22 @@ function parseTextContent(content) {
 /** Remove <think>...</think> reasoning blocks and Gemini-style chain-of-thought so they are not shown in task.done. */
 function stripThink(text) {
   if (!text || typeof text !== "string") return text;
-  
+
   return text
     // Strip standard <think> XML tags (DeepSeek, etc.)
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<\/think>/g, "")
     .replace(/<think>/g, "")
-    
+
     // Strip Gemini/Grok-style thinking headers
     .replace(/\*\*\[Grok-\d+[^\]]*:[\s\S]*?\.\]\*\*/g, "")
-    
+
     // Strip "My Chain of Thought" statements
     .replace(/My Chain of Thought (is active|has been updated)[.\n]*/gi, "")
-    
+
     // Strip "Project context confirmed" 
     .replace(/Project context confirmed:[^\n]*\n*/g, "")
-    
+
     // Strip other thinking-style prefixes
     .replace(/\*\*My (thinking|analysis|approach):\*\*/gi, "")
     .replace(/\n*\*\*Chain of Thought\*\*:[\s\S]*?(?=\n\n|\n\*\*|$)/gi, "")
@@ -692,7 +689,7 @@ function createOpenCodeOnlyBridge() {
   return {
     kind: "opencode",
     chat: async (msg) => runOpenCodeTask(msg, {}),
-    close: () => {},
+    close: () => { },
   };
 }
 
@@ -734,108 +731,6 @@ async function runCursorWaveTask(waveIndex, tasks, payload = {}) {
 
 // runOpenCodeTask → lib/engines/opencode.mjs
 
-function createRealtimeClient({ onEnvelope, agentName = CREWSWARM_RT_AGENT, token = CREWSWARM_RT_TOKEN, channels = CREWSWARM_RT_CHANNELS }) {
-  return new Promise((resolveConnect, rejectConnect) => {
-    const ws = new WebSocket(CREWSWARM_RT_URL, CREWSWARM_RT_URL.startsWith("wss://") && CREWSWARM_RT_TLS_INSECURE
-      ? { rejectUnauthorized: false }
-      : undefined);
-    let ready = false;
-    let settled = false;
-
-    function sendFrame(frame) {
-      if (ws.readyState !== WebSocket.OPEN) {
-        throw new Error("realtime socket is not open");
-      }
-      ws.send(JSON.stringify(frame));
-    }
-
-    const client = {
-      publish({ channel, type, to = "broadcast", taskId, correlationId, priority = "medium", payload = {} }) {
-        sendFrame({
-          type: "publish",
-          channel,
-          messageType: type,
-          to,
-          taskId,
-          correlationId,
-          priority,
-          payload,
-        });
-      },
-      ack({ messageId, status = "received", note = "" }) {
-        sendFrame({ type: "ack", messageId, status, note });
-      },
-      close() {
-        ws.close();
-      },
-      isReady() {
-        return ready;
-      },
-    };
-
-    ws.on("open", () => {
-      telemetry("realtime_open", { url: CREWSWARM_RT_URL, agent: agentName });
-    });
-
-    ws.on("message", async (d) => {
-      const p = parseJsonSafe(d.toString(), null);
-      if (!p) return;
-
-      if (p.type === "server.hello") {
-        sendFrame({ type: "hello", agent: agentName, token });
-        return;
-      }
-
-      if (p.type === "hello.ack") {
-        sendFrame({ type: "subscribe", channels });
-        ready = true;
-        if (!settled) {
-          settled = true;
-          resolveConnect(client);
-        }
-        telemetry("realtime_ready", { channels, agent: agentName });
-        return;
-      }
-
-      if (p.type === "error") {
-        const err = new Error(`realtime error: ${p.message || "unknown"}`);
-        telemetry("realtime_error", { message: err.message });
-        if (!settled) {
-          settled = true;
-          rejectConnect(err);
-        }
-        return;
-      }
-
-      if (p.type === "message" && p.envelope && typeof onEnvelope === "function") {
-        try {
-          await onEnvelope(p.envelope, client);
-        } catch (err) {
-          telemetry("realtime_handler_error", { message: err?.message ?? String(err) });
-        }
-      }
-    });
-
-    ws.on("close", () => {
-      ready = false;
-      telemetry("realtime_closed", { url: CREWSWARM_RT_URL });
-      if (!settled) {
-        settled = true;
-        rejectConnect(new Error("realtime connection closed before ready"));
-      }
-    });
-
-    ws.on("error", (e) => {
-      ready = false;
-      telemetry("realtime_socket_error", { message: e?.message ?? String(e) });
-      if (!settled) {
-        settled = true;
-        rejectConnect(e);
-      }
-    });
-  });
-}
-
 
 /** Extract project root from task text when it contains absolute paths (e.g. /Users/.../Desktop/polymarket-ai-strat/...). */
 function extractProjectDirFromTask(taskText) {
@@ -868,15 +763,15 @@ async function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
   const agents = loadAgentList();
   const agentConfig = agents.find(a => a.id === agentId);
   const usingCrewCLI = agentConfig?.engine === 'crew-cli';
-  
+
   let sharedMemoryContext = '';
   if (isSharedMemoryAvailable() && !usingCrewCLI) {
     try {
       // Adaptive memory result scaling based on task complexity
       const taskTokens = taskText.split(/\s+/).length;
       const maxResults = taskTokens < 50 ? 3    // Simple: "write hello.js"
-                       : taskTokens < 150 ? 5   // Medium: "build auth endpoint"
-                       : 8;                     // Complex: detailed requirements
+        : taskTokens < 150 ? 5   // Medium: "build auth endpoint"
+          : 8;                     // Complex: detailed requirements
 
       // Skip memory recall for chat-only agents (crew-loco)
       // They should only see their own conversation history, not project work
@@ -905,7 +800,7 @@ async function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
       });
       if (projectHints) {
         // Extract just decision/constraint lines, no code blocks
-        const lines = projectHints.split('\n').filter(line => 
+        const lines = projectHints.split('\n').filter(line =>
           !line.includes('```') &&  // No code blocks
           !line.includes('@@') &&   // No tool calls  
           line.trim().length > 0 &&
@@ -950,7 +845,7 @@ async function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
   // crew-cli has its own L2 RAG, memory broker, and context management
   // We pass project-specific constraints/decisions as hints, but let crew-cli load files itself
   if (usingCrewCLI) {
-    const contextInfo = sharedMemoryContext 
+    const contextInfo = sharedMemoryContext
       ? `\n\nProject constraints/decisions:\n${sharedMemoryContext}`
       : '';
     console.log(`[gateway-bridge] crew-cli: minimal context${contextInfo ? ` + ${sharedMemoryContext.length} char hints` : ' (no hints)'}`);
@@ -1154,10 +1049,10 @@ function printMetrics() {
 function loadCredentials() {
   const dev = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "identity/device.json"), "utf8"));
   // Try crewswarm.json first, fall back to openclaw.json
-  const cfgPath = fs.existsSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"))
-    ? path.join(os.homedir(), ".crewswarm", "crewswarm.json")
-    : path.join(LEGACY_STATE_DIR, "openclaw.json");
-  const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+  let cfg = loadSwarmConfig();
+  if (!cfg || !Object.keys(cfg).length) {
+    try { cfg = JSON.parse(fs.readFileSync(path.join(LEGACY_STATE_DIR, "openclaw.json"), "utf8")); } catch { cfg = {}; }
+  }
   const gatewayToken = cfg.gateway?.auth?.token;
   // Prefer gateway token when gateway is in token mode (avoids device token mismatch)
   if (cfg.gateway?.auth?.mode === "token" && gatewayToken) {
@@ -1177,116 +1072,32 @@ function loadCredentials() {
 // Loaded lazily in main for better first-run errors.
 
 // ─── Bridge ─────────────────────────────────────────────────────────────────
-function createBridge({ dev, authToken }) {
-  return new Promise((resolveConnect, rejectConnect) => {
-    const ws = new WebSocket(GATEWAY_URL);
-    const pending = new Map();
-    let settled = false;
-    let reply = "";
-    let replyDone = false;
-    let onDone = null;
-
-    function send(method, params) {
-      return new Promise((res, rej) => {
-        if (ws.readyState !== WebSocket.OPEN) {
-          rej(new Error(`websocket is not open for ${method}`));
-          return;
-        }
-        const id = crypto.randomUUID();
-        const timeout = setTimeout(() => {
-          pending.delete(id);
-          rej(new Error(`timeout: ${method}`));
-        }, REQUEST_TIMEOUT_MS);
-        pending.set(id, {
-          resolve: (v) => { clearTimeout(timeout); res(v); },
-          reject: (e) => { clearTimeout(timeout); rej(e); },
-        });
-        ws.send(JSON.stringify({ type: "req", id, method, params }));
-      });
-    }
-
-    function doConnect(nonce) {
-      const role = "operator", scopes = ["operator.admin"], signedAtMs = Date.now();
-      const ver = nonce ? "v2" : "v1";
-      const payloadStr = [ver, dev.deviceId, "gateway-client", "ui", role, scopes.join(","), String(signedAtMs), authToken || "", ...(nonce ? [nonce] : [])].join("|");
-      const sig = b64url(crypto.sign(null, Buffer.from(payloadStr, "utf8"), crypto.createPrivateKey(dev.privateKeyPem)));
-
-      send("connect", {
-        minProtocol: PROTOCOL_VERSION, maxProtocol: PROTOCOL_VERSION,
-        client: { id: "gateway-client", displayName: "crewHQ", version: "1.0.0", platform: process.platform, mode: "ui", instanceId: crypto.randomUUID() },
-        caps: ["tool-events"], role, scopes,
-        device: { id: dev.deviceId, publicKey: b64url(deriveRaw(dev.publicKeyPem)), signature: sig, signedAt: signedAtMs, ...(nonce ? { nonce } : {}) },
-        ...(authToken ? { auth: { token: authToken } } : {}),
-      }).then(() => {
-        settled = true;
-        resolveConnect({
-          send, ws,
-          chat: (msg, sessionKey = CREWSWARM_RT_AGENT || "main", options = {}) => {
-            reply = ""; replyDone = false;
-            return new Promise((res, rej) => {
-              onDone = (text) => res(text);
-              const idempotencyKey = String(options?.idempotencyKey || crypto.randomUUID());
-              ws.send(JSON.stringify({
-                type: "req", id: crypto.randomUUID(), method: "chat.send",
-                params: { sessionKey, message: msg, thinking: "low", idempotencyKey },
-              }));
-              setTimeout(() => {
-                if (!replyDone) { replyDone = true; res(reply || "(timeout - no reply)"); }
-              }, CHAT_TIMEOUT_MS);
-            });
-          },
-          close: () => ws.close(),
-        });
-      }).catch(rejectConnect);
-    }
-
-    ws.on("message", (d) => {
-      const p = JSON.parse(d.toString());
-      if (p.event === "connect.challenge") { doConnect(p.payload?.nonce); return; }
-      if (p.event === "tick" || p.event === "health") return;
-
-      // Streaming: agent events carry cumulative text
-      if (p.event === "agent" && p.payload?.stream === "text") {
-        const data = p.payload?.data;
-        if (typeof data === "string") reply = data;
-        else if (data?.text) reply = data.text;
-        return;
-      }
-
-      // Chat done event carries final message
-      if (p.event === "chat") {
-        const msg = p.payload?.message;
-        if (msg) {
-          const text = parseTextContent(msg.content);
-          if (text) reply = text;
-        }
-        const state = p.payload?.state;
-        if (state === "idle" || state === "done" || state === "error") {
-          replyDone = true;
-          onDone?.(reply);
-        }
-        return;
-      }
-
-      // Response frames
-      if (p.id && pending.has(p.id)) {
-        const h = pending.get(p.id);
-        pending.delete(p.id);
-        if (p.ok) h.resolve(p.payload); else h.reject(new Error(p.error?.message ?? "unknown"));
-      }
-    });
-
-    ws.on("error", (e) => {
-      if (!settled) rejectConnect(e);
-    });
-    ws.on("close", () => {
-      for (const h of pending.values()) h.reject(new Error("connection closed"));
-      pending.clear();
-      if (!settled) rejectConnect(new Error("connection closed before connect response"));
-    });
-    ws.on("open", () => setTimeout(() => doConnect(null), 1200));
-  });
-}
+const { createRealtimeClient, createBridge, runRealtimeDaemon } = initGatewayWs({
+  WebSocket,
+  crypto,
+  CREWSWARM_RT_URL,
+  CREWSWARM_RT_TLS_INSECURE,
+  CREWSWARM_RT_TOKEN,
+  GATEWAY_URL,
+  PROTOCOL_VERSION,
+  REQUEST_TIMEOUT_MS,
+  CHAT_TIMEOUT_MS,
+  CREWSWARM_RT_AGENT,
+  CREWSWARM_RT_CHANNELS,
+  CREWSWARM_RT_RECONNECT_MS,
+  telemetry,
+  progress,
+  parseJsonSafe,
+  parseTextContent,
+  withRetry,
+  sleep,
+  b64url,
+  deriveRaw,
+  syncOpenCodePermissions,
+  handleRealtimeEnvelope,
+  setRtClient,
+  setRtClientForRunners,
+});
 
 // ─── Main ───────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -1474,27 +1285,27 @@ function syncOpenCodePermissions() {
     // crewswarm tool → OpenCode permission keys
     const TOOL_TO_OC = {
       write_file: { write: "allow", edit: "allow" },
-      read_file:  { read: "allow", glob: "allow", grep: "allow" },
-      run_cmd:    { bash: "allow" },
-      dispatch:   { task: "allow" },
+      read_file: { read: "allow", glob: "allow", grep: "allow" },
+      run_cmd: { bash: "allow" },
+      dispatch: { task: "allow" },
       // git handled separately below — bash allow is too broad
     };
 
     // crewswarm agent-id → OpenCode agent profile name
     const AGENT_TO_OC_PROFILE = {
-      "crew-coder":         "coder",
-      "crew-coder-front":   "coder-front",
-      "crew-coder-back":    "coder-back",
-      "crew-fixer":         "fixer",
-      "crew-frontend":      "frontend",
-      "crew-qa":            "qa",
-      "crew-security":      "security",
-      "crew-pm":            "pm",
-      "crew-main":          "main",
-      "crew-copywriter":    "copywriter",
-      "crew-github":        "github",
-      "crew-orchestrator":  "orchestrator",
-      "orchestrator":       "orchestrator",
+      "crew-coder": "coder",
+      "crew-coder-front": "coder-front",
+      "crew-coder-back": "coder-back",
+      "crew-fixer": "fixer",
+      "crew-frontend": "frontend",
+      "crew-qa": "qa",
+      "crew-security": "security",
+      "crew-pm": "pm",
+      "crew-main": "main",
+      "crew-copywriter": "copywriter",
+      "crew-github": "github",
+      "crew-orchestrator": "orchestrator",
+      "orchestrator": "orchestrator",
     };
 
     const agents = loadAgentList();
@@ -1507,8 +1318,8 @@ function syncOpenCodePermissions() {
     let raw = fs.readFileSync(ocCfgPath, "utf8");
     const stripped = raw.replace(/\/\/[^\n]*/g, "");
     let cfg;
-    try { 
-      cfg = JSON.parse(stripped); 
+    try {
+      cfg = JSON.parse(stripped);
     } catch (e) {
       console.error(`[gateway-bridge] Failed to parse OpenCode config: ${e.message}`);
       return;
@@ -1566,103 +1377,6 @@ function syncOpenCodePermissions() {
   }
 }
 
-async function runRealtimeDaemon(bridge) {
-  syncOpenCodePermissions();
-  progress(`Starting OpenCrew realtime daemon via ${CREWSWARM_RT_URL}...`);
-  let stopRequested = false;
-  let currentClient = null;
-  let heartbeat = null;
-
-  const shutdown = () => {
-    stopRequested = true;
-    if (heartbeat) {
-      clearInterval(heartbeat);
-      heartbeat = null;
-    }
-    try {
-      currentClient?.publish({ channel: "events", type: "agent.offline", payload: { agent: CREWSWARM_RT_AGENT } });
-    } catch (e) {
-      console.error(`[gateway-bridge] Failed to publish offline event: ${e.message}`);
-    }
-    try {
-      currentClient?.close();
-    } catch (e) {
-      console.error(`[gateway-bridge] Failed to close RT client: ${e.message}`);
-    }
-  };
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-
-  while (!stopRequested) {
-    try {
-      const rt = await withRetry(() => createRealtimeClient({
-        onEnvelope: async (envelope, client) => handleRealtimeEnvelope(envelope, client, bridge),
-      }), { retries: 2, baseDelayMs: 300, label: "realtime connect" });
-
-      currentClient = rt;
-      setRtClient(rt); // wire into tool executor for cmd approval requests
-      setRtClientForRunners(rt); // wire into engine runners for agent_working/agent_idle
-      rt.publish({
-        channel: "events",
-        type: "agent.online",
-        to: "broadcast",
-        priority: "high",
-        payload: {
-          agent: CREWSWARM_RT_AGENT,
-          gateway: GATEWAY_URL,
-          mode: "daemon",
-        },
-      });
-
-      console.log(`OpenCrew daemon online: ${CREWSWARM_RT_AGENT}`);
-      console.log(`- gateway: ${GATEWAY_URL}`);
-      console.log(`- realtime: ${CREWSWARM_RT_URL}`);
-      console.log(`- subscribed: ${CREWSWARM_RT_CHANNELS.join(", ")}`);
-
-      heartbeat = setInterval(() => {
-        try {
-          rt.publish({
-            channel: "status",
-            type: "agent.heartbeat",
-            to: "broadcast",
-            payload: { agent: CREWSWARM_RT_AGENT, ts: new Date().toISOString() },
-          });
-        } catch (e) {
-          console.error(`[gateway-bridge] Failed to publish heartbeat: ${e.message}`);
-        }
-      }, 30000);
-
-      await new Promise((resolve) => {
-        const poll = setInterval(() => {
-          if (stopRequested || !rt.isReady()) {
-            clearInterval(poll);
-            resolve();
-          }
-        }, 1000);
-      });
-
-      if (heartbeat) {
-        clearInterval(heartbeat);
-        heartbeat = null;
-      }
-      try { 
-        rt.close(); 
-      } catch (e) {
-        console.error(`[gateway-bridge] Failed to close RT connection: ${e.message}`);
-      }
-      currentClient = null;
-      if (!stopRequested) {
-        progress(`Realtime disconnected. Reconnecting in ${CREWSWARM_RT_RECONNECT_MS}ms...`);
-        await sleep(CREWSWARM_RT_RECONNECT_MS);
-      }
-    } catch (err) {
-      telemetry("realtime_daemon_error", { message: err?.message ?? String(err) });
-      progress(`Realtime daemon error: ${err?.message ?? String(err)}`);
-      if (!stopRequested) await sleep(CREWSWARM_RT_RECONNECT_MS);
-    }
-  }
-}
 
 let bridge;
 let connected = false;
@@ -1733,10 +1447,10 @@ try {
     try {
       const files = fs.readdirSync(OPENCODE_SESSION_DIR);
       if (files.length === 0) { console.log("No saved sessions."); }
-      else { console.log("Saved sessions:\n" + files.map(f => `  ${f.replace(".session","")}`).join("\n")); }
-    } catch (e) { 
+      else { console.log("Saved sessions:\n" + files.map(f => `  ${f.replace(".session", "")}`).join("\n")); }
+    } catch (e) {
       console.error(`[gateway-bridge] Failed to list sessions: ${e.message}`);
-      console.log("No session directory found."); 
+      console.log("No session directory found.");
     }
   } else if (args.includes("--reset")) {
     progress("Resetting main session...");
@@ -1801,7 +1515,7 @@ try {
       process.exit(2);
     }
     assertTaskPromptProtocol(finalPrompt, "direct-chat");
-    
+
     // Check if we should route to OpenCode instead of legacy gateway
     if (shouldUseOpenCode({}, finalPrompt, null)) {
       console.error("[OpenCode] Routing to OpenCode CLI...");
@@ -1811,7 +1525,7 @@ try {
       telemetry("chat_done_opencode", { sessionKey: CREWSWARM_RT_AGENT, replyChars: reply.length });
       process.exit(0);
     }
-    
+
     telemetry("chat_started", {
       sessionKey: "main",
       messageChars: message.length,
@@ -1823,11 +1537,11 @@ try {
     process.stderr.write("⏳ Waiting for assistant reply...\n");
     const targetAgent = RT_TO_GATEWAY_AGENT_MAP[CREWSWARM_RT_AGENT] || "main";
     const reply = await bridge.chat(finalPrompt, targetAgent);
-    
+
     telemetry("chat_done", { sessionKey: targetAgent, replyChars: reply.length });
     process.stderr.write("✅ Reply received\n");
     console.log(reply);
-    
+
     // One-shot mode: exit after task completion (fresh context next run)
     if (ONE_SHOT) {
       process.stderr.write("[gateway-bridge] ONE-SHOT: Exiting after task completion\n");

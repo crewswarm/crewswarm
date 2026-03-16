@@ -49,14 +49,14 @@ async function ensureSingleton() {
     console.log(`[pm-loop] Singleton check skipped (test mode)`);
     return;
   }
-  
+
   try {
     await mkdir(LOGS_DIR, { recursive: true });
-  } catch {}
-  
+  } catch { }
+
   if (existsSync(PM_LOOP_PID_FILE)) {
     const existingPid = readFileSync(PM_LOOP_PID_FILE, "utf8").trim();
-    
+
     // Check if process is still running
     try {
       process.kill(parseInt(existingPid, 10), 0); // Signal 0 = check if alive
@@ -70,11 +70,11 @@ async function ensureSingleton() {
       unlinkSync(PM_LOOP_PID_FILE);
     }
   }
-  
+
   // Write our PID
   await writeFile(PM_LOOP_PID_FILE, String(process.pid));
   console.log(`[pm-loop] Singleton guard active (PID: ${process.pid})`);
-  
+
   // Clean up on exit
   const cleanup = () => {
     try {
@@ -85,9 +85,9 @@ async function ensureSingleton() {
           console.log(`[pm-loop] PID file cleaned up`);
         }
       }
-    } catch {}
+    } catch { }
   };
-  
+
   process.on("exit", cleanup);
   process.on("SIGINT", () => { cleanup(); process.exit(0); });
   process.on("SIGTERM", () => { cleanup(); process.exit(0); });
@@ -97,36 +97,36 @@ async function ensureSingleton() {
 await ensureSingleton();
 
 // ── Args (parsed early so config can reference them) ──────────────────────
-const args           = process.argv.slice(2);
-const DRY_RUN        = args.includes("--dry-run");
-const SELF_EXTEND    = process.env.PM_SELF_EXTEND === "0" ? false : !args.includes("--no-extend");
+const args = process.argv.slice(2);
+const DRY_RUN = args.includes("--dry-run");
+const SELF_EXTEND = process.env.PM_SELF_EXTEND === "0" ? false : !args.includes("--no-extend");
 const EXTEND_EVERY_N = Number(process.env.PM_EXTEND_EVERY || "5");
-const maxIdx         = args.indexOf("--max-items");
-const MAX_ITEMS      = maxIdx >= 0 ? Number(args[maxIdx + 1]) : Number(process.env.PM_MAX_ITEMS || "200");
-const projDirIdx     = args.indexOf("--project-dir");
-const USE_JUDGE      = process.env.PM_USE_JUDGE !== "0" && process.env.PM_USE_JUDGE !== "off" && !args.includes("--no-judge");
-const JUDGE_EVERY    = Number(process.env.PM_JUDGE_EVERY || "5");
+const maxIdx = args.indexOf("--max-items");
+const MAX_ITEMS = maxIdx >= 0 ? Number(args[maxIdx + 1]) : Number(process.env.PM_MAX_ITEMS || "200");
+const projDirIdx = args.indexOf("--project-dir");
+const USE_JUDGE = process.env.PM_USE_JUDGE !== "0" && process.env.PM_USE_JUDGE !== "off" && !args.includes("--no-judge");
+const JUDGE_EVERY = Number(process.env.PM_JUDGE_EVERY || "5");
 
 // ── Config ────────────────────────────────────────────────────────────────
-const CREWSWARM_DIR  = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
-const OUTPUT_DIR     = projDirIdx >= 0 ? args[projDirIdx + 1]
-                     : getProjectDir(join(CREWSWARM_DIR, "website"));
-const ROADMAP_FILE   = process.env.PM_ROADMAP_FILE || join(OUTPUT_DIR, "ROADMAP.md");
-const BRIDGE_PATH    = join(CREWSWARM_DIR, "gateway-bridge.mjs");
-const FEATURES_DOC   = process.env.PM_FEATURES_DOC || null;
-const LOG_DIR        = join(CREWSWARM_DIR, "orchestrator-logs");
-const PM_LOG         = join(LOG_DIR, "pm-loop.jsonl");
+const CREWSWARM_DIR = process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || __dirname;
+const OUTPUT_DIR = projDirIdx >= 0 ? args[projDirIdx + 1]
+  : getProjectDir(join(CREWSWARM_DIR, "website"));
+const ROADMAP_FILE = process.env.PM_ROADMAP_FILE || join(OUTPUT_DIR, "ROADMAP.md");
+const BRIDGE_PATH = join(CREWSWARM_DIR, "gateway-bridge.mjs");
+const FEATURES_DOC = process.env.PM_FEATURES_DOC || null;
+const LOG_DIR = join(CREWSWARM_DIR, "orchestrator-logs");
+const PM_LOG = join(LOG_DIR, "pm-loop.jsonl");
 // Per-project PID and STOP files — allows multiple projects to run simultaneously
-const PROJECT_ID     = process.env.PM_PROJECT_ID || null;
-const _pidSuffix     = PROJECT_ID ? `-${PROJECT_ID}` : "";
-const STOP_FILE      = join(LOG_DIR, `pm-loop${_pidSuffix}.stop`);
-const PID_FILE       = join(LOG_DIR, `pm-loop${_pidSuffix}.pid`);
-const TASK_TIMEOUT        = Number(process.env.PHASED_TASK_TIMEOUT_MS  || "600000"); // 10min — OpenCode sessions need room
+const PROJECT_ID = process.env.PM_PROJECT_ID || null;
+const _pidSuffix = PROJECT_ID ? `-${PROJECT_ID}` : "";
+const STOP_FILE = join(LOG_DIR, `pm-loop${_pidSuffix}.stop`);
+const PID_FILE = join(LOG_DIR, `pm-loop${_pidSuffix}.pid`);
+const TASK_TIMEOUT = Number(process.env.PHASED_TASK_TIMEOUT_MS || "600000"); // 10min — OpenCode sessions need room
 // If an agent is still producing stderr progress output, extend deadline by this many ms (default 15 min).
 const PM_AGENT_IDLE_TIMEOUT_MS = Number(process.env.PM_AGENT_IDLE_TIMEOUT_MS || "900000");
 const MAX_CONCURRENT_TASKS = Number(process.env.PM_MAX_CONCURRENT || "20");
-const GROQ_API_KEY   = process.env.GROQ_API_KEY || ""; // kept for backwards compat
-const ONE_SHOT_MODE  = process.env.PM_ONE_SHOT === "1"; // Fresh context per task
+const GROQ_API_KEY = process.env.GROQ_API_KEY || ""; // kept for backwards compat
+const ONE_SHOT_MODE = process.env.PM_ONE_SHOT === "1"; // Fresh context per task
 
 if (ONE_SHOT_MODE) {
   console.log("[PM-LOOP] One-shot mode enabled: gateway-bridge will exit after each task (fresh context)");
@@ -141,8 +141,8 @@ function getSearchToolsConfig() {
     homedir() + "/.crewswarm/search-tools.json",
   ];
   for (const p of candidates) {
-    try { 
-      return JSON.parse(readFileSync(p, "utf8")); 
+    try {
+      return JSON.parse(readFileSync(p, "utf8"));
     } catch (e) {
       console.error(`[PM-LOOP] Failed to parse search-tools config ${p}: ${e.message}`);
     }
@@ -162,7 +162,7 @@ async function searchWithBrave(query) {
     const data = await res.json();
     const results = (data.web?.results || []).slice(0, 5);
     if (!results.length) return null;
-    return results.map((r, i) => `${i+1}. ${r.title}\n   ${r.description || ""}\n   ${r.url}`).join("\n\n");
+    return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.description || ""}\n   ${r.url}`).join("\n\n");
   } catch (e) {
     console.error(`[PM-LOOP] Brave search failed for query "${query}": ${e.message}`);
     return null;
@@ -184,11 +184,11 @@ function getOCConfig() {
   for (const p of candidates) {
     try {
       const cfg = JSON.parse(readFileSync(p, "utf8"));
-      if (cfg && typeof cfg === "object") { 
+      if (cfg && typeof cfg === "object") {
         _ocCfg = cfg;
         _rosterCache = null;
         _lastConfigRead = Date.now();
-        return _ocCfg; 
+        return _ocCfg;
       }
     } catch (e) {
       console.error(`[PM-LOOP] Failed to parse crewswarm config ${p}: ${e.message}`);
@@ -233,52 +233,52 @@ function getPMProviderConfig() {
   if (GROQ_API_KEY) return { baseUrl: "https://api.groq.com/openai/v1", apiKey: GROQ_API_KEY, model: "llama-3.3-70b-versatile" };
   return null;
 }
-const CODER_AGENT    = process.env.PM_CODER_AGENT || "crew-coder";
+const CODER_AGENT = process.env.PM_CODER_AGENT || "crew-coder";
 // Specialists enabled by default — set PM_USE_SPECIALISTS=0 to disable
 const USE_SPECIALISTS = process.env.PM_USE_SPECIALISTS !== "0";
 // QA review after each task — set PM_USE_QA=0 to disable
-const USE_QA          = process.env.PM_USE_QA !== "0";
+const USE_QA = process.env.PM_USE_QA !== "0";
 // Security audit on security-related tasks — set PM_USE_SECURITY=0 to disable
-const USE_SECURITY    = process.env.PM_USE_SECURITY !== "0";
+const USE_SECURITY = process.env.PM_USE_SECURITY !== "0";
 
 // Role descriptions + routing keywords for well-known agent IDs.
 // `role` is used in PM prompts; `keywords` drive the regex fallback when LLM routing fails.
 // `nonDoer: true` agents are never assigned implementation tasks.
 // New agents in crewswarm.json without an entry here fall back to their identity.theme.
 const ROLE_HINTS = {
-  "crew-main":        { role: "final synthesizer and verifier — reads all output files, checks coherence, writes FINAL_REPORT.md, gives build verdict", nonDoer: true,  keywords: [] },
-  "crew-coder":       { role: "general code, structure, directories, files, setup, create, implement",     nonDoer: false, keywords: ["implement", "create", "build", "file", "module", "class", "function", "script", "python", "ruby", "php", "swift", "kotlin", "go", "rust"] },
-  "crew-coder-front": { role: "HTML, CSS, JS UI, visual design, layout, animations, landing pages",        nonDoer: false, keywords: ["html", "css", "style", "section", "design", "layout", "animation", "nav", "hero", "frontend", "ui", "ux", "responsive", "gradient", "transition", "hover", "font", "color", "visual"] },
-  "crew-coder-back":  { role: "APIs, Node.js, scripts, databases, backend logic, JSON, server endpoints",  nonDoer: false, keywords: ["api", "server", "node", "express", "endpoint", "database", "backend", "mjs", "rest", "graphql", "sql", "postgres", "mongo", "redis", "lambda", "microservice"] },
-  "crew-frontend":    { role: "HTML, CSS, JS UI, visual design, layout, animations, landing pages",        nonDoer: false, keywords: ["html", "css", "style", "design", "layout", "animation", "frontend", "ui", "ux", "responsive"] },
-  "crew-github":      { role: "git commits, branches, pull requests, version control, deployment",         nonDoer: false, keywords: ["git", "github", "commit", "push", "pull request", "branch", "merge", "deploy", "release", "tag", "ci", "cd", "workflow"] },
-  "crew-qa":          { role: "REVIEW ONLY — testing, validation, QA (never for creating/building)",       nonDoer: true,  keywords: [] },
-  "crew-security":    { role: "REVIEW ONLY — security audits, auth flows, secrets (never for creating)",   nonDoer: true,  keywords: [] },
-  "crew-copywriter":  { role: "marketing copy, headlines, taglines, CTAs, docs, README",                   nonDoer: false, keywords: ["copy", "headline", "tagline", "cta", "readme", "docs", "documentation", "marketing", "content", "writing", "blog", "landing page text"] },
-  "crew-fixer":       { role: "debugging, fixing broken code — dispatched automatically on failure",        nonDoer: true,  keywords: [] },
-  "crew-pm":          { role: "project planning, task breakdown, roadmap management",                       nonDoer: true,  keywords: [] },
-  "crew-telegram":    { role: "Telegram messaging, notifications — not a task doer",                        nonDoer: true,  keywords: [] },
-  "crew-lead":        { role: "team lead, high-level coordination and delegation",                          nonDoer: true,  keywords: [] },
-  "orchestrator":     { role: "PM loop orchestrator — internal routing only, not a task doer",              nonDoer: true,  keywords: [] },
+  "crew-main": { role: "final synthesizer and verifier — reads all output files, checks coherence, writes FINAL_REPORT.md, gives build verdict", nonDoer: true, keywords: [] },
+  "crew-coder": { role: "general code, structure, directories, files, setup, create, implement", nonDoer: false, keywords: ["implement", "create", "build", "file", "module", "class", "function", "script", "python", "ruby", "php", "swift", "kotlin", "go", "rust"] },
+  "crew-coder-front": { role: "HTML, CSS, JS UI, visual design, layout, animations, landing pages", nonDoer: false, keywords: ["html", "css", "style", "section", "design", "layout", "animation", "nav", "hero", "frontend", "ui", "ux", "responsive", "gradient", "transition", "hover", "font", "color", "visual"] },
+  "crew-coder-back": { role: "APIs, Node.js, scripts, databases, backend logic, JSON, server endpoints", nonDoer: false, keywords: ["api", "server", "node", "express", "endpoint", "database", "backend", "mjs", "rest", "graphql", "sql", "postgres", "mongo", "redis", "lambda", "microservice"] },
+  "crew-frontend": { role: "HTML, CSS, JS UI, visual design, layout, animations, landing pages", nonDoer: false, keywords: ["html", "css", "style", "design", "layout", "animation", "frontend", "ui", "ux", "responsive"] },
+  "crew-github": { role: "git commits, branches, pull requests, version control, deployment", nonDoer: false, keywords: ["git", "github", "commit", "push", "pull request", "branch", "merge", "deploy", "release", "tag", "ci", "cd", "workflow"] },
+  "crew-qa": { role: "REVIEW ONLY — testing, validation, QA (never for creating/building)", nonDoer: true, keywords: [] },
+  "crew-security": { role: "REVIEW ONLY — security audits, auth flows, secrets (never for creating)", nonDoer: true, keywords: [] },
+  "crew-copywriter": { role: "marketing copy, headlines, taglines, CTAs, docs, README", nonDoer: false, keywords: ["copy", "headline", "tagline", "cta", "readme", "docs", "documentation", "marketing", "content", "writing", "blog", "landing page text"] },
+  "crew-fixer": { role: "debugging, fixing broken code — dispatched automatically on failure", nonDoer: true, keywords: [] },
+  "crew-pm": { role: "project planning, task breakdown, roadmap management", nonDoer: true, keywords: [] },
+  "crew-telegram": { role: "Telegram messaging, notifications — not a task doer", nonDoer: true, keywords: [] },
+  "crew-lead": { role: "team lead, high-level coordination and delegation", nonDoer: true, keywords: [] },
+  "orchestrator": { role: "PM loop orchestrator — internal routing only, not a task doer", nonDoer: true, keywords: [] },
   // Extended specialist presets — add these via dashboard and they route correctly automatically
-  "crew-devops":      { role: "DevOps, CI/CD, Docker, shell scripts, infrastructure, deployment pipelines", nonDoer: false, keywords: ["docker", "ci", "cd", "pipeline", "deploy", "infrastructure", "terraform", "k8s", "kubernetes", "shell", "bash", "nginx", "linux", "server", "cloud", "aws", "gcp", "azure"] },
-  "crew-coder-ios":   { role: "iOS/Swift developer (SwiftUI, UIKit, CoreData, Xcode, Apple platforms)",    nonDoer: false, keywords: ["swift", "swiftui", "uikit", "ios", "xcode", "apple", "iphone", "ipad", "macos", "watchos", "tvos", "coredata", "combine"] },
-  "crew-coder-android":{ role: "Android/Kotlin developer (Jetpack Compose, Android SDK, MVVM)",            nonDoer: false, keywords: ["kotlin", "android", "compose", "jetpack", "gradle", "apk", "activity", "fragment", "viewmodel", "coroutine", "flow"] },
-  "crew-data":        { role: "Data/analytics specialist (Python, SQL, pandas, data pipelines, charts)",   nonDoer: false, keywords: ["pandas", "sql", "data", "analytics", "csv", "dataframe", "plot", "chart", "matplotlib", "numpy", "jupyter", "pipeline", "etl", "postgres", "sqlite"] },
-  "crew-design":      { role: "UI/UX design specs, CSS style guides, component design, animations",        nonDoer: false, keywords: ["design", "ux", "ui", "figma", "spec", "wireframe", "prototype", "component", "style guide", "color", "typography", "spacing"] },
-  "crew-pm-agent":    { role: "product planning, feature breakdown, roadmap tasks, project management",    nonDoer: true,  keywords: [] },
-  "crew-aiml":        { role: "AI/ML engineer — Python, PyTorch, HuggingFace, embeddings, model training", nonDoer: false, keywords: ["model", "train", "embedding", "inference", "pytorch", "tensorflow", "huggingface", "llm", "neural", "dataset", "fine-tune", "rag", "vector", "ml", "ai"] },
-  "crew-api":         { role: "API designer — REST/GraphQL, OpenAPI/Swagger specs, endpoint design",        nonDoer: false, keywords: ["openapi", "swagger", "graphql", "rest", "endpoint", "route", "spec", "api design", "schema", "http"] },
-  "crew-database":    { role: "Database specialist — SQL, migrations, indexes, query optimisation",          nonDoer: false, keywords: ["migration", "schema", "index", "postgres", "mysql", "sqlite", "query", "orm", "seed", "table", "column"] },
-  "crew-rn":          { role: "React Native specialist — Expo, cross-platform iOS/Android mobile apps",      nonDoer: false, keywords: ["react native", "expo", "rn", "mobile", "navigation", "stylesheet", "platform"] },
-  "crew-web3":        { role: "Web3/blockchain — Solidity, smart contracts, ERC20/721, Hardhat, Foundry",   nonDoer: false, keywords: ["solidity", "contract", "blockchain", "web3", "nft", "erc20", "erc721", "hardhat", "foundry", "wagmi", "ethers"] },
-  "crew-automation":  { role: "Automation/scraping — Playwright, Puppeteer, Python scrapers, bots",         nonDoer: false, keywords: ["playwright", "puppeteer", "scrape", "scraping", "automation", "bot", "selenium", "crawler", "spider"] },
-  "crew-docs":        { role: "Technical docs writer — API docs, README, developer guides, Markdown",        nonDoer: false, keywords: ["readme", "documentation", "docs", "api docs", "guide", "markdown", "wiki", "changelog"] },
+  "crew-devops": { role: "DevOps, CI/CD, Docker, shell scripts, infrastructure, deployment pipelines", nonDoer: false, keywords: ["docker", "ci", "cd", "pipeline", "deploy", "infrastructure", "terraform", "k8s", "kubernetes", "shell", "bash", "nginx", "linux", "server", "cloud", "aws", "gcp", "azure"] },
+  "crew-coder-ios": { role: "iOS/Swift developer (SwiftUI, UIKit, CoreData, Xcode, Apple platforms)", nonDoer: false, keywords: ["swift", "swiftui", "uikit", "ios", "xcode", "apple", "iphone", "ipad", "macos", "watchos", "tvos", "coredata", "combine"] },
+  "crew-coder-android": { role: "Android/Kotlin developer (Jetpack Compose, Android SDK, MVVM)", nonDoer: false, keywords: ["kotlin", "android", "compose", "jetpack", "gradle", "apk", "activity", "fragment", "viewmodel", "coroutine", "flow"] },
+  "crew-data": { role: "Data/analytics specialist (Python, SQL, pandas, data pipelines, charts)", nonDoer: false, keywords: ["pandas", "sql", "data", "analytics", "csv", "dataframe", "plot", "chart", "matplotlib", "numpy", "jupyter", "pipeline", "etl", "postgres", "sqlite"] },
+  "crew-design": { role: "UI/UX design specs, CSS style guides, component design, animations", nonDoer: false, keywords: ["design", "ux", "ui", "figma", "spec", "wireframe", "prototype", "component", "style guide", "color", "typography", "spacing"] },
+  "crew-pm-agent": { role: "product planning, feature breakdown, roadmap tasks, project management", nonDoer: true, keywords: [] },
+  "crew-aiml": { role: "AI/ML engineer — Python, PyTorch, HuggingFace, embeddings, model training", nonDoer: false, keywords: ["model", "train", "embedding", "inference", "pytorch", "tensorflow", "huggingface", "llm", "neural", "dataset", "fine-tune", "rag", "vector", "ml", "ai"] },
+  "crew-api": { role: "API designer — REST/GraphQL, OpenAPI/Swagger specs, endpoint design", nonDoer: false, keywords: ["openapi", "swagger", "graphql", "rest", "endpoint", "route", "spec", "api design", "schema", "http"] },
+  "crew-database": { role: "Database specialist — SQL, migrations, indexes, query optimisation", nonDoer: false, keywords: ["migration", "schema", "index", "postgres", "mysql", "sqlite", "query", "orm", "seed", "table", "column"] },
+  "crew-rn": { role: "React Native specialist — Expo, cross-platform iOS/Android mobile apps", nonDoer: false, keywords: ["react native", "expo", "rn", "mobile", "navigation", "stylesheet", "platform"] },
+  "crew-web3": { role: "Web3/blockchain — Solidity, smart contracts, ERC20/721, Hardhat, Foundry", nonDoer: false, keywords: ["solidity", "contract", "blockchain", "web3", "nft", "erc20", "erc721", "hardhat", "foundry", "wagmi", "ethers"] },
+  "crew-automation": { role: "Automation/scraping — Playwright, Puppeteer, Python scrapers, bots", nonDoer: false, keywords: ["playwright", "puppeteer", "scrape", "scraping", "automation", "bot", "selenium", "crawler", "spider"] },
+  "crew-docs": { role: "Technical docs writer — API docs, README, developer guides, Markdown", nonDoer: false, keywords: ["readme", "documentation", "docs", "api docs", "guide", "markdown", "wiki", "changelog"] },
   // Dynamic agents added via dashboard — ensure LLM routing lands correctly
-  "crew-ml":          { role: "Machine learning, AI models, Python ML/AI, data science, PyTorch, scikit-learn, embeddings, training", nonDoer: false, keywords: ["ml", "machine learning", "model", "train", "prediction", "classifier", "regression", "scikit", "pytorch", "tensorflow", "huggingface", "embedding", "neural", "dataset", "feature", "accuracy", "precision"] },
-  "crew-mega":        { role: "General-purpose versatile agent — handles any task that doesn't fit a specialist role",                nonDoer: false, keywords: [] },
-  "crew-researcher":  { role: "Research, investigation, analysis, market research, competitor analysis, data gathering",              nonDoer: false, keywords: ["research", "investigate", "analysis", "analyze", "report", "survey", "compare", "market", "competitor", "trends", "findings", "study"] },
-  "crew-seo":         { role: "SEO, content writing, marketing copy, blog posts, documentation, metadata",                           nonDoer: false, keywords: ["seo", "meta", "keyword", "blog", "content", "copy", "marketing", "title tag", "description", "sitemap", "canonical"] },
+  "crew-ml": { role: "Machine learning, AI models, Python ML/AI, data science, PyTorch, scikit-learn, embeddings, training", nonDoer: false, keywords: ["ml", "machine learning", "model", "train", "prediction", "classifier", "regression", "scikit", "pytorch", "tensorflow", "huggingface", "embedding", "neural", "dataset", "feature", "accuracy", "precision"] },
+  "crew-mega": { role: "General-purpose versatile agent — handles any task that doesn't fit a specialist role", nonDoer: false, keywords: [] },
+  "crew-researcher": { role: "Research, investigation, analysis, market research, competitor analysis, data gathering", nonDoer: false, keywords: ["research", "investigate", "analysis", "analyze", "report", "survey", "compare", "market", "competitor", "trends", "findings", "study"] },
+  "crew-seo": { role: "SEO, content writing, marketing copy, blog posts, documentation, metadata", nonDoer: false, keywords: ["seo", "meta", "keyword", "blog", "content", "copy", "marketing", "title tag", "description", "sitemap", "canonical"] },
 };
 
 /**
@@ -289,7 +289,7 @@ const ROLE_HINTS = {
 function buildActiveAgentRoster() {
   // Return cached roster if available
   if (_rosterCache) return _rosterCache;
-  
+
   const cfg = getOCConfig();
   const providers = { ...(cfg.models?.providers || {}), ...(cfg.providers || {}) };
   const agents = Array.isArray(cfg.agents) ? cfg.agents : (cfg.agents?.list || []);
@@ -317,7 +317,7 @@ function buildActiveAgentRoster() {
     if (!hasKey(a.model)) continue;
 
     const hint = ROLE_HINTS[a.id] || {};
-    const name  = a.identity?.name  || a.name  || a.id;
+    const name = a.identity?.name || a.name || a.id;
     const emoji = a.identity?.emoji || a.emoji || "";
 
     // For dynamic agents without a ROLE_HINTS entry, derive role from _role in config
@@ -379,7 +379,7 @@ async function routeAgent(itemText) {
       const { active, nonDoers } = buildActiveAgentRoster();
       // Doable agents = active agents that are not non-doers
       const doable = active.filter(a => !nonDoers.has(a.id));
-      const valid   = active.map(a => a.id);
+      const valid = active.map(a => a.id);
 
       const agentLines = active.map(a =>
         `${a.emoji ? a.emoji + " " : ""}${a.id}${nonDoers.has(a.id) ? " [REVIEW ONLY — do not choose for implementation]" : ""} — ${a.name}: ${a.role}`
@@ -455,8 +455,8 @@ async function runCopywriterPass(itemText, task) {
 
   const agentPrompts = (() => {
     for (const p of [homedir() + "/.crewswarm/agent-prompts.json"]) {
-      try { 
-        return JSON.parse(readFileSync(p, "utf8")); 
+      try {
+        return JSON.parse(readFileSync(p, "utf8"));
       } catch (e) {
         console.error(`[PM-LOOP] Failed to parse agent prompts ${p}: ${e.message}`);
       }
@@ -500,27 +500,27 @@ async function runCopywriterPass(itemText, task) {
     return task;
   }
 }
-const BETWEEN_TASKS  = Number(process.env.PM_PAUSE_MS || "5000");
+const BETWEEN_TASKS = Number(process.env.PM_PAUSE_MS || "5000");
 
 if (!existsSync(LOG_DIR)) await mkdir(LOG_DIR, { recursive: true });
 
 // ── PID file — prevents duplicate processes ───────────────────────────────
 async function writePid() {
-  await writeFile(PID_FILE, String(process.pid), "utf8").catch(() => {});
+  await writeFile(PID_FILE, String(process.pid), "utf8").catch(() => { });
 }
 async function clearPid() {
   const { unlink } = await import("node:fs/promises");
-  await unlink(PID_FILE).catch(() => {});
+  await unlink(PID_FILE).catch(() => { });
 }
 // Clean up PID on any exit
-process.on("exit",    () => { try { unlinkSync(PID_FILE); } catch (e) { console.error(`[PM-LOOP] Failed to remove PID file: ${e.message}`); } });
+process.on("exit", () => { try { unlinkSync(PID_FILE); } catch (e) { console.error(`[PM-LOOP] Failed to remove PID file: ${e.message}`); } });
 process.on("SIGTERM", async () => { await clearPid(); process.exit(0); });
-process.on("SIGINT",  async () => { await clearPid(); process.exit(0); });
+process.on("SIGINT", async () => { await clearPid(); process.exit(0); });
 
 // ── Logging ───────────────────────────────────────────────────────────────
 async function log(entry) {
   const line = JSON.stringify({ timestamp: new Date().toISOString(), ...entry });
-  await appendFile(PM_LOG, line + "\n").catch(() => {});
+  await appendFile(PM_LOG, line + "\n").catch(() => { });
 }
 
 function banner(msg) { console.log(`\n${"─".repeat(60)}\n  ${msg}\n${"─".repeat(60)}`); }
@@ -563,27 +563,27 @@ function nextPending(items) {
 async function markItem(lineIdx, status, agent = null) {
   const content = await readFile(ROADMAP_FILE, "utf8");
   const lines = content.split("\n");
-  
+
   // CRITICAL: Re-parse to find the actual current line index
   // The original lineIdx may be stale due to concurrent tasks or self-extend
   const { items } = parseRoadmap(content);
   const originalLine = lines[lineIdx];
-  
+
   // Find the item by matching the text content (strip markers and timestamps)
   const cleanOriginal = originalLine.replace(/^-\s+\[[ x!]\]\s+/, "").replace(/\s+[✓✗]\s+\d+:\d+:\d+.*$/g, "").trim();
   const actualItem = items.find(it => {
     const cleanItem = it.text.replace(/\s+[✓✗]\s+\d+:\d+:\d+.*$/g, "").trim();
     return cleanItem === cleanOriginal && it.status !== "done"; // Don't re-mark already done items
   });
-  
+
   if (!actualItem) {
     console.warn(`[markItem] Could not find item to mark: ${cleanOriginal.substring(0, 50)}...`);
     return;
   }
-  
+
   const actualLineIdx = actualItem.lineIdx;
   const ts = new Date().toLocaleTimeString();
-  
+
   if (status === "done") {
     // Mark done — replace any [ ] or [!] marker
     lines[actualLineIdx] = lines[actualLineIdx].replace(/\[[ !]\]/, "[x]");
@@ -648,13 +648,13 @@ WORKFLOW — follow this every time:
     ? readFileSync(progressFile, 'utf8').slice(-5000)  // Last 5KB
     : '';
 
-  const featuresSnippet = FEATURES_DOC ? (() => { 
-    try { 
-      return readFileSync(FEATURES_DOC, "utf8").slice(0, 800); 
-    } catch (e) { 
+  const featuresSnippet = FEATURES_DOC ? (() => {
+    try {
+      return readFileSync(FEATURES_DOC, "utf8").slice(0, 800);
+    } catch (e) {
       console.error(`[PM-LOOP] Failed to read features doc ${FEATURES_DOC}: ${e.message}`);
-      return ""; 
-    } 
+      return "";
+    }
   })() : "";
 
   // Brave search for non-Perplexity providers — gives Groq/Cerebras fresh web context
@@ -757,7 +757,7 @@ WORKFLOW — follow this every time:
 async function getProjectContext() {
   if (!existsSync(OUTPUT_DIR)) return `(output dir ${OUTPUT_DIR} does not exist yet)`;
   const { readdir, stat } = await import("node:fs/promises");
-  const TRACKED_EXT = new Set([".html",".css",".js",".mjs",".ts",".json",".md",".py",".sh",".yaml",".yml",".go",".rs"]);
+  const TRACKED_EXT = new Set([".html", ".css", ".js", ".mjs", ".ts", ".json", ".md", ".py", ".sh", ".yaml", ".yml", ".go", ".rs"]);
   const files = [];
   async function scan(dir, depth = 0) {
     if (depth > 3) return;
@@ -778,8 +778,8 @@ async function getProjectContext() {
   }
   await scan(OUTPUT_DIR);
   if (!files.length) return `(output dir exists but contains no tracked files yet)`;
-  const summary = files.slice(0, 20).map(f => `${f.path} (${Math.round(f.size/1024)}KB)`).join(", ");
-  return `${files.length} file(s) in ${OUTPUT_DIR}: ${summary}${files.length > 20 ? ` ... and ${files.length-20} more` : ""}`;
+  const summary = files.slice(0, 20).map(f => `${f.path} (${Math.round(f.size / 1024)}KB)`).join(", ");
+  return `${files.length} file(s) in ${OUTPUT_DIR}: ${summary}${files.length > 20 ? ` ... and ${files.length - 20} more` : ""}`;
 }
 
 // ── Record progress for learning across iterations ────────────────────────
@@ -789,7 +789,7 @@ async function recordProgress(task, result, iteration) {
     if (!existsSync(progressDir)) {
       await mkdir(progressDir, { recursive: true });
     }
-    
+
     const progressFile = join(progressDir, 'progress.txt');
     const entry = `
 ### Iteration ${iteration} - ${new Date().toISOString()}
@@ -831,7 +831,7 @@ function getMainDeliverableHint() {
 async function getOutputDirFilePaths() {
   if (!existsSync(OUTPUT_DIR)) return [];
   const { readdir } = await import("node:fs/promises");
-  const TRACKED_EXT = new Set([".html",".css",".js",".mjs",".ts",".json",".md",".py",".sh",".yaml",".yml",".go",".rs"]);
+  const TRACKED_EXT = new Set([".html", ".css", ".js", ".mjs", ".ts", ".json", ".md", ".py", ".sh", ".yaml", ".yml", ".go", ".rs"]);
   const out = [];
   async function scan(dir, depth = 0) {
     if (depth > 3) return;
@@ -916,7 +916,7 @@ ${isPerplexity ? "Search for relevant best practices, then generate" : "Generate
         stream: false,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user",   content: userPrompt },
+          { role: "user", content: userPrompt },
         ],
         // Reasoning models (o1/o3/gpt-5 series) don't support max_tokens parameter
         ...(/^(o1|o3|gpt-5)/i.test(provider.model) ? {} : { max_tokens: 400 }),
@@ -929,34 +929,34 @@ ${isPerplexity ? "Search for relevant best practices, then generate" : "Generate
     const raw = data.choices?.[0]?.message?.content?.trim() || "";
     const items = raw.split("\n").map(l => l.trim()).filter(l => l.length > 10 && !l.startsWith("#"));
     const exactly4 = items.slice(0, 4);
-    
+
     // Duplicate detection: filter out items too similar to existing
     const existingRoadmap = await readFile(ROADMAP_FILE, "utf8");
     const filtered = exactly4.filter(newItem => {
       // Check if this item is too similar to any line in existing roadmap
       const normalized = newItem.toLowerCase().replace(/[^a-z0-9\s]/g, "");
       const words = normalized.split(/\s+/).filter(w => w.length > 3);
-      
+
       // If 80% of words appear in existing roadmap, it's likely a duplicate
       const matchCount = words.filter(w => existingRoadmap.toLowerCase().includes(w)).length;
       const similarity = words.length > 0 ? matchCount / words.length : 0;
-      
+
       if (similarity > 0.8) {
         console.log(`  🔄 Skipping duplicate: "${newItem.slice(0, 60)}..."`);
         return false;
       }
       return true;
     });
-    
+
     if (filtered.length === 0 && exactly4.length > 0) {
       console.log(`  ⚠️  All ${exactly4.length} generated items were duplicates, skipping self-extend`);
       return [];
     }
-    
+
     if (filtered.length !== exactly4.length) {
       console.warn(`  ⚠ PM self-extend returned ${exactly4.length} items, ${filtered.length} unique after duplicate filter`);
     }
-    
+
     return filtered;
   } catch (e) {
     console.warn(`  ⚠ PM LLM self-extend failed (${e.message})`);
@@ -980,8 +980,8 @@ async function finalSynthesis(opId, completedItems, doneCount, failedCount) {
   banner("🦊 crew-main (Quill) — Phase 1: Audit");
 
   let filePaths = [];
-  try { 
-    filePaths = await getOutputDirFilePaths(); 
+  try {
+    filePaths = await getOutputDirFilePaths();
   } catch (e) {
     console.error(`[PM-LOOP] Failed to get output dir file paths: ${e.message}`);
   }
@@ -1150,7 +1150,7 @@ function _callAgentRaw(agentId, message, { timeout } = {}) {
     // Kill only when idle > PM_AGENT_IDLE_TIMEOUT_MS, subject to an absolute ceiling.
     const absoluteMax = agentTimeout + 60_000;
     const watchdog = setInterval(() => {
-      const idle  = Date.now() - lastActivity;
+      const idle = Date.now() - lastActivity;
       const total = Date.now() - startTime;
       if (total >= absoluteMax) {
         clearInterval(watchdog);
@@ -1190,20 +1190,20 @@ async function main() {
   console.log(`Security:${USE_SECURITY ? " security agent reviews auth/key tasks" : " disabled (PM_USE_SECURITY=0)"}`);
   const pmProv = getPMProviderConfig();
   const pmProvLabel = pmProv?.baseUrl?.includes("127.0.0.1") || pmProv?.baseUrl?.includes("localhost")
-                    ? `openai-local ${pmProv.model} (free/local)`
-                    : pmProv?.baseUrl?.includes("perplexity") ? `Perplexity ${pmProv.model} (web search ✓)`
-                    : pmProv?.baseUrl?.includes("cerebras")   ? `Cerebras ${pmProv.model}`
-                    : pmProv?.baseUrl?.includes("openai")     ? `OpenAI ${pmProv.model}`
-                    : pmProv ? `${pmProv.model}` : "none — raw item text";
+    ? `openai-local ${pmProv.model} (free/local)`
+    : pmProv?.baseUrl?.includes("perplexity") ? `Perplexity ${pmProv.model} (web search ✓)`
+      : pmProv?.baseUrl?.includes("cerebras") ? `Cerebras ${pmProv.model}`
+        : pmProv?.baseUrl?.includes("openai") ? `OpenAI ${pmProv.model}`
+          : pmProv ? `${pmProv.model}` : "none — raw item text";
   console.log(`PM LLM:  ${pmProvLabel}`);
   console.log(`Extend:  ${SELF_EXTEND ? `every ${EXTEND_EVERY_N} completions OR when roadmap empties` : "disabled (--no-extend)"}`);
   console.log(`\nTip: touch ${STOP_FILE} to stop gracefully between tasks\n`);
 
   // Auto-clean stale stop file from any previous run so we don't exit immediately
   if (existsSync(STOP_FILE)) {
-    try { 
-      unlinkSync(STOP_FILE); 
-      console.log(`🧹 Removed stale stop file: ${STOP_FILE}`); 
+    try {
+      unlinkSync(STOP_FILE);
+      console.log(`🧹 Removed stale stop file: ${STOP_FILE}`);
     } catch (e) {
       console.error(`[PM-LOOP] Failed to remove stop file ${STOP_FILE}: ${e.message}`);
     }
@@ -1217,8 +1217,8 @@ async function main() {
   await writePid();
   await log({ op_id: opId, event: "start", dry_run: DRY_RUN, self_extend: SELF_EXTEND, max_items: MAX_ITEMS, pid: process.pid });
 
-  let itemCount   = 0;
-  let doneCount   = 0;
+  let itemCount = 0;
+  let doneCount = 0;
   let failedCount = 0;
   let extendRound = 0;
   let totalCostThisCycle = 0; // For judge evaluation
@@ -1237,9 +1237,9 @@ async function main() {
     const { items } = parseRoadmap(roadmapContent);
     const item = nextPending(items);
 
-    const total   = items.length;
-    const done    = items.filter(i => i.status === "done").length;
-    const failed  = items.filter(i => i.status === "failed").length;
+    const total = items.length;
+    const done = items.filter(i => i.status === "done").length;
+    const failed = items.filter(i => i.status === "failed").length;
     const pending = items.filter(i => i.status === "pending").length;
 
     console.log(`\n📋 Roadmap: ${done}/${total} done, ${failed} failed, ${pending} pending`);
@@ -1290,7 +1290,7 @@ async function main() {
     // ── Domain detection (for 100K+ line repos with subsystems) ────────
     const domainDetection = detectDomain(item.text);
     logDomainRouting(item.text, domainDetection);
-    
+
     // If domain detected and we have a specialist PM, delegate expansion to them
     const useDomainPM = domainDetection.domain && domainDetection.confidence > 0.5;
     if (useDomainPM && domainDetection.pmAgent !== "crew-pm") {
@@ -1306,7 +1306,7 @@ Current project state:
 ${context}
 
 Output ONLY the four lines: TARGET_AGENT:, TASK:, FILES:, SUCCESS_CRITERIA:`;
-      
+
       try {
         const pmResult = await callAgent(domainDetection.pmAgent, pmTask);
         // Parse the PM's structured response
@@ -1314,7 +1314,7 @@ Output ONLY the four lines: TARGET_AGENT:, TASK:, FILES:, SUCCESS_CRITERIA:`;
         const taskMatch = pmResult.match(/TASK:\s*([\s\S]*?)(?=FILES:|SUCCESS_CRITERIA:|$)/i);
         const filesMatch = pmResult.match(/FILES:\s*([\s\S]*?)(?=SUCCESS_CRITERIA:|$)/i);
         const criteriaMatch = pmResult.match(/SUCCESS_CRITERIA:\s*([\s\S]*?)(?=\n\n|$)/i);
-        
+
         if (taskMatch) {
           const contextRules = `
 
@@ -1330,11 +1330,11 @@ WORKFLOW — follow this every time:
             + (filesMatch ? `\n\nFiles: ${filesMatch[1].trim()}` : "")
             + (criteriaMatch ? `\n\nAcceptance: ${criteriaMatch[1].trim()}` : "")
             + contextRules;
-          
+
           if (targetMatch) {
             expanded.targetAgent = targetMatch[1].trim();
           }
-          
+
           console.log(`  📝 Task (from domain PM):\n    ${task.substring(0, 120)}${task.length > 120 ? "..." : ""}`);
         }
       } catch (e) {
@@ -1346,8 +1346,15 @@ WORKFLOW — follow this every time:
     if (DRY_RUN) {
       console.log(`  ⚠️  DRY RUN - would dispatch to agent, skipping actual call`);
       await log({ op_id: opId, item: item.text, expanded_task: task.substring(0, 200), status: "dry_run" });
+
+      let dryTargetAgent = expanded.targetAgent || (await routeAgent(item.text));
+      await markItem(item.lineIdx, "done", dryTargetAgent);
+      doneCount++;
+      itemCount++;
+      completedItems.push(item.text);
+
       await new Promise(r => setTimeout(r, 500));
-      continue; // Skip to next item without marking as done or dispatching
+      continue; // Skip to next item
     }
     let targetAgent = expanded.targetAgent || (await routeAgent(item.text));
     // QA and security are review-only — never send implementation tasks to them as doer
@@ -1380,12 +1387,12 @@ WORKFLOW — follow this every time:
             : `\n\n(Output dir ${OUTPUT_DIR} has no tracked files yet; skip file reads and reply PASS or FAIL based on the task.)\n`;
           // Detect project type from file extensions to use correct QA criteria
           const hasPython = qaFilePaths.some(p => p.endsWith(".py"));
-          const hasHtml   = qaFilePaths.some(p => p.endsWith(".html") || p.endsWith(".css"));
-          const qaChecks  = hasPython && !hasHtml
+          const hasHtml = qaFilePaths.some(p => p.endsWith(".html") || p.endsWith(".css"));
+          const qaChecks = hasPython && !hasHtml
             ? "Python syntax errors, missing imports, undefined variables, broken FastAPI route registration, unclosed files, missing return statements, type mismatches"
             : hasHtml
-            ? "broken HTML/CSS, JS errors, missing files, visual regressions, unknown CSS classes"
-            : "syntax errors, missing imports, broken logic, undefined references, missing files";
+              ? "broken HTML/CSS, JS errors, missing files, visual regressions, unknown CSS classes"
+              : "syntax errors, missing imports, broken logic, undefined references, missing files";
           const qaPrompt = `[QA-Review] ${targetAgent} just completed this task:\n\n"${task.substring(0, 300)}"\n\nRead the relevant files in ${OUTPUT_DIR} to review the changes. Check for: ${qaChecks}.${qaFilesHint}\nReply with exactly one of:\n- "PASS" if everything looks correct\n- "FAIL: <specific issues>" if there are problems that need fixing`;
           const qaResult = await callAgent("crew-qa", qaPrompt);
           const qaText = String(qaResult).trim();
@@ -1430,19 +1437,19 @@ WORKFLOW — follow this every time:
       await log({ op_id: opId, item: item.text, task: task.substring(0, 120), agent: targetAgent, status: "done", duration_s: parseFloat(dur) });
       doneCount++;
       completedItems.push(item.text);
-      
+
       // Record progress for learning across iterations
       await recordProgress(
         { description: item.text },
         { status: 'success', reply: `Completed by ${targetAgent} in ${dur}s` },
         itemCount
       );
-      
+
       // Judge decision after every N items
       if (USE_JUDGE && doneCount > 0 && doneCount % JUDGE_EVERY === 0) {
         await runJudgeDecision(opId, doneCount, failedCount, completedItems, failedItems);
       }
-      
+
       // One-shot mode: set env for next gateway spawn
       if (ONE_SHOT_MODE) {
         process.env.CREWSWARM_ONE_SHOT = '1';
@@ -1460,16 +1467,16 @@ WORKFLOW — follow this every time:
         // Extract clean error signal - don't echo full failure context
         const errorSignal = e.message.slice(0, 150);  // Just the error message
         const taskDescription = task.substring(0, 100);  // Brief task context
-        
+
         const fixPrompt = `Fix the following error:\n\nTask: ${taskDescription}\nError: ${errorSignal}\n\nContext: Working in ${OUTPUT_DIR}\n\nInstructions:\n1. Read relevant files to understand current state\n2. Make targeted fixes - do not rewrite entire files\n3. Focus on the error cause, not symptoms\n4. Verify fix resolves the specific error above`;
-        
+
         await callAgent("crew-fixer", fixPrompt);
         console.log(`  🔧 Fixer done — marking as done`);
         await markItem(item.lineIdx, "done", "crew-fixer");
         await log({ op_id: opId, item: item.text, task: task.substring(0, 120), agent: "crew-fixer", status: "fixed", duration_s: parseFloat(dur) });
         doneCount++;
         completedItems.push(item.text);
-        
+
         // Record progress for failed->fixed items
         await recordProgress(
           { description: item.text },
@@ -1491,8 +1498,8 @@ WORKFLOW — follow this every time:
   // Final summary
   const finalContent = await readFile(ROADMAP_FILE, "utf8");
   const { items: finalItems } = parseRoadmap(finalContent);
-  const done    = finalItems.filter(i => i.status === "done").length;
-  const failed  = finalItems.filter(i => i.status === "failed").length;
+  const done = finalItems.filter(i => i.status === "done").length;
+  const failed = finalItems.filter(i => i.status === "failed").length;
   const pending = finalItems.filter(i => i.status === "pending").length;
 
   // crew-main synthesizes and verifies the full build before we close out
@@ -1511,7 +1518,7 @@ WORKFLOW — follow this every time:
 async function runJudgeDecision(opId, doneCount, failedCount, completedItems, failedItems) {
   try {
     banner("⚖️  crew-judge — Cycle Evaluation");
-    
+
     const roadmapContent = await readFile(ROADMAP_FILE, "utf8");
     const { items } = parseRoadmap(roadmapContent);
     const itemsRemaining = items.filter(i => i.status === "pending").length;
@@ -1571,7 +1578,7 @@ async function runJudgeDecision(opId, doneCount, failedCount, completedItems, fa
   } catch (error) {
     console.warn(`[PM-LOOP] Judge error: ${error.message}`);
     console.warn("  Using heuristic fallback...");
-    
+
     // Fallback to simple heuristic
     const roadmapContent = await readFile(ROADMAP_FILE, "utf8");
     const { items } = parseRoadmap(roadmapContent);
