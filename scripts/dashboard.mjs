@@ -942,8 +942,14 @@ function serveStatic(req, res, filePath) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://localhost:${listenPort}`);
 
-  // CORS headers for Studio (port 3333) and other cross-origin clients
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // CORS: echo local dev Origins so http://localhost:3333 (Vibe) works with http://127.0.0.1:4319
+  // (browsers treat hostnames as distinct origins). Non-local callers still get *.
+  const _corsOrigin = String(req.headers.origin || "");
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(_corsOrigin)) {
+    res.setHeader("Access-Control-Allow-Origin", _corsOrigin);
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
   res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, DELETE, OPTIONS",

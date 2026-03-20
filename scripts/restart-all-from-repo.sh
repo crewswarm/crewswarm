@@ -108,6 +108,18 @@ if [[ "$START_DASH" -eq 1 ]]; then
   fi
   echo ""
   echo "Dashboard: http://127.0.0.1:4319"
+  # Vibe proxies /api/agents → :4319; if Studio starts first, the UI gets 502 and an empty agent list.
+  echo "Waiting for dashboard HTTP (:4319)..."
+  for i in $(seq 1 30); do
+    if curl -sf -m 1 http://127.0.0.1:4319/ >/dev/null 2>&1; then
+      echo "  ✓ Dashboard accepting connections"
+      break
+    fi
+    if [[ "$i" -eq 30 ]]; then
+      echo "  WARNING: dashboard not ready after 30s — refresh Vibe once :4319 is up"
+    fi
+    sleep 1
+  done
 fi
 
 START_BRIDGES=1
@@ -150,7 +162,21 @@ if [[ "$START_STUDIO" -eq 1 ]]; then
   sleep 1
   nohup npm run studio:start --prefix "$REPO_DIR" >> /tmp/studio.log 2>&1 &
   nohup npm run studio:watch --prefix "$REPO_DIR" >> /tmp/studio-watch.log 2>&1 &
-  sleep 1
+  echo "  Waiting for Vibe (:3333) and watch server (:3334)..."
+  for i in $(seq 1 25); do
+    vibe_ok=0
+    watch_ok=0
+    curl -sf -m 1 http://127.0.0.1:3333/ >/dev/null 2>&1 && vibe_ok=1
+    lsof -ti :3334 >/dev/null 2>&1 && watch_ok=1
+    if [[ "$vibe_ok" -eq 1 && "$watch_ok" -eq 1 ]]; then
+      echo "  ✓ Studio + file watcher ready"
+      break
+    fi
+    if [[ "$i" -eq 25 ]]; then
+      echo "  WARNING: Studio or :3334 not ready after 25s — hard-refresh Vibe when ports are up"
+    fi
+    sleep 1
+  done
   echo "  Vibe: http://127.0.0.1:3333"
 fi
 

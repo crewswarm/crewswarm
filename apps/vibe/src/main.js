@@ -11,10 +11,11 @@ import {
 // CONFIG
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const DASHBOARD_API = "http://127.0.0.1:4319"; // dashboard API
 const RT_WS = "ws://127.0.0.1:18889"; // RT message bus
 const STUDIO_WATCH_WS = "ws://127.0.0.1:3334/ws"; // Studio watch server (CLI file changes)
 const STUDIO_API = window.location.origin;
+/** Same origin — Vibe server proxies to dashboard :4319 (avoids CORS: localhost:3333 vs 127.0.0.1:4319). */
+const DASHBOARD_API = STUDIO_API;
 const CHAT_MODE_STORAGE_KEY = "vibe-chat-mode";
 
 window.Terminal = Terminal;
@@ -664,8 +665,36 @@ async function loadProjects() {
 
 async function loadAgents() {
   try {
-    // Use dashboard proxy - returns array directly
-    const response = await fetch(`${DASHBOARD_API}/api/agents`);
+    // Same-origin /api/agents is proxied to dashboard :4319. After restart-all, dashboard (launchd)
+    // can lag Studio; retry 502/503 so the agent list isn't empty on first paint.
+    const maxAttempts = 12;
+    const delayMs = 800;
+    let response;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        response = await fetch(`${DASHBOARD_API}/api/agents`);
+      } catch (netErr) {
+        if (attempt < maxAttempts) {
+          console.warn(
+            `[loadAgents] fetch failed (${netErr?.message || netErr}), retry ${attempt}/${maxAttempts}`,
+          );
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        throw netErr;
+      }
+      if (
+        (response.status === 502 || response.status === 503) &&
+        attempt < maxAttempts
+      ) {
+        console.warn(
+          `[loadAgents] dashboard proxy not ready (${response.status}), retry ${attempt}/${maxAttempts}`,
+        );
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      break;
+    }
     if (!response.ok) {
       throw new Error(`Dashboard API error: ${response.status}`);
     }
@@ -1379,10 +1408,13 @@ async function sendChatMessage() {
       body.images = sentImages.map(img => img.dataUri);
     }
 
+    const dashboardUnified =
+      apiUrl.includes("/api/chat/unified") && !apiUrl.includes("/api/studio/");
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(dashboardUnified ? { Accept: "text/event-stream" } : {}),
         ...(AUTH_TOKEN ? { Authorization: `Bearer ${AUTH_TOKEN}` } : {}),
       },
       body: JSON.stringify(body),
@@ -1446,12 +1478,23 @@ async function sendChatMessage() {
                 const cleaned = stderrFilter.push(event.text);
                 if (cleaned) {
                   stderrFilteredAccum += cleaned;
-                  traceTranscript += cleaned;
-                  activityTrace?.append(cleaned);
+                  // OpenCode Ink status (e.g. "> build · model/id") often arrives on stderr — same as dashboard chat-actions.
+                  let stderrPiece = filterOpenCodePassthroughTextChunk(
+                    passthroughEngine,
+                    cleaned,
+                  );
+                  stderrPiece = filterGeminiPassthroughTextChunk(
+                    passthroughEngine,
+                    stderrPiece,
+                  );
+                  if (stderrPiece) {
+                    traceTranscript += stderrPiece;
+                    activityTrace?.append(stderrPiece);
+                  }
                   // Promote stderr into the main bubble until we see real assistant chunks
                   // (Cursor prints fatal errors on stderr only — avoids empty "No response returned.")
-                  if (!sawAssistantChunk) {
-                    rawTranscript += cleaned;
+                  if (stderrPiece && !sawAssistantChunk) {
+                    rawTranscript += stderrPiece;
                     updateStreamingChatBubble(bubble, rawTranscript, { pending: true });
                   }
                 }
@@ -1460,11 +1503,30 @@ async function sendChatMessage() {
                 const stderrTail = stderrFilter.flush();
                 if (stderrTail) {
                   stderrFilteredAccum += stderrTail;
-                  traceTranscript += stderrTail;
-                  activityTrace?.append(stderrTail);
+                  let tailPiece = filterOpenCodePassthroughTextChunk(
+                    passthroughEngine,
+                    stderrTail,
+                  );
+                  tailPiece = filterGeminiPassthroughTextChunk(
+                    passthroughEngine,
+                    tailPiece,
+                  );
+                  if (tailPiece) {
+                    traceTranscript += tailPiece;
+                    activityTrace?.append(tailPiece);
+                  }
+                  if (tailPiece && !sawAssistantChunk) {
+                    rawTranscript += tailPiece;
+                    updateStreamingChatBubble(bubble, rawTranscript, { pending: true });
+                  }
                 }
                 if (!rawTranscript.trim() && event.transcript) {
-                  rawTranscript = event.transcript;
+                  let t = filterOpenCodePassthroughTextChunk(
+                    passthroughEngine,
+                    event.transcript,
+                  );
+                  t = filterGeminiPassthroughTextChunk(passthroughEngine, t);
+                  rawTranscript = t;
                 }
                 if (!traceTranscript.trim() && event.transcript) {
                   activityTrace?.append(event.transcript);
@@ -1481,7 +1543,12 @@ async function sendChatMessage() {
                   }
                 }
                 if (!sawAssistantChunk && stderrFilteredAccum.trim()) {
-                  rawTranscript = stderrFilteredAccum.trim();
+                  let acc = filterOpenCodePassthroughTextChunk(
+                    passthroughEngine,
+                    stderrFilteredAccum,
+                  );
+                  acc = filterGeminiPassthroughTextChunk(passthroughEngine, acc);
+                  rawTranscript = acc.trim();
                 }
               }
             } catch (e) {
@@ -1492,14 +1559,26 @@ async function sendChatMessage() {
         const strayStderr = stderrFilter.flush();
         if (strayStderr) {
           stderrFilteredAccum += strayStderr;
-          traceTranscript += strayStderr;
-          activityTrace?.append(strayStderr);
-          if (!sawAssistantChunk) {
-            rawTranscript += strayStderr;
+          let stray = filterOpenCodePassthroughTextChunk(
+            passthroughEngine,
+            strayStderr,
+          );
+          stray = filterGeminiPassthroughTextChunk(passthroughEngine, stray);
+          if (stray) {
+            traceTranscript += stray;
+            activityTrace?.append(stray);
+          }
+          if (stray && !sawAssistantChunk) {
+            rawTranscript += stray;
           }
         }
         if (!sawAssistantChunk && stderrFilteredAccum.trim()) {
-          rawTranscript = stderrFilteredAccum.trim();
+          let acc = filterOpenCodePassthroughTextChunk(
+            passthroughEngine,
+            stderrFilteredAccum,
+          );
+          acc = filterGeminiPassthroughTextChunk(passthroughEngine, acc);
+          rawTranscript = acc.trim();
         }
       } catch (streamErr) {
         const streamMessage = [

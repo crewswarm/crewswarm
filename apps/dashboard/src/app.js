@@ -80,7 +80,7 @@ import {
   applyNewAgentToolPreset,
   applyPromptPreset,
 } from "./tabs/agents-tab.js";
-import { initPromptsTab } from "./tabs/prompts-tab.js";
+import { initPromptsTab, initPromptsTabDeps } from "./tabs/prompts-tab.js";
 import {
   showSkills,
   showRunSkills,
@@ -311,6 +311,7 @@ function hideAllViews() {
 
 initServicesTab({ hideAllViews, setNavActive });
 initAgentsTab({ hideAllViews, setNavActive, refreshAgents: loadAgents });
+initPromptsTabDeps({ hideAllViews, setNavActive });
 initSwarmTab({ hideAllViews, setNavActive });
 initMemoryTab(state);
 initWavesTab();

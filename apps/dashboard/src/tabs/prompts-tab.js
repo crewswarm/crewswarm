@@ -3,42 +3,54 @@
  * Deps: getJSON, postJSON (core/api), escHtml, showNotification (core/dom)
  */
 
-import { getJSON, postJSON } from '../core/api.js';
-import { escHtml, showNotification } from '../core/dom.js';
+import { getJSON, postJSON } from "../core/api.js";
+import { escHtml, showNotification } from "../core/dom.js";
+import { state, persistState } from "../core/state.js";
 
 let currentEditingAgent = null;
 
+let hideAllViews = () => {};
+let setNavActive = () => {};
+
+/** Call once from app.js (same pattern as initAgentsTab). */
+export function initPromptsTabDeps(deps = {}) {
+  hideAllViews = deps.hideAllViews || hideAllViews;
+  setNavActive = deps.setNavActive || setNavActive;
+}
+
 export async function initPromptsTab() {
-  // Show the view
-  const view = document.getElementById('promptsView');
+  hideAllViews();
+  const view = document.getElementById("promptsView");
   if (view) {
-    view.style.display = ''; // Remove inline display:none
-    view.classList.add('active');
+    view.classList.add("active");
   }
+  setNavActive("navPrompts");
+  state.activeTab = "prompts";
+  persistState();
   
   // Wire up event listeners (only once)
-  const list = document.getElementById('promptsList');
+  const list = document.getElementById("promptsList");
   if (list && !list.dataset.wired) {
-    list.dataset.wired = 'true';
-    list.addEventListener('click', (e) => {
-      if (e.target.closest('.prompt-edit-btn')) {
-        const agent = e.target.closest('.prompt-edit-btn').dataset.agent;
+    list.dataset.wired = "true";
+    list.addEventListener("click", (e) => {
+      if (e.target.closest(".prompt-edit-btn")) {
+        const agent = e.target.closest(".prompt-edit-btn").dataset.agent;
         showPromptEditor(agent);
       }
     });
   }
-  
-  const cancelBtn = document.getElementById('promptEditorCancel');
-  const saveBtn = document.getElementById('promptEditorSave');
+
+  const cancelBtn = document.getElementById("promptEditorCancel");
+  const saveBtn = document.getElementById("promptEditorSave");
   if (cancelBtn && !cancelBtn.dataset.wired) {
-    cancelBtn.dataset.wired = 'true';
-    cancelBtn.addEventListener('click', hidePromptEditor);
+    cancelBtn.dataset.wired = "true";
+    cancelBtn.addEventListener("click", hidePromptEditor);
   }
   if (saveBtn && !saveBtn.dataset.wired) {
-    saveBtn.dataset.wired = 'true';
-    saveBtn.addEventListener('click', savePrompt);
+    saveBtn.dataset.wired = "true";
+    saveBtn.addEventListener("click", savePrompt);
   }
-  
+
   await loadPrompts();
 }
 

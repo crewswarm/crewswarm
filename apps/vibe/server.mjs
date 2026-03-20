@@ -1323,6 +1323,88 @@ function handleCliChat(req, res, body) {
   });
 }
 
+/** Dashboard HTTP API (crew-lead proxy, agents list, token). Override if dashboard is not on :4319. */
+const DASHBOARD_PROXY_TARGET = String(
+  process.env.CREWSWARM_DASHBOARD_URL || "http://127.0.0.1:4319",
+).replace(/\/$/, "");
+
+async function readRequestBuffer(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0);
+}
+
+/**
+ * Server-side forward to the dashboard so the browser stays same-origin (e.g. localhost:3333).
+ * Avoids CORS when :4319 responds with Access-Control-Allow-Origin: http://localhost:4319 or when
+ * the page is http://localhost:3333 but fetch targets http://127.0.0.1:4319.
+ */
+async function proxyRequestToDashboard(req, res, pathWithQuery) {
+  const targetUrl = `${DASHBOARD_PROXY_TARGET}${pathWithQuery}`;
+  const headers = {};
+  for (const name of ["content-type", "authorization", "accept"]) {
+    const v = req.headers[name];
+    if (v) headers[name] = v;
+  }
+  const init = {
+    method: req.method,
+    headers,
+    signal: AbortSignal.timeout(660000),
+  };
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    init.body = await readRequestBuffer(req);
+  }
+  let upstream;
+  try {
+    upstream = await fetch(targetUrl, init);
+  } catch (err) {
+    console.warn("[vibe] dashboard proxy fetch failed:", err?.message || err);
+    sendJson(res, 502, {
+      ok: false,
+      error: `dashboard unreachable (${DASHBOARD_PROXY_TARGET}): ${err?.message || err}`,
+    });
+    return;
+  }
+  if (!upstream.ok) {
+    const txt = await upstream.text().catch(() => "");
+    res.writeHead(upstream.status, {
+      "content-type": upstream.headers.get("content-type") || "application/json",
+    });
+    res.end(txt || JSON.stringify({ ok: false, error: String(upstream.status) }));
+    return;
+  }
+  const ct = upstream.headers.get("content-type") || "";
+  const out = {
+    "content-type": ct || "application/octet-stream",
+    "cache-control": upstream.headers.get("cache-control") || "no-cache",
+  };
+  if (ct.includes("text/event-stream")) {
+    out.connection = "keep-alive";
+  }
+  res.writeHead(upstream.status, out);
+  if (!upstream.body) {
+    res.end();
+    return;
+  }
+  const reader = upstream.body.getReader();
+  req.on("close", () => reader.cancel().catch(() => {}));
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value?.byteLength) res.write(Buffer.from(value));
+    }
+  } catch (err) {
+    console.warn("[vibe] dashboard proxy stream:", err?.message || err);
+  } finally {
+    try {
+      res.end();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export function createOrUpdateProject(body) {
   const name = String(body.name || "").trim();
   const outputDirRaw = String(body.outputDir || "").trim();
@@ -1357,6 +1439,20 @@ export const server = http.createServer(async (req, res) => {
 
   if (req.method === "OPTIONS") {
     sendJson(res, 204, {});
+    return;
+  }
+
+  const dashboardProxyPath = parsedUrl.pathname + (parsedUrl.search || "");
+  if (parsedUrl.pathname === "/api/chat/unified" && req.method === "POST") {
+    await proxyRequestToDashboard(req, res, dashboardProxyPath);
+    return;
+  }
+  if (parsedUrl.pathname === "/api/auth/token" && req.method === "GET") {
+    await proxyRequestToDashboard(req, res, dashboardProxyPath);
+    return;
+  }
+  if (parsedUrl.pathname === "/api/agents" && req.method === "GET") {
+    await proxyRequestToDashboard(req, res, dashboardProxyPath);
     return;
   }
 
