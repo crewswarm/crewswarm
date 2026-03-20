@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Restart the full crewswarm stack using only repo scripts (OpenCode, RT daemon, gateways, crew-lead, dashboard).
+# Restart the full crewswarm stack using only repo scripts (OpenCode, RT daemon, gateways, crew-lead, dashboard, Vibe, watch).
 # Run from repo root: ./scripts/restart-all-from-repo.sh
-# Optional: pass --no-dashboard to skip starting the dashboard.
+# Optional: --no-dashboard  skip dashboard
+#           --no-studio    skip Vibe + file watcher
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
@@ -24,6 +25,9 @@ pkill -9 -f "telegram-bridge.mjs"     2>/dev/null; true  # catches all node bina
 pkill -9 -f "whatsapp-bridge.mjs"     2>/dev/null; true  # ditto
 pkill -9 -f "opencode serve"          2>/dev/null; true
 pkill -9 -f "pm-loop.mjs"             2>/dev/null; true  # NEVER auto-start PM loop
+pkill -9 -f "apps/vibe/server.mjs"    2>/dev/null; true
+pkill -9 -f "watch-server.mjs"        2>/dev/null; true
+pkill -9 -f "vite.*vibe"              2>/dev/null; true
 
 # ── Kill by port (catches anything that survived above — e.g. launchd-managed dashboard)
 lsof -ti :5010  2>/dev/null | xargs kill -9 2>/dev/null; true
@@ -31,6 +35,8 @@ lsof -ti :4319  2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :18889 2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :4096  2>/dev/null | xargs kill -9 2>/dev/null; true
 lsof -ti :5020  2>/dev/null | xargs kill -9 2>/dev/null; true
+lsof -ti :3333  2>/dev/null | xargs kill -9 2>/dev/null; true
+lsof -ti :3334  2>/dev/null | xargs kill -9 2>/dev/null; true
 
 # ── Clean stale PID files so start-crew doesn't skip re-spawning
 find /tmp -maxdepth 1 -name "bridge-*.pid" -delete 2>/dev/null; true
@@ -38,7 +44,7 @@ find /tmp -maxdepth 1 -name "bridge-*.pid" -delete 2>/dev/null; true
 sleep 2
 
 # ── Confirm ports are clear
-for port in 5010 4319 18889 4096 5020; do
+for port in 5010 4319 18889 4096 5020 3333 3334; do
   HELD=$(lsof -ti :$port 2>/dev/null | wc -l | tr -d ' ')
   if [ "$HELD" -gt 0 ]; then
     echo "  WARNING: port $port still held — force killing..."
@@ -82,8 +88,10 @@ if ! lsof -ti :5010 >/dev/null 2>&1; then
 fi
 
 START_DASH=1
+START_STUDIO=1
 for arg in "$@"; do
   if [[ "$arg" == "--no-dashboard" ]]; then START_DASH=0; fi
+  if [[ "$arg" == "--no-studio" ]]; then START_STUDIO=0; fi
 done
 
 if [[ "$START_DASH" -eq 1 ]]; then
@@ -133,6 +141,19 @@ else
   echo "  (already running on :5020)"
 fi
 
+if [[ "$START_STUDIO" -eq 1 ]]; then
+  echo "Starting Vibe (Studio) + file watcher (ports 3333, 3334)..."
+  if [[ ! -d "$REPO_DIR/apps/vibe/dist" ]]; then
+    echo "  Building Studio (first run)..."
+    (cd "$REPO_DIR" && npm run studio:build) >/dev/null 2>&1 || true
+  fi
+  sleep 1
+  nohup npm run studio:start --prefix "$REPO_DIR" >> /tmp/studio.log 2>&1 &
+  nohup npm run studio:watch --prefix "$REPO_DIR" >> /tmp/studio-watch.log 2>&1 &
+  sleep 1
+  echo "  Vibe: http://127.0.0.1:3333"
+fi
+
 echo ""
 echo "Stack restarted from repo. Check:"
 echo "  OpenCode:   port 4096  (opencode serve — sessions, MCP, --attach target)"
@@ -140,6 +161,8 @@ echo "  RT bus:     port 18889 (opencrew-rt-daemon.mjs)"
 echo "  crew-lead:  port 5010  (chat + receives agent replies)"
 echo "  dashboard:  port 4319  (Chat tab, RT Messages, Services)"
 echo "  MCP/OpenAI: port 5020  (MCP tools + /v1/chat/completions for Open WebUI etc.)"
+echo "  Vibe:       port 3333  (Studio IDE — Monaco editor + agent chat)"
+echo "  watch:      port 3334  (file watcher for live reload)"
 echo "  bridges:    node scripts/start-crew.mjs --status"
 echo ""
-echo "Logs: /tmp/opencode.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log /tmp/dashboard.log /tmp/crewswarm-mcp.log"
+echo "Logs: /tmp/opencode.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log /tmp/dashboard.log /tmp/crewswarm-mcp.log /tmp/studio.log /tmp/studio-watch.log"

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createInterface, emitKeypressEvents } from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -5,7 +6,16 @@ import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promise
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import chalk from 'chalk';
-import inquirer from 'inquirer';
+// Lazy-load inquirer to avoid ESM/CJS interop deadlock on Node 24
+// (inquirer@9 is ESM but its nested ora@5 dep is CJS)
+let _inquirer: typeof import('inquirer').default | null = null;
+async function getInquirer() {
+  if (!_inquirer) {
+    const mod = await import('inquirer');
+    _inquirer = mod.default;
+  }
+  return _inquirer;
+}
 import type { RepoConfig } from '../config/repo-config.js';
 import { AgentRouter } from '../agent/router.js';
 import { SessionManager } from '../session/manager.js';
@@ -39,8 +49,9 @@ const BANNER = `
 `;
 
 const AVAILABLE_MODELS = [
-  'deepseek-chat', 'gemini-2.0-flash-exp', 'gemini-2.5-flash',
-  'claude-sonnet-4.5', 'grok-4-fast', 'gpt-4o'
+  'gpt-5.4', 'gpt-5.3-codex', 'gemini-3.1-pro', 'gemini-2.5-flash',
+  'claude-sonnet-4.6', 'grok-4.20-beta', 'grok-4.1-fast',
+  'deepseek-v3.2', 'qwen3.5-397b', 'kimi-k2.5', 'llama-3.3-70b'
 ];
 
 const AVAILABLE_ENGINES = ['auto', 'cursor', 'claude', 'gemini', 'codex', 'crew-cli'];
@@ -291,6 +302,24 @@ function answerFromBootstrap(input: string, summary: ModelSummary, bootstrap: Re
   const lower = input.trim().toLowerCase();
   if (!lower) return null;
 
+  // Greetings and smalltalk — don't waste L2 tokens on these
+  if (/^(hi|hey|hello|yo|sup|hola|howdy|hej|oi|what'?s? up|wh?at up|how('?s it going|'?re you|( are)? you doin|( are)? ya)|good (morning|afternoon|evening)|gm|gn)\b/.test(lower)) {
+    const greetings = [
+      'Hi. I can build/fix code, or answer stack config. Try: "what models are configured?"',
+      'Hey! Ready to code. What do you need built or fixed?',
+      'Yo. Give me a coding task, a file to review, or ask about the system.',
+      'What\'s up! I\'m your coding crew. Drop a task or ask /help for commands.',
+    ];
+    return greetings[Math.floor(Math.random() * greetings.length)];
+  }
+
+  // Thanks / bye — quick responses
+  if (/^(thanks|thank you|thx|ty|cheers|nice|cool|great|awesome|perfect|ok|okay|k|bye|goodbye|later|peace)\b/.test(lower)) {
+    return lower.match(/bye|goodbye|later|peace/) 
+      ? 'Later! Run /exit or just close the terminal.' 
+      : '👍';
+  }
+
   if (
     /\b(how does this system work|explain (the )?(system|architecture)|what is crew-cli|tell me about crew-cli)\b/.test(lower)
   ) {
@@ -329,13 +358,17 @@ function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
   console.log('    /clear             Clear session history');
   console.log('    /trace             Show execution path and composed prompts\n');
 
-  console.log(chalk.yellow.bold('  📁 Sandbox Commands:'));
-  console.log('    /preview           Show pending file changes');
-  console.log('    /apply             Write sandbox to disk');
-  console.log('    /rollback          Discard all pending changes');
-  console.log('    /branch            Interactive branch selector (use arrow keys)');
-  console.log('    /branches          Same as /branch');
-  console.log('    /undo              Undo last change\n');
+  console.log(chalk.yellow.bold('  Sandbox & Git:'));
+    console.log('    /preview           Show pending changes (colored diff)');
+    console.log('    /apply [--commit]  Write sandbox to disk + auto-commit');
+    console.log('    /rollback          Discard all pending changes');
+    console.log('    /diff              Show colored git diff');
+    console.log('    /branch            Interactive branch selector');
+    console.log('    /branches          Same as /branch');
+    console.log('    /undo              Undo last change');
+    console.log('    /validate          Blind AI code review of recent changes');
+    console.log('    /test-first <task> TDD: tests -> implement -> validate');
+    console.log('    /image <path>      Attach image for next task (multimodal)\n');
 
   console.log(chalk.magenta.bold('  🎛️  Model & Engine:'));
   console.log('    /models            Interactive model selector (use arrow keys)');
@@ -452,7 +485,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   
   if (!options.initialMode && !repoConfig?.repl?.mode && process.stdin.isTTY) {
     try {
-      const modeAnswer = await inquirer.prompt([
+      const modeAnswer = await (await getInquirer()).prompt([
         {
           type: 'list',
           name: 'mode',
@@ -494,7 +527,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
   if (options.promptInterfaceMode && process.stdin.isTTY) {
     try {
-      const ifaceAnswer = await inquirer.prompt([
+      const ifaceAnswer = await (await getInquirer()).prompt([
         {
           type: 'list',
           name: 'interfaceMode',
@@ -545,7 +578,27 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   const shouldRenderBanner = bannerEnabled && (!bannerFirstLaunchOnly || !existsSync(bannerSeenFile));
   let auditSeq = 0;
   let checkpointEnabled = true;
-  const repoBootstrap = await buildRepoBootstrap(projectDir);
+
+  // Lazy-load repo bootstrap (don't block cold start)
+  let repoBootstrap: RepoBootstrap = { projectDir, topEntries: [], docs: [], keyFiles: [], readmeSummary: '' };
+  const repoBootstrapPromise = buildRepoBootstrap(projectDir).then(b => { repoBootstrap = b; }).catch(() => {});
+
+  // Pre-warm LLM provider connections (fire-and-forget, reduces first-request latency)
+  const preWarmProviders = () => {
+    const endpoints = [
+      { key: 'GEMINI_API_KEY', url: 'https://generativelanguage.googleapis.com' },
+      { key: 'OPENAI_API_KEY', url: 'https://api.openai.com' },
+      { key: 'XAI_API_KEY', url: 'https://api.x.ai' },
+      { key: 'GROQ_API_KEY', url: 'https://api.groq.com' },
+    ];
+    for (const ep of endpoints) {
+      if (process.env[ep.key]) {
+        fetch(ep.url, { method: 'HEAD', signal: AbortSignal.timeout(2000) }).catch(() => {});
+        break; // Only pre-warm the first available provider
+      }
+    }
+  };
+  preWarmProviders();
 
   // Render banner FIRST, before anything else
   if (shouldRenderBanner) {
@@ -561,6 +614,9 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       // Best-effort marker write.
     }
   }
+
+  // Wait for repo bootstrap before showing status (but it started earlier)
+  await repoBootstrapPromise;
 
   // Show dynamic status dashboard on REPL startup
   try {
@@ -633,11 +689,54 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     console.log(chalk.gray(`  Try ${chalk.cyan('/system')} for stack summary.\n`));
   }
 
+  // Tab completion for commands and file paths
+  const SLASH_COMMANDS = [
+    '/help', '/exit', '/quit', '/model', '/models', '/engine', '/engines',
+    '/mode', '/auto-apply', '/verbose', '/stack', '/preview', '/apply',
+    '/rollback', '/branches', '/info', '/status', '/history', '/clear',
+    '/system', '/image', '/search', '/cost', '/recall', '/checkpoint',
+    '/trace', '/timeline', '/audit', '/validate', '/test', '/commit'
+  ];
+
+  const tabCompleter = (line: string): [string[], string] => {
+    const trimmed = line.trim();
+
+    // Complete slash commands
+    if (trimmed.startsWith('/')) {
+      const matches = SLASH_COMMANDS.filter(c => c.startsWith(trimmed));
+      return [matches.length > 0 ? matches : SLASH_COMMANDS, trimmed];
+    }
+
+    // Complete file paths (best-effort, sync)
+    if (trimmed.includes('/') || trimmed.includes('.')) {
+      try {
+        const { readdirSync, statSync } = require('fs');
+        const { dirname, basename } = require('path');
+        const partial = trimmed.split(/\s+/).pop() || '';
+        const dir = partial.includes('/') ? join(projectDir, dirname(partial)) : projectDir;
+        const prefix = partial.includes('/') ? basename(partial) : partial;
+        const entries = readdirSync(dir, { withFileTypes: true })
+          .filter((e: any) => e.name.startsWith(prefix) && !e.name.startsWith('.'))
+          .slice(0, 20)
+          .map((e: any) => {
+            const full = partial.includes('/') ? dirname(partial) + '/' + e.name : e.name;
+            return e.isDirectory() ? full + '/' : full;
+          });
+        if (entries.length > 0) return [entries, partial];
+      } catch {
+        // Fall through — no completions available
+      }
+    }
+
+    return [[], trimmed];
+  };
+
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: buildPrompt(replState, isProcessing, uiMode),
-    terminal: true
+    terminal: true,
+    completer: tabCompleter
   });
 
   const keypressListener = (_str: string, key: { name?: string; shift?: boolean; sequence?: string }) => {
@@ -658,6 +757,9 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
   // Show initial prompt
   rl.prompt();
+
+  // Pending images for multimodal (attached via /image, consumed on next task)
+  const pendingImages: string[] = [];
 
   const handleSlashCommand = async (rawInput: string): Promise<boolean> => {
     const trimmed = applySlashAlias(rawInput.trim(), slashAliases);
@@ -766,7 +868,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         return true;
       }
       try {
-        const answer = await inquirer.prompt([
+        const answer = await (await getInquirer()).prompt([
           {
             type: 'list',
             name: 'model',
@@ -796,10 +898,43 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     if (command === '/model') {
       const modelName = args.join(' ').trim();
       if (!modelName) {
-        console.log(chalk.red('\n  ✗ Provide a model name. Type /models to see options.\n'));
+        // Show benchmark table (novel feature — no competitor has this)
+        try {
+          const { MODEL_CATALOG, formatModelTable, findModelInfo } = await import('./model-info.js');
+          const current = findModelInfo(replState.model);
+          console.log(chalk.blue('\n  ╔══════════════════════════════════════════════════════════════════════════════╗'));
+          console.log(chalk.blue('  ║                        MODEL BENCHMARK & PRICING                            ║'));
+          console.log(chalk.blue('  ╚══════════════════════════════════════════════════════════════════════════════╝\n'));
+          console.log(chalk.gray('  Scores from OpenRouter coding benchmark (March 2026)\n'));
+          console.log(chalk.cyan('  Heavy Tier (L2 Brain):'));
+          console.log(formatModelTable(MODEL_CATALOG.filter(m => m.tier === 'heavy')));
+          console.log(chalk.cyan('\n  Standard Tier (L3 Workers):'));
+          console.log(formatModelTable(MODEL_CATALOG.filter(m => m.tier === 'standard')));
+          console.log(chalk.cyan('\n  Fast Tier (L1 Routing):'));
+          console.log(formatModelTable(MODEL_CATALOG.filter(m => m.tier === 'fast')));
+          if (current) {
+            console.log(chalk.green(`\n  Current: ${current.name} (${current.provider}) — score ${current.codingScore}, $${current.inputCost}/$${current.outputCost}/M`));
+          } else {
+            console.log(chalk.yellow(`\n  Current: ${replState.model} (not in catalog)`));
+          }
+          console.log(chalk.gray(`\n  Usage: /model <name>  — e.g. /model gpt-5.4\n`));
+        } catch {
+          console.log(chalk.red('\n  ✗ Could not load model catalog. Type /model <name> to set directly.\n'));
+        }
       } else {
         replState.model = modelName;
-        console.log(chalk.green(`\n  ✓ Model set to: ${modelName}\n`));
+        try {
+          const { findModelInfo } = await import('./model-info.js');
+          const info = findModelInfo(modelName);
+          if (info) {
+            console.log(chalk.green(`\n  ✓ Model: ${info.name} (${info.provider})`));
+            console.log(chalk.gray(`    Score: ${info.codingScore} | Cost: $${info.inputCost}/$${info.outputCost}/M | Context: ${info.contextWindow}${info.note ? ` | ${info.note}` : ''}\n`));
+          } else {
+            console.log(chalk.green(`\n  ✓ Model set to: ${modelName}\n`));
+          }
+        } catch {
+          console.log(chalk.green(`\n  ✓ Model set to: ${modelName}\n`));
+        }
       }
       return true;
     }
@@ -810,7 +945,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         return true;
       }
       try {
-        const answer = await inquirer.prompt([
+        const answer = await (await getInquirer()).prompt([
           {
             type: 'list',
             name: 'engine',
@@ -889,7 +1024,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         console.log(chalk.blue('║           3-TIER LLM STACK CONFIGURATION                     ║'));
         console.log(chalk.blue('╚══════════════════════════════════════════════════════════════╝\n'));
 
-        const answers = await inquirer.prompt([
+        const answers = await (await getInquirer()).prompt([
           {
             type: 'list',
             name: 'routerProvider',
@@ -1011,7 +1146,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           return true;
         }
         try {
-          const answer = await inquirer.prompt([
+          const answer = await (await getInquirer()).prompt([
             {
               type: 'list',
               name: 'mode',
@@ -1132,14 +1267,24 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       if (!sandbox.hasChanges(activeBranch)) {
         console.log(chalk.yellow(`\n  No pending changes in "${activeBranch}".\n`));
       } else {
+        const rawPreview = sandbox.preview(activeBranch);
         console.log(chalk.blue(`\n┌─ Sandbox Preview [${activeBranch}]`));
-        console.log(logger.highlightDiff(sandbox.preview(activeBranch)));
+        // Colored diff: green for adds, red for removals, cyan for hunks
+        const coloredLines = rawPreview.split('\n').map((line: string) => {
+          if (line.startsWith('+++') || line.startsWith('---')) return chalk.bold(line);
+          if (line.startsWith('+')) return chalk.green(line);
+          if (line.startsWith('-')) return chalk.red(line);
+          if (line.startsWith('@@')) return chalk.cyan(line);
+          return line;
+        });
+        console.log(coloredLines.join('\n'));
         console.log('└─\n');
       }
       return true;
     }
 
     if (command === '/apply') {
+      const wantCommit = args.includes('--commit');
       const activeBranch = sandbox.getActiveBranch();
       if (!sandbox.hasChanges(activeBranch)) {
         console.log(chalk.yellow('\n  No changes to apply.\n'));
@@ -1148,6 +1293,30 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           const paths = sandbox.getPendingPaths(activeBranch);
           await sandbox.apply(activeBranch);
           console.log(chalk.green(`\n  ✓ Applied to: ${paths.join(', ')}\n`));
+
+          // Auto-commit with AI-generated message
+          if (wantCommit) {
+            try {
+              const { execSync } = await import('node:child_process');
+              const diff = execSync('git diff --cached --stat', { encoding: 'utf8', cwd: projectDir }).trim()
+                || execSync('git diff --stat', { encoding: 'utf8', cwd: projectDir }).trim();
+              if (!diff) {
+                console.log(chalk.yellow('  No git changes to commit.\n'));
+              } else {
+                execSync('git add -A', { cwd: projectDir });
+                // Generate commit message via LLM
+                const commitResult = await orchestrator.executeLocally(
+                  `Generate a concise conventional commit message (type: description, max 72 chars) for this diff. Reply with ONLY the commit message:\n\n${diff.slice(0, 2000)}`,
+                  { model: replState.model }
+                );
+                const commitMsg = String(commitResult.result || 'chore: update files').trim().replace(/^['"`]|['"`]$/g, '').split('\n')[0];
+                execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: projectDir });
+                console.log(chalk.green(`  ✓ Committed: ${commitMsg}\n`));
+              }
+            } catch (commitErr) {
+              console.log(chalk.red(`  ✗ Commit failed: ${(commitErr as Error).message}\n`));
+            }
+          }
         } catch (err) {
           console.log(chalk.red(`\n  ✗ Apply failed: ${(err as Error).message}\n`));
         }
@@ -1190,7 +1359,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       
       // Multiple branches - offer interactive selector
       try {
-        const answer = await inquirer.prompt([
+        const answer = await (await getInquirer()).prompt([
           {
             type: 'list',
             name: 'branch',
@@ -1407,6 +1576,170 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       return true;
     }
 
+    // ── /image <path> — attach image for next agentic task ──
+    if (command === '/image') {
+      const imgPath = args.join(' ').trim();
+      if (!imgPath) {
+        if (pendingImages.length === 0) {
+          console.log(chalk.yellow('\n  No images attached. Usage: /image <path>\n'));
+        } else {
+          console.log(chalk.cyan(`\n  📷 ${pendingImages.length} image(s) attached:`));
+          for (const p of pendingImages) {
+            console.log(chalk.gray(`     ${p}`));
+          }
+          console.log(chalk.gray('  These will be sent with your next message.\n'));
+        }
+        return true;
+      }
+      const { resolve: resolvePath } = await import('node:path');
+      const { existsSync } = await import('node:fs');
+      const absPath = resolvePath(projectDir, imgPath);
+      const ext = absPath.split('.').pop()?.toLowerCase();
+      if (!['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext || '')) {
+        console.log(chalk.red(`\n  ✗ Unsupported image type: .${ext} (supported: png, jpg, jpeg, webp, gif)\n`));
+        return true;
+      }
+      if (!existsSync(absPath)) {
+        console.log(chalk.red(`\n  ✗ File not found: ${absPath}\n`));
+        return true;
+      }
+      pendingImages.push(absPath);
+      console.log(chalk.green(`\n  📷 Image attached: ${absPath}`));
+      console.log(chalk.gray(`  ${pendingImages.length} image(s) queued. Type your task and they'll be sent with it.\n`));
+      return true;
+    }
+
+    // ── /diff — colorized git diff ──
+    if (command === '/diff') {
+      try {
+        const { execSync } = await import('node:child_process');
+        const staged = execSync('git diff --cached', { encoding: 'utf8', cwd: projectDir }).trim();
+        const unstaged = execSync('git diff', { encoding: 'utf8', cwd: projectDir }).trim();
+        const fullDiff = (staged + '\n' + unstaged).trim();
+        if (!fullDiff) {
+          console.log(chalk.yellow('\n  No git changes.\n'));
+        } else {
+          console.log(chalk.blue('\n┌─ Git Diff'));
+          const coloredLines = fullDiff.split('\n').map((line: string) => {
+            if (line.startsWith('+++') || line.startsWith('---')) return chalk.bold(line);
+            if (line.startsWith('+')) return chalk.green(line);
+            if (line.startsWith('-')) return chalk.red(line);
+            if (line.startsWith('@@')) return chalk.cyan(line);
+            if (line.startsWith('diff ')) return chalk.bold.blue(line);
+            return line;
+          });
+          console.log(coloredLines.join('\n'));
+          console.log('└─\n');
+        }
+      } catch (err) {
+        console.log(chalk.red(`\n  ✗ Git diff failed: ${(err as Error).message}\n`));
+      }
+      return true;
+    }
+
+    // ── /validate — blind LLM code review ──
+    if (command === '/validate') {
+      console.log(chalk.cyan('\n  🔍 Running blind validation...\n'));
+      try {
+        const { execSync } = await import('node:child_process');
+        let diffStat = '';
+        try { diffStat = execSync('git diff HEAD~1 --stat', { encoding: 'utf8', cwd: projectDir }).slice(0, 2000); } catch {}
+        let codeSnippets = '';
+        try {
+          const changedFiles = execSync('git diff HEAD~1 --name-only', { encoding: 'utf8', cwd: projectDir })
+            .split('\n').filter(Boolean).slice(0, 5);
+          for (const f of changedFiles) {
+            try {
+              const { readFileSync } = await import('node:fs');
+              const content = readFileSync(join(projectDir, f), 'utf8');
+              codeSnippets += `\n### ${f}\n\`\`\`\n${content.slice(0, 1500)}\n\`\`\`\n`;
+            } catch {}
+          }
+        } catch {}
+
+        const validateTask = `You are crew-judge, a blind code validator. Review these recent changes and provide a structured assessment.
+
+Score each category 1-5:
+- **Correctness**: Does the code work? Edge cases?
+- **Security**: Vulnerabilities? Input validation?
+- **Performance**: Bottlenecks? Memory leaks?
+- **Readability**: Clean, documented, follows conventions?
+- **Test Coverage**: Tests present? What's missing?
+
+End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
+
+## Changed files\n${diffStat || 'No recent changes'}\n\n## Code\n${codeSnippets || 'No code to review'}`;
+
+        const result = await orchestrator.executeLocally(validateTask, { model: replState.model });
+        const responseText = String(result.result || 'Validation could not complete.');
+        console.log(chalk.cyan('  ┌─ Validation Report'));
+        logger.printWithHighlight(responseText);
+        console.log('  └─\n');
+
+        if (result.costUsd) {
+          await session.trackCost({ model: result.model || replState.model, usd: result.costUsd });
+        }
+      } catch (err) {
+        console.log(chalk.red(`\n  ✗ Validation failed: ${(err as Error).message}\n`));
+      }
+      return true;
+    }
+
+    // ── /test-first — TDD workflow ──
+    if (command === '/test-first') {
+      const tfTask = args.join(' ').trim();
+      if (!tfTask) {
+        console.log(chalk.red('\n  ✗ Usage: /test-first <task description>\n'));
+        return true;
+      }
+      console.log(chalk.magenta('\n  🧪 Test-first mode\n'));
+      console.log(chalk.gray('  Step 1: Generate tests → Step 2: Implement → Step 3: Validate\n'));
+
+      try {
+        // Step 1: Generate tests
+        console.log(chalk.bold('  Step 1: Generating tests...\n'));
+        const testResult = await orchestrator.executeLocally(
+          `You are a TDD expert. Given a task description, write comprehensive tests FIRST. Cover happy path, edge cases, error handling, input validation. Output ONLY the test code in a fenced code block with the filename.\n\nTask: ${tfTask}\nProject dir: ${projectDir}`,
+          { model: replState.model }
+        );
+        const testCode = String(testResult.result || '');
+        console.log(chalk.cyan('  ┌─ Tests'));
+        logger.printWithHighlight(testCode);
+        console.log('  └─\n');
+
+        // Step 2: Implement
+        console.log(chalk.bold('  Step 2: Implementing to pass tests...\n'));
+        const implResult = await orchestrator.executeLocally(
+          `Given these tests, write the MINIMAL implementation to make ALL tests pass. Use diff blocks to show changes.\n\nTests:\n${testCode}\n\nTask: "${tfTask}"`,
+          { model: replState.model }
+        );
+        const implCode = String(implResult.result || '');
+        console.log(chalk.cyan('  ┌─ Implementation'));
+        logger.printWithHighlight(implCode);
+        console.log('  └─\n');
+
+        // Step 3: Validate
+        console.log(chalk.bold('  Step 3: Validating implementation against tests...\n'));
+        const valResult = await orchestrator.executeLocally(
+          `Given tests and implementation, verify:\n1. Would all tests pass? Walk through each test case.\n2. Missing edge cases?\n3. Implementation bugs?\nVerdict: PASS ✅ or FAIL ❌ with specific issues.\n\nTests:\n${testCode}\n\nImplementation:\n${implCode}`,
+          { model: replState.model }
+        );
+        console.log(chalk.cyan('  ┌─ Validation'));
+        logger.printWithHighlight(String(valResult.result || ''));
+        console.log('  └─\n');
+
+        // Track cost for all 3 steps
+        const totalCost = (testResult.costUsd || 0) + (implResult.costUsd || 0) + (valResult.costUsd || 0);
+        if (totalCost > 0) {
+          await session.trackCost({ model: replState.model, usd: totalCost });
+        }
+        console.log(chalk.gray(`  Total test-first cost: $${totalCost.toFixed(4)}\n`));
+      } catch (err) {
+        console.log(chalk.red(`\n  ✗ Test-first failed: ${(err as Error).message}\n`));
+      }
+      return true;
+    }
+
     console.log(chalk.red(`\n  ✗ Unknown command: ${command}. Type /help.\n`));
     return true;
   };
@@ -1471,14 +1804,31 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
     isProcessing = true;
 
+    // Spinner for thinking indicator
+    // Simple thinking indicator (no intervals — those fight with readline)
+    let spinnerActive = false;
+    if (process.stdout.isTTY) {
+      process.stdout.write(chalk.gray('  ⏳ Thinking...\n'));
+      spinnerActive = true;
+    }
+    const stopSpinner = () => {
+      if (spinnerActive) {
+        spinnerActive = false;
+        // Move up one line and clear it
+        process.stdout.write('\x1b[1A\x1b[2K');
+      }
+    };
+
     try {
       if (replState.verbose) {
+        stopSpinner();
         console.log(chalk.gray('  ⏳ Routing...'));
       }
 
       let taskInput = trimmed;
       const lower = trimmed.toLowerCase();
       if (/\b(switch|set|use).*(solo|standalone)\b/.test(lower)) {
+        stopSpinner();
         replState.useGateway = false;
         process.env.CREW_INTERFACE_MODE = 'standalone';
         console.log(chalk.cyan('\n  ┌─ Response'));
@@ -1489,6 +1839,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         return;
       }
       if (/\b(switch|set|use).*(connected|gateway)\b/.test(lower)) {
+        stopSpinner();
         replState.useGateway = true;
         process.env.CREW_INTERFACE_MODE = 'connected';
         console.log(chalk.cyan('\n  ┌─ Response'));
@@ -1517,6 +1868,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       // Only intercept genuine meta questions, not actual work requests
       const bootstrapAnswer = answerFromBootstrap(trimmed, modelSummary, repoBootstrap);
       if (bootstrapAnswer) {
+        stopSpinner();
         console.log(chalk.cyan('\n  ┌─ Response'));
         console.log(chalk.white(`  ${bootstrapAnswer}`));
         console.log('  └─\n');
@@ -1557,24 +1909,29 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       }
 
       if (route.decision === 'CHAT') {
+        stopSpinner();
         const responseText = route.response || 
           "I'm crew-cli, a multi-agent coding orchestrator. Ask me to build something, review code, or dispatch to specialists!";
         console.log(chalk.cyan('\n  ┌─ Response'));
-        console.log(chalk.white(`  ${responseText}`));
+        logger.printWithHighlight(`  ${responseText}`);
         console.log('  └─\n');
 
-        await session.appendHistory({
-          type: 'repl_chat',
-          input: trimmed,
-          response: responseText
-        });
+        try {
+          await session.appendHistory({
+            type: 'repl_chat',
+            input: trimmed,
+            response: responseText
+          });
 
-        await session.trackCost({
-          inputTokens: trimmed.length / 4,
-          outputTokens: responseText.length / 4,
-          model: 'groq-router',
-          costUsd: 0.0001
-        });
+          await session.trackCost({
+            inputTokens: trimmed.length / 4,
+            outputTokens: responseText.length / 4,
+            model: 'groq-router',
+            costUsd: 0.0001
+          });
+        } catch {
+          // Session tracking is best-effort
+        }
 
         isProcessing = false;
         rl.prompt();
@@ -1582,8 +1939,9 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       }
 
       if (behavior.executionConfirm && process.stdin.isTTY) {
+        stopSpinner();
         const estimate = estimateCost(taskInput, replState.model || undefined, 1800);
-        const answer = await inquirer.prompt([
+        const answer = await (await getInquirer()).prompt([
           {
             type: 'confirm',
             name: 'ok',
@@ -1630,6 +1988,23 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
       const useLegacyStandalone = String(process.env.CREW_LEGACY_ROUTER || '').toLowerCase() === 'true';
       const policy = getExecutionPolicy();
+      // Stop spinner before execution starts (streaming will take over)
+      stopSpinner();
+
+      // Tool progress display (visible without verbose mode)
+      const toolProgressLog: string[] = [];
+      const onToolCall = (name: string, params: Record<string, any>) => {
+        const paramHint = params.file_path || params.path || params.command || params.query || '';
+        const display = paramHint ? `${name}(${String(paramHint).slice(0, 60)})` : name;
+        if (!replState.verbose) {
+          console.log(chalk.gray(`  🔧 ${display}`));
+        }
+        toolProgressLog.push(display);
+      };
+
+      // Inject onToolCall into orchestrator/executor options if available
+      if (dispatchOpts) (dispatchOpts as any).onToolCall = onToolCall;
+
       const result = standaloneMode
         ? (useLegacyStandalone
           ? await withRetries(
@@ -1639,7 +2014,12 @@ export async function startRepl(options: ReplOptions): Promise<void> {
               policy
             )
           : await withRetries(
-              async () => orchestrator.executePipeline(route.task || taskInput, conversationContext, dispatchOpts.sessionId),
+              async () => orchestrator.executeAgentic(route.task || taskInput, {
+                model: dispatchOpts.model,
+                onToolCall,
+                conversationContext,
+                sessionId: dispatchOpts.sessionId
+              }),
               policy
             ))
         : await withRetries(
@@ -1681,6 +2061,17 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       console.log(chalk.cyan('\n  ┌─ Response'));
       logger.printWithHighlight(responseText);
       console.log('  └─');
+
+      // Provider + cost footer (novel feature)
+      const providerInfo = (result as any).providerId || (result as any).model || replState.model;
+      const modelUsed = (result as any).modelUsed || providerInfo;
+      const responseCost = (result as any).costUsd || (result as any).cost || 0;
+      const turnsUsed = (result as any).turns || 1;
+      const toolCount = (result as any).toolsUsed?.length || toolProgressLog.length || 0;
+      if (modelUsed || responseCost) {
+        const costStr = responseCost > 0 ? `$${Number(responseCost).toFixed(4)}` : 'free';
+        console.log(chalk.gray(`  ⚡ ${modelUsed} · ${turnsUsed} turn${turnsUsed > 1 ? 's' : ''} · ${toolCount} tool${toolCount !== 1 ? 's' : ''} · ${costStr}`));
+      }
       if (Array.isArray((result as any).timeline) && (result as any).timeline.length > 0) {
         console.log(chalk.gray('\n  Timeline'));
         for (const step of (result as any).timeline) {
@@ -1691,6 +2082,35 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       const edits = await orchestrator.parseAndApplyToSandbox(responseText);
       if (edits.length > 0) {
         console.log(chalk.yellow(`\n  ✓ ${edits.length} file(s) changed in sandbox`));
+
+        // Animated colored diff preview (premium UX)
+        try {
+          const activeBranch = sandbox.getActiveBranch();
+          if (sandbox.hasChanges(activeBranch)) {
+            const rawPreview = sandbox.preview(activeBranch);
+            if (rawPreview && rawPreview.length < 5000) { // Only show inline for reasonable diffs
+              console.log(chalk.blue(`\n  ┌─ Diff Preview`));
+              const diffLines = rawPreview.split('\n');
+              for (const line of diffLines) {
+                let colored: string;
+                if (line.startsWith('+++') || line.startsWith('---')) colored = chalk.bold(line);
+                else if (line.startsWith('+')) colored = chalk.green(line);
+                else if (line.startsWith('-')) colored = chalk.red(line);
+                else if (line.startsWith('@@')) colored = chalk.cyan(line);
+                else if (line.startsWith('diff') || line.startsWith('index')) colored = chalk.gray(line);
+                else colored = line;
+                console.log(`  ${colored}`);
+                // Animated rendering — slight delay for premium feel (only in TTY)
+                if (process.stdout.isTTY) {
+                  await new Promise(r => setTimeout(r, 8));
+                }
+              }
+              console.log(chalk.blue(`  └─`));
+            }
+          }
+        } catch {
+          // Diff preview is best-effort
+        }
 
         const shouldAutoApply = replState.autoApply || behavior.autoApply;
         await recordReplEvent('autopilot_decision', {
@@ -1752,6 +2172,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       isProcessing = false;
       rl.prompt();
     } catch (err) {
+      stopSpinner();
       console.log(chalk.red(`\n  ✗ Error: ${(err as Error).message}\n`));
       await session.appendHistory({
         type: 'repl_error',

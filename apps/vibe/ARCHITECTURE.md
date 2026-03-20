@@ -973,21 +973,9 @@
       position: relative;
     }
 
-    #terminal-instance .xterm-helpers,
-    #terminal-instance .xterm-accessibility,
-    .xterm-char-measure-element {
-      position: absolute;
-      left: -9999px;
-      top: 0;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      visibility: hidden;
-    }
-
-    #terminal-instance .xterm-scroll-area {
-      visibility: hidden;
-    }
+    /* Let xterm manage its own measurement node.
+       Forcing the char-measure element to 1px breaks column sizing and pushes
+       prompts/input off-screen in the embedded shell. */
 
     /* Chat Panel */
     #chat-panel {

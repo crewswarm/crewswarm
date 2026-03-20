@@ -65,7 +65,7 @@ BUILT_IN_AGENTS=$(
 # Load RT token from config (crewswarm first, then legacy openclaw.json)
 rt_token() {
   local t
-  for f in "$HOME/.crewswarm/config.json" "$HOME/.crewswarm/crewswarm.json" "$CFG"; do
+  for f in "$HOME/.crewswarm/crewswarm.json" "$HOME/.crewswarm/crewswarm.json" "$CFG"; do
     [[ -f "$f" ]] || continue
     t=$("$NODE" -e "try{const c=JSON.parse(require('fs').readFileSync('$f','utf8'));console.log(c.rt?.authToken||c.env?.OPENCREW_RT_AUTH_TOKEN||'')}catch(e){console.log('')}" 2>/dev/null)
     [[ -n "$t" ]] && echo "$t" && return
@@ -75,7 +75,7 @@ rt_token() {
 # ── agents: list canonical RT agent IDs from config (normalized via registry), fallback to registry built-ins ──
 cmd_agents() {
   local cfg="$HOME/.crewswarm/crewswarm.json"
-  [[ -f "$cfg" ]] || cfg="$HOME/.crewswarm/config.json"
+  [[ -f "$cfg" ]] || cfg="$HOME/.crewswarm/crewswarm.json"
   [[ -f "$cfg" ]] || cfg="$CFG"
   [[ -f "$cfg" ]] || cfg="$LEGACY_CFG_DIR/openclaw.json"
   "$NODE" -e "

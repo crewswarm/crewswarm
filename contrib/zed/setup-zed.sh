@@ -22,7 +22,7 @@ fi
 echo "✅ crewswarm MCP server running on :5020"
 
 # 3. Get auth token
-TOKEN=$(cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])")
+TOKEN=$(cat ~/.crewswarm/crewswarm.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])")
 echo "✅ Auth token: ${TOKEN:0:20}..."
 
 # 4. Backup existing Zed config if it exists

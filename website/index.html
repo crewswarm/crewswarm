@@ -13,17 +13,17 @@
     gtag('config', 'G-0QSG6Y9DHT');
   </script>
   <!-- End Google Analytics -->
-  <title>crewswarm — Local-First AI Workspace with Dashboard, Vibe IDE, and Agent Runtime</title>
+  <title>crewswarm — Local-First AI Orchestration</title>
   <meta name="description"
-    content="Open-source local-first AI workspace with a control-plane dashboard, Vibe browser IDE, crewchat native app, and multi-agent runtime. Run crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI in one stack." />
+    content="crewswarm is an open-source AI workspace for software development. It combines multi-agent orchestration, project-aware memory, local tool execution, and editor integrations into one stack you can run yourself." />
   <meta name="keywords"
-    content="local-first AI workspace, multi-agent AI, AI IDE, browser IDE, developer control plane, agent runtime, Vibe IDE, crew-cli, Cursor CLI, Claude Code, Gemini CLI, OpenCode, crewchat, crewswarm" />
+    content="local-first AI orchestration, multi-agent AI, local AI dev tools, Vibe IDE, crew-cli, open-source AI workspace" />
   <!-- Open Graph -->
   <meta property="og:site_name" content="crewswarm" />
   <meta property="og:locale" content="en_US" />
-  <meta property="og:title" content="crewswarm — Local-First AI Workspace for Building with Agents" />
+  <meta property="og:title" content="crewswarm — Local-First AI Orchestration for Real Files and Tools" />
   <meta property="og:description"
-    content="Dashboard, Vibe IDE, crewchat, and a real multi-agent runtime in one open-source stack. Build with crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI." />
+    content="Real execution, not just a chat box bolted onto an editor. Run multi-agent orchestration completely locally via Dashboard, Vibe IDE, or crew-cli." />
   <meta property="og:url" content="https://crewswarm.ai/" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -33,9 +33,9 @@
   <!-- Twitter / X -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@crewswarm" />
-  <meta name="twitter:title" content="crewswarm — Local-First AI Workspace for Building with Agents" />
+  <meta name="twitter:title" content="crewswarm — Local-First AI Orchestration" />
   <meta name="twitter:description"
-    content="Open-source dashboard, Vibe IDE, native chat, and agent runtime. Run crew-cli, Claude, Cursor, Gemini, OpenCode, and Codex CLI in one stack." />
+    content="Real execution, not a chat box. Open-source local-first AI orchestration with Vibe IDE, crew-cli, and native multi-agent runtime." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <meta name="twitter:image:alt" content="crewswarm — multi-agent AI orchestration" />
   <!-- Misc SEO -->
@@ -53,7 +53,7 @@
       "@type": "SoftwareApplication",
       "name": "crewswarm",
       "url": "https://crewswarm.ai/",
-      "description": "Open-source local-first AI workspace with a control-plane dashboard, Vibe browser IDE, native chat client, and multi-agent runtime for software engineering.",
+      "description": "Local-first AI orchestration for software development. Combines multi-agent orchestration, project-aware memory, local tool execution, Vibe IDE, and crew-cli into a single controllable stack.",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux, Windows",
       "offers": {
@@ -133,6 +133,8 @@
 </head>
 
 <body>
+  <!-- AI Crawler Citeable Summary (GEO/LLM SEO) -->
+  <section id="ai-summary" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;">crewswarm is an open-source, local-first AI workspace combining a multi-agent orchestration runtime, a browser control-plane dashboard, the Vibe browser IDE, and native chat clients. It allows software engineers to dispatch complex tasks to specialist AI agents running securely in Docker containers on their own hardware using the ATAT protocol.</section>
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
     <div class="nav-container">
@@ -171,8 +173,7 @@
     <h1>One idea.<br />One build.<br /><span class="gradient-text">One crew.</span></h1>
     <p class="hero-sub">The <a href="#how-it-works"
         style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">local-first AI
-        workspace</a> for <strong>OpenCode</strong>, <strong>Claude Code</strong>, <strong>Cursor</strong>,
-      and <strong>crew-cli</strong>. Dashboard, Vibe, and your
+        orchestration</a> for people who want real files, real tools, and real control. Dashboard, Vibe, and your
       runtime in one stack.</p>
     <div class="proof-bar visible">
       <span class="proof-item">Local-first runtime</span>
@@ -330,6 +331,13 @@
     </div>
   </section>
 
+
+  <section class="section bg-dark" style="border-bottom: 1px solid rgba(255,255,255,0.05); padding: 80px 0; background: linear-gradient(180deg, var(--bg) 0%, #060a10 100%);">
+    <div class="container" style="text-align: center; max-width: 900px; margin: 0 auto;">
+      <h2 style="font-size: clamp(1.8rem, 4vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5rem; font-weight: 800; letter-spacing: -0.02em;">Most AI dev tools are just a chat box bolted onto an editor.</h2>
+      <p style="font-size: clamp(1.1rem, 2vw, 1.35rem); color: var(--text-2); margin-bottom: 2rem; line-height: 1.6;"><strong>crewswarm is different.</strong> It is built to handle actual execution. While other tools fake the important parts, our specialist agents write real files, execute commands locally, and maintain persistent project memory across multiple steps without disappearing into someone else's cloud.</p>
+    </div>
+  </section>
 
   <section class="section bg-dark" style="border-bottom: 1px solid var(--border); padding: 60px 0;">
     <div class="container">
@@ -563,6 +571,37 @@
           <p>Dashboard, Vibe, crewchat, SwiftBar, and CLI surfaces all talk to the same orchestration layer.</p>
         </div>
       </div>
+      <!-- ECOSYSTEM EXPLANATION BLOCK -->
+      <div class="ecosystem-breakdown" style="margin-top: 5rem;">
+        <div class="section-header">
+          <div class="eyebrow">The Ecosystem</div>
+          <h2>One runtime, multiple surfaces.</h2>
+          <p class="section-desc">crewswarm is a modular stack. The core orchestration happens under the hood, but you can interact with the crew through whichever surface fits your current workflow.</p>
+        </div>
+        <div class="features-grid" style="grid-template-columns: repeat(2, 1fr); margin-top: 2rem;">
+          <div class="feature-card">
+            <div class="feature-icon">🧠</div>
+            <h3>The System (Core Runtime)</h3>
+            <p>The beating heart of crewswarm. It relies on the ATAT WebSocket bus, persistent shared memory, and the PM loop to route your requests to 20+ specialized agents seamlessly.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">✨</div>
+            <h3>Vibe IDE</h3>
+            <p>A full-screen, browser-based native IDE. Combines a powerful code editor, file tree, terminal, and agent chat panel into a single unified window. Perfect for starting entirely new projects from scratch.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">💻</div>
+            <h3>crew-cli</h3>
+            <p>The terminal-native interface. Use <code>crew exec "build this"</code> right from your project folder to dispatch the crew without ever leaving your terminal or breaking flow.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🎛️</div>
+            <h3>The Dashboard</h3>
+            <p>Your control plane. Manage API keys, assign LLM models to specific agents (like Claude for coding, Groq for fast planning), map local tools, and view the real-time swarm logs.</p>
+          </div>
+        </div>
+      </div>
+      <!-- END ECOSYSTEM EXPLANATION BLOCK -->
     </div>
   </section>
 
@@ -1144,6 +1183,16 @@ const app = express();
             <div class="provider-models">Gemini 2.5 Pro · Gemini 2.5 Flash · Gemini 2.0 Flash</div>
             <p>Multimodal and fast. Free tier via Gemini CLI — 60 req/min with any Google account, no API key needed.
             </p>
+          </div>
+        </div>
+        <div class="provider-card" style="--p-color:#8b5cf6;">
+          <div class="provider-icon">
+            <img src="https://cdn.simpleicons.org/openrouter/8b5cf6" alt="OpenRouter" width="22" height="22" loading="lazy">
+          </div>
+          <div class="provider-info">
+            <h3>OpenRouter</h3>
+            <div class="provider-models">Claude · GPT-4 · Gemini · Llama · Mistral · 200+ models</div>
+            <p>One API key for hundreds of models. Route to any provider — Claude, OpenAI, Google, Mistral, and more — through a single endpoint.</p>
           </div>
         </div>
         <div class="provider-card" style="--p-color:#a3e635;">
@@ -2577,7 +2626,7 @@ const app = express();
   </section>
 
 
-  <footer>
+    <footer>
     <div class="container footer-inner">
       <div class="footer-brand">
         <div class="footer-logo">crewswarm</div>
@@ -2612,10 +2661,10 @@ const app = express();
     <div class="footer-bottom">
       <div class="container">
         <span>&copy; 2026 crewswarm. All rights reserved.</span>
-
       </div>
     </div>
   </footer>
+
 
 
 

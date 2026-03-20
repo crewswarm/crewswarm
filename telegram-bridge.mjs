@@ -61,9 +61,9 @@ const BOT_TOKEN   = process.env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN || 
 })();
 const RT_URL      = process.env.CREWSWARM_RT_URL    || env.CREWSWARM_RT_URL    || "ws://127.0.0.1:18889";
 const RT_TOKEN    = process.env.CREWSWARM_RT_AUTH_TOKEN || env.CREWSWARM_RT_AUTH_TOKEN || (() => {
-  // Fall back to ~/.crewswarm/config.json → rt.authToken (canonical location)
+  // Fall back to ~/.crewswarm/crewswarm.json → rt.authToken (canonical location)
   try {
-    const configPath = join(homedir(), ".crewswarm", "config.json");
+    const configPath = join(homedir(), ".crewswarm", "crewswarm.json");
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     return config?.rt?.authToken || "";
   } catch {
@@ -658,6 +658,10 @@ function resolveTelegramChatModel(agentCfg) {
   if (providerKey === "openai" && /codex/i.test(modelId)) {
     modelId = "gpt-4o";
   }
+  // OpenRouter requires full ID (e.g. openrouter/hunter-alpha), not bare "hunter-alpha"
+  if (providerKey === "openrouter" && modelId && !modelId.startsWith("openrouter/")) {
+    modelId = "openrouter/" + modelId;
+  }
 
   return { providerKey, modelId };
 }
@@ -704,7 +708,7 @@ const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://127.0.0.1:4319";
 // Auth token for crew-lead API calls (engine passthrough requires Bearer auth)
 function getAuthToken() {
   try {
-    const configPath = join(homedir(), ".crewswarm", "config.json");
+    const configPath = join(homedir(), ".crewswarm", "crewswarm.json");
     const c = JSON.parse(readFileSync(configPath, "utf8"));
     return c.rt?.authToken || "";
   } catch { return ""; }
@@ -821,7 +825,7 @@ async function handleEnginePassthrough(chatId, engine, message) {
   }
 }
 
-async function handleCommand(chatId, text) {
+async function handleCommand(chatId, text, threadId = null) {
   const lower = text.toLowerCase().trim();
 
   const buttonAliases = new Map([
@@ -835,7 +839,7 @@ async function handleCommand(chatId, text) {
     ["help", "/help"]
   ]);
   if (buttonAliases.has(lower)) {
-    return handleCommand(chatId, buttonAliases.get(lower));
+    return handleCommand(chatId, buttonAliases.get(lower), threadId);
   }
 
   // /menu — show main keyboard
@@ -2359,10 +2363,9 @@ async function handleTelegramUpdate(update) {
   saveContactMessage(contactId, "user", text);
   activeSessions.set(chatId, { username, firstName, userId, lastSeen: Date.now() });
 
-  if (text.startsWith("/")) {
-    const handled = await handleCommand(chatId, text);
-    if (handled) return;
-  }
+  // Try handleCommand for both /commands and reply-keyboard button text (e.g. "Chat crew-main" → /home)
+  const handled = await handleCommand(chatId, text, threadId);
+  if (handled) return;
 
   await routeByState(chatId, text, threadId);
 }

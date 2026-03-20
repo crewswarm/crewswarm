@@ -30,118 +30,82 @@ export async function getSystemStatus(): Promise<StatusInfo> {
     version: '0.1.0-alpha'
   };
 
-  // Check if gateway is online with auth
+  // Check which API keys are available (relevant for standalone mode)
+  const providers: string[] = [];
+  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) providers.push('Gemini');
+  if (process.env.GROQ_API_KEY) providers.push('Groq');
+  if (process.env.XAI_API_KEY) providers.push('Grok');
+  if (process.env.OPENAI_API_KEY) providers.push('OpenAI');
+  if (process.env.ANTHROPIC_API_KEY) providers.push('Anthropic');
+  if (process.env.DEEPSEEK_API_KEY) providers.push('DeepSeek');
+  status.models = providers;
+  status.online = providers.length > 0; // "online" if at least one provider is available
+
+  // Check if gateway is reachable (optional, for connected mode)
   try {
-    const headers: Record<string, string> = {};
-    const authToken = process.env.CREW_AUTH_TOKEN;
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
+    // Read auth token from ~/.crewswarm/config.json
+    let authToken = '';
+    try {
+      const { readFileSync } = await import('node:fs');
+      const { homedir } = await import('node:os');
+      const cfg = JSON.parse(readFileSync(`${homedir()}/.crewswarm/config.json`, 'utf8'));
+      authToken = cfg?.rt?.authToken || '';
+    } catch { /* no config */ }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
-
-    const healthCheck = await fetch(`${status.gatewayUrl}/api/health`, {
-      headers,
-      signal: controller.signal
+    const timeoutId = setTimeout(() => controller.abort(), 800);
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const statusCheck = await fetch(`${status.gatewayUrl}/status`, {
+      signal: controller.signal,
+      headers
     });
     clearTimeout(timeoutId);
-    status.online = healthCheck.ok;
-    
-    // Try to get real stats from gateway
-    if (healthCheck.ok) {
-      try {
-        const statsResponse = await fetch(`${status.gatewayUrl}/api/stats`, {
-          headers,
-          signal: AbortSignal.timeout(2000)
-        });
-        if (statsResponse.ok) {
-          const stats = await statsResponse.json();
-          status.activeAgents = stats.activeAgents || status.activeAgents;
-          status.queuedTasks = stats.queuedTasks || status.queuedTasks;
-          status.runningTasks = stats.runningTasks || status.runningTasks;
-          if (stats.models && Array.isArray(stats.models)) {
-            status.models = stats.models;
-          }
-        }
-      } catch {
-        // Fall back to local detection
-      }
+    if (statusCheck.ok) {
+      const data = await statusCheck.json() as any;
+      status.activeAgents = Array.isArray(data.agents) ? data.agents.length : 1;
     }
   } catch {
-    status.online = false;
-  }
-
-  // Get active agents (check running processes)
-  try {
-    const ps = execSync('ps aux | grep -E "crew-|gateway-bridge" | grep -v grep | wc -l', { encoding: 'utf8' });
-    status.activeAgents = parseInt(ps.trim(), 10) || 0;
-  } catch {
-    status.activeAgents = 0;
-  }
-
-  // Check for queued tasks (autofix queue)
-  try {
-    const queuePath = join(process.cwd(), '.crew', 'autofix', 'queue.json');
-    if (existsSync(queuePath)) {
-      const queue = JSON.parse(require('fs').readFileSync(queuePath, 'utf8'));
-      status.queuedTasks = queue.jobs?.filter((j: any) => j.status === 'pending').length || 0;
-      status.runningTasks = queue.jobs?.filter((j: any) => j.status === 'running').length || 0;
-    }
-  } catch {
-    status.queuedTasks = 0;
-  }
-
-  // Get configured models
-  try {
-    const configPath = join(homedir(), '.crewswarm', 'crewswarm.json');
-    if (existsSync(configPath)) {
-      const config = JSON.parse(require('fs').readFileSync(configPath, 'utf8'));
-      const providers = config.providers || config.models?.providers || {};
-      status.models = Object.keys(providers).filter(k => providers[k]?.apiKey);
-    }
-  } catch {
-    status.models = ['local'];
+    // Gateway not reachable — standalone mode only
   }
 
   return status;
 }
 
 export function renderStatusDashboard(status: StatusInfo): string {
-  const { online, activeAgents, queuedTasks, runningTasks, models } = status;
+  const { online, activeAgents, models } = status;
   
   // Colors
   const border = chalk.cyan;
   const label = chalk.gray;
   const value = chalk.white.bold;
-  const online_color = online ? chalk.green : chalk.red;
   const accent = chalk.blue;
 
-  // Progress bar for agents (assuming max 30 for visual purposes)
-  const maxAgents = 30;
-  const agentPercent = Math.min(100, Math.floor((activeAgents / maxAgents) * 100));
-  const filled = Math.floor(agentPercent / 10);
+  // Provider status bar
+  const providerCount = models.length;
+  const maxProviders = 6;
+  const filled = Math.min(10, Math.floor((providerCount / maxProviders) * 10));
   const empty = 10 - filled;
   const progressBar = chalk.green('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
 
+  const statusText = online ? chalk.green('READY') : chalk.red('NO API KEYS');
+  const gatewayText = activeAgents > 0 
+    ? chalk.green(`CONNECTED`) + chalk.gray(` (${activeAgents} agents)`)
+    : chalk.gray('STANDALONE');
+  const modelStack = models.length > 0 ? models.join(' / ') : chalk.red('None — add API keys');
+
   const lines = [
-    border('┌─[ CREWSWARM :: ORCHESTRATION LAYER ]────────────────────────┐'),
+    border('┌─[ CREW-CLI :: AGENTIC CODING ENGINE ]──────────────────────────┐'),
     '',
-    `   ${label('CORE')}      : ${value('ROUTER')} 🧠`,
-    `   ${label('REASONING')}: ${value('PLANNER')} 🧭`,
-    `   ${label('EXECUTION')}: ${value('WORKERS')} ⚡`,
+    `   ${label('STATUS')}     : ${statusText}`,
+    `   ${label('MODE')}       : ${gatewayText}`,
+    `   ${label('PROVIDERS')}  : ${value(modelStack)}`,
     '',
-    `   ${label('SYSTEM STATUS ')} : ${online_color(online ? 'ONLINE' : 'OFFLINE')}`,
-    `   ${label('MODEL STACK   ')}: ${value(models.length > 0 ? models.join(' / ') : 'Not configured')}`,
-    `   ${label('TASK PIPELINE ')}: ${value('REALTIME')}`,
-    '',
-    `   ${accent('Swarm Status')}   : ${progressBar} ${agentPercent}%`,
-    `   ${accent('Active Agents')}  : ${value(activeAgents.toString())}`,
-    `   ${accent('Task Queue')}     : ${value(queuedTasks + ' pending')}${runningTasks > 0 ? `, ${runningTasks} running` : ''}`,
+    `   ${accent('Provider Coverage')}: ${progressBar} ${providerCount}/${maxProviders}`,
     '',
     `   ${chalk.italic.gray('"One idea. One Build. One Crew."')}`,
     '',
-    border('└──────────────────────────────────────────────────────────────┘')
+    border('└──────────────────────────────────────────────────────────────────┘')
   ];
 
   return lines.join('\n');

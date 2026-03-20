@@ -16,6 +16,7 @@ import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
+import { shouldSkipGeminiPassthroughLine } from "../../lib/gemini-cli-passthrough-noise.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.STUDIO_PORT || 3333);
@@ -303,9 +304,11 @@ function projectMessageFile(projectId) {
 }
 
 function loadCrewswarmRtToken() {
+  const envToken = (process.env.CREWSWARM_RT_AUTH_TOKEN || "").trim();
+  if (envToken) return envToken;
   for (const file of [
-    path.join(process.env.HOME || "", ".crewswarm", "config.json"),
     path.join(process.env.HOME || "", ".crewswarm", "crewswarm.json"),
+    path.join(process.env.HOME || "", ".crewswarm", "config.json"),
   ]) {
     try {
       const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -454,9 +457,26 @@ function getCursorCommand() {
   return "agent";
 }
 
-function createCursorStreamRelay(onChunk) {
+/** Same defaults as crew-lead / gateway `runCursorCliTask` (not the IDE `cursor` opener). */
+function resolveStudioCursorModel(bodyModel) {
+  const cursorDefault =
+    process.env.CREWSWARM_CURSOR_MODEL ||
+    process.env.CURSOR_DEFAULT_MODEL ||
+    "composer-2-fast";
+  let m =
+    (bodyModel && String(bodyModel).trim()) ||
+    process.env.STUDIO_CURSOR_MODEL ||
+    cursorDefault;
+  if (String(m).includes("/")) m = cursorDefault;
+  else if (String(m).includes("sonnet-4.6")) m = "sonnet-4.5";
+  return m;
+}
+
+function createCursorStreamRelay(onChunk, onTerminal) {
   let transcript = "";
   let lineBuffer = "";
+  let sawAssistantDelta = false;
+  let lastAssistantNorm = "";
 
   const appendText = (text) => {
     if (!text) return;
@@ -470,24 +490,46 @@ function createCursorStreamRelay(onChunk) {
 
     try {
       const event = JSON.parse(trimmed);
+      if (event.type === "stream_event" && event.event?.type === "content_block_delta") {
+        const t = event.event.delta?.text || "";
+        if (t) {
+          sawAssistantDelta = true;
+          appendText(t);
+        }
+        return;
+      }
       if (event.type === "assistant") {
         const content = event.message?.content;
+        let combined = "";
         if (Array.isArray(content)) {
           for (const chunk of content) {
-            if (chunk?.type === "text" && chunk.text) {
-              appendText(chunk.text);
-            }
+            if (chunk?.type === "text" && chunk.text) combined += chunk.text;
           }
+        } else if (typeof content === "string") {
+          combined = content;
+        }
+        const norm = combined.replace(/\r/g, "").trim();
+        if (norm && norm === lastAssistantNorm) {
           return;
         }
-        if (typeof content === "string") {
-          appendText(content);
-          return;
+        if (norm) lastAssistantNorm = norm;
+        if (!sawAssistantDelta && combined) {
+          if (Array.isArray(content)) {
+            for (const chunk of content) {
+              if (chunk?.type === "text" && chunk.text) appendText(chunk.text);
+            }
+          } else {
+            appendText(combined);
+          }
         }
+        return;
       }
 
-      if (event.type === "result" && !transcript.trim()) {
-        appendText(event.result || event.text || "");
+      if (event.type === "result") {
+        if (!transcript.trim() && (event.result || event.text)) {
+          appendText(String(event.result || event.text || ""));
+        }
+        onTerminal?.();
         return;
       }
 
@@ -578,8 +620,14 @@ function createCodexStreamRelay(onChunk) {
       trimmed.startsWith("reasoning summaries:") ||
       trimmed.startsWith("session id:") ||
       /^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*\b(ERROR|WARN|INFO)\b/.test(trimmed) ||
+      /rmcp::/i.test(trimmed) ||
       /ERROR rmcp::transport::worker/.test(trimmed) ||
-      /mcp startup: failed/.test(trimmed)
+      /mcp startup: failed/.test(trimmed) ||
+      (/\/mcp/i.test(trimmed) &&
+        /127\.0\.0\.1:\d+|localhost:\d+/i.test(trimmed) &&
+        /Connection refused|ConnectError|Transport channel closed|tcp connect error/i.test(
+          trimmed,
+        ))
     );
   };
 
@@ -726,6 +774,7 @@ function createGeminiStreamRelay(onChunk, onDone) {
     }
 
     if (!trimmed.startsWith("{")) {
+      if (shouldSkipGeminiPassthroughLine(trimmed)) return;
       appendAssistant(trimmed);
     }
   };
@@ -767,7 +816,7 @@ function createDefaultCliRelay(onChunk) {
 
 function createCliRelay(engine, onChunk, onDone) {
   if (engine === "cursor") {
-    return createCursorStreamRelay(onChunk);
+    return createCursorStreamRelay(onChunk, onDone);
   }
   if (engine === "codex") {
     return createCodexStreamRelay(onChunk);
@@ -813,6 +862,8 @@ export function createTerminalSession({ projectDir, onData, onExit, cols, rows }
       TERM: process.env.TERM || "xterm-256color",
       FORCE_COLOR: "0",
       HISTFILE: process.env.HISTFILE || "/dev/null",
+      // Avoid macOS zsh session persistence writes in sandboxed terminals.
+      SHELL_SESSIONS_DISABLE: process.env.SHELL_SESSIONS_DISABLE || "1",
       STUDIO_TERM_COLS: String(initialCols),
       STUDIO_TERM_ROWS: String(initialRows),
     },
@@ -885,7 +936,7 @@ export function closeTerminalSession(sessionId) {
 
 const SUPPORTED_ENGINES = ["codex", "claude", "cursor", "gemini", "opencode", "crew-cli"];
 
-export function getCliCommand(engine, projectDir, message) {
+export function getCliCommand(engine, projectDir, message, modelOverride) {
   switch (engine) {
     case "codex": {
       const binary = process.env.STUDIO_CODEX_BIN || "codex";
@@ -928,7 +979,21 @@ export function getCliCommand(engine, projectDir, message) {
     case "cursor":
       {
         const binary = getCursorCommand();
-        const args = ["-p", message];
+        const cwd = projectDir || WORKSPACE_DIR;
+        const model = resolveStudioCursorModel(modelOverride);
+        const args = [
+          "-p",
+          "--force",
+          "--trust",
+          "--output-format",
+          "stream-json",
+          "--stream-partial-output",
+          message,
+          "--model",
+          model,
+          "--workspace",
+          cwd,
+        ];
         return {
           command: binary,
           args,
@@ -951,7 +1016,7 @@ export function getCliCommand(engine, projectDir, message) {
         let model = process.env.OPENCODE_MODEL || process.env.CREWSWARM_OPENCODE_MODEL || "";
         if (!model) {
           try {
-            const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+            const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
             const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
             model = cfg.opencodeModel || "";
           } catch {}
@@ -981,12 +1046,20 @@ export function getCliCommand(engine, projectDir, message) {
 
 // Backward compat alias
 export function getCodexCommand(projectDir, message) {
-  return getCliCommand("codex", projectDir, message);
+  return getCliCommand("codex", projectDir, message, undefined);
 }
 
-export function runCli({ projectDir, projectId, engine, message, onChunk, onTrace }) {
+export function runCli({
+  projectDir,
+  projectId,
+  engine,
+  message,
+  onChunk,
+  onTrace,
+  model,
+}) {
   return new Promise((resolve, reject) => {
-    const cmd = getCliCommand(engine, projectDir, message);
+    const cmd = getCliCommand(engine, projectDir, message, model);
     if (!cmd) {
       reject(new Error(`Unknown engine "${engine}". Supported: ${SUPPORTED_ENGINES.join(", ")}`));
       return;
@@ -1029,14 +1102,19 @@ export function runCli({ projectDir, projectId, engine, message, onChunk, onTrac
     child.on("close", (exitCode) => {
       const normalizedExitCode = Number(exitCode ?? 0);
       transcript = relay.finish();
+      // Cursor agent often exits non-zero after we SIGTERM following a `result` event; treat as OK if we got text.
+      const effectiveExit =
+        engine === "cursor" && transcript.trim()
+          ? 0
+          : normalizedExitCode;
       appendProjectMessage(projectId, {
         role: "assistant",
         content: transcript.trim(),
         ts: Date.now(),
         source: "studio-cli",
-        metadata: { engine, exitCode: normalizedExitCode },
+        metadata: { engine, exitCode: effectiveExit },
       });
-      resolve({ exitCode: normalizedExitCode, transcript: transcript.trim() });
+      resolve({ exitCode: effectiveExit, transcript: transcript.trim() });
     });
 
     child.on("error", reject);
@@ -1088,6 +1166,7 @@ function handleCliChatLocally(req, res, body) {
     projectId,
     engine,
     message,
+    model: body.model ? String(body.model) : undefined,
     onChunk(text) {
       if (!clientClosed) {
         sendSseEvent(res, { type: "chunk", text });
@@ -1152,7 +1231,10 @@ async function handleCliChatViaCrewLead(req, res, body) {
       sessionId,
       ...(model ? { model } : {}),
     }),
-    signal: AbortSignal.timeout(240000),
+    // Align with Vibe client CHAT_STREAM_TIMEOUT_MS (10m) — 240s was aborting long Codex/OpenCode runs
+    signal: AbortSignal.timeout(
+      Number(process.env.STUDIO_CREW_LEAD_FETCH_MS || "600000"),
+    ),
   });
 
   if (!upstream.ok || !upstream.body) {

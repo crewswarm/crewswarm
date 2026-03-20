@@ -13,6 +13,30 @@
     {
       "url": "http://127.0.0.1:5010",
       "description": "crew-lead API (orchestration and chat)"
+    },
+    {
+      "url": "http://127.0.0.1:3333",
+      "description": "Vibe IDE (browser-native workspace)"
+    },
+    {
+      "url": "http://127.0.0.1:5020",
+      "description": "MCP & OpenAI-compatible API"
+    },
+    {
+      "url": "ws://127.0.0.1:18889",
+      "description": "Real-time WebSocket message bus"
+    },
+    {
+      "url": "ws://127.0.0.1:3334",
+      "description": "File Watcher (Vibe live reload)"
+    },
+    {
+      "url": "http://127.0.0.1:4096",
+      "description": "Code Engine (OpenCode / Claude Code / Cursor)"
+    },
+    {
+      "url": "http://127.0.0.1:18789",
+      "description": "OpenClaw Gateway (Optional legacy service)"
     }
   ],
   "tags": [

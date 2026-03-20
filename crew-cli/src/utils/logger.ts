@@ -75,7 +75,33 @@ export class Logger {
   }
 
   printWithHighlight(text: string) {
-    console.log(this.highlightCodeBlocks(text));
+    // Rich markdown rendering for terminal
+    let output = this.highlightCodeBlocks(text);
+
+    // Process line-by-line for headers, bullets, etc.
+    output = output.split('\n').map(line => {
+      // Headers: # ## ###
+      if (/^#{1,3}\s/.test(line)) {
+        return color.bold(color.cyan(line));
+      }
+      // Bullet points
+      if (/^\s*[-*]\s/.test(line)) {
+        return line.replace(/^(\s*)([-*])(\s)/, `$1${color.cyan('$2')}$3`);
+      }
+      // Numbered lists
+      if (/^\s*\d+\.\s/.test(line)) {
+        return line.replace(/^(\s*)(\d+\.)(\s)/, `$1${color.cyan('$2')}$3`);
+      }
+      return line;
+    }).join('\n');
+
+    // Inline formatting (skip inside code blocks)
+    // Bold: **text**
+    output = output.replace(/\*\*([^*]+)\*\*/g, (_, t) => color.bold(t));
+    // Inline code: `text`
+    output = output.replace(/`([^`]+)`/g, (_, t) => color.cyan(t));
+
+    console.log(output);
   }
 
   highlightDiff(diff: string) {

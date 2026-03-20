@@ -88,7 +88,7 @@ crew plan "implement user dashboard" --parallel --concurrency 4
 
 ## Configuration
 
-Create `~/.crewswarm/config.json` to customize settings:
+Create `~/.crewswarm/crewswarm.json` to customize settings:
 
 ```json
 {

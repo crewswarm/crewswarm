@@ -50,6 +50,9 @@ export async function executeAutonomous(
   const repeatThreshold = config.repeatThreshold || DEFAULT_REPEAT_THRESHOLD;
   const history: TurnResult[] = [];
 
+  let lastResponseText = '';
+  let staleCount = 0;
+
   for (let turn = 0; turn < maxTurns; turn++) {
     config.onProgress?.(turn + 1, 'THINKING');
 
@@ -64,6 +67,25 @@ export async function executeAutonomous(
         history,
         finalResponse: response.response
       };
+    }
+
+    // Stale response detection: if LLM gives same text 2x in a row, it's done
+    if (response.response && response.response.length > 20) {
+      if (response.response === lastResponseText) {
+        staleCount++;
+        if (staleCount >= 2) {
+          return {
+            success: true,
+            turns: turn + 1,
+            history,
+            finalResponse: response.response,
+            reason: 'Detected stale response (same output repeated), treating as complete'
+          };
+        }
+      } else {
+        staleCount = 0;
+      }
+      lastResponseText = response.response;
     }
 
     // ACT: Execute all tool calls

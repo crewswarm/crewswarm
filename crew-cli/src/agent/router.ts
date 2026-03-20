@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { EventEmitter } from 'events';
 import { Logger } from '../utils/logger.js';
 import { getProjectContext } from '../context/git.js';

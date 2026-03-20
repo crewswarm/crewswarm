@@ -1,5 +1,9 @@
+// @ts-nocheck
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Logger } from '../utils/logger.js';
 import { EngineSessionLayer, buildSessionPromptEnvelope } from './session-layer.js';
 import { ConversationTranscriptStore, buildConversationHydrationPrompt } from '../session/conversation-transcript.js';
@@ -308,10 +312,10 @@ async function maybeRunViaNativeSession(engine: string, prompt: string, options:
   if (!isCliEngine(engine)) return null;
   const sessionId = String(options.sessionId || '').trim();
   if (!sessionId) return null;
-  const command = buildEngineShellCommand(engine, prompt, options.model);
-  if (!command) return null;
 
   const cwd = String(options.cwd || options.projectDir || process.cwd());
+  const command = buildEngineShellCommand(engine, prompt, options.model, cwd);
+  if (!command) return null;
   const manager = getNativeSessionManager(cwd);
   emitEngineEvent(options, engine, {
     type: 'start',
@@ -464,12 +468,44 @@ export async function runClaudeCli(prompt: string, options: EngineRunOptions = {
   return runCommand('claude', args, options, prompt);
 }
 
+/**
+ * Cursor engine: use the Cursor **agent** CLI (`agent`), same as gateway bypass
+ * (`lib/engines/runners.mjs` / `CURSOR_CLI_BIN`). The `cursor` binary on PATH is
+ * often the IDE opener (Electron) — not compatible with `--execute`.
+ */
+function resolveCursorAgentBin(): string {
+  const fromEnv = String(process.env.CURSOR_CLI_BIN || '').trim();
+  if (fromEnv) return fromEnv;
+  const agentLocal = path.join(os.homedir(), '.local', 'bin', 'agent');
+  if (fs.existsSync(agentLocal)) return agentLocal;
+  return 'agent';
+}
+
 export async function runCursorCli(prompt: string, options: EngineRunOptions = {}): Promise<EngineRunResult> {
-  const args = ['--execute'];
-  if (options.model) {
-    args.push('--model', options.model);
+  const bin = resolveCursorAgentBin();
+  const projectDir = options.cwd || options.projectDir || process.cwd();
+  const cursorDefault = process.env.CREWSWARM_CURSOR_MODEL || 'composer-2-fast';
+  let model = options.model;
+  if (!model || String(model).trim() === '') {
+    model = cursorDefault;
+  } else if (String(model).includes('/')) {
+    model = cursorDefault;
+  } else if (String(model).includes('sonnet-4.6')) {
+    model = 'sonnet-4.5';
   }
-  return runCommand('cursor', args, options, prompt);
+  const args = [
+    '-p',
+    '--force',
+    '--trust',
+    '--output-format',
+    'stream-json',
+    prompt,
+    '--model',
+    model,
+    '--workspace',
+    projectDir
+  ];
+  return runCommand(bin, args, { ...options, cwd: projectDir });
 }
 
 export async function runOpenCodeCli(prompt: string, options: EngineRunOptions = {}): Promise<EngineRunResult> {

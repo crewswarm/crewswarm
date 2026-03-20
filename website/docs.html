@@ -173,24 +173,64 @@ bash install.sh</code></pre>
           </thead>
           <tbody>
             <tr>
+              <td><strong>RT Message Bus</strong></td>
+              <td><code>18889</code></td>
+              <td>Real-time agent communication backbone.</td>
+            </tr>
+            <tr>
+              <td><strong>Sub-Agents</strong></td>
+              <td><code>-</code></td>
+              <td>Worker Bridges (crew-coder, crew-pm, etc.).</td>
+            </tr>
+            <tr>
+              <td><strong>crew-lead</strong></td>
+              <td><code>5010</code></td>
+              <td>Chat commander — dashboard chat, CrewChat, Telegram.</td>
+            </tr>
+            <tr>
+              <td><strong>Telegram Bridge</strong></td>
+              <td><code>-</code></td>
+              <td>@crewswarm_bot → crew-main.</td>
+            </tr>
+            <tr>
+              <td><strong>WhatsApp Bridge</strong></td>
+              <td><code>-</code></td>
+              <td>Personal bot via Baileys linked device.</td>
+            </tr>
+            <tr>
+              <td><strong>Code Engine</strong></td>
+              <td><code>4096</code></td>
+              <td>Coding execution server (OpenCode / Claude Code / Cursor).</td>
+            </tr>
+            <tr>
               <td><strong>Dashboard</strong></td>
               <td><code>4319</code></td>
               <td>The UI for agent management, model assignment, and cost tracking.</td>
             </tr>
             <tr>
-              <td><strong>crew-lead</strong></td>
-              <td><code>5010</code></td>
-              <td>The chat interface (Stinki) for commanding the crew.</td>
+              <td><strong>MCP + OpenAI API</strong></td>
+              <td><code>5020</code></td>
+              <td>MCP tools + /v1/chat/completions for Open WebUI, LM Studio, Aider.</td>
             </tr>
             <tr>
-              <td><strong>Message Bus</strong></td>
-              <td><code>18889</code></td>
-              <td>Real-time WebSocket bus where agents coordinate.</td>
+              <td><strong>Vibe UI</strong></td>
+              <td><code>3333</code></td>
+              <td>Monaco editor + agent chat — Cursor-like IDE for crewswarm.</td>
             </tr>
             <tr>
-              <td><strong>Code Engine</strong></td>
-              <td><code>4096</code></td>
-              <td>The backend for OpenCode and Claude Code execution.</td>
+              <td><strong>Vibe Watch Server</strong></td>
+              <td><code>3334</code></td>
+              <td>CLI → Vibe live reload WebSocket relay.</td>
+            </tr>
+            <tr>
+              <td><strong>OpenClaw Gateway</strong></td>
+              <td><code>18789</code></td>
+              <td>Optional legacy service for the OpenClaw desktop app.</td>
+            </tr>
+            <tr>
+              <td><strong>PM Loops</strong></td>
+              <td><code>-</code></td>
+              <td>Autonomous project manager loops (managed externally).</td>
             </tr>
           </tbody>
         </table>
@@ -258,7 +298,7 @@ bash install.sh</code></pre>
     </div>
   </section>
 
-  <footer>
+    <footer>
     <div class="container footer-inner">
       <div class="footer-brand">
         <div class="footer-logo">crewswarm</div>
@@ -293,10 +333,10 @@ bash install.sh</code></pre>
     <div class="footer-bottom">
       <div class="container">
         <span>&copy; 2026 crewswarm. All rights reserved.</span>
-
       </div>
     </div>
   </footer>
+
 
   <script src="script.js"></script>
 </body>

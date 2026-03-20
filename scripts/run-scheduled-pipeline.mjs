@@ -37,7 +37,7 @@ const WORKFLOW_STAGE_TIMEOUT_MS = 120000;
 
 function getToken() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(CONFIG_DIR, "config.json"), "utf8"));
+    const cfg = JSON.parse(fs.readFileSync(path.join(CONFIG_DIR, "crewswarm.json"), "utf8"));
     return cfg?.rt?.authToken || "";
   } catch {
     return "";

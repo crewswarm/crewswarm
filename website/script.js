@@ -144,6 +144,15 @@ function initDocsFeed() {
         { label: 'Deploy Page', href: 'deploy.html' },
         { label: 'Studio Quickstart', href: 'https://github.com/crewswarm/crewswarm/blob/main/STUDIO-CLI-QUICKSTART.md' }
       ]
+    },
+    {
+      icon: '📋',
+      title: 'API & Integrations',
+      description: 'OpenAPI spec for dashboard, crew-lead, and headless integrations.',
+      links: [
+        { label: 'OpenAPI Spec (JSON)', href: 'https://github.com/crewswarm/crewswarm/blob/main/crew-cli/docs/openapi.unified.v1.json' },
+        { label: 'API-UNIFIED-v1', href: 'https://github.com/crewswarm/crewswarm/blob/main/crew-cli/docs/API-UNIFIED-v1.md' }
+      ]
     }
   ];
 

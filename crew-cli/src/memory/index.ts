@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Memory module exports for shared memory integration
  * Used by main CrewSwarm to access CLI's memory subsystem

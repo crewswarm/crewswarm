@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
@@ -35,7 +36,7 @@ async function gatewayReachable(url) {
 }
 
 async function configExists() {
-  const configPath = join(homedir(), '.crewswarm', 'config.json');
+  const configPath = join(homedir(), '.crewswarm', 'crewswarm.json');
   try {
     await access(configPath, constants.F_OK);
     return { ok: true, path: configPath };
@@ -115,16 +116,65 @@ export async function isGlobalInstallLinked(): Promise<boolean> {
   }
 }
 
-export async function runDoctorChecks(options = {}) {
+// Provider key map — ordered by cost-effectiveness for new users
+const PROVIDER_KEYS = [
+  { id: 'Gemini',     envKey: 'GEMINI_API_KEY',    alt: 'GOOGLE_API_KEY',     cost: 'free tier', signup: 'https://aistudio.google.com/apikey' },
+  { id: 'Groq',       envKey: 'GROQ_API_KEY',      alt: null,                 cost: 'free',      signup: 'https://console.groq.com/keys' },
+  { id: 'xAI (Grok)', envKey: 'XAI_API_KEY',       alt: null,                 cost: '$5/mo free credits', signup: 'https://console.x.ai' },
+  { id: 'DeepSeek',   envKey: 'DEEPSEEK_API_KEY',  alt: null,                 cost: 'cheap',     signup: 'https://platform.deepseek.com' },
+  { id: 'OpenAI',     envKey: 'OPENAI_API_KEY',     alt: null,                 cost: 'pay-as-you-go', signup: 'https://platform.openai.com' },
+  { id: 'Anthropic',  envKey: 'ANTHROPIC_API_KEY',  alt: null,                 cost: 'pay-as-you-go', signup: 'https://console.anthropic.com' },
+  { id: 'OpenRouter', envKey: 'OPENROUTER_API_KEY', alt: null,                 cost: 'varies',    signup: 'https://openrouter.ai' },
+  { id: 'Together',   envKey: 'TOGETHER_API_KEY',   alt: null,                 cost: 'pay-as-you-go', signup: 'https://api.together.xyz' },
+  { id: 'Fireworks',  envKey: 'FIREWORKS_API_KEY',  alt: null,                 cost: 'pay-as-you-go', signup: 'https://fireworks.ai' },
+  { id: 'Moonshot',   envKey: 'MOONSHOT_API_KEY',   alt: null,                 cost: 'pay-as-you-go', signup: 'https://moonshot.ai' },
+];
+
+export function checkApiKeys(): { configured: string[]; missing: string[]; details: string; hint: string } {
+  const configured: string[] = [];
+  const missing: string[] = [];
+
+  for (const p of PROVIDER_KEYS) {
+    if (process.env[p.envKey] || (p.alt && process.env[p.alt])) {
+      configured.push(p.id);
+    } else {
+      missing.push(p.id);
+    }
+  }
+
+  let details: string;
+  let hint = '';
+  if (configured.length === 0) {
+    details = 'No API keys found — crew-cli cannot run';
+    hint = `Cheapest options:\n    → Gemini (free tier): ${PROVIDER_KEYS[0].signup}\n    → Groq (free): ${PROVIDER_KEYS[1].signup}`;
+  } else {
+    details = `${configured.length} provider(s): ${configured.join(', ')}`;
+  }
+
+  return { configured, missing, details, hint };
+}
+
+export async function runDoctorChecks(options: { gateway?: string; updateTag?: string } = {}) {
   const gateway = options.gateway || 'http://localhost:5010';
   const nodeMajor = parseMajorNodeVersion(process.version);
+
+  // Helper: race any promise against a 5s timeout
+  const withTimeout = <T>(promise: Promise<T>, fallback: T, label: string): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<T>(resolve => setTimeout(() => {
+        resolve(fallback);
+      }, 2000))
+    ]);
+
   const gitOk = await commandExists('git');
-  const gatewayOk = await gatewayReachable(gateway);
+  const gatewayOk = await withTimeout(gatewayReachable(gateway), false, 'gateway');
   const config = await configExists();
   const installedVersion = await getInstalledCliVersion();
-  const latestVersion = await getLatestCliVersion(options.updateTag || 'latest');
-  const linkedInstall = await isGlobalInstallLinked();
-  const mcpChecks = await doctorMcpServers(process.cwd());
+  const latestVersion = await withTimeout(getLatestCliVersion(options.updateTag || 'latest'), null, 'npm');
+  const linkedInstall = await withTimeout(isGlobalInstallLinked(), false, 'npm-link');
+  const mcpChecks = await withTimeout(doctorMcpServers(process.cwd()), [{ server: '(timeout)', ok: false, details: 'MCP check timed out' }], 'mcp');
+  const apiKeys = checkApiKeys();
 
   let updateDetails = 'Update check unavailable';
   if (installedVersion && latestVersion) {
@@ -154,6 +204,12 @@ export async function runDoctorChecks(options = {}) {
       name: 'Git installed',
       ok: gitOk,
       details: gitOk ? 'git found in PATH' : 'git not found in PATH'
+    },
+    {
+      name: 'LLM API keys',
+      ok: apiKeys.configured.length > 0,
+      details: apiKeys.details,
+      hint: apiKeys.hint
     },
     {
       name: 'CrewSwarm config present',

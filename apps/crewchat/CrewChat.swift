@@ -4,7 +4,7 @@ import AVFoundation
 
 // ── Config — read from ~/.crewswarm at runtime ────────────────────────────────
 func loadCrewConfig() -> [String: Any] {
-    let path = (NSHomeDirectory() as NSString).appendingPathComponent(".crewswarm/config.json")
+    let path = (NSHomeDirectory() as NSString).appendingPathComponent(".crewswarm/crewswarm.json")
     guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
           let obj  = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
     return obj

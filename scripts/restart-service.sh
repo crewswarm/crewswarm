@@ -79,7 +79,7 @@ _start_detached() {
 _rt_token() {
   local home="$HOME"
   local token
-  token="$(_config_value "$home/.crewswarm/config.json" "rt.authToken")"
+  token="$(_config_value "$home/.crewswarm/crewswarm.json" "rt.authToken")"
   if [[ -n "$token" ]]; then
     printf "%s" "$token"
     return 0

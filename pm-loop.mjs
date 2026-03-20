@@ -205,9 +205,13 @@ function getPMProviderConfig() {
   function fromAgent(agent) {
     if (!agent?.model) return null;
     const [providerKey, ...modelParts] = agent.model.split("/");
-    const modelId = modelParts.join("/").trim();
+    let modelId = modelParts.join("/").trim();
     const prov = providers[providerKey];
     if (!prov?.apiKey || (!prov.baseUrl && providerKey !== "openai")) return null;
+    // OpenRouter requires full ID (e.g. openrouter/hunter-alpha), not bare "hunter-alpha"
+    if ((providerKey === "openrouter" || (prov.baseUrl || "").includes("openrouter.ai")) && modelId && !modelId.startsWith("openrouter/")) {
+      modelId = "openrouter/" + modelId;
+    }
     return { baseUrl: prov.baseUrl || "https://api.openai.com/v1", apiKey: prov.apiKey, model: modelId };
   }
 

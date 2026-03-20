@@ -74,9 +74,9 @@ const env = cfg.env || {};
 
 const RT_URL        = process.env.CREWSWARM_RT_URL        || env.CREWSWARM_RT_URL        || "ws://127.0.0.1:18889";
 const RT_TOKEN      = process.env.CREWSWARM_RT_AUTH_TOKEN || env.CREWSWARM_RT_AUTH_TOKEN || (() => {
-  // Fall back to ~/.crewswarm/config.json → rt.authToken (canonical location)
+  // Fall back to ~/.crewswarm/crewswarm.json → rt.authToken (canonical location)
   try {
-    const c = JSON.parse(readFileSync(join(homedir(), ".crewswarm", "config.json"), "utf8"));
+    const c = JSON.parse(readFileSync(join(homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
     return c?.rt?.authToken || "";
   } catch { return ""; }
 })();
@@ -1030,10 +1030,14 @@ async function main() {
           
           // Parse model string
           const [providerKey, ...modelParts] = agentCfg.model.split("/");
-          const modelId = modelParts.join("/");
+          let modelId = modelParts.join("/");
           const provider = csSwarm.providers?.[providerKey];
           if (!provider?.apiKey) {
             throw new Error(`No API key for provider ${providerKey}`);
+          }
+          // OpenRouter requires full ID (e.g. openrouter/hunter-alpha), not bare "hunter-alpha"
+          if ((providerKey === "openrouter" || (provider.baseUrl || "").includes("openrouter.ai")) && modelId && !modelId.startsWith("openrouter/")) {
+            modelId = "openrouter/" + modelId;
           }
           
           // Load system prompt

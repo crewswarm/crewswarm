@@ -289,7 +289,7 @@ export async function loadToolMatrix(){
     if (!res.ok || !d.ok) {
       const msg = d.error || (res.status === 401 ? 'Unauthorized' : res.statusText || 'Request failed');
       el.innerHTML = '<div class="card" style="padding:16px;"><div style="color:var(--yellow);font-size:13px;font-weight:600;">Health check failed</div>' +
-        '<div style="color:var(--text-2);font-size:12px;margin-top:8px;">' + (res.status === 401 ? 'RT token missing or invalid. Set it in Settings → System (RT token) or in ~/.crewswarm/config.json (rt.authToken).' : msg) + '</div>' +
+        '<div style="color:var(--text-2);font-size:12px;margin-top:8px;">' + (res.status === 401 ? 'RT token missing or invalid. Set it in Settings → System (RT token) or in ~/.crewswarm/crewswarm.json (rt.authToken).' : msg) + '</div>' +
         '<div style="color:var(--text-3);font-size:11px;margin-top:8px;">Ensure crew-lead is running on :5010 (Services tab).</div></div>';
       return;
     }

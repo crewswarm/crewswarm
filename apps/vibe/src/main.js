@@ -1,5 +1,11 @@
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { filterOpenCodePassthroughTextChunk } from "../../../lib/browser/opencode-passthrough-filter.js";
+import { filterGeminiPassthroughTextChunk } from "../../../lib/gemini-cli-passthrough-noise.mjs";
+import {
+  createPassthroughStderrLineFilter,
+  summarizePassthroughTopErrorLine,
+} from "../../../lib/browser/passthrough-stderr.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CONFIG
@@ -45,6 +51,7 @@ let fileTreeRefreshTimer = null;
 const MAX_TERMINAL_ENTRIES = 250;
 const FILE_TREE_REFRESH_DEBOUNCE_MS = 150;
 const DEFAULT_LOCAL_WORKSPACE_DIR = "apps/vibe";
+const CHAT_STREAM_TIMEOUT_MS = 600000;
 
 function getPreferredMonacoTheme() {
   return document.documentElement.classList.contains("dark") ? "vs-dark" : "vs";
@@ -1173,6 +1180,92 @@ window.openFile = openFile;
 const chatInput = document.getElementById("chat-input");
 const chatMessages = document.getElementById("chat-messages");
 
+// ── Image attachments (drag/drop, paste, picker) ──────────────────────────────
+let pendingChatImages = []; // Array of { dataUri, name, size }
+const chatPanel = document.getElementById("chat-panel");
+const chatImageBtn = document.getElementById("chat-image-btn");
+const chatImageFile = document.getElementById("chat-image-file");
+const chatImagePreview = document.getElementById("chat-image-preview");
+const chatDragOverlay = document.getElementById("chat-drag-overlay");
+
+function addPendingImage(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  if (pendingChatImages.length >= 3) return; // max 3 images
+  const reader = new FileReader();
+  reader.onload = () => {
+    pendingChatImages.push({ dataUri: reader.result, name: file.name, size: file.size });
+    renderImagePreview();
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderImagePreview() {
+  if (!pendingChatImages.length) {
+    chatImagePreview.style.display = "none";
+    chatImagePreview.innerHTML = "";
+    return;
+  }
+  chatImagePreview.style.display = "flex";
+  chatImagePreview.innerHTML = pendingChatImages.map((img, i) => `
+    <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:4px 8px;margin-right:6px;">
+      <img src="${img.dataUri}" style="height:36px;width:36px;object-fit:cover;border-radius:4px;" />
+      <span style="font-size:11px;color:var(--text-2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${img.name}</span>
+      <button onclick="removePendingImage(${i})" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;padding:0 2px;" title="Remove">&times;</button>
+    </div>
+  `).join("");
+}
+window.removePendingImage = function(i) {
+  pendingChatImages.splice(i, 1);
+  renderImagePreview();
+};
+
+// Image button click
+if (chatImageBtn) {
+  chatImageBtn.addEventListener("click", () => chatImageFile?.click());
+}
+if (chatImageFile) {
+  chatImageFile.addEventListener("change", (e) => {
+    if (e.target.files?.[0]) addPendingImage(e.target.files[0]);
+    e.target.value = "";
+  });
+}
+
+// Drag & drop on chat panel
+if (chatPanel) {
+  let dragCounter = 0;
+  chatPanel.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    dragCounter++;
+    if (chatDragOverlay) chatDragOverlay.style.display = "flex";
+  });
+  chatPanel.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; if (chatDragOverlay) chatDragOverlay.style.display = "none"; }
+  });
+  chatPanel.addEventListener("dragover", (e) => e.preventDefault());
+  chatPanel.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    if (chatDragOverlay) chatDragOverlay.style.display = "none";
+    for (const file of e.dataTransfer?.files || []) {
+      if (file.type.startsWith("image/")) addPendingImage(file);
+    }
+  });
+}
+
+// Ctrl/Cmd+V paste image
+chatInput?.addEventListener("paste", (e) => {
+  const items = e.clipboardData?.items || [];
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      e.preventDefault();
+      addPendingImage(item.getAsFile());
+      return;
+    }
+  }
+});
+
 chatInput.addEventListener("keydown", (e) => {
   // Cmd+Enter or just Enter to send
   if (e.key === "Enter" && !e.shiftKey) {
@@ -1191,12 +1284,24 @@ function getChatModeLabel() {
   return "crew-lead";
 }
 
+/** Agent id / label for error bubbles (cli:* must not show as crew-lead). */
+function getErrorBubbleAgentId() {
+  if (chatMode.startsWith("cli:")) return chatMode.replace("cli:", "");
+  if (chatMode !== "crew-lead") return chatMode;
+  return "crew-lead";
+}
+
 async function sendChatMessage() {
   const message = chatInput.value.trim();
-  if (!message) return;
+  if (!message && !pendingChatImages.length) return;
 
-  appendChatBubble("user", message);
+  // Show user message (with image indicators if any)
+  const imageLabel = pendingChatImages.length ? `\n📷 ${pendingChatImages.map(i => i.name).join(", ")}` : "";
+  appendChatBubble("user", (message || "(image)") + imageLabel);
   chatInput.value = "";
+  const sentImages = [...pendingChatImages];
+  pendingChatImages = [];
+  renderImagePreview();
   lastAppendedUserContent = message;
 
   // Typing indicator
@@ -1230,7 +1335,7 @@ async function sendChatMessage() {
     // Route based on selected mode
     let apiUrl;
     let body;
-    let isSSE = false;
+    let isSSE = true; // All modes now stream via SSE
 
     if (chatMode.startsWith("cli:")) {
       // CLI Passthrough mode (cli:crew-cli, cli:cursor, etc.) — SSE STREAM
@@ -1246,9 +1351,8 @@ async function sendChatMessage() {
         projectId: currentProject?.id || "general", // ✅ Added for unified history
         ...fileContext, // ✅ Include active file context
       };
-      isSSE = true;
     } else if (chatMode !== "crew-lead") {
-      // Direct agent mode routed through unified chat endpoint
+      // Direct agent mode — SSE STREAM via dashboard unified endpoint
       apiUrl = `${DASHBOARD_API}/api/chat/unified`;
       body = {
         mode: "agent",
@@ -1259,7 +1363,7 @@ async function sendChatMessage() {
         ...fileContext,
       };
     } else {
-      // crew-lead mode (default)
+      // crew-lead mode (default) — SSE STREAM via dashboard unified endpoint
       apiUrl = `${DASHBOARD_API}/api/chat/unified`;
       body = {
         mode: "crew-lead",
@@ -1270,6 +1374,11 @@ async function sendChatMessage() {
       };
     }
 
+    // Attach images if any
+    if (sentImages.length) {
+      body.images = sentImages.map(img => img.dataUri);
+    }
+
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
@@ -1277,7 +1386,7 @@ async function sendChatMessage() {
         ...(AUTH_TOKEN ? { Authorization: `Bearer ${AUTH_TOKEN}` } : {}),
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(CHAT_STREAM_TIMEOUT_MS),
     });
 
     document.getElementById("typing-indicator")?.remove();
@@ -1291,6 +1400,12 @@ async function sendChatMessage() {
       const chatLabel = getChatModeLabel();
       const bubble = createStreamingChatBubble(chatLabel);
       const activityTrace = createActivityTrace(chatLabel);
+      const passthroughEngine = chatMode.startsWith("cli:")
+        ? chatMode.slice(4)
+        : "";
+      const stderrFilter = createPassthroughStderrLineFilter(passthroughEngine);
+      let stderrFilteredAccum = "";
+      let sawAssistantChunk = false;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -1300,37 +1415,121 @@ async function sendChatMessage() {
 
       updateStreamingChatBubble(bubble, rawTranscript, { pending: true });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
 
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const event = JSON.parse(line.slice(6));
-            if (event.type === "chunk" && event.text) {
-              rawTranscript += event.text;
-              updateStreamingChatBubble(bubble, rawTranscript, { pending: true });
-            } else if (event.type === "trace" && event.text) {
-              traceTranscript += event.text;
-              activityTrace?.append(event.text);
-            } else if (event.type === "done") {
-              exitCode = event.exitCode ?? 0;
-              if (!rawTranscript.trim() && event.transcript) {
-                rawTranscript = event.transcript;
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === "chunk" && event.text) {
+                let piece = filterOpenCodePassthroughTextChunk(
+                  passthroughEngine,
+                  event.text,
+                );
+                piece = filterGeminiPassthroughTextChunk(passthroughEngine, piece);
+                if (piece) {
+                  sawAssistantChunk = true;
+                  rawTranscript += piece;
+                  updateStreamingChatBubble(bubble, rawTranscript, { pending: true });
+                }
+              } else if (event.type === "trace" && event.text) {
+                traceTranscript += event.text;
+                activityTrace?.append(event.text);
+              } else if (event.type === "stderr" && event.text) {
+                const cleaned = stderrFilter.push(event.text);
+                if (cleaned) {
+                  stderrFilteredAccum += cleaned;
+                  traceTranscript += cleaned;
+                  activityTrace?.append(cleaned);
+                  // Promote stderr into the main bubble until we see real assistant chunks
+                  // (Cursor prints fatal errors on stderr only — avoids empty "No response returned.")
+                  if (!sawAssistantChunk) {
+                    rawTranscript += cleaned;
+                    updateStreamingChatBubble(bubble, rawTranscript, { pending: true });
+                  }
+                }
+              } else if (event.type === "done") {
+                exitCode = event.exitCode ?? 0;
+                const stderrTail = stderrFilter.flush();
+                if (stderrTail) {
+                  stderrFilteredAccum += stderrTail;
+                  traceTranscript += stderrTail;
+                  activityTrace?.append(stderrTail);
+                }
+                if (!rawTranscript.trim() && event.transcript) {
+                  rawTranscript = event.transcript;
+                }
+                if (!traceTranscript.trim() && event.transcript) {
+                  activityTrace?.append(event.transcript);
+                }
+                const topErr = summarizePassthroughTopErrorLine(
+                  stderrFilteredAccum,
+                  passthroughEngine,
+                );
+                if (exitCode !== 0 && topErr) {
+                  if (!rawTranscript.trim()) {
+                    rawTranscript = `↳ ${topErr}`;
+                  } else if (!rawTranscript.includes(topErr)) {
+                    rawTranscript += `\n\n↳ ${topErr}`;
+                  }
+                }
+                if (!sawAssistantChunk && stderrFilteredAccum.trim()) {
+                  rawTranscript = stderrFilteredAccum.trim();
+                }
               }
-              if (!traceTranscript.trim() && event.transcript) {
-                activityTrace?.append(event.transcript);
-              }
+            } catch (e) {
+              console.warn("Failed to parse SSE event:", line, e);
             }
-          } catch (e) {
-            console.warn("Failed to parse SSE event:", line, e);
           }
         }
+        const strayStderr = stderrFilter.flush();
+        if (strayStderr) {
+          stderrFilteredAccum += strayStderr;
+          traceTranscript += strayStderr;
+          activityTrace?.append(strayStderr);
+          if (!sawAssistantChunk) {
+            rawTranscript += strayStderr;
+          }
+        }
+        if (!sawAssistantChunk && stderrFilteredAccum.trim()) {
+          rawTranscript = stderrFilteredAccum.trim();
+        }
+      } catch (streamErr) {
+        const streamMessage = [
+          streamErr?.name,
+          streamErr?.message,
+          streamErr?.cause?.message,
+          String(streamErr),
+        ]
+          .filter(Boolean)
+          .join(" ");
+        // Chrome: "BodyStreamBuffer was aborted" — disconnect, SSE close, or upstream abort
+        const abortedStream =
+          streamErr?.name === "AbortError" ||
+          /BodyStreamBuffer|stream.*abort|The operation was aborted|user aborted|Loading is aborted/i.test(
+            streamMessage,
+          );
+        const hasVisibleOutput =
+          Boolean(rawTranscript.trim()) || Boolean(traceTranscript.trim());
+
+        if (abortedStream && hasVisibleOutput) {
+          console.warn("Chat stream interrupted after partial output:", streamErr);
+          updateStreamingChatBubble(bubble, rawTranscript, {
+            pending: false,
+            exitCode,
+          });
+          activityTrace?.finish(exitCode);
+          return;
+        }
+
+        throw streamErr;
       }
 
       updateStreamingChatBubble(bubble, rawTranscript, {
@@ -1342,72 +1541,61 @@ async function sendChatMessage() {
       return;
     }
 
-    // Handle JSON responses for crew-lead and direct agent
-    const data = await response.json();
+    // Fallback: if server returned JSON instead of SSE (e.g. error before stream started)
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data = await response.json();
 
-    // Determine which agent is responding (declare before try/catch ends)
-    const respondingAgent =
-      chatMode !== "crew-lead" && !chatMode.startsWith("cli:")
-        ? chatMode
-        : "crew-lead";
-    const agentInfo = allAgents.find((a) => a.id === respondingAgent);
-    const sourceInfo = agentInfo
-      ? {
-          emoji: agentInfo.emoji || "🤖",
-          agent: respondingAgent,
-        }
-      : null;
+      const respondingAgent = getErrorBubbleAgentId();
+      const agentInfo =
+        allAgents.find(
+          (a) => a.id === respondingAgent || a.id === `crew-${respondingAgent}`,
+        ) || { emoji: "⚡", agent: respondingAgent };
+      const sourceInfo = {
+        emoji: agentInfo.emoji || "🤖",
+        agent: respondingAgent,
+      };
 
-    if (data.error) {
-      appendChatBubble("assistant", `⚠️ ${data.error}`, sourceInfo);
-    } else if (data.reply) {
-      // Check for file changes in reply
-      const changes = parseFileChanges(data.reply);
-
-      if (changes.length > 0) {
-        // Show diff preview for first change
-        await showDiffPreview(changes[0]);
-
-        // If multiple changes, queue them
-        if (changes.length > 1) {
-          addTerminalLine(
-            `📝 ${changes.length} files modified, showing first diff`,
-            "info",
-          );
+      if (data.error) {
+        appendChatBubble("assistant", `⚠️ ${data.error}`, sourceInfo);
+      } else if (data.reply) {
+        if (data.reply !== lastAppendedAssistantContent) {
+          appendChatBubble("assistant", data.reply, sourceInfo);
+          lastAppendedAssistantContent = data.reply;
         }
       }
 
-      // Check if reply is different from last appended (avoid duplicates)
-      if (data.reply !== lastAppendedAssistantContent) {
-        appendChatBubble("assistant", data.reply, sourceInfo);
-        lastAppendedAssistantContent = data.reply;
+      if (data.dispatched) {
+        const note = document.createElement("div");
+        note.style.cssText =
+          "font-size:11px;color:var(--text-3);text-align:center;padding:4px;";
+        note.textContent = `⚡ Dispatched to ${data.dispatched.agent}`;
+        chatMessages.appendChild(note);
       }
-    }
-
-    if (data.dispatched) {
-      const note = document.createElement("div");
-      note.style.cssText =
-        "font-size:11px;color:var(--text-3);text-align:center;padding:4px;";
-      note.textContent = `⚡ Dispatched to ${data.dispatched.agent}`;
-      chatMessages.appendChild(note);
     }
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
   } catch (err) {
     document.getElementById("typing-indicator")?.remove();
     // sourceInfo is now accessible here since it's declared outside the try block
-    const respondingAgent =
-      chatMode !== "crew-lead" && !chatMode.startsWith("cli:")
-        ? chatMode
-        : "crew-lead";
-    const agentInfo = allAgents.find((a) => a.id === respondingAgent);
-    const errorSourceInfo = agentInfo
-      ? {
-          emoji: agentInfo.emoji || "🤖",
-          agent: respondingAgent,
-        }
-      : null;
-    appendChatBubble("assistant", `⚠️ Error: ${err.message}`, errorSourceInfo);
+    const respondingAgent = getErrorBubbleAgentId();
+    const agentInfo =
+      allAgents.find(
+        (a) => a.id === respondingAgent || a.id === `crew-${respondingAgent}`,
+      ) || { emoji: "⚡", agent: respondingAgent };
+    const errorSourceInfo = {
+      emoji: agentInfo.emoji || "🤖",
+      agent: respondingAgent,
+    };
+    const msg = err?.message || String(err || "");
+    const benignDisconnect =
+      /BodyStreamBuffer|stream.*abort|AbortError|The operation was aborted/i.test(
+        [err?.name, msg, err?.cause?.message].filter(Boolean).join(" "),
+      );
+    const note = benignDisconnect
+      ? `${msg}\n\n(Stream ended early: timeout, tab refresh, or disconnect. Partial reply above may still be valid.)`
+      : msg;
+    appendChatBubble("assistant", `⚠️ Error: ${note}`, errorSourceInfo);
   }
 }
 
@@ -1626,8 +1814,14 @@ function createStreamingChatBubble(label) {
 function updateStreamingChatBubble(view, rawTranscript, options = {}) {
   const normalizedRaw = String(rawTranscript || "");
   const cleanAnswer = deriveCleanAssistantAnswer(normalizedRaw);
+  const exitCode = options.exitCode ?? 0;
   const visibleText =
-    cleanAnswer || (options.pending ? `${view.label} is working...` : "No response returned.");
+    cleanAnswer ||
+    (options.pending
+      ? `${view.label} is working...`
+      : exitCode !== 0
+        ? "No assistant output — see stderr in the trace or fix Cursor CLI (e.g. agent login / model id)."
+        : "No response returned.");
 
   view.header.textContent = options.pending
     ? `${view.label} · working`

@@ -1,4 +1,11 @@
 import { taskManager } from "../core/task-manager.js";
+import { filterOpenCodePassthroughTextChunk } from "../../../../lib/browser/opencode-passthrough-filter.js";
+import { filterGeminiPassthroughTextChunk } from "../../../../lib/gemini-cli-passthrough-noise.mjs";
+import {
+  createPassthroughStderrLineFilter,
+  shouldDropPassthroughStderrLine,
+  summarizePassthroughTopErrorLine,
+} from "../../../../lib/browser/passthrough-stderr.js";
 
 export function initChatActions(deps) {
   const {
@@ -125,6 +132,29 @@ export function initChatActions(deps) {
   ];
 
   let latestHistoryLoadId = 0;
+  /** Resolvers notified when loadChatHistory finishes (success/cancel/error). */
+  const _historyIdleWaiters = [];
+
+  function waitForChatHistoryIdle() {
+    const box = document.getElementById("chatMessages");
+    if (!box || box.dataset.historyLoading !== "true") {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      _historyIdleWaiters.push(resolve);
+    });
+  }
+
+  function flushHistoryIdleWaiters() {
+    const pending = _historyIdleWaiters.splice(0);
+    pending.forEach((r) => {
+      try {
+        r();
+      } catch {
+        /* ignore */
+      }
+    });
+  }
   let mentionAgents = [];
   let lastMentionAgentLoadAt = 0;
 
@@ -161,18 +191,21 @@ export function initChatActions(deps) {
   async function loadChatHistory() {
     const loadId = ++latestHistoryLoadId;
     const isStale = () => loadId !== latestHistoryLoadId;
-    const projectId = getChatActiveProjectId();
-    const normalizedProjectId =
-      projectId && projectId !== "undefined" ? projectId : "general";
-    console.log("📚 [LOAD HISTORY] ==================");
-    console.log("📚 [LOAD HISTORY] START - projectId:", projectId);
-    console.log(
-      "📚 [LOAD HISTORY] state.chatActiveProjectId:",
-      state.chatActiveProjectId,
-    );
-    console.log("📚 [LOAD HISTORY] URL hash:", window.location.hash);
+    const chatBoxEl = document.getElementById("chatMessages");
+    if (chatBoxEl) chatBoxEl.dataset.historyLoading = "true";
 
     try {
+      const projectId = getChatActiveProjectId();
+      const normalizedProjectId =
+        projectId && projectId !== "undefined" ? projectId : "general";
+      console.log("📚 [LOAD HISTORY] ==================");
+      console.log("📚 [LOAD HISTORY] START - projectId:", projectId);
+      console.log(
+        "📚 [LOAD HISTORY] state.chatActiveProjectId:",
+        state.chatActiveProjectId,
+      );
+      console.log("📚 [LOAD HISTORY] URL hash:", window.location.hash);
+
       // UNIFIED VIEW: Always load from project-messages (all sources), including "general"
       if (normalizedProjectId) {
         console.log(
@@ -181,7 +214,8 @@ export function initChatActions(deps) {
         console.log("📚 [LOAD HISTORY] ProjectId:", projectId);
 
         try {
-          const url = `/api/crew-lead/project-messages?projectId=${encodeURIComponent(normalizedProjectId)}&limit=500`;
+          // Cap payload; chunk-render below so the main thread stays responsive.
+          const url = `/api/crew-lead/project-messages?projectId=${encodeURIComponent(normalizedProjectId)}&limit=250`;
           console.log("📚 [LOAD HISTORY] Fetching:", url);
 
           const d = await getJSON(url);
@@ -224,70 +258,84 @@ export function initChatActions(deps) {
                 (agentsData?.agents || []).map((a) => [a.id, a]),
               );
             } catch {}
+            if (isStale()) return;
 
+            const messages = d.messages;
             console.log(
               "📚 [LOAD HISTORY] Appending",
-              d.messages.length,
-              "unified messages...",
+              messages.length,
+              "unified messages (chunked rAF)...",
             );
-            console.log("📚 [LOAD HISTORY] Sources found:", [
-              ...new Set(d.messages.map((m) => m.source)),
-            ]);
 
-            for (const msg of d.messages) {
-              if (isStale()) return;
-              const agentId = msg.agent || msg.metadata?.agentId || null;
-              const catalogAgent = agentId ? agentsById.get(agentId) : null;
-              const emoji =
-                msg.metadata?.agentEmoji ||
-                catalogAgent?.emoji ||
-                sourceEmoji[msg.source] ||
-                "📝";
-              const agentName =
-                msg.metadata?.agentName ||
-                catalogAgent?.name ||
-                agentId ||
-                null;
-              const timestamp = new Date(msg.ts).toLocaleTimeString();
+            const BATCH = 32;
+            await new Promise((resolve) => {
+              let idx = 0;
+              const pump = () => {
+                if (isStale()) {
+                  resolve();
+                  return;
+                }
+                const end = Math.min(idx + BATCH, messages.length);
+                for (; idx < end; idx++) {
+                  if (isStale()) {
+                    resolve();
+                    return;
+                  }
+                  const msg = messages[idx];
+                  const agentId = msg.agent || msg.metadata?.agentId || null;
+                  const catalogAgent = agentId ? agentsById.get(agentId) : null;
+                  const emoji =
+                    msg.metadata?.agentEmoji ||
+                    catalogAgent?.emoji ||
+                    sourceEmoji[msg.source] ||
+                    "📝";
+                  const agentName =
+                    msg.metadata?.agentName ||
+                    catalogAgent?.name ||
+                    agentId ||
+                    null;
+                  const timestamp = new Date(msg.ts).toLocaleTimeString();
 
-              // Pass source info as metadata object (not embedded HTML)
-              const sourceInfo = {
-                emoji,
-                source: msg.source,
-                agent: agentName,
-                agentName,
-                agentId,
-                targetAgent:
-                  msg.metadata?.targetAgent || msg.metadata?.agentId || null,
-                engine:
-                  msg.metadata?.engine ||
-                  msg.metadata?.runtime ||
-                  msg.metadata?.model ||
-                  null,
-                timestamp,
+                  const sourceInfo = {
+                    emoji,
+                    source: msg.source,
+                    agent: agentName,
+                    agentName,
+                    agentId,
+                    targetAgent:
+                      msg.metadata?.targetAgent || msg.metadata?.agentId || null,
+                    engine:
+                      msg.metadata?.engine ||
+                      msg.metadata?.runtime ||
+                      msg.metadata?.model ||
+                      null,
+                    timestamp,
+                  };
+
+                  appendChatBubble(
+                    msg.role === "user" ? "user" : "assistant",
+                    msg.content,
+                    null,
+                    null,
+                    msg.metadata?.model,
+                    msg.metadata?.engine,
+                    sourceInfo,
+                  );
+                  if (msg.role === "assistant")
+                    setLastAppendedAssistantContent(msg.content);
+                  if (msg.role === "user")
+                    setLastAppendedUserContent(msg.content);
+                }
+                if (idx < messages.length) {
+                  requestAnimationFrame(pump);
+                } else {
+                  resolve();
+                }
               };
+              requestAnimationFrame(pump);
+            });
 
-              console.log("📚 [LOAD HISTORY] Message:", {
-                role: msg.role,
-                source: msg.source,
-                agent: msg.agent,
-                preview: msg.content.slice(0, 50),
-              });
-
-              appendChatBubble(
-                msg.role === "user" ? "user" : "assistant",
-                msg.content,
-                null, // fallbackModel
-                null, // fallbackReason
-                msg.metadata?.model, // primaryModel
-                msg.metadata?.engine, // engineUsed
-                sourceInfo, // NEW: source metadata
-              );
-              if (msg.role === "assistant")
-                setLastAppendedAssistantContent(msg.content);
-              if (msg.role === "user") setLastAppendedUserContent(msg.content);
-            }
-
+            if (isStale()) return;
             console.log(
               "📚 [LOAD HISTORY] ✅ Loaded unified view with all sources",
             );
@@ -434,6 +482,9 @@ export function initChatActions(deps) {
       // On error, still mark as loaded to prevent infinite retry
       const box = document.getElementById("chatMessages");
       if (box) box.dataset.historyLoaded = "true";
+    } finally {
+      if (chatBoxEl) chatBoxEl.dataset.historyLoading = "false";
+      flushHistoryIdleWaiters();
     }
   }
 
@@ -454,6 +505,13 @@ export function initChatActions(deps) {
       if (entry.role === "user") {
         appendChatBubble("user", entry.text);
       } else {
+        let cleanedText = String(entry.text || "")
+          .split("\n")
+          .filter((line) => !shouldDropPassthroughStderrLine(entry.engine, line))
+          .join("\n")
+          .trim();
+        cleanedText = filterOpenCodePassthroughTextChunk(entry.engine, cleanedText);
+        cleanedText = filterGeminiPassthroughTextChunk(entry.engine, cleanedText);
         const bubble = document.createElement("div");
         bubble.className = "chat-bubble assistant";
         bubble.style.cssText =
@@ -461,13 +519,16 @@ export function initChatActions(deps) {
         const lbl = document.createElement("div");
         lbl.style.cssText =
           "font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px;";
+        const ex = entry.exitCode ?? 0;
         lbl.textContent =
           (engineLabels[entry.engine] || entry.engine) +
-          " · direct passthrough ✓ (exit " +
-          (entry.exitCode ?? 0) +
+          " · direct passthrough " +
+          (ex === 0 ? "✓" : "⚠") +
+          " (exit " +
+          ex +
           ")";
         const cnt = document.createElement("div");
-        cnt.textContent = entry.text;
+        cnt.textContent = cleanedText || entry.text;
         bubble.appendChild(lbl);
         bubble.appendChild(cnt);
         box.appendChild(bubble);
@@ -699,6 +760,7 @@ export function initChatActions(deps) {
     appendChatBubble("user", text);
     setLastAppendedUserContent(text);
     setLastSentContent(text);
+    setLastAppendedAssistantContent(""); // Reset so HTTP fallback can display if SSE is silent
 
     const typingId = "typing-" + Date.now();
     const typingDiv = document.createElement("div");
@@ -744,16 +806,14 @@ export function initChatActions(deps) {
         // Don't fail task since we didn't register it
         // taskManager.failTask(taskId, d.error);
       } else if (d.reply) {
-        // SSE already displays the assistant reply in real-time.
-        // Only use HTTP reply as a fallback if SSE didn't deliver within 2s.
-        const reply = d.reply;
-        const _fallbackTimer = setTimeout(() => {
-          if (reply !== getLastAppendedAssistantContent()) {
-            appendChatBubble("assistant", reply);
-            setLastAppendedAssistantContent(reply);
-            if (box) box.scrollTop = box.scrollHeight;
-          }
-        }, 2000);
+        // SSE chat_message is the canonical display path — it removes
+        // the streaming bubble and creates the final one.  Only use
+        // the HTTP reply when SSE was completely silent (connection drop).
+        if (!getLastAppendedAssistantContent()) {
+          appendChatBubble("assistant", d.reply);
+          setLastAppendedAssistantContent(d.reply);
+          if (box) box.scrollTop = box.scrollHeight;
+        }
         // Don't complete task since we didn't register it
         // taskManager.completeTask(taskId);
       }
@@ -989,6 +1049,9 @@ export function initChatActions(deps) {
 
     const controller = new AbortController();
     const taskId = "passthrough-" + engine + "-" + Date.now();
+    const stderrFilter = createPassthroughStderrLineFilter(engine);
+    let stderrFilteredAccum = "";
+    let sawAssistantChunk = false;
 
     // DON'T register passthrough/CLI messages as tasks
     // Only actual agent dispatches should show in tasks panel
@@ -1036,14 +1099,60 @@ export function initChatActions(deps) {
           try {
             const ev = JSON.parse(line.slice(6));
             if (ev.type === "chunk" && ev.text) {
-              content.textContent += ev.text;
-              box.scrollTop = box.scrollHeight;
+              let piece = filterOpenCodePassthroughTextChunk(engine, ev.text);
+              piece = filterGeminiPassthroughTextChunk(engine, piece);
+              if (piece) {
+                sawAssistantChunk = true;
+                content.textContent += piece;
+                box.scrollTop = box.scrollHeight;
+              }
             } else if (ev.type === "stderr" && ev.text) {
-              content.textContent += ev.text;
-              box.scrollTop = box.scrollHeight;
+              const cleaned = stderrFilter.push(ev.text);
+              if (cleaned) {
+                stderrFilteredAccum += cleaned;
+                let stderrPiece = filterOpenCodePassthroughTextChunk(engine, cleaned);
+                stderrPiece = filterGeminiPassthroughTextChunk(engine, stderrPiece);
+                const inkEngines = engine === "opencode" || engine === "antigravity";
+                // Match Vibe for OpenCode: Ink status lines often on stderr; don't spam main bubble
+                // after assistant text (no separate trace panel in dashboard passthrough bubble).
+                const appendStderr =
+                  stderrPiece &&
+                  (!inkEngines || !sawAssistantChunk);
+                if (appendStderr) {
+                  content.textContent += stderrPiece;
+                  box.scrollTop = box.scrollHeight;
+                }
+              }
             } else if (ev.type === "done") {
+              const tail = stderrFilter.flush();
+              if (tail) {
+                stderrFilteredAccum += tail;
+                let tailPiece = filterOpenCodePassthroughTextChunk(engine, tail);
+                tailPiece = filterGeminiPassthroughTextChunk(engine, tailPiece);
+                const inkEngines = engine === "opencode" || engine === "antigravity";
+                if (
+                  tailPiece &&
+                  (!inkEngines || !sawAssistantChunk)
+                ) {
+                  content.textContent += tailPiece;
+                  box.scrollTop = box.scrollHeight;
+                }
+              }
               const exitCode = ev.exitCode ?? 0;
-              label.textContent += ` ✓ (exit ${exitCode})`;
+              const ok = exitCode === 0;
+              label.textContent += ` ${ok ? "✓" : "⚠"} (exit ${exitCode})`;
+              const topErr = summarizePassthroughTopErrorLine(
+                stderrFilteredAccum,
+                engine,
+              );
+              if (!ok && topErr && !content.textContent.includes(topErr)) {
+                const hintEl = document.createElement("div");
+                hintEl.style.cssText =
+                  "font-size:11px;font-weight:600;color:var(--danger, #f87171);margin-top:8px;white-space:pre-wrap;word-break:break-word;";
+                hintEl.textContent = `↳ ${topErr}`;
+                bubble.appendChild(hintEl);
+                box.scrollTop = box.scrollHeight;
+              }
               savePassthroughMsg("user", engine, text, null);
               savePassthroughMsg(
                 "engine",
@@ -1055,6 +1164,17 @@ export function initChatActions(deps) {
               // taskManager.completeTask(taskId);
             }
           } catch {}
+        }
+      }
+      const strayStderr = stderrFilter.flush();
+      if (strayStderr) {
+        stderrFilteredAccum += strayStderr;
+        let stray = filterOpenCodePassthroughTextChunk(engine, strayStderr);
+        stray = filterGeminiPassthroughTextChunk(engine, stray);
+        const inkEngines = engine === "opencode" || engine === "antigravity";
+        if (stray && (!inkEngines || !sawAssistantChunk)) {
+          content.textContent += stray;
+          box.scrollTop = box.scrollHeight;
         }
       }
     } catch (e) {
@@ -1249,12 +1369,26 @@ export function initChatActions(deps) {
             const formData = new FormData();
             formData.append("audio", audioBlob, "voice.webm");
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s for Groq
             const response = await fetch("/api/transcribe-audio", {
               method: "POST",
               body: formData,
+              signal: controller.signal,
             });
+            clearTimeout(timeoutId);
 
-            const result = await response.json();
+            let result;
+            try {
+              result = await response.json();
+            } catch (parseErr) {
+              appendChatBubble(
+                "assistant",
+                `⚠️ Transcription error: Server returned invalid response (${response.status})`,
+              );
+              audioChunks = [];
+              return;
+            }
 
             if (result.ok && result.transcription) {
               appendChatBubble(
@@ -1273,9 +1407,13 @@ export function initChatActions(deps) {
               );
             }
           } catch (err) {
+            const msg = err.message || String(err);
+            const hint = msg === "Failed to fetch"
+              ? " (Is the dashboard running on port 4319? Try: npm run restart-dashboard)"
+              : "";
             appendChatBubble(
               "assistant",
-              `⚠️ Transcription error: ${err.message}`,
+              `⚠️ Transcription error: ${msg}${hint}`,
             );
           }
 
@@ -1668,6 +1806,7 @@ export function initChatActions(deps) {
 
   return {
     loadChatHistory,
+    waitForChatHistoryIdle,
     chatAtAtInput,
     chatKeydown,
     sendChat,

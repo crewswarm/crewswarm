@@ -346,6 +346,38 @@ async function loadCrewLeadInfo() {
   }
 }
 
+/**
+ * Hash routing: view id is only the segment before ? and before /.
+ * e.g. #chat?project=general → view "chat" (NOT "chat?project=general").
+ */
+function parseRouteFromHash() {
+  const raw = (location.hash || "#chat").slice(1);
+  const noQuery = raw.split("?")[0] || "chat";
+  const parts = noQuery.split("/");
+  const view = parts[0] || "chat";
+  const subtab = parts[1];
+  return { view, subtab, raw };
+}
+
+function currentHashBaseView() {
+  return parseRouteFromHash().view;
+}
+
+/**
+ * Set chat project in the URL without firing hashchange — prevents a second
+ * showChat() + loadChatHistory() that clears the thread while a reply streams.
+ */
+function setChatHashProject(projectId) {
+  const id =
+    projectId && String(projectId).trim() && projectId !== "undefined"
+      ? projectId
+      : "general";
+  const next = `#chat?project=${encodeURIComponent(id)}`;
+  if (location.hash !== next) {
+    history.replaceState(null, "", next);
+  }
+}
+
 async function showChat() {
   hideAllViews();
   document.getElementById("chatView").classList.add("active");
@@ -360,6 +392,9 @@ async function showChat() {
 
   // Check if chat content is already loaded (DOM preserved from last visit)
   const chatBox = document.getElementById("chatMessages");
+  if (chatBox?.dataset.historyLoading === "true") {
+    await waitForChatHistoryIdle();
+  }
   const alreadyLoaded =
     chatBox &&
     chatBox.dataset.historyLoaded === "true" &&
@@ -395,9 +430,9 @@ async function showChat() {
     }
   }
 
-  // Set initial URL if not set
+  // Set initial URL if not set (replaceState — no hashchange storm)
   if (!window.location.hash.includes("?project=")) {
-    window.location.hash = `chat?project=${encodeURIComponent(state.chatActiveProjectId)}`;
+    setChatHashProject(state.chatActiveProjectId);
   }
 
   console.log("🔵 [INIT] Active project from URL:", state.chatActiveProjectId);
@@ -456,6 +491,22 @@ function getChatSessionId() {
 let chatPollInterval = null;
 let agentReplySSE = null;
 
+/** Assistant rows from appendChatBubble use align-items:flex-start on the wrapper. */
+function chatThreadHasAssistantText(box, text) {
+  if (!box || text == null) return false;
+  const want = String(text).trim();
+  if (!want) return false;
+  for (let i = box.children.length - 1; i >= 0; i--) {
+    const row = box.children[i];
+    if (row.id === "streaming-wrapper") continue;
+    if (row.children.length < 2) continue;
+    if (!String(row.style.alignItems || "").includes("flex-start")) continue;
+    const bubble = row.children[1];
+    if ((bubble.textContent || "").trim() === want) return true;
+  }
+  return false;
+}
+
 function startAgentReplyListener() {
   if (agentReplySSE) return; // already listening
 
@@ -468,28 +519,23 @@ function startAgentReplyListener() {
 
   console.log("[crewswarm] Starting EventSource listener for", sseUrl);
   agentReplySSE = new EventSource(sseUrl);
+  const sseLog =
+    typeof localStorage !== "undefined" &&
+    localStorage.getItem("crewswarm_debug_sse") === "1";
   agentReplySSE.onmessage = (e) => {
     if (!e.data) {
       console.warn("[crewswarm] SSE message with null/empty data");
       return;
     }
-    console.log("[crewswarm] SSE message received:", e.data.slice(0, 200));
     try {
       const d = JSON.parse(e.data);
       const normalizeProjectId = (value) =>
         !value || value === "general" ? "general" : value;
       const currentSessionId = getChatSessionId();
-      const currentProjectId = state.chatActiveProjectId || "(none - General)";
 
-      console.log("[crewswarm] SSE:", {
-        type: d.type,
-        sseSessionId: d.sessionId,
-        sseProjectId: d.projectId || "(missing!)",
-        currentSessionId: currentSessionId,
-        currentProjectId: currentProjectId,
-        role: d.role,
-        match: d.sessionId === currentSessionId ? "✅ MATCH" : "❌ SKIP",
-      });
+      if (sseLog) {
+        console.log("[crewswarm] SSE:", d.type, e.data.slice(0, 120));
+      }
 
       const box = document.getElementById("chatMessages");
 
@@ -615,28 +661,60 @@ function startAgentReplyListener() {
             .querySelectorAll('[id^="typing-"]')
             .forEach((el) => el.remove());
 
-          // Clean up streaming UI before rendering final assistant bubble.
           const streamWrapper = document.getElementById("streaming-wrapper");
           const streamBubble = document.getElementById("streaming-bubble");
+
           if (streamBubble) {
             if (streamBubble._rafId) cancelAnimationFrame(streamBubble._rafId);
             streamBubble._rafId = null;
+            const pending = streamBubble.dataset.streamChunk || "";
+            if (pending) {
+              if (!streamBubble._textNode) {
+                streamBubble._textNode = document.createTextNode("");
+                streamBubble.appendChild(streamBubble._textNode);
+              }
+              streamBubble._textNode.textContent += pending;
+              streamBubble.dataset.streamChunk = "";
+            }
           }
-          if (streamWrapper) streamWrapper.remove();
 
-          if (d.content !== lastAppendedAssistantContent) {
-            console.log("[crewswarm] Appending assistant bubble (final)");
-            appendChatBubble(
-              "assistant",
-              d.content,
-              d.fallbackModel,
-              d.fallbackReason,
-              d.model,
-              d.engineUsed,
-            );
+          // Promote streaming row → final bubble in place (do NOT remove then re-append).
+          // Removing the stream loses the only visible copy if append/skip heuristics race.
+          if (streamWrapper && streamBubble) {
+            const cl = window._crewLeadInfo || { emoji: "🧠", name: "crew-lead" };
+            const labelEl = streamWrapper.firstElementChild;
+            if (labelEl && labelEl !== streamBubble) {
+              labelEl.textContent = cl.emoji + " " + cl.name;
+            }
+            const finalText = d.content ?? "";
+            if (streamBubble._textNode) {
+              streamBubble._textNode.textContent = finalText;
+            } else {
+              streamBubble.textContent = finalText;
+            }
+            streamWrapper.removeAttribute("id");
+            streamBubble.removeAttribute("id");
+            delete streamBubble.dataset.streamChunk;
             lastAppendedAssistantContent = d.content;
           } else {
-            console.log("[crewswarm] Skipping duplicate assistant message");
+            if (streamWrapper) streamWrapper.remove();
+            const skipDuplicate =
+              d.content === lastAppendedAssistantContent &&
+              chatThreadHasAssistantText(box, d.content);
+            if (!skipDuplicate) {
+              console.log("[crewswarm] Appending assistant bubble (final)");
+              appendChatBubble(
+                "assistant",
+                d.content,
+                d.fallbackModel,
+                d.fallbackReason,
+                d.model,
+                d.engineUsed,
+              );
+              lastAppendedAssistantContent = d.content;
+            } else {
+              console.log("[crewswarm] Skipping duplicate assistant message");
+            }
           }
         }
         if (box) box.scrollTop = box.scrollHeight;
@@ -1306,6 +1384,7 @@ let lastAppendedUserContent = "";
 let lastSentContent = null;
 const {
   loadChatHistory,
+  waitForChatHistoryIdle,
   chatAtAtInput,
   chatKeydown,
   sendChat,
@@ -1385,7 +1464,7 @@ window.selectProjectTab = (projectId) => {
     return;
   }
 
-  window.location.hash = `chat?project=${encodeURIComponent(normalizedId)}`;
+  setChatHashProject(normalizedId);
 
   // Update UI: deactivate all, activate selected
   Array.from(tabsContainer.children).forEach((tab) => {
@@ -1764,6 +1843,7 @@ setInterval(updateStatusBadges, 30000); // Every 30s for badge/status only
       state.projectsData[p.id] = p;
     });
     populateChatProjectDropdown(projects);
+    persistState();
     if (location.hash === "#projects") showProjects();
   } catch {}
 })();
@@ -1845,7 +1925,16 @@ const VIEW_MAP = {
 for (const [hash, fn] of Object.entries(VIEW_MAP)) {
   const original = fn;
   const wrapped = function (...args) {
-    history.replaceState(null, "", "#" + hash);
+    const cur = location.hash || "";
+    if (hash === "chat") {
+      // Never replaceState to bare #chat when already on #chat?project=… — that
+      // fires hashchange in some browsers and doubles showChat + 500-msg reloads.
+      if (!cur.startsWith("#chat")) {
+        history.replaceState(null, "", "#chat");
+      }
+    } else {
+      history.replaceState(null, "", "#" + hash);
+    }
     return original(...args);
   };
   // Update the reference in the map and on window (for onclick= handlers)
@@ -1854,14 +1943,14 @@ for (const [hash, fn] of Object.entries(VIEW_MAP)) {
 }
 
 function navigateTo(view) {
-  const fn = VIEW_MAP[view] || VIEW_MAP["chat"];
+  const base = String(view || "chat").split("?")[0].split("/")[0];
+  const fn = VIEW_MAP[base] || VIEW_MAP["chat"];
   fn();
 }
 
 // On load: restore from hash or default to chat
 // Supports top-level (#chat, #services) and sub-tab deep links (#settings/telegram)
-const startHash = (location.hash || "#chat").slice(1);
-const [startView, startSubtab] = startHash.split("/");
+const { view: startView, subtab: startSubtab } = parseRouteFromHash();
 const params = new URLSearchParams(window.location.search);
 if (params.get("focus") === "1") {
   setTimeout(() => {
@@ -1880,8 +1969,7 @@ if (params.get("focus") === "1") {
 
 // Handle browser back/forward buttons
 window.addEventListener("hashchange", () => {
-  const hash = (location.hash || "#chat").slice(1);
-  const [view, subtab] = hash.split("/");
+  const { view, subtab } = parseRouteFromHash();
 
   // Navigate to the view from hash
   const viewFn = NAV_VIEW_MAP[view];
@@ -2190,7 +2278,7 @@ document.addEventListener(
         event.stopPropagation();
         const view = btn.dataset.view;
         if (!view) return;
-        if (window.location.hash.slice(1) !== view) {
+        if (currentHashBaseView() !== view) {
           window.location.hash = view;
           return;
         }
@@ -2449,7 +2537,7 @@ document.addEventListener("click", (e) => {
     const fn = NAV_VIEW_MAP[viewName];
     if (fn) {
       // Let hashchange drive navigation to avoid double-render/jitter.
-      if (window.location.hash.slice(1) !== viewName) {
+      if (currentHashBaseView() !== viewName) {
         window.location.hash = viewName;
       } else {
         fn();
@@ -2602,12 +2690,5 @@ Object.assign(window, {
   toggleKeyVis,
 });
 
-// Load project tabs at startup (history loads from showChat routing)
-(async () => {
-  try {
-    const data = await getJSON("/api/projects");
-    populateChatProjectDropdown(data.projects || []);
-  } catch (err) {
-    console.warn("Failed to load projects/history on startup:", err);
-  }
-})();
+// Project tabs: startup IIFE (near initProjectsList) already fetches /api/projects
+// and populates the dropdown — avoid a duplicate fetch here.

@@ -229,7 +229,7 @@ if (toStart.includes("crew-lead") && !crewLeadRunning && !shouldSkipCrewLead && 
     cwd: CREWSWARM_DIR,
     stdio: ["ignore", logFd, logFd],
     detached: true,
-    env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: rtToken },
+    env: { ...process.env, ...(raw.env || {}), CREWSWARM_RT_AUTH_TOKEN: rtToken },
   });
   proc.unref();
   console.log(`  ✓ Spawned crew-lead (pid ${proc.pid})`);

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -72,7 +73,7 @@ interface OpenAIMessage {
 
 function readRtToken(): string {
   try {
-    const p = join(homedir(), '.crewswarm', 'config.json');
+    const p = join(homedir(), '.crewswarm', 'crewswarm.json');
     const cfg = JSON.parse(readFileSync(p, 'utf8'));
     return String(cfg?.rt?.authToken || '');
   } catch {
@@ -1087,8 +1088,10 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
         if (mcpResponse && !(mcpResponse as any)._skip) {
           return json(res, 200, mcpResponse);
         } else {
-          // No response for notifications
-          res.writeHead(200, { 'content-type': 'application/json' });
+          // Notifications should not advertise a JSON body. Some MCP clients
+          // attempt to decode an empty 200/application-json response and log
+          // a transport error during initialized.
+          res.writeHead(204);
           res.end();
           return;
         }

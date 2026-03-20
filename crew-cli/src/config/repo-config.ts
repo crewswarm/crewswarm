@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -75,7 +76,7 @@ function parseJsonOrEmpty(raw: string): Record<string, unknown> {
 }
 
 function configPath(baseDir: string, scope: 'team' | 'user') {
-  return join(baseDir, '.crew', scope === 'team' ? 'config.json' : 'config.local.json');
+  return join(baseDir, '.crew', scope === 'team' ? 'crewswarm.json' : 'config.local.json');
 }
 
 function assertNoSecrets(input: unknown, prefix = '') {

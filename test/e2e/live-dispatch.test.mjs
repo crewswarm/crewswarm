@@ -21,7 +21,7 @@ let authToken = "";
 let crewLeadUp = false;
 
 function getAuthToken() {
-  const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+  const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
   try {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
     return cfg?.rt?.authToken || "";

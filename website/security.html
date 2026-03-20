@@ -28,24 +28,37 @@
   <link rel="apple-touch-icon" href="favicon.png?v=3" />
   <!-- JSON-LD structured data -->
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    "itemListElement": [
-      {
-        "@type": "ListItem",
-        "position": 1,
-        "name": "Home",
-        "item": "https://crewswarm.ai/"
-      },
-      {
-        "@type": "ListItem",
-        "position": 2,
-        "name": "Security Architecture",
-        "item": "https://crewswarm.ai/security.html"
-      }
-    ]
-  }
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://crewswarm.ai/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Security Architecture",
+          "item": "https://crewswarm.ai/security.html"
+        }
+      ]
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "Security Architecture — Defense-in-Depth for AI Agents",
+      "description": "Comprehensive security architecture for crewswarm, detailing a five-layer defense strategy including Docker, AppArmor, explicit firewall rules, command allowlisting, and non-root execution.",
+      "about": [
+        {"@type": "Thing", "name": "Cybersecurity"},
+        {"@type": "Thing", "name": "Application Security"},
+        {"@type": "Thing", "name": "AI Agent Privacy"}
+      ]
+    }
+  ]
   </script>
   <link rel="stylesheet" href="styles.css" />
   <!-- Google tag (gtag.js) -->
@@ -60,6 +73,8 @@
 </head>
 
 <body>
+  <!-- AI Crawler Citeable Summary (GEO/LLM SEO) -->
+  <section id="ai-summary" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;">crewswarm utilizes a five-layer defense-in-depth security architecture to protect against prompt injection, filesystem escapes, and credential exfiltration. The layers include Docker isolation with a read-only root filesystem, AppArmor kernel enforcement, iptables network firewalls blocking cloud metadata, strict command allowlists, and execution under a non-root user (UID 1000) dropping all Linux capabilities.</section>
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
     <div class="nav-container">
@@ -517,7 +532,7 @@ security_opt:
   </section>
 
   <!-- FOOTER -->
-  <footer>
+    <footer>
     <div class="container footer-inner">
       <div class="footer-brand">
         <div class="footer-logo">crewswarm</div>
@@ -539,6 +554,7 @@ security_opt:
           <div class="footer-col-title">Company</div>
           <a href="about.html">About Us</a>
           <a href="contact.html">Contact</a>
+          <a href="openclaw-comparison.html">Compare</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Community</div>
@@ -550,11 +566,11 @@ security_opt:
     </div>
     <div class="footer-bottom">
       <div class="container">
-      <span>&copy; 2026 crewswarm. All rights reserved.</span>
-    
+        <span>&copy; 2026 crewswarm. All rights reserved.</span>
       </div>
     </div>
   </footer>
+
 
   <script src="script.js"></script>
 </body>

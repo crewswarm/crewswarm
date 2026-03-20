@@ -22,14 +22,14 @@
   "authNote": "Uses your Cursor IDE login — no separate API key needed.",
   "modelEnvVar": "CREWSWARM_CURSOR_MODEL",
   "modelKey": "cursorModel",
-  "defaultModel": "sonnet-4",
+  "defaultModel": "composer-2-fast",
   "bestFor": ["crew-main", "crew-architect", "crew-orchestrator"],
   "traits": [
     "Parallel waves via crew-orchestrator subagent",
     "Isolated context windows — no cross-agent bleed",
-    "Access to Cursor's reasoning models (sonnet-4, gpt-5, gemini-2.5-flash)",
-    "Requires Cursor IDE installed",
-    "Rate limited on some models (claude-sonnet-4 may return Exit 1)"
+    "Default CLI model: composer-2-fast (Composer 2); override with cursorCliModel or CREWSWARM_CURSOR_MODEL",
+    "Also supports Cursor CLI ids: composer-2, sonnet-4.5, gpt-5.2, gemini-3-flash, etc. (see agent --list-models)",
+    "Requires Cursor IDE installed + agent CLI login"
   ],
   "args": {
     "run": ["agent", "--print", "--yolo", "--output-format", "stream-json", "{prompt}"],

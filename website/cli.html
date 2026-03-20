@@ -62,7 +62,7 @@
       text-align: left;
       border: 1px solid var(--border);
       font-family: "SF Mono", "Fira Code", monospace;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
       font-size: 0.9rem;
       line-height: 1.5;
       overflow-x: auto;
@@ -75,6 +75,15 @@
       padding: 2px 8px;
       border-radius: 4px;
     }
+
+    /* Comparison Table Styles */
+    .parity-section {
+      background: rgba(0,0,0,0.2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .check-val { color: var(--green); font-weight: bold; }
+    .cross-val { color: var(--red); opacity: 0.6; }
 
     @media (max-width: 900px) {
       .hero h1 {
@@ -105,7 +114,7 @@
     <div class="nav-container">
       <a class="nav-logo" href="index.html" aria-label="crewswarm home">
         <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
-        <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+        <span class="nav-logo-wordmark">crew<span class="nav-logo-hq">swarm</span></span>
       </a>
       <ul class="nav-links" id="navLinks" role="menubar">
         <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
@@ -127,23 +136,22 @@
 
   <section class="hero">
     <div class="hero-glow"></div>
-    <div class="hero-badge">Architecture: 3-Tier AI v2.0</div>
+    <div class="hero-badge">Architecture: 3-Tier AI v2.0 · 34+ Tools · Multimodal</div>
     <h1 class="gradient-text">High-Performance Swarms.<br />Zero Context Waste.</h1>
     <p class="hero-sub">
       The <strong>crew-cli</strong> is the high-fidelity execution engine for crewswarm. Built for professional
-      engineers who need multi-agent parallelism and 100% reliable local file operations.
+      engineers who need multi-agent parallelism, multimodal vision, and 100% reliable local file operations.
     </p>
 
     <div class="terminal-window">
-      <div style="color: #58a6ff; margin-bottom: 8px;">$ crew chat "Implement a standard service layer with custom
-        error handling"</div>
-      <div style="color: #8b949e;">[14:30:01] 🚦 Tier 1 (Router): Classifying intent → CODE_ARCH</div>
-      <div style="color: #8b949e;">[14:30:02] 🗺️ Tier 2 (Planner): 5-step implementation roadmap created.</div>
-      <div style="color: #8b949e;">[14:30:03] 🚀 Tier 3 (Pool): Launching 3 parallel workers...</div>
-      <div style="color: #7ee787;">[14:30:15] ⚙️ Worker 1: @@WRITE_FILE lib/services/user.js</div>
-      <div style="color: #7ee787;">[14:30:16] ⚙️ Worker 2: @@WRITE_FILE lib/utils/errors.js</div>
-      <div style="color: #7ee787;">[14:30:18] 🩺 LSP Check: Fix applied to user.js (missing import)</div>
-      <div style="color: #3fb950;">[14:30:22] ✅ Success. Wall-clock: 21s (3.1x speedup)</div>
+      <div style="color: #58a6ff; margin-bottom: 8px;">$ crew chat --image screenshot.png "Fix the layout bug in this UI"</div>
+      <div style="color: #8b949e;">[14:30:01] 📷 Image attached: screenshot.png (image/png, 84KB)</div>
+      <div style="color: #8b949e;">[14:30:01] 🚦 Tier 1 (Router): Classifying intent → CODE_FIX</div>
+      <div style="color: #8b949e;">[14:30:02] 🗺️ Tier 2 (Planner): 3-step fix roadmap created.</div>
+      <div style="color: #8b949e;">[14:30:03] 🚀 Tier 3 (Pool): Launching 2 parallel workers...</div>
+      <div style="color: #7ee787;">[14:30:10] ⚙️ Worker 1: @@WRITE_FILE src/components/Layout.tsx</div>
+      <div style="color: #7ee787;">[14:30:12] 🩺 LSP Check: All diagnostics clean</div>
+      <div style="color: #3fb950;">[14:30:14] ✅ Success. Wall-clock: 13s</div>
     </div>
   </section>
 
@@ -154,31 +162,179 @@
         <h2>Engineering-First Terminals</h2>
       </div>
 
-      <div class="grid-2" style="margin-top: 4rem;">
+      <div class="grid-3" style="margin-top: 4rem;">
         <div class="page-card">
-          <h3>The <a href="atat.html" class="protocol-tag">ATAT</a> Protocol</h3>
-          <p>The CLI uses the proprietary <strong>ATAT Protocol</strong>. It's 10x more token-efficient than JSON-RPC,
-            reducing context window bloat and eliminating the escaping errors that crash sequential AI agents.</p>
-          <a href="atat.html"
-            style="color: var(--accent); font-size: 0.85rem; text-decoration: none; margin-top: 1rem; display: inline-block;">Read
-            the Spec &rarr;</a>
+          <h3>🖼️ Multimodal Vision</h3>
+          <p>Attach images via <code>--image</code> flag or <code>/image</code> REPL command. Native support for <strong>Gemini, GPT-4o, Claude 3, Grok Vision</strong> — no base64 text dumps.</p>
         </div>
         <div class="page-card">
-          <h3>3-Tier LLM Routing</h3>
-          <p>Bypass the "one model fits all" trap. crew-cli uses <strong>Gemini 2.5 Flash</strong> for cheap routing,
-            <strong>Claude Sonnet 4.6</strong> for architecture planning, and a pool of <strong>Grok 3/DeepSeek
-              V3</strong> workers for parallel execution.</p>
+          <h3>🔧 34+ Built-in Tools</h3>
+          <p>File I/O, shell, git, LSP diagnostics, web search, web fetch, Docker sandbox, memory, browser debugging — more tools than any competitor CLI.</p>
+        </div>
+        <div class="page-card">
+          <h3>ATAT Protocol</h3>
+          <p>10x more token-efficient than JSON-RPC. Stream-parseable, no escaping, and supports <strong>graceful partial execution</strong> if a model times out.</p>
+          <a href="atat.html" style="color: var(--accent); font-size: 0.85rem; text-decoration: none; margin-top: 1rem; display: inline-block;">View Spec &rarr;</a>
         </div>
         <div class="page-card">
           <h3>Parallel Worker Pool</h3>
-          <p>Why wait for one agent to finish? crew-cli executes independent tasks concurrently. In benchmarks, we
-            achieve a <strong>2.96x wall-clock speedup</strong> over sequential implementation cycles.</p>
+          <p>Execute independent tasks concurrently. Achieve a <strong>2.96x wall-clock speedup</strong> over sequential implementation cycles.</p>
         </div>
         <div class="page-card">
           <h3>LSP Self-Healing</h3>
-          <p>The CLI integrates the <strong>Language Server Protocol</strong> directly into the sandbox. Agents receive
-            real-time compiler errors and fix their own syntax/type issues before you ever see the code.</p>
+          <p>Language Server Protocol integration identifies syntax/type errors in the sandbox. Agents fix their own bugs before human review.</p>
         </div>
+        <div class="page-card">
+          <h3>🧠 Agent Memory</h3>
+          <p>Persistent cross-session memory with MemoryBroker. Agents recall facts, decisions, and prior task results across conversations.</p>
+        </div>
+        <div class="page-card">
+          <h3>CI Auto-Fix</h3>
+          <p>Link the CLI to your test suite. <code>crew ci-fix --check "npm test"</code> automatically iterates until your tests pass.</p>
+        </div>
+        <div class="page-card">
+          <h3>Speculative Explore</h3>
+          <p>Run competing implementation strategies in parallel branches. Compare architectural diffs side-by-side and merge the winner.</p>
+        </div>
+        <div class="page-card">
+          <h3>Browser Debugging</h3>
+          <p>Headless Chrome integration for visual QA. Agents can inspect live DOM state and fix CSS/UX issues autonomously.</p>
+        </div>
+        <div class="page-card">
+          <h3>⚡ Real-time Streaming</h3>
+          <p>Token-by-token output as the LLM generates. <strong>All providers stream</strong> — Gemini, OpenAI, Anthropic, Grok, DeepSeek, Groq, and OpenRouter. No buffered waits.</p>
+        </div>
+        <div class="page-card">
+          <h3>🔄 Session Continuity</h3>
+          <p>Full conversation history persists across REPL sessions via <code>SessionManager</code>. Resume where you left off with <code>/history</code>, <code>/status</code>, and <code>/clear</code>.</p>
+        </div>
+        <div class="page-card">
+          <h3>🩺 crew doctor</h3>
+          <p>Built-in diagnostics: checks Node.js version, Git, API keys, gateway, MCP, and CLI updates in under 4 seconds. Suggests cheapest providers when no keys are set.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section parity-section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Comparison</div>
+        <h2>Competitive Parity</h2>
+        <p class="section-desc">crew-cli is built for the complexity of professional software development, not just smol demos.</p>
+      </div>
+
+      <div class="comparison-table" style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>crew-cli</th>
+              <th>Claude Code</th>
+              <th>Codex CLI</th>
+              <th>Gemini CLI</th>
+              <th>Cursor</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Multi-model routing</td>
+              <td class="check-val">✅ 10+ Providers</td>
+              <td class="cross-val">❌ Anthropic Only</td>
+              <td class="cross-val">❌ OpenAI Only</td>
+              <td class="cross-val">❌ Google Only</td>
+              <td class="check-val">✅ Native</td>
+            </tr>
+            <tr>
+              <td>Multimodal (Images)</td>
+              <td class="check-val">✅ All Providers</td>
+              <td class="check-val">✅ Claude Vision</td>
+              <td class="cross-val">❌ Text Only</td>
+              <td class="check-val">✅ Gemini Vision</td>
+              <td class="check-val">✅ Native</td>
+            </tr>
+            <tr>
+              <td>Built-in Tools</td>
+              <td class="check-val">✅ 34+ Tools</td>
+              <td class="check-val">✅ ~15 Tools</td>
+              <td class="check-val">✅ ~10 Tools</td>
+              <td class="check-val">✅ ~12 Tools</td>
+              <td class="check-val">✅ ~20 Tools</td>
+            </tr>
+            <tr>
+              <td>Sandbox + Branching</td>
+              <td class="check-val">✅ Professional</td>
+              <td class="cross-val">❌ Direct Write</td>
+              <td class="check-val">✅ Sandbox</td>
+              <td class="cross-val">❌ Direct Write</td>
+              <td class="cross-val">❌ Passive</td>
+            </tr>
+            <tr>
+              <td>Parallel Dispatch</td>
+              <td class="check-val">✅ 21 Specialists</td>
+              <td class="cross-val">❌ Single Agent</td>
+              <td class="cross-val">❌ Single Agent</td>
+              <td class="cross-val">❌ Single Agent</td>
+              <td class="cross-val">❌ Sequential</td>
+            </tr>
+            <tr>
+              <td>Agent Memory</td>
+              <td class="check-val">✅ Cross-Session</td>
+              <td class="cross-val">❌ Per-Session</td>
+              <td class="cross-val">❌ Per-Session</td>
+              <td class="check-val">✅ Gems</td>
+              <td class="cross-val">❌ Per-Session</td>
+            </tr>
+            <tr>
+              <td>CI Auto-fix Loop</td>
+              <td class="check-val">✅ Integrated</td>
+              <td class="cross-val">❌ Manual</td>
+              <td class="cross-val">❌ Manual</td>
+              <td class="cross-val">❌ Manual</td>
+              <td class="cross-val">❌ Manual</td>
+            </tr>
+            <tr>
+              <td>Browser Debugging</td>
+              <td class="check-val">✅ Headless Chrome</td>
+              <td class="cross-val">❌ No UI Vision</td>
+              <td class="cross-val">❌ No</td>
+              <td class="cross-val">❌ No</td>
+              <td class="cross-val">❌ Passive</td>
+            </tr>
+            <tr>
+              <td>Cost Tracking</td>
+              <td class="check-val">✅ Per-Session</td>
+              <td class="check-val">✅ Integrated</td>
+              <td class="cross-val">❌ No</td>
+              <td class="cross-val">❌ No</td>
+              <td class="cross-val">❌ No Granularity</td>
+            </tr>
+            <tr>
+              <td>Streaming Output</td>
+              <td class="check-val">✅ All Providers</td>
+              <td class="check-val">✅ Native</td>
+              <td class="check-val">✅ Native</td>
+              <td class="check-val">✅ Native</td>
+              <td class="check-val">✅ Native</td>
+            </tr>
+            <tr>
+              <td>Diagnostics CLI</td>
+              <td class="check-val">✅ crew doctor</td>
+              <td class="cross-val">❌ No</td>
+              <td class="cross-val">❌ No</td>
+              <td class="cross-val">❌ No</td>
+              <td class="cross-val">❌ No</td>
+            </tr>
+            <tr>
+              <td>Session Memory</td>
+              <td class="check-val">✅ Persistent</td>
+              <td class="check-val">✅ Per-Conversation</td>
+              <td class="cross-val">❌ Stateless</td>
+              <td class="check-val">✅ Gems</td>
+              <td class="cross-val">❌ Per-Session</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </section>
@@ -200,7 +356,7 @@
     </div>
   </section>
 
-  <footer>
+    <footer>
     <div class="container footer-inner">
       <div class="footer-brand">
         <div class="footer-logo">crewswarm</div>
@@ -234,11 +390,11 @@
     </div>
     <div class="footer-bottom">
       <div class="container">
-      <span>&copy; 2026 crewswarm. All rights reserved.</span>
-    
+        <span>&copy; 2026 crewswarm. All rights reserved.</span>
       </div>
     </div>
   </footer>
+
 
   <script src="script.js"></script>
 </body>

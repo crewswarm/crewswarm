@@ -3,7 +3,7 @@
 This repo has two related but different pieces:
 
 1. `crew-cli` manages MCP client configs (`crew mcp ...`) for tools like Cursor/Claude/OpenCode.
-2. `crew-cli` NOW ALSO serves its own MCP server in standalone mode (NEW!)
+2. `crew-cli` also serves its own MCP server in standalone mode.
 3. The crewswarm gateway (parent repo) hosts the main MCP server at `http://127.0.0.1:5020/mcp`.
 
 ## Supported AI Coding Tools
@@ -22,9 +22,9 @@ All 5 tools can connect to **both** crewswarm MCP servers (main gateway + crew-c
 
 ## Two MCP Servers Available
 
-### crew-cli MCP Server (NEW!)
+### crew-cli MCP Server
 **Port:** 4097 (configurable)  
-**Start:** `crew serve --mode standalone --port 4097`  
+**Start:** `crew serve --port 4097`  
 **Tools:** 8 unified routing + sandbox tools
 
 1. `crew_route_task` - L1→L2→L3 orchestration
@@ -58,19 +58,19 @@ Gemini CLI supports MCP servers through HTTP transport with headers for authenti
 ```bash
 # 1) Ensure servers are running
 # Main crewswarm: npm run restart-all (or: node scripts/mcp-server.mjs)
-# crew-cli: crew serve --mode standalone --port 4097
+# crew-cli: crew serve --port 4097
 
 # 2) Add crewswarm gateway MCP
 gemini mcp add crewswarm "http://127.0.0.1:5020/mcp" \
   --transport http \
-  --header "Authorization: Bearer $(cat ~/.crewswarm/config.json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"rt\"][\"authToken\"])')" \
+  --header "Authorization: Bearer $(cat ~/.crewswarm/crewswarm.json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"rt\"][\"authToken\"])')" \
   --description "crewswarm main MCP server - 20 agents + 46 skills" \
   --trust
 
 # 3) Add crew-cli MCP
 gemini mcp add crew-cli "http://127.0.0.1:4097/mcp" \
   --transport http \
-  --header "Authorization: Bearer $(cat ~/.crewswarm/config.json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"rt\"][\"authToken\"])')" \
+  --header "Authorization: Bearer $(cat ~/.crewswarm/crewswarm.json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"rt\"][\"authToken\"])')" \
   --description "crew-cli MCP server - unified routing + sandbox" \
   --trust
 
@@ -91,10 +91,10 @@ gemini "list all available mcp tools" --allowed-mcp-server-names crewswarm crew-
 
 ```bash
 # 1) Start crew-cli server
-crew serve --mode standalone --port 4097
+crew serve --port 4097
 
 # 2) Export token (if not already in .zshrc)
-export CREWSWARM_TOKEN="$(node -e "const fs=require('fs');const os=require('os');const p=os.homedir()+'/.crewswarm/config.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));process.stdout.write(j.rt?.authToken||'')")"
+export CREWSWARM_TOKEN="$(node -e "const fs=require('fs');const os=require('os');const p=os.homedir()+'/.crewswarm/crewswarm.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));process.stdout.write(j.rt?.authToken||'')")"
 
 # 3) Add to Codex
 codex mcp add crew-cli --url "http://127.0.0.1:4097/mcp" --bearer-token-env-var CREWSWARM_TOKEN
@@ -107,7 +107,7 @@ codex mcp get crew-cli
 
 ```bash
 # 1) Export token (if not already in .zshrc)
-export CREWSWARM_TOKEN="$(node -e "const fs=require('fs');const os=require('os');const p=os.homedir()+'/.crewswarm/config.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));process.stdout.write(j.rt?.authToken||'')")"
+export CREWSWARM_TOKEN="$(node -e "const fs=require('fs');const os=require('os');const p=os.homedir()+'/.crewswarm/crewswarm.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));process.stdout.write(j.rt?.authToken||'')")"
 
 # 2) Add MCP server
 codex mcp add crewswarm --url "http://127.0.0.1:5020/mcp" --bearer-token-env-var CREWSWARM_TOKEN
@@ -143,10 +143,11 @@ codex mcp list
 
 ## Install In crew-cli MCP Store (optional)
 
-This syncs to local client config files (`~/.cursor/mcp.json`, `~/.claude/mcp.json`, `~/.config/opencode/mcp.json`):
+This syncs to local client config files for Cursor / Claude / OpenCode, and can also register Codex via `codex mcp add`:
 
 ```bash
-crew mcp add crewswarm --url http://127.0.0.1:5020/mcp --bearer-token-env CREWSWARM_TOKEN
+crew mcp add crewswarm --url http://127.0.0.1:5020/mcp --bearer-token-env-var CREWSWARM_TOKEN
+crew mcp add crewswarm --url http://127.0.0.1:5020/mcp --bearer-token-env-var CREWSWARM_TOKEN --client codex
 crew mcp list
 crew mcp doctor
 ```
@@ -156,14 +157,15 @@ crew mcp doctor
 `crew-cli` serves unified HTTP APIs via:
 
 ```bash
-crew serve --mode standalone
-crew serve --mode connected
+crew serve --port 4317
 ```
 
 Those expose:
 
 1. `/v1/*` endpoints (OpenAI-compatible + unified task endpoints)
 2. `/mcp` endpoint (native MCP tools in `crew-cli`)
+
+`--mode standalone` is still accepted as a compatibility alias, but `connected` is no longer supported.
 
 Use gateway `:5020/mcp` for full crewswarm agents + skills.
 

@@ -151,7 +151,7 @@ ufw allow 5020/tcp
 
 **Config persists across restarts:**
 - `~/.crewswarm/crewswarm.json` — Agent models
-- `~/.crewswarm/config.json` — RT auth token
+- `~/.crewswarm/crewswarm.json` — RT auth token
 - `~/.crewswarm/agent-prompts.json` — System prompts
 
 **Memory persists:**
@@ -191,7 +191,7 @@ curl http://localhost:4319/health
 
 1. **Change default RT token:**
    ```bash
-   # Edit ~/.crewswarm/config.json
+   # Edit ~/.crewswarm/crewswarm.json
    # Change rt.authToken to a random UUID
    ```
 

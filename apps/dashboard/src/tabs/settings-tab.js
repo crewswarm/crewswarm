@@ -620,7 +620,7 @@ const ENV_GROUPS = [
     note: 'Both use OAuth login (run claude or cursor once). No API key required.',
     vars: [
       { key: 'CREWSWARM_CLAUDE_CODE_MODEL', hint: 'Model passed to claude -p — leave blank for Claude Code default',   default: 'claude default' },
-      { key: 'CREWSWARM_CURSOR_MODEL',      hint: 'Model passed to cursor --execute — leave blank for Cursor default', default: 'cursor default' },
+      { key: 'CREWSWARM_CURSOR_MODEL',      hint: 'Cursor CLI --model when agent has no cursorCliModel (default: composer-2-fast)', default: 'composer-2-fast' },
     ],
   },
   {

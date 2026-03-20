@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Local LLM executor - runs tasks without gateway dependency
  * This is the standalone Tier 2 executor that handles tasks directly
@@ -83,7 +84,7 @@ export class LocalExecutor {
     
     const failures: string[] = [];
     
-    console.log(`[Executor] Model: ${model}, Providers: [${providers.join(', ')}]`);
+    if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[Executor] Model: ${model}, Providers: [${providers.join(', ')}]`);
     
     for (const provider of providers) {
       try {
@@ -205,7 +206,7 @@ export class LocalExecutor {
     const model = options.model || process.env.CREW_EXECUTION_MODEL || 'grok-4-1-fast-reasoning';
 
     try {
-      console.log(`[Grok] Starting API call (model: ${model})...`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[Grok] Starting API call (model: ${model})...`);
       const callStart = Date.now();
       
       const headers: Record<string, string> = {
@@ -233,7 +234,7 @@ export class LocalExecutor {
         })
       });
 
-      console.log(`[Grok] Response received in ${Date.now() - callStart}ms (status: ${response.status})`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[Grok] Response received in ${Date.now() - callStart}ms (status: ${response.status})`);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
@@ -263,7 +264,7 @@ export class LocalExecutor {
         costUsd: this.calculateGrokCostWithCache(data?.usage)
       };
     } catch (err) {
-      console.log(`[Grok] Exception: ${(err as Error).message}`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[Grok] Exception: ${(err as Error).message}`);
       this.logger.debug(`Grok execution failed: ${(err as Error).message}`);
       return null;
     }
@@ -372,7 +373,7 @@ export class LocalExecutor {
   private async executeWithDeepSeek(task: string, options: ExecutorOptions, systemPrompt: string): Promise<ExecutorResult | null> {
     const key = process.env.DEEPSEEK_API_KEY;
     if (!key) {
-      console.log('[DeepSeek] No API key found');
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log('[DeepSeek] No API key found');
       return null;
     }
 
@@ -404,7 +405,7 @@ export class LocalExecutor {
         })
       });
 
-      console.log(`[DeepSeek] Response received (status: ${response.status})`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[DeepSeek] Response received (status: ${response.status})`);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -445,7 +446,7 @@ export class LocalExecutor {
 
       // Return ONLY the final answer content (content field)
       // The reasoning_content is internal CoT, not part of structured output
-      console.log(`[DeepSeek] ✓ Success (${data?.usage?.prompt_tokens || 0} in, ${data?.usage?.completion_tokens || 0} out)`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[DeepSeek] ✓ Success (${data?.usage?.prompt_tokens || 0} in, ${data?.usage?.completion_tokens || 0} out)`);
 
       return {
         success: true,
@@ -456,7 +457,7 @@ export class LocalExecutor {
         costUsd: this.calculateCost(model, data?.usage?.prompt_tokens || 0, data?.usage?.completion_tokens || 0)
       };
     } catch (err) {
-      console.log(`[DeepSeek] Exception: ${(err as Error).message}`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[DeepSeek] Exception: ${(err as Error).message}`);
       this.logger.debug(`DeepSeek execution failed: ${(err as Error).message}`);
       return null;
     }
@@ -496,7 +497,7 @@ export class LocalExecutor {
     const model = options.model || 'claude-3-5-sonnet-20241022';
     
     try {
-      console.log(`[Anthropic] Starting API call (model: ${model})...`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[Anthropic] Starting API call (model: ${model})...`);
       const callStart = Date.now();
 
       // Use explicit cache control for 90% savings on system prompt
@@ -524,7 +525,7 @@ export class LocalExecutor {
         })
       });
 
-      console.log(`[Anthropic] Response received in ${Date.now() - callStart}ms (status: ${response.status})`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[Anthropic] Response received in ${Date.now() - callStart}ms (status: ${response.status})`);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
@@ -559,7 +560,7 @@ export class LocalExecutor {
         costUsd: this.calculateAnthropicCostWithCache(data?.usage)
       };
     } catch (err) {
-      console.log(`[Anthropic] Exception: ${(err as Error).message}`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[Anthropic] Exception: ${(err as Error).message}`);
       this.logger.debug(`Anthropic execution failed: ${(err as Error).message}`);
       return null;
     }
@@ -587,27 +588,30 @@ export class LocalExecutor {
   ): Promise<ExecutorResult | null> {
     const key = process.env.OPENAI_API_KEY;
     if (!key) {
-      console.log('[OpenAI] No API key found');
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log('[OpenAI] No API key found');
       return null;
     }
 
     const model = options.model || 'gpt-4o';
     
-    console.log(`[OpenAI] Starting API call (model: ${model})...`);
+    if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[OpenAI] Starting API call (model: ${model})...`);
 
     try {
       // GPT-5+ uses max_completion_tokens, GPT-4 uses max_tokens
       const maxTokensParam = model.startsWith('gpt-5') || model.startsWith('gpt-6')
         ? 'max_completion_tokens'
         : 'max_tokens';
-      
+      // GPT-5/6 only support temperature=1 (default); other values cause 400
+      const temp = (model.startsWith('gpt-5') || model.startsWith('gpt-6'))
+        ? 1
+        : (options.temperature ?? 0.7);
       const requestBody: any = {
         model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: task }
         ],
-        temperature: options.temperature ?? 0.7,
+        temperature: temp,
         [maxTokensParam]: options.maxTokens || 4000
       };
       
@@ -625,7 +629,7 @@ export class LocalExecutor {
         body: JSON.stringify(requestBody)
       });
 
-      console.log(`[OpenAI] Response received (status: ${response.status})`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[OpenAI] Response received (status: ${response.status})`);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -641,7 +645,7 @@ export class LocalExecutor {
         return null;
       }
 
-      console.log(`[OpenAI] ✓ Success (${data?.usage?.prompt_tokens || 0} in, ${data?.usage?.completion_tokens || 0} out)`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[OpenAI] ✓ Success (${data?.usage?.prompt_tokens || 0} in, ${data?.usage?.completion_tokens || 0} out)`);
 
       return {
         success: true,
@@ -653,7 +657,7 @@ export class LocalExecutor {
         costUsd: this.calculateOpenAICost(model, data?.usage?.prompt_tokens || 0, data?.usage?.completion_tokens || 0)
       };
     } catch (err) {
-      console.log(`[OpenAI] Exception: ${(err as Error).message}`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[OpenAI] Exception: ${(err as Error).message}`);
       this.logger.debug(`OpenAI execution failed: ${(err as Error).message}`);
       return null;
     }

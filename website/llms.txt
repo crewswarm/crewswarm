@@ -19,6 +19,12 @@ It combines:
 - Vibe IDE: https://crewswarm.ai/vibe.html
 - Deploy: https://crewswarm.ai/deploy.html
 - Security: https://crewswarm.ai/security.html
+- Documentation: https://crewswarm.ai/docs.html
+- CLI Guide: https://crewswarm.ai/cli.html
+- ATAT Protocol: https://crewswarm.ai/atat.html
+- OpenClaw Comparison: https://crewswarm.ai/openclaw-comparison.html
+- About: https://crewswarm.ai/about.html
+- Contact: https://crewswarm.ai/contact.html
 - GitHub repo: https://github.com/crewswarm/crewswarm
 
 ## Search-oriented summary

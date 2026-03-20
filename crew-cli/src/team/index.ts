@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { access, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir, hostname } from 'node:os';

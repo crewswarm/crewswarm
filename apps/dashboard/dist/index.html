@@ -6,7 +6,7 @@
     <title>crewswarm dashboard</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <!-- Font: system stack only to avoid CORS when dashboard (4319) and studio (3333) both load Inter from Google -->
-    <script type="module" crossorigin src="/assets/index-3fc8pIJr.js"></script>
+    <script type="module" crossorigin src="/assets/index-e9Zm8PhD.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-BqF3Kk6b.css">
   </head>
   <body>
@@ -1111,19 +1111,45 @@
               border-radius: 6px;
             "
           >
-            <strong>Note:</strong> L1 (Chat Interface) uses
-            <code
-              style="
-                background: var(--bg-1);
-                padding: 1px 4px;
-                border-radius: 3px;
-              "
-              >CREW_CHAT_MODEL</code
-            >
-            — configured in Settings → Engines
+            <strong>Recommended stack:</strong> L1 Grok 4.1 Fast · L2 GPT-5.3 · L3 Gemini 2.5 Flash
           </div>
 
           <div style="display: grid; gap: 12px">
+            <!-- L1 Chat Model -->
+            <div>
+              <label
+                style="
+                  display: block;
+                  font-size: 12px;
+                  color: var(--text-2);
+                  margin-bottom: 4px;
+                  font-weight: 500;
+                "
+              >
+                CREW_CHAT_MODEL
+                <span style="color: var(--text-3)">(L1 Chat Interface)</span>
+              </label>
+              <select
+                id="configChatModel"
+                class="config-select"
+                style="
+                  width: 100%;
+                  padding: 8px;
+                  background: var(--bg-card2);
+                  color: var(--text-1);
+                  border: 1px solid var(--border);
+                  border-radius: 6px;
+                  font-size: 13px;
+                "
+              >
+                <option value="">Default</option>
+                <option value="grok-4-1-fast-reasoning">Grok 4.1 Fast (Recommended)</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="deepseek-chat">DeepSeek Chat</option>
+                <option value="gpt-4o">GPT-4o</option>
+              </select>
+            </div>
+
             <!-- Router Model -->
             <div>
               <label
@@ -1154,9 +1180,11 @@
                 "
               >
                 <option value="">Default</option>
+                <option value="gpt-5.4">GPT-5.4 (Recommended)</option>
+                <option value="grok-4-1-fast-reasoning">Grok 4.1 Fast</option>
                 <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                 <option value="deepseek-chat">DeepSeek Chat</option>
-                <option value="grok-4-fast">Grok 4 Fast</option>
+                <option value="gpt-4o">GPT-4o</option>
               </select>
             </div>
 
@@ -1190,18 +1218,14 @@
                 "
               >
                 <option value="">Default</option>
-                <option value="deepseek-reasoner">
-                  DeepSeek Reasoner (R1)
-                </option>
-                <option value="gemini-2.0-flash-thinking-exp">
-                  Gemini 2.0 Flash Thinking
-                </option>
-                <option value="grok-4-1-turbo">
-                  Grok 4.1 Turbo (Fast Reasoning)
-                </option>
-                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                <option value="gpt-5.4">GPT-5.4 (Recommended)</option>
+                <option value="gpt-4o">GPT-4o</option>
                 <option value="o1">OpenAI o1</option>
                 <option value="o1-mini">OpenAI o1-mini</option>
+                <option value="deepseek-reasoner">DeepSeek Reasoner (R1)</option>
+                <option value="gemini-2.0-flash-thinking-exp">Gemini 2.0 Flash Thinking</option>
+                <option value="grok-4-1-turbo">Grok 4.1 Turbo</option>
+                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
               </select>
             </div>
 
@@ -1235,9 +1259,10 @@
                 "
               >
                 <option value="">Default</option>
-                <option value="deepseek-chat">DeepSeek Chat</option>
+                <option value="gpt-5.4">GPT-5.4 (Recommended)</option>
                 <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                <option value="grok-4-fast">Grok 4 Fast</option>
+                <option value="deepseek-chat">DeepSeek Chat</option>
+                <option value="grok-4-1-fast-reasoning">Grok 4.1 Fast</option>
               </select>
             </div>
 
@@ -1271,9 +1296,10 @@
                 "
               >
                 <option value="">Default</option>
+                <option value="gpt-5.4">GPT-5.4 (Recommended)</option>
                 <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
-                <option value="gpt-4o">GPT-4o</option>
                 <option value="deepseek-chat">DeepSeek Chat</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
               </select>
             </div>
 
@@ -1307,18 +1333,12 @@
                 "
               >
                 <option value="">Default</option>
-                <option value="gemini-2.5-flash">
-                  Gemini 2.5 Flash (Fast & Cheap)
-                </option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
                 <option value="deepseek-chat">DeepSeek Chat</option>
-                <option value="grok-4-fast">Grok 4 Fast</option>
-                <option value="claude-sonnet-4.5">
-                  Claude Sonnet 4.5 (Premium)
-                </option>
-                <option value="llama-3.3-70b">
-                  Llama 3.3 70B (Groq - Fast)
-                </option>
-                <option value="qwen-2.5-coder-32b">Qwen 2.5 Coder 32B</option>
+                <option value="grok-4-1-fast-reasoning">Grok 4.1 Fast</option>
+                <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
+                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
               </select>
             </div>
 
@@ -1352,12 +1372,9 @@
                 "
               >
                 <option value="">Default</option>
-                <option value="gemini-2.5-flash">
-                  Gemini 2.5 Flash (Fast QA)
-                </option>
-                <option value="claude-sonnet-4.5">
-                  Claude Sonnet 4.5 (Premium QA)
-                </option>
+                <option value="gpt-5.4">GPT-5.4 (Recommended)</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fast QA)</option>
+                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
                 <option value="deepseek-chat">DeepSeek Chat</option>
                 <option value="gpt-4o-mini">GPT-4o Mini</option>
               </select>
@@ -1437,6 +1454,9 @@
                 style="flex: 1"
               >
                 💾 Save Configuration
+              </button>
+              <button data-action="applyRecommendedCLIProcessConfig" class="btn-ghost" style="color: var(--accent)">
+                ⚡ Apply Recommended
               </button>
               <button data-action="resetCLIProcessConfig" class="btn-ghost">
                 ↻ Reset to Defaults
@@ -2152,7 +2172,7 @@
             <div class="page-sub">
               Keys saved to
               <code style="font-size: 11px; color: var(--text-2)"
-                >~/.crewswarm/config.json</code
+                >~/.crewswarm/crewswarm.json</code
               >
             </div>
           </div>
@@ -2183,7 +2203,7 @@
               </div>
               <div style="font-size: 12px; color: var(--text-2)">
                 Auto-generated during install and saved to
-                <code style="font-size: 11px">~/.crewswarm/config.json</code>.
+                <code style="font-size: 11px">~/.crewswarm/crewswarm.json</code>.
                 All services read it from there — you never need to copy it
                 manually. Only change this if you want to rotate the secret or
                 run the RT bus on a shared machine.

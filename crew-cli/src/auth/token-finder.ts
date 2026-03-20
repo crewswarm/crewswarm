@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { readFile, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';

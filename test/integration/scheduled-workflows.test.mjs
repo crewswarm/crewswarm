@@ -207,7 +207,7 @@ describe("scheduled-workflows", () => {
   });
 
   describe("auth token handling", () => {
-    it("reads token from ~/.crewswarm/config.json", async () => {
+    it("reads token from ~/.crewswarm/crewswarm.json", async () => {
       // The script should read RT auth token from config
       // Mock verification - actual test would validate token presence in request headers
       assert.ok(true, "Auth token reading verified");

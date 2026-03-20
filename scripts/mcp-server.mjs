@@ -40,7 +40,7 @@ import { detectMentions } from "../lib/chat/autonomous-mentions.mjs";
 const CREW_LEAD_URL = process.env.CREW_LEAD_URL || "http://127.0.0.1:5010";
 const PORT = parseInt(process.env.MCP_PORT || "5020");
 const SKILLS_DIR = path.join(os.homedir(), ".crewswarm", "skills");
-const CONFIG_PATH = path.join(os.homedir(), ".crewswarm", "config.json");
+const CONFIG_PATH = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 const CREWSWARM_CFG = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 const STDIO_MODE = process.argv.includes("--stdio");
 
@@ -1526,19 +1526,27 @@ if (STDIO_MODE) {
     if (req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      res.writeHead(200, {
-        "content-type": "application/json",
-        ...corsHeaders,
-      });
       try {
         const msg = JSON.parse(body);
         const resp = await handleMcpMessage(msg);
         if (resp && !resp._skip) {
+          res.writeHead(200, {
+            "content-type": "application/json",
+            ...corsHeaders,
+          });
           res.end(JSON.stringify(resp));
         } else {
-          res.end(); // No response for notifications
+          // Notifications should not advertise a JSON body. Some MCP clients
+          // attempt to decode an empty 200/application-json response and log
+          // a transport error during initialized.
+          res.writeHead(204, corsHeaders);
+          res.end();
         }
       } catch (e) {
+        res.writeHead(200, {
+          "content-type": "application/json",
+          ...corsHeaders,
+        });
         res.end(
           JSON.stringify({
             jsonrpc: "2.0",

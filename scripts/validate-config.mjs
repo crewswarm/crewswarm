@@ -18,7 +18,7 @@ import os from "node:os";
 const JSON_MODE = process.argv.includes("--json");
 const FIX_MODE = process.argv.includes("--fix");
 const SWARM_PATH = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
-const CONFIG_PATH = path.join(os.homedir(), ".crewswarm", "config.json");
+const CONFIG_PATH = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 const BACKUP_PATH = path.join(os.homedir(), ".crewswarm", `crewswarm.json.backup-${Date.now()}`);
 
 // ── Colors ──────────────────────────────────────────────────────────────────
@@ -265,7 +265,7 @@ async function run() {
   // 2. Validate JSON
   section("JSON Syntax");
   const swarmResult = validateJSON(SWARM_PATH, "crewswarm.json");
-  const configResult = validateJSON(CONFIG_PATH, "config.json");
+  const configResult = validateJSON(CONFIG_PATH, "crewswarm.json");
   
   if (!swarmResult.ok || !configResult.ok) {
     log("error", "Cannot proceed with invalid JSON", "Fix syntax errors first");

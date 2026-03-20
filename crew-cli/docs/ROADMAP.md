@@ -59,7 +59,7 @@
 - [x] Create `src/agent/router.js` ✓
 - [x] Connect to gateway at `http://127.0.0.1:5010` ✓
 - [x] Implement `dispatch(agent, task)` function ✓
-- [x] Read auth token from `~/.crewswarm/config.json` ✓
+- [x] Read auth token from `~/.crewswarm/crewswarm.json` ✓
 - [x] Poll for task completion ✓
 - [x] Support skills: `callSkill(name, params)` ✓
 - [x] Read from `memory/brain.md` for context ✓

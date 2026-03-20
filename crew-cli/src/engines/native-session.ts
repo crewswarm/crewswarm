@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -290,13 +291,32 @@ export class NativeEngineSessionManager {
   }
 }
 
-export function buildEngineShellCommand(engine: string, prompt: string, model?: string): string {
+function resolveCursorAgentBinQuoted(): string {
+  const fromEnv = String(process.env.CURSOR_CLI_BIN || '').trim();
+  if (fromEnv) return shellQuote(fromEnv);
+  const agentLocal = join(homedir(), '.local', 'bin', 'agent');
+  if (existsSync(agentLocal)) return shellQuote(agentLocal);
+  return 'agent';
+}
+
+/** cwd: working directory / --workspace for CLI engines that need it (e.g. Cursor agent). */
+export function buildEngineShellCommand(engine: string, prompt: string, model?: string, cwd?: string): string {
   const p = shellQuote(prompt);
   const m = model ? ` -m ${shellQuote(model)}` : '';
   const e = String(engine || '').trim().toLowerCase();
   if (e === 'codex-cli') return `printf %s ${p} | codex exec -s workspace-write --json`;
   if (e === 'claude-cli') return `printf %s ${p} | claude -p --setting-sources user${String(process.env.CREW_CLAUDE_SKIP_PERMISSIONS || '') === 'true' ? ' --dangerously-skip-permissions' : ''}`;
-  if (e === 'cursor-cli' || e === 'cursor') return `printf %s ${p} | cursor --execute${m}`;
+  if (e === 'cursor-cli' || e === 'cursor') {
+    const ws = shellQuote(cwd || process.cwd());
+    const cursorDefault = process.env.CREWSWARM_CURSOR_MODEL || 'composer-2-fast';
+    let mod = model;
+    if (!mod || String(mod).trim() === '') mod = cursorDefault;
+    else if (String(mod).includes('/')) mod = cursorDefault;
+    else if (String(mod).includes('sonnet-4.6')) mod = 'sonnet-4.5';
+    const mq = shellQuote(mod);
+    const bin = resolveCursorAgentBinQuoted();
+    return `${bin} -p --force --trust --output-format stream-json ${p} --model ${mq} --workspace ${ws}`;
+  }
   if (e === 'gemini-cli') return `gemini -p ${p}${model ? ` -m ${shellQuote(model)}` : ''}`;
   if (e === 'opencode-cli' || e === 'opencode') return `opencode run${m} ${p}`;
   return '';

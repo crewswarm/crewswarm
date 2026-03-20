@@ -7,56 +7,10 @@
  *   → http://127.0.0.1:4319
  *
  * Override port: SWARM_DASH_PORT=4320 node scripts/dashboard.mjs
+ *
+ * Single instance: enforced by binding listenPort (see server.on("error") EADDRINUSE).
+ * Do not use pgrep here — it false-positives (matches unrelated PIDs / races with `&`).
  */
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SINGLETON GUARD — Prevent multiple dashboard instances
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-import { execSync } from "node:child_process";
-
-const MY_PID = process.pid;
-
-try {
-  // Check if ANOTHER dashboard.mjs process is already running (exclude our own PID)
-  // Use pgrep for more reliable process detection
-  const existing = execSync(`pgrep -f "node.*dashboard.mjs" || true`, {
-    encoding: "utf8",
-  }).trim();
-
-  if (existing) {
-    const pids = existing
-      .split("\n")
-      .filter(Boolean)
-      .map(Number)
-      .filter((p) => p !== MY_PID);
-
-    if (pids.length > 0) {
-      // Double-check these PIDs actually exist (not zombies)
-      const alivePids = pids.filter((pid) => {
-        try {
-          process.kill(pid, 0); // Test if process exists (doesn't actually kill)
-          return true;
-        } catch {
-          return false; // Process doesn't exist
-        }
-      });
-
-      if (alivePids.length > 0) {
-        console.error(
-          `❌ Dashboard already running (PIDs: ${alivePids.join(", ")})`,
-        );
-        console.error(
-          `   To restart: pkill -9 -f "dashboard.mjs" && node scripts/dashboard.mjs`,
-        );
-        process.exit(1);
-      }
-    }
-  }
-} catch (err) {
-  // Continue if check fails
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import http from "node:http";
 import path from "node:path";
@@ -131,6 +85,31 @@ const pass =
   process.env.OPENCODE_SERVER_PASSWORD ||
   process.env.SWARM_PASSWORD ||
   "opencode";
+
+/**
+ * RT bearer token for crew-lead HTTP API — must match what crew-lead loads
+ * (~/.crewswarm/crewswarm.json, then ~/.crewswarm/config.json).
+ */
+function readRtAuthTokenFromUserConfig() {
+  const home = os.homedir();
+  for (const name of ["crewswarm.json", "config.json"]) {
+    try {
+      const p = path.join(home, ".crewswarm", name);
+      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+      const t = (cfg?.rt?.authToken || "").trim();
+      if (t) return t;
+    } catch {
+      /* try next */
+    }
+  }
+  return "";
+}
+
+function resolveCrewLeadAuthToken() {
+  const e = (process.env.CREWSWARM_RT_AUTH_TOKEN || "").trim();
+  if (e) return e;
+  return readRtAuthTokenFromUserConfig();
+}
 
 // ── Safe config writer: centralised EPERM / uchg handling ───────────────────
 // Returns null on success, or { status, message } on error.
@@ -1632,20 +1611,7 @@ const server = http.createServer(async (req, res) => {
         "content-type": "application/json",
         "access-control-allow-origin": "*",
       });
-      const token = (() => {
-        try {
-          return (
-            JSON.parse(
-              fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "config.json"),
-                "utf8",
-              ),
-            )?.rt?.authToken || ""
-          );
-        } catch {
-          return "";
-        }
-      })();
+      const token = resolveCrewLeadAuthToken();
       res.end(JSON.stringify({ token }));
       return;
     }
@@ -1815,7 +1781,7 @@ const server = http.createServer(async (req, res) => {
 
         // Parse model string
         const [providerKey, ...modelParts] = agentCfg.model.split("/");
-        const modelId = modelParts.join("/");
+        let modelId = modelParts.join("/");
         const provider = csSwarm.providers?.[providerKey];
         if (!provider?.apiKey) {
           res.writeHead(400, { "content-type": "application/json" });
@@ -1823,6 +1789,10 @@ const server = http.createServer(async (req, res) => {
             JSON.stringify({ error: `No API key for provider ${providerKey}` }),
           );
           return;
+        }
+        // OpenRouter requires full ID (e.g. openrouter/hunter-alpha), not bare "hunter-alpha"
+        if ((providerKey === "openrouter" || (provider.baseUrl || "").includes("openrouter.ai")) && modelId && !modelId.startsWith("openrouter/")) {
+          modelId = "openrouter/" + modelId;
         }
 
         // Load system prompt
@@ -2937,8 +2907,8 @@ const server = http.createServer(async (req, res) => {
       if (!rtToken) {
         const home = os.homedir();
         for (const p of [
-          path.join(CFG_DIR, "config.json"),
-          path.join(home, ".crewswarm", "config.json"),
+          path.join(CFG_DIR, "crewswarm.json"),
+          path.join(home, ".crewswarm", "crewswarm.json"),
           path.join(CFG_DIR, "crewswarm.json"),
           path.join(home, ".crewswarm", "crewswarm.json"),
           path.join(home, ".openclaw", "openclaw.json"),
@@ -2952,7 +2922,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (!rtToken) {
         console.warn(
-          "[pm-loop/start] No CREWSWARM_RT_AUTH_TOKEN found in env or ~/.crewswarm/config.json (rt.authToken) — dispatches will fail with 'invalid realtime token'.",
+          "[pm-loop/start] No CREWSWARM_RT_AUTH_TOKEN found in env or ~/.crewswarm/crewswarm.json (rt.authToken) — dispatches will fail with 'invalid realtime token'.",
         );
       }
       const spawnArgs = [
@@ -3106,7 +3076,7 @@ const server = http.createServer(async (req, res) => {
     }
     // ── Settings: RT Bus token ─────────────────────────────────────────────
     if (url.pathname === "/api/settings/rt-token" && req.method === "GET") {
-      const csConfigPath = path.join(os.homedir(), ".crewswarm", "config.json");
+      const csConfigPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
       let token = "";
       try {
         token =
@@ -3123,7 +3093,7 @@ const server = http.createServer(async (req, res) => {
       for await (const chunk of req) body += chunk;
       const { token } = JSON.parse(body);
       const csDir = path.join(os.homedir(), ".crewswarm");
-      const csConfigPath = path.join(csDir, "config.json");
+      const csConfigPath = path.join(csDir, "crewswarm.json");
       fs.mkdirSync(csDir, { recursive: true });
       let cfg = {};
       try {
@@ -3184,7 +3154,7 @@ const server = http.createServer(async (req, res) => {
       url.pathname === "/api/settings/opencode-project" &&
       req.method === "GET"
     ) {
-      const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+      const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
       let dir = process.env.CREWSWARM_OPENCODE_PROJECT || "";
       let fallbackModel =
         process.env.CREWSWARM_OPENCODE_FALLBACK_MODEL ||
@@ -3224,7 +3194,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
       const cfgDir = path.join(os.homedir(), ".crewswarm");
-      const cfgPath = path.join(cfgDir, "config.json");
+      const cfgPath = path.join(cfgDir, "crewswarm.json");
       fs.mkdirSync(cfgDir, { recursive: true });
       let cfg = {};
       try {
@@ -3287,10 +3257,11 @@ const server = http.createServer(async (req, res) => {
       together: "https://api.together.xyz/v1",
       cohere: "https://api.cohere.ai/v1",
       ollama: "http://localhost:11434/v1",
+      openrouter: "https://openrouter.ai/api/v1",
       "openai-local": "http://127.0.0.1:8000/v1",
     };
     const csDir = path.join(os.homedir(), ".crewswarm");
-    const csConfig = path.join(csDir, "config.json");
+    const csConfig = path.join(csDir, "crewswarm.json");
     const csSwarmConfig = path.join(csDir, "crewswarm.json");
     const ocConfig = path.join(os.homedir(), ".openclaw", "openclaw.json");
     function readCSConfig() {
@@ -3489,7 +3460,7 @@ const server = http.createServer(async (req, res) => {
             return (
               JSON.parse(
                 fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "config.json"),
+                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
                   "utf8",
                 ),
               )?.rt?.authToken || ""
@@ -3539,7 +3510,7 @@ const server = http.createServer(async (req, res) => {
             return (
               JSON.parse(
                 fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "config.json"),
+                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
                   "utf8",
                 ),
               )?.rt?.authToken || ""
@@ -3589,7 +3560,7 @@ const server = http.createServer(async (req, res) => {
             return (
               JSON.parse(
                 fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "config.json"),
+                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
                   "utf8",
                 ),
               )?.rt?.authToken || ""
@@ -3735,6 +3706,88 @@ const server = http.createServer(async (req, res) => {
         process.env.CREWSWARM_CREW_CLI_ENABLED = enabled ? "1" : "0";
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, enabled: cfg.crewCli }));
+        return;
+      }
+    }
+    // ── Crew CLI tier models (L1/L2/L3) — persisted to crewswarm.json env ─────────
+    if (url.pathname === "/api/settings/cli-models") {
+      const { readFile } = await import("node:fs/promises");
+      const CLI_MODEL_KEYS = [
+        "CREW_CHAT_MODEL",
+        "CREW_ROUTER_MODEL",
+        "CREW_REASONING_MODEL",
+        "CREW_L2A_MODEL",
+        "CREW_L2B_MODEL",
+        "CREW_EXECUTION_MODEL",
+        "CREW_QA_MODEL",
+        "CREW_JSON_REPAIR_MODEL",
+        "CREW_MAX_PARALLEL_WORKERS",
+        "CREW_L2_EXTRA_VALIDATORS",
+      ];
+      if (req.method === "GET") {
+        try {
+          const cfg = JSON.parse(await readFile(CFG_FILE, "utf8"));
+          const env = cfg.env || {};
+          const result = {};
+          for (const k of CLI_MODEL_KEYS) {
+            result[k] = env[k] ?? process.env[k] ?? "";
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: String(err.message) }));
+        }
+        return;
+      }
+      if (req.method === "POST") {
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        let updates;
+        try {
+          updates = JSON.parse(body || "{}");
+        } catch {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid JSON" }));
+          return;
+        }
+        try {
+          const raw = (() => {
+            try {
+              return fs.readFileSync(CFG_FILE, "utf8");
+            } catch {
+              return "{}";
+            }
+          })();
+          const cfg = JSON.parse(raw);
+          if (!cfg.env) cfg.env = {};
+          for (const k of CLI_MODEL_KEYS) {
+            const v = updates[k];
+            if (v !== undefined) {
+              const s = String(v || "").trim();
+              if (s) cfg.env[k] = s;
+              else delete cfg.env[k];
+            }
+          }
+          const writeErr = await safeWriteConfig(cfg);
+          if (writeErr) {
+            res.writeHead(writeErr.status, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: writeErr.message }));
+            return;
+          }
+          for (const k of CLI_MODEL_KEYS) {
+            if (updates[k] !== undefined) {
+              const s = String(updates[k] || "").trim();
+              if (s) process.env[k] = s;
+              else delete process.env[k];
+            }
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (err) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: String(err.message) }));
+        }
         return;
       }
     }
@@ -4068,7 +4121,7 @@ const server = http.createServer(async (req, res) => {
             return (
               JSON.parse(
                 fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "config.json"),
+                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
                   "utf8",
                 ),
               )?.rt?.authToken || ""
@@ -4146,7 +4199,7 @@ const server = http.createServer(async (req, res) => {
             return (
               JSON.parse(
                 fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "config.json"),
+                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
                   "utf8",
                 ),
               )?.rt?.authToken || ""
@@ -4331,18 +4384,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
-        let clAuthToken = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
-        if (!clAuthToken) {
-          try {
-            clAuthToken =
-              JSON.parse(
-                fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "config.json"),
-                  "utf8",
-                ),
-              )?.rt?.authToken || "";
-          } catch { }
-        }
+        const clAuthToken = resolveCrewLeadAuthToken();
 
         let projectDir = null;
         if (projectId) {
@@ -4468,7 +4510,7 @@ const server = http.createServer(async (req, res) => {
 
         // Parse model string
         const [providerKey, ...modelParts] = agent.model.split("/");
-        const modelId = modelParts.join("/");
+        let modelId = modelParts.join("/");
         const provider = csSwarm.providers?.[providerKey];
         if (!provider?.apiKey) {
           res.writeHead(400, { "content-type": "application/json" });
@@ -4476,6 +4518,10 @@ const server = http.createServer(async (req, res) => {
             JSON.stringify({ error: `No API key for provider ${providerKey}` }),
           );
           return;
+        }
+        // OpenRouter requires full ID (e.g. openrouter/hunter-alpha), not bare "hunter-alpha"
+        if ((providerKey === "openrouter" || (provider.baseUrl || "").includes("openrouter.ai")) && modelId && !modelId.startsWith("openrouter/")) {
+          modelId = "openrouter/" + modelId;
         }
 
         // Load system prompt
@@ -4568,19 +4614,7 @@ const server = http.createServer(async (req, res) => {
       for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
 
-      // Get auth token
-      let clAuthToken = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
-      if (!clAuthToken) {
-        try {
-          clAuthToken =
-            JSON.parse(
-              fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "config.json"),
-                "utf8",
-              ),
-            )?.rt?.authToken || "";
-        } catch { }
-      }
+      const clAuthToken = resolveCrewLeadAuthToken();
 
       try {
         const clRes = await fetch(
@@ -4628,19 +4662,7 @@ const server = http.createServer(async (req, res) => {
       for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
 
-      // Get auth token
-      let clAuthToken = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
-      if (!clAuthToken) {
-        try {
-          clAuthToken =
-            JSON.parse(
-              fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "config.json"),
-                "utf8",
-              ),
-            )?.rt?.authToken || "";
-        } catch { }
-      }
+      const clAuthToken = resolveCrewLeadAuthToken();
 
       try {
         // Forward to crew-lead's /api/dispatch endpoint (not /dispatch!)
@@ -4705,30 +4727,57 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/transcribe-audio" && req.method === "POST") {
-      // Expects multipart/form-data with audio file
-      const busboy = await import("busboy");
-      const chunks = [];
-      return new Promise((resolve) => {
+      // Expects multipart/form-data with audio file (CrewChat: m4a, Dashboard: webm)
+      // Per Groq docs: https://console.groq.com/docs/speech-to-text — file, model required
+      const sendJson = (status, body) => {
+        if (res.headersSent) return;
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      try {
+        const busboy = await import("busboy");
+        const chunks = [];
+        let mimeType = "audio/m4a"; // CrewChat default
+        let resolved = false;
+        const resolveOnce = () => {
+          if (resolved) return;
+          resolved = true;
+        };
         const bb = busboy.default({ headers: req.headers });
         bb.on("file", (name, file, info) => {
+          if (info?.mimeType) mimeType = info.mimeType;
           file.on("data", (data) => chunks.push(data));
+        });
+        bb.on("error", (err) => {
+          sendJson(500, { ok: false, error: err.message });
+          resolveOnce();
+        });
+        req.on("error", (err) => {
+          sendJson(500, { ok: false, error: err.message });
+          resolveOnce();
         });
         bb.on("finish", async () => {
           try {
             const audioBuffer = Buffer.concat(chunks);
+            if (audioBuffer.length === 0) {
+              sendJson(400, { ok: false, error: "No audio data received" });
+              resolveOnce();
+              return;
+            }
             const { transcribeAudio } =
               await import("../lib/integrations/multimodal.mjs");
-            const transcription = await transcribeAudio(audioBuffer);
-            res.writeHead(200, { "content-type": "application/json" });
-            res.end(JSON.stringify({ ok: true, transcription }));
+            const transcription = await transcribeAudio(audioBuffer, { mimeType });
+            sendJson(200, { ok: true, transcription: transcription || "" });
           } catch (err) {
-            res.writeHead(500, { "content-type": "application/json" });
-            res.end(JSON.stringify({ ok: false, error: err.message }));
+            sendJson(500, { ok: false, error: err.message });
           }
-          resolve();
+          resolveOnce();
         });
         req.pipe(bb);
-      });
+      } catch (err) {
+        sendJson(500, { ok: false, error: err.message });
+      }
+      return;
     }
 
     async function proxyCrewLeadChat({
@@ -4769,18 +4818,7 @@ const server = http.createServer(async (req, res) => {
         return true;
       }
 
-      let clAuthToken = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
-      if (!clAuthToken) {
-        try {
-          clAuthToken =
-            JSON.parse(
-              fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "config.json"),
-                "utf8",
-              ),
-            )?.rt?.authToken || "";
-        } catch { }
-      }
+      const clAuthToken = resolveCrewLeadAuthToken();
 
       if (mode === "cli" || String(mode).startsWith("cli:")) {
         const cliEngine = engine || String(mode).replace(/^cli:/, "");
@@ -4871,9 +4909,11 @@ const server = http.createServer(async (req, res) => {
           );
           return true;
         }
+        const wantAgentSSE = String(req.headers.accept || "").includes("text/event-stream");
+        const agentEndpoint = wantAgentSSE ? "/chat/stream" : "/chat";
         try {
-          const clRes = await fetch(
-            `http://127.0.0.1:${crewLeadPort}/api/chat-agent`,
+          const upstream = await fetch(
+            `http://127.0.0.1:${crewLeadPort}${agentEndpoint}`,
             {
               method: "POST",
               headers: {
@@ -4883,7 +4923,7 @@ const server = http.createServer(async (req, res) => {
                   : {}),
               },
               body: JSON.stringify({
-                agent: agentId,
+                agentId,
                 message,
                 sessionId,
                 ...(projectId ? { projectId } : {}),
@@ -4891,17 +4931,74 @@ const server = http.createServer(async (req, res) => {
               signal: AbortSignal.timeout(120000),
             },
           );
-          const txt = await clRes.text();
-          let data;
-          try {
-            data = JSON.parse(txt);
-          } catch {
-            data = { ok: false, error: txt.slice(0, 200) || clRes.statusText };
+          if (!upstream.ok) {
+            const txt = upstream
+              ? await upstream.text().catch(() => "")
+              : "unreachable";
+            res.writeHead(upstream?.status || 503, {
+              "content-type": "application/json",
+            });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `agent ${wantAgentSSE ? "stream" : "chat"} failed: ${txt || upstream?.status}`,
+              }),
+            );
+            return true;
           }
-          res.writeHead(clRes.ok ? 200 : clRes.status, {
-            "content-type": "application/json",
-          });
-          res.end(JSON.stringify(data));
+
+          if (wantAgentSSE && upstream.body) {
+            // SSE streaming path (Vibe, Studio)
+            res.writeHead(200, {
+              "content-type": "text/event-stream",
+              "cache-control": "no-cache",
+              connection: "keep-alive",
+              "access-control-allow-origin": "*",
+            });
+            const reader = upstream.body.getReader();
+            req.on("close", () => reader.cancel().catch(() => {}));
+            (async () => {
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  res.write(value);
+                }
+              } catch {
+              } finally {
+                res.end();
+              }
+            })();
+          } else {
+            // JSON path (Dashboard frontend)
+            const agentCT = String(upstream.headers.get("content-type") || "");
+            if (agentCT.includes("text/event-stream") && upstream.body) {
+              // crew-lead returned SSE but caller wanted JSON — extract final reply
+              const rawSSE = await upstream.text().catch(() => "");
+              let reply = "";
+              for (const line of rawSSE.split("\n")) {
+                if (!line.startsWith("data: ")) continue;
+                try {
+                  const ev = JSON.parse(line.slice(6));
+                  if (ev.type === "done" && ev.transcript) reply = ev.transcript;
+                  else if (ev.type === "chat_message" && ev.content) reply = ev.content;
+                  else if (ev.type === "chunk" && ev.text) reply += ev.text;
+                } catch {}
+              }
+              res.writeHead(200, {
+                "content-type": "application/json",
+                "access-control-allow-origin": "*",
+              });
+              res.end(JSON.stringify({ ok: true, reply: reply || "(no reply)" }));
+            } else {
+              const data = await upstream.json().catch(() => ({}));
+              res.writeHead(200, {
+                "content-type": "application/json",
+                "access-control-allow-origin": "*",
+              });
+              res.end(JSON.stringify(data));
+            }
+          }
           return true;
         } catch (e) {
           res.writeHead(500, { "content-type": "application/json" });
@@ -4915,8 +5012,11 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      // crew-lead mode — SSE if caller accepts it, JSON otherwise
+      const wantSSE = String(req.headers.accept || "").includes("text/event-stream");
+      const chatEndpoint = wantSSE ? "/chat/stream" : "/chat";
       try {
-        const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/chat`, {
+        const upstream = await fetch(`http://127.0.0.1:${crewLeadPort}${chatEndpoint}`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -4931,17 +5031,74 @@ const server = http.createServer(async (req, res) => {
           }),
           signal: AbortSignal.timeout(200000),
         });
-        const txt = await clRes.text();
-        let data;
-        try {
-          data = JSON.parse(txt);
-        } catch {
-          data = { ok: false, error: txt.slice(0, 200) || clRes.statusText };
+        if (!upstream.ok) {
+          const txt = upstream
+            ? await upstream.text().catch(() => "")
+            : "unreachable";
+          res.writeHead(upstream?.status || 503, {
+            "content-type": "application/json",
+          });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: `crew-lead ${wantSSE ? "stream" : "chat"} failed: ${txt || upstream?.status}`,
+            }),
+          );
+          return true;
         }
-        res.writeHead(clRes.ok ? 200 : clRes.status, {
-          "content-type": "application/json",
-        });
-        res.end(JSON.stringify(data));
+
+        if (wantSSE && upstream.body) {
+          // SSE streaming path (Vibe, Studio)
+          res.writeHead(200, {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache",
+            connection: "keep-alive",
+            "access-control-allow-origin": "*",
+          });
+          const reader = upstream.body.getReader();
+          req.on("close", () => reader.cancel().catch(() => {}));
+          (async () => {
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+              }
+            } catch {
+            } finally {
+              res.end();
+            }
+          })();
+        } else {
+          // JSON path (Dashboard frontend)
+          const upstreamCT = String(upstream.headers.get("content-type") || "");
+          if (upstreamCT.includes("text/event-stream") && upstream.body) {
+            // crew-lead returned SSE but caller wanted JSON — extract final reply
+            const rawSSE = await upstream.text().catch(() => "");
+            let reply = "";
+            for (const line of rawSSE.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                const ev = JSON.parse(line.slice(6));
+                if (ev.type === "done" && ev.transcript) reply = ev.transcript;
+                else if (ev.type === "chat_message" && ev.content) reply = ev.content;
+                else if (ev.type === "chunk" && ev.text) reply += ev.text;
+              } catch {}
+            }
+            res.writeHead(200, {
+              "content-type": "application/json",
+              "access-control-allow-origin": "*",
+            });
+            res.end(JSON.stringify({ ok: true, reply: reply || "(no reply)" }));
+          } else {
+            const data = await upstream.json().catch(() => ({}));
+            res.writeHead(200, {
+              "content-type": "application/json",
+              "access-control-allow-origin": "*",
+            });
+            res.end(JSON.stringify(data));
+          }
+        }
       } catch (e) {
         console.error(
           `[dashboard] proxyCrewLeadChat error: ${e?.message || String(e)}`,
@@ -4977,18 +5134,7 @@ const server = http.createServer(async (req, res) => {
       let body = "";
       for await (const chunk of req) body += chunk;
       const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
-      let clAuthToken2 = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
-      if (!clAuthToken2) {
-        try {
-          clAuthToken2 =
-            JSON.parse(
-              fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "config.json"),
-                "utf8",
-              ),
-            )?.rt?.authToken || "";
-        } catch { }
-      }
+      const clAuthToken2 = resolveCrewLeadAuthToken();
       const clRes = await fetch(`http://127.0.0.1:${crewLeadPort}/clear`, {
         method: "POST",
         headers: {
@@ -5047,21 +5193,7 @@ const server = http.createServer(async (req, res) => {
         projectId || "(none)",
       );
 
-      // Get auth token
-      const token = (() => {
-        try {
-          return (
-            JSON.parse(
-              fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "config.json"),
-                "utf8",
-              ),
-            )?.rt?.authToken || ""
-          );
-        } catch {
-          return "";
-        }
-      })();
+      const token = resolveCrewLeadAuthToken();
 
       // Build crew-lead URL with both sessionId and projectId
       let clUrl = `http://127.0.0.1:${crewLeadPort}/api/crew-lead/history?sessionId=${encodeURIComponent(sessionId)}`;
@@ -5124,21 +5256,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // Get auth token
-      const token = (() => {
-        try {
-          return (
-            JSON.parse(
-              fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "config.json"),
-                "utf8",
-              ),
-            )?.rt?.authToken || ""
-          );
-        } catch {
-          return "";
-        }
-      })();
+      const token = resolveCrewLeadAuthToken();
 
       // Build crew-lead URL
       let clUrl = `http://127.0.0.1:${crewLeadPort}/api/crew-lead/project-messages?projectId=${encodeURIComponent(projectId)}&limit=${encodeURIComponent(limit)}`;
@@ -5308,7 +5426,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: writeErr.message }));
         return;
       }
-      // Sync to ~/.crewswarm/config.json
+      // Sync to ~/.crewswarm/crewswarm.json
       try {
         const cs = readCSConfig();
         if (!cs.providers) cs.providers = {};
@@ -5424,75 +5542,67 @@ const server = http.createServer(async (req, res) => {
       const isXai =
         (providerId && providerId.toLowerCase() === "xai") ||
         (baseUrl && baseUrl.toLowerCase().includes("x.ai"));
-      // Perplexity has no GET /models endpoint — use known model list
-      if (isPerplexity) {
-        const knownModels = [
-          { id: "sonar", name: "Sonar" },
-          { id: "sonar-pro", name: "Sonar Pro" },
-          { id: "sonar-reasoning", name: "Sonar Reasoning" },
-          { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro" },
-        ];
-        provider.models = knownModels;
-        if (cfg.models?.providers?.[providerId])
-          cfg.models.providers[providerId].models = knownModels;
-        if (cfg.providers?.[providerId])
-          cfg.providers[providerId].models = knownModels;
-        const writeErr = await safeWriteConfig(cfg);
-        if (writeErr) {
-          res.writeHead(writeErr.status, { "content-type": "application/json" });
-          res.end(JSON.stringify({ error: writeErr.message }));
-          return;
-        }
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(
-          JSON.stringify({
+      const isOpenRouter =
+        (providerId && providerId.toLowerCase() === "openrouter") ||
+        (baseUrl && baseUrl.toLowerCase().includes("openrouter.ai"));
+      // Perplexity: fetch from /v1/models; xAI: fetch from /models; both fallback when empty
+      // OpenRouter: try API first; if empty/fail, use known list (Hunter Alpha, Claude, GPT-4, etc.)
+      // Default returns text-only (~350); output_modalities=all returns text+image+audio (~382)
+      if (isOpenRouter) {
+        try {
+          const r = await fetch(`${baseUrl}/models?output_modalities=all`, {
+            headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+            signal: AbortSignal.timeout(15000),
+          });
+          const d = await r.json().catch(() => ({}));
+          let rawModels = d.data || d.models || [];
+          if (rawModels.length === 0) throw new Error("Empty response");
+          const models = rawModels
+            .filter((m) => m.id || m.name)
+            .map((m) => ({ id: m.id || m.name, name: m.name || m.id }))
+            .sort((a, b) => a.id.localeCompare(b.id));
+          provider.models = models;
+          if (cfg.models?.providers?.[providerId]) cfg.models.providers[providerId].models = models;
+          if (cfg.providers?.[providerId]) cfg.providers[providerId].models = models;
+          const writeErr = await safeWriteConfig(cfg);
+          if (writeErr) {
+            res.writeHead(writeErr.status, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: writeErr.message }));
+            return;
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, models: models.map((m) => m.id), count: models.length }));
+        } catch (e) {
+          const knownModels = [
+            { id: "openrouter/hunter-alpha", name: "Hunter Alpha (1T params, 1M context)" },
+            { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4" },
+            { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet" },
+            { id: "openai/gpt-4o", name: "GPT-4o" },
+            { id: "openai/gpt-4o-mini", name: "GPT-4o Mini" },
+            { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash" },
+            { id: "google/gemini-2.5-flash-preview", name: "Gemini 2.5 Flash" },
+            { id: "meta-llama/llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout 17B" },
+            { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B" },
+            { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek Chat V3" },
+            { id: "mistralai/mistral-large-2411", name: "Mistral Large" },
+          ];
+          provider.models = knownModels;
+          if (cfg.models?.providers?.[providerId]) cfg.models.providers[providerId].models = knownModels;
+          if (cfg.providers?.[providerId]) cfg.providers[providerId].models = knownModels;
+          const writeErr = await safeWriteConfig(cfg);
+          if (writeErr) {
+            res.writeHead(writeErr.status, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: writeErr.message }));
+            return;
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
             ok: true,
             models: knownModels.map((m) => m.id),
             count: knownModels.length,
-            note: "Perplexity has no /models API; built-in list used.",
-          }),
-        );
-        return;
-      }
-      // xAI /models may return empty or different shape — use known Grok list when empty
-      if (isXai) {
-        const knownModels = [
-          { id: "grok-3-mini", name: "Grok 3 Mini" },
-          { id: "grok-3", name: "Grok 3" },
-          {
-            id: "grok-4-fast-non-reasoning",
-            name: "Grok 4 Fast (non-reasoning)",
-          },
-          { id: "grok-4-fast-reasoning", name: "Grok 4 Fast (reasoning)" },
-          {
-            id: "grok-4-1-fast-non-reasoning",
-            name: "Grok 4.1 Fast (non-reasoning)",
-          },
-          { id: "grok-4-1-fast-reasoning", name: "Grok 4.1 Fast (reasoning)" },
-          { id: "grok-4-0709", name: "Grok 4 0709" },
-          { id: "grok-code-fast-1", name: "Grok Code Fast" },
-          { id: "grok-2-vision-1212", name: "Grok 2 Vision" },
-        ];
-        provider.models = knownModels;
-        if (cfg.models?.providers?.[providerId])
-          cfg.models.providers[providerId].models = knownModels;
-        if (cfg.providers?.[providerId])
-          cfg.providers[providerId].models = knownModels;
-        const writeErr = await safeWriteConfig(cfg);
-        if (writeErr) {
-          res.writeHead(writeErr.status, { "content-type": "application/json" });
-          res.end(JSON.stringify({ error: writeErr.message }));
-          return;
+            note: "OpenRouter API unreachable; built-in model list used. Includes Hunter Alpha.",
+          }));
         }
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(
-          JSON.stringify({
-            ok: true,
-            models: knownModels.map((m) => m.id),
-            count: knownModels.length,
-            note: "xAI built-in Grok model list used.",
-          }),
-        );
         return;
       }
       const isGoogle =
@@ -5507,7 +5617,9 @@ const server = http.createServer(async (req, res) => {
           };
       const modelsUrl = isGoogle
         ? `${baseUrl}/models?key=${key}`
-        : `${baseUrl}/models`;
+        : isPerplexity
+          ? `${baseUrl.replace(/\/$/, "")}/v1/models`
+          : `${baseUrl}/models`;
       try {
         const modelsRes = await fetch(modelsUrl, {
           headers: fetchHeaders,
@@ -5590,19 +5702,13 @@ const server = http.createServer(async (req, res) => {
             const knownModels = [
               { id: "grok-3-mini", name: "Grok 3 Mini" },
               { id: "grok-3", name: "Grok 3" },
-              {
-                id: "grok-4-fast-non-reasoning",
-                name: "Grok 4 Fast (non-reasoning)",
-              },
+              { id: "grok-4-fast-non-reasoning", name: "Grok 4 Fast (non-reasoning)" },
               { id: "grok-4-fast-reasoning", name: "Grok 4 Fast (reasoning)" },
-              {
-                id: "grok-4-1-fast-non-reasoning",
-                name: "Grok 4.1 Fast (non-reasoning)",
-              },
-              {
-                id: "grok-4-1-fast-reasoning",
-                name: "Grok 4.1 Fast (reasoning)",
-              },
+              { id: "grok-4-1-fast-non-reasoning", name: "Grok 4.1 Fast (non-reasoning)" },
+              { id: "grok-4-1-fast-reasoning", name: "Grok 4.1 Fast (reasoning)" },
+              { id: "grok-4.20-multi-agent-beta-0309", name: "Grok 4.20 Multi-Agent Beta" },
+              { id: "grok-4.20-beta-0309-reasoning", name: "Grok 4.20 Beta (reasoning)" },
+              { id: "grok-4.20-beta-0309-non-reasoning", name: "Grok 4.20 Beta (non-reasoning)" },
               { id: "grok-4-0709", name: "Grok 4 0709" },
               { id: "grok-code-fast-1", name: "Grok Code Fast" },
               { id: "grok-2-vision-1212", name: "Grok 2 Vision" },
@@ -5837,11 +5943,6 @@ const server = http.createServer(async (req, res) => {
         savedOc.brave?.apiKey ||
         process.env.BRAVE_API_KEY
       );
-      keys.greptile = !!(
-        savedCs.greptile?.apiKey ||
-        savedOc.greptile?.apiKey ||
-        process.env.GREPTILE_API_KEY
-      );
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ keys }));
       return;
@@ -5892,9 +5993,7 @@ const server = http.createServer(async (req, res) => {
           ? "PARALLEL_API_KEY"
           : toolId === "brave"
             ? "BRAVE_API_KEY"
-            : toolId === "greptile"
-              ? "GREPTILE_API_KEY"
-              : null;
+            : null;
       if (envKey) {
         const zshrc = path.join(os.homedir(), ".zshrc");
         let content = await fs.promises.readFile(zshrc, "utf8").catch(() => "");
@@ -5947,7 +6046,7 @@ const server = http.createServer(async (req, res) => {
           ? "PARALLEL_API_KEY"
           : toolId === "brave"
             ? "BRAVE_API_KEY"
-            : "GREPTILE_API_KEY"
+            : ""
         ];
       if (!key) {
         res.writeHead(200, { "content-type": "application/json" });
@@ -5987,17 +6086,6 @@ const server = http.createServer(async (req, res) => {
           );
           ok = r.ok;
           message = ok ? "Connected — Brave Search ready" : null;
-          error = ok ? undefined : `${r.status} ${r.statusText}`;
-        } else if (toolId === "greptile") {
-          const r = await fetch("https://api.greptile.com/v2/repositories", {
-            headers: {
-              Authorization: `Bearer ${key}`,
-              "X-GitHub-Token": "dummy",
-            },
-            signal: AbortSignal.timeout(10000),
-          });
-          ok = r.ok || r.status === 401;
-          message = ok ? "Connected — Greptile ready" : null;
           error = ok ? undefined : `${r.status} ${r.statusText}`;
         }
         res.writeHead(200, { "content-type": "application/json" });
@@ -8296,17 +8384,7 @@ ORDER BY day DESC, cost DESC;`;
     // the browser doesn't need to know the token.
     const CREW_LEAD_URL = "http://127.0.0.1:5010";
     function getCLToken() {
-      try {
-        const cfg = JSON.parse(
-          fs.readFileSync(
-            path.join(os.homedir(), ".crewswarm", "config.json"),
-            "utf8",
-          ),
-        );
-        return cfg?.rt?.authToken || "";
-      } catch {
-        return "";
-      }
+      return resolveCrewLeadAuthToken();
     }
     async function proxyToCL(method, path_, body) {
       const token = getCLToken();
@@ -8451,7 +8529,7 @@ ORDER BY day DESC, cost DESC;`;
           return (
             JSON.parse(
               fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "config.json"),
+                path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
                 "utf8",
               ),
             )?.rt?.authToken || ""
@@ -8943,6 +9021,12 @@ if (process.argv.includes("--print-html")) {
       } else {
         console.error(
           `[dashboard] Port ${listenPort} still in use after 5 retries — exiting`,
+        );
+        console.error(
+          `[dashboard] Free the port:  lsof -nP -iTCP:${listenPort} -sTCP:LISTEN`,
+        );
+        console.error(
+          `[dashboard] Then:            kill -9 $(lsof -ti :${listenPort})`,
         );
         process.exit(1);
       }

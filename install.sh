@@ -31,6 +31,7 @@ Non-interactive environment variables:
   CREWSWARM_ENABLE_AUTONOMOUS=1      Enable background consciousness mode
   CREWSWARM_AUTONOMOUS_MINUTES=15    Background consciousness interval in minutes
   CREWSWARM_SETUP_MCP=1              Write MCP configs for Cursor / Claude Code / OpenCode
+  CREWSWARM_INSTALL_CLIS=all        Install missing coding CLIs (opencode,codex,claude,gemini,cursor,crew-cli,all,n)
   CREWSWARM_START_NOW=1              Start the local CrewSwarm stack after install
 
 Typical one-file local install:
@@ -120,9 +121,9 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
   }
 }
 EOF
-  success "Created ~/.crewswarm/config.json  (RT token: $RT_TOKEN)"
+  success "Created ~/.crewswarm/crewswarm.json  (RT token: $RT_TOKEN)"
 else
-  success "~/.crewswarm/config.json already exists — keeping it"
+  success "~/.crewswarm/crewswarm.json already exists — keeping it"
 fi
 
 CREWSWARM_JSON="$CREWSWARM_DIR/crewswarm.json"
@@ -438,6 +439,96 @@ EOF
   echo "    Bridge runs on port 5015. Messages route to crew-lead automatically."
 else
   skip "Skipping WhatsApp (run 'npm run whatsapp' later and scan QR to activate)"
+fi
+
+# ── 6d2. CLI detection and install (OpenCode, Codex, Claude, Gemini, Cursor, crew-cli) ───
+echo ""
+cli_installed() { command -v "$1" &>/dev/null || [[ -f "$2" ]]; }
+OPENCODE_OK=$(cli_installed opencode "" && echo 1 || echo 0)
+CODEX_OK=$(cli_installed codex "" && echo 1 || echo 0)
+CLAUDE_OK=$(cli_installed claude "" && echo 1 || echo 0)
+GEMINI_OK=$(cli_installed gemini "" && echo 1 || echo 0)
+CURSOR_OK=0
+[[ -f "$HOME/.local/bin/agent" ]] || command -v agent &>/dev/null || command -v cursor &>/dev/null && CURSOR_OK=1
+CREW_CLI_OK=$([[ -f "$REPO_DIR/crew-cli/bin/crew.js" ]] && echo 1 || echo 0)
+
+echo "  Coding CLI status:"
+printf "    %-12s %s\n" "OpenCode"   "$([[ $OPENCODE_OK -eq 1 ]] && echo -e "${GREEN}✓ installed${RESET}" || echo -e "${YELLOW}not found${RESET}")"
+printf "    %-12s %s\n" "Codex"      "$([[ $CODEX_OK -eq 1 ]] && echo -e "${GREEN}✓ installed${RESET}" || echo -e "${YELLOW}not found${RESET}")"
+printf "    %-12s %s\n" "Claude"     "$([[ $CLAUDE_OK -eq 1 ]] && echo -e "${GREEN}✓ installed${RESET}" || echo -e "${YELLOW}not found${RESET}")"
+printf "    %-12s %s\n" "Gemini"     "$([[ $GEMINI_OK -eq 1 ]] && echo -e "${GREEN}✓ installed${RESET}" || echo -e "${YELLOW}not found${RESET}")"
+printf "    %-12s %s\n" "Cursor"     "$([[ $CURSOR_OK -eq 1 ]] && echo -e "${GREEN}✓ installed${RESET}" || echo -e "${YELLOW}not found${RESET}")"
+printf "    %-12s %s\n" "crew-cli"   "$([[ $CREW_CLI_OK -eq 1 ]] && echo -e "${GREEN}✓ built${RESET}" || echo -e "${YELLOW}not built${RESET}")"
+
+MISSING_CLIS=()
+[[ $OPENCODE_OK -eq 0 ]] && MISSING_CLIS+=(opencode)
+[[ $CODEX_OK -eq 0 ]] && MISSING_CLIS+=(codex)
+[[ $CLAUDE_OK -eq 0 ]] && MISSING_CLIS+=(claude)
+[[ $GEMINI_OK -eq 0 ]] && MISSING_CLIS+=(gemini)
+[[ $CURSOR_OK -eq 0 ]] && MISSING_CLIS+=(cursor)
+[[ $CREW_CLI_OK -eq 0 ]] && MISSING_CLIS+=(crew-cli)
+
+if [[ ${#MISSING_CLIS[@]} -gt 0 ]]; then
+  if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    INSTALL_CLIS="${CREWSWARM_INSTALL_CLIS:-N}"
+  else
+    echo ""
+    echo -n "  Install missing CLIs? (opencode|codex|claude|gemini|cursor|crew-cli|all|n) [n] "
+    read -r INSTALL_CLIS
+  fi
+  INSTALL_CLIS="${INSTALL_CLIS:-n}"
+  if [[ "$INSTALL_CLIS" =~ ^[Aa]ll$ ]]; then
+    TO_INSTALL=("${MISSING_CLIS[@]}")
+  elif [[ -n "$INSTALL_CLIS" && "$INSTALL_CLIS" != "n" && "$INSTALL_CLIS" != "N" ]]; then
+    TO_INSTALL=()
+    for c in $(echo "$INSTALL_CLIS" | tr ',' ' '); do
+      c=$(echo "$c" | tr '[:upper:]' '[:lower:]')
+      if [[ " opencode codex claude gemini cursor crew-cli " == *" $c "* ]]; then
+        TO_INSTALL+=("$c")
+      fi
+    done
+  else
+    TO_INSTALL=()
+  fi
+
+  for c in "${TO_INSTALL[@]}"; do
+    case "$c" in
+      opencode)
+        info "Installing OpenCode CLI..."
+        npm install -g @opencode-ai/cli 2>/dev/null && success "OpenCode installed" || warn "OpenCode install failed (try: npm install -g @opencode-ai/cli)"
+        ;;
+      codex)
+        info "Installing Codex CLI..."
+        npm install -g @openai/codex 2>/dev/null && success "Codex installed" || warn "Codex install failed (try: npm install -g @openai/codex)"
+        ;;
+      claude)
+        info "Installing Claude Code CLI..."
+        npm install -g @anthropic-ai/claude-code 2>/dev/null && success "Claude CLI installed" || warn "Claude install failed (try: npm install -g @anthropic-ai/claude-code)"
+        ;;
+      gemini)
+        info "Installing Gemini CLI..."
+        npm install -g @google/gemini-cli 2>/dev/null && success "Gemini CLI installed" || warn "Gemini install failed (try: npm install -g @google/gemini-cli)"
+        ;;
+      cursor)
+        info "Installing Cursor CLI..."
+        if curl -fsSL https://cursor.com/install | bash 2>/dev/null; then
+          success "Cursor CLI installed"
+        else
+          warn "Cursor install failed (try: curl -fsSL https://cursor.com/install | bash)"
+        fi
+        ;;
+      crew-cli)
+        info "Building crew-cli..."
+        if (cd "$REPO_DIR/crew-cli" && npm install --silent 2>/dev/null && npm run build 2>/dev/null); then
+          success "crew-cli built"
+        else
+          warn "crew-cli build failed (try: cd crew-cli && npm install && npm run build)"
+        fi
+        ;;
+    esac
+  done
+else
+  success "All coding CLIs detected"
 fi
 
 # ── 6e. Autonomous / background consciousness ─────────────────────────────────

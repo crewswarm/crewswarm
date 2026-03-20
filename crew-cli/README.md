@@ -64,8 +64,7 @@ crew github doctor                   # GitHub CLI health check
 ```bash
 crew sync --status
 crew privacy --show
-crew serve --mode standalone         # unified /v1 API for dashboard/CLI/headless
-crew serve --mode connected          # proxy unified API to crew-lead/gateway
+crew serve --port 4317               # unified /v1 API + /mcp endpoint
 crew exec "vim src/server.ts"        # interactive terminal (PTY)
 crew listen --duration-sec 6
 crew browser-debug --url http://127.0.0.1:4319
@@ -98,6 +97,35 @@ Preset summary:
 - `turbo6`: 6 parallel workers, QA off, no-router, max throughput
 - `balanced`: 4 workers, QA 1 round, no-router, mixed speed/quality
 - `quality`: 3 workers, QA 2 rounds + stricter gates, no-router
+
+## Diagnostics & Health
+
+```bash
+crew doctor              # checks Node.js, Git, API keys, gateway, MCP, updates (~3s)
+crew doctor --gateway http://custom:5010
+```
+
+`crew doctor` validates your environment and suggests fixes:
+- **API key detection** — shows which of 10 providers are configured
+- **Cheapest-first hints** — when no keys found, recommends Gemini (free) and Groq (free)
+- **Gateway health** — verifies crew-lead is reachable
+- **MCP server health** — checks configured MCP servers
+- **Update check** — shows if a newer version is available on npm
+
+## Key Engine Features
+
+| Feature | Status |
+|---|---|
+| **Streaming output** | ✅ All providers — Gemini, OpenAI, Anthropic, Grok, DeepSeek, Groq, OpenRouter |
+| **Session continuity** | ✅ SessionManager persists history across REPL sessions |
+| **Auto-approve mode** | ✅ `--always-approve` flag for unattended execution |
+| **Turn compression** | ✅ Topic-Action-Summary keeps prompts lean on long sessions |
+| **JIT context** | ✅ Files discovered by tools are indexed for subsequent turns |
+| **Repo-map RAG** | ✅ TF-IDF semantic search injected before execution |
+| **Auto-retry** | ✅ Failed tool calls retry up to 3 times with auto-correction |
+| **Infinite loop detection** | ✅ Repeating-action detector stops stuck agents |
+| **Multimodal vision** | ✅ `--image` flag for Gemini, Claude, GPT-4o, Grok Vision |
+| **Cost tracking** | ✅ Per-session token costs for all providers |
 
 Adaptive QA + reliability:
 - `CREW_QA_SMALL_EDIT_THRESHOLD=1` and `CREW_QA_SMALL_EDIT_ROUNDS=1` reduce QA rounds for tiny edits

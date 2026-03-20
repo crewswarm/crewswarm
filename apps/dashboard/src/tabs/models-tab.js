@@ -25,6 +25,7 @@ const BUILTIN_PROVIDERS = [
   { id:'openai',       label:'OpenAI (API)',        icon:'🟢', url:'https://platform.openai.com/api-keys',        hint:'GPT-4o and o-series — pay per use with API key' },
   { id:'cerebras',     label:'Cerebras',            icon:'🧠', url:'https://cloud.cerebras.ai/',                  hint:'Ultra-fast inference on Cerebras hardware — llama-3.3-70b at 2,000 tok/s' },
   { id:'nvidia',       label:'NVIDIA NIM',          icon:'🎮', url:'https://build.nvidia.com/explore/discover',   hint:'NVIDIA NIM microservices — Llama, Mistral, Phi and more' },
+  { id:'openrouter',   label:'OpenRouter',           icon:'🔀', url:'https://openrouter.ai/keys',                  hint:'One API key for 400+ models — Claude, GPT-4, Gemini, Hunter Alpha, Llama and more' },
   { id:'perplexity',   label:'Perplexity',          icon:'🔍', url:'https://www.perplexity.ai/settings/api',      hint:'Sonar Pro — ideal for crew-pm research tasks' },
   { id:'mistral',      label:'Mistral',             icon:'🌀', url:'https://console.mistral.ai/',                 hint:'Open-weight models, efficient mid-tier tasks' },
   { id:'deepseek',     label:'DeepSeek',            icon:'🌊', url:'https://platform.deepseek.com/',              hint:'Low cost, strong coding performance' },
@@ -36,13 +37,12 @@ const BUILTIN_PROVIDERS = [
 const SEARCH_TOOLS = [
   { id:'parallel', label:'Parallel',    icon:'🔬', url:'https://platform.parallel.ai/signup', hint:'Deep research & web synthesis — used by crew-pm for project planning', envKey:'PARALLEL_API_KEY' },
   { id:'brave',    label:'Brave Search', icon:'🦁', url:'https://api.search.brave.com/',       hint:'Fast web search (~700ms) — best for quick agent lookups',            envKey:'BRAVE_API_KEY'    },
-  { id:'greptile', label:'Greptile',     icon:'🔎', url:'https://app.greptile.com/api',        hint:'Code search & repo indexing — query codebases with natural language', envKey:'GREPTILE_API_KEY' },
 ];
 
 const PROVIDER_ICONS = {
   opencode:'🚀', groq:'⚡', nvidia:'🎮', ollama:'🏠', 'openai-local':'🟢', xai:'𝕏',
   google:'🔵', deepseek:'🌊', openai:'🟢', perplexity:'🔍', cerebras:'🧠', mistral:'🌀',
-  together:'🤝', cohere:'🔶', anthropic:'🟣',
+  together:'🤝', cohere:'🔶', anthropic:'🟣', openrouter:'🔀',
 };
 
 // ── Tab entry point ────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ export async function loadBuiltinProviders() {
 
   try {
     const data = await getJSON('/api/providers');
-    const customs = (data.providers || []).filter(p => !builtinIds.has(p.id));
+    const customs = (data.providers || []).filter(p => !builtinIds.has(p.id) && p.id !== 'greptile');
     if (customs.length) {
       html += `<div style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px;padding:0 2px;">Custom Providers</div>`;
       html += customs.map(p => {

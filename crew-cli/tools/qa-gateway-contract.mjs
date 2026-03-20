@@ -17,7 +17,7 @@ function isRateLimited(text) {
 async function readAuthToken() {
   const token = process.env.CREWSWARM_RT_TOKEN;
   if (token) return token;
-  const cfg = join(homedir(), '.crewswarm', 'config.json');
+  const cfg = join(homedir(), '.crewswarm', 'crewswarm.json');
   if (!existsSync(cfg)) return null;
   try {
     const parsed = JSON.parse(await readFile(cfg, 'utf8'));

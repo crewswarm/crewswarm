@@ -99,6 +99,23 @@ import { normalizeRtAgentId } from "./lib/agent-registry.mjs";
 import { handleAutonomousMentions } from "./lib/chat/autonomous-mentions.mjs";
 import { initIntervalManagers } from "./lib/crew-lead/interval-manager.mjs";
 
+// ── Single instance + canonical PID (dashboard / restart-crew-lead.sh use this path) ──
+const _crewLeadLock = acquireStartupLock("crew-lead", {
+  port: PORT,
+  killStale: false,
+  pidFile: PID_PATH,
+});
+if (!_crewLeadLock.ok) {
+  console.error(`[crew-lead] Refusing to start: ${_crewLeadLock.message}`);
+  console.error(
+    `[crew-lead] Stop the other instance (Services tab, or: bash scripts/restart-crew-lead.sh)`,
+  );
+  console.error(
+    `[crew-lead] If it crashed and left a stale PID file: rm -f ${PID_PATH}`,
+  );
+  process.exit(1);
+}
+
 // ── Global state (declared early — referenced throughout) ────────────────────
 const sseClients = new Set();
 const activeOpenCodeAgents = new Map(); // agentId → { model, since }
@@ -147,7 +164,7 @@ let BG_CONSCIOUSNESS_MODEL = (() => {
   return "groq/llama-3.1-8b-instant";
 })();
 // Runtime-mutable — can be toggled via dashboard without restart.
-// Reads from env first, then from ~/.crewswarm/config.json bgConsciousness field.
+// Reads from env first, then from ~/.crewswarm/crewswarm.json bgConsciousness field.
 function loadBgConsciousnessEnabled() {
   if (process.env.CREWSWARM_BG_CONSCIOUSNESS) return /^1|true|yes$/i.test(String(process.env.CREWSWARM_BG_CONSCIOUSNESS));
   const cfg = loadSystemConfig();
@@ -166,9 +183,14 @@ function loadConfig() {
   const agents = Array.isArray(csSwarm.agents) ? csSwarm.agents : [];
   const agentCfg = agents.find(a => a.id === "crew-lead");
   const modelString = agentCfg?.model || process.env.CREW_LEAD_MODEL || "groq/llama-3.3-70b-versatile";
+  const useGeminiCli =
+    modelString === "gemini-cli" ||
+    modelString?.toLowerCase().startsWith("gemini-cli/") ||
+    agentCfg?.engine === "gemini-cli" ||
+    cs?.crewLeadUseGeminiCli === true;
   const [providerKey, ...modelParts] = modelString.split("/");
-  const modelId = modelParts.join("/");
-  const provider = csSwarm?.providers?.[providerKey] || cs?.providers?.[providerKey];
+  const modelId = useGeminiCli ? "cli" : modelParts.join("/");
+  const provider = useGeminiCli ? null : (csSwarm?.providers?.[providerKey] || cs?.providers?.[providerKey]);
 
   const teamAgents = agents
     .filter(a => a.id && a.id !== "crew-lead")
@@ -208,7 +230,7 @@ function loadConfig() {
     fallbackProvider = csSwarm?.providers?.[fbPk] || cs?.providers?.[fbPk];
   }
 
-  return { modelId, providerKey, provider, knownAgents, agentModels, agentRoster, displayName, emoji, fallbackModelId, fallbackProviderKey, fallbackProvider, agents };
+  return { modelId, providerKey, provider, useGeminiCli, knownAgents, agentModels, agentRoster, displayName, emoji, fallbackModelId, fallbackProviderKey, fallbackProvider, agents };
 }
 
 function tryRead(p) {
@@ -447,7 +469,7 @@ const bgConsciousnessRef = {
     BG_CONSCIOUSNESS_MODEL = v;
     // Persist to config so it survives restart
     try {
-      const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+      const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
       const cfg = loadSystemConfig();
       cfg.bgConsciousnessModel = v;
       fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), "utf8");

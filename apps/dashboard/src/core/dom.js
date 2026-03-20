@@ -81,12 +81,17 @@ export function appendChatBubble(
   primaryModel,
   engineUsed,
   sourceInfo,
+  bubbleOptions,
 ) {
   const box = document.getElementById("chatMessages");
   if (!box) return;
   const isUser = role === "user";
   const isHistoryRender = Boolean(sourceInfo);
-  if (!isUser) {
+  const forceAppend =
+    bubbleOptions &&
+    typeof bubbleOptions === "object" &&
+    bubbleOptions.force === true;
+  if (!isUser && !forceAppend) {
     const last = box.lastElementChild;
     if (last && last.children.length >= 2) {
       const lastBubbleText = last.children[1].textContent;

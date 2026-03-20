@@ -12,6 +12,7 @@ Start here. Treat this section and `docs/CANONICAL/` as the current source of tr
 - `docs/CANONICAL/README.md` — canonical docs map
 - `docs/CANONICAL/ROUTING.md` — shared chat, mentions, dispatch, thread continuity
 - `docs/CANONICAL/RUNTIME.md` — engines, agent execution paths, runtime identity
+- `docs/CANONICAL/CURSOR-CLI.md` — Cursor `agent` CLI, Keychain/auth, `CURSOR_API_KEY`
 - `docs/CANONICAL/MEMORY.md` — shared memory, project messages, RAG role
 - `docs/CANONICAL/TESTING.md` — smoke tests, regression coverage, verification rules
 
@@ -38,9 +39,9 @@ You interact through a web dashboard, Telegram, WhatsApp, or by chatting directl
 | Mode | How it works | Best for |
 |---|---|---|
 | **OpenCode** | Agent tasks run inside `opencode run` — full file editing, bash, session memory | Coding agents (crew-coder, crew-coder-back, crew-coder-front, crew-fixer) |
-| **Cursor CLI** | Agent tasks run via `cursor --model <model> --execute` | Complex reasoning tasks, architect, crew-main |
+| **Cursor CLI** | Agent tasks run via Cursor `agent` CLI with `--model` (default **`composer-2-fast`**; set `cursorCliModel` per agent or `CREWSWARM_CURSOR_MODEL`) | Complex reasoning tasks, architect, crew-main |
 | **Claude Code** | Agent tasks run via `claude -p` — full workspace context, native tool use, session continuity | Large refactors, multi-file reasoning, crew-coder |
-| **Codex CLI** | Agent tasks run via `codex exec --sandbox workspace-write --json` — OpenAI Codex with full file write access | Coding agents that prefer OpenAI models; compatible with any agent |
+| **crew-cli** | Agent tasks run via `codex exec --sandbox workspace-write --json` — OpenAI Codex with full file write access | Coding agents that prefer OpenAI models; compatible with any agent |
 | **Direct API** | Agent calls the LLM provider directly, parses `@@TOOL` markers | Fast/cheap agents, crew-pm, crew-qa, crew-copywriter |
 
 Switch modes from the **Settings → Engines** tab with the bulk setter buttons, or configure per-agent in `~/.crewswarm/crewswarm.json`.
@@ -177,7 +178,7 @@ bash start-studio.sh
 # Opens http://127.0.0.1:3333
 ```
 
-**Full-screen IDE with Monaco editor + agent chat** — Cursor-style layout with file tree, editor, chat panel, and terminal. Perfect for coding with the swarm in one window. See `STUDIO-SETUP-COMPLETE.md` for details.
+**Full-screen IDE with Monaco editor + agent chat** — Cursor-style layout with file tree, editor, chat panel, and terminal. `npm run restart-all` now starts Vibe + file watcher automatically. See `STUDIO-SETUP-COMPLETE.md` for details.
 
 **Option 3: CrewChat.app** (native macOS)
 
@@ -186,7 +187,8 @@ bash start-studio.sh
 All platforms now support image recognition and voice transcription:
 
 - **Dashboard**: Click 📷 to upload images, 🎤 to record voice messages
-- **Studio**: Full coding environment with agent chat sidebar
+- **Vibe (Studio)**: Full coding environment with agent chat sidebar — drag/drop images, Ctrl/Cmd+V paste, or click 📷 to attach up to 3 images per message
+- **crew-cli**: `crew chat --image photo.png "What is this?"` or `/image path.png` in REPL mode — works with Gemini, Anthropic, and OpenAI vision models
 - **Telegram**: Send photos or voice notes → bot analyzes/transcribes automatically
 - **WhatsApp**: Send images or audio → bot handles media
 - **CrewChat.app v2.0**: Native macOS app with two modes:
@@ -201,6 +203,32 @@ All platforms now support image recognition and voice transcription:
 **Providers**: Groq (fast/cheap) or Gemini 2.0 Flash (best quality). Auto-selects based on API keys.
 
 **Cost**: ~$3/month for typical usage (100 images + 1hr audio/day on Groq).
+
+### crew-cli — Standalone Agentic CLI
+
+**`crew-cli/`** is a full-featured TypeScript agentic CLI comparable to Claude Code, Codex CLI, or Gemini CLI:
+
+- **34+ built-in tools**: File I/O, bash, glob/grep, LSP integration, git operations, web search, Docker sandbox, semantic code search (RAG)
+- **Multi-provider**: Gemini, OpenAI, Anthropic, xAI, DeepSeek — auto-detects available API keys
+- **Multimodal vision**: `--image` flag or `/image` REPL command — images sent as proper content parts
+- **Agent memory**: MemoryBroker integration for persistent context across sessions
+- **3-layer executor**: L1 (direct tool calls) → L2 (agentic CoT loop, up to 25 iterations) → L3 (fallback providers)
+- **REPL mode**: `crew chat` for interactive sessions with `/image`, `/tools`, `/model`, `/clear` commands
+- **CI auto-fix**: `crew exec "fix lint errors" --ci` for headless operation
+
+```bash
+# Interactive chat
+crew chat
+
+# One-shot execution
+crew exec "refactor auth module"
+
+# With image attachment
+crew chat --image screenshot.png "What's wrong with this UI?"
+
+# CI mode
+crew exec "fix all TypeScript errors" --ci
+```
 
 See `CREWCHAT-QUICKSTART.md` for CrewChat v2.0 usage guide.  
 See `MULTIMODAL-TAB-UI-COMPLETE.md` for full multimodal setup and API reference.  
@@ -439,7 +467,7 @@ sqlite3 ~/.crewswarm/collections.db "SELECT title, tags FROM collection_items;"
 | `whatsapp-bridge.mjs` | WhatsApp integration (personal bot via Baileys — scan QR once) |
 | `scripts/crew-scribe.mjs` | Memory maintenance (summaries, lessons) |
 | `~/.crewswarm/crewswarm.json` | Agent model assignments + provider API keys |
-| `~/.crewswarm/config.json` | RT auth token |
+| `~/.crewswarm/crewswarm.json` | RT auth token |
 | `~/.crewswarm/agent-prompts.json` | System prompt per agent |
 
 **Crew laws:** `memory/law.md` defines four principles injected into every agent: (1) do not harm the user, (2) no access to personal/private resources without permission, (3) do not break the machine, (4) create value (make the user money or equivalent). See [Laws of robotics](https://en.wikipedia.org/wiki/Laws_of_robotics). Edit `memory/law.md` to tweak.
@@ -744,10 +772,10 @@ In-flight tasks already dispatched to agents cannot be recalled by either comman
 
 ## External API (for integrations)
 
-crew-lead exposes a REST API for external tools. Auth: Bearer token from `~/.crewswarm/config.json → rt.authToken`.
+crew-lead exposes a REST API for external tools. Auth: Bearer token from `~/.crewswarm/crewswarm.json → rt.authToken`.
 
 ```bash
-TOKEN=$(cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])")
+TOKEN=$(cat ~/.crewswarm/crewswarm.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])")
 
 # List agents
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/api/agents
@@ -854,7 +882,7 @@ node scripts/run-scheduled-pipeline.mjs --skill twitter.post --params '{"text":"
 0 9 * * * cd /path/to/crewswarm && node scripts/run-scheduled-pipeline.mjs social >> ~/.crewswarm/logs/cron.log 2>&1
 ```
 
-crew-lead must be running (port 5010). Auth: `~/.crewswarm/config.json` → `rt.authToken`.
+crew-lead must be running (port 5010). Auth: `~/.crewswarm/crewswarm.json` → `rt.authToken`.
 
 ---
 
@@ -1206,7 +1234,7 @@ Add to `~/.cursor/mcp.json` (same format for `~/.claude/mcp.json` and `~/.config
 }
 ```
 
-Find your auth token: `cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])"`
+Find your auth token: `cat ~/.crewswarm/crewswarm.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])"`
 
 Restart your editor after adding the config. The MCP server must be running (`npm run restart-all`).
 
@@ -1244,14 +1272,14 @@ gh auth login   # follow prompts — authenticates gh with GitHub
 
 ## MCP Integration — use crewswarm agents in any project
 
-crewswarm runs an MCP server on port **5020**. Wire it into Cursor, Claude Code, OpenCode, Codex CLI, or Gemini CLI and all 20 agents become available as callable tools in any project — no AGENTS.md copy needed.
+crewswarm runs an MCP server on port **5020**. Wire it into Cursor, Claude Code, OpenCode, crew-cli, or Gemini CLI and all 20 agents become available as callable tools in any project — no AGENTS.md copy needed.
 
 **Auto-setup (recommended):** run `bash install.sh` and answer `y` to the MCP prompt. It configures Cursor, Claude Code, and OpenCode automatically.
 
 **Manual setup:** get your auth token, then add the crewswarm entry to each tool's MCP config:
 
 ```bash
-TOKEN=$(node -e "const c=require('fs').readFileSync(require('os').homedir()+'/.crewswarm/config.json','utf8');console.log(JSON.parse(c).rt?.authToken)")
+TOKEN=$(node -e "const c=require('fs').readFileSync(require('os').homedir()+'/.crewswarm/crewswarm.json','utf8');console.log(JSON.parse(c).rt?.authToken)")
 ```
 
 **Cursor** — `~/.cursor/mcp.json`:
@@ -1281,7 +1309,7 @@ gemini mcp add crewswarm "http://127.0.0.1:5020/mcp" \
 ```
 Config is stored in `.gemini/settings.json` (project-level).
 
-**Codex CLI** — uses its own MCP config via CLI:
+**crew-cli** — uses its own MCP config via CLI:
 ```bash
 # Store your token permanently
 echo 'export CREWSWARM_TOKEN="<TOKEN>"' >> ~/.zshenv
@@ -1305,17 +1333,17 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 |---|---|---|
 | `CREWSWARM_ENGINE_IDLE_TIMEOUT_MS` | `300000` | Kill engine process after this many ms of silence (no stdout/stderr). Resets on any output. |
 | `CREWSWARM_ENGINE_MAX_TOTAL_MS` | `1800000` | Absolute ceiling per engine task regardless of activity (30 min). |
-| `PM_AGENT_IDLE_TIMEOUT_MS` | `300000` | Kill PM loop's `--send` subprocess after this many ms of silence. |
-| `PHASED_TASK_TIMEOUT_MS` | `300000` | Per-agent timeout inside the PM loop's phased dispatch. |
-| `CREWSWARM_DISPATCH_TIMEOUT_MS` | `120000` | ms before a dispatched task times out. |
-| `CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS` | `600000` | Timeout for tasks already claimed by an agent bridge. |
+| `PM_AGENT_IDLE_TIMEOUT_MS` | `900000` | Kill PM loop's `--send` subprocess after this many ms of silence. |
+| `PHASED_TASK_TIMEOUT_MS` | `600000` | Per-agent timeout inside the PM loop's phased dispatch. |
+| `CREWSWARM_DISPATCH_TIMEOUT_MS` | `300000` | ms before an unclaimed dispatched task times out. |
+| `CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS` | `900000` | Timeout for tasks already claimed by an agent bridge. |
 
 ### PM loop behaviour
 
 | Variable | Default | What it controls |
 |---|---|---|
-| `PM_MAX_ITEMS` | `10` | Max roadmap items per PM loop run. |
-| `PM_MAX_CONCURRENT` | `1` | Max parallel tasks dispatched simultaneously. |
+| `PM_MAX_ITEMS` | `200` | Max roadmap items per PM loop run. |
+| `PM_MAX_CONCURRENT` | `20` | Max parallel tasks dispatched simultaneously. |
 | `PM_CODER_AGENT` | `crew-coder` | Override default coding agent for PM loop. |
 | `PM_USE_QA` | `off` | Include crew-qa quality gate in PM pipeline. |
 | `PM_USE_SECURITY` | `off` | Include crew-security in PM pipeline. |
@@ -1353,7 +1381,7 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 |---|---|---|
 | `CREW_LEAD_PORT` | `5010` | crew-lead HTTP server port. |
 | `SWARM_DASH_PORT` | `4319` | Dashboard port. |
-| `WA_HTTP_PORT` | `3000` | WhatsApp bridge HTTP port. |
+| `WA_HTTP_PORT` | `5015` | WhatsApp bridge HTTP port. |
 
 ---
 

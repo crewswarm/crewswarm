@@ -99,6 +99,30 @@ export async function buildImageContextBlock(paths: string[] = [], maxBytes = 25
   return `## Extra Image Context\n${sections.join('\n\n')}`;
 }
 
+/** Load images as structured attachments for multimodal LLM input */
+export async function loadImageAttachments(
+  paths: string[] = [],
+  maxBytes = 250_000
+): Promise<Array<{ data: string; mimeType: string }>> {
+  if (!paths.length) return [];
+  const attachments: Array<{ data: string; mimeType: string }> = [];
+
+  for (const rawPath of paths) {
+    const abs = resolve(rawPath);
+    try {
+      const mime = inferImageMime(abs);
+      if (!mime) continue;
+      const buf = await readFile(abs);
+      const used = buf.subarray(0, maxBytes);
+      attachments.push({ data: used.toString('base64'), mimeType: mime });
+    } catch {
+      // Skip unreadable files
+    }
+  }
+
+  return attachments;
+}
+
 export function mergeTaskWithContext(task: string, blocks: string[]): string {
   const filtered = blocks.map(x => String(x || '').trim()).filter(Boolean);
   if (!filtered.length) return task;

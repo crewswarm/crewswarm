@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 
 const CREW_LEAD_URL = process.env.CREW_LEAD_URL || "http://127.0.0.1:5010";
-const CFG = path.join(os.homedir(), ".crewswarm", "config.json");
+const CFG = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 const timeoutMs = Number(process.env.CREWSWARM_SMOKE_TIMEOUT_MS || "120000");
 const pollMs = Number(process.env.CREWSWARM_SMOKE_POLL_MS || "1500");
 
@@ -19,7 +19,7 @@ function getToken() {
 
 async function dispatch(agent, task) {
   const token = getToken();
-  if (!token) throw new Error("Missing RT token in ~/.crewswarm/config.json (rt.authToken)");
+  if (!token) throw new Error("Missing RT token in ~/.crewswarm/crewswarm.json (rt.authToken)");
 
   const res = await fetch(`${CREW_LEAD_URL}/api/dispatch`, {
     method: "POST",

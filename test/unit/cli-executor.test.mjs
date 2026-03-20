@@ -15,6 +15,22 @@ test("buildCLICommand uses non-interactive cursor flags", () => {
   ]);
 });
 
+test("buildCLICommand maps provider model strings to Cursor default (composer-2-fast)", () => {
+  const result = buildCLICommand(
+    "cursor",
+    "inspect this",
+    "anthropic/claude-sonnet-4-5",
+    "/tmp",
+  );
+  assert.deepEqual(result.args.slice(0, 4), [
+    "--print",
+    "--yolo",
+    "--model",
+    process.env.CREWSWARM_CURSOR_MODEL || "composer-2-fast",
+  ]);
+  assert.equal(result.args[4], "inspect this");
+});
+
 test("buildCLICommand uses skip-permissions for claude", () => {
   const result = buildCLICommand("claude", "inspect this", "sonnet", "/tmp/project");
   assert.deepEqual(result.args, [

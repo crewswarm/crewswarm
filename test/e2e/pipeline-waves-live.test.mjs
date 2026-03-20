@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
-const CONFIG_PATH = join(homedir(), ".crewswarm", "config.json");
+const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
 
 let authToken;
 

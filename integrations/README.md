@@ -101,7 +101,7 @@ Add to `~/.cursor/mcp.json` (or `~/.claude/mcp.json`, `~/.config/opencode/mcp.js
 }
 ```
 
-Get token: `cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])"`
+Get token: `cat ~/.crewswarm/crewswarm.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])"`
 
 ### Available Tools
 
@@ -177,7 +177,7 @@ node integrations/mcp-server.mjs
 
 **WhatsApp:**
 - `WA_ALLOWED_NUMBERS` — Comma-separated phone numbers
-- `WA_HTTP_PORT` — HTTP server port (default: 3000)
+- `WA_HTTP_PORT` — HTTP server port (default: 5015)
 
 **MCP:**
 - `MCP_PORT` — Server port (default: 5020)

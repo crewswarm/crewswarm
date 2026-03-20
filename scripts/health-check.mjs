@@ -23,7 +23,7 @@ const NO_SERVICES  = process.argv.includes("--no-services"); // skip live checks
 const CREW_LEAD  = process.env.CREW_LEAD_URL  || "http://127.0.0.1:5010";
 const DASHBOARD  = process.env.DASHBOARD_URL  || "http://127.0.0.1:4319";
 const MCP_URL    = process.env.MCP_URL        || "http://127.0.0.1:5020";
-const CFG_PATH   = path.join(os.homedir(), ".crewswarm", "config.json");
+const CFG_PATH   = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 const SWARM_PATH = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 
 // ── Output helpers ─────────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ async function run() {
   section("Config");
   const hasConfig = fs.existsSync(CFG_PATH);
   const hasSwarm  = fs.existsSync(SWARM_PATH);
-  check("~/.crewswarm/config.json", hasConfig ? "pass" : "fail", hasConfig ? "" : "run: bash install.sh");
+  check("~/.crewswarm/crewswarm.json", hasConfig ? "pass" : "fail", hasConfig ? "" : "run: bash install.sh");
   check("~/.crewswarm/crewswarm.json", hasSwarm ? "pass" : "fail", hasSwarm ? "" : "run: bash install.sh");
 
   const token = getToken();

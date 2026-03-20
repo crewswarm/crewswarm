@@ -1,17 +1,24 @@
 {
   "name": "crewswarm-cli",
-  "version": "0.1.0-alpha",
-  "description": "Command-line interface for CrewSwarm agent orchestration",
+  "version": "0.1.0",
+  "description": "Multi-model AI coding CLI with 34+ tools, multi-agent swarm, and real-time streaming — works with GPT, Claude, Gemini, Grok, DeepSeek, and more",
   "type": "module",
   "main": "dist/crew.mjs",
   "bin": {
     "crew": "bin/crew.js"
   },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "node bin/crew.js",
-    "build": "npm run build:cli && npm run build:memory",
+    "build": "npm run build:cli && npm run build:memory && npm run build:engine",
     "build:cli": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --target=node20 --sourcemap --outfile=dist/crew.mjs --packages=external",
     "build:memory": "esbuild src/memory/index.ts --bundle --platform=node --format=esm --target=node20 --sourcemap --outfile=dist/memory.mjs --packages=external",
+    "build:engine": "esbuild src/engine-api.ts --bundle --platform=node --format=esm --target=node20 --sourcemap --outfile=dist/engine.mjs --packages=external",
     "test": "node --import tsx --test tests/unit/*.test.js",
     "test:coverage": "node --import tsx --test --experimental-test-coverage tests/*.test.js tests/unit/*.test.js",
     "qa:inventory": "node tools/qa-file-inventory.mjs",
@@ -27,14 +34,47 @@
     "benchmark:check": "node scripts/benchmark-presets.mjs --check --tasks-file benchmarks/presets-corpus.json --baseline benchmarks/presets-baseline.json",
     "benchmark:check:ci": "node scripts/benchmark-presets.mjs --check --tasks-file benchmarks/presets-corpus.json --baseline benchmarks/presets-baseline.json --min-pass-rate 0.5 --max-regression-pct 40 --skip-if-unavailable",
     "benchmark:baseline:update": "node scripts/benchmark-presets.mjs --update-baseline --tasks-file benchmarks/presets-corpus.json --baseline benchmarks/presets-baseline.json",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
     "typecheck:touched": "node scripts/typecheck-touched.mjs",
     "check": "npm run build && node --check dist/crew.mjs",
     "doctor": "node bin/crew.js doctor",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepublishOnly": "npm run build"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "keywords": [
+    "ai",
+    "cli",
+    "coding",
+    "agent",
+    "multi-agent",
+    "grok",
+    "gemini",
+    "openai",
+    "claude",
+    "deepseek",
+    "agentic",
+    "code-generation",
+    "llm",
+    "crewswarm",
+    "orchestration",
+    "devtools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crewswarm/crewswarm.git",
+    "directory": "crew-cli"
+  },
+  "homepage": "https://crewswarm.com/cli",
+  "bugs": {
+    "url": "https://github.com/crewswarm/crewswarm/issues"
+  },
+  "author": "CrewSwarm <hello@crewswarm.com>",
+  "license": "ISC",
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@google/genai": "^1.44.0",
@@ -69,8 +109,5 @@
     "example": "examples",
     "lib": "lib",
     "test": "tests"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  }
 }

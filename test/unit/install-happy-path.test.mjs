@@ -199,7 +199,7 @@ describe("install.sh — structural completeness", () => {
 
   it("creates config.json with an RT auth token", () => {
     assert.ok(
-      SCRIPT_SRC.includes("config.json"),
+      SCRIPT_SRC.includes("crewswarm.json"),
       "Expected config.json bootstrap"
     );
     assert.ok(
@@ -598,7 +598,7 @@ describe("install.sh — idempotency (re-run does not overwrite)", () => {
     // Record the generated auth token so we can verify it survives the second run
     const cfgFile = path.join(tempHome.dir, ".crewswarm", "config.json");
     const cfg = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
-    firstToken = cfg.rt.authToken;
+    firstToken = cfg?.rt?.authToken;
 
     // Second run — should be safe and preserve the existing token
     const second = runInstallDryRun(tempHome.dir);

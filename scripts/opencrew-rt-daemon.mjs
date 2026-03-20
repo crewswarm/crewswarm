@@ -522,7 +522,7 @@ if (isMain) {
   let token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
   if (!token) {
     const home = process.env.HOME || process.env.USERPROFILE || "";
-    for (const p of [join(home, ".crewswarm", "config.json"), join(home, ".openclaw", "openclaw.json")]) {
+    for (const p of [join(home, ".crewswarm", "crewswarm.json"), join(home, ".openclaw", "openclaw.json")]) {
       try {
         const cfg = JSON.parse(readFileSync(p, "utf8"));
         token = cfg?.rt?.authToken || cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
@@ -534,7 +534,7 @@ if (isMain) {
   const requireToken = requireTokenEnv === "1" || (requireTokenEnv !== "0" && token !== "");
 
   if (requireToken && !token) {
-    console.error("CREWSWARM_RT_AUTH_TOKEN is required when CREWSWARM_RT_REQUIRE_TOKEN=1. Set it in ~/.crewswarm/config.json (rt.authToken) or ~/.openclaw/openclaw.json (env.CREWSWARM_RT_AUTH_TOKEN).");
+    console.error("CREWSWARM_RT_AUTH_TOKEN is required when CREWSWARM_RT_REQUIRE_TOKEN=1. Set it in ~/.crewswarm/crewswarm.json (rt.authToken) or ~/.openclaw/openclaw.json (env.CREWSWARM_RT_AUTH_TOKEN).");
     process.exit(1);
   }
 

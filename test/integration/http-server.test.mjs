@@ -95,7 +95,7 @@ before(async () => {
   resetPaths();
   await mkdir(join(tempHomeDir, ".crewswarm"), { recursive: true });
   await writeFile(
-    join(tempHomeDir, ".crewswarm", "config.json"),
+    join(tempHomeDir, ".crewswarm", "crewswarm.json"),
     JSON.stringify({}, null, 2),
   );
   const deps = makeMockDeps();

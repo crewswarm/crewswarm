@@ -31,7 +31,7 @@ const LOGS_DIR = path.join(CREWSWARM_DIR, "orchestrator-logs");
 // Auth token for crew-lead
 function loadAuthToken() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(CREWSWARM_DIR, "config.json"), "utf8"));
+    const cfg = JSON.parse(fs.readFileSync(path.join(CREWSWARM_DIR, "crewswarm.json"), "utf8"));
     return cfg?.rt?.authToken || "";
   } catch { return ""; }
 }

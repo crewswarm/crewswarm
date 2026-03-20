@@ -30,6 +30,9 @@ backups/
 website-backup-*/
 newfeature/
 test-output/
+test-results/
+test-scratch/
+*.cpuprofile
 
 # Private roadmap (internal only)
 docs/ROADMAP-PRIVATE.md
@@ -44,6 +47,13 @@ docs/OPENCODE-INTEGRATION-STATUS.md
 
 # Personal / local-only files
 polymarket_ai_strat/
+marketing/
+
+# Stray symlinks / duplicates
+crew-cli/gateway-bridge 2.mjs
+
+# Scripts
+scripts/test-openrouter.mjs
 crew-chat.html
 Modelfile
 stinky-favicon.png
@@ -133,6 +143,7 @@ apps/vibe/test/test.md
 
 # IDE / OS
 .DS_Store
+**/.DS_Store
 Thumbs.db
 .idea/
 .vscode/

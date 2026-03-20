@@ -10,7 +10,7 @@
  * Checks performed (in order):
  *   1. Node.js version >= 20
  *   2. ~/.crewswarm/crewswarm.json exists (created by install.sh)
- *   3. ~/.crewswarm/config.json exists (created by install.sh)
+ *   3. ~/.crewswarm/crewswarm.json exists (created by install.sh)
  *   4. At least one provider with an apiKey is configured
  *
  * On success, delegates to `npm run dashboard` (the standard start target).
@@ -63,7 +63,7 @@ success(`Node.js v${process.versions.node}`);
 // ── 2. Config directory ───────────────────────────────────────────────────────
 const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
 const SWARM_CFG     = path.join(CREWSWARM_DIR, "crewswarm.json");
-const SYS_CFG       = path.join(CREWSWARM_DIR, "config.json");
+const SYS_CFG       = path.join(CREWSWARM_DIR, "crewswarm.json");
 const INSTALL_SH    = path.join(ROOT, "install.sh");
 
 function tryReadJSON(p) {

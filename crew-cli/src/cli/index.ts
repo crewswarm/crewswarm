@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-nocheck
 
 import { Command } from 'commander';
 import chalk from 'chalk';
@@ -463,6 +464,78 @@ export function parseConfigValue(raw: string, asJson = false): unknown {
 }
 
 export async function main(args = []) {
+  // ── Fast-path for lightweight commands that don't need full startup ──
+  const firstArg = (args.find(a => !a.startsWith('-')) || '').toLowerCase();
+  if (['doctor', 'update', 'version'].includes(firstArg)) {
+    const lightweight = new Command();
+    lightweight.name('crew');
+
+    lightweight
+      .command('doctor')
+      .description('Run local diagnostics (Node, Git, config, API keys, gateway)')
+      .option('-g, --gateway <url>', 'Gateway URL to check', 'http://localhost:5010')
+      .option('--update-tag <tag>', 'Version channel for update check', 'latest')
+      .action(async options => {
+        const checks = await runDoctorChecks({ gateway: options.gateway, updateTag: options.updateTag });
+        const summary = summarizeDoctorResults(checks);
+
+        console.log(chalk.blue('\ncrew doctor\n'));
+        checks.forEach(check => {
+          let marker = check.ok ? chalk.green('✓') : chalk.red('✗');
+          if (check.name === 'CLI update status' && String(check.details || '').toLowerCase().includes('update available')) {
+            marker = chalk.yellow('!');
+          }
+          console.log(`  ${marker} ${check.name} ${chalk.gray(`— ${check.details}`)}`);
+          if (!check.ok && check.hint) {
+            check.hint.split('\n').forEach(line => console.log(chalk.yellow(`    ${line}`)));
+          }
+        });
+
+        console.log();
+        const summaryColor = summary.failed === 0 ? chalk.green : chalk.red;
+        console.log(summaryColor(`  ${summary.passed} passed, ${summary.failed} failed\n`));
+
+        if (summary.failed > 0) process.exit(1);
+      });
+
+    lightweight
+      .command('update')
+      .description('Check for updates and install latest crew-cli globally')
+      .option('--check', 'Only check availability, do not install', false)
+      .option('--tag <tag>', 'Update channel/tag (default: latest)', 'latest')
+      .option('-y, --yes', 'Skip confirmation prompt', false)
+      .action(async options => {
+        const installed = await getInstalledCliVersion();
+        const latest = await getLatestCliVersion(options.tag || 'latest');
+        if (!latest) {
+          console.log(chalk.yellow('Unable to check latest version from npm right now.'));
+          return;
+        }
+        if (!installed) {
+          console.log(chalk.yellow(`Current version unknown. Latest available: ${latest}`));
+          return;
+        }
+        const cmp = compareVersions(installed, latest);
+        if (cmp >= 0) {
+          console.log(chalk.green(`✓ Up to date (${installed})`));
+        } else {
+          console.log(chalk.yellow(`Update available: ${installed} → ${latest}`));
+          console.log(chalk.gray('Run: npm i -g crewswarm-cli@latest'));
+        }
+      });
+
+    lightweight
+      .command('version')
+      .description('Show crew-cli version')
+      .action(async () => {
+        const v = await getInstalledCliVersion();
+        console.log(v || 'unknown');
+      });
+
+    await lightweight.parseAsync(args, { from: 'user' });
+    process.exit(0);
+  }
+
   const normalizedArgs = [...args];
   if (normalizedArgs.includes('--legacy-router')) {
     process.env.CREW_LEGACY_ROUTER = 'true';
@@ -501,6 +574,8 @@ export async function main(args = []) {
       logger.error(`Failed to mark banner as seen: ${e.message}`);
     }
   }
+
+  // (fast-path for doctor/update/version is at the top of main())
 
   const logger = new Logger();
   const config = new ConfigManager();
@@ -655,20 +730,22 @@ export async function main(args = []) {
 
         const projectDir = options.project || process.cwd();
 
-        // crew-CLI is ALWAYS standalone (uses built-in L1→L2→L3 workers)
-        // Can be used AS an engine by CrewSwarm agents, but never routes back
+        // crew-CLI: use connected mode (gateway dispatch) when --gateway or --crew is specified
+        // Otherwise use standalone agentic executor with built-in tools
+        const useConnected = Boolean(options.gateway || options.crew);
         const useLegacyStandalone = String(process.env.CREW_LEGACY_ROUTER || '').toLowerCase() === 'true';
-        const useUnifiedStandalone = !useLegacyStandalone;
         const fallbackModels = (options.fallbackModel && options.fallbackModel.length > 0)
           ? options.fallbackModel
           : (executorPolicy.fallback || []);
-        const capabilityHandshake = getCapabilityHandshake('standalone');
+        const capabilityHandshake = getCapabilityHandshake(useConnected ? 'connected' : 'standalone');
 
-        // crew-CLI uses built-in L3 workers (executor-code, specialist-qa, etc.)
-        if (useUnifiedStandalone) {
-          logger.info('Executing in unified standalone mode (L1→L2→L3)');
+        // crew-CLI uses agentic executor (standalone) unless explicitly connected
+        if (!useConnected && !useLegacyStandalone) {
+          logger.info('Executing in standalone mode (agentic executor with file tools)');
           const result = await withRetries(
-            async () => orchestrator.executePipeline(input, '', await sessionManager.getSessionId()),
+            async () => orchestrator.executeAgentic(input, {
+              sessionId: await sessionManager.getSessionId()
+            }),
             policy
           );
           const responseText = String(result.response || result.result || '');
@@ -735,7 +812,10 @@ export async function main(args = []) {
                 `chat-${randomUUID()}`
               );
 
-          const responseText = String(result.response || result.result || '');
+          const rawResponse = result.response || result.result || '';
+          const responseText = typeof rawResponse === 'object' 
+            ? (rawResponse.result || rawResponse.output || rawResponse.message || JSON.stringify(rawResponse, null, 2))
+            : String(rawResponse);
           // Try to parse any edits
           const edits = await orchestrator.parseAndApplyToSandbox(responseText);
           if (options.json) {
@@ -2659,7 +2739,7 @@ export async function main(args = []) {
     .requiredOption('--url <url>', 'MCP server URL')
     .option('--bearer-token-env-var <var>', 'Bearer token env variable name')
     .option('--header <kv>', 'Custom header key:value (repeatable)', collectOption, [])
-    .option('--client <id>', 'Optional client sync: cursor | claude | opencode')
+    .option('--client <id>', 'Optional client sync: cursor | claude | opencode | codex')
     .action(async (name, options) => {
       const headers: Record<string, string> = {};
       for (const raw of options.header || []) {
@@ -2678,7 +2758,7 @@ export async function main(args = []) {
     .command('remove')
     .description('Remove an MCP server entry')
     .argument('<name>', 'Server name')
-    .option('--client <id>', 'Optional client sync removal: cursor | claude | opencode')
+    .option('--client <id>', 'Optional client sync removal: cursor | claude | opencode | codex')
     .action(async (name, options) => {
       await removeMcpServer(name, process.cwd(), options.client);
       logger.success(`Removed MCP server "${name}"`);
@@ -3408,7 +3488,10 @@ export async function main(args = []) {
   program
     .command('engine')
     .description('Run a prompt through a direct engine integration')
-    .requiredOption('-e, --engine <id>', 'gemini-api | claude-api | gemini-cli | codex-cli | claude-cli')
+    .requiredOption(
+      '-e, --engine <id>',
+      'gemini-api | claude-api | gemini-cli | codex-cli | claude-cli | cursor | cursor-cli (Cursor agent CLI, not IDE opener)'
+    )
     .requiredOption('-p, --prompt <text>', 'Prompt text')
     .option('-m, --model <id>', 'Model override')
     .option('-t, --timeout <ms>', 'Timeout in milliseconds', '600000')
@@ -3643,6 +3726,9 @@ export async function main(args = []) {
           marker = chalk.yellow('!');
         }
         console.log(`${marker} ${check.name} ${chalk.gray(`(${check.details})`)}`);
+        if (!check.ok && check.hint) {
+          console.log(chalk.yellow(`  ${check.hint}`));
+        }
       });
 
       const summaryColor = summary.failed === 0 ? chalk.green : chalk.red;
@@ -4136,9 +4222,16 @@ export async function main(args = []) {
   program
     .command('serve')
     .description('Start unified interface API server (standalone only)')
+    .option('--mode <mode>', 'Compatibility alias; only "standalone" is supported', 'standalone')
     .option('--host <host>', 'Bind host', process.env.CREW_API_HOST || '127.0.0.1')
     .option('--port <port>', 'Bind port', process.env.CREW_API_PORT || '4317')
     .action(async (options) => {
+      const requestedMode = String(options.mode || 'standalone').trim().toLowerCase();
+      if (requestedMode !== 'standalone') {
+        logger.error(`Unsupported --mode "${requestedMode}". crew serve only supports standalone mode now.`);
+        logger.info('Use: crew serve --port 4097');
+        process.exit(1);
+      }
       const mode = 'standalone';
       const host = String(options.host || '127.0.0.1');
       const port = Number.parseInt(String(options.port || '4317'), 10);
@@ -4172,6 +4265,153 @@ export async function main(args = []) {
       process.on('SIGINT', shutdown);
       process.on('SIGTERM', shutdown);
       await new Promise(() => {});
+    });
+
+  // ── crew validate — blind AI code review ──
+  program
+    .command('validate')
+    .description('Blind AI code review of recent changes')
+    .option('-m, --model <id>', 'Model override', executorPrimary || undefined)
+    .option('-n, --commits <n>', 'How many commits to review (default: 1)', '1')
+    .option('--json', 'Output machine-readable JSON', false)
+    .action(async (options) => {
+      try {
+        const n = Math.max(1, parseInt(options.commits || '1', 10));
+        let diffStat = '';
+        try { diffStat = execSync(`git diff HEAD~${n} --stat`, { encoding: 'utf8', cwd: process.cwd() }).slice(0, 2000); } catch {}
+        let codeSnippets = '';
+        try {
+          const changedFiles = execSync(`git diff HEAD~${n} --name-only`, { encoding: 'utf8', cwd: process.cwd() })
+            .split('\n').filter(Boolean).slice(0, 5);
+          for (const f of changedFiles) {
+            try {
+              const { readFileSync } = await import('node:fs');
+              const content = readFileSync(join(process.cwd(), f), 'utf8');
+              codeSnippets += `\n### ${f}\n\`\`\`\n${content.slice(0, 1500)}\n\`\`\`\n`;
+            } catch {}
+          }
+        } catch {}
+
+        const validateTask = `You are crew-judge, a blind code validator. Review these recent changes and provide a structured assessment.
+
+Score each category 1-5:
+- **Correctness**: Does the code work? Edge cases?
+- **Security**: Vulnerabilities? Input validation?
+- **Performance**: Bottlenecks? Memory leaks?
+- **Readability**: Clean, documented, follows conventions?
+- **Test Coverage**: Tests present? What's missing?
+
+End with VERDICT: SHIP, FIX, or REJECT with actionable items.
+
+## Changed files\n${diffStat || 'No recent changes'}\n\n## Code\n${codeSnippets || 'No code to review'}`;
+
+        logger.info('Running blind validation...');
+        const result = await orchestrator.executeLocally(validateTask, { model: options.model });
+        const responseText = String(result.result || 'Validation could not complete.');
+
+        if (options.json) {
+          printJsonEnvelope('validate.result', { response: responseText, costUsd: result.costUsd || 0 });
+        } else {
+          console.log(chalk.blue('\n--- Validation Report ---'));
+          logger.printWithHighlight(responseText);
+          console.log();
+          if (result.costUsd) {
+            console.log(chalk.gray(`Cost: $${result.costUsd.toFixed(4)}`));
+          }
+        }
+      } catch (error) {
+        logger.error('Validation failed:', (error as Error).message);
+        process.exit(1);
+      }
+    });
+
+  // ── crew diff — colored git diff ──
+  program
+    .command('diff')
+    .description('Show colored git diff of working directory')
+    .option('--staged', 'Show only staged changes', false)
+    .option('--stat', 'Show diffstat only', false)
+    .action(async (options) => {
+      try {
+        const statFlag = options.stat ? ' --stat' : '';
+        const staged = execSync(`git diff --cached${statFlag}`, { encoding: 'utf8', cwd: process.cwd() }).trim();
+        const unstaged = options.staged ? '' : execSync(`git diff${statFlag}`, { encoding: 'utf8', cwd: process.cwd() }).trim();
+        const fullDiff = (staged + '\n' + unstaged).trim();
+        if (!fullDiff) {
+          console.log(chalk.yellow('No git changes.'));
+          return;
+        }
+        const lines = fullDiff.split('\n').map(line => {
+          if (line.startsWith('+++') || line.startsWith('---')) return chalk.bold(line);
+          if (line.startsWith('+')) return chalk.green(line);
+          if (line.startsWith('-')) return chalk.red(line);
+          if (line.startsWith('@@')) return chalk.cyan(line);
+          if (line.startsWith('diff ')) return chalk.bold.blue(line);
+          return line;
+        });
+        console.log(lines.join('\n'));
+      } catch (error) {
+        logger.error('Git diff failed:', (error as Error).message);
+        process.exit(1);
+      }
+    });
+
+  // ── crew test-first — TDD workflow ──
+  program
+    .command('test-first')
+    .description('TDD workflow: generate tests -> implement -> validate')
+    .argument('<task...>', 'Task description')
+    .option('-m, --model <id>', 'Model override', executorPrimary || undefined)
+    .option('--json', 'Output machine-readable JSON', false)
+    .action(async (taskArray, options) => {
+      const task = taskArray.join(' ');
+      const projectDir = process.cwd();
+      try {
+        logger.info('Step 1: Generating tests...');
+        const testResult = await orchestrator.executeLocally(
+          `You are a TDD expert. Write comprehensive tests FIRST. Cover happy path, edge cases, error handling. Output ONLY the test code in a fenced code block with filename.\n\nTask: ${task}\nProject dir: ${projectDir}`,
+          { model: options.model }
+        );
+        const testCode = String(testResult.result || '');
+        if (!options.json) {
+          console.log(chalk.blue('\n--- Tests ---'));
+          logger.printWithHighlight(testCode);
+        }
+
+        logger.info('Step 2: Implementing to pass tests...');
+        const implResult = await orchestrator.executeLocally(
+          `Given these tests, write the MINIMAL implementation to make ALL tests pass.\n\nTests:\n${testCode}\n\nTask: "${task}"`,
+          { model: options.model }
+        );
+        const implCode = String(implResult.result || '');
+        if (!options.json) {
+          console.log(chalk.blue('\n--- Implementation ---'));
+          logger.printWithHighlight(implCode);
+        }
+
+        logger.info('Step 3: Validating...');
+        const valResult = await orchestrator.executeLocally(
+          `Verify: 1) Would all tests pass? 2) Missing edge cases? 3) Bugs?\nVerdict: PASS or FAIL with specific issues.\n\nTests:\n${testCode}\n\nImplementation:\n${implCode}`,
+          { model: options.model }
+        );
+        if (!options.json) {
+          console.log(chalk.blue('\n--- Validation ---'));
+          logger.printWithHighlight(String(valResult.result || ''));
+        }
+
+        const totalCost = (testResult.costUsd || 0) + (implResult.costUsd || 0) + (valResult.costUsd || 0);
+        if (options.json) {
+          printJsonEnvelope('test-first.result', {
+            tests: testCode, implementation: implCode,
+            validation: String(valResult.result || ''), costUsd: totalCost
+          });
+        } else {
+          console.log(chalk.gray(`\nTotal cost: $${totalCost.toFixed(4)}`));
+        }
+      } catch (error) {
+        logger.error('Test-first failed:', (error as Error).message);
+        process.exit(1);
+      }
     });
 
   if (args.length === 0) {

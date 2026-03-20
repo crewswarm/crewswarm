@@ -48,7 +48,7 @@ jobs:
       - name: Bootstrap minimal CI config
         run: |
           mkdir -p ~/.crewswarm
-          echo '{"rt":{"authToken":"ci-static-token"}}' > ~/.crewswarm/config.json
+          echo '{"rt":{"authToken":"ci-static-token"}}' > ~/.crewswarm/crewswarm.json
           echo '{"agents":[],"providers":{}}' > ~/.crewswarm/crewswarm.json
           echo '[]' > ~/.crewswarm/cmd-allowlist.json
           echo '{}' > ~/.crewswarm/agent-prompts.json
@@ -86,12 +86,13 @@ jobs:
         run: |
           mkdir -p ~/.crewswarm
           TOKEN=$(echo -n "${CREWSWARM_RT_TOKEN:-ci-test-token}" | tr -d ' ')
-          echo "{\"rt\":{\"authToken\":\"$TOKEN\"}}" > ~/.crewswarm/config.json
           node -e "
             const fs = require('fs');
             const path = require('path');
             const groqKey = (process.env.GROQ_API_KEY || '').trim();
+            const token = (process.env.CREWSWARM_RT_TOKEN || 'ci-test-token').trim();
             const cfg = {
+              rt: { authToken: token },
               agents: [
                 { id: 'crew-main',  model: 'groq/llama-3.3-70b-versatile' },
                 { id: 'crew-coder', model: 'groq/llama-3.3-70b-versatile' },
@@ -111,7 +112,7 @@ jobs:
           CREWSWARM_OPENCODE_ENABLED: "0"
           CREWSWARM_RT_URL: "ws://127.0.0.1:18889"
         run: |
-          export CREWSWARM_RT_AUTH_TOKEN=$(node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/config.json')); console.log((c.rt&&c.rt.authToken||'').trim())")
+          export CREWSWARM_RT_AUTH_TOKEN=$(node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME+'/.crewswarm/crewswarm.json')); console.log((c.rt&&c.rt.authToken||'').trim())")
           export CREWSWARM_RT_REQUIRE_TOKEN=1
           node scripts/opencrew-rt-daemon.mjs &
           sleep 3

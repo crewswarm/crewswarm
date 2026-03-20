@@ -5,7 +5,7 @@ import { homedir } from 'os';
 export class ConfigManager {
   constructor() {
     this.config = {};
-    this.configPath = join(homedir(), '.crewswarm', 'config.json');
+    this.configPath = join(homedir(), '.crewswarm', 'crewswarm.json');
     this.loadConfig();
   }
 

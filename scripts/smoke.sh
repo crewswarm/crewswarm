@@ -118,10 +118,10 @@ fi
 
 # ── 6. Config bootstrap ──────────────────────────────────────────────────────
 info "Config"
-if [[ -f "$HOME/.crewswarm/config.json" ]]; then
-  ok "~/.crewswarm/config.json"
+if [[ -f "$HOME/.crewswarm/crewswarm.json" ]]; then
+  ok "~/.crewswarm/crewswarm.json"
 else
-  fail "~/.crewswarm/config.json missing — run: bash install.sh"
+  fail "~/.crewswarm/crewswarm.json missing — run: bash install.sh"
 fi
 
 if [[ -f "$HOME/.crewswarm/crewswarm.json" ]]; then

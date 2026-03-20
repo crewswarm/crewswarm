@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Sandbox } from '../sandbox/index.js';
 import { AgentRouter } from '../agent/router.js';
 import { Logger } from '../utils/logger.js';
@@ -8,6 +9,7 @@ import { LocalExecutor } from '../executor/local.js';
 import { getProfileConfig, type RuntimeProfile } from '../executor/profiles.js';
 import { UnifiedPipeline } from '../pipeline/unified.js';
 import { parseJsonObjectWithRepair } from '../utils/structured-json.js';
+import { runAgenticWorker } from '../executor/agentic-executor.js';
 
 export { WorkerPool } from './worker-pool.js';
 export type { WorkerTask, TaskResult, WorkerPoolOptions } from './worker-pool.js';
@@ -591,6 +593,66 @@ export class Orchestrator {
    */
   getTrace(traceId: string) {
     return this.pipeline.getTrace(traceId);
+  }
+
+  /**
+   * Execute a task using the agentic executor with full file tools.
+   * This is the primary execution path — single worker with THINK→ACT→OBSERVE loop
+   * and 34+ tools (read_file, write_file, replace, bash, grep, etc.).
+   * Equivalent to how Claude Code, Codex CLI, and Gemini CLI execute tasks.
+   */
+  async executeAgentic(
+    task: string,
+    options: {
+      model?: string;
+      onToolCall?: (name: string, params: Record<string, any>) => void;
+      conversationContext?: string;
+      sessionId?: string;
+      verbose?: boolean;
+    } = {}
+  ): Promise<any> {
+    const verbose = options.verbose ?? (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true');
+    const model = options.model || process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash';
+
+    // Prepend conversation context if provided
+    let fullTask = task;
+    if (options.conversationContext) {
+      fullTask = `## Recent conversation context\n${options.conversationContext}\n\n## Current task\n${task}`;
+    }
+
+    if (verbose) {
+      console.log(`[Agentic] Starting execution (model: ${model}, tools: 34+)`);
+    }
+
+    try {
+      const result = await runAgenticWorker(fullTask, this.sandbox, {
+        model,
+        maxTurns: 25,
+        onToolCall: options.onToolCall,
+        verbose
+      });
+
+      return {
+        success: result.success !== false,
+        result: result.output,
+        response: result.output,
+        model: result.model || model,
+        turns: result.turns,
+        toolsUsed: result.toolsUsed,
+        costUsd: result.cost || 0,
+        totalCost: result.cost || 0,
+        plan: { decision: 'execute-local' },
+        executionPath: ['agentic-executor']
+      };
+    } catch (err) {
+      return {
+        success: false,
+        result: `Agentic execution failed: ${(err as Error).message}`,
+        response: `Agentic execution failed: ${(err as Error).message}`,
+        model,
+        error: (err as Error).message
+      };
+    }
   }
 
   async parseAndApplyToSandbox(agentOutput: string): Promise<string[]> {

@@ -100,10 +100,14 @@ export async function openAICompatibleTurn(
     { role: 'user', content: fullTask }
   ];
 
+  // GPT-5/6 only support temperature=1; other values cause 400
+  const temp = (config.model?.startsWith?.('gpt-5') || config.model?.startsWith?.('gpt-6'))
+    ? 1
+    : (config.temperature ?? 0.3);
   const requestBody: any = {
     model: config.model,
     messages,
-    temperature: config.temperature ?? 0.3,
+    temperature: temp,
     max_tokens: config.maxTokens ?? 16000,
     tools: toOpenAITools(tools)
   };
@@ -169,16 +173,30 @@ export async function anthropicTurn(
   task: string,
   tools: ToolDeclaration[],
   history: TurnResult[],
-  config: AnthropicDriverConfig
+  config: AnthropicDriverConfig,
+  images?: Array<{ data: string; mimeType: string }>
 ): Promise<LLMTurnResult> {
   const historyContext = historyToOpenAIContext(history);
   const fullTask = historyContext ? `${task}${historyContext}` : task;
+
+  // Build user content: text + optional images using Anthropic's native format
+  let userContent: any = fullTask;
+  if (images?.length) {
+    const parts: any[] = [{ type: 'text', text: fullTask }];
+    for (const img of images) {
+      parts.push({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mimeType, data: img.data }
+      });
+    }
+    userContent = parts;
+  }
 
   const requestBody: any = {
     model: config.model,
     max_tokens: config.maxTokens ?? 16000,
     system: config.systemPrompt,
-    messages: [{ role: 'user', content: fullTask }],
+    messages: [{ role: 'user', content: userContent }],
     temperature: config.temperature ?? 0.3,
     tools: toAnthropicTools(tools)
   };

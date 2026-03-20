@@ -192,7 +192,6 @@ export function setStoredChatProjectId(id) {
 }
 
 export function populateChatProjectDropdown(projects) {
-  console.trace('[DIAGNOSTIC] populateChatProjectDropdown called with', projects?.length, 'projects');
   const tabsContainer = document.getElementById('chatProjectTabs');
   if (!tabsContainer) return;
   

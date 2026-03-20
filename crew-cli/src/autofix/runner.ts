@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { execSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

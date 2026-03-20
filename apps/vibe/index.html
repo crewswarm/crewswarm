@@ -973,17 +973,9 @@
       position: relative;
     }
 
-    /* xterm helpers/textarea must remain accessible for keyboard input.
-       Only hide the char-measure element used for font metrics. */
-    .xterm-char-measure-element {
-      position: absolute;
-      left: -9999px;
-      top: 0;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      visibility: hidden;
-    }
+    /* Let xterm manage its own measurement node.
+       Forcing the char-measure element to 1px breaks column sizing and pushes
+       prompts/input off-screen in the embedded shell. */
 
     /* Chat Panel */
     #chat-panel {
@@ -1212,6 +1204,7 @@
     }
 
     #chat-input-container {
+      position: relative;
       border-top: 1px solid var(--border);
       padding: 12px;
       background: var(--bg-card2);
@@ -2244,13 +2237,17 @@
         </div>
       </div>
       <div id="chat-messages"></div>
+      <div id="chat-image-preview" style="display:none;padding:6px 12px;background:var(--bg-2);border-top:1px solid var(--border);"></div>
       <div id="chat-input-container">
         <textarea 
           id="chat-input" 
-          placeholder="Ask the crew anything... (Enter to send, Shift+Enter for new line)"
+          placeholder="Ask the crew anything... (Enter to send, Shift+Enter for new line, 📷 drop/paste images)"
           rows="3"
         ></textarea>
+        <button id="chat-image-btn" type="button" title="Attach image (or drag & drop / paste)" style="position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,0.08);border:1px solid var(--border);border-radius:6px;color:var(--text-2);font-size:16px;cursor:pointer;padding:4px 8px;line-height:1;transition:background 0.15s;">📷</button>
+        <input type="file" id="chat-image-file" accept="image/*" style="display:none;" />
       </div>
+      <div id="chat-drag-overlay" style="display:none;position:absolute;inset:0;background:rgba(14,165,233,0.12);border:2px dashed var(--accent);border-radius:8px;z-index:50;pointer-events:none;align-items:center;justify-content:center;font-size:14px;color:var(--accent);font-weight:600;">📷 Drop image here</div>
     </div>
 
     <div
@@ -2818,16 +2815,19 @@
       function setBottomTerminalOpen(nextOpen) {
         terminalOpen = Boolean(nextOpen);
         if (terminalOpen) {
-          connectBottomTerminal().catch((error) => {
-            bottomTerminal?.writeln(`\r\n[terminal error] ${error.message}`);
-            updateTerminalStatus("Failed to start shell");
-          });
           terminalPanel.classList.add("visible");
           terminalPanel.setAttribute("aria-hidden", "false");
           toggleButton.textContent = "Hide Terminal";
           requestAnimationFrame(() => {
-            fitBottomTerminal();
-            bottomTerminal?.focus();
+            connectBottomTerminal()
+              .then(() => {
+                fitBottomTerminal();
+                bottomTerminal?.focus();
+              })
+              .catch((error) => {
+                bottomTerminal?.writeln(`\r\n[terminal error] ${error.message}`);
+                updateTerminalStatus("Failed to start shell");
+              });
           });
           return;
         }
