@@ -15,148 +15,53 @@ This file contains the complete repository state, architecture, and documentatio
 
 # crewswarm
 
-**The local-first AI workspace for people who want real files, real services, and real control.**
+**Local-first AI orchestration for people who want real files, real tools, and real control.**
 
-crewswarm is an open-source local-first AI workspace for software development. It combines a real orchestration runtime, multi-agent routing, project-aware chat/history, local coding surfaces, and MCP/editor integrations into one stack you can run yourself.
+crewswarm is an open-source AI workspace for software development. It combines multi-agent orchestration, project-aware memory, local tool execution, chat surfaces, and editor/MCP integrations into one stack you can run yourself.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org)
 [![Website](https://img.shields.io/badge/website-crewswarm.ai-blue)](https://crewswarm.ai)
 
+![crewswarm Dashboard](website/dashboard-agents.webp)
+
 ---
 
-## crewswarm
+## What crewswarm is
 
-![crewswarm Dashboard — Chat, agents, and multi-engine orchestration](website/dashboard-agents.webp)
+Most AI dev tools are just a chat box bolted onto an editor.
 
-**The local-first AI workspace.** Dashboard, multi-agent orchestration, project-aware chat, real-time service monitoring, and multi-engine execution in one stack.
+**crewswarm** is different:
 
-- **Local-first control plane:** Dashboard, Vibe, crewchat, and the same shared runtime.
-- **Multi-engine execution:** Codex, Claude Code, Cursor, Gemini, OpenCode, and `crew-cli`.
-- **Real project context:** Memory, history, services, and files persist beyond one chat tab.
-- **One-file install:** Clone and run `bash install.sh` or the curl installer.
+- **Local-first** — run it on your own machine
+- **Real execution** — agents write files, run commands, and operate on actual projects
+- **Multi-agent** — planner, coder, QA, fixer, security, GitHub, and more
+- **Persistent context** — memory and session history survive beyond one chat
+- **Multiple control surfaces** — dashboard, CLI, Telegram, SwiftBar, MCP/editor integrations
+- **Model-flexible** — use Groq, OpenAI, Anthropic, Gemini, Mistral, DeepSeek, xAI, Ollama, and more
 
-## Why this matters
-
-Most AI dev tools give you one chat box, one model, or one editor plugin.
-
-crewswarm gives you:
-- a real orchestration backend
-- multiple operator surfaces: Dashboard, Vibe, `crewchat`, SwiftBar
-- multi-engine execution: Codex, Claude Code, Cursor, Gemini, OpenCode, `crew-cli`
-- project-aware history and memory
-- a local stack you can actually inspect, run, and extend
-
-That makes it useful for:
-- solo builders who want more than a chat sidebar
-- AI-native engineering teams
+It is built for:
+- solo builders
+- AI-native dev teams
 - local-first users who do not want SaaS lock-in
-- developers building their own agentic workflows and products
-
-## Proof Points
-
-- Real stack, not just prompts: dashboard, RT bus, `crew-lead`, sub-agents, MCP, Vibe, and `crewchat`
-- Multiple production-like surfaces: browser IDE, service dashboard, native macOS chat app, menu bar controls
-- 414 passing unit tests in the current suite
-- smoke coverage for dashboard, `crew-lead`, Vibe, and `crewchat`
-- Playwright coverage for Vibe editor/chat persistence flows
-- one-file local install and non-interactive install flow for Cursor/Codex/headless setups
+- people building real software with agent workflows, not toy demos
 
 ---
 
-## Quickstart (Vibe Mode)
+## Why it matters
 
-### 1. Requirements
-- Node.js 20+
-- OpenAI Codex CLI (`npm install -g @openai/codex`)
+Most “agent” tools still fake the important part.
 
-### 2. Install
-```bash
-git clone https://github.com/crewswarm/crewswarm
-cd crewswarm
-bash install.sh
-```
+They can talk. They can plan. They can look clever.
 
-One-file install on a fresh machine:
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/install.sh)
-```
+Then they fall apart when it is time to:
+- write real files
+- work across multiple steps
+- keep project memory
+- coordinate multiple specialists
+- run locally without disappearing into someone else’s cloud
 
-### 3. Launch the Vibe
-```bash
-npm run vibe
-# Open http://127.0.0.1:3333
-```
-
-### 4. Headless / agent-driven install
-
-For Codex, Cursor, CI, or remote shells, `install.sh` now supports a real non-interactive path:
-
-```bash
-CREWSWARM_SETUP_MCP=1 \
-CREWSWARM_START_NOW=1 \
-bash install.sh --non-interactive
-```
-
-Optional env flags:
-- `CREWSWARM_BUILD_CREWCHAT=1`
-- `CREWSWARM_SETUP_TELEGRAM=1` with `TELEGRAM_BOT_TOKEN=...`
-- `CREWSWARM_SETUP_WHATSAPP=1`
-- `CREWSWARM_ENABLE_AUTONOMOUS=1`
-
----
-
-## How it works
-
-```
-You: "Build a user auth API with tests"
-        ↓
-crew-lead   →  understands intent, dispatches to Codex
-        ↓
-Codex CLI   →  executes in local sandbox (@@WRITE_FILE)
-        ↓
-crew-vibe   →  streams diffs to dashboard, hides tool-calls
-        ↓
-Human:      →  "Explain that middleware logic" (Ask Mode)
-```
-
-No broadcast races. No duplicate work. Each agent gets exactly one task, from one dispatcher, with full context — and actually writes the files.
-
-> **Demo:** type `"build me a REST API with JWT auth and tests"` in the dashboard chat → watch crew-pm plan it → crew-coder write the files → crew-qa audit them → crew-github commit. Takes ~3 minutes on Groq.
-
----
-
-## Why crewswarm vs alternatives
-
-| | crewswarm | LangChain/LangGraph | AutoGen | CrewAI |
-|---|---|---|---|---|
-| **Real file writes** | ✅ actual disk I/O | ⚠️ tools vary | ⚠️ tools vary | ⚠️ tools vary |
-| **PM-led planning** | ✅ dedicated crew-pm | ❌ manual | ❌ manual | ⚠️ role-based |
-| **Any model, any agent** | ✅ per-agent model | ⚠️ global config | ✅ per-agent | ⚠️ limited |
-| **Persistent memory** | ✅ brain.md + session-log | ⚠️ vector store setup | ❌ | ⚠️ |
-| **Local-first** | ✅ no cloud required | ⚠️ | ⚠️ | ⚠️ |
-| **Dashboard + UI** | ✅ built-in | ❌ | ❌ | ❌ |
-| **Telegram / WhatsApp** | ✅ built-in bridges | ❌ | ❌ | ❌ |
-| **Free to start** | ✅ Groq free tier | ✅ | ✅ | ✅ |
-| **Setup time** | ~5 min | hours | hours | 30 min |
-
----
-
-## Features
-
-- **Real tool execution** — Agents write files (`@@WRITE_FILE`), read them (`@@READ_FILE`), make directories (`@@MKDIR`), and run commands (`@@RUN_CMD`). Not simulated. Real disk I/O.
-- **PM-led orchestration** — Natural language requirement → PM breaks into phased tasks → targeted dispatch to the right specialist.
-- **Task pipeline DSL** — crew-lead can emit `@@PIPELINE [{"agent":"crew-coder","task":"..."},{"agent":"crew-qa","task":"..."}]` to chain sequential tasks automatically, with each step's result injected into the next.
-- **Shared memory** — `brain.md`, `session-log.md`, `current-state.md`, and `orchestration-protocol.md` are injected into every agent's prompt. crew-scribe watches completed tasks and writes LLM-generated summaries back to `session-log.md`. Agents write durable facts to `brain.md` via `@@BRAIN:` tags.
-- **Fault tolerance** — Retry with backoff, task leases, heartbeat checks. Failed coding tasks auto-escalate to `crew-fixer`. After max retries, tasks land in the Dead Letter Queue for dashboard replay.
-- **Command approval gate** — `@@RUN_CMD` calls from non-trusted agents pause and show an approval toast in the dashboard (Allow / Deny with 60s countdown). Pre-approve patterns like `npm *` or `node *` in **Settings → Command Allowlist** so common commands run without prompting. Dangerous commands (`rm -rf`, `sudo`, `curl | bash`) are always hard-blocked.
-- **Token / cost tracking** — Every LLM call captures token usage. Dashboard **Settings** shows total calls, tokens, and estimated cost with per-model breakdown.
-- **Telegram** — Full bidirectional Telegram integration. Each chat gets an isolated crew-lead session. Agents reply directly to the sender.
-- **Five execution engines** — Route any agent through **OpenCode** (persistent sessions), **Cursor CLI** (reasoning models), **Claude Code** (`claude -p`, full workspace context), **Codex CLI** (`codex exec`, workspace-write sandbox), or **Gemini CLI** (free via Google OAuth). Switch per-agent from the dashboard **Engines** tab.
-- **Four control surfaces** — CLI (`crew-cli`), web dashboard (port 4319), macOS SwiftBar menu bar, and Telegram.
-- **Any model, any agent** — Each agent runs its own model. Mix OpenAI, Anthropic, Groq, Mistral, DeepSeek, Perplexity, or local Ollama. Switch without restarting.
-- **PM Loop** — Autonomous mode: reads a `ROADMAP.md`, dispatches one item at a time, self-extends when the roadmap empties.
-- **Standalone** — Runs without any third-party orchestration service. Bring your own API keys; direct LLM calls only.
+crewswarm is built to handle actual execution.
 
 ---
 
@@ -165,9 +70,10 @@ No broadcast races. No duplicate work. Each agent gets exactly one task, from on
 ### Requirements
 
 - Node.js 20+
-- API key for at least one LLM provider (Groq is free → [console.groq.com](https://console.groq.com))
+- At least one LLM provider key for best results  
+  - Groq is the fastest free starting point: [console.groq.com](https://console.groq.com)
 
-### One-command install (macOS)
+### Install
 
 ```bash
 git clone https://github.com/crewswarm/crewswarm
@@ -175,222 +81,161 @@ cd crewswarm
 bash install.sh
 ```
 
-Or on a completely fresh machine (no clone needed):
-
+**Fresh machine shortcut:**
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/install.sh)
 ```
 
-The installer:
-- Checks Node.js 20+ (tells you how to get it if missing)
-- Runs `npm install`
-- Creates `~/.crewswarm/` with correct structure
-- Writes default config with a random RT auth token
-- Bootstraps all 10 agents defaulted to Groq Llama 3.3 70B
-- Pre-approves `npm *`, `node *`, `npx *` in the command allowlist
-- Adds a `crew-cli` alias to your shell
-- Optionally wires MCP into Cursor / Claude Code / OpenCode
-- Can run non-interactively with env flags for agent-driven setup
-
-### Zero-to-Wow Demo
-
-Want to see the swarm build something beautiful instantly? Run our built-in "Wow Factor" script. It will ensure you have an API key set up and immediately dispatch the agents to code a 3D animated glassmorphism website from scratch:
-
-```bash
-node scripts/wow.mjs
-```
-
-### Configure API keys
-
-After install, open the dashboard **Providers** tab and paste at least one API key:
-
-```bash
-npm run dashboard
-# Open http://127.0.0.1:4319 → Providers tab
-```
-
-Keys are saved to `~/.crewswarm/crewswarm.json`. Groq is free and the fastest way to get started.
-
-### Start the crew
-
+### Start
 ```bash
 npm run restart-all
 ```
 
-This starts: RT bus (18889) → agent bridges → crew-lead (5010) → dashboard (4319).
+Then open:
+`http://127.0.0.1:4319`
 
-Then open **http://127.0.0.1:4319** and go to the **🧠 Chat** tab.
-
-## Documentation
-
-- [docs/README.md](docs/README.md) — documentation index
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system diagram, port map, request flow
-- [docs/SETUP-NEW-AGENTS.md](docs/SETUP-NEW-AGENTS.md) — adding new agents
-- [docs/MODEL-RECOMMENDATIONS.md](docs/MODEL-RECOMMENDATIONS.md) — model selection guide
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — common issues and fixes
-- [docs/UNIFIED-API.md](docs/UNIFIED-API.md) — REST API overview
-
-
-### Run a build
-
-```bash
-# From the dashboard Chat tab — type naturally, crew-lead dispatches
-# Or from the CLI:
-crew-cli "Build a REST API for user authentication with JWT and tests"
-```
-
-### PM Loop (autonomous mode)
-
-```bash
-# Create a roadmap
-node scripts/run.mjs "Build a SaaS MVP with auth, billing, and a dashboard"
-
-# Start the loop — runs until every roadmap item is complete
-PM_ROADMAP_FILE=./ROADMAP.md CREWSWARM_OUTPUT_DIR=./output node pm-loop.mjs
-```
-
-### Smoke checks
-
-```bash
-npm run smoke            # end-to-end flow test
-npm run health           # verify paths, config, and running services
-```
+Add your provider key in the Providers tab, then go to Chat and start giving tasks.
 
 ---
 
-## The Crew
+### First example
 
-| Agent | Role | Default model |
-|---|---|---|
-| `crew-lead` | Conversational commander — chat, dispatch, pipeline orchestration | Gemini 2.5 Flash |
-| `crew-pm` | Plans, breaks requirements into tasks, manages the roadmap | Grok 4.1 Fast |
-| `crew-coder` | General implementation — files, APIs, scripts | GPT-5.3 Codex |
-| `crew-coder-front` | Frontend specialist — HTML, CSS, JS, UI | GPT-5.3 Codex |
-| `crew-coder-back` | Backend specialist — APIs, DBs, server logic | GPT-5.3 Codex |
-| `crew-qa` | Tests, validation, HTML/accessibility audits | Gemini 2.5 Flash |
-| `crew-fixer` | Debugging, patching failures — auto-escalated on coder failure | GPT-5.3 Codex |
-| `crew-security` | Security audits, hardening | Gemini 2.5 Flash |
-| `crew-github` | Git commits, PRs, branch management | Groq Llama 3.3 70B |
-| `crew-copywriter` | Headlines, CTAs, product copy | Groq Llama 3.3 70B |
-| `crew-main` | General orchestration fallback | Groq Llama 3.3 70B |
+In the dashboard chat, type:
+> Build a REST API for user authentication with JWT and tests
+
+**crewswarm will:**
+- route the request through `crew-lead`
+- break it down through `crew-pm`
+- dispatch implementation to the right coding agent
+- run QA / validation
+- optionally hand off Git tasks
+
+This is not simulated. It works against real files and your real local workspace.
+
+---
+
+### Headless / non-interactive install
+
+For Cursor, Codex, CI, or remote shell setups:
+```bash
+CREWSWARM_SETUP_MCP=1 \
+CREWSWARM_START_NOW=1 \
+bash install.sh --non-interactive
+```
+
+Optional flags:
+- `CREWSWARM_BUILD_CREWCHAT=1`
+- `CREWSWARM_SETUP_TELEGRAM=1`
+- `CREWSWARM_SETUP_WHATSAPP=1`
+- `CREWSWARM_ENABLE_AUTONOMOUS=1`
+
+---
+
+## Core capabilities
+
+**Real tool execution**
+Agents can write files, read files, create directories, run commands, and work inside a real project folder.
+
+**PM-led orchestration**
+Natural language requests are broken into structured tasks and routed to the right agent.
+
+**Shared memory**
+Project context persists through files like `brain.md`, `session-log.md`, `current-state.md`, and `orchestration-protocol.md`.
+
+**Fault tolerance**
+Retries, escalation to fixer agents, task leases, and dead-letter replay support are built in.
+
+**Command approval gate**
+Potentially risky shell commands require approval before execution.
+
+**Multi-engine support**
+Route work through different engines and environments, including Codex, Claude Code, Cursor, Gemini, OpenCode, and `crew-cli`.
+
+**Multiple control surfaces**
+Use crewswarm from the web dashboard, CLI, Telegram, macOS SwiftBar, or MCP/editor integrations.
+
+---
+
+## Why crewswarm vs other frameworks
+
+| Feature | crewswarm | LangChain / LangGraph | AutoGen | CrewAI |
+|---|---|---|---|---|
+| Real file writes | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| PM-led planning | ✅ | ❌ | ❌ | ⚠️ |
+| Persistent memory | ✅ | ⚠️ | ❌ | ⚠️ |
+| Local-first | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| Built-in dashboard | ✅ | ❌ | ❌ | ❌ |
+| Telegram / messaging bridges | ✅ | ❌ | ❌ | ❌ |
+| Easy local startup | ✅ | ⚠️ | ⚠️ | ⚠️ |
+
+---
+
+## Main components
+
+| Component | Purpose |
+|---|---|
+| `crew-lead` | conversational command layer and dispatcher |
+| `crew-pm` | planning, task breakdown, roadmap management |
+| `crew-coder` | implementation |
+| `crew-qa` | testing and validation |
+| `crew-fixer` | debugging and repair |
+| `crew-security` | security review |
+| `crew-github` | Git and repo actions |
+| `dashboard` | browser-based control surface |
+| `crew-cli` | command-line interface |
+| `crew-scribe` | memory and task summarization |
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                       Control Surfaces                           │
-│  Dashboard (4319)  │  SwiftBar  │  Telegram  │  WhatsApp  │  CLI │
-└────────────────────────────┬─────────────────────────────────────┘
-                              │ HTTP (5010)
-                         crew-lead.mjs
-                   (chat · dispatch · pipelines · @@STOP/@@KILL)
-                              │ WebSocket pub/sub
-                 ┌────────────┴────────────┐
-                 │  RT Bus (18889)          │  ← opencrew-rt-daemon.mjs
-                 └────────────┬────────────┘
-                              │ task.assigned / command.run_task
-        ┌───────┬─────────────┼───────┬──────────┐
-      crew-pm  crew-coder  crew-qa  crew-fixer  crew-github  …
-                 │
-              gateway-bridge.mjs (per-agent daemon)
-                 ├── loads shared memory (brain.md, etc.)
-                 ├── calls LLM directly (per-provider API)
-                 ├── executes @@WRITE_FILE / @@READ_FILE / @@RUN_CMD
-                 ├── approval gate for @@RUN_CMD
-                 ├── Code Engine :4096 (OpenCode / Claude Code / Cursor / Codex)
-                 └── retry → escalate to crew-fixer → DLQ
-
-  MCP + OpenAI API (5020)  ← mcp-server.mjs (optional)
-     ├── Cursor MCP · Claude Code MCP · OpenCode MCP · Codex MCP
-     └── Open WebUI · LM Studio · Aider (/v1/chat/completions)
-
-  memory/           ← shared agent context (markdown)
-  crew-scribe.mjs   ← polls done.jsonl, writes brain.md + session-log.md
-  DLQ               ← failed task replay queue
+Dashboard / CLI / Telegram / SwiftBar / MCP
+                  |
+              crew-lead
+                  |
+               RT Bus
+                  |
+     -----------------------------------
+     |        |        |       |       |
+   crew-pm  coder     qa    fixer   github
+                  |
+           local tools + models
+                  |
+          real files, commands, memory
 ```
 
 ---
 
-## Control Surfaces
+## Commands
 
-### CLI
-
-> **Standalone version:** The CLI is also available as a standalone npm package at [github.com/crewswarm/crew-cli](https://github.com/crewswarm/crew-cli)
-
-```bash
-npm run crew-cli -- "Build X"               # full PM orchestration
-npm run crew-cli -- code "Create login"     # send to crew-coder
-npm run crew-cli -- test "Test auth flow"   # send to crew-qa
-npm run crew-cli -- fix "Debug timeout"     # send to crew-fixer
-npm run crew-cli -- audit "Security review" # send to crew-security
-npm run crew-cli -- --status                # check agent status
-```
-
-### Dashboard (http://127.0.0.1:4319)
-
-| Tab | What it does |
-|---|---|
-| **💬 Sessions** | Active RT sessions and recent messages |
-| **📡 RT Messages** | Live feed of every agent message on the bus |
-| **🧠 Chat** | Conversational interface to crew-lead — type naturally, agents do work |
-| **🔨 Build** | Start phased builds, run PM Loop, view output per project |
-| **📁 Projects** | Create and manage projects, start/stop PM Loop per project |
-| **🤖 Agents** | Assign models, edit system prompts, configure tool permissions |
-| **⚙️ Providers** | Paste API keys for Groq, Anthropic, OpenAI, Perplexity, Mistral, DeepSeek, xAI, Ollama |
-| **📡 Telegram** | Bot config, per-chatId conversation viewer, RT activity feed |
-| **🔧 Services** | Restart/stop any managed service |
-| **🛠 Settings** | Token usage + cost tracking, command allowlist (pre-approve `npm *`, `node *`, etc.) |
-| **⚠️ DLQ** | Replay failed tasks |
-
-### Telegram
-
-```bash
-# Start the Telegram bridge — chat with your crew from your phone
-TELEGRAM_BOT_TOKEN=xxx npm run telegram
-```
-
-Each Telegram chatId gets its own isolated crew-lead session. Agent replies are forwarded back to the sender automatically.
-
-### SwiftBar (macOS)
-
-Install `contrib/swiftbar/openswitch.10s.sh` as a SwiftBar plugin for a menu bar status indicator and one-click agent controls.
+- **Start the stack:** `npm run restart-all`
+- **Launch dashboard only:** `npm run dashboard`
+- **Run CLI task:** `crew-cli "Build a REST API with JWT auth and tests"`
+- **Static smoke** (no services): `npm run smoke:static`
+- **Live smoke** (stack must be running): `npm run smoke`
+- **Health check:** `npm run health`
 
 ---
 
 ## Configuration
 
-### API keys & RT token
+crewswarm stores config under your local `~/.crewswarm` directory.
 
-Managed through the dashboard **Providers** tab → saved to `~/.crewswarm/config.json`.
+Typical settings include provider API keys, agent model assignments, RT auth token, output path, and command allowlist.
 
-### Agent models
+The easiest way to manage config is through the dashboard.
 
-Set in the dashboard **Agents** tab or directly in `~/.crewswarm/crewswarm.json`:
-
+**Example agent config**
 ```json
 {
   "agents": [
-    { "id": "crew-pm",    "model": "perplexity/sonar-pro" },
-    { "id": "crew-coder", "model": "anthropic/claude-3-5-sonnet-20241022" },
-    { "id": "crew-qa",    "model": "groq/llama-3.3-70b-versatile" }
+    { "id": "crew-pm", "model": "perplexity/sonar-pro" },
+    { "id": "crew-coder", "model": "anthropic/claude-sonnet-4-20250514" },
+    { "id": "crew-qa", "model": "groq/llama-3.3-70b-versatile" }
   ]
 }
 ```
-
-### Command allowlist
-
-Pre-approve shell commands in **Settings → Command Allowlist** so agents don't prompt for every `npm install`. Patterns use glob syntax (`npm *`, `node *`, `python *`). Hard-blocked commands (`rm -rf`, `sudo`, `curl | bash`) can never be allowlisted.
-
-### Environment variables
-
-| Variable | Description |
-|---|---|
-| `CREWSWARM_RT_AUTH_TOKEN` | Auth token for the RT message bus |
-| `CREWSWARM_OUTPUT_DIR` | Where agents write files |
-| `CREWSWARM_RT_URL` | RT bus URL (default: `ws://127.0.0.1:18889`) |
-| `CREW_LEAD_PORT` | crew-lead HTTP port (default: 5010) |
 
 ---
 
@@ -398,65 +243,40 @@ Pre-approve shell commands in **Settings → Command Allowlist** so agents don't
 
 ```
 crewswarm/
-├── crew-lead.mjs             # conversational commander + pipeline DSL + approval relay
-├── crew-cli.mjs              # unified CLI
-├── gateway-bridge.mjs        # agent runtime — RT bus ↔ direct LLM ↔ tool execution
-├── telegram-bridge.mjs       # Telegram ↔ crew-lead bridge (per-chatId sessions)
-├── pm-loop.mjs               # autonomous PM loop (reads ROADMAP.md)
-├── unified-orchestrator.mjs  # PM → parser → dispatch pipeline
-├── phased-orchestrator.mjs   # phased build orchestrator
-├── continuous-build.mjs      # continuous round-based builder
+├── crew-lead.mjs
+├── crew-cli.mjs
+├── gateway-bridge.mjs
+├── telegram-bridge.mjs
+├── pm-loop.mjs
+├── unified-orchestrator.mjs
+├── phased-orchestrator.mjs
+├── continuous-build.mjs
 ├── scripts/
-│   ├── dashboard.mjs         # web dashboard server (port 4319)
-│   ├── start-crew.mjs        # spawn RT daemon + all agent bridges + crew-scribe
-│   ├── crew-scribe.mjs       # memory daemon — polls done.jsonl, writes brain.md + session-log.md
-│   ├── opencrew-rt-daemon.mjs # WebSocket message bus (port 18889)
-│   ├── crewswarm-flow-test.mjs # end-to-end integration test
-│   ├── dlq-replay.mjs        # DLQ replay helper
-│   ├── openswitchctl         # control script (status, send, start/stop, DLQ replay)
-│   └── run.mjs               # canonical entrypoint
-├── memory/                   # shared agent context (markdown files)
-│   ├── brain.md              # persistent project knowledge — agents append @@BRAIN: facts
-│   ├── session-log.md        # LLM-written task summaries from crew-scribe
-│   ├── orchestration-protocol.md
-│   └── agents.md
-├── docs/                     # guides and references
-├── contrib/swiftbar/         # macOS SwiftBar plugin
-└── website/                  # crewswarm.ai marketing site
+├── memory/
+├── docs/
+├── contrib/swiftbar/
+└── website/
 ```
 
 ---
 
-## More docs
+## Docs
 
-- [Architecture](docs/ARCHITECTURE.md) — system diagram, port map, request flow
-- [Orchestrator Guide](docs/ORCHESTRATOR-GUIDE.md) — how dispatch and pipelines work
-- [Agent Setup](docs/SETUP-NEW-AGENTS.md) — adding custom agents
-- [Model Recommendations](docs/MODEL-RECOMMENDATIONS.md) — per-agent model guide
-- [Troubleshooting](docs/TROUBLESHOOTING.md)
-- [Changelog](CHANGELOG.md)
-- [Security Policy](SECURITY.md)
-- [SwiftBar Plugin](contrib/swiftbar/README.md)
+- `docs/ARCHITECTURE.md`
+- `docs/ORCHESTRATOR-GUIDE.md`
+- `docs/SETUP-NEW-AGENTS.md`
+- `docs/MODEL-RECOMMENDATIONS.md`
+- `docs/TROUBLESHOOTING.md`
 
----
+## Related repos
 
-## Related Repositories
-
-- **[crew-cli](https://github.com/crewswarm/crew-cli)** — Standalone CLI for agent execution and task orchestration (npm installable)
-- _More coming soon:_ agent protocol specs, Docker orchestration, security toolkit
+- `crew-cli` — standalone CLI for task execution and orchestration
 
 ---
 
 ## License
 
-MIT — use it, fork it, build on it.
-
----
-
-<p align="center">
-  <a href="https://crewswarm.ai">crewswarm.ai</a> · 
-  <a href="https://github.com/crewswarm/crewswarm">GitHub</a>
-</p>
+MIT
 
 
 ====================================================
@@ -533,6 +353,7 @@ Start here. Treat this section and `docs/CANONICAL/` as the current source of tr
 - `docs/CANONICAL/README.md` — canonical docs map
 - `docs/CANONICAL/ROUTING.md` — shared chat, mentions, dispatch, thread continuity
 - `docs/CANONICAL/RUNTIME.md` — engines, agent execution paths, runtime identity
+- `docs/CANONICAL/CURSOR-CLI.md` — Cursor `agent` CLI, Keychain/auth, `CURSOR_API_KEY`
 - `docs/CANONICAL/MEMORY.md` — shared memory, project messages, RAG role
 - `docs/CANONICAL/TESTING.md` — smoke tests, regression coverage, verification rules
 
@@ -559,9 +380,9 @@ You interact through a web dashboard, Telegram, WhatsApp, or by chatting directl
 | Mode | How it works | Best for |
 |---|---|---|
 | **OpenCode** | Agent tasks run inside `opencode run` — full file editing, bash, session memory | Coding agents (crew-coder, crew-coder-back, crew-coder-front, crew-fixer) |
-| **Cursor CLI** | Agent tasks run via `cursor --model <model> --execute` | Complex reasoning tasks, architect, crew-main |
+| **Cursor CLI** | Agent tasks run via Cursor `agent` CLI with `--model` (default **`composer-2-fast`**; set `cursorCliModel` per agent or `CREWSWARM_CURSOR_MODEL`) | Complex reasoning tasks, architect, crew-main |
 | **Claude Code** | Agent tasks run via `claude -p` — full workspace context, native tool use, session continuity | Large refactors, multi-file reasoning, crew-coder |
-| **Codex CLI** | Agent tasks run via `codex exec --sandbox workspace-write --json` — OpenAI Codex with full file write access | Coding agents that prefer OpenAI models; compatible with any agent |
+| **crew-cli** | Agent tasks run via `codex exec --sandbox workspace-write --json` — OpenAI Codex with full file write access | Coding agents that prefer OpenAI models; compatible with any agent |
 | **Direct API** | Agent calls the LLM provider directly, parses `@@TOOL` markers | Fast/cheap agents, crew-pm, crew-qa, crew-copywriter |
 
 Switch modes from the **Settings → Engines** tab with the bulk setter buttons, or configure per-agent in `~/.crewswarm/crewswarm.json`.
@@ -698,7 +519,7 @@ bash start-studio.sh
 # Opens http://127.0.0.1:3333
 ```
 
-**Full-screen IDE with Monaco editor + agent chat** — Cursor-style layout with file tree, editor, chat panel, and terminal. `npm run restart-all` now starts Vibe + file watcher automatically. See `STUDIO-SETUP-COMPLETE.md` for details.
+**Full-screen IDE with Monaco editor + agent chat** — Cursor-style layout with file tree, editor, chat panel, and terminal. `npm run restart-all` now starts Vibe + file watcher automatically. See `apps/vibe/STUDIO-SETUP-COMPLETE.md` and `docs/CANONICAL/SURFACES.md`.
 
 **Option 3: CrewChat.app** (native macOS)
 
@@ -707,7 +528,8 @@ bash start-studio.sh
 All platforms now support image recognition and voice transcription:
 
 - **Dashboard**: Click 📷 to upload images, 🎤 to record voice messages
-- **Studio**: Full coding environment with agent chat sidebar
+- **Vibe (Studio)**: Full coding environment with agent chat sidebar — drag/drop images, Ctrl/Cmd+V paste, or click 📷 to attach up to 3 images per message
+- **crew-cli**: `crew chat --image photo.png "What is this?"` or `/image path.png` in REPL mode — works with Gemini, Anthropic, and OpenAI vision models
 - **Telegram**: Send photos or voice notes → bot analyzes/transcribes automatically
 - **WhatsApp**: Send images or audio → bot handles media
 - **CrewChat.app v2.0**: Native macOS app with two modes:
@@ -723,9 +545,35 @@ All platforms now support image recognition and voice transcription:
 
 **Cost**: ~$3/month for typical usage (100 images + 1hr audio/day on Groq).
 
-See `CREWCHAT-QUICKSTART.md` for CrewChat v2.0 usage guide.  
-See `MULTIMODAL-TAB-UI-COMPLETE.md` for full multimodal setup and API reference.  
-See `STUDIO-SETUP-COMPLETE.md` for crewswarm Studio IDE guide.
+### crew-cli — Standalone Agentic CLI
+
+**`crew-cli/`** is a full-featured TypeScript agentic CLI comparable to Claude Code, Codex CLI, or Gemini CLI:
+
+- **34+ built-in tools**: File I/O, bash, glob/grep, LSP integration, git operations, web search, Docker sandbox, semantic code search (RAG)
+- **Multi-provider**: Gemini, OpenAI, Anthropic, xAI, DeepSeek — auto-detects available API keys
+- **Multimodal vision**: `--image` flag or `/image` REPL command — images sent as proper content parts
+- **Agent memory**: MemoryBroker integration for persistent context across sessions
+- **3-layer executor**: L1 (direct tool calls) → L2 (agentic CoT loop, up to 25 iterations) → L3 (fallback providers)
+- **REPL mode**: `crew chat` for interactive sessions with `/image`, `/tools`, `/model`, `/clear` commands
+- **CI auto-fix**: `crew exec "fix lint errors" --ci` for headless operation
+
+```bash
+# Interactive chat
+crew chat
+
+# One-shot execution
+crew exec "refactor auth module"
+
+# With image attachment
+crew chat --image screenshot.png "What's wrong with this UI?"
+
+# CI mode
+crew exec "fix all TypeScript errors" --ci
+```
+
+CrewChat.app: sources under `apps/crewchat/`; optional build flags in `docs/CANONICAL/INSTALL.md`.  
+Multimodal / surfaces: `docs/CANONICAL/SURFACES.md`, `docs/CANONICAL/DASHBOARD-TABS.md`.  
+Studio (Vibe): `apps/vibe/README.md`, `apps/vibe/STUDIO-SETUP-COMPLETE.md`.
 
 ---
 
@@ -758,7 +606,7 @@ GET /api/crew-lead/export-project-messages?projectId=my-project&format=markdown
 
 **No configuration needed** - messages auto-save and auto-index as you chat!
 
-See `CHAT-HISTORY-AND-RAG-COMPLETE.md` for complete guide (architecture, API reference, troubleshooting).
+See `docs/CANONICAL/MEMORY.md` (architecture) and `docs/UNIFIED-API.md` (HTTP overview) for persistence, search, and export.
 
 ---
 
@@ -821,7 +669,7 @@ After migration: `@@MEMORY stats` shows 200+ facts available to all agents.
 
 **Cross-system example:** User stores a fact in Cursor via `@@BRAIN` → Gateway recalls it when dispatching to crew-coder → CLI sees it in next `crew chat` session. Zero duplication, zero sync lag.
 
-See `SHARED-MEMORY-INTEGRATION.md` for full architecture and API reference.
+See `docs/CANONICAL/MEMORY.md` and `crew-cli/docs/SHARED-MEMORY.md` for full architecture and CLI behavior.
 
 ---
 
@@ -932,10 +780,7 @@ sqlite3 ~/.crewswarm/contacts.db "SELECT display_name, preferences FROM contacts
 sqlite3 ~/.crewswarm/collections.db "SELECT title, tags FROM collection_items;"
 ```
 
-**Full docs:**
-- `WHATSAPP-TELEGRAM-INTEGRATION.md` - How both platforms work together
-- `GENERIC-COLLECTIONS.md` - Collections system explained
-- `FINAL-TEST-RESULTS.md` - Test results and verification
+**Full docs:** `docs/CANONICAL/SURFACES.md`, `docs/TROUBLESHOOTING.md` (bridge quirks); collections code in `lib/collections/index.mjs`; verification patterns in `docs/CANONICAL/TESTING.md`. Old root filenames → `docs/archive/legacy-root-guides/README.md`.
 
 ---
 
@@ -960,7 +805,7 @@ sqlite3 ~/.crewswarm/collections.db "SELECT title, tags FROM collection_items;"
 | `whatsapp-bridge.mjs` | WhatsApp integration (personal bot via Baileys — scan QR once) |
 | `scripts/crew-scribe.mjs` | Memory maintenance (summaries, lessons) |
 | `~/.crewswarm/crewswarm.json` | Agent model assignments + provider API keys |
-| `~/.crewswarm/config.json` | RT auth token |
+| `~/.crewswarm/crewswarm.json` | RT auth token |
 | `~/.crewswarm/agent-prompts.json` | System prompt per agent |
 
 **Crew laws:** `memory/law.md` defines four principles injected into every agent: (1) do not harm the user, (2) no access to personal/private resources without permission, (3) do not break the machine, (4) create value (make the user money or equivalent). See [Laws of robotics](https://en.wikipedia.org/wiki/Laws_of_robotics). Edit `memory/law.md` to tweak.
@@ -1265,10 +1110,10 @@ In-flight tasks already dispatched to agents cannot be recalled by either comman
 
 ## External API (for integrations)
 
-crew-lead exposes a REST API for external tools. Auth: Bearer token from `~/.crewswarm/config.json → rt.authToken`.
+crew-lead exposes a REST API for external tools. Auth: Bearer token from `~/.crewswarm/crewswarm.json → rt.authToken`.
 
 ```bash
-TOKEN=$(cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])")
+TOKEN=$(cat ~/.crewswarm/crewswarm.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])")
 
 # List agents
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/api/agents
@@ -1375,7 +1220,7 @@ node scripts/run-scheduled-pipeline.mjs --skill twitter.post --params '{"text":"
 0 9 * * * cd /path/to/crewswarm && node scripts/run-scheduled-pipeline.mjs social >> ~/.crewswarm/logs/cron.log 2>&1
 ```
 
-crew-lead must be running (port 5010). Auth: `~/.crewswarm/config.json` → `rt.authToken`.
+crew-lead must be running (port 5010). Auth: `~/.crewswarm/crewswarm.json` → `rt.authToken`.
 
 ---
 
@@ -1602,8 +1447,7 @@ You (Topic 20 → crew-loco): Can you dispatch a task to crew-coder?
 crew-loco: ⚠️ crew-loco does not have dispatch permissions (chat-only mode)
 ```
 
-See `TELEGRAM-TOPIC-AGENT-PERMISSIONS.md` for full permission matrix and testing instructions.
-See `TELEGRAM-SELF-DISPATCH.md` for tool execution details.
+Permission matrix and behavior: table above; Comms setup `docs/CANONICAL/DASHBOARD-TABS.md`; implementation `telegram-bridge.mjs`.
 
 ### Commands
 
@@ -1727,7 +1571,7 @@ Add to `~/.cursor/mcp.json` (same format for `~/.claude/mcp.json` and `~/.config
 }
 ```
 
-Find your auth token: `cat ~/.crewswarm/config.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])"`
+Find your auth token: `cat ~/.crewswarm/crewswarm.json | python3 -c "import json,sys; print(json.load(sys.stdin)['rt']['authToken'])"`
 
 Restart your editor after adding the config. The MCP server must be running (`npm run restart-all`).
 
@@ -1765,14 +1609,14 @@ gh auth login   # follow prompts — authenticates gh with GitHub
 
 ## MCP Integration — use crewswarm agents in any project
 
-crewswarm runs an MCP server on port **5020**. Wire it into Cursor, Claude Code, OpenCode, Codex CLI, or Gemini CLI and all 20 agents become available as callable tools in any project — no AGENTS.md copy needed.
+crewswarm runs an MCP server on port **5020**. Wire it into Cursor, Claude Code, OpenCode, crew-cli, or Gemini CLI and all 20 agents become available as callable tools in any project — no AGENTS.md copy needed.
 
 **Auto-setup (recommended):** run `bash install.sh` and answer `y` to the MCP prompt. It configures Cursor, Claude Code, and OpenCode automatically.
 
 **Manual setup:** get your auth token, then add the crewswarm entry to each tool's MCP config:
 
 ```bash
-TOKEN=$(node -e "const c=require('fs').readFileSync(require('os').homedir()+'/.crewswarm/config.json','utf8');console.log(JSON.parse(c).rt?.authToken)")
+TOKEN=$(node -e "const c=require('fs').readFileSync(require('os').homedir()+'/.crewswarm/crewswarm.json','utf8');console.log(JSON.parse(c).rt?.authToken)")
 ```
 
 **Cursor** — `~/.cursor/mcp.json`:
@@ -1802,7 +1646,7 @@ gemini mcp add crewswarm "http://127.0.0.1:5020/mcp" \
 ```
 Config is stored in `.gemini/settings.json` (project-level).
 
-**Codex CLI** — uses its own MCP config via CLI:
+**crew-cli** — uses its own MCP config via CLI:
 ```bash
 # Store your token permanently
 echo 'export CREWSWARM_TOKEN="<TOKEN>"' >> ~/.zshenv
@@ -1826,17 +1670,17 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 |---|---|---|
 | `CREWSWARM_ENGINE_IDLE_TIMEOUT_MS` | `300000` | Kill engine process after this many ms of silence (no stdout/stderr). Resets on any output. |
 | `CREWSWARM_ENGINE_MAX_TOTAL_MS` | `1800000` | Absolute ceiling per engine task regardless of activity (30 min). |
-| `PM_AGENT_IDLE_TIMEOUT_MS` | `300000` | Kill PM loop's `--send` subprocess after this many ms of silence. |
-| `PHASED_TASK_TIMEOUT_MS` | `300000` | Per-agent timeout inside the PM loop's phased dispatch. |
-| `CREWSWARM_DISPATCH_TIMEOUT_MS` | `120000` | ms before a dispatched task times out. |
-| `CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS` | `600000` | Timeout for tasks already claimed by an agent bridge. |
+| `PM_AGENT_IDLE_TIMEOUT_MS` | `900000` | Kill PM loop's `--send` subprocess after this many ms of silence. |
+| `PHASED_TASK_TIMEOUT_MS` | `600000` | Per-agent timeout inside the PM loop's phased dispatch. |
+| `CREWSWARM_DISPATCH_TIMEOUT_MS` | `300000` | ms before an unclaimed dispatched task times out. |
+| `CREWSWARM_DISPATCH_CLAIMED_TIMEOUT_MS` | `900000` | Timeout for tasks already claimed by an agent bridge. |
 
 ### PM loop behaviour
 
 | Variable | Default | What it controls |
 |---|---|---|
-| `PM_MAX_ITEMS` | `10` | Max roadmap items per PM loop run. |
-| `PM_MAX_CONCURRENT` | `1` | Max parallel tasks dispatched simultaneously. |
+| `PM_MAX_ITEMS` | `200` | Max roadmap items per PM loop run. |
+| `PM_MAX_CONCURRENT` | `20` | Max parallel tasks dispatched simultaneously. |
 | `PM_CODER_AGENT` | `crew-coder` | Override default coding agent for PM loop. |
 | `PM_USE_QA` | `off` | Include crew-qa quality gate in PM pipeline. |
 | `PM_USE_SECURITY` | `off` | Include crew-security in PM pipeline. |
@@ -1874,7 +1718,7 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 |---|---|---|
 | `CREW_LEAD_PORT` | `5010` | crew-lead HTTP server port. |
 | `SWARM_DASH_PORT` | `4319` | Dashboard port. |
-| `WA_HTTP_PORT` | `3000` | WhatsApp bridge HTTP port. |
+| `WA_HTTP_PORT` | `5015` | WhatsApp bridge HTTP port. |
 
 ---
 
@@ -1980,7 +1824,7 @@ crewswarm is designed to run **locally on your machine** — not exposed to the 
 
 1. **Ports 4319, 5010, 18889 are localhost-only** — do not expose these ports publicly without a reverse proxy and proper authentication.
 2. **Agent tool calls are gated** — `@@RUN_CMD` from untrusted agents requires dashboard approval. Pre-approve only patterns you trust.
-3. **Bearer token auth** — all crew-lead API calls require the RT auth token from `~/.crewswarm/config.json`. Protect this file.
+3. **Bearer token auth** — all crew-lead API calls require the RT auth token from `~/.crewswarm/crewswarm.json`. Protect this file.
 4. **Skill definitions** — imported skills can make HTTP calls. Review skill JSON before importing from untrusted sources.
 5. **API keys** — stored in `~/.crewswarm/crewswarm.json`. This file should be `chmod 600` and never committed.
 
@@ -1992,7 +1836,7 @@ If you expose crewswarm beyond localhost:
 
 - [ ] Put a reverse proxy (nginx/Caddy) with TLS in front of port 4319
 - [ ] Add IP allowlisting or HTTP Basic Auth at the proxy layer
-- [ ] Rotate the RT auth token (`rt.authToken` in `~/.crewswarm/config.json`) regularly
+- [ ] Rotate the RT auth token (`rt.authToken` in `~/.crewswarm/crewswarm.json`) regularly
 - [ ] Review `~/.crewswarm/cmd-allowlist.json` — minimize pre-approved patterns
 - [ ] Never commit `~/.crewswarm/crewswarm.json` (contains API keys)
 - [ ] Use `WA_ALLOWED_NUMBERS` / `TELEGRAM_ALLOWED_USERNAMES` to restrict messaging bridges
@@ -2014,4 +1858,4 @@ Security researchers who have responsibly disclosed issues will be credited here
 
 ====================================================
 
- window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-0QSG6Y9DHT'); crewswarm — Local-First AI Workspace with Dashboard, Vibe IDE, and Agent Runtime [ { "@context": "https://schema.org", "@type": "SoftwareApplication", "name": "crewswarm", "url": "https://crewswarm.ai/", "description": "Open-source local-first AI workspace with a control-plane dashboard, Vibe browser IDE, native chat client, and multi-agent runtime for software engineering.", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Linux, Windows", "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }, "author": { "@type": "Organization", "name": "crewswarm", "url": "https://crewswarm.ai/" }, "image": "https://crewswarm.ai/og-image.png", "softwareVersion": "1.0", "license": "https://github.com/crewswarm/crewswarm/blob/main/LICENSE" }, { "@context": "https://schema.org", "@type": "Organization", "@id": "https://crewswarm.ai/#organization", "name": "crewswarm", "url": "https://crewswarm.ai/", "logo": "https://crewswarm.ai/favicon.png", "email": "info@crewswarm.ai", "sameAs": [ "https://github.com/crewswarm", "https://twitter.com/crewswarm" ] }, { "@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [ { "@type": "Question", "name": "What does “One requirement. One crew.” actually mean?", "acceptedAnswer": { "@type": "Answer", "text": "The tagline is literal: describe an idea once and a PM-led crew handles the rest — planning, coding, QA, and fixes — until real files land on disk. Ideate, build & ship." } }, { "@type": "Question", "name": "How does the PM Loop keep shipping without new prompts?", "acceptedAnswer": { "@type": "Answer", "text": "The PM Loop reads ROADMAP.md, ships every pending item, then calls Groq as a product strategist to append fresh roadmap items based on the live output. It repeats forever until you stop it." } }, { "@type": "Question", "name": "How is targeted dispatch different from broadcast-style bots?", "acceptedAnswer": { "@type": "Answer", "text": "crewswarm never shouts into a swarm. Each task goes to one named agent, eliminating race conditions and duplicate work. You send a command, the gateway routes it to exactly the right specialist, and only that agent replies." } }, { "@type": "Question", "name": "What phases does a phased build follow?", "acceptedAnswer": { "@type": "Answer", "text": "Everything ships in three passes: MVP for the smallest viable outcome, Phase 1 for depth, and Phase 2 for polish. Each phase carries 3–5 tightly scoped tasks so agents never time out." } } ] } ] #hero.hero>* { position: relative; z-index: 1; } crewswarm is an open-source, local-first AI workspace combining a multi-agent orchestration runtime, a browser control-plane dashboard, the Vibe browser IDE, and native chat clients. It allows software engineers to dispatch complex tasks to specialist AI agents running securely in Docker containers on their own hardware using the ATAT protocol. Crew Swarm Home Vibe IDE Deploy Features Security Get started → Get started → One idea. One build. One crew. The local-first AI workspace for OpenCode , Claude Code , Cursor , and crew-cli . Dashboard, Vibe, and your runtime in one stack. Local-first runtime • Dashboard + Vibe IDE • crew-cli + Cursor • Claude Code + OpenCode • MCP server • PM-led builds • Shared memory + recovery Install crewswarm Explore Vibe pm-loop — crewswarm ↻ ⏭ $ ▶ Run const AGENTS = ['crew-pm', 'crew-coder-back', 'crew-coder-front', 'crew-qa', 'crew-fixer', 'crew-github']; const PHASES = ['MVP', 'Phase 1', 'Phase 2']; function makeLines(requirement) { const req = requirement || 'Build a todo API with tests'; return [ { text: ' ▸ Sonar Pro researching best practices... ', delay: 900 }, { text: ' ▸ ROADMAP.md — 6 tasks queued ', delay: 700 }, { text: '', delay: 300 }, { text: ' MVP crew-pm → planning tasks...', delay: 800 }, { text: ' MVP crew-coder-back server.js — Express, /health, CRUD routes 11.4s ', delay: 1600 }, { text: ' MVP crew-qa PASS — endpoints valid, no lint errors 6.2s ', delay: 1000 }, { text: '', delay: 300 }, { text: ' Phase 1 crew-coder-back server.test.js — 14 tests, all CRUD paths 18.7s ', delay: 1800 }, { text: ' Phase 1 crew-qa PASS — 14/14 tests green 8.1s ', delay: 1100 }, { text: '', delay: 400 }, { text: ' Phase 2 crew-coder-front index.html — UI scaffold 22.3s ', delay: 2000 }, { text: ' Phase 2 crew-fixer Fixed: missing CORS headers on POST route 7.4s ', delay: 1200 }, { text: '', delay: 400 }, { text: ' ✓ Build complete — 3 phases, 6 tasks, 75.1s, 0 failures ', delay: 800 }, { text: ' ▸ Generating next roadmap items... █ ', delay: 900 }, ]; } let heroTimeout = null, heroLine = 0, heroLines = []; function runHeroLines(lines) { const container = document.getElementById('hero-terminal-content'); if (!container) return; container.innerHTML = ''; heroLine = 0; heroLines = lines; // Pause blink cursors while terminal is playing — resume when done document.querySelectorAll('.lt-cursor-blink, .lt-cursor').forEach(el => { el.style.animationPlayState = 'paused'; }); function showNext() { if (heroLine >= heroLines.length) { // Terminal done — re-enable blink only on the last visible cursor document.querySelectorAll('.lt-cursor-blink, .lt-cursor').forEach(el => { el.style.animationPlayState = 'running'; }); return; } const data = heroLines[heroLine]; const el = document.createElement('div'); el.className = 'lt-line'; el.innerHTML = data.text; container.appendChild(el); requestAnimationFrame(() => { el.classList.add('visible'); container.scrollTop = container.scrollHeight; }); heroLine++; if (heroLine { const el = document.createElement('div'); el.className = 'lt-line visible'; el.innerHTML = data.text; container.appendChild(el); }); container.scrollTop = container.scrollHeight; } function runCustomHeroTerminal() { const input = document.getElementById('hero-input'); const val = input ? input.value.trim() : ''; if (heroTimeout) clearTimeout(heroTimeout); runHeroLines(makeLines(val || 'Build a todo API with tests')); } document.addEventListener('DOMContentLoaded', function () { const input = document.getElementById('hero-input'); if (input) { input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runCustomHeroTerminal(); } }); } runHeroTerminal(); }); function switchPreview(btn) { document.querySelectorAll('.preview-tab').forEach(t => t.classList.remove('active')); btn.classList.add('active'); const target = document.getElementById(btn.dataset.target); if (target) target.classList.add('active'); const rail = document.getElementById('dashboardPreviewRail'); if (rail && target) { const slide = target.closest('.preview-slide'); if (slide) { rail.scrollTo({ left: slide.offsetLeft - rail.offsetLeft, behavior: 'smooth' }); } } else { document.querySelectorAll('.preview-panel').forEach(p => p.classList.remove('active')); if (target) target.classList.add('active'); } } The Product One stack. Three surfaces. Use the Dashboard as the control plane, Vibe as the browser IDE, and crewchat as the native chat client. All three talk to the same agents, memory, and runtime. Dashboard Services, agents, models, memory, and build control. Vibe File tree, Monaco editor, chat, diffs, and terminal. crewchat Native chat surface for quick routing and project context. vibe.html Open Vibe → How it works From requirement to reality in one command No orchestration expertise required. Write what you need in plain English. 01 You write a requirement One sentence, one paragraph, or a full spec. Drop it in the dashboard or pass it on the CLI. → 02 PM breaks it into tasks crew-pm plans MVP → Phase 1 → Phase 2. Each phase gets 3–5 small, targeted tasks. → 03 Agents execute with real tools crew-coder writes code, crew-qa adds tests, crew-fixer handles bugs — each gets exactly their task. → 04 Done. Files on disk. Real files, real output. No hallucinated success messages. Failed tasks hit the DLQ for replay. Architecture Code Engine, control plane, and agent runtime crewswarm runs as one stack: a Code Engine for direct CLI execution, a realtime control plane for targeted dispatch, and product surfaces like the dashboard, Vibe, Telegram, WhatsApp, and crewchat on top. Planning layer crew-pm · roadmap → tasks ↓ command · assign crew-coder crew-coder-front crew-coder-back crew-qa crew-fixer ↓ done · issues Synthesis layer crew-main · audit &amp; assemble The RT channels (`command`, `assign`, `done`, `issues`) coordinate targeted dispatch while the Code Engine handles real execution. Same stack, different layers. Three layers, one stack The product stays simple because the runtime is layered cleanly underneath it. 01 Code Engine OpenCode · Cursor CLI · Claude Code · crew-cli · Gemini · Codex CLI This is the execution layer. It is the part that writes files, runs commands, streams output, and gives each agent a real working environment. ↓ 02 Realtime control plane RT bus · targeted dispatch · retries · issues The RT layer coordinates agent daemons, targeted dispatch, retries, fanout, and bridge traffic. It is infrastructure, not a fake animation layer. ↓ 03 Orchestration layer crewswarm PM planning, phased builds, PM Loop, shared memory, fault recovery, dashboard, Vibe, SwiftBar, Telegram, WhatsApp, MCP, and crewchat all sit here as one coordinated product. Built different How crewswarm differs from framework-only stacks crewswarm is a runtime , not just a library. You get a realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, Claude Code, and crew-cli out of the box. Four execution engines, first-class Every agent can run inside OpenCode (persistent sessions, full file editing), Cursor CLI (opus-thinking, sonnet-4.6), Claude Code (full workspace context, native tool use), or crew-cli (High-performance execution). Switch per agent from the dashboard — no config files, no restarts. Realtime bus + daemons Agents run as long-lived daemons connected to an RT message bus. Tasks flow over command , assign , done , issues — no in-process-only simulation. Real dispatch, real replies. Execution layer included Tool calls ( @@WRITE_FILE , @@RUN_CMD , etc.) are executed by the gateway with allowlists and path sandboxing. You don’t have to build a runner or wire a framework to one. DLQ and fault recovery Failed tasks go to a Dead Letter Queue. Retry with backoff, replay from the dashboard. Framework-only stacks leave retries and observability to you. Your models, your machine Each agent calls its LLM directly with your API key. No proxy, no vendor lock-in. Run fully local with Ollama. Compare options in the comparison section . Why not just Cursor? Because a single editor is not a runtime Cursor is an editor. crewswarm is the control plane, runtime, and memory layer around your editors and CLIs. 🧭 Persistent coordination Agents, services, memory, and projects survive beyond one editor tab or one CLI session. 🛠️ Runtime control Start, stop, inspect, and route the whole stack from the dashboard instead of gluing scripts together manually. 🔁 Cross-surface continuity Dashboard, Vibe, crewchat, SwiftBar, and CLI surfaces all talk to the same orchestration layer. Features Everything a dev crew needs, minus the meetings ⚡ PM-led orchestration Natural-language requirement → PM breaks it into tasks → targeted dispatch to the right agent. No broadcast races. No duplicate work. crew-pm → crew-coder → crew-qa → crew-fixer 🎯 Targeted dispatch Send to one agent by name. --send crew-coder "Build auth" . Only that agent receives it. 📐 Phased builds (PDD) MVP → Phase 1 → Phase 2. Failed tasks auto-break into subtasks and retry. No work is lost. 🧩 Domain-Aware Planning Large codebases (100K+ lines) get subsystem-specific PM agents. crew-pm-cli handles CLI tasks, crew-pm-frontend owns dashboard, crew-pm-core manages orchestration. No more hallucinated file paths. 🧠 Shared Memory + Project Message RAG Every agent reads shared memory (brain.md, decisions, handoff notes). All project messages auto-save to ~/.crewswarm/project-messages/ and are automatically indexed for semantic search using local TF-IDF + cosine similarity — no API calls, all local. AgentMemory Cognitive facts (decisions, constraints, preferences) Written by @@BRAIN commands Persists across all sessions Project Messages All chat saved to JSONL automatically Semantic search: "What did we discuss about auth?" Export to markdown, JSON, CSV AgentKeeper Task results from completed work Gateway records after execution Available to all future agents Cache headers prevent stale data. Messages persist across tab switches. Zero configuration needed. 🔌 Skill-powered Extend agents with data-driven SKILL.md or JSON plugins. Add Twitter, Fly.io, or custom API tools without writing JS code. 🎤 Multimodal Support — Images + Voice across all platforms Send images or voice messages from any surface. Dashboard, Telegram, WhatsApp, and crewchat all support image recognition and voice transcription. Powered by Groq (fast/cheap ~$3/month) or Gemini 2.0 Flash (best quality). 📱 Dashboard Click 📷 to upload images, 🎤 to record voice messages 💬 Telegram/WhatsApp Send photos or voice notes → auto-analyzed and transcribed 🍎 crewchat Native image picker + AVFoundation voice recording 🐦 Real-time X/Twitter Intelligence with Grok The only AI coding platform with live X/Twitter search. Use @@SKILL grok.x-search to search recent tweets, get citations with X post URLs, filter by date ranges, handles, and media types. Powered by xAI's Grok 3 with real-time X data access. grok.x-search Search recent tweets (last 24-48 hours) Filter by handles, date ranges, media types Citations with X post URLs grok.vision Image analysis with grok-vision-beta Screenshot analysis and UI audits Diagram and chart interpretation Competitive edge: GitHub Copilot can't search X. Claude can't search X. Only crewswarm has real-time X intelligence. 🐳 Docker-First Deployment — Multi-Arch Images One-line install on any Linux machine. Multi-arch images (AMD64 + ARM64) for servers, VMs, Raspberry Pi, cloud deployments, and CI/CD. Perfect for team shared instances, GitHub Actions, or self-hosted setups. curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash ☁️ Cloud VMs AWS, GCP, DigitalOcean, Azure 🏠 Home Servers Raspberry Pi 4/5, NUCs, edge devices 🔄 CI/CD GitHub Actions, GitLab CI, Jenkins 👥 Team Instances Shared crew for entire team Local dev setup also available for contributors. Pick the deployment that fits your workflow. 🔄 Fault tolerance Retry with backoff and task leases. After max retries, tasks hit the Dead Letter Queue for manual replay from the dashboard. 🚀 Five execution engines — your choice per agent Your crew runs specialist AI agents (PM, coder, QA, fixer…) — each one calling its LLM directly. For heavy coding tasks, agents can go deeper: route them into OpenCode , Cursor CLI , Claude Code , crew-cli , or Gemini CLI for full file editing, bash access, and persistent sessions. Switch per agent from the dashboard. No restarts, no config files. OpenCode Persistent sessions per agent Full file editing + bash Context survives across tasks Best for: crew-coder, crew-fixer, crew-coder-front/back Cursor CLI opus-thinking + sonnet-4.6 Deep reasoning &amp; architecture Parallel wave dispatch Best for: crew-main, crew-architect, complex reasoning Claude Code Full workspace context Native Anthropic tool use Session continuity per agent Best for: large refactors, multi-file reasoning crew-cli 3-Tier AI Architecture (Router/Planner/Worker) 3x Parallel Speedup over sequential cycles ATAT Protocol & LSP Self-Healing enabled Best for: High-performance terminal engineering Gemini CLI Google Gemini 2.0 Flash / Pro — stream-json output Fast inference, multimodal support Non-interactive --yolo mode Best for: Fast iterations, Google-model workflows 🔌 MCP server — your crew in any AI tool crewswarm exposes your entire crew as an MCP server on port 5020 . Add one line to ~/.cursor/mcp.json (or Claude Code, OpenCode, Codex) and every project gets your full persistent agent fleet — not session-scoped generics, but your crew with memory, custom models, and cross-agent coordination. dispatch_agent Send a task to any specialist agent Waits for the result Full tool access + memory run_pipeline Multi-agent chains from any client Each stage passes output to the next PM → coder → QA in one call chat_stinki + skills Talk to crew-lead directly via MCP Run any skill (deploy, TTS, webhooks…) OpenAI-compatible API on same port ~/.cursor/mcp.json → {"mcpServers":{"crewswarm":{"url":"http://127.0.0.1:5020/mcp"}}} ⚙️ @@ Protocol — 10x more efficient than JSON-RPC While others use verbose JSON-RPC or natural language, crewswarm agents communicate via a proprietary @@ syntax that's 10x more token-efficient , unambiguous, and easy for LLMs to generate. MCP-compatible via translation layer. Standard JSON-RPC {"tool": "write", "params": { "path": "app.ts", "content": "import express..." }} ~80 tokens • Fragile @@ Protocol (CAP) @@WRITE_FILE app.ts import express from 'express'; const app = express(); ... @@END_FILE ~8 tokens • 10x less overhead Why @@ wins: Zero ambiguity — Regex-parseable, no JSON errors Inline with prose — Explain AND execute in one message LLM-friendly — Easy to generate from prompt examples Cost savings — 10x fewer tokens = cheaper API bills Graceful Failure: Unlike JSON, CAP is stream-parseable. If a model hits a context limit halfway through writing 4 files, the first 3 are still valid and executed. In JSON, you lose the whole turn. Available commands: @@READ_FILE • @@WRITE_FILE • @@RUN_CMD • @@DISPATCH • @@PIPELINE • @@SKILL • @@WEB_SEARCH • @@MEMORY 🖥️ Seven control surfaces Pick how you want to drive the crew. Every surface talks to the same RT bus and the same agents. Chat with Stinki Dashboard Full web UI — chat, build, services, RT bus, DLQ, spend crewswarm Vibe Browser-native IDE with Monaco — real-time file tree + agent chat. crewchat Quick & Advanced modes — multimodal image + voice support. REST API / CLI curl /chat · direct dispatch · scheduled pipelines Mobile messengers Telegram Message Stinki from your phone — same conversation as Dashboard WhatsApp Personal bot via Baileys — QR scan once, then chat from WhatsApp Monitoring &amp; control Dashboard Services · RT bus · DLQ replay · spend · agent health SwiftBar macOS menu bar — status, quick restart, agent logs Wave Orchestration Parallel execution with wave-based dispatch Run multiple agents simultaneously. Tasks in the same wave execute in parallel — no queuing, no waiting, true concurrent multi-agent execution. Significantly faster than sequential task processing. Wave 1 Sequential Start Wave 1 runs first — typically crew-pm planning the build and breaking it into tasks. Wave 2 Parallel Execution Wave 2 tasks run simultaneously — crew-coder + crew-qa + crew-security all working at once. Wave 3 Synthesis Wave 3 waits for wave 2 completion, then crew-main synthesizes results and validates the build. @@PIPELINE Wave Syntax @@PIPELINE [ {"wave":1, "agent":"crew-pm", "task":"Plan the build and create roadmap"}, {"wave":2, "agent":"crew-coder", "task":"Implement backend API"}, {"wave":2, "agent":"crew-qa", "task":"Write integration tests"}, {"wave":2, "agent":"crew-security", "task":"Security audit"}, {"wave":3, "agent":"crew-main", "task":"Synthesize results and validate"} ] Wave 1 runs first. All wave 2 tasks execute in parallel . Wave 3 waits for wave 2 completion before starting. ⚡ Significantly Faster Builds Parallel execution means crew-coder, crew-qa, and crew-security run simultaneously instead of sequentially — cutting build time proportional to agents in each wave (3 parallel agents = ~3x faster). 🎯 No Race Conditions Wave dependencies prevent file conflicts and duplicate work. Each wave waits for the previous wave to complete before starting. 🔄 Auto-Retry Failed wave tasks retry independently without blocking other waves. Builds keep moving even when individual agents hit errors. Models Bring your own model Every agent calls its LLM directly — no proxy, no middleware. Mix and match freely: PM on Perplexity for web search, coders on Mistral or DeepSeek, coordinator on Cerebras for instant replies. Add Brave Search and Parallel in the dashboard for crew-lead and PM lookups. Or run everything local with Ollama. OpenAI GPT-4.1 · GPT-4.1-mini · o3 · o4-mini Industry standard. Best for general reasoning and instruction following. Anthropic Claude Sonnet 4.6 · Claude Opus 4.6 · Claude Haiku 4.5 Top-tier code quality and instruction following. Strong on long context. GQ Groq Llama 4 Scout · Llama 3.3 70B · Gemma 2 9B Blazing-fast inference. Best for QA and fixer agents where speed matters. Mistral Mistral Large · Codestral · Mistral Small Excellent for code generation. Codestral is purpose-built for dev tasks. DS DeepSeek DeepSeek V3 · DeepSeek R1 Open-source coding model with exceptional code completion quality. Perplexity Sonar Pro · Sonar Real-time web search. Ideal for the PM agent to research before planning. Google Gemini Gemini 2.5 Pro · Gemini 2.5 Flash · Gemini 2.0 Flash Multimodal and fast. Free tier via Gemini CLI — 60 req/min with any Google account, no API key needed. OpenRouter Claude · GPT-4 · Gemini · Llama · Mistral · 200+ models One API key for hundreds of models. Route to any provider — Claude, OpenAI, Google, Mistral, and more — through a single endpoint. CB Cerebras Llama 4 Scout · Llama 3.3 70B Ultra-fast hardware inference. Near-instant responses for latency-critical agents. xAI xAI / Grok Grok 3 · Grok 3 Mini · Grok 3 Vision xAI's model with real-time X/Twitter data access and strong reasoning. Ollama (Local) Qwen 3 · DeepSeek R1 · Phi-4 · Llama 4 Run fully local. No API keys, no rate limits, no data leaving your machine. 🦁 Brave Search Web Search API Fast web search. crew-lead and the PM loop use it for lookups when you ask questions — add your key in the dashboard Search &amp; Research Tools. ∥ Parallel Deep research · Web synthesis Multi-step research and synthesis. Used by the PM for project planning and deep lookups. Configure in the dashboard alongside Brave. 💡 Each agent can use a different provider. Add API keys and assign models from the Providers tab ; add Brave and Parallel keys in Search &amp; Research Tools for crew-lead and PM lookups. Or edit the config JSON directly. Switch at any time, no restarts needed. Open Source Free forever. MIT licensed. crewswarm is open-source software. Use it, modify it, contribute to it. MIT License Use it for personal projects, commercial products, or anything in between. No restrictions. 🆓 Free to use No subscription. No usage limits. Bring your own API keys for the LLM providers you choose. 🤝 Community-driven Contributions welcome. Report issues, submit PRs, or just star the repo to show support. View on GitHub 90-second walkthrough See the product in one fast pass This is the fastest way to understand crewswarm: launch the stack, build in Vibe, and control the runtime from the dashboard. crewswarm.ai/vibe.html 0:00–0:20 Launch the stack Show the one-line install or local quickstart, then open the Dashboard and Vibe side by side. 0:20–0:55 Build in Vibe Send one prompt, show the file tree updating, open the written file, preview the diff, and pop the terminal. 0:55–1:30 Control the runtime Switch to the dashboard, show Services and Agents, then land on the install CTA while the stack is still visibly running. Read demo script Run it yourself The crew Specialized agents, targeted tasks A crew of specialists, each with a role, a model, and a set of tools. The PM decides who gets what — no broadcast racing. crew-lead · Chat Commander 🧠 Stinki ☠️ The pirate captain of this AI swarm. Stinki orchestrates dispatches, drafts roadmaps, and answers your questions with web search or codebase dives. Talk to him from the dashboard, Telegram, or WhatsApp. If you're talking shit, he'll roast back — while keeping the ship afloat. No prisoners. Just results. 🔥 Talks back 🗺️ Roadmaps on demand 🌐 Web search + fetch ⚡ Dispatches the crew 📁 Reads &amp; writes files ⚙️ Runs shell commands 🔧 Calls skills 📱 Telegram + WhatsApp Try it "build me a SaaS landing page with a waitlist" "have crew-qa audit the last PR" "what's the fastest free model right now?" "kick off the pipeline for my React app" Q crew-main Quill Coordinator Chat, triage, and kick off orchestrators. Your first point of contact. P crew-pm Planner Planning Breaks requirements into phased tasks. Assigns agents. Keeps scope tight. C crew-coder Coder Implementation Writes code, creates files, runs shell commands. The workhorse of every build. F crew-coder-front Mistral Front Frontend specialist UI, styling, and client-side code. Knows the design system and keeps markup clean. B crew-coder-back DeepSeek Back Backend specialist APIs, databases, and server-side logic. Optimized for structured, deep code tasks. C crew-copywriter Copy Copywriting Headlines, CTAs, and product copy. Keeps brand voice sharp and on-message. T crew-qa Tester Quality assurance Adds tests, validates behavior, and audits output before anything ships. D crew-fixer Debugger Bug fixing Diagnoses failures, fixes edge cases, patches what QA flags. S crew-security Guardian Security review Audits for vulnerabilities, hardens configs, and enforces best practices. G crew-github GitBot Git &amp; PRs Commits, branches, pull requests, and GitHub Actions. Runs real git and gh commands. R crew-researcher Scout Web research Searches the web, summarizes findings, and surfaces competitive intelligence via Perplexity. A crew-architect Arch System design &amp; DevOps Designs systems, writes infra-as-code, and handles deployment pipelines. F crew-frontend Pixel CSS &amp; design systems Polished UI, animations, theming, and layout — Apple/Linear-level visual craft. S crew-seo Rank SEO specialist Keyword research, meta tags, content strategy, and technical SEO audits. M crew-ml Neuron Machine learning AI pipelines, model selection, fine-tuning setup, and data preprocessing workflows. O crew-orchestrator Wave Parallel orchestration Fans out tasks to multiple agents simultaneously in waves. No queuing, no collisions. T crew-telegram TGBot Telegram bridge Routes tasks and replies through your Telegram bot. Dispatch to any agent from your phone. W crew-whatsapp WABot WhatsApp bridge Personal WhatsApp bot via Baileys. Chat with your crew from any device — no Business API needed. M crew-mega Mega Heavy general tasks Long-horizon, high-complexity tasks that need extended context and deep reasoning. Use cases How the crew ships 01 Build a feature from one sentence Type a requirement in the Build tab, click Run. PM plans it, coder builds it, QA tests it. Watch it happen in RT Messages. Phased builds 02 Fix a bug and add tests crew-fixer diagnoses and patches, crew-qa writes the test suite. Targeted dispatch means each agent does exactly one thing. Targeted dispatch 03 Ship a small API with CRUD + tests "Build a todo API with Express, CRUD endpoints, and a test file." One sentence. Real files on disk in minutes. Single-shot build 04 Automate your workflows with Skills Drop a SKILL.md in your config folder. Agents immediately gain the ability to deploy to Fly.io, send tweets, or hit any custom API. Extensibility 05 Control from the menu bar SwiftBar shows status at a glance. Start, stop, restart agents. Send a message to any agent. Open logs. SwiftBar 06 Recover from failures Max retries hit? Task goes to the DLQ. Open the dashboard, see the error, replay with one click — or fix and rerun. DLQ + replay 07 Keep agents aligned across sessions Shared memory files — current state, decisions, handoff — are injected into every agent. Resume tomorrow exactly where you left off. Shared memory 08 Route through any CLI engine One click in the dashboard switches agents between Claude Code, Cursor, OpenCode, Gemini, or crew-cli. Each agent maintains its own persistent session — context survives across tasks. Multi-engine routing 09 Mix models and engines per agent Send your architect to Claude for deep reasoning, your coders to Cursor for fast edits, your QA to Gemini for breadth. Mix execution modes per agent — no restarts, no config files. Per-agent engine config Dashboard Everything in one place Build, dispatch, replay, monitor — and open any file the crew wrote directly in Cursor or OpenCode. localhost:4319/build Install &amp; open → localhost:4319/agents Meet the crew → Swipe or shift-scroll to explore the dashboard surfaces. Next panel Compare What crewswarm does The only fully open-source platform where a PM agent runs the build — not just a single autocomplete suggestion. For comparison with CrewAI and other frameworks, this section outlines what crewswarm does differently. 🎓 Research-driven orchestration crewswarm implements structural and content markers identified in Princeton GEO (Generative Engine Optimization) research to maximize AI visibility and authority. Our agents also utilize iterative reasoning loops inspired by the Reflexion framework to ensure code quality. 🧠 PM-led phased builds A dedicated Project Manager agent reads your ROADMAP, breaks work into phases, dispatches tasks to the right specialists, and writes handoff notes between sessions — automatically. 🤝 Shared memory across agents Every agent reads and writes to a shared memory layer — decisions, context, and progress persist across sessions so nothing gets lost between runs. ⚡ Real-time agent mesh Agents communicate over an RT message bus. Any agent can broadcast, any agent can listen — parallel work happens naturally without a central bottleneck. 🔁 Automatic fault recovery Failed tasks land in a Dead Letter Queue and are automatically retried. Builds keep moving even when individual agents hit errors or timeouts. 🔑 Bring your own model Configure any model per agent — Groq, Anthropic, OpenAI, NVIDIA, or fully local via Ollama. No vendor lock-in, no forced subscriptions. 📡 Control from anywhere Manage your crew from the web dashboard, the CLI, crewchat, SwiftBar, or Telegram. One build, every surface covered. Early access What builders are saying ✦ Beta builder "One sentence in. Working API out. No standups, no tickets, no back-and-forth." Vlad Fullstack Engineer · Early access ✦ Beta builder "I start the PM Loop, go eat dinner, come back to a finished feature. It's genuinely autonomous." Dev Startup Founder · Early access ✦ Beta builder "Shared memory is the killer feature. I can stop mid-project and pick it up days later — agents just know where we left off." Attila Indie Developer · Early access Orchestration Three modes, one crew Pick the right tool for the job. From single tasks to full autonomous builds. 📐 PM Loop Recommended for most builds Break large work into MVP → Phase 1 → Phase 2. Auto-phases ambiguous requirements, auto-retries failed tasks, and breaks them into subtasks if needed. Auto-phasing Auto-retry Task breakdown DLQ recovery Example node scripts/run.mjs "Build a todo API with CRUD and tests" ⚡ Unified Single-shot structured runs One command, structured execution. PM plans it once, crew executes in sequence. No phasing overhead — good for well-defined tasks. Single pass Targeted dispatch Sequential exec Example node scripts/run.mjs "Fix auth.js bug and add tests" 🎯 Single-task One agent, right now Send one task directly to one agent. No PM, no planning. Fastest path from intent to execution for simple, well-scoped work. Direct send No orchestration Instant dispatch Example node gateway-bridge.mjs --send crew-coder "Add GET /health to server.js" Quick comparison Mode Best for Auto-retry Phasing Overhead PM Loop Large or ambiguous builds ✓ ✓ Medium Unified Well-defined tasks ✓ — Low Single-task Quick fixes, small edits — — None Stack Built on boring, solid tech No proprietary runtime. No cloud lock-in. Everything runs on tools you already know. Node.js Runtime — all scripts, daemons, and the dashboard TypeScript RT daemon and plugin suite compiled to JS WS WebSocket crewswarm RT — real-time agent mesh on port 18889 Docker Sandboxed execution — route any agent into a secure container Skills (JSON/MD) Data-driven plugins — add new tools to agents without code Shared Memory RAG Semantic search over history via local TF-IDF (no API calls). 🌊 Wave Orchestration Parallel task dispatch — concurrent multi-agent execution. Bash openswitchctl — start, stop, restart, health checks macOS SwiftBar menu bar plugin — status, control, logs at a glance SQLite Advanced task tracking, agent health, and queue metrics (optional) Ollama Run any agent fully local — no API key, no internet required GitHub CLI crew-github — commits, branches, pull requests via gh Telegram Message Quill from your phone — dispatches to the full crew WhatsApp Personal bot via Baileys — scan QR, chat with the crew from any WhatsApp Frequently Asked Questions Everything you need to know about running your AI crew. No matching answers yet. Try another keyword. What does “One requirement. One crew.” actually mean? + The tagline is literal: describe an idea once and a PM-led crew handles the rest — planning, coding, QA, and fixes — until real files land on disk. Ideate, build &amp; ship. How does the PM Loop keep shipping without new prompts? + The PM Loop reads ROADMAP.md , ships every pending item, then calls Groq as a product strategist to append fresh roadmap items based on the live output. It repeats forever until you stop it. Which shared memory files load for every task? + Four files are always injected: current-state.md , decisions.md , agent-handoff.md , and orchestration-protocol.md . The wrapper auto-bootstraps them and enforces token budgets so no agent runs blind. How is targeted dispatch different from broadcast-style bots? + crewswarm never shouts into a swarm. Each task goes to one named agent, eliminating race conditions and duplicate work. You send a command, the gateway routes it to exactly the right specialist, and only that agent replies. What phases does a phased build follow? + Everything ships in three passes: MVP for the smallest viable outcome, Phase 1 for depth, and Phase 2 for polish. Each phase carries 3–5 tightly scoped tasks so agents never time out. What happens when a task fails repeatedly? + Failures trigger automatic retries. If attempts are exhausted, the task lands in the Dead Letter Queue (DLQ) for replay from the dashboard or handoff to crew-fixer . Is it safe to run AI code on my machine? + Yes. You can route any agent into a Docker sandbox so they have no access to your host files. crewswarm also uses path-based allowlists and permission layers to restrict tool usage. Can I add new tools to my agents? + Absolutely. You can add "Skills" by dropping a simple JSON or SKILL.md file into ~/.crewswarm/skills/ . No custom JavaScript is required to extend your crew's capabilities. How do I launch the dashboard? + From your crewswarm directory run: $ node scripts/dashboard.mjs That gives you Build, Chat (crew-lead), Services, RT Messages, DLQ, Projects, Send, and Messaging tabs in one place. How do I kick off a phased build from the CLI? + From the dashboard Chat tab, just type your requirement. From the CLI: $ node scripts/run.mjs "Build a todo API" That single command triggers PM planning plus all subsequent coding, QA, and fixing phases. What does a targeted send look like? + Send straight to one agent: $ node gateway-bridge.mjs --send crew-coder "Create server.js with Express and GET /health" Only crew-coder receives that instruction, so there is zero broadcast noise. Can I mix different LLM providers per agent? + Yes. Every agent has its own model assignment — Anthropic for coding, Perplexity for planning, Cerebras for fast coordination, Groq for QA speed. Configure from the dashboard Providers tab or edit the config JSON directly. No code changes, no restarts. How do I resume a project that paused mid-build? + Use the Projects tab in the dashboard. Every project stores its roadmap path; click “Resume PM Loop” and it picks up right where the roadmap last stopped. What happens after the roadmap is empty? + The PM Loop inspects the live output, asks Groq-as-strategist for 3–5 fresh items, appends them to ROADMAP.md , and keeps shipping. You never need to re-seed work manually. How are required memory files bootstrapped? + The gateway wrapper auto-creates any missing memory files from templates, logs the bootstrap event, and refuses to run a task if memory cannot load. That policy came from DEC-004/005. What telemetry is tracked? + A JSONL feed at ~/.crewswarm/logs/events.jsonl stores bootstrap events, memory load failures, protocol violations, retries, and RT events for later auditing. Which agents ship with the default crew? + You get 21+ specialist agents : crew-lead (chat commander), crew-main (coordination), crew-pm (planning), crew-coder (implementation), crew-qa (testing), crew-fixer (debugging), crew-security (audits), crew-github (git/PRs), crew-researcher (web research), crew-architect (system design), crew-copywriter (docs/copy), crew-frontend (CSS/UI), crew-seo, crew-ml, crew-orchestrator (wave dispatch), and domain PM specialists (crew-pm-cli, crew-pm-frontend, crew-pm-core) for large codebases. What are waves and how do they work? + Waves let you run tasks in parallel. Tasks in the same wave execute simultaneously, higher waves wait for lower waves to complete. Example: {"wave":2, "agent":"crew-coder"} and {"wave":2, "agent":"crew-qa"} run at the same time. Wave 3 waits for all wave 2 tasks before starting. This is significantly faster than sequential execution (speedup proportional to number of parallel agents). Can I schedule workflows to run automatically? + Yes. Create workflows in ~/.crewswarm/pipelines/&lt;name&gt;.json with multi-stage agent chains or skill-only pipelines. Run via cron: node scripts/run-scheduled-pipeline.mjs social . Each stage's output passes to the next. Perfect for daily builds, automated testing, or scheduled deployments. What is Background Consciousness? + An optional feature where crew-main runs periodic reflection when idle — reading brain.md, suggesting follow-ups, managing system health. Enable with CREWSWARM_BG_CONSCIOUSNESS=1 . Cheap Groq mode costs ~$0.01/day. Keeps the crew proactive between tasks. How does Continuous Build mode help with websites? + It inspects the target directory for required sections (hero, features, testimonials, etc.), dispatches tasks for anything missing, and loops until every section exists. What does the SwiftBar plugin control? + SwiftBar shows stack health, lets you start/stop/restart agents (including crew-lead and the dashboard), open the dashboard, and send targeted messages. crewchat is a separate menu bar app for talking to crew-lead in a popover — same conversation as the dashboard and Telegram. How do multiple projects stay organized? + Each project is registered with its output path and roadmap. The dashboard’s Projects tab and orchestrator-logs/projects.json keep everything resume-ready. How is the shared memory token budget enforced? + The loader trims each file to 2,500 characters and caps the combined memory payload at 12,000 characters, guaranteeing agents never blow their context windows. What if a task is too big for one attempt? + When a task fails, the orchestrator automatically breaks it into 2–4 smaller subtasks so follow-up attempts stay within safe execution windows. What are the three layers of the stack? + Layer 1: crewswarm RT — your own WebSocket message bus (port 18889). Layer 2: Direct LLM calls — each agent calls its configured provider API with your key, no proxy. Layer 3: crewswarm orchestration — planner, phased builds, shared memory, dashboard, and SwiftBar. Does everything run locally? + Yes. The orchestrator, dashboard, SwiftBar plugin, and memory system all run on your Mac. The only external calls are to the LLM providers you configure. How do I watch live RT traffic? + The RT Messages tab in the dashboard mirrors every command, agent reply, and issue. It’s the best place to verify what each agent just did. How do I restart a single agent? + From the dashboard’s Services tab, hit Restart next to any agent. You can also use SwiftBar’s per-agent controls from the macOS menu bar. Either path keeps the rest of the crew running. Get started Up and running in minutes ✓ Node.js 20+ · ✓ RT server :18889 · ✓ Agent daemons · ✓ API key or Ollama · opt SwiftBar crewswarm — quick start 01 Check the stack $ openswitchctl status 02 Launch the dashboard $ node scripts/dashboard.mjs 03 Start building $ open http://127.0.0.1:4319 — or — node scripts/run.mjs "Build a todo API" 04 Or target one agent directly $ node gateway-bridge.mjs --send crew-coder "Add auth middleware" System Architecture → Agent Setup Guide → SwiftBar Setup → Documentation Everything you need to know From quick starts to deep dives — comprehensive guides for every part of the crewswarm stack. 📚 Architecture & Reference How the stack fits together — RT bus, agent bridges, pipelines, MCP API, and tool execution. System Architecture Agent Setup Guide (AGENTS.md) Orchestrator Guide 🔧 Technical Guides Step-by-step guides for configuration, deployment, and advanced usage patterns. Keep Agents Working SwiftBar Setup Troubleshooting 🎓 Tutorials Hands-on walkthroughs to get you building with crewswarm quickly. Build a feature from one sentence Continuous autonomous development with PM Loop Fix bugs and add tests Scroll for more guides. New cards load as the section enters view. All models and agents configurable via JSON. No code changes required to switch LLMs. View full docs on GitHub → crewswarm Multi-agent AI orchestration. Your models. Your keys. Your machine. Contact: info@crewswarm.ai Product Home Vibe IDE Deploy Security Docs CLI Company About Us Contact Compare Community GitHub Issues Twitter &copy; 2026 crewswarm. All rights reserved. document.addEventListener('DOMContentLoaded', function () { const faqList = document.getElementById('faqList'); if (!faqList) return; const faqItems = Array.from(faqList.querySelectorAll('.faq-item')); const searchInput = document.getElementById('faqSearch'); const emptyState = faqList.querySelector('.faq-empty'); faqItems.forEach((item) => { const button = item.querySelector('.faq-question'); const answer = item.querySelector('.faq-answer'); if (!button || !answer) return; button.addEventListener('click', () => { const isExpanded = button.getAttribute('aria-expanded') === 'true'; faqItems.forEach((it) => { const btn = it.querySelector('.faq-question'); const panel = it.querySelector('.faq-answer'); if (!btn || !panel) return; const expand = it === item && !isExpanded; btn.setAttribute('aria-expanded', String(expand)); panel.classList.toggle('open', expand); }); }); }); const filterFaq = (value = '') => { const term = value.trim().toLowerCase(); let visibleCount = 0; faqItems.forEach((item) => { const haystack = item.dataset.question || ''; const match = !term || haystack.toLowerCase().includes(term); item.classList.toggle('hidden', !match); if (match) visibleCount += 1; }); if (emptyState) emptyState.hidden = visibleCount !== 0; }; if (searchInput) { searchInput.addEventListener('input', (event) => { filterFaq(event.target.value); }); } // Initialize FAQ on load filterFaq(''); }); document.addEventListener('DOMContentLoaded', function () { const sections = document.querySelectorAll('section.section, .proof-bar'); const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add('visible'); } }); }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' }); sections.forEach(section => observer.observe(section)); const lazyImages = document.querySelectorAll('img[data-src]'); const imageObserver = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { const img = entry.target; img.src = img.dataset.src; img.classList.add('loaded'); img.removeAttribute('data-src'); imageObserver.unobserve(img); } }); }, { rootMargin: '50px 0px' }); lazyImages.forEach(img => imageObserver.observe(img)); }); (function () { const minifyCSS = function (css) { return css .replace(/\/\*[\s\S]*?\*\//g, '') .replace(/\s+/g, ' ') .replace(/\s*([{}:;,>~+])\s*/g, '$1') .replace(/;}/g, '}') .replace(/\s+!/g, '!') .trim(); }; window.minifyCSS = minifyCSS; })(); // Hamburger nav toggle (function () { if (window.__crewswarmNavInit) return; const btn = document.getElementById('navHamburger'); const links = document.getElementById('navLinks'); if (!btn || !links) return; btn.addEventListener('click', function () { const open = links.classList.toggle('open'); btn.classList.toggle('open', open); btn.setAttribute('aria-expanded', String(open)); }); // Close on nav link click links.querySelectorAll('.nav-link-item').forEach(function (a) { a.addEventListener('click', function () { links.classList.remove('open'); btn.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }); }); // Close on outside click document.addEventListener('click', function (e) { if (!btn.contains(e.target) && !links.contains(e.target)) { links.classList.remove('open'); btn.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); } }); })(); 
+ window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-0QSG6Y9DHT'); crewswarm — Local-First AI Orchestration [ { "@context": "https://schema.org", "@type": "SoftwareApplication", "name": "crewswarm", "url": "https://crewswarm.ai/", "description": "Local-first AI orchestration for software development. Combines multi-agent orchestration, project-aware memory, local tool execution, Vibe IDE, and crew-cli into a single controllable stack.", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Linux, Windows", "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }, "author": { "@type": "Organization", "name": "crewswarm", "url": "https://crewswarm.ai/" }, "image": "https://crewswarm.ai/og-image.png", "softwareVersion": "1.0", "license": "https://github.com/crewswarm/crewswarm/blob/main/LICENSE" }, { "@context": "https://schema.org", "@type": "Organization", "@id": "https://crewswarm.ai/#organization", "name": "crewswarm", "url": "https://crewswarm.ai/", "logo": "https://crewswarm.ai/favicon.png", "email": "info@crewswarm.ai", "sameAs": [ "https://github.com/crewswarm", "https://twitter.com/crewswarm" ] }, { "@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [ { "@type": "Question", "name": "What does “One requirement. One crew.” actually mean?", "acceptedAnswer": { "@type": "Answer", "text": "The tagline is literal: describe an idea once and a PM-led crew handles the rest — planning, coding, QA, and fixes — until real files land on disk. Ideate, build & ship." } }, { "@type": "Question", "name": "How does the PM Loop keep shipping without new prompts?", "acceptedAnswer": { "@type": "Answer", "text": "The PM Loop reads ROADMAP.md, ships every pending item, then calls Groq as a product strategist to append fresh roadmap items based on the live output. It repeats forever until you stop it." } }, { "@type": "Question", "name": "How is targeted dispatch different from broadcast-style bots?", "acceptedAnswer": { "@type": "Answer", "text": "crewswarm never shouts into a swarm. Each task goes to one named agent, eliminating race conditions and duplicate work. You send a command, the gateway routes it to exactly the right specialist, and only that agent replies." } }, { "@type": "Question", "name": "What phases does a phased build follow?", "acceptedAnswer": { "@type": "Answer", "text": "Everything ships in three passes: MVP for the smallest viable outcome, Phase 1 for depth, and Phase 2 for polish. Each phase carries 3–5 tightly scoped tasks so agents never time out." } } ] } ] #hero.hero>* { position: relative; z-index: 1; } crewswarm is an open-source, local-first AI workspace combining a multi-agent orchestration runtime, a browser control-plane dashboard, the Vibe browser IDE, and native chat clients. It allows software engineers to dispatch complex tasks to specialist AI agents running securely in Docker containers on their own hardware using the ATAT protocol. Crew Swarm Home Vibe IDE Deploy Features Security Get started → Get started → One idea. One build. One crew. The local-first AI orchestration for people who want real files, real tools, and real control. Dashboard, Vibe, and your runtime in one stack. Local-first runtime • Dashboard + Vibe IDE • crew-cli + Cursor • Claude Code + OpenCode • MCP server • PM-led builds • Shared memory + recovery Install crewswarm Explore Vibe pm-loop — crewswarm ↻ ⏭ $ ▶ Run const AGENTS = ['crew-pm', 'crew-coder-back', 'crew-coder-front', 'crew-qa', 'crew-fixer', 'crew-github']; const PHASES = ['MVP', 'Phase 1', 'Phase 2']; function makeLines(requirement) { const req = requirement || 'Build a todo API with tests'; return [ { text: ' ▸ Sonar Pro researching best practices... ', delay: 900 }, { text: ' ▸ ROADMAP.md — 6 tasks queued ', delay: 700 }, { text: '', delay: 300 }, { text: ' MVP crew-pm → planning tasks...', delay: 800 }, { text: ' MVP crew-coder-back server.js — Express, /health, CRUD routes 11.4s ', delay: 1600 }, { text: ' MVP crew-qa PASS — endpoints valid, no lint errors 6.2s ', delay: 1000 }, { text: '', delay: 300 }, { text: ' Phase 1 crew-coder-back server.test.js — 14 tests, all CRUD paths 18.7s ', delay: 1800 }, { text: ' Phase 1 crew-qa PASS — 14/14 tests green 8.1s ', delay: 1100 }, { text: '', delay: 400 }, { text: ' Phase 2 crew-coder-front index.html — UI scaffold 22.3s ', delay: 2000 }, { text: ' Phase 2 crew-fixer Fixed: missing CORS headers on POST route 7.4s ', delay: 1200 }, { text: '', delay: 400 }, { text: ' ✓ Build complete — 3 phases, 6 tasks, 75.1s, 0 failures ', delay: 800 }, { text: ' ▸ Generating next roadmap items... █ ', delay: 900 }, ]; } let heroTimeout = null, heroLine = 0, heroLines = []; function runHeroLines(lines) { const container = document.getElementById('hero-terminal-content'); if (!container) return; container.innerHTML = ''; heroLine = 0; heroLines = lines; // Pause blink cursors while terminal is playing — resume when done document.querySelectorAll('.lt-cursor-blink, .lt-cursor').forEach(el => { el.style.animationPlayState = 'paused'; }); function showNext() { if (heroLine >= heroLines.length) { // Terminal done — re-enable blink only on the last visible cursor document.querySelectorAll('.lt-cursor-blink, .lt-cursor').forEach(el => { el.style.animationPlayState = 'running'; }); return; } const data = heroLines[heroLine]; const el = document.createElement('div'); el.className = 'lt-line'; el.innerHTML = data.text; container.appendChild(el); requestAnimationFrame(() => { el.classList.add('visible'); container.scrollTop = container.scrollHeight; }); heroLine++; if (heroLine { const el = document.createElement('div'); el.className = 'lt-line visible'; el.innerHTML = data.text; container.appendChild(el); }); container.scrollTop = container.scrollHeight; } function runCustomHeroTerminal() { const input = document.getElementById('hero-input'); const val = input ? input.value.trim() : ''; if (heroTimeout) clearTimeout(heroTimeout); runHeroLines(makeLines(val || 'Build a todo API with tests')); } document.addEventListener('DOMContentLoaded', function () { const input = document.getElementById('hero-input'); if (input) { input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runCustomHeroTerminal(); } }); } runHeroTerminal(); }); function switchPreview(btn) { document.querySelectorAll('.preview-tab').forEach(t => t.classList.remove('active')); btn.classList.add('active'); const target = document.getElementById(btn.dataset.target); if (target) target.classList.add('active'); const rail = document.getElementById('dashboardPreviewRail'); if (rail && target) { const slide = target.closest('.preview-slide'); if (slide) { rail.scrollTo({ left: slide.offsetLeft - rail.offsetLeft, behavior: 'smooth' }); } } else { document.querySelectorAll('.preview-panel').forEach(p => p.classList.remove('active')); if (target) target.classList.add('active'); } } Most AI dev tools are just a chat box bolted onto an editor. crewswarm is different. It is built to handle actual execution. While other tools fake the important parts, our specialist agents write real files, execute commands locally, and maintain persistent project memory across multiple steps without disappearing into someone else's cloud. The Product One stack. Three surfaces. Use the Dashboard as the control plane, Vibe as the browser IDE, and crewchat as the native chat client. All three talk to the same agents, memory, and runtime. Dashboard Services, agents, models, memory, and build control. Vibe File tree, Monaco editor, chat, diffs, and terminal. crewchat Native chat surface for quick routing and project context. vibe.html Open Vibe → How it works From requirement to reality in one command No orchestration expertise required. Write what you need in plain English. 01 You write a requirement One sentence, one paragraph, or a full spec. Drop it in the dashboard or pass it on the CLI. → 02 PM breaks it into tasks crew-pm plans MVP → Phase 1 → Phase 2. Each phase gets 3–5 small, targeted tasks. → 03 Agents execute with real tools crew-coder writes code, crew-qa adds tests, crew-fixer handles bugs — each gets exactly their task. → 04 Done. Files on disk. Real files, real output. No hallucinated success messages. Failed tasks hit the DLQ for replay. Architecture Code Engine, control plane, and agent runtime crewswarm runs as one stack: a Code Engine for direct CLI execution, a realtime control plane for targeted dispatch, and product surfaces like the dashboard, Vibe, Telegram, WhatsApp, and crewchat on top. Planning layer crew-pm · roadmap → tasks ↓ command · assign crew-coder crew-coder-front crew-coder-back crew-qa crew-fixer ↓ done · issues Synthesis layer crew-main · audit &amp; assemble The RT channels (`command`, `assign`, `done`, `issues`) coordinate targeted dispatch while the Code Engine handles real execution. Same stack, different layers. Three layers, one stack The product stays simple because the runtime is layered cleanly underneath it. 01 Code Engine OpenCode · Cursor CLI · Claude Code · crew-cli · Gemini · Codex CLI This is the execution layer. It is the part that writes files, runs commands, streams output, and gives each agent a real working environment. ↓ 02 Realtime control plane RT bus · targeted dispatch · retries · issues The RT layer coordinates agent daemons, targeted dispatch, retries, fanout, and bridge traffic. It is infrastructure, not a fake animation layer. ↓ 03 Orchestration layer crewswarm PM planning, phased builds, PM Loop, shared memory, fault recovery, dashboard, Vibe, SwiftBar, Telegram, WhatsApp, MCP, and crewchat all sit here as one coordinated product. Built different How crewswarm differs from framework-only stacks crewswarm is a runtime , not just a library. You get a realtime bus, daemon orchestration, and first-class routing into OpenCode, Cursor CLI, Claude Code, and crew-cli out of the box. Four execution engines, first-class Every agent can run inside OpenCode (persistent sessions, full file editing), Cursor CLI (opus-thinking, sonnet-4.6), Claude Code (full workspace context, native tool use), or crew-cli (High-performance execution). Switch per agent from the dashboard — no config files, no restarts. Realtime bus + daemons Agents run as long-lived daemons connected to an RT message bus. Tasks flow over command , assign , done , issues — no in-process-only simulation. Real dispatch, real replies. Execution layer included Tool calls ( @@WRITE_FILE , @@RUN_CMD , etc.) are executed by the gateway with allowlists and path sandboxing. You don’t have to build a runner or wire a framework to one. DLQ and fault recovery Failed tasks go to a Dead Letter Queue. Retry with backoff, replay from the dashboard. Framework-only stacks leave retries and observability to you. Your models, your machine Each agent calls its LLM directly with your API key. No proxy, no vendor lock-in. Run fully local with Ollama. Compare options in the comparison section . Why not just Cursor? Because a single editor is not a runtime Cursor is an editor. crewswarm is the control plane, runtime, and memory layer around your editors and CLIs. 🧭 Persistent coordination Agents, services, memory, and projects survive beyond one editor tab or one CLI session. 🛠️ Runtime control Start, stop, inspect, and route the whole stack from the dashboard instead of gluing scripts together manually. 🔁 Cross-surface continuity Dashboard, Vibe, crewchat, SwiftBar, and CLI surfaces all talk to the same orchestration layer. The Ecosystem One runtime, multiple surfaces. crewswarm is a modular stack. The core orchestration happens under the hood, but you can interact with the crew through whichever surface fits your current workflow. 🧠 The System (Core Runtime) The beating heart of crewswarm. It relies on the ATAT WebSocket bus, persistent shared memory, and the PM loop to route your requests to 20+ specialized agents seamlessly. ✨ Vibe IDE A full-screen, browser-based native IDE. Combines a powerful code editor, file tree, terminal, and agent chat panel into a single unified window. Perfect for starting entirely new projects from scratch. 💻 crew-cli The terminal-native interface. Use crew exec "build this" right from your project folder to dispatch the crew without ever leaving your terminal or breaking flow. 🎛️ The Dashboard Your control plane. Manage API keys, assign LLM models to specific agents (like Claude for coding, Groq for fast planning), map local tools, and view the real-time swarm logs. Features Everything a dev crew needs, minus the meetings ⚡ PM-led orchestration Natural-language requirement → PM breaks it into tasks → targeted dispatch to the right agent. No broadcast races. No duplicate work. crew-pm → crew-coder → crew-qa → crew-fixer 🎯 Targeted dispatch Send to one agent by name. --send crew-coder "Build auth" . Only that agent receives it. 📐 Phased builds (PDD) MVP → Phase 1 → Phase 2. Failed tasks auto-break into subtasks and retry. No work is lost. 🧩 Domain-Aware Planning Large codebases (100K+ lines) get subsystem-specific PM agents. crew-pm-cli handles CLI tasks, crew-pm-frontend owns dashboard, crew-pm-core manages orchestration. No more hallucinated file paths. 🧠 Shared Memory + Project Message RAG Every agent reads shared memory (brain.md, decisions, handoff notes). All project messages auto-save to ~/.crewswarm/project-messages/ and are automatically indexed for semantic search using local TF-IDF + cosine similarity — no API calls, all local. AgentMemory Cognitive facts (decisions, constraints, preferences) Written by @@BRAIN commands Persists across all sessions Project Messages All chat saved to JSONL automatically Semantic search: "What did we discuss about auth?" Export to markdown, JSON, CSV AgentKeeper Task results from completed work Gateway records after execution Available to all future agents Cache headers prevent stale data. Messages persist across tab switches. Zero configuration needed. 🔌 Skill-powered Extend agents with data-driven SKILL.md or JSON plugins. Add Twitter, Fly.io, or custom API tools without writing JS code. 🎤 Multimodal Support — Images + Voice across all platforms Send images or voice messages from any surface. Dashboard, Telegram, WhatsApp, and crewchat all support image recognition and voice transcription. Powered by Groq (fast/cheap ~$3/month) or Gemini 2.0 Flash (best quality). 📱 Dashboard Click 📷 to upload images, 🎤 to record voice messages 💬 Telegram/WhatsApp Send photos or voice notes → auto-analyzed and transcribed 🍎 crewchat Native image picker + AVFoundation voice recording 🐦 Real-time X/Twitter Intelligence with Grok The only AI coding platform with live X/Twitter search. Use @@SKILL grok.x-search to search recent tweets, get citations with X post URLs, filter by date ranges, handles, and media types. Powered by xAI's Grok 3 with real-time X data access. grok.x-search Search recent tweets (last 24-48 hours) Filter by handles, date ranges, media types Citations with X post URLs grok.vision Image analysis with grok-vision-beta Screenshot analysis and UI audits Diagram and chart interpretation Competitive edge: GitHub Copilot can't search X. Claude can't search X. Only crewswarm has real-time X intelligence. 🐳 Docker-First Deployment — Multi-Arch Images One-line install on any Linux machine. Multi-arch images (AMD64 + ARM64) for servers, VMs, Raspberry Pi, cloud deployments, and CI/CD. Perfect for team shared instances, GitHub Actions, or self-hosted setups. curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash ☁️ Cloud VMs AWS, GCP, DigitalOcean, Azure 🏠 Home Servers Raspberry Pi 4/5, NUCs, edge devices 🔄 CI/CD GitHub Actions, GitLab CI, Jenkins 👥 Team Instances Shared crew for entire team Local dev setup also available for contributors. Pick the deployment that fits your workflow. 🔄 Fault tolerance Retry with backoff and task leases. After max retries, tasks hit the Dead Letter Queue for manual replay from the dashboard. 🚀 Five execution engines — your choice per agent Your crew runs specialist AI agents (PM, coder, QA, fixer…) — each one calling its LLM directly. For heavy coding tasks, agents can go deeper: route them into OpenCode , Cursor CLI , Claude Code , crew-cli , or Gemini CLI for full file editing, bash access, and persistent sessions. Switch per agent from the dashboard. No restarts, no config files. OpenCode Persistent sessions per agent Full file editing + bash Context survives across tasks Best for: crew-coder, crew-fixer, crew-coder-front/back Cursor CLI opus-thinking + sonnet-4.6 Deep reasoning &amp; architecture Parallel wave dispatch Best for: crew-main, crew-architect, complex reasoning Claude Code Full workspace context Native Anthropic tool use Session continuity per agent Best for: large refactors, multi-file reasoning crew-cli 3-Tier AI Architecture (Router/Planner/Worker) 3x Parallel Speedup over sequential cycles ATAT Protocol & LSP Self-Healing enabled Best for: High-performance terminal engineering Gemini CLI Google Gemini 2.0 Flash / Pro — stream-json output Fast inference, multimodal support Non-interactive --yolo mode Best for: Fast iterations, Google-model workflows 🔌 MCP server — your crew in any AI tool crewswarm exposes your entire crew as an MCP server on port 5020 . Add one line to ~/.cursor/mcp.json (or Claude Code, OpenCode, Codex) and every project gets your full persistent agent fleet — not session-scoped generics, but your crew with memory, custom models, and cross-agent coordination. dispatch_agent Send a task to any specialist agent Waits for the result Full tool access + memory run_pipeline Multi-agent chains from any client Each stage passes output to the next PM → coder → QA in one call chat_stinki + skills Talk to crew-lead directly via MCP Run any skill (deploy, TTS, webhooks…) OpenAI-compatible API on same port ~/.cursor/mcp.json → {"mcpServers":{"crewswarm":{"url":"http://127.0.0.1:5020/mcp"}}} ⚙️ @@ Protocol — 10x more efficient than JSON-RPC While others use verbose JSON-RPC or natural language, crewswarm agents communicate via a proprietary @@ syntax that's 10x more token-efficient , unambiguous, and easy for LLMs to generate. MCP-compatible via translation layer. Standard JSON-RPC {"tool": "write", "params": { "path": "app.ts", "content": "import express..." }} ~80 tokens • Fragile @@ Protocol (CAP) @@WRITE_FILE app.ts import express from 'express'; const app = express(); ... @@END_FILE ~8 tokens • 10x less overhead Why @@ wins: Zero ambiguity — Regex-parseable, no JSON errors Inline with prose — Explain AND execute in one message LLM-friendly — Easy to generate from prompt examples Cost savings — 10x fewer tokens = cheaper API bills Graceful Failure: Unlike JSON, CAP is stream-parseable. If a model hits a context limit halfway through writing 4 files, the first 3 are still valid and executed. In JSON, you lose the whole turn. Available commands: @@READ_FILE • @@WRITE_FILE • @@RUN_CMD • @@DISPATCH • @@PIPELINE • @@SKILL • @@WEB_SEARCH • @@MEMORY 🖥️ Seven control surfaces Pick how you want to drive the crew. Every surface talks to the same RT bus and the same agents. Chat with Stinki Dashboard Full web UI — chat, build, services, RT bus, DLQ, spend crewswarm Vibe Browser-native IDE with Monaco — real-time file tree + agent chat. crewchat Quick & Advanced modes — multimodal image + voice support. REST API / CLI curl /chat · direct dispatch · scheduled pipelines Mobile messengers Telegram Message Stinki from your phone — same conversation as Dashboard WhatsApp Personal bot via Baileys — QR scan once, then chat from WhatsApp Monitoring &amp; control Dashboard Services · RT bus · DLQ replay · spend · agent health SwiftBar macOS menu bar — status, quick restart, agent logs Wave Orchestration Parallel execution with wave-based dispatch Run multiple agents simultaneously. Tasks in the same wave execute in parallel — no queuing, no waiting, true concurrent multi-agent execution. Significantly faster than sequential task processing. Wave 1 Sequential Start Wave 1 runs first — typically crew-pm planning the build and breaking it into tasks. Wave 2 Parallel Execution Wave 2 tasks run simultaneously — crew-coder + crew-qa + crew-security all working at once. Wave 3 Synthesis Wave 3 waits for wave 2 completion, then crew-main synthesizes results and validates the build. @@PIPELINE Wave Syntax @@PIPELINE [ {"wave":1, "agent":"crew-pm", "task":"Plan the build and create roadmap"}, {"wave":2, "agent":"crew-coder", "task":"Implement backend API"}, {"wave":2, "agent":"crew-qa", "task":"Write integration tests"}, {"wave":2, "agent":"crew-security", "task":"Security audit"}, {"wave":3, "agent":"crew-main", "task":"Synthesize results and validate"} ] Wave 1 runs first. All wave 2 tasks execute in parallel . Wave 3 waits for wave 2 completion before starting. ⚡ Significantly Faster Builds Parallel execution means crew-coder, crew-qa, and crew-security run simultaneously instead of sequentially — cutting build time proportional to agents in each wave (3 parallel agents = ~3x faster). 🎯 No Race Conditions Wave dependencies prevent file conflicts and duplicate work. Each wave waits for the previous wave to complete before starting. 🔄 Auto-Retry Failed wave tasks retry independently without blocking other waves. Builds keep moving even when individual agents hit errors. Models Bring your own model Every agent calls its LLM directly — no proxy, no middleware. Mix and match freely: PM on Perplexity for web search, coders on Mistral or DeepSeek, coordinator on Cerebras for instant replies. Add Brave Search and Parallel in the dashboard for crew-lead and PM lookups. Or run everything local with Ollama. OpenAI GPT-4.1 · GPT-4.1-mini · o3 · o4-mini Industry standard. Best for general reasoning and instruction following. Anthropic Claude Sonnet 4.6 · Claude Opus 4.6 · Claude Haiku 4.5 Top-tier code quality and instruction following. Strong on long context. GQ Groq Llama 4 Scout · Llama 3.3 70B · Gemma 2 9B Blazing-fast inference. Best for QA and fixer agents where speed matters. Mistral Mistral Large · Codestral · Mistral Small Excellent for code generation. Codestral is purpose-built for dev tasks. DS DeepSeek DeepSeek V3 · DeepSeek R1 Open-source coding model with exceptional code completion quality. Perplexity Sonar Pro · Sonar Real-time web search. Ideal for the PM agent to research before planning. Google Gemini Gemini 2.5 Pro · Gemini 2.5 Flash · Gemini 2.0 Flash Multimodal and fast. Free tier via Gemini CLI — 60 req/min with any Google account, no API key needed. OpenRouter Claude · GPT-4 · Gemini · Llama · Mistral · 200+ models One API key for hundreds of models. Route to any provider — Claude, OpenAI, Google, Mistral, and more — through a single endpoint. CB Cerebras Llama 4 Scout · Llama 3.3 70B Ultra-fast hardware inference. Near-instant responses for latency-critical agents. xAI xAI / Grok Grok 3 · Grok 3 Mini · Grok 3 Vision xAI's model with real-time X/Twitter data access and strong reasoning. Ollama (Local) Qwen 3 · DeepSeek R1 · Phi-4 · Llama 4 Run fully local. No API keys, no rate limits, no data leaving your machine. 🦁 Brave Search Web Search API Fast web search. crew-lead and the PM loop use it for lookups when you ask questions — add your key in the dashboard Search &amp; Research Tools. ∥ Parallel Deep research · Web synthesis Multi-step research and synthesis. Used by the PM for project planning and deep lookups. Configure in the dashboard alongside Brave. 💡 Each agent can use a different provider. Add API keys and assign models from the Providers tab ; add Brave and Parallel keys in Search &amp; Research Tools for crew-lead and PM lookups. Or edit the config JSON directly. Switch at any time, no restarts needed. Open Source Free forever. MIT licensed. crewswarm is open-source software. Use it, modify it, contribute to it. MIT License Use it for personal projects, commercial products, or anything in between. No restrictions. 🆓 Free to use No subscription. No usage limits. Bring your own API keys for the LLM providers you choose. 🤝 Community-driven Contributions welcome. Report issues, submit PRs, or just star the repo to show support. View on GitHub 90-second walkthrough See the product in one fast pass This is the fastest way to understand crewswarm: launch the stack, build in Vibe, and control the runtime from the dashboard. crewswarm.ai/vibe.html 0:00–0:20 Launch the stack Show the one-line install or local quickstart, then open the Dashboard and Vibe side by side. 0:20–0:55 Build in Vibe Send one prompt, show the file tree updating, open the written file, preview the diff, and pop the terminal. 0:55–1:30 Control the runtime Switch to the dashboard, show Services and Agents, then land on the install CTA while the stack is still visibly running. Read demo script Run it yourself The crew Specialized agents, targeted tasks A crew of specialists, each with a role, a model, and a set of tools. The PM decides who gets what — no broadcast racing. crew-lead · Chat Commander 🧠 Stinki ☠️ The pirate captain of this AI swarm. Stinki orchestrates dispatches, drafts roadmaps, and answers your questions with web search or codebase dives. Talk to him from the dashboard, Telegram, or WhatsApp. If you're talking shit, he'll roast back — while keeping the ship afloat. No prisoners. Just results. 🔥 Talks back 🗺️ Roadmaps on demand 🌐 Web search + fetch ⚡ Dispatches the crew 📁 Reads &amp; writes files ⚙️ Runs shell commands 🔧 Calls skills 📱 Telegram + WhatsApp Try it "build me a SaaS landing page with a waitlist" "have crew-qa audit the last PR" "what's the fastest free model right now?" "kick off the pipeline for my React app" Q crew-main Quill Coordinator Chat, triage, and kick off orchestrators. Your first point of contact. P crew-pm Planner Planning Breaks requirements into phased tasks. Assigns agents. Keeps scope tight. C crew-coder Coder Implementation Writes code, creates files, runs shell commands. The workhorse of every build. F crew-coder-front Mistral Front Frontend specialist UI, styling, and client-side code. Knows the design system and keeps markup clean. B crew-coder-back DeepSeek Back Backend specialist APIs, databases, and server-side logic. Optimized for structured, deep code tasks. C crew-copywriter Copy Copywriting Headlines, CTAs, and product copy. Keeps brand voice sharp and on-message. T crew-qa Tester Quality assurance Adds tests, validates behavior, and audits output before anything ships. D crew-fixer Debugger Bug fixing Diagnoses failures, fixes edge cases, patches what QA flags. S crew-security Guardian Security review Audits for vulnerabilities, hardens configs, and enforces best practices. G crew-github GitBot Git &amp; PRs Commits, branches, pull requests, and GitHub Actions. Runs real git and gh commands. R crew-researcher Scout Web research Searches the web, summarizes findings, and surfaces competitive intelligence via Perplexity. A crew-architect Arch System design &amp; DevOps Designs systems, writes infra-as-code, and handles deployment pipelines. F crew-frontend Pixel CSS &amp; design systems Polished UI, animations, theming, and layout — Apple/Linear-level visual craft. S crew-seo Rank SEO specialist Keyword research, meta tags, content strategy, and technical SEO audits. M crew-ml Neuron Machine learning AI pipelines, model selection, fine-tuning setup, and data preprocessing workflows. O crew-orchestrator Wave Parallel orchestration Fans out tasks to multiple agents simultaneously in waves. No queuing, no collisions. T crew-telegram TGBot Telegram bridge Routes tasks and replies through your Telegram bot. Dispatch to any agent from your phone. W crew-whatsapp WABot WhatsApp bridge Personal WhatsApp bot via Baileys. Chat with your crew from any device — no Business API needed. M crew-mega Mega Heavy general tasks Long-horizon, high-complexity tasks that need extended context and deep reasoning. Use cases How the crew ships 01 Build a feature from one sentence Type a requirement in the Build tab, click Run. PM plans it, coder builds it, QA tests it. Watch it happen in RT Messages. Phased builds 02 Fix a bug and add tests crew-fixer diagnoses and patches, crew-qa writes the test suite. Targeted dispatch means each agent does exactly one thing. Targeted dispatch 03 Ship a small API with CRUD + tests "Build a todo API with Express, CRUD endpoints, and a test file." One sentence. Real files on disk in minutes. Single-shot build 04 Automate your workflows with Skills Drop a SKILL.md in your config folder. Agents immediately gain the ability to deploy to Fly.io, send tweets, or hit any custom API. Extensibility 05 Control from the menu bar SwiftBar shows status at a glance. Start, stop, restart agents. Send a message to any agent. Open logs. SwiftBar 06 Recover from failures Max retries hit? Task goes to the DLQ. Open the dashboard, see the error, replay with one click — or fix and rerun. DLQ + replay 07 Keep agents aligned across sessions Shared memory files — current state, decisions, handoff — are injected into every agent. Resume tomorrow exactly where you left off. Shared memory 08 Route through any CLI engine One click in the dashboard switches agents between Claude Code, Cursor, OpenCode, Gemini, or crew-cli. Each agent maintains its own persistent session — context survives across tasks. Multi-engine routing 09 Mix models and engines per agent Send your architect to Claude for deep reasoning, your coders to Cursor for fast edits, your QA to Gemini for breadth. Mix execution modes per agent — no restarts, no config files. Per-agent engine config Dashboard Everything in one place Build, dispatch, replay, monitor — and open any file the crew wrote directly in Cursor or OpenCode. localhost:4319/build Install &amp; open → localhost:4319/agents Meet the crew → Swipe or shift-scroll to explore the dashboard surfaces. Next panel Compare What crewswarm does The only fully open-source platform where a PM agent runs the build — not just a single autocomplete suggestion. For comparison with CrewAI and other frameworks, this section outlines what crewswarm does differently. 🎓 Research-driven orchestration crewswarm implements structural and content markers identified in Princeton GEO (Generative Engine Optimization) research to maximize AI visibility and authority. Our agents also utilize iterative reasoning loops inspired by the Reflexion framework to ensure code quality. 🧠 PM-led phased builds A dedicated Project Manager agent reads your ROADMAP, breaks work into phases, dispatches tasks to the right specialists, and writes handoff notes between sessions — automatically. 🤝 Shared memory across agents Every agent reads and writes to a shared memory layer — decisions, context, and progress persist across sessions so nothing gets lost between runs. ⚡ Real-time agent mesh Agents communicate over an RT message bus. Any agent can broadcast, any agent can listen — parallel work happens naturally without a central bottleneck. 🔁 Automatic fault recovery Failed tasks land in a Dead Letter Queue and are automatically retried. Builds keep moving even when individual agents hit errors or timeouts. 🔑 Bring your own model Configure any model per agent — Groq, Anthropic, OpenAI, NVIDIA, or fully local via Ollama. No vendor lock-in, no forced subscriptions. 📡 Control from anywhere Manage your crew from the web dashboard, the CLI, crewchat, SwiftBar, or Telegram. One build, every surface covered. Early access What builders are saying ✦ Beta builder "One sentence in. Working API out. No standups, no tickets, no back-and-forth." Vlad Fullstack Engineer · Early access ✦ Beta builder "I start the PM Loop, go eat dinner, come back to a finished feature. It's genuinely autonomous." Dev Startup Founder · Early access ✦ Beta builder "Shared memory is the killer feature. I can stop mid-project and pick it up days later — agents just know where we left off." Attila Indie Developer · Early access Orchestration Three modes, one crew Pick the right tool for the job. From single tasks to full autonomous builds. 📐 PM Loop Recommended for most builds Break large work into MVP → Phase 1 → Phase 2. Auto-phases ambiguous requirements, auto-retries failed tasks, and breaks them into subtasks if needed. Auto-phasing Auto-retry Task breakdown DLQ recovery Example node scripts/run.mjs "Build a todo API with CRUD and tests" ⚡ Unified Single-shot structured runs One command, structured execution. PM plans it once, crew executes in sequence. No phasing overhead — good for well-defined tasks. Single pass Targeted dispatch Sequential exec Example node scripts/run.mjs "Fix auth.js bug and add tests" 🎯 Single-task One agent, right now Send one task directly to one agent. No PM, no planning. Fastest path from intent to execution for simple, well-scoped work. Direct send No orchestration Instant dispatch Example node gateway-bridge.mjs --send crew-coder "Add GET /health to server.js" Quick comparison Mode Best for Auto-retry Phasing Overhead PM Loop Large or ambiguous builds ✓ ✓ Medium Unified Well-defined tasks ✓ — Low Single-task Quick fixes, small edits — — None Stack Built on boring, solid tech No proprietary runtime. No cloud lock-in. Everything runs on tools you already know. Node.js Runtime — all scripts, daemons, and the dashboard TypeScript RT daemon and plugin suite compiled to JS WS WebSocket crewswarm RT — real-time agent mesh on port 18889 Docker Sandboxed execution — route any agent into a secure container Skills (JSON/MD) Data-driven plugins — add new tools to agents without code Shared Memory RAG Semantic search over history via local TF-IDF (no API calls). 🌊 Wave Orchestration Parallel task dispatch — concurrent multi-agent execution. Bash openswitchctl — start, stop, restart, health checks macOS SwiftBar menu bar plugin — status, control, logs at a glance SQLite Advanced task tracking, agent health, and queue metrics (optional) Ollama Run any agent fully local — no API key, no internet required GitHub CLI crew-github — commits, branches, pull requests via gh Telegram Message Quill from your phone — dispatches to the full crew WhatsApp Personal bot via Baileys — scan QR, chat with the crew from any WhatsApp Frequently Asked Questions Everything you need to know about running your AI crew. No matching answers yet. Try another keyword. What does “One requirement. One crew.” actually mean? + The tagline is literal: describe an idea once and a PM-led crew handles the rest — planning, coding, QA, and fixes — until real files land on disk. Ideate, build &amp; ship. How does the PM Loop keep shipping without new prompts? + The PM Loop reads ROADMAP.md , ships every pending item, then calls Groq as a product strategist to append fresh roadmap items based on the live output. It repeats forever until you stop it. Which shared memory files load for every task? + Four files are always injected: current-state.md , decisions.md , agent-handoff.md , and orchestration-protocol.md . The wrapper auto-bootstraps them and enforces token budgets so no agent runs blind. How is targeted dispatch different from broadcast-style bots? + crewswarm never shouts into a swarm. Each task goes to one named agent, eliminating race conditions and duplicate work. You send a command, the gateway routes it to exactly the right specialist, and only that agent replies. What phases does a phased build follow? + Everything ships in three passes: MVP for the smallest viable outcome, Phase 1 for depth, and Phase 2 for polish. Each phase carries 3–5 tightly scoped tasks so agents never time out. What happens when a task fails repeatedly? + Failures trigger automatic retries. If attempts are exhausted, the task lands in the Dead Letter Queue (DLQ) for replay from the dashboard or handoff to crew-fixer . Is it safe to run AI code on my machine? + Yes. You can route any agent into a Docker sandbox so they have no access to your host files. crewswarm also uses path-based allowlists and permission layers to restrict tool usage. Can I add new tools to my agents? + Absolutely. You can add "Skills" by dropping a simple JSON or SKILL.md file into ~/.crewswarm/skills/ . No custom JavaScript is required to extend your crew's capabilities. How do I launch the dashboard? + From your crewswarm directory run: $ node scripts/dashboard.mjs That gives you Build, Chat (crew-lead), Services, RT Messages, DLQ, Projects, Send, and Messaging tabs in one place. How do I kick off a phased build from the CLI? + From the dashboard Chat tab, just type your requirement. From the CLI: $ node scripts/run.mjs "Build a todo API" That single command triggers PM planning plus all subsequent coding, QA, and fixing phases. What does a targeted send look like? + Send straight to one agent: $ node gateway-bridge.mjs --send crew-coder "Create server.js with Express and GET /health" Only crew-coder receives that instruction, so there is zero broadcast noise. Can I mix different LLM providers per agent? + Yes. Every agent has its own model assignment — Anthropic for coding, Perplexity for planning, Cerebras for fast coordination, Groq for QA speed. Configure from the dashboard Providers tab or edit the config JSON directly. No code changes, no restarts. How do I resume a project that paused mid-build? + Use the Projects tab in the dashboard. Every project stores its roadmap path; click “Resume PM Loop” and it picks up right where the roadmap last stopped. What happens after the roadmap is empty? + The PM Loop inspects the live output, asks Groq-as-strategist for 3–5 fresh items, appends them to ROADMAP.md , and keeps shipping. You never need to re-seed work manually. How are required memory files bootstrapped? + The gateway wrapper auto-creates any missing memory files from templates, logs the bootstrap event, and refuses to run a task if memory cannot load. That policy came from DEC-004/005. What telemetry is tracked? + A JSONL feed at ~/.crewswarm/logs/events.jsonl stores bootstrap events, memory load failures, protocol violations, retries, and RT events for later auditing. Which agents ship with the default crew? + You get 21+ specialist agents : crew-lead (chat commander), crew-main (coordination), crew-pm (planning), crew-coder (implementation), crew-qa (testing), crew-fixer (debugging), crew-security (audits), crew-github (git/PRs), crew-researcher (web research), crew-architect (system design), crew-copywriter (docs/copy), crew-frontend (CSS/UI), crew-seo, crew-ml, crew-orchestrator (wave dispatch), and domain PM specialists (crew-pm-cli, crew-pm-frontend, crew-pm-core) for large codebases. What are waves and how do they work? + Waves let you run tasks in parallel. Tasks in the same wave execute simultaneously, higher waves wait for lower waves to complete. Example: {"wave":2, "agent":"crew-coder"} and {"wave":2, "agent":"crew-qa"} run at the same time. Wave 3 waits for all wave 2 tasks before starting. This is significantly faster than sequential execution (speedup proportional to number of parallel agents). Can I schedule workflows to run automatically? + Yes. Create workflows in ~/.crewswarm/pipelines/&lt;name&gt;.json with multi-stage agent chains or skill-only pipelines. Run via cron: node scripts/run-scheduled-pipeline.mjs social . Each stage's output passes to the next. Perfect for daily builds, automated testing, or scheduled deployments. What is Background Consciousness? + An optional feature where crew-main runs periodic reflection when idle — reading brain.md, suggesting follow-ups, managing system health. Enable with CREWSWARM_BG_CONSCIOUSNESS=1 . Cheap Groq mode costs ~$0.01/day. Keeps the crew proactive between tasks. How does Continuous Build mode help with websites? + It inspects the target directory for required sections (hero, features, testimonials, etc.), dispatches tasks for anything missing, and loops until every section exists. What does the SwiftBar plugin control? + SwiftBar shows stack health, lets you start/stop/restart agents (including crew-lead and the dashboard), open the dashboard, and send targeted messages. crewchat is a separate menu bar app for talking to crew-lead in a popover — same conversation as the dashboard and Telegram. How do multiple projects stay organized? + Each project is registered with its output path and roadmap. The dashboard’s Projects tab and orchestrator-logs/projects.json keep everything resume-ready. How is the shared memory token budget enforced? + The loader trims each file to 2,500 characters and caps the combined memory payload at 12,000 characters, guaranteeing agents never blow their context windows. What if a task is too big for one attempt? + When a task fails, the orchestrator automatically breaks it into 2–4 smaller subtasks so follow-up attempts stay within safe execution windows. What are the three layers of the stack? + Layer 1: crewswarm RT — your own WebSocket message bus (port 18889). Layer 2: Direct LLM calls — each agent calls its configured provider API with your key, no proxy. Layer 3: crewswarm orchestration — planner, phased builds, shared memory, dashboard, and SwiftBar. Does everything run locally? + Yes. The orchestrator, dashboard, SwiftBar plugin, and memory system all run on your Mac. The only external calls are to the LLM providers you configure. How do I watch live RT traffic? + The RT Messages tab in the dashboard mirrors every command, agent reply, and issue. It’s the best place to verify what each agent just did. How do I restart a single agent? + From the dashboard’s Services tab, hit Restart next to any agent. You can also use SwiftBar’s per-agent controls from the macOS menu bar. Either path keeps the rest of the crew running. Get started Up and running in minutes ✓ Node.js 20+ · ✓ RT server :18889 · ✓ Agent daemons · ✓ API key or Ollama · opt SwiftBar crewswarm — quick start 01 Check the stack $ openswitchctl status 02 Launch the dashboard $ node scripts/dashboard.mjs 03 Start building $ open http://127.0.0.1:4319 — or — node scripts/run.mjs "Build a todo API" 04 Or target one agent directly $ node gateway-bridge.mjs --send crew-coder "Add auth middleware" System Architecture → Agent Setup Guide → SwiftBar Setup → Documentation Everything you need to know From quick starts to deep dives — comprehensive guides for every part of the crewswarm stack. 📚 Architecture & Reference How the stack fits together — RT bus, agent bridges, pipelines, MCP API, and tool execution. System Architecture Agent Setup Guide (AGENTS.md) Orchestrator Guide 🔧 Technical Guides Step-by-step guides for configuration, deployment, and advanced usage patterns. Keep Agents Working SwiftBar Setup Troubleshooting 🎓 Tutorials Hands-on walkthroughs to get you building with crewswarm quickly. Build a feature from one sentence Continuous autonomous development with PM Loop Fix bugs and add tests Scroll for more guides. New cards load as the section enters view. All models and agents configurable via JSON. No code changes required to switch LLMs. View full docs on GitHub → crewswarm Multi-agent AI orchestration. Your models. Your keys. Your machine. Contact: info@crewswarm.ai Product Home Vibe IDE Deploy Security Docs CLI Company About Us Contact Compare Community GitHub Issues Twitter &copy; 2026 crewswarm. All rights reserved. document.addEventListener('DOMContentLoaded', function () { const faqList = document.getElementById('faqList'); if (!faqList) return; const faqItems = Array.from(faqList.querySelectorAll('.faq-item')); const searchInput = document.getElementById('faqSearch'); const emptyState = faqList.querySelector('.faq-empty'); faqItems.forEach((item) => { const button = item.querySelector('.faq-question'); const answer = item.querySelector('.faq-answer'); if (!button || !answer) return; button.addEventListener('click', () => { const isExpanded = button.getAttribute('aria-expanded') === 'true'; faqItems.forEach((it) => { const btn = it.querySelector('.faq-question'); const panel = it.querySelector('.faq-answer'); if (!btn || !panel) return; const expand = it === item && !isExpanded; btn.setAttribute('aria-expanded', String(expand)); panel.classList.toggle('open', expand); }); }); }); const filterFaq = (value = '') => { const term = value.trim().toLowerCase(); let visibleCount = 0; faqItems.forEach((item) => { const haystack = item.dataset.question || ''; const match = !term || haystack.toLowerCase().includes(term); item.classList.toggle('hidden', !match); if (match) visibleCount += 1; }); if (emptyState) emptyState.hidden = visibleCount !== 0; }; if (searchInput) { searchInput.addEventListener('input', (event) => { filterFaq(event.target.value); }); } // Initialize FAQ on load filterFaq(''); }); document.addEventListener('DOMContentLoaded', function () { const sections = document.querySelectorAll('section.section, .proof-bar'); const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add('visible'); } }); }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' }); sections.forEach(section => observer.observe(section)); const lazyImages = document.querySelectorAll('img[data-src]'); const imageObserver = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { const img = entry.target; img.src = img.dataset.src; img.classList.add('loaded'); img.removeAttribute('data-src'); imageObserver.unobserve(img); } }); }, { rootMargin: '50px 0px' }); lazyImages.forEach(img => imageObserver.observe(img)); }); (function () { const minifyCSS = function (css) { return css .replace(/\/\*[\s\S]*?\*\//g, '') .replace(/\s+/g, ' ') .replace(/\s*([{}:;,>~+])\s*/g, '$1') .replace(/;}/g, '}') .replace(/\s+!/g, '!') .trim(); }; window.minifyCSS = minifyCSS; })(); // Hamburger nav toggle (function () { if (window.__crewswarmNavInit) return; const btn = document.getElementById('navHamburger'); const links = document.getElementById('navLinks'); if (!btn || !links) return; btn.addEventListener('click', function () { const open = links.classList.toggle('open'); btn.classList.toggle('open', open); btn.setAttribute('aria-expanded', String(open)); }); // Close on nav link click links.querySelectorAll('.nav-link-item').forEach(function (a) { a.addEventListener('click', function () { links.classList.remove('open'); btn.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }); }); // Close on outside click document.addEventListener('click', function (e) { if (!btn.contains(e.target) && !links.contains(e.target)) { links.classList.remove('open'); btn.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); } }); })(); 

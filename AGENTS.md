@@ -178,7 +178,7 @@ bash start-studio.sh
 # Opens http://127.0.0.1:3333
 ```
 
-**Full-screen IDE with Monaco editor + agent chat** — Cursor-style layout with file tree, editor, chat panel, and terminal. `npm run restart-all` now starts Vibe + file watcher automatically. See `STUDIO-SETUP-COMPLETE.md` for details.
+**Full-screen IDE with Monaco editor + agent chat** — Cursor-style layout with file tree, editor, chat panel, and terminal. `npm run restart-all` now starts Vibe + file watcher automatically. See `apps/vibe/STUDIO-SETUP-COMPLETE.md` and `docs/CANONICAL/SURFACES.md`.
 
 **Option 3: CrewChat.app** (native macOS)
 
@@ -230,9 +230,9 @@ crew chat --image screenshot.png "What's wrong with this UI?"
 crew exec "fix all TypeScript errors" --ci
 ```
 
-See `CREWCHAT-QUICKSTART.md` for CrewChat v2.0 usage guide.  
-See `MULTIMODAL-TAB-UI-COMPLETE.md` for full multimodal setup and API reference.  
-See `STUDIO-SETUP-COMPLETE.md` for crewswarm Studio IDE guide.
+CrewChat.app: sources under `apps/crewchat/`; optional build flags in `docs/CANONICAL/INSTALL.md`.  
+Multimodal / surfaces: `docs/CANONICAL/SURFACES.md`, `docs/CANONICAL/DASHBOARD-TABS.md`.  
+Studio (Vibe): `apps/vibe/README.md`, `apps/vibe/STUDIO-SETUP-COMPLETE.md`.
 
 ---
 
@@ -265,7 +265,7 @@ GET /api/crew-lead/export-project-messages?projectId=my-project&format=markdown
 
 **No configuration needed** - messages auto-save and auto-index as you chat!
 
-See `CHAT-HISTORY-AND-RAG-COMPLETE.md` for complete guide (architecture, API reference, troubleshooting).
+See `docs/CANONICAL/MEMORY.md` (architecture) and `docs/UNIFIED-API.md` (HTTP overview) for persistence, search, and export.
 
 ---
 
@@ -328,7 +328,7 @@ After migration: `@@MEMORY stats` shows 200+ facts available to all agents.
 
 **Cross-system example:** User stores a fact in Cursor via `@@BRAIN` → Gateway recalls it when dispatching to crew-coder → CLI sees it in next `crew chat` session. Zero duplication, zero sync lag.
 
-See `SHARED-MEMORY-INTEGRATION.md` for full architecture and API reference.
+See `docs/CANONICAL/MEMORY.md` and `crew-cli/docs/SHARED-MEMORY.md` for full architecture and CLI behavior.
 
 ---
 
@@ -439,10 +439,7 @@ sqlite3 ~/.crewswarm/contacts.db "SELECT display_name, preferences FROM contacts
 sqlite3 ~/.crewswarm/collections.db "SELECT title, tags FROM collection_items;"
 ```
 
-**Full docs:**
-- `WHATSAPP-TELEGRAM-INTEGRATION.md` - How both platforms work together
-- `GENERIC-COLLECTIONS.md` - Collections system explained
-- `FINAL-TEST-RESULTS.md` - Test results and verification
+**Full docs:** `docs/CANONICAL/SURFACES.md`, `docs/TROUBLESHOOTING.md` (bridge quirks); collections code in `lib/collections/index.mjs`; verification patterns in `docs/CANONICAL/TESTING.md`. Old root filenames → `docs/archive/legacy-root-guides/README.md`.
 
 ---
 
@@ -1109,8 +1106,7 @@ You (Topic 20 → crew-loco): Can you dispatch a task to crew-coder?
 crew-loco: ⚠️ crew-loco does not have dispatch permissions (chat-only mode)
 ```
 
-See `TELEGRAM-TOPIC-AGENT-PERMISSIONS.md` for full permission matrix and testing instructions.
-See `TELEGRAM-SELF-DISPATCH.md` for tool execution details.
+Permission matrix and behavior: table above; Comms setup `docs/CANONICAL/DASHBOARD-TABS.md`; implementation `telegram-bridge.mjs`.
 
 ### Commands
 

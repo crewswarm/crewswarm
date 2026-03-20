@@ -375,4 +375,4 @@ crew-coder: ✅ Added validation.js
 
 ---
 
-**Next:** See `STUDIO-SETUP-COMPLETE.md` for the current local setup, verification, and usage guide.
+**Next:** See [`STUDIO-SETUP-COMPLETE.md`](./STUDIO-SETUP-COMPLETE.md) in this folder for local setup, verification, and usage.

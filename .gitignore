@@ -156,8 +156,8 @@ Thumbs.db
 crew-cli/setup-keys.sh
 */setup-keys.sh
 
-# Archive
-archive/
+# Top-level archive folder only (keep `docs/archive/` trackable for doc redirects)
+/archive/
 
 # Session logs
 .opencode/task-logs/

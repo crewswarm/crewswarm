@@ -1,3 +1,7 @@
+# Maintainer checklist (repo hygiene)
+
+> **Location:** `docs/internal/MAINTAINER-CHECKLIST.md` (moved from repo root so the root stays minimal for public clones).
+
 # CrewSwarm Cleanup Checklist
 
 ## Must-fix before public push

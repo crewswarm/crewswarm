@@ -46,3 +46,11 @@ Start here. These are the maintained, authoritative guides:
 ## Legacy & specialized
 
 Older or specialized docs live in `docs/` — see file list. Prefer canonical docs when they overlap.
+
+## Archived root guides (bookmarks)
+
+If an old link pointed at a root-level `*-COMPLETE.md` file, see **[docs/archive/legacy-root-guides/README.md](archive/legacy-root-guides/README.md)** for the replacement map.
+
+## Maintainer-only
+
+- **[docs/internal/MAINTAINER-CHECKLIST.md](internal/MAINTAINER-CHECKLIST.md)** — pre-release / repo hygiene checklist (not required reading for end users).

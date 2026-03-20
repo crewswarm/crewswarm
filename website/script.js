@@ -120,9 +120,9 @@ function initDocsFeed() {
       title: 'Memory & Context',
       description: 'Understand shared memory layers, migration, retrieval, and project message search behavior.',
       links: [
-        { label: 'Memory', href: 'https://github.com/crewswarm/crewswarm/blob/main/docs/CANONICAL/MEMORY.md' },
-        { label: 'Shared Memory Integration', href: 'https://github.com/crewswarm/crewswarm/blob/main/SHARED-MEMORY-INTEGRATION.md' },
-        { label: 'Chat History and RAG', href: 'https://github.com/crewswarm/crewswarm/blob/main/CHAT-HISTORY-AND-RAG-COMPLETE.md' }
+        { label: 'Memory (canonical)', href: 'https://github.com/crewswarm/crewswarm/blob/main/docs/CANONICAL/MEMORY.md' },
+        { label: 'crew-cli shared memory', href: 'https://github.com/crewswarm/crewswarm/blob/main/crew-cli/docs/SHARED-MEMORY.md' },
+        { label: 'Unified API overview', href: 'https://github.com/crewswarm/crewswarm/blob/main/docs/UNIFIED-API.md' }
       ]
     },
     {
@@ -142,7 +142,7 @@ function initDocsFeed() {
       links: [
         { label: 'Docker Guide', href: 'https://github.com/crewswarm/crewswarm/blob/main/docs/docker.md' },
         { label: 'Deploy Page', href: 'deploy.html' },
-        { label: 'Studio Quickstart', href: 'https://github.com/crewswarm/crewswarm/blob/main/STUDIO-CLI-QUICKSTART.md' }
+        { label: 'Vibe (Studio) README', href: 'https://github.com/crewswarm/crewswarm/blob/main/apps/vibe/README.md' }
       ]
     },
     {
