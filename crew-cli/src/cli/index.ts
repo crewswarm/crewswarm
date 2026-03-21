@@ -603,6 +603,23 @@ export async function main(args = []) {
   await toolManager.initialize();
   await sandbox.load();
 
+  const getStandaloneRuntime = async (projectDir?: string) => {
+    const targetDir = projectDir || process.cwd();
+    if (targetDir === process.cwd()) {
+      return { sandbox, orchestrator, sessionManager };
+    }
+    const scopedSession = new SessionManager(targetDir);
+    const scopedSandbox = new Sandbox(targetDir);
+    const scopedOrchestrator = new Orchestrator(agentRouter, scopedSandbox, scopedSession);
+    await scopedSession.ensureInitialized();
+    await scopedSandbox.load();
+    return {
+      sandbox: scopedSandbox,
+      orchestrator: scopedOrchestrator,
+      sessionManager: scopedSession
+    };
+  };
+
   // Show banner on new sessions
   const sessionData = await sessionManager.loadSession();
   if (sessionData.history.length === 0 && !args.includes('--headless') && !args.includes('--json')) {
@@ -742,21 +759,23 @@ export async function main(args = []) {
         // crew-CLI uses agentic executor (standalone) unless explicitly connected
         if (!useConnected && !useLegacyStandalone) {
           logger.info('Executing in standalone mode (agentic executor with file tools)');
+          const standaloneRuntime = await getStandaloneRuntime(projectDir);
           const result = await withRetries(
-            async () => orchestrator.executeAgentic(input, {
-              sessionId: await sessionManager.getSessionId()
+            async () => standaloneRuntime.orchestrator.executeAgentic(input, {
+              sessionId: await standaloneRuntime.sessionManager.getSessionId(),
+              model: options.model
             }),
             policy
           );
           const responseText = String(result.response || result.result || '');
-          const edits = await orchestrator.parseAndApplyToSandbox(responseText);
-          const hasPendingChanges = sandbox.hasChanges();
+          const edits = await standaloneRuntime.orchestrator.parseAndApplyToSandbox(responseText);
+          const hasPendingChanges = standaloneRuntime.sandbox.hasChanges();
           let appliedPaths: string[] = [];
           if (hasPendingChanges && options.apply) {
-            appliedPaths = sandbox.getPendingPaths();
-            await sandbox.apply();
+            appliedPaths = standaloneRuntime.sandbox.getPendingPaths();
+            await standaloneRuntime.sandbox.apply();
           }
-          await sessionManager.appendHistory({
+          await standaloneRuntime.sessionManager.appendHistory({
             input,
             response: responseText,
             decision: result.plan?.decision || 'execute',
@@ -2162,13 +2181,14 @@ export async function main(args = []) {
       if (looksLikeNaturalLanguage) {
         logger.info('Interpreting `crew exec` input as a one-shot task. Use `crew exec <cmd> [args...]` for PTY commands.');
         try {
-          const result = await orchestrator.executeAgentic(command, {
-            sessionId: await sessionManager.getSessionId(),
+          const standaloneRuntime = await getStandaloneRuntime(process.cwd());
+          const result = await standaloneRuntime.orchestrator.executeAgentic(command, {
+            sessionId: await standaloneRuntime.sessionManager.getSessionId(),
             model: options.model
           });
           const responseText = String(result.response || result.result || '');
-          const edits = await orchestrator.parseAndApplyToSandbox(responseText);
-          await sessionManager.appendHistory({
+          const edits = await standaloneRuntime.orchestrator.parseAndApplyToSandbox(responseText);
+          await standaloneRuntime.sessionManager.appendHistory({
             input: command,
             response: responseText,
             decision: result.plan?.decision || 'execute',
