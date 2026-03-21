@@ -16,6 +16,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawn, execFileSync } from "node:child_process";
 import { getProjectDir } from "./lib/project-dir.mjs";
+import { rewriteTaskPathsRelativeToProjectRoot } from "./lib/runtime/project-dir.mjs";
 import { COORDINATOR_AGENT_IDS } from "./lib/agent-registry.mjs";
 import {
   isSharedMemoryAvailable,
@@ -592,6 +593,7 @@ function getAgentOpenCodeConfig(agentId) {
   const claudeCodeModel = cfg?.claudeCodeModel || null;
   const codexModel = cfg?.codexModel || null;
   const geminiCliModel = cfg?.geminiCliModel || null;
+  const crewCliModel = cfg?.crewCliModel || null;
   const agentModel = cfg?.model || null;  // ← Get the agent's base model
   if (!cfg) {
     return {
@@ -607,6 +609,8 @@ function getAgentOpenCodeConfig(agentId) {
       codexModel: null,
       useGeminiCli: false,
       geminiCliModel: null,
+      useCrewCLI: false,
+      crewCliModel: null,
       engine: null,
     };
   }
@@ -615,7 +619,13 @@ function getAgentOpenCodeConfig(agentId) {
   const useCursorCli = cfg.useCursorCli === true || assignedEngine === "cursor";
   const useClaudeCode = cfg.useClaudeCode === true || assignedEngine === "claude";
   const useCodex = cfg.useCodex === true || assignedEngine === "codex";
-  const useGeminiCli = cfg.useGeminiCli === true || assignedEngine === "gemini";
+  const useGeminiCli =
+    cfg.useGeminiCli === true ||
+    assignedEngine === "gemini" ||
+    assignedEngine === "gemini-cli";
+  const useCrewCLI =
+    cfg.useCrewCLI === true ||
+    assignedEngine === "crew-cli";
 
   if (cfg.useOpenCode === true || assignedEngine === "opencode") {
     return {
@@ -631,6 +641,8 @@ function getAgentOpenCodeConfig(agentId) {
       codexModel,
       useGeminiCli,
       geminiCliModel,
+      useCrewCLI,
+      crewCliModel,
       engine: assignedEngine,
     };
   }
@@ -649,6 +661,8 @@ function getAgentOpenCodeConfig(agentId) {
       codexModel,
       useGeminiCli,
       geminiCliModel,
+      useCrewCLI,
+      crewCliModel,
       engine: assignedEngine,
     };
   }
@@ -749,6 +763,7 @@ async function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
     if (fromTask) dir = fromTask;
   }
   dir = dir || process.cwd();
+  const taskForPrompt = rewriteTaskPathsRelativeToProjectRoot(taskText, dir);
 
   // Prepend condensed memory — now using shared memory adapter
   const readSafe = (p) => { try { return fs.readFileSync(p, "utf8").trim(); } catch { return ""; } };
@@ -768,7 +783,7 @@ async function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
   if (isSharedMemoryAvailable() && !usingCrewCLI) {
     try {
       // Adaptive memory result scaling based on task complexity
-      const taskTokens = taskText.split(/\s+/).length;
+      const taskTokens = taskForPrompt.split(/\s+/).length;
       const maxResults = taskTokens < 50 ? 3    // Simple: "write hello.js"
         : taskTokens < 150 ? 5   // Medium: "build auth endpoint"
           : 8;                     // Complex: detailed requirements
@@ -776,7 +791,7 @@ async function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
       // Skip memory recall for chat-only agents (crew-loco)
       // They should only see their own conversation history, not project work
       if (agentId !== 'crew-loco') {
-        sharedMemoryContext = await recallMemoryContext(dir, taskText, {
+        sharedMemoryContext = await recallMemoryContext(dir, taskForPrompt, {
           maxResults,
           includeDocs: true,
           includeCode: false,
@@ -791,7 +806,7 @@ async function buildMiniTaskForOpenCode(taskText, agentId, projectDir) {
     // For crew-cli: Pass ONLY project-specific hints (decisions/constraints, not full code)
     // crew-cli's L2 RAG will load the actual files it needs automatically
     try {
-      const projectHints = await recallMemoryContext(dir, taskText, {
+      const projectHints = await recallMemoryContext(dir, taskForPrompt, {
         maxResults: 2,  // Minimal - just key decisions
         includeDocs: false,  // crew-cli loads its own docs via L2 RAG
         includeCode: false,

@@ -467,6 +467,7 @@ MISSING_CLIS=()
 [[ $GEMINI_OK -eq 0 ]] && MISSING_CLIS+=(gemini)
 [[ $CURSOR_OK -eq 0 ]] && MISSING_CLIS+=(cursor)
 [[ $CREW_CLI_OK -eq 0 ]] && MISSING_CLIS+=(crew-cli)
+TO_INSTALL=()
 
 if [[ ${#MISSING_CLIS[@]} -gt 0 ]]; then
   if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
@@ -491,7 +492,8 @@ if [[ ${#MISSING_CLIS[@]} -gt 0 ]]; then
     TO_INSTALL=()
   fi
 
-  for c in "${TO_INSTALL[@]}"; do
+  for c in "${TO_INSTALL[@]-}"; do
+    [[ -z "$c" ]] && continue
     case "$c" in
       opencode)
         info "Installing OpenCode CLI..."

@@ -30,7 +30,15 @@ if [[ -z "${CREWSWARM_DIR:-}" ]] || [[ ! -f "$CREWSWARM_DIR/scripts/start-crew.m
   fi
 fi
 
-NODE="${NODE:-node}"
+if [[ -z "${NODE:-}" ]]; then
+  if [[ -x "$CREWSWARM_DIR/scripts/resolve-node-bin.sh" ]]; then
+    NODE="$("$CREWSWARM_DIR/scripts/resolve-node-bin.sh")"
+  else
+    NODE="node"
+  fi
+else
+  NODE="${NODE}"
+fi
 # Prefer RT daemon in repo; fall back to swarm plugin
 if [[ -z "${RT_DAEMON:-}" ]]; then
   if [[ -f "$CREWSWARM_DIR/scripts/opencrew-rt-daemon.mjs" ]]; then

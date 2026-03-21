@@ -10,6 +10,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CREWSWARM_DIR="${CREWSWARM_DIR:-${OPENCLAW_DIR:-$REPO_ROOT}}"
 PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:$HOME/bin:/usr/bin:/bin:${PATH:-}"
 export PATH
+RESOLVE_NODE_BIN="$CREWSWARM_DIR/scripts/resolve-node-bin.sh"
 
 if [[ -z "$SERVICE_ID" ]]; then
   echo "Usage: $0 <service-id>"
@@ -19,7 +20,9 @@ fi
 
 NODE_BIN="${NODE:-}"
 if [[ -z "$NODE_BIN" ]]; then
-  if command -v node >/dev/null 2>&1; then
+  if [[ -x "$RESOLVE_NODE_BIN" ]]; then
+    NODE_BIN="$("$RESOLVE_NODE_BIN")"
+  elif command -v node >/dev/null 2>&1; then
     NODE_BIN="$(command -v node)"
   elif [[ -x /usr/local/bin/node ]]; then
     NODE_BIN="/usr/local/bin/node"
@@ -207,21 +210,33 @@ case "$SERVICE_ID" in
     echo "✅ mcp restart requested"
     ;;
   studio)
+    if _launchctl_restart "com.crewswarm.studio"; then
+      echo "✅ studio restart requested via launchd"
+      exit 0
+    fi
     pkill -f "vite.*studio" 2>/dev/null || true
     pkill -f "apps/vibe/server.mjs" 2>/dev/null || true
     lsof -ti :3333 2>/dev/null | xargs kill -9 2>/dev/null || true
     lsof -ti :3335 2>/dev/null | xargs kill -9 2>/dev/null || true
     sleep 1
     _start_detached /tmp/studio.log \
-      npm run studio:start --prefix "$CREWSWARM_DIR"
+      env \
+      NODE_DISABLE_COMPILE_CACHE=1 \
+      "$NODE_BIN" "$CREWSWARM_DIR/apps/vibe/server.mjs"
     echo "✅ studio restart requested"
     ;;
   studio-watch)
+    if _launchctl_restart "com.crewswarm.studio-watch"; then
+      echo "✅ studio-watch restart requested via launchd"
+      exit 0
+    fi
     pkill -f "watch-server.mjs" 2>/dev/null || true
     lsof -ti :3334 2>/dev/null | xargs kill -9 2>/dev/null || true
     sleep 1
     _start_detached /tmp/studio-watch.log \
-      npm run studio:watch --prefix "$CREWSWARM_DIR"
+      env \
+      NODE_DISABLE_COMPILE_CACHE=1 \
+      "$NODE_BIN" "$CREWSWARM_DIR/apps/vibe/watch-server.mjs"
     echo "✅ studio-watch restart requested"
     ;;
   openclaw-gateway)

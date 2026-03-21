@@ -2,7 +2,6 @@
   "id": "docker-sandbox",
   "label": "Docker Sandbox",
   "description": "Run any crewswarm engine inside an isolated Docker microVM. Filesystem and network are sandboxed — API keys are injected by the network proxy and never exposed to the agent.",
-  "priority": 70,
   "shouldUse": {
     "runtime": ["docker-sandbox", "docker"],
     "payloadKey": "useDockerSandbox",

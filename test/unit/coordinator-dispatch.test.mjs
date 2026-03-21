@@ -246,6 +246,36 @@ describe("coordinator-dispatch: self-dispatch blocked", () => {
   });
 });
 
+describe("coordinator-dispatch: dispatchTask engine enrichment", () => {
+  beforeEach(() => pendingDispatches.clear());
+  afterEach(() => pendingDispatches.clear());
+
+  it("merges useCodex / codexModel from loadConfig.agents into RT payload", () => {
+    let captured = null;
+    const deps = createMockDeps({
+      loadConfig: () => ({
+        agents: [
+          {
+            id: "crew-frontend",
+            useCodex: true,
+            codexModel: "gpt-5.3-codex",
+            useOpenCode: false,
+          },
+        ],
+      }),
+      getRtPublish: () => (msg) => {
+        captured = msg;
+        return "task-enrich-1";
+      },
+    });
+    initWaveDispatcher(deps);
+    dispatchTask("crew-frontend", "design brief", "owner");
+    assert.ok(captured, "RT publish should have been called");
+    assert.equal(captured.payload.useCodex, true);
+    assert.equal(captured.payload.codexModel, "gpt-5.3-codex");
+  });
+});
+
 describe("coordinator-dispatch: dispatchTask queue cap", () => {
   beforeEach(() => pendingDispatches.clear());
   afterEach(() => pendingDispatches.clear());

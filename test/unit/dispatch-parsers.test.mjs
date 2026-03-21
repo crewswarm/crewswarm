@@ -9,6 +9,7 @@ import {
   parseProject,
   parseRegisterProject,
   stripThink,
+  applyProjectDirToPipelineSteps,
 } from "../../lib/dispatch/parsers.mjs";
 
 describe("parseDispatch", () => {
@@ -118,6 +119,36 @@ describe("parsePipeline", () => {
   });
 });
 
+describe("applyProjectDirToPipelineSteps", () => {
+  test("prefixes bare markdown filenames with projectDir", () => {
+    const steps = [
+      {
+        agent: "crew-coder-front",
+        task: "@@READ_FILE content-draft.md then @@READ_FILE seo-strategy.md",
+      },
+    ];
+    applyProjectDirToPipelineSteps(steps, "/tmp/my-project");
+    assert.match(steps[0].task, /\/tmp\/my-project\/content-draft\.md/);
+    assert.match(steps[0].task, /\/tmp\/my-project\/seo-strategy\.md/);
+  });
+
+  test("does not rewrite paths that already include a directory", () => {
+    const steps = [
+      { agent: "crew-frontend", task: "@@READ_FILE docs/design-brief.md" },
+    ];
+    const before = steps[0].task;
+    applyProjectDirToPipelineSteps(steps, "/tmp/my-project");
+    assert.equal(steps[0].task, before);
+  });
+
+  test("no-op without projectDir", () => {
+    const steps = [{ agent: "crew-coder", task: "@@READ_FILE foo.md" }];
+    const before = steps[0].task;
+    applyProjectDirToPipelineSteps(steps, null);
+    assert.equal(steps[0].task, before);
+  });
+});
+
 describe("stripPipeline", () => {
   test("removes @@PIPELINE block", () => {
     const text = `Plan:\n@@PIPELINE [{"wave":1,"agent":"crew-coder","task":"a"},{"wave":2,"agent":"crew-qa","task":"b"}]\nEnd.`;
@@ -155,6 +186,24 @@ describe("parseRegisterProject", () => {
 });
 
 describe("parseDispatch — natural language fallback", () => {
+  test("parses imperative dispatch phrasing", () => {
+    const text =
+      "dispatch crew-coder build /Users/jeffhobbs/Desktop/Chuck/index.html from the planning docs";
+    const result = parseDispatch(text, text);
+    assert.ok(result !== null, "expected a dispatch result");
+    assert.equal(result.agent, "crew-coder");
+    assert.match(result.task, /build .*index\.html/);
+  });
+
+  test("normalizes profane crew-handle variants", () => {
+    const text =
+      "send fucking crew-coder build the landing page from the docs";
+    const result = parseDispatch(text, text);
+    assert.ok(result !== null, "expected a dispatch result");
+    assert.equal(result.agent, "crew-coder");
+    assert.match(result.task, /build the landing page/);
+  });
+
   test("parses 'I'll dispatch to crew-coder' phrasing", () => {
     const text = "I'll dispatch to crew-coder to write the auth module.";
     const result = parseDispatch(text, "write the auth module");

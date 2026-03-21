@@ -2,7 +2,6 @@
   "id": "opencode",
   "label": "OpenCode",
   "description": "Full agentic coding sessions with persistent memory, file editing, and bash execution. Runs opencode run — the original crewswarm execution engine.",
-  "priority": 40,
   "shouldUse": {
     "runtime": ["opencode", "gpt5", "gpt-5"],
     "payloadKey": "useOpenCode",

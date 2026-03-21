@@ -5,6 +5,7 @@ import {
   BUILT_IN_RT_AGENTS,
   RT_TO_GATEWAY_AGENT_MAP,
   COORDINATOR_AGENT_IDS,
+  coordinate_aget_ids,
   NO_PREFIX_AGENT_IDS,
 } from "../../lib/agent-registry.mjs";
 
@@ -76,5 +77,9 @@ describe("COORDINATOR_AGENT_IDS", () => {
     assert.ok(COORDINATOR_AGENT_IDS.includes("crew-pm"));
     assert.ok(COORDINATOR_AGENT_IDS.includes("crew-main"));
     assert.ok(COORDINATOR_AGENT_IDS.includes("crew-orchestrator"));
+  });
+
+  test("exports the backward-compatible typo alias", () => {
+    assert.equal(coordinate_aget_ids, COORDINATOR_AGENT_IDS);
   });
 });

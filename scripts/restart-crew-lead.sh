@@ -14,9 +14,12 @@ PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${PATH:-}"
 export PATH
 LAUNCH_LABEL="com.crewswarm.crew-lead"
 LAUNCH_PLIST="$HOME/Library/LaunchAgents/${LAUNCH_LABEL}.plist"
+RESOLVE_NODE_BIN="$CREWSWARM_DIR/scripts/resolve-node-bin.sh"
 NODE_BIN="${NODE:-}"
 if [[ -z "$NODE_BIN" ]]; then
-  if command -v node >/dev/null 2>&1; then
+  if [[ -x "$RESOLVE_NODE_BIN" ]]; then
+    NODE_BIN="$("$RESOLVE_NODE_BIN")"
+  elif command -v node >/dev/null 2>&1; then
     NODE_BIN="$(command -v node)"
   elif [[ -x /usr/local/bin/node ]]; then
     NODE_BIN="/usr/local/bin/node"
@@ -28,11 +31,36 @@ if [[ -z "$NODE_BIN" ]]; then
   fi
 fi
 
+# Stop every way crew-lead might be running and free :5010 (launchd alone does not
+# kill a nohup/manual node crew-lead.mjs, which causes "Port 5010 in use" on kickstart).
+stop_crew_lead_processes() {
+  echo "  → Stopping existing crew-lead processes..."
+  if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+      echo "  → Found crew-lead PID $PID from PID file"
+      kill -9 "$PID" 2>/dev/null || true
+    fi
+    echo "" > "$PID_FILE" 2>/dev/null || true
+  fi
+  pkill -9 -f "crew-lead.mjs" 2>/dev/null || true
+  if lsof -i :5010 -sTCP:LISTEN -t &>/dev/null; then
+    echo "  → Releasing port 5010 (listener still present)..."
+    lsof -ti :5010 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+  fi
+  local n=0
+  while lsof -i :5010 -sTCP:LISTEN -t &>/dev/null && [ "$n" -lt 60 ]; do
+    sleep 0.25
+    n=$((n + 1))
+  done
+}
+
 echo "🔄 Restarting crew-lead..."
 
 if launchctl list "$LAUNCH_LABEL" >/dev/null 2>&1 || [[ -f "$LAUNCH_PLIST" ]]; then
   echo "  → Using launchd agent: $LAUNCH_LABEL"
   launchctl bootout "gui/$(id -u)" "$LAUNCH_PLIST" 2>/dev/null || true
+  stop_crew_lead_processes
   launchctl bootstrap "gui/$(id -u)" "$LAUNCH_PLIST"
   launchctl kickstart -k "gui/$(id -u)/$LAUNCH_LABEL"
   sleep 2
@@ -47,28 +75,7 @@ if launchctl list "$LAUNCH_LABEL" >/dev/null 2>&1 || [[ -f "$LAUNCH_PLIST" ]]; t
   exit 1
 fi
 
-# Step 1: Try to kill via PID file first (safest method)
-echo "  → Stopping existing crew-lead processes..."
-if [ -f "$PID_FILE" ]; then
-  PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
-  if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
-    echo "  → Found crew-lead PID $PID from PID file"
-    kill -9 "$PID" 2>/dev/null || true
-    echo "" > "$PID_FILE"  # Clear PID file
-  else
-    echo "  → PID file exists but process not running (cleaning up stale PID)"
-    echo "" > "$PID_FILE"
-  fi
-else
-  echo "  → No PID file found, using fallback pattern match"
-fi
-
-# Step 2: Fallback pattern-based kill (only if PID method didn't work)
-pkill -9 -f "crew-lead.mjs" 2>/dev/null || true
-
-# Step 3: Wait for port to release
-echo "  → Waiting for port 5010 to release..."
-sleep 2
+stop_crew_lead_processes
 
 # Step 4: Start fresh crew-lead
 echo "  → Starting crew-lead at $CREW_LEAD_SCRIPT..."

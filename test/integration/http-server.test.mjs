@@ -26,6 +26,8 @@ function makeMockDeps(overrides = {}) {
     sseClients: new Set(),
     loadConfig: () => ({
       model: "test/model",
+      displayName: "TestLead",
+      emoji: "🧠",
       knownAgents: ["crew-coder", "crew-qa"],
       agentRoster: [
         { id: "crew-coder", name: "Fuller", role: "Full Stack Coder", model: "test/model" },
@@ -53,6 +55,7 @@ function makeMockDeps(overrides = {}) {
     },
     pendingDispatches,
     pendingPipelines: new Map(),
+    dispatchPipelineWave: () => {},
     resolveAgentId: (_cfg, id) => id,
     readAgentTools: () => ({ tools: ["read_file", "write_file"] }),
     writeAgentTools: () => {},
@@ -433,6 +436,8 @@ describe("GET /api/agents", () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.ok, true);
+    assert.ok(body.crewLead?.id === "crew-lead");
+    assert.ok(body.crewLead?.model === "test/model");
     assert.ok(Array.isArray(body.agents));
     assert.ok(body.agents.length >= 2);
   });

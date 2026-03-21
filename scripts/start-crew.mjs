@@ -9,7 +9,7 @@
  *   node scripts/start-crew.mjs --status # show running bridges
  */
 
-import { spawn, execSync } from "node:child_process";
+import { spawn, execFileSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -19,6 +19,20 @@ import { loadSystemConfig, loadSwarmConfig, loadAgentList as loadAgentListFromCo
 const CREWSWARM_DIR = path.resolve(process.env.CREWSWARM_DIR || process.env.OPENCLAW_DIR || process.cwd());
 const OPENCLAW_CFG = path.join(os.homedir(), ".openclaw", "openclaw.json");
 const BRIDGE = path.join(CREWSWARM_DIR, "gateway-bridge.mjs");
+const RESOLVE_NODE_BIN = path.join(CREWSWARM_DIR, "scripts", "resolve-node-bin.sh");
+
+function resolveNodeBin() {
+  if (process.env.NODE && fs.existsSync(process.env.NODE)) return process.env.NODE;
+  if (fs.existsSync(RESOLVE_NODE_BIN)) {
+    try {
+      const resolved = execFileSync(RESOLVE_NODE_BIN, { encoding: "utf8" }).trim();
+      if (resolved) return resolved;
+    } catch {}
+  }
+  return process.execPath;
+}
+
+const NODE_BIN = resolveNodeBin();
 
 function loadConfig() {
   const raw = loadSwarmConfig();
@@ -114,7 +128,21 @@ if (args.includes("--stop") || forceRestart) {
 }
 
 if (args.includes("--status")) {
+  let rtStatus = null;
+  try {
+    const raw = execSync("curl -sf -m 1 http://127.0.0.1:18889/status", {
+      encoding: "utf8",
+      timeout: 2000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    rtStatus = raw ? JSON.parse(raw) : null;
+  } catch {}
   const running = runningBridges();
+  if (rtStatus?.running) {
+    console.log(`RT bus: up (18889) — ${rtStatus.clients || 0} clients`);
+  } else {
+    console.log("RT bus: down (18889)");
+  }
   if (!running.size) { console.log("No bridge daemons running."); process.exit(0); }
   console.log(`Running bridge daemons (${running.size}):`);
   for (const a of [...running].sort()) console.log(`  ✓ ${a}`);
@@ -225,7 +253,7 @@ const shouldSkipCrewLead = process.env.SKIP_CREW_LEAD === "1";
 if (toStart.includes("crew-lead") && !crewLeadRunning && !shouldSkipCrewLead && fs.existsSync(CREW_LEAD_SCRIPT)) {
   const logFile = path.join(os.tmpdir(), "bridge-crew-lead.log");
   const logFd = fs.openSync(logFile, "a");
-  const proc = spawn("node", [CREW_LEAD_SCRIPT], {
+  const proc = spawn(NODE_BIN, [CREW_LEAD_SCRIPT], {
     cwd: CREWSWARM_DIR,
     stdio: ["ignore", logFd, logFd],
     detached: true,
@@ -249,7 +277,7 @@ for (const rtId of toStart.filter(id => id !== "crew-lead")) {
 
   const logFile = path.join(os.tmpdir(), `bridge-${rtId}.log`);
   const logFd = fs.openSync(logFile, "a");
-  const proc = spawn("node", [BRIDGE, "--rt-daemon"], {
+  const proc = spawn(NODE_BIN, [BRIDGE, "--rt-daemon"], {
     cwd: CREWSWARM_DIR,
     stdio: ["ignore", logFd, logFd],
     detached: true,
@@ -268,7 +296,7 @@ const scribeRunning = (() => {
 })();
 if (!scribeRunning && fs.existsSync(SCRIBE_SCRIPT)) {
   const logFd = fs.openSync(path.join(os.tmpdir(), "crew-scribe.log"), "a");
-  const proc = spawn("node", [SCRIBE_SCRIPT], {
+  const proc = spawn(NODE_BIN, [SCRIBE_SCRIPT], {
     cwd: CREWSWARM_DIR, stdio: ["ignore", logFd, logFd], detached: true,
     env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: rtToken },
   });
@@ -283,7 +311,7 @@ const mcpRunning = (() => {
 })();
 if (!mcpRunning && fs.existsSync(MCP_SCRIPT)) {
   const logFd = fs.openSync(path.join(os.tmpdir(), "crewswarm-mcp.log"), "a");
-  const proc = spawn("node", [MCP_SCRIPT], {
+  const proc = spawn(NODE_BIN, [MCP_SCRIPT], {
     cwd: CREWSWARM_DIR, stdio: ["ignore", logFd, logFd], detached: true,
     env: { ...process.env, CREWSWARM_RT_AUTH_TOKEN: rtToken },
   });

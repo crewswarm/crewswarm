@@ -8,7 +8,20 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 export CREWSWARM_DIR="$REPO_DIR"
 export OPENCLAW_DIR="$REPO_DIR"   # backward compat for scripts that only check this
-export NODE="${NODE:-node}"
+export NODE="$("$REPO_DIR/scripts/resolve-node-bin.sh")"
+# Work around intermittent Node 24 ESM loader crashes (`Unknown system error -11, read`)
+# seen in the RT daemon and Vibe startup paths on this machine.
+export NODE_DISABLE_COMPILE_CACHE="${NODE_DISABLE_COMPILE_CACHE:-1}"
+
+wait_for_rt() {
+  for i in {1..10}; do
+    if curl -s -m 1 http://127.0.0.1:18889/status >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
 
 echo "Stopping existing crewswarm processes..."
 
@@ -53,7 +66,7 @@ for port in 5010 4319 18889 4096 5020 3333 3334; do
   fi
 done
 
-echo "Starting OpenCode server (port 4096)..."
+echo "Starting optional OpenCode session server (port 4096)..."
 OPENCODE_BIN="$(command -v opencode 2>/dev/null)" || OPENCODE_BIN="/usr/local/bin/opencode"
 if [[ -x "$OPENCODE_BIN" ]]; then
   nohup "$OPENCODE_BIN" serve --port 4096 --hostname 127.0.0.1 >> /tmp/opencode.log 2>&1 &
@@ -68,13 +81,24 @@ sleep 2
 
 # Wait for RT daemon to be ready (accepts connections properly)
 echo "  Waiting for RT daemon to be ready..."
-for i in {1..10}; do
-  if curl -s -m 1 http://127.0.0.1:18889/status >/dev/null 2>&1; then
-    echo "  ✓ RT daemon ready"
-    break
-  fi
+if wait_for_rt; then
+  echo "  ✓ RT daemon ready"
+else
+  echo "  ⚠ RT daemon did not come up on first attempt — retrying once..."
+  pkill -9 -f "opencrew-rt-daemon.mjs" 2>/dev/null; true
+  lsof -ti :18889 2>/dev/null | xargs kill -9 2>/dev/null; true
   sleep 1
-done
+  nohup "$NODE" scripts/opencrew-rt-daemon.mjs >> /tmp/opencrew-rt-daemon.log 2>&1 &
+  sleep 2
+  if wait_for_rt; then
+    echo "  ✓ RT daemon ready (second attempt)"
+  else
+    echo "  ✗ RT daemon failed to start after retry"
+    echo "  Last RT log lines:"
+    tail -n 80 /tmp/opencrew-rt-daemon.log 2>/dev/null || true
+    exit 1
+  fi
+fi
 
 echo "Starting gateway bridges (crew-main, crew-pm, crew-coder, etc.)..."
 "$NODE" scripts/start-crew.mjs --force
@@ -131,6 +155,12 @@ if [[ "$START_BRIDGES" -eq 1 ]]; then
   # Give RT daemon and crew-lead extra time to fully initialize
   echo "Waiting for RT bus and crew-lead to be fully ready..."
   sleep 3
+  if ! curl -s -m 1 http://127.0.0.1:18889/status >/dev/null 2>&1; then
+    echo "  ✗ RT bus went down before bridge startup completed"
+    echo "  Last RT log lines:"
+    tail -n 80 /tmp/opencrew-rt-daemon.log 2>/dev/null || true
+    exit 1
+  fi
   
   echo "Starting Telegram bridge..."
   # Pattern without leading "node " to catch any node binary path variant
@@ -160,8 +190,8 @@ if [[ "$START_STUDIO" -eq 1 ]]; then
     (cd "$REPO_DIR" && npm run studio:build) >/dev/null 2>&1 || true
   fi
   sleep 1
-  nohup npm run studio:start --prefix "$REPO_DIR" >> /tmp/studio.log 2>&1 &
-  nohup npm run studio:watch --prefix "$REPO_DIR" >> /tmp/studio-watch.log 2>&1 &
+  nohup "$NODE" "$REPO_DIR/apps/vibe/server.mjs" >> /tmp/studio.log 2>&1 &
+  nohup env NODE_DISABLE_COMPILE_CACHE=1 "$NODE" "$REPO_DIR/apps/vibe/watch-server.mjs" >> /tmp/studio-watch.log 2>&1 &
   echo "  Waiting for Vibe (:3333) and watch server (:3334)..."
   for i in $(seq 1 25); do
     vibe_ok=0
@@ -182,7 +212,7 @@ fi
 
 echo ""
 echo "Stack restarted from repo. Check:"
-echo "  OpenCode:   port 4096  (opencode serve — sessions, MCP, --attach target)"
+echo "  OpenCode:   port 4096  (optional opencode serve — sessions/history)"
 echo "  RT bus:     port 18889 (opencrew-rt-daemon.mjs)"
 echo "  crew-lead:  port 5010  (chat + receives agent replies)"
 echo "  dashboard:  port 4319  (Chat tab, RT Messages, Services)"
