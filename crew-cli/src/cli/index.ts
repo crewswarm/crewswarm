@@ -750,6 +750,12 @@ export async function main(args = []) {
           );
           const responseText = String(result.response || result.result || '');
           const edits = await orchestrator.parseAndApplyToSandbox(responseText);
+          const hasPendingChanges = sandbox.hasChanges();
+          let appliedPaths: string[] = [];
+          if (hasPendingChanges && options.apply) {
+            appliedPaths = sandbox.getPendingPaths();
+            await sandbox.apply();
+          }
           await sessionManager.appendHistory({
             input,
             response: responseText,
@@ -774,7 +780,8 @@ export async function main(args = []) {
                 agent: 'unified-pipeline',
                 response: responseText,
                 edits: edits.length > 0 ? edits : undefined,
-                needsApproval: edits.length > 0,
+                applied: appliedPaths.length > 0 ? appliedPaths : undefined,
+                needsApproval: hasPendingChanges && appliedPaths.length === 0,
                 traceId: result.traceId,
                 timeline: result.timeline,
                 capabilityHandshake
@@ -818,13 +825,19 @@ export async function main(args = []) {
             : String(rawResponse);
           // Try to parse any edits
           const edits = await orchestrator.parseAndApplyToSandbox(responseText);
+          let appliedPaths: string[] = [];
+          if (edits.length > 0 && (options.apply || options.crew)) {
+            appliedPaths = sandbox.getPendingPaths();
+            await sandbox.apply();
+          }
           if (options.json) {
             printJsonEnvelope('chat.result', {
               route,
               agent,
               response: responseText,
               edits,
-              needsApproval: edits.length > 0,
+              applied: appliedPaths.length > 0 ? appliedPaths : undefined,
+              needsApproval: edits.length > 0 && appliedPaths.length === 0,
               traceId: result.traceId || null,
               timeline: Array.isArray(result.timeline) ? result.timeline : [],
               capabilityHandshake
@@ -840,14 +853,11 @@ export async function main(args = []) {
             }
           }
           if (edits.length > 0) {
-            logger.success(`Added changes to ${edits.length} files in sandbox. Run "crew preview" to review.`);
-            
-            // Auto-apply if --apply flag or --crew flag is set
-            if (options.apply || options.crew) {
-              logger.info('Auto-applying changes to disk...');
-              const applied = await sandbox.apply();
-              logger.success(`✓ Applied ${applied.length} files to disk`);
-              applied.forEach(f => logger.info(`  - ${f}`));
+            if (appliedPaths.length > 0) {
+              logger.success(`✓ Applied ${appliedPaths.length} files to disk`);
+              appliedPaths.forEach(f => logger.info(`  - ${f}`));
+            } else {
+              logger.success(`Added changes to ${edits.length} files in sandbox. Run "crew preview" to review.`);
             }
           }
         } else if (route.decision === 'SKILL') {
