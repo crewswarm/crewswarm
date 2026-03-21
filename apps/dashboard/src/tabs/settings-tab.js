@@ -624,6 +624,14 @@ const ENV_GROUPS = [
     ],
   },
   {
+    label: 'Engine — Codex & crew-cli',
+    note: 'These are the dashboard-wide defaults when an agent does not have a per-route model override.',
+    vars: [
+      { key: 'CREWSWARM_CODEX_MODEL',     hint: 'Model passed to codex exec --model (leave blank for Codex default)', default: 'codex default' },
+      { key: 'CREWSWARM_CREW_CLI_MODEL',  hint: 'Model passed to crew chat --model and gateway crew-cli engine',      default: 'gemini-2.5-flash' },
+    ],
+  },
+  {
     label: 'Engine — Gemini CLI',
     note: 'Free tier via Google account — 60 req/min. Run gemini once to auth.',
     vars: [

@@ -22,6 +22,7 @@ import {
   CREW_LEAD_PORT as PORT,
   CREW_LEAD_PID_PATH as PID_PATH,
   CREW_LEAD_HISTORY_DIR as HISTORY_DIR,
+  CREWSWARM_REPO_ROOT,
   PROJECTS_REGISTRY,
   MAX_HISTORY,
   LLM_TIMEOUT,
@@ -93,6 +94,7 @@ import {
   cancelAllPipelines,
   dispatchPipelineWave,
   checkWaveQualityGate,
+  failPipelineOnQualityGate,
   dispatchTask,
 } from "./lib/crew-lead/wave-dispatcher.mjs";
 import { normalizeRtAgentId } from "./lib/agent-registry.mjs";
@@ -230,7 +232,24 @@ function loadConfig() {
     fallbackProvider = csSwarm?.providers?.[fbPk] || cs?.providers?.[fbPk];
   }
 
-  return { modelId, providerKey, provider, useGeminiCli, knownAgents, agentModels, agentRoster, displayName, emoji, fallbackModelId, fallbackProviderKey, fallbackProvider, agents };
+  // Canonical string from config (same as crewswarm.json agents[].model for crew-lead)
+  const model = modelString;
+  return {
+    model,
+    modelId,
+    providerKey,
+    provider,
+    useGeminiCli,
+    knownAgents,
+    agentModels,
+    agentRoster,
+    displayName,
+    emoji,
+    fallbackModelId,
+    fallbackProviderKey,
+    fallbackProvider,
+    agents,
+  };
 }
 
 function tryRead(p) {
@@ -245,7 +264,7 @@ function readProjectsRegistry() {
   return Object.values(raw);
 }
 
-const BRAIN_PATH = path.join(process.cwd(), "memory", "brain.md");
+const BRAIN_PATH = path.join(CREWSWARM_REPO_ROOT, "memory", "brain.md");
 const GLOBAL_RULES_PATH = path.join(os.homedir(), ".crewswarm", "global-rules.md");
 const CREWSWARM_CFG_FILE = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
 
@@ -500,6 +519,7 @@ initHttpServer({
   dispatchTask,
   pendingDispatches,
   pendingPipelines,
+  dispatchPipelineWave,
   resolveAgentId,
   readAgentTools,
   writeAgentTools,
@@ -570,6 +590,7 @@ initWaveDispatcher({
   recordAgentTimeout,
   isAgentOnRtBus,
   loadSystemConfig,
+  loadConfig,
   resolveAgentId,
   writeTaskBrief,
   buildTaskText,
@@ -613,6 +634,7 @@ const connectRT = initWsRouter({
   pendingPipelines,
   handleAutonomousMentions,
   checkWaveQualityGate,
+  failPipelineOnQualityGate,
   savePipelineState,
   dispatchPipelineWave,
   parsePipeline,

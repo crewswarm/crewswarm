@@ -212,9 +212,9 @@ async function loadAgents_cfg() {
               </span>
               ${a.useCursorCli ? '<span style="font-size:11px;font-family:monospace;color:var(--purple);" title="Cursor CLI — routing tasks through Cursor agent subagents">⚡ cursor</span>' : ""}
               ${a.useClaudeCode ? '<span style="font-size:11px;font-family:monospace;color:var(--green-hi);" title="Claude Code CLI — routing tasks through claude -p">🤖 claude</span>' : ""}
-              ${a.useCodex ? '<span style="font-size:11px;font-family:monospace;color:var(--purple);" title="Codex CLI — routing tasks through codex exec">🟣 codex</span>' : ""}
+              ${a.useCodex ? '<span style="font-size:11px;font-family:monospace;color:var(--purple);" title="Codex CLI — routing tasks through codex exec">🟣 ' + (a.codexModel || "codex") + "</span>" : ""}
               ${a.useGeminiCli ? '<span style="font-size:11px;font-family:monospace;color:#4285f4;" title="Gemini CLI — routing tasks through gemini -p">🔵 gemini</span>' : ""}
-              ${a.useCrewCLI ? '<span style="font-size:11px;font-family:monospace;color:#10b981;" title="Crew CLI — routing tasks through crew-cli native agents">🔧 crew-cli</span>' : ""}
+              ${a.useCrewCLI ? '<span style="font-size:11px;font-family:monospace;color:#10b981;" title="Crew CLI — routing tasks through crew-cli native agents">🔧 ' + (a.crewCliModel || "crew-cli") + "</span>" : ""}
               ${a.opencodeModel && !a.useCursorCli && !a.useClaudeCode && !a.useCodex && !a.useGeminiCli && !a.useCrewCLI ? '<span style="font-size:11px;font-family:monospace;color:' + (BROKEN_MODELS.has(a.opencodeModel) ? "var(--red-hi)" : "var(--green-hi)") + ';" title="OpenCode model — used when routing tasks through OpenCode CLI">⚡ ' + a.opencodeModel + "</span>" : ""}
               ${BROKEN_MODELS.has(a.model) ? '<span style="font-size:10px;font-weight:600;color:var(--red-hi);background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);padding:1px 6px;border-radius:4px;">BROKEN — REASSIGN</span>' : ""}
             </div>
@@ -382,6 +382,18 @@ async function loadAgents_cfg() {
               <input id="claudecode-model-txt-${a.id}" type="text" placeholder="claude-sonnet-4-5 or leave blank" value="${a.claudeCodeModel || ""}" style="flex:1; min-width:160px; font-size:12px;" />
               <button data-action="saveClaudeCodeConfig" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px; color:#f59e0b; border-color:rgba(245,158,11,0.3);">Save</button>
             </div>
+            <div id="codex-model-row-${a.id}" style="display:${a.useCodex ? "flex" : "none"}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <select id="codex-model-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncCodexModelText('${a.id}')">
+                <option value="">— auto (Codex default) —</option>
+                <option value="gpt-5.3-codex" ${(a.codexModel || "") === "gpt-5.3-codex" ? "selected" : ""}>gpt-5.3-codex</option>
+                <option value="gpt-5.2-codex" ${(a.codexModel || "") === "gpt-5.2-codex" ? "selected" : ""}>gpt-5.2-codex</option>
+                <option value="gpt-5.1-codex" ${(a.codexModel || "") === "gpt-5.1-codex" ? "selected" : ""}>gpt-5.1-codex</option>
+                <option value="gpt-5.1-codex-mini" ${(a.codexModel || "") === "gpt-5.1-codex-mini" ? "selected" : ""}>gpt-5.1-codex-mini</option>
+                <option value="codex-mini" ${(a.codexModel || "") === "codex-mini" ? "selected" : ""}>codex-mini</option>
+              </select>
+              <input id="codex-model-txt-${a.id}" type="text" placeholder="gpt-5.3-codex or leave blank for auto" value="${a.codexModel || ""}" style="flex:1; min-width:160px; font-size:12px;" />
+              <button data-action="saveCodexConfig" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px; color:#a855f7; border-color:rgba(168,85,247,0.3);">Save</button>
+            </div>
             <div id="gemini-model-row-${a.id}" style="display:${a.useGeminiCli ? "flex" : "none"}; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
               <select id="gemini-model-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncGeminiModelText('${a.id}')">
                 <option value="">— auto (gemini-2.5-flash) —</option>
@@ -394,8 +406,9 @@ async function loadAgents_cfg() {
             </div>
             <div id="crew-cli-config-row-${a.id}" style="display:${a.useCrewCLI ? "flex" : "none"}; gap:8px; align-items:center; flex-wrap:wrap; padding:10px; background:var(--surface-2); border-radius:8px; border:1px solid var(--border); margin-bottom:10px;">
               <span style="font-size:12px; font-weight:600; color:var(--text-1);">🔧 Crew CLI Mode Active</span>
-              <span style="font-size:11px; color:var(--text-3); flex:1;">Native crew-cli agents — no additional model config needed. Uses model from Conversation Model above.</span>
-              <button data-action="saveCrewCLIConfig" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px; color:#10b981; border-color:rgba(16,185,129,0.3);">✓ Saved</button>
+              <select id="crew-cli-model-sel-${a.id}" style="flex:1; min-width:200px; font-size:12px;" onchange="syncCrewCliModelText('${a.id}')"></select>
+              <input id="crew-cli-model-txt-${a.id}" type="text" placeholder="provider/model or leave blank for default" value="${a.crewCliModel || ""}" style="flex:1; min-width:180px; font-size:12px;" />
+              <button data-action="saveCrewCLIConfig" data-arg="${a.id}" class="btn-ghost" style="white-space:nowrap; font-size:12px; color:#10b981; border-color:rgba(16,185,129,0.3);">Save</button>
             </div>
           </div>
           <div style="border-top:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
@@ -427,6 +440,10 @@ async function loadAgents_cfg() {
         populateCursorModelDropdown(
           "cursor-model-sel-" + a.id,
           a.cursorCliModel || "",
+        );
+        populateGenericModelDropdown(
+          "crew-cli-model-sel-" + a.id,
+          a.crewCliModel || "",
         );
       });
     });
@@ -478,7 +495,7 @@ async function loadEnginesAndPopulateButtons(agents) {
       // Dynamic engine buttons from JSON
       _engines
         .filter((e) => e.ready) // Only show installed engines
-        .sort((a, b) => (b.priority || 0) - (a.priority || 0)) // Sort by priority
+        .sort((a, b) => String(a.label || a.id).localeCompare(String(b.label || b.id)))
         .forEach((eng) => {
           const icon = ENGINE_ICONS[eng.id] || "🔧";
           const color = ENGINE_COLORS[eng.id] || eng.color || "#6b7280";
@@ -862,6 +879,40 @@ function syncCursorModelText(agentId) {
 }
 window.syncCursorModelText = syncCursorModelText;
 
+function populateGenericModelDropdown(selectId, currentVal) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— auto / default —</option>';
+
+  const grouped = {};
+  (_allModels || []).forEach((full) => {
+    const provider = full.includes("/") ? full.split("/")[0] : "other";
+    if (!grouped[provider]) grouped[provider] = [];
+    grouped[provider].push(full);
+  });
+
+  for (const [provider, ids] of Object.entries(grouped)) {
+    const grp = document.createElement("optgroup");
+    grp.label = provider.toUpperCase();
+    ids.forEach((full) => {
+      const opt = document.createElement("option");
+      opt.value = full;
+      opt.textContent = full;
+      if (full === currentVal) opt.selected = true;
+      grp.appendChild(opt);
+    });
+    sel.appendChild(grp);
+  }
+
+  if (currentVal && !sel.value) {
+    const opt = document.createElement("option");
+    opt.value = currentVal;
+    opt.textContent = currentVal + " (custom)";
+    opt.selected = true;
+    sel.prepend(opt);
+  }
+}
+
 // route toggle — mutually exclusive
 async function setRoute(agentId, route) {
   // Map engine IDs to agent config keys
@@ -914,6 +965,7 @@ async function setRoute(agentId, route) {
   const ocFbRow = document.getElementById("oc-fallback-row-" + agentId);
   const cursorRow = document.getElementById("cursor-model-row-" + agentId);
   const ccRow = document.getElementById("claudecode-model-row-" + agentId);
+  const codexRow = document.getElementById("codex-model-row-" + agentId);
   const geminiRow = document.getElementById("gemini-model-row-" + agentId);
   const crewCliRow = document.getElementById("crew-cli-config-row-" + agentId);
   const loopRow = document.getElementById("loop-row-" + agentId);
@@ -924,6 +976,7 @@ async function setRoute(agentId, route) {
   if (ccRow)
     ccRow.style.display =
       route === "claude-code" || route === "claudecode" ? "flex" : "none";
+  if (codexRow) codexRow.style.display = route === "codex" ? "flex" : "none";
   if (geminiRow)
     geminiRow.style.display =
       route === "gemini-cli" || route === "gemini" ? "flex" : "none";
@@ -967,6 +1020,25 @@ async function saveClaudeCodeConfig(agentId) {
   }
 }
 
+function syncCodexModelText(agentId) {
+  const sel = document.getElementById("codex-model-sel-" + agentId);
+  const txt = document.getElementById("codex-model-txt-" + agentId);
+  if (sel && txt) txt.value = sel.value;
+}
+window.syncCodexModelText = syncCodexModelText;
+
+async function saveCodexConfig(agentId) {
+  const codexModel = (
+    document.getElementById("codex-model-txt-" + agentId)?.value || ""
+  ).trim();
+  try {
+    await postJSON("/api/agents-config/update", { agentId, codexModel });
+    showNotification(agentId + " Codex model → " + (codexModel || "auto"));
+  } catch (e) {
+    showNotification("Failed: " + e.message, true);
+  }
+}
+
 function syncGeminiModelText(agentId) {
   const sel = document.getElementById("gemini-model-sel-" + agentId);
   const txt = document.getElementById("gemini-model-txt-" + agentId);
@@ -987,14 +1059,29 @@ async function saveGeminiCliConfig(agentId) {
 }
 
 async function saveCrewCLIConfig(agentId) {
-  // Crew CLI uses the conversation model — this is just a confirmation handler
+  const crewCliModel = (
+    document.getElementById("crew-cli-model-txt-" + agentId)?.value || ""
+  ).trim();
   try {
-    await postJSON("/api/agents-config/update", { agentId, useCrewCLI: true });
-    showNotification(agentId + " Crew CLI mode confirmed ✓");
+    await postJSON("/api/agents-config/update", {
+      agentId,
+      useCrewCLI: true,
+      crewCliModel,
+    });
+    showNotification(
+      agentId + " Crew CLI model → " + (crewCliModel || "default"),
+    );
   } catch (e) {
     showNotification("Failed: " + e.message, true);
   }
 }
+
+function syncCrewCliModelText(agentId) {
+  const sel = document.getElementById("crew-cli-model-sel-" + agentId);
+  const txt = document.getElementById("crew-cli-model-txt-" + agentId);
+  if (sel && txt) txt.value = sel.value;
+}
+window.syncCrewCliModelText = syncCrewCliModelText;
 
 async function saveAgentLoop(agentId) {
   const enabled =
@@ -1148,7 +1235,9 @@ async function bulkSetRoute(route, model) {
       if (model && route === "cursor") payload.cursorCliModel = model;
       if (model && route === "opencode") payload.opencodeModel = model;
       if (model && route === "claudecode") payload.claudeCodeModel = model;
+      if (model && route === "codex") payload.codexModel = model;
       if (model && route === "gemini") payload.geminiCliModel = model;
+      if (model && route === "crew-cli") payload.crewCliModel = model;
       await postJSON("/api/agents-config/update", payload);
       // Small delay to prevent rapid-fire saves that create backup storms
       await new Promise(r => setTimeout(r, 50));
@@ -2140,6 +2229,7 @@ export {
   saveOpenCodeFallback,
   saveCursorCliConfig,
   saveClaudeCodeConfig,
+  saveCodexConfig,
   saveGeminiCliConfig,
   saveCrewCLIConfig,
   bulkSetRoute,

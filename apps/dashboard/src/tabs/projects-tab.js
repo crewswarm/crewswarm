@@ -191,6 +191,16 @@ export function setStoredChatProjectId(id) {
   try { if (id) localStorage.setItem(CHAT_ACTIVE_PROJECT_KEY, id); else localStorage.removeItem(CHAT_ACTIVE_PROJECT_KEY); } catch {}
 }
 
+function persistSharedActiveProjectId(id) {
+  const normalizedId =
+    id && String(id).trim() && id !== "undefined" ? String(id).trim() : "general";
+  return fetch("/api/ui/active-project", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: normalizedId }),
+  }).catch(() => {});
+}
+
 export function populateChatProjectDropdown(projects) {
   const tabsContainer = document.getElementById('chatProjectTabs');
   if (!tabsContainer) return;
@@ -229,6 +239,7 @@ export function populateChatProjectDropdown(projects) {
   const activeProjectId = availableIds.has(prev) ? prev : 'general';
   state.chatActiveProjectId = activeProjectId;
   setStoredChatProjectId(activeProjectId);
+  persistSharedActiveProjectId(activeProjectId);
   Array.from(tabsContainer.children).forEach((tab) => {
     tab.classList.toggle('active', tab.dataset.projectId === activeProjectId);
   });
@@ -241,6 +252,7 @@ export function onChatProjectChange() {
   if (sel) {
     state.chatActiveProjectId = sel.value;
     setStoredChatProjectId(state.chatActiveProjectId);
+    persistSharedActiveProjectId(state.chatActiveProjectId);
     updateChatProjectHint();
   }
 }
@@ -260,6 +272,7 @@ export function updateChatProjectHint() {
 export function autoSelectChatProject(projectId) {
   state.chatActiveProjectId = projectId;
   setStoredChatProjectId(projectId);
+  persistSharedActiveProjectId(projectId);
   const sel = document.getElementById('chatProjectSelect');
   if (sel && sel.querySelector('option[value="' + projectId + '"]')) {
     sel.value = projectId;

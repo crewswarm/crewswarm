@@ -37,6 +37,8 @@ let chatMode = "crew-lead"; // 'crew-lead', 'direct', or 'cli'
 let selectedAgent = null;
 let ws = null;
 let watchWs = null; // WebSocket for CLI file changes
+let crewLeadEvents = null;
+let crewLeadEventsReconnectTimer = null;
 let lastAppendedAssistantContent = "";
 let lastAppendedUserContent = "";
 let inlineChatAnchor = null;
@@ -48,6 +50,7 @@ let monaco = null;
 let monacoLoadPromise = null;
 let fileTreeLoadToken = 0;
 let fileTreeRefreshTimer = null;
+let projectReplyPollTimer = null;
 
 const MAX_TERMINAL_ENTRIES = 250;
 const FILE_TREE_REFRESH_DEBOUNCE_MS = 150;
@@ -61,6 +64,57 @@ function getPreferredMonacoTheme() {
 function normalizeProjectsPayload(data) {
   if (Array.isArray(data)) return data;
   return Array.isArray(data?.projects) ? data.projects : [];
+}
+
+function normalizeProjectId(value) {
+  return !value || value === "general" ? "general" : String(value);
+}
+
+async function loadSharedActiveProjectId() {
+  try {
+    const data = await fetchJSON(`${STUDIO_API}/api/studio/active-project`);
+    const projectId = String(data?.projectId || "").trim();
+    return projectId || "general";
+  } catch {
+    return "general";
+  }
+}
+
+async function persistSharedActiveProjectId(projectId) {
+  const normalizedProjectId =
+    projectId && String(projectId).trim() && projectId !== "undefined"
+      ? String(projectId).trim()
+      : "general";
+  try {
+    await fetchJSON(`${STUDIO_API}/api/studio/active-project`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: normalizedProjectId }),
+    });
+  } catch {
+    // Best effort only.
+  }
+}
+
+async function syncProjectFromSharedState() {
+  const sharedProjectId = await loadSharedActiveProjectId();
+  const normalizedSharedId =
+    sharedProjectId && sharedProjectId !== "undefined"
+      ? sharedProjectId
+      : "general";
+  const currentProjectId =
+    currentProject?.id && currentProject.id !== "undefined"
+      ? currentProject.id
+      : "general";
+  if (normalizedSharedId === currentProjectId) return;
+  const selector = document.getElementById("projectSelector");
+  if (
+    selector &&
+    Array.from(selector.options).some((option) => option.value === normalizedSharedId)
+  ) {
+    selector.value = normalizedSharedId;
+    await switchProject(normalizedSharedId);
+  }
 }
 
 async function fetchJSON(url, options = {}) {
@@ -626,6 +680,7 @@ async function loadProjects() {
     const hash = window.location.hash;
     const match = hash.match(/project=([^&]+)/);
     const urlProjectId = match ? decodeURIComponent(match[1]) : null;
+    const sharedProjectId = await loadSharedActiveProjectId();
 
     if (
       urlProjectId &&
@@ -635,8 +690,18 @@ async function loadProjects() {
       // Restore project from URL
       selector.value = urlProjectId;
       await switchProject(urlProjectId);
+    } else if (
+      sharedProjectId &&
+      (sharedProjectId === "general" ||
+        allProjects.find((p) => p.id === sharedProjectId))
+    ) {
+      selector.value = sharedProjectId;
+      await switchProject(sharedProjectId);
     } else {
-      const defaultProjectId = allProjects[0]?.id || "general";
+      const defaultProjectId =
+        allProjects.find((project) => project.id === DEFAULT_PROJECT_ID)?.id ||
+        allProjects[0]?.id ||
+        "general";
       selector.value = defaultProjectId;
       await switchProject(defaultProjectId);
     }
@@ -798,6 +863,7 @@ async function switchProject(projectId) {
 
   // Update URL hash BEFORE setting currentProject (use projectId param, not currentProject)
   window.location.hash = `studio?project=${encodeURIComponent(projectId)}`;
+  await persistSharedActiveProjectId(projectId);
 
   // Set currentProject based on projectId
   if (projectId === "general") {
@@ -923,6 +989,79 @@ async function loadChatHistory() {
   } catch (err) {
     console.warn("Failed to load chat history:", err);
   }
+}
+
+function appendChatSystemNote(text) {
+  if (!chatMessages) return;
+  const note = document.createElement("div");
+  note.className = "message assistant";
+  note.innerHTML = `
+    <div class="message-header">⚡ crew-lead</div>
+    <div class="message-content">${escapeHtml(text)}</div>
+  `;
+  chatMessages.appendChild(note);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function scheduleProjectReplyRefresh(durationMs = 30000, intervalMs = 3000) {
+  if (projectReplyPollTimer) {
+    clearInterval(projectReplyPollTimer);
+    projectReplyPollTimer = null;
+  }
+  const startedAt = Date.now();
+  projectReplyPollTimer = setInterval(async () => {
+    if (Date.now() - startedAt > durationMs) {
+      clearInterval(projectReplyPollTimer);
+      projectReplyPollTimer = null;
+      return;
+    }
+    try {
+      await loadChatHistory();
+    } catch {
+      // best effort
+    }
+  }, intervalMs);
+}
+
+function connectCrewLeadEvents() {
+  if (crewLeadEvents) return;
+  const eventsUrl = `${STUDIO_API}/api/crew-lead/events`;
+  crewLeadEvents = new EventSource(eventsUrl);
+
+  crewLeadEvents.onmessage = async (event) => {
+    if (!event.data) return;
+    let payload = null;
+    try {
+      payload = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    const currentProjectId = normalizeProjectId(currentProject?.id || "general");
+    const eventProjectId = normalizeProjectId(payload.projectId);
+    if (currentProjectId !== eventProjectId) return;
+
+    if (payload.type === "agent_working" && payload.agent) {
+      appendChatSystemNote(`${payload.agent} is working...`);
+      return;
+    }
+
+    if (payload.type === "agent_reply" || (payload.from && payload.content)) {
+      addTerminalLine(`🤖 ${payload.from || "agent"} replied`, "info");
+      await loadChatHistory();
+    }
+  };
+
+  crewLeadEvents.onerror = () => {
+    try {
+      crewLeadEvents?.close();
+    } catch {}
+    crewLeadEvents = null;
+    if (crewLeadEventsReconnectTimer) return;
+    crewLeadEventsReconnectTimer = window.setTimeout(() => {
+      crewLeadEventsReconnectTimer = null;
+      connectCrewLeadEvents();
+    }, 2000);
+  };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1616,6 +1755,12 @@ async function sendChatMessage() {
         exitCode,
       });
       activityTrace?.finish(exitCode);
+      if (
+        chatMode === "crew-lead" &&
+        /dispatch(?:ed)?\s+to\b|reply will show here|working/i.test(rawTranscript)
+      ) {
+        scheduleProjectReplyRefresh();
+      }
 
       return;
     }
@@ -1650,6 +1795,7 @@ async function sendChatMessage() {
           "font-size:11px;color:var(--text-3);text-align:center;padding:4px;";
         note.textContent = `⚡ Dispatched to ${data.dispatched.agent}`;
         chatMessages.appendChild(note);
+        scheduleProjectReplyRefresh();
       }
     }
 
@@ -2591,6 +2737,10 @@ window.addEventListener("hashchange", () => {
   }
 });
 
+window.addEventListener("focus", () => {
+  syncProjectFromSharedState().catch(() => {});
+});
+
 async function init() {
   try {
     addTerminalLine("🐝 crewswarm Vibe starting...", "info");
@@ -2602,6 +2752,7 @@ bindEditorToolbar();
     await loadProjects();
     await loadAgents();
     window.switchChatMode();
+    connectCrewLeadEvents();
     connectRTBus();
     connectStudioWatch(); // Connect to CLI watch server for live reload
 

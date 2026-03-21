@@ -11,7 +11,6 @@ import {
   renderStatusBadge,
 } from "./core/dom.js";
 import {
-  sortAgents,
   state,
   persistState,
   saveScrollPosition,
@@ -72,6 +71,7 @@ import {
   saveOpenCodeFallback,
   saveCursorCliConfig,
   saveClaudeCodeConfig,
+  saveCodexConfig,
   saveGeminiCliConfig,
   saveCrewCLIConfig,
   bulkSetRoute,
@@ -257,14 +257,6 @@ import {
 } from "./tabs/pm-loop-tab.js";
 
 let selected = null;
-let agents = [];
-async function loadAgents() {
-  try {
-    agents = sortAgents(await getJSON("/api/agents"));
-  } catch (e) {
-    console.error("Failed to load agents:", e);
-  }
-}
 // Lightweight status updater (just status dot + DLQ badge, no content loading)
 async function updateStatusBadges() {
   try {
@@ -310,7 +302,7 @@ function hideAllViews() {
 }
 
 initServicesTab({ hideAllViews, setNavActive });
-initAgentsTab({ hideAllViews, setNavActive, refreshAgents: loadAgents });
+initAgentsTab({ hideAllViews, setNavActive, refreshAgents: loadAgents_cfg });
 initPromptsTabDeps({ hideAllViews, setNavActive });
 initSwarmTab({ hideAllViews, setNavActive });
 initMemoryTab(state);
@@ -379,6 +371,44 @@ function setChatHashProject(projectId) {
   }
 }
 
+async function loadSharedActiveProjectId() {
+  try {
+    const data = await getJSON("/api/ui/active-project");
+    const projectId = String(data?.projectId || "").trim();
+    return projectId || "general";
+  } catch {
+    return "general";
+  }
+}
+
+async function persistSharedActiveProjectId(projectId) {
+  const normalizedId =
+    projectId && String(projectId).trim() && projectId !== "undefined"
+      ? String(projectId).trim()
+      : "general";
+  try {
+    await postJSON("/api/ui/active-project", { projectId: normalizedId });
+  } catch {
+    /* best effort */
+  }
+}
+
+async function syncChatProjectFromSharedState() {
+  if (parseRouteFromHash().view !== "chat") return;
+  const sharedProjectId = await loadSharedActiveProjectId();
+  const normalizedSharedId =
+    sharedProjectId && sharedProjectId !== "undefined"
+      ? sharedProjectId
+      : "general";
+  const currentProjectId =
+    state.chatActiveProjectId && state.chatActiveProjectId !== "undefined"
+      ? state.chatActiveProjectId
+      : "general";
+  if (normalizedSharedId !== currentProjectId && window.selectProjectTab) {
+    window.selectProjectTab(normalizedSharedId);
+  }
+}
+
 async function showChat() {
   hideAllViews();
   document.getElementById("chatView").classList.add("active");
@@ -415,7 +445,7 @@ async function showChat() {
     console.warn("Failed to refresh projects dropdown:", e);
   }
 
-  // Read project from URL first (most explicit), then localStorage, default to "general"
+  // Read project from URL first (most explicit), then shared UI state, then localStorage.
   const urlParams = new URLSearchParams(
     window.location.hash.replace(/^#chat\?/, ""),
   );
@@ -423,11 +453,14 @@ async function showChat() {
   if (urlProject) {
     state.chatActiveProjectId = urlProject;
   } else {
+    const sharedProjectId = await loadSharedActiveProjectId();
     try {
       state.chatActiveProjectId =
-        localStorage.getItem("crewswarm_chat_active_project_id") || "general";
+        sharedProjectId ||
+        localStorage.getItem("crewswarm_chat_active_project_id") ||
+        "general";
     } catch {
-      state.chatActiveProjectId = "general";
+      state.chatActiveProjectId = sharedProjectId || "general";
     }
   }
 
@@ -457,6 +490,7 @@ async function showChat() {
     sel.querySelector('option[value="' + state.chatActiveProjectId + '"]')
   )
     sel.value = state.chatActiveProjectId;
+  persistSharedActiveProjectId(state.chatActiveProjectId);
   checkCrewLeadStatus();
   startAgentReplyListener();
   loadCrewLeadInfo();
@@ -506,6 +540,19 @@ function chatThreadHasAssistantText(box, text) {
     if ((bubble.textContent || "").trim() === want) return true;
   }
   return false;
+}
+
+/** Most recent assistant bubble text (for consecutive duplicate SSE guard). */
+function lastAssistantBubbleText(box) {
+  if (!box) return "";
+  for (let i = box.children.length - 1; i >= 0; i--) {
+    const row = box.children[i];
+    if (row.id === "streaming-wrapper") continue;
+    if (row.children.length < 2) continue;
+    if (!String(row.style.alignItems || "").includes("flex-start")) continue;
+    return (row.children[1].textContent || "").trim();
+  }
+  return "";
 }
 
 function startAgentReplyListener() {
@@ -661,6 +708,16 @@ function startAgentReplyListener() {
           document
             .querySelectorAll('[id^="typing-"]')
             .forEach((el) => el.remove());
+
+          const assistantTrimmed = String(d.content || "").trim();
+          if (
+            assistantTrimmed &&
+            lastAssistantBubbleText(box) === assistantTrimmed
+          ) {
+            lastAppendedAssistantContent = d.content;
+            if (box) box.scrollTop = box.scrollHeight;
+            return;
+          }
 
           const streamWrapper = document.getElementById("streaming-wrapper");
           const streamBubble = document.getElementById("streaming-bubble");
@@ -1483,6 +1540,7 @@ window.selectProjectTab = (projectId) => {
   try {
     localStorage.setItem("crewswarm_chat_active_project_id", normalizedId);
   } catch {}
+  persistSharedActiveProjectId(normalizedId);
 
   console.log("🔵 [TAB CLICK] Updated state:", {
     projectId: state.chatActiveProjectId,
@@ -1503,6 +1561,10 @@ window.selectProjectTab = (projectId) => {
       console.error("🔵 [TAB CLICK] loadChatHistory() ERROR:", err);
     });
 };
+
+window.addEventListener("focus", () => {
+  syncChatProjectFromSharedState().catch(() => {});
+});
 
 /* services tab extracted to tabs/services-tab.js */
 async function loadFiles(forceRefresh) {
@@ -1705,7 +1767,7 @@ function showSettingsTab(tab) {
 
 initCommsTab({ showSettings, showSettingsTab });
 initSettingsTab({ getModels: loadAgents_cfg, populateModelDropdown });
-initModelsTab({ hideAllViews, setNavActive, loadAgents });
+initModelsTab({ hideAllViews, setNavActive, loadAgents: loadAgents_cfg });
 initAddProviderForm();
 initSwarmChatTab({ hideAllViews, setNavActive });
 
@@ -1996,7 +2058,7 @@ fetch("/api/env")
   })
   .catch(() => {});
 
-loadAgents();
+loadAgents_cfg().catch((e) => console.error("Initial agents-config load failed:", e));
 refreshAll();
 
 // Wrap every type="password" input in a <form display:contents> so Chrome
@@ -2202,6 +2264,7 @@ const ACTION_REGISTRY = {
   saveOpenCodeFallback: (id) => saveOpenCodeFallback(id),
   saveCursorCliConfig: (id) => saveCursorCliConfig(id),
   saveClaudeCodeConfig: (id) => saveClaudeCodeConfig(id),
+  saveCodexConfig: (id) => saveCodexConfig(id),
   saveGeminiCliConfig: (id) => saveGeminiCliConfig(id),
   saveCrewCLIConfig: (id) => saveCrewCLIConfig(id),
   // PM Loop / Projects
@@ -2682,6 +2745,7 @@ Object.assign(window, {
   saveOpenCodeConfig,
   saveOpenCodeFallback,
   saveSearchTool,
+  saveCodexConfig,
   setRoute,
   stopService,
   testBuiltinProvider,

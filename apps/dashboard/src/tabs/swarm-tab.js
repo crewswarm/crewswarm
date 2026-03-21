@@ -57,16 +57,10 @@ export async function loadSessions() {
   if (select) select.value = _selectedEngine;
   
   try {
-    // Map engine to API endpoint
-    const apiMap = {
-      'opencode': '/api/sessions',
-      'claude': '/api/claude-sessions',
-      'codex': '/api/codex-sessions',
-      'gemini': '/api/gemini-sessions',
-      'crew-cli': '/api/crew-cli-sessions'
-    };
-    
-    const endpoint = apiMap[_selectedEngine] || '/api/sessions';
+    const activeProjectId = state.chatActiveProjectId || 'general';
+    const endpoint =
+      '/api/engine-sessions?engine=' + encodeURIComponent(_selectedEngine) +
+      '&projectId=' + encodeURIComponent(activeProjectId);
     const result = await getJSON(endpoint);
     const data = result.sessions || result || [];
     

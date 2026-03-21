@@ -31,7 +31,7 @@ export async function loadServices() {
   }
   try {
     const services = await getJSON('/api/services/status');
-    const downCount = services.filter(s => !s.running).length;
+    const downCount = services.filter(s => !s.running && !s.optional).length;
     const badge = document.getElementById('servicesBadge');
     if (badge) {
       if (downCount > 0) {
@@ -45,8 +45,9 @@ export async function loadServices() {
       const up = svc.running;
       const canRestart = svc.canRestart;
       const statusColor = up ? 'var(--green-hi)' : 'var(--red-hi)';
-      const statusText = up ? (svc.pid ? '● running  pid ' + svc.pid : '● running') : '● stopped';
+      const statusText = svc.statusText || (up ? (svc.pid ? '● running  pid ' + svc.pid : '● running') : '● stopped');
       const uptime = svc.uptimeSec ? formatUptime(svc.uptimeSec) : '';
+      const footerNote = svc.noteText || (!canRestart ? 'status only' : '');
       return '<div class="card" style="display:flex;flex-direction:column;gap:10px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
           '<div>' +
@@ -61,7 +62,7 @@ export async function loadServices() {
           (canRestart && up ? '<button class="btn-ghost" style="font-size:12px;" data-action="restartService" data-arg="' + svc.id + '">↻ Restart</button>' : '') +
           (canRestart && !up ? '<button class="btn-green" style="font-size:12px;" data-action="restartService" data-arg="' + svc.id + '">▶ Start</button>' : '') +
           (canRestart && up ? '<button class="btn-red" style="font-size:12px;" data-action="stopService" data-arg="' + svc.id + '">⏹ Stop</button>' : '') +
-          (!canRestart ? '<span style="font-size:11px;color:var(--text-3);align-self:center;">managed externally</span>' : '') +
+          (!canRestart ? '<span style="font-size:11px;color:var(--text-3);align-self:center;">' + escHtml(footerNote) + '</span>' : '') +
         '</div>' +
       '</div>';
     }).join('');

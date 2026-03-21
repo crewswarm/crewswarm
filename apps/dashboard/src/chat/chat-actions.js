@@ -26,6 +26,26 @@ export function initChatActions(deps) {
 
   const PASSTHROUGH_LOG_KEY = "crewswarm_passthrough_log";
   const PASSTHROUGH_LOG_MAX = 200;
+
+  function resolveVisibleChatProjectId() {
+    const selector = document.getElementById("chatProjectSelect");
+    const selectedValue = String(selector?.value || "").trim();
+    const activeTab = document.querySelector(
+      '#chatProjectTabs [data-project-id].active',
+    );
+    const tabValue = String(activeTab?.dataset?.projectId || "").trim();
+    const resolved =
+      selectedValue && selectedValue !== "undefined"
+        ? selectedValue
+        : tabValue && tabValue !== "undefined"
+          ? tabValue
+          : getChatActiveProjectId() || state.chatActiveProjectId || "general";
+    state.chatActiveProjectId = resolved;
+    try {
+      localStorage.setItem("crewswarm_chat_active_project_id", resolved);
+    } catch { }
+    return resolved;
+  }
   const ATAT_COMMANDS = [
     {
       id: "RESET",
@@ -786,7 +806,7 @@ export function initChatActions(deps) {
     // });
 
     try {
-      const activeProject = getChatActiveProjectId();
+      const activeProject = resolveVisibleChatProjectId();
       const activeProj = activeProject && state.projectsData[activeProject];
       const d = await postJSON(
         "/api/chat/unified",
@@ -920,7 +940,7 @@ export function initChatActions(deps) {
       indicator.style.display = "none";
       return;
     }
-    const activeProjectId = getChatActiveProjectId();
+    const activeProjectId = resolveVisibleChatProjectId();
     const activeProj = activeProjectId && state.projectsData[activeProjectId];
     const projectDir = activeProj?.outputDir || null;
     const sessionScope = getChatSessionId() || "owner";
@@ -944,7 +964,7 @@ export function initChatActions(deps) {
   async function clearPassthroughSession() {
     const engine = document.getElementById("passthroughEngine")?.value;
     if (!engine) return;
-    const activeProjectId = getChatActiveProjectId();
+    const activeProjectId = resolveVisibleChatProjectId();
     const activeProj = activeProjectId && state.projectsData[activeProjectId];
     const projectDir = activeProj?.outputDir || null;
     if (!projectDir) return;
@@ -1030,7 +1050,7 @@ export function initChatActions(deps) {
     const label = document.createElement("div");
     label.style.cssText =
       "font-size:11px;font-weight:700;color:var(--text-3);margin-bottom:6px;";
-    const activeProjectId = getChatActiveProjectId();
+    const activeProjectId = resolveVisibleChatProjectId();
     const activeProj = activeProjectId && state.projectsData[activeProjectId];
     const selectedModel = modelSelect?.value || "";
     const modelLabel = selectedModel ? ` [${selectedModel}]` : "";
@@ -1512,7 +1532,7 @@ export function initChatActions(deps) {
     box.scrollTop = box.scrollHeight;
 
     try {
-      const activeProjectId = getChatActiveProjectId();
+      const activeProjectId = resolveVisibleChatProjectId();
       const response = await postJSON("/api/chat/unified", {
         mode: "agent",
         agentId,
@@ -1594,13 +1614,13 @@ export function initChatActions(deps) {
       return { route: "claude", model: agent.claudeCodeModel || "auto" };
     }
     if (agent.useCodex) {
-      return { route: "codex", model: agent.model || "auto" };
+      return { route: "codex", model: agent.codexModel || "auto" };
     }
     if (agent.useGeminiCli) {
       return { route: "gemini", model: agent.geminiCliModel || "auto" };
     }
     if (agent.useCrewCLI) {
-      return { route: "crew-cli", model: "managed by crew-cli" };
+      return { route: "crew-cli", model: agent.crewCliModel || "auto" };
     }
     if (agent.useOpenCode === true) {
       return {

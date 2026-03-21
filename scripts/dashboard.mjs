@@ -38,6 +38,36 @@ const CFG_DIR =
   process.env.CREWSWARM_CONFIG_DIR || path.join(os.homedir(), ".crewswarm");
 // Config filename within CFG_DIR
 const CFG_FILE = path.join(CFG_DIR, "crewswarm.json");
+const UI_STATE_FILE = path.join(CFG_DIR, "ui-state.json");
+const PREFERRED_NODE_BIN = (() => {
+  const candidates = [
+    process.env.NODE,
+    "/usr/local/opt/node@20/bin/node",
+    "/opt/homebrew/opt/node@20/bin/node",
+    "/usr/local/bin/node",
+    "/opt/homebrew/bin/node",
+    process.execPath,
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch { }
+  }
+  return process.execPath;
+})();
+
+function readUiState() {
+  try {
+    return JSON.parse(fs.readFileSync(UI_STATE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeUiState(nextState = {}) {
+  fs.mkdirSync(CFG_DIR, { recursive: true });
+  fs.writeFileSync(UI_STATE_FILE, JSON.stringify(nextState, null, 2));
+}
 // Load crewswarm.json env block into process.env on startup (so dashboard reads them)
 // Credentials are excluded — only operational config vars are applied this way.
 const ENV_CREDENTIAL_KEYS = new Set([
@@ -72,6 +102,146 @@ if (!lockResult.ok) {
 }
 
 const opencodeBase = process.env.OPENCODE_URL || "http://127.0.0.1:4096";
+
+function resolveCommandPath(bin, extraPaths = []) {
+  const candidate = String(bin || "").trim();
+  if (!candidate) return null;
+  const checks = [];
+  if (candidate.includes("/")) {
+    checks.push(candidate);
+  } else {
+    checks.push(
+      ...extraPaths,
+      path.join("/usr/local/bin", candidate),
+      path.join("/opt/homebrew/bin", candidate),
+      path.join(os.homedir(), ".local", "bin", candidate),
+      path.join(os.homedir(), "bin", candidate),
+    );
+  }
+  for (const item of checks) {
+    try {
+      if (item && fs.existsSync(item)) return item;
+    } catch {}
+  }
+  try {
+    const out = execSync(`command -v "${candidate.replace(/"/g, '\\"')}"`, {
+      stdio: ["ignore", "pipe", "ignore"],
+      shell: "/bin/zsh",
+      env: {
+        ...process.env,
+        PATH: [
+          process.env.PATH || "",
+          "/usr/local/bin",
+          "/opt/homebrew/bin",
+          path.join(os.homedir(), ".local", "bin"),
+          path.join(os.homedir(), "bin"),
+        ].filter(Boolean).join(":"),
+      },
+    }).toString("utf8").trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+function commandExists(bin, extraPaths = []) {
+  return !!resolveCommandPath(bin, extraPaths);
+}
+
+function readSwarmConfigSafe() {
+  try {
+    return JSON.parse(fs.readFileSync(CFG_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function getEngineRuntimeStatuses() {
+  const swarmCfg = readSwarmConfigSafe();
+  const cfgEnv = swarmCfg?.env || {};
+  const codexInstalled = commandExists(process.env.CODEX_CLI_BIN || "codex");
+  const claudeInstalled = commandExists(process.env.CLAUDE_CODE_BIN || "claude");
+  const cursorInstalled =
+    commandExists(
+      process.env.CURSOR_CLI_BIN || path.join(os.homedir(), ".local", "bin", "agent"),
+      [path.join(os.homedir(), ".local", "bin", "agent")],
+    ) || commandExists("agent", [path.join(os.homedir(), ".local", "bin", "agent")]);
+  const geminiInstalled = commandExists(process.env.GEMINI_CLI_BIN || "gemini");
+  const crewCliInstalled =
+    commandExists("crew", [path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js")]) ||
+    fs.existsSync(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"));
+  const opencodeInstalled =
+    commandExists(process.env.CREWSWARM_OPENCODE_BIN || "opencode") ||
+    fs.existsSync(path.join(os.homedir(), ".opencode", "bin", "opencode"));
+  const opencodeRunning =
+    (() => {
+      try {
+        return !!execSync(`lsof -ti :4096`, { stdio: ["ignore", "pipe", "ignore"] }).toString("utf8").trim();
+      } catch {
+        return false;
+      }
+    })();
+  return [
+    {
+      id: "opencode",
+      label: "OpenCode",
+      kind: "daemon",
+      installed: opencodeInstalled,
+      enabled:
+        cfgEnv.CREWSWARM_OPENCODE_ENABLED === "on" ||
+        cfgEnv.CREWSWARM_OPENCODE_ENABLED === "1" ||
+        process.env.CREWSWARM_OPENCODE_ENABLED === "on" ||
+        process.env.CREWSWARM_OPENCODE_ENABLED === "1",
+      running: opencodeRunning,
+      optionalDaemon: true,
+      port: 4096,
+    },
+    {
+      id: "codex",
+      label: "Codex CLI",
+      kind: "spawned",
+      installed: codexInstalled,
+      enabled: swarmCfg.codex === true || process.env.CREWSWARM_CODEX === "1",
+      running: codexInstalled,
+    },
+    {
+      id: "claude",
+      label: "Claude Code",
+      kind: "spawned",
+      installed: claudeInstalled,
+      enabled: swarmCfg.claudeCode === true,
+      running: claudeInstalled,
+    },
+    {
+      id: "cursor",
+      label: "Cursor CLI",
+      kind: "spawned",
+      installed: cursorInstalled,
+      enabled: swarmCfg.cursorWaves === true,
+      running: cursorInstalled,
+    },
+    {
+      id: "gemini",
+      label: "Gemini CLI",
+      kind: "spawned",
+      installed: geminiInstalled,
+      enabled:
+        swarmCfg.geminiCli === true ||
+        process.env.CREWSWARM_GEMINI_CLI_ENABLED === "1",
+      running: geminiInstalled,
+    },
+    {
+      id: "crew-cli",
+      label: "crew-cli",
+      kind: "spawned",
+      installed: crewCliInstalled,
+      enabled:
+        swarmCfg.crewCli === true ||
+        process.env.CREWSWARM_CREW_CLI_ENABLED === "1",
+      running: crewCliInstalled,
+    },
+  ];
+}
 const phasedOrchestrator = path.join(CREWSWARM_DIR, "phased-orchestrator.mjs");
 const continuousBuild = path.join(CREWSWARM_DIR, "continuous-build.mjs");
 const pmLoop = path.join(CREWSWARM_DIR, "pm-loop.mjs");
@@ -1039,7 +1209,66 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/engine-runtimes" && req.method === "GET") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, engines: getEngineRuntimeStatuses() }));
+      return;
+    }
+
     // ── Multi-CLI Session APIs ─────────────────────────────────────────────────
+
+    if (url.pathname === "/api/engine-sessions" && req.method === "GET") {
+      const engine = String(url.searchParams.get("engine") || "opencode").trim();
+      const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
+      const projectId = String(url.searchParams.get("projectId") || "").trim();
+      const projectDir = (() => {
+        if (!projectId || projectId === "general") return "";
+        try {
+          const registryFile = path.join(CFG_DIR, "projects.json");
+          const projects = JSON.parse(fs.readFileSync(registryFile, "utf8"));
+          return String(projects?.[projectId]?.outputDir || "").trim();
+        } catch {
+          return "";
+        }
+      })();
+      const endpointMap = {
+        opencode: "/api/sessions",
+        codex: "/api/codex-sessions",
+        claude: "/api/claude-sessions",
+        gemini: "/api/gemini-sessions",
+        "crew-cli": "/api/crew-cli-sessions",
+      };
+      const endpoint = endpointMap[engine] || endpointMap.opencode;
+      const qs = new URLSearchParams();
+      if (limit) qs.set("limit", String(limit));
+      if (engine === "claude" && projectDir) qs.set("dir", projectDir);
+      const target =
+        endpoint + (qs.toString() ? `?${qs.toString()}` : "");
+      let payload = {};
+      try {
+        if (endpoint === "/api/sessions") payload = await proxyJSON("/session");
+        else {
+          const upstream = await fetch(
+            `http://127.0.0.1:${listenPort}${target}`,
+            { signal: AbortSignal.timeout(8000) },
+          );
+          payload = await upstream.json();
+        }
+      } catch (error) {
+        payload = { ok: false, sessions: [], error: error.message };
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ok: payload?.ok !== false,
+          engine,
+          projectId: projectId || null,
+          sessions: payload?.sessions || payload || [],
+          error: payload?.error,
+        }),
+      );
+      return;
+    }
 
     if (url.pathname === "/api/codex-sessions") {
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
@@ -1506,6 +1735,9 @@ const server = http.createServer(async (req, res) => {
         // Engine — Claude Code & Cursor
         "CREWSWARM_CLAUDE_CODE_MODEL",
         "CREWSWARM_CURSOR_MODEL",
+        // Engine — Codex & crew-cli
+        "CREWSWARM_CODEX_MODEL",
+        "CREWSWARM_CREW_CLI_MODEL",
         // Engine — Gemini CLI
         "CREWSWARM_GEMINI_CLI_ENABLED",
         "CREWSWARM_GEMINI_CLI_MODEL",
@@ -2071,8 +2303,7 @@ const server = http.createServer(async (req, res) => {
         const { existsSync: ex } = await import("node:fs");
         const { readFile: rf } = await import("node:fs/promises");
         const regPath = path.join(
-          CREWSWARM_DIR,
-          "orchestrator-logs",
+          CFG_DIR,
           "projects.json",
         );
         if (ex(regPath)) {
@@ -2096,7 +2327,7 @@ const server = http.createServer(async (req, res) => {
         throw new Error(
           "phased-orchestrator.mjs not found at " + phasedOrchestrator,
         );
-      const proc = spawn("node", [phasedOrchestrator, "--all", requirement], {
+      const proc = spawn(PREFERRED_NODE_BIN, [phasedOrchestrator, "--all", requirement], {
         cwd: CREWSWARM_DIR,
         stdio: "ignore",
         detached: true,
@@ -2159,8 +2390,7 @@ const server = http.createServer(async (req, res) => {
         const { existsSync: ex } = await import("node:fs");
         const { readFile: rf } = await import("node:fs/promises");
         const regPath = path.join(
-          CREWSWARM_DIR,
-          "orchestrator-logs",
+          CFG_DIR,
           "projects.json",
         );
         if (ex(regPath)) {
@@ -2182,7 +2412,7 @@ const server = http.createServer(async (req, res) => {
       const { existsSync } = await import("node:fs");
       if (!existsSync(continuousBuild))
         throw new Error("continuous-build.mjs not found at " + continuousBuild);
-      const proc = spawn("node", [continuousBuild, requirement], {
+      const proc = spawn(PREFERRED_NODE_BIN, [continuousBuild, requirement], {
         cwd: CREWSWARM_DIR,
         stdio: "ignore",
         detached: true,
@@ -2692,6 +2922,40 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(JSON.stringify({ ok: true, projects: enriched }));
       return;
+    }
+    if (url.pathname === "/api/ui/active-project") {
+      if (req.method === "GET") {
+        const uiState = readUiState();
+        res.writeHead(200, {
+          "content-type": "application/json",
+          "access-control-allow-origin": "*",
+        });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            projectId: String(uiState.chatActiveProjectId || "general"),
+          }),
+        );
+        return;
+      }
+      if (req.method === "POST") {
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        const { projectId } = JSON.parse(body || "{}");
+        const normalizedProjectId =
+          projectId && String(projectId).trim()
+            ? String(projectId).trim()
+            : "general";
+        const uiState = readUiState();
+        uiState.chatActiveProjectId = normalizedProjectId;
+        writeUiState(uiState);
+        res.writeHead(200, {
+          "content-type": "application/json",
+          "access-control-allow-origin": "*",
+        });
+        res.end(JSON.stringify({ ok: true, projectId: normalizedProjectId }));
+        return;
+      }
     }
     if (url.pathname === "/api/projects" && req.method === "POST") {
       let body = "";
@@ -3609,11 +3873,12 @@ const server = http.createServer(async (req, res) => {
           const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
           const enabled =
             cfg.codex === true || process.env.CREWSWARM_CODEX === "1";
+          const installed = commandExists(process.env.CODEX_CLI_BIN || "codex");
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ enabled }));
+          res.end(JSON.stringify({ enabled, installed }));
         } catch {
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ enabled: false }));
+          res.end(JSON.stringify({ enabled: false, installed: false }));
         }
         return;
       }
@@ -3645,14 +3910,7 @@ const server = http.createServer(async (req, res) => {
           const enabled =
             cfg.geminiCli === true ||
             process.env.CREWSWARM_GEMINI_CLI_ENABLED === "1";
-          const installed = (() => {
-            try {
-              execSync("which gemini", { stdio: "ignore" });
-              return true;
-            } catch {
-              return false;
-            }
-          })();
+          const installed = commandExists(process.env.GEMINI_CLI_BIN || "gemini");
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ enabled, installed }));
         } catch {
@@ -3689,11 +3947,14 @@ const server = http.createServer(async (req, res) => {
           const enabled =
             cfg.crewCli === true ||
             process.env.CREWSWARM_CREW_CLI_ENABLED === "1";
+          const installed =
+            commandExists("crew") ||
+            fs.existsSync(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"));
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ enabled, installed: true }));
+          res.end(JSON.stringify({ enabled, installed }));
         } catch {
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ enabled: false, installed: true }));
+          res.end(JSON.stringify({ enabled: false, installed: false }));
         }
         return;
       }
@@ -3810,14 +4071,9 @@ const server = http.createServer(async (req, res) => {
             env.CREWSWARM_OPENCODE_ENABLED === "1" ||
             process.env.CREWSWARM_OPENCODE_ENABLED === "on" ||
             process.env.CREWSWARM_OPENCODE_ENABLED === "1";
-          const installed = (() => {
-            try {
-              execSync("which opencode", { stdio: "ignore" });
-              return true;
-            } catch {
-              return false;
-            }
-          })();
+          const installed =
+            commandExists(process.env.CREWSWARM_OPENCODE_BIN || "opencode") ||
+            fs.existsSync(path.join(os.homedir(), ".opencode", "bin", "opencode"));
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ enabled, installed }));
         } catch {
@@ -4825,6 +5081,16 @@ const server = http.createServer(async (req, res) => {
       }
 
       const clAuthToken = resolveCrewLeadAuthToken();
+      let resolvedProjectDir = projectDir || null;
+      if (!resolvedProjectDir && projectId) {
+        try {
+          const registryFile = path.join(CFG_DIR, "projects.json");
+          const projects = fs.existsSync(registryFile)
+            ? JSON.parse(fs.readFileSync(registryFile, "utf8"))
+            : {};
+          resolvedProjectDir = projects?.[projectId]?.outputDir || null;
+        } catch { }
+      }
 
       if (mode === "cli" || String(mode).startsWith("cli:")) {
         const cliEngine = engine || String(mode).replace(/^cli:/, "");
@@ -4844,7 +5110,7 @@ const server = http.createServer(async (req, res) => {
             message,
             sessionId,
             ...(projectId ? { projectId } : {}),
-            ...(projectDir ? { projectDir } : {}),
+            ...(resolvedProjectDir ? { projectDir: resolvedProjectDir } : {}),
             ...(model ? { model } : {}),
             ...(injectHistory ? { injectHistory: true } : {}),
           };
@@ -4933,6 +5199,7 @@ const server = http.createServer(async (req, res) => {
                 message,
                 sessionId,
                 ...(projectId ? { projectId } : {}),
+                ...(resolvedProjectDir ? { projectDir: resolvedProjectDir } : {}),
               }),
               signal: AbortSignal.timeout(120000),
             },
@@ -5032,7 +5299,7 @@ const server = http.createServer(async (req, res) => {
             message,
             sessionId,
             ...(projectId ? { projectId } : {}),
-            ...(projectDir ? { projectDir } : {}),
+            ...(resolvedProjectDir ? { projectDir: resolvedProjectDir } : {}),
             ...(channelMode ? { channelMode: true } : {}),
           }),
           signal: AbortSignal.timeout(200000),
@@ -6392,9 +6659,11 @@ ORDER BY day DESC, cost DESC;`;
           useClaudeCode: a.useClaudeCode || false,
           claudeCodeModel: a.claudeCodeModel || "",
           useCodex: a.useCodex || false,
+          codexModel: a.codexModel || "",
           useGeminiCli: a.useGeminiCli || false,
           geminiCliModel: a.geminiCliModel || "",
           useCrewCLI: a.useCrewCLI || false,
+          crewCliModel: a.crewCliModel || "",
           useDockerSandbox: a.useDockerSandbox || false,
           role: a._role || "",
           opencodeLoop: a.opencodeLoop || false,
@@ -6623,9 +6892,11 @@ ORDER BY day DESC, cost DESC;`;
         useClaudeCode,
         claudeCodeModel,
         useCodex,
+        codexModel,
         useGeminiCli,
         geminiCliModel,
         useCrewCLI,
+        crewCliModel,
         useDockerSandbox,
         role,
         opencodeLoop,
@@ -6722,10 +6993,14 @@ ORDER BY day DESC, cost DESC;`;
       if (claudeCodeModel !== undefined)
         agent.claudeCodeModel = claudeCodeModel || undefined;
       if (useCodex !== undefined) agent.useCodex = useCodex;
+      if (codexModel !== undefined)
+        agent.codexModel = codexModel || undefined;
       if (useGeminiCli !== undefined) agent.useGeminiCli = useGeminiCli;
       if (geminiCliModel !== undefined)
         agent.geminiCliModel = geminiCliModel || undefined;
       if (useCrewCLI !== undefined) agent.useCrewCLI = useCrewCLI;
+      if (crewCliModel !== undefined)
+        agent.crewCliModel = crewCliModel || undefined;
       if (useDockerSandbox !== undefined)
         agent.useDockerSandbox = useDockerSandbox;
       if (role !== undefined) agent._role = role || undefined;
@@ -7782,18 +8057,37 @@ ORDER BY day DESC, cost DESC;`;
         const { execSync } = await import("node:child_process");
         const net = await import("node:net");
 
-        function portListening(port) {
+        function portListening(port, timeoutMs = 350) {
           return new Promise((resolve) => {
             const sock = new net.default.Socket();
-            sock.setTimeout(500);
+            let done = false;
+            const finish = (value) => {
+              if (done) return;
+              done = true;
+              try {
+                sock.destroy();
+              } catch { }
+              resolve(value);
+            };
+            sock.setTimeout(timeoutMs);
             sock.once("connect", () => {
-              sock.destroy();
-              resolve(true);
+              finish(true);
             });
-            sock.once("error", () => resolve(false));
-            sock.once("timeout", () => resolve(false));
+            sock.once("error", () => finish(false));
+            sock.once("timeout", () => finish(false));
             sock.connect(port, "127.0.0.1");
           });
+        }
+
+        async function httpOk(url, timeoutMs = 900) {
+          try {
+            const r = await fetch(url, {
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+            return r.ok;
+          } catch {
+            return false;
+          }
         }
 
         function pidRunning(pidFile) {
@@ -7811,7 +8105,7 @@ ORDER BY day DESC, cost DESC;`;
           try {
             const out = execSync(`pgrep -f "${pattern}" | wc -l`, {
               encoding: "utf8",
-              timeout: 2000,
+              timeout: 300,
               stdio: ["pipe", "pipe", "pipe"],
             }).trim();
             return parseInt(out, 10) || 0;
@@ -7824,7 +8118,7 @@ ORDER BY day DESC, cost DESC;`;
           try {
             const out = execSync(`pgrep -f "${pattern}"`, {
               encoding: "utf8",
-              timeout: 2000,
+              timeout: 300,
               stdio: ["pipe", "pipe", "pipe"],
             }).trim();
             const pids = out
@@ -7841,7 +8135,7 @@ ORDER BY day DESC, cost DESC;`;
           try {
             const out = execSync(`pgrep -f "${pattern}"`, {
               encoding: "utf8",
-              timeout: 2000,
+              timeout: 300,
               stdio: ["pipe", "pipe", "pipe"],
             }).trim();
             return out
@@ -7857,7 +8151,7 @@ ORDER BY day DESC, cost DESC;`;
           try {
             const out = execSync(`ps -p ${pid} -o lstart=`, {
               encoding: "utf8",
-              timeout: 1500,
+              timeout: 300,
               stdio: ["pipe", "pipe", "pipe"],
             }).trim();
             return out ? new Date(out).getTime() : null;
@@ -7874,25 +8168,82 @@ ORDER BY day DESC, cost DESC;`;
           pidRunning(
             path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"),
           ) || getPid("whatsapp-bridge.mjs");
-        const rtUp = await portListening(18889);
+        const rtStatusPromise = fetch("http://127.0.0.1:18889/status", {
+          signal: AbortSignal.timeout(900),
+        });
+        const mcpHealthPromise = httpOk("http://127.0.0.1:5020/health", 900);
+        const [
+          rtUp,
+          crewLeadUp,
+          gwUp,
+          ocPortUp,
+          dashUp,
+          studioUp,
+          watchUp,
+        ] = await Promise.all([
+          portListening(18889),
+          portListening(crewLeadPort),
+          portListening(18789),
+          portListening(4096),
+          portListening(listenPort),
+          portListening(3333),
+          portListening(3334),
+        ]);
         const rtPid = getPid("opencrew-rt-daemon");
-        const crewLeadUp = await portListening(crewLeadPort);
         const crewLeadPid = getPid("crew-lead.mjs");
-        const gwUp = await portListening(18789);
         const gwPid = getPid("openclaw-gateway");
         const oclawPaired =
           fs.existsSync(
             path.join(os.homedir(), ".openclaw", "devices", "paired.json"),
           ) ||
           fs.existsSync(path.join(os.homedir(), ".openclaw", "device.json"));
-        const ocUp = await portListening(4096);
-        const ocPid = getPid("opencode serve");
+        const ocPid =
+          getPid("\\.opencode serve") ||
+          getPid("opencode serve") ||
+          getPid("bin/.opencode") ||
+          getPid("/.opencode");
+        const ocUp = ocPortUp || ocPid !== null;
+        const codexInstalled = commandExists(process.env.CODEX_CLI_BIN || "codex");
+        const claudeInstalled = commandExists(process.env.CLAUDE_CODE_BIN || "claude");
+        const cursorInstalled = commandExists(
+          process.env.CURSOR_CLI_BIN ||
+            path.join(os.homedir(), ".local", "bin", "agent"),
+          [path.join(os.homedir(), ".local", "bin", "agent")],
+        ) || commandExists("agent", [path.join(os.homedir(), ".local", "bin", "agent")]);
+        const geminiInstalled = commandExists(process.env.GEMINI_CLI_BIN || "gemini");
+        const crewCliInstalled =
+          commandExists("crew", [
+            path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"),
+          ]) ||
+          fs.existsSync(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"));
+        let swarmCfg = {};
+        try {
+          swarmCfg = JSON.parse(
+            fs.readFileSync(
+              path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
+              "utf8",
+            ),
+          );
+        } catch {}
+        const cfgEnv = swarmCfg?.env || {};
+        const codexEnabled =
+          swarmCfg.codex === true || process.env.CREWSWARM_CODEX === "1";
+        const claudeEnabled = swarmCfg.claudeCode === true;
+        const cursorEnabled = swarmCfg.cursorWaves === true;
+        const geminiEnabled =
+          swarmCfg.geminiCli === true ||
+          process.env.CREWSWARM_GEMINI_CLI_ENABLED === "1";
+        const crewCliEnabled =
+          swarmCfg.crewCli === true ||
+          process.env.CREWSWARM_CREW_CLI_ENABLED === "1";
+        const opencodeEnabled =
+          cfgEnv.CREWSWARM_OPENCODE_ENABLED === "on" ||
+          cfgEnv.CREWSWARM_OPENCODE_ENABLED === "1" ||
+          process.env.CREWSWARM_OPENCODE_ENABLED === "on" ||
+          process.env.CREWSWARM_OPENCODE_ENABLED === "1";
         const mcpPid = getPid("mcp-server.mjs");
-        const dashUp = await portListening(listenPort);
-        const studioUp = await portListening(3333);
         const studioPid =
           getPid("apps/vibe/server.mjs") || getPid("npm.*studio:start");
-        const watchUp = await portListening(3334);
         const watchPid = getPid("watch-server.mjs");
 
         // Agent count: ask RT bus which agents are actually connected (most reliable source)
@@ -7900,9 +8251,7 @@ ORDER BY day DESC, cost DESC;`;
         let rtAgentList = [];
         let agentPids = [];
         try {
-          const rtStatusRes = await fetch("http://127.0.0.1:18889/status", {
-            signal: AbortSignal.timeout(1500),
-          });
+          const rtStatusRes = await rtStatusPromise;
           const rtStatus = await rtStatusRes.json();
           const raw = (rtStatus.agents || []).filter(Boolean);
           rtAgentList = raw.filter(
@@ -7918,18 +8267,13 @@ ORDER BY day DESC, cost DESC;`;
         // Total: count configured agents (minus crew-lead); never show X/Y with X > Y
         let agentsTotal = 0;
         try {
-          const swarmCfg = JSON.parse(
-            fs.readFileSync(
-              path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-              "utf8",
-            ),
-          );
           agentsTotal = (swarmCfg.agents || []).filter(
             (a) => a.id && String(a.id).toLowerCase() !== "crew-lead",
           ).length;
         } catch { }
         if (agentsTotal === 0) agentsTotal = 14;
         agentsTotal = Math.max(agentsTotal, agentsOnline);
+        const pmCount = countProcs("pm-loop.mjs");
 
         services = [
           {
@@ -7988,13 +8332,84 @@ ORDER BY day DESC, cost DESC;`;
           },
           {
             id: "opencode",
-            label: "Code Engine",
+            label: "OpenCode Session Server",
             description:
-              "Coding execution server (OpenCode / Claude Code / Cursor) — port 4096",
+              "Optional OpenCode daemon for session browsing/history on port 4096. OpenCode task execution itself runs per-task like the other CLIs.",
             port: 4096,
             running: ocUp,
             canRestart: true,
+            optional: true,
             pid: ocPid,
+          },
+          {
+            id: "cli-codex",
+            label: "Codex CLI Runtime",
+            description: codexInstalled
+              ? `Per-task Codex runner${codexEnabled ? " — globally enabled" : ""}`
+              : "Codex CLI binary not found",
+            port: null,
+            running: codexInstalled,
+            canRestart: false,
+            pid: null,
+            statusText: codexInstalled
+              ? `● available${codexEnabled ? " · enabled" : ""}`
+              : "● missing",
+          },
+          {
+            id: "cli-claude",
+            label: "Claude Code Runtime",
+            description: claudeInstalled
+              ? `Per-task Claude Code runner${claudeEnabled ? " — globally enabled" : ""}`
+              : "Claude Code CLI binary not found",
+            port: null,
+            running: claudeInstalled,
+            canRestart: false,
+            pid: null,
+            statusText: claudeInstalled
+              ? `● available${claudeEnabled ? " · enabled" : ""}`
+              : "● missing",
+          },
+          {
+            id: "cli-cursor",
+            label: "Cursor CLI Runtime",
+            description: cursorInstalled
+              ? `Per-task Cursor agent runner${cursorEnabled ? " — cursor waves enabled" : ""}`
+              : "Cursor agent CLI binary not found",
+            port: null,
+            running: cursorInstalled,
+            canRestart: false,
+            pid: null,
+            statusText: cursorInstalled
+              ? `● available${cursorEnabled ? " · enabled" : ""}`
+              : "● missing",
+          },
+          {
+            id: "cli-gemini",
+            label: "Gemini CLI Runtime",
+            description: geminiInstalled
+              ? `Per-task Gemini runner${geminiEnabled ? " — globally enabled" : ""}`
+              : "Gemini CLI binary not found",
+            port: null,
+            running: geminiInstalled,
+            canRestart: false,
+            pid: null,
+            statusText: geminiInstalled
+              ? `● available${geminiEnabled ? " · enabled" : ""}`
+              : "● missing",
+          },
+          {
+            id: "cli-crew",
+            label: "crew-cli Runtime",
+            description: crewCliInstalled
+              ? `Per-task crew-cli runner${crewCliEnabled ? " — globally enabled" : ""}`
+              : "crew-cli build/binary not found",
+            port: null,
+            running: crewCliInstalled,
+            canRestart: false,
+            pid: null,
+            statusText: crewCliInstalled
+              ? `● available${crewCliEnabled ? " · enabled" : ""}`
+              : "● missing",
           },
           {
             id: "dashboard",
@@ -8011,16 +8426,7 @@ ORDER BY day DESC, cost DESC;`;
             description:
               "MCP tools + /v1/chat/completions for Open WebUI, LM Studio, Aider — port 5020",
             port: 5020,
-            running: await (async () => {
-              try {
-                const r = await fetch("http://127.0.0.1:5020/health", {
-                  signal: AbortSignal.timeout(1500),
-                });
-                return r.ok;
-              } catch {
-                return false;
-              }
-            })(),
+            running: await mcpHealthPromise,
             canRestart: true,
             pid: mcpPid,
           },
@@ -8066,20 +8472,19 @@ ORDER BY day DESC, cost DESC;`;
             id: "pm-loops",
             label: "PM Loops",
             description: (() => {
-              const pmCount = countProcs("pm-loop.mjs");
               if (pmCount === 0) return "No active PM loops";
               if (pmCount === 1) return "1 PM loop running (managing roadmap)";
               return `${pmCount} PM loops running ⚠️ (should be 0-1)`;
             })(),
             port: null,
-            running: countProcs("pm-loop.mjs") > 0,
+            running: pmCount > 0,
             optional: true,
             canRestart: false,
             pid: (() => {
               try {
                 const pids = execSync("pgrep -f 'pm-loop.mjs'", {
                   encoding: "utf8",
-                  timeout: 2000,
+                  timeout: 300,
                   stdio: ["pipe", "pipe", "pipe"],
                 }).trim().split("\n").filter(Boolean).map(p => parseInt(p, 10));
                 return pids.length === 1 ? pids[0] : pids;
@@ -8087,7 +8492,7 @@ ORDER BY day DESC, cost DESC;`;
                 return null;
               }
             })(),
-            count: countProcs("pm-loop.mjs"),
+            count: pmCount,
           },
         ];
       } catch (statusErr) {
@@ -8134,12 +8539,63 @@ ORDER BY day DESC, cost DESC;`;
           },
           {
             id: "opencode",
-            label: "Code Engine",
-            description: "opencode serve — port 4096",
+            label: "OpenCode Session Server",
+            description: "Optional OpenCode daemon for session browsing/history — port 4096",
             port: 4096,
             running: false,
             canRestart: true,
+            optional: true,
             pid: null,
+          },
+          {
+            id: "cli-codex",
+            label: "Codex CLI Runtime",
+            description: "Per-task Codex runner",
+            port: null,
+            running: false,
+            canRestart: false,
+            pid: null,
+            statusText: "● unknown",
+          },
+          {
+            id: "cli-claude",
+            label: "Claude Code Runtime",
+            description: "Per-task Claude Code runner",
+            port: null,
+            running: false,
+            canRestart: false,
+            pid: null,
+            statusText: "● unknown",
+          },
+          {
+            id: "cli-cursor",
+            label: "Cursor CLI Runtime",
+            description: "Per-task Cursor agent runner",
+            port: null,
+            running: false,
+            canRestart: false,
+            pid: null,
+            statusText: "● unknown",
+          },
+          {
+            id: "cli-gemini",
+            label: "Gemini CLI Runtime",
+            description: "Per-task Gemini runner",
+            port: null,
+            running: false,
+            canRestart: false,
+            pid: null,
+            statusText: "● unknown",
+          },
+          {
+            id: "cli-crew",
+            label: "crew-cli Runtime",
+            description: "Per-task crew-cli runner",
+            port: null,
+            running: false,
+            canRestart: false,
+            pid: null,
+            statusText: "● unknown",
           },
           {
             id: "dashboard",

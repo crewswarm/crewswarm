@@ -17,6 +17,8 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { shouldSkipGeminiPassthroughLine } from "../../lib/gemini-cli-passthrough-noise.mjs";
+import { normalizeProjectDir } from "../../lib/runtime/project-dir.mjs";
+import { resolveCursorLaunchSpec } from "../../lib/engines/cursor-launcher.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.STUDIO_PORT || 3333);
@@ -25,11 +27,13 @@ const WORKSPACE_DIR = __dirname;
 const STUDIO_DATA_DIR = process.env.STUDIO_DATA_DIR
   ? path.resolve(process.env.STUDIO_DATA_DIR)
   : path.join(__dirname, ".studio-data");
-const PROJECTS_FILE = path.join(STUDIO_DATA_DIR, "projects.json");
 const MESSAGE_DIR = path.join(STUDIO_DATA_DIR, "project-messages");
 const terminalSessions = new Map();
 const PTY_HOST = path.join(__dirname, "scripts", "studio-pty-host.py");
 const DEFAULT_PROJECT_ID = "studio-local";
+const CREWSWARM_CFG_DIR = path.join(os.homedir(), ".crewswarm");
+const SHARED_PROJECTS_FILE = path.join(CREWSWARM_CFG_DIR, "projects.json");
+const UI_STATE_FILE = path.join(CREWSWARM_CFG_DIR, "ui-state.json");
 const DEFAULT_PROJECT = {
   id: DEFAULT_PROJECT_ID,
   name: "Studio Workspace",
@@ -68,22 +72,18 @@ function slugify(value = "") {
 
 function ensureProjects() {
   ensureDataDirs();
-  if (!fs.existsSync(PROJECTS_FILE)) {
-    fs.writeFileSync(PROJECTS_FILE, JSON.stringify([DEFAULT_PROJECT], null, 2));
-    return [DEFAULT_PROJECT];
-  }
-
   try {
-    const parsed = JSON.parse(fs.readFileSync(PROJECTS_FILE, "utf8"));
-    const projects = Array.isArray(parsed) ? parsed : [];
-    if (projects.some((project) => project.id === DEFAULT_PROJECT_ID)) {
-      return projects;
-    }
-    const nextProjects = [DEFAULT_PROJECT, ...projects];
-    fs.writeFileSync(PROJECTS_FILE, JSON.stringify(nextProjects, null, 2));
-    return nextProjects;
+    const parsed = JSON.parse(fs.readFileSync(SHARED_PROJECTS_FILE, "utf8"));
+    const sharedProjects = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === "object"
+        ? Object.values(parsed)
+        : [];
+    const deduped = sharedProjects.filter(
+      (project) => project && project.id && project.id !== DEFAULT_PROJECT_ID,
+    );
+    return [...deduped, DEFAULT_PROJECT];
   } catch {
-    fs.writeFileSync(PROJECTS_FILE, JSON.stringify([DEFAULT_PROJECT], null, 2));
     return [DEFAULT_PROJECT];
   }
 }
@@ -94,19 +94,56 @@ export function readProjects() {
 
 export function writeProjects(projects) {
   ensureDataDirs();
-  fs.writeFileSync(PROJECTS_FILE, JSON.stringify(projects, null, 2));
+  fs.mkdirSync(CREWSWARM_CFG_DIR, { recursive: true });
+  let existing = {};
+  try {
+    existing = JSON.parse(fs.readFileSync(SHARED_PROJECTS_FILE, "utf8"));
+  } catch {
+    existing = {};
+  }
+  const next = { ...(existing && typeof existing === "object" ? existing : {}) };
+  for (const project of Array.isArray(projects) ? projects : []) {
+    if (!project?.id || project.id === DEFAULT_PROJECT_ID) continue;
+    next[project.id] = {
+      ...(next[project.id] || {}),
+      ...project,
+    };
+  }
+  fs.writeFileSync(SHARED_PROJECTS_FILE, JSON.stringify(next, null, 2));
   clearWorkspaceCaches();
+}
+
+function readUiState() {
+  try {
+    return JSON.parse(fs.readFileSync(UI_STATE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeUiState(nextState = {}) {
+  ensureDataDirs();
+  fs.mkdirSync(CREWSWARM_CFG_DIR, { recursive: true });
+  fs.writeFileSync(UI_STATE_FILE, JSON.stringify(nextState, null, 2));
 }
 
 function clearWorkspaceCaches() {
   workspaceScanCache.clear();
 }
 
+function resolveStudioProjectPath(rawPath, fallback = WORKSPACE_DIR) {
+  const normalized = normalizeProjectDir(rawPath);
+  if (normalized) return normalized;
+  const source =
+    rawPath == null || String(rawPath).trim() === "" ? fallback : String(rawPath);
+  return path.resolve(source);
+}
+
 function getAllowedRoots() {
   const roots = new Set([WORKSPACE_DIR]);
   for (const project of readProjects()) {
     if (project?.outputDir) {
-      roots.add(path.resolve(project.outputDir));
+      roots.add(resolveStudioProjectPath(project.outputDir));
     }
   }
   return [...roots];
@@ -352,6 +389,9 @@ export function readProjectMessages(projectId, limit = 50) {
 }
 
 function sendSseHeaders(res) {
+  if (res.headersSent || res.writableEnded) {
+    return false;
+  }
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -360,9 +400,11 @@ function sendSseHeaders(res) {
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   });
+  return true;
 }
 
 function sendSseEvent(res, payload) {
+  if (res.writableEnded) return;
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
@@ -443,18 +485,7 @@ function normalizeTerminalSize(value, fallback) {
 
 function getCursorCommand() {
   const configuredBinary = process.env.STUDIO_CURSOR_BIN || process.env.CURSOR_CLI_BIN;
-  if (configuredBinary) {
-    return configuredBinary;
-  }
-
-  const homeAgent = process.env.HOME
-    ? path.join(process.env.HOME, ".local", "bin", "agent")
-    : "";
-  if (homeAgent && fs.existsSync(homeAgent)) {
-    return homeAgent;
-  }
-
-  return "agent";
+  return resolveCursorLaunchSpec(configuredBinary);
 }
 
 /** Same defaults as crew-lead / gateway `runCursorCliTask` (not the IDE `cursor` opener). */
@@ -842,7 +873,7 @@ function broadcastTerminalMessage(sessionId, payload) {
 }
 
 export function createTerminalSession({ projectDir, onData, onExit, cols, rows }) {
-  const cwd = path.resolve(projectDir || WORKSPACE_DIR);
+  const cwd = resolveStudioProjectPath(projectDir, WORKSPACE_DIR);
   if (!isWithinAllowedRoots(cwd)) {
     throw new Error("projectDir is outside configured project roots");
   }
@@ -940,6 +971,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
   switch (engine) {
     case "codex": {
       const binary = process.env.STUDIO_CODEX_BIN || "codex";
+      const model = modelOverride || process.env.CREWSWARM_CODEX_MODEL || "";
       const prefixArgs = (process.env.STUDIO_CODEX_BIN_ARGS || "")
         .split(" ")
         .map((value) => value.trim())
@@ -959,7 +991,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
       }
       return {
         command: binary,
-        args: ["-a", "never", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--color", "never", "-C", projectDir, message],
+        args: ["-a", "never", "exec", "--sandbox", "danger-full-access", "--skip-git-repo-check", "--color", "never", ...(model ? ["--model", model] : []), "-C", projectDir, message],
         stdin: null,
       };
     }
@@ -967,8 +999,10 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
       // Claude Code uses OAuth — no API key needed
       {
         const args = ["-p", "--setting-sources", "user"];
+        const model = modelOverride || process.env.CREWSWARM_CLAUDE_CODE_MODEL || "";
         // Add workspace directory context
         if (projectDir) args.push("--add-dir", projectDir);
+        if (model) args.push("--model", model);
         return {
           command: "claude",
           args,
@@ -978,10 +1012,11 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
       }
     case "cursor":
       {
-        const binary = getCursorCommand();
+        const cursorSpec = getCursorCommand();
         const cwd = projectDir || WORKSPACE_DIR;
         const model = resolveStudioCursorModel(modelOverride);
         const args = [
+          ...cursorSpec.argsPrefix,
           "-p",
           "--force",
           "--trust",
@@ -995,7 +1030,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
           cwd,
         ];
         return {
-          command: binary,
+          command: cursorSpec.bin,
           args,
           stdin: null,
         };
@@ -1003,6 +1038,8 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
     case "gemini":
       {
         const args = ["-p", message, "--output-format", "stream-json", "--yolo"];
+        const model = modelOverride || process.env.CREWSWARM_GEMINI_CLI_MODEL || "";
+        if (model) args.push("-m", model);
         // Add workspace directory to allow file operations in projectDir (gemini uses --include-directories)
         if (projectDir) args.push("--include-directories", projectDir);
         return {
@@ -1013,7 +1050,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
       }
     case "opencode":
       {
-        let model = process.env.OPENCODE_MODEL || process.env.CREWSWARM_OPENCODE_MODEL || "";
+        let model = modelOverride || process.env.OPENCODE_MODEL || process.env.CREWSWARM_OPENCODE_MODEL || "";
         if (!model) {
           try {
             const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
@@ -1033,9 +1070,10 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
       }
     case "crew-cli": {
       const crewBin = path.join(__dirname, "..", "..", "crew-cli", "bin", "crew.js");
+      const model = modelOverride || process.env.CREWSWARM_CREW_CLI_MODEL || "";
       return {
         command: "node",
-        args: [crewBin, "chat", message],
+        args: [crewBin, "chat", message, ...(model ? ["--model", model] : [])],
         stdin: null,
       };
     }
@@ -1128,7 +1166,7 @@ export function runCodexCli(opts) {
 
 function handleCliChatLocally(req, res, body) {
   const message = String(body.message || "").trim();
-  const projectDir = path.resolve(body.projectDir || WORKSPACE_DIR);
+  const projectDir = resolveStudioProjectPath(body.projectDir, WORKSPACE_DIR);
   const projectId = body.projectId || DEFAULT_PROJECT_ID;
   const engine = body.engine || "";
 
@@ -1157,7 +1195,9 @@ function handleCliChatLocally(req, res, body) {
     metadata: { engine },
   });
 
-  sendSseHeaders(res);
+  if (!sendSseHeaders(res)) {
+    return;
+  }
 
   let clientClosed = false;
 
@@ -1206,7 +1246,7 @@ function handleCliChatLocally(req, res, body) {
 
 async function handleCliChatViaCrewLead(req, res, body) {
   const message = String(body.message || "").trim();
-  const projectDir = path.resolve(body.projectDir || WORKSPACE_DIR);
+  const projectDir = resolveStudioProjectPath(body.projectDir, WORKSPACE_DIR);
   const projectId = body.projectId || DEFAULT_PROJECT_ID;
   const sessionId = String(body.sessionId || "studio-cli");
   const engine = body.engine || "";
@@ -1250,7 +1290,9 @@ async function handleCliChatViaCrewLead(req, res, body) {
     metadata: { engine },
   });
 
-  sendSseHeaders(res);
+  if (!sendSseHeaders(res)) {
+    throw new Error("SSE response already started");
+  }
 
   let clientClosed = false;
   let sseBuffer = "";
@@ -1318,8 +1360,17 @@ async function handleCliChatViaCrewLead(req, res, body) {
 
 function handleCliChat(req, res, body) {
   handleCliChatViaCrewLead(req, res, body).catch((error) => {
-    console.warn(`[studio] crew-lead passthrough unavailable, falling back local: ${error.message}`);
-    handleCliChatLocally(req, res, body);
+    if (!res.headersSent && !res.writableEnded) {
+      console.warn(`[studio] crew-lead passthrough unavailable, falling back local: ${error.message}`);
+      handleCliChatLocally(req, res, body);
+      return;
+    }
+    console.warn(`[studio] crew-lead stream failed after response start: ${error.message}`);
+    if (!res.writableEnded) {
+      sendSseEvent(res, { type: "trace", text: `crew-lead stream interrupted: ${error.message}` });
+      sendSseEvent(res, { type: "done", exitCode: 1 });
+      res.end();
+    }
   });
 }
 
@@ -1418,13 +1469,25 @@ export function createOrUpdateProject(body) {
     return { status: 400, payload: { error: "outputDir is required" } };
   }
 
-  const outputDir = path.resolve(outputDirRaw);
+  const outputDir = resolveStudioProjectPath(outputDirRaw);
   fs.mkdirSync(outputDir, { recursive: true });
+  const roadmapFile = path.join(outputDir, "ROADMAP.md");
 
   const projects = readProjects();
   const existing = projects.find((project) => path.resolve(project.outputDir) === outputDir);
   const id = existing?.id || slugify(name) || `project-${Date.now()}`;
-  const project = { id, name, outputDir, description };
+  const project = {
+    ...(existing || {}),
+    id,
+    name,
+    outputDir,
+    description,
+    roadmapFile: existing?.roadmapFile || roadmapFile,
+    featuresDoc: existing?.featuresDoc || "",
+    tags: Array.isArray(existing?.tags) ? existing.tags : [],
+    created: existing?.created || new Date().toISOString(),
+    status: existing?.status || "active",
+  };
   const nextProjects = existing
     ? projects.map((entry) => (entry.id === existing.id ? project : entry))
     : [...projects, project];
@@ -1475,9 +1538,38 @@ export const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (parsedUrl.pathname === "/api/studio/active-project") {
+    if (req.method === "GET") {
+      const uiState = readUiState();
+      sendJson(res, 200, {
+        ok: true,
+        projectId: String(uiState.chatActiveProjectId || "general"),
+      });
+      return;
+    }
+    if (req.method === "POST") {
+      try {
+        const body = await readBody(req);
+        const normalizedProjectId =
+          body?.projectId && String(body.projectId).trim()
+            ? String(body.projectId).trim()
+            : "general";
+        const uiState = readUiState();
+        uiState.chatActiveProjectId = normalizedProjectId;
+        writeUiState(uiState);
+        sendJson(res, 200, { ok: true, projectId: normalizedProjectId });
+      } catch (error) {
+        sendJson(res, 400, { error: error.message });
+      }
+      return;
+    }
+  }
+
   if (parsedUrl.pathname === "/api/studio/files" && req.method === "GET") {
     const requestedDir = parsedUrl.searchParams.get("dir");
-    const scanDir = requestedDir ? path.resolve(requestedDir) : WORKSPACE_DIR;
+    const scanDir = requestedDir
+      ? resolveStudioProjectPath(requestedDir, WORKSPACE_DIR)
+      : WORKSPACE_DIR;
     if (!isWithinAllowedRoots(scanDir)) {
       sendJson(res, 403, { error: "path outside configured project roots" });
       return;
@@ -1489,7 +1581,7 @@ export const server = http.createServer(async (req, res) => {
 
   if (parsedUrl.pathname === "/api/studio/file-content" && req.method === "GET") {
     const filePath = parsedUrl.searchParams.get("path") || "";
-    const resolvedPath = path.resolve(filePath);
+    const resolvedPath = resolveStudioProjectPath(filePath, "");
     if (!filePath || !isWithinAllowedRoots(resolvedPath)) {
       sendJson(res, 400, { error: "invalid path" });
       return;
@@ -1507,7 +1599,7 @@ export const server = http.createServer(async (req, res) => {
   if (parsedUrl.pathname === "/api/studio/file-content" && req.method === "POST") {
     try {
       const body = await readBody(req);
-      const resolvedPath = path.resolve(String(body.path || ""));
+      const resolvedPath = resolveStudioProjectPath(String(body.path || ""), "");
       const content = typeof body.content === "string" ? body.content : "";
       if (!resolvedPath || !isWithinAllowedRoots(resolvedPath)) {
         sendJson(res, 400, { error: "invalid path" });

@@ -1,7 +1,7 @@
 /**
  * Models / Providers / Search-tools tab — extracted from app.js
  * Deps: getJSON, postJSON (core/api), showNotification (core/dom)
- * Inject: initModelsTab({ hideAllViews, setNavActive, loadAgents })
+ * Inject: initModelsTab({ hideAllViews, setNavActive, loadAgents: loadAgents_cfg })
  */
 
 import { getJSON, postJSON } from '../core/api.js';
@@ -356,6 +356,7 @@ export async function saveKey(providerId) {
     await postJSON('/api/providers/save', { providerId, apiKey: key });
     showNotification('Saved key for ' + providerId);
     loadProviders();
+    _loadAgents();
   } catch(e) { showNotification('Failed: ' + e.message, true); }
 }
 

@@ -2,7 +2,6 @@
   "id": "crew-cli",
   "label": "crew-cli",
   "description": "crewswarm's native CLI with intelligent routing, sandbox workflow, and cross-repo context. Full agent orchestration with safety gates, review loops, and persistent memory.",
-  "priority": 110,
   "_note": "crew-cli command integration updated (uses 'crew chat' as of March 2026)",
   "shouldUse": {
     "runtime": ["crew-cli", "crewcli"],
