@@ -167,3 +167,11 @@ tmp/
 
 # Demo recording scratch project
 demo-project/
+
+# Local scratch / one-off experiments
+/cli
+/test-repl-imports.mjs
+/chuck-security-audit.md
+/snowy-owl-sanctuary/
+/scripts/chat-stinki-pipeline.mjs
+/scripts/track-share-of-voice.mjs

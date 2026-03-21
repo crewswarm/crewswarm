@@ -1349,6 +1349,7 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 | `PM_USE_JUDGE` | `on` | Call crew-judge after each cycle to decide CONTINUE/SHIP/RESET. |
 | `PM_JUDGE_EVERY` | `5` | Run judge decision after every N items completed. |
 | `CREW_JUDGE_MODEL` | `groq/llama-3.3-70b-versatile` | Model for judge decisions (should be fast + cheap). |
+| `CREWSWARM_PIPELINE_ADVANCE_ON_QUALITY_FAIL` | `off` | If `1`/`true`, after dashboard/Swarm Chat pipeline quality-gate retries are exhausted, the pipeline **still advances** (legacy). Default: pipeline **stops** with `pipeline_failed` SSE + history entry. |
 
 ### Engine routing
 
@@ -1362,6 +1363,7 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 | `CREWSWARM_GEMINI_CLI_ENABLED` | `off` | Route agents through Gemini CLI. |
 | `CREWSWARM_GEMINI_CLI_MODEL` | — | Which Gemini model (e.g. `gemini-2.0-flash`). |
 | `CREW_CLAUDE_SKIP_PERMISSIONS` | `off` | ⚠️ **SECURITY RISK:** Bypass Claude CLI permission checks. Allows agents to execute arbitrary host commands via prompt injection. Only enable in sandboxed/trusted environments. |
+| `CREWSWARM_CURSOR_WAVES` | `off` | When `1`, multi-agent **pipeline** waves with no `projectDir` can route through **crew-orchestrator** + Cursor CLI. Pipelines tied to a dashboard project (`projectDir` set) **always** dispatch each agent directly so a Cursor CLI fallback cannot simulate subagents with plain text. |
 
 ### Background consciousness
 
