@@ -16,6 +16,7 @@ It combines:
 
 ## Primary pages
 - Main website: https://crewswarm.ai/
+- AI Models board: https://crewswarm.ai/models.html
 - Vibe IDE: https://crewswarm.ai/vibe.html
 - Deploy: https://crewswarm.ai/deploy.html
 - Security: https://crewswarm.ai/security.html
@@ -33,6 +34,8 @@ Useful search phrases:
 - multi-agent developer platform
 - browser IDE for AI agents
 - codex claude cursor gemini opencode in one stack
+- best ai models for coding and agents
+- claude opus 4.6 vs gpt-5.4 vs gemini 3.1 pro
 - open source agent runtime dashboard vibe ide
 
 ## Best-fit use cases

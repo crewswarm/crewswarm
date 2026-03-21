@@ -4,7 +4,7 @@ set -e
 echo "🚀 Deploying crewswarm website with new screenshots..."
 echo ""
 
-cd /Users/jeffhobbs/Desktop/crewswarm/website
+cd /Users/jeffhobbs/Desktop/CrewSwarm/website
 
 # Check auth
 if ! flyctl auth whoami &>/dev/null; then
