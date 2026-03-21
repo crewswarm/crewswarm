@@ -2500,9 +2500,83 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    function getEmbeddedWavesConfig() {
+      return {
+        _note:
+          "Planning pipeline wave configuration. Edit via dashboard Waves tab.",
+        waves: [
+          {
+            id: 1,
+            name: "Scope + Research",
+            description: "Define project scope and research context",
+            agents: [
+              {
+                id: "crew-pm",
+                task: "[SCOPE] Project: {{projectName}} at {{projectPath}}. User brief: {{userBrief}}. Use @@SKILL problem-statement {} to run a problem framing canvas, then write an initial scope doc covering: who the user is, what problem is solved, proposed features/sections, rough IA, key decisions. @@WRITE_FILE {{projectPath}}/scope-draft.md",
+              },
+              {
+                id: "crew-copywriter",
+                task: "[RESEARCH] Project: {{projectName}} at {{projectPath}}. User request: {{userRequest}}. Research the topic, brainstorm content angles, develop initial content strategy and section ideas. Use @@WEB_SEARCH if helpful. Reply with your findings and recommendations.",
+              },
+              {
+                id: "crew-main",
+                task: "[RESEARCH] Project: {{projectName}} at {{projectPath}}. User request: {{userRequest}}. Explore similar projects/pages, identify best practices and patterns. Reply with competitive landscape and recommendations.",
+              },
+            ],
+          },
+          {
+            id: 2,
+            name: "Technical Consultation",
+            description:
+              "Specialists provide architecture, design, security input",
+            agents: [
+              {
+                id: "crew-architect",
+                task: "[CONSULT] Review the scope from wave 1. Provide: system architecture (mermaid diagram if applicable), tech stack with versions, file/directory structure, data models/schema, API contracts, deployment strategy. Be specific and technical.",
+              },
+              {
+                id: "crew-coder-front",
+                task: "[CONSULT] Review the scope and content research from wave 1. Provide: component breakdown, file structure, tech stack, responsive strategy for this project.",
+              },
+              {
+                id: "crew-frontend",
+                task: "[CONSULT] Review the scope from wave 1. Provide: design system proposal (color tokens, typography, spacing, animation strategy, theme approach) for this project.",
+              },
+              {
+                id: "crew-qa",
+                task: "[CONSULT] Review the scope from wave 1. Provide: test strategy, acceptance criteria per feature, performance budgets, a11y requirements.",
+              },
+              {
+                id: "crew-security",
+                task: "[CONSULT] Review the scope from wave 1. Provide: security considerations (CSP, CORS, dependencies, auth if needed).",
+              },
+            ],
+          },
+          {
+            id: 3,
+            name: "PM Compiles",
+            description: "PM synthesizes all input into planning documents",
+            agents: [
+              {
+                id: "crew-pm",
+                task: "Compile ALL specialist input from previous waves. Use @@SKILL roadmap-planning {} to structure the output. Write THREE files: (1) {{projectPath}}/PDD.md (product design doc: persona, problem, success metrics, constraints, non-goals, technical decisions), (2) {{projectPath}}/TECH-SPEC.md (technical specification: architecture diagram from crew-architect, tech stack, data models, API contracts, file structure, deployment, security), (3) {{projectPath}}/ROADMAP.md (phased tasks with agents, file paths, acceptance criteria). @@WRITE_FILE all three files. Do NOT dispatch build tasks — present for user approval.",
+              },
+            ],
+          },
+        ],
+        templates: {
+          default: {
+            name: "Default Planning Pipeline",
+            description: "Standard 3-wave planning for general projects",
+            waves: [1, 2, 3],
+          },
+        },
+      };
+    }
+
     // ── Waves Configuration APIs ──────────────────────────────────────────
     if (url.pathname === "/api/waves/config" && req.method === "GET") {
-      const { existsSync } = await import("node:fs");
+      const { existsSync, readFileSync } = await import("node:fs");
       const { readFile: rf } = await import("node:fs/promises");
       const wavesConfigPath = path.join(
         CREWSWARM_DIR,
@@ -2518,7 +2592,22 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const config = JSON.parse(await rf(wavesConfigPath, "utf8"));
+        let raw = "";
+        try {
+          raw = await rf(wavesConfigPath, "utf8");
+        } catch (readErr) {
+          try {
+            raw = await rf(wavesConfigPath, "utf8");
+          } catch {
+            try {
+              raw = readFileSync(wavesConfigPath, "utf8");
+            } catch {
+              raw = JSON.stringify(getEmbeddedWavesConfig());
+            }
+          }
+          console.warn("[dashboard] Waves config read failed, used fallback:", readErr?.message || readErr);
+        }
+        const config = JSON.parse(raw);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(config));
       } catch (e) {
@@ -2570,81 +2659,9 @@ const server = http.createServer(async (req, res) => {
           const defaultConfig = await rf(wavesConfigBackup, "utf8");
           await wf(wavesConfigPath, defaultConfig, "utf8");
         } else {
-          // Restore from embedded default (same as current waves-config.json)
-          const defaultWaves = {
-            _note:
-              "Planning pipeline wave configuration. Edit via dashboard Waves tab.",
-            waves: [
-              {
-                id: 1,
-                name: "Scope + Research",
-                description: "Define project scope and research context",
-                agents: [
-                  {
-                    id: "crew-pm",
-                    task: "[SCOPE] Project: {{projectName}} at {{projectPath}}. User brief: {{userBrief}}. Use @@SKILL problem-statement {} to run a problem framing canvas, then write an initial scope doc covering: who the user is, what problem is solved, proposed features/sections, rough IA, key decisions. @@WRITE_FILE {{projectPath}}/scope-draft.md",
-                  },
-                  {
-                    id: "crew-copywriter",
-                    task: "[RESEARCH] Project: {{projectName}} at {{projectPath}}. User request: {{userRequest}}. Research the topic, brainstorm content angles, develop initial content strategy and section ideas. Use @@WEB_SEARCH if helpful. Reply with your findings and recommendations.",
-                  },
-                  {
-                    id: "crew-main",
-                    task: "[RESEARCH] Project: {{projectName}} at {{projectPath}}. User request: {{userRequest}}. Explore similar projects/pages, identify best practices and patterns. Reply with competitive landscape and recommendations.",
-                  },
-                ],
-              },
-              {
-                id: 2,
-                name: "Technical Consultation",
-                description:
-                  "Specialists provide architecture, design, security input",
-                agents: [
-                  {
-                    id: "crew-architect",
-                    task: "[CONSULT] Review the scope from wave 1. Provide: system architecture (mermaid diagram if applicable), tech stack with versions, file/directory structure, data models/schema, API contracts, deployment strategy. Be specific and technical.",
-                  },
-                  {
-                    id: "crew-coder-front",
-                    task: "[CONSULT] Review the scope and content research from wave 1. Provide: component breakdown, file structure, tech stack, responsive strategy for this project.",
-                  },
-                  {
-                    id: "crew-frontend",
-                    task: "[CONSULT] Review the scope from wave 1. Provide: design system proposal (color tokens, typography, spacing, animation strategy, theme approach) for this project.",
-                  },
-                  {
-                    id: "crew-qa",
-                    task: "[CONSULT] Review the scope from wave 1. Provide: test strategy, acceptance criteria per feature, performance budgets, a11y requirements.",
-                  },
-                  {
-                    id: "crew-security",
-                    task: "[CONSULT] Review the scope from wave 1. Provide: security considerations (CSP, CORS, dependencies, auth if needed).",
-                  },
-                ],
-              },
-              {
-                id: 3,
-                name: "PM Compiles",
-                description: "PM synthesizes all input into planning documents",
-                agents: [
-                  {
-                    id: "crew-pm",
-                    task: "Compile ALL specialist input from previous waves. Use @@SKILL roadmap-planning {} to structure the output. Write THREE files: (1) {{projectPath}}/PDD.md (product design doc: persona, problem, success metrics, constraints, non-goals, technical decisions), (2) {{projectPath}}/TECH-SPEC.md (technical specification: architecture diagram from crew-architect, tech stack, data models, API contracts, file structure, deployment, security), (3) {{projectPath}}/ROADMAP.md (phased tasks with agents, file paths, acceptance criteria). @@WRITE_FILE all three files. Do NOT dispatch build tasks — present for user approval.",
-                  },
-                ],
-              },
-            ],
-            templates: {
-              default: {
-                name: "Default Planning Pipeline",
-                description: "Standard 3-wave planning for general projects",
-                waves: [1, 2, 3],
-              },
-            },
-          };
           await wf(
             wavesConfigPath,
-            JSON.stringify(defaultWaves, null, 2),
+            JSON.stringify(getEmbeddedWavesConfig(), null, 2),
             "utf8",
           );
         }
