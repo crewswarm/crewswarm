@@ -60,6 +60,9 @@ export interface L3Result {
     escalationNeeded: boolean;
     escalationReason?: string;
     toolsUsed?: string[];
+    failedToolCalls?: number;
+    turns?: number;
+    stopReason?: string;
   }>;
   totalCost: number;
   executionTimeMs: number;
@@ -298,6 +301,54 @@ export class UnifiedPipeline {
     };
   }
 
+  private countFailedToolCalls(history: Array<{ tool: string; params: Record<string, any>; error?: string }> = []): number {
+    return history.filter(turn => Boolean(turn?.error)).length;
+  }
+
+  private hasRepeatedFailedAction(history: Array<{ tool: string; params: Record<string, any>; error?: string }> = []): boolean {
+    const failures = history
+      .filter(turn => Boolean(turn?.error))
+      .map(turn => `${String(turn.tool || '')}:${JSON.stringify(turn.params || {})}`);
+    if (failures.length < 2) return false;
+    const last = failures[failures.length - 1];
+    const prev = failures[failures.length - 2];
+    return last === prev;
+  }
+
+  private containsLegacyFileCommands(text: string): boolean {
+    const value = String(text || '');
+    return value.includes('@@WRITE_FILE')
+      || value.includes('@@MKDIR')
+      || /(^|\n)\s*FILE:\s+/im.test(value)
+      || /(^|\n)\s*write:\s+/im.test(value);
+  }
+
+  private shouldParseLegacyCommands(result: { output: string; filesChanged?: string[] }): boolean {
+    return (!Array.isArray(result.filesChanged) || result.filesChanged.length === 0)
+      && this.containsLegacyFileCommands(result.output);
+  }
+
+  private buildExecutionAuditContext(executionResults?: L3Result): string {
+    if (!executionResults || !Array.isArray(executionResults.results) || executionResults.results.length === 0) {
+      return 'No execution metadata available.';
+    }
+    return executionResults.results.map(result => {
+      const lines = [
+        `Unit: ${result.workUnitId}`,
+        `Persona: ${result.persona}`,
+        `Files changed: ${result.filesChanged.length > 0 ? result.filesChanged.join(', ') : '(none reported)'}`,
+        `Verification passed: ${result.verificationPassed ? 'yes' : 'no'}`,
+        `Verification evidence: ${result.verification.length > 0 ? result.verification.join(' | ') : '(none)'}`,
+        `Escalation needed: ${result.escalationNeeded ? 'yes' : 'no'}`,
+      ];
+      if (result.escalationReason) lines.push(`Escalation reason: ${result.escalationReason}`);
+      if (typeof result.failedToolCalls === 'number') lines.push(`Failed tool calls: ${result.failedToolCalls}`);
+      if (typeof result.turns === 'number') lines.push(`Turns: ${result.turns}`);
+      if (result.stopReason) lines.push(`Stop reason: ${result.stopReason}`);
+      return lines.join('\n');
+    }).join('\n\n');
+  }
+
   private buildWorkerExecutionResult(
     task: WorkerTaskEnvelope,
     parsed: { output: string; validation?: string[] },
@@ -312,6 +363,8 @@ export class UnifiedPipeline {
     const history = Array.isArray(workerResult.history) ? workerResult.history : [];
     const filesChanged = this.extractFilesChanged(history);
     const verificationState = this.collectVerificationSignals(history, parsed, task);
+    const failedToolCalls = this.countFailedToolCalls(history);
+    const repeatedFailedAction = this.hasRepeatedFailedAction(history);
 
     let escalationNeeded = verificationState.escalationNeeded || workerResult.success === false;
     let escalationReason = verificationState.escalationReason;
@@ -339,6 +392,15 @@ export class UnifiedPipeline {
     } else if (filesChanged.length > task.maxFilesTouched) {
       escalationNeeded = true;
       escalationReason = `Worker touched ${filesChanged.length} files but task budget was ${task.maxFilesTouched}.`;
+    } else if (task.requiredCapabilities.includes('file-write') && filesChanged.length === 0 && !this.containsLegacyFileCommands(parsed.output)) {
+      escalationNeeded = true;
+      escalationReason = 'Worker completed without producing any file changes for a file-write task.';
+    } else if (failedToolCalls >= 2 && repeatedFailedAction) {
+      escalationNeeded = true;
+      escalationReason = 'Worker repeated the same failing tool action multiple times.';
+    } else if (failedToolCalls >= 3) {
+      escalationNeeded = true;
+      escalationReason = 'Worker accumulated too many failed tool calls.';
     }
 
     return {
@@ -351,7 +413,10 @@ export class UnifiedPipeline {
       verificationPassed: verificationState.verificationPassed,
       escalationNeeded,
       escalationReason,
-      toolsUsed: workerResult.toolsUsed || []
+      toolsUsed: workerResult.toolsUsed || [],
+      failedToolCalls,
+      turns: workerResult.turns,
+      stopReason: workerResult.stopReason
     };
   }
 
@@ -505,6 +570,7 @@ If output has blockers, set approved=false.`,
   private async runQaFixerLoop(
     response: string,
     traceId: string,
+    executionResults?: L3Result,
     sessionId?: string
   ): Promise<{
     response: string;
@@ -518,9 +584,12 @@ If output has blockers, set approved=false.`,
     let approved = false;
     let lastSummary = '';
     const rounds = this.qaMaxRounds();
+    const qaInput = executionResults
+      ? `${response}\n\nExecution metadata:\n${this.buildExecutionAuditContext(executionResults)}`
+      : response;
 
     for (let round = 1; round <= rounds; round++) {
-      const qa = await this.qaAuditResponse(working, traceId, round, sessionId);
+      const qa = await this.qaAuditResponse(round === 1 ? qaInput : working, traceId, round, sessionId);
       addedCost += qa.cost;
       lastSummary = qa.summary;
       if (qa.approved) {
@@ -831,7 +900,7 @@ If output has blockers, set approved=false.`,
         
         // Parse and apply file commands from the output
         const { parseDirectFileCommands } = await import('../cli/file-commands.js');
-        const fileCommands = parseDirectFileCommands(response);
+        const fileCommands = this.shouldParseLegacyCommands(result) ? parseDirectFileCommands(response) : [];
         if (fileCommands.length > 0 && this.sandbox) {
           await this.sandbox.load(); // Ensure sandbox is loaded
           
@@ -878,7 +947,7 @@ If output has blockers, set approved=false.`,
           
           // Parse and apply file commands from the output
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
-          const fileCommands = parseDirectFileCommands(response);
+          const fileCommands = this.shouldParseLegacyCommands(result) ? parseDirectFileCommands(response) : [];
           if (fileCommands.length > 0 && this.sandbox) {
             await this.sandbox.load(); // Ensure sandbox is loaded
             
@@ -923,6 +992,7 @@ If output has blockers, set approved=false.`,
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
           const allFileCommands: any[] = [];
           for (const result of executionResults.results) {
+            if (!this.shouldParseLegacyCommands(result)) continue;
             const commands = parseDirectFileCommands(result.output);
             allFileCommands.push(...commands);
           }
@@ -952,7 +1022,7 @@ If output has blockers, set approved=false.`,
 
       if (plan.decision !== 'direct-answer' && this.qaLoopEnabled()) {
         executionPath.push('l3-qa-gate');
-        const qaLoop = await this.runQaFixerLoop(response, traceId, sessionId);
+        const qaLoop = await this.runQaFixerLoop(response, traceId, executionResults, sessionId);
         response = qaLoop.response;
         totalCost += qaLoop.addedCost;
         qaRounds = qaLoop.rounds;
@@ -1623,9 +1693,15 @@ Return ONLY valid JSON:
    * Synthesize parallel results into coherent response
    */
   private synthesizeResults(results: L3Result): string {
-    const sections = results.results.map(r => 
-      `### ${r.persona} (${r.workUnitId})\n\n${r.output}`
-    );
+    const sections = results.results.map(r => {
+      const metadata = [
+        `Files: ${r.filesChanged.length > 0 ? r.filesChanged.join(', ') : '(none reported)'}`,
+        `Verification: ${r.verificationPassed ? 'passed' : 'not confirmed'}`,
+        ...(r.verification.length > 0 ? [`Evidence: ${r.verification.join(' | ')}`] : []),
+        ...(r.escalationNeeded ? [`Escalation: ${r.escalationReason || 'required'}`] : [])
+      ].join('\n');
+      return `### ${r.persona} (${r.workUnitId})\n\n${metadata}\n\n${r.output}`;
+    });
 
     return sections.join('\n\n---\n\n');
   }
