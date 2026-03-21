@@ -405,7 +405,17 @@ export class UnifiedPipeline {
     if (paths.length === 0) return false;
 
     if (executionResults?.results?.length) {
-      if (executionResults.results.some(result => result.escalationNeeded)) return false;
+      const hasBlockingEscalation = executionResults.results.some(result => {
+        if (!result.escalationNeeded) return false;
+        const reason = String(result.escalationReason || '').toLowerCase();
+        return reason.includes('outside allowed scope')
+          || reason.includes('touched')
+          || reason.includes('too many failed tool calls')
+          || reason.includes('repeated the same failing tool action')
+          || reason.includes('did not reach a successful completion state')
+          || reason.includes('without producing any file changes');
+      });
+      if (hasBlockingEscalation) return false;
       if (executionResults.results.some(result => result.verificationPassed)) return true;
     }
 
