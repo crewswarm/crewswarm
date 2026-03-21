@@ -36,6 +36,13 @@ export function validateWorkGraph(v: any): ValidationResult {
     if (!String(unit.requiredPersona || '').trim()) errors.push('unit.requiredPersona missing');
     if (!Array.isArray(unit.dependencies)) errors.push('unit.dependencies must be array');
     if (!Array.isArray(unit.requiredCapabilities)) errors.push('unit.requiredCapabilities must be array');
+    if (!Array.isArray(unit.sourceRefs) || unit.sourceRefs.length === 0) errors.push(`unit.sourceRefs missing for ${String(unit.id || 'unknown')}`);
+    if (!Array.isArray(unit.allowedPaths)) errors.push(`unit.allowedPaths must be array for ${String(unit.id || 'unknown')}`);
+    if (!Array.isArray(unit.verification) || unit.verification.length === 0) errors.push(`unit.verification missing for ${String(unit.id || 'unknown')}`);
+    if (!Array.isArray(unit.escalationHints) || unit.escalationHints.length === 0) errors.push(`unit.escalationHints missing for ${String(unit.id || 'unknown')}`);
+    if (typeof unit.maxFilesTouched !== 'number' || !Number.isFinite(unit.maxFilesTouched) || unit.maxFilesTouched < 1) {
+      errors.push(`unit.maxFilesTouched invalid for ${String(unit.id || 'unknown')}`);
+    }
   }
   return result(errors);
 }
@@ -50,4 +57,3 @@ export function validatePolicyValidation(v: any): ValidationResult {
   if (typeof v.estimatedCost !== 'number') errors.push('estimatedCost must be number');
   return result(errors);
 }
-

@@ -19,6 +19,10 @@ export interface WorkUnit {
   estimatedComplexity: 'low' | 'medium' | 'high';
   requiredCapabilities: string[];
   sourceRefs?: string[];
+  allowedPaths?: string[];
+  verification?: string[];
+  escalationHints?: string[];
+  maxFilesTouched?: number;
 }
 
 export interface PlanningArtifacts {
@@ -546,7 +550,11 @@ ${planningArtifacts.goldenBenchmarks}`,
       "dependencies": ["id1", "id2"],
       "estimatedComplexity": "low|medium|high",
       "requiredCapabilities": ["code-generation", "file-write", "code-reading"],
-      "sourceRefs": ["PDD.md#section", "ROADMAP.md#milestone", "ARCH.md#decision", "CONTRACT-TESTS.md#case", "DOD.md#checklist"]
+      "sourceRefs": ["PDD.md#section", "ROADMAP.md#milestone", "ARCH.md#decision", "CONTRACT-TESTS.md#case", "DOD.md#checklist"],
+      "allowedPaths": ["src/auth/jwt.ts", "test/auth/jwt.test.ts"],
+      "verification": ["Run npm test -- jwt", "Confirm src/auth/jwt.ts was updated"],
+      "escalationHints": ["Escalate if auth logic requires changes outside src/auth", "Escalate after two failed verification attempts"],
+      "maxFilesTouched": 2
     }
   ],
   "totalComplexity": 1-10,
@@ -559,6 +567,11 @@ Rules:
 - requiredCapabilities can be: ["code-generation", "file-write", "code-reading"] only. NO "filesystem" or other non-existent capabilities.
 - Every unit must include at least one sourceRefs entry.
 - sourceRefs must reference one or more of: PDD.md, ROADMAP.md, ARCH.md, CONTRACT-TESTS.md, DOD.md, SCAFFOLD.md, GOLDEN-BENCHMARKS.md.
+- Every unit must include explicit allowedPaths. Use the smallest concrete file list possible.
+- Every unit must include explicit verification steps. Verification must mention exact commands or exact file-state checks.
+- Every unit must include escalationHints. Tell the worker when to stop and escalate.
+- maxFilesTouched must be 1-3 for normal tasks. Only use a higher number if absolutely necessary.
+- Keep each unit tightly scoped to one artifact or one small cluster of files. Do not create broad "entire project" tasks.
 - DO NOT wrap in markdown code fences (NO \`\`\`json)
 - Start response with { and end with }
 - Return raw JSON only`,
@@ -588,11 +601,23 @@ Rules:
     const workGraph = await this.parseStructuredJson<WorkGraph>(
       rawOutput,
       'Decomposer',
-      '{"units":[{"id":"unit-1","description":"...","requiredPersona":"crew-coder","dependencies":[],"estimatedComplexity":"low","requiredCapabilities":["coding"]}],"totalComplexity":1,"requiredPersonas":["crew-coder"],"estimatedCost":0.01}'
+      '{"units":[{"id":"unit-1","description":"Update src/example.ts","requiredPersona":"executor-code","dependencies":[],"estimatedComplexity":"low","requiredCapabilities":["code-generation","file-write"],"sourceRefs":["ROADMAP.md#item"],"allowedPaths":["src/example.ts"],"verification":["Confirm src/example.ts changed"],"escalationHints":["Escalate if another file must be edited"],"maxFilesTouched":1}],"totalComplexity":1,"requiredPersonas":["executor-code"],"estimatedCost":0.01}'
     );
     for (const unit of (workGraph.units || [])) {
       if (!Array.isArray(unit.sourceRefs) || unit.sourceRefs.length === 0) {
         unit.sourceRefs = ['PDD.md#overview', 'ROADMAP.md#milestones', 'ARCH.md#architecture', 'CONTRACT-TESTS.md#cases', 'DOD.md#checklist'];
+      }
+      if (!Array.isArray(unit.allowedPaths)) {
+        unit.allowedPaths = [];
+      }
+      if (!Array.isArray(unit.verification) || unit.verification.length === 0) {
+        unit.verification = ['Report the exact files changed.'];
+      }
+      if (!Array.isArray(unit.escalationHints) || unit.escalationHints.length === 0) {
+        unit.escalationHints = ['Escalate after two failed verification attempts.'];
+      }
+      if (typeof unit.maxFilesTouched !== 'number' || !Number.isFinite(unit.maxFilesTouched) || unit.maxFilesTouched < 1) {
+        unit.maxFilesTouched = unit.allowedPaths.length > 0 ? unit.allowedPaths.length : 1;
       }
     }
     
@@ -700,17 +725,25 @@ REJECT: Remote agent personas (crew-coder, crew-qa, etc.) - not available in sta
       dependencies: [],
       estimatedComplexity: 'low',
       requiredCapabilities: ['scaffolding', 'code-generation'],
-      sourceRefs: ['SCAFFOLD.md#structure', 'ARCH.md#module-structure']
+      sourceRefs: ['SCAFFOLD.md#structure', 'ARCH.md#module-structure'],
+      allowedPaths: ['.'],
+      verification: ['Confirm the scaffold files required by SCAFFOLD.md now exist.'],
+      escalationHints: ['Escalate if the scaffold requires changes outside the project workspace.'],
+      maxFilesTouched: 3
     });
 
     addUnit({
       id: 'contract-tests-from-pdd',
       description: 'Generate contract tests from PDD acceptance criteria and map each test to acceptance IDs before feature implementation.',
-      requiredPersona: 'specialist-qa',
+      requiredPersona: 'executor-code',
       dependencies: ['scaffold-bootstrap'],
       estimatedComplexity: 'medium',
-      requiredCapabilities: ['testing', 'validation'],
-      sourceRefs: ['PDD.md#success-criteria', 'CONTRACT-TESTS.md#cases']
+      requiredCapabilities: ['code-generation', 'file-write', 'code-reading'],
+      sourceRefs: ['PDD.md#success-criteria', 'CONTRACT-TESTS.md#cases'],
+      allowedPaths: ['test/', 'tests/', '__tests__/'],
+      verification: ['Confirm contract tests were created from CONTRACT-TESTS.md cases.'],
+      escalationHints: ['Escalate if the correct test directory cannot be determined.'],
+      maxFilesTouched: 3
     });
 
     for (const unit of units) {
@@ -728,21 +761,29 @@ REJECT: Remote agent personas (crew-coder, crew-qa, etc.) - not available in sta
     addUnit({
       id: 'gate-definition-of-done',
       description: 'Definition of done gate: verify completion criteria from DOD.md are met and return explicit pass/fail with failed checks.',
-      requiredPersona: 'specialist-qa',
+      requiredPersona: 'executor-code',
       dependencies: implUnitIds,
       estimatedComplexity: 'low',
-      requiredCapabilities: ['validation', 'auditing'],
-      sourceRefs: ['DOD.md#checklist', 'PDD.md#success-criteria']
+      requiredCapabilities: ['code-reading'],
+      sourceRefs: ['DOD.md#checklist', 'PDD.md#success-criteria'],
+      allowedPaths: ['.'],
+      verification: ['Return explicit pass/fail against DOD.md and list failed checks if any.'],
+      escalationHints: ['Escalate if the definition-of-done checks require missing artifacts.'],
+      maxFilesTouched: 1
     });
 
     addUnit({
       id: 'gate-golden-benchmark-suite',
       description: 'Run golden benchmark suite for major changes using GOLDEN-BENCHMARKS.md and report command outputs, timing, and pass/fail.',
-      requiredPersona: 'specialist-qa',
+      requiredPersona: 'executor-code',
       dependencies: ['gate-definition-of-done'],
       estimatedComplexity: 'medium',
-      requiredCapabilities: ['testing', 'validation'],
-      sourceRefs: ['GOLDEN-BENCHMARKS.md#suite', 'ROADMAP.md#critical-path']
+      requiredCapabilities: ['code-reading'],
+      sourceRefs: ['GOLDEN-BENCHMARKS.md#suite', 'ROADMAP.md#critical-path'],
+      allowedPaths: ['.'],
+      verification: ['Report the benchmark command, timing, and pass/fail outcome.'],
+      escalationHints: ['Escalate if the benchmark command is missing or ambiguous.'],
+      maxFilesTouched: 1
     });
 
     for (const unit of units) {

@@ -16,7 +16,7 @@ import { randomUUID } from 'crypto';
 import { ContextPackManager } from './context-pack.js';
 import { getPipelineMemory } from './agent-memory.js';
 import { appendFile, mkdir } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { resolve, join, normalize } from 'node:path';
 import { parseJsonObject, parseJsonObjectWithRepair } from '../utils/structured-json.js';
 import { validatePolicyValidation, validateRouterDecision, validateWorkGraph } from '../utils/json-schemas.js';
 import { recordJsonParseMetric } from '../metrics/json-parse.js';
@@ -130,9 +130,13 @@ export class UnifiedPipeline {
   private normalizeDecision(raw: string): 'direct-answer' | 'execute-local' | 'execute-parallel' {
     const value = String(raw || '').trim().toLowerCase();
     if (value === 'direct-answer' || value === 'chat') return 'direct-answer';
-    if (value === 'execute-local' || value === 'code') return 'execute-local';
+    if (value === 'execute-local' || value === 'code') {
+      return process.env.CREW_ALLOW_EXECUTE_LOCAL === 'true'
+        ? 'execute-local'
+        : 'execute-parallel';
+    }
     if (value === 'execute-parallel' || value === 'dispatch') return 'execute-parallel';
-    return 'execute-local';
+    return 'execute-parallel';
   }
 
   private getReasoningModel(): string | undefined {
@@ -317,6 +321,24 @@ export class UnifiedPipeline {
     } else if (!escalationReason && workerResult.stopReason && !String(workerResult.stopReason).toLowerCase().includes('complete')) {
       escalationNeeded = true;
       escalationReason = workerResult.stopReason;
+    }
+
+    const normalizedAllowedPaths = task.allowedPaths.map(path => normalize(String(path)).replace(/\\/g, '/'));
+    const outOfScopeFiles = filesChanged.filter(file => {
+      const normalizedFile = normalize(String(file)).replace(/\\/g, '/');
+      if (normalizedAllowedPaths.length === 0 || normalizedAllowedPaths.includes('.')) return false;
+      return !normalizedAllowedPaths.some(allowed => (
+        normalizedFile === allowed ||
+        normalizedFile.startsWith(`${allowed}/`) ||
+        (allowed.endsWith('/') && normalizedFile.startsWith(allowed))
+      ));
+    });
+    if (outOfScopeFiles.length > 0) {
+      escalationNeeded = true;
+      escalationReason = `Worker changed files outside allowed scope: ${outOfScopeFiles.join(', ')}`;
+    } else if (filesChanged.length > task.maxFilesTouched) {
+      escalationNeeded = true;
+      escalationReason = `Worker touched ${filesChanged.length} files but task budget was ${task.maxFilesTouched}.`;
     }
 
     return {

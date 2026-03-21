@@ -11,6 +11,7 @@ export interface WorkerTaskEnvelope {
   sourceRefs: string[];
   estimatedComplexity: 'low' | 'medium' | 'high';
   escalationHints: string[];
+  maxFilesTouched: number;
 }
 
 export interface WorkerTaskValidation {
@@ -64,18 +65,29 @@ function defaultEscalationHints(unit: WorkUnit, allowedPaths: string[]): string[
 }
 
 export function createWorkerTaskEnvelope(unit: WorkUnit): WorkerTaskEnvelope {
-  const allowedPaths = extractPaths(unit.description || '');
+  const allowedPaths = Array.isArray(unit.allowedPaths) && unit.allowedPaths.length > 0
+    ? unique(unit.allowedPaths.map(String))
+    : extractPaths(unit.description || '');
+  const verification = Array.isArray(unit.verification) && unit.verification.length > 0
+    ? unique(unit.verification.map(String))
+    : defaultVerification(unit, allowedPaths);
+  const escalationHints = Array.isArray(unit.escalationHints) && unit.escalationHints.length > 0
+    ? unique(unit.escalationHints.map(String))
+    : defaultEscalationHints(unit, allowedPaths);
   return {
     id: unit.id,
     goal: unit.description,
     persona: unit.requiredPersona,
     dependencies: Array.isArray(unit.dependencies) ? unit.dependencies : [],
     allowedPaths,
-    verification: defaultVerification(unit, allowedPaths),
+    verification,
     requiredCapabilities: Array.isArray(unit.requiredCapabilities) ? unit.requiredCapabilities : [],
     sourceRefs: Array.isArray(unit.sourceRefs) ? unit.sourceRefs.map(String) : [],
     estimatedComplexity: unit.estimatedComplexity || 'medium',
-    escalationHints: defaultEscalationHints(unit, allowedPaths)
+    escalationHints,
+    maxFilesTouched: typeof unit.maxFilesTouched === 'number' && Number.isFinite(unit.maxFilesTouched) && unit.maxFilesTouched > 0
+      ? Math.floor(unit.maxFilesTouched)
+      : Math.max(1, allowedPaths.length || 1)
   };
 }
 
@@ -90,6 +102,9 @@ export function validateWorkerTaskEnvelope(task: WorkerTaskEnvelope): WorkerTask
   if (!Array.isArray(task.verification) || task.verification.length === 0) errors.push('task.verification missing');
   if (!Array.isArray(task.requiredCapabilities)) errors.push('task.requiredCapabilities must be array');
   if (!Array.isArray(task.sourceRefs) || task.sourceRefs.length === 0) errors.push('task.sourceRefs missing');
+  if (typeof task.maxFilesTouched !== 'number' || !Number.isFinite(task.maxFilesTouched) || task.maxFilesTouched < 1) {
+    errors.push('task.maxFilesTouched invalid');
+  }
   if (!['low', 'medium', 'high'].includes(String(task.estimatedComplexity || ''))) {
     errors.push('task.estimatedComplexity invalid');
   }
@@ -104,6 +119,9 @@ export function validateWorkerTaskEnvelope(task: WorkerTaskEnvelope): WorkerTask
   }
   if (task.allowedPaths.length > 3) {
     warnings.push('task.allowedPaths spans more than 3 paths; consider decomposing further');
+  }
+  if (task.maxFilesTouched > 3 && task.estimatedComplexity !== 'high') {
+    warnings.push('task.maxFilesTouched > 3 for non-high-complexity task');
   }
   if (task.verification.length > 5) {
     warnings.push('task.verification has many checks; consider splitting the task');
@@ -126,6 +144,7 @@ export function createAdHocWorkerTask(input: {
   sourceRefs?: string[];
   estimatedComplexity?: 'low' | 'medium' | 'high';
   requiredCapabilities?: string[];
+  maxFilesTouched?: number;
 }): WorkerTaskEnvelope {
   const goal = String(input.goal || '').trim();
   const allowedPaths = extractPaths(goal);
@@ -152,6 +171,9 @@ export function createAdHocWorkerTask(input: {
     escalationHints: [
       ...(allowedPaths.length === 0 ? ['Escalate if the file scope is ambiguous.'] : []),
       'Escalate after two failed attempts on the same verification step.'
-    ]
+    ],
+    maxFilesTouched: typeof input.maxFilesTouched === 'number' && Number.isFinite(input.maxFilesTouched) && input.maxFilesTouched > 0
+      ? Math.floor(input.maxFilesTouched)
+      : Math.max(1, allowedPaths.length || 1)
   };
 }
