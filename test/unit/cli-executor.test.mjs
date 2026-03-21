@@ -62,6 +62,7 @@ test("buildCLICommand uses crew chat json mode for crew-cli", () => {
     "chat",
     "inspect this",
     "--json",
+    "--apply",
     "--model",
     "groq/llama-3.3-70b-versatile",
     "--project",

@@ -915,6 +915,18 @@ class JITContextTracker {
   private discoveredFiles = new Set<string>();
   private contextCache: string = '';
 
+  /** Hydrate from a prior session's discovered files */
+  static fromPrior(files: string[]): JITContextTracker {
+    const tracker = new JITContextTracker();
+    for (const f of files) tracker.discoveredFiles.add(f);
+    return tracker;
+  }
+
+  /** Serialize discovered files for session persistence */
+  toFileList(): string[] {
+    return Array.from(this.discoveredFiles);
+  }
+
   /** Track a file that was read/written/grepped during tool execution */
   trackFile(filePath: string) {
     if (filePath && !this.discoveredFiles.has(filePath)) {
@@ -1090,6 +1102,7 @@ export interface AgenticExecutorResult {
   providerId?: string;
   modelUsed?: string;
   filesDiscovered?: number;
+  discoveredFiles?: string[];
   history?: TurnResult[];
   stopReason?: string;
 }
@@ -1107,6 +1120,7 @@ export async function runAgenticWorker(
     tier?: 'fast' | 'standard' | 'heavy';
     images?: ImageAttachment[];
     onToolCall?: (name: string, params: Record<string, any>) => void;
+    priorDiscoveredFiles?: string[];
   } = {}
 ): Promise<AgenticExecutorResult> {
   const adapter = new GeminiToolAdapter(sandbox);
@@ -1117,7 +1131,9 @@ export async function runAgenticWorker(
   const projectDir = options.projectDir || (sandbox as any).baseDir || process.cwd();
   const verbose = options.verbose ?? Boolean(process.env.CREW_DEBUG);
   const stream = options.stream ?? !process.env.CREW_NO_STREAM; // Stream by default
-  const jit = new JITContextTracker();
+  const jit = options.priorDiscoveredFiles?.length
+    ? JITContextTracker.fromPrior(options.priorDiscoveredFiles)
+    : new JITContextTracker();
 
   // Resolve provider early to report which model/provider is being used
   const resolvedProvider = resolveProvider(model, options.tier);
@@ -1249,6 +1265,7 @@ export async function runAgenticWorker(
     providerId: resolvedProvider?.id,
     modelUsed: resolvedProvider?.model,
     filesDiscovered: jit.fileCount,
+    discoveredFiles: jit.toFileList(),
     history: result.history,
     stopReason: result.reason
   };

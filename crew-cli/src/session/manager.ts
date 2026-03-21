@@ -28,6 +28,7 @@ export class SessionManager {
   private paths: {
     session: string;
     routing: string;
+    jitContext: string;
     cost: string;
     sandbox: string;
   };
@@ -39,7 +40,8 @@ export class SessionManager {
       session: join(this.stateDir, 'session.json'),
       routing: join(this.stateDir, 'routing.log'),
       cost: join(this.stateDir, 'cost.json'),
-      sandbox: join(this.stateDir, 'sandbox.json')
+      sandbox: join(this.stateDir, 'sandbox.json'),
+      jitContext: join(this.stateDir, 'jit-context.json')
     };
   }
 
@@ -130,6 +132,28 @@ export class SessionManager {
   async getSessionId() {
     const session = await this.loadSession();
     return session.sessionId;
+  }
+
+  /** Save JIT discovered files so subsequent CLI invocations inherit context */
+  async saveJITContext(discoveredFiles: string[]) {
+    await this.ensureInitialized();
+    const MAX_FILES = 200;
+    const trimmed = discoveredFiles.slice(-MAX_FILES);
+    await writeFile(this.paths.jitContext, JSON.stringify({
+      updatedAt: nowIso(),
+      files: trimmed
+    }, null, 2), 'utf8');
+  }
+
+  /** Load JIT context from prior session (returns empty array if none) */
+  async loadJITContext(): Promise<string[]> {
+    try {
+      const raw = await readFile(this.paths.jitContext, 'utf8');
+      const data = JSON.parse(raw);
+      return Array.isArray(data.files) ? data.files : [];
+    } catch {
+      return [];
+    }
   }
 
   async appendHistory(entry: { input: string; output?: string; route?: string; agent?: string }) {
