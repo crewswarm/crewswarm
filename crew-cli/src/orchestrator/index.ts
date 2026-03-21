@@ -9,7 +9,6 @@ import { LocalExecutor } from '../executor/local.js';
 import { getProfileConfig, type RuntimeProfile } from '../executor/profiles.js';
 import { UnifiedPipeline } from '../pipeline/unified.js';
 import { parseJsonObjectWithRepair } from '../utils/structured-json.js';
-import { runAgenticWorker } from '../executor/agentic-executor.js';
 
 export { WorkerPool } from './worker-pool.js';
 export type { WorkerTask, TaskResult, WorkerPoolOptions } from './worker-pool.js';
@@ -611,45 +610,37 @@ export class Orchestrator {
       verbose?: boolean;
     } = {}
   ): Promise<any> {
-    const verbose = options.verbose ?? (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true');
-    const model = options.model || process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash';
-
-    // Prepend conversation context if provided
-    let fullTask = task;
-    if (options.conversationContext) {
-      fullTask = `## Recent conversation context\n${options.conversationContext}\n\n## Current task\n${task}`;
-    }
-
-    if (verbose) {
-      console.log(`[Agentic] Starting execution (model: ${model}, tools: 34+)`);
-    }
-
     try {
-      const result = await runAgenticWorker(fullTask, this.sandbox, {
-        model,
-        maxTurns: 25,
-        onToolCall: options.onToolCall,
-        verbose
+      const fullTask = options.conversationContext
+        ? `## Recent conversation context\n${options.conversationContext}\n\n## Current task\n${task}`
+        : task;
+
+      const result = await this.pipeline.execute({
+        userInput: fullTask,
+        sessionId: options.sessionId || 'crew-cli',
+        context: options.conversationContext
       });
 
       return {
-        success: result.success !== false,
-        result: result.output,
-        response: result.output,
-        model: result.model || model,
-        turns: result.turns,
-        toolsUsed: result.toolsUsed,
-        costUsd: result.cost || 0,
-        totalCost: result.cost || 0,
-        plan: { decision: 'execute-local' },
-        executionPath: ['agentic-executor']
+        success: result.phase === 'complete',
+        result: result.response,
+        response: result.response,
+        model: options.model || process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash',
+        turns: result.executionResults?.results?.length || 0,
+        toolsUsed: Array.from(new Set((result.executionResults?.results || []).flatMap(r => r.toolsUsed || []))),
+        costUsd: result.totalCost || 0,
+        totalCost: result.totalCost || 0,
+        plan: result.plan,
+        traceId: result.traceId,
+        timeline: result.timeline,
+        executionPath: result.executionPath
       };
     } catch (err) {
       return {
         success: false,
         result: `Agentic execution failed: ${(err as Error).message}`,
         response: `Agentic execution failed: ${(err as Error).message}`,
-        model,
+        model: options.model || process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash',
         error: (err as Error).message
       };
     }

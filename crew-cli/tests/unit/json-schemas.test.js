@@ -31,12 +31,17 @@ test('validateWorkGraph accepts well-formed graph', () => {
       {
         id: 'u1',
         description: 'Do step one',
-        requiredPersona: 'crew-coder',
+        requiredPersona: 'executor-code',
         dependencies: [],
-        requiredCapabilities: ['write_file'],
+        requiredCapabilities: ['code-generation', 'file-write'],
+        sourceRefs: ['ROADMAP.md#step-1'],
+        allowedPaths: ['src/example.ts'],
+        verification: ['Confirm src/example.ts changed'],
+        escalationHints: ['Escalate if another file must be edited'],
+        maxFilesTouched: 1,
       },
     ],
-    requiredPersonas: ['crew-coder'],
+    requiredPersonas: ['executor-code'],
     totalComplexity: 3,
     estimatedCost: 0.42,
   };
@@ -65,6 +70,11 @@ test('validateWorkGraph reports top-level and unit-level errors', () => {
   assert.match(merged, /unit\.requiredPersona missing/);
   assert.match(merged, /unit\.dependencies must be array/);
   assert.match(merged, /unit\.requiredCapabilities must be array/);
+  assert.match(merged, /unit\.sourceRefs missing/);
+  assert.match(merged, /unit\.allowedPaths must be array/);
+  assert.match(merged, /unit\.verification missing/);
+  assert.match(merged, /unit\.escalationHints missing/);
+  assert.match(merged, /unit\.maxFilesTouched invalid/);
 });
 
 test('validatePolicyValidation accepts valid policy validation payload', () => {
