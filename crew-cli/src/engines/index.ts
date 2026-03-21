@@ -456,7 +456,7 @@ export async function runGeminiCli(prompt: string, options: EngineRunOptions = {
 }
 
 export async function runCodexCli(prompt: string, options: EngineRunOptions = {}): Promise<EngineRunResult> {
-  const args = ['exec', '-s', 'workspace-write', '--json'];
+  const args = ['-a', 'never', 'exec', '--sandbox', 'danger-full-access', '--json'];
   return runCommand('codex', args, options, prompt);
 }
 

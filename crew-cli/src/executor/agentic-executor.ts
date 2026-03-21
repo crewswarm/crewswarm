@@ -21,6 +21,7 @@ import {
   anthropicTurn,
   type LLMTurnResult
 } from './multi-turn-drivers.js';
+import { CorrectionStore } from '../learning/corrections.js';
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -62,20 +63,28 @@ Every turn, follow this exact pattern:
 **ACT** (one or more tool calls):
 - Choose the most targeted tool for the job.
 - Prefer small, verifiable steps over large changes.
+- When multiple independent lookups are needed, call multiple tools in parallel.
 
 **OBSERVE** (after tools return):
 - Did the tool succeed or fail? What does the output tell me?
 - Do I need to adjust my approach?
 
+## Operating Principles
+
+- Match the request. Do what was asked — nothing more. A bug fix is just a bug fix. Don't refactor adjacent code, add docstrings to unchanged functions, or suggest rewrites beyond the task scope.
+- Simplest approach first. Don't over-engineer. Three similar lines are better than a premature abstraction. Only add error handling, validation, or fallbacks at system boundaries (user input, external APIs), not for internal guarantees.
+- Own mistakes. If a tool call fails or your approach is wrong, say so briefly and try a different approach. Don't repeat the same failing action. If the same failure pattern repeats twice, switch strategy.
+- Be security-conscious. Don't introduce injection, XSS, or hardcoded secrets. Validate at trust boundaries.
+
 ## Available Tools
 
-**Files**: read_file, write_file, replace (edit), read_many_files, glob, grep_search, grep_search_ripgrep, list_directory, mkdir
-**Shell**: run_shell_command (with Docker sandbox isolation when staged files exist)
-**Git**: git (status, diff, log, add, commit, show, branch)
-**LSP**: lsp (query "symbols <file>", "refs <file:line>", "goto <file:line>", "diagnostics <file>", "complete <file:line:col>")
+**Files**: read_file, write_file, replace (edit with replace_all flag), read_many_files, glob, grep_search (output_mode: content/files/count, context, type filter), list_directory, mkdir
+**Shell**: run_shell_command (Docker isolation when staged files exist; run_in_background for long commands; configurable timeout via CREW_SHELL_TIMEOUT, default 120s, max 600s), check_background_task
+**Git**: git (status, diff, log, add, commit, show, branch, stash, tag, blame, checkout, fetch, pull, merge, rebase, cherry-pick, worktree — force-push and --no-verify blocked)
 **Web**: google_web_search, web_fetch
 **Memory**: save_memory (persist facts across sessions), write_todos
 **Docs**: get_internal_docs (read project documentation)
+**Agents**: spawn_agent (spawn autonomous sub-agent for independent subtasks — isolated sandbox branch, cheap model by default, merges changes on completion)
 
 ## File Reading Strategy
 
@@ -86,17 +95,32 @@ Every turn, follow this exact pattern:
 
 ## Edit Strategy
 
-1. Use replace (edit) for surgical changes — provide exact old_string that uniquely matches.
-2. For new files, use write_file.
-3. Never rewrite an entire existing file — always use targeted edits.
-4. After every edit: use lsp "diagnostics <file>" to catch TypeScript errors immediately.
-5. If an edit fails with "String not found", the file may have changed. Re-read it and retry with the actual current content.
+1. ALWAYS read_file before editing. Edits on unread files will be rejected.
+2. Use replace (edit) for surgical changes — provide exact old_string that uniquely matches.
+3. Use replace_all:true when renaming a variable/function across the file.
+4. For new files, use write_file.
+5. Never rewrite an entire existing file — always use targeted edits.
+6. If an edit fails with "not unique", provide more surrounding context or use replace_all:true.
+7. If an edit fails with "String not found", re-read the file and retry with current content.
+
+## Shell Strategy
+
+1. For long-running commands (builds, tests, installs), use run_in_background:true.
+2. Use check_background_task to poll for results.
+3. Prefer dedicated tools over shell: use read_file not cat, grep_search not rg, glob not find.
+4. Never use destructive commands (rm -rf, git reset --hard) without explicit task instruction.
 
 ## Verification
 
 1. After code changes: run the build command (usually "npm run build" or "tsc --noEmit").
 2. After logic changes: run relevant tests ("npm test", or specific test file).
 3. Check git diff to confirm only intended changes were made.
+
+## Output
+
+- Lead with what you did, not how you thought about it. Skip preamble.
+- Concise summary of changes: files modified, what changed, verification result.
+- Do NOT output raw file contents in your final response.
 
 ## Stop Conditions — When to Finish
 
@@ -111,7 +135,31 @@ Every turn, follow this exact pattern:
 - Do NOT make speculative changes to files you haven't read.
 - Do NOT run the same command twice if it already succeeded.
 - Do NOT apologize or explain failures at length — just fix them and move on.
-- Do NOT output raw file contents in your final response.`;
+- Do NOT add features, refactor, or "improve" code beyond what the task asks.
+- Do NOT add comments, docstrings, or type annotations to code you didn't change.`;
+
+// ---------------------------------------------------------------------------
+// Corrections injection — load recent corrections to prevent repeat mistakes
+// ---------------------------------------------------------------------------
+
+async function loadCorrectionsContext(projectDir: string): Promise<string> {
+  try {
+    const store = new CorrectionStore(projectDir);
+    const entries = await store.loadAll();
+    if (entries.length === 0) return '';
+
+    // Take last 10 corrections (most recent = most relevant)
+    const recent = entries.slice(-10);
+    const lines = recent.map(c => {
+      const tags = c.tags?.length ? ` [${c.tags.join(', ')}]` : '';
+      return `- ${c.prompt.slice(0, 100)}${tags}: ${c.corrected.slice(0, 200)}`;
+    });
+
+    return `\n\n## Past Corrections (avoid repeating these mistakes)\n${lines.join('\n')}`;
+  } catch {
+    return ''; // No corrections file or parse error — non-fatal
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Turn Compression — Topic-Action-Summary model
@@ -153,18 +201,139 @@ function compressTurnHistory(history: TurnResult[]): CompressedTurn[] {
   });
 }
 
+/** Format a tool result as a string, truncated for context */
+function formatToolResult(h: TurnResult, maxLen = 1500): string {
+  const res = h.error
+    ? `ERROR: ${h.error}`
+    : (typeof h.result === 'object' && h.result && 'output' in h.result)
+      ? String((h.result as { output?: string }).output ?? '')
+      : String(h.result ?? '');
+  return res.slice(0, maxLen);
+}
+
+/**
+ * Convert TurnResult[] into provider-specific structured messages.
+ * Each TurnResult becomes an assistant tool_call + user tool_result pair.
+ * For long histories, older turns are compressed to text summary while
+ * recent turns (last 5) use full structured format.
+ */
+function historyToGeminiContents(history: TurnResult[]): any[] {
+  if (history.length === 0) return [];
+  const contents: any[] = [];
+
+  // For long histories, compress older turns into a text summary
+  const structuredTurns = history.length > 8 ? history.slice(-5) : history;
+  const compressedTurns = history.length > 8 ? history.slice(0, -5) : [];
+
+  if (compressedTurns.length > 0) {
+    const compressed = compressTurnHistory(compressedTurns);
+    const summary = compressed.map(c => `[${c.turn}] ${c.action} → ${c.outcome}`).join('\n');
+    contents.push(
+      { role: 'model', parts: [{ text: `[Earlier execution summary]\n${summary}` }] },
+      { role: 'user', parts: [{ text: 'Acknowledged. Continue with the task.' }] }
+    );
+  }
+
+  for (const h of structuredTurns) {
+    // Model made a tool call
+    contents.push({
+      role: 'model',
+      parts: [{ functionCall: { name: h.tool, args: h.params } }]
+    });
+    // User provided tool result
+    const resultObj = h.error
+      ? { error: h.error }
+      : (typeof h.result === 'object' && h.result) ? h.result : { output: formatToolResult(h) };
+    contents.push({
+      role: 'user',
+      parts: [{ functionResponse: { name: h.tool, response: resultObj } }]
+    });
+  }
+  return contents;
+}
+
+function historyToOpenAIMessages(history: TurnResult[]): any[] {
+  if (history.length === 0) return [];
+  const messages: any[] = [];
+
+  const structuredTurns = history.length > 8 ? history.slice(-5) : history;
+  const compressedTurns = history.length > 8 ? history.slice(0, -5) : [];
+
+  if (compressedTurns.length > 0) {
+    const compressed = compressTurnHistory(compressedTurns);
+    const summary = compressed.map(c => `[${c.turn}] ${c.action} → ${c.outcome}`).join('\n');
+    messages.push(
+      { role: 'assistant', content: `[Earlier execution summary]\n${summary}` },
+      { role: 'user', content: 'Acknowledged. Continue with the task.' }
+    );
+  }
+
+  for (const h of structuredTurns) {
+    const callId = `call_${h.turn}_${h.tool}`;
+    messages.push({
+      role: 'assistant',
+      tool_calls: [{
+        id: callId,
+        type: 'function',
+        function: { name: h.tool, arguments: JSON.stringify(h.params) }
+      }]
+    });
+    messages.push({
+      role: 'tool',
+      tool_call_id: callId,
+      content: formatToolResult(h)
+    });
+  }
+  return messages;
+}
+
+function historyToAnthropicMessages(history: TurnResult[]): any[] {
+  if (history.length === 0) return [];
+  const messages: any[] = [];
+
+  const structuredTurns = history.length > 8 ? history.slice(-5) : history;
+  const compressedTurns = history.length > 8 ? history.slice(0, -5) : [];
+
+  if (compressedTurns.length > 0) {
+    const compressed = compressTurnHistory(compressedTurns);
+    const summary = compressed.map(c => `[${c.turn}] ${c.action} → ${c.outcome}`).join('\n');
+    messages.push(
+      { role: 'assistant', content: `[Earlier execution summary]\n${summary}` },
+      { role: 'user', content: 'Acknowledged. Continue with the task.' }
+    );
+  }
+
+  for (const h of structuredTurns) {
+    const useId = `tu_${h.turn}_${h.tool}`;
+    messages.push({
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: useId,
+        name: h.tool,
+        input: h.params
+      }]
+    });
+    messages.push({
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: useId,
+        content: formatToolResult(h)
+      }]
+    });
+  }
+  return messages;
+}
+
+/** Legacy text-based history for fallback (markers-only providers) */
 function historyToContext(history: TurnResult[]): string {
   if (history.length === 0) return '';
 
   // For short histories, use detailed format
   if (history.length <= 5) {
     const lines = history.map(h => {
-      const res = h.error
-        ? `ERROR: ${h.error}`
-        : (typeof h.result === 'object' && h.result && 'output' in h.result)
-          ? String((h.result as { output?: string }).output ?? '')
-          : String(h.result ?? '');
-      return `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 200)}) → ${res.slice(0, 800)}`;
+      return `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 200)}) → ${formatToolResult(h, 800)}`;
     });
     return '\n\nPrevious tool results:\n' + lines.join('\n');
   }
@@ -181,12 +350,7 @@ function historyToContext(history: TurnResult[]): string {
 
   ctx += '\n\nRecent actions (detailed):\n';
   ctx += recentDetailed.map(h => {
-    const res = h.error
-      ? `ERROR: ${h.error}`
-      : (typeof h.result === 'object' && h.result && 'output' in h.result)
-        ? String((h.result as { output?: string }).output ?? '')
-        : String(h.result ?? '');
-    return `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 200)}) → ${res.slice(0, 800)}`;
+    return `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 200)}) → ${formatToolResult(h, 800)}`;
   }).join('\n');
 
   return ctx;
@@ -274,7 +438,8 @@ async function executeStreamingGeminiTurn(
   model: string,
   systemPrompt: string,
   stream: boolean,
-  images?: ImageAttachment[]
+  images?: ImageAttachment[],
+  historyMessages?: any[]
 ): Promise<LLMTurnResult> {
   const functionDeclarations = tools.map(t => ({
     name: t.name,
@@ -290,7 +455,11 @@ async function executeStreamingGeminiTurn(
     }
   }
   const contents: any[] = [
-    { role: 'user', parts: userParts }
+    { role: 'user', parts: userParts },
+    // Insert structured history (tool call/result pairs)
+    ...(historyMessages || []),
+    // Continuation prompt if we have history
+    ...(historyMessages?.length ? [{ role: 'user', parts: [{ text: 'Continue executing the task based on the results above.' }] }] : [])
   ];
 
   const endpoint = stream ? 'streamGenerateContent' : 'generateContent';
@@ -403,7 +572,8 @@ async function executeStreamingOpenAITurn(
   model: string,
   systemPrompt: string,
   stream: boolean,
-  images?: ImageAttachment[]
+  images?: ImageAttachment[],
+  historyMessages?: any[]
 ): Promise<LLMTurnResult> {
   // Build user content: text + optional images as content array
   let userContent: any = fullTask;
@@ -419,7 +589,9 @@ async function executeStreamingOpenAITurn(
   }
   const messages = [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: userContent }
+    { role: 'user', content: userContent },
+    // Insert structured history (assistant tool_calls + tool results)
+    ...(historyMessages || [])
   ];
 
   const openaiTools = tools.map(t => ({
@@ -548,7 +720,8 @@ async function executeStreamingAnthropicTurn(
   model: string,
   systemPrompt: string,
   stream: boolean,
-  images?: ImageAttachment[]
+  images?: ImageAttachment[],
+  historyMessages?: any[]
 ): Promise<LLMTurnResult> {
   // Build user content: text + optional images
   let userContent: any = fullTask;
@@ -573,7 +746,11 @@ async function executeStreamingAnthropicTurn(
     model,
     max_tokens: 8192,
     system: systemPrompt,
-    messages: [{ role: 'user', content: userContent }],
+    messages: [
+      { role: 'user', content: userContent },
+      // Insert structured history (assistant tool_use + user tool_result)
+      ...(historyMessages || [])
+    ],
     temperature: 0.3,
     tools: anthropicTools,
     stream
@@ -695,8 +872,6 @@ async function executeLLMTurn(
   stream: boolean,
   images?: ImageAttachment[]
 ): Promise<LLMTurnResult> {
-  const historyContext = historyToContext(history);
-  const fullTask = historyContext ? `${task}${historyContext}` : task;
   const resolved = resolveProvider(model);
   if (!resolved) {
     throw new Error(
@@ -711,19 +886,22 @@ async function executeLLMTurn(
 
   const { key, model: effectiveModel, driver, apiUrl, id } = resolved;
 
-  // Gemini: streaming SSE (with optional images)
+  // Gemini: structured multi-turn with functionCall/functionResponse
   if (driver === 'gemini') {
-    return executeStreamingGeminiTurn(fullTask, tools, key, effectiveModel, systemPrompt, stream, images);
+    const historyMsgs = historyToGeminiContents(history);
+    return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
   }
 
-  // Anthropic: streaming with native format
+  // Anthropic: structured multi-turn with tool_use/tool_result
   if (driver === 'anthropic') {
-    return executeStreamingAnthropicTurn(fullTask, tools, key, effectiveModel, systemPrompt, stream, images);
+    const historyMsgs = historyToAnthropicMessages(history);
+    return executeStreamingAnthropicTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
   }
 
-  // OpenAI-compatible (Grok, OpenAI, DeepSeek, Groq, Together, Kimi, OpenRouter)
+  // OpenAI-compatible: structured multi-turn with tool_calls/tool messages
   if (driver === 'openai' || driver === 'openrouter') {
-    return executeStreamingOpenAITurn(fullTask, tools, apiUrl!, key, effectiveModel, systemPrompt, stream, images);
+    const historyMsgs = historyToOpenAIMessages(history);
+    return executeStreamingOpenAITurn(task, tools, apiUrl!, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
   }
 
   throw new Error(`Unsupported driver: ${driver}`);
@@ -955,6 +1133,19 @@ export async function runAgenticWorker(
       enrichedTask = `${task}${repoContext}`;
       if (verbose) {
         console.log(`[AgenticExecutor] Repo-map: ${repoContext.length} chars injected`);
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // Inject past corrections to prevent repeat mistakes
+  try {
+    const correctionsContext = await loadCorrectionsContext(projectDir);
+    if (correctionsContext) {
+      enrichedTask = `${enrichedTask}${correctionsContext}`;
+      if (verbose) {
+        console.log(`[AgenticExecutor] Corrections context injected`);
       }
     }
   } catch {

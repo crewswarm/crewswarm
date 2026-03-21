@@ -88,28 +88,34 @@ export async function executeAutonomous(
       lastResponseText = response.response;
     }
 
-    // ACT: Execute all tool calls
-    for (const call of response.toolCalls) {
+    // ACT: Execute tool calls — parallel when multiple, sequential when single
+    if (response.toolCalls.length === 1) {
+      // Single tool call — run directly
+      const call = response.toolCalls[0];
       config.onProgress?.(turn + 1, `EXECUTING: ${call.tool}`);
-
       try {
         const result = await executeTool(call.tool, call.params);
-
-        // OBSERVE: Add to history
-        history.push({
-          turn: turn + 1,
-          tool: call.tool,
-          params: call.params,
-          result
-        });
+        history.push({ turn: turn + 1, tool: call.tool, params: call.params, result });
       } catch (error: any) {
-        history.push({
-          turn: turn + 1,
-          tool: call.tool,
-          params: call.params,
-          result: null,
-          error: error.message
-        });
+        history.push({ turn: turn + 1, tool: call.tool, params: call.params, result: null, error: error.message });
+      }
+    } else {
+      // Multiple tool calls — run in parallel for speed
+      config.onProgress?.(turn + 1, `EXECUTING ${response.toolCalls.length} tools in parallel`);
+      const results = await Promise.allSettled(
+        response.toolCalls.map(async (call) => {
+          config.onProgress?.(turn + 1, `EXECUTING: ${call.tool}`);
+          return { call, result: await executeTool(call.tool, call.params) };
+        })
+      );
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        const call = response.toolCalls[i];
+        if (r.status === 'fulfilled') {
+          history.push({ turn: turn + 1, tool: r.value.call.tool, params: r.value.call.params, result: r.value.result });
+        } else {
+          history.push({ turn: turn + 1, tool: call.tool, params: call.params, result: null, error: r.reason?.message || 'parallel execution failed' });
+        }
       }
     }
 

@@ -304,7 +304,7 @@ export function buildEngineShellCommand(engine: string, prompt: string, model?: 
   const p = shellQuote(prompt);
   const m = model ? ` -m ${shellQuote(model)}` : '';
   const e = String(engine || '').trim().toLowerCase();
-  if (e === 'codex-cli') return `printf %s ${p} | codex exec -s workspace-write --json`;
+  if (e === 'codex-cli') return `printf %s ${p} | codex -a never exec --sandbox danger-full-access --json`;
   if (e === 'claude-cli') return `printf %s ${p} | claude -p --setting-sources user${String(process.env.CREW_CLAUDE_SKIP_PERMISSIONS || '') === 'true' ? ' --dangerously-skip-permissions' : ''}`;
   if (e === 'cursor-cli' || e === 'cursor') {
     const ws = shellQuote(cwd || process.cwd());

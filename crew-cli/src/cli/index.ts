@@ -2138,10 +2138,62 @@ export async function main(args = []) {
 
   program
     .command('exec')
-    .description('Run an interactive terminal command with PTY support')
+    .description('Run a one-shot task or interactive terminal command with PTY support')
     .argument('<command>', 'Command to run')
     .argument('[args...]', 'Arguments for the command')
-    .action(async (command, args) => {
+    .option('-m, --model <id>', 'Model override for one-shot task fallback')
+    .option('--json', 'Output machine-readable JSON envelope for one-shot task fallback', false)
+    .action(async (command, args, options) => {
+      const looksLikeNaturalLanguage =
+        args.length === 0 &&
+        typeof command === 'string' &&
+        /\s/.test(command.trim());
+
+      if (looksLikeNaturalLanguage) {
+        logger.info('Interpreting `crew exec` input as a one-shot task. Use `crew exec <cmd> [args...]` for PTY commands.');
+        try {
+          const result = await orchestrator.executeAgentic(command, {
+            sessionId: await sessionManager.getSessionId(),
+            model: options.model
+          });
+          const responseText = String(result.response || result.result || '');
+          const edits = await orchestrator.parseAndApplyToSandbox(responseText);
+          await sessionManager.appendHistory({
+            input: command,
+            response: responseText,
+            decision: result.plan?.decision || 'execute',
+            agent: 'unified-pipeline',
+            model: String(result.plan?.validation?.modelUsed || options.model || 'unknown'),
+            costUsd: result.totalCost
+          });
+          if (options.json) {
+            printJsonEnvelope('exec.result', {
+              route: result.plan
+                ? {
+                    decision: result.plan.decision.toUpperCase(),
+                    explanation: result.plan.reasoning
+                  }
+                : { decision: 'EXECUTE', explanation: 'Direct L3 execution' },
+              agent: 'unified-pipeline',
+              response: responseText,
+              edits,
+              needsApproval: edits.length > 0,
+              traceId: result.traceId,
+              timeline: result.timeline
+            });
+            return;
+          }
+          console.log(responseText);
+          if (edits.length > 0) {
+            logger.success(`Added changes to ${edits.length} files in sandbox. Run "crew preview" to review.`);
+          }
+          return;
+        } catch (err) {
+          logger.error(`One-shot task failed: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      }
+
       // Unified: use src/pty implementation (has fallback logic)
       const { runPtyCommand } = await import('../pty/index.js');
       try {

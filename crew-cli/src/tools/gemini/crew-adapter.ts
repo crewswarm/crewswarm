@@ -53,11 +53,35 @@ export class CrewMessageBus {
   }
 }
 
+// Shell timeout: configurable via CREW_SHELL_TIMEOUT env (seconds), default 120s, max 600s
+function getShellTimeout(): number {
+  const envVal = parseInt(process.env.CREW_SHELL_TIMEOUT || '', 10);
+  if (envVal > 0) return Math.min(envVal * 1000, 600000); // max 600s
+  return 120000; // default 120s
+}
+
+// Dangerous shell commands that should warn (matches Claude Code behavior)
+const DANGEROUS_SHELL_PATTERNS = [
+  /\brm\s+-rf?\s/,           // rm -r / rm -rf
+  /\bgit\s+push\s+.*--force/, // force push
+  /\bgit\s+reset\s+--hard/,   // hard reset
+  /\bgit\s+clean\s+-f/,       // clean untracked
+  /\bdrop\s+table\b/i,        // SQL drop
+  /\bdrop\s+database\b/i,     // SQL drop database
+  /\bkill\s+-9\b/,            // kill -9
+  /\bmkfs\b/,                 // format filesystem
+  /\bdd\s+if=/,               // dd (disk destroyer)
+];
+
+// Background shell processes tracked by ID
+const _backgroundProcesses = new Map<string, { promise: Promise<ToolResult>; startedAt: number }>();
+
 // Main adapter class
 export class GeminiToolAdapter {
   private config: CrewConfig;
   private messageBus: CrewMessageBus;
-  
+  private _filesRead = new Set<string>(); // Track reads for read-before-edit guard
+
   constructor(private sandbox: Sandbox) {
     const workspaceRoot = (sandbox as any).baseDir || process.cwd();
     this.config = new CrewConfig(workspaceRoot);
@@ -92,7 +116,9 @@ export class GeminiToolAdapter {
       'tracker_get_task',
       'tracker_list_tasks',
       'tracker_add_dependency',
-      'tracker_visualize'
+      'tracker_visualize',
+      'spawn_agent',
+      'check_background_task'
     ];
     const canonical = canonicalNames.map((name) => {
       const found = staticByName.get(name);
@@ -137,7 +163,8 @@ export class GeminiToolAdapter {
       { alias: 'tracker_visualize', target: 'tracker_visualize' },
       { alias: 'mkdir', target: 'write_file' },
       { alias: 'git', target: 'run_shell_command' },
-      { alias: 'lsp', target: 'read_file' }
+      // LSP is not yet implemented — don't alias to read_file (misleads the model)
+      // { alias: 'lsp', target: 'read_file' }
     ];
 
     const byName = new Map<string, any>();
@@ -190,12 +217,12 @@ export class GeminiToolAdapter {
     return [
       { name: 'read_file', description: 'Read file', parameters: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] } },
       { name: 'write_file', description: 'Write file', parameters: { type: 'object', properties: { file_path: { type: 'string' }, content: { type: 'string' } }, required: ['file_path', 'content'] } },
-      { name: 'replace', description: 'Replace text in file', parameters: { type: 'object', properties: { file_path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' } }, required: ['file_path', 'old_string', 'new_string'] } },
+      { name: 'replace', description: 'Replace text in file. old_string must uniquely match one location (use replace_all:true for all occurrences). You MUST read_file before editing.', parameters: { type: 'object', properties: { file_path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' }, replace_all: { type: 'boolean', description: 'Replace ALL occurrences (useful for renames). Default: false (unique match required)' } }, required: ['file_path', 'old_string', 'new_string'] } },
       { name: 'glob', description: 'Glob search', parameters: { type: 'object', properties: { pattern: { type: 'string' } }, required: ['pattern'] } },
-      { name: 'grep_search', description: 'Grep search', parameters: { type: 'object', properties: { pattern: { type: 'string' }, dir_path: { type: 'string' }, path: { type: 'string' } }, required: ['pattern'] } },
-      { name: 'grep_search_ripgrep', description: 'Ripgrep search', parameters: { type: 'object', properties: { pattern: { type: 'string' }, dir_path: { type: 'string' }, path: { type: 'string' } }, required: ['pattern'] } },
+      { name: 'grep_search', description: 'Search for regex/text in files. Supports output modes (content/files/count), context lines, case insensitivity, file type filters.', parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' }, dir_path: { type: 'string' }, output_mode: { type: 'string', description: 'content (matching lines), files (file paths only), count (match counts)' }, context: { type: 'number', description: 'Lines of context around matches' }, before: { type: 'number' }, after: { type: 'number' }, case_insensitive: { type: 'boolean' }, type: { type: 'string', description: 'File type filter (js, py, ts, go, etc.)' }, max_results: { type: 'number' } }, required: ['pattern'] } },
+      { name: 'grep_search_ripgrep', description: 'Alias for grep_search with same capabilities', parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' }, dir_path: { type: 'string' }, output_mode: { type: 'string' }, context: { type: 'number' }, case_insensitive: { type: 'boolean' }, type: { type: 'string' }, max_results: { type: 'number' } }, required: ['pattern'] } },
       { name: 'list_directory', description: 'List directory', parameters: { type: 'object', properties: { dir_path: { type: 'string' }, path: { type: 'string' } } } },
-      { name: 'run_shell_command', description: 'Run shell command', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } },
+      { name: 'run_shell_command', description: 'Run shell command (configurable timeout, Docker isolation when staged files exist). Use run_in_background:true for long-running commands.', parameters: { type: 'object', properties: { command: { type: 'string' }, run_in_background: { type: 'boolean', description: 'Run in background and return task ID. Use check_background_task to get result.' }, description: { type: 'string', description: 'Brief description of what the command does' } }, required: ['command'] } },
       { name: 'google_web_search', description: 'Web search', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
       { name: 'web_fetch', description: 'Fetch URL', parameters: { type: 'object', properties: { url: { type: 'string' }, prompt: { type: 'string' } } } },
       { name: 'read_many_files', description: 'Read many files', parameters: { type: 'object', properties: { include: { type: 'string' }, exclude: { type: 'string' }, recursive: { type: 'boolean' } } } },
@@ -211,7 +238,9 @@ export class GeminiToolAdapter {
       { name: 'tracker_get_task', description: 'Get tracker task', parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
       { name: 'tracker_list_tasks', description: 'List tracker tasks', parameters: { type: 'object', properties: { status: { type: 'string' }, type: { type: 'string' }, parentId: { type: 'string' } } } },
       { name: 'tracker_add_dependency', description: 'Add tracker dependency', parameters: { type: 'object', properties: { taskId: { type: 'string' }, dependencyId: { type: 'string' } }, required: ['taskId', 'dependencyId'] } },
-      { name: 'tracker_visualize', description: 'Visualize tracker graph', parameters: { type: 'object', properties: {} } }
+      { name: 'tracker_visualize', description: 'Visualize tracker graph', parameters: { type: 'object', properties: {} } },
+      { name: 'spawn_agent', description: 'Spawn a sub-agent to handle a task autonomously in parallel. Use for independent research, file analysis, or coding subtasks. Returns the sub-agent result when complete.', parameters: { type: 'object', properties: { task: { type: 'string', description: 'Clear task description for the sub-agent' }, model: { type: 'string', description: 'Optional model override (default: use cheap model for workers)' }, max_turns: { type: 'number', description: 'Max turns for sub-agent (default: 15)' } }, required: ['task'] } },
+      { name: 'check_background_task', description: 'Check the status/result of a background shell command. Returns result if done, or elapsed time if still running.', parameters: { type: 'object', properties: { task_id: { type: 'string', description: 'Task ID returned by run_shell_command with run_in_background:true' } }, required: ['task_id'] } }
     ];
   }
 
@@ -228,7 +257,8 @@ export class GeminiToolAdapter {
           return await this.editFile({
             file_path: params.file_path,
             old_string: params.old_string,
-            new_string: params.new_string
+            new_string: params.new_string,
+            replace_all: params.replace_all
           });
         case 'append_file':
           return await this.appendFile(params);
@@ -266,7 +296,14 @@ export class GeminiToolAdapter {
         case 'grep_search_ripgrep':
           return await this.grepTool({
             pattern: params.pattern,
-            path: params.dir_path || params.path
+            path: params.dir_path || params.path,
+            output_mode: params.output_mode,
+            context: params.context,
+            before: params.before,
+            after: params.after,
+            case_insensitive: params.case_insensitive,
+            type: params.type,
+            max_results: params.max_results
           });
         case 'git':
           return await this.gitTool(params);
@@ -293,6 +330,10 @@ export class GeminiToolAdapter {
           return await this.trackerAddDependencyTool(params);
         case 'tracker_visualize':
           return await this.trackerVisualizeTool();
+        case 'spawn_agent':
+          return await this.spawnAgentTool(params);
+        case 'check_background_task':
+          return await this.checkBackgroundTask(params);
         default:
           return {
             success: false,
@@ -337,6 +378,10 @@ export class GeminiToolAdapter {
   private async readFile(params: { file_path: string; start_line?: number; end_line?: number }): Promise<ToolResult> {
     const filePath = resolve(this.config.getWorkspaceRoot(), params.file_path);
 
+    // Track that this file has been read (for read-before-edit guard)
+    this._filesRead.add(params.file_path);
+    this._filesRead.add(filePath);
+
     // Check sandbox first for staged (not yet applied) changes
     const stagedContent = this.sandbox.getStagedContent?.(params.file_path)
       || this.sandbox.getStagedContent?.(filePath);
@@ -353,24 +398,91 @@ export class GeminiToolAdapter {
     return { success: true, output: content };
   }
   
-  private async editFile(params: { file_path: string; old_string: string; new_string: string }): Promise<ToolResult> {
+  private async editFile(params: { file_path: string; old_string: string; new_string: string; replace_all?: boolean }): Promise<ToolResult> {
     const filePath = resolve(this.config.getWorkspaceRoot(), params.file_path);
-    const content = await readFile(filePath, 'utf8');
-    
+
+    // Read-before-edit guard: require the file to have been read first (matches Claude Code)
+    if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
+      return {
+        success: false,
+        error: `You must read_file "${params.file_path}" before editing it. Never guess at file contents.`
+      };
+    }
+
+    // Read current content (could be staged)
+    const stagedContent = this.sandbox.getStagedContent?.(params.file_path)
+      || this.sandbox.getStagedContent?.(filePath);
+    const content = stagedContent ?? await readFile(filePath, 'utf8');
+
     if (!content.includes(params.old_string)) {
       return {
         success: false,
         error: `String not found in ${params.file_path}`
       };
     }
-    
+
+    const occurrences = content.split(params.old_string).length - 1;
+
+    // replace_all mode: replace every occurrence (useful for renames)
+    if (params.replace_all) {
+      const updated = content.split(params.old_string).join(params.new_string);
+      await this.sandbox.addChange(params.file_path, updated);
+      const diagnostics = await this.shadowValidate(params.file_path);
+      return {
+        success: true,
+        output: `Edited ${params.file_path} (${occurrences} replacements)${diagnostics}`
+      };
+    }
+
+    // Default: unique match required
+    if (occurrences > 1) {
+      return {
+        success: false,
+        error: `old_string matches ${occurrences} locations in ${params.file_path}. Provide more context to make it unique, or use replace_all:true to replace all occurrences.`
+      };
+    }
+
     const updated = content.replace(params.old_string, params.new_string);
     await this.sandbox.addChange(params.file_path, updated);
-    
+
+    // Shadow validation: run diagnostics on the edited file (Cursor-style)
+    const diagnostics = await this.shadowValidate(params.file_path);
+
     return {
       success: true,
-      output: `Edited ${params.file_path}`
+      output: `Edited ${params.file_path}${diagnostics}`
     };
+  }
+
+  /**
+   * Shadow validation: after an edit, check for type/lint errors using LSP.
+   * Returns empty string if clean, or diagnostic summary if errors found.
+   * Non-fatal — silently returns empty on any failure.
+   */
+  private async shadowValidate(filePath: string): Promise<string> {
+    // Only validate TypeScript/JavaScript files
+    if (!/\.(ts|tsx|js|jsx|mjs|mts)$/.test(filePath)) return '';
+
+    try {
+      const lsp = await import('../../lsp/index.js');
+      const diags = await lsp.typeCheckProject(this.config.getWorkspaceRoot(), [filePath]);
+
+      // Filter to only errors in the edited file
+      const fileErrors = diags.filter((d: any) =>
+        d.category === 'error' && d.file?.endsWith(filePath)
+      );
+
+      if (fileErrors.length === 0) return '';
+
+      const errorLines = fileErrors.slice(0, 5).map((d: any) =>
+        `  ${d.file}:${d.line} — ${d.message}`
+      );
+
+      return `\n\n⚠️ Shadow validation found ${fileErrors.length} error(s) after edit:\n${errorLines.join('\n')}${fileErrors.length > 5 ? `\n  ... and ${fileErrors.length - 5} more` : ''}\nFix these before moving on.`;
+    } catch {
+      // LSP not available or failed — non-fatal
+      return '';
+    }
   }
 
   private async mkdirTool(params: { path?: string; dir_path?: string }): Promise<ToolResult> {
@@ -400,12 +512,53 @@ export class GeminiToolAdapter {
     }
   }
 
-  private async grepTool(params: { pattern: string; path?: string }): Promise<ToolResult> {
+  private async grepTool(params: {
+    pattern: string;
+    path?: string;
+    output_mode?: 'content' | 'files' | 'count';
+    context?: number;
+    before?: number;
+    after?: number;
+    case_insensitive?: boolean;
+    type?: string;
+    max_results?: number;
+  }): Promise<ToolResult> {
     const pattern = String(params.pattern || '').trim();
     const searchPath = String(params.path || '.').trim();
     if (!pattern) return { success: false, error: 'grep requires pattern' };
+
+    const args = ['rg'];
+
+    // Output mode (matches Claude Code's Grep tool)
+    const mode = params.output_mode || 'content';
+    if (mode === 'files') {
+      args.push('-l'); // files_with_matches
+    } else if (mode === 'count') {
+      args.push('-c'); // count
+    } else {
+      args.push('-n'); // line numbers for content mode
+    }
+
+    // Context flags
+    if (params.context) args.push(`-C${params.context}`);
+    else {
+      if (params.before) args.push(`-B${params.before}`);
+      if (params.after) args.push(`-A${params.after}`);
+    }
+
+    // Case insensitive
+    if (params.case_insensitive) args.push('-i');
+
+    // File type filter
+    if (params.type) args.push(`--type=${params.type}`);
+
+    // Max results
+    if (params.max_results) args.push(`-m${params.max_results}`);
+
+    args.push(JSON.stringify(pattern), JSON.stringify(searchPath));
+
     try {
-      const out = execSync(`rg -n ${JSON.stringify(pattern)} ${JSON.stringify(searchPath)}`, {
+      const out = execSync(args.join(' '), {
         cwd: process.cwd(),
         stdio: 'pipe',
         encoding: 'utf8'
@@ -413,6 +566,8 @@ export class GeminiToolAdapter {
       return { success: true, output: out.trim() };
     } catch (err: any) {
       const text = `${err?.stdout?.toString?.() || ''}\n${err?.stderr?.toString?.() || ''}`.trim();
+      // rg returns exit code 1 for no matches — that's not an error
+      if (err?.status === 1 && !text) return { success: true, output: '(no matches)' };
       return { success: false, error: text || err?.message || 'grep failed' };
     }
   }
@@ -420,13 +575,32 @@ export class GeminiToolAdapter {
   private async gitTool(params: { command: string }): Promise<ToolResult> {
     const command = String(params.command || '').trim();
     if (!command) return { success: false, error: 'git requires command' };
-    const allowed = ['status', 'diff', 'log', 'add', 'commit', 'show', 'branch'];
+
+    // Expanded allowed subcommands (matches Claude Code git safety protocol)
+    const allowed = ['status', 'diff', 'log', 'add', 'commit', 'show', 'branch', 'stash', 'tag', 'blame', 'checkout', 'switch', 'restore', 'rev-parse', 'remote', 'fetch', 'pull', 'push', 'merge', 'rebase', 'reset', 'cherry-pick', 'worktree'];
     const verb = command.split(/\s+/)[0];
     if (!allowed.includes(verb)) {
-      return { success: false, error: `git subcommand not allowed: ${verb}` };
+      return { success: false, error: `git subcommand not allowed: ${verb}. Allowed: ${allowed.join(', ')}` };
     }
+
+    // Safety guards (Claude Code pattern: never force push, never skip hooks)
+    if (/--force|--force-with-lease/.test(command) && verb === 'push') {
+      return { success: false, error: 'Force push is not allowed. Use a regular push or create a new branch.' };
+    }
+    if (/--no-verify/.test(command)) {
+      return { success: false, error: 'Skipping hooks (--no-verify) is not allowed. Fix the hook issue instead.' };
+    }
+    if (verb === 'reset' && /--hard/.test(command)) {
+      return { success: false, error: 'git reset --hard is destructive. Use git stash or git checkout <file> instead.' };
+    }
+
     try {
-      const out = execSync(`git ${command}`, { cwd: process.cwd(), stdio: 'pipe', encoding: 'utf8' });
+      const out = execSync(`git ${command}`, {
+        cwd: this.config.getWorkspaceRoot(),
+        stdio: 'pipe',
+        encoding: 'utf8',
+        timeout: 30000
+      });
       return { success: true, output: out.trim() };
     } catch (err: any) {
       const text = `${err?.stdout?.toString?.() || ''}\n${err?.stderr?.toString?.() || ''}`.trim();
@@ -434,9 +608,47 @@ export class GeminiToolAdapter {
     }
   }
 
-  private async shellTool(params: { command: string }): Promise<ToolResult> {
+  private async shellTool(params: { command: string; run_in_background?: boolean; description?: string }): Promise<ToolResult> {
     const command = String(params.command || '').trim();
     if (!command) return { success: false, error: 'shell requires command' };
+
+    // Dangerous command detection (warn but don't block — matches Claude Code pattern)
+    for (const pat of DANGEROUS_SHELL_PATTERNS) {
+      if (pat.test(command)) {
+        console.warn(`[GeminiAdapter] ⚠️ Potentially destructive command detected: ${command.slice(0, 80)}`);
+        break;
+      }
+    }
+
+    // Background execution: run command asynchronously, return task ID
+    if (params.run_in_background) {
+      const taskId = `bg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const bgPromise = (async (): Promise<ToolResult> => {
+        try {
+          const { spawn } = await import('node:child_process');
+          return new Promise((resolve) => {
+            const proc = spawn('sh', ['-c', command], {
+              cwd: this.config.getWorkspaceRoot(),
+              stdio: 'pipe'
+            });
+            let stdout = '', stderr = '';
+            proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+            proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+            const timeout = setTimeout(() => { proc.kill('SIGTERM'); resolve({ success: false, error: 'Background task timed out' }); }, getShellTimeout());
+            proc.on('close', (code: number | null) => {
+              clearTimeout(timeout);
+              resolve(code === 0
+                ? { success: true, output: stdout.trim() }
+                : { success: false, error: (stderr || stdout).trim() || `exit code ${code}` });
+            });
+          });
+        } catch (err: any) {
+          return { success: false, error: err.message };
+        }
+      })();
+      _backgroundProcesses.set(taskId, { promise: bgPromise, startedAt: Date.now() });
+      return { success: true, output: `Background task started: ${taskId}\nUse check_background_task with this ID to get the result.` };
+    }
     
     try {
       // Check if we have staged files - if so, use Docker sandbox
@@ -451,7 +663,7 @@ export class GeminiToolAdapter {
           console.log(`[GeminiAdapter] Running command in Docker with ${this.sandbox.getPendingPaths().length} staged file(s)`);
           const result = await docker.runCommand(command, this.sandbox, {
             workDir: this.config.getWorkspaceRoot(),
-            timeout: 10000
+            timeout: getShellTimeout()
           });
           return {
             success: result.success,
@@ -468,7 +680,7 @@ export class GeminiToolAdapter {
         cwd: this.config.getWorkspaceRoot(),
         stdio: 'pipe',
         encoding: 'utf8',
-        timeout: 10000
+        timeout: getShellTimeout()
       });
       return { success: true, output: out.trim() };
     } catch (err: any) {
@@ -845,7 +1057,95 @@ export class GeminiToolAdapter {
     }
     return { success: false, error: `Unsupported lsp query: ${query}` };
   }
-  
+
+  private async checkBackgroundTask(params: { task_id: string }): Promise<ToolResult> {
+    const taskId = String(params.task_id || '').trim();
+    if (!taskId) return { success: false, error: 'check_background_task requires task_id' };
+    const bg = _backgroundProcesses.get(taskId);
+    if (!bg) return { success: false, error: `No background task found with ID: ${taskId}` };
+
+    // Check if done (non-blocking with race against a resolved promise)
+    const done = await Promise.race([
+      bg.promise.then(r => ({ done: true as const, result: r })),
+      new Promise<{ done: false }>(resolve => setTimeout(() => resolve({ done: false }), 50))
+    ]);
+
+    if (!done.done) {
+      const elapsed = Math.round((Date.now() - bg.startedAt) / 1000);
+      return { success: true, output: `Task ${taskId} still running (${elapsed}s elapsed). Check again later.` };
+    }
+
+    _backgroundProcesses.delete(taskId);
+    return done.result;
+  }
+
+  // Track sub-agent depth to prevent infinite recursion
+  private static _spawnDepth = 0;
+  private static readonly MAX_SPAWN_DEPTH = 3;
+
+  private async spawnAgentTool(params: { task: string; model?: string; max_turns?: number }): Promise<ToolResult> {
+    const task = String(params.task || '').trim();
+    if (!task) return { success: false, error: 'spawn_agent requires task' };
+
+    if (GeminiToolAdapter._spawnDepth >= GeminiToolAdapter.MAX_SPAWN_DEPTH) {
+      return { success: false, error: `Sub-agent depth limit reached (max ${GeminiToolAdapter.MAX_SPAWN_DEPTH}). Complete this task directly instead.` };
+    }
+
+    const maxTurns = Math.min(params.max_turns || 15, 25);
+    const model = params.model || process.env.CREW_WORKER_MODEL || process.env.CREW_EXECUTION_MODEL || '';
+    const branchName = `sub-agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    try {
+      // Create isolated sandbox branch for sub-agent
+      await this.sandbox.createBranch(branchName);
+
+      GeminiToolAdapter._spawnDepth++;
+
+      const { runAgenticWorker } = await import('../../executor/agentic-executor.js');
+      const result = await runAgenticWorker(task, this.sandbox, {
+        model,
+        maxTurns,
+        stream: false,     // Sub-agents don't stream to stdout
+        verbose: Boolean(process.env.CREW_DEBUG),
+        tier: 'fast'        // Default to cheap model for sub-agents
+      });
+
+      GeminiToolAdapter._spawnDepth--;
+
+      // Merge sub-agent changes back to parent branch
+      const parentBranch = this.sandbox.getActiveBranch();
+      if (parentBranch !== branchName) {
+        // Already switched back by the sub-agent's sandbox ops — merge explicitly
+        await this.sandbox.mergeBranch(branchName, parentBranch);
+      } else {
+        // Switch back to parent and merge
+        const branches = this.sandbox.getBranches();
+        const parent = branches.find(b => b !== branchName) || 'main';
+        await this.sandbox.switchBranch(parent);
+        await this.sandbox.mergeBranch(branchName, parent);
+      }
+
+      // Clean up the branch
+      try { await this.sandbox.deleteBranch(branchName); } catch { /* ignore */ }
+
+      const output = [
+        `Sub-agent completed in ${result.turns || 0} turns (${result.modelUsed || 'unknown'})`,
+        result.cost ? `Cost: $${result.cost.toFixed(4)}` : '',
+        `Status: ${result.success ? 'SUCCESS' : 'FAILED'}`,
+        '',
+        result.output?.slice(0, 3000) || '(no output)'
+      ].filter(Boolean).join('\n');
+
+      return { success: result.success, output };
+    } catch (err: any) {
+      GeminiToolAdapter._spawnDepth = Math.max(0, GeminiToolAdapter._spawnDepth - 1);
+      // Try to clean up branch
+      try { await this.sandbox.switchBranch('main'); } catch { /* ignore */ }
+      try { await this.sandbox.deleteBranch(branchName); } catch { /* ignore */ }
+      return { success: false, error: `Sub-agent failed: ${err.message}` };
+    }
+  }
+
   /**
    * Get tool declarations for LLM function calling
    */
