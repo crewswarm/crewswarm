@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import fs from "node:fs/promises";
+import syncFs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13,6 +14,10 @@ const reportDir = path.join(rootDir, "output");
 const reportPath = path.join(reportDir, "performance-audit.json");
 const port = Number(process.env.STUDIO_AUDIT_PORT || 3345);
 const baseUrl = `http://127.0.0.1:${port}`;
+const systemChrome = [
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+].find((candidate) => syncFs.existsSync(candidate));
 
 const BUDGETS = {
   domContentLoadedMs: 2500,
@@ -61,7 +66,10 @@ function startServer() {
 }
 
 async function collectMetrics() {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    ...(systemChrome ? { executablePath: systemChrome } : {}),
+  });
   const page = await browser.newPage();
   const cdp = await page.context().newCDPSession(page);
 

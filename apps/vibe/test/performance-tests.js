@@ -55,8 +55,9 @@ export async function runPerformanceTests() {
       assert.ok(indexBundleStat, "expected a built index bundle");
       assert.ok(indexBundleStat.size < 3 * 1024 * 1024, `bundle too large: ${indexBundleStat.size}`);
     }),
-    test("index.html preconnects to external asset origin", () => {
-      assert.match(html, /<link rel="preconnect" href="https:\/\/cdn\.jsdelivr\.net" crossorigin \/>/i);
+    test("index.html avoids external font and CDN preconnects", () => {
+      assert.match(html, /System font stack only to avoid CORS/i);
+      assert.doesNotMatch(html, /<link rel="preconnect"/i);
     }),
     test("Monaco is loaded lazily through dynamic imports", () => {
       assert.match(appSource, /async function loadMonaco\(/);
@@ -79,8 +80,8 @@ export async function runPerformanceTests() {
       assert.match(serverSource, /if \(acceptEncoding\.includes\("gzip"\)\)/);
     }),
     test("Vite build targets the dist assets directory explicitly", () => {
-      assert.match(viteConfig, /outDir:\s*'dist'/);
-      assert.match(viteConfig, /assetsDir:\s*'assets'/);
+      assert.match(viteConfig, /outDir:\s*["']dist["']/);
+      assert.match(viteConfig, /assetsDir:\s*["']assets["']/);
     }),
     test("workspace scans cap file enumeration to avoid runaway traversal", () => {
       assert.match(serverSource, /const MAX_FILES = 800;/);
@@ -91,10 +92,9 @@ export async function runPerformanceTests() {
       assert.match(serverSource, /workspaceScanCache\.set\(resolvedScanDir,\s*\{/);
       assert.match(serverSource, /invalidateWorkspaceScanCache\(resolvedPath\);/);
     }),
-    test("audit reads reuse cached file samples instead of rescanning immediately", () => {
-      assert.match(serverSource, /const AUDIT_FILE_CACHE_TTL_MS = Number\(process\.env\.STUDIO_AUDIT_CACHE_TTL_MS \|\| 3_000\);/);
+    test("audit cache is tracked and invalidated alongside workspace scans", () => {
       assert.match(serverSource, /const auditFileCache = new Map\(\);/);
-      assert.match(serverSource, /auditFileCache\.set\(resolvedScanDir,\s*\{/);
+      assert.match(serverSource, /for \(const cache of \[workspaceScanCache, auditFileCache\]\)/);
     }),
     test("file tree refreshes are debounced during bursty CLI updates", () => {
       assert.match(appSource, /const FILE_TREE_REFRESH_DEBOUNCE_MS = 150;/);

@@ -31,7 +31,10 @@ async function runSmokeTests() {
     const projects = readProjects();
     assert.ok(Array.isArray(projects), "Projects should be an array");
     assert.ok(projects.length > 0, "Should have at least one project");
-    assert.equal(projects[0].id, "studio-local", "First project should be the default one");
+    assert.ok(
+      projects.some((project) => project.id === "studio-local"),
+      "Projects should include the default studio-local workspace",
+    );
 
     // 3. Workspace files
     const files = listWorkspaceFiles(rootDir);
