@@ -52,6 +52,7 @@ export interface WorkGraph {
   requiredPersonas: string[];
   estimatedCost: number;
   planningArtifacts?: PlanningArtifacts;
+  planMode?: 'lightweight' | 'full';
 }
 
 export interface PolicyValidation {
@@ -109,6 +110,121 @@ export class DualL2Planner {
     return this.getChatModel();
   }
 
+  private extractAllowedPaths(task: string): string[] {
+    const found = new Set<string>();
+    const fileNamed = [...task.matchAll(/file named\s+["'`]?([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)["'`]?/gi)];
+    for (const match of fileNamed) {
+      const path = String(match[1] || '').trim();
+      if (path) found.add(path);
+    }
+
+    const pathLike = [...task.matchAll(/(?:^|[\s("'`])([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)(?=$|[\s)"'`,.:;])/g)];
+    for (const match of pathLike) {
+      const path = String(match[1] || '').trim();
+      if (path && !path.startsWith('ac-')) found.add(path);
+    }
+
+    return Array.from(found).slice(0, 3);
+  }
+
+  private isLightweightTask(task: string, context: string = ''): boolean {
+    const text = `${task}\n${context}`.toLowerCase();
+    if (text.length > 1200) return false;
+
+    const broadSignals = [
+      'roadmap',
+      'architecture',
+      'planning',
+      'phase 1',
+      'phase 2',
+      'phase 3',
+      'entire project',
+      'whole project',
+      'multi-agent',
+      'benchmark suite',
+      'golden benchmark',
+      'definition of done',
+      'contract tests',
+      'scaffold',
+      'deploy',
+      'migration',
+      'refactor the entire',
+      'across the repo'
+    ];
+    if (broadSignals.some(signal => text.includes(signal))) return false;
+
+    const paths = this.extractAllowedPaths(task);
+    const narrowIntent = /(create|write|update|modify|edit|add|fix|rename)\b/.test(text);
+    return narrowIntent && paths.length > 0 && paths.length <= 3;
+  }
+
+  private buildLightweightPlan(task: string, context: string, traceId: string): DualL2Result {
+    const allowedPaths = this.extractAllowedPaths(task);
+    const artifacts: PlanningArtifacts = {
+      pdd: `# PDD\n\n## Overview\n- Execute a small scoped implementation task.\n\n## Requirements\n- ${task}`,
+      roadmap: `# ROADMAP\n\n## Phase 1\n- Complete the requested small file-scoped task.`,
+      architecture: `# ARCH\n\n## Scope\n- Lightweight single-step implementation.\n- Limit edits to explicit task paths.`,
+      scaffold: '',
+      contractTests: '',
+      definitionOfDone: '',
+      goldenBenchmarks: '',
+      acceptanceCriteria: [
+        `Complete task exactly as requested: ${task}`
+      ],
+      outputDir: '',
+      files: {
+        pdd: '',
+        roadmap: '',
+        architecture: '',
+        scaffold: '',
+        contractTests: '',
+        definitionOfDone: '',
+        goldenBenchmarks: ''
+      }
+    };
+
+    const workGraph: WorkGraph = {
+      units: [
+        {
+          id: 'lightweight-execute',
+          description: task,
+          requiredPersona: 'executor-code',
+          dependencies: [],
+          estimatedComplexity: allowedPaths.length > 1 ? 'medium' : 'low',
+          requiredCapabilities: ['code-generation', 'file-write', 'code-reading'],
+          sourceRefs: ['PDD.md#overview', 'ROADMAP.md#phase-1', 'ARCH.md#scope'],
+          allowedPaths,
+          verification: allowedPaths.map(path => `Confirm ${path} exists and matches the requested content/behavior.`),
+          escalationHints: [
+            'Escalate if completing the task requires editing files outside the allowed paths.',
+            'Escalate after two failed verification attempts.'
+          ],
+          maxFilesTouched: Math.max(1, allowedPaths.length)
+        }
+      ],
+      totalComplexity: allowedPaths.length > 1 ? 3 : 1,
+      requiredPersonas: ['executor-code'],
+      estimatedCost: 0.001,
+      planningArtifacts: artifacts,
+      planMode: 'lightweight'
+    };
+
+    return {
+      workGraph,
+      validation: {
+        approved: true,
+        riskLevel: 'low',
+        concerns: [],
+        recommendations: ['Keep edits within explicit allowedPaths.'],
+        fallbackStrategy: 'Escalate to full planner if the task expands beyond the scoped files.',
+        estimatedCost: 0.001
+      },
+      traceId,
+      executionPath: ['dual-l2-planner', 'l2a-lightweight', 'l2b-lightweight'],
+      artifacts
+    };
+  }
+
   private async parseStructuredJson<T>(raw: string, label: string, schemaHint?: string): Promise<T> {
     // Strip markdown code fences if present
     let cleaned = raw.trim();
@@ -151,6 +267,11 @@ export class DualL2Planner {
     const executionPath: string[] = ['dual-l2-planner'];
 
     try {
+      if (this.isLightweightTask(task, context)) {
+        executionPath.push('l2a-lightweight');
+        return this.buildLightweightPlan(task, context, traceId);
+      }
+
       // L2A-PHASE-0: Generate planning artifacts (PDD, ROADMAP, ARCH)
       executionPath.push('l2a-planning-artifacts');
       const planningArtifacts = await this.generatePlanningArtifacts(task, context, traceId);

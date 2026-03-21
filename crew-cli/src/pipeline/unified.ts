@@ -621,6 +621,7 @@ If output has blockers, set approved=false.`,
   private assertMandatoryWorkGraphGates(workGraph: WorkGraph) {
     if (!this.scaffoldGateEnabled()) return;
     if (process.env.CREW_DUAL_L2_ENABLED !== 'true') return;
+    if (workGraph.planMode === 'lightweight') return;
     const ids = new Set((workGraph.units || []).map(u => u.id));
     const required = ['scaffold-bootstrap', 'contract-tests-from-pdd', 'gate-definition-of-done', 'gate-golden-benchmark-suite'];
     const missing = required.filter(id => !ids.has(id));
