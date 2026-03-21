@@ -87,7 +87,8 @@ function runningBridges() {
     }
   } catch { /* PID_DIR unreadable, fall through */ }
   // Fallback: pgrep-based detection (fast, no ps aux hang risk)
-  if (agents.size === 0) {
+  const allowPgrepFallback = process.env.CREWSWARM_DISABLE_PGREP_FALLBACK !== "1";
+  if (agents.size === 0 && allowPgrepFallback) {
     try {
       const pids = execSync("pgrep -f 'gateway-bridge.mjs --rt-daemon'", { encoding: "utf8", timeout: 2000 }).trim();
       if (pids) {

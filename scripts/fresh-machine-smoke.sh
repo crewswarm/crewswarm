@@ -37,12 +37,61 @@ step()  { printf "\n${BLD}${DIM}── %s ──${RST}\n" "$1"; }
 banner(){ printf "\n${BLD}%s${RST}\n" "$1"; }
 FAILED=0
 
+local_repo_path() {
+  local src="$1"
+  if [[ "$src" == file://* ]]; then
+    printf "%s\n" "${src#file://}"
+    return 0
+  fi
+  if [[ -d "$src/.git" ]]; then
+    printf "%s\n" "$src"
+    return 0
+  fi
+  return 1
+}
+
+export_repo_snapshot() {
+  local src="$1"
+  local dest="$2"
+  local archive_file
+  archive_file="$(mktemp "${TMPDIR:-/tmp}/fresh-smoke-archive.XXXXXX.tar")"
+  mkdir -p "$dest"
+  git -C "$src" archive --format=tar -o "$archive_file" HEAD
+  tar -xf "$archive_file" -C "$dest"
+  rm -f "$archive_file"
+}
+
+run_npm_ci() {
+  local log_file="$1"
+  : > "$log_file"
+  npm ci --prefer-offline >"$log_file" 2>&1 &
+  local pid=$!
+  local ticks=0
+  printf "  Installing dependencies"
+  while kill -0 "$pid" 2>/dev/null; do
+    printf "."
+    sleep 2
+    ticks=$((ticks + 1))
+    if (( ticks % 10 == 0 )); then
+      local last_line
+      last_line="$(tail -n 1 "$log_file" 2>/dev/null || true)"
+      if [[ -n "$last_line" ]]; then
+        printf "\n${DIM}    %s${RST}\n" "$last_line"
+        printf "  Installing dependencies"
+      fi
+    fi
+  done
+  wait "$pid"
+}
+
 # ── Config ──────────────────────────────────────────────────────────────────
 REPO_URL="${FRESH_SMOKE_REPO:-https://github.com/CrewSwarm/CrewSwarm.git}"
 GROQ_API_KEY="${GROQ_API_KEY:-}"
 RT_TOKEN="fresh-smoke-$(openssl rand -hex 8 2>/dev/null || echo 'testtoken')"
 TIMEOUT_AGENTS=120   # seconds to wait for agents to connect
 TIMEOUT_TASK=90      # seconds to wait for smoke dispatch
+RT_PORT="${FRESH_SMOKE_RT_PORT:-18989}"
+CREW_LEAD_PORT="${FRESH_SMOKE_CREW_LEAD_PORT:-5110}"
 
 banner "🧪 CrewSwarm Fresh-Machine Smoke  $(date -u '+%Y-%m-%d %H:%M UTC')"
 printf "${DIM}Repo:  %s${RST}\n" "$REPO_URL"
@@ -78,10 +127,18 @@ fi
 step "2 · Clone"
 WORK_DIR=$(mktemp -d)
 CLONE_DIR="$WORK_DIR/CrewSwarm"
+export TMPDIR="$WORK_DIR/tmp"
+mkdir -p "$TMPDIR"
 trap 'echo ""; warn "Cleaning up $WORK_DIR ..."; kill $(jobs -p) 2>/dev/null || true; rm -rf "$WORK_DIR"' EXIT
 
 printf "${DIM}  Cloning into %s ...${RST}\n" "$CLONE_DIR"
-if git clone --depth=1 "$REPO_URL" "$CLONE_DIR" --quiet 2>&1; then
+if LOCAL_REPO="$(local_repo_path "$REPO_URL")"; then
+  if export_repo_snapshot "$LOCAL_REPO" "$CLONE_DIR"; then
+    pass "Exported local HEAD snapshot $LOCAL_REPO → $CLONE_DIR"
+  else
+    fail "local snapshot export failed"; exit 1
+  fi
+elif git clone --depth=1 "$REPO_URL" "$CLONE_DIR" --quiet 2>&1; then
   pass "Cloned $REPO_URL → $CLONE_DIR"
 else
   fail "git clone failed"; exit 1
@@ -91,9 +148,14 @@ cd "$CLONE_DIR"
 
 # ── 3. npm install ──────────────────────────────────────────────────────────
 step "3 · npm install"
-if npm ci --prefer-offline --silent 2>&1 | tail -3; then
+NPM_LOG="$WORK_DIR/fresh-smoke-npm.log"
+if run_npm_ci "$NPM_LOG"; then
+  printf "\n"
+  tail -3 "$NPM_LOG" 2>/dev/null || true
   pass "npm ci succeeded"
 else
+  printf "\n${DIM}npm log:${RST}\n"
+  tail -40 "$NPM_LOG" 2>/dev/null || true
   fail "npm ci failed"; exit 1
 fi
 
@@ -124,6 +186,8 @@ node -e "
       { id: 'crew-qa',    model: 'groq/llama-3.3-70b-versatile' },
       { id: 'crew-fixer', model: 'groq/llama-3.3-70b-versatile' },
       { id: 'crew-pm',    model: 'groq/llama-3.3-70b-versatile' },
+      { id: 'crew-orchestrator', model: 'groq/llama-3.3-70b-versatile' },
+      { id: 'crew-judge', model: 'groq/llama-3.3-70b-versatile' },
     ],
     providers: {
       groq: { apiKey: key, baseUrl: 'https://api.groq.com/openai/v1' }
@@ -162,9 +226,12 @@ fi
 step "6 · Start stack"
 export CREWSWARM_RT_AUTH_TOKEN="$RT_TOKEN"
 export CREWSWARM_RT_REQUIRE_TOKEN=1
-export CREWSWARM_RT_URL="ws://127.0.0.1:18889"
+export CREWSWARM_RT_PORT="$RT_PORT"
+export CREWSWARM_RT_URL="ws://127.0.0.1:${RT_PORT}"
 export CREWSWARM_OPENCODE_ENABLED=0
-export CREW_LEAD_URL="http://127.0.0.1:5010"
+export CREW_LEAD_PORT="$CREW_LEAD_PORT"
+export CREW_LEAD_URL="http://127.0.0.1:${CREW_LEAD_PORT}"
+export CREWSWARM_DISABLE_PGREP_FALLBACK=1
 
 "$NODE" "$CLONE_DIR/scripts/opencrew-rt-daemon.mjs" >> /tmp/fresh-smoke-rt.log 2>&1 &
 sleep 3
@@ -180,7 +247,7 @@ T_END=$((SECONDS + TIMEOUT_AGENTS))
 CONNECTED=false
 printf "  Polling RT bus"
 while [[ $SECONDS -lt $T_END ]]; do
-  STATUS=$(curl -sf http://127.0.0.1:18889/status 2>/dev/null || echo '{}')
+  STATUS=$(curl -sf "http://127.0.0.1:${RT_PORT}/status" 2>/dev/null || echo '{}')
   if echo "$STATUS" | grep -q '"crew-coder"' && echo "$STATUS" | grep -q '"crew-main"'; then
     CONNECTED=true
     printf "\n"
