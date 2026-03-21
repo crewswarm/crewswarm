@@ -18,4 +18,4 @@ export CREW_DUAL_L2_ENABLED=true
 
 # Run benchmark
 cd "$(dirname "$0")"
-npm run benchmark:reliability -- "$@"
+npm run benchmark:presets -- "$@"
