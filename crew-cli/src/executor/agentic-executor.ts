@@ -1090,6 +1090,8 @@ export interface AgenticExecutorResult {
   providerId?: string;
   modelUsed?: string;
   filesDiscovered?: number;
+  history?: TurnResult[];
+  stopReason?: string;
 }
 
 export async function runAgenticWorker(
@@ -1246,6 +1248,8 @@ export async function runAgenticWorker(
     toolsUsed: Array.from(toolsUsed),
     providerId: resolvedProvider?.id,
     modelUsed: resolvedProvider?.model,
-    filesDiscovered: jit.fileCount
+    filesDiscovered: jit.fileCount,
+    history: result.history,
+    stopReason: result.reason
   };
 }

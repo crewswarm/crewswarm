@@ -22,6 +22,7 @@ import { validatePolicyValidation, validateRouterDecision, validateWorkGraph } f
 import { recordJsonParseMetric } from '../metrics/json-parse.js';
 import { PipelineRunState } from './run-state.js';
 import { missingForRequiredCapabilities, resolveCapabilityMap } from '../capabilities/index.js';
+import { buildWorkerTasks, createAdHocWorkerTask, validateWorkerTaskEnvelope, type WorkerTaskEnvelope } from './task-envelope.js';
 // Structure analyzer temporarily disabled - file missing
 // import { analyzeProjectStructure, formatStructureContext } from '../utils/structure-analyzer.js';
 
@@ -53,6 +54,12 @@ export interface L3Result {
     persona: string;
     output: string;
     cost: number;
+    filesChanged: string[];
+    verification: string[];
+    verificationPassed: boolean;
+    escalationNeeded: boolean;
+    escalationReason?: string;
+    toolsUsed?: string[];
   }>;
   totalCost: number;
   executionTimeMs: number;
@@ -230,6 +237,100 @@ export class UnifiedPipeline {
       }
     }
     return { output: text };
+  }
+
+  private extractFilesChanged(history: Array<{ tool: string; params: Record<string, any>; error?: string }> = []): string[] {
+    const changed = new Set<string>();
+    for (const turn of history) {
+      if (turn?.error) continue;
+      if (!['write_file', 'replace'].includes(String(turn.tool || ''))) continue;
+      const filePath = String(turn.params?.file_path || '').trim();
+      if (filePath) changed.add(filePath);
+    }
+    return Array.from(changed);
+  }
+
+  private collectVerificationSignals(
+    history: Array<{ tool: string; params: Record<string, any>; result?: any; error?: string }> = [],
+    parsed: { output: string; validation?: string[] },
+    task: WorkerTaskEnvelope
+  ): { verification: string[]; verificationPassed: boolean; escalationNeeded: boolean; escalationReason?: string } {
+    const verification = new Set<string>(Array.isArray(parsed.validation) ? parsed.validation : []);
+    let verificationPassed = false;
+    let escalationNeeded = false;
+    let escalationReason: string | undefined;
+
+    for (const turn of history) {
+      const tool = String(turn?.tool || '');
+      if (turn?.error) continue;
+      if (tool === 'run_shell_command' || tool === 'check_background_task') {
+        const command = String(turn.params?.command || turn.params?.task_id || '').trim();
+        const output = String(turn.result?.output || turn.result || '').trim();
+        verification.add(command ? `Command succeeded: ${command}` : 'Verification command succeeded.');
+        if (output) {
+          verification.add(`Verification output: ${output.slice(0, 200)}`);
+        }
+        verificationPassed = true;
+      }
+    }
+
+    if (!verificationPassed && task.verification.length > 0) {
+      const normalizedOutput = String(parsed.output || '').toLowerCase();
+      if (normalizedOutput.includes('verified') || normalizedOutput.includes('validation') || normalizedOutput.includes('test passed')) {
+        verificationPassed = true;
+      }
+    }
+
+    if (!verificationPassed && task.verification.length > 0) {
+      escalationNeeded = true;
+      escalationReason = 'Worker completed without an explicit verification signal.';
+    }
+
+    return {
+      verification: Array.from(verification),
+      verificationPassed,
+      escalationNeeded,
+      escalationReason
+    };
+  }
+
+  private buildWorkerExecutionResult(
+    task: WorkerTaskEnvelope,
+    parsed: { output: string; validation?: string[] },
+    workerResult: {
+      cost?: number;
+      success?: boolean;
+      toolsUsed?: string[];
+      history?: Array<{ tool: string; params: Record<string, any>; result?: any; error?: string }>;
+      stopReason?: string;
+    }
+  ) {
+    const history = Array.isArray(workerResult.history) ? workerResult.history : [];
+    const filesChanged = this.extractFilesChanged(history);
+    const verificationState = this.collectVerificationSignals(history, parsed, task);
+
+    let escalationNeeded = verificationState.escalationNeeded || workerResult.success === false;
+    let escalationReason = verificationState.escalationReason;
+
+    if (!escalationReason && workerResult.success === false) {
+      escalationReason = workerResult.stopReason || 'Worker did not reach a successful completion state.';
+    } else if (!escalationReason && workerResult.stopReason && !String(workerResult.stopReason).toLowerCase().includes('complete')) {
+      escalationNeeded = true;
+      escalationReason = workerResult.stopReason;
+    }
+
+    return {
+      workUnitId: task.id,
+      persona: task.persona,
+      output: parsed.output,
+      cost: workerResult.cost || 0,
+      filesChanged,
+      verification: verificationState.verification,
+      verificationPassed: verificationState.verificationPassed,
+      escalationNeeded,
+      escalationReason,
+      toolsUsed: workerResult.toolsUsed || []
+    };
   }
 
   private async recordPipelineMetrics(entry: {
@@ -435,6 +536,28 @@ If output has blockers, set approved=false.`,
     if (missing.length > 0) {
       throw new Error(`Mandatory pipeline gates missing: ${missing.join(', ')}`);
     }
+  }
+
+  private buildValidatedWorkerTasks(workGraph: WorkGraph): WorkerTaskEnvelope[] {
+    const tasks = buildWorkerTasks(workGraph);
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    for (const task of tasks) {
+      const check = validateWorkerTaskEnvelope(task);
+      if (!check.ok) {
+        errors.push(`${task.id}: ${check.errors.join(', ')}`);
+      }
+      if (Array.isArray(check.warnings) && check.warnings.length > 0) {
+        warnings.push(`${task.id}: ${check.warnings.join(', ')}`);
+      }
+    }
+    if (warnings.length > 0) {
+      this.logger.warn(`L2→L3 worker task warnings: ${warnings.join(' | ')}`);
+    }
+    if (errors.length > 0) {
+      throw new Error(`Invalid L2→L3 worker tasks: ${errors.join(' | ')}`);
+    }
+    return tasks;
   }
 
   private async runDefinitionOfDoneGate(
@@ -672,7 +795,12 @@ If output has blockers, set approved=false.`,
       else if (plan.decision === 'execute-local') {
         executionPath.push('l3-executor-single');
         const result = await this.l3ExecuteSingle(
-          request.userInput,
+          createAdHocWorkerTask({
+            id: 'single-task',
+            goal: request.userInput,
+            persona: 'executor-code',
+            sourceRefs: ['request#user-input']
+          }),
           request.context || '',
           traceId
         );
@@ -714,7 +842,12 @@ If output has blockers, set approved=false.`,
           this.logger.warn('L2 selected execute-parallel without workGraph; falling back to single executor');
           executionPath.push('l3-executor-single');
           const result = await this.l3ExecuteSingle(
-            request.userInput,
+            createAdHocWorkerTask({
+              id: 'single-task',
+              goal: request.userInput,
+              persona: 'executor-code',
+              sourceRefs: ['request#user-input']
+            }),
             request.context || '',
             traceId
           );
@@ -1050,6 +1183,7 @@ Return ONLY valid JSON:
         if (!graphCheck.ok) {
           throw new Error(`Planner returned invalid work graph: ${graphCheck.errors.join('; ')}`);
         }
+        this.buildValidatedWorkerTasks(workGraph);
       }
       if (validation) {
         const policyCheck = validatePolicyValidation(validation);
@@ -1104,7 +1238,7 @@ Return ONLY valid JSON:
    * L3: Single Executor
    */
   private async l3ExecuteSingle(
-    task: string,
+    task: WorkerTaskEnvelope,
     context: string,
     traceId: string
   ): Promise<{
@@ -1112,12 +1246,22 @@ Return ONLY valid JSON:
     persona: string;
     output: string;
     cost: number;
+    filesChanged: string[];
+    verification: string[];
+    verificationPassed: boolean;
+    escalationNeeded: boolean;
+    escalationReason?: string;
+    toolsUsed?: string[];
   }> {
     // Structure analyzer temporarily disabled
     // const structure = await analyzeProjectStructure(process.cwd());
     // const structureContext = formatStructureContext(structure);
     // const enhancedTask = `${structureContext}\n\n${task}`;
-    const enhancedTask = task;
+    const check = validateWorkerTaskEnvelope(task);
+    if (!check.ok) {
+      throw new Error(`Invalid single worker task: ${check.errors.join(', ')}`);
+    }
+    const enhancedTask = task.goal;
     
     const overlays: PromptOverlay[] = [
       { type: 'task', content: enhancedTask, priority: 1 }
@@ -1126,6 +1270,14 @@ Return ONLY valid JSON:
     if (context) {
       overlays.push({ type: 'context', content: context, priority: 2 });
     }
+    overlays.push({
+      type: 'constraints',
+      content: `Worker task contract:
+- Allowed paths: ${task.allowedPaths.length > 0 ? task.allowedPaths.join(', ') : '(no explicit paths extracted)'}
+- Verification: ${task.verification.join(' | ')}
+- Escalate when: ${task.escalationHints.join(' | ')}`,
+      priority: 3
+    });
 
     // Get sessionId from session manager if available
     const sessionId = this.session ? await this.session.getSessionId() : undefined;
@@ -1138,12 +1290,8 @@ Return ONLY valid JSON:
       maxTurns: 25
     });
 
-    return {
-      workUnitId: 'single-task',
-      persona: 'executor-code',
-      output: result.output,
-      cost: result.cost
-    };
+    const parsed = this.parseWorkerOutput(String(result.output || ''));
+    return this.buildWorkerExecutionResult(task, parsed, result);
   }
 
   /**
@@ -1170,6 +1318,7 @@ Return ONLY valid JSON:
     }
 
     this.assertMandatoryWorkGraphGates(workGraph);
+    const workerTasks = this.buildValidatedWorkerTasks(workGraph);
 
     // Get sessionId from session manager if available
     const sessionId = this.session ? await this.session.getSessionId() : undefined;
@@ -1186,7 +1335,7 @@ Return ONLY valid JSON:
       : '';
 
     // Sort work units by dependency order
-    const sorted = this.topologicalSort(workGraph.units);
+    const sorted = this.topologicalSort(workerTasks);
 
     // Execute in batches (units with no pending dependencies)
     const maxWorkers = this.getMaxParallelWorkers();
@@ -1207,13 +1356,13 @@ Return ONLY valid JSON:
         }
 
         // Resolve prompt template from persona registry (covers full standalone role set).
-        const templateId = getTemplateForPersona(unit.requiredPersona);
+        const templateId = getTemplateForPersona(unit.persona);
 
         // Structure analyzer temporarily disabled
         // const structure = await analyzeProjectStructure(process.cwd());
         // const structureContext = formatStructureContext(structure);
         // const enhancedDescription = `${structureContext}\n\n${unit.description}`;
-        const enhancedDescription = unit.description;
+        const enhancedDescription = unit.goal;
 
         const overlays: PromptOverlay[] = [
           { type: 'task', content: enhancedDescription, priority: 1 },
@@ -1240,7 +1389,7 @@ Return ONLY valid JSON:
             + (workGraph.planningArtifacts?.roadmap?.length || 0)
             + (workGraph.planningArtifacts?.architecture?.length || 0);
           const artifactContext = this.contextPacks.retrieve(artifactPackId, {
-            query: unit.description,
+            query: unit.goal,
             sourceRefs: unit.sourceRefs || [],
             budgetChars: Number(process.env.CREW_CONTEXT_BUDGET_CHARS || 7000),
             maxChunks: Number(process.env.CREW_CONTEXT_MAX_CHUNKS || 8)
@@ -1278,12 +1427,20 @@ Return ONLY valid JSON:
             priority: 3
           });
         }
+        overlays.push({
+          type: 'constraints',
+          content: `Worker task contract:
+- Allowed paths: ${unit.allowedPaths.length > 0 ? unit.allowedPaths.join(', ') : '(no explicit paths extracted)'}
+- Verification: ${unit.verification.join(' | ')}
+- Escalate when: ${unit.escalationHints.join(' | ')}`,
+          priority: 3
+        });
         
         // Only add JSON constraint for non-coding workers
         // Coding workers (crew-coder, crew-coder-front, crew-coder-back, crew-frontend, crew-fixer) 
         // should use @@WRITE_FILE format instead
         const codingPersonas = ['crew-coder', 'crew-coder-front', 'crew-coder-back', 'crew-frontend', 'crew-fixer', 'crew-mega'];
-        if (!codingPersonas.includes(unit.requiredPersona)) {
+        if (!codingPersonas.includes(unit.persona)) {
           overlays.push({
             type: 'constraints',
             content: `Return ONLY valid JSON:
@@ -1300,7 +1457,7 @@ Return ONLY valid JSON:
         const composedPrompt = this.composer.compose(templateId, overlays, `${traceId}-${unit.id}`);
         
         if (verbose) {
-          console.log(`  [${unit.id}] ${unit.requiredPersona} executing (agentic)...`);
+          console.log(`  [${unit.id}] ${unit.persona} executing (agentic)...`);
         }
         const unitStart = Date.now();
         
@@ -1322,16 +1479,11 @@ Return ONLY valid JSON:
 
         // Store worker output in memory for cross-model continuity
         getPipelineMemory().remember(
-          `Worker ${unit.id} (${unit.requiredPersona}): ${parsed.output.substring(0, 300)}...`,
+          `Worker ${unit.id} (${unit.persona}): ${parsed.output.substring(0, 300)}...`,
           { critical: false, tags: ['l3-output', traceId, unit.id], provider: 'pipeline' }
         );
 
-        return {
-          workUnitId: unit.id,
-          persona: unit.requiredPersona,
-          output: parsed.output,
-          cost: result.cost || 0
-        };
+        return this.buildWorkerExecutionResult(unit, parsed, result);
       };
 
       const batchResults: Array<{
@@ -1339,6 +1491,12 @@ Return ONLY valid JSON:
         persona: string;
         output: string;
         cost: number;
+        filesChanged: string[];
+        verification: string[];
+        verificationPassed: boolean;
+        escalationNeeded: boolean;
+        escalationReason?: string;
+        toolsUsed?: string[];
       }> = [];
       const queue = batch.slice();
       const workers = Array.from({ length: Math.min(maxWorkers, queue.length) }, async () => {
@@ -1381,8 +1539,8 @@ Return ONLY valid JSON:
   /**
    * Topological sort for dependency ordering
    */
-  private topologicalSort(units: WorkGraph['units']): typeof units {
-    const sorted: typeof units = [];
+  private topologicalSort<T extends { id: string; dependencies: string[] }>(units: T[]): T[] {
+    const sorted: T[] = [];
     const visited = new Set<string>();
     const temp = new Set<string>();
 
@@ -1418,8 +1576,8 @@ Return ONLY valid JSON:
   /**
    * Group units into parallel execution batches
    */
-  private getBatches(sortedUnits: WorkGraph['units']): Array<typeof sortedUnits> {
-    const batches: Array<typeof sortedUnits> = [];
+  private getBatches<T extends { id: string; dependencies: string[] }>(sortedUnits: T[]): Array<T[]> {
+    const batches: Array<T[]> = [];
     const completed = new Set<string>();
 
     while (completed.size < sortedUnits.length) {
