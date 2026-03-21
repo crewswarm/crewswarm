@@ -1,8 +1,10 @@
 # crewswarm
 
-**Local-first AI orchestration for people who want real files, real tools, and real control.**
+**Local-first AI orchestration that actually works on real projects.**
 
-crewswarm is an open-source AI runtime for software development. It combines multi-agent orchestration, project-aware memory, local tool execution, and multiple interfaces into one stack you can run yourself.
+Run a multi-agent software crew on your own machine. crewswarm writes files, runs commands, keeps project memory, and gives you multiple ways to work: dashboard, studio, CLI, chat clients, and editor integrations.
+
+**One runtime. Multiple interfaces. Real execution.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org)
