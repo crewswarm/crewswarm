@@ -33,6 +33,7 @@ function resolveNodeBin() {
 }
 
 const NODE_BIN = resolveNodeBin();
+const ALLOW_PGREP_FALLBACK = process.env.CREWSWARM_DISABLE_PGREP_FALLBACK !== "1";
 
 function loadConfig() {
   const raw = loadSwarmConfig();
@@ -87,8 +88,7 @@ function runningBridges() {
     }
   } catch { /* PID_DIR unreadable, fall through */ }
   // Fallback: pgrep-based detection (fast, no ps aux hang risk)
-  const allowPgrepFallback = process.env.CREWSWARM_DISABLE_PGREP_FALLBACK !== "1";
-  if (agents.size === 0 && allowPgrepFallback) {
+  if (agents.size === 0 && ALLOW_PGREP_FALLBACK) {
     try {
       const pids = execSync("pgrep -f 'gateway-bridge.mjs --rt-daemon'", { encoding: "utf8", timeout: 2000 }).trim();
       if (pids) {
@@ -180,10 +180,12 @@ const already = runningBridges();
 
 // SAFETY CHECK: Use pgrep as authoritative source to detect duplicate bridges
 let actualRunning = 0;
-try {
-  const pids = execSync("pgrep -f 'gateway-bridge.mjs --rt-daemon'", { encoding: "utf8", timeout: 2000 }).trim();
-  actualRunning = pids ? pids.split("\n").filter(Boolean).length : 0;
-} catch { /* no matches */ }
+if (ALLOW_PGREP_FALLBACK) {
+  try {
+    const pids = execSync("pgrep -f 'gateway-bridge.mjs --rt-daemon'", { encoding: "utf8", timeout: 2000 }).trim();
+    actualRunning = pids ? pids.split("\n").filter(Boolean).length : 0;
+  } catch { /* no matches */ }
+}
 
 // If pgrep shows more processes than our PID tracking, we have orphaned/duplicate bridges
 if (actualRunning > already.size && actualRunning > allRtIds.size) {
@@ -242,6 +244,7 @@ console.log();
 // crew-lead runs its own script, not gateway-bridge
 const CREW_LEAD_SCRIPT = path.join(CREWSWARM_DIR, "crew-lead.mjs");
 const crewLeadRunning = (() => {
+  if (!ALLOW_PGREP_FALLBACK) return false;
   try {
     execSync("pgrep -f 'crew-lead.mjs'", { encoding: "utf8", timeout: 2000, stdio: "pipe" });
     return true;
