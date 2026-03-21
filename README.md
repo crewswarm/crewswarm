@@ -2,7 +2,7 @@
 
 **Local-first AI orchestration for people who want real files, real tools, and real control.**
 
-crewswarm is an open-source AI workspace for software development. It combines multi-agent orchestration, project-aware memory, local tool execution, chat surfaces, and editor/MCP integrations into one stack you can run yourself.
+crewswarm is an open-source AI runtime for software development. It combines multi-agent orchestration, project-aware memory, local tool execution, and multiple interfaces into one stack you can run yourself.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org)
@@ -18,11 +18,11 @@ Most AI dev tools are just a chat box bolted onto an editor.
 
 **crewswarm** is different:
 
-- **Local-first** — run it on your own machine
+- **Local-first** — the runtime runs on your machine, against your files and your workspace
 - **Real execution** — agents write files, run commands, and operate on actual projects
 - **Multi-agent** — planner, coder, QA, fixer, security, GitHub, and more
 - **Persistent context** — memory and session history survive beyond one chat
-- **Multiple control surfaces** — dashboard, CLI, Telegram, SwiftBar, MCP/editor integrations
+- **Multiple interfaces** — dashboard, studio, CLI, Telegram, WhatsApp, SwiftBar, and editor integrations
 - **Model-flexible** — use Groq, OpenAI, Anthropic, Gemini, Mistral, DeepSeek, xAI, Ollama, and more
 
 It is built for:
@@ -30,6 +30,54 @@ It is built for:
 - AI-native dev teams
 - local-first users who do not want SaaS lock-in
 - people building real software with agent workflows, not toy demos
+
+---
+
+## What "local-first" means
+
+Local-first does **not** mean "local models only."
+
+It means the **crewswarm runtime** runs on your machine:
+- your project files stay in your workspace
+- orchestration runs locally
+- config and memory live under `~/.crewswarm`
+- command execution happens on your machine
+
+You can still use either:
+- **remote model APIs** like Groq, OpenAI, Anthropic, Gemini, Mistral, or DeepSeek
+- **local models** through Ollama
+
+In other words: crewswarm is **local-first control and execution**, with flexible model backends.
+
+---
+
+## Product map
+
+crewswarm is one system with a few different ways to use it.
+
+### Core runtime
+
+- **`crewswarm`** — the local-first multi-agent runtime and orchestration layer
+
+### Main interfaces
+
+- **`dashboard`** — browser-based control panel for setup, configuration, services, health, and chat
+- **`studio` / `vibe`** — lightweight IDE-style workspace with project-aware chat
+- **`crew-cli`** — terminal-first execution interface for one-shot tasks, scripting, and headless workflows
+
+### Optional chat clients
+
+- **Telegram** — chat with the same runtime from Telegram
+- **WhatsApp** — chat with the same runtime from WhatsApp
+- **CrewChat.app** — native macOS chat client
+- **SwiftBar** — lightweight menu bar status and quick control surface
+
+### Integration layers
+
+- **MCP integrations** — let tools like Cursor, Claude Code, OpenCode, and other MCP-capable clients use crewswarm
+- **OpenAI-compatible API** — lets OpenAI-style clients connect to crewswarm through standard `/v1/*` endpoints
+
+This is not a pile of separate products. It is **one runtime with multiple surfaces and integration paths**.
 
 ---
 
@@ -118,26 +166,23 @@ Optional flags:
 
 ## Core capabilities
 
-**Real tool execution**
+**Real tool execution**  
 Agents can write files, read files, create directories, run commands, and work inside a real project folder.
 
-**PM-led orchestration**
+**PM-led orchestration**  
 Natural language requests are broken into structured tasks and routed to the right agent.
 
-**Shared memory**
+**Shared memory**  
 Project context persists through files like `brain.md`, `session-log.md`, `current-state.md`, and `orchestration-protocol.md`.
 
-**Fault tolerance**
+**Fault tolerance**  
 Retries, escalation to fixer agents, task leases, and dead-letter replay support are built in.
 
-**Command approval gate**
+**Command approval gate**  
 Potentially risky shell commands require approval before execution.
 
-**Multi-engine support**
-Route work through different engines and environments, including Codex, Claude Code, Cursor, Gemini, OpenCode, and `crew-cli`.
-
-**Multiple control surfaces**
-Use crewswarm from the web dashboard, CLI, Telegram, macOS SwiftBar, or MCP/editor integrations.
+**Multiple interfaces**  
+Use crewswarm from the dashboard, studio, CLI, Telegram, SwiftBar, or editor integrations.
 
 ---
 
@@ -148,9 +193,9 @@ Use crewswarm from the web dashboard, CLI, Telegram, macOS SwiftBar, or MCP/edit
 | Real file writes | ✅ | ⚠️ | ⚠️ | ⚠️ |
 | PM-led planning | ✅ | ❌ | ❌ | ⚠️ |
 | Persistent memory | ✅ | ⚠️ | ❌ | ⚠️ |
-| Local-first | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| Local-first runtime | ✅ | ⚠️ | ⚠️ | ⚠️ |
 | Built-in dashboard | ✅ | ❌ | ❌ | ❌ |
-| Telegram / messaging bridges | ✅ | ❌ | ❌ | ❌ |
+| Messaging interfaces | ✅ | ❌ | ❌ | ❌ |
 | Easy local startup | ✅ | ⚠️ | ⚠️ | ⚠️ |
 
 ---
