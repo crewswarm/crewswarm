@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { IncomingMessage, ServerResponse } from 'http';
 import { UnifiedServerOptions } from './server.js';
 

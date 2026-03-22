@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';

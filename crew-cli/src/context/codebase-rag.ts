@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Codebase RAG - Auto-load relevant files for LLM context
  * 

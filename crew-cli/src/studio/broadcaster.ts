@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Studio Broadcaster
  * Sends file changes from CLI to Studio via WebSocket

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { spawn, ChildProcess } from 'node:child_process';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
