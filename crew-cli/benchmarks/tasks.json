@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "fixtureDir": "fixture",
+  "defaultTimeoutMs": 120000,
+  "tasks": [
+    {
+      "id": "t1-routing-status-code",
+      "tier": 1,
+      "name": "Route: status code question",
+      "prompt": "What HTTP status code should a DELETE endpoint return on success when the response body is empty?",
+      "expectedDecision": "direct-answer",
+      "verify": {
+        "type": "response-contains",
+        "patterns": ["204"]
+      }
+    },
+    {
+      "id": "t1-routing-count-routes",
+      "tier": 1,
+      "name": "Route: count project routes",
+      "prompt": "How many Express route handlers (GET, POST, PUT, DELETE) are defined across all files in the src/routes/ directory? List each one.",
+      "expectedDecision": "direct-answer",
+      "verify": {
+        "type": "response-contains",
+        "patterns": ["GET", "POST", "DELETE"]
+      }
+    },
+    {
+      "id": "t2-validation",
+      "tier": 2,
+      "name": "Single-file: add input validation to POST /users",
+      "prompt": "Add input validation to the POST /api/users route in src/routes/users.ts. The name field must be a non-empty string, and the email field must be a string containing an @ character. Return 400 with a JSON error message if validation fails.",
+      "expectedDecision": "execute",
+      "verify": {
+        "type": "shell",
+        "commands": ["npx tsc --noEmit"],
+        "filesMustContain": {
+          "src/routes/users.ts": ["400", "@"]
+        }
+      }
+    },
+    {
+      "id": "t2-fix-test",
+      "tier": 2,
+      "name": "Single-file: fix failing test",
+      "prompt": "Run the test suite with 'node --import tsx --test tests/users.test.ts' and fix the failing test. Do not change the route handler behavior, only fix the test assertion.",
+      "expectedDecision": "execute",
+      "verify": {
+        "type": "shell",
+        "commands": ["node --import tsx --test tests/users.test.ts"],
+        "filesMustContain": {
+          "tests/users.test.ts": ["204"]
+        }
+      }
+    },
+    {
+      "id": "t2-return-types",
+      "tier": 2,
+      "name": "Single-file: add return types to logger",
+      "prompt": "Add explicit TypeScript return type annotations to all functions in src/utils/logger.ts. The formatTimestamp and formatMessage functions should return string, and all logger methods should return void.",
+      "expectedDecision": "execute",
+      "verify": {
+        "type": "shell",
+        "commands": ["npx tsc --noEmit"],
+        "filesMustContain": {
+          "src/utils/logger.ts": [": string", ": void"]
+        }
+      }
+    },
+    {
+      "id": "t2-add-search",
+      "tier": 2,
+      "name": "Single-file: add search query param",
+      "prompt": "Add a search feature to GET /api/users in src/routes/users.ts. When a ?q= query parameter is provided, filter users by name (case-insensitive partial match). If no q parameter is given, return all users.",
+      "expectedDecision": "execute",
+      "verify": {
+        "type": "shell",
+        "commands": ["npx tsc --noEmit"],
+        "filesMustContain": {
+          "src/routes/users.ts": ["query", "filter"]
+        }
+      }
+    },
+    {
+      "id": "t3-activity-endpoint",
+      "tier": 3,
+      "name": "Multi-file: add activity endpoint",
+      "prompt": "Add a new GET /api/users/:id/activity endpoint that returns recent activity for a user. Create: (1) src/models/activity.ts with an Activity interface (id, userId, action, timestamp) and an ActivityStore class with methods to add and get activities by userId, (2) a route handler in src/routes/users.ts or a new src/routes/activity.ts file that returns activities as JSON, (3) a test file tests/activity.test.ts that tests the new endpoint. The endpoint should return 404 if the user does not exist.",
+      "expectedDecision": "execute",
+      "verify": {
+        "type": "shell",
+        "commands": ["npx tsc --noEmit"],
+        "filesMustExist": ["src/models/activity.ts"],
+        "filesMustContain": {
+          "src/models/activity.ts": ["Activity", "userId"]
+        }
+      }
+    },
+    {
+      "id": "t3-rename-store",
+      "tier": 3,
+      "name": "Multi-file: rename UserStore to AccountStore",
+      "prompt": "Rename the UserStore class to AccountStore across the entire codebase. Update the class name, the export, and all import references. Make sure the code still compiles with tsc.",
+      "expectedDecision": "execute",
+      "verify": {
+        "type": "shell",
+        "commands": ["npx tsc --noEmit"],
+        "filesMustContain": {
+          "src/models/user.ts": ["AccountStore"]
+        },
+        "filesMustNotContain": {
+          "src/models/user.ts": ["class UserStore"]
+        }
+      }
+    },
+    {
+      "id": "t4-rate-limiting",
+      "tier": 4,
+      "name": "QA: add rate limiting middleware",
+      "prompt": "Add rate limiting middleware to all API routes. Requirements: (1) Create src/middleware/rate-limit.ts with a middleware that limits each IP to 100 requests per minute, (2) Return 429 Too Many Requests with a JSON error and Retry-After header when the limit is exceeded, (3) Apply it to the /api routes in server.ts, (4) Write a test in tests/rate-limit.test.ts that verifies the rate limit is enforced. Use an in-memory store, no external dependencies.",
+      "expectedDecision": "execute",
+      "verify": {
+        "type": "shell",
+        "commands": ["npx tsc --noEmit"],
+        "filesMustExist": ["src/middleware/rate-limit.ts"],
+        "filesMustContain": {
+          "src/middleware/rate-limit.ts": ["429", "100", "Retry-After"],
+          "src/server.ts": ["rate"]
+        }
+      }
+    },
+    {
+      "id": "t4-error-handling",
+      "tier": 4,
+      "name": "QA: comprehensive error handling",
+      "prompt": "Improve error handling across the application: (1) Create src/utils/errors.ts with custom error classes (AppError, NotFoundError, ValidationError) that include status codes, (2) Update the error handler in server.ts to use these custom errors and return structured JSON responses with a correlationId, (3) Update the users routes to throw NotFoundError and ValidationError instead of manually setting status codes, (4) Ensure the code compiles with tsc --noEmit.",
+      "expectedDecision": "execute",
+      "verify": {
+        "type": "shell",
+        "commands": ["npx tsc --noEmit"],
+        "filesMustExist": ["src/utils/errors.ts"],
+        "filesMustContain": {
+          "src/utils/errors.ts": ["AppError", "NotFoundError", "ValidationError", "statusCode"]
+        }
+      }
+    }
+  ]
+}

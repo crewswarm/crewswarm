@@ -1972,6 +1972,8 @@ export async function main(args = []) {
             resumedPhase: resumeContext?.fromPhase || null,
             traceId: result.traceId || null,
             phase: result.phase || null,
+            decision: result.plan?.decision || null,
+            executionPath: Array.isArray(result.executionPath) ? result.executionPath : [],
             timeline: Array.isArray(result.timeline) ? result.timeline : [],
             response: responseText,
             edits,
