@@ -3414,25 +3414,37 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     // ── Settings: Preset (from setup wizard) ────────────────────────────────
-    if (url.pathname === "/api/settings/preset" && req.method === "POST") {
-      let body = "";
-      for await (const chunk of req) body += chunk;
-      try {
-        const { preset } = JSON.parse(body);
-        const cfg = readSwarmConfigSafe();
-        cfg.preset = preset || "balanced";
-        const writeErr = await safeWriteConfig(cfg);
-        if (writeErr) {
-          res.writeHead(writeErr.status, { "content-type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: writeErr.message }));
-        } else {
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ ok: true, preset: cfg.preset }));
+    // ── Engine detection for first-run wizard ─────────────────────────────
+    if (url.pathname === "/api/first-run-engines" && req.method === "GET") {
+      const { execSync } = await import("node:child_process");
+      // Expand PATH to include common install locations (launchd has restricted PATH)
+      const extraPaths = [
+        `${os.homedir()}/.local/bin`,
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        `${os.homedir()}/.npm-global/bin`,
+        `${os.homedir()}/.nvm/versions/node/*/bin`,
+      ].join(":");
+      const fullPath = `${extraPaths}:${process.env.PATH || ""}`;
+      const checks = [
+        { id: "claude-code", bin: "claude" },
+        { id: "codex",       bin: "codex" },
+        { id: "opencode",    bin: "opencode" },
+        { id: "gemini-cli",  bin: "gemini" },
+        { id: "cursor",      bin: "cursor" },
+      ];
+      const engines = {};
+      for (const { id, bin } of checks) {
+        try {
+          // Use login shell to get full user PATH
+          execSync(`/bin/zsh -lc 'command -v ${bin}'`, { stdio: "pipe", timeout: 5000 });
+          engines[id] = true;
+        } catch {
+          engines[id] = false;
         }
-      } catch (err) {
-        res.writeHead(500, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: err.message }));
       }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ engines }));
       return;
     }
     // ── Settings: RT Bus token ─────────────────────────────────────────────
@@ -3606,6 +3618,7 @@ const server = http.createServer(async (req, res) => {
     // ── Built-in providers (crewswarm standalone config) ─────────────────
     const BUILTIN_URLS = {
       groq: "https://api.groq.com/openai/v1",
+      fireworks: "https://api.fireworks.ai/inference/v1",
       anthropic: "https://api.anthropic.com/v1",
       openai: "https://api.openai.com/v1",
       cerebras: "https://api.cerebras.ai/v1",

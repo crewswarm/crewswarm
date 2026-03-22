@@ -21,6 +21,7 @@ export function initModelsTab({ hideAllViews, setNavActive, loadAgents } = {}) {
 
 const BUILTIN_PROVIDERS = [
   { id:'groq',         label:'Groq',              icon:'⚡', url:'https://console.groq.com/keys',              hint:'Fast inference — great for crew-coder, crew-fixer' },
+  { id:'fireworks',    label:'Fireworks AI',      icon:'🎆', url:'https://fireworks.ai/',                       hint:'OpenAI-compatible inference platform — fast serverless models, custom deployments, and easy model discovery' },
   { id:'anthropic',    label:'Anthropic',          icon:'🟣', url:'https://console.anthropic.com/',              hint:'Claude models — best for complex reasoning tasks' },
   { id:'openai',       label:'OpenAI (API)',        icon:'🟢', url:'https://platform.openai.com/api-keys',        hint:'GPT-4o and o-series — pay per use with API key' },
   { id:'cerebras',     label:'Cerebras',            icon:'🧠', url:'https://cloud.cerebras.ai/',                  hint:'Ultra-fast inference on Cerebras hardware — llama-3.3-70b at 2,000 tok/s' },
@@ -40,7 +41,7 @@ const SEARCH_TOOLS = [
 ];
 
 const PROVIDER_ICONS = {
-  opencode:'🚀', groq:'⚡', nvidia:'🎮', ollama:'🏠', 'openai-local':'🟢', xai:'𝕏',
+  opencode:'🚀', groq:'⚡', fireworks:'🎆', nvidia:'🎮', ollama:'🏠', 'openai-local':'🟢', xai:'𝕏',
   google:'🔵', deepseek:'🌊', openai:'🟢', perplexity:'🔍', cerebras:'🧠', mistral:'🌀',
   together:'🤝', cohere:'🔶', anthropic:'🟣', openrouter:'🔀',
 };
