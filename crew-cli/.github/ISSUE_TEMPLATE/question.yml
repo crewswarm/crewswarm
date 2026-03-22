@@ -1,0 +1,22 @@
+name: Question
+description: Ask a usage or architecture question
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to understand?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Share commands/config/repo context that may help.
+  - type: textarea
+    id: tried
+    attributes:
+      label: What You Tried
+      description: Mention docs/commands you already checked.

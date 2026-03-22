@@ -1,0 +1,113 @@
+{
+  "name": "crewswarm-cli",
+  "version": "0.1.0",
+  "description": "Multi-model AI coding CLI with 34+ tools, multi-agent swarm, and real-time streaming — works with GPT, Claude, Gemini, Grok, DeepSeek, and more",
+  "type": "module",
+  "main": "dist/crew.mjs",
+  "bin": {
+    "crew": "bin/crew.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/crew.js",
+    "build": "npm run build:cli && npm run build:memory && npm run build:engine",
+    "build:cli": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --target=node20 --sourcemap --outfile=dist/crew.mjs --packages=external",
+    "build:memory": "esbuild src/memory/index.ts --bundle --platform=node --format=esm --target=node20 --sourcemap --outfile=dist/memory.mjs --packages=external",
+    "build:engine": "esbuild src/engine-api.ts --bundle --platform=node --format=esm --target=node20 --sourcemap --outfile=dist/engine.mjs --packages=external",
+    "test": "node --import tsx --test tests/unit/*.test.js",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage tests/*.test.js tests/unit/*.test.js",
+    "qa:inventory": "node tools/qa-file-inventory.mjs",
+    "qa:smoke": "node tools/qa-command-smoke.mjs",
+    "qa:gateway-contract": "node tools/qa-gateway-contract.mjs",
+    "qa:engine-matrix": "node tools/qa-engine-matrix.mjs",
+    "qa:pm-loop": "node tools/qa-pm-loop-e2e.mjs",
+    "qa:review-strict": "node tools/qa-review-strict.mjs",
+    "qa:soak": "node tools/qa-soak-headless.mjs",
+    "qa:e2e": "npm run qa:gateway-contract && npm run qa:engine-matrix && npm run qa:pm-loop",
+    "qa:full": "npm run build && npm run test:coverage && npm run qa:inventory && npm run qa:smoke",
+    "benchmark:presets": "node scripts/benchmark-presets.mjs --tasks-file benchmarks/presets-corpus.json",
+    "benchmark:check": "node scripts/benchmark-presets.mjs --check --tasks-file benchmarks/presets-corpus.json --baseline benchmarks/presets-baseline.json",
+    "benchmark:check:ci": "node scripts/benchmark-presets.mjs --check --tasks-file benchmarks/presets-corpus.json --baseline benchmarks/presets-baseline.json --min-pass-rate 0.5 --max-regression-pct 40 --skip-if-unavailable",
+    "benchmark:baseline:update": "node scripts/benchmark-presets.mjs --update-baseline --tasks-file benchmarks/presets-corpus.json --baseline benchmarks/presets-baseline.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
+    "typecheck:touched": "node scripts/typecheck-touched.mjs",
+    "check": "npm run build && node --check dist/crew.mjs",
+    "doctor": "node bin/crew.js doctor",
+    "lint": "eslint src/",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "ai",
+    "cli",
+    "coding",
+    "agent",
+    "multi-agent",
+    "grok",
+    "gemini",
+    "openai",
+    "claude",
+    "deepseek",
+    "agentic",
+    "code-generation",
+    "llm",
+    "crewswarm",
+    "orchestration",
+    "devtools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crewswarm/crewswarm.git",
+    "directory": "crew-cli"
+  },
+  "homepage": "https://crewswarm.com/cli",
+  "bugs": {
+    "url": "https://github.com/crewswarm/crewswarm/issues"
+  },
+  "author": "CrewSwarm <hello@crewswarm.com>",
+  "license": "ISC",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@google/genai": "^1.44.0",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
+    "body-parser": "^1.20.4",
+    "chalk": "^5.3.0",
+    "chokidar": "^4.0.3",
+    "commander": "^11.0.0",
+    "diff": "^8.0.3",
+    "dotenv": "^16.3.0",
+    "express": "^4.22.1",
+    "fast-glob": "^3.3.3",
+    "fast-levenshtein": "^3.0.0",
+    "ignore": "^7.0.5",
+    "inquirer": "^9.2.0",
+    "mime": "^4.1.0",
+    "node-pty": "^1.1.0",
+    "ora": "^7.0.1",
+    "ws": "^8.14.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.2",
+    "esbuild": "^0.25.0",
+    "eslint": "^8.50.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.0.0"
+  },
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "lib": "lib",
+    "test": "tests"
+  }
+}

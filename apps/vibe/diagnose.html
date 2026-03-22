@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Vibe Diagnostic</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #0a0e14;
+      color: #f0f6ff;
+    }
+    .test { margin: 10px 0; padding: 10px; border-left: 3px solid #38bdf8; }
+    .pass { border-color: #34d399; }
+    .fail { border-color: #f87171; }
+    pre { background: #0d1420; padding: 10px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Vibe Diagnostic</h1>
+  <div id="results"></div>
+
+  <script>
+    const results = document.getElementById('results');
+
+    function test(name, fn) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      try {
+        const result = fn();
+        div.classList.add('pass');
+        div.innerHTML = `<strong>✅ ${name}</strong><pre>${JSON.stringify(result, null, 2)}</pre>`;
+      } catch (err) {
+        div.classList.add('fail');
+        div.innerHTML = `<strong>❌ ${name}</strong><pre>${err.message}</pre>`;
+      }
+      results.appendChild(div);
+    }
+
+    // Wait for Vibe to load
+    setTimeout(() => {
+      test('Vibe URL is accessible', () => {
+        return { url: window.location.href };
+      });
+
+      test('Monaco loaded', () => {
+        if (typeof window.monaco === 'undefined') {
+          throw new Error('window.monaco is undefined - Monaco did not load');
+        }
+        return { monaco: 'loaded' };
+      });
+
+      test('Editor instance', () => {
+        if (typeof window.editor === 'undefined') {
+          return { editor: 'undefined (normal - not initialized until file opened)' };
+        }
+        return { editor: window.editor ? 'initialized' : 'null' };
+      });
+
+      test('Fetch projects API', async () => {
+        const res = await fetch(`${window.location.origin}/api/studio/projects`);
+        const data = await res.json();
+        return { status: res.status, projects: data.projects?.length };
+      });
+
+      test('Fetch files API', async () => {
+        const rootDir =
+          typeof window.__studioGetCurrentProjectDir === 'function'
+            ? window.__studioGetCurrentProjectDir()
+            : 'apps/vibe';
+        const res = await fetch(
+          `${window.location.origin}/api/studio/files?dir=${encodeURIComponent(rootDir)}`
+        );
+        const data = await res.json();
+        return { status: res.status, files: data.files?.length };
+      });
+
+      test('Terminal content element', () => {
+        const el = document.getElementById('terminal-content');
+        if (!el) throw new Error('terminal-content element not found');
+        return { 
+          exists: true, 
+          children: el.children.length,
+          innerHTML: el.innerHTML.slice(0, 200)
+        };
+      });
+
+      test('Editor toolbar buttons', () => {
+        const buttons = document.querySelectorAll('.editor-toolbar-btn');
+        if (!buttons.length) throw new Error('No toolbar buttons found');
+        const states = Array.from(buttons).map(btn => ({
+          id: btn.id,
+          disabled: btn.disabled,
+          title: btn.title
+        }));
+        return { count: buttons.length, states };
+      });
+
+      test('Console errors', () => {
+        // Can't capture past errors, but can show if any are visible
+        return { note: 'Check browser DevTools console for red errors' };
+      });
+
+    }, 2000);
+  </script>
+</body>
+</html>

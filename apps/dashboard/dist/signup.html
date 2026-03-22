@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign Up — CrewSwarm</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #060a10;
+      --bg-card: #0d1420;
+      --bg-card2: #111827;
+      --border: rgba(255,255,255,0.07);
+      --text: #f0f6ff;
+      --text-2: #8b9db3;
+      --text-3: #4a5568;
+      --accent: #38bdf8;
+      --green: #34d399;
+      --red: #f87171;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      font-size: 14px;
+    }
+    .container {
+      max-width: 480px;
+      width: 100%;
+    }
+    .brand {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .brand-name {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .brand-name span { color: var(--accent); }
+    .brand-sub {
+      font-size: 14px;
+      color: var(--text-2);
+      margin-top: 6px;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+    }
+    .form-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .form-subtitle {
+      font-size: 13px;
+      color: var(--text-2);
+      margin-bottom: 24px;
+    }
+    .form-group {
+      margin-bottom: 18px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+    label .required {
+      color: var(--red);
+      margin-left: 2px;
+    }
+    input, select, textarea {
+      width: 100%;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    input::placeholder {
+      color: var(--text-3);
+    }
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+    .help-text {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: 4px;
+    }
+    .btn {
+      width: 100%;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 7px;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.2s;
+    }
+    .btn:hover:not(:disabled) {
+      opacity: 0.9;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .alert {
+      padding: 12px 14px;
+      border-radius: 7px;
+      margin-top: 16px;
+      font-size: 13px;
+      display: none;
+    }
+    .alert.error {
+      background: rgba(248,113,113,0.12);
+      color: var(--red);
+      border: 1px solid rgba(248,113,113,0.25);
+    }
+    .alert.success {
+      background: rgba(52,211,153,0.12);
+      color: var(--green);
+      border: 1px solid rgba(52,211,153,0.25);
+    }
+    .footer {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 13px;
+      color: var(--text-2);
+    }
+    .footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .footer a:hover {
+      text-decoration: underline;
+    }
+    #successCard {
+      display: none;
+    }
+    .success-icon {
+      font-size: 48px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .whatsapp-btn {
+      background: #25D366;
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-decoration: none;
+      width: 100%;
+    }
+    .whatsapp-btn:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="brand">
+      <div class="brand-name">Crew<span>Swarm</span></div>
+      <div class="brand-sub">Multi-Agent AI Orchestration</div>
+    </div>
+
+    <!-- Signup Form -->
+    <div class="card" id="signupCard">
+      <h1 class="form-title">Create Your Account</h1>
+      <p class="form-subtitle">Get started with our AI crew assistant on WhatsApp</p>
+
+      <form id="signupForm">
+        <div class="form-group">
+          <label>Name <span class="required">*</span></label>
+          <input type="text" id="name" name="name" placeholder="Your full name" required maxlength="100" />
+        </div>
+
+        <div class="form-group">
+          <label>WhatsApp Phone <span class="required">*</span></label>
+          <input type="tel" id="phone" name="phone" placeholder="+1234567890" required pattern="^\+[1-9]\d{1,14}$" />
+          <div class="help-text">Include country code (e.g., +1 for US)</div>
+        </div>
+
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="email" name="email" placeholder="you@example.com" maxlength="100" />
+          <div class="help-text">Optional — for notifications and updates</div>
+        </div>
+
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" id="city" name="city" placeholder="Grand Bend" maxlength="100" />
+          <div class="help-text">Your current city (helps with local recommendations)</div>
+        </div>
+
+        <div class="form-group">
+          <label>State / Province</label>
+          <input type="text" id="state" name="state" placeholder="Ontario" maxlength="100" />
+        </div>
+
+        <div class="form-group">
+          <label>Country</label>
+          <input type="text" id="country" name="country" placeholder="Canada" maxlength="100" />
+        </div>
+
+        <div class="form-group">
+          <label>Diet Preference</label>
+          <select id="diet" name="diet">
+            <option value="">— Select —</option>
+            <option value="omnivore">Omnivore</option>
+            <option value="vegetarian">Vegetarian</option>
+            <option value="vegan">Vegan</option>
+            <option value="pescatarian">Pescatarian</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Spice Level</label>
+          <select id="spiceLevel" name="spiceLevel">
+            <option value="">— Select —</option>
+            <option value="mild">Mild</option>
+            <option value="medium">Medium</option>
+            <option value="hot">Hot</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Budget</label>
+          <select id="budget" name="budget">
+            <option value="">— Select —</option>
+            <option value="$">$ (Budget-friendly)</option>
+            <option value="$$">$$ (Moderate)</option>
+            <option value="$$$">$$$ (Premium)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Allergies</label>
+          <input type="text" id="allergies" name="allergies" placeholder="shellfish, peanuts" maxlength="200" />
+          <div class="help-text">Comma-separated list</div>
+        </div>
+
+        <div class="form-group">
+          <label>Favorite Cuisines</label>
+          <input type="text" id="favCuisines" name="favCuisines" placeholder="Thai, Mexican, Italian" maxlength="200" />
+          <div class="help-text">Comma-separated list</div>
+        </div>
+
+        <button type="submit" class="btn" id="submitBtn">Sign Up</button>
+      </form>
+
+      <div class="alert error" id="errorAlert"></div>
+      <div class="alert success" id="successAlert"></div>
+    </div>
+
+    <!-- Success Confirmation -->
+    <div class="card" id="successCard">
+      <div class="success-icon">✅</div>
+      <h1 class="form-title" style="text-align: center;">You're All Set!</h1>
+      <p class="form-subtitle" style="text-align: center;">Your account has been created. Now message us on WhatsApp to get started.</p>
+      
+      <a href="#" class="btn whatsapp-btn" id="whatsappBtn">
+        <span style="font-size: 20px;">📱</span>
+        Open WhatsApp
+      </a>
+
+      <div class="help-text" style="text-align: center; margin-top: 16px;">
+        Or manually message: <strong id="whatsappNumber"></strong>
+      </div>
+    </div>
+
+    <div class="footer">
+      Already have an account? <a href="/">Go to Dashboard</a>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('signupForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const errorAlert = document.getElementById('errorAlert');
+    const successAlert = document.getElementById('successAlert');
+    const signupCard = document.getElementById('signupCard');
+    const successCard = document.getElementById('successCard');
+
+    // Sanitize input (prevent XSS)
+    function sanitize(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML.trim().slice(0, 1000); // Max 1000 chars
+    }
+
+    // Validate phone format
+    function validatePhone(phone) {
+      const phoneRegex = /^\+[1-9]\d{1,14}$/;
+      return phoneRegex.test(phone);
+    }
+
+    // Show error
+    function showError(message) {
+      errorAlert.textContent = message;
+      errorAlert.style.display = 'block';
+      successAlert.style.display = 'none';
+    }
+
+    // Show success
+    function showSuccess(message) {
+      successAlert.textContent = message;
+      successAlert.style.display = 'block';
+      errorAlert.style.display = 'none';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      // Clear alerts
+      errorAlert.style.display = 'none';
+      successAlert.style.display = 'none';
+      
+      // Disable submit button
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating account...';
+
+      // Get and sanitize form values
+      const name = sanitize(document.getElementById('name').value);
+      const phone = sanitize(document.getElementById('phone').value);
+      const email = sanitize(document.getElementById('email').value);
+      const city = sanitize(document.getElementById('city').value);
+      const state = sanitize(document.getElementById('state').value);
+      const country = sanitize(document.getElementById('country').value);
+      const diet = sanitize(document.getElementById('diet').value);
+      const spiceLevel = sanitize(document.getElementById('spiceLevel').value);
+      const budget = sanitize(document.getElementById('budget').value);
+      const allergies = sanitize(document.getElementById('allergies').value);
+      const favCuisines = sanitize(document.getElementById('favCuisines').value);
+
+      // Validate required fields
+      if (!name || name.length < 2) {
+        showError('Please enter a valid name (at least 2 characters)');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign Up';
+        return;
+      }
+
+      if (!phone || !validatePhone(phone)) {
+        showError('Please enter a valid phone number with country code (e.g., +1234567890)');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign Up';
+        return;
+      }
+
+      // Build preferences object
+      const preferences = {};
+      if (diet) preferences.diet = diet;
+      if (spiceLevel) preferences.spiceLevel = spiceLevel;
+      if (budget) preferences.budget = budget;
+      if (allergies) {
+        preferences.allergies = allergies.split(',').map(a => a.trim()).filter(Boolean);
+      }
+      if (favCuisines) {
+        preferences.favCuisines = favCuisines.split(',').map(c => c.trim()).filter(Boolean);
+      }
+
+      // Submit to API
+      try {
+        const response = await fetch('/api/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            phone,
+            email,
+            city,
+            state,
+            country,
+            preferences
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to create account');
+        }
+
+        // Success — show confirmation card
+        signupCard.style.display = 'none';
+        successCard.style.display = 'block';
+
+        // Set WhatsApp link
+        const whatsappNumber = data.whatsappNumber || '+1234567890'; // Fallback
+        document.getElementById('whatsappNumber').textContent = whatsappNumber;
+        
+        const whatsappLink = `https://wa.me/${whatsappNumber.replace(/[^\d]/g, '')}?text=Hi!`;
+        document.getElementById('whatsappBtn').href = whatsappLink;
+
+      } catch (error) {
+        showError(error.message || 'Something went wrong. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign Up';
+      }
+    });
+
+    // Real-time phone validation
+    document.getElementById('phone').addEventListener('input', (e) => {
+      const phone = e.target.value;
+      if (phone && !phone.startsWith('+')) {
+        e.target.value = '+' + phone.replace(/[^\d]/g, '');
+      }
+    });
+  </script>
+</body>
+</html>

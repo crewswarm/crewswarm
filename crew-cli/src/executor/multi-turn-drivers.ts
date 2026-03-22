@@ -1,0 +1,275 @@
+/**
+ * Multi-turn conversation drivers for agentic tool-calling loops.
+ * Each driver handles the provider-specific API format for tool calls.
+ *
+ * Used by executeWorkerAgentic() via autonomous-loop.ts to enable
+ * multi-turn agentic execution for all providers, not just Gemini.
+ */
+
+import type { ToolCall, TurnResult } from '../worker/autonomous-loop.js';
+
+/** Tool declaration in a provider-agnostic format */
+export interface ToolDeclaration {
+  name: string;
+  description: string;
+  parameters: Record<string, any>;
+}
+
+/** Result from a single LLM turn */
+export interface LLMTurnResult {
+  toolCalls?: ToolCall[];
+  response: string;
+  status?: string;
+  cost: number;
+}
+
+// ─── Provider detection ───────────────────────────────────────────────
+
+export type ProviderType = 'gemini' | 'openai' | 'anthropic' | 'grok' | 'deepseek' | 'groq' | 'mistral' | 'cerebras' | 'markers-only';
+
+export function detectProvider(model: string): ProviderType {
+  const m = String(model || '').trim().toLowerCase();
+  const bare = m.includes('/') ? m.split('/').pop() || '' : m;
+  if (bare.startsWith('gemini')) return 'gemini';
+  if (bare.startsWith('claude')) return 'anthropic';
+  if (bare.startsWith('gpt-') || bare.startsWith('o1-') || bare.startsWith('o3-')) return 'openai';
+  if (bare.startsWith('grok')) return 'grok';
+  if (bare.startsWith('deepseek')) return 'deepseek';
+  if (bare.startsWith('llama') || bare.startsWith('mixtral')) return 'groq';
+  if (bare.startsWith('mistral')) return 'mistral';
+  if (bare.startsWith('cerebras')) return 'cerebras';
+  return 'markers-only';
+}
+
+export function providerSupportsToolCalling(provider: ProviderType): boolean {
+  return ['openai', 'anthropic', 'grok', 'deepseek', 'groq', 'mistral'].includes(provider);
+}
+
+// ─── Tool declaration formatters ──────────────────────────────────────
+
+function toOpenAITools(tools: ToolDeclaration[]): any[] {
+  return tools.map(t => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.parameters }
+  }));
+}
+
+function toAnthropicTools(tools: ToolDeclaration[]): any[] {
+  return tools.map(t => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters
+  }));
+}
+
+// ─── History formatters ───────────────────────────────────────────────
+
+function historyToOpenAIContext(history: TurnResult[]): string {
+  if (history.length === 0) return '';
+  const lines = history.map(h => {
+    const res = h.error ? `ERROR: ${h.error}` : String(h.result || '').slice(0, 2000);
+    return `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 200)}) → ${res.slice(0, 500)}`;
+  });
+  return '\n\nPrevious tool results:\n' + lines.join('\n');
+}
+
+// ─── OpenAI-compatible driver (works for OpenAI, Grok, DeepSeek, Groq, Mistral) ──
+
+interface OpenAIDriverConfig {
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  tools: ToolDeclaration[];
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+}
+
+export async function openAICompatibleTurn(
+  task: string,
+  tools: ToolDeclaration[],
+  history: TurnResult[],
+  config: OpenAIDriverConfig
+): Promise<LLMTurnResult> {
+  const historyContext = historyToOpenAIContext(history);
+  const fullTask = historyContext ? `${task}${historyContext}` : task;
+
+  const messages: any[] = [
+    { role: 'system', content: config.systemPrompt },
+    { role: 'user', content: fullTask }
+  ];
+
+  // GPT-5/6 only support temperature=1; other values cause 400
+  const temp = (config.model?.startsWith?.('gpt-5') || config.model?.startsWith?.('gpt-6'))
+    ? 1
+    : (config.temperature ?? 0.3);
+  const requestBody: any = {
+    model: config.model,
+    messages,
+    temperature: temp,
+    max_tokens: config.maxTokens ?? 16000,
+    tools: toOpenAITools(tools)
+  };
+
+  const response = await fetch(config.apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`
+    },
+    signal: AbortSignal.timeout(config.timeoutMs ?? 120000),
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => response.statusText);
+    throw new Error(`API error ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const data = await response.json() as any;
+  const choice = data?.choices?.[0];
+  const message = choice?.message;
+  const usage = data?.usage || {};
+
+  // Calculate cost (rough)
+  const cost = (usage.prompt_tokens || 0) * 3 / 1_000_000 + (usage.completion_tokens || 0) * 10 / 1_000_000;
+
+  // Check for tool calls
+  if (message?.tool_calls && message.tool_calls.length > 0) {
+    const toolCalls: ToolCall[] = message.tool_calls.map((tc: any) => {
+      let params = {};
+      try { params = JSON.parse(tc.function?.arguments || '{}'); } catch { /* ignore */ }
+      return { tool: tc.function?.name || '', params };
+    });
+    return {
+      toolCalls,
+      response: message.content || '',
+      cost
+    };
+  }
+
+  // No tool calls — model is done
+  return {
+    response: message?.content || '',
+    status: 'COMPLETE',
+    cost
+  };
+}
+
+// ─── Anthropic driver ─────────────────────────────────────────────────
+
+interface AnthropicDriverConfig {
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  tools: ToolDeclaration[];
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+}
+
+export async function anthropicTurn(
+  task: string,
+  tools: ToolDeclaration[],
+  history: TurnResult[],
+  config: AnthropicDriverConfig,
+  images?: Array<{ data: string; mimeType: string }>
+): Promise<LLMTurnResult> {
+  const historyContext = historyToOpenAIContext(history);
+  const fullTask = historyContext ? `${task}${historyContext}` : task;
+
+  // Build user content: text + optional images using Anthropic's native format
+  let userContent: any = fullTask;
+  if (images?.length) {
+    const parts: any[] = [{ type: 'text', text: fullTask }];
+    for (const img of images) {
+      parts.push({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mimeType, data: img.data }
+      });
+    }
+    userContent = parts;
+  }
+
+  const requestBody: any = {
+    model: config.model,
+    max_tokens: config.maxTokens ?? 16000,
+    system: config.systemPrompt,
+    messages: [{ role: 'user', content: userContent }],
+    temperature: config.temperature ?? 0.3,
+    tools: toAnthropicTools(tools)
+  };
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': config.apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    signal: AbortSignal.timeout(config.timeoutMs ?? 120000),
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => response.statusText);
+    throw new Error(`Anthropic API error ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const data = await response.json() as any;
+  const usage = data?.usage || {};
+  const cost = (usage.input_tokens || 0) * 3 / 1_000_000 + (usage.output_tokens || 0) * 15 / 1_000_000;
+
+  const content = data?.content || [];
+  const toolUseBlocks = content.filter((b: any) => b.type === 'tool_use');
+  const textBlocks = content.filter((b: any) => b.type === 'text');
+  const textResponse = textBlocks.map((b: any) => b.text).join('\n');
+
+  if (toolUseBlocks.length > 0) {
+    const toolCalls: ToolCall[] = toolUseBlocks.map((b: any) => ({
+      tool: b.name,
+      params: b.input || {}
+    }));
+    return { toolCalls, response: textResponse, cost };
+  }
+
+  return { response: textResponse, status: 'COMPLETE', cost };
+}
+
+// ─── Provider URL + key resolution ────────────────────────────────────
+
+export function getProviderConfig(provider: ProviderType, model: string): { apiUrl: string; apiKey: string } | null {
+  switch (provider) {
+    case 'openai': {
+      const key = process.env.OPENAI_API_KEY;
+      return key ? { apiUrl: 'https://api.openai.com/v1/chat/completions', apiKey: key } : null;
+    }
+    case 'grok': {
+      const key = process.env.XAI_API_KEY;
+      return key ? { apiUrl: 'https://api.x.ai/v1/chat/completions', apiKey: key } : null;
+    }
+    case 'deepseek': {
+      const key = process.env.DEEPSEEK_API_KEY;
+      return key ? { apiUrl: 'https://api.deepseek.com/v1/chat/completions', apiKey: key } : null;
+    }
+    case 'groq': {
+      const key = process.env.GROQ_API_KEY;
+      return key ? { apiUrl: 'https://api.groq.com/openai/v1/chat/completions', apiKey: key } : null;
+    }
+    case 'mistral': {
+      const key = process.env.MISTRAL_API_KEY;
+      return key ? { apiUrl: 'https://api.mistral.ai/v1/chat/completions', apiKey: key } : null;
+    }
+    case 'cerebras': {
+      const key = process.env.CEREBRAS_API_KEY;
+      return key ? { apiUrl: 'https://api.cerebras.ai/v1/chat/completions', apiKey: key } : null;
+    }
+    case 'anthropic': {
+      const key = process.env.ANTHROPIC_API_KEY;
+      return key ? { apiUrl: 'https://api.anthropic.com/v1/messages', apiKey: key } : null;
+    }
+    default:
+      return null;
+  }
+}

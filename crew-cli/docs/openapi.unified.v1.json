@@ -1,0 +1,4666 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "crewswarm Complete API",
+    "version": "2.0.0",
+    "description": "Complete API specification for crewswarm Dashboard (port 4319) and crew-lead (port 5010). Includes all agent orchestration, messaging integrations, memory management, and system control endpoints."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4319",
+      "description": "Dashboard API (primary web interface)"
+    },
+    {
+      "url": "http://127.0.0.1:5010",
+      "description": "crew-lead API (orchestration and chat)"
+    },
+    {
+      "url": "http://127.0.0.1:3333",
+      "description": "Vibe IDE (browser-native workspace)"
+    },
+    {
+      "url": "http://127.0.0.1:5020",
+      "description": "MCP & OpenAI-compatible API"
+    },
+    {
+      "url": "ws://127.0.0.1:18889",
+      "description": "Real-time WebSocket message bus"
+    },
+    {
+      "url": "ws://127.0.0.1:3334",
+      "description": "File Watcher (Vibe live reload)"
+    },
+    {
+      "url": "http://127.0.0.1:4096",
+      "description": "Code Engine (OpenCode / Claude Code / Cursor)"
+    },
+    {
+      "url": "http://127.0.0.1:18789",
+      "description": "OpenClaw Gateway (Optional legacy service)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Core",
+      "description": "Essential system endpoints"
+    },
+    {
+      "name": "Agents",
+      "description": "Agent management and configuration"
+    },
+    {
+      "name": "Chat",
+      "description": "Conversational interfaces"
+    },
+    {
+      "name": "Dispatch",
+      "description": "Task dispatch and orchestration"
+    },
+    {
+      "name": "Projects",
+      "description": "Project and roadmap management"
+    },
+    {
+      "name": "PM Loop",
+      "description": "Project manager autonomous loop"
+    },
+    {
+      "name": "Build",
+      "description": "Build orchestration"
+    },
+    {
+      "name": "Providers",
+      "description": "LLM provider configuration"
+    },
+    {
+      "name": "Skills",
+      "description": "Skill plugin management"
+    },
+    {
+      "name": "Memory",
+      "description": "Shared memory and brain"
+    },
+    {
+      "name": "Messaging",
+      "description": "Telegram and WhatsApp integrations"
+    },
+    {
+      "name": "Contacts",
+      "description": "Contact management"
+    },
+    {
+      "name": "Settings",
+      "description": "System configuration"
+    },
+    {
+      "name": "Services",
+      "description": "Service lifecycle management"
+    },
+    {
+      "name": "Engines",
+      "description": "Engine passthrough and configuration"
+    },
+    {
+      "name": "Multimodal",
+      "description": "Image and audio processing"
+    },
+    {
+      "name": "Telemetry",
+      "description": "Usage tracking and spending"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /health",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/health",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "GET /api/agents",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents-config": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "GET /api/agents-config",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents-config/create": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "POST /api/agents-config/create",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents-config/update": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "POST /api/agents-config/update",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents-config/delete": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "POST /api/agents-config/delete",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents-config/reset-session": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "POST /api/agents-config/reset-session",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/reset-session": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "POST /api/agents/reset-session",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/chat": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /api/crew-lead/chat",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/history": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "GET /api/crew-lead/history",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/clear": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /api/crew-lead/clear",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/status": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "GET /api/crew-lead/status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/events": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "GET /api/crew-lead/events",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/confirm-project": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "POST /api/crew-lead/confirm-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/discard-project": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "POST /api/crew-lead/discard-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dispatch": {
+      "post": {
+        "tags": [
+          "Dispatch"
+        ],
+        "summary": "POST /api/dispatch",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "GET /api/projects",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "POST /api/projects",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/update": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "POST /api/projects/update",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/delete": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "POST /api/projects/delete",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pm-loop/start": {
+      "post": {
+        "tags": [
+          "PM Loop"
+        ],
+        "summary": "POST /api/pm-loop/start",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pm-loop/stop": {
+      "post": {
+        "tags": [
+          "PM Loop"
+        ],
+        "summary": "POST /api/pm-loop/stop",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pm-loop/status": {
+      "get": {
+        "tags": [
+          "PM Loop"
+        ],
+        "summary": "GET /api/pm-loop/status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pm-loop/log": {
+      "get": {
+        "tags": [
+          "PM Loop"
+        ],
+        "summary": "GET /api/pm-loop/log",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pm-loop/roadmap": {
+      "get": {
+        "tags": [
+          "PM Loop"
+        ],
+        "summary": "GET /api/pm-loop/roadmap",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/roadmap/read": {
+      "post": {
+        "tags": [
+          "PM Loop"
+        ],
+        "summary": "POST /api/roadmap/read",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/roadmap/write": {
+      "post": {
+        "tags": [
+          "PM Loop"
+        ],
+        "summary": "POST /api/roadmap/write",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/roadmap/retry-failed": {
+      "post": {
+        "tags": [
+          "PM Loop"
+        ],
+        "summary": "POST /api/roadmap/retry-failed",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/build": {
+      "post": {
+        "tags": [
+          "Build"
+        ],
+        "summary": "POST /api/build",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/build/stop": {
+      "post": {
+        "tags": [
+          "Build"
+        ],
+        "summary": "POST /api/build/stop",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/continuous-build": {
+      "post": {
+        "tags": [
+          "Build"
+        ],
+        "summary": "POST /api/continuous-build",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/continuous-build/stop": {
+      "post": {
+        "tags": [
+          "Build"
+        ],
+        "summary": "POST /api/continuous-build/stop",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/continuous-build/log": {
+      "get": {
+        "tags": [
+          "Build"
+        ],
+        "summary": "GET /api/continuous-build/log",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/phased-progress": {
+      "get": {
+        "tags": [
+          "Build"
+        ],
+        "summary": "GET /api/phased-progress",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "GET /api/providers",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers/builtin": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "GET /api/providers/builtin",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers/builtin/save": {
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "POST /api/providers/builtin/save",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers/builtin/test": {
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "POST /api/providers/builtin/test",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers/add": {
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "POST /api/providers/add",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers/save": {
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "POST /api/providers/save",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers/test": {
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "POST /api/providers/test",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers/fetch-models": {
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "POST /api/providers/fetch-models",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/import": {
+      "post": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "POST /api/skills/import",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memory/stats": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "GET /api/memory/stats",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memory/search": {
+      "post": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "POST /api/memory/search",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memory/migrate": {
+      "post": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "POST /api/memory/migrate",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memory/compact": {
+      "post": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "POST /api/memory/compact",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram/config": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "GET /api/telegram/config",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "POST /api/telegram/config",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram/start": {
+      "post": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "POST /api/telegram/start",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram/stop": {
+      "post": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "POST /api/telegram/stop",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram/status": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "GET /api/telegram/status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram/messages": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "GET /api/telegram/messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram/discover-topics": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "GET /api/telegram/discover-topics",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram-sessions": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "GET /api/telegram-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/config": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "GET /api/whatsapp/config",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "POST /api/whatsapp/config",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/start": {
+      "post": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "POST /api/whatsapp/start",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/stop": {
+      "post": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "POST /api/whatsapp/stop",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/status": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "GET /api/whatsapp/status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/messages": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "GET /api/whatsapp/messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contacts": {
+      "get": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "GET /api/contacts",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contacts/update": {
+      "post": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "POST /api/contacts/update",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contacts/delete": {
+      "post": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "POST /api/contacts/delete",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contacts/send": {
+      "post": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "POST /api/contacts/send",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/rt-token": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/rt-token",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/rt-token",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/opencode-project": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/opencode-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/opencode-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/bg-consciousness": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/bg-consciousness",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/bg-consciousness",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/cursor-waves": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/cursor-waves",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/cursor-waves",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/claude-code": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/claude-code",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/claude-code",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/codex": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/codex",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/codex",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/gemini-cli": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/gemini-cli",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/gemini-cli",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/crew-cli": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/crew-cli",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/crew-cli",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/global-fallback": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/global-fallback",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/global-fallback",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/global-oc-loop": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/global-oc-loop",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/global-oc-loop",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/global-rules": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/global-rules",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/global-rules",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/loop-brain": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/loop-brain",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/loop-brain",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/openclaw-status": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/openclaw-status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/passthrough-notify": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/passthrough-notify",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/passthrough-notify",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/role-defaults": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/role-defaults",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/role-defaults",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/spending-caps": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/spending-caps",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/spending-caps",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/env": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/env",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/env-advanced": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/env-advanced",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/env-advanced",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/services/status": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "GET /api/services/status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/services/restart": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "POST /api/services/restart",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/services/stop": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "POST /api/services/stop",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew/start": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "POST /api/crew/start",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/engines",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/import": {
+      "post": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "POST /api/engines/import",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engine-passthrough": {
+      "post": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "POST /api/engine-passthrough",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/opencode-models": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/opencode-models",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/opencode-stats": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/opencode-stats",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/passthrough-sessions": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/passthrough-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "DELETE /api/passthrough-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyze-image": {
+      "post": {
+        "tags": [
+          "Multimodal"
+        ],
+        "summary": "POST /api/analyze-image",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transcribe-audio": {
+      "post": {
+        "tags": [
+          "Multimodal"
+        ],
+        "summary": "POST /api/transcribe-audio",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/token-usage": {
+      "get": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "GET /api/token-usage",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dlq": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/dlq",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dlq/replay": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/dlq/replay",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/waves/config": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/waves/config",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/waves/config",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/waves/config/reset": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/waves/config/reset",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompts": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/prompts",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/prompts",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cmd-allowlist": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/cmd-allowlist",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/cmd-allowlist",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "DELETE /api/cmd-allowlist",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cmd-approve": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/cmd-approve",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cmd-reject": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/cmd-reject",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/enhance-prompt": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/enhance-prompt",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search-tools": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/search-tools",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search-tools/save": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/search-tools/save",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search-tools/test": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/search-tools/test",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/benchmark-tasks": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/benchmark-tasks",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/benchmark-run": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/benchmark-run",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/files",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-content": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/file-content",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pick-folder": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/pick-folder",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/send": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/send",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rt-messages": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/rt-messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /chat",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/history": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "GET /history",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clear": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /clear",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "GET /events",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/confirm-project": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "POST /confirm-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/discard-project": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "POST /discard-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/classify": {
+      "post": {
+        "tags": [
+          "Dispatch"
+        ],
+        "summary": "POST /api/classify",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat-agent": {
+      "post": {
+        "tags": [
+          "Dispatch"
+        ],
+        "summary": "POST /api/chat-agent",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/opencode": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "GET /api/agents/opencode",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "GET /api/skills",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "POST /api/skills",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/approve": {
+      "post": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "POST /api/skills/approve",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/reject": {
+      "post": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "POST /api/skills/reject",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/opencode-event": {
+      "post": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "POST /api/opencode-event",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/opencode-sessions": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/opencode-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/claude-sessions": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/claude-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/services/health": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "GET /api/services/health",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/services/restart-opencode": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "POST /api/services/restart-opencode",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spending": {
+      "get": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "GET /api/spending",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spending/reset": {
+      "post": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "POST /api/spending/reset",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telemetry": {
+      "get": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "GET /api/telemetry",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-transcripts/recent": {
+      "get": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "GET /api/agent-transcripts/recent",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/background": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/background",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/allowlist-cmd": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /allowlist-cmd",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /allowlist-cmd",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "DELETE /allowlist-cmd",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/approve-cmd": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /approve-cmd",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reject-cmd": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /reject-cmd",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChatRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "docs": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "string"
+                },
+                "mimeType": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "data",
+                "mimeType"
+              ]
+            }
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "ChatResponse": {
+        "type": "object",
+        "properties": {
+          "reply": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "executionPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "costUsd": {
+            "type": "number"
+          },
+          "pendingChanges": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reply"
+        ]
+      },
+      "TaskCreateRequest": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "engine": {
+                "type": "string"
+              },
+              "gateway": {
+                "type": "string"
+              },
+              "direct": {
+                "type": "boolean"
+              },
+              "bypass": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "agent",
+          "task"
+        ]
+      },
+      "TaskCreateResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accepted"
+        ]
+      },
+      "TaskStatusResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "error"
+            ]
+          },
+          "result": {},
+          "traceId": {
+            "type": "string"
+          },
+          "costUsd": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "AgentsResponse": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "agents"
+        ]
+      },
+      "SystemStatusResponse": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "standalone"
+            ]
+          },
+          "gateway": {
+            "type": "string"
+          },
+          "l2": {
+            "type": "object",
+            "properties": {
+              "unifiedRouter": {
+                "type": "boolean"
+              },
+              "dualL2": {
+                "type": "boolean"
+              }
+            }
+          },
+          "queueDepth": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "SandboxStateResponse": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "changedFiles": {
+            "type": "integer"
+          },
+          "diffPreview": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch",
+          "changedFiles"
+        ]
+      },
+      "SandboxApplyRequest": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "checkCommand": {
+            "type": "string"
+          }
+        }
+      },
+      "SandboxApplyResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "appliedFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "SandboxRollbackRequest": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string"
+          }
+        }
+      },
+      "SandboxRollbackResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "TracePromptItem": {
+        "type": "object",
+        "properties": {
+          "templateId": {
+            "type": "string"
+          },
+          "templateVersion": {
+            "type": "string"
+          },
+          "composedAt": {
+            "type": "string"
+          },
+          "overlays": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "TraceResponse": {
+        "type": "object",
+        "properties": {
+          "composedPrompts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TracePromptItem"
+            }
+          },
+          "plannerTrace": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TracePromptItem"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "IndexRebuildRequest": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includeDocs": {
+            "type": "boolean"
+          },
+          "includeCode": {
+            "type": "boolean"
+          }
+        }
+      },
+      "IndexRebuildResponse": {
+        "type": "object",
+        "properties": {
+          "indexId": {
+            "type": "string"
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "integer"
+              },
+              "chunks": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "IndexSearchHit": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "snippet": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "score"
+        ]
+      },
+      "IndexSearchResponse": {
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexSearchHit"
+            }
+          }
+        },
+        "required": [
+          "hits"
+        ]
+      }
+    }
+  }
+}

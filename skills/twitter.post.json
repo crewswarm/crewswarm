@@ -1,0 +1,14 @@
+{
+  "description": "Post a tweet via Twitter/X API v2",
+  "url": "https://api.twitter.com/2/tweets",
+  "method": "POST",
+  "auth": {
+    "type": "bearer",
+    "keyFrom": "providers.twitter.apiKey"
+  },
+  "headers": {},
+  "defaultParams": {},
+  "paramNotes": "Required: text (tweet content, max 280 chars). Optional: reply.in_reply_to_tweet_id for threads.",
+  "requiresApproval": true,
+  "timeout": 15000
+}

@@ -1,0 +1,31 @@
+{
+  "id": "opencode",
+  "label": "OpenCode",
+  "description": "Full agentic coding sessions with persistent memory, file editing, and bash execution. Runs opencode run — the original crewswarm execution engine.",
+  "shouldUse": {
+    "runtime": ["opencode", "gpt5", "gpt-5"],
+    "payloadKey": "useOpenCode",
+    "agentConfigKey": "useOpenCode",
+    "envVar": "CREWSWARM_OPENCODE_ENABLED"
+  },
+  "bin": "opencode",
+  "installCmd": "npm install -g opencode-ai",
+  "installUrl": "https://opencode.ai",
+  "docsUrl": "https://opencode.ai/docs",
+  "color": "#38bdf8",
+  "icon": "opencode",
+  "agentConfigKey": "useOpenCode",
+  "envToggle": "CREWSWARM_OPENCODE_ENABLED",
+  "bestFor": ["crew-coder", "crew-coder-back", "crew-coder-front", "crew-fixer"],
+  "traits": [
+    "Persistent sessions — context survives between tasks",
+    "Full file editing with native tool use",
+    "Bash execution with approval gate",
+    "Works with any model/provider"
+  ],
+  "args": {
+    "run": ["run", "{prompt}", "--model", "{model}"],
+    "continue": ["run", "{prompt}", "--continue", "--model", "{model}"]
+  },
+  "outputMode": "streaming"
+}

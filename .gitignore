@@ -1,0 +1,178 @@
+# Dependencies
+node_modules/
+
+# User config and state
+.crewswarm/
+.crew/
+.gemini/
+.claude/
+telegram-bridge.json
+
+# Runtime logs & state
+orchestrator-logs/
+*.log
+logs/
+*.pid
+*.stop
+
+# Memory runtime state (keep schema/docs, exclude live state)
+memory/brain.md
+memory/session-log.md
+memory/session-log.md.backup-*
+memory/current-state.md
+memory/agent-handoff.md
+memory/telegram-context.md
+memory/whatsapp-context.md
+memory/stinki-bio.md
+memory/deepseek-bio.md
+
+# Local backups & temp build output
+backups/
+website-backup-*/
+newfeature/
+test-output/
+test-results/
+test-scratch/
+*.cpuprofile
+
+# Private roadmap (internal only)
+docs/ROADMAP-PRIVATE.md
+
+# OpenClaw legacy files (old brand name)
+docs/OPENCLAW-*.md
+docs/SESSION-SUMMARY.md
+docs/IMPROVEMENT-PLAN.md
+docs/MIGRATION-CREW-IDS.md
+docs/OPENAI-CHATGPT-VS-API.md
+docs/OPENCODE-INTEGRATION-STATUS.md
+
+# Personal / local-only files
+polymarket_ai_strat/
+marketing/
+
+# Stray symlinks / duplicates
+crew-cli/gateway-bridge 2.mjs
+
+# Scripts
+scripts/test-openrouter.mjs
+crew-chat.html
+Modelfile
+stinky-favicon.png
+openai-codex-oauth.json
+openai-oauth-vs-api.json
+
+# External CLI repos (cloned locally, not shipped)
+crew-cli/external/
+
+# Agent-written junk (dev notes that should not be committed)
+crew-cli/_crew-*
+crew-cli/*-COMPLETE.md
+crew-cli/*-VERIFIED.md
+crew-cli/*-PROOF.md
+
+# Agent-written garbage (project files that don't belong)
+*.pyc
+__pycache__/
+*.prof
+*.prof.run
+profile_output.*
+main.py
+requirements.txt
+database.py
+run_migrations.py
+server.js
+migrations/
+models/
+routes/
+backend/
+src/api/
+tests/
+__tests__/
+.ai-pm-notes.md
+security-considerations-*.md
+
+# Python tooling
+.pytest_cache/
+.ruff_cache/
+venv/
+
+# Agent output reports
+*-report.md
+*-output.md
+task-done.md
+
+# QA output
+qa-output/
+scripts/qa-*.mjs
+scripts/quick-screenshot.mjs
+scripts/capture-nav-screenshots.mjs
+
+# Leaked paths / junk dirs agents create
+desktop/
+/src/
+homepage/
+
+# Dashboard build artifacts
+/apps/dashboard/dist/*.br
+/apps/dashboard/dist/**/*.br
+
+# Secrets
+.env
+.env.local
+*.pem
+openclaw.json
+
+# Stray runtime files
+frontend/memory/
+apps/dashboard/.crew/
+apps/dashboard/memory/
+apps/vibe/.crew/
+apps/vibe/.studio-data/
+apps/vibe/output/
+apps/vibe/codex-output.txt
+apps/vibe/gemini-final-test.txt
+apps/vibe/gemini-workspace-test.txt
+apps/vibe/studio-cli-test.txt
+apps/vibe/studio-cursor-test.txt
+apps/vibe/studio-gemini-test.txt
+apps/vibe/test/.crew/
+apps/vibe/test/AUTO-REFRESH-TEST.md
+apps/vibe/test/REFRESH-VERIFICATION.md
+apps/vibe/test/refresh-created-file.md
+apps/vibe/test/refresh-test-*.md
+apps/vibe/test/test.md
+
+# IDE / OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.cursor/
+!.cursor/mcp.json
+*.swp
+*.swo
+
+# API key setup scripts
+crew-cli/setup-keys.sh
+*/setup-keys.sh
+
+# Top-level archive folder only (keep `docs/archive/` trackable for doc redirects)
+/archive/
+
+# Session logs
+.opencode/task-logs/
+
+# Temp
+tmp/
+
+# Demo recording scratch project
+demo-project/
+
+# Local scratch / one-off experiments
+/cli
+/test-repl-imports.mjs
+/chuck-security-audit.md
+/snowy-owl-sanctuary/
+/scripts/chat-stinki-pipeline.mjs
+/scripts/track-share-of-voice.mjs

@@ -1,0 +1,28 @@
+name: Question / help
+description: Ask a setup or usage question
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For quick questions, the dashboard chat (once running) and the README troubleshooting section are often faster. But ask here if you prefer.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      placeholder: "e.g. How do I route crew-coder to use Claude Code instead of OpenCode?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you already tried?
+      description: AGENTS.md, README troubleshooting section, logs checked?
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      placeholder: "node --version"
