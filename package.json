@@ -49,7 +49,8 @@
     "smoke": "node scripts/smoke-dispatch.mjs",
     "smoke:static": "bash scripts/smoke.sh",
     "health": "node scripts/health-check.mjs",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "release:check": "bash scripts/release-check.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2"
