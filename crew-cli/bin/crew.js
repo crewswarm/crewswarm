@@ -83,10 +83,12 @@ Options:
   process.exit(0);
 }
 
-try {
-  const { main } = await import('../dist/crew.mjs');
-  await main(args);
-} catch (error) {
-  console.error('Error:', error.message);
-  process.exit(1);
-}
+(async () => {
+  try {
+    const { main } = await import('../dist/crew.mjs');
+    await main(args);
+  } catch (error) {
+    console.error('Error:', error.message);
+    process.exit(1);
+  }
+})();
