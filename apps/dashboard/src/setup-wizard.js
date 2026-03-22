@@ -88,7 +88,8 @@ let _providerKeys = {};
 export async function checkFirstRun() {
   try {
     const data = await getJSON("/api/first-run-status");
-    if (!data.firstRun) return false;
+    const forceWizard = new URLSearchParams(window.location.search).has("wizard");
+    if (!data.firstRun && !forceWizard) return false;
     _showWizard();
     return true;
   } catch (e) {
