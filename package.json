@@ -48,7 +48,8 @@
     "test:e2e:studio:headed": "node node_modules/playwright/cli.js test --config=playwright.config.js --headed",
     "smoke": "node scripts/smoke-dispatch.mjs",
     "smoke:static": "bash scripts/smoke.sh",
-    "health": "node scripts/health-check.mjs"
+    "health": "node scripts/health-check.mjs",
+    "doctor": "node scripts/doctor.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2"

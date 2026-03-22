@@ -34,6 +34,7 @@ Before calling the repo public-ready, these should be true:
 ## Recommended Final Pass
 
 1. Run a release smoke:
+   - `npm run doctor` — fast preflight and next-step hints
    - `npm run smoke:static` — static checks (syntax, build, unit tests)
    - `npm run restart-all` — start stack
    - `npm run smoke` — live dispatch (crew-coder + crew-main)

@@ -41,6 +41,7 @@ bash install.sh
 Then:
 
 ```bash
+npm run doctor
 npm run restart-all
 open http://127.0.0.1:4319
 ```
@@ -100,6 +101,7 @@ Use Docker when you want:
 2. Verify health:
 
 ```bash
+npm run doctor
 bash scripts/smoke.sh --no-build
 bash scripts/smoke-surfaces.sh
 ```
