@@ -1,83 +1,44 @@
 /**
  * Setup Wizard — first-run onboarding overlay for CrewSwarm dashboard.
  * Shows when no API keys are configured (firstRun === true).
+ * Step 1: Welcome  →  Step 2: API Keys  →  Step 3: CLI Engines
  * Vanilla JS, no frameworks. Matches the existing dark dashboard theme.
  */
 
 import { getJSON, postJSON } from "./core/api.js";
 
-// ── Provider definitions for the wizard ─────────────────────────────────────
-const WIZARD_PROVIDERS = [
-  {
-    id: "anthropic",
-    label: "Anthropic",
-    icon: "\u{1F7E3}",
-    placeholder: "sk-ant-...",
-    url: "https://console.anthropic.com/",
-  },
-  {
-    id: "openai",
-    label: "OpenAI",
-    icon: "\u{1F7E2}",
-    placeholder: "sk-...",
-    url: "https://platform.openai.com/api-keys",
-  },
-  {
-    id: "groq",
-    label: "Groq",
-    icon: "\u26A1",
-    placeholder: "gsk_...",
-    url: "https://console.groq.com/keys",
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    icon: "\u{1F500}",
-    placeholder: "sk-or-...",
-    url: "https://openrouter.ai/keys",
-  },
-  {
-    id: "xai",
-    label: "xAI (Grok)",
-    icon: "\u{1D54F}",
-    placeholder: "xai-...",
-    url: "https://console.x.ai/",
-  },
-  {
-    id: "deepseek",
-    label: "DeepSeek",
-    icon: "\u{1F30A}",
-    placeholder: "sk-...",
-    url: "https://platform.deepseek.com/",
-  },
+// ── All supported providers (synced with models-tab.js BUILTIN_PROVIDERS) ────
+const ALL_PROVIDERS = [
+  { id: "anthropic",    label: "Anthropic",        icon: "\uD83D\uDFE3", placeholder: "sk-ant-...",  url: "https://console.anthropic.com/" },
+  { id: "openai",       label: "OpenAI",            icon: "\uD83D\uDFE2", placeholder: "sk-...",      url: "https://platform.openai.com/api-keys" },
+  { id: "google",       label: "Google (Gemini)",   icon: "\uD83D\uDD35", placeholder: "AIza...",     url: "https://aistudio.google.com/apikey" },
+  { id: "groq",         label: "Groq",              icon: "\u26A1",       placeholder: "gsk_...",     url: "https://console.groq.com/keys" },
+  { id: "fireworks",    label: "Fireworks AI",      icon: "\uD83C\uDF86", placeholder: "fw_...",      url: "https://fireworks.ai/" },
+  { id: "openrouter",   label: "OpenRouter",        icon: "\uD83D\uDD00", placeholder: "sk-or-...",   url: "https://openrouter.ai/keys" },
+  { id: "xai",          label: "xAI (Grok)",        icon: "\uD835\uDD4F", placeholder: "xai-...",     url: "https://console.x.ai/" },
+  { id: "deepseek",     label: "DeepSeek",          icon: "\uD83C\uDF0A", placeholder: "sk-...",      url: "https://platform.deepseek.com/" },
+  { id: "mistral",      label: "Mistral",           icon: "\uD83C\uDF00", placeholder: "...",         url: "https://console.mistral.ai/api-keys" },
+  { id: "cerebras",     label: "Cerebras",          icon: "\uD83E\uDDE0", placeholder: "csk-...",     url: "https://cloud.cerebras.ai/" },
+  { id: "nvidia",       label: "NVIDIA NIM",        icon: "\uD83C\uDFAE", placeholder: "nvapi-...",   url: "https://build.nvidia.com/" },
+  { id: "perplexity",   label: "Perplexity",        icon: "\uD83D\uDD0D", placeholder: "pplx-...",    url: "https://www.perplexity.ai/settings/api" },
+  { id: "ollama",       label: "Ollama (local)",    icon: "\uD83C\uDFE0", placeholder: "no key needed", url: "https://ollama.com/download" },
 ];
 
-const PRESETS = [
-  {
-    id: "fast",
-    label: "Fast",
-    description: "Cheapest. Uses fast models for everything. Great for simple tasks.",
-    icon: "\u26A1",
-  },
-  {
-    id: "balanced",
-    label: "Balanced",
-    description: "Best value. Smart planning + fast execution.",
-    icon: "\u2696\uFE0F",
-    default: true,
-  },
-  {
-    id: "quality",
-    label: "Quality",
-    description: "Maximum quality. Full planning, QA gates, extra validation.",
-    icon: "\u{1F3AF}",
-  },
+// ── CLI engines we can detect ────────────────────────────────────────────────
+const CLI_ENGINES = [
+  { id: "claude-code", cmd: "claude",   label: "Claude Code",  desc: "Anthropic's CLI agent. Best for complex reasoning and multi-file refactors.", installUrl: "https://docs.anthropic.com/en/docs/claude-code/overview", authCmd: "claude auth",  keyProvider: "anthropic" },
+  { id: "codex",       cmd: "codex",    label: "Codex CLI",    desc: "OpenAI's CLI agent. Sandboxed execution with full file write access.",        installUrl: "https://github.com/openai/codex",                        authCmd: "codex auth",   keyProvider: "openai" },
+  { id: "crew-cli",    cmd: "crew",     label: "crew-cli",     desc: "CrewSwarm's own 3-tier pipeline. Supports Anthropic, OpenAI, Gemini, Groq, DeepSeek, and more.", installUrl: null,                                                      authCmd: null,           keyProvider: null },
+  { id: "opencode",    cmd: "opencode", label: "OpenCode",     desc: "Multi-provider CLI agent. Supports OpenAI, Anthropic, Google, and more.",     installUrl: "https://github.com/opencode-ai/opencode",                authCmd: null,           keyProvider: null },
+  { id: "gemini-cli",  cmd: "gemini",   label: "Gemini CLI",   desc: "Google's CLI agent. Fast inference with Gemini models.",                      installUrl: "https://github.com/google-gemini/gemini-cli",            authCmd: "gemini auth",  keyProvider: "google" },
+  { id: "cursor",      cmd: "cursor",   label: "Cursor CLI",   desc: "Cursor's agent mode via CLI. Requires Cursor IDE installed.",                 installUrl: "https://www.cursor.com/",                                authCmd: null,           keyProvider: null },
 ];
 
 let _currentStep = 1;
 let _overlayEl = null;
-let _selectedPreset = "balanced";
-let _providerKeys = {};
+let _providerKeys = {};       // only keys the user actually typed
+let _configuredProviders = []; // already-configured provider IDs from backend
+let _detectedEngines = {};     // { engineId: true/false }
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -90,6 +51,7 @@ export async function checkFirstRun() {
     const data = await getJSON("/api/first-run-status");
     const forceWizard = new URLSearchParams(window.location.search).has("wizard");
     if (!data.firstRun && !forceWizard) return false;
+    _configuredProviders = data.configuredProviders || [];
     _showWizard();
     return true;
   } catch (e) {
@@ -102,7 +64,6 @@ export async function checkFirstRun() {
 
 function _showWizard() {
   _currentStep = 1;
-  _selectedPreset = "balanced";
   _providerKeys = {};
 
   _overlayEl = document.createElement("div");
@@ -132,13 +93,13 @@ function _renderStep() {
   wrapper.appendChild(card);
   _overlayEl.appendChild(wrapper);
 
-  // Animate card entrance
   requestAnimationFrame(() => {
     wrapper.classList.add("visible");
   });
 }
 
 function _buildStepIndicator() {
+  const labels = ["Welcome", "API Keys", "Engines"];
   const indicator = document.createElement("div");
   indicator.className = "setup-wizard-steps";
   indicator.setAttribute("aria-label", `Step ${_currentStep} of 3`);
@@ -153,7 +114,7 @@ function _buildStepIndicator() {
 
     const label = document.createElement("span");
     label.className = "setup-wizard-step-label";
-    label.textContent = ["Welcome", "Providers", "Preset"][i - 1];
+    label.textContent = labels[i - 1];
 
     const step = document.createElement("div");
     step.className = "setup-wizard-step";
@@ -174,14 +135,10 @@ function _buildStepIndicator() {
 
 function _buildStepContent() {
   switch (_currentStep) {
-    case 1:
-      return _buildWelcomeStep();
-    case 2:
-      return _buildProvidersStep();
-    case 3:
-      return _buildPresetStep();
-    default:
-      return _buildWelcomeStep();
+    case 1: return _buildWelcomeStep();
+    case 2: return _buildProvidersStep();
+    case 3: return _buildEnginesStep();
+    default: return _buildWelcomeStep();
   }
 }
 
@@ -198,7 +155,8 @@ function _buildWelcomeStep() {
       </div>
       <h1 class="setup-wizard-title">Welcome to CrewSwarm</h1>
       <p class="setup-wizard-subtitle">
-        Let's get you set up in 2 minutes
+        Multi-agent orchestration for AI coding tools.<br>
+        Let's get you set up in 2 minutes.
       </p>
     </div>
     <div class="setup-wizard-checklist">
@@ -208,11 +166,11 @@ function _buildWelcomeStep() {
       </div>
       <div class="setup-wizard-check-item">
         <span class="setup-wizard-check-icon pending">&bull;</span>
-        <span>Add an API provider key</span>
+        <span>Add API provider keys</span>
       </div>
       <div class="setup-wizard-check-item">
         <span class="setup-wizard-check-icon pending">&bull;</span>
-        <span>Choose a quality preset</span>
+        <span>Detect & configure CLI engines</span>
       </div>
     </div>
   `;
@@ -240,7 +198,7 @@ function _buildWelcomeStep() {
   return frag;
 }
 
-// ── Step 2: Providers ───────────────────────────────────────────────────────
+// ── Step 2: API Keys ────────────────────────────────────────────────────────
 
 function _buildProvidersStep() {
   const frag = document.createElement("div");
@@ -249,9 +207,10 @@ function _buildProvidersStep() {
   const header = document.createElement("div");
   header.className = "setup-wizard-section-header";
   header.innerHTML = `
-    <h2 class="setup-wizard-section-title">Add a Provider</h2>
+    <h2 class="setup-wizard-section-title">API Keys</h2>
     <p class="setup-wizard-section-desc">
-      Paste at least one API key. You can add more later in Settings.
+      Add keys for the providers you want to use. Already-configured keys are shown with a checkmark.
+      Only new keys you enter will be saved &mdash; existing keys won't be touched.
     </p>
   `;
   frag.appendChild(header);
@@ -259,16 +218,24 @@ function _buildProvidersStep() {
   const list = document.createElement("div");
   list.className = "setup-wizard-provider-list";
 
-  for (const prov of WIZARD_PROVIDERS) {
+  for (const prov of ALL_PROVIDERS) {
+    const alreadyConfigured = _configuredProviders.includes(prov.id);
+
     const row = document.createElement("div");
     row.className = "setup-wizard-provider-row";
+    if (alreadyConfigured) row.classList.add("already-configured");
 
     const labelWrap = document.createElement("div");
     labelWrap.className = "setup-wizard-provider-label";
 
-    const icon = document.createElement("span");
-    icon.className = "setup-wizard-provider-icon";
-    icon.textContent = prov.icon;
+    const provIcon = document.createElement("span");
+    provIcon.className = "setup-wizard-provider-icon";
+    provIcon.textContent = prov.icon || "";
+
+    const statusIcon = document.createElement("span");
+    statusIcon.className = "setup-wizard-provider-status";
+    statusIcon.textContent = alreadyConfigured ? "\u2713" : "";
+    statusIcon.title = alreadyConfigured ? "Already configured" : "Not configured";
 
     const name = document.createElement("span");
     name.className = "setup-wizard-provider-name";
@@ -282,8 +249,9 @@ function _buildProvidersStep() {
     link.textContent = "Get key";
     link.setAttribute("aria-label", `Get API key for ${prov.label}`);
 
-    labelWrap.appendChild(icon);
+    labelWrap.appendChild(provIcon);
     labelWrap.appendChild(name);
+    labelWrap.appendChild(statusIcon);
     labelWrap.appendChild(link);
 
     const inputWrap = document.createElement("div");
@@ -292,7 +260,7 @@ function _buildProvidersStep() {
     const input = document.createElement("input");
     input.type = "password";
     input.className = "setup-wizard-provider-input";
-    input.placeholder = prov.placeholder;
+    input.placeholder = alreadyConfigured ? "configured \u2713" : prov.placeholder;
     input.autocomplete = "off";
     input.spellcheck = false;
     input.dataset.providerId = prov.id;
@@ -317,7 +285,7 @@ function _buildProvidersStep() {
     const toggleVis = document.createElement("button");
     toggleVis.type = "button";
     toggleVis.className = "setup-wizard-toggle-vis";
-    toggleVis.textContent = "\u{1F441}";
+    toggleVis.textContent = "\uD83D\uDC41";
     toggleVis.setAttribute("aria-label", "Toggle key visibility");
     toggleVis.addEventListener("click", () => {
       input.type = input.type === "password" ? "text" : "password";
@@ -357,8 +325,11 @@ function _buildProvidersStep() {
   const saveBtn = document.createElement("button");
   saveBtn.className = "setup-wizard-btn-primary";
   saveBtn.id = "wizardSaveBtn";
-  saveBtn.textContent = "Save & Continue";
-  saveBtn.disabled = Object.keys(_providerKeys).length === 0;
+  // Allow continuing even without new keys (they may all be pre-configured)
+  const hasNewKeys = Object.keys(_providerKeys).length > 0;
+  const hasExistingKeys = _configuredProviders.length > 0;
+  saveBtn.textContent = hasNewKeys ? "Save & Continue" : "Continue";
+  saveBtn.disabled = !hasNewKeys && !hasExistingKeys;
   saveBtn.addEventListener("click", _saveProviders);
 
   actions.appendChild(backBtn);
@@ -370,85 +341,162 @@ function _buildProvidersStep() {
 
 function _updateSaveBtn() {
   const btn = document.getElementById("wizardSaveBtn");
-  if (btn) {
-    btn.disabled = Object.keys(_providerKeys).length === 0;
-  }
+  if (!btn) return;
+  const hasNewKeys = Object.keys(_providerKeys).length > 0;
+  const hasExistingKeys = _configuredProviders.length > 0;
+  btn.textContent = hasNewKeys ? "Save & Continue" : "Continue";
+  btn.disabled = !hasNewKeys && !hasExistingKeys;
 }
 
 async function _saveProviders() {
   const btn = document.getElementById("wizardSaveBtn");
   const errorEl = document.getElementById("wizardProviderError");
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Saving...";
-  }
-  if (errorEl) errorEl.classList.add("hidden");
 
-  try {
-    for (const [providerId, apiKey] of Object.entries(_providerKeys)) {
-      if (apiKey && apiKey.length > 0) {
+  const newKeys = Object.entries(_providerKeys).filter(([, v]) => v && v.length > 0);
+
+  if (newKeys.length > 0) {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Saving...";
+    }
+    if (errorEl) errorEl.classList.add("hidden");
+
+    try {
+      for (const [providerId, apiKey] of newKeys) {
         await postJSON("/api/providers/builtin/save", { providerId, apiKey });
       }
+    } catch (e) {
+      if (errorEl) {
+        errorEl.textContent = "Failed to save: " + (e.message || "Unknown error");
+        errorEl.classList.remove("hidden");
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Save & Continue";
+      }
+      return;
     }
-    _currentStep = 3;
-    _renderStep();
-  } catch (e) {
-    if (errorEl) {
-      errorEl.textContent = "Failed to save: " + (e.message || "Unknown error");
-      errorEl.classList.remove("hidden");
-    }
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Save & Continue";
-    }
+  }
+
+  // Detect engines before showing step 3
+  await _detectEngines();
+  _currentStep = 3;
+  _renderStep();
+}
+
+// ── Step 3: CLI Engines ─────────────────────────────────────────────────────
+
+async function _detectEngines() {
+  try {
+    const data = await getJSON("/api/first-run-engines");
+    _detectedEngines = data.engines || {};
+  } catch {
+    // If endpoint doesn't exist yet, fall back to empty
+    _detectedEngines = {};
   }
 }
 
-// ── Step 3: Preset ──────────────────────────────────────────────────────────
-
-function _buildPresetStep() {
+function _buildEnginesStep() {
   const frag = document.createElement("div");
   frag.className = "setup-wizard-content";
 
   const header = document.createElement("div");
   header.className = "setup-wizard-section-header";
   header.innerHTML = `
-    <h2 class="setup-wizard-section-title">Choose a Preset</h2>
+    <h2 class="setup-wizard-section-title">CLI Engines</h2>
     <p class="setup-wizard-section-desc">
-      This controls how agents balance speed, cost, and quality. You can change it anytime.
+      CrewSwarm dispatches tasks to these CLI coding agents.
+      You need at least one installed. Use the API keys from Step 2 to authenticate.
     </p>
   `;
   frag.appendChild(header);
 
   const grid = document.createElement("div");
-  grid.className = "setup-wizard-preset-grid";
+  grid.className = "setup-wizard-engine-grid";
 
-  for (const preset of PRESETS) {
-    const card = document.createElement("button");
-    card.className = "setup-wizard-preset-card";
-    card.type = "button";
-    card.dataset.preset = preset.id;
-    card.setAttribute("aria-label", `${preset.label}: ${preset.description}`);
-    if (preset.id === _selectedPreset) card.classList.add("selected");
+  const detectedCount = Object.values(_detectedEngines).filter(Boolean).length;
 
-    card.innerHTML = `
-      <div class="setup-wizard-preset-icon">${preset.icon}</div>
-      <div class="setup-wizard-preset-label">${preset.label}</div>
-      <div class="setup-wizard-preset-desc">${preset.description}</div>
-    `;
+  for (const engine of CLI_ENGINES) {
+    const detected = _detectedEngines[engine.id] === true;
+    // crew-cli is always available (it's part of this repo)
+    const available = engine.id === "crew-cli" || detected;
 
-    card.addEventListener("click", () => {
-      _selectedPreset = preset.id;
-      grid.querySelectorAll(".setup-wizard-preset-card").forEach((c) =>
-        c.classList.remove("selected"),
-      );
-      card.classList.add("selected");
-    });
+    const card = document.createElement("div");
+    card.className = "setup-wizard-engine-card";
+    if (available) card.classList.add("available");
 
+    // Status badge
+    const badge = document.createElement("div");
+    badge.className = "setup-wizard-engine-badge";
+    if (available) {
+      badge.textContent = "\u2713 Installed";
+      badge.classList.add("installed");
+    } else {
+      badge.textContent = "Not found";
+      badge.classList.add("missing");
+    }
+    card.appendChild(badge);
+
+    // Engine name + command
+    const title = document.createElement("div");
+    title.className = "setup-wizard-engine-title";
+    title.textContent = engine.label;
+    card.appendChild(title);
+
+    const cmd = document.createElement("code");
+    cmd.className = "setup-wizard-engine-cmd";
+    cmd.textContent = engine.cmd;
+    card.appendChild(cmd);
+
+    // Description
+    const desc = document.createElement("p");
+    desc.className = "setup-wizard-engine-desc";
+    desc.textContent = engine.desc;
+    card.appendChild(desc);
+
+    // Action area
+    const actionArea = document.createElement("div");
+    actionArea.className = "setup-wizard-engine-action";
+
+    if (available && engine.authCmd) {
+      const authLabel = document.createElement("span");
+      authLabel.className = "setup-wizard-engine-auth-label";
+      authLabel.textContent = "Auth:";
+      const authCode = document.createElement("code");
+      authCode.className = "setup-wizard-engine-auth-cmd";
+      authCode.textContent = engine.authCmd;
+      actionArea.appendChild(authLabel);
+      actionArea.appendChild(authCode);
+    } else if (available && engine.keyProvider) {
+      const keyNote = document.createElement("span");
+      keyNote.className = "setup-wizard-engine-key-note";
+      const provLabel = ALL_PROVIDERS.find(p => p.id === engine.keyProvider)?.label || engine.keyProvider;
+      const hasKey = _configuredProviders.includes(engine.keyProvider);
+      keyNote.textContent = hasKey ? `Uses ${provLabel} key \u2713` : `Needs ${provLabel} key`;
+      keyNote.classList.add(hasKey ? "key-ok" : "key-missing");
+      actionArea.appendChild(keyNote);
+    } else if (!available && engine.installUrl) {
+      const installLink = document.createElement("a");
+      installLink.href = engine.installUrl;
+      installLink.target = "_blank";
+      installLink.rel = "noopener";
+      installLink.className = "setup-wizard-engine-install-btn";
+      installLink.textContent = "Install \u2192";
+      actionArea.appendChild(installLink);
+    }
+
+    card.appendChild(actionArea);
     grid.appendChild(card);
   }
 
   frag.appendChild(grid);
+
+  if (detectedCount === 0 && Object.keys(_detectedEngines).length > 0) {
+    const hint = document.createElement("p");
+    hint.className = "setup-wizard-engine-hint";
+    hint.innerHTML = "No external CLI engines detected. <strong>crew-cli</strong> is built in and always available.";
+    frag.appendChild(hint);
+  }
 
   const actions = document.createElement("div");
   actions.className = "setup-wizard-actions";
@@ -463,7 +511,7 @@ function _buildPresetStep() {
 
   const startBtn = document.createElement("button");
   startBtn.className = "setup-wizard-btn-primary setup-wizard-btn-start";
-  startBtn.textContent = "Start CrewSwarm";
+  startBtn.textContent = "Launch Dashboard";
   startBtn.addEventListener("click", _finishSetup);
 
   actions.appendChild(backBtn);
@@ -479,18 +527,11 @@ async function _finishSetup() {
   const btn = _overlayEl?.querySelector(".setup-wizard-btn-start");
   if (btn) {
     btn.disabled = true;
-    btn.textContent = "Starting...";
-  }
-
-  try {
-    await postJSON("/api/settings/preset", { preset: _selectedPreset });
-  } catch {
-    // Non-critical — preset save can fail silently
+    btn.textContent = "Loading...";
   }
 
   _dismiss();
-  // Reload to get fresh state with configured keys
-  window.location.reload();
+  window.location.href = window.location.pathname; // strip ?wizard param
 }
 
 function _dismiss() {
@@ -505,7 +546,6 @@ function _dismiss() {
     },
     { once: true },
   );
-  // Fallback removal if transition doesn't fire
   setTimeout(() => {
     if (_overlayEl) {
       _overlayEl.remove();

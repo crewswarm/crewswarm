@@ -1698,7 +1698,137 @@ select {
   color: var(--text);
 }
 
-/* ── Step 3: Preset cards ── */
+/* ── Step 3: Engine cards ── */
+
+.setup-wizard-engine-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.setup-wizard-engine-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.setup-wizard-engine-card.available {
+  border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.03);
+}
+
+.setup-wizard-engine-card:not(.available) {
+  opacity: 0.7;
+}
+
+.setup-wizard-engine-badge {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.setup-wizard-engine-badge.installed {
+  color: var(--green, #34d399);
+}
+
+.setup-wizard-engine-badge.missing {
+  color: var(--text-3, #666);
+}
+
+.setup-wizard-engine-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.setup-wizard-engine-cmd {
+  font-size: 12px;
+  color: var(--text-3);
+  background: var(--bg-card);
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+  font-family: var(--font-mono, monospace);
+}
+
+.setup-wizard-engine-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+  margin: 4px 0 8px;
+}
+
+.setup-wizard-engine-action {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.setup-wizard-engine-auth-label {
+  color: var(--text-3);
+}
+
+.setup-wizard-engine-auth-cmd {
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(99, 102, 241, 0.1);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+}
+
+.setup-wizard-engine-key-note {
+  font-size: 12px;
+}
+
+.setup-wizard-engine-key-note.key-ok {
+  color: var(--green, #34d399);
+}
+
+.setup-wizard-engine-key-note.key-missing {
+  color: var(--yellow, #fbbf24);
+}
+
+.setup-wizard-engine-install-btn {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  padding: 4px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  transition: background 150ms ease;
+}
+
+.setup-wizard-engine-install-btn:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.setup-wizard-engine-hint {
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: center;
+  margin: 8px 0;
+}
+
+.setup-wizard-provider-icon {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ── Legacy preset grid (kept for backwards compat) ── */
 
 .setup-wizard-preset-grid {
   display: grid;
@@ -1833,6 +1963,11 @@ select {
     padding: 28px 20px 24px;
     margin: 0 12px;
     border-radius: 12px;
+  }
+
+  .setup-wizard-engine-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .setup-wizard-preset-grid {
