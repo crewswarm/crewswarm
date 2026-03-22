@@ -17,10 +17,53 @@ function setupCLIProcessListeners() {
   document.querySelector('[data-action="saveCLIProcessConfig"]')?.addEventListener('click', saveCLIProcessConfig);
   document.querySelector('[data-action="applyRecommendedCLIProcessConfig"]')?.addEventListener('click', applyRecommendedCLIProcessConfig);
   document.querySelector('[data-action="resetCLIProcessConfig"]')?.addEventListener('click', resetCLIProcessConfig);
+  bindCustomModelSelectors();
   document.querySelector('[data-action="refreshCLIProcess"]')?.addEventListener('click', async () => {
     await updateOrchestrationStatus();
     await loadCLIProcessConfig();
   });
+}
+
+function bindCustomModelSelectors() {
+  [
+    'configChatModel',
+    'configRouterModel',
+    'configReasoningModel',
+    'configL2AModel',
+    'configL2BModel',
+    'configExecutionModel',
+    'configQAModel'
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.customBound === '1') return;
+    el.dataset.customBound = '1';
+    el.addEventListener('change', () => handleCustomModelSelection(el));
+  });
+}
+
+function handleCustomModelSelection(selectEl) {
+  if (!selectEl || selectEl.value !== '__custom__') return;
+  const previous = selectEl.dataset.previousValue || '';
+  const raw = window.prompt('Enter exact model ID for this slot:', previous);
+  const custom = String(raw || '').trim();
+  if (!custom) {
+    selectEl.value = previous;
+    return;
+  }
+  let option = Array.from(selectEl.options).find((opt) => opt.value === custom);
+  if (!option) {
+    option = document.createElement('option');
+    option.value = custom;
+    option.textContent = `${custom} (custom)`;
+    const customMarker = Array.from(selectEl.options).find((opt) => opt.value === '__custom__');
+    if (customMarker) {
+      selectEl.insertBefore(option, customMarker);
+    } else {
+      selectEl.appendChild(option);
+    }
+  }
+  selectEl.value = custom;
+  selectEl.dataset.previousValue = custom;
 }
 
 function toggleCLIProcessMode() {
@@ -38,7 +81,24 @@ async function loadCLIProcessConfig() {
     const res = await fetch('/api/settings/cli-models');
     if (res.ok) {
       const config = await res.json();
-      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+      const set = (id, v) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const value = v || '';
+        if (value && !Array.from(el.options).some((opt) => opt.value === value)) {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = `${value} (saved custom)`;
+          const customMarker = Array.from(el.options).find((opt) => opt.value === '__custom__');
+          if (customMarker) {
+            el.insertBefore(option, customMarker);
+          } else {
+            el.appendChild(option);
+          }
+        }
+        el.value = value;
+        el.dataset.previousValue = value;
+      };
       set('configChatModel', config.CREW_CHAT_MODEL);
       set('configRouterModel', config.CREW_ROUTER_MODEL);
       set('configReasoningModel', config.CREW_REASONING_MODEL);
@@ -89,7 +149,7 @@ async function saveCLIProcessConfig() {
 
 async function applyRecommendedCLIProcessConfig() {
   const config = {
-    CREW_CHAT_MODEL: 'grok-4-1-fast-reasoning',
+    CREW_CHAT_MODEL: 'grok-4-1-fast-non-reasoning',
     CREW_ROUTER_MODEL: 'gpt-5.4',
     CREW_REASONING_MODEL: 'gpt-5.4',
     CREW_L2A_MODEL: 'gpt-5.4',
@@ -108,6 +168,7 @@ async function applyRecommendedCLIProcessConfig() {
   document.getElementById('configQAModel').value = config.CREW_QA_MODEL;
   document.getElementById('configMaxWorkers').value = config.CREW_MAX_PARALLEL_WORKERS;
   document.getElementById('configExtraValidators').value = config.CREW_L2_EXTRA_VALIDATORS;
+  bindCustomModelSelectors();
   try {
     const res = await fetch('/api/settings/cli-models', {
       method: 'POST',
