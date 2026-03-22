@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "note": "Stub baseline. Run `node benchmarks/run.mjs --update-baseline` to populate.",
+  "createdAt": null,
+  "results": {}
+}

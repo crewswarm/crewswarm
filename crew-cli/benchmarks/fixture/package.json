@@ -1,0 +1,20 @@
+{
+  "name": "benchmark-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npx tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "start": "npx tsx src/server.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}
