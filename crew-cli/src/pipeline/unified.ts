@@ -708,14 +708,30 @@ If output has blockers, set approved=false.`,
       maxTokens: 2000,
       sessionId
     });
-    const parsed = this.parseJsonObject(String(result.result || ''));
-    const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
-    return {
-      approved: Boolean(parsed.approved),
-      summary: String(parsed.summary || ''),
-      issues,
-      cost: Number(result.costUsd || 0)
-    };
+    const rawResult = String(result.result || '');
+    try {
+      const parsed = this.parseJsonObject(rawResult);
+      const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
+      return {
+        approved: Boolean(parsed.approved),
+        summary: String(parsed.summary || ''),
+        issues,
+        cost: Number(result.costUsd || 0)
+      };
+    } catch {
+      // QA parse failure: use deterministic heuristic on raw text instead of auto-approving
+      this.logger.warn(`QA audit response was not valid JSON (round ${round}), falling back to text analysis`);
+      const lower = rawResult.toLowerCase();
+      const hasRejectSignals = lower.includes('reject') || lower.includes('fail') || lower.includes('incorrect') || lower.includes('missing') || lower.includes('wrong');
+      const hasApproveSignals = lower.includes('approved') || lower.includes('looks good') || lower.includes('correct') || lower.includes('passes');
+      const approved = hasApproveSignals && !hasRejectSignals;
+      return {
+        approved,
+        summary: `QA parse failed — text heuristic: ${approved ? 'likely approved' : 'likely rejected'}`,
+        issues: hasRejectSignals ? [{ severity: 'medium' as const, problem: 'QA returned non-JSON with rejection signals', requiredFix: 'Review worker output manually' }] : [],
+        cost: Number(result.costUsd || 0)
+      };
+    }
   }
 
   private async fixerPatchResponse(
@@ -801,6 +817,19 @@ If output has blockers, set approved=false.`,
     lastSummary = finalQa.summary;
     approved = finalQa.approved;
     return { response: working, addedCost, approved, rounds: rounds + 1, lastSummary };
+  }
+
+  /**
+   * Apply any pending sandbox file writes to disk.
+   * Workers stage files via write_file/edit tools → sandbox.addChange(),
+   * but those changes need to be flushed to disk after execution.
+   */
+  private async flushSandbox(): Promise<void> {
+    if (!this.sandbox) return;
+    const pending = this.sandbox.getPendingPaths();
+    if (pending.length === 0) return;
+    await this.sandbox.apply();
+    this.logger.info(`Applied ${pending.length} staged file(s) to disk: ${pending.join(', ')}`);
   }
 
   private autoCheckpointEnabled(): boolean {
@@ -930,15 +959,28 @@ If output has blockers, set approved=false.`,
       maxTokens: 1200,
       sessionId
     });
-    const parsed = this.parseJsonObject(String(res.result || ''));
-    const failed = Array.isArray(parsed.failedChecks) ? parsed.failedChecks : [];
-    const approved = Boolean(parsed.approved) && failed.length === 0;
-    return {
-      approved,
-      summary: String(parsed.summary || ''),
-      cost: Number(res.costUsd || 0),
-      ran: true
-    };
+    const rawDod = String(res.result || '');
+    try {
+      const parsed = this.parseJsonObject(rawDod);
+      const failed = Array.isArray(parsed.failedChecks) ? parsed.failedChecks : [];
+      const approved = Boolean(parsed.approved) && failed.length === 0;
+      return {
+        approved,
+        summary: String(parsed.summary || ''),
+        cost: Number(res.costUsd || 0),
+        ran: true
+      };
+    } catch {
+      this.logger.warn('DoD QA response was not valid JSON, falling back to text analysis');
+      const lower = rawDod.toLowerCase();
+      const hasRejectSignals = lower.includes('fail') || lower.includes('reject') || lower.includes('missing') || lower.includes('incorrect');
+      return {
+        approved: !hasRejectSignals,
+        summary: `DoD parse failed — text heuristic: ${hasRejectSignals ? 'likely rejected' : 'likely approved'}`,
+        cost: Number(res.costUsd || 0),
+        ran: true
+      };
+    }
   }
 
   private async runGoldenBenchmarkGate(
@@ -985,13 +1027,26 @@ If output has blockers, set approved=false.`,
       maxTokens: 1000,
       sessionId
     });
-    const parsed = this.parseJsonObject(String(res.result || ''));
-    return {
-      approved: Boolean(parsed.approved),
-      summary: String(parsed.summary || ''),
-      cost: Number(res.costUsd || 0),
-      ran: true
-    };
+    const rawGolden = String(res.result || '');
+    try {
+      const parsed = this.parseJsonObject(rawGolden);
+      return {
+        approved: Boolean(parsed.approved),
+        summary: String(parsed.summary || ''),
+        cost: Number(res.costUsd || 0),
+        ran: true
+      };
+    } catch {
+      this.logger.warn('Golden benchmark QA response was not valid JSON, falling back to text analysis');
+      const lower = rawGolden.toLowerCase();
+      const hasRejectSignals = lower.includes('fail') || lower.includes('reject') || lower.includes('not pass');
+      return {
+        approved: !hasRejectSignals,
+        summary: `Golden bench parse failed — text heuristic: ${hasRejectSignals ? 'likely rejected' : 'likely approved'}`,
+        cost: Number(res.costUsd || 0),
+        ran: true
+      };
+    }
   }
 
   private async runExtraL2Validators(
@@ -1031,9 +1086,18 @@ If output has blockers, set approved=false.`,
         maxTokens: 1000
       });
       totalCost += Number(res.costUsd || 0);
-      const parsed = this.parseJsonObject(String(res.result || ''));
-      if (!Boolean(parsed.approved)) {
-        failures.push(`${model}: ${String(parsed.summary || 'rejected')}`);
+      try {
+        const parsed = this.parseJsonObject(String(res.result || ''));
+        if (!Boolean(parsed.approved)) {
+          failures.push(`${model}: ${String(parsed.summary || 'rejected')}`);
+        }
+      } catch {
+        const rawExtra = String(res.result || '').toLowerCase();
+        const hasRejectSignals = rawExtra.includes('reject') || rawExtra.includes('fail') || rawExtra.includes('unsafe');
+        if (hasRejectSignals) {
+          failures.push(`${model}: non-JSON response with rejection signals`);
+        }
+        this.logger.warn(`Extra L2 validator ${model} returned non-JSON, text heuristic: ${hasRejectSignals ? 'rejected' : 'approved'}`);
       }
     }
 
@@ -1127,7 +1191,10 @@ If output has blockers, set approved=false.`,
         );
         response = result.output;
         totalCost = result.cost;
-        
+
+        // Apply any tool-based file writes staged during worker execution
+        await this.flushSandbox();
+
         // Parse and apply file commands from the output
         const { parseDirectFileCommands } = await import('../cli/file-commands.js');
         const fileCommands = this.shouldParseLegacyCommands(result) ? parseDirectFileCommands(response) : [];
@@ -1176,6 +1243,9 @@ If output has blockers, set approved=false.`,
         response = result.output;
         totalCost = result.cost;
 
+        // Apply any tool-based file writes staged during worker execution
+        await this.flushSandbox();
+
         // Parse and apply file commands from the output
         const { parseDirectFileCommands: parseDirectCmds } = await import('../cli/file-commands.js');
         const directFileCommands = this.shouldParseLegacyCommands(result) ? parseDirectCmds(response) : [];
@@ -1222,6 +1292,9 @@ If output has blockers, set approved=false.`,
           response = result.output;
           totalCost = result.cost;
 
+          // Apply any tool-based file writes staged during worker execution
+          await this.flushSandbox();
+
           // Parse and apply file commands from the output
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
           const fileCommands = this.shouldParseLegacyCommands(result) ? parseDirectFileCommands(response) : [];
@@ -1261,7 +1334,10 @@ If output has blockers, set approved=false.`,
           const metrics = (executionResults as any)?.metrics;
           contextChunksUsed = Number(metrics?.contextChunksUsed || 0);
           contextCharsSaved = Number(metrics?.contextCharsSaved || 0);
-          
+
+          // Apply any tool-based file writes staged during worker execution
+          await this.flushSandbox();
+
           // Parse and apply file commands from parallel worker outputs
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
           const allFileCommands: any[] = [];

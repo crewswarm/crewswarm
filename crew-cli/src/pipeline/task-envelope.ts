@@ -129,7 +129,12 @@ export function validateWorkerTaskEnvelope(task: WorkerTaskEnvelope): WorkerTask
   if (goal.length < 20) errors.push('task.goal too short');
   if (!ACTION_VERB_RE.test(goal)) warnings.push('task.goal may be too vague; no concrete action verb found');
   if (BROAD_SCOPE_RE.test(goal)) {
-    errors.push('task.goal too broad');
+    // Ad-hoc tasks from raw user input may contain broad language — warn, don't reject
+    if (task.sourceRefs?.includes('adhoc#request') || task.sourceRefs?.includes('request#user-input')) {
+      warnings.push('task.goal may be too broad for a single worker');
+    } else {
+      errors.push('task.goal too broad');
+    }
   }
   if (task.estimatedComplexity && task.estimatedComplexity !== 'low' && task.allowedPaths.length === 0) {
     warnings.push('task.allowedPaths empty for non-trivial task');
