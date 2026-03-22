@@ -15,20 +15,20 @@ export function validateRouterDecision(v: any): ValidationResult {
   const errors: string[] = [];
   if (!isObject(v)) return result(['must be object']);
   const decision = String(v.decision || '').trim();
-  if (![
-    'direct-answer',
-    'execute-direct',
-    'direct-execute',
-    'simple',
-    'execute-local',
-    'execute-parallel',
-    'chat',
-    'code',
-    'dispatch',
-    'CHAT',
-    'CODE',
-    'DISPATCH'
-  ].includes(decision)) {
+  const lower = decision.toLowerCase();
+  const looksLikeDecision =
+    lower.length > 0 &&
+    (
+      lower.includes('direct') ||
+      lower.includes('answer') ||
+      lower.includes('chat') ||
+      lower.includes('local') ||
+      lower.includes('code') ||
+      lower.includes('parallel') ||
+      lower.includes('dispatch') ||
+      lower.includes('simple')
+    );
+  if (!looksLikeDecision) {
     errors.push('invalid decision');
   }
   if (!String(v.reasoning || '').trim()) errors.push('missing reasoning');
