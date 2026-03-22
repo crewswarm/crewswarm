@@ -15,7 +15,10 @@ export function validateRouterDecision(v: any): ValidationResult {
   const errors: string[] = [];
   if (!isObject(v)) return result(['must be object']);
   const decision = String(v.decision || '').trim();
-  const lower = decision.toLowerCase();
+  // Normalize: lowercase, replace underscores with hyphens, strip whitespace
+  const lower = decision.toLowerCase().replace(/_/g, '-').replace(/\s+/g, '-');
+  // Accept any string that normalizeDecision() in unified.ts would handle,
+  // plus common LLM variations (underscores, extra words, etc.)
   const looksLikeDecision =
     lower.length > 0 &&
     (
@@ -26,7 +29,12 @@ export function validateRouterDecision(v: any): ValidationResult {
       lower.includes('code') ||
       lower.includes('parallel') ||
       lower.includes('dispatch') ||
-      lower.includes('simple')
+      lower.includes('simple') ||
+      lower.includes('execute') ||
+      lower.includes('run') ||
+      lower.includes('plan') ||
+      lower.includes('build') ||
+      lower.includes('implement')
     );
   if (!looksLikeDecision) {
     errors.push('invalid decision');

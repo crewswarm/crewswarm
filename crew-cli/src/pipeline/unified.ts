@@ -131,15 +131,20 @@ export class UnifiedPipeline {
   }
 
   private normalizeDecision(raw: string): 'direct-answer' | 'execute-local' | 'execute-parallel' | 'execute-direct' {
-    const value = String(raw || '').trim().toLowerCase();
-    if (value === 'direct-answer' || value === 'chat') return 'direct-answer';
-    if (value === 'execute-direct' || value === 'direct-execute' || value === 'simple') return 'execute-direct';
+    // Normalize: lowercase, underscores→hyphens, collapse whitespace
+    const value = String(raw || '').trim().toLowerCase().replace(/_/g, '-').replace(/\s+/g, '-');
+    if (value === 'direct-answer' || value === 'chat' || value === 'answer') return 'direct-answer';
+    if (value === 'execute-direct' || value === 'direct-execute' || value === 'simple' || value === 'run' || value === 'execute') return 'execute-direct';
     if (value === 'execute-local' || value === 'code') {
       return process.env.CREW_ALLOW_EXECUTE_LOCAL === 'true'
         ? 'execute-local'
         : 'execute-parallel';
     }
-    if (value === 'execute-parallel' || value === 'dispatch') return 'execute-parallel';
+    if (value === 'execute-parallel' || value === 'dispatch' || value === 'plan' || value === 'build' || value === 'implement') return 'execute-parallel';
+    // Fallback: if it contains recognizable fragments, route accordingly
+    if (value.includes('direct') && value.includes('answer')) return 'direct-answer';
+    if (value.includes('direct')) return 'execute-direct';
+    if (value.includes('parallel') || value.includes('dispatch')) return 'execute-parallel';
     return 'execute-parallel';
   }
 
