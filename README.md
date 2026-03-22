@@ -176,7 +176,7 @@ Use crewswarm from the web dashboard, CLI, Telegram, macOS SwiftBar, or MCP/edit
 ## Architecture
 
 ```
-Dashboard / CLI / Telegram / SwiftBar / MCP
+Dashboard / Vibe / crew-cli / Telegram / SwiftBar / MCP
                   |
               crew-lead
                   |
@@ -197,7 +197,7 @@ Dashboard / CLI / Telegram / SwiftBar / MCP
 
 - **Preflight:** `npm run doctor`
 - **Start the stack:** `npm run restart-all`
-- **Launch dashboard only:** `npm run dashboard`
+- **Launch Dashboard only:** `npm run dashboard`
 - **Run CLI task:** `crew exec "Build a REST API with JWT auth and tests"`
 - **Static smoke** (no services): `npm run smoke:static`
 - **Live smoke** (stack must be running): `npm run smoke`
@@ -232,7 +232,7 @@ The easiest way to manage config is through the dashboard.
 ```
 crewswarm/
 ├── crew-lead.mjs
-├── crew-cli.mjs
+├── crew-cli/
 ├── gateway-bridge.mjs
 ├── telegram-bridge.mjs
 ├── pm-loop.mjs
