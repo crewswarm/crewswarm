@@ -1,0 +1,38 @@
+name: OpenCode Scheduled Maintenance
+
+on:
+  schedule:
+    - cron: "30 14 * * 1"
+  workflow_dispatch:
+
+jobs:
+  scheduled-maintenance:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run OpenCode scheduled maintenance
+        uses: anomalyco/opencode/github@latest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          model: anthropic/claude-sonnet-4-20250514
+          use_github_token: true
+          prompt: |
+            You are running scheduled repository maintenance.
+            Priorities:
+            1) identify stale TODO/FIXME items and summarize top candidates
+            2) identify obvious docs drift (commands, versions, paths)
+            3) identify low-risk dependency/version hygiene opportunities
+            4) propose small, safe follow-up actions
+            Keep changes minimal and safe. Prefer opening/refreshing issues/PR notes over broad refactors.

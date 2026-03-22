@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/jeffhobbs/crewswarm/blob/main/README.md
+    about: README + AGENTS.md cover setup, configuration, and all features
+  - name: Troubleshooting guide
+    url: https://github.com/jeffhobbs/crewswarm/blob/main/docs/TROUBLESHOOTING.md
+    about: Common errors and fixes

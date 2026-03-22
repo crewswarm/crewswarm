@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": [
+    "src/cli/index.ts",
+    "src/memory/index.ts",
+    "src/engine-api.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

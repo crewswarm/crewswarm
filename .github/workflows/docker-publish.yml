@@ -1,0 +1,188 @@
+name: Build and Publish Docker Images
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY_DOCKERHUB: docker.io
+  REGISTRY_GHCR: ghcr.io
+  IMAGE_NAME: crewswarm/crewswarm
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_DOCKERHUB }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY_GHCR }}/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate artifact attestation
+        if: github.event_name != 'pull_request' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY_GHCR }}/${{ github.repository }}
+          subject-digest: ${{ steps.build-and-push.outputs.digest }}
+          push-to-registry: true
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name != 'pull_request' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Pull and test Docker image
+        run: |
+          # Pull the image that was just built
+          docker pull ghcr.io/${{ github.repository }}:${{ github.sha }}
+          
+          # Tag it for local testing
+          docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} crewswarm:test
+          
+          # Start services
+          docker compose -f - up -d <<EOF
+          services:
+            crewswarm:
+              image: crewswarm:test
+              ports:
+                - "4319:4319"
+                - "5010:5010"
+              volumes:
+                - crewswarm-test:/root/.crewswarm
+              environment:
+                - NODE_ENV=production
+          volumes:
+            crewswarm-test:
+          EOF
+          
+          # Wait for health check
+          echo "Waiting for services to start..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:4319/api/health; then
+              echo "✓ Dashboard health check passed"
+              break
+            fi
+            sleep 2
+          done
+          
+          # Test crew CLI
+          echo "Testing crew CLI..."
+          docker compose exec -T crewswarm crew --version
+          
+          # Test dashboard API
+          echo "Testing dashboard API..."
+          curl -sf http://localhost:4319/api/health | jq '.ok'
+          
+          # Test crew-lead API
+          echo "Testing crew-lead API..."
+          curl -sf http://localhost:5010/health | jq '.ok'
+          
+          echo "✓ All tests passed"
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+
+  release-notes:
+    runs-on: ubuntu-latest
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        run: |
+          echo "## Docker Images" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "### Docker Hub" >> release-notes.md
+          echo '```bash' >> release-notes.md
+          echo "docker pull ${{ env.IMAGE_NAME }}:${GITHUB_REF#refs/tags/}" >> release-notes.md
+          echo '```' >> release-notes.md
+          echo "" >> release-notes.md
+          echo "### GitHub Container Registry" >> release-notes.md
+          echo '```bash' >> release-notes.md
+          echo "docker pull ghcr.io/${{ github.repository }}:${GITHUB_REF#refs/tags/}" >> release-notes.md
+          echo '```' >> release-notes.md
+          echo "" >> release-notes.md
+          echo "### Multi-arch Support" >> release-notes.md
+          echo "- ✅ linux/amd64 (Intel/AMD servers)" >> release-notes.md
+          echo "- ✅ linux/arm64 (AWS Graviton, Raspberry Pi 4/5, Apple Silicon)" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "### Quick Start" >> release-notes.md
+          echo '```bash' >> release-notes.md
+          echo "curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install-docker.sh | bash" >> release-notes.md
+          echo '```' >> release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: release-notes.md
+          generate_release_notes: true

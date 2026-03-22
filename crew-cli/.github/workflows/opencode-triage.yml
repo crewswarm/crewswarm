@@ -1,0 +1,70 @@
+name: OpenCode Issue Triage
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  workflow_dispatch:
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Evaluate anti-spam gate
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (context.eventName === "workflow_dispatch") {
+              core.setOutput("allowed", "true");
+              core.setOutput("reason", "manual-dispatch");
+              return;
+            }
+
+            const sender = context.payload.sender || {};
+            const assoc = String(context.payload.issue?.author_association || "").toUpperCase();
+            const trusted = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+            const createdAt = sender.created_at ? new Date(sender.created_at).getTime() : 0;
+            const ageDays = createdAt ? (Date.now() - createdAt) / (1000 * 60 * 60 * 24) : 0;
+            const isBot = sender.type === "Bot" || String(sender.login || "").endsWith("[bot]");
+            const allowed = !isBot && (trusted.has(assoc) || ageDays >= 30);
+
+            core.info(`triage gate: assoc=${assoc || "unknown"} ageDays=${ageDays.toFixed(1)} bot=${isBot} allowed=${allowed}`);
+            core.setOutput("allowed", allowed ? "true" : "false");
+            core.setOutput("reason", trusted.has(assoc) ? "trusted-association" : (ageDays >= 30 ? "account-age" : "blocked"));
+
+      - name: Stop when anti-spam gate blocks
+        if: steps.gate.outputs.allowed != 'true'
+        run: |
+          echo "Skipping OpenCode triage: anti-spam gate blocked this issue event."
+          echo "Reason: ${{ steps.gate.outputs.reason }}"
+          exit 0
+
+      - name: Checkout repository
+        if: steps.gate.outputs.allowed == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run OpenCode triage
+        if: steps.gate.outputs.allowed == 'true'
+        uses: anomalyco/opencode/github@latest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          model: anthropic/claude-sonnet-4-20250514
+          use_github_token: true
+          prompt: |
+            You are triaging an issue.
+            Goals:
+            1) classify bug/feature/question/support
+            2) identify missing reproduction details
+            3) suggest labels and next owner
+            4) link relevant docs/workflows if applicable
+            Keep responses concise and operational.

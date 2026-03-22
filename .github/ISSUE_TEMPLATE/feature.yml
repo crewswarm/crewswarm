@@ -1,0 +1,47 @@
+name: Feature request
+description: Propose a new capability or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are welcome. A clear problem statement helps a lot more than a solution description.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the limitation or gap you're hitting.
+      placeholder: "e.g. There's no way to schedule a pipeline to run daily without manually editing cron — the docs describe it but there's no dashboard UI for it"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you build or change? Rough sketch is fine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you've tried?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Agent / execution engine
+        - Dashboard UI
+        - Skills / plugins
+        - Telegram / WhatsApp integration
+        - MCP server
+        - CLI / install
+        - Docs
+        - Other
+    validations:
+      required: true

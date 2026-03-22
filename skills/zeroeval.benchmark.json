@@ -1,0 +1,14 @@
+{
+  "aliases": ["benchmark", "benchmarks"],
+  "description": "Fetch pre-computed LLM leaderboard from llm-stats.com (ZeroEval API). Returns ranked model scores for a benchmark. Does NOT run evaluations — only fetches existing public data.",
+  "url": "https://api.zeroeval.com/leaderboard/benchmarks/{benchmark_id}",
+  "listUrl": "https://api.zeroeval.com/leaderboard/benchmarks",
+  "listUrlIdField": "benchmark_id",
+  "paramAliases": { "benchmark_id": { "human-eval": "humaneval", "list": "" } },
+  "method": "GET",
+  "headers": {},
+  "defaultParams": { "benchmark_id": "swe-bench-verified" },
+  "paramNotes": "Workflow: {} lists IDs (truncated); {\"benchmark_id\":\"X\"} gets leaderboard (top 10). Read-only, no evals. Like Dashboard → Benchmarks.",
+  "requiresApproval": false,
+  "timeout": 15000
+}

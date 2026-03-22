@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Models 2026 — Best Coding, Value, Speed, and Open Models | crewswarm</title>
+  <meta name="description" content="A practical March 2026 model board for AI agents and coding workflows: Claude, GPT, Gemini, Grok, Kimi, DeepSeek, GLM, Groq, Ollama, Sonar, and more. Ranked by role, value, context, and execution fit." />
+  <meta name="keywords" content="best AI models 2026, best coding model, claude opus 4.6, gpt-5.4, gemini 3.1 pro, grok 4.20, kimi k2.5, deepseek r1, glm-5, openrouter, coding agent models" />
+  <meta property="og:title" content="AI Models 2026 — Best Coding, Value, Speed, and Open Models" />
+  <meta property="og:description" content="A practical model board for software teams: what to use for coding, orchestration, cheap utility work, local/offline runs, research, and agent execution." />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:url" content="https://crewswarm.ai/models.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@crewswarm" />
+  <meta name="twitter:title" content="AI Models 2026 — Best Coding, Value, Speed, and Open Models" />
+  <meta name="twitter:description" content="A practical March 2026 board for coding, orchestration, cheap utility work, local/offline models, and agent execution." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#060a10" />
+  <link rel="canonical" href="https://crewswarm.ai/models.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "AI Models 2026 — Best Coding, Value, Speed, and Open Models",
+    "description": "A practical March 2026 model board for software engineering and agent workflows.",
+    "datePublished": "2026-03-20",
+    "dateModified": "2026-03-21",
+    "author": {
+      "@type": "Organization",
+      "name": "crewswarm"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "crewswarm",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://crewswarm.ai/favicon.png"
+      }
+    },
+    "mainEntityOfPage": "https://crewswarm.ai/models.html"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is the best model for crew-lead in crewswarm?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "For crewswarm, crew-lead usually wants speed, strong synthesis, and large context. Grok 4.1 Fast is a good default for orchestration. GPT-5.4 and Gemini 3.1 Pro are stronger premium options when long context and deeper judgment matter more than cost."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is the best coding model for crewswarm agents?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Claude Sonnet 4.6 is the best practical premium default for crew-coder and crew-fixer because it keeps frontier coding quality without Opus pricing. Claude Opus 4.6 is the premium upgrade for the hardest jobs. Kimi K2.5 is the main budget coding challenger."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is the cheapest good enough model for QA and support agents?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Gemini 2.5 Flash is the strongest cheap default for QA, PM, SEO, and other support agents. Gemini 2.5 Flash Lite is the cheaper fallback for summaries, classification, and glue tasks."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is OpenRouter a coding agent or just a unified API?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "OpenRouter is a unified API and routing layer, not a coding agent. It gives one OpenAI-compatible API for many models and providers, plus fallback and auto-routing. crewswarm can use it as transport, but the orchestration, memory, and agent behavior are separate."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Do I need one model for everything in crewswarm?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. crewswarm works better with per-agent model assignments. A fast large-context model fits crew-lead, a premium coding model fits crew-coder and crew-fixer, and a cheaper model fits QA, PM, SEO, and utility roles."
+        }
+      }
+    ]
+  }
+  </script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .models-hero {
+      padding-top: 120px;
+      padding-bottom: 40px;
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.2), transparent 40%),
+        radial-gradient(circle at top right, rgba(129, 140, 248, 0.16), transparent 36%),
+        linear-gradient(180deg, rgba(6, 10, 16, 1) 0%, rgba(8, 12, 20, 1) 100%);
+    }
+
+    .models-shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    .models-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.5rem 0.9rem;
+      border-radius: 999px;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      background: rgba(56, 189, 248, 0.08);
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .models-hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+      gap: 2rem;
+      margin-top: 1.5rem;
+      align-items: start;
+    }
+
+    .models-hero h1 {
+      font-size: clamp(2.4rem, 5vw, 4.5rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      margin-bottom: 1rem;
+    }
+
+    .models-hero p {
+      color: var(--text-2);
+      font-size: 1.02rem;
+      max-width: 760px;
+    }
+
+    .models-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.4rem;
+    }
+
+    .models-updated {
+      margin-top: 1rem;
+      color: var(--text-2);
+      font-size: 0.88rem;
+    }
+
+    .models-meta-chip {
+      padding: 0.55rem 0.8rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-2);
+      font-size: 0.84rem;
+    }
+
+    .models-agent-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+      margin-top: 1rem;
+    }
+
+    .models-agent-link {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.55rem 0.85rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-2);
+      font-size: 0.84rem;
+      transition: border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+
+    .models-agent-link:hover {
+      color: var(--text);
+      border-color: var(--border-hi);
+      transform: translateY(-1px);
+    }
+
+    .models-note,
+    .models-card,
+    .models-rank-card,
+    .models-framework-card,
+    .models-callout,
+    .models-method {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 14px 60px rgba(0, 0, 0, 0.18);
+    }
+
+    .models-note {
+      padding: 1.4rem;
+    }
+
+    .models-note h2 {
+      font-size: 1rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .models-note p,
+    .models-note li,
+    .models-method p,
+    .models-method li,
+    .models-card p,
+    .models-framework-card p,
+    .models-callout p {
+      color: var(--text-2);
+      font-size: 0.92rem;
+      line-height: 1.65;
+    }
+
+    .models-note ul,
+    .models-method ul {
+      margin-top: 0.85rem;
+      padding-left: 1.15rem;
+    }
+
+    .models-section {
+      padding: 36px 0;
+    }
+
+    .models-section-heading {
+      margin-bottom: 1.25rem;
+      max-width: 840px;
+    }
+
+    .models-section-heading h2 {
+      font-size: clamp(1.7rem, 3.2vw, 2.6rem);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.7rem;
+    }
+
+    .models-section-heading p {
+      color: var(--text-2);
+      font-size: 0.98rem;
+    }
+
+    .models-grid-3,
+    .models-grid-2 {
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    .models-grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .models-grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .models-card,
+    .models-framework-card,
+    .models-callout,
+    .models-method {
+      padding: 1.4rem;
+    }
+
+    .models-card h3,
+    .models-framework-card h3,
+    .models-callout h3,
+    .models-method h3 {
+      font-size: 1.02rem;
+      margin-bottom: 0.45rem;
+    }
+
+    .models-card-tag {
+      display: inline-block;
+      margin-bottom: 0.8rem;
+      padding: 0.3rem 0.6rem;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(56, 189, 248, 0.08);
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .models-rank-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.25rem;
+    }
+
+    .models-rank-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+    }
+
+    .models-accordion-list {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .models-accordion {
+      overflow: hidden;
+    }
+
+    .models-accordion summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 1rem 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .models-accordion summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .models-accordion-summary-copy h3 {
+      font-size: 1.02rem;
+      margin: 0;
+    }
+
+    .models-accordion-summary-copy p {
+      margin: 0.25rem 0 0;
+      color: var(--text-2);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .models-accordion-caret {
+      flex: 0 0 auto;
+      color: var(--accent);
+      font-size: 1.2rem;
+      font-weight: 800;
+      transition: transform 0.18s ease;
+    }
+
+    .models-accordion[open] .models-accordion-caret {
+      transform: rotate(45deg);
+    }
+
+    .models-accordion-body {
+      border-top: 1px solid var(--border);
+    }
+
+    .models-rank-card {
+      overflow: hidden;
+    }
+
+    .models-rank-head {
+      padding: 1.1rem 1.2rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .models-rank-head h3 {
+      font-size: 1.08rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .models-rank-head p {
+      color: var(--text-2);
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+
+    .models-table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .models-table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+    }
+
+    .models-table th,
+    .models-table td {
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      text-align: left;
+      font-size: 0.88rem;
+    }
+
+    .models-table th {
+      color: var(--text-2);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .models-table tbody tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .models-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .models-rank {
+      color: var(--accent);
+      font-weight: 800;
+      width: 48px;
+    }
+
+    .models-cell-tight {
+      white-space: nowrap;
+    }
+
+    .models-score {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .models-subtle {
+      color: var(--text-2);
+    }
+
+    .models-framework-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .models-framework-card {
+      min-height: 220px;
+    }
+
+    .models-framework-label {
+      display: inline-block;
+      margin-bottom: 0.8rem;
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .models-framework-card ul {
+      margin-top: 0.75rem;
+      padding-left: 1.1rem;
+      color: var(--text-2);
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+
+    .models-framework-card li {
+      margin-bottom: 0.35rem;
+    }
+
+    .models-callout {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    .models-callout-list {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .models-callout-item {
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .models-callout-item strong {
+      display: block;
+      margin-bottom: 0.25rem;
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+
+    .models-source-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+      margin-top: 1rem;
+    }
+
+    .models-source-list a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.55rem 0.8rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-2);
+      font-size: 0.84rem;
+      transition: border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+
+    .models-source-list a:hover {
+      color: var(--text);
+      border-color: var(--border-hi);
+      transform: translateY(-1px);
+    }
+
+    .models-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+
+    .models-mini-card {
+      padding: 1rem;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .models-mini-card h4 {
+      font-size: 0.92rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .models-mini-card p {
+      color: var(--text-2);
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+
+    .models-faq {
+      display: grid;
+      gap: 0.85rem;
+      margin-top: 1rem;
+    }
+
+    .models-faq-item {
+      padding: 1.1rem 1.15rem;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .models-faq-item h3 {
+      font-size: 0.98rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .models-faq-item p {
+      color: var(--text-2);
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    .models-mobile-cards {
+      display: none;
+      gap: 0.85rem;
+      margin-top: 0.9rem;
+    }
+
+    .models-mobile-card {
+      padding: 1rem;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .models-mobile-card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.55rem;
+    }
+
+    .models-mobile-card-rank {
+      color: var(--accent);
+      font-weight: 800;
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    .models-mobile-card h4 {
+      font-size: 0.96rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .models-mobile-card p {
+      color: var(--text-2);
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+
+    .models-mobile-meta {
+      display: grid;
+      gap: 0.35rem;
+      margin-top: 0.7rem;
+      color: var(--text-2);
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 1080px) {
+      .models-hero-grid,
+      .models-rank-grid,
+      .models-framework-grid,
+      .models-grid-3,
+      .models-grid-2,
+      .models-callout,
+      .models-mini-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .models-shell {
+        padding: 0 1rem;
+      }
+
+      .models-hero {
+        padding-top: 96px;
+      }
+
+      .models-table {
+        min-width: 680px;
+      }
+
+      .models-rank-card.role-board .models-table-wrap {
+        display: none;
+      }
+
+      .models-rank-card.role-board .models-mobile-cards {
+        display: grid;
+      }
+
+      .models-note,
+      .models-card,
+      .models-rank-head,
+      .models-method,
+      .models-mini-card,
+      .models-faq-item {
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+
+      .models-section-heading p,
+      .models-hero p,
+      .models-note p {
+        font-size: 0.94rem;
+      }
+
+      .models-accordion summary {
+        align-items: flex-start;
+      }
+
+      .models-table-wrap.mobile-cardify {
+        overflow: visible;
+      }
+
+      .models-table-wrap.mobile-cardify .models-table {
+        min-width: 0;
+        display: block;
+      }
+
+      .models-table-wrap.mobile-cardify .models-table thead {
+        display: none;
+      }
+
+      .models-table-wrap.mobile-cardify .models-table tbody {
+        display: grid;
+        gap: 0.85rem;
+      }
+
+      .models-table-wrap.mobile-cardify .models-table tr {
+        display: block;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .models-table-wrap.mobile-cardify .models-table td {
+        display: block;
+        padding: 0;
+        border-bottom: none;
+        font-size: 0.9rem;
+      }
+
+      .models-table-wrap.mobile-cardify .models-table td + td {
+        margin-top: 0.6rem;
+      }
+
+      .models-table-wrap.mobile-cardify .models-table td::before {
+        display: block;
+        margin-bottom: 0.18rem;
+        color: var(--text-2);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .core-board-table td:nth-child(1)::before { content: "Model"; }
+      .core-board-table td:nth-child(2)::before { content: "Vendor"; }
+      .core-board-table td:nth-child(3)::before { content: "Lane"; }
+      .core-board-table td:nth-child(4)::before { content: "Context"; }
+      .core-board-table td:nth-child(5)::before { content: "Input / 1M"; }
+      .core-board-table td:nth-child(6)::before { content: "Output / 1M"; }
+      .core-board-table td:nth-child(7)::before { content: "Best Roles"; }
+      .core-board-table td:nth-child(8)::before { content: "Why It Matters"; }
+
+      .brain-exec-table td:nth-child(1)::before { content: "Agent Lane"; }
+      .brain-exec-table td:nth-child(2)::before { content: "Chat Brain"; }
+      .brain-exec-table td:nth-child(3)::before { content: "Exec Engine"; }
+      .brain-exec-table td:nth-child(4)::before { content: "Exec Model"; }
+      .brain-exec-table td:nth-child(5)::before { content: "Why"; }
+
+      .models-table-wrap.mobile-cardify .models-table td:first-child {
+        font-size: 0.98rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks" role="menubar">
+        <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+        <li role="none"><a href="models.html" role="menuitem" class="nav-link-item">Models</a></li>
+        <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+        <li role="none"><a href="cli.html" role="menuitem" class="nav-link-item">CLI</a></li>
+        <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+        <li role="none"><a href="docs.html" role="menuitem" class="nav-link-item">Docs</a></li>
+        <li role="none" class="nav-mobile-cta"><a href="#model-board" class="btn btn-sm">See rankings →</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="#model-board" class="btn btn-sm nav-desktop-cta">See rankings →</a>
+        <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <header class="models-hero">
+    <div class="models-shell">
+      <div class="models-kicker">March 21, 2026 model board</div>
+      <div class="models-hero-grid">
+        <div>
+          <h1>The model page people actually need.</h1>
+          <p>
+            There is no single best model. There is a best model for your role, budget, context window, latency target,
+            and execution path. This page starts with real pricing and context numbers, then maps the best options by
+            agent role instead of pretending one leaderboard solves everything.
+          </p>
+          <div class="models-updated">Last updated: March 21, 2026</div>
+          <div class="models-meta">
+            <span class="models-meta-chip">Accuracy-first</span>
+            <span class="models-meta-chip">Value-first</span>
+            <span class="models-meta-chip">Cheap and good enough</span>
+            <span class="models-meta-chip">Open / open-weight challengers</span>
+            <span class="models-meta-chip">Long context and tools</span>
+          </div>
+          <div class="models-agent-nav" aria-label="Quick links">
+            <a class="models-agent-link" href="#crew-lead-board">crew-lead</a>
+            <a class="models-agent-link" href="#crew-coder-board">crew-coder</a>
+            <a class="models-agent-link" href="#crew-pm-board">crew-pm / qa</a>
+            <a class="models-agent-link" href="#all-models-board">all models</a>
+            <a class="models-agent-link" href="#brain-vs-execution">chat vs execution</a>
+            <a class="models-agent-link" href="#models-faq">faq</a>
+          </div>
+        </div>
+        <aside class="models-note">
+          <h2>How to read this page</h2>
+          <p>
+            This is a practical board for crewswarm setups. It focuses on what you would actually assign to
+            <code>crew-lead</code>, coders, PM/QA, support lanes, and execution engines.
+          </p>
+          <p><a href="vibe.html" style="color:var(--accent);">Vibe IDE</a> · <a href="cli.html" style="color:var(--accent);">crew-cli</a> · <a href="deploy.html" style="color:var(--accent);">Deploy</a></p>
+          <ul>
+            <li><strong>Pricing and context first</strong></li>
+            <li><strong>Per-role recommendations second</strong></li>
+            <li><strong>No generic “one model wins everything” nonsense</strong></li>
+          </ul>
+        </aside>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="all-models-board" class="models-section">
+      <div class="models-shell">
+        <div class="models-section-heading">
+          <h2>Core model board</h2>
+          <p>
+            This is the one global board for the page: premium models, cheap defaults, local fallbacks, research-first
+            models, and routers. Prices are OpenRouter starting prices per 1M tokens where available, checked March 21, 2026.
+          </p>
+        </div>
+        <div class="models-rank-card">
+          <div class="models-rank-head">
+            <h3>Best production options for crewswarm</h3>
+            <p>
+              Use this as the short-list for crewswarm engine and agent defaults. It is not only a coding board. It
+              mixes premium frontier models, the cheaper models that are already practical in the swarm, local/offline
+              fallbacks, and router/search options you may actually use in production.
+            </p>
+          </div>
+          <div class="models-table-wrap mobile-cardify core-board-table">
+            <table class="models-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Vendor</th>
+                  <th>Lane</th>
+                  <th>Context</th>
+                  <th>Input / 1M</th>
+                  <th>Output / 1M</th>
+                  <th>Best crewswarm roles</th>
+                  <th>Why it matters</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Claude Opus 4.6</strong></td>
+                  <td>Anthropic</td>
+                  <td>Premium coding</td>
+                  <td>1,000,000</td>
+                  <td>$5</td>
+                  <td>$25</td>
+                  <td>crew-coder, crew-fixer, crew-security</td>
+                  <td>Safest premium choice when the task is expensive to get wrong.</td>
+                </tr>
+                <tr>
+                  <td><strong>Claude Sonnet 4.6</strong></td>
+                  <td>Anthropic</td>
+                  <td>Premium coding</td>
+                  <td>1,000,000</td>
+                  <td>$3</td>
+                  <td>$15</td>
+                  <td>crew-coder, crew-coder-front, crew-coder-back, crew-fixer</td>
+                  <td>Frontier quality without Opus burn.</td>
+                </tr>
+                <tr>
+                  <td><strong>GPT-5.4</strong></td>
+                  <td>OpenAI</td>
+                  <td>Premium general</td>
+                  <td>1,050,000</td>
+                  <td>$2.50</td>
+                  <td>$15</td>
+                  <td>crew-lead, crew-architect, crew-ml, crew-main</td>
+                  <td>Strong all-around flagship with giant context.</td>
+                </tr>
+                <tr>
+                  <td><strong>Gemini 3.1 Pro Preview</strong></td>
+                  <td>Google</td>
+                  <td>Premium general</td>
+                  <td>1,048,576</td>
+                  <td>$2</td>
+                  <td>$12</td>
+                  <td>crew-lead, crew-architect, crew-researcher</td>
+                  <td>High-context power with improving software-engineering focus.</td>
+                </tr>
+                <tr>
+                  <td><strong>Grok 4.20 Beta</strong></td>
+                  <td>xAI</td>
+                  <td>Premium orchestration</td>
+                  <td>2,000,000</td>
+                  <td>$2</td>
+                  <td>$6</td>
+                  <td>crew-lead, crew-main, crew-orchestrator</td>
+                  <td>Massive context and strong speed profile.</td>
+                </tr>
+                <tr>
+                  <td><strong>Grok 4.1 Fast</strong></td>
+                  <td>xAI</td>
+                  <td>Cheap orchestration</td>
+                  <td>2,000,000</td>
+                  <td>$0.20</td>
+                  <td>$0.50</td>
+                  <td>crew-lead, crew-main, crew-orchestrator, crew-pm</td>
+                  <td>One of the best speed-to-cost options for coordinators and high-context chat.</td>
+                </tr>
+                <tr>
+                  <td><strong>Kimi K2.5</strong></td>
+                  <td>Moonshot</td>
+                  <td>Value coding</td>
+                  <td>262,144</td>
+                  <td>$0.45</td>
+                  <td>$2.20</td>
+                  <td>crew-coder budget lane, crew-coder-front, L3 workers</td>
+                  <td>One of the best capability-per-dollar plays.</td>
+                </tr>
+                <tr>
+                  <td><strong>GLM-5</strong></td>
+                  <td>Z.ai</td>
+                  <td>Value coding</td>
+                  <td>202,752</td>
+                  <td>$0.72</td>
+                  <td>$2.30</td>
+                  <td>crew-coder-back, crew-architect, budget coding lane</td>
+                  <td>Strong open-weight alternative with agent focus.</td>
+                </tr>
+                <tr>
+                  <td><strong>MiniMax M2.5</strong></td>
+                  <td>MiniMax</td>
+                  <td>Cheap utility</td>
+                  <td>196,608</td>
+                  <td>$0.27</td>
+                  <td>$0.95</td>
+                  <td>crew-copywriter, crew-seo, L3 workers</td>
+                  <td>Probably the nastiest value sleeper on the board.</td>
+                </tr>
+                <tr>
+                  <td><strong>DeepSeek R1</strong></td>
+                  <td>DeepSeek</td>
+                  <td>Reasoning</td>
+                  <td>64,000</td>
+                  <td>$0.70</td>
+                  <td>$2.50</td>
+                  <td>crew-pm, crew-judge, research-heavy analysis</td>
+                  <td>Still relevant, but context is now small relative to 2026 leaders.</td>
+                </tr>
+                <tr>
+                  <td><strong>Gemini 2.5 Flash</strong></td>
+                  <td>Google</td>
+                  <td>Cheap utility</td>
+                  <td>1,048,576</td>
+                  <td>$0.30</td>
+                  <td>$2.50</td>
+                  <td>crew-qa, crew-pm, crew-seo, crew-telegram, crew-loco</td>
+                  <td>Excellent “good enough” workhorse.</td>
+                </tr>
+                <tr>
+                  <td><strong>Gemini 2.5 Flash Lite</strong></td>
+                  <td>Google</td>
+                  <td>Cheapest utility</td>
+                  <td>1,048,576</td>
+                  <td>$0.10</td>
+                  <td>$0.40</td>
+                  <td>triage, glue work, cheap support lanes</td>
+                  <td>Ridiculously cheap for a 1M-context utility model.</td>
+                </tr>
+                <tr>
+                  <td><strong>Groq Llama 3.3 70B Versatile</strong></td>
+                  <td>Groq</td>
+                  <td>Cheap coordinator</td>
+                  <td>128,000</td>
+                  <td>Groq pricing</td>
+                  <td>Groq pricing</td>
+                  <td>crew-main, crew-orchestrator, crew-judge</td>
+                  <td>Already practical in your live swarm and one of the easiest cheap defaults to keep hot.</td>
+                </tr>
+                <tr>
+                  <td><strong>Groq Llama 3.1 8B Instant</strong></td>
+                  <td>Groq</td>
+                  <td>Ultra-cheap planning</td>
+                  <td>128,000</td>
+                  <td>Groq pricing</td>
+                  <td>Groq pricing</td>
+                  <td>crew-pm, triage, lightweight routing</td>
+                  <td>Fastest lightweight option when speed matters more than prestige.</td>
+                </tr>
+                <tr>
+                  <td><strong>Perplexity Sonar Pro</strong></td>
+                  <td>Perplexity</td>
+                  <td>Research-first</td>
+                  <td>200,000</td>
+                  <td>$3</td>
+                  <td>$15</td>
+                  <td>crew-researcher, crew-main research lane</td>
+                  <td>Built-in live web search makes it different from the pure foundation models on this board.</td>
+                </tr>
+                <tr>
+                  <td><strong>Ollama Qwen 2.5 Coder 7B</strong></td>
+                  <td>Ollama</td>
+                  <td>Local / offline coding</td>
+                  <td>128,000</td>
+                  <td>Local only</td>
+                  <td>Local only</td>
+                  <td>offline worker lanes, private coding, cheapest fallback</td>
+                  <td>Not frontier, but useful when privacy, cost, or offline operation beats raw quality.</td>
+                </tr>
+                <tr>
+                  <td><strong>Ollama Llama 3.1 8B</strong></td>
+                  <td>Ollama</td>
+                  <td>Local / offline general</td>
+                  <td>128,000</td>
+                  <td>Local only</td>
+                  <td>Local only</td>
+                  <td>offline coordination, simple PM, bridge roles</td>
+                  <td>Lowest-friction local fallback for a swarm that needs to stay cheap or private.</td>
+                </tr>
+                <tr>
+                  <td><strong>OpenRouter Auto</strong></td>
+                  <td>OpenRouter</td>
+                  <td>Router</td>
+                  <td>2,000,000</td>
+                  <td>Varies</td>
+                  <td>Varies</td>
+                  <td>router layer for every role</td>
+                  <td>Not a model. It routes to models like Claude, GPT, Gemini, Kimi, Grok, GLM, and others.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="models-mini-grid">
+          <article class="models-mini-card">
+            <h4>Why OpenRouter is on this page</h4>
+            <p>Because it solves a real production problem: one API, many vendors, provider failover, and an auto-router. It is access infrastructure, not a coding agent and not a foundation model.</p>
+          </article>
+          <article class="models-mini-card">
+            <h4>What this means for crewswarm</h4>
+            <p>crewswarm should treat OpenRouter as one transport layer. The product value is still orchestration, memory, task routing, and engine choice above the raw model API.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="model-board" class="models-section">
+      <div class="models-shell">
+        <div class="models-section-heading">
+          <h2>Role picks by agent</h2>
+          <p>
+            One section, full roster. Expand the role you care about and use the top 3 picks for that lane.
+          </p>
+        </div>
+        <div class="models-accordion-list">
+          <details id="crew-lead-board" class="models-rank-card models-accordion" open>
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-lead` top 3</h3>
+                <p>For orchestration, synthesis, routing, long context, and talking to the user without lagging the whole system.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why it fits `crew-lead`</th><th>Context</th><th>Pricing</th><th>Pick when</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Grok 4.1 Fast</strong><br /><span class="models-subtle">xAI</span></td><td>Fast enough for leadership/orchestration, cheap relative to premium coding models, and strong for routing and synthesis.</td><td class="models-cell-tight">2,000,000</td><td class="models-cell-tight">$0.20 / $0.50</td><td>speed and conversational flow matter most</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>GPT-5.4</strong><br /><span class="models-subtle">OpenAI</span></td><td>Best premium option when `crew-lead` needs giant context, better judgment, and broad mixed-task reasoning.</td><td class="models-cell-tight">1,050,000</td><td class="models-cell-tight">$2.50 / $15</td><td>you want premium synthesis and deep context</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>Gemini 3.1 Pro</strong><br /><span class="models-subtle">Google</span></td><td>Very strong long-context lead brain for project state, docs, and multimodal orchestration.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$2 / $12</td><td>you want huge context with better economics</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details id="crew-coder-board" class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-coder` / `crew-fixer` top 3</h3>
+                <p>For actual code quality, repo surgery, debugging, and difficult implementation work.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why it fits coders</th><th>Context</th><th>Pricing</th><th>Pick when</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Claude Sonnet 4.6</strong><br /><span class="models-subtle">Anthropic</span></td><td>Best practical default for day-to-day coding quality without Opus cost.</td><td class="models-cell-tight">1,000,000</td><td class="models-cell-tight">$3 / $15</td><td>you want the safest premium coding default</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>GPT-5.3 Codex</strong><br /><span class="models-subtle">OpenAI</span></td><td>Excellent for targeted implementation and repair, especially in Codex-style harnesses.</td><td class="models-cell-tight">400,000</td><td class="models-cell-tight">$1.75 / $14</td><td>you want strong repo surgery and OpenAI tooling</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>Kimi K2.5</strong><br /><span class="models-subtle">Moonshot</span></td><td>Best cheaper coding challenger if you want strong output without premium closed-model pricing.</td><td class="models-cell-tight">262,144</td><td class="models-cell-tight">$0.45 / $2.20</td><td>cost matters more than absolute peak quality</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details id="crew-pm-board" class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-pm` / `crew-qa` top 3</h3>
+                <p>For planning, audits, roadmap work, triage, and cheap high-volume review passes.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why it fits PM / QA</th><th>Context</th><th>Pricing</th><th>Pick when</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Gemini 2.5 Flash</strong><br /><span class="models-subtle">Google</span></td><td>Best cheap strong worker for PM, QA, SEO, and utility roles.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$0.30 / $2.50</td><td>you need cheap volume without useless output</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>Grok 4.1 Fast Reasoning</strong><br /><span class="models-subtle">xAI</span></td><td>Good PM planning brain when you want speed plus reasoning. Same base pricing as Grok 4.1 Fast, with reasoning enabled.</td><td class="models-cell-tight">2,000,000</td><td class="models-cell-tight">$0.20 / $0.50</td><td>planning quality matters more than raw cheapness</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>Gemini 2.5 Flash Lite</strong><br /><span class="models-subtle">Google</span></td><td>Ultra-cheap for repetitive review, summaries, and glue work.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$0.10 / $0.40</td><td>you want the lowest-cost support lane</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-coder-front` / `crew-frontend`</h3>
+                <p>Frontend implementation, UI polish, and component-heavy coding work.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Claude Sonnet 4.6</strong></td><td>Safest premium default for frontend quality.</td><td class="models-cell-tight">1,000,000</td><td class="models-cell-tight">$3 / $15</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>GPT-5.3 Codex</strong></td><td>Strong targeted UI implementation and repair.</td><td class="models-cell-tight">400,000</td><td class="models-cell-tight">$1.75 / $14</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>Kimi K2.5</strong></td><td>Best cheaper frontend coding challenger.</td><td class="models-cell-tight">262,144</td><td class="models-cell-tight">$0.45 / $2.20</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-coder-back`</h3>
+                <p>Backend systems, APIs, infra glue, and long-horizon implementation.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Claude Sonnet 4.6</strong></td><td>Strong backend reasoning with good reliability.</td><td class="models-cell-tight">1,000,000</td><td class="models-cell-tight">$3 / $15</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>GPT-5.3 Codex</strong></td><td>Targeted backend implementation and fixer work.</td><td class="models-cell-tight">400,000</td><td class="models-cell-tight">$1.75 / $14</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>GLM-5</strong></td><td>Open challenger for systems and backend-heavy coding.</td><td class="models-cell-tight">202,752</td><td class="models-cell-tight">$0.72 / $2.30</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-security`</h3>
+                <p>Threat review, careful code reading, and security analysis where mistakes are expensive.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Claude Opus 4.6</strong></td><td>Premium review model when false confidence is expensive.</td><td class="models-cell-tight">1,000,000</td><td class="models-cell-tight">$5 / $25</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>Claude Sonnet 4.6</strong></td><td>Cheaper default for strong security reading and reasoning.</td><td class="models-cell-tight">1,000,000</td><td class="models-cell-tight">$3 / $15</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>GPT-5.4</strong></td><td>Good mixed security plus architecture fallback.</td><td class="models-cell-tight">1,050,000</td><td class="models-cell-tight">$2.50 / $15</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-github`</h3>
+                <p>Git operations, PR prep, repo automation, and tool-oriented execution.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Gemini 2.5 Flash</strong></td><td>Cheap and strong enough for git-oriented execution lanes.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$0.30 / $2.50</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>Grok 4.1 Fast</strong></td><td>Fast operator model for repo routing and summaries.</td><td class="models-cell-tight">2,000,000</td><td class="models-cell-tight">$0.20 / $0.50</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>GPT-5.3 Codex</strong></td><td>Use when the git lane also needs real code judgment.</td><td class="models-cell-tight">400,000</td><td class="models-cell-tight">$1.75 / $14</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-copywriter` / `crew-seo`</h3>
+                <p>Content, search pages, summaries, and high-volume marketing tasks.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Gemini 2.5 Flash</strong></td><td>Best cheap default for throughput-heavy content lanes.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$0.30 / $2.50</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>MiniMax M2.5</strong></td><td>Cheap strong writer and productivity lane.</td><td class="models-cell-tight">196,608</td><td class="models-cell-tight">$0.27 / $0.95</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>Claude Sonnet 4.6</strong></td><td>Use when quality matters more than token burn.</td><td class="models-cell-tight">1,000,000</td><td class="models-cell-tight">$3 / $15</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-researcher`</h3>
+                <p>Live research, citations, search-grounded work, and changing-source synthesis.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Perplexity Sonar</strong></td><td>Search-grounded research lane. Retrieval matters as much as raw model IQ here.</td><td class="models-cell-tight">Varies</td><td class="models-cell-tight">Varies</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>Gemini 3.1 Pro</strong></td><td>Strong long-context synthesis when result sets are large.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$2 / $12</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>GPT-5.4</strong></td><td>Premium mixed research and reasoning fallback.</td><td class="models-cell-tight">1,050,000</td><td class="models-cell-tight">$2.50 / $15</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-architect` / `crew-ml`</h3>
+                <p>Systems design, ML planning, architecture docs, and deep technical judgment.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>GPT-5.4</strong></td><td>Best mixed architecture and systems reasoning flagship.</td><td class="models-cell-tight">1,050,000</td><td class="models-cell-tight">$2.50 / $15</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>Gemini 3.1 Pro</strong></td><td>Great high-context planning for large system state.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$2 / $12</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>Claude Sonnet 4.6</strong></td><td>Strong architecture plus coding crossover.</td><td class="models-cell-tight">1,000,000</td><td class="models-cell-tight">$3 / $15</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-main` / `crew-orchestrator` / `crew-judge`</h3>
+                <p>Synthesis, routing, judging whether to continue, and decision-gate work.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Groq Llama 3.3 70B Versatile</strong></td><td>Cheap, fast, and already practical for routing and gate decisions.</td><td class="models-cell-tight">128,000</td><td class="models-cell-tight">Groq tier</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>Grok 4.1 Fast</strong></td><td>Upgrade when coordinators need bigger context and stronger synthesis.</td><td class="models-cell-tight">2,000,000</td><td class="models-cell-tight">$0.20 / $0.50</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>Ollama Qwen 2.5 3B / Llama 3.1 8B</strong></td><td>Local fallback when you want near-zero cost, privacy, or offline coordination.</td><td class="models-cell-tight">128,000</td><td class="models-cell-tight">Local</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="models-rank-card models-accordion">
+            <summary>
+              <div class="models-accordion-summary-copy">
+                <h3>`crew-telegram` / `crew-loco`</h3>
+                <p>Bridge roles, messaging surfaces, and lightweight conversational support.</p>
+              </div>
+              <span class="models-accordion-caret">+</span>
+            </summary>
+            <div class="models-accordion-body models-table-wrap">
+              <table class="models-table">
+                <thead><tr><th>#</th><th>Model</th><th>Why</th><th>Context</th><th>Pricing</th></tr></thead>
+                <tbody>
+                  <tr><td class="models-rank">1</td><td><strong>Gemini 2.5 Flash</strong></td><td>Cheap strong default for messaging and bridge lanes.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$0.30 / $2.50</td></tr>
+                  <tr><td class="models-rank">2</td><td><strong>Grok 4.1 Fast</strong></td><td>Fast conversational fallback with huge context.</td><td class="models-cell-tight">2,000,000</td><td class="models-cell-tight">$0.20 / $0.50</td></tr>
+                  <tr><td class="models-rank">3</td><td><strong>Gemini 2.5 Flash Lite</strong></td><td>Lowest-cost utility lane for repetitive bridge work.</td><td class="models-cell-tight">1,048,576</td><td class="models-cell-tight">$0.10 / $0.40</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section id="brain-vs-execution" class="models-section">
+      <div class="models-shell">
+        <div class="models-section-heading">
+          <h2>`crew-cli` L1 / L2 / L3 stack</h2>
+          <p>
+            `crew-cli` is not one flat model call. The code splits responsibilities across L1 chat, L2 reasoning/planning,
+            and L3 workers. This matters because the best model for chat is not the best model for decomposition, and the
+            best model for decomposition is often too expensive for every small worker task.
+          </p>
+        </div>
+        <div class="models-grid-3">
+          <article class="models-card">
+            <span class="models-card-tag">L1 chat interface</span>
+            <h3>Fast, cheap, user-facing</h3>
+            <p><strong>Best fits:</strong> Grok 4.1 Fast, Gemini 2.5 Flash, GPT-5 mini.</p>
+            <p>L1 should stay responsive and not burn premium reasoning tokens on greetings, clarifications, or simple chat turns. In the code, L1 does not execute tasks; it passes them to L2 and synthesizes results back.</p>
+          </article>
+          <article class="models-card">
+            <span class="models-card-tag">L2 reasoning / planning</span>
+            <h3>Heavy brain layer</h3>
+            <p><strong>Best fits:</strong> Claude Sonnet 4.6, GPT-5.4, Gemini 3.1 Pro.</p>
+            <p>This is where the router, planner, decomposer, and validator live. This is the right place for expensive reasoning models because L2 is deciding how to break down and validate the work graph.</p>
+          </article>
+          <article class="models-card">
+            <span class="models-card-tag">L3 workers</span>
+            <h3>Scoped execution</h3>
+            <p><strong>Best fits:</strong> Kimi K2.5, Gemini 2.5 Flash, GPT-5.3 Codex.</p>
+            <p>L3 workers should usually execute bounded tasks, not act like mini CEOs. That means cheap fast models are often correct here, with premium models reserved for hard coding workers or fallback lanes.</p>
+          </article>
+        </div>
+        <div class="models-mini-grid">
+          <article class="models-mini-card">
+            <h4>What the code says</h4>
+            <p><strong>L1</strong> is chat only, <strong>L2</strong> is router/reasoner/planner, and <strong>L3</strong> is the worker execution layer. That matches the implementation in <code>crew-cli</code>, not just a marketing diagram.</p>
+          </article>
+          <article class="models-mini-card">
+            <h4>Practical default</h4>
+            <p>Use a cheap fast model for L1, a premium reasoning model for L2, and smaller faster workers for L3 unless a task clearly needs a premium coding model.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="models-section">
+      <div class="models-shell">
+        <div class="models-section-heading">
+          <h2>Chat brain vs execution</h2>
+          <p>
+            This is the distinction most model pages miss. Some crewswarm roles are mostly direct LLMs. Coding roles
+            usually need a real execution engine. The chat model you talk to and the model that actually executes work
+            do not always need to be the same.
+          </p>
+        </div>
+        <div class="models-rank-card">
+          <div class="models-table-wrap mobile-cardify brain-exec-table">
+            <table class="models-table">
+              <thead>
+                <tr>
+                  <th>Agent lane</th>
+                  <th>Chat brain</th>
+                  <th>Exec engine</th>
+                  <th>Exec model</th>
+                  <th>Why</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>crew-lead</strong></td>
+                  <td>Grok 4.1 Fast, GPT-5.4, Gemini 3.1 Pro</td>
+                  <td>Direct API or Cursor CLI</td>
+                  <td>Usually same as chat brain</td>
+                  <td>Leadership is mostly synthesis and routing. It does not always need a coding CLI.</td>
+                </tr>
+                <tr>
+                  <td><strong>crew-coder / crew-fixer</strong></td>
+                  <td>Claude Sonnet 4.6, GPT-5.4</td>
+                  <td>Codex CLI, Claude Code, OpenCode</td>
+                  <td>GPT-5.3 Codex, Claude Sonnet 4.6, Kimi K2.5</td>
+                  <td>These roles need real file edits, terminals, tools, and multi-step execution.</td>
+                </tr>
+                <tr>
+                  <td><strong>crew-coder-front / back</strong></td>
+                  <td>Claude Sonnet 4.6, GPT-5.4</td>
+                  <td>Codex CLI, Claude Code, OpenCode</td>
+                  <td>GPT-5.3 Codex, Claude Sonnet 4.6, GLM-5, Kimi K2.5</td>
+                  <td>Same pattern as coders: strong chat model up top, real worker model underneath.</td>
+                </tr>
+                <tr>
+                  <td><strong>crew-pm / crew-qa / crew-seo</strong></td>
+                  <td>Gemini 2.5 Flash, Grok 4.1 Fast Reasoning</td>
+                  <td>Direct API</td>
+                  <td>Usually same as chat brain</td>
+                  <td>These are mostly analysis, summaries, triage, and planning lanes. A CLI is often unnecessary.</td>
+                </tr>
+                <tr>
+                  <td><strong>crew-researcher</strong></td>
+                  <td>Perplexity Sonar, Gemini 3.1 Pro, GPT-5.4</td>
+                  <td>Direct API</td>
+                  <td>Usually same as chat brain</td>
+                  <td>Research-first roles care more about search and citations than about code execution.</td>
+                </tr>
+                <tr>
+                  <td><strong>crew-main / orchestrator / judge</strong></td>
+                  <td>Groq Llama 3.3 70B, Grok 4.1 Fast</td>
+                  <td>Direct API</td>
+                  <td>Usually same as chat brain</td>
+                  <td>Coordinator roles are often cheap chat brains unless escalated.</td>
+                </tr>
+                <tr>
+                  <td><strong>Local / private lane</strong></td>
+                  <td>Ollama Llama 3.1 8B</td>
+                  <td>Direct API or local OpenCode lane</td>
+                  <td>Ollama Qwen 2.5 Coder 7B, Ollama Llama 3.1 8B</td>
+                  <td>Useful when privacy, offline use, or near-zero cost matters more than raw quality.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="models-mini-grid">
+          <article class="models-mini-card">
+            <h4>Direct LLM roles</h4>
+            <p>`crew-pm`, `crew-qa`, `crew-seo`, `crew-copywriter`, `crew-telegram`, and many coordinator roles can often run as direct LLM lanes without a heavy CLI execution surface.</p>
+          </article>
+          <article class="models-mini-card">
+            <h4>CLI execution roles</h4>
+            <p>`crew-coder`, `crew-fixer`, `crew-coder-front`, and `crew-coder-back` usually want Codex CLI, Claude Code, or OpenCode because real coding work needs tools, terminals, and file edits.</p>
+          </article>
+          <article class="models-mini-card">
+            <h4>Chat vs worker model</h4>
+            <p>You can chat with an agent using one strong brain model and still execute the task on a different cheaper or more specialized worker model underneath.</p>
+          </article>
+          <article class="models-mini-card">
+            <h4>Where Cursor fits</h4>
+            <p>Cursor CLI is a good reasoning/chat surface, especially with `composer-2-fast`, but it should not be treated as the universal answer for every hard execution lane.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="models-faq" class="models-section">
+      <div class="models-shell">
+        <div class="models-section-heading">
+          <h2>FAQ</h2>
+          <p>
+            Short answers to the actual search queries people type when choosing a model stack.
+          </p>
+        </div>
+        <div class="models-faq">
+          <article class="models-faq-item">
+            <h3>What is the best model for `crew-lead`?</h3>
+            <p><strong>Grok 4.1 Fast</strong> is a strong default when you want fast orchestration and lower burn. Use <strong>GPT-5.4</strong> or <strong>Gemini 3.1 Pro</strong> when `crew-lead` needs giant context and stronger synthesis.</p>
+          </article>
+          <article class="models-faq-item">
+            <h3>What is the best coding model for `crew-coder` and `crew-fixer`?</h3>
+            <p><strong>Claude Sonnet 4.6</strong> is the best practical premium default for <code>crew-coder</code> and <code>crew-fixer</code>. Use <strong>Claude Opus 4.6</strong> for the hardest jobs. Use <strong>Kimi K2.5</strong> when you want a much cheaper coding challenger.</p>
+          </article>
+          <article class="models-faq-item">
+            <h3>What is the cheapest good enough model for `crew-qa`, `crew-pm`, and support agents?</h3>
+            <p><strong>Gemini 2.5 Flash</strong> is the main answer. It is cheap, fast, and strong enough for <code>crew-qa</code>, <code>crew-pm</code>, <code>crew-seo</code>, triage, and summaries. <strong>Gemini 2.5 Flash Lite</strong> is the lower-cost fallback for repetitive glue work.</p>
+          </article>
+          <article class="models-faq-item">
+            <h3>Is OpenRouter a model or a coding agent?</h3>
+            <p><strong>Neither.</strong> OpenRouter is a unified API and routing layer. It gives you one endpoint for many vendors and can auto-route or fail over across providers. The agent behavior still comes from tools like crewswarm, Cursor, Claude Code, or Codex CLI.</p>
+          </article>
+          <article class="models-faq-item">
+            <h3>Should one model run the whole swarm?</h3>
+            <p><strong>No.</strong> crewswarm is better with per-agent assignments: one model for `crew-lead`, one for coders, and one cheap workhorse for QA and support roles. That keeps quality high without setting money on fire.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="models.html">Models</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="cli.html">CLI</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Compare</div>
+          <a href="openclaw-comparison.html">OpenClaw</a>
+          <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="about.html">About</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <span>&copy; 2026 crewswarm. All rights reserved.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

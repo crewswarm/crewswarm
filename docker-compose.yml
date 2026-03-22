@@ -1,0 +1,84 @@
+services:
+  crewswarm:
+    build: .
+    image: crewswarm:latest
+    container_name: crewswarm
+    restart: unless-stopped
+
+    ports:
+      - "4319:4319"   # Dashboard
+      - "5010:5010"   # crew-lead
+      - "18889:18889" # RT message bus
+      - "4096:4096"   # Code engine
+      - "5020:5020"   # MCP server (optional — comment out if not used)
+      - "3333:3333"   # Studio UI
+      - "3334:3334"   # Studio watch server (CLI → Studio live reload)
+
+    volumes:
+      # ~/.crewswarm contains all config, API keys, agent prompts, and chat history.
+      # This is the only persistent state — never baked into the image.
+      - crewswarm-config:/root/.crewswarm
+      
+      # Workspace directory for CLI output → Studio visualization
+      # CLI writes files to /workspace inside container
+      # Studio UI browses /workspace
+      # Host can access via ./workspace directory
+      - ./workspace:/workspace:rw
+
+      # ── Engine binaries ───────────────────────────────────────────────────
+      # Mount host engine binaries so passthrough works inside the container.
+      # Comment out any you don't have installed.
+      - /usr/local/bin/claude:/usr/local/bin/claude:ro
+      - /usr/local/bin/cursor:/usr/local/bin/cursor:ro
+      - /usr/local/bin/codex:/usr/local/bin/codex:ro
+      - /usr/local/bin/opencode:/usr/local/bin/opencode:ro
+
+      # ── Engine auth tokens ────────────────────────────────────────────────
+      # OAuth tokens live on the host after running each CLI once.
+      # Authenticate on the host first (opens browser normally), then these
+      # mounts let the container reuse your tokens — no re-auth needed.
+      # Comment out any you don't use.
+      - ${HOME}/.claude:/root/.claude:ro         # Claude Code OAuth
+      - ${HOME}/.cursor:/root/.cursor:ro         # Cursor CLI auth
+      - ${HOME}/.codex:/root/.codex:ro           # Codex OAuth
+      - ${HOME}/.config/opencode:/root/.config/opencode:ro  # OpenCode config
+
+    environment:
+      # Node environment
+      - NODE_ENV=production
+
+      # Bind all services to 0.0.0.0 inside the container so Docker port
+      # mappings can route traffic in. Inter-service calls still use 127.0.0.1
+      # (works because all services share the same network namespace).
+      - CREWSWARM_BIND_HOST=0.0.0.0
+      - CREWSWARM_RT_HOST=0.0.0.0
+
+      # All runtime config lives in ~/.crewswarm/crewswarm.json (mounted above).
+      # Override specific vars here if needed — they take precedence over the JSON config.
+
+      # Core ports (uncomment to override defaults)
+      # - CREW_LEAD_PORT=5010
+      # - SWARM_DASH_PORT=4319
+
+      # Engine routing (uncomment to enable globally)
+      # - CREWSWARM_OPENCODE_ENABLED=1
+      # - CREWSWARM_DOCKER_SANDBOX=1
+
+      # Background consciousness (uncomment to enable)
+      # - CREWSWARM_BG_CONSCIOUSNESS=1
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4319/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  crewswarm-config:
+    # Use a named volume for portability, or bind-mount your host dir:
+    # driver: local
+    # driver_opts:
+    #   type: none
+    #   o: bind
+    #   device: ~/.crewswarm

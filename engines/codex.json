@@ -1,0 +1,37 @@
+{
+  "id": "codex",
+  "label": "Codex CLI",
+  "description": "OpenAI Codex CLI — non-interactive agentic coding with danger-full-access sandbox and no approval prompts. Works with OpenAI models out of the box.",
+  "shouldUse": {
+    "runtime": ["codex", "codex-cli"],
+    "payloadKey": "useCodex",
+    "agentConfigKey": "useCodex",
+    "envVar": "CREWSWARM_CODEX"
+  },
+  "bin": "codex",
+  "installCmd": "npm install -g @openai/codex",
+  "installUrl": "https://github.com/openai/codex",
+  "docsUrl": "https://github.com/openai/codex#readme",
+  "color": "#a78bfa",
+  "icon": "codex",
+  "agentConfigKey": "useCodex",
+  "envToggle": "CREWSWARM_CODEX",
+  "authNote": "Uses OAuth — run `codex login` once to authenticate. No API key needed.",
+  "bestFor": ["crew-coder", "crew-coder-back", "crew-coder-front", "crew-fixer"],
+  "traits": [
+    "danger-full-access sandbox — full machine access, no approval prompts",
+    "Non-interactive exec mode (codex exec --json)",
+    "OpenAI models — works with your existing OPENAI_API_KEY",
+    "MCP-connected: agents available inside Codex sessions"
+  ],
+  "args": {
+    "run": ["-a", "never", "exec", "--sandbox", "danger-full-access", "--json", "{prompt}"]
+  },
+  "outputMode": "json-stream",
+  "jsonOutputEvent": "item.completed",
+  "jsonOutputField": "item.text",
+  "mcpSetup": {
+    "command": "codex mcp add crewswarm --url \"http://127.0.0.1:5020/mcp\" --bearer-token-env-var CREWSWARM_TOKEN",
+    "envRequired": "CREWSWARM_TOKEN"
+  }
+}

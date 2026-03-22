@@ -1,0 +1,75 @@
+{
+  "id": "gemini-cli",
+  "label": "Gemini CLI",
+  "description": "Google's open-source terminal AI agent powered by Gemini 3. Free tier: 60 req/min and 1,000 req/day with a personal Google account. Runs non-interactively with -p flag. Full workspace context, built-in Google Search grounding, file operations, and shell commands.",
+  "shouldUse": {
+    "runtime": ["gemini", "gemini-cli"],
+    "payloadKey": "useGeminiCli",
+    "agentConfigKey": "useGeminiCli",
+    "envVar": "CREWSWARM_GEMINI_CLI_ENABLED"
+  },
+  "bin": "gemini",
+  "installCmd": "npm install -g @google/gemini-cli",
+  "installUrl": "https://github.com/google-gemini/gemini-cli",
+  "docsUrl": "https://geminicli.com/docs/",
+  "color": "#4285f4",
+  "icon": "gemini",
+  "agentConfigKey": "useGeminiCli",
+  "envToggle": "CREWSWARM_GEMINI_CLI_ENABLED",
+  "authNote": "No API key needed for free tier. Three auth options below — pick one.",
+  "requiresAuth": true,
+  "authMethods": [
+    {
+      "label": "Option 1 — Google OAuth (free, recommended)",
+      "cmd": "gemini auth login",
+      "note": "Opens your browser. Free quota: 60 req/min · 1,000 req/day with any personal Google account."
+    },
+    {
+      "label": "Option 2 — Gemini API key",
+      "cmd": "export GEMINI_API_KEY=your_key_here",
+      "note": "Get a key at aistudio.google.com/apikey — paste it in your shell profile or set it in Dashboard → Providers."
+    },
+    {
+      "label": "Option 3 — Vertex AI (enterprise / GCP)",
+      "cmd": "export GOOGLE_CLOUD_PROJECT=your_project_id && gcloud auth application-default login",
+      "note": "For Google Cloud users — uses your GCP project quota."
+    }
+  ],
+  "modelEnvVar": "CREWSWARM_GEMINI_CLI_MODEL",
+  "modelFlag": "-m",
+  "bestFor": ["crew-coder", "crew-researcher", "crew-main"],
+  "traits": [
+    "Free tier: 60 req/min and 1,000 req/day with personal Google account",
+    "Gemini 3 models with 1M token context window",
+    "Built-in Google Search grounding for real-time info",
+    "Non-interactive headless mode: gemini -p \"task\" --output-format stream-json",
+    "Open source Apache 2.0 — 95k+ GitHub stars"
+  ],
+  "defaultModel": "gemini-2.5-pro",
+  "modelSuggestions": [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview"
+  ],
+  "args": {
+    "run": ["-p", "{prompt}", "--output-format", "stream-json"],
+    "run_with_model": ["-p", "{prompt}", "-m", "{model}", "--output-format", "stream-json"],
+    "run_yolo": ["-p", "{prompt}", "--output-format", "stream-json", "--yolo"]
+  },
+  "outputMode": "stream-json",
+  "streamJsonEvents": {
+    "init":        { "eventType": "init",        "fields": ["session_id", "model", "timestamp"] },
+    "text_chunk":  { "eventType": "message",     "path": "content", "filter": "role === 'assistant' && delta === true" },
+    "tool_use":    { "eventType": "tool_use",    "fields": ["tool_name", "tool_id", "parameters"] },
+    "tool_result": { "eventType": "tool_result", "fields": ["tool_id", "status", "output", "error"] },
+    "done":        { "eventType": "result",      "fields": ["status", "stats"] },
+    "error":       { "eventType": "error",       "fields": ["severity", "message"] }
+  },
+  "exitCodes": {
+    "0":  "Success",
+    "1":  "General error or API failure",
+    "42": "Input error (invalid prompt or arguments)",
+    "53": "Turn limit exceeded"
+  }
+}

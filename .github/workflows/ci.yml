@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: PR checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm install --prefix apps/dashboard
+      - run: npm install --prefix crew-cli
+      - run: npm run doctor
+      - run: cd crew-cli && npm test
+      - run: npm run smoke:static
+      - run: npm run release:check

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>@@PROTOCOL — Token-Efficient LLM Commands | crewswarm</title>
+  <meta name="description" content="The At-At Protocol (@@PROTOCOL) — Token-efficient LLM commands that cut overhead by 85%. Stream-parseable, no escaping, graceful partial execution." />
+  <!-- Open Graph -->
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:title" content="@@PROTOCOL — Token-Efficient LLM Commands" />
+  <meta property="og:description" content="85% fewer tokens than JSON-RPC. Stream-parseable, no escaping, graceful partial execution. Licensed to build, not to JSON." />
+  <meta property="og:url" content="https://crewswarm.ai/atat.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@crewswarm" />
+  <meta name="twitter:title" content="@@PROTOCOL — Token-Efficient LLM Commands" />
+  <meta name="twitter:description" content="85% fewer tokens than JSON-RPC. Stream-parseable, no escaping, graceful partial execution." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- Misc SEO -->
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#060a10" />
+  <link rel="canonical" href="https://crewswarm.ai/atat.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://crewswarm.ai/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "ATAT Protocol",
+        "item": "https://crewswarm.ai/atat.html"
+      }
+    ]
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+  
+  <style>
+    .hero h1.atat-title { font-size: 5rem; font-family: var(--font-mono); color: var(--accent); margin-bottom: 1rem; letter-spacing: -0.02em; }
+    .hero .subtitle { font-size: 1.5rem; color: var(--text-muted); margin-bottom: 3rem; }
+    .comparison { max-width: 1200px; margin: 4rem auto; padding: 0 1.5rem; }
+    .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 4rem; }
+    .comparison-card { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 2rem; }
+    .comparison-card h3 { color: var(--accent); margin-bottom: 1rem; font-size: 1.25rem; }
+    .comparison-card.winner { border-color: var(--accent); box-shadow: 0 0 20px rgba(6, 182, 212, 0.2); }
+    pre { background: #000; padding: 1.5rem; border-radius: var(--radius-sm); overflow-x: auto; margin: 1rem 0; border: 1px solid var(--border); }
+    code { font-family: var(--font-mono); color: #38bdf8; font-size: 0.9rem; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; max-width: 900px; margin: 0 auto; text-align: center; }
+    .stat { background: var(--bg-alt); padding: 2rem; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+    .stat-number { font-size: 3rem; font-weight: 700; color: var(--accent); margin-bottom: 0.5rem; }
+    .stat-label { color: var(--text-muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; }
+    .feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2rem; max-width: 1000px; margin: 4rem auto; }
+    .feature { background: var(--bg-alt); padding: 2rem; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+    .feature h3 { color: var(--accent); margin-bottom: 0.75rem; }
+    .agent-badge { display: inline-block; background: linear-gradient(135deg, var(--accent) 0%, #0284c7 100%); color: white; padding: 0.5rem 1.5rem; border-radius: 50px; font-family: var(--font-mono); font-weight: 600; margin: 2rem auto; font-size: 1.1rem; box-shadow: 0 4px 20px rgba(6, 182, 212, 0.3); }
+    table { width: 100%; border-collapse: collapse; margin: 2rem 0; background: var(--bg-alt); border-radius: var(--radius-lg); overflow: hidden; }
+    th, td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--accent); text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.05em; background: rgba(6, 182, 212, 0.05); }
+    .checkmark { color: #22c55e; font-weight: bold; }
+    .xmark { color: #ef4444; font-weight: bold; }
+    @media (max-width: 768px) { 
+      .hero h1.atat-title { font-size: 2.5rem; }
+      .hero .subtitle { font-size: 1.1rem; }
+      .comparison-grid, .feature-grid, .stats { grid-template-columns: 1fr !important; gap: 1.25rem; }
+      .stats { margin: 2rem auto; }
+      .stat { padding: 1.5rem; }
+      .stat-number { font-size: 2.25rem; }
+      .comparison { margin: 2rem auto; }
+      .comparison-card { padding: 1.5rem; }
+      table { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    }
+  </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+    </a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+      <li role="none"><a href="models.html" role="menuitem" class="nav-link-item">Models</a></li>
+      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+      <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+      </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-glow"></div>
+    
+      <h1 class="atat-title">@@PROTOCOL</h1>
+      <div class="subtitle">The At-At Protocol</div>
+      <div class="agent-badge">SPECIAL AGENT DOUBLE @@</div>
+      <p style="font-size: 1.25rem; color: var(--text); max-width: 700px; margin: 2rem auto;">
+        Token-efficient LLM commands using <code style="color: var(--accent);">@@</code> markers.<br/>
+        Licensed to build, not to JSON.
+      </p>
+    
+  </section>
+
+  <!-- STATS -->
+  <section class="section visible">
+    <div class="container">
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-number">85%</div>
+          <div class="stat-label">Fewer Tokens</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">Stream</div>
+          <div class="stat-label">Parseable</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">Zero</div>
+          <div class="stat-label">Escaping</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section class="section visible">
+    <div class="container">
+    <h2 style="text-align: center; font-size: 2.5rem; margin-bottom: 3rem;">Why <span class="gradient-text">@@PROTOCOL</span>?</h2>
+
+    <div class="comparison-grid">
+      <div class="comparison-card">
+        <h3>❌ JSON-RPC (Standard)</h3>
+        <pre><code>{
+  "tool": "write",
+  "params": {
+    "path": "src/app.ts",
+    "content": "import express from 'express';\nconst app = express();\napp.listen(3000);"
+  }
+}</code></pre>
+        <p><strong>Tokens:</strong> ~60<br/>
+        <strong>Escaping:</strong> Required (<code>\n</code>, <code>\"</code>)<br/>
+        <strong>Failure:</strong> One missing <code>}</code> = Total crash</p>
+      </div>
+
+      <div class="comparison-card winner">
+        <h3>✅ @@PROTOCOL (At-At)</h3>
+        <pre><code>@@WRITE_FILE src/app.ts
+import express from 'express';
+const app = express();
+app.listen(3000);
+@@END_FILE</code></pre>
+        <p><strong>Tokens:</strong> ~8<br/>
+        <strong>Escaping:</strong> Not required (raw content)<br/>
+        <strong>Failure:</strong> Graceful partial execution</p>
+      </div>
+    </div>
+
+    <h3 style="text-align: center; font-size: 2rem; margin: 4rem 0 2rem;">Full Command Surface</h3>
+    
+    <table>
+      <thead>
+        <tr>
+          <th>Command</th>
+          <th>Usage</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>@@READ_FILE</code></td>
+          <td><code>@@READ_FILE /path/to/file</code></td>
+          <td>Read file contents</td>
+        </tr>
+        <tr>
+          <td><code>@@WRITE_FILE</code></td>
+          <td><code>@@WRITE_FILE /path<br/>...content...<br/>@@END_FILE</code></td>
+          <td>Write or overwrite file</td>
+        </tr>
+        <tr>
+          <td><code>@@MKDIR</code></td>
+          <td><code>@@MKDIR /path/to/dir</code></td>
+          <td>Create directory (with parents)</td>
+        </tr>
+        <tr>
+          <td><code>@@RUN_CMD</code></td>
+          <td><code>@@RUN_CMD npm install</code></td>
+          <td>Execute shell command</td>
+        </tr>
+        <tr>
+          <td><code>@@DISPATCH</code></td>
+          <td><code>@@DISPATCH crew-coder<br/>Write auth endpoint</code></td>
+          <td>Send task to specialist agent</td>
+        </tr>
+        <tr>
+          <td><code>@@PIPELINE</code></td>
+          <td><code>@@PIPELINE [{"wave":1,...}]</code></td>
+          <td>Multi-agent orchestration</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="section bg-dark visible">
+    <div class="container">
+    <h2 style="text-align: center; font-size: 2.5rem; margin-bottom: 3rem;">Why It Works</h2>
+
+    <div class="feature-grid">
+      <div class="feature">
+        <h3>🎯 High-Signal Markers</h3>
+        <p>The <code>@@</code> symbol is visually distinct and rarely appears in natural text, making it easy for LLMs to learn and reliable for parsers to detect.</p>
+      </div>
+
+      <div class="feature">
+        <h3>⚡ Stream-Parseable</h3>
+        <p>Unlike JSON (which must close before parsing), <code>@@</code> commands are parsed line-by-line during streaming — reducing latency and enabling graceful partial execution.</p>
+      </div>
+
+      <div class="feature">
+        <h3>📦 No Escaping Required</h3>
+        <p>LLMs don't need to escape newlines, quotes, or special characters inside <code>@@WRITE_FILE</code> blocks. This eliminates common hallucination patterns where models forget to close strings.</p>
+      </div>
+
+      <div class="feature">
+        <h3>🛡️ Graceful Failure</h3>
+        <p>If an LLM hits a context limit mid-generation, every <em>completed</em> <code>@@</code> block executes successfully. With JSON-RPC, one missing brace invalidates the entire payload.</p>
+      </div>
+
+      <div class="feature">
+        <h3>🧠 LLM-Native</h3>
+        <p>LLMs think in top-down narratives. @@PROTOCOL follows this: agents can explain <em>why</em>, then execute the <code>@@</code> command, then continue their narrative — all in one natural flow.</p>
+      </div>
+
+      <div class="feature">
+        <h3>💰 Token Efficient</h3>
+        <p>JSON syntax (braces, quotes, escapes) consumes 15-30% more tokens than necessary. @@PROTOCOL reduces overhead from ~60 tokens to ~8 tokens per file operation.</p>
+      </div>
+    </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON TABLE -->
+  <section class="section visible">
+    <div class="container">
+    <h2 style="text-align: center; font-size: 2.5rem; margin-bottom: 3rem;">Protocol Comparison</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>JSON-RPC</th>
+          <th>@@PROTOCOL</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Token Overhead</strong></td>
+          <td class="xmark">45-60 tokens per call</td>
+          <td class="checkmark">8 tokens per call</td>
+        </tr>
+        <tr>
+          <td><strong>Escaping</strong></td>
+          <td class="xmark">Required (<code>\n</code>, <code>\"</code>)</td>
+          <td class="checkmark">Not required</td>
+        </tr>
+        <tr>
+          <td><strong>Streaming</strong></td>
+          <td class="xmark">Must close block before parsing</td>
+          <td class="checkmark">Line-by-line parseable</td>
+        </tr>
+        <tr>
+          <td><strong>Partial Execution</strong></td>
+          <td class="xmark">One error = total failure</td>
+          <td class="checkmark">Graceful partial execution</td>
+        </tr>
+        <tr>
+          <td><strong>LLM Hallucination</strong></td>
+          <td class="xmark">Frequent (unclosed braces)</td>
+          <td class="checkmark">Rare (simple markers)</td>
+        </tr>
+        <tr>
+          <td><strong>Readability</strong></td>
+          <td class="xmark">Verbose nested JSON</td>
+          <td class="checkmark">Clean, narrative flow</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- TECHNICAL SPECS -->
+  <section class="section bg-dark visible">
+    <div class="container">
+    <h2 style="text-align: center; font-size: 2.5rem; margin-bottom: 3rem;">Technical Specifications</h2>
+    
+    <div style="max-width: 800px; margin: 0 auto;">
+      <h3 style="color: var(--accent); margin-bottom: 1rem;">v1.0 — Inline Syntax</h3>
+      <p>The current production protocol uses inline <code>@@</code> markers that agents embed in their natural language replies.</p>
+      <p><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/ATAT-PROTOCOL.md" class="btn btn-secondary" style="margin-top: 1rem;">View v1.0 Specification →</a></p>
+
+      <h3 style="color: var(--accent); margin: 3rem 0 1rem;">v2.0 — Universal Adapters (Draft)</h3>
+      <p>The upcoming v2 adds adapter layers for MCP, JSON-RPC, and OpenAI-style tool calls while keeping <code>@@</code> syntax as the canonical internal format.</p>
+      <p><a href="https://github.com/crewswarm/crewswarm/blob/main/docs/ATAT-V2.md" class="btn btn-secondary" style="margin-top: 1rem;">View v2.0 Draft →</a></p>
+
+      <h3 style="color: var(--accent); margin: 3rem 0 1rem;">Reference Implementation</h3>
+      <ul style="list-style: none; padding: 0;">
+        <li style="margin-bottom: 0.5rem;">• Orchestration: <code>crew-lead.mjs</code></li>
+        <li style="margin-bottom: 0.5rem;">• Parsing: <code>lib/dispatch/parsers.mjs</code></li>
+        <li style="margin-bottom: 0.5rem;">• Execution: <code>gateway-bridge.mjs</code></li>
+      </ul>
+    </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="section visible" style="text-align: center;">
+    <div class="container">
+      <h2 style="font-size: 2.5rem; margin-bottom: 1.5rem;">Ready to deploy <span class="gradient-text">Special Agent Double @@</span>?</h2>
+      <p style="font-size: 1.25rem; color: var(--text-muted); margin-bottom: 3rem; max-width: 700px; margin-left: auto; margin-right: auto;">
+        @@PROTOCOL is built into crewswarm. Clone the repo and start building with token-efficient agent commands today.
+      </p>
+      <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <a href="https://github.com/crewswarm/crewswarm" class="btn btn-primary">Download crewswarm</a>
+        <a href="https://github.com/crewswarm/crewswarm/blob/main/docs/ATAT-PROTOCOL.md" class="btn btn-secondary">Read Full Spec</a>
+      </div>
+    </div>
+  </section>
+
+    <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a
+            href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="models.html">Models</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+          <a href="openclaw-comparison.html">Compare</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <span>&copy; 2026 crewswarm. All rights reserved.</span>
+      </div>
+    </div>
+  </footer>
+
+
+  <script src="script.js"></script>
+</body>
+</html>

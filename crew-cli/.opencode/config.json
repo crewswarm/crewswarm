@@ -1,0 +1,7 @@
+{
+  "timeout": 600000,
+  "maxRetries": 3,
+  "retryDelay": 5000,
+  "workerMode": true,
+  "workerTimeout": 600000
+}

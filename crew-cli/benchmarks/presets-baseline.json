@@ -1,0 +1,34 @@
+{
+  "updatedAt": "2026-03-21T06:06:44.276Z",
+  "sourceReport": "/Users/jeffhobbs/Desktop/CrewSwarm/crew-cli/.crew/benchmarks/presets-latest.json",
+  "summary": {
+    "turbo6": {
+      "avgMs": 18882,
+      "passCount": 1,
+      "failCount": 1,
+      "total": 2,
+      "passRate": 0.5
+    },
+    "fast6": {
+      "avgMs": 24745,
+      "passCount": 1,
+      "failCount": 1,
+      "total": 2,
+      "passRate": 0.5
+    },
+    "balanced": {
+      "avgMs": 30042,
+      "passCount": 0,
+      "failCount": 2,
+      "total": 2,
+      "passRate": 0
+    },
+    "quality": {
+      "avgMs": 30037,
+      "passCount": 0,
+      "failCount": 2,
+      "total": 2,
+      "passRate": 0
+    }
+  }
+}

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documentation & Quick Start — crewswarm</title>
+  <meta name="description"
+    content="Get started with crewswarm in minutes. Installation guide, service overview, execution modes, and best practices for multi-agent AI orchestration." />
+  <!-- Open Graph -->
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:title" content="Documentation & Quick Start — crewswarm" />
+  <meta property="og:description"
+    content="Get started with crewswarm in minutes. Installation, services, execution modes, and best practices." />
+  <meta property="og:url" content="https://crewswarm.ai/docs.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:locale" content="en_US" />
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@crewswarm" />
+  <meta name="twitter:title" content="Documentation & Quick Start — crewswarm" />
+  <meta name="twitter:description"
+    content="Get started with crewswarm in minutes. Installation, services, execution modes, and best practices." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- Misc SEO -->
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#060a10" />
+  <meta name="author" content="crewswarm" />
+  <link rel="canonical" href="https://crewswarm.ai/docs.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://crewswarm.ai/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Docs",
+        "item": "https://crewswarm.ai/docs.html"
+      }
+    ]
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+
+  <style>
+    .docs-section {
+      margin-bottom: 4rem;
+    }
+
+    .docs-section h2 {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    pre {
+      background: #000;
+      padding: 1.5rem;
+      border-radius: var(--radius-sm);
+      overflow-x: auto;
+      margin-bottom: 1.5rem;
+      border: 1px solid var(--border);
+    }
+
+    code {
+      font-family: var(--font-mono);
+      color: #38bdf8;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 2rem;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      color: var(--accent);
+      text-transform: uppercase;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+    }
+
+    .step-number {
+      background: var(--accent);
+      color: white;
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+  </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+
+</head>
+
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks" role="menubar">
+        <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+        <li role="none"><a href="models.html" role="menuitem" class="nav-link-item">Models</a></li>
+        <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+        <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+        <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+        <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+        <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+        <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false"
+          aria-controls="navLinks">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-glow"></div>
+
+    <div class="hero-badge">Master the Swarm</div>
+    <h1>Documentation &<br /><span class="gradient-text">Quick Start Guide.</span></h1>
+
+  </section>
+
+  <section class="section subpage-content wide visible">
+    <div class="container">
+
+      <!-- INSTALLATION -->
+      <section class="docs-section">
+        <h2>Installation</h2>
+        <p>crewswarm is a local-first system. Ensure you have Node.js 20+ installed.</p>
+
+        <div style="margin-top: 2rem;">
+          <p><strong>1. Clone the repository</strong></p>
+          <pre><code>git clone https://github.com/crewswarm/crewswarm.git
+cd crewswarm</code></pre>
+
+          <p><strong>2. Install dependencies & Setup</strong></p>
+          <pre><code>npm install
+bash install.sh</code></pre>
+
+          <p><strong>3. Start all services</strong></p>
+          <pre><code>npm run restart-all</code></pre>
+        </div>
+        <p>Once running, the dashboard is accessible at <a href="http://127.0.0.1:4319"
+            style="color: var(--accent);">http://127.0.0.1:4319</a>.</p>
+      </section>
+
+      <!-- SERVICES -->
+      <section class="docs-section">
+        <h2>System Services</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Port</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>RT Message Bus</strong></td>
+              <td><code>18889</code></td>
+              <td>Real-time agent communication backbone.</td>
+            </tr>
+            <tr>
+              <td><strong>Sub-Agents</strong></td>
+              <td><code>-</code></td>
+              <td>Worker Bridges (crew-coder, crew-pm, etc.).</td>
+            </tr>
+            <tr>
+              <td><strong>crew-lead</strong></td>
+              <td><code>5010</code></td>
+              <td>Chat commander — dashboard chat, CrewChat, Telegram.</td>
+            </tr>
+            <tr>
+              <td><strong>Telegram Bridge</strong></td>
+              <td><code>-</code></td>
+              <td>@crewswarm_bot → crew-main.</td>
+            </tr>
+            <tr>
+              <td><strong>WhatsApp Bridge</strong></td>
+              <td><code>-</code></td>
+              <td>Personal bot via Baileys linked device.</td>
+            </tr>
+            <tr>
+              <td><strong>Code Engine</strong></td>
+              <td><code>4096</code></td>
+              <td>Coding execution server (OpenCode / Claude Code / Cursor).</td>
+            </tr>
+            <tr>
+              <td><strong>Dashboard</strong></td>
+              <td><code>4319</code></td>
+              <td>The UI for agent management, model assignment, and cost tracking.</td>
+            </tr>
+            <tr>
+              <td><strong>MCP + OpenAI API</strong></td>
+              <td><code>5020</code></td>
+              <td>MCP tools + /v1/chat/completions for Open WebUI, LM Studio, Aider.</td>
+            </tr>
+            <tr>
+              <td><strong>Vibe UI</strong></td>
+              <td><code>3333</code></td>
+              <td>Monaco editor + agent chat — Cursor-like IDE for crewswarm.</td>
+            </tr>
+            <tr>
+              <td><strong>Vibe Watch Server</strong></td>
+              <td><code>3334</code></td>
+              <td>CLI → Vibe live reload WebSocket relay.</td>
+            </tr>
+            <tr>
+              <td><strong>OpenClaw Gateway</strong></td>
+              <td><code>18789</code></td>
+              <td>Optional legacy service for the OpenClaw desktop app.</td>
+            </tr>
+            <tr>
+              <td><strong>PM Loops</strong></td>
+              <td><code>-</code></td>
+              <td>Autonomous project manager loops (managed externally).</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- EXECUTION MODES -->
+      <section class="docs-section">
+        <h2>Execution Modes</h2>
+        <div class="grid-2">
+          <div class="page-card">
+            <h3>Direct API</h3>
+            <p>Agents call LLMs (Groq, Anthropic, OpenAI) directly. Best for analysis and planning tasks that don't
+              require file system access.</p>
+          </div>
+          <div class="page-card">
+            <h3>OpenCode (Default)</h3>
+            <p>Recommended for coding. Agents run in a sandboxed session with full system access. OpenCode routes
+              reasoning to models like GPT-5.3 Codex, Claude 3.5, and Gemini.</p>
+          </div>
+          <div class="page-card">
+            <h3>Claude Code CLI</h3>
+            <p>Integrates directly with Anthropic's native `claude -p` CLI for tasks that benefit from its specific
+              codebase reasoning capabilities.</p>
+          </div>
+          <div class="page-card">
+            <h3>Cursor CLI</h3>
+            <p>Integrates directly with the Cursor editor's CLI, leveraging its internal codebase indexing and MCP
+              models.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- BEST PRACTICES -->
+      <section class="docs-section">
+        <h2>Best Practices</h2>
+        <ul style="list-style: none; padding: 0;">
+          <li style="margin-bottom: 2rem; padding-left: 2rem; border-left: 2px solid var(--accent);">
+            <h3 style="margin-bottom: 0.5rem;">Update the Brain</h3>
+            <p>Maintain <code>memory/brain.md</code> in your project. This file is the primary context source for all
+              agents. Use it to store project rules and architectural decisions.</p>
+          </li>
+          <li style="margin-bottom: 2rem; padding-left: 2rem; border-left: 2px solid var(--accent);">
+            <h3 style="margin-bottom: 0.5rem;">Leverage the PM Loop</h3>
+            <p>Don't manage tasks manually. Create a <code>ROADMAP.md</code> and let <code>crew-pm</code> handle the
+              decomposition. This enables autonomous, multi-step progress.</p>
+          </li>
+          <li style="margin-bottom: 2rem; padding-left: 2rem; border-left: 2px solid var(--accent);">
+            <h3 style="margin-bottom: 0.5rem;">Task Granularity</h3>
+            <p>The smaller the task, the higher the success rate. If a task is complex, ask <code>crew-pm</code> to
+              break it down further before dispatching it to <code>crew-coder</code>.</p>
+          </li>
+        </ul>
+      </section>
+
+      <!-- CALL TO ACTION -->
+      <section class="docs-section"
+        style="text-align: center; background: var(--bg-alt); padding: 4rem 2rem; border-radius: var(--radius-lg); border: 1px solid var(--border);">
+        <h2>Ready to build?</h2>
+        <p style="margin-bottom: 2rem;">Clone the repo and start your first crew today.</p>
+        <div style="display: flex; gap: 1rem; justify-content: center;">
+          <a href="https://github.com/crewswarm/crewswarm" class="btn btn-primary">Download from GitHub</a>
+          <a href="contact.html" class="btn btn-secondary">Get Support</a>
+        </div>
+      </section>
+    </div>
+  </section>
+
+    <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a
+            href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="models.html">Models</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+          <a href="openclaw-comparison.html">Compare</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <span>&copy; 2026 crewswarm. All rights reserved.</span>
+      </div>
+    </div>
+  </footer>
+
+
+  <script src="script.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,24 @@
+{
+  "description": "Text-to-speech via ElevenLabs — returns audio URL or base64",
+  "url": "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+  "method": "POST",
+  "auth": {
+    "type": "header",
+    "header": "xi-api-key",
+    "keyFrom": "providers.elevenlabs.apiKey"
+  },
+  "headers": {
+    "Accept": "audio/mpeg"
+  },
+  "defaultParams": {
+    "voice_id": "21m00Tcm4TlvDq8ikWAM",
+    "model_id": "eleven_monolingual_v1",
+    "voice_settings": {
+      "stability": 0.5,
+      "similarity_boost": 0.75
+    }
+  },
+  "paramNotes": "Required: text (the text to speak). Optional: voice_id (default: Rachel), model_id.",
+  "requiresApproval": false,
+  "timeout": 45000
+}

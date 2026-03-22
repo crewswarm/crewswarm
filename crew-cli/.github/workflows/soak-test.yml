@@ -1,0 +1,54 @@
+name: Soak Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      gateway:
+        description: Gateway URL
+        required: false
+        default: http://127.0.0.1:5010
+      minutes:
+        description: Soak duration in minutes
+        required: false
+        default: '30'
+      require_gateway:
+        description: Fail if gateway is unreachable
+        required: false
+        default: 'true'
+      max_iterations:
+        description: Safety cap for loop iterations
+        required: false
+        default: '9999'
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run soak test
+        env:
+          QA_GATEWAY: ${{ github.event.inputs.gateway || 'http://127.0.0.1:5010' }}
+          QA_SOAK_MINUTES: ${{ github.event.inputs.minutes || '30' }}
+          QA_REQUIRE_GATEWAY: ${{ github.event.inputs.require_gateway || 'true' }}
+          QA_SOAK_MAX_ITERATIONS: ${{ github.event.inputs.max_iterations || '9999' }}
+        run: npm run qa:soak
+
+      - name: Upload soak report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-report
+          path: .crew/soak-report.json
+          if-no-files-found: ignore
+
