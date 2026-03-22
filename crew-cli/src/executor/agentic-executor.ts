@@ -214,19 +214,39 @@ function formatToolResult(h: TurnResult, maxLen = 1500): string {
 /**
  * Convert TurnResult[] into provider-specific structured messages.
  * Each TurnResult becomes an assistant tool_call + user tool_result pair.
- * For long histories, older turns are compressed to text summary while
- * recent turns (last 5) use full structured format.
+ * For long histories, middle turns are compressed to text summary while
+ * the first 3 (initial context) and last 5 (recent work) use full structured format.
  */
 function historyToGeminiContents(history: TurnResult[]): any[] {
   if (history.length === 0) return [];
   const contents: any[] = [];
 
-  // For long histories, compress older turns into a text summary
-  const structuredTurns = history.length > 8 ? history.slice(-5) : history;
-  const compressedTurns = history.length > 8 ? history.slice(0, -5) : [];
+  // Selective compression: keep first 3 + last 5 detailed, compress only middle
+  const firstN = 3;
+  const lastN = 5;
+  const needsCompression = history.length > firstN + lastN;
+  const headDetailed = needsCompression ? history.slice(0, firstN) : [];
+  const middleTurns = needsCompression ? history.slice(firstN, -lastN) : [];
+  const structuredTurns = needsCompression ? history.slice(-lastN) : history;
 
-  if (compressedTurns.length > 0) {
-    const compressed = compressTurnHistory(compressedTurns);
+  // Emit head turns (initial context) as full structured messages
+  for (const h of headDetailed) {
+    contents.push({
+      role: 'model',
+      parts: [{ functionCall: { name: h.tool, args: h.params } }]
+    });
+    const resultObj = h.error
+      ? { error: h.error }
+      : (typeof h.result === 'object' && h.result) ? h.result : { output: formatToolResult(h) };
+    contents.push({
+      role: 'user',
+      parts: [{ functionResponse: { name: h.tool, response: resultObj } }]
+    });
+  }
+
+  // Emit compressed summary of middle turns
+  if (middleTurns.length > 0) {
+    const compressed = compressTurnHistory(middleTurns);
     const summary = compressed.map(c => `[${c.turn}] ${c.action} → ${c.outcome}`).join('\n');
     contents.push(
       { role: 'model', parts: [{ text: `[Earlier execution summary]\n${summary}` }] },
@@ -256,11 +276,35 @@ function historyToOpenAIMessages(history: TurnResult[]): any[] {
   if (history.length === 0) return [];
   const messages: any[] = [];
 
-  const structuredTurns = history.length > 8 ? history.slice(-5) : history;
-  const compressedTurns = history.length > 8 ? history.slice(0, -5) : [];
+  // Selective compression: keep first 3 + last 5 detailed, compress only middle
+  const firstN = 3;
+  const lastN = 5;
+  const needsCompression = history.length > firstN + lastN;
+  const headDetailed = needsCompression ? history.slice(0, firstN) : [];
+  const middleTurns = needsCompression ? history.slice(firstN, -lastN) : [];
+  const structuredTurns = needsCompression ? history.slice(-lastN) : history;
 
-  if (compressedTurns.length > 0) {
-    const compressed = compressTurnHistory(compressedTurns);
+  // Emit head turns (initial context) as full structured messages
+  for (const h of headDetailed) {
+    const callId = `call_${h.turn}_${h.tool}`;
+    messages.push({
+      role: 'assistant',
+      tool_calls: [{
+        id: callId,
+        type: 'function',
+        function: { name: h.tool, arguments: JSON.stringify(h.params) }
+      }]
+    });
+    messages.push({
+      role: 'tool',
+      tool_call_id: callId,
+      content: formatToolResult(h)
+    });
+  }
+
+  // Emit compressed summary of middle turns
+  if (middleTurns.length > 0) {
+    const compressed = compressTurnHistory(middleTurns);
     const summary = compressed.map(c => `[${c.turn}] ${c.action} → ${c.outcome}`).join('\n');
     messages.push(
       { role: 'assistant', content: `[Earlier execution summary]\n${summary}` },
@@ -291,11 +335,39 @@ function historyToAnthropicMessages(history: TurnResult[]): any[] {
   if (history.length === 0) return [];
   const messages: any[] = [];
 
-  const structuredTurns = history.length > 8 ? history.slice(-5) : history;
-  const compressedTurns = history.length > 8 ? history.slice(0, -5) : [];
+  // Selective compression: keep first 3 + last 5 detailed, compress only middle
+  const firstN = 3;
+  const lastN = 5;
+  const needsCompression = history.length > firstN + lastN;
+  const headDetailed = needsCompression ? history.slice(0, firstN) : [];
+  const middleTurns = needsCompression ? history.slice(firstN, -lastN) : [];
+  const structuredTurns = needsCompression ? history.slice(-lastN) : history;
 
-  if (compressedTurns.length > 0) {
-    const compressed = compressTurnHistory(compressedTurns);
+  // Emit head turns (initial context) as full structured messages
+  for (const h of headDetailed) {
+    const useId = `tu_${h.turn}_${h.tool}`;
+    messages.push({
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: useId,
+        name: h.tool,
+        input: h.params
+      }]
+    });
+    messages.push({
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: useId,
+        content: formatToolResult(h)
+      }]
+    });
+  }
+
+  // Emit compressed summary of middle turns
+  if (middleTurns.length > 0) {
+    const compressed = compressTurnHistory(middleTurns);
     const summary = compressed.map(c => `[${c.turn}] ${c.action} → ${c.outcome}`).join('\n');
     messages.push(
       { role: 'assistant', content: `[Earlier execution summary]\n${summary}` },

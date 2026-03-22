@@ -8,10 +8,10 @@ export interface WorkerTaskEnvelope {
   allowedPaths: string[];
   verification: string[];
   requiredCapabilities: string[];
-  sourceRefs: string[];
-  estimatedComplexity: 'low' | 'medium' | 'high';
-  escalationHints: string[];
-  maxFilesTouched: number;
+  sourceRefs?: string[];
+  estimatedComplexity?: 'low' | 'medium' | 'high';
+  escalationHints?: string[];
+  maxFilesTouched?: number;
 }
 
 export interface WorkerTaskValidation {
@@ -71,10 +71,8 @@ export function createWorkerTaskEnvelope(unit: WorkUnit): WorkerTaskEnvelope {
   const verification = Array.isArray(unit.verification) && unit.verification.length > 0
     ? unique(unit.verification.map(String))
     : defaultVerification(unit, allowedPaths);
-  const escalationHints = Array.isArray(unit.escalationHints) && unit.escalationHints.length > 0
-    ? unique(unit.escalationHints.map(String))
-    : defaultEscalationHints(unit, allowedPaths);
-  return {
+
+  const envelope: WorkerTaskEnvelope = {
     id: unit.id,
     goal: unit.description,
     persona: unit.requiredPersona,
@@ -82,13 +80,32 @@ export function createWorkerTaskEnvelope(unit: WorkUnit): WorkerTaskEnvelope {
     allowedPaths,
     verification,
     requiredCapabilities: Array.isArray(unit.requiredCapabilities) ? unit.requiredCapabilities : [],
-    sourceRefs: Array.isArray(unit.sourceRefs) ? unit.sourceRefs.map(String) : [],
-    estimatedComplexity: unit.estimatedComplexity || 'medium',
-    escalationHints,
-    maxFilesTouched: typeof unit.maxFilesTouched === 'number' && Number.isFinite(unit.maxFilesTouched) && unit.maxFilesTouched > 0
-      ? Math.floor(unit.maxFilesTouched)
-      : Math.max(1, allowedPaths.length || 1)
   };
+
+  // Only populate optional advisory fields when there's actual data
+  const sourceRefs = Array.isArray(unit.sourceRefs) ? unit.sourceRefs.map(String).filter(Boolean) : [];
+  if (sourceRefs.length > 0) {
+    envelope.sourceRefs = sourceRefs;
+  }
+
+  if (unit.estimatedComplexity && ['low', 'medium', 'high'].includes(unit.estimatedComplexity)) {
+    envelope.estimatedComplexity = unit.estimatedComplexity;
+  }
+
+  const escalationHints = Array.isArray(unit.escalationHints) && unit.escalationHints.length > 0
+    ? unique(unit.escalationHints.map(String))
+    : defaultEscalationHints(unit, allowedPaths);
+  if (escalationHints.length > 0) {
+    envelope.escalationHints = escalationHints;
+  }
+
+  if (typeof unit.maxFilesTouched === 'number' && Number.isFinite(unit.maxFilesTouched) && unit.maxFilesTouched > 0) {
+    envelope.maxFilesTouched = Math.floor(unit.maxFilesTouched);
+  } else if (allowedPaths.length > 0) {
+    envelope.maxFilesTouched = allowedPaths.length;
+  }
+
+  return envelope;
 }
 
 export function validateWorkerTaskEnvelope(task: WorkerTaskEnvelope): WorkerTaskValidation {
@@ -101,11 +118,11 @@ export function validateWorkerTaskEnvelope(task: WorkerTaskEnvelope): WorkerTask
   if (!Array.isArray(task.allowedPaths)) errors.push('task.allowedPaths must be array');
   if (!Array.isArray(task.verification) || task.verification.length === 0) errors.push('task.verification missing');
   if (!Array.isArray(task.requiredCapabilities)) errors.push('task.requiredCapabilities must be array');
-  if (!Array.isArray(task.sourceRefs) || task.sourceRefs.length === 0) errors.push('task.sourceRefs missing');
-  if (typeof task.maxFilesTouched !== 'number' || !Number.isFinite(task.maxFilesTouched) || task.maxFilesTouched < 1) {
+  if (task.sourceRefs !== undefined && !Array.isArray(task.sourceRefs)) errors.push('task.sourceRefs must be array if provided');
+  if (task.maxFilesTouched !== undefined && (typeof task.maxFilesTouched !== 'number' || !Number.isFinite(task.maxFilesTouched) || task.maxFilesTouched < 1)) {
     errors.push('task.maxFilesTouched invalid');
   }
-  if (!['low', 'medium', 'high'].includes(String(task.estimatedComplexity || ''))) {
+  if (task.estimatedComplexity !== undefined && !['low', 'medium', 'high'].includes(String(task.estimatedComplexity || ''))) {
     errors.push('task.estimatedComplexity invalid');
   }
   const goal = String(task.goal || '').trim();
@@ -114,21 +131,23 @@ export function validateWorkerTaskEnvelope(task: WorkerTaskEnvelope): WorkerTask
   if (BROAD_SCOPE_RE.test(goal)) {
     errors.push('task.goal too broad');
   }
-  if (task.estimatedComplexity !== 'low' && task.allowedPaths.length === 0) {
+  if (task.estimatedComplexity && task.estimatedComplexity !== 'low' && task.allowedPaths.length === 0) {
     warnings.push('task.allowedPaths empty for non-trivial task');
   }
   if (task.allowedPaths.length > 3) {
     warnings.push('task.allowedPaths spans more than 3 paths; consider decomposing further');
   }
-  if (task.maxFilesTouched > 3 && task.estimatedComplexity !== 'high') {
+  if (task.maxFilesTouched && task.maxFilesTouched > 3 && task.estimatedComplexity !== 'high') {
     warnings.push('task.maxFilesTouched > 3 for non-high-complexity task');
   }
   if (task.verification.length > 5) {
     warnings.push('task.verification has many checks; consider splitting the task');
   }
-  const invalidSourceRefs = (task.sourceRefs || []).filter(ref => !CANONICAL_SOURCE_RE.test(String(ref)));
-  if (invalidSourceRefs.length > 0) {
-    warnings.push(`task.sourceRefs include non-canonical refs: ${invalidSourceRefs.join(', ')}`);
+  if (Array.isArray(task.sourceRefs) && task.sourceRefs.length > 0) {
+    const invalidSourceRefs = task.sourceRefs.filter(ref => !CANONICAL_SOURCE_RE.test(String(ref)));
+    if (invalidSourceRefs.length > 0) {
+      warnings.push(`task.sourceRefs include non-canonical refs: ${invalidSourceRefs.join(', ')}`);
+    }
   }
   return { ok: errors.length === 0, errors, warnings };
 }

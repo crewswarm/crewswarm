@@ -39,7 +39,7 @@ export interface L1Request {
 }
 
 export interface L2Plan {
-  decision: 'direct-answer' | 'execute-local' | 'execute-parallel';
+  decision: 'direct-answer' | 'execute-local' | 'execute-parallel' | 'execute-direct';
   reasoning: string;
   workGraph?: WorkGraph;
   validation?: PolicyValidation;
@@ -63,6 +63,7 @@ export interface L3Result {
     failedToolCalls?: number;
     turns?: number;
     stopReason?: string;
+    shellResults?: Array<{ command: string; exitCode: number; output: string }>;
   }>;
   totalCost: number;
   executionTimeMs: number;
@@ -130,9 +131,10 @@ export class UnifiedPipeline {
     });
   }
 
-  private normalizeDecision(raw: string): 'direct-answer' | 'execute-local' | 'execute-parallel' {
+  private normalizeDecision(raw: string): 'direct-answer' | 'execute-local' | 'execute-parallel' | 'execute-direct' {
     const value = String(raw || '').trim().toLowerCase();
     if (value === 'direct-answer' || value === 'chat') return 'direct-answer';
+    if (value === 'execute-direct' || value === 'direct-execute' || value === 'simple') return 'execute-direct';
     if (value === 'execute-local' || value === 'code') {
       return process.env.CREW_ALLOW_EXECUTE_LOCAL === 'true'
         ? 'execute-local'
@@ -246,6 +248,11 @@ export class UnifiedPipeline {
     return { output: text };
   }
 
+  // NOTE: Files are extracted from claimed tool calls in worker history,
+  // not from actual filesystem state. A worker could claim a write_file
+  // call that the sandbox rejected, or the file could have been
+  // overwritten by a later worker. Filesystem verification is not yet
+  // implemented.
   private extractFilesChanged(history: Array<{ tool: string; params: Record<string, any>; error?: string }> = []): string[] {
     const changed = new Set<string>();
     for (const turn of history) {
@@ -255,6 +262,25 @@ export class UnifiedPipeline {
       if (filePath) changed.add(filePath);
     }
     return Array.from(changed);
+  }
+
+  private extractShellResults(
+    history: Array<{ tool: string; params: Record<string, any>; result?: any; error?: string }> = []
+  ): Array<{ command: string; exitCode: number; output: string }> {
+    const results: Array<{ command: string; exitCode: number; output: string }> = [];
+    for (const turn of history) {
+      const tool = String(turn?.tool || '');
+      if (tool !== 'run_shell_command' && tool !== 'check_background_task') continue;
+      const command = String(turn.params?.command || turn.params?.task_id || '').trim();
+      const rawOutput = String(turn.result?.output || turn.result || '').trim();
+      const exitCode = turn?.error ? 1 : (typeof turn.result?.exitCode === 'number' ? turn.result.exitCode : 0);
+      results.push({
+        command,
+        exitCode,
+        output: rawOutput.slice(0, 500)
+      });
+    }
+    return results;
   }
 
   private collectVerificationSignals(
@@ -281,16 +307,12 @@ export class UnifiedPipeline {
       }
     }
 
-    if (!verificationPassed && task.verification.length > 0) {
-      const normalizedOutput = String(parsed.output || '').toLowerCase();
-      if (normalizedOutput.includes('verified') || normalizedOutput.includes('validation') || normalizedOutput.includes('test passed')) {
-        verificationPassed = true;
-      }
-    }
-
+    // No prose keyword fallback — verification requires shell evidence
+    // (exit code 0 from run_shell_command/check_background_task) or
+    // structured validation fields from the worker output.
     if (!verificationPassed && task.verification.length > 0) {
       escalationNeeded = true;
-      escalationReason = 'Worker completed without an explicit verification signal.';
+      escalationReason = 'No shell verification command was executed';
     }
 
     return {
@@ -324,27 +346,72 @@ export class UnifiedPipeline {
   }
 
   private shouldParseLegacyCommands(result: { output: string; filesChanged?: string[] }): boolean {
-    return (!Array.isArray(result.filesChanged) || result.filesChanged.length === 0)
+    const hasLegacy = (!Array.isArray(result.filesChanged) || result.filesChanged.length === 0)
       && this.containsLegacyFileCommands(result.output);
+    if (hasLegacy) {
+      this.logger.warn('[DEPRECATED] Legacy file commands detected (@@WRITE_FILE, FILE:, write:). Use structured tool calls instead.');
+    }
+    return hasLegacy;
+  }
+
+  private buildStructuredEvidence(executionResults?: L3Result): Array<{
+    workUnitId: string;
+    persona: string;
+    filesChanged: string[];
+    shellResults: Array<{ command: string; exitCode: number; output: string }>;
+    verificationPassed: boolean;
+    verificationEvidence: string;
+    workerOutput: string;
+    escalationNeeded: boolean;
+    escalationReason?: string;
+    failedToolCalls?: number;
+    turns?: number;
+    stopReason?: string;
+  }> {
+    if (!executionResults || !Array.isArray(executionResults.results) || executionResults.results.length === 0) {
+      return [];
+    }
+    return executionResults.results.map(result => {
+      const shellResults = Array.isArray(result.shellResults) ? result.shellResults : [];
+      const verificationEvidence = result.verification.length > 0
+        ? result.verification.join(' | ')
+        : 'No shell verification command was executed';
+      return {
+        workUnitId: result.workUnitId,
+        persona: result.persona,
+        filesChanged: result.filesChanged,
+        shellResults,
+        verificationPassed: result.verificationPassed,
+        verificationEvidence,
+        workerOutput: result.output,
+        escalationNeeded: result.escalationNeeded,
+        escalationReason: result.escalationReason,
+        failedToolCalls: result.failedToolCalls,
+        turns: result.turns,
+        stopReason: result.stopReason
+      };
+    });
   }
 
   private buildExecutionAuditContext(executionResults?: L3Result): string {
-    if (!executionResults || !Array.isArray(executionResults.results) || executionResults.results.length === 0) {
+    const evidence = this.buildStructuredEvidence(executionResults);
+    if (evidence.length === 0) {
       return 'No execution metadata available.';
     }
-    return executionResults.results.map(result => {
+    return evidence.map(e => {
       const lines = [
-        `Unit: ${result.workUnitId}`,
-        `Persona: ${result.persona}`,
-        `Files changed: ${result.filesChanged.length > 0 ? result.filesChanged.join(', ') : '(none reported)'}`,
-        `Verification passed: ${result.verificationPassed ? 'yes' : 'no'}`,
-        `Verification evidence: ${result.verification.length > 0 ? result.verification.join(' | ') : '(none)'}`,
-        `Escalation needed: ${result.escalationNeeded ? 'yes' : 'no'}`,
+        `Unit: ${e.workUnitId}`,
+        `Persona: ${e.persona}`,
+        `Files changed: ${JSON.stringify(e.filesChanged)}`,
+        `Verification passed: ${e.verificationPassed}`,
+        `Verification evidence: ${e.verificationEvidence}`,
+        `Shell results: ${JSON.stringify(e.shellResults)}`,
+        `Escalation needed: ${e.escalationNeeded}`,
       ];
-      if (result.escalationReason) lines.push(`Escalation reason: ${result.escalationReason}`);
-      if (typeof result.failedToolCalls === 'number') lines.push(`Failed tool calls: ${result.failedToolCalls}`);
-      if (typeof result.turns === 'number') lines.push(`Turns: ${result.turns}`);
-      if (result.stopReason) lines.push(`Stop reason: ${result.stopReason}`);
+      if (e.escalationReason) lines.push(`Escalation reason: ${e.escalationReason}`);
+      if (typeof e.failedToolCalls === 'number') lines.push(`Failed tool calls: ${e.failedToolCalls}`);
+      if (typeof e.turns === 'number') lines.push(`Turns: ${e.turns}`);
+      if (e.stopReason) lines.push(`Stop reason: ${e.stopReason}`);
       return lines.join('\n');
     }).join('\n\n');
   }
@@ -468,6 +535,7 @@ export class UnifiedPipeline {
   ) {
     const history = Array.isArray(workerResult.history) ? workerResult.history : [];
     const filesChanged = this.extractFilesChanged(history);
+    const shellResults = this.extractShellResults(history);
     const verificationState = this.collectVerificationSignals(history, parsed, task);
     const failedToolCalls = this.countFailedToolCalls(history);
     const repeatedFailedAction = this.hasRepeatedFailedAction(history);
@@ -495,7 +563,7 @@ export class UnifiedPipeline {
     if (outOfScopeFiles.length > 0) {
       escalationNeeded = true;
       escalationReason = `Worker changed files outside allowed scope: ${outOfScopeFiles.join(', ')}`;
-    } else if (filesChanged.length > task.maxFilesTouched) {
+    } else if (task.maxFilesTouched && filesChanged.length > task.maxFilesTouched) {
       escalationNeeded = true;
       escalationReason = `Worker touched ${filesChanged.length} files but task budget was ${task.maxFilesTouched}.`;
     } else if (task.requiredCapabilities.includes('file-write') && filesChanged.length === 0 && !this.containsLegacyFileCommands(parsed.output)) {
@@ -522,7 +590,8 @@ export class UnifiedPipeline {
       toolsUsed: workerResult.toolsUsed || [],
       failedToolCalls,
       turns: workerResult.turns,
-      stopReason: workerResult.stopReason
+      stopReason: workerResult.stopReason,
+      shellResults
     };
   }
 
@@ -565,7 +634,7 @@ export class UnifiedPipeline {
   private async parseRouterDecision(raw: string, traceId: string, sessionId?: string): Promise<any> {
     return parseJsonObjectWithRepair(raw, {
       label: `L2 router (${traceId})`,
-      schemaHint: '{"decision":"direct-answer|execute-local|execute-parallel","reasoning":"...","directResponse":"...","complexity":"low|medium|high","estimatedCost":0.001}',
+      schemaHint: '{"decision":"direct-answer|execute-direct|execute-local|execute-parallel","reasoning":"...","directResponse":"...","complexity":"low|medium|high","estimatedCost":0.001}',
       maxAttempts: this.getJsonParseAttempts(),
       validate: validateRouterDecision,
       onAttempt: async meta => {
@@ -583,21 +652,30 @@ export class UnifiedPipeline {
     });
   }
 
-  private async qaAuditResponse(response: string, traceId: string, round: number, sessionId?: string): Promise<{
+  private async qaAuditResponse(response: string, traceId: string, round: number, sessionId?: string, executionResults?: L3Result): Promise<{
     approved: boolean;
     summary: string;
     issues: Array<{ severity: 'high' | 'medium' | 'low'; problem: string; requiredFix: string }>;
     cost: number;
   }> {
+    const evidence = this.buildStructuredEvidence(executionResults);
+    const hasStructuredEvidence = evidence.length > 0;
+
     const overlays: PromptOverlay[] = [
       {
         type: 'task',
-        content: `Audit this generated output for correctness, completeness, and coherence.`,
+        content: `Audit this generated output for correctness, completeness, and coherence.
+
+Evaluate based on STRUCTURED EVIDENCE first (shell results, exit codes, files changed), not narrative quality.
+If shell commands passed with exit code 0 and files were modified as expected, approve regardless of prose quality.
+Only reject based on prose if structured evidence is missing or contradictory.`,
         priority: 1
       },
       {
         type: 'context',
-        content: `Round: ${round}\n\nGenerated output:\n${response}`,
+        content: hasStructuredEvidence
+          ? `Round: ${round}\n\nStructured evidence:\n${JSON.stringify(evidence, null, 2)}\n\nWorker output:\n${response}`
+          : `Round: ${round}\n\nGenerated output:\n${response}`,
         priority: 2
       },
       {
@@ -693,7 +771,7 @@ If output has blockers, set approved=false.`,
 
     for (let round = 1; round <= rounds; round++) {
       const qaPayload = this.appendExecutionAuditContext(working, executionResults);
-      const qa = await this.qaAuditResponse(round === 1 ? qaPayload : qaPayload, traceId, round, sessionId);
+      const qa = await this.qaAuditResponse(qaPayload, traceId, round, sessionId, executionResults);
       addedCost += qa.cost;
       lastSummary = qa.summary;
       if (qa.approved) {
@@ -712,7 +790,8 @@ If output has blockers, set approved=false.`,
       this.appendExecutionAuditContext(working, executionResults),
       traceId,
       rounds + 1,
-      sessionId
+      sessionId,
+      executionResults
     );
     addedCost += finalQa.cost;
     lastSummary = finalQa.summary;
@@ -1075,29 +1154,75 @@ If output has blockers, set approved=false.`,
           executionTimeMs: Date.now() - startTime
         };
       }
+      else if (plan.decision === 'execute-direct') {
+        // execute-direct: skip L2 planning entirely, go straight to L3 single execution
+        executionPath.push('l3-executor-direct');
+        const directTask = createAdHocWorkerTask({
+          id: 'direct-task',
+          goal: request.userInput,
+          persona: 'executor-code',
+          sourceRefs: ['request#user-input'],
+          estimatedComplexity: 'low'
+        });
+        const result = await this.l3ExecuteSingle(
+          directTask,
+          request.context || '',
+          traceId
+        );
+        response = result.output;
+        totalCost = result.cost;
+
+        // Parse and apply file commands from the output
+        const { parseDirectFileCommands: parseDirectCmds } = await import('../cli/file-commands.js');
+        const directFileCommands = this.shouldParseLegacyCommands(result) ? parseDirectCmds(response) : [];
+        if (directFileCommands.length > 0 && this.sandbox) {
+          await this.sandbox.load();
+          for (const cmd of directFileCommands) {
+            if (cmd.type === 'write') {
+              await this.sandbox.addChange(cmd.path, cmd.content || '');
+              this.logger.info(`Staged file: ${cmd.path}`);
+            } else if (cmd.type === 'mkdir') {
+              await this.sandbox.addChange(cmd.path + '/.gitkeep', '');
+              this.logger.info(`Staged directory: ${cmd.path}`);
+            }
+          }
+          if (request.autoApply) {
+            await this.sandbox.apply();
+            this.logger.info(`Applied ${directFileCommands.length} file change(s)`);
+          }
+        }
+
+        executionResults = {
+          success: true,
+          results: [result],
+          totalCost: result.cost,
+          executionTimeMs: Date.now() - startTime
+        };
+      }
       else if (plan.decision === 'execute-parallel') {
         if (!plan.workGraph) {
-          this.logger.warn('L2 selected execute-parallel without workGraph; falling back to single executor');
-          executionPath.push('l3-executor-single');
+          this.logger.warn('execute-parallel without workGraph — routing to execute-direct instead');
+          executionPath.push('l3-executor-direct');
+          const fallbackTask = createAdHocWorkerTask({
+            id: 'direct-task',
+            goal: request.userInput,
+            persona: 'executor-code',
+            sourceRefs: ['request#user-input'],
+            estimatedComplexity: 'low'
+          });
           const result = await this.l3ExecuteSingle(
-            createAdHocWorkerTask({
-              id: 'single-task',
-              goal: request.userInput,
-              persona: 'executor-code',
-              sourceRefs: ['request#user-input']
-            }),
+            fallbackTask,
             request.context || '',
             traceId
           );
           response = result.output;
           totalCost = result.cost;
-          
+
           // Parse and apply file commands from the output
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
           const fileCommands = this.shouldParseLegacyCommands(result) ? parseDirectFileCommands(response) : [];
           if (fileCommands.length > 0 && this.sandbox) {
-            await this.sandbox.load(); // Ensure sandbox is loaded
-            
+            await this.sandbox.load();
             for (const cmd of fileCommands) {
               if (cmd.type === 'write') {
                 await this.sandbox.addChange(cmd.path, cmd.content || '');
@@ -1107,14 +1232,12 @@ If output has blockers, set approved=false.`,
                 this.logger.info(`Staged directory: ${cmd.path}`);
               }
             }
-            
-            // Auto-apply if --apply flag was used
             if (request.autoApply) {
               await this.sandbox.apply();
               this.logger.info(`Applied ${fileCommands.length} file change(s)`);
             }
           }
-          
+
           executionResults = {
             success: true,
             results: [result],
@@ -1293,7 +1416,7 @@ If output has blockers, set approved=false.`,
       };
     }
 
-    if (plan.decision === 'execute-local') {
+    if (plan.decision === 'execute-local' || plan.decision === 'execute-direct') {
       return {
         decision: 'CODE',
         agent: 'crew-coder',
@@ -1344,26 +1467,35 @@ If output has blockers, set approved=false.`,
 
 1. DIRECT-ANSWER: Simple question, greeting, status check, or clarification
    → Provide immediate text response
-   
-2. EXECUTE-LOCAL: DEPRECATED - only for testing/debugging
+
+2. EXECUTE-DIRECT: Simple single-file task that needs no planning — skip directly to execution
+   → Single file create/edit, small bug fix, one-liner change
+   → Bypasses L2 planning overhead entirely
+
+3. EXECUTE-LOCAL: DEPRECATED - only for testing/debugging
    → Not used in production
-   
-3. EXECUTE-PARALLEL: ALL coding/implementation tasks (default for code)
-   → Any request involving writing, modifying, or refactoring code
+
+4. EXECUTE-PARALLEL: Multi-file or complex coding/implementation tasks (default for code)
+   → Any request involving writing, modifying, or refactoring multiple files
    → L2 will decompose into work units for L3 workers
    → After execution, L2 runs QA validation
    → If QA fails, expensive fixer runs, then QA again
    → Use dual-L2 planner for work graph
 
-**Always choose EXECUTE-PARALLEL for:**
-- Writing code, functions, classes, modules
-- Implementing features, APIs, algorithms
-- Refactoring, bug fixes, optimizations
-- Test creation, documentation generation
+**Choose EXECUTE-DIRECT for:**
+- Creating or editing a single file
+- Small, focused bug fixes
+- Simple code generation with obvious scope
+
+**Choose EXECUTE-PARALLEL for:**
+- Multi-file features, APIs, or refactors
+- Implementing features that span modules
+- Test creation across multiple files
+- Documentation generation for entire projects
 
 Return ONLY valid JSON:
 {
-  "decision": "direct-answer|execute-parallel",
+  "decision": "direct-answer|execute-direct|execute-parallel",
   "reasoning": "why this path was chosen",
   "directResponse": "if direct-answer, provide response here",
   "complexity": "low|medium|high",
@@ -1527,7 +1659,7 @@ Return ONLY valid JSON:
       content: `Worker task contract:
 - Allowed paths: ${task.allowedPaths.length > 0 ? task.allowedPaths.join(', ') : '(no explicit paths extracted)'}
 - Verification: ${task.verification.join(' | ')}
-- Escalate when: ${task.escalationHints.join(' | ')}`,
+- Escalate when: ${(task.escalationHints || []).join(' | ')}`,
       priority: 3
     });
 
@@ -1692,7 +1824,7 @@ Return ONLY valid JSON:
           content: `Worker task contract:
 - Allowed paths: ${unit.allowedPaths.length > 0 ? unit.allowedPaths.join(', ') : '(no explicit paths extracted)'}
 - Verification: ${unit.verification.join(' | ')}
-- Escalate when: ${unit.escalationHints.join(' | ')}`,
+- Escalate when: ${(unit.escalationHints || []).join(' | ')}`,
           priority: 3
         });
         
@@ -1765,6 +1897,7 @@ Return ONLY valid JSON:
         escalationNeeded: boolean;
         escalationReason?: string;
         toolsUsed?: string[];
+        shellResults?: Array<{ command: string; exitCode: number; output: string }>;
       }> = [];
       const queue = batch.slice();
       const workers = Array.from({ length: Math.min(maxWorkers, queue.length) }, async () => {
