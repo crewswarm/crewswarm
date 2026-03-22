@@ -30,6 +30,7 @@ const BUILTIN_PROVIDERS = [
   { id:'perplexity',   label:'Perplexity',          icon:'🔍', url:'https://www.perplexity.ai/settings/api',      hint:'Sonar Pro — ideal for crew-pm research tasks' },
   { id:'mistral',      label:'Mistral',             icon:'🌀', url:'https://console.mistral.ai/',                 hint:'Open-weight models, efficient mid-tier tasks' },
   { id:'deepseek',     label:'DeepSeek',            icon:'🌊', url:'https://platform.deepseek.com/',              hint:'Low cost, strong coding performance' },
+  { id:'together',     label:'Together AI',         icon:'🤝', url:'https://api.together.ai/',                    hint:'OpenAI-compatible access to strong open models like Qwen, DeepSeek, Llama, and more' },
   { id:'xai',          label:'xAI (Grok)',          icon:'𝕏',  url:'https://console.x.ai/',                      hint:'Grok models with real-time X/Twitter access, vision (grok-vision-beta), 128K context — ideal for research, social media analysis' },
   { id:'ollama',       label:'Ollama',              icon:'🏠', url:'https://ollama.com/download',                 hint:'Local models — no API key needed, runs offline' },
   { id:'openai-local', label:'OpenAI (local)',      icon:'🟢', url:'https://github.com/RayBytes/ChatMock',        hint:'ChatMock — use ChatGPT Plus/Pro subscription. Run ChatMock server first (e.g. port 8000). Key ignored.' },

@@ -3433,10 +3433,21 @@ const server = http.createServer(async (req, res) => {
         { id: "gemini-cli",  bin: "gemini" },
         { id: "cursor",      bin: "cursor" },
       ];
-      const engines = {};
+      const engines = { "crew-cli": true }; // always available (part of this repo)
+      const searchDirs = [
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        `${os.homedir()}/.local/bin`,
+        `${os.homedir()}/.npm-global/bin`,
+      ];
       for (const { id, bin } of checks) {
+        // Check common paths directly (launchd PATH is restricted)
+        if (searchDirs.some(d => fs.existsSync(path.join(d, bin)))) {
+          engines[id] = true;
+          continue;
+        }
+        // Fallback: try login shell
         try {
-          // Use login shell to get full user PATH
           execSync(`/bin/zsh -lc 'command -v ${bin}'`, { stdio: "pipe", timeout: 5000 });
           engines[id] = true;
         } catch {
@@ -3627,8 +3638,8 @@ const server = http.createServer(async (req, res) => {
       perplexity: "https://api.perplexity.ai",
       mistral: "https://api.mistral.ai/v1",
       deepseek: "https://api.deepseek.com/v1",
-      xai: "https://api.x.ai/v1",
       together: "https://api.together.xyz/v1",
+      xai: "https://api.x.ai/v1",
       cohere: "https://api.cohere.ai/v1",
       ollama: "http://localhost:11434/v1",
       openrouter: "https://openrouter.ai/api/v1",
