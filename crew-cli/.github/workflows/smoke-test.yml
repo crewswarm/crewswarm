@@ -1,0 +1,59 @@
+name: CLI Smoke Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type Check
+        run: npx tsc --noEmit
+
+      - name: Build CLI
+        run: npm run build
+
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Verify CLI Binary (Help)
+        run: ./bin/crew.js --help
+
+      # NOTE: `crew doctor` checks gateway reachability on localhost:5010.
+      # In GitHub Actions this service is usually not running, so this step
+      # can fail even when CLI code/build/tests are healthy.
+      - name: Smoke Test - Doctor
+        run: ./bin/crew.js doctor
+
+      - name: Smoke Test - Auth
+        run: ./bin/crew.js auth
+
+      - name: Smoke Test - Sandbox Branching
+        run: |
+          ./bin/crew.js branch ci-test
+          ./bin/crew.js branches | grep ci-test
+          ./bin/crew.js test-sandbox --file ci-demo.txt --content "CI passed"
+          ./bin/crew.js preview ci-test | grep "CI passed"
+          ./bin/crew.js rollback ci-test
+
+      - name: Verify Distribution Artifact
+        run: |
+          if [ ! -f dist/crew.mjs ]; then
+            echo "Build artifact missing!"
+            exit 1
+          fi

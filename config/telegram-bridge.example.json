@@ -1,0 +1,20 @@
+{
+  "token": "YOUR_TELEGRAM_BOT_TOKEN",
+  "targetAgent": "crew-lead",
+  "allowedChatIds": [
+    123456789
+  ],
+  "contactNames": {
+    "123456789": "Owner"
+  },
+  "userRouting": {
+    "123456789": "crew-lead"
+  },
+  "topicRouting": {},
+  "tts": {
+    "enabled": false,
+    "provider": "auto",
+    "perUserOverrides": {},
+    "voiceMap": {}
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "crewswarm-studio",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "NODE_DISABLE_COMPILE_CACHE=1 node server.mjs",
+    "watch": "NODE_DISABLE_COMPILE_CACHE=1 node watch-server.mjs",
+    "dev:full": "npm run watch & npm run dev",
+    "test": "node tests/run-quality.mjs",
+    "test:smoke": "node tests/server.smoke.mjs",
+    "test:buttons": "node tests/button-contract.mjs",
+    "test:e2e": "node tests/e2e.local.mjs",
+    "test:e2e:buttons": "node tests/e2e-buttons.playwright.mjs",
+    "test:accessibility": "node test/accessibility-tests.js",
+    "test:performance": "node test/performance-tests.js",
+    "test:security": "node test/security-tests.js",
+    "perf:analyze": "python3 ../../scripts/bench/performance_optimization.py --url http://127.0.0.1:3333/ --profile all",
+    "perf:audit": "node test/browser-performance-audit.mjs"
+  },
+  "dependencies": {
+    "@xterm/xterm": "^6.0.0",
+    "monaco-editor": "^0.52.2",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
+  }
+}

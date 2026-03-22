@@ -1,0 +1,19 @@
+{
+  "description": "Deploy an app to Fly.io using the Fly Machines API",
+  "url": "https://api.machines.dev/v1/apps/{app}/machines",
+  "method": "POST",
+  "auth": {
+    "type": "bearer",
+    "keyFrom": "providers.fly.apiKey"
+  },
+  "headers": {},
+  "defaultParams": {
+    "config": {
+      "image": "registry.fly.io/{app}:latest",
+      "restart": { "policy": "always" }
+    }
+  },
+  "paramNotes": "Required: app (app name). config.image will be auto-set to registry.fly.io/{app}:latest.",
+  "requiresApproval": false,
+  "timeout": 30000
+}

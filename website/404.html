@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404 — Page Not Found | crewswarm</title>
+  <meta name="description" content="Page not found. Head back to crewswarm — the local-first multi-agent AI workspace." />
+  <!-- Open Graph -->
+  <meta property="og:title" content="404 — Page Not Found | crewswarm" />
+  <meta property="og:description" content="Page not found. Head back to crewswarm." />
+  <meta property="og:url" content="https://crewswarm.ai/404" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="404 — Page Not Found | crewswarm" />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- Misc -->
+  <meta name="theme-color" content="#060a10" />
+  <link rel="canonical" href="https://crewswarm.ai/" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <style>
+    .error-section {
+      min-height: 70vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6rem 1.5rem;
+    }
+    .error-content {
+      text-align: center;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .error-code {
+      font-size: 8rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 1rem;
+      letter-spacing: -0.04em;
+    }
+    .error-content h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+    .error-content p {
+      font-size: 1.125rem;
+      color: var(--text-muted);
+      margin-bottom: 2.5rem;
+      line-height: 1.6;
+    }
+    .error-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 3rem;
+    }
+    .error-links {
+      padding: 1.5rem 2rem;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg, 12px);
+      text-align: left;
+      font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+      font-size: 0.875rem;
+    }
+    .error-links-title {
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+    .error-links a {
+      display: block;
+      padding: 0.25rem 0;
+      color: var(--accent);
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    .error-links a:hover {
+      opacity: 0.8;
+    }
+    .error-links a::before {
+      content: "\2192  ";
+      color: var(--text-muted);
+    }
+    @media (max-width: 640px) {
+      .error-code { font-size: 4rem; }
+      .error-content h1 { font-size: 1.75rem; }
+      .error-links { padding: 1.25rem; }
+    }
+  </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+
+</head>
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+    <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+      <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+      <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
+    </a>
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+      <li role="none"><a href="models.html" role="menuitem" class="nav-link-item">Models</a></li>
+      <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+      <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+      <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+      <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+      <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+      </div>
+  </nav>
+
+  <section class="error-section">
+    <div class="error-content">
+      <div class="error-code">404</div>
+      <h1>Task not found.</h1>
+      <p>
+        Looks like this page wandered off the roadmap. Even the best crews
+        miss a dispatch sometimes. Let's get you back on track.
+      </p>
+      <div class="error-actions">
+        <a href="index.html" class="btn btn-primary">Return to base</a>
+        <a href="index.html#get-started" class="btn btn-secondary">Get started</a>
+      </div>
+      <div class="error-links">
+        <div class="error-links-title">// Maybe you were looking for:</div>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#agents">The crew</a>
+        <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">Documentation</a>
+        <a href="vibe.html">Vibe IDE</a>
+        <a href="https://github.com/crewswarm/crewswarm">GitHub repo</a>
+      </div>
+    </div>
+  </section>
+
+    <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a
+            href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="models.html">Models</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+          <a href="openclaw-comparison.html">Compare</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <span>&copy; 2026 crewswarm. All rights reserved.</span>
+      </div>
+    </div>
+  </footer>
+
+
+  <script src="script.js"></script>
+</body>
+</html>

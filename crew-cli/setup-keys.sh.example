@@ -1,0 +1,33 @@
+#!/bin/bash
+# 3-Tier Test Setup - Export API Keys from Config
+# COPY THIS TO setup-keys.sh AND ADD YOUR REAL KEYS
+# DO NOT COMMIT setup-keys.sh TO GIT!
+
+echo "🔑 Setting up API keys for 3-Tier test..."
+
+# Read from JSON config or set manually
+export GROQ_API_KEY="your_groq_api_key_here"
+export GOOGLE_API_KEY="your_google_api_key_here"
+export DEEPSEEK_API_KEY="your_deepseek_api_key_here"
+export OPENAI_API_KEY="your_openai_api_key_here"
+export XAI_API_KEY="your_xai_api_key_here"
+export ANTHROPIC_API_KEY="your_anthropic_api_key_here"
+
+echo "✅ API Keys configured:"
+echo "   Tier 1 (Router): GROQ_API_KEY=${GROQ_API_KEY:0:20}..."
+echo "   Tier 2 (Planner): GOOGLE_API_KEY=${GOOGLE_API_KEY:0:20}... OR DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:0:20}..."
+echo "   Tier 3 (Workers): OPENAI_API_KEY=${OPENAI_API_KEY:0:20}..."
+echo "   Bonus: XAI_API_KEY=${XAI_API_KEY:0:20}... (for X-search)"
+echo
+
+# Now run the test
+if [ "$1" = "--test" ]; then
+    cd "$(dirname "$0")"
+    echo "🚀 Running 3-Tier test suite..."
+    echo
+    ./test-3-tier.sh
+else
+    echo "✓ Keys exported to current shell"
+    echo "  Run: source setup-keys.sh"
+    echo "  Then: ./test-3-tier.sh"
+fi

@@ -1,0 +1,584 @@
+/**
+ * Integration tests for lib/crew-lead/http-server.mjs
+ * Starts the HTTP server on a random port with minimal mock deps.
+ * No Docker, no crew-lead daemon, no RT bus required.
+ */
+import { test, describe, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { initHttpServer, createAndStartServer } from "../../lib/crew-lead/http-server.mjs";
+import {
+  clearProjectMessages,
+  saveProjectMessage,
+} from "../../lib/chat/project-messages.mjs";
+import { resetPaths } from "../../lib/runtime/paths.mjs";
+
+const TEST_PORT = 0;
+let BASE = "";
+
+// ── Minimal mock deps ──────────────────────────────────────────────────────────
+
+function makeMockDeps(overrides = {}) {
+  const pendingDispatches = overrides.pendingDispatches || new Map();
+  return {
+    sseClients: new Set(),
+    loadConfig: () => ({
+      model: "test/model",
+      displayName: "TestLead",
+      emoji: "🧠",
+      knownAgents: ["crew-coder", "crew-qa"],
+      agentRoster: [
+        { id: "crew-coder", name: "Fuller", role: "Full Stack Coder", model: "test/model" },
+        { id: "crew-qa",    name: "Testy",  role: "QA",               model: "test/model" },
+      ],
+      providers: {},
+    }),
+    loadHistory:    () => [],
+    clearHistory:   () => {},
+    appendHistory:  () => {},
+    broadcastSSE:   () => {},
+    handleChat:     async () => ({ reply: "ok" }),
+    confirmProject: () => {},
+    pendingProjects: new Map(),
+    dispatchTask:   (agent, spec, sessionId) => {
+      const taskId = overrides.dispatchTaskId || "test-task-id";
+      pendingDispatches.set(taskId, {
+        agent,
+        spec,
+        sessionId,
+        ts: Date.now(),
+        ...(overrides.seedDispatch || {}),
+      });
+      return taskId;
+    },
+    pendingDispatches,
+    pendingPipelines: new Map(),
+    dispatchPipelineWave: () => {},
+    resolveAgentId: (_cfg, id) => id,
+    readAgentTools: () => ({ tools: ["read_file", "write_file"] }),
+    writeAgentTools: () => {},
+    activeOpenCodeAgents: new Map(),
+    agentTimeoutCounts: new Map(),
+    crewswarmToolNames: ["read_file", "write_file"],
+    classifyTask:   async () => null,
+    tryRead:        () => null,
+    resolveSkillAlias: (name) => name,
+    connectRT:      () => {},
+    historyDir:     "/tmp/test-history",
+    dispatchTimeoutMs: 30000,
+    dispatchTimeoutInterval: null,
+    setDispatchTimeoutInterval: (v) => { void v; },
+    checkDispatchTimeouts: () => {},
+    getRTToken:     () => overrides.rtToken || "",  // empty = no auth (open access)
+    getRtPublish:   () => null,
+    telemetrySchemaVersion: "1.0",
+    readTelemetryEvents: () => [],
+    bgConsciousnessRef: { enabled: false, model: "" },
+    bgConsciousnessIntervalMs: 900000,
+    cursorWavesRef: { enabled: false },
+    claudeCodeRef:  { enabled: false },
+    ...overrides,
+  };
+}
+
+let server;
+let dispatchInterval = null;
+let tempHomeDir;
+let originalHome;
+let originalUserProfile;
+
+before(async () => {
+  tempHomeDir = await mkdtemp(join(tmpdir(), "crewswarm-http-server-test-"));
+  originalHome = process.env.HOME;
+  originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = tempHomeDir;
+  process.env.USERPROFILE = tempHomeDir;
+  resetPaths();
+  await mkdir(join(tempHomeDir, ".crewswarm"), { recursive: true });
+  await writeFile(
+    join(tempHomeDir, ".crewswarm", "crewswarm.json"),
+    JSON.stringify({}, null, 2),
+  );
+  const deps = makeMockDeps();
+  // Track the interval so we can clear it in after() to unblock event loop
+  deps.setDispatchTimeoutInterval = (v) => { dispatchInterval = v; };
+  initHttpServer(deps);
+  server = createAndStartServer(TEST_PORT);
+  await new Promise((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  BASE = `http://127.0.0.1:${server.address().port}`;
+});
+
+after(async () => {
+  if (dispatchInterval) clearInterval(dispatchInterval);
+  await new Promise((resolve) => server.close(resolve));
+  process.env.HOME = originalHome;
+  process.env.USERPROFILE = originalUserProfile;
+  resetPaths();
+  await rm(tempHomeDir, { recursive: true, force: true });
+});
+
+describe("GET /api/crew-lead/project-messages", () => {
+  test("supports mention and thread filters", async () => {
+    const projectId = `test-http-messages-${Date.now()}`;
+    saveProjectMessage(projectId, {
+      source: "dashboard",
+      role: "user",
+      content: "@crew-main investigate this",
+      threadId: "thread-1",
+      metadata: { mentions: ["crew-main"] },
+    });
+    saveProjectMessage(projectId, {
+      source: "dashboard",
+      role: "assistant",
+      content: "other thread",
+      threadId: "thread-2",
+      metadata: {},
+    });
+
+    const res = await fetch(
+      `${BASE}/api/crew-lead/project-messages?projectId=${encodeURIComponent(projectId)}&threadId=thread-1&mentionedAgent=crew-main`,
+    );
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.count, 1);
+    assert.equal(body.messages[0].threadId, "thread-1");
+    assert.deepEqual(body.messages[0].metadata.mentions, ["crew-main"]);
+
+    clearProjectMessages(projectId);
+  });
+
+  test("supports since and excludeDirect filters", async () => {
+    const projectId = `test-http-filters-${Date.now()}`;
+    saveProjectMessage(projectId, {
+      source: "dashboard",
+      role: "user",
+      content: "older direct",
+      metadata: { directChat: true },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const since = Date.now();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    saveProjectMessage(projectId, {
+      source: "agent",
+      role: "assistant",
+      content: "newer persisted message",
+      agent: "crew-coder",
+      metadata: {},
+    });
+
+    const res = await fetch(
+      `${BASE}/api/crew-lead/project-messages?projectId=${encodeURIComponent(projectId)}&since=${since}&excludeDirect=true`,
+    );
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.count, 1);
+    assert.equal(body.messages[0].content, "newer persisted message");
+
+    clearProjectMessages(projectId);
+  });
+});
+
+describe("project message search/export endpoints", () => {
+  test("searches messages by query and source filter", async () => {
+    const projectId = `test-http-search-${Date.now()}`;
+    saveProjectMessage(projectId, {
+      source: "dashboard",
+      role: "user",
+      content: "Authentication failed for admin login",
+      metadata: {},
+    });
+    saveProjectMessage(projectId, {
+      source: "agent",
+      role: "assistant",
+      content: "Investigating a separate issue",
+      agent: "crew-qa",
+      metadata: {},
+    });
+
+    const res = await fetch(
+      `${BASE}/api/crew-lead/search-project-messages?projectId=${encodeURIComponent(projectId)}&q=${encodeURIComponent("authentication")}&source=dashboard`,
+    );
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.count, 1);
+    assert.match(body.results[0].snippet, /Authentication failed/i);
+
+    clearProjectMessages(projectId);
+  });
+
+  test("exports markdown with metadata when requested", async () => {
+    const projectId = `test-http-export-${Date.now()}`;
+    saveProjectMessage(projectId, {
+      source: "agent",
+      role: "assistant",
+      content: "Export this message",
+      agent: "crew-coder",
+      metadata: { severity: "info" },
+    });
+
+    const res = await fetch(
+      `${BASE}/api/crew-lead/export-project-messages?projectId=${encodeURIComponent(projectId)}&format=markdown&includeMetadata=true`,
+    );
+    assert.equal(res.status, 200);
+    assert.equal(
+      res.headers.get("content-type"),
+      "text/markdown",
+    );
+    assert.match(
+      res.headers.get("content-disposition") || "",
+      new RegExp(`project-${projectId}\\.md`),
+    );
+    const body = await res.text();
+    assert.match(body, /# Project Chat:/);
+    assert.match(body, /Export this message/);
+    assert.match(body, /"severity": "info"/);
+
+    clearProjectMessages(projectId);
+  });
+
+  test("returns grouped threads and specific thread views", async () => {
+    const projectId = `test-http-threads-${Date.now()}`;
+    saveProjectMessage(projectId, {
+      source: "dashboard",
+      role: "user",
+      content: "Thread one",
+      threadId: "thread-a",
+      metadata: {},
+    });
+    saveProjectMessage(projectId, {
+      source: "agent",
+      role: "assistant",
+      content: "Thread two",
+      threadId: "thread-b",
+      metadata: {},
+    });
+
+    const allRes = await fetch(
+      `${BASE}/api/crew-lead/message-threads?projectId=${encodeURIComponent(projectId)}`,
+    );
+    assert.equal(allRes.status, 200);
+    const allBody = await allRes.json();
+    assert.equal(allBody.threadCount, 2);
+    assert.equal(allBody.threads["thread-a"].length, 1);
+
+    const singleRes = await fetch(
+      `${BASE}/api/crew-lead/message-threads?projectId=${encodeURIComponent(projectId)}&threadId=thread-b`,
+    );
+    assert.equal(singleRes.status, 200);
+    const singleBody = await singleRes.json();
+    assert.equal(singleBody.threadCount, 1);
+    assert.equal(singleBody.threads[0].threadId, "thread-b");
+
+    clearProjectMessages(projectId);
+  });
+});
+
+describe("semantic message endpoints", () => {
+  test("indexes and searches project messages semantically", async () => {
+    const projectId = `test-http-rag-${Date.now()}`;
+    saveProjectMessage(projectId, {
+      source: "dashboard",
+      role: "user",
+      content: "The authentication service needs rate limiting and session expiry",
+      metadata: {},
+    });
+
+    const indexRes = await fetch(`${BASE}/api/crew-lead/index-project-messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    assert.equal(indexRes.status, 200);
+    const indexBody = await indexRes.json();
+    assert.equal(indexBody.ok, true);
+    assert.equal(indexBody.messagesIndexed, 1);
+
+    const searchRes = await fetch(
+      `${BASE}/api/crew-lead/search-messages-semantic?projectId=${encodeURIComponent(projectId)}&q=${encodeURIComponent("authentication security")}`,
+    );
+    assert.equal(searchRes.status, 200);
+    const searchBody = await searchRes.json();
+    assert.equal(searchBody.ok, true);
+    assert.ok(searchBody.count >= 1);
+    assert.match(searchBody.results[0].content, /authentication service/i);
+
+    const statsRes = await fetch(`${BASE}/api/crew-lead/message-index-stats`);
+    assert.equal(statsRes.status, 200);
+    const statsBody = await statsRes.json();
+    assert.equal(statsBody.ok, true);
+    assert.ok(statsBody.stats.totalIndexed >= 1);
+    assert.ok(projectId in statsBody.stats.byProject);
+
+    clearProjectMessages(projectId);
+  });
+});
+
+// ── /health ───────────────────────────────────────────────────────────────────
+
+describe("GET /health", () => {
+  test("returns 200 with ok:true", async () => {
+    const res = await fetch(`${BASE}/health`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.agent, "crew-lead");
+    assert.equal(body.port, server.address().port);
+  });
+});
+
+// ── /status ───────────────────────────────────────────────────────────────────
+
+describe("GET /status", () => {
+  test("returns 200 with model and rtConnected fields", async () => {
+    const res = await fetch(`${BASE}/status`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.model, "test/model");
+    assert.equal(body.rtConnected, false);
+  });
+});
+
+// ── /api/classify ─────────────────────────────────────────────────────────────
+
+describe("POST /api/classify", () => {
+  test("returns 400 when task is missing", async () => {
+    const res = await fetch(`${BASE}/api/classify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.ok, false);
+    assert.ok(body.error.toLowerCase().includes("task"));
+  });
+
+  test("returns 200 with skipped:true when classifyTask returns null (no API key)", async () => {
+    const res = await fetch(`${BASE}/api/classify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ task: "write a login page with JWT" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.skipped, true);
+  });
+
+  test("returns 400 for invalid JSON body", async () => {
+    const res = await fetch(`${BASE}/api/classify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "not-json",
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+describe("POST /api/dispatch and GET /api/status/:taskId", () => {
+  test("dispatches a known agent and returns pending status", async () => {
+    const res = await fetch(`${BASE}/api/dispatch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        agent: "crew-coder",
+        task: "Write a regression test",
+        sessionId: "session-123",
+      }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.taskId, "test-task-id");
+    assert.equal(body.agent, "crew-coder");
+
+    const statusRes = await fetch(`${BASE}/api/status/test-task-id`);
+    assert.equal(statusRes.status, 200);
+    const statusBody = await statusRes.json();
+    assert.equal(statusBody.status, "pending");
+    assert.equal(statusBody.agent, "crew-coder");
+    assert.equal(statusBody.sessionId, "session-123");
+  });
+
+  test("rejects unknown agents", async () => {
+    const res = await fetch(`${BASE}/api/dispatch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agent: "crew-unknown", task: "Do work" }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.ok, false);
+    assert.match(body.error, /Unknown agent/);
+  });
+
+  test("returns unknown status for missing tasks", async () => {
+    const res = await fetch(`${BASE}/api/status/missing-task-id`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.status, "unknown");
+  });
+});
+
+// ── /api/agents ───────────────────────────────────────────────────────────────
+
+describe("GET /api/agents", () => {
+  test("returns 200 with agents array", async () => {
+    const res = await fetch(`${BASE}/api/agents`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.ok(body.crewLead?.id === "crew-lead");
+    assert.ok(body.crewLead?.model === "test/model");
+    assert.ok(Array.isArray(body.agents));
+    assert.ok(body.agents.length >= 2);
+  });
+
+  test("each agent has id, tools, and inOpenCode fields", async () => {
+    const res = await fetch(`${BASE}/api/agents`);
+    const body = await res.json();
+    for (const agent of body.agents) {
+      assert.ok(agent.id, "agent should have id");
+      assert.ok(Array.isArray(agent.tools), `agent ${agent.id} should have tools array`);
+      assert.ok("inOpenCode" in agent, `agent ${agent.id} should have inOpenCode field`);
+    }
+  });
+});
+
+// ── /api/skills ───────────────────────────────────────────────────────────────
+
+describe("GET /api/skills", () => {
+  test("returns 200 with skills array", async () => {
+    const res = await fetch(`${BASE}/api/skills`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.ok(Array.isArray(body.skills));
+  });
+});
+
+describe("POST /api/skills", () => {
+  test("returns 400 when name is missing", async () => {
+    const res = await fetch(`${BASE}/api/skills`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/api" }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.ok, false);
+    assert.ok(body.error.includes("name"));
+  });
+
+  test("returns 400 when url is missing", async () => {
+    const res = await fetch(`${BASE}/api/skills`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "test-skill" }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.ok, false);
+  });
+});
+
+// ── /api/spending ─────────────────────────────────────────────────────────────
+
+describe("GET /api/spending", () => {
+  test("returns 200 with spending and caps fields", async () => {
+    const res = await fetch(`${BASE}/api/spending`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.ok("spending" in body, "should have spending field");
+    assert.ok("caps" in body, "should have caps field");
+  });
+
+  test("spending has date, global, and agents fields", async () => {
+    const res = await fetch(`${BASE}/api/spending`);
+    const body = await res.json();
+    assert.ok(body.spending.date, "spending.date should be present");
+    assert.ok(typeof body.spending.global === "object");
+    assert.ok(typeof body.spending.agents === "object");
+  });
+});
+
+describe("auth-protected endpoints", () => {
+  let authServer;
+  let authInterval = null;
+  let AUTH_BASE = "";
+
+  before(async () => {
+    const deps = makeMockDeps({ rtToken: "secret-token" });
+    deps.setDispatchTimeoutInterval = (v) => { authInterval = v; };
+    initHttpServer(deps);
+    authServer = createAndStartServer(0);
+    await new Promise((resolve, reject) => {
+      authServer.once("listening", resolve);
+      authServer.once("error", reject);
+    });
+    AUTH_BASE = `http://127.0.0.1:${authServer.address().port}`;
+  });
+
+  after(async () => {
+    if (authInterval) clearInterval(authInterval);
+    await new Promise((resolve) => authServer.close(resolve));
+    const deps = makeMockDeps();
+    deps.setDispatchTimeoutInterval = (v) => { dispatchInterval = v; };
+    initHttpServer(deps);
+  });
+
+  test("returns 401 without a bearer token", async () => {
+    const res = await fetch(`${AUTH_BASE}/api/agents`);
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.ok, false);
+  });
+
+  test("returns 200 with a valid bearer token", async () => {
+    const res = await fetch(`${AUTH_BASE}/api/agents`, {
+      headers: { authorization: "Bearer secret-token" },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.ok(Array.isArray(body.agents));
+  });
+
+  test("exposes background-consciousness settings over GET", async () => {
+    const res = await fetch(`${AUTH_BASE}/api/settings/bg-consciousness`, {
+      headers: { authorization: "Bearer secret-token" },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.enabled, false);
+    assert.equal(body.intervalMs, 900000);
+  });
+});
+
+// ── OPTIONS (CORS preflight) ──────────────────────────────────────────────────
+
+describe("OPTIONS preflight", () => {
+  test("returns 204 for CORS preflight", async () => {
+    const res = await fetch(`${BASE}/health`, { method: "OPTIONS" });
+    assert.equal(res.status, 204);
+  });
+});
+
+// ── 404 ───────────────────────────────────────────────────────────────────────
+
+describe("404 handling", () => {
+  test("returns 404 for unknown routes", async () => {
+    const res = await fetch(`${BASE}/api/nonexistent-route-xyz`);
+    assert.equal(res.status, 404);
+  });
+});

@@ -1,0 +1,12 @@
+{
+  "aliases": ["swebench", "swe-bench", "swe_bench"],
+  "description": "Fetch SWE-Bench Verified tasks from the public HuggingFace dataset. Returns problem statements, repo info, and test specs for running against your coding engines. Use {\"instance_id\":\"\"} to list tasks, or {\"instance_id\":\"django__django-11099\"} to get one.",
+  "url": "https://datasets-server.huggingface.co/rows?dataset=princeton-nlp%2FSWE-bench_Verified&config=default&split=test&offset={offset}&length={length}",
+  "listUrl": "https://datasets-server.huggingface.co/rows?dataset=princeton-nlp%2FSWE-bench_Verified&config=default&split=test&offset=0&length=20",
+  "method": "GET",
+  "headers": {},
+  "defaultParams": { "offset": 0, "length": 20 },
+  "paramNotes": "offset/length for pagination. Returns rows[].row with: instance_id, repo, problem_statement, hints_text, patch (gold), test_patch. Use instance_id to identify a task for benchmark-run.",
+  "requiresApproval": false,
+  "timeout": 15000
+}
