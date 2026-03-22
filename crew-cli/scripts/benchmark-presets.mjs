@@ -231,10 +231,11 @@ async function main() {
   }
 
   const results = [];
+  const crewCliEntry = resolve(cwd, 'dist', 'crew.mjs');
   for (const preset of PRESETS) {
     for (const task of runTasks) {
       const runDir = await mkdtemp(join(cwd, 'test-scratch', `bench-${preset}-`));
-      const args = ['--import', 'tsx', resolve(cwd, 'src/cli/index.ts'), 'run', '-t', task, '--json'];
+      const args = [crewCliEntry, 'run', '-t', task, '--json'];
       const env = resolvePresetEnv(preflight.provider, preset);
       const res = await runCommand('node', args, runDir, { env, timeoutMs: parsed.timeoutMs });
       const stderrPreview = String(res.stderr || '').trim().split('\n').filter(Boolean).slice(-4).join('\n');
