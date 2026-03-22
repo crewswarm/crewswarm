@@ -10,6 +10,7 @@ const homeDir = os.homedir();
 const configPath = path.join(homeDir, ".crewswarm", "crewswarm.json");
 const dashboardDistPath = path.join(rootDir, "apps", "dashboard", "dist", "index.html");
 const vibeDistPath = path.join(rootDir, "apps", "vibe", "dist", "index.html");
+const CI_MODE = process.env.CI === "true";
 const issues = [];
 const warnings = [];
 const nextSteps = [];
@@ -53,6 +54,16 @@ function unique(list) {
   return Array.from(new Set(list.filter(Boolean)));
 }
 
+function getPortOccupant(port) {
+  try {
+    const out = run(`lsof -n -P -iTCP:${port} -sTCP:LISTEN`);
+    const lines = out.split("\n").filter(Boolean);
+    return lines.length > 1 ? lines[1].trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 console.log(`\n${B}${C}crewswarm doctor${N}`);
 console.log(`Repo: ${rootDir}`);
 
@@ -86,17 +97,29 @@ if (fs.existsSync(configPath)) {
     if (configuredProviders.length > 0) {
       ok("Provider keys", configuredProviders.map(([name]) => name).join(", "));
     } else {
-      fail(
-        "Provider keys",
-        "none configured",
-        "Open Dashboard → Providers and add at least one API key.",
-      );
+      if (CI_MODE) {
+        warn("Provider keys", "none configured (CI mode)");
+      } else {
+        fail(
+          "Provider keys",
+          "none configured",
+          "Open Dashboard → Providers and add at least one API key.",
+        );
+      }
     }
   } catch (error) {
-    fail("Config parse", error.message, "Re-run `bash install.sh` if your config is corrupted.");
+    if (CI_MODE) {
+      warn("Config parse", `${error.message} (CI mode)`);
+    } else {
+      fail("Config parse", error.message, "Re-run `bash install.sh` if your config is corrupted.");
+    }
   }
 } else {
-  fail("Config file", "missing ~/.crewswarm/crewswarm.json", "Run `bash install.sh` first.");
+  if (CI_MODE) {
+    warn("Config file", "missing ~/.crewswarm/crewswarm.json (CI mode)");
+  } else {
+    fail("Config file", "missing ~/.crewswarm/crewswarm.json", "Run `bash install.sh` first.");
+  }
 }
 
 if (fs.existsSync(dashboardDistPath)) {
@@ -116,22 +139,40 @@ if (fs.existsSync(vibeDistPath)) {
   nextSteps.push("Run `cd apps/vibe && npm run build` if you want the Vibe IDE available.");
 }
 
-try {
-  const health = run("node scripts/health-check.mjs --json");
-  const jsonStart = health.indexOf("{");
-  const parsed = JSON.parse(jsonStart >= 0 ? health.slice(jsonStart) : health);
-  if (parsed.fail === 0) {
-    ok("Live health", `${parsed.pass} pass / ${parsed.warn} warn`);
+[
+  { port: 5010, label: "crew-lead port 5010" },
+  { port: 3333, label: "Vibe port 3333" },
+  { port: 4096, label: "OpenCode port 4096" },
+].forEach(({ port, label }) => {
+  const occupant = getPortOccupant(port);
+  if (occupant) {
+    warn(label, `already in use: ${occupant}`);
+    nextSteps.push(`If startup fails, inspect port ${port} with \`lsof -n -P -iTCP:${port} -sTCP:LISTEN\`.`);
   } else {
-    fail(
-      "Live health",
-      `${parsed.fail} fail / ${parsed.warn} warn`,
-      "Run `npm run restart-all` and then `npm run health`.",
-    );
+    ok(label, "free");
   }
-} catch (error) {
-  warn("Live health", "services may be down or partially started");
-  nextSteps.push("Run `npm run restart-all` and then `npm run health`.");
+});
+
+if (CI_MODE) {
+  ok("Live health", "skipped in CI mode");
+} else {
+  try {
+    const health = run("node scripts/health-check.mjs --json");
+    const jsonStart = health.indexOf("{");
+    const parsed = JSON.parse(jsonStart >= 0 ? health.slice(jsonStart) : health);
+    if (parsed.fail === 0) {
+      ok("Live health", `${parsed.pass} pass / ${parsed.warn} warn`);
+    } else {
+      fail(
+        "Live health",
+        `${parsed.fail} fail / ${parsed.warn} warn`,
+        "Run `npm run restart-all` and then `npm run health`.",
+      );
+    }
+  } catch (error) {
+    warn("Live health", "services may be down or partially started");
+    nextSteps.push("Run `npm run restart-all` and then `npm run health`.");
+  }
 }
 
 console.log(`\n${B}Summary${N}`);

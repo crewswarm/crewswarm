@@ -30,7 +30,11 @@ bash scripts/smoke.sh --no-build
 
 echo ""
 echo "3. Health"
-npm run health -- --quiet
+if [[ "${CI:-}" == "true" ]]; then
+  npm run health -- --quiet --no-services
+else
+  npm run health -- --quiet
+fi
 
 if [[ "$FULL" -eq 1 ]]; then
   echo ""

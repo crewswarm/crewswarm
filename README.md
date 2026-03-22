@@ -73,6 +73,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/ins
 
 ### Start
 ```bash
+npm run doctor
 npm run restart-all
 ```
 
@@ -194,12 +195,14 @@ Dashboard / CLI / Telegram / SwiftBar / MCP
 
 ## Commands
 
+- **Preflight:** `npm run doctor`
 - **Start the stack:** `npm run restart-all`
 - **Launch dashboard only:** `npm run dashboard`
-- **Run CLI task:** `crew-cli "Build a REST API with JWT auth and tests"`
+- **Run CLI task:** `crew exec "Build a REST API with JWT auth and tests"`
 - **Static smoke** (no services): `npm run smoke:static`
 - **Live smoke** (stack must be running): `npm run smoke`
 - **Health check:** `npm run health`
+- **Release preflight:** `npm run release:check`
 
 ---
 
@@ -247,6 +250,7 @@ crewswarm/
 
 ## Docs
 
+- `docs/CANONICAL/README.md`
 - `docs/ARCHITECTURE.md`
 - `docs/ORCHESTRATOR-GUIDE.md`
 - `docs/SETUP-NEW-AGENTS.md`

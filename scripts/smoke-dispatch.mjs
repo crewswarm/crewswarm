@@ -39,6 +39,32 @@ async function dispatch(agent, task) {
   return String(taskId);
 }
 
+async function getHealth() {
+  const res = await fetch(`${CREW_LEAD_URL}/health`);
+  if (!res.ok) {
+    throw new Error(`health ${res.status}`);
+  }
+  return res.json();
+}
+
+async function chat(message, sessionId) {
+  const token = getToken();
+  if (!token) throw new Error("Missing RT token in ~/.crewswarm/crewswarm.json (rt.authToken)");
+  const res = await fetch(`${CREW_LEAD_URL}/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({ message, sessionId }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`chat ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
 async function getStatus(taskId) {
   const token = getToken();
   const res = await fetch(`${CREW_LEAD_URL}/api/status/${taskId}`, {
@@ -70,10 +96,22 @@ function assert(condition, message) {
 async function run() {
   const runId = Date.now().toString(36);
   const projectRoot = path.join(path.dirname(process.argv[1]), "..");
-const outDir = path.join(projectRoot, "test-output", "smoke-dispatch");
+  const outDir = path.join(projectRoot, "test-output", "smoke-dispatch");
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(`[smoke-dispatch] runId=${runId}`);
+
+  console.log("[0/4] health...");
+  const health = await getHealth();
+  assert(health?.ok === true, "health response was not ok=true");
+  console.log("[ok] /health");
+
+  const chatMarker = `SMOKE_CHAT_OK_${runId}`;
+  console.log("[1/4] chat...");
+  const chatResult = await chat(`say: ${chatMarker}`, `smoke-chat-${runId}`);
+  const chatReply = String(chatResult?.reply || chatResult?.message || "");
+  assert(chatReply.includes(chatMarker), `chat reply missing marker (${chatMarker})`);
+  console.log("[ok] /chat");
 
   const marker = `SMOKE_DISPATCH_OK_${runId}`;
   const outFile = path.join(outDir, `coder-${runId}.txt`);
@@ -84,9 +122,9 @@ const outDir = path.join(projectRoot, "test-output", "smoke-dispatch");
     `Do not add extra text to the file.`,
   ].join("\n");
 
-  console.log("[1/2] dispatch crew-coder...");
+  console.log("[2/4] dispatch crew-coder...");
   const coderTaskId = await dispatch("crew-coder", coderTask);
-  const coderResult = await waitDone(coderTaskId, "crew-coder smoke task");
+  await waitDone(coderTaskId, "crew-coder smoke task");
   assert(fs.existsSync(outFile), `expected output file missing: ${outFile}`);
   const fileBody = fs.readFileSync(outFile, "utf8").trim();
   assert(fileBody === marker, `unexpected file content: ${fileBody}`);
@@ -95,7 +133,7 @@ const outDir = path.join(projectRoot, "test-output", "smoke-dispatch");
   const mainMarker = `MAIN_OK_${runId}`;
   const mainTask = `Reply with exactly: ${mainMarker}`;
 
-  console.log("[2/2] dispatch crew-main...");
+  console.log("[3/4] dispatch crew-main...");
   const mainTaskId = await dispatch("crew-main", mainTask);
   const mainResult = await waitDone(mainTaskId, "crew-main smoke task");
   const text = String(mainResult?.result || "");
