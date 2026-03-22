@@ -1191,6 +1191,58 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    // ── First-run detection ──────────────────────────────────────────────────
+    if (url.pathname === "/api/first-run-status" && req.method === "GET") {
+      const cfg = readSwarmConfigSafe();
+      const providers = cfg.providers || {};
+      const envBlock = cfg.env || {};
+      const configuredProviders = [];
+
+      // Check providers object for keys with length > 8
+      for (const [id, prov] of Object.entries(providers)) {
+        if (prov?.apiKey && String(prov.apiKey).length > 8) {
+          configuredProviders.push(id);
+        }
+      }
+      // Also check env block for *_API_KEY entries
+      for (const [k, v] of Object.entries(envBlock)) {
+        if (k.endsWith("_API_KEY") && v && String(v).length > 8) {
+          const pid = k.replace(/_API_KEY$/, "").toLowerCase();
+          if (!configuredProviders.includes(pid)) configuredProviders.push(pid);
+        }
+      }
+
+      const hasApiKeys = configuredProviders.length > 0;
+
+      // Check crew-lead health
+      let crewLeadUp = false;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        const resp = await fetch("http://127.0.0.1:5010/health", {
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        crewLeadUp = resp.ok;
+      } catch {
+        crewLeadUp = false;
+      }
+
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          firstRun: !hasApiKeys,
+          checks: {
+            hasApiKeys,
+            servicesUp: crewLeadUp,
+            crewLeadUp,
+          },
+          configuredProviders,
+        }),
+      );
+      return;
+    }
+
     // /api/health handled by crew-lead proxy below (line ~8423)
     if (url.pathname === "/api/sessions") {
       res.writeHead(200, { "content-type": "application/json" });
@@ -3355,6 +3407,28 @@ const server = http.createServer(async (req, res) => {
         const deleted = deleteDLQEntry(taskId);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: deleted }));
+      } catch (err) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+      return;
+    }
+    // ── Settings: Preset (from setup wizard) ────────────────────────────────
+    if (url.pathname === "/api/settings/preset" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      try {
+        const { preset } = JSON.parse(body);
+        const cfg = readSwarmConfigSafe();
+        cfg.preset = preset || "balanced";
+        const writeErr = await safeWriteConfig(cfg);
+        if (writeErr) {
+          res.writeHead(writeErr.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: writeErr.message }));
+        } else {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, preset: cfg.preset }));
+        }
       } catch (err) {
         res.writeHead(500, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: err.message }));

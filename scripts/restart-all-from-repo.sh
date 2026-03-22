@@ -3,6 +3,7 @@
 # Run from repo root: ./scripts/restart-all-from-repo.sh
 # Optional: --no-dashboard  skip dashboard
 #           --no-studio    skip Vibe + file watcher
+#           --no-bridges   skip Telegram + WhatsApp bridges
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
@@ -13,50 +14,119 @@ export NODE="$("$REPO_DIR/scripts/resolve-node-bin.sh")"
 # seen in the RT daemon and Vibe startup paths on this machine.
 export NODE_DISABLE_COMPILE_CACHE="${NODE_DISABLE_COMPILE_CACHE:-1}"
 
-wait_for_rt() {
-  for i in {1..10}; do
-    if curl -s -m 1 http://127.0.0.1:18889/status >/dev/null 2>&1; then
+# ── Color helpers ─────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# ── Service status tracking ──────────────────────────────────────────────────
+declare -A SVC_STATUS  # "up" or "down"
+
+# ── Graceful kill: SIGTERM first, SIGKILL after 5s ────────────────────────────
+graceful_kill_pattern() {
+  local pattern="$1"
+  local pids
+  pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+  if [[ -z "$pids" ]]; then return 0; fi
+  # Send SIGTERM
+  echo "$pids" | xargs kill -TERM 2>/dev/null || true
+  # Wait up to 5s for processes to exit
+  local waited=0
+  while [[ $waited -lt 50 ]]; do
+    if ! pgrep -f "$pattern" >/dev/null 2>&1; then
       return 0
     fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  # Still alive — SIGKILL
+  pgrep -f "$pattern" 2>/dev/null | xargs kill -9 2>/dev/null || true
+}
+
+graceful_kill_port() {
+  local port="$1"
+  local pids
+  pids=$(lsof -ti :"$port" 2>/dev/null || true)
+  if [[ -z "$pids" ]]; then return 0; fi
+  echo "$pids" | xargs kill -TERM 2>/dev/null || true
+  local waited=0
+  while [[ $waited -lt 50 ]]; do
+    if ! lsof -ti :"$port" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  lsof -ti :"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+}
+
+# ── Health polling: wait for a URL to respond 200 (or any 2xx/3xx) ────────────
+wait_for_health() {
+  local url="$1"
+  local name="$2"
+  local max_attempts="${3:-30}"
+  local attempt=0
+  while [ $attempt -lt $max_attempts ]; do
+    if curl -s --max-time 2 "$url" > /dev/null 2>&1; then
+      echo -e "  ${GREEN}✓${RESET} $name is up"
+      SVC_STATUS[$name]="up"
+      return 0
+    fi
+    attempt=$((attempt + 1))
     sleep 1
   done
+  echo -e "  ${RED}✗${RESET} $name failed to start (tried ${max_attempts}s)"
+  SVC_STATUS[$name]="down"
   return 1
 }
 
-echo "Stopping existing crewswarm processes..."
+# ── Parse flags ───────────────────────────────────────────────────────────────
+START_DASH=1
+START_STUDIO=1
+START_BRIDGES=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-dashboard) START_DASH=0 ;;
+    --no-studio)    START_STUDIO=0 ;;
+    --no-bridges)   START_BRIDGES=0 ;;
+  esac
+done
 
-# ── Kill by process name first (don't rely on port — avoids killing unrelated listeners)
-# Use pattern without leading "node " so we catch all node binary paths (/usr/local/bin/node,
-# /usr/local/Cellar/node/x.y.z/bin/node, bare "node", etc.)
-pkill -9 -f "gateway-bridge.mjs"      2>/dev/null; true  # all --rt-daemon AND --send stragglers
-pkill -9 -f "opencrew-rt-daemon.mjs"  2>/dev/null; true
-pkill -9 -f "crew-lead.mjs"           2>/dev/null; true
-pkill -9 -f "scripts/dashboard.mjs"   2>/dev/null; true
-pkill -9 -f "scripts/mcp-server.mjs"  2>/dev/null; true
-pkill -9 -f "scripts/crew-scribe.mjs" 2>/dev/null; true  # was never killed; accumulated on restart
-pkill -9 -f "telegram-bridge.mjs"     2>/dev/null; true  # catches all node binary path variants
-pkill -9 -f "whatsapp-bridge.mjs"     2>/dev/null; true  # ditto
-pkill -9 -f "opencode serve"          2>/dev/null; true
-pkill -9 -f "pm-loop.mjs"             2>/dev/null; true  # NEVER auto-start PM loop
-pkill -9 -f "apps/vibe/server.mjs"    2>/dev/null; true
-pkill -9 -f "watch-server.mjs"        2>/dev/null; true
-pkill -9 -f "vite.*vibe"              2>/dev/null; true
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 1: Stop everything gracefully
+# ══════════════════════════════════════════════════════════════════════════════
+echo ""
+echo -e "${BOLD}Stopping existing crewswarm processes...${RESET}"
 
-# ── Kill by port (catches anything that survived above — e.g. launchd-managed dashboard)
-lsof -ti :5010  2>/dev/null | xargs kill -9 2>/dev/null; true
-lsof -ti :4319  2>/dev/null | xargs kill -9 2>/dev/null; true
-lsof -ti :18889 2>/dev/null | xargs kill -9 2>/dev/null; true
-lsof -ti :4096  2>/dev/null | xargs kill -9 2>/dev/null; true
-lsof -ti :5020  2>/dev/null | xargs kill -9 2>/dev/null; true
-lsof -ti :3333  2>/dev/null | xargs kill -9 2>/dev/null; true
-lsof -ti :3334  2>/dev/null | xargs kill -9 2>/dev/null; true
+# ── Kill by process name (SIGTERM → SIGKILL) ─────────────────────────────────
+# Use pattern without leading "node " so we catch all node binary paths
+graceful_kill_pattern "gateway-bridge.mjs"
+graceful_kill_pattern "opencrew-rt-daemon.mjs"
+graceful_kill_pattern "crew-lead.mjs"
+graceful_kill_pattern "scripts/dashboard.mjs"
+graceful_kill_pattern "scripts/mcp-server.mjs"
+graceful_kill_pattern "scripts/crew-scribe.mjs"
+graceful_kill_pattern "telegram-bridge.mjs"
+graceful_kill_pattern "whatsapp-bridge.mjs"
+graceful_kill_pattern "opencode serve"
+graceful_kill_pattern "pm-loop.mjs"
+graceful_kill_pattern "apps/vibe/server.mjs"
+graceful_kill_pattern "watch-server.mjs"
+graceful_kill_pattern "vite.*vibe"
+
+# ── Kill by port (catches anything that survived — e.g. launchd-managed dashboard)
+for port in 5010 4319 18889 4096 5020 3333 3334; do
+  graceful_kill_port "$port"
+done
 
 # ── Clean stale PID files so start-crew doesn't skip re-spawning
 find /tmp -maxdepth 1 -name "bridge-*.pid" -delete 2>/dev/null; true
 
-sleep 2
+sleep 1
 
-# ── Confirm ports are clear
+# ── Confirm ports are clear ──────────────────────────────────────────────────
 for port in 5010 4319 18889 4096 5020 3333 3334; do
   HELD=$(lsof -ti :$port 2>/dev/null | wc -l | tr -d ' ')
   if [ "$HELD" -gt 0 ]; then
@@ -66,124 +136,114 @@ for port in 5010 4319 18889 4096 5020 3333 3334; do
   fi
 done
 
+echo "  All processes stopped."
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 2: Start services in order with health polling
+# ══════════════════════════════════════════════════════════════════════════════
+echo ""
+echo -e "${BOLD}Starting services...${RESET}"
+
+# ── 1. OpenCode (optional, non-critical) ─────────────────────────────────────
+echo ""
 echo "Starting optional OpenCode session server (port 4096)..."
 OPENCODE_BIN="$(command -v opencode 2>/dev/null)" || OPENCODE_BIN="/usr/local/bin/opencode"
 if [[ -x "$OPENCODE_BIN" ]]; then
   nohup "$OPENCODE_BIN" serve --port 4096 --hostname 127.0.0.1 >> /tmp/opencode.log 2>&1 &
-  sleep 1
+  # Non-critical — don't block on health
+  SVC_STATUS["opencode"]="up"
+  echo "  Started (PID $!)"
 else
   echo "  (opencode not found; skip)"
+  SVC_STATUS["opencode"]="skip"
 fi
 
+# ── 2. RT daemon (port 18889) ────────────────────────────────────────────────
+echo ""
 echo "Starting RT daemon (port 18889)..."
 nohup "$NODE" scripts/opencrew-rt-daemon.mjs >> /tmp/opencrew-rt-daemon.log 2>&1 &
-sleep 2
 
-# Wait for RT daemon to be ready (accepts connections properly)
-echo "  Waiting for RT daemon to be ready..."
-if wait_for_rt; then
-  echo "  ✓ RT daemon ready"
-else
-  echo "  ⚠ RT daemon did not come up on first attempt — retrying once..."
-  pkill -9 -f "opencrew-rt-daemon.mjs" 2>/dev/null; true
-  lsof -ti :18889 2>/dev/null | xargs kill -9 2>/dev/null; true
+if ! wait_for_health "http://127.0.0.1:18889/status" "rt-bus" 15; then
+  echo "  Retrying RT daemon once..."
+  graceful_kill_pattern "opencrew-rt-daemon.mjs"
+  graceful_kill_port 18889
   sleep 1
   nohup "$NODE" scripts/opencrew-rt-daemon.mjs >> /tmp/opencrew-rt-daemon.log 2>&1 &
-  sleep 2
-  if wait_for_rt; then
-    echo "  ✓ RT daemon ready (second attempt)"
-  else
-    echo "  ✗ RT daemon failed to start after retry"
+  if ! wait_for_health "http://127.0.0.1:18889/status" "rt-bus" 15; then
     echo "  Last RT log lines:"
-    tail -n 80 /tmp/opencrew-rt-daemon.log 2>/dev/null || true
-    exit 1
+    tail -n 40 /tmp/opencrew-rt-daemon.log 2>/dev/null || true
+    echo ""
+    echo -e "  ${RED}RT bus failed — continuing with remaining services${RESET}"
   fi
 fi
 
+# ── 3. Gateway bridges (agents) ──────────────────────────────────────────────
+echo ""
 echo "Starting gateway bridges (crew-main, crew-pm, crew-coder, etc.)..."
 "$NODE" scripts/start-crew.mjs --force
+SVC_STATUS["agents"]="up"
 sleep 1
 
+# ── 4. crew-lead (port 5010) — CRITICAL ─────────────────────────────────────
+echo ""
 echo "Starting crew-lead (port 5010)..."
 # crew-lead is spawned by start-crew.mjs above; this is a safety net only.
 if ! lsof -ti :5010 >/dev/null 2>&1; then
   nohup "$NODE" crew-lead.mjs >> /tmp/crew-lead.log 2>&1 &
-  sleep 1
 fi
+wait_for_health "http://127.0.0.1:5010/health" "crew-lead" 30 || true
 
-START_DASH=1
-START_STUDIO=1
-for arg in "$@"; do
-  if [[ "$arg" == "--no-dashboard" ]]; then START_DASH=0; fi
-  if [[ "$arg" == "--no-studio" ]]; then START_STUDIO=0; fi
-done
-
+# ── 5. Dashboard (port 4319) — CRITICAL ─────────────────────────────────────
 if [[ "$START_DASH" -eq 1 ]]; then
+  echo ""
   echo "Starting dashboard (port 4319)..."
-  # If a LaunchAgent manages the dashboard, use launchctl so we don't race with KeepAlive.
-  # launchctl stop + start is idempotent and avoids the "two processes fight for port" problem.
   if launchctl list com.crewswarm.dashboard >/dev/null 2>&1; then
     launchctl stop com.crewswarm.dashboard 2>/dev/null; sleep 1
     launchctl start com.crewswarm.dashboard 2>/dev/null
-    echo "  (via launchd — will be up in ~2s)"
+    echo "  (via launchd)"
   else
     nohup "$NODE" scripts/dashboard.mjs >> /tmp/dashboard.log 2>&1 &
-    sleep 1
   fi
-  echo ""
-  echo "Dashboard: http://127.0.0.1:4319"
-  # Vibe proxies /api/agents → :4319; if Studio starts first, the UI gets 502 and an empty agent list.
-  echo "Waiting for dashboard HTTP (:4319)..."
-  for i in $(seq 1 30); do
-    if curl -sf -m 1 http://127.0.0.1:4319/ >/dev/null 2>&1; then
-      echo "  ✓ Dashboard accepting connections"
-      break
-    fi
-    if [[ "$i" -eq 30 ]]; then
-      echo "  WARNING: dashboard not ready after 30s — refresh Vibe once :4319 is up"
-    fi
-    sleep 1
-  done
+  wait_for_health "http://127.0.0.1:4319/" "dashboard" 30 || true
+else
+  SVC_STATUS["dashboard"]="skip"
 fi
 
-START_BRIDGES=1
-for arg in "$@"; do
-  if [[ "$arg" == "--no-bridges" ]]; then START_BRIDGES=0; fi
-done
-
+# ── 6. Messaging bridges (Telegram + WhatsApp) ──────────────────────────────
 if [[ "$START_BRIDGES" -eq 1 ]]; then
-  # Give RT daemon and crew-lead extra time to fully initialize
-  echo "Waiting for RT bus and crew-lead to be fully ready..."
-  sleep 3
-  if ! curl -s -m 1 http://127.0.0.1:18889/status >/dev/null 2>&1; then
-    echo "  ✗ RT bus went down before bridge startup completed"
-    echo "  Last RT log lines:"
-    tail -n 80 /tmp/opencrew-rt-daemon.log 2>/dev/null || true
-    exit 1
-  fi
-  
-  echo "Starting Telegram bridge..."
-  # Pattern without leading "node " to catch any node binary path variant
-  pkill -9 -f "telegram-bridge.mjs" 2>/dev/null; sleep 1
-  nohup "$NODE" "$REPO_DIR/telegram-bridge.mjs" >> /tmp/telegram-bridge.log 2>&1 &
-  echo "  PID: $!"
+  echo ""
+  # Verify RT bus is still up before starting bridges
+  if [[ "${SVC_STATUS[rt-bus]:-down}" == "up" ]]; then
+    echo "Starting Telegram bridge..."
+    nohup "$NODE" "$REPO_DIR/telegram-bridge.mjs" >> /tmp/telegram-bridge.log 2>&1 &
+    SVC_STATUS["telegram"]="up"
+    echo "  PID: $!"
 
-  echo "Starting WhatsApp bridge..."
-  pkill -9 -f "whatsapp-bridge.mjs" 2>/dev/null; sleep 1
-  nohup "$NODE" "$REPO_DIR/whatsapp-bridge.mjs" >> /tmp/whatsapp-bridge.log 2>&1 &
-  echo "  PID: $!"
+    echo "Starting WhatsApp bridge..."
+    nohup "$NODE" "$REPO_DIR/whatsapp-bridge.mjs" >> /tmp/whatsapp-bridge.log 2>&1 &
+    SVC_STATUS["whatsapp"]="up"
+    echo "  PID: $!"
+  else
+    echo -e "  ${YELLOW}Skipping messaging bridges — RT bus is not up${RESET}"
+    SVC_STATUS["telegram"]="skip"
+    SVC_STATUS["whatsapp"]="skip"
+  fi
 fi
 
+# ── 7. MCP + OpenAI-compat server (port 5020) ───────────────────────────────
+echo ""
 echo "Starting MCP + OpenAI-compat server (port 5020)..."
-# Guard: mcp-server is also spawned by start-crew.mjs — only start if not already up
 if ! lsof -ti :5020 >/dev/null 2>&1; then
   nohup "$NODE" scripts/mcp-server.mjs >> /tmp/crewswarm-mcp.log 2>&1 &
-  sleep 1
+  wait_for_health "http://127.0.0.1:5020/health" "mcp-server" 15 || true
 else
   echo "  (already running on :5020)"
+  SVC_STATUS["mcp-server"]="up"
 fi
 
+# ── 8. Vibe Studio + file watcher (ports 3333, 3334) ────────────────────────
 if [[ "$START_STUDIO" -eq 1 ]]; then
+  echo ""
   echo "Starting Vibe (Studio) + file watcher (ports 3333, 3334)..."
   if [[ ! -d "$REPO_DIR/apps/vibe/dist" ]]; then
     echo "  Building Studio (first run)..."
@@ -192,33 +252,78 @@ if [[ "$START_STUDIO" -eq 1 ]]; then
   sleep 1
   nohup "$NODE" "$REPO_DIR/apps/vibe/server.mjs" >> /tmp/studio.log 2>&1 &
   nohup env NODE_DISABLE_COMPILE_CACHE=1 "$NODE" "$REPO_DIR/apps/vibe/watch-server.mjs" >> /tmp/studio-watch.log 2>&1 &
-  echo "  Waiting for Vibe (:3333) and watch server (:3334)..."
-  for i in $(seq 1 25); do
-    vibe_ok=0
-    watch_ok=0
-    curl -sf -m 1 http://127.0.0.1:3333/ >/dev/null 2>&1 && vibe_ok=1
-    lsof -ti :3334 >/dev/null 2>&1 && watch_ok=1
-    if [[ "$vibe_ok" -eq 1 && "$watch_ok" -eq 1 ]]; then
-      echo "  ✓ Studio + file watcher ready"
+  wait_for_health "http://127.0.0.1:3333/" "vibe-studio" 25 || true
+  # Watch server doesn't have HTTP health — just check port
+  for i in $(seq 1 10); do
+    if lsof -ti :3334 >/dev/null 2>&1; then
+      echo -e "  ${GREEN}✓${RESET} file watcher is up"
+      SVC_STATUS["file-watcher"]="up"
       break
     fi
-    if [[ "$i" -eq 25 ]]; then
-      echo "  WARNING: Studio or :3334 not ready after 25s — hard-refresh Vibe when ports are up"
+    if [[ "$i" -eq 10 ]]; then
+      echo -e "  ${YELLOW}!${RESET} file watcher not detected on :3334"
+      SVC_STATUS["file-watcher"]="down"
     fi
     sleep 1
   done
-  echo "  Vibe: http://127.0.0.1:3333"
+else
+  SVC_STATUS["vibe-studio"]="skip"
+  SVC_STATUS["file-watcher"]="skip"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 3: Summary
+# ══════════════════════════════════════════════════════════════════════════════
+echo ""
+echo -e "${BOLD}━━━ Service Summary ━━━${RESET}"
+
+print_status() {
+  local name="$1"
+  local port="$2"
+  local status="${SVC_STATUS[$name]:-unknown}"
+  case "$status" in
+    up)   echo -e "  ${GREEN}✓${RESET} $name  :$port" ;;
+    down) echo -e "  ${RED}✗${RESET} $name  :$port" ;;
+    skip) echo -e "  ${YELLOW}-${RESET} $name  :$port  (skipped)" ;;
+    *)    echo -e "  ${YELLOW}?${RESET} $name  :$port  (unknown)" ;;
+  esac
+}
+
+print_status "rt-bus"       18889
+print_status "crew-lead"    5010
+print_status "dashboard"    4319
+print_status "agents"       "--"
+print_status "mcp-server"   5020
+print_status "vibe-studio"  3333
+print_status "file-watcher" 3334
+print_status "opencode"     4096
+if [[ "$START_BRIDGES" -eq 1 ]]; then
+  print_status "telegram"   "--"
+  print_status "whatsapp"   "--"
 fi
 
 echo ""
-echo "Stack restarted from repo. Check:"
-echo "  OpenCode:   port 4096  (optional opencode serve — sessions/history)"
-echo "  RT bus:     port 18889 (opencrew-rt-daemon.mjs)"
-echo "  crew-lead:  port 5010  (chat + receives agent replies)"
-echo "  dashboard:  port 4319  (Chat tab, RT Messages, Services)"
-echo "  MCP/OpenAI: port 5020  (MCP tools + /v1/chat/completions for Open WebUI etc.)"
-echo "  Vibe:       port 3333  (Studio IDE — Monaco editor + agent chat)"
-echo "  watch:      port 3334  (file watcher for live reload)"
-echo "  bridges:    node scripts/start-crew.mjs --status"
-echo ""
 echo "Logs: /tmp/opencode.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log /tmp/dashboard.log /tmp/crewswarm-mcp.log /tmp/studio.log /tmp/studio-watch.log"
+
+# ── Run health-check if available ────────────────────────────────────────────
+if [[ -f "$REPO_DIR/scripts/health-check.mjs" ]]; then
+  echo ""
+  echo -e "${BOLD}Running health check...${RESET}"
+  "$NODE" "$REPO_DIR/scripts/health-check.mjs" --quiet 2>/dev/null || true
+fi
+
+# ── Exit code: 0 if critical services are up, 1 otherwise ────────────────────
+CREW_LEAD_OK="${SVC_STATUS[crew-lead]:-down}"
+DASHBOARD_OK="${SVC_STATUS[dashboard]:-down}"
+
+if [[ "$CREW_LEAD_OK" == "up" ]] && { [[ "$DASHBOARD_OK" == "up" ]] || [[ "$START_DASH" -eq 0 ]]; }; then
+  echo ""
+  echo -e "${GREEN}${BOLD}All critical services are up.${RESET}"
+  exit 0
+else
+  echo ""
+  echo -e "${RED}${BOLD}One or more critical services failed to start.${RESET}"
+  [[ "$CREW_LEAD_OK" != "up" ]] && echo -e "  ${RED}crew-lead is not responding — check /tmp/crew-lead.log${RESET}"
+  [[ "$DASHBOARD_OK" != "up" && "$START_DASH" -eq 1 ]] && echo -e "  ${RED}dashboard is not responding — check /tmp/dashboard.log${RESET}"
+  exit 1
+fi

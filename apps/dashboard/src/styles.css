@@ -1366,3 +1366,508 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Setup Wizard Overlay ──────────────────────────────────────────────────── */
+
+.setup-wizard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 16, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+.setup-wizard-overlay.visible {
+  opacity: 1;
+}
+
+.setup-wizard-overlay.dismissing {
+  opacity: 0;
+}
+
+.setup-wizard-card {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 40px 36px 32px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 24px 64px rgba(0, 0, 0, 0.5);
+  transform: translateY(12px) scale(0.98);
+  opacity: 0;
+  transition:
+    transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 300ms ease;
+}
+
+.setup-wizard-card.visible {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+/* ── Step indicator ── */
+
+.setup-wizard-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 32px;
+}
+
+.setup-wizard-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.setup-wizard-step-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--text-3);
+  background: transparent;
+  padding: 0;
+  cursor: default;
+  transition:
+    background 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.setup-wizard-step-dot.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+.setup-wizard-step-dot.completed {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.setup-wizard-step-label {
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.setup-wizard-step .active ~ .setup-wizard-step-label,
+.setup-wizard-step-dot.active + .setup-wizard-step-label {
+  color: var(--accent);
+}
+
+.setup-wizard-step-dot.completed + .setup-wizard-step-label {
+  color: var(--green);
+}
+
+.setup-wizard-step-line {
+  width: 48px;
+  height: 2px;
+  background: var(--text-3);
+  margin: 0 12px;
+  margin-bottom: 18px;
+  border-radius: 1px;
+  transition: background 200ms ease;
+}
+
+.setup-wizard-step-line.completed {
+  background: var(--green);
+}
+
+/* ── Content area ── */
+
+.setup-wizard-content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Step 1: Welcome hero ── */
+
+.setup-wizard-hero {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.setup-wizard-logo-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.setup-wizard-logo {
+  width: 36px;
+  height: 36px;
+}
+
+.setup-wizard-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+
+.setup-wizard-subtitle {
+  font-size: 15px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.setup-wizard-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 28px;
+}
+
+.setup-wizard-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.setup-wizard-check-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.setup-wizard-check-icon.done {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--green);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.setup-wizard-check-icon.pending {
+  background: var(--bg-card);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  font-size: 8px;
+}
+
+/* ── Step 2: Provider list ── */
+
+.setup-wizard-section-header {
+  margin-bottom: 20px;
+}
+
+.setup-wizard-section-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.setup-wizard-section-desc {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.setup-wizard-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.setup-wizard-provider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition:
+    border-color 200ms ease,
+    background 200ms ease;
+}
+
+.setup-wizard-provider-row.has-key {
+  border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.04);
+}
+
+.setup-wizard-provider-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-wizard-provider-icon {
+  font-size: 16px;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.setup-wizard-provider-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.setup-wizard-provider-link {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity 150ms ease;
+}
+
+.setup-wizard-provider-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.setup-wizard-provider-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.setup-wizard-provider-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 200ms ease;
+}
+
+.setup-wizard-provider-input::placeholder {
+  color: var(--text-3);
+}
+
+.setup-wizard-provider-input:focus {
+  border-color: var(--accent);
+}
+
+.setup-wizard-toggle-vis {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-3);
+  transition: color 150ms ease;
+}
+
+.setup-wizard-toggle-vis:hover {
+  color: var(--text);
+}
+
+/* ── Step 3: Preset cards ── */
+
+.setup-wizard-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.setup-wizard-preset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px 12px;
+  background: var(--bg-card2);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    border-color 200ms ease,
+    background 200ms ease,
+    transform 150ms ease;
+}
+
+.setup-wizard-preset-card:hover {
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.setup-wizard-preset-card.selected {
+  border-color: var(--accent);
+  background: rgba(56, 189, 248, 0.06);
+}
+
+.setup-wizard-preset-icon {
+  font-size: 28px;
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+.setup-wizard-preset-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.setup-wizard-preset-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+/* ── Wizard buttons ── */
+
+.setup-wizard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.setup-wizard-btn-primary {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    opacity 150ms ease,
+    transform 100ms ease;
+}
+
+.setup-wizard-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.setup-wizard-btn-primary:active {
+  transform: scale(0.98);
+}
+
+.setup-wizard-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.setup-wizard-btn-ghost {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.setup-wizard-btn-ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* ── Error state ── */
+
+.setup-wizard-error {
+  padding: 10px 14px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: 8px;
+  color: var(--red);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.setup-wizard-error.hidden {
+  display: none;
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 640px) {
+  .setup-wizard-card {
+    padding: 28px 20px 24px;
+    margin: 0 12px;
+    border-radius: 12px;
+  }
+
+  .setup-wizard-preset-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .setup-wizard-preset-card {
+    flex-direction: row;
+    text-align: left;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+
+  .setup-wizard-preset-icon {
+    font-size: 22px;
+    margin-bottom: 0;
+  }
+
+  .setup-wizard-preset-label {
+    margin-bottom: 2px;
+  }
+
+  .setup-wizard-step-line {
+    width: 28px;
+    margin: 0 6px;
+  }
+
+  .setup-wizard-actions {
+    flex-direction: column-reverse;
+  }
+
+  .setup-wizard-btn-primary,
+  .setup-wizard-btn-ghost {
+    width: 100%;
+    text-align: center;
+  }
+}

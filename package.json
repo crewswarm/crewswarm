@@ -29,6 +29,7 @@
     "perf:analyze": "python3 scripts/bench/performance_optimization.py --url http://127.0.0.1:4319/api/health --profile all",
     "perf:analyze:offline": "python3 scripts/bench/performance_optimization.py --url http://127.0.0.1:4319/api/health --profile all --force-synthetic",
     "test:performance:tooling": "node test/performance-tooling.test.mjs",
+    "restart": "bash scripts/restart-all-from-repo.sh",
     "restart-all": "bash scripts/restart-all-from-repo.sh",
     "restart-dashboard": "bash scripts/restart-dashboard.sh",
     "start-crew": "node scripts/start-crew.mjs",

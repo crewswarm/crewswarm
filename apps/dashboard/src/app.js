@@ -1,4 +1,5 @@
 import { getJSON, postJSON } from "./core/api.js";
+import { checkFirstRun } from "./setup-wizard.js";
 import {
   escHtml,
   showNotification,
@@ -2011,24 +2012,29 @@ function navigateTo(view) {
   fn();
 }
 
-// On load: restore from hash or default to chat
+// On load: check first-run status, then restore from hash or default to chat
 // Supports top-level (#chat, #services) and sub-tab deep links (#settings/telegram)
-const { view: startView, subtab: startSubtab } = parseRouteFromHash();
-const params = new URLSearchParams(window.location.search);
-if (params.get("focus") === "1") {
-  setTimeout(() => {
-    const ci = document.getElementById("chatInput");
-    if (ci) {
-      navigateTo("chat");
-      ci.focus();
+(async () => {
+  const wizardShown = await checkFirstRun();
+  if (wizardShown) return; // wizard handles its own flow; reload on completion
+
+  const { view: startView, subtab: startSubtab } = parseRouteFromHash();
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("focus") === "1") {
+    setTimeout(() => {
+      const ci = document.getElementById("chatInput");
+      if (ci) {
+        navigateTo("chat");
+        ci.focus();
+      }
+    }, 500);
+  } else {
+    navigateTo(startView || "chat");
+    if (startView === "settings" && startSubtab) {
+      showSettingsTab(startSubtab);
     }
-  }, 500);
-} else {
-  navigateTo(startView || "chat");
-  if (startView === "settings" && startSubtab) {
-    showSettingsTab(startSubtab);
   }
-}
+})();
 
 // Handle browser back/forward buttons
 window.addEventListener("hashchange", () => {
