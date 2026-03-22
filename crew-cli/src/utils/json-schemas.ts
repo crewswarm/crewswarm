@@ -14,8 +14,21 @@ function result(errors: string[]): ValidationResult {
 export function validateRouterDecision(v: any): ValidationResult {
   const errors: string[] = [];
   if (!isObject(v)) return result(['must be object']);
-  const decision = String(v.decision || '');
-  if (!['direct-answer', 'execute-local', 'execute-parallel', 'CHAT', 'CODE', 'DISPATCH'].includes(decision)) {
+  const decision = String(v.decision || '').trim();
+  if (![
+    'direct-answer',
+    'execute-direct',
+    'direct-execute',
+    'simple',
+    'execute-local',
+    'execute-parallel',
+    'chat',
+    'code',
+    'dispatch',
+    'CHAT',
+    'CODE',
+    'DISPATCH'
+  ].includes(decision)) {
     errors.push('invalid decision');
   }
   if (!String(v.reasoning || '').trim()) errors.push('missing reasoning');
