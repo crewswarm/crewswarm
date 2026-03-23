@@ -1,6 +1,6 @@
 # crewswarm — Product Roadmap
 
-> Core product development (ops, features, infrastructure). Last updated: **2026-03-16**
+> Core product development (ops, features, infrastructure). Last updated: **2026-03-23**
 
 ---
 
@@ -59,6 +59,21 @@
 - ✅ **Workflow system** — Cron-based scheduling with workflow CRUD APIs
 - ✅ **Continuous build** — Build automation infrastructure
 - ✅ **Pipeline orchestration** — Phased dispatch with concurrency control
+
+### Browser Automation
+- ✅ **CDP client** — Full Chrome DevTools Protocol integration (`crew-cli/src/browser/index.ts`)
+- ✅ **Headless Chrome** — Launch, navigate, screenshot, and inspect live pages
+- ✅ **Console error collection** — Auto-capture and route browser errors to crew-fixer
+- ✅ **Visual diff** — Screenshot comparison for regression detection
+- ✅ **CLI commands** — `crew browser-debug`, `crew browser-diff`, `crew browser-fix`
+
+### Background Agent System (AutoFix)
+- ✅ **Persisted job queue** — `crew-cli/src/autofix/store.ts`
+- ✅ **Unattended worker loop** — `crew-cli/src/autofix/runner.ts`
+- ✅ **CLI commands** — `crew autofix enqueue`, `list`, `show`, `cancel`, `worker`
+- ✅ **Safety gates** — Blast-radius scoring, validation command hooks, patch-risk gating before apply
+- ✅ **Apply policy controls** — `never` (proposal only), `safe` (validation+blast gate), `force`
+- ✅ **Proposal diffs** — Blocked or disabled apply saves diff to `.crew/autofix/proposals/<job-id>.diff`
 
 
 ## Backlog
@@ -132,61 +147,6 @@
 
 **Documentation:** See `docs/AGENTCHATTR-HYBRID-PDD.md`, `docs/AGENTCHATTR-HYBRID-ARCHITECTURE.md`, and `docs/AGENTCHATTR-HYBRID-ROADMAP.md`
 
-### Background Agent System (AutoFix) 🆕
-**Priority:** High  
-**Effort:** 10-14 days  
-**Inspired by:** GitHub Copilot Autofix, GitHub Advanced Security
-
-**What it does**: Background autonomous agent that automatically detects and fixes:
-- Security vulnerabilities (CVEs, secrets, dependency issues)
-- Code quality issues (linter errors, code smells)
-- Test failures (flaky tests, missing coverage)
-- Documentation drift (broken links, outdated docs)
-
-**How it works**:
-1. **Scan** → Detect issues (CodeQL, ESLint, npm audit, etc.)
-2. **Route** → Dispatch to specialized agent (crew-security, crew-fixer, crew-qa)
-3. **Fix** → Generate fix in isolated sandbox
-4. **Review** → Self-review (run tests, security scan, blast radius)
-5. **PR** → Create pull request with full context
-
-**Key features**:
-- ✅ Multi-platform (GitHub, GitLab, Bitbucket, local)
-- ✅ 14 specialized agents (vs GitHub's single agent)
-- ✅ Multi-provider LLMs (not locked to one vendor)
-- ✅ More issue types (security, quality, tests, docs, deps)
-- ✅ Self-hosted option (keep data private)
-- ✅ Configurable limits (max PRs/day, confidence thresholds)
-
-**Competitive advantage**:
-- GitHub Copilot: 3x faster vulnerability remediation, but GitHub-only + requires Advanced Security ($)
-- crewswarm: Open-source, works anywhere, more powerful, specialized agents
-
-**Scheduling options**:
-1. GitHub Actions (daily cron job)
-2. Continuous daemon (local/self-hosted)
-3. On-demand CLI: `crew autofix run`
-
-**Configuration**:
-```json
-// .crew/autofix.json
-{
-  "enabled": true,
-  "schedule": "0 2 * * *",
-  "scanners": {
-    "security": {"enabled": true, "severity": ["high", "critical"]},
-    "quality": {"enabled": true, "autofix": true},
-    "tests": {"enabled": true, "fixFlaky": true}
-  },
-  "limits": {"maxPRsPerRun": 3, "minConfidence": 0.7}
-}
-```
-
-**Status:** PDD written, not yet started  
-**Documentation:** See `PDD-BACKGROUND-AGENT-AUTOFIX.md` for complete plan
-
----
-
 ### Public Release Preparation
 **Priority:** High  
 **Effort:** 2-3 days
@@ -218,24 +178,11 @@
 ## Next Steps
 
 ### Immediate (March 2026)
-1. **Public release preparation** (2-3 days)
-   - Documentation audit
-   - Remove development logs
-   - Version tagging `0.1.0-beta`
-   - Demo video
-   - Launch announcement
+1. **Demo video production**
+   - 3-5 minute walkthrough showing browser automation, AutoFix, and the REPL
+   - Script and scenario in `crew-cli/docs/VIDEO-SCRIPT.md` and `crew-cli/docs/DEMO-SCENARIO.md`
 
-2. **Browser automation** (2-3 days)
-   - Add basic Puppeteer/Playwright tool surface for agents
-   - Start with navigate, screenshot, click, type, and simple permission controls
-   - Use existing analysis in `OPENCLAW-COMPARISON-FINAL.md` and `BROWSER-AUTOMATION-GUIDE.md`
-
-3. **Background Agent System (AutoFix)** (10-14 days)
-   - Competitive feature matching GitHub Copilot
-   - Automatic vulnerability + quality fixes
-   - See `PDD-BACKGROUND-AGENT-AUTOFIX.md`
-
-4. **Discord bridge execution** (5-7 days)
+2. **Discord bridge execution** (5-7 days)
    - Planning docs already exist; move from spec into implementation
    - See `docs/DISCORD-BRIDGE-ROADMAP.md`
 
@@ -269,7 +216,7 @@
 - ✅ Multi-provider (not locked to one LLM vendor)
 - ✅ Self-hosted option (keep data private)
 - ✅ Grok integration (real-time X/Twitter intelligence)
-- ⏳ Background autofix (planned, matches their latest feature)
+- ✅ Background autofix (complete — `crew-cli/src/autofix/`)
 
 **Unique capabilities:**
 - Multi-engine support (OpenCode, Cursor CLI, Claude Code, Codex)
@@ -279,4 +226,4 @@
 
 ---
 
-**Last updated:** March 16, 2026
+**Last updated:** March 23, 2026

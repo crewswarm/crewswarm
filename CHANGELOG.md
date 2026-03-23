@@ -102,10 +102,13 @@ First public release of crewswarm — PM-led multi-agent orchestration for softw
 - Documentation bloat — Reduced root markdown files by 43%
 
 ### Planned for v1.0
-- Background Agent System (AutoFix) — autonomous bug fixing
 - Skill marketplace — community skill registry
 - Enhanced observability — telemetry dashboard
 - Video demos — YouTube walkthroughs
+
+### Shipped since beta (not yet in versioned release)
+- **Browser automation** — CDP client with headless Chrome, screenshots, console error capture (`crew-cli/src/browser/index.ts`)
+- **Background Agent System (AutoFix)** — persisted job queue, unattended worker loop, safety gates (`crew-cli/src/autofix/`)
 
 ---
 
