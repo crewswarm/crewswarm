@@ -8286,7 +8286,7 @@ ORDER BY day DESC, cost DESC;`;
         const rtStatusPromise = fetch("http://127.0.0.1:18889/status", {
           signal: AbortSignal.timeout(900),
         });
-        const mcpHealthPromise = httpOk("http://127.0.0.1:5020/health", 900);
+        const mcpHealthPromise = httpOk("http://127.0.0.1:5020/health", 3000);
         const [
           rtUp,
           crewLeadUp,

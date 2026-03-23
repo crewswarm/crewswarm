@@ -27,6 +27,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { fileURLToPath } from "node:url";
 
 const CREW_LEAD_PORT = process.env.CREW_LEAD_PORT || "5010";
 const CREW_LEAD_URL = `http://127.0.0.1:${CREW_LEAD_PORT}`;
@@ -35,7 +36,7 @@ const PIPELINES_DIR = path.join(CONFIG_DIR, "pipelines");
 const POLL_INTERVAL_MS = 2000;
 const WORKFLOW_STAGE_TIMEOUT_MS = 120000;
 
-function getToken() {
+export function getToken() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(CONFIG_DIR, "crewswarm.json"), "utf8"));
     return cfg?.rt?.authToken || "";
@@ -44,13 +45,13 @@ function getToken() {
   }
 }
 
-function authHeaders(token) {
+export function authHeaders(token) {
   const h = { "Content-Type": "application/json" };
   if (token) h["Authorization"] = `Bearer ${token}`;
   return h;
 }
 
-async function runSkill(skillName, params, token) {
+export async function runSkill(skillName, params, token) {
   const url = `${CREW_LEAD_URL}/api/skills/${encodeURIComponent(skillName)}/run`;
   const res = await fetch(url, {
     method: "POST",
@@ -62,7 +63,7 @@ async function runSkill(skillName, params, token) {
   return { ok: res.ok, status: res.status, data };
 }
 
-async function dispatch(agent, task, token, sessionId = "cron") {
+export async function dispatch(agent, task, token, sessionId = "cron") {
   const res = await fetch(`${CREW_LEAD_URL}/api/dispatch`, {
     method: "POST",
     headers: authHeaders(token),
@@ -73,7 +74,7 @@ async function dispatch(agent, task, token, sessionId = "cron") {
   return { ok: res.ok, data };
 }
 
-async function pollStatus(taskId, token) {
+export async function pollStatus(taskId, token) {
   const url = `${CREW_LEAD_URL}/api/status/${encodeURIComponent(taskId)}`;
   const res = await fetch(url, {
     method: "GET",
@@ -84,7 +85,7 @@ async function pollStatus(taskId, token) {
   return data;
 }
 
-async function waitForCompletion(taskId, token, log) {
+export async function waitForCompletion(taskId, token, log) {
   const deadline = Date.now() + WORKFLOW_STAGE_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const st = await pollStatus(taskId, token);
@@ -95,7 +96,7 @@ async function waitForCompletion(taskId, token, log) {
   return { ok: false, result: "", error: "timeout" };
 }
 
-async function runWorkflowStages(stages, token, log) {
+export async function runWorkflowStages(stages, token, log) {
   let prevOutput = "";
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i];
@@ -127,7 +128,7 @@ async function runWorkflowStages(stages, token, log) {
   return true;
 }
 
-async function runSkillSteps(steps, token, log) {
+export async function runSkillSteps(steps, token, log) {
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const skill = step.skill || step.name;
@@ -219,7 +220,11 @@ async function main() {
   process.exit(1);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isDirectRun) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

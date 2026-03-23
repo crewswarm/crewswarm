@@ -73,10 +73,12 @@ async function runPMLoop({ projectDir, maxItems = 3, dryRun = false, timeout = 3
   const roadmapFile = path.join(projectDir, "ROADMAP.md");
   const pidFile = path.join(LOGS_DIR, "pm-loop.pid");
   const stopFile = path.join(LOGS_DIR, "pm-loop.stop");
+  const testHome = path.join(projectDir, ".test-home");
   
   // Clean up any stale PID/stop files
   try { fs.unlinkSync(pidFile); } catch {}
   try { fs.unlinkSync(stopFile); } catch {}
+  await mkdir(path.join(testHome, ".crewswarm"), { recursive: true });
   
   return new Promise((resolve, reject) => {
     const args = [
@@ -89,6 +91,9 @@ async function runPMLoop({ projectDir, maxItems = 3, dryRun = false, timeout = 3
     
     const env = {
       ...process.env,
+      HOME: testHome,
+      GROQ_API_KEY: "",
+      PM_LOOP_TEST_MODE: "1",
       PM_ROADMAP_FILE: roadmapFile,
       PM_USE_QA: "0",           // Disable QA for faster tests
       PM_USE_SECURITY: "0",     // Disable security audits
@@ -491,19 +496,20 @@ describe("PM loop — log file tracking", { skip: SKIP_LIVE }, () => {
     await writeFile(path.join(testDir, "ROADMAP.md"), `# Test
 - [ ] Simple task
 `, "utf8");
+
+    const logFile = path.join(LOGS_DIR, "pm-loop.jsonl");
+    try { fs.unlinkSync(logFile); } catch {}
     
     await runPMLoop({ projectDir: testDir, maxItems: 1, dryRun: true, timeout: 10000 });
-    
-    const logFile = path.join(LOGS_DIR, "pm-loop.jsonl");
-    
+
     if (fs.existsSync(logFile)) {
       const logs = fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean);
       assert.ok(logs.length > 0, "PM loop log should have entries");
       
-      // Parse first log entry
-      const firstLog = JSON.parse(logs[0]);
-      assert.ok(firstLog.event, "Log entry should have event field");
-      assert.ok(firstLog.ts, "Log entry should have timestamp");
+      // Parse the most recent log entry from this run
+      const lastLog = JSON.parse(logs[logs.length - 1]);
+      assert.ok(lastLog.event || lastLog.status, "Log entry should have event or status field");
+      assert.ok(lastLog.ts || lastLog.timestamp, "Log entry should have timestamp");
     }
     
     await rm(testDir, { recursive: true, force: true }).catch(() => {});

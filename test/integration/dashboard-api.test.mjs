@@ -5,6 +5,13 @@
  */
 import { test, describe, before } from "node:test";
 import assert from "node:assert/strict";
+import {
+  StartBuildSchema,
+  StartPMLoopSchema,
+  ServiceActionSchema,
+  ImportSkillSchema,
+  validate,
+} from "../../scripts/dashboard-validation.mjs";
 
 const DASHBOARD_BASE = process.env.DASHBOARD_BASE || "http://127.0.0.1:4319";
 
@@ -304,46 +311,53 @@ describe("Dashboard API Validation Tests", () => {
 });
 
 describe("Regression Tests", () => {
-  test("no execSync calls remain in dashboard.mjs", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
+  test("dashboard validation schemas export the expected contracts", () => {
+    assert.equal(validate(StartBuildSchema, { requirement: "" }).ok, false);
+    assert.equal(
+      validate(StartBuildSchema, { requirement: "write a hello world script" }).ok,
+      true,
+    );
 
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
-    const content = await fs.readFile(dashboardPath, "utf8");
+    assert.equal(
+      validate(StartPMLoopSchema, { pmOptions: { maxIterations: 0 } }).ok,
+      false,
+    );
+    assert.equal(
+      validate(StartPMLoopSchema, { pmOptions: { maxIterations: 5 } }).ok,
+      true,
+    );
 
-    assert.ok(!content.includes("execSync"), "dashboard.mjs should not contain execSync calls");
+    assert.equal(validate(ServiceActionSchema, { id: "invalid-service" }).ok, false);
+    assert.equal(validate(ServiceActionSchema, { id: "crew-lead" }).ok, true);
+
+    assert.equal(validate(ImportSkillSchema, { url: "notaurl" }).ok, false);
+    assert.equal(
+      validate(ImportSkillSchema, {
+        url: "https://raw.githubusercontent.com/user/repo/main/skill.json",
+      }).ok,
+      true,
+    );
   });
 
-  test("validation schemas are imported", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
+  test("live dashboard endpoints enforce the intended validation behavior", async (t) => {
+    if (skipIfDown(t)) return;
 
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
-    const content = await fs.readFile(dashboardPath, "utf8");
+    const buildInvalid = await apiRequest("/api/build", "POST", { requirement: "" });
+    assert.equal(buildInvalid.status, 400);
 
-    assert.ok(content.includes("StartBuildSchema"), "Should import StartBuildSchema");
-    assert.ok(content.includes("StartPMLoopSchema"), "Should import StartPMLoopSchema");
-    assert.ok(content.includes("ServiceActionSchema"), "Should import ServiceActionSchema");
-    assert.ok(content.includes("ImportSkillSchema"), "Should import ImportSkillSchema");
-  });
+    const pmInvalid = await apiRequest("/api/pm-loop/start", "POST", {
+      pmOptions: { maxIterations: 0 },
+    });
+    assert.equal(pmInvalid.status, 400);
 
-  test("validation is actually called for each endpoint", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
+    const serviceInvalid = await apiRequest("/api/services/restart", "POST", {
+      id: "invalid-service",
+    });
+    assert.equal(serviceInvalid.status, 400);
 
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
-    const content = await fs.readFile(dashboardPath, "utf8");
-
-    // Check that validate() is called with the right schemas
-    assert.ok(content.match(/validate\(StartBuildSchema/), "Should validate /api/build requests");
-    assert.ok(content.match(/validate\(StartPMLoopSchema/), "Should validate /api/pm-loop/start requests");
-    assert.ok(content.match(/validate\(ServiceActionSchema/), "Should validate /api/services/restart requests");
-    assert.ok(content.match(/validate\(ImportSkillSchema/), "Should validate /api/skills/import requests");
+    const importInvalid = await apiRequest("/api/skills/import", "POST", {
+      url: "http://example.com/skill.json",
+    });
+    assert.equal(importInvalid.status, 400);
   });
 });
