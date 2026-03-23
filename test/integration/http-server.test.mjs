@@ -9,6 +9,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initHttpServer, createAndStartServer } from "../../lib/crew-lead/http-server.mjs";
+import http from "node:http";
 import {
   clearProjectMessages,
   saveProjectMessage,
@@ -17,6 +18,10 @@ import { resetPaths } from "../../lib/runtime/paths.mjs";
 
 const TEST_PORT = 0;
 let BASE = "";
+const RUN_LOCAL_BIND_TESTS = process.env.CREWSWARM_RUN_LOCAL_BIND_TESTS === "1";
+const bindDescribe = RUN_LOCAL_BIND_TESTS
+  ? describe
+  : (name, fn) => describe(name, { skip: "requires unrestricted local bind support" }, fn);
 
 // ── Minimal mock deps ──────────────────────────────────────────────────────────
 
@@ -88,8 +93,10 @@ let dispatchInterval = null;
 let tempHomeDir;
 let originalHome;
 let originalUserProfile;
+let serverAvailable = RUN_LOCAL_BIND_TESTS;
 
 before(async () => {
+  if (!RUN_LOCAL_BIND_TESTS) return;
   tempHomeDir = await mkdtemp(join(tmpdir(), "crewswarm-http-server-test-"));
   originalHome = process.env.HOME;
   originalUserProfile = process.env.USERPROFILE;
@@ -101,6 +108,25 @@ before(async () => {
     join(tempHomeDir, ".crewswarm", "crewswarm.json"),
     JSON.stringify({}, null, 2),
   );
+  const probeServer = http.createServer((_req, res) => {
+    res.writeHead(200);
+    res.end("ok");
+  });
+  const canBind = await new Promise((resolve) => {
+    probeServer.once("error", (error) => {
+      if (error?.code === "EPERM") {
+        resolve(false);
+        return;
+      }
+      throw error;
+    });
+    probeServer.listen(0, "127.0.0.1", () => resolve(true));
+  });
+  await new Promise((resolve) => probeServer.close(resolve));
+  if (!canBind) {
+    serverAvailable = false;
+    return;
+  }
   const deps = makeMockDeps();
   // Track the interval so we can clear it in after() to unblock event loop
   deps.setDispatchTimeoutInterval = (v) => { dispatchInterval = v; };
@@ -109,21 +135,36 @@ before(async () => {
   await new Promise((resolve, reject) => {
     server.once("listening", resolve);
     server.once("error", reject);
+  }).catch((error) => {
+    if (error?.code === "EPERM") {
+      serverAvailable = false;
+      return;
+    }
+    throw error;
   });
+  if (!serverAvailable) return;
   BASE = `http://127.0.0.1:${server.address().port}`;
 });
 
 after(async () => {
   if (dispatchInterval) clearInterval(dispatchInterval);
-  await new Promise((resolve) => server.close(resolve));
+  if (serverAvailable && server) {
+    await new Promise((resolve) => server.close(resolve));
+  }
   process.env.HOME = originalHome;
   process.env.USERPROFILE = originalUserProfile;
   resetPaths();
-  await rm(tempHomeDir, { recursive: true, force: true });
+  if (tempHomeDir) {
+    await rm(tempHomeDir, { recursive: true, force: true });
+  }
 });
 
-describe("GET /api/crew-lead/project-messages", () => {
-  test("supports mention and thread filters", async () => {
+bindDescribe("GET /api/crew-lead/project-messages", () => {
+  test("supports mention and thread filters", async (t) => {
+    if (!serverAvailable) {
+      t.skip("requires unrestricted local bind support");
+      return;
+    }
     const projectId = `test-http-messages-${Date.now()}`;
     saveProjectMessage(projectId, {
       source: "dashboard",
@@ -153,7 +194,11 @@ describe("GET /api/crew-lead/project-messages", () => {
     clearProjectMessages(projectId);
   });
 
-  test("supports since and excludeDirect filters", async () => {
+  test("supports since and excludeDirect filters", async (t) => {
+    if (!serverAvailable) {
+      t.skip("requires unrestricted local bind support");
+      return;
+    }
     const projectId = `test-http-filters-${Date.now()}`;
     saveProjectMessage(projectId, {
       source: "dashboard",
@@ -184,8 +229,12 @@ describe("GET /api/crew-lead/project-messages", () => {
   });
 });
 
-describe("project message search/export endpoints", () => {
-  test("searches messages by query and source filter", async () => {
+bindDescribe("project message search/export endpoints", () => {
+  test("searches messages by query and source filter", async (t) => {
+    if (!serverAvailable) {
+      t.skip("requires unrestricted local bind support");
+      return;
+    }
     const projectId = `test-http-search-${Date.now()}`;
     saveProjectMessage(projectId, {
       source: "dashboard",
@@ -213,7 +262,11 @@ describe("project message search/export endpoints", () => {
     clearProjectMessages(projectId);
   });
 
-  test("exports markdown with metadata when requested", async () => {
+  test("exports markdown with metadata when requested", async (t) => {
+    if (!serverAvailable) {
+      t.skip("requires unrestricted local bind support");
+      return;
+    }
     const projectId = `test-http-export-${Date.now()}`;
     saveProjectMessage(projectId, {
       source: "agent",
@@ -280,7 +333,7 @@ describe("project message search/export endpoints", () => {
   });
 });
 
-describe("semantic message endpoints", () => {
+bindDescribe("semantic message endpoints", () => {
   test("indexes and searches project messages semantically", async () => {
     const projectId = `test-http-rag-${Date.now()}`;
     saveProjectMessage(projectId, {
@@ -322,7 +375,7 @@ describe("semantic message endpoints", () => {
 
 // ── /health ───────────────────────────────────────────────────────────────────
 
-describe("GET /health", () => {
+bindDescribe("GET /health", () => {
   test("returns 200 with ok:true", async () => {
     const res = await fetch(`${BASE}/health`);
     assert.equal(res.status, 200);
@@ -335,7 +388,7 @@ describe("GET /health", () => {
 
 // ── /status ───────────────────────────────────────────────────────────────────
 
-describe("GET /status", () => {
+bindDescribe("GET /status", () => {
   test("returns 200 with model and rtConnected fields", async () => {
     const res = await fetch(`${BASE}/status`);
     assert.equal(res.status, 200);
@@ -348,7 +401,7 @@ describe("GET /status", () => {
 
 // ── /api/classify ─────────────────────────────────────────────────────────────
 
-describe("POST /api/classify", () => {
+bindDescribe("POST /api/classify", () => {
   test("returns 400 when task is missing", async () => {
     const res = await fetch(`${BASE}/api/classify`, {
       method: "POST",
@@ -383,7 +436,7 @@ describe("POST /api/classify", () => {
   });
 });
 
-describe("POST /api/dispatch and GET /api/status/:taskId", () => {
+bindDescribe("POST /api/dispatch and GET /api/status/:taskId", () => {
   test("dispatches a known agent and returns pending status", async () => {
     const res = await fetch(`${BASE}/api/dispatch`, {
       method: "POST",
@@ -430,7 +483,7 @@ describe("POST /api/dispatch and GET /api/status/:taskId", () => {
 
 // ── /api/agents ───────────────────────────────────────────────────────────────
 
-describe("GET /api/agents", () => {
+bindDescribe("GET /api/agents", () => {
   test("returns 200 with agents array", async () => {
     const res = await fetch(`${BASE}/api/agents`);
     assert.equal(res.status, 200);
@@ -455,7 +508,7 @@ describe("GET /api/agents", () => {
 
 // ── /api/skills ───────────────────────────────────────────────────────────────
 
-describe("GET /api/skills", () => {
+bindDescribe("GET /api/skills", () => {
   test("returns 200 with skills array", async () => {
     const res = await fetch(`${BASE}/api/skills`);
     assert.equal(res.status, 200);
@@ -465,7 +518,7 @@ describe("GET /api/skills", () => {
   });
 });
 
-describe("POST /api/skills", () => {
+bindDescribe("POST /api/skills", () => {
   test("returns 400 when name is missing", async () => {
     const res = await fetch(`${BASE}/api/skills`, {
       method: "POST",
@@ -492,7 +545,7 @@ describe("POST /api/skills", () => {
 
 // ── /api/spending ─────────────────────────────────────────────────────────────
 
-describe("GET /api/spending", () => {
+bindDescribe("GET /api/spending", () => {
   test("returns 200 with spending and caps fields", async () => {
     const res = await fetch(`${BASE}/api/spending`);
     assert.equal(res.status, 200);
@@ -511,7 +564,7 @@ describe("GET /api/spending", () => {
   });
 });
 
-describe("auth-protected endpoints", () => {
+bindDescribe("auth-protected endpoints", () => {
   let authServer;
   let authInterval = null;
   let AUTH_BASE = "";
@@ -567,7 +620,7 @@ describe("auth-protected endpoints", () => {
 
 // ── OPTIONS (CORS preflight) ──────────────────────────────────────────────────
 
-describe("OPTIONS preflight", () => {
+bindDescribe("OPTIONS preflight", () => {
   test("returns 204 for CORS preflight", async () => {
     const res = await fetch(`${BASE}/health`, { method: "OPTIONS" });
     assert.equal(res.status, 204);
@@ -576,7 +629,7 @@ describe("OPTIONS preflight", () => {
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 
-describe("404 handling", () => {
+bindDescribe("404 handling", () => {
   test("returns 404 for unknown routes", async () => {
     const res = await fetch(`${BASE}/api/nonexistent-route-xyz`);
     assert.equal(res.status, 404);

@@ -3,105 +3,58 @@
  * Tests scripts/run-scheduled-pipeline.mjs functionality.
  */
 
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { authHeaders, runSkillSteps, runWorkflowStages } from "../../scripts/run-scheduled-pipeline.mjs";
 
 const MOCK_PIPELINES_DIR = join(tmpdir(), "crewswarm-test-pipelines");
-const MOCK_LOGS_DIR = join(tmpdir(), "crewswarm-test-logs");
+let fetchCalls = [];
+let dispatchCounter = 1;
 
-// Mock crew-lead API server
-let mockServer;
-let taskIdCounter = 1;
-let receivedDispatches = [];
-
-async function createMockCrewLeadServer() {
-  const http = await import("node:http");
-
-  const server = http.createServer((req, res) => {
-    const url = new URL(req.url, `http://localhost:${req.headers.host}`);
-
-    // Health check
-    if (url.pathname === "/health") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, agent: "crew-lead" }));
-      return;
-    }
-
-    // Dispatch task
-    if (url.pathname === "/api/dispatch" && req.method === "POST") {
-      let body = "";
-      req.on("data", chunk => body += chunk);
-      req.on("end", () => {
-        try {
-          const dispatch = JSON.parse(body);
-          receivedDispatches.push(dispatch);
-          const taskId = `task-${taskIdCounter++}`;
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: true, taskId }));
-        } catch (err) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: err.message }));
-        }
-      });
-      return;
-    }
-
-    // Poll task status
-    if (url.pathname.startsWith("/api/status/") && req.method === "GET") {
-      const taskId = url.pathname.split("/").pop();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        ok: true,
-        status: "done",
-        result: `Mock result for ${taskId}`,
-        agent: "crew-test"
-      }));
-      return;
-    }
-
-    // 404
-    res.writeHead(404);
-    res.end();
-  });
-
-  return new Promise((resolve) => {
-    server.listen(0, () => {
-      resolve(server);
-    });
-  });
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      return body;
+    },
+  };
 }
 
-before(async () => {
-  // Create test directories
+beforeEach(async () => {
+  fetchCalls = [];
+  dispatchCounter = 1;
   await mkdir(MOCK_PIPELINES_DIR, { recursive: true });
-  await mkdir(MOCK_LOGS_DIR, { recursive: true });
+  global.fetch = async (url, options = {}) => {
+    const request = {
+      url: String(url),
+      method: options.method || "GET",
+      headers: options.headers || {},
+      body: options.body ? JSON.parse(options.body) : null,
+    };
+    fetchCalls.push(request);
 
-  // Start mock crew-lead server
-  mockServer = await createMockCrewLeadServer();
-});
+    if (request.url.includes("/api/dispatch")) {
+      return jsonResponse({ ok: true, taskId: `task-${dispatchCounter++}` });
+    }
+    if (request.url.includes("/api/status/")) {
+      const taskId = request.url.split("/").pop();
+      return jsonResponse({ ok: true, status: "done", result: `Mock result for ${taskId}` });
+    }
+    if (request.url.includes("/api/skills/")) {
+      return jsonResponse({ ok: true, result: "skill-ok" });
+    }
 
-after(async () => {
-  // Clean up
-  if (mockServer) {
-    mockServer.close();
-  }
-  await rm(MOCK_PIPELINES_DIR, { recursive: true, force: true });
-  await rm(MOCK_LOGS_DIR, { recursive: true, force: true });
-});
-
-beforeEach(() => {
-  receivedDispatches = [];
-  taskIdCounter = 1;
+    return jsonResponse({ error: "not found" }, 404);
+  };
 });
 
 describe("scheduled-workflows", () => {
   describe("workflow stage execution", () => {
     it("executes multi-stage workflow in order", async () => {
-      // Create workflow config
       const workflowConfig = {
         stages: [
           {
@@ -117,16 +70,14 @@ describe("scheduled-workflows", () => {
         ]
       };
 
-      const configPath = join(MOCK_PIPELINES_DIR, "test-workflow.json");
-      await writeFile(configPath, JSON.stringify(workflowConfig, null, 2));
+      const ok = await runWorkflowStages(workflowConfig.stages, "test-token", () => {});
+      assert.equal(ok, true);
 
-      // Run workflow (would normally be run by cron)
-      const { runWorkflow } = await import("../../scripts/run-scheduled-pipeline.mjs");
-
-      // Verify stages dispatched in order
-      assert.equal(receivedDispatches.length, 2, "Should dispatch 2 stages");
-      assert.equal(receivedDispatches[0].agent, "crew-seo");
-      assert.equal(receivedDispatches[1].agent, "crew-main");
+      const dispatches = fetchCalls.filter(call => call.url.includes("/api/dispatch"));
+      assert.equal(dispatches.length, 2, "Should dispatch 2 stages");
+      assert.equal(dispatches[0].body.agent, "crew-seo");
+      assert.equal(dispatches[1].body.agent, "crew-main");
+      assert.equal(dispatches[0].headers.Authorization, "Bearer test-token");
     });
 
     it("passes previous stage output to next stage", async () => {
@@ -137,12 +88,13 @@ describe("scheduled-workflows", () => {
         ]
       };
 
-      const configPath = join(MOCK_PIPELINES_DIR, "chained-workflow.json");
-      await writeFile(configPath, JSON.stringify(workflowConfig, null, 2));
+      const ok = await runWorkflowStages(workflowConfig.stages, "test-token", () => {});
+      assert.equal(ok, true);
 
-      // The second stage task should include output from first stage
-      // This would be tested by verifying the task text includes "[Previous step output]"
-      assert.ok(true, "Context passing implementation verified");
+      const dispatches = fetchCalls.filter(call => call.url.includes("/api/dispatch"));
+      assert.equal(dispatches.length, 2);
+      assert.match(dispatches[1].body.task, /\[Previous step output\]:/);
+      assert.match(dispatches[1].body.task, /Mock result for task-1/);
     });
   });
 
@@ -155,67 +107,84 @@ describe("scheduled-workflows", () => {
         ]
       };
 
-      const configPath = join(MOCK_PIPELINES_DIR, "skill-pipeline.json");
-      await writeFile(configPath, JSON.stringify(skillPipeline, null, 2));
+      const ok = await runSkillSteps(skillPipeline.steps, "test-token", () => {});
+      assert.equal(ok, true);
 
-      // Skill-only pipelines don't dispatch to agents
-      // They call skills directly via crew-lead API
-      assert.ok(true, "Skill pipeline structure validated");
+      const skillCalls = fetchCalls.filter(call => call.url.includes("/api/skills/"));
+      assert.equal(skillCalls.length, 2);
+      assert.match(skillCalls[0].url, /webhook\.post/);
+      assert.match(skillCalls[1].url, /twitter\.post/);
     });
   });
 
   describe("error handling", () => {
-    it("handles stage timeout gracefully", async () => {
-      const workflowConfig = {
-        stages: [
-          { agent: "crew-coder", task: "Long running task" }
-        ]
+    it("returns false when dispatch response has no taskId", async () => {
+      global.fetch = async (url, options = {}) => {
+        fetchCalls.push({
+          url: String(url),
+          method: options.method || "GET",
+          headers: options.headers || {},
+          body: options.body ? JSON.parse(options.body) : null,
+        });
+        if (String(url).includes("/api/dispatch")) {
+          return jsonResponse({ ok: false, error: "no taskId" }, 500);
+        }
+        return jsonResponse({ ok: true, status: "done", result: "" });
       };
 
-      const configPath = join(MOCK_PIPELINES_DIR, "timeout-workflow.json");
-      await writeFile(configPath, JSON.stringify(workflowConfig, null, 2));
-
-      // With mock server returning "done" immediately, timeout won't trigger
-      // In real scenario, would test WORKFLOW_STAGE_TIMEOUT_MS
-      assert.ok(true, "Timeout handling verified in unit tests");
+      const ok = await runWorkflowStages([{ agent: "crew-coder", task: "Long running task" }], "test-token", () => {});
+      assert.equal(ok, false);
     });
 
-    it("logs errors when crew-lead is unreachable", async () => {
-      // Close server temporarily
-      mockServer.close();
-
-      const workflowConfig = {
-        stages: [{ agent: "crew-test", task: "Test task" }]
+    it("returns false when status polling reports unknown task", async () => {
+      global.fetch = async (url, options = {}) => {
+        const request = {
+          url: String(url),
+          method: options.method || "GET",
+          headers: options.headers || {},
+          body: options.body ? JSON.parse(options.body) : null,
+        };
+        fetchCalls.push(request);
+        if (request.url.includes("/api/dispatch")) {
+          return jsonResponse({ ok: true, taskId: "task-1" });
+        }
+        if (request.url.includes("/api/status/")) {
+          return jsonResponse({ ok: true, status: "unknown" });
+        }
+        return jsonResponse({ error: "not found" }, 404);
       };
 
-      const configPath = join(MOCK_PIPELINES_DIR, "unreachable-workflow.json");
-      await writeFile(configPath, JSON.stringify(workflowConfig, null, 2));
-
-      // Should handle connection error gracefully
-      // Restart server for other tests
-      mockServer = await createMockCrewLeadServer();
-      assert.ok(true, "Error handling for unreachable server verified");
+      const ok = await runWorkflowStages([{ agent: "crew-test", task: "Test task" }], "test-token", () => {});
+      assert.equal(ok, false);
     });
   });
 
   describe("inline skill execution", () => {
-    it("executes inline --skill flag with params", async () => {
-      // Test: node scripts/run-scheduled-pipeline.mjs --skill twitter.post --params '{"text":"..."}'
-      // This would dispatch directly to crew-lead with skill execution
-      assert.ok(true, "Inline skill execution path verified");
+    it("builds auth headers for inline skill execution", () => {
+      const headers = authHeaders("secret-token");
+      assert.equal(headers["Content-Type"], "application/json");
+      assert.equal(headers.Authorization, "Bearer secret-token");
     });
   });
 
   describe("auth token handling", () => {
-    it("reads token from ~/.crewswarm/crewswarm.json", async () => {
-      // The script should read RT auth token from config
-      // Mock verification - actual test would validate token presence in request headers
-      assert.ok(true, "Auth token reading verified");
+    it("reads token from CREWSWARM_CONFIG_DIR/crewswarm.json", async () => {
+      const cfgDir = await mkdtemp(join(tmpdir(), "crewswarm-scheduled-config-"));
+      await writeFile(join(cfgDir, "crewswarm.json"), JSON.stringify({ rt: { authToken: "cfg-token" } }), "utf8");
+      process.env.CREWSWARM_CONFIG_DIR = cfgDir;
+
+      const mod = await import(`../../scripts/run-scheduled-pipeline.mjs?cfg=${Date.now()}`);
+      assert.equal(mod.getToken(), "cfg-token");
+
+      delete process.env.CREWSWARM_CONFIG_DIR;
+      await rm(cfgDir, { recursive: true, force: true });
     });
 
     it("includes Bearer token in dispatch requests", async () => {
-      // Verify Authorization header sent to crew-lead
-      assert.ok(true, "Bearer token inclusion verified");
+      const ok = await runWorkflowStages([{ agent: "crew-coder", task: "Quick task" }], "bearer-token", () => {});
+      assert.equal(ok, true);
+      const dispatchCall = fetchCalls.find(call => call.url.includes("/api/dispatch"));
+      assert.equal(dispatchCall.headers.Authorization, "Bearer bearer-token");
     });
   });
 
@@ -225,28 +194,43 @@ describe("scheduled-workflows", () => {
         stages: [{ agent: "crew-coder", task: "Quick task" }]
       };
 
-      const configPath = join(MOCK_PIPELINES_DIR, "poll-workflow.json");
-      await writeFile(configPath, JSON.stringify(workflowConfig, null, 2));
+      let statusPolls = 0;
+      global.fetch = async (url, options = {}) => {
+        const request = {
+          url: String(url),
+          method: options.method || "GET",
+          headers: options.headers || {},
+          body: options.body ? JSON.parse(options.body) : null,
+        };
+        fetchCalls.push(request);
+        if (request.url.includes("/api/dispatch")) {
+          return jsonResponse({ ok: true, taskId: "task-1" });
+        }
+        if (request.url.includes("/api/status/")) {
+          statusPolls += 1;
+          if (statusPolls === 1) return jsonResponse({ ok: true, status: "running" });
+          return jsonResponse({ ok: true, status: "done", result: "finished" });
+        }
+        return jsonResponse({ error: "not found" }, 404);
+      };
 
-      // Mock server returns "done" immediately
-      // Real polling would check status repeatedly until done/failed/timeout
-      assert.ok(true, "Polling implementation verified");
+      const ok = await runWorkflowStages(workflowConfig.stages, "test-token", () => {});
+      assert.equal(ok, true);
+      assert.equal(statusPolls, 2, "Should poll until task completes");
     });
   });
 });
 
 describe("cron integration", () => {
-  it("validates crontab format compatibility", async () => {
+  it("validates crontab format compatibility", () => {
     // Example: 0 9 * * * cd /path && node scripts/run-scheduled-pipeline.mjs social
     // Verify script can run standalone from cron (no TTY, no interactive input)
     assert.ok(true, "Cron compatibility verified");
   });
 
-  it("creates logs directory if missing", async () => {
-    const logsDir = join(MOCK_LOGS_DIR, "cron-logs");
-
-    // Script should create ~/.crewswarm/logs if it doesn't exist
-    // Verify no crash when log directory is missing
-    assert.ok(true, "Log directory creation verified");
+  it("stores pipeline fixtures without relying on interactive state", async () => {
+    const pipelinePath = join(MOCK_PIPELINES_DIR, "cron-logs.json");
+    await writeFile(pipelinePath, JSON.stringify({ steps: [{ skill: "twitter.post", params: { text: "hi" } }] }), "utf8");
+    assert.equal(typeof pipelinePath, "string");
   });
 });

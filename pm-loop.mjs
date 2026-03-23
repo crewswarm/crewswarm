@@ -523,7 +523,8 @@ process.on("SIGINT", async () => { await clearPid(); process.exit(0); });
 
 // ── Logging ───────────────────────────────────────────────────────────────
 async function log(entry) {
-  const line = JSON.stringify({ timestamp: new Date().toISOString(), ...entry });
+  const timestamp = new Date().toISOString();
+  const line = JSON.stringify({ timestamp, ts: timestamp, ...entry });
   await appendFile(PM_LOG, line + "\n").catch(() => { });
 }
 
@@ -1252,7 +1253,7 @@ async function main() {
     // Stop self-extending if too many failures (something is broken)
     if (failed >= 10) {
       console.log(`\n⚠️  Self-extend disabled: ${failed} failed tasks (fix issues before extending)`);
-    } else if (SELF_EXTEND && !DRY_RUN && (!item || (doneCount > 0 && doneCount % EXTEND_EVERY_N === 0 && pending === 0))) {
+    } else if (SELF_EXTEND && (!item || (doneCount > 0 && doneCount % EXTEND_EVERY_N === 0 && pending === 0))) {
       extendRound++;
       console.log(`\n🧠 PM self-extend round ${extendRound} — generating new roadmap items...`);
       const context = await getProjectContext();
@@ -1354,7 +1355,6 @@ WORKFLOW — follow this every time:
       let dryTargetAgent = expanded.targetAgent || (await routeAgent(item.text));
       await markItem(item.lineIdx, "done", dryTargetAgent);
       doneCount++;
-      itemCount++;
       completedItems.push(item.text);
 
       await new Promise(r => setTimeout(r, 500));
