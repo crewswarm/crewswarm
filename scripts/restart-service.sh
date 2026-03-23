@@ -178,6 +178,7 @@ case "$SERVICE_ID" in
     sleep 1
     _start_detached "$HOME/.crewswarm/logs/whatsapp-bridge-stdout.log" \
       env \
+      NODE_DISABLE_COMPILE_CACHE=1 \
       WA_ALLOWED_NUMBERS="$(_config_value "$HOME/.crewswarm/crewswarm.json" "env.WA_ALLOWED_NUMBERS")" \
       CREWSWARM_RT_AUTH_TOKEN="$(_rt_token)" \
       "$NODE_BIN" "$CREWSWARM_DIR/whatsapp-bridge.mjs"
@@ -206,6 +207,7 @@ case "$SERVICE_ID" in
     lsof -ti :5020 2>/dev/null | xargs kill -9 2>/dev/null || true
     sleep 1
     _start_detached /tmp/crewswarm-mcp.log \
+      env NODE_DISABLE_COMPILE_CACHE=1 \
       "$NODE_BIN" "$CREWSWARM_DIR/scripts/mcp-server.mjs"
     echo "✅ mcp restart requested"
     ;;
