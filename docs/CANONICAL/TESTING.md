@@ -10,7 +10,7 @@ Docs explain behavior. Tests enforce it.
 
 - unit tests for intent/routing logic
 - smoke scripts for end-to-end behavior
-- Playwright browser automation for Vibe/Studio UI flows
+- Playwright browser automation for Dashboard and Vibe/Studio UI flows
 - runtime/module load checks
 - targeted regression tests for production failures
 
@@ -27,9 +27,15 @@ Routing changes should keep tests for:
 ## Useful commands
 
 ```bash
+# Full Node test aggregate
+npm run test:all
+
 # Unit tests (no services required)
 node --test test/unit/mention-routing-intent.test.mjs
 node --test test/unit/thread-binding.test.mjs
+
+# Integration tests (mostly hermetic)
+node --test test/integration/*.test.mjs
 
 # Static smoke (syntax, build, health — no services)
 npm run smoke:static
@@ -41,6 +47,9 @@ npm run smoke
 
 # Node E2E (requires crew-lead on 5010)
 node --test test/e2e/*.test.mjs
+
+# Browser E2E (requires dashboard + vibe + crew-lead)
+node node_modules/playwright/cli.js test tests/e2e --reporter=list
 ```
 
 ## Live smoke (npm run smoke)
@@ -55,12 +64,28 @@ Used by CI integration job on push. Requires `GROQ_API_KEY` and `CREWSWARM_RT_TO
 
 ## Browser automation (Playwright)
 
-Playwright is configured for `tests/e2e/*.spec.js` but no specs exist yet. To add:
+Playwright is configured for `tests/e2e/*.spec.js`.
+
+Current browser coverage includes:
+
+- Dashboard Services tab rendering and status badges
+- Dashboard Engines tab rendering and engine toggle POST wiring
+- Dashboard Workflows tab list/editor flows, `New`, `Add Stage`, and `Run Now`
+- Dashboard chat dispatch through crew-lead
+- Vibe project selector readiness and file tree loading
+- Vibe Monaco file open and autosave persistence via API
+- Vibe chat send/render, project-switch chat isolation, and chat mode switching
+
+Main specs:
+
+- `tests/e2e/dashboard-tabs.spec.js`
+- `tests/e2e/dispatch-surfaces.spec.js`
+- `tests/e2e/vibe-editor.spec.js`
+
+Run:
 
 ```bash
-mkdir -p tests/e2e
-# Add *.spec.js files, then:
-npx playwright test tests/e2e
+node node_modules/playwright/cli.js test tests/e2e --reporter=list
 npx playwright install   # if browsers not installed
 ```
 

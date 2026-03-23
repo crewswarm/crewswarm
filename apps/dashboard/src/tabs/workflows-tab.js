@@ -441,7 +441,8 @@ function renderWorkflowEditor(wf, meta = {}) {
   wireWorkflowEditorEvents();
 }
 
-function collectWorkflowFromForm() {
+function collectWorkflowFromForm(options = {}) {
+  const { includeIncompleteStages = false } = options;
   const name = (document.getElementById("wfName")?.value || "").trim();
   const description = (
     document.getElementById("wfDescription")?.value || ""
@@ -456,7 +457,7 @@ function collectWorkflowFromForm() {
       const task = row.querySelector(".wf-task")?.value?.trim() || "";
       return { agent, task, ...(tool ? { tool } : {}) };
     })
-    .filter((s) => s.agent && s.task);
+    .filter((s) => includeIncompleteStages || (s.agent && s.task));
   const existingSteps = Array.isArray(wfState.editorWorkflow?.steps)
     ? wfState.editorWorkflow.steps
     : [];
@@ -593,7 +594,7 @@ function wireWorkflowEditorEvents() {
 
   document.getElementById("wfAddStageBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
-    const current = collectWorkflowFromForm();
+    const current = collectWorkflowFromForm({ includeIncompleteStages: true });
     current.workflow.stages.push({ agent: "crew-main", task: "", tool: "" });
     renderWorkflowEditor({ name: current.name, ...current.workflow });
   });
@@ -602,7 +603,7 @@ function wireWorkflowEditorEvents() {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       const idx = Number(btn.dataset.stageIndex || "-1");
-      const current = collectWorkflowFromForm();
+      const current = collectWorkflowFromForm({ includeIncompleteStages: true });
       current.workflow.stages = current.workflow.stages.filter(
         (_, i) => i !== idx,
       );
@@ -618,7 +619,7 @@ function wireWorkflowEditorEvents() {
       e.preventDefault();
       const idx = Number(btn.dataset.stageIndex || "-1");
       if (idx <= 0) return;
-      const current = collectWorkflowFromForm();
+      const current = collectWorkflowFromForm({ includeIncompleteStages: true });
       const [stage] = current.workflow.stages.splice(idx, 1);
       current.workflow.stages.splice(idx - 1, 0, stage);
       renderWorkflowEditor({ name: current.name, ...current.workflow });
@@ -629,7 +630,7 @@ function wireWorkflowEditorEvents() {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       const idx = Number(btn.dataset.stageIndex || "-1");
-      const current = collectWorkflowFromForm();
+      const current = collectWorkflowFromForm({ includeIncompleteStages: true });
       if (idx < 0 || idx >= current.workflow.stages.length - 1) return;
       const [stage] = current.workflow.stages.splice(idx, 1);
       current.workflow.stages.splice(idx + 1, 0, stage);
@@ -641,7 +642,7 @@ function wireWorkflowEditorEvents() {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       const idx = Number(btn.dataset.stageIndex || "-1");
-      const current = collectWorkflowFromForm();
+      const current = collectWorkflowFromForm({ includeIncompleteStages: true });
       if (idx < 0 || idx >= current.workflow.stages.length) return;
       const source = current.workflow.stages[idx];
       current.workflow.stages.splice(idx + 1, 0, { ...source });

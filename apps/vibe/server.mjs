@@ -209,6 +209,37 @@ function getEncodedAsset(filePath, acceptEncoding = "") {
   return { filePath, encoding: null };
 }
 
+function readUtf8FileSyncWithRetry(filePath, attempts = 3) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return fs.readFileSync(filePath, "utf8");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function readFileWithRetry(filePath, attempts = 3, delayMs = 25) {
+  return new Promise((resolve, reject) => {
+    const tryRead = (attempt) => {
+      fs.readFile(filePath, (err, content) => {
+        if (!err) {
+          resolve(content);
+          return;
+        }
+        if (attempt < attempts) {
+          setTimeout(() => tryRead(attempt + 1), delayMs);
+          return;
+        }
+        reject(err);
+      });
+    };
+    tryRead(1);
+  });
+}
+
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json",
@@ -370,11 +401,18 @@ export function readProjectMessages(projectId, limit = 50) {
     return [];
   }
 
-  const lines = fs
-    .readFileSync(file, "utf8")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+  let lines;
+  try {
+    lines = readUtf8FileSyncWithRetry(file)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch (error) {
+    console.warn(
+      `[vibe] Failed to read project messages for ${projectId}: ${error.message}`,
+    );
+    return [];
+  }
 
   return lines
     .slice(-Math.max(1, Math.min(Number(limit) || 50, 200)))
@@ -1682,38 +1720,37 @@ export const server = http.createServer(async (req, res) => {
     req.headers["accept-encoding"] || "",
   );
 
-  fs.readFile(servedPath, (err, content) => {
-    if (err) {
+  readFileWithRetry(servedPath)
+    .then((content) => {
+      const headers = {
+        "Content-Type": contentType,
+        "Cache-Control": getCacheControlHeader(filePath),
+        Vary: "Accept-Encoding",
+      };
+
+      if (encoding) {
+        headers["Content-Encoding"] = encoding;
+      }
+
+      res.writeHead(200, headers);
+      res.end(content);
+    })
+    .catch((err) => {
       if (err.code === "ENOENT") {
-        fs.readFile(path.join(DIST_DIR, "index.html"), (fallbackError, html) => {
-          if (fallbackError) {
-            res.writeHead(500);
-            res.end("Server error");
-          } else {
+        readFileWithRetry(path.join(DIST_DIR, "index.html"))
+          .then((html) => {
             res.writeHead(200, { "Content-Type": "text/html" });
             res.end(html);
-          }
-        });
-      } else {
-        res.writeHead(500);
-        res.end("Server error");
+          })
+          .catch(() => {
+            res.writeHead(500);
+            res.end("Server error");
+          });
+        return;
       }
-      return;
-    }
-
-    const headers = {
-      "Content-Type": contentType,
-      "Cache-Control": getCacheControlHeader(filePath),
-      Vary: "Accept-Encoding",
-    };
-
-    if (encoding) {
-      headers["Content-Encoding"] = encoding;
-    }
-
-    res.writeHead(200, headers);
-    res.end(content);
-  });
+      res.writeHead(500);
+      res.end("Server error");
+    });
 });
 
 const terminalWss = new WebSocketServer({ noServer: true });
