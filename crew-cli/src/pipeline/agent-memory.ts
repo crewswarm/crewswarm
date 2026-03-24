@@ -203,7 +203,7 @@ export class AgentMemory {
     oldestFact: string | null;
     newestFact: string | null;
   } {
-    const facts = this.state.facts;
+    const facts = this.state.facts || [];
     const timestamps = facts.map(f => f.timestamp).sort();
     const providers = Array.from(new Set(
       facts.map(f => f.provider).filter(Boolean) as string[]
