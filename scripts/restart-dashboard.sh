@@ -39,6 +39,7 @@ wait_for_dashboard() {
 }
 
 start_dashboard() {
+  export NODE_DISABLE_COMPILE_CACHE=1
   if command -v setsid >/dev/null 2>&1; then
     setsid "$NODE_BIN" "$DASHBOARD_SCRIPT" >> "$LOG_FILE" 2>&1 < /dev/null &
   else

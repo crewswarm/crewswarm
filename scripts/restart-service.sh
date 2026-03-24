@@ -139,6 +139,7 @@ case "$SERVICE_ID" in
     _wait_for_port_free 18889 12 || true
     _start_detached /tmp/opencrew-rt-daemon.log \
       env \
+      NODE_DISABLE_COMPILE_CACHE=1 \
       CREWSWARM_RT_AUTH_TOKEN="$(_rt_token)" \
       OPENCLAW_ALLOWED_AGENTS="$(_allowed_agents)" \
       "$NODE_BIN" "$CREWSWARM_DIR/scripts/opencrew-rt-daemon.mjs"
@@ -150,6 +151,7 @@ case "$SERVICE_ID" in
     sleep 1
     _start_detached /tmp/start-crew.log \
       env \
+      NODE_DISABLE_COMPILE_CACHE=1 \
       CREWSWARM_DIR="$CREWSWARM_DIR" \
       SKIP_CREW_LEAD=1 \
       "$NODE_BIN" "$CREWSWARM_DIR/scripts/start-crew.mjs" --force
@@ -166,6 +168,7 @@ case "$SERVICE_ID" in
     sleep 1
     _start_detached /tmp/telegram-bridge.log \
       env \
+      NODE_DISABLE_COMPILE_CACHE=1 \
       TELEGRAM_BOT_TOKEN="$TG_TOKEN" \
       TELEGRAM_TARGET_AGENT="$(_config_value "$HOME/.crewswarm/telegram-bridge.json" "targetAgent")" \
       CREWSWARM_RT_AUTH_TOKEN="$(_rt_token)" \
@@ -199,6 +202,7 @@ case "$SERVICE_ID" in
       exit 1
     fi
     _start_detached /tmp/opencode.log \
+      env NODE_DISABLE_COMPILE_CACHE=1 \
       "$OPENCODE_BIN" serve --port 4096 --hostname 127.0.0.1
     echo "✅ opencode restart requested"
     ;;
