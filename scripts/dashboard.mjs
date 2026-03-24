@@ -6932,8 +6932,8 @@ ORDER BY day DESC, cost DESC;`;
       } = await import("../lib/memory/shared-adapter.mjs");
 
       try {
-        const agentMemoryStats = getMemoryStats("crew-lead");
-        const keeperStats = await getKeeperStats(process.cwd());
+        const agentMemoryStats = isSharedMemoryAvailable() ? getMemoryStats("crew-lead") : null;
+        const keeperStats = isSharedMemoryAvailable() ? await getKeeperStats(process.cwd()) : null;
 
         res.end(
           JSON.stringify({
