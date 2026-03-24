@@ -127,9 +127,9 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/Desktop/crewswarm/package.json`
-- `/Users/jeffhobbs/Desktop/crewswarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/scripts/smoke.sh`
+- `/Users/jeffhobbs/CrewSwarm/package.json`
+- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
+- `/Users/jeffhobbs/CrewSwarm/scripts/smoke.sh`
 - docs that mention `frontend/`
 
 ### If `studio/` moves to `apps/vibe/`
@@ -144,11 +144,11 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/Desktop/crewswarm/package.json`
-- `/Users/jeffhobbs/Desktop/crewswarm/start-studio.sh`
-- `/Users/jeffhobbs/Desktop/crewswarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/contrib/swiftbar/openswitch.10s.sh`
-- `/Users/jeffhobbs/Desktop/crewswarm/tests/e2e/studio-test-utils.js`
+- `/Users/jeffhobbs/CrewSwarm/package.json`
+- `/Users/jeffhobbs/CrewSwarm/start-studio.sh`
+- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
+- `/Users/jeffhobbs/CrewSwarm/contrib/swiftbar/openswitch.10s.sh`
+- `/Users/jeffhobbs/CrewSwarm/tests/e2e/studio-test-utils.js`
 - docs that mention `studio/`
 
 ### If `crew-cli/` moves to `packages/crew-cli/`
@@ -162,9 +162,9 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/Desktop/crewswarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/package.json`
-- `/Users/jeffhobbs/Desktop/crewswarm/AGENTS.md`
+- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
+- `/Users/jeffhobbs/CrewSwarm/package.json`
+- `/Users/jeffhobbs/CrewSwarm/AGENTS.md`
 - crew-cli docs and internal scripts
 
 ### If `lib/` moves to `packages/core/`
@@ -180,12 +180,12 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/Desktop/crewswarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/crew-lead.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/gateway-bridge.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/test/**/*.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/tests/**/*.js`
-- `/Users/jeffhobbs/Desktop/crewswarm/crew-cli/**`
+- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
+- `/Users/jeffhobbs/CrewSwarm/crew-lead.mjs`
+- `/Users/jeffhobbs/CrewSwarm/gateway-bridge.mjs`
+- `/Users/jeffhobbs/CrewSwarm/test/**/*.mjs`
+- `/Users/jeffhobbs/CrewSwarm/tests/**/*.js`
+- `/Users/jeffhobbs/CrewSwarm/crew-cli/**`
 
 ### If `crew-lead.mjs` or `gateway-bridge.mjs` moves
 
@@ -199,10 +199,10 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/Desktop/crewswarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/scripts/restart-dashboard.sh`
-- `/Users/jeffhobbs/Desktop/crewswarm/scripts/start-crew.mjs`
-- `/Users/jeffhobbs/Desktop/crewswarm/contrib/swiftbar/openswitch.10s.sh`
+- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
+- `/Users/jeffhobbs/CrewSwarm/scripts/restart-dashboard.sh`
+- `/Users/jeffhobbs/CrewSwarm/scripts/start-crew.mjs`
+- `/Users/jeffhobbs/CrewSwarm/contrib/swiftbar/openswitch.10s.sh`
 - canonical docs and AGENTS docs
 
 ## Lowest-risk phase 1
@@ -236,9 +236,9 @@ Phase 1 should avoid changing any runtime directory used by production services.
 
 ### Phase 1 files to patch
 
-- `/Users/jeffhobbs/Desktop/crewswarm/package.json`
-- `/Users/jeffhobbs/Desktop/crewswarm/docs/CANONICAL/TESTING.md`
-- `/Users/jeffhobbs/Desktop/crewswarm/docs/CANONICAL/README.md`
+- `/Users/jeffhobbs/CrewSwarm/package.json`
+- `/Users/jeffhobbs/CrewSwarm/docs/CANONICAL/TESTING.md`
+- `/Users/jeffhobbs/CrewSwarm/docs/CANONICAL/README.md`
 - any smoke or CI scripts that reference moved test files
 
 ## Phase 2

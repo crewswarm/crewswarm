@@ -107,6 +107,6 @@ if (existsSync(memoryFile)) {
 
 console.log('\n=== Demo Complete ===');
 console.log('\nTo enable cross-system sharing:');
-console.log('  1. Add to .env: CREW_MEMORY_DIR=/Users/jeffhobbs/Desktop/CrewSwarm/shared-memory');
+console.log('  1. Add to .env: CREW_MEMORY_DIR=/Users/jeffhobbs/CrewSwarm/shared-memory');
 console.log('  2. All agents (Cursor, CLI, Gateway) will use same storage');
 console.log('  3. Facts stored by Cursor are immediately visible to CLI and Gateway');

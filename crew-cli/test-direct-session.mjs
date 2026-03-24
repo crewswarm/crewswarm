@@ -1,6 +1,6 @@
 import { SessionManager } from './src/session/manager.ts';
 
-const sm = new SessionManager('/Users/jeffhobbs/Desktop/CrewSwarm/crew-cli/testproject');
+const sm = new SessionManager('/Users/jeffhobbs/CrewSwarm/crew-cli/testproject');
 await sm.ensureInitialized();
 
 console.log('📝 Appending test entry...');

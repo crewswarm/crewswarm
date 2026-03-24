@@ -320,4 +320,4 @@
 **Roadmap version:** 1.0  
 **Last updated:** 2026-02-27  
 **Owner:** crewswarm team  
-**Output directory:** `/Users/jeffhobbs/Desktop/crewswarm/crew-cli`
+**Output directory:** `/Users/jeffhobbs/CrewSwarm/crew-cli`

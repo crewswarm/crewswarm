@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-cd /Users/jeffhobbs/Desktop/crewswarm/crew-cli
+cd /Users/jeffhobbs/CrewSwarm/crew-cli
 npm install
 chmod +x bin/crew.js
 ```
@@ -14,7 +14,7 @@ The crew-cli requires the crewswarm gateway to be running:
 
 ```bash
 # In a separate terminal
-cd /Users/jeffhobbs/Desktop/crewswarm
+cd /Users/jeffhobbs/CrewSwarm
 npm run crew-lead
 ```
 
