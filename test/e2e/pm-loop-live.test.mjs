@@ -49,7 +49,7 @@ async function apiPost(base, path_, body, token) {
   const res = await fetch(`${base}${path_}`, {
     method: "POST", headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(20_000),
   });
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
