@@ -34,7 +34,7 @@ let dashboardUp = false;
 
 async function checkDashboard() {
   try {
-    const res = await fetch(`${DASHBOARD_BASE}/health`, {
+    const res = await fetch(`${DASHBOARD_BASE}/api/health`, {
       signal: AbortSignal.timeout(3000),
     });
     return res.ok;

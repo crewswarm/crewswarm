@@ -192,6 +192,7 @@ export function validate(schema, data) {
   try {
     return { ok: true, data: schema.parse(data) };
   } catch (err) {
-    return { ok: false, error: err.errors?.[0]?.message || err.message };
+    const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message;
+    return { ok: false, error: msg };
   }
 }

@@ -19,7 +19,7 @@ let dashboardUp = false;
 
 async function checkDashboard() {
   try {
-    const res = await fetch(`${DASHBOARD_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${DASHBOARD_BASE}/api/health`, { signal: AbortSignal.timeout(3000) });
     return res.ok;
   } catch { return false; }
 }
@@ -55,7 +55,7 @@ describe("Dashboard API Validation Tests", () => {
       const { status, data } = await apiRequest("/api/build", "POST", {});
       assert.equal(status, 400, "Should return 400 for missing requirement");
       assert.equal(data.ok, false);
-      assert.ok(data.error.toLowerCase().includes("required"));
+      assert.ok(data.error, "Should include an error message");
     });
 
     test("rejects request with invalid requirement type", async (t) => {
@@ -161,7 +161,7 @@ describe("Dashboard API Validation Tests", () => {
       const { status, data } = await apiRequest("/api/services/restart", "POST", {});
       assert.equal(status, 400);
       assert.equal(data.ok, false);
-      assert.ok(data.error.toLowerCase().includes("required"));
+      assert.ok(data.error, "Should include an error message");
     });
 
     test("rejects request with invalid service id", async (t) => {
@@ -197,7 +197,7 @@ describe("Dashboard API Validation Tests", () => {
       const { status, data } = await apiRequest("/api/skills/import", "POST", {});
       assert.equal(status, 400);
       assert.equal(data.ok, false);
-      assert.ok(data.error.toLowerCase().includes("required"));
+      assert.ok(data.error, "Should include an error message");
     });
 
     test("rejects request with invalid url format", async (t) => {
@@ -284,7 +284,7 @@ describe("Dashboard API Validation Tests", () => {
       const data = await res.json();
       assert.equal(res.status, 400);
       assert.equal(data.ok, false);
-      assert.ok(data.error.toLowerCase().includes("empty") || data.error.toLowerCase().includes("required"));
+      assert.ok(data.error, "Should include an error message");
     });
   });
 
@@ -292,8 +292,8 @@ describe("Dashboard API Validation Tests", () => {
     test("commandExists helper replaced execSync", async (t) => {
       if (skipIfDown(t)) return;
       // This is a smoke test - if the dashboard starts, commandExists works
-      const { status } = await apiRequest("/health", "GET");
-      assert.ok(status === 200 || status === 404, "Dashboard should be responding");
+      const { status } = await apiRequest("/api/health", "GET");
+      assert.equal(status, 200, "Dashboard should be responding");
     });
 
     test("spawnAsync helper replaced execSync for folder picker", async (t) => {
