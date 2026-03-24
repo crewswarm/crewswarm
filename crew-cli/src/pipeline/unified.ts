@@ -706,7 +706,8 @@ If output has blockers, set approved=false.`,
       model: this.getQaModel(),
       temperature: 0.1,
       maxTokens: 2000,
-      sessionId
+      sessionId,
+      jsonMode: true
     });
     const rawResult = String(result.result || '');
     try {
@@ -1935,7 +1936,7 @@ Return ONLY valid JSON:
         
         // Use built-in L3_SYSTEM_PROMPT (has THINK→ACT→OBSERVE + tool list)
         // Do NOT override with template basePrompt — those are generic and don't mention tools
-        const result = await runAgenticWorker(composedPrompt.finalPrompt, this.sandbox, {
+        const result = await this.runWorker(composedPrompt.finalPrompt, {
           model: process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash',
           maxTurns: 25,
           verbose,
@@ -2088,16 +2089,107 @@ Return ONLY valid JSON:
    */
   private synthesizeResults(results: L3Result): string {
     const sections = results.results.map(r => {
+      const filesChanged = r.filesChanged || [];
+      const verification = r.verification || [];
       const metadata = [
-        `Files: ${r.filesChanged.length > 0 ? r.filesChanged.join(', ') : '(none reported)'}`,
+        `Files: ${filesChanged.length > 0 ? filesChanged.join(', ') : '(none reported)'}`,
         `Verification: ${r.verificationPassed ? 'passed' : 'not confirmed'}`,
-        ...(r.verification.length > 0 ? [`Evidence: ${r.verification.join(' | ')}`] : []),
+        ...(verification.length > 0 ? [`Evidence: ${verification.join(' | ')}`] : []),
         ...(r.escalationNeeded ? [`Escalation: ${r.escalationReason || 'required'}`] : [])
       ].join('\n');
       return `### ${r.persona} (${r.workUnitId})\n\n${metadata}\n\n${r.output}`;
     });
 
     return sections.join('\n\n---\n\n');
+  }
+
+  /**
+   * Run a worker unit — delegates to agentic executor by default.
+   * Can be overridden in tests to use a mock executor.
+   */
+  async runWorker(prompt: string, options: { model?: string; maxTurns?: number; verbose?: boolean; priorDiscoveredFiles?: string[] }): Promise<{ output: string; cost?: number; turns?: number; discoveredFiles?: string[] }> {
+    if (this.executor && typeof this.executor.execute === 'function') {
+      const result = await this.executor.execute(prompt, options);
+      return { output: String(result.result || ''), cost: result.costUsd || 0, turns: 1 };
+    }
+    return runAgenticWorker(prompt, this.sandbox, options);
+  }
+
+  /**
+   * Check if native Gemini tool loop can be used for a given model
+   */
+  private canUseNativeGeminiToolLoop(modelId: string): boolean {
+    if (!process.env.GEMINI_API_KEY) return false;
+    const mode = (process.env.CREW_TOOL_MODE || 'auto').toLowerCase();
+    if (mode === 'markers') return false;
+    const lower = String(modelId || '').toLowerCase();
+    return lower.includes('gemini');
+  }
+
+  /**
+   * Parse tool call markers from LLM output
+   */
+  private parseToolCalls(output: string): Array<{ toolName: string; params: Record<string, string> }> {
+    const calls: Array<{ toolName: string; params: Record<string, string> }> = [];
+    const lines = output.split('\n');
+
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // @@WRITE_FILE <path>
+      const writeMatch = line.match(/^@@WRITE_FILE\s+(.+)$/);
+      if (writeMatch) {
+        const filePath = writeMatch[1].trim().replace(/[`;\s]+$/g, '');
+        // Find @@END_FILE
+        let content = '';
+        let found = false;
+        let j = i + 1;
+        while (j < lines.length) {
+          if (lines[j].trim() === '@@END_FILE') {
+            found = true;
+            break;
+          }
+          content += (content ? '\n' : '') + lines[j];
+          j++;
+        }
+        if (found) {
+          calls.push({ toolName: 'write_file', params: { file_path: filePath, content } });
+          i = j + 1;
+          continue;
+        }
+        // No terminator — skip just the @@WRITE_FILE line
+        i++;
+        continue;
+      }
+
+      // @@EDIT "old" → "new" <path>
+      const editMatch = line.match(/^@@EDIT\s+"(.+?)"\s*→\s*"(.+?)"\s+(.+)$/);
+      if (editMatch) {
+        let editPath = editMatch[3].trim().replace(/[`;\s]+$/g, '');
+        // Reject paths with @@ (likely garbled)
+        if (!editPath.includes('@@')) {
+          calls.push({ toolName: 'edit', params: { path: editPath, old: editMatch[1], new: editMatch[2] } });
+        }
+        i++;
+        continue;
+      }
+
+      // @@MKDIR <path>
+      const mkdirMatch = line.match(/^@@MKDIR\s+(.+)$/);
+      if (mkdirMatch) {
+        const dirPath = mkdirMatch[1].trim().replace(/[`;\s]+$/g, '');
+        if (!dirPath.includes('@@')) {
+          calls.push({ toolName: 'mkdir', params: { path: dirPath } });
+        }
+        i++;
+        continue;
+      }
+
+      i++;
+    }
+
+    return calls;
   }
 
   /**
