@@ -7,8 +7,8 @@
 
 import fs from 'fs';
 
-const ROADMAP = fs.readFileSync('/Users/jeffhobbs/Desktop/CrewSwarm/crew-cli/ide-extension/ROADMAP.md', 'utf8');
-const PDD = fs.readFileSync('/Users/jeffhobbs/Desktop/CrewSwarm/crew-cli/ide-extension/PDD.md', 'utf8');
+const ROADMAP = fs.readFileSync('/Users/jeffhobbs/CrewSwarm/crew-cli/ide-extension/ROADMAP.md', 'utf8');
+const PDD = fs.readFileSync('/Users/jeffhobbs/CrewSwarm/crew-cli/ide-extension/PDD.md', 'utf8');
 
 const TASK = `Build the MVP (Phase 1) of a VS Code extension for CrewSwarm per the specs in the roadmap.
 

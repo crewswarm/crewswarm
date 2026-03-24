@@ -1573,7 +1573,7 @@ async function loadFiles(forceRefresh) {
   const dir =
     document.getElementById("filesDir").value.trim() ||
     window._crewCwd ||
-    (window._crewHome ? window._crewHome + "/Desktop/crewswarm" : "");
+    (window._crewHome ? window._crewHome + "/CrewSwarm" : "");
   showLoading(el, "Scanning " + dir + "...");
   try {
     const data = await getJSON("/api/files?dir=" + encodeURIComponent(dir));

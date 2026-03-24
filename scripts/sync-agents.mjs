@@ -136,7 +136,7 @@ Last updated: ${new Date().toISOString()}
 
 ## Dispatch command
 \`\`\`bash
-node ~/Desktop/crewswarm/gateway-bridge.mjs --send <agent-name> "<task>"
+node ~/CrewSwarm/gateway-bridge.mjs --send <agent-name> "<task>"
 \`\`\`
 
 ## Available agents

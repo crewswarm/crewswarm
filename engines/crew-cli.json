@@ -10,8 +10,8 @@
     "envVar": "CREWSWARM_CREW_CLI_ENABLED"
   },
   "bin": "crew",
-  "binAlternate": "~/Desktop/crewswarm/crew-cli/bin/crew.js",
-  "installCmd": "cd ~/Desktop/crewswarm/crew-cli && npm install && npm run build",
+  "binAlternate": "~/CrewSwarm/crew-cli/bin/crew.js",
+  "installCmd": "cd ~/CrewSwarm/crew-cli && npm install && npm run build",
   "installUrl": "https://github.com/crewswarm/crewswarm/tree/main/crew-cli",
   "docsUrl": "https://github.com/crewswarm/crewswarm/blob/main/crew-cli/docs/OVERVIEW.md",
   "color": "#8b5cf6",
