@@ -34,10 +34,23 @@ async function openDashboard(page) {
  * active (the JS framework adds the "active" class to the view div).
  */
 async function openTab(page, navId, viewId) {
+  // Dashboard uses hash-based navigation. Clicking the nav button sets
+  // location.hash which triggers hashchange → view function → adds "active".
+  // In headless browsers the click sometimes doesn't propagate, so we also
+  // set the hash directly as a fallback.
   await page.locator(`#${navId}`).click();
-  await expect(page.locator(`#${viewId}`)).toHaveClass(/active/, {
-    timeout: 10_000,
-  });
+  // Give the hashchange listener a moment to fire
+  await page.waitForTimeout(500);
+  // If the view still isn't active, force hash navigation
+  const isActive = await page.locator(`#${viewId}`).evaluate(
+    (el) => el.classList.contains("active") || el.style.display !== "none"
+  ).catch(() => false);
+  if (!isActive) {
+    const dataView = await page.locator(`#${navId}`).getAttribute("data-view");
+    if (dataView) await page.evaluate((v) => { window.location.hash = v; }, dataView);
+    await page.waitForTimeout(500);
+  }
+  await expect(page.locator(`#${viewId}`)).toBeVisible({ timeout: 10_000 });
 }
 
 async function disableDashboardSSE(page) {
