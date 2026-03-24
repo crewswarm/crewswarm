@@ -80,7 +80,7 @@ stop_crew_lead_processes
 # Step 4: Start fresh crew-lead
 echo "  → Starting crew-lead at $CREW_LEAD_SCRIPT..."
 cd "$CREWSWARM_DIR"
-nohup "$NODE_BIN" "$CREW_LEAD_SCRIPT" >> "$LOG_FILE" 2>&1 &
+NODE_DISABLE_COMPILE_CACHE=1 nohup "$NODE_BIN" "$CREW_LEAD_SCRIPT" >> "$LOG_FILE" 2>&1 &
 
 # Step 5: Wait for startup and verify
 echo "  → Verifying startup..."
