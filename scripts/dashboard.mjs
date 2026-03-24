@@ -28,6 +28,13 @@ import {
   hasEngineConfigured,
   getToolPermissions,
 } from "../lib/agents/tool-instructions.mjs";
+import {
+  StartBuildSchema,
+  StartPMLoopSchema,
+  ServiceActionSchema,
+  ImportSkillSchema,
+  validate,
+} from "./dashboard-validation.mjs";
 import { execCrewLeadTools } from "../lib/crew-lead/tools.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2346,9 +2353,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/build" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { requirement, projectId } = JSON.parse(body || "{}");
-      if (!requirement || typeof requirement !== "string")
-        throw new Error("missing requirement");
+      let parsed;
+      try { parsed = JSON.parse(body || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(StartBuildSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { requirement, projectId } = vr.data;
       // Resolve project output dir if projectId provided
       let projectEnv = {};
       if (projectId) {
@@ -3176,7 +3193,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/pm-loop/start" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { dryRun, projectId, pmOptions = {} } = JSON.parse(body || "{}");
+      let parsed;
+      try { parsed = JSON.parse(body || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(StartPMLoopSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { dryRun, projectId, pmOptions = {} } = vr.data;
       const { spawn } = await import("node:child_process");
       const { existsSync, mkdirSync, unlinkSync } = await import("node:fs");
       const { readFile: rf } = await import("node:fs/promises");
@@ -8743,7 +8772,19 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/services/restart" && req.method === "POST") {
       let raw = "";
       for await (const chunk of req) raw += chunk;
-      const { id } = JSON.parse(raw || "{}");
+      let parsed;
+      try { parsed = JSON.parse(raw || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(ServiceActionSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { id } = vr.data;
       const { execFileSync } = await import("node:child_process");
 
       if (id === "dashboard") {
@@ -9387,8 +9428,19 @@ ORDER BY day DESC, cost DESC;`;
       let body = "";
       for await (const chunk of req) body += chunk;
       try {
-        const { url: skillUrl } = JSON.parse(body || "{}");
-        if (!skillUrl) throw new Error("url is required");
+        let parsed;
+        try { parsed = JSON.parse(body || "{}"); } catch {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+          return;
+        }
+        const vr = validate(ImportSkillSchema, parsed);
+        if (!vr.ok) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: vr.error }));
+          return;
+        }
+        const { url: skillUrl } = vr.data;
 
         // ── Security: validate import source URL ─────────────────────────────
         let parsedImportUrl;
@@ -9540,7 +9592,7 @@ ORDER BY day DESC, cost DESC;`;
         );
       } catch (e) {
         res.writeHead(400, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: e.message }));
+        res.end(JSON.stringify({ ok: false, error: e.message }));
       }
       return;
     }
@@ -9576,8 +9628,8 @@ ORDER BY day DESC, cost DESC;`;
     res.end("not found");
   } catch (err) {
     if (!res.headersSent) {
-      res.writeHead(500, { "content-type": "text/plain" });
-      res.end(String(err?.message || err));
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: String(err?.message || err) }));
     }
   }
 });

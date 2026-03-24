@@ -2,22 +2,17 @@
  * Integration tests for lib/runtime/spending.mjs
  * Tests loadSpending, saveSpending, and addAgentSpend.
  * Uses hermetic test mode to avoid corrupting live data.
- * 
- * NOTE: These tests are currently skipped due to module initialization issues.
- * The tokenUsage IIFE at module level runs before hermetic mode is set up.
- * TODO: Refactor spending.mjs to lazy-initialize tokenUsage.
  */
 
 // IMPORTANT: Setup hermetic mode BEFORE other imports
 import { setupHermeticTest } from "../helpers/hermetic.mjs";
 setupHermeticTest();
 
-import { test, describe, before, after, skip } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "assert/strict";
 import { loadSpending, saveSpending, addAgentSpend } from "../../lib/runtime/spending.mjs";
 
-// Skip all tests until module initialization issue is fixed
-const testOrSkip = skip;
+const testOrSkip = test;
 
 describe("loadSpending", () => {
   testOrSkip("returns an object with date, global, and agents fields", () => {
