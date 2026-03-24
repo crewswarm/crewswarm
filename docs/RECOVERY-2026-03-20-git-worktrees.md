@@ -3,11 +3,11 @@
 ## What was done
 
 1. **Frozen copies** of all five broken Cursor worktrees to:
-   - `/Users/jeffhobbs/Desktop/CrewSwarm-recovery-backup-2026-03-20/worktree-{cju,ehh,fuc,jvk,leb}/`
+   - `/Users/jeffhobbs/CrewSwarm-recovery-backup-2026-03-20/worktree-{cju,ehh,fuc,jvk,leb}/`
    - Total size ~2.5 GB (full tree snapshots, not Git objects).
 
 2. **Inventory** — `diff -rq` of backup `cju/crew-cli` vs repo `crew-cli` (268 lines):
-   - `/Users/jeffhobbs/Desktop/CrewSwarm-recovery-backup-2026-03-20/inventory-diff-cju-crew-cli-vs-main.txt`
+   - `/Users/jeffhobbs/CrewSwarm-recovery-backup-2026-03-20/inventory-diff-cju-crew-cli-vs-main.txt`
    - Backup has many extra root-level `.md` notes and differs in `LICENSE` / `README.md`; main repo has paths like `.opencode/` and deleted Gemini tests.
 
 3. **Git metadata cleanup**
@@ -38,10 +38,10 @@
 ## Restoring files from backup
 
 ```bash
-BACKUP="/Users/jeffhobbs/Desktop/CrewSwarm-recovery-backup-2026-03-20"
+BACKUP="/Users/jeffhobbs/CrewSwarm-recovery-backup-2026-03-20"
 # Example: restore one Gemini test (adjust paths)
 cp "$BACKUP/worktree-cju/crew-cli/src/tools/gemini/read-file.test.ts" \
-   /Users/jeffhobbs/Desktop/CrewSwarm/crew-cli/src/tools/gemini/
+   /Users/jeffhobbs/CrewSwarm/crew-cli/src/tools/gemini/
 ```
 
 Review diffs before bulk restore; backup includes a lot of scratch `.md` you may not want on `main`.

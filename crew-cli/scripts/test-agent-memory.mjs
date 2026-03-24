@@ -69,6 +69,6 @@ if (existsSync(vendorPath)) {
 
 console.log('\n=== Integration Complete ===');
 console.log('To test runtime behavior:');
-console.log('  cd /Users/jeffhobbs/Desktop/CrewSwarm');
+console.log('  cd /Users/jeffhobbs/CrewSwarm');
 console.log('  cd crew-cli');
 console.log('  npm run crew -- --help');

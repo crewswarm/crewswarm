@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CREWSWARM_DIR="${CREWSWARM_DIR:-${OPENCLAW_DIR:-$HOME/Desktop/crewswarm}}"
+CREWSWARM_DIR="${CREWSWARM_DIR:-${OPENCLAW_DIR:-$HOME/CrewSwarm}}"
 SWARM_PLUGIN_DIR="${SWARM_PLUGIN_DIR:-$HOME/swarm/.opencode/plugin}"
 # Prefer repo script so SwiftBar works without installing to ~/bin
 if [[ -x "$CREWSWARM_DIR/scripts/openswitchctl" ]]; then

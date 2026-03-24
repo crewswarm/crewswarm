@@ -15,8 +15,8 @@ import fs from 'fs';
 import path from 'path';
 
 const TASK = `Build the MVP (Phase 1) of a VS Code extension for CrewSwarm per the specs in:
-- /Users/jeffhobbs/Desktop/CrewSwarm/crew-cli/ide-extension/ROADMAP.md
-- /Users/jeffhobbs/Desktop/CrewSwarm/crew-cli/ide-extension/PDD.md
+- /Users/jeffhobbs/CrewSwarm/crew-cli/ide-extension/ROADMAP.md
+- /Users/jeffhobbs/CrewSwarm/crew-cli/ide-extension/PDD.md
 
 Output to: {{OUTPUT_DIR}}
 

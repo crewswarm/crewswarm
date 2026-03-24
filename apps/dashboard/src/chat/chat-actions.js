@@ -101,7 +101,7 @@ export function initChatActions(deps) {
     {
       id: "RUN_CMD",
       label: "Run a shell command",
-      template: "ls -la /Users/jeffhobbs/Desktop/crewswarm",
+      template: "ls -la /Users/jeffhobbs/CrewSwarm",
     },
     {
       id: "WEB_SEARCH",
