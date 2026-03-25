@@ -56,51 +56,6 @@
   }
   </script>
   <link rel="stylesheet" href="styles.css" />
-  <style>
-    .terminal-window {
-      background: #060a10;
-      border-radius: 12px;
-      padding: 24px;
-      max-width: 850px;
-      margin: 3rem auto;
-      text-align: left;
-      border: 1px solid var(--border);
-      font-family: "SF Mono", "Fira Code", monospace;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
-      font-size: 0.9rem;
-      line-height: 1.5;
-      overflow-x: auto;
-    }
-
-    .protocol-tag {
-      color: var(--accent);
-      font-weight: 800;
-      background: rgba(56, 189, 248, 0.1);
-      padding: 2px 8px;
-      border-radius: 4px;
-    }
-
-    /* Comparison Table Styles */
-    .parity-section {
-      background: rgba(0,0,0,0.2);
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-    .check-val { color: var(--green); font-weight: bold; }
-    .cross-val { color: var(--red); opacity: 0.6; }
-
-    @media (max-width: 900px) {
-      .hero h1 {
-        font-size: 2.25rem !important;
-      }
-
-      .terminal-window {
-        font-size: 0.75rem;
-        padding: 1rem;
-        margin: 2rem 0;
-      }
-    }
-  </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
   <script>
@@ -127,6 +82,20 @@
         <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
         <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
         <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+        <li role="none" class="nav-dropdown">
+          <button class="nav-dropdown-toggle" aria-haspopup="true" aria-expanded="false">
+            More
+            <svg class="nav-dropdown-chevron" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <ul class="nav-dropdown-menu" role="menu">
+            <li role="none"><a href="docs.html" role="menuitem">Docs</a></li>
+            <li role="none"><a href="cli.html" role="menuitem">CLI</a></li>
+            <li role="none"><a href="atat.html" role="menuitem">@@Protocol</a></li>
+            <li role="none"><a href="openclaw-comparison.html" role="menuitem">Compare</a></li>
+            <li role="none"><a href="about.html" role="menuitem">About</a></li>
+            <li role="none"><a href="contact.html" role="menuitem">Contact</a></li>
+          </ul>
+        </li>
         <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
       </ul>
       <div class="nav-actions">

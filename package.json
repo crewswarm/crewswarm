@@ -21,7 +21,7 @@
     "cursor"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=25"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",

@@ -49,42 +49,6 @@
   }
   </script>
   <link rel="stylesheet" href="styles.css" />
-  
-  <style>
-    .hero h1.atat-title { font-size: 5rem; font-family: var(--font-mono); color: var(--accent); margin-bottom: 1rem; letter-spacing: -0.02em; }
-    .hero .subtitle { font-size: 1.5rem; color: var(--text-muted); margin-bottom: 3rem; }
-    .comparison { max-width: 1200px; margin: 4rem auto; padding: 0 1.5rem; }
-    .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 4rem; }
-    .comparison-card { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 2rem; }
-    .comparison-card h3 { color: var(--accent); margin-bottom: 1rem; font-size: 1.25rem; }
-    .comparison-card.winner { border-color: var(--accent); box-shadow: 0 0 20px rgba(6, 182, 212, 0.2); }
-    pre { background: #000; padding: 1.5rem; border-radius: var(--radius-sm); overflow-x: auto; margin: 1rem 0; border: 1px solid var(--border); }
-    code { font-family: var(--font-mono); color: #38bdf8; font-size: 0.9rem; }
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; max-width: 900px; margin: 0 auto; text-align: center; }
-    .stat { background: var(--bg-alt); padding: 2rem; border-radius: var(--radius-lg); border: 1px solid var(--border); }
-    .stat-number { font-size: 3rem; font-weight: 700; color: var(--accent); margin-bottom: 0.5rem; }
-    .stat-label { color: var(--text-muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; }
-    .feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2rem; max-width: 1000px; margin: 4rem auto; }
-    .feature { background: var(--bg-alt); padding: 2rem; border-radius: var(--radius-lg); border: 1px solid var(--border); }
-    .feature h3 { color: var(--accent); margin-bottom: 0.75rem; }
-    .agent-badge { display: inline-block; background: linear-gradient(135deg, var(--accent) 0%, #0284c7 100%); color: white; padding: 0.5rem 1.5rem; border-radius: 50px; font-family: var(--font-mono); font-weight: 600; margin: 2rem auto; font-size: 1.1rem; box-shadow: 0 4px 20px rgba(6, 182, 212, 0.3); }
-    table { width: 100%; border-collapse: collapse; margin: 2rem 0; background: var(--bg-alt); border-radius: var(--radius-lg); overflow: hidden; }
-    th, td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--border); }
-    th { color: var(--accent); text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.05em; background: rgba(6, 182, 212, 0.05); }
-    .checkmark { color: #22c55e; font-weight: bold; }
-    .xmark { color: #ef4444; font-weight: bold; }
-    @media (max-width: 768px) { 
-      .hero h1.atat-title { font-size: 2.5rem; }
-      .hero .subtitle { font-size: 1.1rem; }
-      .comparison-grid, .feature-grid, .stats { grid-template-columns: 1fr !important; gap: 1.25rem; }
-      .stats { margin: 2rem auto; }
-      .stat { padding: 1.5rem; }
-      .stat-number { font-size: 2.25rem; }
-      .comparison { margin: 2rem auto; }
-      .comparison-card { padding: 1.5rem; }
-      table { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    }
-  </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
   <script>
@@ -95,7 +59,7 @@
   </script>
 
 </head>
-<body>
+<body class="atat-page">
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
     <div class="nav-container">
@@ -110,6 +74,20 @@
       <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
       <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
       <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+      <li role="none" class="nav-dropdown">
+        <button class="nav-dropdown-toggle" aria-haspopup="true" aria-expanded="false">
+          More
+          <svg class="nav-dropdown-chevron" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <ul class="nav-dropdown-menu" role="menu">
+          <li role="none"><a href="docs.html" role="menuitem">Docs</a></li>
+          <li role="none"><a href="cli.html" role="menuitem">CLI</a></li>
+          <li role="none"><a href="atat.html" role="menuitem">@@Protocol</a></li>
+          <li role="none"><a href="openclaw-comparison.html" role="menuitem">Compare</a></li>
+          <li role="none"><a href="about.html" role="menuitem">About</a></li>
+          <li role="none"><a href="contact.html" role="menuitem">Contact</a></li>
+        </ul>
+      </li>
       <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
     </ul>
     <div class="nav-actions">
