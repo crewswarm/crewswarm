@@ -1,7 +1,28 @@
 {
   "name": "crewswarm",
   "version": "0.5.0",
+  "description": "Local-first multi-agent orchestration platform — coordinate AI coding agents, LLMs, and tools from a single dashboard",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crewswarm/crewswarm.git"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "orchestration",
+    "multi-agent",
+    "local-first",
+    "llm",
+    "coding-agents",
+    "claude",
+    "codex",
+    "cursor"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "better-sqlite3": "^12.6.2",
