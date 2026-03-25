@@ -53,66 +53,6 @@
   }
   </script>
   <link rel="stylesheet" href="styles.css" />
-
-  <style>
-    .docs-section {
-      margin-bottom: 4rem;
-    }
-
-    .docs-section h2 {
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 0.5rem;
-      margin-bottom: 1.5rem;
-    }
-
-    pre {
-      background: #000;
-      padding: 1.5rem;
-      border-radius: var(--radius-sm);
-      overflow-x: auto;
-      margin-bottom: 1.5rem;
-      border: 1px solid var(--border);
-    }
-
-    code {
-      font-family: var(--font-mono);
-      color: #38bdf8;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 2rem;
-    }
-
-    th,
-    td {
-      text-align: left;
-      padding: 1rem;
-      border-bottom: 1px solid var(--border);
-    }
-
-    th {
-      color: var(--accent);
-      text-transform: uppercase;
-      font-size: 0.85rem;
-      letter-spacing: 0.05em;
-    }
-
-    .step-number {
-      background: var(--accent);
-      color: white;
-      width: 24px;
-      height: 24px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      margin-right: 0.5rem;
-      font-size: 0.8rem;
-      font-weight: bold;
-    }
-  </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
   <script>
@@ -139,6 +79,20 @@
         <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
         <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
         <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+        <li role="none" class="nav-dropdown">
+          <button class="nav-dropdown-toggle" aria-haspopup="true" aria-expanded="false">
+            More
+            <svg class="nav-dropdown-chevron" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <ul class="nav-dropdown-menu" role="menu">
+            <li role="none"><a href="docs.html" role="menuitem">Docs</a></li>
+            <li role="none"><a href="cli.html" role="menuitem">CLI</a></li>
+            <li role="none"><a href="atat.html" role="menuitem">@@Protocol</a></li>
+            <li role="none"><a href="openclaw-comparison.html" role="menuitem">Compare</a></li>
+            <li role="none"><a href="about.html" role="menuitem">About</a></li>
+            <li role="none"><a href="contact.html" role="menuitem">Contact</a></li>
+          </ul>
+        </li>
         <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
       </ul>
       <div class="nav-actions">

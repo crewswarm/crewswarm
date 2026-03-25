@@ -53,6 +53,55 @@
     ]
   }
   </script>
+  <!-- FAQPage structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "How do I report a crewswarm bug?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Open an issue on GitHub at https://github.com/crewswarm/crewswarm/issues/new. Include your OS, Node version, the command you ran, and the full error output."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is crewswarm free to use?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. crewswarm is open-source and free. You supply your own API keys — there is no hosted tier, no proxying of requests, and no charge for model usage."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What LLM providers does crewswarm support?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "crewswarm supports Anthropic Claude, OpenAI, Groq, Gemini, and any OpenAI-compatible endpoint. Each agent in a crew can use a different model."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I contribute to crewswarm?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Read CONTRIBUTING.md on GitHub first. It covers branch conventions, commit style, and how to run the test suite locally."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Where can I get help with crewswarm?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Start with the docs at https://crewswarm.ai/docs.html. For specific questions, open a GitHub Discussion at https://github.com/crewswarm/crewswarm/discussions. For urgent issues, email info@crewswarm.ai."
+        }
+      }
+    ]
+  }
+  </script>
   <link rel="stylesheet" href="styles.css" />
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
@@ -80,6 +129,20 @@
         <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
         <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
         <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+        <li role="none" class="nav-dropdown">
+          <button class="nav-dropdown-toggle" aria-haspopup="true" aria-expanded="false">
+            More
+            <svg class="nav-dropdown-chevron" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <ul class="nav-dropdown-menu" role="menu">
+            <li role="none"><a href="docs.html" role="menuitem">Docs</a></li>
+            <li role="none"><a href="cli.html" role="menuitem">CLI</a></li>
+            <li role="none"><a href="atat.html" role="menuitem">@@Protocol</a></li>
+            <li role="none"><a href="openclaw-comparison.html" role="menuitem">Compare</a></li>
+            <li role="none"><a href="about.html" role="menuitem">About</a></li>
+            <li role="none"><a href="contact.html" role="menuitem">Contact</a></li>
+          </ul>
+        </li>
         <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
       </ul>
       <div class="nav-actions">
@@ -119,6 +182,69 @@
           <a href="https://github.com/crewswarm/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">View
             Issues</a>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section subpage-content visible" id="faq">
+    <div class="container">
+      <h2 style="margin-bottom: 2rem;">Common questions</h2>
+      <div class="grid-2">
+
+        <section class="page-card">
+          <h3>How do I report a bug?</h3>
+          <p>Open an issue on GitHub. Include your OS, Node version, the command you ran, and the full error output. The faster you give us a repro, the faster we fix it.</p>
+          <a href="https://github.com/crewswarm/crewswarm/issues/new" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;">Open a GitHub issue &rarr;</a>
+        </section>
+
+        <section class="page-card">
+          <h3>Is crewswarm free?</h3>
+          <p>Yes. crewswarm is open-source and free to run. You supply your own API keys — we don't proxy your requests or charge for model usage. There's no hosted tier that gates features.</p>
+          <a href="index.html#get-started" style="color:var(--accent);text-decoration:underline;">Get started &rarr;</a>
+        </section>
+
+        <section class="page-card">
+          <h3>What LLM providers are supported?</h3>
+          <p>Anthropic Claude, OpenAI, Groq, Gemini, and any OpenAI-compatible endpoint. Each agent in a crew can use a different model. Mix and match based on cost, speed, or capability.</p>
+          <a href="models.html" style="color:var(--accent);text-decoration:underline;">See all supported models &rarr;</a>
+        </section>
+
+        <section class="page-card">
+          <h3>How do I contribute?</h3>
+          <p>Read CONTRIBUTING.md first — it covers branch conventions, commit style, and how to run the test suite locally. PRs that include tests get reviewed faster.</p>
+          <a href="https://github.com/crewswarm/crewswarm/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;">Read CONTRIBUTING.md &rarr;</a>
+        </section>
+
+        <section class="page-card" style="grid-column: 1 / -1;">
+          <h3>Where can I get help?</h3>
+          <p>Start with the docs — most setup questions are answered there. If you're stuck on something specific, open a GitHub Discussion so the answer is findable by the next person too. For urgent issues, email works.</p>
+          <p style="margin-top: 0.75rem;">
+            <a href="docs.html" style="color:var(--accent);text-decoration:underline;">Read the docs</a>
+            &nbsp;&middot;&nbsp;
+            <a href="https://github.com/crewswarm/crewswarm/discussions" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;">GitHub Discussions</a>
+            &nbsp;&middot;&nbsp;
+            <a href="mailto:info@crewswarm.ai" style="color:var(--accent);text-decoration:underline;">info@crewswarm.ai</a>
+          </p>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Community -->
+  <section class="section subpage-content visible" id="community">
+    <div class="container">
+      <div class="grid-2">
+        <section class="page-card" style="grid-column: 1 / -1;">
+          <h2>Built in the open</h2>
+          <p style="font-size: 1.125rem;">crewswarm is an open-source project. Every line of orchestration logic, every agent prompt template, and every architectural decision is public on GitHub. We ship in the open, discuss roadmap changes in the open, and fix bugs in the open.</p>
+          <p style="margin-top: 1rem;">If you're building on top of crewswarm, following its development, or just want to share what you've shipped — come hang out.</p>
+          <p style="margin-top: 1.25rem;">
+            <a href="https://github.com/crewswarm/crewswarm/discussions" target="_blank" rel="noopener" class="btn btn-ghost" style="margin-right: 0.75rem;">GitHub Discussions</a>
+            <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener" class="btn btn-ghost">Follow on Twitter</a>
+          </p>
+        </section>
       </div>
     </div>
   </section>
