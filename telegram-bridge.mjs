@@ -1393,7 +1393,7 @@ async function routeByState(chatId, text, threadId = null) {
     return;
   }
   if (st.mode === "bypass") {
-    // TODO: implement bypass dispatch via crew-lead /api/dispatch with direct=true, bypass=true
+    // Bypass dispatch not yet wired — falls back to chat mode
     await tgSend(chatId, `⚠️ Bypass mode not yet implemented. Falling back to chat mode.`);
     await dispatchChat(chatId, text, st.agent || "crew-main", threadId);
     return;

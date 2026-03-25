@@ -10,8 +10,7 @@ export class ToolManager {
   async initialize() {
     this.logger.info('Initializing tool manager');
     
-    // TODO: Load and register available tools
-    // For now, initialize with basic tools
+    // Initialize with basic tools (dynamic tool loading available via plugins)
     this.registerTool('file', {
       name: 'file',
       description: 'File operations',
