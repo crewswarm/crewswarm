@@ -2,25 +2,18 @@
  * Integration tests for lib/runtime/spending.mjs
  * Tests loadSpending, saveSpending, and addAgentSpend.
  * Uses hermetic test mode to avoid corrupting live data.
- * 
- * NOTE: These tests are currently skipped due to module initialization issues.
- * The tokenUsage IIFE at module level runs before hermetic mode is set up.
- * TODO: Refactor spending.mjs to lazy-initialize tokenUsage.
  */
 
 // IMPORTANT: Setup hermetic mode BEFORE other imports
 import { setupHermeticTest } from "../helpers/hermetic.mjs";
 setupHermeticTest();
 
-import { test, describe, before, after, skip } from "node:test";
+import { test, describe } from "node:test";
 import assert from "assert/strict";
 import { loadSpending, saveSpending, addAgentSpend } from "../../lib/runtime/spending.mjs";
 
-// Skip all tests until module initialization issue is fixed
-const testOrSkip = skip;
-
 describe("loadSpending", () => {
-  testOrSkip("returns an object with date, global, and agents fields", () => {
+  test("returns an object with date, global, and agents fields", () => {
     const s = loadSpending();
     assert.ok(s.date, "should have date");
     assert.ok(typeof s.global === "object", "should have global object");
@@ -29,7 +22,7 @@ describe("loadSpending", () => {
     assert.ok(typeof s.agents === "object", "should have agents object");
   });
 
-  testOrSkip("date matches today's ISO date (YYYY-MM-DD)", () => {
+  test("date matches today's ISO date (YYYY-MM-DD)", () => {
     const s = loadSpending();
     const today = new Date().toISOString().slice(0, 10);
     assert.equal(s.date, today);
@@ -37,7 +30,7 @@ describe("loadSpending", () => {
 });
 
 describe("saveSpending + loadSpending round-trip", () => {
-  testOrSkip("saves and reloads spending data correctly", () => {
+  test("saves and reloads spending data correctly", () => {
     const today = new Date().toISOString().slice(0, 10);
     const testData = {
       date: today,
@@ -53,7 +46,7 @@ describe("saveSpending + loadSpending round-trip", () => {
 });
 
 describe("addAgentSpend", () => {
-  testOrSkip("accumulates tokens for a new agent", () => {
+  test("accumulates tokens for a new agent", () => {
     const before = loadSpending();
     const initialGlobal = before.global.tokens;
     addAgentSpend("test-crew-agent", 500, 0.05);
@@ -63,7 +56,7 @@ describe("addAgentSpend", () => {
     assert.ok(after.agents["test-crew-agent"].tokens >= 500);
   });
 
-  testOrSkip("accumulates additional spend for existing agent", () => {
+  test("accumulates additional spend for existing agent", () => {
     const before = loadSpending();
     const initialTokens = (before.agents["test-crew-agent"] || { tokens: 0 }).tokens;
     addAgentSpend("test-crew-agent", 200, 0.02);
@@ -71,15 +64,15 @@ describe("addAgentSpend", () => {
     assert.ok(after.agents["test-crew-agent"].tokens >= initialTokens + 200);
   });
 
-  testOrSkip("accumulates costUSD correctly", () => {
+  test("accumulates costUSD correctly", () => {
     const before = loadSpending();
     const prevGlobalCost = before.global.costUSD;
     const prevGlobalTokens = before.global.tokens;
-    
+
     addAgentSpend("test-crew-agent-c", 1000, 0.10);
-    
+
     const after = loadSpending();
-    assert.ok(after.global.costUSD >= prevGlobalCost + 0.10 - 0.001, 
+    assert.ok(after.global.costUSD >= prevGlobalCost + 0.10 - 0.001,
       `Expected cost >= ${prevGlobalCost + 0.10}, got ${after.global.costUSD}`);
     assert.ok(after.global.tokens >= prevGlobalTokens + 1000,
       `Expected tokens >= ${prevGlobalTokens + 1000}, got ${after.global.tokens}`);
