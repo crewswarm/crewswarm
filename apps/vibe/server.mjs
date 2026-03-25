@@ -1203,10 +1203,19 @@ export function runCodexCli(opts) {
 }
 
 function handleCliChatLocally(req, res, body) {
-  const message = String(body.message || "").trim();
+  let message = String(body.message || "").trim();
   const projectDir = resolveStudioProjectPath(body.projectDir, WORKSPACE_DIR);
   const projectId = body.projectId || DEFAULT_PROJECT_ID;
   const engine = body.engine || "";
+
+  // Inject open file context from Vibe editor into the message
+  if (body.activeFile) {
+    const ctx = [`[Currently open file: ${body.activeFile}]`];
+    if (body.selectedText) {
+      ctx.push(`[Selected text (lines ${body.selectionStart || "?"}-${body.selectionEnd || "?"}):\n${body.selectedText}\n]`);
+    }
+    message = `${ctx.join("\n")}\n\n${message}`;
+  }
 
   if (!message) {
     sendJson(res, 400, { error: "message is required" });
@@ -1283,8 +1292,17 @@ function handleCliChatLocally(req, res, body) {
 }
 
 async function handleCliChatViaCrewLead(req, res, body) {
-  const message = String(body.message || "").trim();
+  let message = String(body.message || "").trim();
   const projectDir = resolveStudioProjectPath(body.projectDir, WORKSPACE_DIR);
+
+  // Inject open file context from Vibe editor into the message
+  if (body.activeFile) {
+    const ctx = [`[Currently open file: ${body.activeFile}]`];
+    if (body.selectedText) {
+      ctx.push(`[Selected text (lines ${body.selectionStart || "?"}-${body.selectionEnd || "?"}):\n${body.selectedText}\n]`);
+    }
+    message = `${ctx.join("\n")}\n\n${message}`;
+  }
   const projectId = body.projectId || DEFAULT_PROJECT_ID;
   const sessionId = String(body.sessionId || "studio-cli");
   const engine = body.engine || "";

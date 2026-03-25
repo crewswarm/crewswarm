@@ -4296,8 +4296,9 @@ Every turn, follow this exact pattern:
 ## Output
 
 - Lead with what you did, not how you thought about it. Skip preamble.
-- Concise summary of changes: files modified, what changed, verification result.
-- Do NOT output raw file contents in your final response.
+- For informational queries (listing files, reading code, checking status): include the actual tool output in your response so the user sees the data.
+- For code changes: concise summary of files modified, what changed, verification result.
+- When you used a tool to answer a question, show the results \u2014 don't just say "I listed the files" without showing them.
 
 ## Stop Conditions \u2014 When to Finish
 
