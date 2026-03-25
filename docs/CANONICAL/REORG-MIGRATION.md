@@ -127,9 +127,9 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/CrewSwarm/package.json`
-- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/CrewSwarm/scripts/smoke.sh`
+- `package.json`
+- `scripts/dashboard.mjs`
+- `scripts/smoke.sh`
 - docs that mention `frontend/`
 
 ### If `studio/` moves to `apps/vibe/`

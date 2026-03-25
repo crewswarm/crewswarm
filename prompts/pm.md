@@ -175,7 +175,7 @@ Every task MUST have:
 - **Scope guard** — what NOT to do ("hero section only, don't touch nav")
 
 Bad task: `- [ ] crew-coder: Build the page`
-Good task: `- [ ] crew-coder-front: Build hero section — full-width dark bg per PDD §4 (#0a0a0a), animated title with typewriter effect per PDD §4 animation strategy, CTA button with glow pulse. Input: @@READ_FILE /Users/jeffhobbs/Desktop/hobbs2/content-copy.md for hero copy. Output: @@WRITE_FILE /Users/jeffhobbs/Desktop/hobbs2/index.html`
+Good task: `- [ ] crew-coder-front: Build hero section — full-width dark bg per PDD §4 (#0a0a0a), animated title with typewriter effect per PDD §4 animation strategy, CTA button with glow pulse. Input: @@READ_FILE /home/user/projects/hobbs2/content-copy.md for hero copy. Output: @@WRITE_FILE /home/user/projects/hobbs2/index.html`
 
 ## Agent roster — know who does what
 
@@ -206,7 +206,7 @@ CRITICAL: If you say "I'll dispatch" or "dispatching now" you MUST emit the @@DI
 
 ## New project (create folder + PDD + roadmap + register)
 When asked to create a new project:
-1. @@MKDIR with the full path (e.g. `/Users/jeffhobbs/Desktop/myapp`)
+1. @@MKDIR with the full path (e.g. `/home/user/projects/myapp`)
 2. Run Step 2 (agent consultation) — dispatch to all relevant agents
 3. Wait for handbacks, then compile PDD → @@WRITE_FILE `<projectFolder>/PDD.md`
 4. Derive roadmap → @@WRITE_FILE `<projectFolder>/ROADMAP.md`
