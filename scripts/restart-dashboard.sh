@@ -53,7 +53,8 @@ echo "🔄 Restarting dashboard..."
 if launchctl list "$LAUNCH_LABEL" >/dev/null 2>&1 || [[ -f "$LAUNCH_PLIST" ]]; then
   echo "  → Using launchd agent: $LAUNCH_LABEL"
   launchctl bootout "gui/$(id -u)" "$LAUNCH_PLIST" 2>/dev/null || true
-  pkill -9 -f "scripts/dashboard.mjs" 2>/dev/null || true
+  # Kill only the actual node dashboard process, not shell wrappers that mention it
+pgrep -f 'node.*scripts/dashboard\.mjs' | xargs kill -9 2>/dev/null || true
   lsof -ti :4319 2>/dev/null | xargs kill -9 2>/dev/null || true
   sleep 2
   launchctl bootstrap "gui/$(id -u)" "$LAUNCH_PLIST"
@@ -73,7 +74,8 @@ if launchctl list "$LAUNCH_LABEL" >/dev/null 2>&1 || [[ -f "$LAUNCH_PLIST" ]]; t
 fi
 
 echo "  → Stopping existing dashboard processes..."
-pkill -9 -f "scripts/dashboard.mjs" 2>/dev/null || true
+# Kill only the actual node dashboard process, not shell wrappers that mention it
+pgrep -f 'node.*scripts/dashboard\.mjs' | xargs kill -9 2>/dev/null || true
 
 echo "  → Waiting for port 4319 to release..."
 sleep 2
