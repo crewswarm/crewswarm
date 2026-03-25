@@ -10,7 +10,7 @@ cd "$REPO_DIR"
 export CREWSWARM_DIR="$REPO_DIR"
 export OPENCLAW_DIR="$REPO_DIR"   # backward compat for scripts that only check this
 export NODE="$("$REPO_DIR/scripts/resolve-node-bin.sh")"
-# Work around intermittent Node 24 ESM loader crashes (`Unknown system error -11, read`)
+# Work around intermittent Node 24/25 ESM loader crashes (`Unknown system error -11, read`)
 # seen in the RT daemon and Vibe startup paths on this machine.
 export NODE_DISABLE_COMPILE_CACHE="${NODE_DISABLE_COMPILE_CACHE:-1}"
 
