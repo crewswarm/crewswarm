@@ -1,0 +1,27 @@
+{
+  "name": "@crewswarm/openclaw-plugin",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin — dispatch tasks to a local CrewSwarm multi-agent crew",
+  "keywords": ["openclaw", "crewswarm", "multi-agent", "ai", "orchestration"],
+  "homepage": "https://github.com/CrewSwarm/CrewSwarm",
+  "bugs": "https://github.com/CrewSwarm/CrewSwarm/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CrewSwarm/CrewSwarm.git",
+    "directory": "contrib/openclaw-plugin"
+  },
+  "license": "MIT",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "skills": ["./skills/crewswarm"]
+  },
+  "files": [
+    "index.ts",
+    "openclaw.plugin.json",
+    "skills/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

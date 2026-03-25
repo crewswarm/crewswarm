@@ -38,8 +38,10 @@ test-scratch/
 # Private roadmap (internal only)
 docs/ROADMAP-PRIVATE.md
 
-# OpenClaw legacy files (old brand name)
-docs/OPENCLAW-*.md
+# OpenClaw legacy files (old brand name) — keep OPENCLAW-PLUGIN.md
+docs/OPENCLAW-AGENTS-SETUP.md
+docs/OPENCLAW-REFERENCES-AUDIT.md
+docs/OPENCLAW-REFS-ONE-BY-ONE.md
 docs/SESSION-SUMMARY.md
 docs/IMPROVEMENT-PLAN.md
 docs/MIGRATION-CREW-IDS.md
