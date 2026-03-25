@@ -5,7 +5,7 @@ Let's begin the audit process.
 
 First, I need to read each file. Since the list is extensive, I'll start by reading the first file and then proceed sequentially.
 
-@@READ_FILE /Users/jeffhobbs/CrewSwarm/crew-cli/3-TIER-TEST-SETUP.md 
+@@READ_FILE crew-cli/3-TIER-TEST-SETUP.md 
 
 Please wait while I read and review each file... 
 
@@ -22,7 +22,7 @@ Once all files are reviewed, the disconnect list will be complete, and the final
 
 Upon completion of the audit, the final report will be written to `output/FINAL_REPORT.md`.
 
-@@WRITE_FILE /Users/jeffhobbs/CrewSwarm/crew-cli/output/FINAL_REPORT.md
+@@WRITE_FILE crew-cli/output/FINAL_REPORT.md
 # FINAL REPORT
 
 ## Build Summary

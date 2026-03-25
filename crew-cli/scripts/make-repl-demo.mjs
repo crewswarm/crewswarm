@@ -102,7 +102,7 @@ async function main() {
  ║                                                                           ║
  ╚═══════════════════════════════════════════════════════════════════════════╝</div>
 <div class="gray">
-  Project: /Users/jeffhobbs/CrewSwarm
+  Project: /home/user/CrewSwarm
   Session: 7b30e600-6084-471f-9daa-3de3fa700b08
   Model: deepseek-chat  Engine: auto  Mode: manual
 

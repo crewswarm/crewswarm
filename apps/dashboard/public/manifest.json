@@ -1,0 +1,20 @@
+{
+  "name": "CrewSwarm Dashboard",
+  "short_name": "CrewDash",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%2338bdf8'/%3E%3Ctext x='96' y='130' font-size='100' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-weight='bold'%3ECS%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%2338bdf8'/%3E%3Ctext x='256' y='350' font-size='280' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-weight='bold'%3ECS%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#38bdf8",
+  "background_color": "#060a10"
+}

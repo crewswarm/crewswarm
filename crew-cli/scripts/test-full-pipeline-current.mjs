@@ -17,7 +17,7 @@ config({ path: envPath });
 
 const TASK = `Build MVP Phase 1 VS Code extension for CrewSwarm.
 
-Output to: /Users/jeffhobbs/Desktop/benchmark-vscode-grok-FULL
+Output to: /home/user/benchmark-vscode-grok-FULL
 
 Requirements:
 1. Extension scaffold (package.json)
@@ -33,7 +33,7 @@ async function runFullPipeline() {
   console.log('║   FULL PIPELINE TEST (WITHOUT QA LOOP)                       ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
-  const outputDir = '/Users/jeffhobbs/Desktop/benchmark-vscode-grok-FULL';
+  const outputDir = '/home/user/benchmark-vscode-grok-FULL';
   
   // Clean output directory
   if (fs.existsSync(outputDir)) {

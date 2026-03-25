@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
 
 import { buildCLICommand } from "../../lib/bridges/cli-executor.mjs";
 
 test("buildCLICommand uses non-interactive cursor flags", () => {
   const result = buildCLICommand("cursor", "inspect this", "sonnet-4.5", "/tmp");
-  assert.equal(result.bin, process.env.CURSOR_CLI_BIN || "/Users/jeffhobbs/.local/bin/agent");
+  assert.equal(result.bin, process.env.CURSOR_CLI_BIN || `${homedir()}/.local/bin/agent`);
   assert.deepEqual(result.args, [
     "--print",
     "--yolo",

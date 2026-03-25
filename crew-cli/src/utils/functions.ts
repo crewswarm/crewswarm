@@ -1,6 +1,6 @@
 /**
  * Utility Functions Catalog
- * Auto-generated catalog of all utility functions found in /Users/jeffhobbs/CrewSwarm/crew-cli/src/
+ * Auto-generated catalog of all utility functions found in crew-cli/src/
  * 
  * This file serves as a central reference for discovering existing utilities
  * to prevent duplicate implementations and aid code reuse.

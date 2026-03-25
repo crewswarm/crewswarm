@@ -1542,14 +1542,20 @@ If output has blockers, set approved=false.`,
       });
     }
 
+    const projectDir = (this.sandbox as any)?.baseDir || process.cwd();
     overlays.push({
       type: 'constraints',
-      content: `Analyze this request and decide:
+      content: `You are operating in project directory: ${projectDir}
+You have full file system access with tools: list_directory, read_file, write_file, grep_search, glob, run_shell_command, git, and more.
 
-1. DIRECT-ANSWER: Simple question, greeting, status check, or clarification
+Analyze this request and decide:
+
+1. DIRECT-ANSWER: ONLY for greetings ("hi", "hello") or meta-questions about your identity/capabilities
    → Provide immediate text response
+   → Do NOT use this for any question about files, code, project state, or folder contents — use EXECUTE-DIRECT instead
 
-2. EXECUTE-DIRECT: Simple single-file task that needs no planning — skip directly to execution
+2. EXECUTE-DIRECT: Simple task or question that can be answered by reading files, listing directories, or a single focused action
+   → Questions about files, folder contents, code, project structure → use tools to answer
    → Single file create/edit, small bug fix, one-liner change
    → Bypasses L2 planning overhead entirely
 
@@ -1564,6 +1570,7 @@ If output has blockers, set approved=false.`,
    → Use dual-L2 planner for work graph
 
 **Choose EXECUTE-DIRECT for:**
+- Any question about files, folders, code, or project state (use tools to look)
 - Creating or editing a single file
 - Small, focused bug fixes
 - Simple code generation with obvious scope

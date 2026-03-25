@@ -144,11 +144,11 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/CrewSwarm/package.json`
-- `/Users/jeffhobbs/CrewSwarm/start-studio.sh`
-- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/CrewSwarm/contrib/swiftbar/openswitch.10s.sh`
-- `/Users/jeffhobbs/CrewSwarm/tests/e2e/studio-test-utils.js`
+- `package.json`
+- `start-studio.sh`
+- `scripts/dashboard.mjs`
+- `contrib/swiftbar/openswitch.10s.sh`
+- `tests/e2e/studio-test-utils.js`
 - docs that mention `studio/`
 
 ### If `crew-cli/` moves to `packages/crew-cli/`
@@ -162,9 +162,9 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/CrewSwarm/package.json`
-- `/Users/jeffhobbs/CrewSwarm/AGENTS.md`
+- `scripts/dashboard.mjs`
+- `package.json`
+- `AGENTS.md`
 - crew-cli docs and internal scripts
 
 ### If `lib/` moves to `packages/core/`
@@ -180,12 +180,12 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/CrewSwarm/crew-lead.mjs`
-- `/Users/jeffhobbs/CrewSwarm/gateway-bridge.mjs`
-- `/Users/jeffhobbs/CrewSwarm/test/**/*.mjs`
-- `/Users/jeffhobbs/CrewSwarm/tests/**/*.js`
-- `/Users/jeffhobbs/CrewSwarm/crew-cli/**`
+- `scripts/dashboard.mjs`
+- `crew-lead.mjs`
+- `gateway-bridge.mjs`
+- `test/**/*.mjs`
+- `tests/**/*.js`
+- `crew-cli/**`
 
 ### If `crew-lead.mjs` or `gateway-bridge.mjs` moves
 
@@ -199,10 +199,10 @@ Likely breakpoints:
 
 Files likely to break:
 
-- `/Users/jeffhobbs/CrewSwarm/scripts/dashboard.mjs`
-- `/Users/jeffhobbs/CrewSwarm/scripts/restart-dashboard.sh`
-- `/Users/jeffhobbs/CrewSwarm/scripts/start-crew.mjs`
-- `/Users/jeffhobbs/CrewSwarm/contrib/swiftbar/openswitch.10s.sh`
+- `scripts/dashboard.mjs`
+- `scripts/restart-dashboard.sh`
+- `scripts/start-crew.mjs`
+- `contrib/swiftbar/openswitch.10s.sh`
 - canonical docs and AGENTS docs
 
 ## Lowest-risk phase 1
@@ -236,9 +236,9 @@ Phase 1 should avoid changing any runtime directory used by production services.
 
 ### Phase 1 files to patch
 
-- `/Users/jeffhobbs/CrewSwarm/package.json`
-- `/Users/jeffhobbs/CrewSwarm/docs/CANONICAL/TESTING.md`
-- `/Users/jeffhobbs/CrewSwarm/docs/CANONICAL/README.md`
+- `package.json`
+- `docs/CANONICAL/TESTING.md`
+- `docs/CANONICAL/README.md`
 - any smoke or CI scripts that reference moved test files
 
 ## Phase 2

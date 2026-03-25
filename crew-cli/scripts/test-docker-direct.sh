@@ -79,7 +79,7 @@ echo ""
 echo "✅ Step 4: Run test with Docker sandbox (staged files)"
 echo ""
 
-cd /Users/jeffhobbs/CrewSwarm/crew-cli
+cd crew-cli
 
 # Create a minimal test that uses the Docker sandbox
 node << 'NODEEOF'

@@ -17,7 +17,7 @@ import { UnifiedPipeline } from '../src/pipeline/unified.js';
 import fs from 'fs';
 import path from 'path';
 
-const OUTPUT_DIR = '/Users/jeffhobbs/Desktop/benchmark-task1-grok';
+const OUTPUT_DIR = '/home/user/benchmark-task1-grok';
 const TASK = `Build search and filter functionality for a todo app in ${OUTPUT_DIR}/:
 
 Requirements:

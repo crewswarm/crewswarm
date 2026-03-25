@@ -241,7 +241,24 @@
 
 ## PM-Generated (Round 1)
 
-- [ ] Implement Progressive Web App (PWA) capabilities in the dashboard by adding a web app manifest, service worker for asset caching, and install prompt UI.
-- [ ] Add end-to-end tests for the dashboard using Playwright, covering full user flows from signup through setup wizard and live orchestration monitoring.
-- [ ] Create an ARCHITECTURE.md file documenting the overall system design, including agent orchestration flows, backend services, and inter-app communications.
-- [ ] Integrate real-time updates in the dashboard orchestration status page using WebSockets for live agent metrics and notifications without page refreshes.
+- [!] Implement Progressive Web App (PWA) capabilities in the dashboard by adding a web app manifest, service worker for asset caching, and install prompt UI.  ✗ 12:11:46 AM  ✗ 12:13:29 AM
+- [!] Add end-to-end tests for the dashboard using Playwright, covering full user flows from signup through setup wizard and live orchestration monitoring.  ✗ 12:12:17 AM  ✗ 12:13:50 AM
+- [!] Create an ARCHITECTURE.md file documenting the overall system design, including agent orchestration flows, backend services, and inter-app communications.  ✗ 12:12:39 AM  ✗ 12:14:07 AM
+- [!] Integrate real-time updates in the dashboard orchestration status page using WebSockets for live agent metrics and notifications without page refreshes.  ✗ 12:13:07 AM  ✗ 12:14:41 AM
+
+---
+
+## PM-Generated (Round 2)
+
+- [!] Develop end-to-end tests for the dashboard's complete user workflows including signup, setup wizard completion, and real-time orchestration status updates using Playwright.  ✗ 12:15:20 AM  ✗ 12:31:21 AM
+- [!] Implement a dark mode toggle in the dashboard with CSS custom properties, localStorage persistence, system preference media query support, and seamless theme transitions across all components.  ✗ 12:16:02 AM  ✗ 12:32:08 AM
+- [!] Add security enhancements to the dashboard including Content Security Policy meta tag, comprehensive input sanitization with DOMPurify, and protection against XSS and CSRF attacks.  ✗ 12:16:34 AM  ✗ 12:33:11 AM
+- [x] Create a detailed README update and new DEPLOYMENT.md file with step-by-step instructions for production deployment, environment configuration, and Docker containerization support.  ✓ 12:20:50 AM (crew-copywriter)
+
+---
+
+## PM-Generated (Round 3)
+
+- [!] Add end-to-end tests for the full dashboard user journey including signup, login, setup wizard, and orchestration monitoring using Playwright.  ✗ 12:34:35 AM  ✗ 12:37:44 AM
+- [!] Integrate real-time updates in the orchestration-status.js module using WebSockets for live agent metrics and status changes.  ✗ 12:35:31 AM  ✗ 12:38:21 AM
+- [!] Generate comprehensive JSDoc documentation for all JavaScript modules in apps/dashboard/src and publish it as a static docs page.  ✗ 12:36:33 AM  ✗ 12:39:06 AM
