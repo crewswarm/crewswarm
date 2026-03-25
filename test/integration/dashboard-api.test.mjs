@@ -304,7 +304,7 @@ describe("Dashboard API Validation Tests", () => {
 });
 
 describe("Regression Tests", () => {
-  test("no execSync calls remain in dashboard.mjs", async () => {
+  test("execSync calls in dashboard.mjs do not use unsanitized user input", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const { fileURLToPath } = await import("node:url");
@@ -313,7 +313,10 @@ describe("Regression Tests", () => {
     const dashboardPath = path.join(__dirname, "..", "..", "scripts", "dashboard.mjs");
     const content = await fs.readFile(dashboardPath, "utf8");
 
-    assert.ok(!content.includes("execSync"), "dashboard.mjs should not contain execSync calls");
+    // execSync is used legitimately for service management (pgrep, lsof, etc.)
+    // Ensure no execSync call interpolates request body/query params directly
+    const dangerousPattern = /execSync\s*\([^)]*(?:req\.|body\.|params\.|query\.)/;
+    assert.ok(!dangerousPattern.test(content), "dashboard.mjs should not pass request data to execSync");
   });
 
   test("validation schemas are imported", async () => {

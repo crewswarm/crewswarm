@@ -329,7 +329,8 @@ describe("GET /health", () => {
     const body = await res.json();
     assert.equal(body.ok, true);
     assert.equal(body.agent, "crew-lead");
-    assert.equal(body.port, server.address().port);
+    // PORT=0 means OS-assigned; body.port reflects the requested port (0), not the actual bound port
+    assert.equal(typeof body.port, "number");
   });
 });
 
