@@ -25,12 +25,18 @@ const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
 const LOGS_DIR = path.join(CREWSWARM_DIR, "logs");
 const TG_LOG = path.join(LOGS_DIR, "telegram-bridge.jsonl");
 
-// Load bot token from crewswarm.json
+// Load bot token — mirrors telegram-bridge.mjs lookup order
 function loadTgToken() {
+  if (process.env.TELEGRAM_BOT_TOKEN) return process.env.TELEGRAM_BOT_TOKEN;
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(CREWSWARM_DIR, "crewswarm.json"), "utf8"));
-    return cfg?.env?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || null;
-  } catch { return null; }
+    if (cfg?.env?.TELEGRAM_BOT_TOKEN) return cfg.env.TELEGRAM_BOT_TOKEN;
+  } catch {}
+  try {
+    const tgCfg = JSON.parse(fs.readFileSync(path.join(CREWSWARM_DIR, "telegram-bridge.json"), "utf8"));
+    if (tgCfg?.token) return tgCfg.token;
+  } catch {}
+  return null;
 }
 
 const TOKEN = loadTgToken();
