@@ -14,7 +14,7 @@
   },
   "scripts": {
     "start": "node scripts/start.mjs",
-    "test": "node --test test/unit/*.test.mjs",
+    "test": "node --test test/unit/*.test.mjs test/mention-participants.test.mjs test/project-messages-chat-protocol.test.mjs && npm --prefix crew-cli test",
     "test:unit": "node --test test/unit/*.test.mjs",
     "test:integration": "PM_LOOP_TEST_MODE=1 node --test test/integration/*.test.mjs",
     "test:integration:bounded": "node scripts/run-integration-bounded.mjs",
