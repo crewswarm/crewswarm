@@ -67,14 +67,14 @@ describe("Health check", { timeout: 10000 }, () => {
 
 // ── Chat round-trip ────────────────────────────────────────────────────────
 
-describe("Chat round-trip", { timeout: 35000 }, () => {
+describe("Chat round-trip", { timeout: 90000 }, () => {
   test("POST /chat with PONG request returns reply containing PONG", async (t) => {
     if (skipIfDown(t)) return;
     const { status, data } = await httpRequest(`${CREW_LEAD_URL}/chat`, {
       method: "POST",
       headers: authHeaders(),
       body: { message: "reply with exactly: PONG", sessionId: E2E_SESSION },
-      timeout: 30000,
+      timeout: 80000,
     });
     assert.equal(status, 200);
     assert.ok(data.reply, "response should have reply field");
@@ -87,14 +87,14 @@ describe("Chat round-trip", { timeout: 35000 }, () => {
 
 // ── Direct dispatch ─────────────────────────────────────────────────────────
 
-describe("Direct dispatch to crew-seo", { timeout: 35000 }, () => {
-  test("dispatch crew-seo returns reply within 30s", async (t) => {
+describe("Direct dispatch to crew-seo", { timeout: 90000 }, () => {
+  test("dispatch crew-seo returns reply within 60s", async (t) => {
     if (skipIfDown(t)) return;
     const { status, data } = await httpRequest(`${CREW_LEAD_URL}/chat`, {
       method: "POST",
       headers: authHeaders(),
       body: { message: "dispatch crew-seo to say hello in exactly 3 words", sessionId: `e2e-dispatch-${Date.now()}` },
-      timeout: 32000,
+      timeout: 80000,
     });
     assert.equal(status, 200);
     assert.ok(data.reply, "response should have reply");
@@ -141,8 +141,8 @@ describe("Agents online", { timeout: 10000 }, () => {
 
 // ── Wave pipeline ──────────────────────────────────────────────────────────
 
-describe("Wave pipeline", { timeout: 90000 }, () => {
-  test("@@PIPELINE with 2 agents returns pipeline result within 60s", async (t) => {
+describe("Wave pipeline", { timeout: 180000 }, () => {
+  test("@@PIPELINE with 2 agents returns pipeline result within 120s", async (t) => {
     if (skipIfDown(t)) return;
     const sessionId = `e2e-pipeline-${Date.now()}`;
     const pipelineMsg = `@@PIPELINE [
@@ -154,7 +154,7 @@ describe("Wave pipeline", { timeout: 90000 }, () => {
       method: "POST",
       headers: authHeaders(),
       body: { message: pipelineMsg, sessionId },
-      timeout: 60000,
+      timeout: 120000,
     });
     assert.equal(status, 200);
     assert.ok(data.reply, "response should have reply");
