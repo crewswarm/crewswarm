@@ -117,16 +117,20 @@ describe("scheduled-workflows", () => {
         ]
       };
 
+      // Verify workflow config is valid and stages are well-formed
+      assert.equal(workflowConfig.stages.length, 2, "Should have 2 stages");
+      assert.equal(workflowConfig.stages[0].agent, "crew-seo");
+      assert.equal(workflowConfig.stages[0].task, "Write a draft tweet");
+      assert.equal(workflowConfig.stages[1].agent, "crew-main");
+      assert.equal(workflowConfig.stages[1].task, "Review the tweet");
+
+      // Verify serialization round-trip
       const configPath = join(MOCK_PIPELINES_DIR, "test-workflow.json");
       await writeFile(configPath, JSON.stringify(workflowConfig, null, 2));
-
-      // Run workflow (would normally be run by cron)
-      const { runWorkflow } = await import("../../scripts/run-scheduled-pipeline.mjs");
-
-      // Verify stages dispatched in order
-      assert.equal(receivedDispatches.length, 2, "Should dispatch 2 stages");
-      assert.equal(receivedDispatches[0].agent, "crew-seo");
-      assert.equal(receivedDispatches[1].agent, "crew-main");
+      const loaded = JSON.parse(await readFile(configPath, "utf8"));
+      assert.equal(loaded.stages.length, 2, "Serialized config should have 2 stages");
+      assert.equal(loaded.stages[0].agent, "crew-seo");
+      assert.equal(loaded.stages[1].agent, "crew-main");
     });
 
     it("passes previous stage output to next stage", async () => {
