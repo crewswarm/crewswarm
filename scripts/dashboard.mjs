@@ -8313,7 +8313,7 @@ ORDER BY day DESC, cost DESC;`;
             path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"),
           ) || getPid("whatsapp-bridge.mjs");
         const rtStatusPromise = fetch("http://127.0.0.1:18889/status", {
-          signal: AbortSignal.timeout(900),
+          signal: AbortSignal.timeout(2000),
         });
         const mcpHealthPromise = httpOk("http://127.0.0.1:5020/health", 3000);
         const [
@@ -8404,9 +8404,14 @@ ORDER BY day DESC, cost DESC;`;
           agentsOnline = rtAgentList.length;
           agentPids = getAllPids("gateway-bridge.mjs --rt-daemon");
         } catch {
-          // RT not reachable — fall back to pgrep
+          // RT not reachable — fall back to pgrep for count, config for names
           agentsOnline = countProcs("gateway-bridge.mjs --rt-daemon");
           agentPids = getAllPids("gateway-bridge.mjs --rt-daemon");
+          try {
+            rtAgentList = (swarmCfg.agents || [])
+              .map((a) => a.id)
+              .filter((id) => id && String(id).toLowerCase() !== "crew-lead");
+          } catch { }
         }
         // Total: count configured agents (minus crew-lead); never show X/Y with X > Y
         let agentsTotal = 0;
