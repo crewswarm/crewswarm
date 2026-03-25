@@ -1254,6 +1254,11 @@ async function main() {
     if (failed >= 10) {
       console.log(`\n⚠️  Self-extend disabled: ${failed} failed tasks (fix issues before extending)`);
     } else if (SELF_EXTEND && (!item || (doneCount > 0 && doneCount % EXTEND_EVERY_N === 0 && pending === 0))) {
+      if (DRY_RUN) {
+        console.log(`\n🧠 Dry-run: skipping self-extend (would generate new items)`);
+        if (!item) break; // nothing left to process
+        continue;
+      }
       extendRound++;
       console.log(`\n🧠 PM self-extend round ${extendRound} — generating new roadmap items...`);
       const context = await getProjectContext();
@@ -1360,7 +1365,7 @@ WORKFLOW — follow this every time:
       console.log(`  ⚠️  DRY RUN - would dispatch to agent, skipping actual call`);
       await log({ op_id: opId, item: item.text, expanded_task: task.substring(0, 200), status: "dry_run" });
 
-      let dryTargetAgent = expanded.targetAgent || (await routeAgent(item.text));
+      let dryTargetAgent = expanded.targetAgent || CODER_AGENT; // skip LLM routing in dry-run
       await markItem(item.lineIdx, "done", dryTargetAgent);
       doneCount++;
       completedItems.push(item.text);
