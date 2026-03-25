@@ -2055,6 +2055,11 @@ var init_crew_adapter = __esm({
         }
       }
       async writeFile(params) {
+        const fullPath = resolve3(this.config.getWorkspaceRoot(), params.file_path);
+        const wsRoot = resolve3(this.config.getWorkspaceRoot());
+        if (!fullPath.startsWith(wsRoot + "/") && fullPath !== wsRoot) {
+          return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
+        }
         await this.sandbox.addChange(params.file_path, params.content);
         return {
           success: true,
@@ -2079,6 +2084,10 @@ var init_crew_adapter = __esm({
       }
       async readFile(params) {
         const filePath = resolve3(this.config.getWorkspaceRoot(), params.file_path);
+        const wsRoot = resolve3(this.config.getWorkspaceRoot());
+        if (!filePath.startsWith(wsRoot + "/") && filePath !== wsRoot) {
+          return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
+        }
         this._filesRead.add(params.file_path);
         this._filesRead.add(filePath);
         const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
@@ -2094,6 +2103,10 @@ var init_crew_adapter = __esm({
       }
       async editFile(params) {
         const filePath = resolve3(this.config.getWorkspaceRoot(), params.file_path);
+        const wsRoot = resolve3(this.config.getWorkspaceRoot());
+        if (!filePath.startsWith(wsRoot + "/") && filePath !== wsRoot) {
+          return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
+        }
         if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
           return {
             success: false,
@@ -2236,8 +2249,13 @@ ${err?.stderr?.toString?.() || ""}`.trim();
         if (verb === "reset" && /--hard/.test(command)) {
           return { success: false, error: "git reset --hard is destructive. Use git stash or git checkout <file> instead." };
         }
+        if (/[;&|`$(){}\\!<>]/.test(command)) {
+          return { success: false, error: "git command contains disallowed shell characters. Use only git arguments." };
+        }
         try {
-          const out = execSync2(`git ${command}`, {
+          const args = command.split(/\s+/).filter(Boolean);
+          const { execFileSync: execFileSync2 } = await import("node:child_process");
+          const out = execFileSync2("git", args, {
             cwd: this.config.getWorkspaceRoot(),
             stdio: "pipe",
             encoding: "utf8",
@@ -2255,8 +2273,7 @@ ${err?.stderr?.toString?.() || ""}`.trim();
         if (!command) return { success: false, error: "shell requires command" };
         for (const pat of DANGEROUS_SHELL_PATTERNS) {
           if (pat.test(command)) {
-            console.warn(`[GeminiAdapter] \u26A0\uFE0F Potentially destructive command detected: ${command.slice(0, 80)}`);
-            break;
+            return { success: false, error: `Blocked: destructive command detected (${command.slice(0, 60)}). Use a safer alternative.` };
           }
         }
         if (params.run_in_background) {
@@ -4317,14 +4334,14 @@ Every turn, follow this exact pattern:
 - Do NOT add comments, docstrings, or type annotations to code you didn't change.`;
     PROVIDER_ORDER = [
       // Heavy tier — L2 brain (complex multi-file tasks, planning)
-      { id: "openai", envKey: "OPENAI_API_KEY", model: "gpt-5.4", driver: "openai", apiUrl: "https://api.openai.com/v1/chat/completions", modelPrefix: "gpt", tier: "heavy" },
-      { id: "anthropic", envKey: "ANTHROPIC_API_KEY", model: "claude-sonnet-4.6", driver: "anthropic", modelPrefix: "claude", tier: "heavy" },
-      { id: "grok", envKey: "XAI_API_KEY", model: "grok-4.20-beta", driver: "openai", apiUrl: "https://api.x.ai/v1/chat/completions", modelPrefix: "grok", tier: "heavy" },
+      { id: "openai", envKey: "OPENAI_API_KEY", model: "gpt-4.1", driver: "openai", apiUrl: "https://api.openai.com/v1/chat/completions", modelPrefix: "gpt", tier: "heavy" },
+      { id: "anthropic", envKey: "ANTHROPIC_API_KEY", model: "claude-sonnet-4-20250514", driver: "anthropic", modelPrefix: "claude", tier: "heavy" },
+      { id: "grok", envKey: "XAI_API_KEY", model: "grok-3-mini-beta", driver: "openai", apiUrl: "https://api.x.ai/v1/chat/completions", modelPrefix: "grok", tier: "heavy" },
       // Standard tier — L3 workers (execution, parallel tasks)
       { id: "gemini", envKey: "GEMINI_API_KEY", model: "gemini-2.5-flash", driver: "gemini", modelPrefix: "gemini", tier: "standard" },
       { id: "gemini", envKey: "GOOGLE_API_KEY", model: "gemini-2.5-flash", driver: "gemini", modelPrefix: "gemini", tier: "standard" },
-      { id: "deepseek", envKey: "DEEPSEEK_API_KEY", model: "deepseek-v3.2", driver: "openai", apiUrl: "https://api.deepseek.com/v1/chat/completions", modelPrefix: "deepseek", tier: "standard" },
-      { id: "kimi", envKey: "MOONSHOT_API_KEY", model: "kimi-k2.5", driver: "openai", apiUrl: "https://api.moonshot.cn/v1/chat/completions", modelPrefix: "kimi", tier: "standard" },
+      { id: "deepseek", envKey: "DEEPSEEK_API_KEY", model: "deepseek-chat", driver: "openai", apiUrl: "https://api.deepseek.com/v1/chat/completions", modelPrefix: "deepseek", tier: "standard" },
+      { id: "kimi", envKey: "MOONSHOT_API_KEY", model: "moonshot-v1-128k", driver: "openai", apiUrl: "https://api.moonshot.cn/v1/chat/completions", modelPrefix: "kimi", tier: "standard" },
       // Fast tier — L1 routing (classification, cheap)
       { id: "groq", envKey: "GROQ_API_KEY", model: "llama-3.3-70b-versatile", driver: "openai", apiUrl: "https://api.groq.com/openai/v1/chat/completions", modelPrefix: "llama", tier: "fast" },
       // Fallback — free tier
@@ -4391,10 +4408,8 @@ Every turn, follow this exact pattern:
           }
           const dirsToIndex = Array.from(uniqueDirs).slice(0, 5);
           if (dirsToIndex.length === 0) return "";
-          const paths = dirsToIndex.map((d) => {
-            const { resolve: resolve18 } = __require("node:path");
-            return resolve18(projectDir, d);
-          });
+          const { resolve: resolvePath } = await import("node:path");
+          const paths = dirsToIndex.map((d) => resolvePath(projectDir, d));
           const index = await buildCollectionIndex2(paths, { includeCode: true });
           if (index.chunkCount === 0) return "";
           const query = Array.from(this.discoveredFiles).slice(0, 10).join(" ");
@@ -11641,7 +11656,6 @@ var Sandbox = class {
     if (!await this.exists(dir)) {
       await mkdir2(dir, { recursive: true });
     }
-    console.log(`[Sandbox] persist() - branches = ${JSON.stringify(this.state.branches).substring(0, 200)}`);
     await writeFile2(this.stateFilePath, JSON.stringify(this.state, null, 2), "utf8");
   }
   /** Alias for persist() to match external API expectations */
@@ -11652,11 +11666,9 @@ var Sandbox = class {
     const fullPath = join4(this.baseDir, filePath);
     let original = "";
     if (!this.state.branches[this.state.activeBranch] || Array.isArray(this.state.branches[this.state.activeBranch])) {
-      console.log(`[Sandbox] Fixing branches.${this.state.activeBranch} from ${typeof this.state.branches[this.state.activeBranch]} to object`);
       this.state.branches[this.state.activeBranch] = {};
     }
     const activeChanges = this.state.branches[this.state.activeBranch];
-    console.log(`[Sandbox] activeChanges is ${typeof activeChanges}, isArray: ${Array.isArray(activeChanges)}`);
     if (activeChanges[filePath]) {
       original = activeChanges[filePath].original;
     } else if (await this.exists(fullPath)) {
@@ -11668,7 +11680,6 @@ var Sandbox = class {
       modified: modifiedContent,
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     };
-    console.log(`[Sandbox] After assignment: activeChanges = ${JSON.stringify(activeChanges).substring(0, 150)}`);
     await this.persist();
   }
   preview(branchName = this.state.activeBranch) {
@@ -19680,7 +19691,7 @@ async function runValidationCommands2(commands = [], cwd = process.cwd()) {
 async function runLspAutoFixCycle2(projectDir, maxAttempts, options) {
   const { typeCheckProject: typeCheckProject2 } = await Promise.resolve().then(() => (init_lsp(), lsp_exports));
   const cappedAttempts = Math.max(1, maxAttempts);
-  let diagnostics = typeCheckProject2(projectDir, []);
+  let diagnostics = await typeCheckProject2(projectDir, []);
   if (diagnostics.length === 0) return { fixed: true, attempts: 0, remainingDiagnostics: 0 };
   let attempts = 0;
   while (attempts < cappedAttempts && diagnostics.length > 0) {
@@ -19715,7 +19726,7 @@ async function runLspAutoFixCycle2(projectDir, maxAttempts, options) {
       diagnostics: diagnostics.length,
       edits: edits.length
     });
-    diagnostics = typeCheckProject2(projectDir, []);
+    diagnostics = await typeCheckProject2(projectDir, []);
   }
   return {
     fixed: diagnostics.length === 0,

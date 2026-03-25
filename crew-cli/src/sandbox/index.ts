@@ -62,7 +62,6 @@ export class Sandbox {
     if (!(await this.exists(dir))) {
       await mkdir(dir, { recursive: true });
     }
-    console.log(`[Sandbox] persist() - branches = ${JSON.stringify(this.state.branches).substring(0, 200)}`);
     await writeFile(this.stateFilePath, JSON.stringify(this.state, null, 2), 'utf8');
   }
 
@@ -77,12 +76,11 @@ export class Sandbox {
 
     // Ensure branch exists and is an object (not array)
     if (!this.state.branches[this.state.activeBranch] || Array.isArray(this.state.branches[this.state.activeBranch])) {
-      console.log(`[Sandbox] Fixing branches.${this.state.activeBranch} from ${typeof this.state.branches[this.state.activeBranch]} to object`);
+      // Fix malformed branch data silently
       this.state.branches[this.state.activeBranch] = {};
     }
 
     const activeChanges = this.state.branches[this.state.activeBranch];
-    console.log(`[Sandbox] activeChanges is ${typeof activeChanges}, isArray: ${Array.isArray(activeChanges)}`);
 
     if (activeChanges[filePath]) {
       original = activeChanges[filePath].original;
@@ -97,7 +95,6 @@ export class Sandbox {
       timestamp: new Date().toISOString()
     };
     
-    console.log(`[Sandbox] After assignment: activeChanges = ${JSON.stringify(activeChanges).substring(0, 150)}`);
 
     await this.persist();
   }

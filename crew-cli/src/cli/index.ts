@@ -357,7 +357,7 @@ async function runLspAutoFixCycle(
 ): Promise<{ fixed: boolean; attempts: number; remainingDiagnostics: number }> {
   const { typeCheckProject } = await import('../lsp/index.js');
   const cappedAttempts = Math.max(1, maxAttempts);
-  let diagnostics = typeCheckProject(projectDir, []);
+  let diagnostics = await typeCheckProject(projectDir, []);
   if (diagnostics.length === 0) return { fixed: true, attempts: 0, remainingDiagnostics: 0 };
 
   let attempts = 0;
@@ -396,7 +396,7 @@ async function runLspAutoFixCycle(
       diagnostics: diagnostics.length,
       edits: edits.length
     });
-    diagnostics = typeCheckProject(projectDir, []);
+    diagnostics = await typeCheckProject(projectDir, []);
   }
 
   return {
