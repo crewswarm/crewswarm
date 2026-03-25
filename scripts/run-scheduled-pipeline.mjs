@@ -34,7 +34,7 @@ const CREW_LEAD_URL = `http://127.0.0.1:${CREW_LEAD_PORT}`;
 const CONFIG_DIR = process.env.CREWSWARM_CONFIG_DIR || path.join(os.homedir(), ".crewswarm");
 const PIPELINES_DIR = path.join(CONFIG_DIR, "pipelines");
 const POLL_INTERVAL_MS = 2000;
-const WORKFLOW_STAGE_TIMEOUT_MS = 120000;
+const WORKFLOW_STAGE_TIMEOUT_MS = 600000;
 
 export function getToken() {
   try {
@@ -63,7 +63,7 @@ export async function runSkill(skillName, params, token) {
   return { ok: res.ok, status: res.status, data };
 }
 
-export async function dispatch(agent, task, token, sessionId = "cron") {
+export async function dispatch(agent, task, token, sessionId = "owner") {
   const res = await fetch(`${CREW_LEAD_URL}/api/dispatch`, {
     method: "POST",
     headers: authHeaders(token),

@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { readFile, appendFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -377,7 +378,7 @@ function extractFilePaths(text) {
   // Pattern 2: ~/path/to/file
   const homePaths = text.match(/~\/[\w\-./]+/g);
   if (homePaths) {
-    const homeDir = process.env.HOME || '/Users/jeffhobbs';
+    const homeDir = process.env.HOME || os.homedir();
     paths.push(...homePaths.map(p => p.replace('~', homeDir)));
   }
   

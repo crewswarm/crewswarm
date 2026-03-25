@@ -410,10 +410,10 @@ function connectRT(sendToJid) {
         const isChatReply = env.messageType === "chat.reply" || env.type === "chat.reply";
         const rawSessionId = env.payload?.sessionId;
         
-        // Extract JID from sessionId format "whatsapp-<jid>"
-        const sessionId = rawSessionId?.startsWith("whatsapp-") 
+        // Extract JID from sessionId format "whatsapp-<jid>" — STRICT: reject non-whatsapp sessions
+        const sessionId = rawSessionId?.startsWith("whatsapp-")
           ? rawSessionId.slice(9)  // Extract JID: "whatsapp-13109...@s.whatsapp.net" → "13109...@s.whatsapp.net"
-          : rawSessionId;
+          : null;  // Not a WhatsApp session — do NOT fall through
 
         if ((from === TARGET || isChatReply) && content && content.length > 2) {
           const isHeartbeat = env.type === "agent.heartbeat" || env.channel === "status";
@@ -423,6 +423,11 @@ function connectRT(sendToJid) {
             // The sessionId must match exactly to prevent sending to wrong contacts
             if (sessionId && activeSessions.has(sessionId)) {
               const jid = sessionId;
+              // Allowlist check on outbound — never send to unauthorized JIDs
+              if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
+                log("warn", "RT reply blocked by allowlist — not sending to unauthorized JID", { jid, from });
+                return;
+              }
               const lastReply = lastReplyTime.get(jid) || 0;
               if (Date.now() - lastReply < 2000) {
                 // Skip - too soon after last reply (debounce)
@@ -518,6 +523,11 @@ async function listenForAgentReplies(sendToJid) {
             }
             
             const jid = whatsappJid;
+            // Allowlist check on outbound — never send to unauthorized JIDs
+            if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
+              log("warn", "SSE reply blocked by allowlist — not sending to unauthorized JID", { jid, from: d.from });
+              continue;
+            }
             if (shouldSkipDuplicate(jid, d.content)) {
               log("info", "SSE reply already sent via RT path — skipping", { jid, from: d.from });
               continue;
@@ -1433,6 +1443,11 @@ async function main() {
             targetJid = phone.replace(/^\+/, "").replace(/\D/g, "") + "@s.whatsapp.net";
           }
           if (!targetJid) { res.writeHead(400); res.end(JSON.stringify({ error: "jid or phone required" })); return; }
+          // Allowlist check on outbound — never send to unauthorized JIDs
+          if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(targetJid)) {
+            log("warn", "HTTP /send blocked by allowlist", { targetJid });
+            res.writeHead(403); res.end(JSON.stringify({ error: "JID not in allowlist" })); return;
+          }
           await sendToJid(targetJid, text);
           logMessage({ direction: "outbound", jid: targetJid, text });
           res.writeHead(200, { "Content-Type": "application/json" });
