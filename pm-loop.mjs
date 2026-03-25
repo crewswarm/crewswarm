@@ -1286,18 +1286,26 @@ async function main() {
     const context = await getProjectContext();
     console.log(`  Website state: ${context}`);
 
-    // ── PM Expansion (runs in both normal and dry-run mode) ──────────
-    console.log("  🤔 PM expanding item into task...");
-    const expanded = await expandWithGroq(item.text, context);
-    let task = expanded.taskText;
-    console.log(`  📝 Task:\n    ${task.substring(0, 120)}${task.length > 120 ? "..." : ""}`);
+    // ── PM Expansion ──────────────────────────────────────────────────
+    // In dry-run mode, skip the LLM expansion to avoid slow API calls
+    let expanded, task;
+    if (DRY_RUN) {
+      console.log("  ⏩ Dry-run: skipping LLM expansion");
+      expanded = { targetAgent: null, taskText: `Task: ${item.text}` };
+      task = expanded.taskText;
+    } else {
+      console.log("  🤔 PM expanding item into task...");
+      expanded = await expandWithGroq(item.text, context);
+      task = expanded.taskText;
+      console.log(`  📝 Task:\n    ${task.substring(0, 120)}${task.length > 120 ? "..." : ""}`);
+    }
 
     // ── Domain detection (for 100K+ line repos with subsystems) ────────
     const domainDetection = detectDomain(item.text);
     logDomainRouting(item.text, domainDetection);
 
     // If domain detected and we have a specialist PM, delegate expansion to them
-    const useDomainPM = domainDetection.domain && domainDetection.confidence > 0.5;
+    const useDomainPM = !DRY_RUN && domainDetection.domain && domainDetection.confidence > 0.5;
     if (useDomainPM && domainDetection.pmAgent !== "crew-pm") {
       console.log(`  🎯 Delegating expansion to ${domainDetection.pmAgent} (domain specialist)...`);
       const domainContext = buildDomainContext(domainDetection.domain, item.text);

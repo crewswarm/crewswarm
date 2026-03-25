@@ -229,7 +229,7 @@ describe("PM loop — markItem function behavior", () => {
   });
 });
 
-describe("PM loop — dry-run mode (no actual dispatch)", { skip: SKIP_LIVE }, () => {
+describe("PM loop — dry-run mode (no actual dispatch)", { skip: SKIP_LIVE, timeout: 60000 }, () => {
   let testDir;
   
   before(async () => {
@@ -252,16 +252,16 @@ describe("PM loop — dry-run mode (no actual dispatch)", { skip: SKIP_LIVE }, (
     const roadmapPath = path.join(testDir, "ROADMAP.md");
     const beforeContent = await readFile(roadmapPath, "utf8");
     const before = parseRoadmapStatus(beforeContent);
-    
+
     assert.equal(before.pending, 3);
     assert.equal(before.done, 0);
-    
+
     // Run PM loop in dry-run mode with max 2 items
     const result = await runPMLoop({
       projectDir: testDir,
       maxItems: 2,
       dryRun: true,
-      timeout: 15000,
+      timeout: 30000,
     });
     
     assert.equal(result.code, 0, `PM loop failed with code ${result.code}\nstderr: ${result.stderr}`);
@@ -275,7 +275,7 @@ describe("PM loop — dry-run mode (no actual dispatch)", { skip: SKIP_LIVE }, (
   });
 });
 
-describe("PM loop — next item selection CRITICAL FLOW", { skip: SKIP_LIVE }, () => {
+describe("PM loop — next item selection CRITICAL FLOW", { skip: SKIP_LIVE, timeout: 90000 }, () => {
   let testDir;
   
   before(async () => {
@@ -296,22 +296,22 @@ describe("PM loop — next item selection CRITICAL FLOW", { skip: SKIP_LIVE }, (
     const roadmapPath = path.join(testDir, "ROADMAP.md");
     
     // Run PM loop for 1 item
-    await runPMLoop({ projectDir: testDir, maxItems: 1, dryRun: true, timeout: 10000 });
-    
+    await runPMLoop({ projectDir: testDir, maxItems: 1, dryRun: true, timeout: 30000 });
+
     let content = await readFile(roadmapPath, "utf8");
     let status = parseRoadmapStatus(content);
-    
+
     // Task A should be done
     assert.equal(status.done, 1);
     assert.equal(status.items[0].status, "done");
     assert.equal(status.items[0].text, "Task A");
-    
+
     // Task B should still be pending
     assert.equal(status.items[1].status, "pending");
     assert.equal(status.items[1].text, "Task B");
-    
+
     // Run PM loop for 1 more item
-    await runPMLoop({ projectDir: testDir, maxItems: 1, dryRun: true, timeout: 10000 });
+    await runPMLoop({ projectDir: testDir, maxItems: 1, dryRun: true, timeout: 30000 });
     
     content = await readFile(roadmapPath, "utf8");
     status = parseRoadmapStatus(content);
@@ -336,11 +336,11 @@ describe("PM loop — next item selection CRITICAL FLOW", { skip: SKIP_LIVE }, (
 `, "utf8");
     
     // Run PM loop for 2 items
-    await runPMLoop({ projectDir: testDir, maxItems: 2, dryRun: true, timeout: 15000 });
-    
+    await runPMLoop({ projectDir: testDir, maxItems: 2, dryRun: true, timeout: 30000 });
+
     const content = await readFile(roadmapPath, "utf8");
     const status = parseRoadmapStatus(content);
-    
+
     // Both should be marked done ONCE
     assert.equal(status.done, 2, `Expected 2 done, got ${status.done}\nRoadmap:\n${content}`);
     
@@ -353,7 +353,7 @@ describe("PM loop — next item selection CRITICAL FLOW", { skip: SKIP_LIVE }, (
   });
 });
 
-describe("PM loop — self-extend when roadmap is empty", { skip: SKIP_LIVE }, () => {
+describe("PM loop — self-extend when roadmap is empty", { skip: SKIP_LIVE, timeout: 90000 }, () => {
   let testDir;
   
   before(async () => {
@@ -379,7 +379,7 @@ describe("PM loop — self-extend when roadmap is empty", { skip: SKIP_LIVE }, (
       maxItems: 5,
       dryRun: true,
       selfExtend: true,
-      timeout: 30000,
+      timeout: 60000,
     });
     
     assert.equal(result.code, 0, `PM loop failed\nstderr: ${result.stderr}`);
@@ -396,7 +396,7 @@ describe("PM loop — self-extend when roadmap is empty", { skip: SKIP_LIVE }, (
   });
 });
 
-describe("PM loop — stop file halts execution gracefully", { skip: SKIP_LIVE }, () => {
+describe("PM loop — stop file halts execution gracefully", { skip: SKIP_LIVE, timeout: 60000 }, () => {
   let testDir;
   
   before(async () => {
@@ -428,7 +428,7 @@ describe("PM loop — stop file halts execution gracefully", { skip: SKIP_LIVE }
       projectDir: testDir,
       maxItems: 10,
       dryRun: true,
-      timeout: 20000,
+      timeout: 30000,
     });
     
     // Wait 2 seconds then create stop file
@@ -485,14 +485,14 @@ describe("PM loop — agent routing logic", () => {
   });
 });
 
-describe("PM loop — log file tracking", { skip: SKIP_LIVE }, () => {
+describe("PM loop — log file tracking", { skip: SKIP_LIVE, timeout: 60000 }, () => {
   it("writes pm-loop.jsonl log entries", async () => {
     const testDir = await mkdtemp(path.join(tmpdir(), "pm-log-"));
     await writeFile(path.join(testDir, "ROADMAP.md"), `# Test
 - [ ] Simple task
 `, "utf8");
     
-    await runPMLoop({ projectDir: testDir, maxItems: 1, dryRun: true, timeout: 10000 });
+    await runPMLoop({ projectDir: testDir, maxItems: 1, dryRun: true, timeout: 30000 });
     
     const logFile = path.join(LOGS_DIR, "pm-loop.jsonl");
     
