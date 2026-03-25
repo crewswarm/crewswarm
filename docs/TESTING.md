@@ -1,6 +1,6 @@
 # Testing Guide
 
-CrewSwarm has ~1,900 test cases across multiple suites and runners.
+CrewSwarm has ~1,100 test cases across multiple suites and runners.
 
 ## Quick Reference
 
@@ -108,16 +108,6 @@ npm --prefix crew-cli test                # unit tests only
 npm --prefix crew-cli run test:coverage   # unit tests + coverage report
 ```
 
-### Gemini Tool Tests (`crew-cli/src/tools/gemini/`)
-
-| Runner | Files | Cases | Requires server |
-|--------|-------|-------|-----------------|
-| vitest | 36 | ~800+ | No |
-
-Ported from upstream [gemini-cli](https://github.com/google-gemini/gemini-cli). Covers tool implementations: read-file, write-file, edit, glob, grep, shell, web-fetch, web-search, MCP client, memory, and more.
-
-**Status:** Not runnable yet — vitest is not a devDependency and upstream sibling modules (`src/tools/utils/*`, `src/tools/config/*`, etc.) are missing. These tests are preserved for future integration.
-
 ### Vibe App Tests (`apps/vibe/test/`)
 
 | Runner | Files | Cases | Requires server |
@@ -147,9 +137,8 @@ GitHub Actions runs two workflows:
 | E2E (node:test) | 7 | 50+ | No |
 | Playwright specs | 2 | 20+ | No |
 | Crew-CLI | 19 | 163 | Yes |
-| Gemini (vitest) | 36 | 800+ | N/A (not wired) |
 | Vibe app | 4 | 30+ | No |
-| **Total** | **122** | **~1,900+** | |
+| **Total** | **86** | **~1,100+** | |
 
 ## Adding Tests
 
