@@ -401,51 +401,46 @@ describe("PM loop — stop file halts execution gracefully", { skip: SKIP_LIVE, 
   
   before(async () => {
     testDir = await mkdtemp(path.join(tmpdir(), "pm-stop-"));
-    await writeFile(path.join(testDir, "ROADMAP.md"), `# Test
+    // Generate many tasks so the loop doesn't finish before the stop file is created
+    const tasks = Array.from({ length: 50 }, (_, i) => `- [ ] Task ${i + 1}`).join("\n");
+    await writeFile(path.join(testDir, "ROADMAP.md"), `# Test\n\n${tasks}\n`, "utf8");
 
-- [ ] Task 1
-- [ ] Task 2
-- [ ] Task 3
-- [ ] Task 4
-- [ ] Task 5
-`, "utf8");
-    
     // Ensure logs dir exists
     await mkdir(LOGS_DIR, { recursive: true });
   });
-  
+
   after(async () => {
     await rm(testDir, { recursive: true, force: true }).catch(() => {});
     // Clean up stop file
     try { fs.unlinkSync(path.join(LOGS_DIR, "pm-loop.stop")); } catch {}
   });
-  
+
   it("stops when stop file is created mid-execution", async () => {
     const stopFile = path.join(LOGS_DIR, "pm-loop.stop");
-    
-    // Start PM loop in background
+
+    // Start PM loop in background with many items
     const pmPromise = runPMLoop({
       projectDir: testDir,
-      maxItems: 10,
+      maxItems: 50,
       dryRun: true,
       timeout: 30000,
     });
-    
-    // Wait 2 seconds then create stop file
-    await new Promise(r => setTimeout(r, 2000));
+
+    // Wait 3 seconds then create stop file (dry-run ~500ms/task, so ~3s = ~6 tasks done)
+    await new Promise(r => setTimeout(r, 3000));
     await writeFile(stopFile, "stop", "utf8");
-    
+
     const result = await pmPromise;
-    
+
     // Should exit cleanly
     assert.equal(result.code, 0);
-    assert.match(result.stdout, /Stop file detected/i);
-    
-    // Should NOT have completed all 5 tasks
+    assert.match(result.stdout, /stop file detected/i);
+
+    // Should NOT have completed all 50 tasks
     const content = await readFile(path.join(testDir, "ROADMAP.md"), "utf8");
     const status = parseRoadmapStatus(content);
-    
-    assert.ok(status.done < 5, `Expected < 5 done (stopped early), got ${status.done}`);
+
+    assert.ok(status.done < 50, `Expected < 50 done (stopped early), got ${status.done}`);
     assert.ok(status.pending > 0, `Expected some pending items, got ${status.pending}`);
   });
 });
