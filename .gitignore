@@ -16,15 +16,8 @@ logs/
 *.stop
 
 # Memory runtime state (keep schema/docs, exclude live state)
-memory/brain.md
-memory/session-log.md
-memory/session-log.md.backup-*
-memory/current-state.md
-memory/agent-handoff.md
-memory/telegram-context.md
-memory/whatsapp-context.md
-memory/stinki-bio.md
-memory/deepseek-bio.md
+memory/
+reports/
 
 # Local backups & temp build output
 backups/
