@@ -51,15 +51,24 @@ async function pollPipelineStatus(pipelineId, maxWaitMs = 60000) {
   const start = Date.now();
 
   while (Date.now() - start < maxWaitMs) {
-    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/pipeline/${pipelineId}`, {
-      headers: { "Authorization": token ? `Bearer ${token}` : "" },
-    });
-    if (status < 200 || status >= 300) {
-      throw new Error(`Pipeline status check failed: ${status}`);
-    }
-    if (data.status === "completed" || data.status === "done") return data;
-    if (data.status === "failed" || data.status === "timeout") {
-      throw new Error(`Pipeline ${data.status}: ${data.error || "unknown"}`);
+    try {
+      const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/pipeline/${pipelineId}`, {
+        headers: { "Authorization": token ? `Bearer ${token}` : "" },
+        timeout: 15000,
+      });
+      if (status < 200 || status >= 300) {
+        // Transient error — retry
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
+      }
+      if (data.status === "completed" || data.status === "done") return data;
+      if (data.status === "failed" || data.status === "timeout") {
+        throw new Error(`Pipeline ${data.status}: ${data.error || "unknown"}`);
+      }
+    } catch (e) {
+      // If it's a definitive pipeline failure, re-throw; otherwise retry
+      if (e.message?.startsWith("Pipeline ")) throw e;
+      // Transient network error — keep polling
     }
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
