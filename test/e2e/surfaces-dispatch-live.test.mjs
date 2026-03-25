@@ -1,6 +1,7 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import puppeteer from "puppeteer";
+import { checkServiceUp } from "../helpers/http.mjs";
 
 const DASHBOARD_URL = "http://127.0.0.1:4319";
 const VIBE_URL = "http://127.0.0.1:3333";
@@ -9,15 +10,6 @@ const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 let browser = null;
 let servicesUp = false;
-
-async function checkUp(url) {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
 
 function skipIfDown(t) {
   if (!servicesUp) {
@@ -45,9 +37,9 @@ async function clearAndType(page, selector, text) {
 describe("Dashboard + Vibe dispatch surfaces", { timeout: 120000 }, () => {
   before(async () => {
     const [dashUp, vibeUp, leadUp] = await Promise.all([
-      checkUp(`${DASHBOARD_URL}/api/health`),
-      checkUp(`${VIBE_URL}/api/studio/projects`),
-      checkUp(`${CREW_LEAD_URL}/health`),
+      checkServiceUp(`${DASHBOARD_URL}/api/health`),
+      checkServiceUp(`${VIBE_URL}/api/studio/projects`),
+      checkServiceUp(`${CREW_LEAD_URL}/health`),
     ]);
     servicesUp = dashUp && vibeUp && leadUp;
     if (!servicesUp) return;

@@ -25,23 +25,13 @@ import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from "node:fs/promis
 import { existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
+import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
 
 // ── Dashboard connectivity ────────────────────────────────────────────────────
 
 const DASHBOARD_BASE = process.env.DASHBOARD_BASE || "http://127.0.0.1:4319";
 
 let dashboardUp = false;
-
-async function checkDashboard() {
-  try {
-    const res = await fetch(`${DASHBOARD_BASE}/api/health`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
 
 function skipIfDown(t) {
   if (!dashboardUp) {
@@ -51,17 +41,10 @@ function skipIfDown(t) {
   return false;
 }
 
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
+// ── HTTP helpers (uses http.request — Node 25 fetch unreliable on localhost) ──
 
 async function api(endpoint, method = "GET", body = null) {
-  const opts = {
-    method,
-    headers: { "content-type": "application/json" },
-  };
-  if (body !== null) opts.body = JSON.stringify(body);
-  const res = await fetch(`${DASHBOARD_BASE}${endpoint}`, opts);
-  const data = await res.json().catch(() => ({}));
-  return { status: res.status, data };
+  return httpRequest(`${DASHBOARD_BASE}${endpoint}`, { method, body });
 }
 
 // ── Temp state dir for file-system tests ─────────────────────────────────────
@@ -136,7 +119,7 @@ before(async () => {
   pipelinesDir = join(tempStateDir, "pipelines");
   await mkdir(pipelinesDir, { recursive: true });
 
-  dashboardUp = await checkDashboard();
+  dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/api/health`);
   if (!dashboardUp) {
     console.log(
       `[workflow-crud] Dashboard not running on ${DASHBOARD_BASE} — HTTP tests will be skipped.`,

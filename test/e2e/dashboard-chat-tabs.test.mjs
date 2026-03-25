@@ -1,6 +1,7 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import puppeteer from "puppeteer";
+import { checkServiceUp } from "../helpers/http.mjs";
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://127.0.0.1:4319";
 const CREW_LEAD_URL = process.env.CREW_LEAD_URL || "http://127.0.0.1:5010";
@@ -8,15 +9,6 @@ const CREW_LEAD_URL = process.env.CREW_LEAD_URL || "http://127.0.0.1:5010";
 let browser = null;
 let page = null;
 let servicesUp = false;
-
-async function checkUp(url) {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
 
 function skipIfDown(t) {
   if (!servicesUp) {
@@ -56,8 +48,8 @@ async function waitForHash(prefix, timeout = 4000) {
 describe("Dashboard chat tabs", { timeout: 60000 }, () => {
   before(async () => {
     const [dashUp, crewLeadUp] = await Promise.all([
-      checkUp(`${DASHBOARD_URL}/api/env`),
-      checkUp(`${CREW_LEAD_URL}/health`),
+      checkServiceUp(`${DASHBOARD_URL}/api/env`),
+      checkServiceUp(`${CREW_LEAD_URL}/health`),
     ]);
     servicesUp = dashUp && crewLeadUp;
     if (!servicesUp) return;

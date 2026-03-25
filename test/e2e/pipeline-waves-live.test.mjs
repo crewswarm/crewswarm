@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
 const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
@@ -31,67 +32,43 @@ async function getAuthToken() {
   }
 }
 
-async function checkCrewLeadHealth() {
-  try {
-    const res = await fetch(`${CREW_LEAD_URL}/health`, { signal: AbortSignal.timeout(5000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 async function dispatchPipeline(pipeline) {
   const token = await getAuthToken();
-  const res = await fetch(`${CREW_LEAD_URL}/api/pipeline`, {
+  const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/pipeline`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": token ? `Bearer ${token}` : "",
-    },
-    body: JSON.stringify({ pipeline }),
-    signal: AbortSignal.timeout(10000),
+    headers: { "Authorization": token ? `Bearer ${token}` : "" },
+    body: { pipeline },
+    timeout: 10000,
   });
-  
-  if (!res.ok) {
-    throw new Error(`Pipeline dispatch failed: ${res.status}`);
+  if (status < 200 || status >= 300) {
+    throw new Error(`Pipeline dispatch failed: ${status}`);
   }
-  
-  return res.json();
+  return data;
 }
 
 async function pollPipelineStatus(pipelineId, maxWaitMs = 60000) {
   const token = await getAuthToken();
   const start = Date.now();
-  
+
   while (Date.now() - start < maxWaitMs) {
-    const res = await fetch(`${CREW_LEAD_URL}/api/pipeline/${pipelineId}`, {
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/pipeline/${pipelineId}`, {
       headers: { "Authorization": token ? `Bearer ${token}` : "" },
-      signal: AbortSignal.timeout(5000),
     });
-    
-    if (!res.ok) {
-      throw new Error(`Pipeline status check failed: ${res.status}`);
+    if (status < 200 || status >= 300) {
+      throw new Error(`Pipeline status check failed: ${status}`);
     }
-    
-    const data = await res.json();
-    
-    if (data.status === "completed" || data.status === "done") {
-      return data;
-    }
-    
+    if (data.status === "completed" || data.status === "done") return data;
     if (data.status === "failed" || data.status === "timeout") {
       throw new Error(`Pipeline ${data.status}: ${data.error || "unknown"}`);
     }
-    
-    // Poll every 2 seconds
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  
+
   throw new Error(`Pipeline timed out after ${maxWaitMs}ms`);
 }
 
 before(async () => {
-  const healthy = await checkCrewLeadHealth();
+  const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
   if (!healthy) {
     console.warn("⚠️  crew-lead not running on :5010 — E2E wave tests will be skipped");
   }
@@ -99,7 +76,7 @@ before(async () => {
 
 describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipelines now go through /api/dispatch or MCP run_pipeline" }, () => {
   it("runs 2-agent wave in parallel", async (t) => {
-    const healthy = await checkCrewLeadHealth();
+    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;
@@ -143,7 +120,7 @@ describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipel
   });
   
   it("executes waves in sequence (wave 1 before wave 2)", async (t) => {
-    const healthy = await checkCrewLeadHealth();
+    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;
@@ -173,7 +150,7 @@ describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipel
   });
   
   it("applies quality gate if crew-qa fails", async (t) => {
-    const healthy = await checkCrewLeadHealth();
+    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;
@@ -188,7 +165,7 @@ describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipel
   });
   
   it("extends timeout when agent shows activity", async (t) => {
-    const healthy = await checkCrewLeadHealth();
+    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;
@@ -202,7 +179,7 @@ describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipel
   });
   
   it("routes through Cursor CLI when toggle ON", async (t) => {
-    const healthy = await checkCrewLeadHealth();
+    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;
@@ -220,7 +197,7 @@ describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipel
 
 describe("wave dispatcher integration", () => {
   it("broadcasts wave lifecycle events via SSE", async (t) => {
-    const healthy = await checkCrewLeadHealth();
+    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;
@@ -234,7 +211,7 @@ describe("wave dispatcher integration", () => {
   });
   
   it("handles wave cancellation via @@STOP", async (t) => {
-    const healthy = await checkCrewLeadHealth();
+    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;
@@ -250,7 +227,7 @@ describe("wave dispatcher integration", () => {
 
 describe("wave concurrency limits", () => {
   it("respects PM_MAX_CONCURRENT limit", async (t) => {
-    const healthy = await checkCrewLeadHealth();
+    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;

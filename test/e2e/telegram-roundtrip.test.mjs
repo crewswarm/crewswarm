@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import https from "node:https";
 
 const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
 const LOGS_DIR = path.join(CREWSWARM_DIR, "logs");
@@ -38,14 +39,25 @@ const OWNER_CHAT_ID = 123456789; // from telegram-bridge.jsonl
 const SKIP = !TOKEN;
 
 async function tgApi(method, params = {}) {
-  const url = new URL(`https://api.telegram.org/bot${TOKEN}/${method}`);
-  const res = await fetch(url.toString(), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(params),
-    signal: AbortSignal.timeout(10_000),
+  // Use https module directly — Node 25 fetch is unreliable
+  return new Promise((resolve, reject) => {
+    const urlStr = `https://api.telegram.org/bot${TOKEN}/${method}`;
+    const url = new URL(urlStr);
+    const body = JSON.stringify(params);
+    const req = https.request({
+      hostname: url.hostname, path: url.pathname,
+      method: "POST", timeout: 10000,
+      headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) },
+    }, (res) => {
+      let d = "";
+      res.on("data", (c) => d += c);
+      res.on("end", () => { try { resolve(JSON.parse(d)); } catch { resolve(d); } });
+    });
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
+    req.write(body);
+    req.end();
   });
-  return res.json();
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
@@ -152,11 +164,8 @@ describe("Telegram — getUpdates (bridge polling)", { skip: SKIP ? "No TELEGRAM
 
 describe("Telegram — bridge → crew-lead forwarding", { skip: SKIP ? "No token" : false }, () => {
   it("crew-lead is reachable (required for bridge forwarding)", async () => {
-    let reachable = false;
-    try {
-      const res = await fetch("http://127.0.0.1:5010/health", { signal: AbortSignal.timeout(3000) });
-      reachable = res.ok;
-    } catch { /* not running */ }
+    const { checkServiceUp } = await import("../helpers/http.mjs");
+    let reachable = await checkServiceUp("http://127.0.0.1:5010/health");
 
     if (!reachable) {
       // crew-lead not running — skip rather than fail
