@@ -119,7 +119,11 @@ before(async () => {
   pipelinesDir = join(tempStateDir, "pipelines");
   await mkdir(pipelinesDir, { recursive: true });
 
-  dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/api/health`);
+  dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/api/health`, 8000);
+  if (!dashboardUp) {
+    await new Promise(r => setTimeout(r, 2000));
+    dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/api/health`, 8000);
+  }
   if (!dashboardUp) {
     console.log(
       `[workflow-crud] Dashboard not running on ${DASHBOARD_BASE} — HTTP tests will be skipped.`,
