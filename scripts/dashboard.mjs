@@ -1770,6 +1770,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if ((url.pathname === "/health" || url.pathname === "/api/health") && req.method === "GET") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, uptime: Math.round(process.uptime()) }));
+      return;
+    }
+
     if (url.pathname === "/api/env" && req.method === "GET") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
@@ -8201,7 +8207,7 @@ ORDER BY day DESC, cost DESC;`;
         const { execSync } = await import("node:child_process");
         const net = await import("node:net");
 
-        function portListening(port, timeoutMs = 350) {
+        function portListening(port, timeoutMs = 2000) {
           return new Promise((resolve) => {
             const sock = new net.default.Socket();
             let done = false;
@@ -8223,7 +8229,7 @@ ORDER BY day DESC, cost DESC;`;
           });
         }
 
-        async function httpOk(url, timeoutMs = 900) {
+        async function httpOk(url, timeoutMs = 3000) {
           try {
             const r = await fetch(url, {
               signal: AbortSignal.timeout(timeoutMs),
