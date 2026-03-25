@@ -74,7 +74,7 @@ before(async () => {
   }
 });
 
-describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipelines now go through /api/dispatch or MCP run_pipeline" }, () => {
+describe("pipeline-waves E2E", { timeout: 120000 }, () => {
   it("runs 2-agent wave in parallel", async (t) => {
     const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
@@ -195,48 +195,27 @@ describe("pipeline-waves E2E", { skip: "/api/pipeline endpoint removed — pipel
   });
 });
 
-describe("wave dispatcher integration", () => {
-  it("broadcasts wave lifecycle events via SSE", async (t) => {
+describe("wave dispatcher integration", { timeout: 30000 }, () => {
+  it("GET /api/pipeline/:id returns status for a dispatched pipeline", async (t) => {
     const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
     if (!healthy) {
       t.skip("crew-lead not running");
       return;
     }
-    
-    // Test that wave events are broadcast over SSE
-    // Events: wave.started, wave.task_done, wave.completed
-    
-    // Requires SSE client to monitor events during wave execution
-    t.skip("SSE events tested via live-dispatch tests");
-  });
-  
-  it("handles wave cancellation via @@STOP", async (t) => {
-    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
-    if (!healthy) {
-      t.skip("crew-lead not running");
-      return;
-    }
-    
-    // Start a multi-wave pipeline
-    // Send @@STOP command
-    // Verify all waves cancelled and SSE broadcast
-    
-    t.skip("Wave cancellation tested in stop-kill-signals tests");
-  });
-});
 
-describe("wave concurrency limits", () => {
-  it("respects PM_MAX_CONCURRENT limit", async (t) => {
-    const healthy = await checkServiceUp(`${CREW_LEAD_URL}/health`);
-    if (!healthy) {
-      t.skip("crew-lead not running");
-      return;
-    }
-    
-    // When PM_MAX_CONCURRENT=2, only 2 tasks should run simultaneously
-    // Even if wave has 5 agents
-    
-    // Requires monitoring RT bus for concurrent claim events
-    t.skip("Concurrency limits tested in pm-synthesis tests");
+    // Dispatch a simple 1-task pipeline and verify status endpoint works
+    const pipeline = [
+      { wave: 1, agent: "crew-main", task: "Say hello in 3 words" }
+    ];
+    const result = await dispatchPipeline(pipeline);
+    assert.ok(result.pipelineId, "Should return pipelineId");
+
+    // Status endpoint should return something for this pipeline
+    const token = await getAuthToken();
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/pipeline/${result.pipelineId}`, {
+      headers: { Authorization: token ? `Bearer ${token}` : "" },
+    });
+    assert.equal(status, 200, "Status endpoint should return 200");
+    assert.ok(data.status, "Should have a status field");
   });
 });
