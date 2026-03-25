@@ -11,7 +11,7 @@ import { DualL2Planner } from '../src/prompts/dual-l2.js';
 
 const TASK = `Build the MVP (Phase 1) of a VS Code extension for CrewSwarm.
 
-Output to: /Users/jeffhobbs/Desktop/benchmark-vscode-test
+Output to: /home/user/benchmark-vscode-test
 
 Requirements:
 1. Extension scaffold with package.json

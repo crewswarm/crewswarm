@@ -15,8 +15,8 @@ import fs from 'fs';
 import path from 'path';
 
 const TASK = `Build the MVP (Phase 1) of a VS Code extension for CrewSwarm per the specs in:
-- /Users/jeffhobbs/CrewSwarm/crew-cli/ide-extension/ROADMAP.md
-- /Users/jeffhobbs/CrewSwarm/crew-cli/ide-extension/PDD.md
+- crew-cli/ide-extension/ROADMAP.md
+- crew-cli/ide-extension/PDD.md
 
 Output to: {{OUTPUT_DIR}}
 
@@ -45,7 +45,7 @@ All code must be production-ready with error handling, TypeScript types, and com
 const STACKS = [
   {
     name: 'GROK',
-    outputDir: '/Users/jeffhobbs/Desktop/benchmark-vscode-grok',
+    outputDir: '/home/user/benchmark-vscode-grok',
     config: {
       CREW_CHAT_MODEL: 'grok-4-1-fast-reasoning',
       CREW_REASONING_MODEL: 'grok-4-1-fast-reasoning',
@@ -54,7 +54,7 @@ const STACKS = [
   },
   {
     name: 'DEEPSEEK',
-    outputDir: '/Users/jeffhobbs/Desktop/benchmark-vscode-deepseek',
+    outputDir: '/home/user/benchmark-vscode-deepseek',
     config: {
       CREW_CHAT_MODEL: 'deepseek-chat',
       CREW_REASONING_MODEL: 'deepseek-reasoner',
@@ -63,7 +63,7 @@ const STACKS = [
   },
   {
     name: 'GEMINI',
-    outputDir: '/Users/jeffhobbs/Desktop/benchmark-vscode-gemini',
+    outputDir: '/home/user/benchmark-vscode-gemini',
     config: {
       CREW_CHAT_MODEL: 'gemini-2.5-flash',
       CREW_REASONING_MODEL: 'gemini-2.5-flash',

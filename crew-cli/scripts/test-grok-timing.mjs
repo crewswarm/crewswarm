@@ -7,12 +7,12 @@
 
 import fs from 'fs';
 
-const ROADMAP = fs.readFileSync('/Users/jeffhobbs/CrewSwarm/crew-cli/ide-extension/ROADMAP.md', 'utf8');
-const PDD = fs.readFileSync('/Users/jeffhobbs/CrewSwarm/crew-cli/ide-extension/PDD.md', 'utf8');
+const ROADMAP = fs.readFileSync('crew-cli/ide-extension/ROADMAP.md', 'utf8');
+const PDD = fs.readFileSync('crew-cli/ide-extension/PDD.md', 'utf8');
 
 const TASK = `Build the MVP (Phase 1) of a VS Code extension for CrewSwarm per the specs in the roadmap.
 
-Output to: /Users/jeffhobbs/Desktop/benchmark-vscode-grok
+Output to: /home/user/benchmark-vscode-grok
 
 Requirements from ROADMAP Phase 1:
 1. Extension scaffold with package.json

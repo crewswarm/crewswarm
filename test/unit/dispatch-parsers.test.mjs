@@ -188,7 +188,7 @@ describe("parseRegisterProject", () => {
 describe("parseDispatch — natural language fallback", () => {
   test("parses imperative dispatch phrasing", () => {
     const text =
-      "dispatch crew-coder build /Users/jeffhobbs/Desktop/Chuck/index.html from the planning docs";
+      "dispatch crew-coder build /home/user/Chuck/index.html from the planning docs";
     const result = parseDispatch(text, text);
     assert.ok(result !== null, "expected a dispatch result");
     assert.equal(result.agent, "crew-coder");

@@ -56,7 +56,7 @@ echo "Test 2: Using crew-cli to fix and test in Docker sandbox"
 echo ""
 
 # Use crew-cli to fix the file
-cd /Users/jeffhobbs/CrewSwarm/crew-cli
+cd crew-cli
 
 # Task: Fix the add function and run tests
 TASK="Fix the add function in $TEST_DIR/src/math.js - it should return a + b, not 0. After fixing it, stage the change and run npm test to verify."

@@ -14,7 +14,7 @@ config({ path: envPath });
 
 const TASK = `Build MVP Phase 1 VS Code extension for CrewSwarm.
 
-Output to: /Users/jeffhobbs/Desktop/benchmark-vscode-WITH-PLANNING
+Output to: /home/user/benchmark-vscode-WITH-PLANNING
 
 Requirements:
 1. Extension scaffold (package.json)
@@ -30,7 +30,7 @@ async function testWithPlanning() {
   console.log('║   PIPELINE TEST WITH PLANNING ARTIFACTS                     ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
-  const outputDir = '/Users/jeffhobbs/Desktop/benchmark-vscode-WITH-PLANNING';
+  const outputDir = '/home/user/benchmark-vscode-WITH-PLANNING';
   
   if (fs.existsSync(outputDir)) {
     fs.rmSync(outputDir, { recursive: true });

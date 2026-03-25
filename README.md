@@ -227,6 +227,54 @@ The easiest way to manage config is through the dashboard.
 
 ---
 
+## Deployment
+
+crewswarm is designed for local-first deployment but supports production containerization and cloud deployment. The system runs as a collection of Node.js services coordinated through an RT (realtime) bus, with optional web dashboard, CLI, and messaging bridge interfaces.
+
+**Environment Configuration**
+
+Production deployments require proper environment variable management. Store sensitive credentials in `.env` files and exclude them from version control using `.gitignore`. At minimum, configure one LLM provider API key (`GROQ_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`). The RT bus requires `RT_PORT` (default 4319) and `RT_AUTH_TOKEN` for secure inter-service communication. Dashboard configuration uses `VITE_RT_URL` and `VITE_RT_AUTH_TOKEN` to connect to the RT bus. Optional variables include `CREWSWARM_OUTPUT_PATH` for task outputs and `CREWSWARM_WORKSPACE` for project directories.
+
+Generate cryptographically secure tokens for production:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Additional configuration resides in `~/.crewswarm/config.json`, including provider credentials, agent-to-model assignments, command approval settings, and allowlists for shell command execution.
+
+**Docker Support**
+
+All crewswarm components support Docker containerization. Use multi-stage Dockerfiles to separate build dependencies from runtime artifacts, reducing final image size. A proper `.dockerignore` should exclude `node_modules/`, `.git/`, `.env` files, build artifacts, logs, and IDE configuration. Configure services using environment variables rather than hardcoded values, enabling 12-factor app compliance.
+
+For the RT bus and Node services, expose only necessary ports (typically 4319 for RT bus, 8080 for dashboard). Use `docker-compose.yml` for local development and multi-container orchestration, or Kubernetes manifests for production clusters. Health checks ensure container orchestrators can detect and restart failed services.
+
+Example minimal `.dockerignore`:
+```
+node_modules/
+.git/
+.env
+*.log
+dist/
+```
+
+**Production Infrastructure**
+
+Production deployments benefit from process managers like PM2 or systemd for automatic restarts and clustering. Configure a reverse proxy (nginx, Caddy, Traefik) in front of services to handle TLS termination, load balancing, and request routing. Enable HTTPS using Let's Encrypt certificates for external-facing deployments.
+
+Implement comprehensive monitoring using Prometheus for metrics collection and Grafana for visualization. Structure logs as JSON for easier aggregation in ELK stack (Elasticsearch, Logstash, Kibana) or similar log management platforms. Key metrics include task throughput, error rates, agent response times, and system resource utilization.
+
+Security considerations for production:
+- Enable command approval gates to review shell commands before execution
+- Restrict RT bus port access via firewall rules
+- Rotate API keys and auth tokens regularly
+- Run services with minimal required permissions
+- Implement rate limiting on public endpoints
+- Regular dependency updates for security patches
+
+For comprehensive deployment instructions including Docker examples, Kubernetes manifests, nginx configuration, monitoring setup, and troubleshooting, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+---
+
 ## Project structure
 
 ```
