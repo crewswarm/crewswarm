@@ -2116,7 +2116,7 @@ const server = http.createServer(async (req, res) => {
 
         systemPrompt += toolInstructions;
 
-        // Build messages (TODO: load history from session)
+        // Build messages (session history loaded separately via chat API)
         const messages = [
           { role: "system", content: systemPrompt },
           { role: "user", content: message },
