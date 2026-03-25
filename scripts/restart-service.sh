@@ -245,6 +245,20 @@ case "$SERVICE_ID" in
       "$NODE_BIN" "$CREWSWARM_DIR/apps/vibe/watch-server.mjs"
     echo "✅ studio-watch restart requested"
     ;;
+  rt|rt-daemon)
+    if _launchctl_restart "com.crewswarm.rt-daemon"; then
+      echo "✅ rt-daemon restart requested via launchd"
+      exit 0
+    fi
+    pkill -f "opencrew-rt-daemon.mjs" 2>/dev/null || true
+    lsof -ti :18889 2>/dev/null | xargs kill -9 2>/dev/null || true
+    sleep 1
+    _start_detached /tmp/rt-daemon.log \
+      env \
+      NODE_DISABLE_COMPILE_CACHE=1 \
+      "$NODE_BIN" "$CREWSWARM_DIR/scripts/opencrew-rt-daemon.mjs"
+    echo "✅ rt-daemon restart requested"
+    ;;
   openclaw-gateway)
     pkill -f "openclaw-gateway" 2>/dev/null || true
     sleep 1
