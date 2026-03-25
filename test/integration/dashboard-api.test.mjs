@@ -22,12 +22,7 @@ async function apiRequest(endpoint, method = "GET", body = null) {
 }
 
 before(async () => {
-  // Try twice with generous timeout — dashboard may be slow under test load
-  dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/health`, 8000);
-  if (!dashboardUp) {
-    await new Promise(r => setTimeout(r, 2000));
-    dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/health`, 8000);
-  }
+  dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/health`);
   if (!dashboardUp) console.log("⚠️ Dashboard not running on :4319 — skipping API validation tests");
 });
 
