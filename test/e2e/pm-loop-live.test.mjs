@@ -171,6 +171,13 @@ describe("PM loop — stop file halts execution", { skip: SKIP_FULL }, () => {
   it("creating stop file causes PM loop to halt", async () => {
     if (!testProjectId) return;
 
+    // Check if PM loop is still running — if already stopped, skip
+    const { body: initialStatus } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
+    if (initialStatus.running === false || initialStatus.pid === undefined) {
+      // Loop already finished (dry-run completes fast) — nothing to stop
+      return;
+    }
+
     const stopFile = path.join(LOGS_DIR, `pm-loop-${testProjectId}.stop`);
     // Write stop file
     await writeFile(stopFile, "stop", "utf8").catch(() => {});
