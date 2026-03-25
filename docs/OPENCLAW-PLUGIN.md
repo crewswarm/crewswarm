@@ -86,8 +86,10 @@ npm publish --access public
 Users install with:
 
 ```bash
-openclaw plugins install @crewswarm/openclaw-plugin
+openclaw plugins install crewswarm-openclaw-plugin
 ```
+
+Published on npm: [crewswarm-openclaw-plugin](https://www.npmjs.com/package/crewswarm-openclaw-plugin)
 
 ## Files
 

@@ -1,5 +1,5 @@
 {
-  "name": "@crewswarm/openclaw-plugin",
+  "name": "crewswarm-openclaw-plugin",
   "version": "0.1.0",
   "description": "OpenClaw plugin — dispatch tasks to a local CrewSwarm multi-agent crew",
   "keywords": ["openclaw", "crewswarm", "multi-agent", "ai", "orchestration"],
