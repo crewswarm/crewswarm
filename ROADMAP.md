@@ -233,6 +233,15 @@
 ## PM-Generated (Round 1)
 
 - [x] Implement WCAG 2.2 AA accessibility compliance in the dashboard by adding ARIA roles, landmarks, keyboard navigation, and color contrast fixes across all pages.  ✗ 11:08:21 PM  ✓ 11:08:37 PM (crew-fixer)
-- [ ] Optimize dashboard performance by minifying and tree-shaking JavaScript bundles, enabling code splitting for routes, and adding image lazy loading.
-- [ ] Add comprehensive unit tests for dashboard JavaScript modules including setup-wizard.js, orchestration-status.js, and cli-process.js using Vitest.
-- [ ] Enhance mobile responsiveness in the dashboard with CSS media queries, viewport meta tags, touch event handlers, and flexible grid layouts for all views.
+- [x] Optimize dashboard performance by minifying and tree-shaking JavaScript bundles, enabling code splitting for routes, and adding image lazy loading.  ✗ 11:24:44 PM  ✓ 11:25:22 PM (crew-fixer)
+- [x] Add comprehensive unit tests for dashboard JavaScript modules including setup-wizard.js, orchestration-status.js, and cli-process.js using Vitest.  ✓ 11:36:20 PM (crew-coder)
+- [x] Enhance mobile responsiveness in the dashboard with CSS media queries, viewport meta tags, touch event handlers, and flexible grid layouts for all views.  ✗ 11:52:09 PM  ✓ 11:55:01 PM (crew-fixer)
+
+---
+
+## PM-Generated (Round 1)
+
+- [ ] Implement Progressive Web App (PWA) capabilities in the dashboard by adding a web app manifest, service worker for asset caching, and install prompt UI.
+- [ ] Add end-to-end tests for the dashboard using Playwright, covering full user flows from signup through setup wizard and live orchestration monitoring.
+- [ ] Create an ARCHITECTURE.md file documenting the overall system design, including agent orchestration flows, backend services, and inter-app communications.
+- [ ] Integrate real-time updates in the dashboard orchestration status page using WebSockets for live agent metrics and notifications without page refreshes.

@@ -57,6 +57,7 @@ body {
   height: 100vh;
   overflow: hidden;
   font-size: 14px;
+  touch-action: manipulation;
 }
 
 /* ── Accessibility ── */
@@ -1135,6 +1136,30 @@ select {
   .page-header .actions {
     flex-wrap: wrap;
   }
+  /* Mobile responsive containers */
+  .container,
+  .dashboard-grid,
+  .view,
+  .card {
+    width: 100%;
+    max-width: 100%;
+    padding: 1rem;
+  }
+  /* Responsive images and videos */
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
+  }
+  /* Ensure all interactive elements meet touch target size */
+  button,
+  a,
+  .nav-item,
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1157,6 +1182,24 @@ select {
   .stab {
     padding: 4px 10px;
     font-size: 11px;
+  }
+  /* Touch-friendly buttons and inputs */
+  button {
+    min-height: 44px;
+    font-size: 16px;
+    padding: 8px 16px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  /* Prevent zoom on input focus */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    font-size: 16px;
   }
 }
 

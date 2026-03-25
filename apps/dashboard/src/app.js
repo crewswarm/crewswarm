@@ -26,15 +26,14 @@ import {
   showSwarmChat,
   handleSwarmSSEEvent,
 } from "./tabs/swarm-chat-tab.js";
-import {
-  showBenchmarks as showBenchmarksTab,
-  loadBenchmarks,
-  loadBenchmarkLeaderboard,
-  loadBenchmarkTasks,
-  onBenchmarkTaskSelect,
-  runBenchmarkTask,
-  stopBenchmarkRun,
-} from "./tabs/benchmarks-tab.js";
+// Lazy-loaded benchmarks tab for code splitting
+let benchmarksTabModule = null;
+async function loadBenchmarksTabModule() {
+  if (!benchmarksTabModule) {
+    benchmarksTabModule = await import("./tabs/benchmarks-tab.js");
+  }
+  return benchmarksTabModule;
+}
 import { initWavesTab } from "./tabs/waves-tab.js";
 import { initWorkflowsTab, showWorkflows } from "./tabs/workflows-tab.js";
 import {
@@ -1782,7 +1781,10 @@ function showEngines() {
 
 // showSkills / showRunSkills → skills-tab.js
 
-const showBenchmarks = () => showBenchmarksTab({ hideAllViews, setNavActive });
+const showBenchmarks = async () => {
+  const { showBenchmarks: showBenchmarksTab } = await loadBenchmarksTabModule();
+  showBenchmarksTab({ hideAllViews, setNavActive });
+};
 
 function showMemoryView() {
   hideAllViews();
@@ -2195,12 +2197,30 @@ const ACTION_REGISTRY = {
   saveSkill,
   cancelSkillForm,
   loadRunSkills,
-  loadBenchmarks,
-  loadBenchmarkLeaderboard,
-  loadBenchmarkTasks,
-  onBenchmarkTaskSelect,
-  runBenchmarkTask,
-  stopBenchmarkRun,
+  loadBenchmarks: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.loadBenchmarks();
+  },
+  loadBenchmarkLeaderboard: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.loadBenchmarkLeaderboard();
+  },
+  loadBenchmarkTasks: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.loadBenchmarkTasks();
+  },
+  onBenchmarkTaskSelect: async (taskId) => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.onBenchmarkTaskSelect(taskId);
+  },
+  runBenchmarkTask: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.runBenchmarkTask();
+  },
+  stopBenchmarkRun: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.stopBenchmarkRun();
+  },
   // Memory
   loadMemoryStats,
   searchMemory,
@@ -2292,10 +2312,30 @@ const ACTION_REGISTRY = {
   showSettingsTab: (tab) => showSettingsTab(tab),
 };
 
+// ── Touch and click event handling for mobile responsiveness ───────────────
+let touchHandled = false;
+
+document.addEventListener("touchstart", (e) => {
+  if (!(e.target instanceof Element)) return;
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+
+  // Mark that touch was handled to prevent duplicate click event
+  touchHandled = true;
+  setTimeout(() => { touchHandled = false; }, 500);
+}, { passive: true });
+
 document.addEventListener("click", (e) => {
   if (!(e.target instanceof Element)) return;
   const el = e.target.closest("[data-action]");
   if (!el) return;
+
+  // Skip if already handled by touch
+  if (touchHandled) {
+    e.preventDefault();
+    return;
+  }
+
   e.stopPropagation();
   const action = el.dataset.action;
   const fn = ACTION_REGISTRY[action];
@@ -2650,12 +2690,30 @@ Object.assign(window, {
   clearChatHistory,
   filterSkills,
   loadAllUsage,
-  loadBenchmarkLeaderboard,
-  loadBenchmarks,
-  loadBenchmarkTasks,
-  onBenchmarkTaskSelect,
-  runBenchmarkTask,
-  stopBenchmarkRun,
+  loadBenchmarkLeaderboard: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.loadBenchmarkLeaderboard();
+  },
+  loadBenchmarks: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.loadBenchmarks();
+  },
+  loadBenchmarkTasks: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.loadBenchmarkTasks();
+  },
+  onBenchmarkTaskSelect: async (taskId) => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.onBenchmarkTaskSelect(taskId);
+  },
+  runBenchmarkTask: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.runBenchmarkTask();
+  },
+  stopBenchmarkRun: async () => {
+    const mod = await loadBenchmarksTabModule();
+    return mod.stopBenchmarkRun();
+  },
   loadMemoryStats,
   searchMemory,
   migrateMemory,
