@@ -1,6 +1,6 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 import { checkServiceUp } from "../helpers/http.mjs";
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://127.0.0.1:4319";
@@ -56,6 +56,7 @@ describe("Dashboard chat tabs", { timeout: 60000 }, () => {
 
     browser = await puppeteer.launch({
       headless: true,
+      executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
       defaultViewport: { width: 1440, height: 960 },
     });
