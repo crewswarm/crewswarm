@@ -6,8 +6,8 @@ if [[ -n "${NODE:-}" && -x "${NODE}" ]]; then
 fi
 
 for candidate in \
-  "/usr/local/opt/node@20/bin/node" \
-  "/opt/homebrew/opt/node@20/bin/node" \
+  "/usr/local/opt/node/bin/node" \
+  "/opt/homebrew/opt/node/bin/node" \
   "/usr/local/bin/node" \
   "/opt/homebrew/bin/node"
 do

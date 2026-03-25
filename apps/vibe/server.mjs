@@ -1229,8 +1229,8 @@ function handleCliChatLocally(req, res, body) {
     role: "user",
     content: message,
     ts: Date.now(),
-    source: "studio-cli",
-    metadata: { engine },
+    source: "cli",
+    metadata: { engine, agentName: "You", agentEmoji: "👤" },
   });
 
   if (!sendSseHeaders(res)) {
@@ -1324,8 +1324,8 @@ async function handleCliChatViaCrewLead(req, res, body) {
     role: "user",
     content: message,
     ts: Date.now(),
-    source: "studio-cli",
-    metadata: { engine },
+    source: "cli",
+    metadata: { engine, agentName: "You", agentEmoji: "👤" },
   });
 
   if (!sendSseHeaders(res)) {
@@ -1387,8 +1387,9 @@ async function handleCliChatViaCrewLead(req, res, body) {
     role: "assistant",
     content: (transcript || stderrText || "(no output)").trim(),
     ts: Date.now(),
-    source: "studio-cli",
-    metadata: { engine, exitCode },
+    source: "cli",
+    agent: engine,
+    metadata: { engine, exitCode, agentName: engine, agentEmoji: "⚡" },
   });
 
   if (!clientClosed) {
