@@ -22,6 +22,7 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
 
 const DASH_BASE = "http://127.0.0.1:4319";
 const CL_BASE   = "http://127.0.0.1:5010";
@@ -39,32 +40,20 @@ const TOKEN = loadAuthToken();
 
 async function apiGet(base, path_, token) {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const res = await fetch(`${base}${path_}`, { headers, signal: AbortSignal.timeout(8000) });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const { status, data } = await httpRequest(`${base}${path_}`, { headers, timeout: 8000 });
+  return { status, body: data };
 }
 
 async function apiPost(base, path_, body, token) {
-  const headers = { "content-type": "application/json" };
+  const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${base}${path_}`, {
-    method: "POST", headers,
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const { status, data } = await httpRequest(`${base}${path_}`, { method: "POST", headers, body, timeout: 10000 });
+  return { status, body: data };
 }
 
 // Check services are up
-let dashReachable = false;
-let crewLeadReachable = false;
-try {
-  const r = await fetch(`${DASH_BASE}/api/env`, { signal: AbortSignal.timeout(3000) });
-  dashReachable = r.ok;
-} catch {}
-try {
-  const r = await fetch(`${CL_BASE}/health`, { signal: AbortSignal.timeout(3000) });
-  crewLeadReachable = r.ok;
-} catch {}
+const dashReachable = await checkServiceUp(`${DASH_BASE}/health`);
+const crewLeadReachable = await checkServiceUp(`${CL_BASE}/health`);
 
 const SKIP_FULL = (!dashReachable || !crewLeadReachable)
   ? "Requires dashboard (:4319) and crew-lead (:5010) — run npm run restart-all"

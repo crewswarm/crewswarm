@@ -5,38 +5,24 @@
  */
 import { test, describe, before } from "node:test";
 import assert from "node:assert/strict";
+import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
 
 const DASHBOARD_BASE = process.env.DASHBOARD_BASE || "http://127.0.0.1:4319";
 
 let dashboardUp = false;
-
-async function checkDashboard() {
-  try {
-    const res = await fetch(`${DASHBOARD_BASE}/health`, { signal: AbortSignal.timeout(3000) });
-    return res.ok;
-  } catch { return false; }
-}
 
 function skipIfDown(t) {
   if (!dashboardUp) { t.skip("dashboard not running on :4319"); return true; }
   return false;
 }
 
-// Helper to make API requests
+// Helper to make API requests (uses http.request — Node 25 fetch unreliable on localhost)
 async function apiRequest(endpoint, method = "GET", body = null) {
-  const options = {
-    method,
-    headers: { "content-type": "application/json" },
-  };
-  if (body) options.body = JSON.stringify(body);
-
-  const res = await fetch(`${DASHBOARD_BASE}${endpoint}`, options);
-  const data = await res.json();
-  return { status: res.status, data };
+  return httpRequest(`${DASHBOARD_BASE}${endpoint}`, { method, body });
 }
 
 before(async () => {
-  dashboardUp = await checkDashboard();
+  dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/health`);
   if (!dashboardUp) console.log("⚠️ Dashboard not running on :4319 — skipping API validation tests");
 });
 
@@ -256,26 +242,22 @@ describe("Dashboard API Validation Tests", () => {
   describe("Error Handling", () => {
     test("returns 400 for malformed JSON", async (t) => {
       if (skipIfDown(t)) return;
-      const res = await fetch(`${DASHBOARD_BASE}/api/build`, {
+      const { status, data } = await httpRequest(`${DASHBOARD_BASE}/api/build`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: "{ invalid json"
       });
-      const data = await res.json();
-      assert.equal(res.status, 400);
+      assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("json"));
     });
 
     test("returns 400 for empty request body", async (t) => {
       if (skipIfDown(t)) return;
-      const res = await fetch(`${DASHBOARD_BASE}/api/build`, {
+      const { status, data } = await httpRequest(`${DASHBOARD_BASE}/api/build`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: ""
       });
-      const data = await res.json();
-      assert.equal(res.status, 400);
+      assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("empty") || data.error.toLowerCase().includes("required"));
     });
@@ -293,11 +275,9 @@ describe("Dashboard API Validation Tests", () => {
       if (skipIfDown(t)) return;
       // Folder picker only works on macOS, but should not crash
       if (process.platform === "darwin") {
-        const res = await fetch(`${DASHBOARD_BASE}/api/pick-folder?default=/tmp`, {
-          method: "GET"
-        });
+        const { status } = await httpRequest(`${DASHBOARD_BASE}/api/pick-folder?default=/tmp`);
         // Should return 200 with ok field (may be false if user cancels)
-        assert.ok(res.status === 200 || res.status === 500, "Folder picker should handle requests");
+        assert.ok(status === 200 || status === 500, "Folder picker should handle requests");
       }
     });
   });

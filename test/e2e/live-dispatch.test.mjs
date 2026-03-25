@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
 const DASHBOARD_URL = "http://127.0.0.1:4319";
@@ -30,21 +31,9 @@ function getAuthToken() {
   }
 }
 
-async function checkCrewLeadUp() {
-  try {
-    const res = await fetch(`${CREW_LEAD_URL}/health`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    return res.ok;
-  } catch (e) {
-    if (/ECONNREFUSED|fetch failed|network/i.test(String(e?.message || e))) return false;
-    throw e;
-  }
-}
-
 before(async () => {
   authToken = getAuthToken();
-  crewLeadUp = await checkCrewLeadUp();
+  crewLeadUp = await checkServiceUp(`${CREW_LEAD_URL}/health`);
   if (!crewLeadUp) {
     console.log("⚠️ crew-lead not running on 5010 — skipping all e2e tests");
   }
@@ -69,13 +58,10 @@ function authHeaders() {
 describe("Health check", { timeout: 10000 }, () => {
   test("GET /health returns 200 OK", async (t) => {
     if (skipIfDown(t)) return;
-    const res = await fetch(`${CREW_LEAD_URL}/health`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.ok, true);
-    assert.equal(body.agent, "crew-lead");
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/health`);
+    assert.equal(status, 200);
+    assert.equal(data.ok, true);
+    assert.equal(data.agent, "crew-lead");
   });
 });
 
@@ -84,21 +70,17 @@ describe("Health check", { timeout: 10000 }, () => {
 describe("Chat round-trip", { timeout: 35000 }, () => {
   test("POST /chat with PONG request returns reply containing PONG", async (t) => {
     if (skipIfDown(t)) return;
-    const res = await fetch(`${CREW_LEAD_URL}/chat`, {
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/chat`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({
-        message: "reply with exactly: PONG",
-        sessionId: E2E_SESSION,
-      }),
-      signal: AbortSignal.timeout(30000),
+      body: { message: "reply with exactly: PONG", sessionId: E2E_SESSION },
+      timeout: 30000,
     });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.ok(body.reply, "response should have reply field");
+    assert.equal(status, 200);
+    assert.ok(data.reply, "response should have reply field");
     assert.ok(
-      /pong/i.test(body.reply),
-      `reply should contain PONG (case-insensitive), got: ${body.reply?.slice(0, 100)}`
+      /pong/i.test(data.reply),
+      `reply should contain PONG (case-insensitive), got: ${data.reply?.slice(0, 100)}`
     );
   });
 });
@@ -108,19 +90,15 @@ describe("Chat round-trip", { timeout: 35000 }, () => {
 describe("Direct dispatch to crew-seo", { timeout: 35000 }, () => {
   test("dispatch crew-seo returns reply within 30s", async (t) => {
     if (skipIfDown(t)) return;
-    const res = await fetch(`${CREW_LEAD_URL}/chat`, {
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/chat`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({
-        message: "dispatch crew-seo to say hello in exactly 3 words",
-        sessionId: `e2e-dispatch-${Date.now()}`,
-      }),
-      signal: AbortSignal.timeout(32000),
+      body: { message: "dispatch crew-seo to say hello in exactly 3 words", sessionId: `e2e-dispatch-${Date.now()}` },
+      timeout: 32000,
     });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.ok(body.reply, "response should have reply");
-    assert.ok(body.reply.length > 0, "reply should not be empty");
+    assert.equal(status, 200);
+    assert.ok(data.reply, "response should have reply");
+    assert.ok(data.reply.length > 0, "reply should not be empty");
   });
 });
 
@@ -129,17 +107,14 @@ describe("Direct dispatch to crew-seo", { timeout: 35000 }, () => {
 describe("History saved", { timeout: 15000 }, () => {
   test("GET /history?sessionId=e2e-test contains PONG message after chat", async (t) => {
     if (skipIfDown(t)) return;
-    const res = await fetch(
+    const authHdrs = authToken ? { authorization: `Bearer ${authToken}` } : {};
+    const { status, data } = await httpRequest(
       `${CREW_LEAD_URL}/history?sessionId=${encodeURIComponent(E2E_SESSION)}`,
-      {
-        headers: authToken ? { authorization: `Bearer ${authToken}` } : {},
-        signal: AbortSignal.timeout(5000),
-      }
+      { headers: authHdrs }
     );
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.ok(Array.isArray(body.history), "history should be array");
-    const hasPong = body.history.some(
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(data.history), "history should be array");
+    const hasPong = data.history.some(
       (m) => m.role === "assistant" && /pong/i.test(m.content || "")
     );
     assert.ok(hasPong, "history should contain assistant message with PONG");
@@ -151,14 +126,11 @@ describe("History saved", { timeout: 15000 }, () => {
 describe("Agents online", { timeout: 10000 }, () => {
   test("GET /api/agents returns agent list with crew-seo", async (t) => {
     if (skipIfDown(t)) return;
-    const res = await fetch(`${CREW_LEAD_URL}/api/agents`, {
-      headers: authToken ? { authorization: `Bearer ${authToken}` } : {},
-      signal: AbortSignal.timeout(5000),
-    });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.ok(body.ok !== false, "response should be ok");
-    const agents = body.agents || body;
+    const authHdrs = authToken ? { authorization: `Bearer ${authToken}` } : {};
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/agents`, { headers: authHdrs });
+    assert.equal(status, 200);
+    assert.ok(data.ok !== false, "response should be ok");
+    const agents = data.agents || data;
     assert.ok(Array.isArray(agents), "agents should be array");
     const seo = agents.find(
       (a) => (a.id || a).includes("seo") || (a.id || a) === "crew-seo"
@@ -178,40 +150,38 @@ describe("Wave pipeline", { timeout: 90000 }, () => {
   {"wave":1,"agent":"crew-main","task":"say the word ORANGE"}
 ]`;
 
-    const res = await fetch(`${CREW_LEAD_URL}/chat`, {
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/chat`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ message: pipelineMsg, sessionId }),
-      signal: AbortSignal.timeout(60000),
+      body: { message: pipelineMsg, sessionId },
+      timeout: 60000,
     });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.ok(body.reply, "response should have reply");
+    assert.equal(status, 200);
+    assert.ok(data.reply, "response should have reply");
 
     // Poll history for pipeline completion (30 polls × 2s = 60s max)
     let found = false;
+    const authHdrs = authToken ? { authorization: `Bearer ${authToken}` } : {};
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, POLL_MS));
-      const histRes = await fetch(
-        `${CREW_LEAD_URL}/history?sessionId=${encodeURIComponent(sessionId)}`,
-        {
-          headers: authToken ? { authorization: `Bearer ${authToken}` } : {},
-          signal: AbortSignal.timeout(5000),
+      try {
+        const hist = await httpRequest(
+          `${CREW_LEAD_URL}/history?sessionId=${encodeURIComponent(sessionId)}`,
+          { headers: authHdrs }
+        );
+        if (hist.status !== 200) continue;
+        const hasApple = (hist.data.history || []).some(
+          (m) => /apple/i.test(m.content || "")
+        );
+        const hasOrange = (hist.data.history || []).some(
+          (m) => /orange/i.test(m.content || "")
+        );
+        if (hasApple || hasOrange || data.reply?.length > 50) {
+          found = true;
+          break;
         }
-      );
-      if (!histRes.ok) continue;
-      const hist = await histRes.json();
-      const hasApple = (hist.history || []).some(
-        (m) => /apple/i.test(m.content || "")
-      );
-      const hasOrange = (hist.history || []).some(
-        (m) => /orange/i.test(m.content || "")
-      );
-      if (hasApple || hasOrange || body.reply?.length > 50) {
-        found = true;
-        break;
-      }
+      } catch { continue; }
     }
-    assert.ok(found || body.reply?.length > 0, "pipeline should produce reply or history");
+    assert.ok(found || data.reply?.length > 0, "pipeline should produce reply or history");
   });
 });

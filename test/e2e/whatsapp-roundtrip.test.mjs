@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { httpRequest, checkServiceUp } from "../helpers/http.mjs";
 
 const WA_HTTP_PORT = parseInt(process.env.WA_HTTP_PORT || "5015", 10);
 const WA_BASE = `http://127.0.0.1:${WA_HTTP_PORT}`;
@@ -29,18 +30,13 @@ const OWNER_PHONE = "+15551234567";
 const OWNER_JID = "15551234567@s.whatsapp.net";
 
 async function waGet(endpoint) {
-  const res = await fetch(`${WA_BASE}${endpoint}`, { signal: AbortSignal.timeout(5000) });
-  return res.json();
+  const { data } = await httpRequest(`${WA_BASE}${endpoint}`);
+  return data;
 }
 
 async function waPost(endpoint, body) {
-  const res = await fetch(`${WA_BASE}${endpoint}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return res.json();
+  const { data } = await httpRequest(`${WA_BASE}${endpoint}`, { method: "POST", body, timeout: 10000 });
+  return data;
 }
 
 // Check bridge is reachable before running any tests
@@ -103,23 +99,17 @@ describe("WhatsApp — outbound message delivery", { skip: SKIP }, () => {
   });
 
   it("POST /send without text returns 400", async () => {
-    const res = await fetch(`${WA_BASE}/send`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: OWNER_PHONE }),
-      signal: AbortSignal.timeout(5000),
+    const { status } = await httpRequest(`${WA_BASE}/send`, {
+      method: "POST", body: { phone: OWNER_PHONE },
     });
-    assert.equal(res.status, 400);
+    assert.equal(status, 400);
   });
 
   it("POST /send without jid/phone returns 400", async () => {
-    const res = await fetch(`${WA_BASE}/send`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "no recipient" }),
-      signal: AbortSignal.timeout(5000),
+    const { status } = await httpRequest(`${WA_BASE}/send`, {
+      method: "POST", body: { text: "no recipient" },
     });
-    assert.equal(res.status, 400);
+    assert.equal(status, 400);
   });
 });
 
@@ -205,8 +195,7 @@ describe("WhatsApp — crew-lead forwarding path", { skip: SKIP }, () => {
   it("crew-lead is reachable on :5010 (required for inbound → dispatch)", async () => {
     let ok = false;
     try {
-      const res = await fetch("http://127.0.0.1:5010/health", { signal: AbortSignal.timeout(3000) });
-      ok = res.ok;
+      ok = await checkServiceUp("http://127.0.0.1:5010/health");
     } catch { /* not running */ }
     if (!ok) return; // crew-lead not up — skip, not fail
     assert.ok(ok);
