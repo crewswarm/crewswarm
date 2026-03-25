@@ -4,3 +4,8 @@ dist/
 coverage/
 *.log
 .DS_Store
+.env
+.env.*
+*.bak
+*.backup
+*.broken

@@ -349,6 +349,12 @@ export class GeminiToolAdapter {
   }
   
   private async writeFile(params: { file_path: string; content: string }): Promise<ToolResult> {
+    // Path traversal guard
+    const fullPath = resolve(this.config.getWorkspaceRoot(), params.file_path);
+    const wsRoot = resolve(this.config.getWorkspaceRoot());
+    if (!fullPath.startsWith(wsRoot + '/') && fullPath !== wsRoot) {
+      return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
+    }
     // Stage in sandbox instead of writing directly
     await this.sandbox.addChange(params.file_path, params.content);
     return {
@@ -378,6 +384,12 @@ export class GeminiToolAdapter {
   private async readFile(params: { file_path: string; start_line?: number; end_line?: number }): Promise<ToolResult> {
     const filePath = resolve(this.config.getWorkspaceRoot(), params.file_path);
 
+    // Path traversal guard: ensure resolved path is within workspace
+    const wsRoot = resolve(this.config.getWorkspaceRoot());
+    if (!filePath.startsWith(wsRoot + '/') && filePath !== wsRoot) {
+      return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
+    }
+
     // Track that this file has been read (for read-before-edit guard)
     this._filesRead.add(params.file_path);
     this._filesRead.add(filePath);
@@ -400,6 +412,12 @@ export class GeminiToolAdapter {
   
   private async editFile(params: { file_path: string; old_string: string; new_string: string; replace_all?: boolean }): Promise<ToolResult> {
     const filePath = resolve(this.config.getWorkspaceRoot(), params.file_path);
+
+    // Path traversal guard
+    const wsRoot = resolve(this.config.getWorkspaceRoot());
+    if (!filePath.startsWith(wsRoot + '/') && filePath !== wsRoot) {
+      return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
+    }
 
     // Read-before-edit guard: require the file to have been read first (matches Claude Code)
     if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
@@ -594,8 +612,15 @@ export class GeminiToolAdapter {
       return { success: false, error: 'git reset --hard is destructive. Use git stash or git checkout <file> instead.' };
     }
 
+    // Reject shell metacharacters to prevent command injection
+    if (/[;&|`$(){}\\!<>]/.test(command)) {
+      return { success: false, error: 'git command contains disallowed shell characters. Use only git arguments.' };
+    }
+
     try {
-      const out = execSync(`git ${command}`, {
+      const args = command.split(/\s+/).filter(Boolean);
+      const { execFileSync } = await import('node:child_process');
+      const out = execFileSync('git', args, {
         cwd: this.config.getWorkspaceRoot(),
         stdio: 'pipe',
         encoding: 'utf8',
@@ -612,11 +637,10 @@ export class GeminiToolAdapter {
     const command = String(params.command || '').trim();
     if (!command) return { success: false, error: 'shell requires command' };
 
-    // Dangerous command detection (warn but don't block — matches Claude Code pattern)
+    // Dangerous command detection — block destructive patterns
     for (const pat of DANGEROUS_SHELL_PATTERNS) {
       if (pat.test(command)) {
-        console.warn(`[GeminiAdapter] ⚠️ Potentially destructive command detected: ${command.slice(0, 80)}`);
-        break;
+        return { success: false, error: `Blocked: destructive command detected (${command.slice(0, 60)}). Use a safer alternative.` };
       }
     }
 

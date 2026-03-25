@@ -445,14 +445,14 @@ interface ProviderEntry {
 
 const PROVIDER_ORDER: ProviderEntry[] = [
   // Heavy tier — L2 brain (complex multi-file tasks, planning)
-  { id: 'openai', envKey: 'OPENAI_API_KEY', model: 'gpt-5.4', driver: 'openai', apiUrl: 'https://api.openai.com/v1/chat/completions', modelPrefix: 'gpt', tier: 'heavy' },
-  { id: 'anthropic', envKey: 'ANTHROPIC_API_KEY', model: 'claude-sonnet-4.6', driver: 'anthropic', modelPrefix: 'claude', tier: 'heavy' },
-  { id: 'grok', envKey: 'XAI_API_KEY', model: 'grok-4.20-beta', driver: 'openai', apiUrl: 'https://api.x.ai/v1/chat/completions', modelPrefix: 'grok', tier: 'heavy' },
+  { id: 'openai', envKey: 'OPENAI_API_KEY', model: 'gpt-4.1', driver: 'openai', apiUrl: 'https://api.openai.com/v1/chat/completions', modelPrefix: 'gpt', tier: 'heavy' },
+  { id: 'anthropic', envKey: 'ANTHROPIC_API_KEY', model: 'claude-sonnet-4-20250514', driver: 'anthropic', modelPrefix: 'claude', tier: 'heavy' },
+  { id: 'grok', envKey: 'XAI_API_KEY', model: 'grok-3-mini-beta', driver: 'openai', apiUrl: 'https://api.x.ai/v1/chat/completions', modelPrefix: 'grok', tier: 'heavy' },
   // Standard tier — L3 workers (execution, parallel tasks)
   { id: 'gemini', envKey: 'GEMINI_API_KEY', model: 'gemini-2.5-flash', driver: 'gemini', modelPrefix: 'gemini', tier: 'standard' },
   { id: 'gemini', envKey: 'GOOGLE_API_KEY', model: 'gemini-2.5-flash', driver: 'gemini', modelPrefix: 'gemini', tier: 'standard' },
-  { id: 'deepseek', envKey: 'DEEPSEEK_API_KEY', model: 'deepseek-v3.2', driver: 'openai', apiUrl: 'https://api.deepseek.com/v1/chat/completions', modelPrefix: 'deepseek', tier: 'standard' },
-  { id: 'kimi', envKey: 'MOONSHOT_API_KEY', model: 'kimi-k2.5', driver: 'openai', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', modelPrefix: 'kimi', tier: 'standard' },
+  { id: 'deepseek', envKey: 'DEEPSEEK_API_KEY', model: 'deepseek-chat', driver: 'openai', apiUrl: 'https://api.deepseek.com/v1/chat/completions', modelPrefix: 'deepseek', tier: 'standard' },
+  { id: 'kimi', envKey: 'MOONSHOT_API_KEY', model: 'moonshot-v1-128k', driver: 'openai', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', modelPrefix: 'kimi', tier: 'standard' },
   // Fast tier — L1 routing (classification, cheap)
   { id: 'groq', envKey: 'GROQ_API_KEY', model: 'llama-3.3-70b-versatile', driver: 'openai', apiUrl: 'https://api.groq.com/openai/v1/chat/completions', modelPrefix: 'llama', tier: 'fast' },
   // Fallback — free tier
@@ -1056,10 +1056,8 @@ class JITContextTracker {
       const dirsToIndex = Array.from(uniqueDirs).slice(0, 5);
       if (dirsToIndex.length === 0) return '';
 
-      const paths = dirsToIndex.map(d => {
-        const { resolve } = require('node:path');
-        return resolve(projectDir, d);
-      });
+      const { resolve: resolvePath } = await import('node:path');
+      const paths = dirsToIndex.map(d => resolvePath(projectDir, d));
 
       const index = await buildCollectionIndex(paths, { includeCode: true });
       if (index.chunkCount === 0) return '';
