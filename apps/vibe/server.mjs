@@ -1111,7 +1111,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
       const model = modelOverride || process.env.CREWSWARM_CREW_CLI_MODEL || "";
       return {
         command: "node",
-        args: [crewBin, "chat", message, ...(model ? ["--model", model] : [])],
+        args: [crewBin, "chat", message, ...(projectDir ? ["--project", projectDir] : []), ...(model ? ["--model", model] : [])],
         stdin: null,
       };
     }
