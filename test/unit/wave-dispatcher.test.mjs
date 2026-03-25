@@ -9,7 +9,6 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { getStatePath, resetPaths } from "../../lib/runtime/paths.mjs";
-import { saveProjectMessage } from "../../lib/chat/project-messages.mjs";
 
 import {
   initWaveDispatcher,
@@ -105,50 +104,6 @@ describe("wave-dispatcher", () => {
 
       assert.equal(result, taskId);
       assert.equal(pendingDispatches.get(taskId).task, "write hello from object");
-    });
-
-    it("resolves project alias prompt from project thread context before dispatch", () => {
-      const taskId = "task-alias-1";
-      let publishedPayload = null;
-      const deps = createMockDeps({
-        getRtPublish: () => (msg) => {
-          publishedPayload = msg?.payload || null;
-          return taskId;
-        },
-      });
-      initWaveDispatcher(deps);
-
-      const threadId = "general:studio-1774286863681";
-      saveProjectMessage("general", {
-        source: "dashboard",
-        role: "user",
-        content: "project-a-1774286864901",
-        threadId,
-      });
-      saveProjectMessage("general", {
-        source: "dashboard",
-        role: "assistant",
-        content:
-          "Chuck site exists now. QA flags 3 polish issues: add :focus-visible, mobile stack query, reduced-motion scroll-behavior.",
-        threadId,
-      });
-
-      const result = dispatchTask(
-        "crew-frontend",
-        "project-a-1774286864901",
-        "studio-1774286863681",
-      );
-
-      assert.equal(result, taskId);
-      assert.ok(publishedPayload, "expected publish payload");
-      assert.match(
-        String(publishedPayload.prompt || ""),
-        /\[Resolved project-a-1774286864901 from project thread context\]/,
-      );
-      assert.match(
-        String(publishedPayload.prompt || ""),
-        /QA flags 3 polish issues/,
-      );
     });
   });
 

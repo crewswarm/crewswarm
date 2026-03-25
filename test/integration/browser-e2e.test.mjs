@@ -63,18 +63,7 @@ before(async () => {
     res.end(html);
   });
 
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  }).catch((error) => {
-    if (error?.code === "EPERM") {
-      server = null;
-      playwrightAvailable = false;
-      return;
-    }
-    throw error;
-  });
-  if (!server) return;
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   baseUrl = `http://127.0.0.1:${address.port}`;
 });

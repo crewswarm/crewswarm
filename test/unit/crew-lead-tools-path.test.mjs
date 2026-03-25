@@ -6,9 +6,9 @@ describe("sanitizeToolPathArgument", () => {
   it("strips glued prose after .md", () => {
     assert.equal(
       sanitizeToolPathArgument(
-        "/home/user/projects/stinki-shrine/content-draft.md and then summarize",
+        "/Users/jeffhobbs/Desktop/stinki-shrine/content-draft.md and then summarize",
       ),
-      "/home/user/projects/stinki-shrine/content-draft.md",
+      "/Users/jeffhobbs/Desktop/stinki-shrine/content-draft.md",
     );
   });
 
@@ -21,8 +21,8 @@ describe("sanitizeToolPathArgument", () => {
 
   it("leaves clean paths unchanged", () => {
     assert.equal(
-      sanitizeToolPathArgument("/home/user/projects/stinki-shrine/content-draft.md"),
-      "/home/user/projects/stinki-shrine/content-draft.md",
+      sanitizeToolPathArgument("/Users/jeffhobbs/Desktop/stinki-shrine/content-draft.md"),
+      "/Users/jeffhobbs/Desktop/stinki-shrine/content-draft.md",
     );
   });
 

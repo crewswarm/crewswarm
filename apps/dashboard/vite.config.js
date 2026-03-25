@@ -38,6 +38,47 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: false,
+        dead_code: true,
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Split large tab modules into separate chunks
+          if (id.includes('src/tabs/')) {
+            const match = id.match(/tabs\/([^/]+)\.js/);
+            if (match) return `tab-${match[1]}`;
+          }
+          // Split chat modules
+          if (id.includes('src/chat/')) {
+            return 'chat-core';
+          }
+          // Split components
+          if (id.includes('src/components/')) {
+            return 'components';
+          }
+          // Split core utilities
+          if (id.includes('src/core/')) {
+            return 'core-utils';
+          }
+          // Setup wizard separate chunk
+          if (id.includes('setup-wizard')) {
+            return 'setup-wizard';
+          }
+          // Orchestration and CLI process
+          if (id.includes('orchestration-status')) {
+            return 'orchestration';
+          }
+          if (id.includes('cli-process')) {
+            return 'cli-process';
+          }
+        },
+      },
+    },
   },
   plugins: [copyPublicFilesPlugin()],
   server: {
