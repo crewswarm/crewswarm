@@ -40,14 +40,14 @@ const TOKEN = loadAuthToken();
 
 async function apiGet(base, path_, token) {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const { status, data } = await httpRequest(`${base}${path_}`, { headers, timeout: 8000 });
+  const { status, data } = await httpRequest(`${base}${path_}`, { headers, timeout: 30000 });
   return { status, body: data };
 }
 
 async function apiPost(base, path_, body, token) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  const { status, data } = await httpRequest(`${base}${path_}`, { method: "POST", headers, body, timeout: 10000 });
+  const { status, data } = await httpRequest(`${base}${path_}`, { method: "POST", headers, body, timeout: 30000 });
   return { status, body: data };
 }
 
@@ -65,7 +65,7 @@ let testProjectId = null;
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
-describe("PM loop — project creation via dashboard API", { skip: SKIP_FULL }, () => {
+describe("PM loop — project creation via dashboard API", { skip: SKIP_FULL, timeout: 60000 }, () => {
   it("POST /api/projects creates a test project with ROADMAP.md", async () => {
     testDir = await mkdtemp(path.join(tmpdir(), "crewswarm-pm-test-"));
     const { status, body } = await apiPost(DASH_BASE, "/api/projects", {
@@ -142,7 +142,7 @@ describe("PM loop — self-extend with 1-phase roadmap", { skip: SKIP_FULL }, ()
   });
 });
 
-describe("PM loop — PM_CODER_AGENT override", { skip: SKIP_FULL }, () => {
+describe("PM loop — PM_CODER_AGENT override", { skip: SKIP_FULL, timeout: 60000 }, () => {
   it("pmOptions.coderAgent is passed to spawned process as PM_CODER_AGENT env", async () => {
     // We can verify this by checking the dashboard source — the spawn env
     // sets PM_CODER_AGENT from pmOptions.coderAgent

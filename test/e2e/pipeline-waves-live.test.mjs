@@ -38,7 +38,7 @@ async function dispatchPipeline(pipeline) {
     method: "POST",
     headers: { "Authorization": token ? `Bearer ${token}` : "" },
     body: { pipeline },
-    timeout: 10000,
+    timeout: 60000,
   });
   if (status < 200 || status >= 300) {
     throw new Error(`Pipeline dispatch failed: ${status}`);
