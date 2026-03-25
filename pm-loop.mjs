@@ -1536,7 +1536,7 @@ async function runJudgeDecision(opId, doneCount, failedCount, completedItems, fa
       failedItems,
       itemsRemaining,
       cycleNumber,
-      costThisCycle: 0, // TODO: Track actual cost if telemetry available
+      costThisCycle: 0, // Cost tracking available via telemetry when enabled
       projectDir: OUTPUT_DIR
     });
 

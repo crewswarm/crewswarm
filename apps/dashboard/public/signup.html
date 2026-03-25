@@ -15,8 +15,8 @@
       --bg-card2: #111827;
       --border: rgba(255,255,255,0.07);
       --text: #f0f6ff;
-      --text-2: #8b9db3;
-      --text-3: #4a5568;
+      --text-2: #a0b3cc;
+      --text-3: #7a8a9f;
       --accent: #38bdf8;
       --green: #34d399;
       --red: #f87171;
@@ -99,6 +99,11 @@
     input:focus, select:focus, textarea:focus {
       outline: none;
       border-color: var(--accent);
+    }
+    /* Keyboard navigation focus */
+    input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
     }
     input::placeholder {
       color: var(--text-3);
@@ -186,18 +191,18 @@
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="brand">
+  <main class="container" role="main" aria-label="Sign up form">
+    <header class="brand">
       <div class="brand-name">Crew<span>Swarm</span></div>
       <div class="brand-sub">Multi-Agent AI Orchestration</div>
-    </div>
+    </header>
 
     <!-- Signup Form -->
     <div class="card" id="signupCard">
       <h1 class="form-title">Create Your Account</h1>
       <p class="form-subtitle">Get started with our AI crew assistant on WhatsApp</p>
 
-      <form id="signupForm">
+      <form id="signupForm" aria-label="Account creation form">
         <div class="form-group">
           <label>Name <span class="required">*</span></label>
           <input type="text" id="name" name="name" placeholder="Your full name" required maxlength="100" />
@@ -297,10 +302,10 @@
       </div>
     </div>
 
-    <div class="footer">
+    <footer class="footer">
       Already have an account? <a href="/">Go to Dashboard</a>
-    </div>
-  </div>
+    </footer>
+  </main>
 
   <script>
     const form = document.getElementById('signupForm');

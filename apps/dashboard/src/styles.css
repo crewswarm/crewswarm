@@ -16,8 +16,8 @@
   /* Text */
   --text: #f0f6ff;
   --text-1: #f0f6ff; /* alias: --text */
-  --text-2: #8b9db3;
-  --text-3: #4a5568;
+  --text-2: #a0b3cc; /* Improved contrast from #8b9db3 for WCAG AA */
+  --text-3: #7a8a9f; /* Improved contrast from #4a5568 for WCAG AA */
 
   /* Accent */
   --accent: #38bdf8;
@@ -57,6 +57,40 @@ body {
   height: 100vh;
   overflow: hidden;
   font-size: 14px;
+}
+
+/* ── Accessibility ── */
+/* Skip link for keyboard navigation */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--accent);
+  color: #000;
+  padding: 8px 16px;
+  text-decoration: none;
+  font-weight: 600;
+  border-radius: 0 0 4px 0;
+  z-index: 9999;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* Focus visible styles for keyboard navigation */
+*:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Override for buttons and inputs to have better contrast */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ── Sidebar ── */

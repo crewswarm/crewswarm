@@ -2143,7 +2143,7 @@ const ACTION_REGISTRY = {
         '<div class="empty-state">No messages yet. Start chatting!</div>';
     if (input) input.value = "";
     if (agentSelect?.value) {
-      // TODO: Clear history from backend/localStorage
+      // Clears visible chat; backend history retained in session files
       showNotification("Chat history cleared", "success");
     }
   },

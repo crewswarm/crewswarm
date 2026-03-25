@@ -10,8 +10,11 @@
     <link rel="stylesheet" crossorigin href="/assets/index-CqfB8-Zy.css">
   </head>
   <body>
+    <!-- Skip link for keyboard navigation -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
     <!-- ── Sidebar ── -->
-    <nav class="sidebar">
+    <nav class="sidebar" role="navigation" aria-label="Main navigation">
       <div class="sidebar-brand">
         <img class="brand-icon" src="/favicon.png" alt="crewswarm" />
         <span class="brand-name">Crew<span>Swarm</span></span>
@@ -23,6 +26,7 @@
           id="refreshBtn"
           class="btn-ghost"
           style="margin-left: auto; padding: 3px 8px; font-size: 11px"
+          aria-label="Refresh status"
         >
           ↻
         </button>
@@ -122,7 +126,7 @@
     </nav>
 
     <!-- ── Main content ── -->
-    <div class="main-wrap">
+    <main class="main-wrap" role="main" aria-label="Dashboard main content" id="main-content">
       <!-- Sessions view -->
       <div class="view-sessions" id="sessionsView">
         <section id="sessions"></section>
@@ -6433,6 +6437,6 @@
           </div>
         </div>
       </div>
-    </div>
+    </main>
   </body>
 </html>

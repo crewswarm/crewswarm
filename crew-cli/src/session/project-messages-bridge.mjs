@@ -122,7 +122,7 @@ export async function saveCliToProjectMessages(projectDir, entry) {
  */
 function extractProjectIdFromDir(projectDir) {
   // For now, use directory name as projectId
-  // TODO: Look up actual project ID from dashboard projects registry
+  // Uses directory name as projectId — dashboard projects registry lookup deferred
   const parts = projectDir.split('/');
   const dirName = parts[parts.length - 1] || parts[parts.length - 2];
   return dirName || null;
