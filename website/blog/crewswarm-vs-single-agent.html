@@ -68,8 +68,8 @@
 
     <table>
       <tr><th>Task</th><th>Single Agent</th><th>crewswarm Crew</th></tr>
-      <tr><td>Planning a feature</td><td>Same model as coder</td><td>crew-pm with Perplexity for research</td></tr>
-      <tr><td>Writing backend code</td><td>Same model as everything</td><td>crew-coder-back with Codex engine</td></tr>
+      <tr><td>Planning a feature</td><td>Same model as coder</td><td>crew-pm with web research capability</td></tr>
+      <tr><td>Writing backend code</td><td>Same model as everything</td><td>crew-coder-back with dedicated coding engine</td></tr>
       <tr><td>Writing frontend</td><td>Same model, same context</td><td>crew-coder-front with fresh context</td></tr>
       <tr><td>Code review</td><td>Self-review (blind spots)</td><td>crew-qa with different model + fresh eyes</td></tr>
       <tr><td>Security audit</td><td>Afterthought, if at all</td><td>crew-security as dedicated gate</td></tr>
@@ -89,12 +89,12 @@
     <p>A single-agent system uses one model for everything. crewswarm lets you put <strong>the right model on each task</strong>:</p>
 
     <table>
-      <tr><th>Agent</th><th>Model</th><th>Why</th></tr>
-      <tr><td>PM (planning)</td><td>Grok 4.1 Fast</td><td>Speed — planning needs quick iterations</td></tr>
-      <tr><td>Coder (execution)</td><td>Claude Sonnet 4.6</td><td>Quality — code needs to be right</td></tr>
-      <tr><td>QA (review)</td><td>GPT-5.4</td><td>Different perspective — catches what Claude misses</td></tr>
-      <tr><td>Fixer (bugs)</td><td>Codex</td><td>Tool access — needs to run code and debug</td></tr>
-      <tr><td>Researcher</td><td>Perplexity Sonar</td><td>Web access — real-time information</td></tr>
+      <tr><th>Agent</th><th>Optimized for</th><th>Why a different model</th></tr>
+      <tr><td>PM (planning)</td><td>Fast, cheap model</td><td>Speed — planning needs quick iterations, not deep reasoning</td></tr>
+      <tr><td>Coder (execution)</td><td>Best coding model</td><td>Quality — code needs to be right the first time</td></tr>
+      <tr><td>QA (review)</td><td>Different model than coder</td><td>Fresh perspective — catches what the coder's model misses</td></tr>
+      <tr><td>Fixer (bugs)</td><td>Tool-heavy engine</td><td>Needs to run code, read errors, debug interactively</td></tr>
+      <tr><td>Researcher</td><td>Web-connected model</td><td>Real-time information, not stale training data</td></tr>
     </table>
 
     <p>This isn't theoretical. Using different models for different roles consistently outperforms a single frontier model doing everything — at lower total cost, because most agents use fast/cheap models.</p>
