@@ -136,7 +136,7 @@
 
 <body>
   <!-- AI Crawler Citeable Summary (GEO/LLM SEO) -->
-  <section id="ai-summary" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;">crewswarm is an open-source, local-first AI workspace combining a multi-agent orchestration runtime, a browser control-plane dashboard, the Vibe browser IDE, and native chat clients. It allows software engineers to dispatch complex tasks to specialist AI agents running securely in Docker containers on their own hardware using the ATAT protocol.</section>
+  <section id="ai-summary" style="position: absolute; width: 1px; height: 1px; max-width: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; border-width: 0;">crewswarm is an open-source, local-first AI workspace combining a multi-agent orchestration runtime, a browser control-plane dashboard, the Vibe browser IDE, and native chat clients. It allows software engineers to dispatch complex tasks to specialist AI agents running securely in Docker containers on their own hardware using the ATAT protocol.</section>
   <!-- NAV -->
   <nav role="navigation" aria-label="Main navigation">
     <div class="nav-container">
@@ -1543,45 +1543,23 @@ const app = express();
   <section id="demo" class="section section-alt">
     <div class="container">
       <div class="section-header">
-        <div class="eyebrow">90-second walkthrough</div>
-        <h2>See the product in one fast pass</h2>
-        <p class="section-desc">This is the fastest way to understand crewswarm: launch the stack, build in Vibe, and
-          control the runtime from the dashboard.</p>
+        <div class="eyebrow">See it in action</div>
+        <h2>From install to first build</h2>
+        <p class="section-desc">Clone, install, and ship a feature — all in under 60 seconds.</p>
       </div>
-      <div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,0.9fr);gap:24px;align-items:start;">
+      <div style="display:grid;grid-template-columns:1fr;gap:24px;max-width:900px;margin:0 auto;">
         <div class="preview-frame" style="margin:0;">
           <div class="preview-chrome">
             <div class="preview-chrome-dots"><span></span><span></span><span></span></div>
-            <span class="preview-chrome-url">crewswarm.ai/vibe.html</span>
+            <span class="preview-chrome-url">crewswarm Vibe IDE</span>
           </div>
           <img class="preview-img" src="vibe-ide-real.webp?v=1"
             alt="crewswarm Vibe IDE — Monaco editor, file explorer, agent chat, and terminal" loading="lazy"
             width="1440" height="900" style="width:100%; height:auto; display:block;" />
         </div>
-        <div style="display:grid;gap:14px;">
-          <div style="padding:18px;border:1px solid var(--border);border-radius:16px;background:var(--bg-card);">
-            <strong style="display:block;color:var(--accent);margin-bottom:6px;">0:00–0:20</strong>
-            <h3 style="font-size:1.05rem;margin-bottom:6px;">Launch the stack</h3>
-            <p style="color:var(--text-2);font-size:0.95rem;">Show the one-line install or local quickstart, then open
-              the Dashboard and Vibe side by side.</p>
-          </div>
-          <div style="padding:18px;border:1px solid var(--border);border-radius:16px;background:var(--bg-card);">
-            <strong style="display:block;color:var(--accent);margin-bottom:6px;">0:20–0:55</strong>
-            <h3 style="font-size:1.05rem;margin-bottom:6px;">Build in Vibe</h3>
-            <p style="color:var(--text-2);font-size:0.95rem;">Send one prompt, show the file tree updating, open the
-              written file, preview the diff, and pop the terminal.</p>
-          </div>
-          <div style="padding:18px;border:1px solid var(--border);border-radius:16px;background:var(--bg-card);">
-            <strong style="display:block;color:var(--accent);margin-bottom:6px;">0:55–1:30</strong>
-            <h3 style="font-size:1.05rem;margin-bottom:6px;">Control the runtime</h3>
-            <p style="color:var(--text-2);font-size:0.95rem;">Switch to the dashboard, show Services and Agents, then
-              land on the install CTA while the stack is still visibly running.</p>
-          </div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;">
-            <a href="https://github.com/crewswarm/crewswarm/blob/main/docs/CANONICAL/DEMO-SCRIPT.md"
-              class="btn btn-ghost" target="_blank" rel="noopener">Read demo script</a>
-            <a href="#get-started" class="btn btn-primary">Run it yourself</a>
-          </div>
+        <div style="text-align:center;">
+          <a href="vibe.html" class="btn btn-primary">Explore Vibe</a>
+          <a href="#get-started" class="btn btn-ghost" style="margin-left:12px;">Install crewswarm</a>
         </div>
       </div>
     </div>
