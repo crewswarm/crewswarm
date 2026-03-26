@@ -817,23 +817,48 @@ async function main() {
       const isGroup = jid.endsWith("@g.us");
       if (isGroup) continue;
 
-      // WhatsApp multi-device uses @lid (Linked Identity) JIDs for self-chat messages.
-      // These arrive as fromMe:true with a @lid suffix — this is the personal bot pattern.
-      const isSelfChatLid = msg.key.fromMe && jid.endsWith("@lid");
+      // WhatsApp multi-device uses @lid (Linked Identity) JIDs.
+      // CRITICAL: Not all fromMe + @lid messages are self-chat!
+      // When you message ANYONE from your phone, it arrives as fromMe:true with THEIR @lid.
+      // Self-chat is ONLY when the @lid matches the bot's own linked identity.
       const ownJid = sock.user?.id?.split(":")[0] + "@s.whatsapp.net";
+      // Detect the bot's own @lid JID. Baileys may expose sock.user.lid,
+      // or we detect it from the first self-addressed message.
+      const ownLid = sock.user?.lid || sock._ownLid || null;
+      let isSelfChatLid = false;
+      if (msg.key.fromMe && jid.endsWith("@lid")) {
+        if (ownLid && jid === ownLid) {
+          // Known self-chat LID
+          isSelfChatLid = true;
+        } else if (!ownLid && msg.key.participant) {
+          // First @lid message — check if participant matches our own number
+          const participantNum = msg.key.participant?.split(":")[0]?.split("@")[0];
+          const ownNum = sock.user?.id?.split(":")[0];
+          if (participantNum === ownNum) {
+            isSelfChatLid = true;
+            sock._ownLid = jid; // Cache for future messages
+            log("info", "Detected own @lid JID", { lid: jid, ownNum });
+          }
+        }
+        // If we still can't determine, it's NOT self-chat (safe default)
+      }
       const isSelfChatOwn = msg.key.fromMe && jid === ownJid;
+      const isSelfChat = isSelfChatLid || isSelfChatOwn;
 
-      // Block outgoing messages that aren't self-chat (i.e. bot's own replies going out)
-      if (msg.key.fromMe && !isSelfChatLid && !isSelfChatOwn) continue;
+      // Block ALL outgoing messages that aren't self-chat.
+      // This prevents the bot from processing your messages to other people.
+      if (msg.key.fromMe && !isSelfChat) continue;
 
-      // Map @lid JID to @s.whatsapp.net for allowlist matching
+      // For self-chat @lid messages, map to the owner's real @s.whatsapp.net JID
       if (isSelfChatLid && ownJid) {
         LID_TO_JID.set(jid, ownJid);
-        log("info", "Mapped @lid to @s.whatsapp.net", { lid: jid, jid: ownJid });
+        log("info", "Mapped self-chat @lid to @s.whatsapp.net", { lid: jid, jid: ownJid });
       }
 
       // ── Allowlist check (before any media processing) ─────────────────
-      if (!isSelfChatLid && !isSelfChatOwn) {
+      // Self-chat always passes (it's you talking to yourself).
+      // Other messages: check if sender is in allowlist.
+      if (!isSelfChat) {
         if (ALLOWLIST_ENABLED && !isJidAllowed(jid)) {
           log("warn", "Silently ignored unauthorized sender", { jid });
           continue;
