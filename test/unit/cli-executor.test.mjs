@@ -36,8 +36,7 @@ test("buildCLICommand uses skip-permissions for claude", () => {
   const result = buildCLICommand("claude", "inspect this", "sonnet", "/tmp/project");
   assert.deepEqual(result.args, [
     "-p",
-    "--setting-sources",
-    "user",
+    "--bare",
     "--dangerously-skip-permissions",
     "--output-format",
     "stream-json",
