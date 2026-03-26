@@ -81,6 +81,7 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
@@ -3476,8 +3477,33 @@ img[data-src].loaded {
     grid-template-columns: 1fr;
   }
 
+  .feature-card,
   .feature-card-wide {
     grid-column: span 1;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .feature-code,
+  .feature-card pre,
+  .feature-card code {
+    overflow-x: auto;
+    max-width: 100%;
+    word-break: break-word;
+  }
+
+  .engines-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .engine-card {
+    max-width: 100%;
+  }
+
+  .control-surfaces,
+  .cs-group {
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .agents-grid {
