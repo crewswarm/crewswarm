@@ -216,6 +216,12 @@
     <div style="margin-top: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3);">
       <code>npm install -g crewswarm</code>
     </div>
+    <div style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+      <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">
+        <img src="https://img.shields.io/github/stars/crewswarm/crewswarm?style=social" alt="GitHub stars" loading="lazy" height="20" />
+      </a>
+      <span style="font-size: 0.8rem; color: var(--text-3);">Free forever. Bring your own API keys or use CLI OAuth.</span>
+    </div>
     <div class="hero-terminal">
       <div class="terminal-bar">
         <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
@@ -1107,10 +1113,10 @@ const app = express();
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Wave Orchestration</div>
-        <h2>Parallel execution with wave-based dispatch</h2>
-        <p class="section-desc">Run multiple agents simultaneously. Tasks in the same wave execute in parallel — no
-          queuing, no waiting, true concurrent multi-agent execution. Significantly faster than sequential task
-          processing.</p>
+        <h2>Multiple agents working at the same time</h2>
+        <p class="section-desc">Instead of one agent doing everything in sequence, crewswarm dispatches tasks to
+          multiple agents in parallel. Backend, frontend, and tests all get built simultaneously — 3x faster than
+          waiting for one agent to finish before the next starts.</p>
       </div>
       <div class="flow" style="grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 3rem;">
         <div class="flow-step">
@@ -1976,6 +1982,37 @@ const app = express();
 
   <!-- SUCCESS STORIES -->
   <!-- TESTIMONIALS -->
+  <!-- BUILT WITH CREWSWARM -->
+  <section id="built-with" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Real results</div>
+        <h2>Built with crewswarm</h2>
+        <p class="section-desc">Not demos. Not mockups. Real projects built end-to-end by the crew.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-bottom:2rem;">
+        <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:1.5rem;">
+          <div style="font-size:2rem;font-weight:700;color:var(--accent);margin-bottom:0.25rem;">10 min</div>
+          <div style="font-weight:600;margin-bottom:0.5rem;">VS Code Extension</div>
+          <p style="font-size:0.85rem;color:var(--text-2);margin:0;">Full VS Code extension — from "build a VS Code plugin"
+            to packaged, installable extension. crew-pm planned it, crew-coder built it, crew-qa tested it.</p>
+        </div>
+        <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:1.5rem;">
+          <div style="font-size:2rem;font-weight:700;color:var(--accent);margin-bottom:0.25rem;">30 min</div>
+          <div style="font-weight:600;margin-bottom:0.5rem;">Production Website</div>
+          <p style="font-size:0.85rem;color:var(--text-2);margin:0;">The crewswarm.ai website you're reading right now.
+            90% built autonomously by the swarm — landing page, SEO, security docs, deploy config. Humans polished the rest.</p>
+        </div>
+        <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:1.5rem;">
+          <div style="font-size:2rem;font-weight:700;color:var(--accent);margin-bottom:0.25rem;">6 engines</div>
+          <div style="font-weight:600;margin-bottom:0.5rem;">Session Resume</div>
+          <p style="font-size:0.85rem;color:var(--text-2);margin:0;">Native session resume across Claude Code, Cursor,
+            Gemini, Codex, and OpenCode — built in one session. Switch engines mid-conversation, keep your context.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="testimonials" class="section">
     <div class="container">
       <div class="section-header">
@@ -2309,6 +2346,39 @@ const app = express();
   </section>
 
   <!-- GET STARTED -->
+  <!-- PRICING / COST -->
+  <section id="pricing" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Pricing</div>
+        <h2>What does it cost?</h2>
+      </div>
+      <div style="max-width:700px;margin:0 auto;text-align:center;">
+        <div style="font-size:3rem;font-weight:700;color:var(--accent);margin-bottom:0.5rem;">$0</div>
+        <p style="font-size:1.1rem;color:var(--text-1);margin-bottom:1.5rem;">crewswarm is free and open source. Always.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;text-align:left;margin-bottom:1.5rem;">
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:1rem;">
+            <div style="font-weight:600;margin-bottom:0.5rem;">You pay for</div>
+            <ul style="font-size:0.85rem;color:var(--text-2);padding-left:1.2rem;margin:0;">
+              <li>LLM API keys (your accounts)</li>
+              <li>Or use CLI OAuth (Claude, Cursor, Gemini — login once, no keys needed)</li>
+            </ul>
+          </div>
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:1rem;">
+            <div style="font-weight:600;margin-bottom:0.5rem;">Free options</div>
+            <ul style="font-size:0.85rem;color:var(--text-2);padding-left:1.2rem;margin:0;">
+              <li>Gemini CLI: 1,000 free req/day</li>
+              <li>Groq: free tier, fast inference</li>
+              <li>Ollama: fully local, zero cost</li>
+            </ul>
+          </div>
+        </div>
+        <p style="font-size:0.85rem;color:var(--text-3);">No subscriptions. No usage fees. No vendor lock-in.
+          Switch providers anytime — your code stays on your machine.</p>
+      </div>
+    </div>
+  </section>
+
   <section id="get-started" class="section">
     <section id="faq" class="faq-accordion py-20 bg-gray-50">
       <div class="container">
