@@ -455,6 +455,24 @@
     </div>
   </section>
 
+  <!-- QUICKSTART VIDEO -->
+  <section id="quickstart-video" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Quickstart</div>
+        <h2>Install to first build in 60 seconds</h2>
+        <p class="section-desc">One npm install. Pick your models. Ship a feature. That's it.</p>
+      </div>
+      <div style="max-width:900px;margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid var(--border);">
+        <video autoplay muted loop playsinline preload="metadata" width="900" height="560"
+          style="width:100%;height:auto;display:block;">
+          <source src="vibe-assets/quickstart.webm" type="video/webm" />
+          <source src="vibe-assets/quickstart.mp4" type="video/mp4" />
+        </video>
+      </div>
+    </div>
+  </section>
+
   <!-- SYSTEM DIAGRAM -->
   <section id="system-diagram" class="section">
     <div class="container">
@@ -1184,11 +1202,35 @@ const app = express();
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Models</div>
-        <h2 id="models-heading">Bring your own model</h2>
-        <p class="section-desc">Every agent calls its LLM directly — no proxy, no middleware. Mix and match freely: PM
-          on Perplexity for web search, coders on Mistral or DeepSeek, coordinator on Cerebras for instant replies. Add
-          Brave Search and Parallel in the dashboard for crew-lead and PM lookups. Or run everything local with Ollama.
-        </p>
+        <h2 id="models-heading">Different models for different agents</h2>
+        <p class="section-desc">Every agent gets its own model — configured from the dashboard, no config files.
+          Use cheap, fast models for routing and planning ($0.10/M tokens). Use powerful models for coding and reasoning
+          ($3/M tokens). Use free models for QA and testing. Your bill drops 5-10x compared to running everything on one
+          expensive model.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.75rem;margin:1.5rem 0;font-size:0.85rem;">
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:0.75rem;text-align:center;">
+            <div style="font-weight:600;color:var(--text-1);">crew-lead (router)</div>
+            <div style="color:var(--text-3);font-size:0.8rem;">Groq Llama 3.3 70B</div>
+            <div style="color:#4ade80;font-weight:600;">Free</div>
+          </div>
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:0.75rem;text-align:center;">
+            <div style="font-weight:600;color:var(--text-1);">crew-pm (planner)</div>
+            <div style="color:var(--text-3);font-size:0.8rem;">Gemini 2.5 Flash</div>
+            <div style="color:#4ade80;font-weight:600;">$0.075/M tokens</div>
+          </div>
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:0.75rem;text-align:center;">
+            <div style="font-weight:600;color:var(--text-1);">crew-coder (builder)</div>
+            <div style="color:var(--text-3);font-size:0.8rem;">Claude Sonnet 4.6</div>
+            <div style="color:#fbbf24;font-weight:600;">$3/M tokens</div>
+          </div>
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:0.75rem;text-align:center;">
+            <div style="font-weight:600;color:var(--text-1);">crew-qa (tester)</div>
+            <div style="color:var(--text-3);font-size:0.8rem;">Gemini CLI (OAuth)</div>
+            <div style="color:#4ade80;font-weight:600;">Free (1K req/day)</div>
+          </div>
+        </div>
+        <p style="font-size:0.85rem;color:var(--text-3);text-align:center;margin-top:0;">Change any agent's model from the
+          dashboard. No restarts, no config files. All these providers work out of the box:</p>
       </div>
       <div class="providers-grid">
         <div class="provider-card" style="--p-color:#10a37f;">
