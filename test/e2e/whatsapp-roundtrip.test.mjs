@@ -178,7 +178,7 @@ describe("WhatsApp — bridge logs", () => {
     assert.ok(outbound.length > 0, "No outbound messages recorded in message log");
   });
 
-  it("recent outbound messages include owner JID", () => {
+  it("recent outbound messages include owner JID", { skip: bridgeReachable ? false : "WhatsApp bridge not running — cannot verify owner JID messages" }, () => {
     if (!fs.existsSync(WA_MSGS)) return;
     const lines = fs.readFileSync(WA_MSGS, "utf8").trim().split("\n").filter(Boolean);
     const ownerMsgs = lines.filter(l => {

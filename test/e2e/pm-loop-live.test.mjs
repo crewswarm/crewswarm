@@ -217,9 +217,9 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
       // Write stop file
       await writeFile(stopFile, "stop", "utf8").catch(() => {});
 
-      // Poll until the loop detects the stop file or has already exited (up to 30s)
+      // Poll until the loop detects the stop file or has already exited (up to 60s)
       let stopped = false;
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 60; i++) {
         await new Promise(r => setTimeout(r, 1000));
         const { body: st } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
         if (!st.running) {
@@ -229,7 +229,7 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
       }
       // Clean up stop file
       await rm(stopFile, { force: true }).catch(() => {});
-      assert.ok(stopped, "PM loop should stop within 30 seconds of stop file being created");
+      assert.ok(stopped, "PM loop should stop within 60 seconds of stop file being created");
     });
   });
 

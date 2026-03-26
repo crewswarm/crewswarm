@@ -28,14 +28,11 @@ const CREWSWARM_DIR = path.resolve(".");
 const PM_LOOP_SCRIPT = path.join(CREWSWARM_DIR, "pm-loop.mjs");
 const LOGS_DIR = path.join(CREWSWARM_DIR, "orchestrator-logs"); // Use repo-local logs, matching pm-loop.mjs
 
-// Check if services are running
+// Check if services are running (with a 5s timeout so we never hang here)
 let rtBusReachable = false;
 try {
-  // RT bus doesn't have /health, just check if port is listening
-  const { exec } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const execAsync = promisify(exec);
-  const { stdout } = await execAsync("lsof -i :18889 | grep LISTEN");
+  const { execSync } = await import("node:child_process");
+  const stdout = execSync("lsof -i :18889 | grep LISTEN", { encoding: "utf8", timeout: 5000 });
   rtBusReachable = stdout.includes("18889");
 } catch {}
 
@@ -96,18 +93,23 @@ async function runPMLoop({ projectDir, maxItems = 3, dryRun = false, timeout = 3
     };
     
     const proc = spawn("node", args, {
-      stdio: ["inherit", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
       env,
+      detached: true,
     });
-    
+
     let stdout = "";
     let stderr = "";
-    
+
     proc.stdout?.on("data", d => { stdout += d.toString(); });
     proc.stderr?.on("data", d => { stderr += d.toString(); });
-    
+
     const timeoutId = setTimeout(() => {
-      proc.kill("SIGTERM");
+      // Kill entire process group so child processes don't keep pipes open
+      try { process.kill(-proc.pid, "SIGTERM"); } catch { proc.kill("SIGTERM"); }
+      setTimeout(() => {
+        try { process.kill(-proc.pid, "SIGKILL"); } catch { try { proc.kill("SIGKILL"); } catch {} }
+      }, 2000);
       reject(new Error(`PM loop timeout after ${timeout}ms\nstdout: ${stdout}\nstderr: ${stderr}`));
     }, timeout);
     
