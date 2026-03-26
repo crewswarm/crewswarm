@@ -5,6 +5,22 @@ All notable changes to crewswarm will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1-beta] - 2026-03-25
+
+### Security
+- Scrubbed personal phone number from all source files, docs, and examples
+- Removed accidental LLM artifact file containing personal paths
+- Fixed GitHub URLs to use org account instead of personal
+
+### Fixed
+- PM loop dry-run: self-extend generates placeholder items instead of calling LLM
+- PM loop process now exits cleanly after main() completes
+- PM loop E2E test: fixed stop-file path mismatch (was using wrong directory)
+- PM loop E2E test: wrapped describe blocks in `concurrency: 1` to prevent races
+- Pipeline-waves E2E: switched from crew-main (hangs) to crew-coder, added warm-up preflight
+- Dashboard-api integration tests: added `concurrency: 1` to prevent timeout cascade
+- WhatsApp bridge test: graceful handling of stale PID files
+
 ## [0.8.0-beta] - 2026-03-04
 
 ### 🎉 Public Beta Release

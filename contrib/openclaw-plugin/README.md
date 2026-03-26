@@ -22,7 +22,7 @@ Your OpenClaw agents gain three new tools — `crewswarm_dispatch`, `crewswarm_s
 
 ## Requirements
 
-- [CrewSwarm](https://github.com/jeffhobbs/CrewSwarm) running locally (`npm run restart-all`)
+- [CrewSwarm](https://github.com/crewswarm/crewswarm) running locally (`npm run restart-all`)
 - `crew-lead` reachable at `http://127.0.0.1:5010` (default)
 - Your RT auth token from `~/.crewswarm/config.json → rt.authToken`
 

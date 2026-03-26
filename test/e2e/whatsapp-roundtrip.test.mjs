@@ -26,8 +26,8 @@ const WA_BASE = `http://127.0.0.1:${WA_HTTP_PORT}`;
 const LOGS_DIR = path.join(os.homedir(), ".crewswarm", "logs");
 const WA_LOG = path.join(LOGS_DIR, "whatsapp-bridge.jsonl");
 const WA_MSGS = path.join(LOGS_DIR, "whatsapp-messages.jsonl");
-const OWNER_PHONE = "+15551234567";
-const OWNER_JID = "15551234567@s.whatsapp.net";
+const OWNER_PHONE = process.env.WA_OWNER_PHONE || "+15551234567";
+const OWNER_JID = OWNER_PHONE.replace(/\D/g, "") + "@s.whatsapp.net";
 
 async function waGet(endpoint) {
   const { data } = await httpRequest(`${WA_BASE}${endpoint}`);
