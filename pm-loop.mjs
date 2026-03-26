@@ -1255,8 +1255,12 @@ async function main() {
       console.log(`\n⚠️  Self-extend disabled: ${failed} failed tasks (fix issues before extending)`);
     } else if (SELF_EXTEND && (!item || (doneCount > 0 && doneCount % EXTEND_EVERY_N === 0 && pending === 0))) {
       if (DRY_RUN) {
-        console.log(`\n🧠 Dry-run: skipping self-extend (would generate new items)`);
-        if (!item) break; // nothing left to process
+        extendRound++;
+        console.log(`\n🧠 Dry-run: self-extend round ${extendRound} — generating placeholder items`);
+        const dryItems = [`Dry-run generated task ${extendRound}-1`, `Dry-run generated task ${extendRound}-2`];
+        await appendGeneratedItems(dryItems, extendRound);
+        await log({ op_id: opId, event: "self_extend", round: extendRound, new_items: dryItems.length, dry_run: true });
+        doneCount = 0;
         continue;
       }
       extendRound++;
@@ -1619,4 +1623,4 @@ async function runJudgeDecision(opId, doneCount, failedCount, completedItems, fa
   }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
