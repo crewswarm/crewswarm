@@ -3493,11 +3493,26 @@ img[data-src].loaded {
   }
 
   .engines-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
 
   .engine-card {
     max-width: 100%;
+  }
+
+  .flow {
+    grid-template-columns: 1fr !important;
+  }
+
+  .orch-table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  table {
+    display: block !important;
+    overflow-x: auto !important;
+    max-width: 100% !important;
   }
 
   .control-surfaces,
@@ -3509,12 +3524,6 @@ img[data-src].loaded {
   .preview-rail,
   .preview-rail-wrap {
     max-width: 100vw;
-  }
-
-  table {
-    display: block;
-    overflow-x: auto;
-    max-width: 100%;
   }
 
   pre, code {
