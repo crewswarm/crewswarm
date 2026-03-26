@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>crewswarm API Reference — 142 endpoints</title>
+  <meta name="description" content="Complete API reference for crewswarm — 142 endpoints for agent orchestration, chat, dispatch, skills, providers, and more." />
+  <meta property="og:title" content="crewswarm API Reference" />
+  <meta property="og:description" content="142 endpoints for local-first multi-agent orchestration. OpenAPI 3.1 spec." />
+  <meta property="og:url" content="https://crewswarm.ai/api.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .api-header {
+      background: #060a10;
+      color: #e2e8f0;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      border-bottom: 1px solid #1e293b;
+    }
+    .api-header a { color: #e2e8f0; text-decoration: none; font-weight: 600; font-size: 1.1rem; }
+    .api-header a:hover { color: #818cf8; }
+    .api-header .sep { color: #475569; margin: 0 0.25rem; }
+    .api-header .badge {
+      background: #1e1b4b;
+      color: #818cf8;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .api-header .links { margin-left: auto; display: flex; gap: 1rem; font-size: 0.85rem; }
+    .api-header .links a { color: #94a3b8; font-weight: 400; }
+    .api-header .links a:hover { color: #e2e8f0; }
+    .api-note {
+      background: #0f172a;
+      color: #94a3b8;
+      padding: 0.75rem 2rem;
+      font-size: 0.8rem;
+      border-bottom: 1px solid #1e293b;
+    }
+    .api-note code { background: #1e293b; padding: 2px 6px; border-radius: 4px; color: #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="api-header">
+    <a href="index.html">crewswarm</a>
+    <span class="sep">/</span>
+    <span>API Reference</span>
+    <span class="badge">142 endpoints</span>
+    <span class="badge">OpenAPI 3.1</span>
+    <div class="links">
+      <a href="https://github.com/crewswarm/crewswarm/blob/main/crew-cli/docs/openapi.unified.v1.json" target="_blank" rel="noopener">Raw JSON</a>
+      <a href="docs.html">Docs</a>
+      <a href="index.html">Home</a>
+    </div>
+  </div>
+  <div class="api-note">
+    This API runs on your local machine (ports 4319, 5010, 3333). To try endpoints interactively,
+    start crewswarm locally and use the
+    <a href="https://petstore.swagger.io/?url=https://raw.githubusercontent.com/crewswarm/crewswarm/main/crew-cli/docs/openapi.unified.v1.json" target="_blank" rel="noopener" style="color:#818cf8;">Swagger UI</a>
+    — it sends requests to <code>localhost</code>.
+  </div>
+  <redoc spec-url="https://raw.githubusercontent.com/crewswarm/crewswarm/main/crew-cli/docs/openapi.unified.v1.json"
+    hide-download-button
+    theme='{
+      "colors": { "primary": { "main": "#818cf8" } },
+      "typography": { "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" },
+      "sidebar": { "backgroundColor": "#0f172a", "textColor": "#e2e8f0" },
+      "rightPanel": { "backgroundColor": "#1e293b" }
+    }'
+  ></redoc>
+  <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+</body>
+</html>
