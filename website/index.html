@@ -209,8 +209,12 @@
     </div>
     <div class="hero-cta">
       <a href="#get-started" class="btn btn-primary">Install crewswarm</a>
-      <a href="models.html" class="btn btn-ghost">See Models</a>
+      <a href="https://github.com/crewswarm/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.npmjs.com/package/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">npm</a>
       <a href="vibe.html" class="btn btn-ghost">Explore Vibe</a>
+    </div>
+    <div style="margin-top: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3);">
+      <code>npm install -g crewswarm</code>
     </div>
     <div class="hero-terminal">
       <div class="terminal-bar">
@@ -2528,35 +2532,33 @@ const app = express();
             <div class="gs-step">
               <div class="gs-step-num">01</div>
               <div class="gs-step-content">
-                <div class="gs-step-label">Check the stack</div>
-                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> openswitchctl
-                    status</span></div>
+                <div class="gs-step-label">Clone and install</div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> git clone https://github.com/crewswarm/crewswarm.git && cd crewswarm</span></div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> bash install.sh</span></div>
               </div>
             </div>
             <div class="gs-step-divider"></div>
             <div class="gs-step">
               <div class="gs-step-num">02</div>
               <div class="gs-step-content">
-                <div class="gs-step-label">Launch the dashboard</div>
-                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node
-                    scripts/dashboard.mjs</span></div>
+                <div class="gs-step-label">Or install from npm</div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> npm install -g crewswarm</span></div>
               </div>
             </div>
             <div class="gs-step-divider"></div>
             <div class="gs-step">
               <div class="gs-step-num">03</div>
               <div class="gs-step-content">
-                <div class="gs-step-label">Start building</div>
-                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> <span
-                      class="code-str">open http://127.0.0.1:4319 — or —</span> node scripts/run.mjs <span
-                      class="code-str">"Build a todo API"</span></span></div>
+                <div class="gs-step-label">Start the dashboard</div>
+                <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> npm start</span></div>
+                <div class="code-line"><span class="code-prompt" style="opacity:0.5"> </span><span class="code-str" style="opacity:0.6">  crewswarm Dashboard at http://127.0.0.1:4319</span></div>
               </div>
             </div>
             <div class="gs-step-divider"></div>
             <div class="gs-step">
               <div class="gs-step-num">04</div>
               <div class="gs-step-content">
-                <div class="gs-step-label">Or target one agent directly</div>
+                <div class="gs-step-label">Build something</div>
                 <div class="code-line"><span class="code-prompt">$</span><span class="code-cmd"> node gateway-bridge.mjs
                     <span class="code-str">--send crew-coder "Add auth middleware"</span></span></div>
               </div>
