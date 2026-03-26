@@ -171,6 +171,45 @@ if [[ ! -f "$CREWSWARM_JSON" ]]; then
 }
 EOF
   success "Created ~/.crewswarm/crewswarm.json  (all agents on Groq Llama 3.3 70B — add your key to start)"
+
+  # Migrate API keys from OpenClaw if available
+  OPENCLAW_CFG="$HOME/.openclaw/openclaw.json"
+  if [[ -f "$OPENCLAW_CFG" ]]; then
+    info "Found OpenClaw config at ~/.openclaw/openclaw.json — migrating API keys..."
+    node -e "
+      const fs = require('fs');
+      const oc = JSON.parse(fs.readFileSync('$OPENCLAW_CFG', 'utf8'));
+      const cs = JSON.parse(fs.readFileSync('$CREWSWARM_JSON', 'utf8'));
+      const providerMap = {
+        groq: 'groq', anthropic: 'anthropic', openai: 'openai',
+        xai: 'xai', deepseek: 'deepseek', mistral: 'mistral',
+        google: 'google', perplexity: 'perplexity', nvidia: 'nvidia',
+        cerebras: 'cerebras', ollama: 'ollama'
+      };
+      let migrated = 0;
+      for (const [ocId, ocCfg] of Object.entries(oc.providers || {})) {
+        const key = ocCfg.apiKey || ocCfg.key || '';
+        const csId = providerMap[ocId] || ocId;
+        if (key && cs.providers?.[csId] && !cs.providers[csId].apiKey) {
+          cs.providers[csId].apiKey = key;
+          migrated++;
+        }
+      }
+      if (migrated > 0) {
+        fs.writeFileSync('$CREWSWARM_JSON', JSON.stringify(cs, null, 2));
+        console.log('MIGRATED:' + migrated);
+      }
+    " 2>/dev/null && {
+      MIGRATED_COUNT=$(node -e "
+        const fs = require('fs');
+        const oc = JSON.parse(fs.readFileSync('$OPENCLAW_CFG', 'utf8'));
+        let c = 0;
+        for (const [, v] of Object.entries(oc.providers || {})) { if (v.apiKey || v.key) c++; }
+        console.log(c);
+      " 2>/dev/null || echo "0")
+      success "Migrated $MIGRATED_COUNT API key(s) from OpenClaw"
+    } || true
+  fi
 else
   success "~/.crewswarm/crewswarm.json already exists — keeping it"
 fi
