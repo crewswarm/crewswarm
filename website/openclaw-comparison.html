@@ -146,9 +146,11 @@
   <!-- OPENCLAW + CREWSWARM -->
   <section id="openclaw-plus-crewswarm" class="section">
     <div class="container">
-      <span class="section-label">Better together</span>
-      <h2>What OpenClaw Does Well</h2>
-      <p class="hero-sub" style="max-width:680px;margin:0 auto 1.5rem;">
+      <div class="section-header">
+        <div class="eyebrow">Better together</div>
+        <h2>What OpenClaw Does Well</h2>
+      </div>
+      <p class="hero-sub" style="max-width:680px;margin:0 auto 1.5rem;text-align:center;">
         OpenClaw is a mature personal AI assistant platform. It has real strengths &mdash; and crewswarm is designed to complement them, not replace them.
       </p>
 
@@ -175,8 +177,10 @@
         </div>
       </div>
 
-      <h2 style="margin-top:3rem;">What crewswarm Adds</h2>
-      <p class="hero-sub" style="max-width:680px;margin:0 auto 1.5rem;">
+      <div class="section-header" style="margin-top:3rem;">
+        <h2>What crewswarm Adds</h2>
+      </div>
+      <p class="hero-sub" style="max-width:680px;margin:0 auto 1.5rem;text-align:center;">
         OpenClaw runs one agent at a time. crewswarm runs 22 specialist agents in parallel, coordinated by a PM loop that plans, delegates, evaluates, and iterates autonomously.
       </p>
 
@@ -258,9 +262,11 @@
   <!-- WHY LOCAL-FIRST -->
   <section id="why-local" class="section">
     <div class="container">
-      <span class="section-label">Why local-first</span>
-      <h2>The Case for Running AI on Your Machine</h2>
-      <p class="hero-sub" style="max-width:680px;margin:0 auto 1rem;">
+      <div class="section-header">
+        <div class="eyebrow">Why local-first</div>
+        <h2>The Case for Running AI on Your Machine</h2>
+      </div>
+      <p class="hero-sub" style="max-width:680px;margin:0 auto 1rem;text-align:center;">
         Cloud AI orchestration platforms route your code through third-party servers, add subscription costs,
         and lock you into a single provider. There is a better way.
       </p>
@@ -419,8 +425,10 @@
   <!-- HOW IT WORKS -->
   <section id="how-it-works" class="section">
     <div class="container">
-      <span class="section-label">How it works</span>
-      <h2>From Idea to Shipped Code in One Command</h2>
+      <div class="section-header">
+        <div class="eyebrow">How it works</div>
+        <h2>From Idea to Shipped Code in One Command</h2>
+      </div>
       <p class="hero-sub" style="max-width:680px;margin:0 auto;">
         crewswarm replaces the manual cycle of prompting, reviewing, and re-prompting across scattered tools.
       </p>
@@ -448,8 +456,10 @@
   <!-- FAQ -->
   <section id="faq" class="section bg-dark">
     <div class="container">
-      <span class="section-label">FAQ</span>
-      <h2>Frequently Asked Questions</h2>
+      <div class="section-header">
+        <div class="eyebrow">FAQ</div>
+        <h2>Frequently Asked Questions</h2>
+      </div>
 
       <div class="faq-list">
         <article class="faq-entry">
@@ -527,9 +537,11 @@
   <!-- OpenClaw Plugin -->
   <section class="section" style="border-top: 1px solid var(--border);">
     <div class="container">
-      <span class="section-label">Already using OpenClaw?</span>
-      <h2>Use crewswarm from inside OpenClaw</h2>
-      <p class="hero-sub" style="max-width:640px;">
+      <div class="section-header">
+        <div class="eyebrow">Already using OpenClaw?</div>
+        <h2>Use crewswarm from inside OpenClaw</h2>
+      </div>
+      <p class="hero-sub" style="max-width:640px;text-align:center;margin:0 auto;">
         The official crewswarm plugin gives every OpenClaw agent access to your local crew.
         Dispatch tasks, poll results, and list agents &mdash; all without leaving OpenClaw.
       </p>
@@ -558,9 +570,9 @@
         </div>
       </div>
 
-      <div class="install-block" role="region" aria-label="Plugin install command" style="margin-bottom: 1rem;">
-        <code>openclaw plugins install crewswarm-openclaw-plugin</code>
-        <button class="copy-btn" aria-label="Copy plugin install command">Copy</button>
+      <div class="install-block" role="region" aria-label="Plugin install command" style="display:flex;align-items:center;gap:1rem;justify-content:center;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1.25rem;max-width:540px;margin:0 auto 1rem;">
+        <code style="flex:1;font-size:0.82rem;color:var(--accent);">openclaw plugins install crewswarm-openclaw-plugin</code>
+        <button class="copy-btn" aria-label="Copy plugin install command" style="white-space:nowrap;padding:4px 12px;font-size:0.75rem;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:6px;color:var(--text-2);cursor:pointer;">Copy</button>
       </div>
       <p style="font-size: 0.85rem; color: var(--text-3);">
         No LLM keys are shared &mdash; crewswarm uses its own providers. The only shared secret is the RT auth token.
@@ -579,9 +591,9 @@
         One command. No sign-up. No subscription. Just clone, install, and start building.
       </p>
 
-      <div class="install-block" role="region" aria-label="Install command">
-        <code>git clone https://github.com/crewswarm/crewswarm && cd crewswarm && bash install.sh</code>
-        <button class="copy-btn" aria-label="Copy install command">Copy</button>
+      <div class="install-block" role="region" aria-label="Install command" style="display:flex;align-items:center;gap:1rem;justify-content:center;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1.25rem;max-width:700px;margin:0 auto;">
+        <code style="flex:1;font-size:0.82rem;color:var(--accent);">git clone https://github.com/crewswarm/crewswarm && cd crewswarm && bash install.sh</code>
+        <button class="copy-btn" aria-label="Copy install command" style="white-space:nowrap;padding:4px 12px;font-size:0.75rem;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:6px;color:var(--text-2);cursor:pointer;">Copy</button>
       </div>
 
       <p class="cta-stats">
