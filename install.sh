@@ -166,6 +166,17 @@ if [[ ! -f "$CREWSWARM_JSON" ]]; then
     "perplexity":  { "apiKey": "", "baseUrl": "https://api.perplexity.ai" },
     "nvidia":      { "apiKey": "", "baseUrl": "https://integrate.api.nvidia.com/v1" },
     "google":      { "apiKey": "", "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai" },
+    "openrouter":  { "apiKey": "", "baseUrl": "https://openrouter.ai/api/v1" },
+    "fireworks":   { "apiKey": "", "baseUrl": "https://api.fireworks.ai/inference/v1" },
+    "together":    { "apiKey": "", "baseUrl": "https://api.together.xyz/v1" },
+    "huggingface": { "apiKey": "", "baseUrl": "https://api-inference.huggingface.co/v1" },
+    "venice":      { "apiKey": "", "baseUrl": "https://api.venice.ai/api/v1" },
+    "moonshot":    { "apiKey": "", "baseUrl": "https://api.moonshot.cn/v1" },
+    "minimax":     { "apiKey": "", "baseUrl": "https://api.minimax.chat/v1" },
+    "volcengine":  { "apiKey": "", "baseUrl": "https://ark.cn-beijing.volces.com/api/v3" },
+    "qianfan":     { "apiKey": "", "baseUrl": "https://aip.baidubce.com/rpc/2.0/ai_custom/v1" },
+    "vllm":        { "apiKey": "none", "baseUrl": "http://localhost:8000/v1" },
+    "sglang":      { "apiKey": "none", "baseUrl": "http://localhost:30000/v1" },
     "ollama":      { "apiKey": "ollama", "baseUrl": "http://localhost:11434/v1" }
   }
 }
@@ -184,7 +195,10 @@ EOF
         groq: 'groq', anthropic: 'anthropic', openai: 'openai',
         xai: 'xai', deepseek: 'deepseek', mistral: 'mistral',
         google: 'google', perplexity: 'perplexity', nvidia: 'nvidia',
-        cerebras: 'cerebras', ollama: 'ollama'
+        cerebras: 'cerebras', ollama: 'ollama', openrouter: 'openrouter',
+        together: 'together', huggingface: 'huggingface', venice: 'venice',
+        moonshot: 'moonshot', minimax: 'minimax', volcengine: 'volcengine',
+        qianfan: 'qianfan', fireworks: 'fireworks'
       };
       let migrated = 0;
       for (const [ocId, ocCfg] of Object.entries(oc.providers || {})) {
