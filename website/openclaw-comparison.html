@@ -201,13 +201,51 @@
       </div>
 
       <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; margin: 2.5rem 0; text-align: center;">
-        <h3 style="margin-bottom: 0.75rem;">The combination</h3>
+        <h3 style="margin-bottom: 0.75rem;">Use them together</h3>
         <p style="font-size: 1.05rem; color: var(--text-2); max-width: 600px; margin: 0 auto;">
           Use OpenClaw as the front door &mdash; chat from your phone, desktop, or any channel.
           crewswarm does the heavy lifting behind the scenes: planning, coding, testing, and shipping with a full specialist crew.
         </p>
         <div style="margin-top: 1.25rem;">
           <code style="font-size: 0.9rem; color: var(--accent);">openclaw plugins install crewswarm-openclaw-plugin</code>
+        </div>
+      </div>
+
+      <div style="background: linear-gradient(135deg, var(--bg-card), var(--bg-card2)); border: 1px solid var(--accent); border-radius: 12px; padding: 2rem; margin: 0 0 2.5rem 0;">
+        <h3 style="margin-bottom: 0.75rem; text-align: center;">crewswarm works without OpenClaw</h3>
+        <p style="font-size: 1rem; color: var(--text-2); max-width: 640px; margin: 0 auto 1.5rem; text-align: center;">
+          OpenClaw is one of many surfaces. crewswarm runs independently with its own dashboard, Vibe IDE, crew-cli, Telegram, and WhatsApp &mdash; no OpenClaw required.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; max-width: 640px; margin: 0 auto;">
+          <div style="text-align: center; padding: 1rem;">
+            <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">&#x1f4bb;</div>
+            <strong style="font-size: 0.9rem;">Dashboard</strong>
+            <p style="font-size: 0.8rem; color: var(--text-3); margin: 0.25rem 0 0;">Web UI at localhost:4319</p>
+          </div>
+          <div style="text-align: center; padding: 1rem;">
+            <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">&#x1f3a8;</div>
+            <strong style="font-size: 0.9rem;">Vibe IDE</strong>
+            <p style="font-size: 0.8rem; color: var(--text-3); margin: 0.25rem 0 0;">Monaco editor + agent chat</p>
+          </div>
+          <div style="text-align: center; padding: 1rem;">
+            <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">&#x2328;&#xfe0f;</div>
+            <strong style="font-size: 0.9rem;">crew-cli</strong>
+            <p style="font-size: 0.8rem; color: var(--text-3); margin: 0.25rem 0 0;">Terminal-first workflow</p>
+          </div>
+        </div>
+
+        <h3 style="margin: 2rem 0 0.75rem; text-align: center; font-size: 1rem;">Migrating from OpenClaw?</h3>
+        <p style="font-size: 0.9rem; color: var(--text-2); max-width: 580px; margin: 0 auto 1rem; text-align: center;">
+          crewswarm reads your existing OpenClaw provider config automatically. Your API keys, model preferences, and channel settings carry over.
+        </p>
+        <div style="max-width: 520px; margin: 0 auto; font-family: 'SF Mono', monospace; font-size: 0.82rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; line-height: 1.8;">
+          <div><span style="color: var(--text-3);"># 1. Install crewswarm (keeps OpenClaw intact)</span></div>
+          <div><span style="color: var(--accent);">$</span> git clone https://github.com/crewswarm/crewswarm && cd crewswarm</div>
+          <div><span style="color: var(--accent);">$</span> bash install.sh</div>
+          <div style="margin-top: 0.5rem;"><span style="color: var(--text-3);"># 2. Start — it finds your ~/.openclaw/ keys automatically</span></div>
+          <div><span style="color: var(--accent);">$</span> npm start</div>
+          <div style="margin-top: 0.5rem;"><span style="color: var(--text-3);"># 3. Done. Use dashboard, Vibe, CLI, or keep OpenClaw as a surface</span></div>
         </div>
       </div>
     </div>
