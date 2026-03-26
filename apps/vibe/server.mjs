@@ -21,6 +21,8 @@ import { normalizeProjectDir } from "../../lib/runtime/project-dir.mjs";
 import { resolveCursorLaunchSpec } from "../../lib/engines/cursor-launcher.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version;
+const SERVER_START = Date.now();
 const PORT = Number(process.env.STUDIO_PORT || 3333);
 const DIST_DIR = path.join(__dirname, "dist");
 const WORKSPACE_DIR = __dirname;
@@ -1565,6 +1567,15 @@ export const server = http.createServer(async (req, res) => {
   const dashboardProxyPath = parsedUrl.pathname + (parsedUrl.search || "");
   if (parsedUrl.pathname === "/api/chat/unified" && req.method === "POST") {
     await proxyRequestToDashboard(req, res, dashboardProxyPath);
+    return;
+  }
+  if (parsedUrl.pathname === "/api/version" && req.method === "GET") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      version: PKG_VERSION,
+      uptime: Math.floor((Date.now() - SERVER_START) / 1000),
+      uptimeHuman: `${Math.floor((Date.now() - SERVER_START) / 3600000)}h ${Math.floor(((Date.now() - SERVER_START) % 3600000) / 60000)}m`,
+    }));
     return;
   }
   if (parsedUrl.pathname === "/api/auth/token" && req.method === "GET") {
