@@ -237,15 +237,16 @@
 
         <h3 style="margin: 2rem 0 0.75rem; text-align: center; font-size: 1rem;">Migrating from OpenClaw?</h3>
         <p style="font-size: 0.9rem; color: var(--text-2); max-width: 580px; margin: 0 auto 1rem; text-align: center;">
-          crewswarm reads your existing OpenClaw provider config automatically. Your API keys, model preferences, and channel settings carry over.
+          The installer automatically detects <code>~/.openclaw/openclaw.json</code> and migrates your API keys into crewswarm. No manual config copying. OpenClaw stays installed &mdash; use it as a surface or uninstall it later.
         </p>
         <div style="max-width: 520px; margin: 0 auto; font-family: 'SF Mono', monospace; font-size: 0.82rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; line-height: 1.8;">
           <div><span style="color: var(--text-3);"># 1. Install crewswarm (keeps OpenClaw intact)</span></div>
           <div><span style="color: var(--accent);">$</span> git clone https://github.com/crewswarm/crewswarm && cd crewswarm</div>
           <div><span style="color: var(--accent);">$</span> bash install.sh</div>
-          <div style="margin-top: 0.5rem;"><span style="color: var(--text-3);"># 2. Start — it finds your ~/.openclaw/ keys automatically</span></div>
+          <div style="margin-top: 0.25rem;"><span style="color: #4ade80;">  ✓ Found OpenClaw config — migrated 4 API keys</span></div>
+          <div style="margin-top: 0.5rem;"><span style="color: var(--text-3);"># 2. Start — your keys are already configured</span></div>
           <div><span style="color: var(--accent);">$</span> npm start</div>
-          <div style="margin-top: 0.5rem;"><span style="color: var(--text-3);"># 3. Done. Use dashboard, Vibe, CLI, or keep OpenClaw as a surface</span></div>
+          <div style="margin-top: 0.5rem;"><span style="color: var(--text-3);"># 3. Done. Dashboard, Vibe, CLI, Telegram, WhatsApp all ready</span></div>
         </div>
       </div>
     </div>
