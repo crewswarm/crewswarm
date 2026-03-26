@@ -89,12 +89,14 @@
     <p>A single-agent system uses one model for everything. crewswarm lets you put <strong>the right model on each task</strong>:</p>
 
     <table>
-      <tr><th>Agent</th><th>Optimized for</th><th>Why a different model</th></tr>
-      <tr><td>PM (planning)</td><td>Fast, cheap model</td><td>Speed — planning needs quick iterations, not deep reasoning</td></tr>
-      <tr><td>Coder (execution)</td><td>Best coding model</td><td>Quality — code needs to be right the first time</td></tr>
-      <tr><td>QA (review)</td><td>Different model than coder</td><td>Fresh perspective — catches what the coder's model misses</td></tr>
-      <tr><td>Fixer (bugs)</td><td>Tool-heavy engine</td><td>Needs to run code, read errors, debug interactively</td></tr>
-      <tr><td>Researcher</td><td>Web-connected model</td><td>Real-time information, not stale training data</td></tr>
+      <tr><th>Agent</th><th>Optimized for</th><th>Example setup</th></tr>
+      <tr><td>crew-pm (planning)</td><td>Fast, cheap model</td><td>Groq Llama 3.3 70B or Grok — speed over depth</td></tr>
+      <tr><td>crew-coder (execution)</td><td>Best coding model</td><td>Claude Sonnet, GPT-5, or Codex — quality matters</td></tr>
+      <tr><td>crew-qa (review)</td><td>Different model than coder</td><td>Gemini Flash or DeepSeek — fresh eyes catch more</td></tr>
+      <tr><td>crew-fixer (bugs)</td><td>Tool-heavy engine</td><td>Codex or Claude Code — needs to run code and debug</td></tr>
+      <tr><td>crew-researcher</td><td>Web-connected model</td><td>Perplexity Sonar or any model with web search</td></tr>
+      <tr><td>crew-security (audit)</td><td>Thorough reasoning</td><td>Claude or GPT — needs to think through attack vectors</td></tr>
+      <tr><td>crew-lead (coordinator)</td><td>Conversational, fast</td><td>Any fast model — this is your chat interface</td></tr>
     </table>
 
     <p>This isn't theoretical. Using different models for different roles consistently outperforms a single frontier model doing everything — at lower total cost, because most agents use fast/cheap models.</p>
