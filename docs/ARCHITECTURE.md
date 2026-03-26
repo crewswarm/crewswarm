@@ -65,3 +65,25 @@ System diagram, port map, and request flow.
 - **command.run_task**: used for pipeline execution
 
 See [ORCHESTRATOR-GUIDE.md](ORCHESTRATOR-GUIDE.md) for pipeline DSL and wave execution.
+
+## API Reference
+
+The full OpenAPI 3.1 specification is at [`crew-cli/docs/openapi.unified.v1.json`](../crew-cli/docs/openapi.unified.v1.json) — 142 endpoints across Dashboard (`:4319`), crew-lead (`:5010`), and Vibe (`:3333`).
+
+Import into Postman, Insomnia, or any OpenAPI-compatible tool:
+```bash
+# View in browser
+open crew-cli/docs/openapi.unified.v1.json
+
+# Generate a client
+npx openapi-generator-cli generate -i crew-cli/docs/openapi.unified.v1.json -g typescript-fetch -o sdk/
+```
+
+Key endpoint groups:
+- `/api/dispatch`, `/api/status/:taskId` — task orchestration
+- `/api/agents`, `/api/agents-config/*` — agent management
+- `/api/crew-lead/chat` — conversational chat
+- `/api/pm-loop/*` — autonomous PM loop control
+- `/api/skills/*` — skill management and execution
+- `/api/providers/*` — LLM provider configuration
+- `/api/services/*` — service health and control
