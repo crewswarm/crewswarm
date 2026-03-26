@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>crewswarm Changelog — What's New</title>
+  <meta name="description" content="See what's new in crewswarm. Release notes, new features, bug fixes, and improvements." />
+  <meta property="og:title" content="crewswarm Changelog" />
+  <meta property="og:description" content="Release notes and updates for crewswarm — local-first multi-agent orchestration." />
+  <meta property="og:url" content="https://crewswarm.ai/changelog.html" />
+  <link rel="icon" type="image/png" href="favicon.png?v=3" />
+  <link rel="canonical" href="https://crewswarm.ai/changelog.html" />
+  <style>
+    :root { --bg: #060a10; --bg-card: #0f172a; --text-1: #e2e8f0; --text-2: #94a3b8; --text-3: #64748b; --border: #1e293b; --accent: #818cf8; --green: #34d399; --red: #f87171; --yellow: #fbbf24; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text-1); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.7; }
+    .header { background: var(--bg); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    .header a { color: var(--text-1); text-decoration: none; font-weight: 600; }
+    .header a:hover { color: var(--accent); }
+    .header .sep { color: var(--text-3); }
+    .header .links { margin-left: auto; display: flex; gap: 1rem; font-size: 0.85rem; }
+    .header .links a { color: var(--text-2); font-weight: 400; }
+    .container { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--text-2); margin-bottom: 3rem; font-size: 1rem; }
+    .release { margin-bottom: 3rem; padding-bottom: 2rem; border-bottom: 1px solid var(--border); }
+    .release:last-child { border-bottom: none; }
+    .release h2 { font-size: 1.3rem; margin-bottom: 0.25rem; }
+    .release h2 a { color: var(--accent); text-decoration: none; }
+    .release h2 a:hover { text-decoration: underline; }
+    .release .date { color: var(--text-3); font-size: 0.85rem; margin-bottom: 1rem; }
+    .release h3 { font-size: 0.9rem; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin: 1.25rem 0 0.5rem; }
+    .release ul { padding-left: 1.5rem; }
+    .release li { color: var(--text-2); margin-bottom: 0.35rem; font-size: 0.9rem; }
+    .release li code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 4px; font-size: 0.82rem; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; margin-left: 0.5rem; }
+    .badge-beta { background: rgba(251,191,36,0.15); color: var(--yellow); border: 1px solid rgba(251,191,36,0.3); }
+    .badge-stable { background: rgba(52,211,153,0.15); color: var(--green); border: 1px solid rgba(52,211,153,0.3); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="index.html">crewswarm</a>
+    <span class="sep">/</span>
+    <span>Changelog</span>
+    <div class="links">
+      <a href="https://github.com/crewswarm/crewswarm/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Raw</a>
+      <a href="docs.html">Docs</a>
+      <a href="index.html">Home</a>
+    </div>
+  </div>
+  <div class="container">
+    <h1>Changelog</h1>
+    <p class="subtitle">What's new in crewswarm. See the <a href="https://github.com/crewswarm/crewswarm/blob/main/CHANGELOG.md" style="color:var(--accent);">full changelog on GitHub</a>.</p>
+    <div id="releases"></div>
+  </div>
+  <script>
+    // Fetch and render CHANGELOG.md from GitHub (or local fallback)
+    async function loadChangelog() {
+      const container = document.getElementById('releases');
+      let md;
+      try {
+        // Try local file first (works when deployed alongside), then GitHub raw
+        const localRes = await fetch('CHANGELOG.md').catch(() => null);
+        if (localRes && localRes.ok && (await localRes.clone().text()).startsWith('#')) {
+          md = await localRes.text();
+        } else {
+          const ghRes = await fetch('https://raw.githubusercontent.com/crewswarm/crewswarm/main/CHANGELOG.md');
+          md = await ghRes.text();
+        }
+      } catch {
+        container.innerHTML = '<p style="color:var(--text-3)">Could not load changelog. <a href="https://github.com/crewswarm/crewswarm/blob/main/CHANGELOG.md" style="color:var(--accent)">View on GitHub</a>.</p>';
+        return;
+      }
+
+      // Simple markdown parser for changelog format
+      const sections = md.split(/^## /m).slice(1); // split on ## headers
+      let html = '';
+      for (const section of sections.slice(0, 10)) { // show last 10 releases
+        const lines = section.split('\n');
+        const header = lines[0].trim();
+        const match = header.match(/\[(.+?)\]\s*-?\s*([\d-]+)?/);
+        const version = match ? match[1] : header;
+        const date = match ? match[2] || '' : '';
+        const isBeta = version.includes('beta') || version.includes('alpha') || version.includes('rc');
+        const badge = isBeta ? '<span class="badge badge-beta">beta</span>' : '<span class="badge badge-stable">stable</span>';
+
+        let body = lines.slice(1).join('\n');
+        // Convert ### headers
+        body = body.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+        // Convert list items
+        body = body.replace(/^- (.+)$/gm, '<li>$1</li>');
+        // Wrap consecutive <li> in <ul>
+        body = body.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+        // Inline code
+        body = body.replace(/`([^`]+)`/g, '<code>$1</code>');
+        // Bold
+        body = body.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        // Remove empty lines
+        body = body.replace(/^\s*$/gm, '');
+
+        html += `<div class="release">
+          <h2>${version} ${badge}</h2>
+          ${date ? `<div class="date">${date}</div>` : ''}
+          ${body}
+        </div>`;
+      }
+      container.innerHTML = html;
+    }
+    loadChangelog();
+  </script>
+</body>
+</html>

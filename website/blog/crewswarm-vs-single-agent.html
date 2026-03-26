@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-Agent vs Single-Agent: Why One AI Isn't Enough</title>
+  <meta name="description" content="Why a PM agent plus specialist crew outperforms a single general-purpose model on real software projects. Architecture comparison and practical results." />
+  <meta property="og:title" content="Multi-Agent vs Single-Agent: Why One AI Isn't Enough" />
+  <meta property="og:description" content="A PM + specialist crew outperforms a single model on real software tasks." />
+  <meta property="og:url" content="https://crewswarm.ai/blog/crewswarm-vs-single-agent.html" />
+  <meta property="og:type" content="article" />
+  <link rel="icon" type="image/png" href="../favicon.png?v=3" />
+  <link rel="canonical" href="https://crewswarm.ai/blog/crewswarm-vs-single-agent.html" />
+  <style>
+    :root { --bg: #060a10; --bg-card: #0f172a; --text-1: #e2e8f0; --text-2: #94a3b8; --text-3: #64748b; --border: #1e293b; --accent: #818cf8; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text-1); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.8; }
+    .header { background: var(--bg); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    .header a { color: var(--text-1); text-decoration: none; font-weight: 600; }
+    .header a:hover { color: var(--accent); }
+    .header .sep { color: var(--text-3); }
+    .header .links { margin-left: auto; display: flex; gap: 1rem; font-size: 0.85rem; }
+    .header .links a { color: var(--text-2); font-weight: 400; }
+    .container { max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; line-height: 1.3; }
+    .meta { color: var(--text-3); font-size: 0.85rem; margin-bottom: 2rem; }
+    h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; }
+    p { color: var(--text-2); margin-bottom: 1.25rem; font-size: 1rem; }
+    strong { color: var(--text-1); }
+    code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+    table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.9rem; }
+    th { text-align: left; padding: 0.5rem; border-bottom: 2px solid var(--border); color: var(--text-1); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    td { padding: 0.5rem; border-bottom: 1px solid var(--border); color: var(--text-2); }
+    .cta { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; margin-top: 3rem; text-align: center; }
+    .cta a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .cta code { display: block; margin-top: 0.75rem; font-size: 0.9rem; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="../index.html">crewswarm</a>
+    <span class="sep">/</span>
+    <a href="index.html" style="font-weight:400;color:var(--text-2);">Blog</a>
+    <div class="links">
+      <a href="../changelog.html">Changelog</a>
+      <a href="../docs.html">Docs</a>
+    </div>
+  </div>
+  <div class="container">
+    <h1>Multi-Agent vs Single-Agent: Why One AI Isn't Enough</h1>
+    <div class="meta">March 2026</div>
+
+    <p>The default approach to AI coding is: open a chat, describe what you want, get code back. One model, one conversation. It works for small tasks. It breaks down on real projects.</p>
+
+    <h2>The single-agent ceiling</h2>
+
+    <p>A single model doing everything hits predictable limits:</p>
+
+    <p><strong>Context window pressure.</strong> By the time you've described the project, loaded relevant files, and gone through a few iterations, you're deep into the context window. The model starts forgetting earlier decisions. It contradicts itself. Quality degrades.</p>
+
+    <p><strong>Role confusion.</strong> Should the model plan or execute? Review its own code? Make architectural decisions and also write CSS? Every role switch costs quality. A model that just finished writing backend code isn't in the right headspace to catch security vulnerabilities in that same code.</p>
+
+    <p><strong>No verification loop.</strong> When the same model writes code and evaluates it, it has a blind spot for its own mistakes. It "looks right" because it wrote it.</p>
+
+    <h2>The multi-agent advantage</h2>
+
+    <p>crewswarm splits the work across <strong>22 specialist agents</strong>, each with a focused role, fresh context, and purpose-built tools:</p>
+
+    <table>
+      <tr><th>Task</th><th>Single Agent</th><th>crewswarm Crew</th></tr>
+      <tr><td>Planning a feature</td><td>Same model as coder</td><td>crew-pm with Perplexity for research</td></tr>
+      <tr><td>Writing backend code</td><td>Same model as everything</td><td>crew-coder-back with Codex engine</td></tr>
+      <tr><td>Writing frontend</td><td>Same model, same context</td><td>crew-coder-front with fresh context</td></tr>
+      <tr><td>Code review</td><td>Self-review (blind spots)</td><td>crew-qa with different model + fresh eyes</td></tr>
+      <tr><td>Security audit</td><td>Afterthought, if at all</td><td>crew-security as dedicated gate</td></tr>
+      <tr><td>Git workflow</td><td>Manual</td><td>crew-github handles commits, PRs</td></tr>
+    </table>
+
+    <p>Each agent starts with <strong>clean context</strong> — just its role prompt, the task, and shared project memory. No accumulated conversation noise. No role confusion.</p>
+
+    <h2>The PM as coordinator</h2>
+
+    <p>The key insight: specialists without coordination produce chaos. crewswarm's PM agent reads a <code>ROADMAP.md</code>, breaks work into tasks, dispatches to the right agent, evaluates results, and iterates. It uses a fast model (Groq) for speed and a reasoning model for complex planning decisions.</p>
+
+    <p>The PM doesn't write code. It doesn't review code. It coordinates. This separation is what makes the system reliable — each agent does one thing well.</p>
+
+    <h2>Model diversity</h2>
+
+    <p>A single-agent system uses one model for everything. crewswarm lets you put <strong>the right model on each task</strong>:</p>
+
+    <table>
+      <tr><th>Agent</th><th>Model</th><th>Why</th></tr>
+      <tr><td>PM (planning)</td><td>Grok 4.1 Fast</td><td>Speed — planning needs quick iterations</td></tr>
+      <tr><td>Coder (execution)</td><td>Claude Sonnet 4.6</td><td>Quality — code needs to be right</td></tr>
+      <tr><td>QA (review)</td><td>GPT-5.4</td><td>Different perspective — catches what Claude misses</td></tr>
+      <tr><td>Fixer (bugs)</td><td>Codex</td><td>Tool access — needs to run code and debug</td></tr>
+      <tr><td>Researcher</td><td>Perplexity Sonar</td><td>Web access — real-time information</td></tr>
+    </table>
+
+    <p>This isn't theoretical. Using different models for different roles consistently outperforms a single frontier model doing everything — at lower total cost, because most agents use fast/cheap models.</p>
+
+    <h2>Shared memory, separate context</h2>
+
+    <p>All agents share a persistent memory layer: project state, decisions, handoff notes. But each agent's <em>conversation context</em> is fresh. This gives you the best of both worlds: agents know what's been decided (shared memory) without carrying the burden of everything that's been said (clean context).</p>
+
+    <h2>When single-agent is fine</h2>
+
+    <p>For a quick question, a one-file edit, or an explanation — a single agent is faster and simpler. crewswarm doesn't replace that. You can always chat with crew-lead directly for lightweight tasks. The multi-agent system kicks in when you need to <strong>build, test, and ship</strong> — not just generate.</p>
+
+    <div class="cta">
+      <p style="color:var(--text-1);font-weight:600;margin-bottom:0.5rem;">Try multi-agent orchestration</p>
+      <p><a href="https://github.com/crewswarm/crewswarm">GitHub</a> &middot; <a href="https://www.npmjs.com/package/crewswarm">npm</a> &middot; <a href="../index.html#get-started">Install guide</a></p>
+      <code>npm install -g crewswarm</code>
+    </div>
+  </div>
+</body>
+</html>

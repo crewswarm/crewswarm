@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Why We Built crewswarm — From One Agent to a Full Crew</title>
+  <meta name="description" content="AI coding tools are everywhere. Most are chat boxes bolted onto editors. We wanted specialist agents that plan, build, test, and ship autonomously." />
+  <meta property="og:title" content="Why We Built crewswarm" />
+  <meta property="og:description" content="From one agent to a full crew — why multi-agent orchestration changes everything about AI-assisted development." />
+  <meta property="og:url" content="https://crewswarm.ai/blog/why-we-built-crewswarm.html" />
+  <meta property="og:type" content="article" />
+  <link rel="icon" type="image/png" href="../favicon.png?v=3" />
+  <link rel="canonical" href="https://crewswarm.ai/blog/why-we-built-crewswarm.html" />
+  <style>
+    :root { --bg: #060a10; --bg-card: #0f172a; --text-1: #e2e8f0; --text-2: #94a3b8; --text-3: #64748b; --border: #1e293b; --accent: #818cf8; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text-1); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.8; }
+    .header { background: var(--bg); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    .header a { color: var(--text-1); text-decoration: none; font-weight: 600; }
+    .header a:hover { color: var(--accent); }
+    .header .sep { color: var(--text-3); }
+    .header .links { margin-left: auto; display: flex; gap: 1rem; font-size: 0.85rem; }
+    .header .links a { color: var(--text-2); font-weight: 400; }
+    .container { max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; line-height: 1.3; }
+    .meta { color: var(--text-3); font-size: 0.85rem; margin-bottom: 2rem; }
+    h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; }
+    p { color: var(--text-2); margin-bottom: 1.25rem; font-size: 1rem; }
+    strong { color: var(--text-1); }
+    code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+    blockquote { border-left: 3px solid var(--accent); padding-left: 1rem; margin: 1.5rem 0; color: var(--text-2); font-style: italic; }
+    .cta { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; margin-top: 3rem; text-align: center; }
+    .cta a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .cta a:hover { text-decoration: underline; }
+    .cta code { display: block; margin-top: 0.75rem; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="../index.html">crewswarm</a>
+    <span class="sep">/</span>
+    <a href="index.html" style="font-weight:400;color:var(--text-2);">Blog</a>
+    <div class="links">
+      <a href="../changelog.html">Changelog</a>
+      <a href="../docs.html">Docs</a>
+      <a href="../index.html">Home</a>
+    </div>
+  </div>
+  <div class="container">
+    <h1>Why We Built crewswarm</h1>
+    <div class="meta">March 2026</div>
+
+    <p>Every AI coding tool follows the same pattern: one model, one chat window, one conversation. You describe what you want, the model writes some code, and you paste it into your editor. Maybe it has file access. Maybe it can run commands. But it's still one agent doing everything.</p>
+
+    <p>That's not how software gets built.</p>
+
+    <h2>Real software needs specialists</h2>
+
+    <p>When a team ships a feature, the PM plans it, the backend engineer builds the API, the frontend engineer builds the UI, QA writes tests, security reviews the code, and someone handles the git workflow. They share context, hand off work, and iterate until it's done.</p>
+
+    <p>We wanted that, but with AI agents. Not one model trying to be everything. <strong>A crew of 22 specialists, each with their own model and tools, coordinated by a PM that plans autonomously.</strong></p>
+
+    <h2>Why local-first</h2>
+
+    <p>Your source code is your most sensitive asset. We didn't want it routed through someone else's servers. crewswarm runs entirely on your machine. API keys stay in your config. Files stay on your disk. No cloud proxy, no subscription, no vendor lock-in.</p>
+
+    <p>This isn't ideological — it's practical. Local execution means you can use <strong>any model from any provider</strong>. Claude for reasoning, Groq for speed, DeepSeek for cost, Ollama for offline. Mix and match per agent. Change your mind tomorrow with one config edit.</p>
+
+    <h2>The PM Loop</h2>
+
+    <p>The core insight: if you have specialists, you need a coordinator. crewswarm's PM Loop reads a <code>ROADMAP.md</code>, plans the work, dispatches tasks to the right agents, evaluates results, and iterates. You describe a feature once; the crew ships it.</p>
+
+    <blockquote>Describe the idea. The PM plans it. Agents build it. QA tests it. Code lands on disk.</blockquote>
+
+    <p>This isn't a demo. It runs real commands, writes real files, and uses real tools. The PM agent uses Groq for speed. The coder uses Claude or Codex for quality. The QA agent catches bugs the coder missed. Each agent is optimized for its job.</p>
+
+    <h2>Six coding engines, not one</h2>
+
+    <p>crewswarm doesn't just call an API. It orchestrates <strong>six full coding engines</strong>: Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and crew-cli. Each has its own strengths. The system picks the right one for the task, or you can pin agents to specific engines.</p>
+
+    <p>When crew-coder needs to edit a file, it doesn't generate a diff and hope for the best. It runs an actual coding agent with file system access, tool execution, and verification. The output is real, tested code — not a suggestion in a chat window.</p>
+
+    <h2>What we're building toward</h2>
+
+    <p>crewswarm is open source (MIT). We're building it in public because we think local-first multi-agent orchestration should be a commons, not a product with a paywall. The best models change every month. The best providers change every quarter. The orchestration layer should be yours.</p>
+
+    <p>We're not competing with editors or chat tools. We're building the layer underneath: the crew that does the work, regardless of which surface you talk to it from — a dashboard, an IDE, a CLI, Telegram, WhatsApp, or even an OpenClaw desktop app.</p>
+
+    <div class="cta">
+      <p style="color:var(--text-1);font-weight:600;margin-bottom:0.5rem;">Try it in 5 minutes</p>
+      <p><a href="https://github.com/crewswarm/crewswarm">GitHub</a> &middot; <a href="https://www.npmjs.com/package/crewswarm">npm</a> &middot; <a href="../index.html#get-started">Install guide</a></p>
+      <code style="color:var(--accent);">git clone https://github.com/crewswarm/crewswarm && cd crewswarm && bash install.sh</code>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Case for Local-First AI Development</title>
+  <meta name="description" content="Your code shouldn't leave your machine. Why local-first AI execution changes the trust model and why we chose it for crewswarm." />
+  <meta property="og:title" content="The Case for Local-First AI Development" />
+  <meta property="og:description" content="Local execution means your code stays on your machine. No cloud proxy, no subscription, no vendor lock-in." />
+  <meta property="og:url" content="https://crewswarm.ai/blog/local-first-ai.html" />
+  <meta property="og:type" content="article" />
+  <link rel="icon" type="image/png" href="../favicon.png?v=3" />
+  <link rel="canonical" href="https://crewswarm.ai/blog/local-first-ai.html" />
+  <style>
+    :root { --bg: #060a10; --bg-card: #0f172a; --text-1: #e2e8f0; --text-2: #94a3b8; --text-3: #64748b; --border: #1e293b; --accent: #818cf8; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text-1); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.8; }
+    .header { background: var(--bg); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    .header a { color: var(--text-1); text-decoration: none; font-weight: 600; }
+    .header a:hover { color: var(--accent); }
+    .header .sep { color: var(--text-3); }
+    .header .links { margin-left: auto; display: flex; gap: 1rem; font-size: 0.85rem; }
+    .header .links a { color: var(--text-2); font-weight: 400; }
+    .container { max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; line-height: 1.3; }
+    .meta { color: var(--text-3); font-size: 0.85rem; margin-bottom: 2rem; }
+    h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; }
+    p { color: var(--text-2); margin-bottom: 1.25rem; font-size: 1rem; }
+    strong { color: var(--text-1); }
+    code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+    ul { padding-left: 1.5rem; margin-bottom: 1.25rem; }
+    li { color: var(--text-2); margin-bottom: 0.5rem; font-size: 0.95rem; }
+    .cta { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; margin-top: 3rem; text-align: center; }
+    .cta a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .cta code { display: block; margin-top: 0.75rem; font-size: 0.9rem; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="../index.html">crewswarm</a>
+    <span class="sep">/</span>
+    <a href="index.html" style="font-weight:400;color:var(--text-2);">Blog</a>
+    <div class="links">
+      <a href="../changelog.html">Changelog</a>
+      <a href="../docs.html">Docs</a>
+    </div>
+  </div>
+  <div class="container">
+    <h1>The Case for Local-First AI Development</h1>
+    <div class="meta">March 2026</div>
+
+    <p>Most AI coding platforms work like this: your code goes to a server, a model processes it, results come back. You're trusting a third party with your source code, your API keys, and your development workflow. For hobby projects, that's fine. For real work, it's a problem.</p>
+
+    <h2>What "local-first" means</h2>
+
+    <p>In crewswarm, <strong>all execution happens on your machine</strong>. When an agent writes a file, it writes to your local disk. When it runs a command, it runs in your shell. When it calls an LLM, it goes directly from your machine to the provider's API — no proxy server in between.</p>
+
+    <p>This is a design choice with concrete consequences:</p>
+
+    <ul>
+      <li><strong>Your code never leaves your machine.</strong> No cloud storage, no third-party caching, no "we may use your data for training" clauses.</li>
+      <li><strong>API keys stay in your config.</strong> Stored in <code>~/.crewswarm/crewswarm.json</code> with file permissions you control. Not in someone else's database.</li>
+      <li><strong>No subscription.</strong> You pay providers directly for what you use. No per-seat pricing, no monthly fee for the orchestration layer.</li>
+      <li><strong>Works offline.</strong> With Ollama or a local vLLM server, crewswarm runs with zero internet dependency.</li>
+    </ul>
+
+    <h2>Provider freedom</h2>
+
+    <p>When you're not locked into a platform, you can choose providers based on merit. crewswarm supports <strong>24 providers</strong> out of the box — from Anthropic and OpenAI to Groq, DeepSeek, Cerebras, Together, and local inference via Ollama, vLLM, or SGLang.</p>
+
+    <p>More importantly, you can <strong>mix providers per agent</strong>. Your PM uses Groq for speed. Your coder uses Claude for quality. Your researcher uses Perplexity for web search. Switch any of them with one config change, no migration needed.</p>
+
+    <p>When a new model drops — and they drop every week — you update a string in your config. No waiting for your platform vendor to "add support." No feature flags. No upgrade tier.</p>
+
+    <h2>The trust model</h2>
+
+    <p>Cloud AI platforms ask for broad trust: send us your code, your prompts, your file system access. You trust that they don't log it, don't train on it, don't get breached.</p>
+
+    <p>Local-first inverts this. <strong>You trust the LLM provider with your prompts</strong> (unavoidable — the model needs to see the code to work on it). But you trust <strong>nobody else</strong> with your execution environment, your file system, or your infrastructure.</p>
+
+    <p>The orchestration layer — the part that decides what code to write, which files to modify, what commands to run — runs on your machine, under your control, with source code you can audit.</p>
+
+    <h2>When local-first is wrong</h2>
+
+    <p>Local-first isn't always the right answer. If you want a hosted product you never think about, a managed team deployment with centralized billing, or a mobile-first experience — cloud platforms serve that well.</p>
+
+    <p>crewswarm is for developers who want <strong>control</strong>. Control over which models they use, which providers they pay, where their code runs, and how their agents behave. If that's you, local-first is the only architecture that makes sense.</p>
+
+    <div class="cta">
+      <p style="color:var(--text-1);font-weight:600;margin-bottom:0.5rem;">Own your AI stack</p>
+      <p><a href="https://github.com/crewswarm/crewswarm">GitHub</a> &middot; <a href="https://www.npmjs.com/package/crewswarm">npm</a> &middot; <a href="../index.html#get-started">Install guide</a></p>
+      <code>npm install -g crewswarm</code>
+    </div>
+  </div>
+</body>
+</html>
