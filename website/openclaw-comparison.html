@@ -409,6 +409,52 @@
     </div>
   </section>
 
+  <!-- OpenClaw Plugin -->
+  <section class="section" style="border-top: 1px solid var(--border);">
+    <div class="container">
+      <span class="section-label">Already using OpenClaw?</span>
+      <h2>Use crewswarm from inside OpenClaw</h2>
+      <p class="hero-sub" style="max-width:640px;">
+        The official crewswarm plugin gives every OpenClaw agent access to your local crew.
+        Dispatch tasks, poll results, and list agents &mdash; all without leaving OpenClaw.
+      </p>
+
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Agent Tools</h3>
+          <p style="font-size: 0.9rem; color: var(--text-2);">
+            <code>crewswarm_dispatch</code> &mdash; send a task to any crew agent and wait for the result.<br>
+            <code>crewswarm_agents</code> &mdash; list all 22 available agents.<br>
+            <code>crewswarm_status</code> &mdash; poll a running task.
+          </p>
+        </div>
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Slash Command</h3>
+          <p style="font-size: 0.9rem; color: var(--text-2);">
+            <code>/crewswarm crew-coder "Add auth middleware"</code><br>
+            Works from any OpenClaw channel &mdash; Telegram, WhatsApp, Discord, iMessage, or the desktop app.
+          </p>
+        </div>
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Gateway RPC</h3>
+          <p style="font-size: 0.9rem; color: var(--text-2);">
+            Programmatic access via <code>crewswarm.dispatch</code>, <code>crewswarm.status</code>, and <code>crewswarm.agents</code> RPC methods.
+          </p>
+        </div>
+      </div>
+
+      <div class="install-block" role="region" aria-label="Plugin install command" style="margin-bottom: 1rem;">
+        <code>openclaw plugins install crewswarm-openclaw-plugin</code>
+        <button class="copy-btn" aria-label="Copy plugin install command">Copy</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-3);">
+        No LLM keys are shared &mdash; crewswarm uses its own providers. The only shared secret is the RT auth token.
+        <a href="https://www.npmjs.com/package/crewswarm-openclaw-plugin" target="_blank" rel="noopener">View on npm</a> &middot;
+        <a href="https://github.com/crewswarm/crewswarm/tree/main/contrib/openclaw-plugin" target="_blank" rel="noopener">Source &amp; docs</a>
+      </p>
+    </div>
+  </section>
+
   <!-- CTA -->
   <section id="get-started" class="section">
     <div class="container" style="text-align:center;">
