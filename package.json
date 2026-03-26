@@ -1,6 +1,6 @@
 {
   "name": "crewswarm",
-  "version": "0.9.0",
+  "version": "0.8.2-beta",
   "description": "Local-first multi-agent orchestration platform — coordinate AI coding agents, LLMs, and tools from a single dashboard",
   "type": "module",
   "license": "MIT",
