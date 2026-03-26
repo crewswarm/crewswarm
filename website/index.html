@@ -216,9 +216,9 @@
       <a href="https://www.npmjs.com/package/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">npm</a>
       <a href="vibe.html" class="btn btn-ghost">Explore Vibe</a>
     </div>
-    <div style="margin-top: 0.75rem; display: inline-flex; align-items: center; gap: 0.5rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;" onclick="navigator.clipboard.writeText('npm install -g crewswarm').then(()=>{this.querySelector('.copy-icon').textContent='✓ copied';setTimeout(()=>this.querySelector('.copy-icon').textContent='📋',2000)})" title="Click to copy">
-      <code>npm install -g crewswarm</code>
-      <span class="copy-icon" style="font-size: 0.9rem; opacity: 0.6;">📋</span>
+    <div style="margin-top: 0.75rem; display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;" onclick="navigator.clipboard.writeText('npm install -g crewswarm').then(()=>{this.querySelector('.copy-icon').textContent='copied';setTimeout(()=>this.querySelector('.copy-icon').textContent='copy',2000)})" title="Click to copy">
+      <code style="color: var(--accent);">npm install -g crewswarm</code>
+      <span class="copy-icon" style="font-size: 0.7rem; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.05em;">copy</span>
     </div>
     <div style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
       <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">
@@ -227,17 +227,18 @@
       <span style="font-size: 0.8rem; color: var(--text-3);">Free forever. Bring your own API keys or use CLI OAuth.</span>
     </div>
     <!-- Powered by logo strip -->
-    <div style="margin-top: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 2rem; flex-wrap: wrap; opacity: 0.45;">
-      <span style="font-size: 0.7rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.1em;">Works with</span>
-      <svg viewBox="0 0 24 24" width="20" height="20" title="OpenAI"><path fill="#fff" d="M22.28 9.82a5.98 5.98 0 0 0-.52-4.91 6.05 6.05 0 0 0-6.51-2.9A6.07 6.07 0 0 0 4.98 4.18a5.98 5.98 0 0 0-4 2.9 6.05 6.05 0 0 0 .74 7.1 5.98 5.98 0 0 0 .51 4.91 6.05 6.05 0 0 0 6.51 2.9A5.98 5.98 0 0 0 13.26 24a6.06 6.06 0 0 0 5.77-4.21 5.99 5.99 0 0 0 4-2.9 6.06 6.06 0 0 0-.75-7.07z"/></svg>
-      <svg viewBox="0 0 24 24" width="20" height="20" title="Anthropic"><path fill="#fff" d="M17.3 3.54h-3.67l6.7 16.92H24zm-10.6 0L0 20.46h3.74l1.37-3.55h7l1.37 3.55h3.74L10.54 3.54zm-.37 10.22 2.29-5.95 2.29 5.95z"/></svg>
-      <svg viewBox="0 0 24 24" width="20" height="20" title="Google Gemini"><path fill="#fff" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>
-      <span style="font-size: 0.75rem; font-weight: 800; color: #fff; font-family: system-ui;" title="Groq">Groq</span>
-      <span style="font-size: 0.75rem; font-weight: 800; color: #fff; font-family: system-ui;" title="xAI">xAI</span>
-      <img src="https://cdn.simpleicons.org/cursor/ffffff" alt="Cursor" width="20" height="20" loading="lazy" title="Cursor" />
-      <img src="https://cdn.simpleicons.org/ollama/ffffff" alt="Ollama" width="20" height="20" loading="lazy" title="Ollama" />
-      <span style="font-size: 0.75rem; font-weight: 800; color: #fff; font-family: system-ui;" title="DeepSeek">DeepSeek</span>
-      <span style="font-size: 0.7rem; color: var(--text-3);">+ 16 more providers</span>
+    <div style="margin-top: 1.25rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.75rem; color: var(--text-3);">
+      <span style="text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.65rem; margin-right: 0.25rem;">Works with</span>
+      <span style="color: rgba(255,255,255,0.5);">OpenAI</span><span style="opacity:0.3;">|</span>
+      <span style="color: rgba(255,255,255,0.5);">Anthropic</span><span style="opacity:0.3;">|</span>
+      <span style="color: rgba(255,255,255,0.5);">Google</span><span style="opacity:0.3;">|</span>
+      <span style="color: rgba(255,255,255,0.5);">Groq</span><span style="opacity:0.3;">|</span>
+      <span style="color: rgba(255,255,255,0.5);">xAI</span><span style="opacity:0.3;">|</span>
+      <span style="color: rgba(255,255,255,0.5);">DeepSeek</span><span style="opacity:0.3;">|</span>
+      <span style="color: rgba(255,255,255,0.5);">Ollama</span><span style="opacity:0.3;">|</span>
+      <span style="color: rgba(255,255,255,0.5);">Cursor</span><span style="opacity:0.3;">|</span>
+      <span style="color: rgba(255,255,255,0.5);">Codex</span><span style="opacity:0.3;">|</span>
+      <span>+15 more</span>
     </div>
     <div class="hero-terminal">
       <div class="terminal-bar">
