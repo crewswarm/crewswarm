@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
   <title>crewswarm — Local-First AI Orchestration</title>
   <meta name="description"
-    content="crewswarm is an open-source AI workspace for software development. It combines multi-agent orchestration, project-aware memory, local tool execution, and editor integrations into one stack you can run yourself." />
+    content="The only multi-engine AI coding platform. Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. Parallel agents, persistent sessions, PM-led builds. Open source, local-first." />
   <meta name="keywords"
     content="local-first AI orchestration, multi-agent AI, local AI dev tools, Vibe IDE, crew-cli, open-source AI workspace" />
   <!-- Open Graph -->
@@ -16,7 +16,7 @@
   <meta property="og:locale" content="en_US" />
   <meta property="og:title" content="crewswarm — Local-First AI Orchestration for Real Files and Tools" />
   <meta property="og:description"
-    content="Real execution, not just a chat box bolted onto an editor. Run multi-agent orchestration completely locally via Dashboard, Vibe IDE, or crew-cli." />
+    content="The only multi-engine AI coding platform. 6 CLI engines, parallel agents, persistent sessions, PM-led builds. Open source, local-first, no vendor lock-in." />
   <meta property="og:url" content="https://crewswarm.ai/" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -28,7 +28,7 @@
   <meta name="twitter:site" content="@crewswarm" />
   <meta name="twitter:title" content="crewswarm — Local-First AI Orchestration" />
   <meta name="twitter:description"
-    content="Real execution, not a chat box. Open-source local-first AI orchestration with Vibe IDE, crew-cli, and native multi-agent runtime." />
+    content="The only multi-engine AI coding platform. Switch between Claude, Cursor, Gemini, Codex mid-conversation. Parallel agents, persistent sessions, open source." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <meta name="twitter:image:alt" content="crewswarm — multi-agent AI orchestration" />
   <!-- Misc SEO -->
@@ -188,24 +188,24 @@
       </picture>
     </div>
     <h1>One idea.<br />One build.<br /><span class="gradient-text">One crew.</span></h1>
-    <p class="hero-sub">The <a href="#how-it-works"
-        style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">local-first AI
-        orchestration</a> for people who want real files, real tools, and real control. Dashboard, Vibe, and your
-      runtime in one stack.</p>
+    <p class="hero-sub">The only <a href="#how-it-works"
+        style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">multi-engine AI
+        coding platform</a>. Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation.
+      Parallel agents. Persistent sessions. No vendor lock-in.</p>
     <div class="proof-bar visible">
-      <span class="proof-item">Local-first runtime</span>
+      <span class="proof-item">6 CLI engines</span>
+      <span class="proof-sep" aria-hidden="true">•</span>
+      <span class="proof-item">Native session resume</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">Dashboard + Vibe IDE</span>
       <span class="proof-sep" aria-hidden="true">•</span>
-      <span class="proof-item">crew-cli + Cursor</span>
+      <span class="proof-item">20+ specialist agents</span>
       <span class="proof-sep" aria-hidden="true">•</span>
-      <span class="proof-item">Claude Code + OpenCode</span>
-      <span class="proof-sep" aria-hidden="true">•</span>
-      <span class="proof-item">MCP server</span>
+      <span class="proof-item">Wave orchestration</span>
       <span class="proof-sep" aria-hidden="true">•</span>
       <span class="proof-item">PM-led builds</span>
       <span class="proof-sep" aria-hidden="true">•</span>
-      <span class="proof-item">Shared memory + recovery</span>
+      <span class="proof-item">Local-first &amp; open source</span>
     </div>
     <div class="hero-cta">
       <a href="#get-started" class="btn btn-primary">Install crewswarm</a>
@@ -534,11 +534,11 @@
       </div>
       <div class="differs-grid">
         <div class="differs-card">
-          <h3>Four execution engines, first-class</h3>
-          <p>Every agent can run inside <strong>OpenCode</strong> (persistent sessions, full file editing),
-            <strong>Cursor CLI</strong> (opus-thinking, sonnet-4.6), <strong>Claude Code</strong> (full workspace
-            context, native tool use), or <strong>crew-cli</strong> (High-performance execution). Switch per agent from
-            the dashboard — no config files, no restarts.
+          <h3>Six execution engines, first-class</h3>
+          <p>Every agent can run inside <strong>Claude Code</strong>, <strong>Cursor CLI</strong>,
+            <strong>Gemini CLI</strong>, <strong>Codex CLI</strong>, <strong>OpenCode</strong>, or
+            <strong>crew-cli</strong>. Switch per agent from the dashboard — no config files, no restarts.
+            Each engine keeps native session resume so context persists across messages.
           </p>
         </div>
         <div class="differs-card">
@@ -1776,10 +1776,90 @@ const app = express();
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Compare</div>
-        <h2 id="wwd-heading">What crewswarm does</h2>
-        <p class="section-desc">The only fully open-source platform where a PM agent runs the build — not just a single
-          autocomplete suggestion. For comparison with CrewAI and other frameworks, this section outlines what crewswarm
-          does differently.</p>
+        <h2 id="wwd-heading">Nothing else does all of this</h2>
+        <p class="section-desc">Every other tool locks you into one model, one editor, one agent. crewswarm is the only
+          platform where you switch engines mid-conversation, run parallel agents, and resume sessions across restarts.</p>
+      </div>
+      <!-- Competitor table -->
+      <div style="overflow-x:auto;margin-bottom:2.5rem;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;min-width:700px;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border);">
+              <th style="text-align:left;padding:0.75rem 1rem;color:var(--text-2);font-weight:500;">Capability</th>
+              <th style="padding:0.75rem 0.5rem;color:var(--accent);font-weight:700;">crewswarm</th>
+              <th style="padding:0.75rem 0.5rem;color:var(--text-3);font-weight:500;">Cursor</th>
+              <th style="padding:0.75rem 0.5rem;color:var(--text-3);font-weight:500;">Windsurf</th>
+              <th style="padding:0.75rem 0.5rem;color:var(--text-3);font-weight:500;">Devin</th>
+              <th style="padding:0.75rem 0.5rem;color:var(--text-3);font-weight:500;">Copilot</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:0.6rem 1rem;">Multi-engine (6 CLIs)</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:0.6rem 1rem;">Native session resume</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:0.6rem 1rem;">Parallel agent waves</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#fbbf24;">Partial</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:0.6rem 1rem;">Browser IDE + terminal</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Vibe</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">Desktop</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">Desktop</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:0.6rem 1rem;">20+ specialist agents</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">1</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">1</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">1</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">1</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:0.6rem 1rem;">PM Loop (autonomous roadmap)</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#fbbf24;">Partial</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:0.6rem 1rem;">Local-first / no cloud</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#fbbf24;">Partial</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+            </tr>
+            <tr>
+              <td style="padding:0.6rem 1rem;">Open source</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:#4ade80;">Yes</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+              <td style="padding:0.6rem 0.5rem;text-align:center;color:var(--text-3);">No</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
       <div class="wwd-grid">
         <div class="wwd-card wwd-card-wide">

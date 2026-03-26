@@ -31,6 +31,8 @@ const STUDIO_DATA_DIR = process.env.STUDIO_DATA_DIR
   : path.join(__dirname, ".studio-data");
 const MESSAGE_DIR = path.join(STUDIO_DATA_DIR, "project-messages");
 const terminalSessions = new Map();
+// CLI session resume: maps "engine:projectDir" → { sessionId, conversationId, ts }
+const cliResumeSessions = new Map();
 const PTY_HOST = path.join(__dirname, "scripts", "studio-pty-host.py");
 const DEFAULT_PROJECT_ID = "studio-local";
 const CREWSWARM_CFG_DIR = path.join(os.homedir(), ".crewswarm");
@@ -1007,7 +1009,7 @@ export function closeTerminalSession(sessionId) {
 
 const SUPPORTED_ENGINES = ["codex", "claude", "cursor", "gemini", "opencode", "crew-cli"];
 
-export function getCliCommand(engine, projectDir, message, modelOverride) {
+export function getCliCommand(engine, projectDir, message, modelOverride, resumeSession) {
   switch (engine) {
     case "codex": {
       const binary = process.env.STUDIO_CODEX_BIN || "codex";
@@ -1029,9 +1031,13 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
       if (process.env.STUDIO_CODEX_BIN) {
         return { command: binary, args: [...resolvedPrefixArgs, projectDir, message], stdin: null };
       }
+      const codexArgs = ["-a", "never", "exec", "--sandbox", "danger-full-access", "--skip-git-repo-check", "--color", "never", ...(model ? ["--model", model] : []), "-C", projectDir];
+      // Resume: codex supports --conversation-id for session continuity
+      if (resumeSession?.conversationId) codexArgs.push("--conversation-id", resumeSession.conversationId);
+      codexArgs.push(message);
       return {
         command: binary,
-        args: ["-a", "never", "exec", "--sandbox", "danger-full-access", "--skip-git-repo-check", "--color", "never", ...(model ? ["--model", model] : []), "-C", projectDir, message],
+        args: codexArgs,
         stdin: null,
       };
     }
@@ -1043,6 +1049,8 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
         // Add workspace directory context
         if (projectDir) args.push("--add-dir", projectDir);
         if (model) args.push("--model", model);
+        // Resume: claude supports --resume <sessionId> for conversation continuity
+        if (resumeSession?.sessionId) args.push("--resume", resumeSession.sessionId);
         return {
           command: "claude",
           args,
@@ -1069,6 +1077,8 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
           "--workspace",
           cwd,
         ];
+        // Resume: cursor supports --thread-id for session continuity
+        if (resumeSession?.sessionId) args.push("--thread-id", resumeSession.sessionId);
         return {
           command: cursorSpec.bin,
           args,
@@ -1082,6 +1092,8 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
         if (model) args.push("-m", model);
         // Add workspace directory to allow file operations in projectDir (gemini uses --include-directories)
         if (projectDir) args.push("--include-directories", projectDir);
+        // Resume: gemini supports --session for conversation continuity
+        if (resumeSession?.sessionId) args.push("--session", resumeSession.sessionId);
         return {
           command: "gemini",
           args,
@@ -1102,6 +1114,8 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
         const args = ["run", "-m", model, message];
         // Add workspace directory context
         if (projectDir) args.push("--dir", projectDir);
+        // Resume: opencode supports --session for conversation continuity
+        if (resumeSession?.sessionId) args.push("--session", resumeSession.sessionId);
         return {
           command: "opencode",
           args,
@@ -1111,9 +1125,12 @@ export function getCliCommand(engine, projectDir, message, modelOverride) {
     case "crew-cli": {
       const crewBin = path.join(__dirname, "..", "..", "crew-cli", "bin", "crew.js");
       const model = modelOverride || process.env.CREWSWARM_CREW_CLI_MODEL || "";
+      const crewArgs = [crewBin, "chat", message, ...(projectDir ? ["--project", projectDir] : []), ...(model ? ["--model", model] : [])];
+      // Resume: crew-cli supports --session for conversation continuity
+      if (resumeSession?.sessionId) crewArgs.push("--session", resumeSession.sessionId);
       return {
         command: "node",
-        args: [crewBin, "chat", message, ...(projectDir ? ["--project", projectDir] : []), ...(model ? ["--model", model] : [])],
+        args: crewArgs,
         stdin: null,
       };
     }
@@ -1127,6 +1144,10 @@ export function getCodexCommand(projectDir, message) {
   return getCliCommand("codex", projectDir, message, undefined);
 }
 
+export function getCliResumeKey(engine, projectDir) {
+  return `${engine}:${projectDir || "default"}`;
+}
+
 export function runCli({
   projectDir,
   projectId,
@@ -1135,9 +1156,13 @@ export function runCli({
   onChunk,
   onTrace,
   model,
+  resume = true,
 }) {
   return new Promise((resolve, reject) => {
-    const cmd = getCliCommand(engine, projectDir, message, model);
+    // Look up existing session for resume
+    const resumeKey = getCliResumeKey(engine, projectDir);
+    const resumeSession = resume ? cliResumeSessions.get(resumeKey) : undefined;
+    const cmd = getCliCommand(engine, projectDir, message, model, resumeSession);
     if (!cmd) {
       reject(new Error(`Unknown engine "${engine}". Supported: ${SUPPORTED_ENGINES.join(", ")}`));
       return;
@@ -1166,20 +1191,42 @@ export function runCli({
     }
 
     let transcript = "";
+    let extractedSessionId = null;
+    let extractedConversationId = null;
     const relay = createCliRelay(engine, onChunk, () => {
       if (!child.killed) {
         child.kill("SIGTERM");
       }
     });
+    const SESSION_ID_RE = /session[ _-]?id:\s*(.+)/i;
+    const CONVERSATION_ID_RE = /conversation[ _-]?id:\s*(.+)/i;
     const handleOutput = (chunk) => {
-      onTrace?.(chunk.toString("utf8"));
+      const text = chunk.toString("utf8");
+      onTrace?.(text);
       relay.push(chunk);
+      // Extract session/conversation IDs from CLI output for resume
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        const sMatch = SESSION_ID_RE.exec(trimmed);
+        if (sMatch) extractedSessionId = sMatch[1].trim();
+        const cMatch = CONVERSATION_ID_RE.exec(trimmed);
+        if (cMatch) extractedConversationId = cMatch[1].trim();
+      }
     };
     child.stdout.on("data", handleOutput);
     child.stderr.on("data", handleOutput);
     child.on("close", (exitCode) => {
       const normalizedExitCode = Number(exitCode ?? 0);
       transcript = relay.finish();
+      // Store session ID for resume on subsequent calls
+      if (extractedSessionId || extractedConversationId) {
+        cliResumeSessions.set(resumeKey, {
+          sessionId: extractedSessionId,
+          conversationId: extractedConversationId,
+          engine,
+          ts: Date.now(),
+        });
+      }
       // Cursor agent often exits non-zero after we SIGTERM following a `result` event; treat as OK if we got text.
       const effectiveExit =
         engine === "cursor" && transcript.trim()
@@ -1584,6 +1631,26 @@ export const server = http.createServer(async (req, res) => {
   }
   if (parsedUrl.pathname === "/api/agents" && req.method === "GET") {
     await proxyRequestToDashboard(req, res, dashboardProxyPath);
+    return;
+  }
+
+  // CLI session resume management
+  if (parsedUrl.pathname === "/api/studio/sessions" && req.method === "GET") {
+    const sessions = {};
+    for (const [key, val] of cliResumeSessions) sessions[key] = val;
+    sendJson(res, 200, { sessions });
+    return;
+  }
+  if (parsedUrl.pathname === "/api/studio/sessions" && req.method === "DELETE") {
+    const engine = parsedUrl.searchParams.get("engine");
+    if (engine) {
+      for (const key of cliResumeSessions.keys()) {
+        if (key.startsWith(`${engine}:`)) cliResumeSessions.delete(key);
+      }
+    } else {
+      cliResumeSessions.clear();
+    }
+    sendJson(res, 200, { ok: true, cleared: engine || "all" });
     return;
   }
 
