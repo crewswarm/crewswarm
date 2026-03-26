@@ -21,6 +21,13 @@ const ALL_PROVIDERS = [
   { id: "cerebras",     label: "Cerebras",          icon: "\uD83E\uDDE0", placeholder: "csk-...",     url: "https://cloud.cerebras.ai/" },
   { id: "nvidia",       label: "NVIDIA NIM",        icon: "\uD83C\uDFAE", placeholder: "nvapi-...",   url: "https://build.nvidia.com/" },
   { id: "perplexity",   label: "Perplexity",        icon: "\uD83D\uDD0D", placeholder: "pplx-...",    url: "https://www.perplexity.ai/settings/api" },
+  { id: "together",     label: "Together AI",       icon: "\uD83E\uDD1D", placeholder: "...",         url: "https://api.together.xyz/settings/api-keys" },
+  { id: "huggingface",  label: "Hugging Face",      icon: "\uD83E\uDD17", placeholder: "hf_...",     url: "https://huggingface.co/settings/tokens" },
+  { id: "venice",       label: "Venice AI",         icon: "\uD83C\uDFD6\uFE0F", placeholder: "...",  url: "https://venice.ai/settings/api" },
+  { id: "moonshot",     label: "Moonshot / Kimi",   icon: "\uD83C\uDF19", placeholder: "sk-...",     url: "https://platform.moonshot.cn/console/api-keys" },
+  { id: "minimax",      label: "MiniMax",           icon: "\u2728",       placeholder: "...",        url: "https://www.minimaxi.com/" },
+  { id: "volcengine",   label: "Volcengine",        icon: "\uD83C\uDF0B", placeholder: "...",        url: "https://console.volcengine.com/ark" },
+  { id: "qianfan",      label: "Baidu Qianfan",     icon: "\uD83D\uDD35", placeholder: "...",        url: "https://console.bce.baidu.com/qianfan/" },
   { id: "ollama",       label: "Ollama (local)",    icon: "\uD83C\uDFE0", placeholder: "no key needed", url: "https://ollama.com/download" },
 ];
 

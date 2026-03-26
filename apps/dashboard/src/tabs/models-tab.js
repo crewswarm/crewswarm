@@ -32,7 +32,15 @@ const BUILTIN_PROVIDERS = [
   { id:'deepseek',     label:'DeepSeek',            icon:'🌊', url:'https://platform.deepseek.com/',              hint:'Low cost, strong coding performance' },
   { id:'together',     label:'Together AI',         icon:'🤝', url:'https://api.together.ai/',                    hint:'OpenAI-compatible access to strong open models like Qwen, DeepSeek, Llama, and more' },
   { id:'xai',          label:'xAI (Grok)',          icon:'𝕏',  url:'https://console.x.ai/',                      hint:'Grok models with real-time X/Twitter access, vision (grok-vision-beta), 128K context — ideal for research, social media analysis' },
+  { id:'huggingface',  label:'Hugging Face',        icon:'🤗', url:'https://huggingface.co/settings/tokens',      hint:'Open-source model hub — access thousands of models via Inference API' },
+  { id:'venice',       label:'Venice AI',           icon:'🏖️', url:'https://venice.ai/settings/api',              hint:'Privacy-focused inference — no logging, no training on your data' },
+  { id:'moonshot',     label:'Moonshot / Kimi',     icon:'🌙', url:'https://platform.moonshot.cn/console/api-keys', hint:'128K+ context windows — strong on long codebases, Chinese + English' },
+  { id:'minimax',      label:'MiniMax',             icon:'✨', url:'https://www.minimaxi.com/',                    hint:'Chinese LLM provider — competitive pricing, multilingual' },
+  { id:'volcengine',   label:'Volcengine',          icon:'🌋', url:'https://console.volcengine.com/ark',          hint:'ByteDance Doubao models — fast inference' },
+  { id:'qianfan',      label:'Baidu Qianfan',       icon:'🔵', url:'https://console.bce.baidu.com/qianfan/',      hint:'Baidu ERNIE models — strong on Chinese language and reasoning' },
   { id:'ollama',       label:'Ollama',              icon:'🏠', url:'https://ollama.com/download',                 hint:'Local models — no API key needed, runs offline' },
+  { id:'vllm',         label:'vLLM',                icon:'⚡', url:'https://docs.vllm.ai/',                       hint:'Self-hosted inference server — any open model, OpenAI-compatible' },
+  { id:'sglang',       label:'SGLang',              icon:'⚡', url:'https://github.com/sgl-project/sglang',      hint:'Self-hosted inference server — fast structured generation' },
   { id:'openai-local', label:'OpenAI (local)',      icon:'🟢', url:'https://github.com/RayBytes/ChatMock',        hint:'ChatMock — use ChatGPT Plus/Pro subscription. Run ChatMock server first (e.g. port 8000). Key ignored.' },
 ];
 
@@ -44,7 +52,8 @@ const SEARCH_TOOLS = [
 const PROVIDER_ICONS = {
   opencode:'🚀', groq:'⚡', fireworks:'🎆', nvidia:'🎮', ollama:'🏠', 'openai-local':'🟢', xai:'𝕏',
   google:'🔵', deepseek:'🌊', openai:'🟢', perplexity:'🔍', cerebras:'🧠', mistral:'🌀',
-  together:'🤝', cohere:'🔶', anthropic:'🟣', openrouter:'🔀',
+  together:'🤝', cohere:'🔶', anthropic:'🟣', openrouter:'🔀', huggingface:'🤗',
+  venice:'🏖️', moonshot:'🌙', minimax:'✨', volcengine:'🌋', qianfan:'🔵', vllm:'⚡', sglang:'⚡',
 };
 
 // ── Tab entry point ────────────────────────────────────────────────────────────
