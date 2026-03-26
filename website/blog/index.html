@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>crewswarm Blog — Building with AI Agents</title>
+  <meta name="description" content="Updates, guides, and insights from the crewswarm team on local-first AI orchestration and multi-agent development." />
+  <meta property="og:title" content="crewswarm Blog" />
+  <meta property="og:description" content="Updates and insights on local-first AI orchestration." />
+  <meta property="og:url" content="https://crewswarm.ai/blog/" />
+  <link rel="icon" type="image/png" href="../favicon.png?v=3" />
+  <link rel="canonical" href="https://crewswarm.ai/blog/" />
+  <style>
+    :root { --bg: #060a10; --bg-card: #0f172a; --text-1: #e2e8f0; --text-2: #94a3b8; --text-3: #64748b; --border: #1e293b; --accent: #818cf8; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text-1); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.7; }
+    .header { background: var(--bg); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    .header a { color: var(--text-1); text-decoration: none; font-weight: 600; }
+    .header a:hover { color: var(--accent); }
+    .header .sep { color: var(--text-3); }
+    .header .links { margin-left: auto; display: flex; gap: 1rem; font-size: 0.85rem; }
+    .header .links a { color: var(--text-2); font-weight: 400; }
+    .container { max-width: 720px; margin: 0 auto; padding: 3rem 1.5rem; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--text-2); margin-bottom: 3rem; }
+    .post-card { display: block; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; text-decoration: none; color: inherit; transition: border-color 0.2s; }
+    .post-card:hover { border-color: var(--accent); }
+    .post-card h2 { font-size: 1.2rem; margin-bottom: 0.25rem; color: var(--text-1); }
+    .post-card .meta { font-size: 0.8rem; color: var(--text-3); margin-bottom: 0.5rem; }
+    .post-card p { color: var(--text-2); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="../index.html">crewswarm</a>
+    <span class="sep">/</span>
+    <span>Blog</span>
+    <div class="links">
+      <a href="../changelog.html">Changelog</a>
+      <a href="../docs.html">Docs</a>
+      <a href="../index.html">Home</a>
+    </div>
+  </div>
+  <div class="container">
+    <h1>Blog</h1>
+    <p class="subtitle">Updates, guides, and insights on local-first AI orchestration.</p>
+
+    <a href="why-we-built-crewswarm.html" class="post-card">
+      <h2>Why We Built crewswarm</h2>
+      <div class="meta">March 2026</div>
+      <p>AI coding tools are everywhere. Most are chat boxes bolted onto editors. We wanted something different: a local crew of specialist agents that actually plans, builds, tests, and ships.</p>
+    </a>
+
+    <a href="crewswarm-vs-single-agent.html" class="post-card">
+      <h2>Multi-Agent vs Single-Agent: Why One AI Isn't Enough</h2>
+      <div class="meta">March 2026</div>
+      <p>Why a PM agent + specialist crew outperforms a single general-purpose model on real software projects. With benchmarks.</p>
+    </a>
+
+    <a href="local-first-ai.html" class="post-card">
+      <h2>The Case for Local-First AI Development</h2>
+      <div class="meta">March 2026</div>
+      <p>Your code shouldn't leave your machine. Why we chose local execution over cloud APIs, and how it changes the trust model.</p>
+    </a>
+  </div>
+</body>
+</html>

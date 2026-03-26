@@ -162,6 +162,8 @@
             <li role="none"><a href="cli.html" role="menuitem">CLI</a></li>
             <li role="none"><a href="atat.html" role="menuitem">@@Protocol</a></li>
             <li role="none"><a href="openclaw-comparison.html" role="menuitem">Compare</a></li>
+            <li role="none"><a href="changelog.html" role="menuitem">Changelog</a></li>
+            <li role="none"><a href="blog/" role="menuitem">Blog</a></li>
             <li role="none"><a href="about.html" role="menuitem">About</a></li>
             <li role="none"><a href="contact.html" role="menuitem">Contact</a></li>
           </ul>
@@ -214,14 +216,29 @@
       <a href="https://www.npmjs.com/package/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">npm</a>
       <a href="vibe.html" class="btn btn-ghost">Explore Vibe</a>
     </div>
-    <div style="margin-top: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3);">
+    <div style="margin-top: 0.75rem; display: inline-flex; align-items: center; gap: 0.5rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;" onclick="navigator.clipboard.writeText('npm install -g crewswarm').then(()=>{this.querySelector('.copy-icon').textContent='✓ copied';setTimeout(()=>this.querySelector('.copy-icon').textContent='📋',2000)})" title="Click to copy">
       <code>npm install -g crewswarm</code>
+      <span class="copy-icon" style="font-size: 0.9rem; opacity: 0.6;">📋</span>
     </div>
     <div style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
       <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">
         <img src="https://img.shields.io/github/stars/crewswarm/crewswarm?style=social" alt="GitHub stars" loading="lazy" height="20" />
       </a>
       <span style="font-size: 0.8rem; color: var(--text-3);">Free forever. Bring your own API keys or use CLI OAuth.</span>
+    </div>
+    <!-- Powered by logo strip -->
+    <div style="margin-top: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 1.5rem; flex-wrap: wrap; opacity: 0.5;">
+      <span style="font-size: 0.7rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.1em;">Works with</span>
+      <img src="https://cdn.simpleicons.org/openai/ffffff" alt="OpenAI" width="20" height="20" loading="lazy" title="OpenAI" />
+      <img src="https://cdn.simpleicons.org/anthropic/ffffff" alt="Anthropic" width="20" height="20" loading="lazy" title="Anthropic" />
+      <img src="https://cdn.simpleicons.org/google/ffffff" alt="Google" width="20" height="20" loading="lazy" title="Google Gemini" />
+      <svg viewBox="0 0 24 24" fill="#ffffff" width="20" height="20" title="Groq"><text x="2" y="18" font-size="14" font-weight="900" fill="#ffffff" font-family="system-ui">GQ</text></svg>
+      <img src="https://cdn.simpleicons.org/cursor/ffffff" alt="Cursor" width="20" height="20" loading="lazy" title="Cursor" />
+      <svg viewBox="0 0 24 24" fill="#ffffff" width="20" height="20" title="xAI"><text x="2" y="18" font-size="13" font-weight="900" fill="#ffffff" font-family="system-ui">xAI</text></svg>
+      <img src="https://cdn.simpleicons.org/ollama/ffffff" alt="Ollama" width="20" height="20" loading="lazy" title="Ollama" />
+      <img src="https://cdn.simpleicons.org/openrouter/ffffff" alt="OpenRouter" width="20" height="20" loading="lazy" title="OpenRouter" />
+      <svg viewBox="0 0 24 24" fill="#ffffff" width="20" height="20" title="DeepSeek"><text x="0" y="18" font-size="12" font-weight="900" fill="#ffffff" font-family="system-ui">DS</text></svg>
+      <span style="font-size: 0.75rem; color: var(--text-3);">+15 more</span>
     </div>
     <div class="hero-terminal">
       <div class="terminal-bar">
