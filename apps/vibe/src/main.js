@@ -831,6 +831,27 @@ window.switchChatMode = function () {
   }
 };
 
+window.clearCliSession = async function () {
+  try {
+    const pd = currentProject?.outputDir || "";
+    const scope = SESSION_ID || "default";
+    // Clear all engines for this project+session via crew-lead API
+    const res = await fetch(`${STUDIO_API}/api/studio/clear-cli-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectDir: pd, sessionId: scope }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      addTerminalLine(`↻ Session cleared — next message starts fresh${data.cleared?.length ? ` (${data.cleared.join(", ")})` : ""}`, "info");
+    } else {
+      addTerminalLine(`⚠ Failed to clear session: ${data.error || "unknown"}`, "error");
+    }
+  } catch (e) {
+    addTerminalLine(`⚠ Failed to clear session: ${e.message}`, "error");
+  }
+};
+
 document.getElementById("agent-selector")?.addEventListener("change", (e) => {
   selectedAgent = e.target.value;
   if (selectedAgent) {
