@@ -1,0 +1,41 @@
+# Dependencies (nested)
+**/node_modules/
+
+# Build artifacts
+apps/dashboard/dist/
+apps/dashboard/*.gz
+apps/dashboard/*.br
+apps/vibe/.tmp*
+
+# Test files
+test/
+tests/
+crew-cli/tests/
+crew-cli/test/
+**/*.test.*
+**/*.spec.*
+
+# Dev / CI
+.github/
+.claude/
+.cursor/
+.vscode/
+.git/
+
+# Config / state
+memory/
+reports/
+.env
+.env.*
+!.env.example
+
+# Large assets
+website/
+*.webm
+*.mp4
+
+# Misc
+*.log
+*.pid
+.tmp*
+.DS_Store

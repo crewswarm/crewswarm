@@ -20,8 +20,33 @@
     "codex",
     "cursor"
   ],
+  "bin": {
+    "crewswarm": "scripts/start.mjs"
+  },
+  "files": [
+    "scripts/",
+    "lib/",
+    "engines/",
+    "prompts/",
+    "apps/dashboard/dist/",
+    "apps/dashboard/src/",
+    "apps/dashboard/index.html",
+    "apps/dashboard/package.json",
+    "apps/vibe/",
+    "contrib/openclaw-plugin/",
+    "crew-lead.mjs",
+    "gateway-bridge.mjs",
+    "whatsapp-bridge.mjs",
+    "telegram-bridge.mjs",
+    "unified-orchestrator.mjs",
+    "pm-loop.mjs",
+    "install.sh",
+    ".env.example",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
-    "node": ">=25"
+    "node": ">=20"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
