@@ -1701,6 +1701,23 @@ export const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (parsedUrl.pathname === "/api/studio/clear-cli-session" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const token = loadCrewswarmRtToken();
+      const upstream = await fetch("http://127.0.0.1:5010/api/engine-passthrough/clear-session", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const data = await upstream.json();
+      sendJson(res, upstream.status, data);
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: e.message });
+    }
+    return;
+  }
+
   if (parsedUrl.pathname === "/api/studio/chat/unified" && req.method === "POST") {
     try {
       const body = await readBody(req);
