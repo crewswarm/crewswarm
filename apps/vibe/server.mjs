@@ -887,7 +887,61 @@ function createDefaultCliRelay(onChunk) {
   };
 }
 
+function createClaudeStreamRelay(onChunk) {
+  let buffer = "";
+  let transcript = "";
+
+  return {
+    push(chunk) {
+      buffer += chunk.toString("utf8");
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const ev = JSON.parse(trimmed);
+          // Stream events with text deltas
+          if (ev.type === "stream_event") {
+            const inner = ev.event;
+            if (inner?.type === "content_block_delta" && inner?.delta?.type === "text_delta") {
+              const text = inner.delta.text || "";
+              transcript += text;
+              onChunk?.(text);
+            }
+          }
+          // Final assistant message
+          if (ev.type === "assistant") {
+            const content = ev.message?.content;
+            if (Array.isArray(content)) {
+              for (const c of content) {
+                if (c.type === "text" && c.text) {
+                  transcript += c.text;
+                  onChunk?.(c.text);
+                }
+              }
+            }
+          }
+          // Result event
+          if (ev.type === "result" && ev.result) {
+            if (!transcript) {
+              transcript = ev.result;
+              onChunk?.(ev.result);
+            }
+          }
+        } catch { /* not JSON, skip */ }
+      }
+    },
+    finish() {
+      return transcript.trim();
+    },
+  };
+}
+
 function createCliRelay(engine, onChunk, onDone) {
+  if (engine === "claude") {
+    return createClaudeStreamRelay(onChunk);
+  }
   if (engine === "cursor") {
     return createCursorStreamRelay(onChunk, onDone);
   }
@@ -1044,17 +1098,18 @@ export function getCliCommand(engine, projectDir, message, modelOverride, resume
     case "claude":
       // Claude Code uses OAuth — no API key needed
       {
-        const args = ["-p", "--setting-sources", "user"];
+        const args = ["-p", "--setting-sources", "user", "--output-format", "stream-json", "--verbose"];
         const model = modelOverride || process.env.CREWSWARM_CLAUDE_CODE_MODEL || "";
         // Add workspace directory context
         if (projectDir) args.push("--add-dir", projectDir);
         if (model) args.push("--model", model);
         // Resume: claude supports --resume <sessionId> for conversation continuity
         if (resumeSession?.sessionId) args.push("--resume", resumeSession.sessionId);
+        args.push(message);
         return {
           command: "claude",
           args,
-          stdin: message,
+          stdin: null,
           stripEnv: ["CLAUDECODE", "CLAUDE_CODE"],
         };
       }
