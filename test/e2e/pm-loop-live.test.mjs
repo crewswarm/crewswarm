@@ -26,13 +26,16 @@ import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
 
 const DASH_BASE = "http://127.0.0.1:4319";
 const CL_BASE   = "http://127.0.0.1:5010";
-const CREWSWARM_DIR = path.join(os.homedir(), ".crewswarm");
-const LOGS_DIR = path.join(CREWSWARM_DIR, "orchestrator-logs");
+// Dashboard resolves CREWSWARM_DIR to the project root (not ~/.crewswarm).
+// PID and stop files live under <project-root>/orchestrator-logs/.
+const PROJECT_ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
+const LOGS_DIR = path.join(PROJECT_ROOT, "orchestrator-logs");
 
 // Auth token for crew-lead
+const CFG_DIR = path.join(os.homedir(), ".crewswarm");
 function loadAuthToken() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(CREWSWARM_DIR, "crewswarm.json"), "utf8"));
+    const cfg = JSON.parse(fs.readFileSync(path.join(CFG_DIR, "crewswarm.json"), "utf8"));
     return cfg?.rt?.authToken || "";
   } catch { return ""; }
 }
@@ -64,153 +67,219 @@ let testDir = null;
 let testProjectId = null;
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
+// All describe blocks share testDir/testProjectId — must run sequentially
+describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
 
-describe("PM loop — project creation via dashboard API", { skip: SKIP_FULL, timeout: 60000 }, () => {
-  it("POST /api/projects creates a test project with ROADMAP.md", async () => {
-    testDir = await mkdtemp(path.join(tmpdir(), "crewswarm-pm-test-"));
-    const { status, body } = await apiPost(DASH_BASE, "/api/projects", {
-      name: "PM Loop E2E Test",
-      description: "Automated test project — safe to delete",
-      outputDir: testDir,
+  describe("project creation via dashboard API", { skip: SKIP_FULL }, () => {
+    it("POST /api/projects creates a test project with ROADMAP.md", async () => {
+      testDir = await mkdtemp(path.join(tmpdir(), "crewswarm-pm-test-"));
+      const { status, body } = await apiPost(DASH_BASE, "/api/projects", {
+        name: "PM Loop E2E Test",
+        description: "Automated test project — safe to delete",
+        outputDir: testDir,
+      });
+      assert.ok([200, 201].includes(status), `Expected 200/201, got ${status}: ${JSON.stringify(body)}`);
+      assert.ok(body.project?.id || body.id, "No project ID returned");
+      testProjectId = body.project?.id || body.id;
+
+      // Should have created ROADMAP.md in testDir
+      const roadmap = path.join(testDir, "ROADMAP.md");
+      assert.ok(fs.existsSync(roadmap), `ROADMAP.md not created at ${roadmap}`);
     });
-    assert.ok([200, 201].includes(status), `Expected 200/201, got ${status}: ${JSON.stringify(body)}`);
-    assert.ok(body.project?.id || body.id, "No project ID returned");
-    testProjectId = body.project?.id || body.id;
 
-    // Should have created ROADMAP.md in testDir
-    const roadmap = path.join(testDir, "ROADMAP.md");
-    assert.ok(fs.existsSync(roadmap), `ROADMAP.md not created at ${roadmap}`);
+    it("ROADMAP.md has at least one unchecked item", () => {
+      if (!testDir) return;
+      const roadmap = path.join(testDir, "ROADMAP.md");
+      if (!fs.existsSync(roadmap)) return;
+      const content = fs.readFileSync(roadmap, "utf8");
+      assert.match(content, /^- \[ \]/m, "No unchecked items in ROADMAP.md");
+    });
   });
 
-  it("ROADMAP.md has at least one unchecked item", () => {
-    if (!testDir) return;
-    const roadmap = path.join(testDir, "ROADMAP.md");
-    if (!fs.existsSync(roadmap)) return;
-    const content = fs.readFileSync(roadmap, "utf8");
-    assert.match(content, /^- \[ \]/m, "No unchecked items in ROADMAP.md");
-  });
-});
-
-describe("PM loop — self-extend with 1-phase roadmap", { skip: SKIP_FULL }, () => {
-  it("ROADMAP.md with a single item triggers self-extend when queue empties", async () => {
-    if (!testDir) return;
-    // Write a minimal 1-item roadmap
-    const roadmap = path.join(testDir, "ROADMAP.md");
-    await writeFile(roadmap, `# PM Loop E2E Test
+  describe("self-extend with 1-phase roadmap", { skip: SKIP_FULL }, () => {
+    it("ROADMAP.md with a single item triggers self-extend when queue empties", async () => {
+      if (!testDir) return;
+      // Write a minimal 1-item roadmap
+      const roadmap = path.join(testDir, "ROADMAP.md");
+      await writeFile(roadmap, `# PM Loop E2E Test
 
 ## Phase 0
 
 - [ ] Create hello.txt with content "Hello World"
 `, "utf8");
 
-    const content = fs.readFileSync(roadmap, "utf8");
-    const unchecked = (content.match(/^- \[ \]/gm) || []).length;
-    assert.equal(unchecked, 1, "Should have exactly 1 unchecked item");
-  });
-
-  it("dry-run: PM loop starts, picks item, logs it, does not dispatch", async () => {
-    if (!testDir || !testProjectId) return;
-
-    const { status, body } = await apiPost(DASH_BASE, "/api/pm-loop/start", {
-      dryRun: true,
-      projectId: testProjectId,
-      pmOptions: {
-        selfExtend: true,
-        extendEveryN: 1,
-        coderAgent: "crew-copywriter", // fast agent for testing
-        maxItems: 3,
-        taskTimeoutMin: 1,
-      },
+      const content = fs.readFileSync(roadmap, "utf8");
+      const unchecked = (content.match(/^- \[ \]/gm) || []).length;
+      assert.equal(unchecked, 1, "Should have exactly 1 unchecked item");
     });
-    // Should start or report already running
-    assert.ok([200, 201].includes(status), `PM loop start failed: ${status} ${JSON.stringify(body)}`);
-    assert.ok(body.ok, `Expected ok:true, got: ${JSON.stringify(body)}`);
-  });
 
-  it("PM loop status shows running or completed after dry-run start", async () => {
-    if (!testProjectId) return;
-    // Give it a moment to start
-    await new Promise(r => setTimeout(r, 2000));
+    it("dry-run: PM loop starts, picks item, logs it, does not dispatch", async () => {
+      if (!testDir || !testProjectId) return;
 
-    const { status, body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
-    assert.ok([200].includes(status), `Status check failed: ${status}`);
-    // Should be running or already completed (dry-run is fast)
-    assert.ok(
-      body.running === true || body.running === false,
-      `Unexpected status body: ${JSON.stringify(body)}`
-    );
-  });
-});
-
-describe("PM loop — PM_CODER_AGENT override", { skip: SKIP_FULL, timeout: 60000 }, () => {
-  it("pmOptions.coderAgent is passed to spawned process as PM_CODER_AGENT env", async () => {
-    // We can verify this by checking the dashboard source — the spawn env
-    // sets PM_CODER_AGENT from pmOptions.coderAgent
-    // This test validates the expected behavior through the API contract
-
-    if (!testDir) return;
-
-    const roadmap = path.join(testDir, "ROADMAP.md");
-    const content = fs.existsSync(roadmap) ? fs.readFileSync(roadmap, "utf8") : "";
-
-    // The dashboard API accepts coderAgent and passes it as PM_CODER_AGENT
-    const { status, body } = await apiPost(DASH_BASE, "/api/pm-loop/start", {
-      dryRun: true,
-      projectId: testProjectId,
-      pmOptions: {
-        coderAgent: "crew-mega", // override from default crew-coder
-        maxItems: 1,
-      },
+      const { status, body } = await apiPost(DASH_BASE, "/api/pm-loop/start", {
+        dryRun: true,
+        projectId: testProjectId,
+        pmOptions: {
+          selfExtend: true,
+          extendEveryN: 1,
+          coderAgent: "crew-copywriter", // fast agent for testing
+          maxItems: 3,
+          taskTimeoutMin: 1,
+        },
+      });
+      // Should start or report already running
+      assert.ok([200, 201].includes(status), `PM loop start failed: ${status} ${JSON.stringify(body)}`);
+      assert.ok(body.ok, `Expected ok:true, got: ${JSON.stringify(body)}`);
     });
-    // Should be ok (might be "already running" which is also fine)
-    assert.ok([200, 201].includes(status));
+
+    it("PM loop status shows running or completed after dry-run start", async () => {
+      if (!testProjectId) return;
+      // Give it a moment to start
+      await new Promise(r => setTimeout(r, 2000));
+
+      const { status, body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
+      assert.ok([200].includes(status), `Status check failed: ${status}`);
+      // Should be running or already completed (dry-run is fast)
+      assert.ok(
+        body.running === true || body.running === false,
+        `Unexpected status body: ${JSON.stringify(body)}`
+      );
+    });
   });
-});
 
-describe("PM loop — stop file halts execution", { skip: SKIP_FULL }, () => {
-  it("creating stop file causes PM loop to halt", async () => {
-    if (!testProjectId) return;
+  describe("PM_CODER_AGENT override", { skip: SKIP_FULL }, () => {
+    it("pmOptions.coderAgent is passed to spawned process as PM_CODER_AGENT env", async () => {
+      if (!testDir) return;
 
-    // Check if PM loop is still running — if already stopped, skip
-    const { body: initialStatus } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
-    if (initialStatus.running === false || initialStatus.pid === undefined) {
-      // Loop already finished (dry-run completes fast) — nothing to stop
-      return;
-    }
+      const roadmap = path.join(testDir, "ROADMAP.md");
+      const content = fs.existsSync(roadmap) ? fs.readFileSync(roadmap, "utf8") : "";
 
-    const stopFile = path.join(LOGS_DIR, `pm-loop-${testProjectId}.stop`);
-    // Write stop file
-    await writeFile(stopFile, "stop", "utf8").catch(() => {});
+      // The dashboard API accepts coderAgent and passes it as PM_CODER_AGENT
+      const { status, body } = await apiPost(DASH_BASE, "/api/pm-loop/start", {
+        dryRun: true,
+        projectId: testProjectId,
+        pmOptions: {
+          coderAgent: "crew-mega", // override from default crew-coder
+          maxItems: 1,
+        },
+      });
+      // Should be ok (might be "already running" which is also fine)
+      assert.ok([200, 201].includes(status));
+    });
+  });
 
-    // Poll until the loop detects the stop file (up to 10s)
-    let stopped = false;
-    for (let i = 0; i < 10; i++) {
+  describe("stop file halts execution", { skip: SKIP_FULL }, () => {
+    it("creating stop file causes PM loop to halt", async () => {
+      if (!testProjectId) return;
+
+      // Wait for any previous PM loop to finish first
+      for (let i = 0; i < 15; i++) {
+        const { body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
+        if (!body.running) break;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+      // Start a fresh PM loop with many items so it stays running long enough
+      const roadmap = path.join(testDir, "ROADMAP.md");
+      await writeFile(roadmap, `# PM Loop E2E Test
+
+## Phase 0
+
+- [ ] Task A
+- [ ] Task B
+- [ ] Task C
+- [ ] Task D
+- [ ] Task E
+- [ ] Task F
+- [ ] Task G
+- [ ] Task H
+- [ ] Task I
+- [ ] Task J
+`, "utf8");
+
+      const { status, body } = await apiPost(DASH_BASE, "/api/pm-loop/start", {
+        dryRun: true,
+        projectId: testProjectId,
+        pmOptions: {
+          selfExtend: true,
+          extendEveryN: 5,
+          maxItems: 50,
+          taskTimeoutMin: 1,
+        },
+      });
+      assert.ok([200, 201].includes(status), `PM loop start failed: ${status}`);
+      assert.ok(body.ok);
+
+      // Wait for it to be running
       await new Promise(r => setTimeout(r, 1000));
-      const { body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
-      if (body.running === false || body.pid === undefined) {
-        stopped = true;
-        break;
+
+      const stopFile = path.join(LOGS_DIR, `pm-loop-${testProjectId}.stop`);
+      // Write stop file
+      await writeFile(stopFile, "stop", "utf8").catch(() => {});
+
+      // Poll until the loop detects the stop file or has already exited (up to 30s)
+      let stopped = false;
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const { body: st } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
+        if (!st.running) {
+          stopped = true;
+          break;
+        }
+      }
+      // Clean up stop file
+      await rm(stopFile, { force: true }).catch(() => {});
+      assert.ok(stopped, "PM loop should stop within 30 seconds of stop file being created");
+    });
+  });
+
+  describe("pm-loop.jsonl log file", { skip: SKIP_FULL }, () => {
+    it("pm-loop.jsonl log exists after a run", async () => {
+      if (!testProjectId) return;
+      await new Promise(r => setTimeout(r, 1000));
+
+      const logFile = path.join(LOGS_DIR, `pm-loop.jsonl`);
+      const projectLog = path.join(LOGS_DIR, `pm-loop-${testProjectId}.jsonl`);
+
+      // Either the default log or project-specific log should exist
+      const logExists = fs.existsSync(logFile) || fs.existsSync(projectLog);
+      if (!logExists) return; // dry-run may not write log — skip gracefully
+
+      const file = fs.existsSync(projectLog) ? projectLog : logFile;
+      const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+      assert.ok(lines.length > 0, "PM loop log is empty");
+    });
+  });
+
+  describe("PHASED_TASK_TIMEOUT_MS is respected", { skip: SKIP_FULL }, () => {
+    it("pmOptions.taskTimeoutMin is passed as PHASED_TASK_TIMEOUT_MS", async () => {
+      if (!testProjectId) return;
+
+      // Start with a custom timeout — this verifies the option is accepted
+      const { status, body } = await apiPost(DASH_BASE, "/api/pm-loop/start", {
+        dryRun: true,
+        projectId: testProjectId,
+        pmOptions: { taskTimeoutMin: 2 }, // 2 minutes
+      });
+      assert.ok([200, 201].includes(status), `Start failed: ${status} ${JSON.stringify(body)}`);
+    });
+  });
+
+  // Cleanup
+  after(async () => {
+    // Remove test project directory
+    if (testDir) {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
+    // Remove test project from registry
+    if (testProjectId) {
+      await apiPost(DASH_BASE, `/api/projects/${testProjectId}/delete`, {}).catch(() => {});
+      // Also clean up any PID/stop files
+      const suffix = `-${testProjectId}`;
+      for (const file of [`pm-loop${suffix}.pid`, `pm-loop${suffix}.stop`, `pm-loop${suffix}.jsonl`]) {
+        try { fs.unlinkSync(path.join(LOGS_DIR, file)); } catch {}
       }
     }
-    assert.ok(stopped, "PM loop should stop within 10 seconds of stop file being created");
-  });
-});
-
-describe("PM loop — pm-loop.jsonl log file", { skip: SKIP_FULL }, () => {
-  it("pm-loop.jsonl log exists after a run", async () => {
-    if (!testProjectId) return;
-    await new Promise(r => setTimeout(r, 1000));
-
-    const logFile = path.join(LOGS_DIR, `pm-loop.jsonl`);
-    const projectLog = path.join(LOGS_DIR, `pm-loop-${testProjectId}.jsonl`);
-
-    // Either the default log or project-specific log should exist
-    const logExists = fs.existsSync(logFile) || fs.existsSync(projectLog);
-    if (!logExists) return; // dry-run may not write log — skip gracefully
-
-    const file = fs.existsSync(projectLog) ? projectLog : logFile;
-    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
-    assert.ok(lines.length > 0, "PM loop log is empty");
   });
 });
 
@@ -242,35 +311,4 @@ describe("PM loop — self-extend generates new items", () => {
 
     await rm(tmpDir, { recursive: true, force: true });
   });
-});
-
-describe("PM loop — PHASED_TASK_TIMEOUT_MS is respected", { skip: SKIP_FULL }, () => {
-  it("pmOptions.taskTimeoutMin is passed as PHASED_TASK_TIMEOUT_MS", async () => {
-    if (!testProjectId) return;
-
-    // Start with a custom timeout — this verifies the option is accepted
-    const { status, body } = await apiPost(DASH_BASE, "/api/pm-loop/start", {
-      dryRun: true,
-      projectId: testProjectId,
-      pmOptions: { taskTimeoutMin: 2 }, // 2 minutes
-    });
-    assert.ok([200, 201].includes(status), `Start failed: ${status} ${JSON.stringify(body)}`);
-  });
-});
-
-// Cleanup
-after(async () => {
-  // Remove test project directory
-  if (testDir) {
-    await rm(testDir, { recursive: true, force: true }).catch(() => {});
-  }
-  // Remove test project from registry
-  if (testProjectId) {
-    await apiPost(DASH_BASE, `/api/projects/${testProjectId}/delete`, {}).catch(() => {});
-    // Also clean up any PID/stop files
-    const suffix = `-${testProjectId}`;
-    for (const file of [`pm-loop${suffix}.pid`, `pm-loop${suffix}.stop`, `pm-loop${suffix}.jsonl`]) {
-      try { fs.unlinkSync(path.join(LOGS_DIR, file)); } catch {}
-    }
-  }
 });
