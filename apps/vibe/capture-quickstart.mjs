@@ -63,17 +63,18 @@ function esc(s) {
 
 const frames = [
   {
-    title: "Install — 60 seconds",
+    title: "Install — real output from Docker",
     lines: [
       "$ npm install -g crewswarm",
       "",
-      "added 47 packages in 8s",
+      "added 59 packages in 9s",
       "",
-      "✓ crewswarm@0.8.1 installed globally",
+      "$ crewswarm --version",
+      "0.8.2-beta",
       "",
       "$ crewswarm",
       "",
-      "⚡ crewswarm v0.8.1",
+      "⚡ crewswarm v0.8.2-beta",
       "→ Dashboard:  http://localhost:4319",
       "→ Vibe IDE:   http://localhost:3333",
       "→ crew-lead:  http://localhost:5010",
