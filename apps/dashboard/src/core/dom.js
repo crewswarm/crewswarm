@@ -172,19 +172,27 @@ export function appendChatBubble(
     if (engineUsed) {
       const engineColors = {
         claude: "#e07a5f",
+        "claude-code": "#e07a5f",
         codex: "#8338ec",
         cursor: "#3d405b",
         opencode: "#06d6a0",
         gemini: "#4285f4",
+        "gemini-cli": "#4285f4",
         "docker-sandbox": "#0db7ed",
+        "crew-cli": "#8b5cf6",
+        "direct-llm": "#6b7280",
       };
       const engineLabels = {
         claude: "🤖 Claude Code",
+        "claude-code": "🤖 Claude Code",
         codex: "🟣 Codex",
         cursor: "🖱 Cursor",
         opencode: "⚡ OpenCode",
         gemini: "✨ Gemini",
+        "gemini-cli": "✨ Gemini",
         "docker-sandbox": "🐳 Docker",
+        "crew-cli": "🔧 crew-cli",
+        "direct-llm": "💬 LLM Direct",
       };
       const engineBadge = document.createElement("span");
       engineBadge.title =
