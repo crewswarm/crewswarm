@@ -144,6 +144,19 @@ const ALLOWED_JIDS = new Set(
 );
 const ALLOWLIST_ENABLED = ALLOWED_JIDS.size > 0;
 
+// Map @lid JIDs to their @s.whatsapp.net equivalents (populated on first message)
+const LID_TO_JID = new Map();
+
+function isJidAllowed(jid) {
+  if (!ALLOWLIST_ENABLED) return true;
+  if (ALLOWED_JIDS.has(jid)) return true;
+  // Check if this @lid JID is mapped to an allowed @s.whatsapp.net
+  if (jid.endsWith("@lid") && LID_TO_JID.has(jid)) {
+    return ALLOWED_JIDS.has(LID_TO_JID.get(jid));
+  }
+  return false;
+}
+
 // Per-user routing: maps "+1234..." or "1234...@s.whatsapp.net" → agent name
 const USER_ROUTING = loadUserRouting();
 
@@ -424,7 +437,7 @@ function connectRT(sendToJid) {
             if (sessionId && activeSessions.has(sessionId)) {
               const jid = sessionId;
               // Allowlist check on outbound — never send to unauthorized JIDs
-              if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
+              if (ALLOWLIST_ENABLED && !isJidAllowed(jid)) {
                 log("warn", "RT reply blocked by allowlist — not sending to unauthorized JID", { jid, from });
                 return;
               }
@@ -524,7 +537,7 @@ async function listenForAgentReplies(sendToJid) {
             
             const jid = whatsappJid;
             // Allowlist check on outbound — never send to unauthorized JIDs
-            if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
+            if (ALLOWLIST_ENABLED && !isJidAllowed(jid)) {
               log("warn", "SSE reply blocked by allowlist — not sending to unauthorized JID", { jid, from: d.from });
               continue;
             }
@@ -813,9 +826,15 @@ async function main() {
       // Block outgoing messages that aren't self-chat (i.e. bot's own replies going out)
       if (msg.key.fromMe && !isSelfChatLid && !isSelfChatOwn) continue;
 
+      // Map @lid JID to @s.whatsapp.net for allowlist matching
+      if (isSelfChatLid && ownJid) {
+        LID_TO_JID.set(jid, ownJid);
+        log("info", "Mapped @lid to @s.whatsapp.net", { lid: jid, jid: ownJid });
+      }
+
       // ── Allowlist check (before any media processing) ─────────────────
       if (!isSelfChatLid && !isSelfChatOwn) {
-        if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(jid)) {
+        if (ALLOWLIST_ENABLED && !isJidAllowed(jid)) {
           log("warn", "Silently ignored unauthorized sender", { jid });
           continue;
         }
@@ -1444,7 +1463,7 @@ async function main() {
           }
           if (!targetJid) { res.writeHead(400); res.end(JSON.stringify({ error: "jid or phone required" })); return; }
           // Allowlist check on outbound — never send to unauthorized JIDs
-          if (ALLOWLIST_ENABLED && !ALLOWED_JIDS.has(targetJid)) {
+          if (ALLOWLIST_ENABLED && !isJidAllowed(targetJid)) {
             log("warn", "HTTP /send blocked by allowlist", { targetJid });
             res.writeHead(403); res.end(JSON.stringify({ error: "JID not in allowlist" })); return;
           }
