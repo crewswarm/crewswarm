@@ -1,315 +1,205 @@
 # crewswarm
 
-**Local-first AI orchestration for people who want real files, real tools, and real control.**
+**The only multi-engine AI coding platform.** Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. Parallel agents. Persistent sessions. No vendor lock-in.
 
-crewswarm is an open-source AI workspace for software development. It combines multi-agent orchestration, project-aware memory, local tool execution, chat surfaces, and editor/MCP integrations into one stack you can run yourself.
-
+[![npm version](https://img.shields.io/npm/v/crewswarm)](https://www.npmjs.com/package/crewswarm)
+[![Tests](https://img.shields.io/badge/tests-647%20passed-brightgreen)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org)
 [![Website](https://img.shields.io/badge/website-crewswarm.ai-blue)](https://crewswarm.ai)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/crewswarm?label=Sponsor)](https://github.com/sponsors/crewswarm)
 
 ![crewswarm Dashboard](website/dashboard-agents.webp)
 
 ---
 
-## What crewswarm is
+## Why crewswarm?
 
-Most AI dev tools are just a chat box bolted onto an editor.
+**Rate limits are real.** Every $20/month AI coding plan has them. Claude, Cursor, Codex — you'll hit the wall mid-feature.
 
-**crewswarm** is different:
+crewswarm is the only tool where you seamlessly switch to another engine and keep your session context. Or pick the best CLI for each job:
 
-- **Local-first** — run it on your own machine
-- **Real execution** — agents write files, run commands, and operate on actual projects
-- **Multi-agent** — planner, coder, QA, fixer, security, GitHub, and more
-- **Persistent context** — memory and session history survive beyond one chat
-- **Multiple control surfaces** — dashboard, CLI, Telegram, SwiftBar, MCP/editor integrations
-- **Model-flexible** — use Groq, OpenAI, Anthropic, Gemini, Mistral, DeepSeek, xAI, Ollama, and more
-
-It is built for:
-- solo builders
-- AI-native dev teams
-- local-first users who do not want SaaS lock-in
-- people building real software with agent workflows, not toy demos
-
----
-
-## Why it matters
-
-Most “agent” tools still fake the important part.
-
-They can talk. They can plan. They can look clever.
-
-Then they fall apart when it is time to:
-- write real files
-- work across multiple steps
-- keep project memory
-- coordinate multiple specialists
-- run locally without disappearing into someone else’s cloud
-
-crewswarm is built to handle actual execution.
+| Engine | Best for | Key strength |
+|---|---|---|
+| **Claude Code** | Large refactors, frontend | Full workspace context, session resume |
+| **Cursor CLI** | Architecture, complex reasoning | Parallel waves, isolated contexts |
+| **Gemini CLI** | Research, SEO, free fallback | Free: 60 req/min, Google Search built in |
+| **Codex CLI** | Backend, fast iteration | Full sandbox, no approval prompts |
+| **OpenCode** | Provider flexibility | Any model (Groq/DeepSeek/Ollama) |
+| **crew-cli** | Orchestration, quality workflows | 20+ agents, sandbox, 3x parallel speedup |
 
 ---
 
 ## Quickstart
 
-### Requirements
+```bash
+npm install -g crewswarm
+crewswarm
+```
 
-- Node.js 20+
-- At least one LLM provider key for best results  
-  - Groq is the fastest free starting point: [console.groq.com](https://console.groq.com)
+That's it. Dashboard opens at `localhost:4319`, Vibe IDE at `localhost:3333`.
 
-### Install
+### Or install from source
 
 ```bash
 git clone https://github.com/crewswarm/crewswarm
 cd crewswarm
 bash install.sh
-```
-
-**Fresh machine shortcut:**
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/install.sh)
-```
-
-### Start
-```bash
 npm run doctor
-npm run restart-all
+npm start
 ```
 
-Then open:
-`http://127.0.0.1:4319`
+### What does it cost?
 
-Add your provider key in the Providers tab, then go to Chat and start giving tasks.
-
----
-
-### First example
-
-In the dashboard chat, type:
-> Build a REST API for user authentication with JWT and tests
-
-**crewswarm will:**
-- route the request through `crew-lead`
-- break it down through `crew-pm`
-- dispatch implementation to the right coding agent
-- run QA / validation
-- optionally hand off Git tasks
-
-This is not simulated. It works against real files and your real local workspace.
+**$0.** crewswarm is free and open source (MIT). You bring your own API keys — or use CLI OAuth (Claude, Cursor, Gemini login once, no keys needed). Free options: Gemini CLI (1,000 req/day), Groq (free tier), Ollama (fully local).
 
 ---
 
-### Headless / non-interactive install
+## What makes it different
 
-For Cursor, Codex, CI, or remote shell setups:
-```bash
-CREWSWARM_SETUP_MCP=1 \
-CREWSWARM_START_NOW=1 \
-bash install.sh --non-interactive
-```
-
-Optional flags:
-- `CREWSWARM_BUILD_CREWCHAT=1`
-- `CREWSWARM_SETUP_TELEGRAM=1`
-- `CREWSWARM_SETUP_WHATSAPP=1`
-- `CREWSWARM_ENABLE_AUTONOMOUS=1`
+| Capability | crewswarm | Cursor | Windsurf | Devin | Copilot |
+|---|---|---|---|---|---|
+| Multi-engine (6 CLIs) | Yes | No | No | No | No |
+| Native session resume | Yes | No | No | No | No |
+| Parallel agent waves | Yes | No | No | Partial | No |
+| Browser IDE + terminal | Vibe | Desktop | Desktop | Yes | Yes |
+| 20+ specialist agents | Yes | 1 | 1 | 1 | 1 |
+| PM Loop (autonomous roadmap) | Yes | No | No | Partial | No |
+| Local-first / no cloud | Yes | Partial | No | No | No |
+| Open source | Yes | No | No | No | No |
 
 ---
 
-## Core capabilities
+## How it works
 
-**Real tool execution**
-Agents can write files, read files, create directories, run commands, and work inside a real project folder.
-
-**PM-led orchestration**
-Natural language requests are broken into structured tasks and routed to the right agent.
-
-**Shared memory**
-Project context persists through files like `brain.md`, `session-log.md`, `current-state.md`, and `orchestration-protocol.md`.
-
-**Fault tolerance**
-Retries, escalation to fixer agents, task leases, and dead-letter replay support are built in.
-
-**Command approval gate**
-Potentially risky shell commands require approval before execution.
-
-**Multi-engine support**
-Route work through different engines and environments, including Codex, Claude Code, Cursor, Gemini, OpenCode, and `crew-cli`.
-
-**Multiple control surfaces**
-Use crewswarm from the web dashboard, CLI, Telegram, macOS SwiftBar, or MCP/editor integrations.
-
----
-
-## Why crewswarm vs other frameworks
-
-| Feature | crewswarm | LangChain / LangGraph | AutoGen | CrewAI |
-|---|---|---|---|---|
-| Real file writes | ✅ | ⚠️ | ⚠️ | ⚠️ |
-| PM-led planning | ✅ | ❌ | ❌ | ⚠️ |
-| Persistent memory | ✅ | ⚠️ | ❌ | ⚠️ |
-| Local-first | ✅ | ⚠️ | ⚠️ | ⚠️ |
-| Built-in dashboard | ✅ | ❌ | ❌ | ❌ |
-| Telegram / messaging bridges | ✅ | ❌ | ❌ | ❌ |
-| Easy local startup | ✅ | ⚠️ | ⚠️ | ⚠️ |
-
----
-
-## Main components
-
-| Component | Purpose |
-|---|---|
-| `crew-lead` | conversational command layer and dispatcher |
-| `crew-pm` | planning, task breakdown, roadmap management |
-| `crew-coder` | implementation |
-| `crew-qa` | testing and validation |
-| `crew-fixer` | debugging and repair |
-| `crew-security` | security review |
-| `crew-github` | Git and repo actions |
-| `dashboard` | browser-based control surface |
-| `crew-cli` | command-line interface |
-| `crew-scribe` | memory and task summarization |
-
----
-
-## Architecture
+1. **You write a requirement** — one sentence, one paragraph, or a full spec
+2. **crew-pm plans it** — breaks work into phases, assigns specialists
+3. **Agents execute in parallel** — backend, frontend, tests built simultaneously (3x faster)
+4. **Done. Files on disk.** — real files, real tests, real output
 
 ```
-Dashboard / Vibe / crew-cli / Telegram / SwiftBar / MCP
-                  |
-              crew-lead
-                  |
-               RT Bus
-                  |
-     -----------------------------------
+Dashboard / Vibe IDE / crew-cli / Telegram / MCP
+                    |
+                crew-lead (router)
+                    |
+                 RT Bus
+                    |
+     ─────────────────────────────────
      |        |        |       |       |
    crew-pm  coder     qa    fixer   github
-                  |
-           local tools + models
-                  |
-          real files, commands, memory
+                    |
+        Code Engines: Claude · Cursor · Gemini · Codex · OpenCode · crew-cli
+                    |
+            real files, commands, memory
 ```
+
+---
+
+## Surfaces
+
+- **Dashboard** — web control plane at `localhost:4319` (agents, engines, models, build, sessions)
+- **Vibe IDE** — browser-based editor + terminal + chat at `localhost:3333`
+- **crew-cli** — terminal-first with 34+ built-in tools
+- **Telegram** — chat with your crew from your phone
+- **MCP server** — plug crewswarm into any MCP-compatible editor
+
+---
+
+## Per-agent model configuration
+
+Every agent gets its own model. Use cheap models for routing, expensive for coding:
+
+```json
+{
+  "agents": [
+    { "id": "crew-lead", "model": "groq/llama-3.3-70b-versatile" },
+    { "id": "crew-pm", "model": "google/gemini-2.5-flash" },
+    { "id": "crew-coder", "model": "anthropic/claude-sonnet-4-20250514" },
+    { "id": "crew-qa", "model": "google/gemini-2.5-flash" },
+    { "id": "crew-fixer", "model": "openai/codex-mini-latest" }
+  ]
+}
+```
+
+Or skip API keys entirely — use Claude Code, Cursor, or Gemini CLI with OAuth login.
+
+---
+
+## The crew
+
+| Agent | Role |
+|---|---|
+| `crew-lead` | Routes tasks, manages conversation |
+| `crew-pm` | Plans, breaks down, prioritizes |
+| `crew-coder` | Writes code (full-stack) |
+| `crew-coder-back` | Backend specialist |
+| `crew-coder-front` | Frontend specialist |
+| `crew-qa` | Tests and validates |
+| `crew-fixer` | Debugs and repairs |
+| `crew-security` | Security review |
+| `crew-github` | Git, PRs, branches |
+| `crew-architect` | System design |
+| `crew-orchestrator` | Wave dispatch |
+| `crew-copywriter` | Docs and content |
+| `crew-frontend` | UI/UX polish |
+| `crew-main` | General coordination |
+
+---
+
+## Built with crewswarm
+
+- **VS Code extension** — full extension from prompt to package in 10 minutes
+- **crewswarm.ai** — the production website you see, 90% built by the swarm in 30 minutes
+- **Session resume** — native resume across 6 CLI engines, built in one session
 
 ---
 
 ## Commands
 
-- **Preflight:** `npm run doctor`
-- **Start the stack:** `npm run restart-all`
-- **Launch Dashboard only:** `npm run dashboard`
-- **Run CLI task:** `crew exec "Build a REST API with JWT auth and tests"`
-- **Static smoke** (no services): `npm run smoke:static`
-- **Live smoke** (stack must be running): `npm run smoke`
-- **Health check:** `npm run health`
-- **Release preflight:** `npm run release:check`
-
----
-
-## Configuration
-
-crewswarm stores config under your local `~/.crewswarm` directory.
-
-Typical settings include provider API keys, agent model assignments, RT auth token, output path, and command allowlist.
-
-The easiest way to manage config is through the dashboard.
-
-**Example agent config**
-```json
-{
-  "agents": [
-    { "id": "crew-pm", "model": "perplexity/sonar-pro" },
-    { "id": "crew-coder", "model": "anthropic/claude-sonnet-4-20250514" },
-    { "id": "crew-qa", "model": "groq/llama-3.3-70b-versatile" }
-  ]
-}
+```bash
+crewswarm                    # Start all services
+crewswarm pm-loop            # Run autonomous PM loop
+npm run doctor               # Preflight check
+npm run restart-all          # Restart the stack
+npm test                     # Run 647 tests
+crew exec "Build X"          # Send task via CLI
 ```
 
 ---
 
 ## Deployment
 
-crewswarm is designed for local-first deployment but supports production containerization and cloud deployment. The system runs as a collection of Node.js services coordinated through an RT (realtime) bus, with optional web dashboard, CLI, and messaging bridge interfaces.
-
-**Environment Configuration**
-
-Production deployments require proper environment variable management. Store sensitive credentials in `.env` files and exclude them from version control using `.gitignore`. At minimum, configure one LLM provider API key (`GROQ_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`). The RT bus requires `RT_PORT` (default 4319) and `RT_AUTH_TOKEN` for secure inter-service communication. Dashboard configuration uses `VITE_RT_URL` and `VITE_RT_AUTH_TOKEN` to connect to the RT bus. Optional variables include `CREWSWARM_OUTPUT_PATH` for task outputs and `CREWSWARM_WORKSPACE` for project directories.
-
-Generate cryptographically secure tokens for production:
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# Docker
+docker-compose up -d
+
+# Or the one-liner
+bash <(curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/install.sh)
 ```
 
-Additional configuration resides in `~/.crewswarm/config.json`, including provider credentials, agent-to-model assignments, command approval settings, and allowlists for shell command execution.
-
-**Docker Support**
-
-All crewswarm components support Docker containerization. Use multi-stage Dockerfiles to separate build dependencies from runtime artifacts, reducing final image size. A proper `.dockerignore` should exclude `node_modules/`, `.git/`, `.env` files, build artifacts, logs, and IDE configuration. Configure services using environment variables rather than hardcoded values, enabling 12-factor app compliance.
-
-For the RT bus and Node services, expose only necessary ports (typically 4319 for RT bus, 8080 for dashboard). Use `docker-compose.yml` for local development and multi-container orchestration, or Kubernetes manifests for production clusters. Health checks ensure container orchestrators can detect and restart failed services.
-
-Example minimal `.dockerignore`:
-```
-node_modules/
-.git/
-.env
-*.log
-dist/
-```
-
-**Production Infrastructure**
-
-Production deployments benefit from process managers like PM2 or systemd for automatic restarts and clustering. Configure a reverse proxy (nginx, Caddy, Traefik) in front of services to handle TLS termination, load balancing, and request routing. Enable HTTPS using Let's Encrypt certificates for external-facing deployments.
-
-Implement comprehensive monitoring using Prometheus for metrics collection and Grafana for visualization. Structure logs as JSON for easier aggregation in ELK stack (Elasticsearch, Logstash, Kibana) or similar log management platforms. Key metrics include task throughput, error rates, agent response times, and system resource utilization.
-
-Security considerations for production:
-- Enable command approval gates to review shell commands before execution
-- Restrict RT bus port access via firewall rules
-- Rotate API keys and auth tokens regularly
-- Run services with minimal required permissions
-- Implement rate limiting on public endpoints
-- Regular dependency updates for security patches
-
-For comprehensive deployment instructions including Docker examples, Kubernetes manifests, nginx configuration, monitoring setup, and troubleshooting, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+See [deploy.html](https://crewswarm.ai/deploy.html) for Docker, cloud VM, and production setup.
 
 ---
 
-## Project structure
+## Documentation
 
-```
-crewswarm/
-├── crew-lead.mjs
-├── crew-cli/
-├── gateway-bridge.mjs
-├── telegram-bridge.mjs
-├── pm-loop.mjs
-├── unified-orchestrator.mjs
-├── phased-orchestrator.mjs
-├── continuous-build.mjs
-├── scripts/
-├── memory/
-├── docs/
-├── contrib/swiftbar/
-└── website/
-```
+- [Website](https://crewswarm.ai)
+- [Vibe IDE](https://crewswarm.ai/vibe.html)
+- [crew-cli](https://crewswarm.ai/cli.html)
+- [Models & Providers](https://crewswarm.ai/models.html)
+- [Security](https://crewswarm.ai/security.html)
+- [API Docs](https://crewswarm.ai/api.html)
+- [@@Protocol](https://crewswarm.ai/atat.html)
 
 ---
 
-## Docs
+## Contributing
 
-- `docs/CANONICAL/README.md`
-- `docs/ARCHITECTURE.md`
-- `docs/ORCHESTRATOR-GUIDE.md`
-- `docs/SETUP-NEW-AGENTS.md`
-- `docs/MODEL-RECOMMENDATIONS.md`
-- `docs/TROUBLESHOOTING.md`
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Issues and PRs welcome.
 
-## Related repos
+## Security
 
-- `crew-cli` — standalone CLI for task execution and orchestration
-
----
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## License
 
