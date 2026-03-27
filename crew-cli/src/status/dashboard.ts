@@ -30,16 +30,31 @@ export async function getSystemStatus(): Promise<StatusInfo> {
     version: '0.1.0-alpha'
   };
 
-  // Check which API keys are available (relevant for standalone mode)
+  // Check which providers have API keys (from crewswarm.json + env vars)
   const providers: string[] = [];
-  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) providers.push('Gemini');
-  if (process.env.GROQ_API_KEY) providers.push('Groq');
-  if (process.env.XAI_API_KEY) providers.push('Grok');
-  if (process.env.OPENAI_API_KEY) providers.push('OpenAI');
-  if (process.env.ANTHROPIC_API_KEY) providers.push('Anthropic');
-  if (process.env.DEEPSEEK_API_KEY) providers.push('DeepSeek');
+  try {
+    const { readFileSync } = await import('node:fs');
+    const cfgPath = `${homedir()}/.crewswarm/crewswarm.json`;
+    const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+    const providerEntries = cfg.providers || {};
+    for (const [id, p] of Object.entries(providerEntries) as [string, any][]) {
+      if (p.apiKey && String(p.apiKey).trim()) {
+        providers.push(id);
+      }
+    }
+  } catch { /* no config */ }
+  // Also check env vars for providers not in config
+  const envMap: Record<string, string> = {
+    GEMINI_API_KEY: 'google', GOOGLE_API_KEY: 'google', GROQ_API_KEY: 'groq',
+    XAI_API_KEY: 'xai', OPENAI_API_KEY: 'openai', ANTHROPIC_API_KEY: 'anthropic',
+    DEEPSEEK_API_KEY: 'deepseek', MISTRAL_API_KEY: 'mistral', PERPLEXITY_API_KEY: 'perplexity',
+    TOGETHER_API_KEY: 'together', FIREWORKS_API_KEY: 'fireworks', HUGGINGFACE_API_KEY: 'huggingface',
+  };
+  for (const [envKey, id] of Object.entries(envMap)) {
+    if (process.env[envKey] && !providers.includes(id)) providers.push(id);
+  }
   status.models = providers;
-  status.online = providers.length > 0; // "online" if at least one provider is available
+  status.online = providers.length > 0;
 
   // Check if gateway is reachable (optional, for connected mode)
   try {
@@ -83,7 +98,7 @@ export function renderStatusDashboard(status: StatusInfo): string {
 
   // Provider status bar
   const providerCount = models.length;
-  const maxProviders = 6;
+  const maxProviders = 24;
   const filled = Math.min(10, Math.floor((providerCount / maxProviders) * 10));
   const empty = 10 - filled;
   const progressBar = chalk.green('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
