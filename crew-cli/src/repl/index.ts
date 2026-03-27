@@ -485,7 +485,9 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   
   if (!options.initialMode && !repoConfig?.repl?.mode && process.stdin.isTTY) {
     try {
-      const modeAnswer = await (await getInquirer()).prompt([
+      console.log(''); // Clear line after init output
+      const inquirer = await getInquirer();
+      const modeAnswer = await inquirer.prompt([
         {
           type: 'list',
           name: 'mode',
@@ -512,8 +514,9 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         }
       ]);
       selectedMode = modeAnswer.mode as ReplMode;
-    } catch {
-      // User cancelled, use manual as fallback
+    } catch (err) {
+      // User cancelled or inquirer unavailable — use manual
+      console.error('[repl] Mode picker failed, using manual:', (err as Error).message);
       selectedMode = 'manual';
     }
   }
@@ -527,7 +530,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
   if (options.promptInterfaceMode && process.stdin.isTTY) {
     try {
-      const ifaceAnswer = await (await getInquirer()).prompt([
+      const inquirer2 = await getInquirer();
+      const ifaceAnswer = await inquirer2.prompt([
         {
           type: 'list',
           name: 'interfaceMode',
