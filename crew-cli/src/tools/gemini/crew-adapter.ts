@@ -349,13 +349,31 @@ export class GeminiToolAdapter {
   }
   
   private async writeFile(params: { file_path: string; content: string }): Promise<ToolResult> {
-    // Path traversal guard
+    const isAbsolute = params.file_path.startsWith('/');
+
+    if (isAbsolute) {
+      // Absolute paths: write directly to disk (user explicitly specified the path)
+      try {
+        const { mkdir, writeFile } = await import('node:fs/promises');
+        const { dirname } = await import('node:path');
+        const dir = dirname(params.file_path);
+        await mkdir(dir, { recursive: true });
+        await writeFile(params.file_path, params.content, 'utf8');
+        return {
+          success: true,
+          output: `Wrote ${params.file_path} (${params.content.length} bytes)`
+        };
+      } catch (err: any) {
+        return { success: false, error: `Write failed: ${err.message}` };
+      }
+    }
+
+    // Relative paths: stage in sandbox with path traversal guard
     const fullPath = resolve(this.config.getWorkspaceRoot(), params.file_path);
     const wsRoot = resolve(this.config.getWorkspaceRoot());
     if (!fullPath.startsWith(wsRoot + '/') && fullPath !== wsRoot) {
       return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
     }
-    // Stage in sandbox instead of writing directly
     await this.sandbox.addChange(params.file_path, params.content);
     return {
       success: true,
