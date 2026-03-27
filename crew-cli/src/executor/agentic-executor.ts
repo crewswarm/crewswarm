@@ -1329,7 +1329,11 @@ export async function runAgenticWorker(
 
   return {
     success: result.success ?? false,
-    output: result.finalResponse ?? result.history?.map(h => String(h.result)).join('\n') ?? '',
+    output: result.finalResponse ?? result.history?.map(h => {
+      if (!h.result) return '';
+      if (typeof h.result === 'string') return h.result;
+      return h.result.output || h.result.error || JSON.stringify(h.result);
+    }).filter(Boolean).join('\n') ?? '',
     cost: totalCost,
     turns: result.turns,
     toolsUsed: Array.from(toolsUsed),

@@ -4224,7 +4224,11 @@ async function runAgenticWorker(task, sandbox, options = {}) {
   );
   return {
     success: result2.success ?? false,
-    output: result2.finalResponse ?? result2.history?.map((h) => String(h.result)).join("\n") ?? "",
+    output: result2.finalResponse ?? result2.history?.map((h) => {
+      if (!h.result) return "";
+      if (typeof h.result === "string") return h.result;
+      return h.result.output || h.result.error || JSON.stringify(h.result);
+    }).filter(Boolean).join("\n") ?? "",
     cost: totalCost,
     turns: result2.turns,
     toolsUsed: Array.from(toolsUsed),
