@@ -5,6 +5,33 @@ All notable changes to crewswarm will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3-beta] - 2026-03-28
+
+### Added
+- Vibe: diff preview for ALL 6 engine writes (not just @@WRITE_FILE) — Monaco side-by-side diff
+- Vibe: multi-file diff queue with Accept / Dismiss / Accept All buttons
+- Vibe: reject reverts CLI-written files to previous content on disk
+- crew-cli REPL: deferred sandbox apply in manual/assist mode — shows diff before writing
+- crew-cli: `crew plan` generates 7 planning artifacts with dual-model validation
+- crew-cli: `crew test-first` TDD pipeline (tests → implement → validate)
+- crew-cli: `crew validate` blind code review with scores and verdicts
+- crew-cli: `crew auto` autonomous mode
+- crew-cli: `crew doctor` health check (6/7 checks)
+- Website: CLI page rewritten with 7 commands and 3-tier pipeline diagram
+- Website: 4-step workflow demo (build → polish → errors → security)
+- Website: architecture section updated (22 agents, 6 engines, RT bus channels)
+- Launch plan with HN post, Twitter thread, Reddit posts, FAQ
+
+### Fixed
+- crew-cli: file writes blocked by path traversal guard on absolute paths
+- crew-cli: `[object Object]` response serialization
+- crew-cli: REPL hang from home directory (repo indexer now skips ~ and /)
+- crew-cli: binary was pointing to stale Desktop copy (relinked)
+- Claude Code: stale session resume causing "no text output" — dispatch tasks start fresh
+- Website: performance 70→78 (mascot resize, favicon webp, fetchpriority, cache TTL)
+- Website: mobile overflow fixes, architecture section accuracy
+- Website: case studies updated with real benchmark data (17s weather dashboard)
+
 ## [0.8.2-beta] - 2026-03-27
 
 ### Added
