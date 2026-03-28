@@ -126,6 +126,20 @@ Title: Show r/programming: We built a multi-agent coding platform that uses diff
 Body: [shorter version, focus on the architecture]
 ```
 
+**r/ChatGPTCoding:**
+```
+Title: Built a tool that lets you switch between Claude Code, Cursor, Gemini, and Codex mid-conversation — sessions persist across engines
+
+Body: Every $20/month plan has rate limits. I kept hitting the wall mid-feature. So I built CrewSwarm — it runs all 6 coding CLIs and lets you switch seamlessly. Your session context follows you. 957 tests, fully local, MIT licensed. crewswarm.ai
+```
+
+**r/SideProject:**
+```
+Title: CrewSwarm — 22 AI agents that build features for you while you eat dinner (open source)
+
+Body: PM Loop reads your ROADMAP.md and ships. Agents run in parallel waves — backend, frontend, tests all built simultaneously. Built the crewswarm.ai website itself in 30 minutes. npm install -g crewswarm
+```
+
 ## Product Hunt
 
 Save for Week 2 — don't split attention on launch day. PH needs a dedicated tagline, gallery images, and maker comments.
