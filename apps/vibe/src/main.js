@@ -2391,44 +2391,42 @@ window.addEventListener("resize", () => {
 
 let diffEditor = null;
 let pendingChange = null;
+let diffQueue = []; // Queue of { path, newContent, oldContent } for multi-file diffs
 
 function parseFileChanges(agentReply) {
-  // Parse agent response for @@WRITE_FILE markers
   const fileRegex =
     /@@WRITE_FILE\s+(.+?)\n([\s\S]+?)(?=@@END_FILE|@@WRITE_FILE|$)/g;
   const changes = [];
-
   let match;
   while ((match = fileRegex.exec(agentReply)) !== null) {
-    changes.push({
-      path: match[1].trim(),
-      newContent: match[2].trim(),
-    });
+    changes.push({ path: match[1].trim(), newContent: match[2].trim() });
   }
-
   return changes;
 }
 
 async function showDiffPreview(change) {
+  // If a diff is already showing, queue this one
+  const overlay = document.getElementById("diff-preview-overlay");
+  if (overlay.classList.contains("visible") && pendingChange) {
+    diffQueue.push(change);
+    updateDiffCounter();
+    return;
+  }
+
   pendingChange = change;
   await ensureEditorReady();
   await ensureEditorLanguage(detectLanguage(change.path));
 
-  const overlay = document.getElementById("diff-preview-overlay");
   const container = document.getElementById("diff-editor");
   const filePathEl = document.getElementById("diff-file-path");
 
   // Get current file content
-  const oldContent =
-    activeTab?.path === change.path
-      ? activeTab.content
-      : await readFile(change.path);
+  const oldContent = activeTab?.path === change.path
+    ? activeTab.content
+    : await readFile(change.path).catch(() => "");
+  pendingChange.oldContent = oldContent;
 
-  // Create diff editor
-  if (diffEditor) {
-    diffEditor.dispose();
-  }
-
+  if (diffEditor) diffEditor.dispose();
   diffEditor = monaco.editor.createDiffEditor(container, {
     theme: getPreferredMonacoTheme(),
     readOnly: false,
@@ -2436,77 +2434,101 @@ async function showDiffPreview(change) {
     renderSideBySide: true,
     automaticLayout: true,
   });
-
   diffEditor.setModel({
-    original: monaco.editor.createModel(
-      oldContent,
-      detectLanguage(change.path),
-    ),
-    modified: monaco.editor.createModel(
-      change.newContent,
-      detectLanguage(change.path),
-    ),
+    original: monaco.editor.createModel(oldContent, detectLanguage(change.path)),
+    modified: monaco.editor.createModel(change.newContent, detectLanguage(change.path)),
   });
 
   filePathEl.textContent = change.path;
   overlay.classList.add("visible");
+  updateDiffCounter();
+}
+
+function updateDiffCounter() {
+  const counter = document.getElementById("diff-queue-counter");
+  const acceptAllBtn = document.getElementById("diff-accept-all-btn");
+  const total = diffQueue.length + (pendingChange ? 1 : 0);
+  if (counter) {
+    counter.textContent = total > 1 ? `${total} files changed` : "";
+    counter.style.display = total > 1 ? "inline" : "none";
+  }
+  if (acceptAllBtn) {
+    acceptAllBtn.style.display = total > 1 ? "inline-block" : "none";
+  }
+}
+
+async function applyOneChange(change) {
+  try {
+    await fetchJSON(`${STUDIO_API}/api/studio/file-content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: change.path, content: change.newContent }),
+    });
+    const openTab = openTabs.find((tab) => tab.path === change.path);
+    if (openTab) {
+      openTab.content = change.newContent;
+      if (activeTab?.path === change.path) editor?.setValue(change.newContent);
+    }
+    addTerminalLine(`✅ Applied ${change.path}`, "success");
+  } catch (err) {
+    addTerminalLine(`❌ Failed to apply ${change.path}: ${err.message}`, "error");
+  }
+}
+
+async function showNextDiff() {
+  if (diffQueue.length > 0) {
+    const next = diffQueue.shift();
+    pendingChange = null;
+    await showDiffPreview(next);
+  } else {
+    closeDiffPreview();
+    await loadFileTree();
+  }
 }
 
 window.acceptDiff = async function () {
   if (!pendingChange) return;
+  await applyOneChange(pendingChange);
+  pendingChange = null;
+  await showNextDiff();
+};
 
-  try {
-    await fetchJSON(`${STUDIO_API}/api/studio/file-content`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        path: pendingChange.path,
-        content: pendingChange.newContent,
-      }),
-    });
-
-    const openTab = openTabs.find((tab) => tab.path === pendingChange.path);
-    if (openTab) {
-      openTab.content = pendingChange.newContent;
-      if (activeTab?.path === pendingChange.path) {
-        editor.setValue(pendingChange.newContent);
-      }
-    }
-
-    await loadFileTree();
-    addTerminalLine(`✅ Applied proposed changes to ${pendingChange.path}`, "success");
-    closeDiffPreview();
-  } catch (err) {
-    addTerminalLine(`❌ Failed to apply diff: ${err.message}`, "error");
+window.acceptAllDiffs = async function () {
+  // Accept current + all queued
+  if (pendingChange) {
+    await applyOneChange(pendingChange);
+    pendingChange = null;
   }
+  for (const change of diffQueue) {
+    await applyOneChange(change);
+  }
+  diffQueue = [];
+  closeDiffPreview();
+  await loadFileTree();
+  addTerminalLine(`✅ All changes applied`, "success");
 };
 
 window.rejectDiff = async function () {
   if (pendingChange) {
-    // For CLI-originated changes, restore the old content (file was already written to disk by CLI)
     const openTab = openTabs.find((tab) => tab.path === pendingChange.path);
-    if (openTab && openTab.content !== pendingChange.newContent) {
-      // Old content is still in the tab — restore it to disk
+    if (openTab && pendingChange.oldContent !== undefined && openTab.content !== pendingChange.newContent) {
       try {
         await fetchJSON(`${STUDIO_API}/api/studio/file-content`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: pendingChange.path, content: openTab.content }),
+          body: JSON.stringify({ path: pendingChange.path, content: pendingChange.oldContent }),
         });
-        if (activeTab?.path === pendingChange.path) {
-          editor?.setValue(openTab.content);
-        }
-        addTerminalLine(`↩️ Reverted ${pendingChange.path} to previous version`, "warning");
+        if (activeTab?.path === pendingChange.path) editor?.setValue(pendingChange.oldContent);
+        addTerminalLine(`↩️ Reverted ${pendingChange.path}`, "warning");
       } catch {
-        addTerminalLine(`⚠️ Could not revert ${pendingChange.path} — file may have the CLI's version`, "error");
+        addTerminalLine(`⚠️ Could not revert ${pendingChange.path}`, "error");
       }
     } else {
-      addTerminalLine(`🗑️ Dismissed proposed changes for ${pendingChange.path}`, "warning");
+      addTerminalLine(`🗑️ Dismissed ${pendingChange.path}`, "warning");
     }
   }
-  closeDiffPreview();
+  pendingChange = null;
+  await showNextDiff();
 };
 
 window.addEventListener("studio-themechange", () => {

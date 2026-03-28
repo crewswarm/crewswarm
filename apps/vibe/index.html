@@ -2452,9 +2452,11 @@
           <div class="diff-preview-render" id="diff-preview-render"></div>
         </div>
       </div>
-      <div class="actions">
+      <div class="actions" style="display:flex;align-items:center;gap:8px;">
         <button class="secondary" onclick="rejectDiff()">Dismiss</button>
-        <button onclick="acceptDiff()">Looks Good</button>
+        <button onclick="acceptDiff()">Accept</button>
+        <button id="diff-accept-all-btn" onclick="acceptAllDiffs()" style="display:none;background:#10b981;">Accept All</button>
+        <span id="diff-queue-counter" style="display:none;font-size:11px;color:var(--text-3);margin-left:4px;"></span>
       </div>
     </div>
   </div>
