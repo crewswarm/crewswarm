@@ -147,6 +147,23 @@ Body: PM Loop reads your ROADMAP.md and ships. Agents run in parallel waves — 
 
 Save for Week 2 — don't split attention on launch day. PH needs a dedicated tagline, gallery images, and maker comments.
 
+## HN Comment FAQ (have ready)
+
+**"How is this different from CrewAI / LangGraph / AutoGen?"**
+> Those are Python frameworks for building multi-agent systems from scratch. CrewSwarm is a ready-to-run platform — install, configure models, start building. Dashboard, IDE, CLI, messaging bridges all included. No Python, no framework code, no orchestration boilerplate.
+
+**"Why not just use Claude Code?"**
+> Claude Code is one agent, one model, one conversation. CrewSwarm runs Claude Code as one of 6 engines — plus Cursor, Codex, Gemini, OpenCode, crew-cli. Different agents use different engines. When Claude hits rate limits, your coder switches to Codex. When you need fast QA, Gemini CLI runs for free. The PM Loop plans and ships features autonomously across all of them.
+
+**"This seems over-engineered"**
+> For "fix this bug" — yes, use Claude Code directly. CrewSwarm's value shows on multi-step work: "build user auth, test it, review for security." That's 3 agents working in parallel waves, each with the right model. One agent doing all 3 sequentially is slower and more expensive.
+
+**"How does this compare to Devin?"**
+> Devin is cloud-hosted, closed-source, and expensive. CrewSwarm runs on your machine. Your code never leaves your disk. MIT licensed. Bring your own API keys — no middleman markup.
+
+**"957 tests — are they real?"**
+> Yes. `npm test` runs 731 offline. The rest are integration/E2E that need the server. All documented in docs/TESTING.md. Clone it and run them yourself.
+
 ## After launch
 
 - Monitor HN comments — respond quickly to technical questions
