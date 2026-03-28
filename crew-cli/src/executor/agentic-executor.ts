@@ -1087,6 +1087,10 @@ class JITContextTracker {
 
 async function buildRepoMapContext(task: string, projectDir: string): Promise<string> {
   try {
+    // Skip indexing for home directory or root — too large, will hang
+    const { homedir } = await import('node:os');
+    if (projectDir === homedir() || projectDir === '/') return '';
+
     const { buildCollectionIndex, searchCollection } = await import('../collections/index.js');
     const index = await buildCollectionIndex([projectDir], { includeCode: true });
     if (index.chunkCount === 0) return '';
