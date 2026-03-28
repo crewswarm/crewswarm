@@ -50,7 +50,7 @@ export function httpRequest(urlStr, { method = "GET", body = null, timeout = 500
 /**
  * Check if a service is up by hitting a URL and checking for a 2xx response.
  */
-export async function checkServiceUp(url, timeoutMs = 3000) {
+export async function checkServiceUp(url, timeoutMs = 8000) {
   try {
     const { status } = await httpRequest(url, { timeout: timeoutMs });
     return status >= 200 && status < 300;

@@ -58,7 +58,7 @@ function authHeaders() {
 describe("Health check", { timeout: 10000 }, () => {
   test("GET /health returns 200 OK", async (t) => {
     if (skipIfDown(t)) return;
-    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/health`);
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/health`, { timeout: 8000 });
     assert.equal(status, 200);
     assert.equal(data.ok, true);
     assert.equal(data.agent, "crew-lead");

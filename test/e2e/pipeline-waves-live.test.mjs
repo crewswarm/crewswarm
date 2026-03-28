@@ -88,7 +88,7 @@ if (crewLeadUp) {
       timeout: 10000,
     });
     if (data?.pipelineId) {
-      const result = await pollPipelineStatus(data.pipelineId, 30000);
+      const result = await pollPipelineStatus(data.pipelineId, 90000);
       agentReady = result.status === "completed";
     }
   } catch { /* agent backlogged or down */ }
@@ -97,7 +97,7 @@ if (crewLeadUp) {
 const SKIP = !crewLeadUp
   ? "crew-lead not running on :5010"
   : !agentReady
-    ? "crew-coder agent backlogged or unavailable (warm-up task didn't complete in 30s)"
+    ? "crew-coder agent backlogged or unavailable (warm-up task didn't complete in 90s)"
     : false;
 
 describe("pipeline-waves — parallel execution", { skip: SKIP, timeout: 120000 }, () => {
