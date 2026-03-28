@@ -583,6 +583,11 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   let auditSeq = 0;
   let checkpointEnabled = true;
 
+  // Warn if running from home directory (too broad, will be slow)
+  if (projectDir === homedir()) {
+    console.log(chalk.yellow('\n  ⚠ Running from home directory (~). For best results, cd into a project folder first.\n'));
+  }
+
   // Lazy-load repo bootstrap (don't block cold start)
   let repoBootstrap: RepoBootstrap = { projectDir, topEntries: [], docs: [], keyFiles: [], readmeSummary: '' };
   const repoBootstrapPromise = buildRepoBootstrap(projectDir).then(b => { repoBootstrap = b; }).catch(() => {});

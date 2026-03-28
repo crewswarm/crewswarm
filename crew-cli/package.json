@@ -1,6 +1,6 @@
 {
   "name": "crewswarm-cli",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Multi-model AI coding CLI with 34+ tools, multi-agent swarm, and real-time streaming — works with GPT, Claude, Gemini, Grok, DeepSeek, and more",
   "type": "module",
   "main": "dist/crew.mjs",
