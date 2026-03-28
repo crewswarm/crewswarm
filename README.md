@@ -3,7 +3,7 @@
 **The only multi-engine AI coding platform.** Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. Parallel agents. Persistent sessions. No vendor lock-in.
 
 [![npm version](https://img.shields.io/npm/v/crewswarm)](https://www.npmjs.com/package/crewswarm)
-[![Tests](https://img.shields.io/badge/tests-929%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-957%20passed-brightgreen)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org)
 [![Website](https://img.shields.io/badge/website-crewswarm.ai-blue)](https://crewswarm.ai)
@@ -161,7 +161,7 @@ crewswarm                    # Start all services
 crewswarm pm-loop            # Run autonomous PM loop
 npm run doctor               # Preflight check
 npm run restart-all          # Restart the stack
-npm test                     # Run 929 tests
+npm test                     # Run 957 tests
 crew exec "Build X"          # Send task via CLI
 ```
 
