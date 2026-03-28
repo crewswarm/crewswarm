@@ -2027,7 +2027,8 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
                 model: dispatchOpts.model,
                 onToolCall,
                 conversationContext,
-                sessionId: dispatchOpts.sessionId
+                sessionId: dispatchOpts.sessionId,
+                deferApply: !replState.autoApply // In manual/assist mode, defer so REPL can show diff
               }),
               policy
             ))

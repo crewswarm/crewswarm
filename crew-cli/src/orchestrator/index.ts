@@ -608,6 +608,7 @@ export class Orchestrator {
       conversationContext?: string;
       sessionId?: string;
       verbose?: boolean;
+      deferApply?: boolean;
     } = {}
   ): Promise<any> {
     try {
@@ -618,7 +619,8 @@ export class Orchestrator {
       const result = await this.pipeline.execute({
         userInput: fullTask,
         sessionId: options.sessionId || 'crew-cli',
-        context: options.conversationContext
+        context: options.conversationContext,
+        deferApply: options.deferApply
       });
 
       return {

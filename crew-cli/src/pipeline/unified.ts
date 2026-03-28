@@ -29,6 +29,7 @@ export interface L1Request {
   userInput: string;
   context?: string;
   sessionId: string;
+  deferApply?: boolean; // If true, don't auto-flush sandbox — let caller handle preview/apply
   resume?: {
     fromPhase?: 'plan' | 'execute' | 'validate';
     priorPlan?: L2Plan;
@@ -825,10 +826,14 @@ If output has blockers, set approved=false.`,
    * Workers stage files via write_file/edit tools → sandbox.addChange(),
    * but those changes need to be flushed to disk after execution.
    */
-  private async flushSandbox(): Promise<void> {
+  private async flushSandbox(request?: L1Request): Promise<void> {
     if (!this.sandbox) return;
     const pending = this.sandbox.getPendingPaths();
     if (pending.length === 0) return;
+    if (request?.deferApply) {
+      this.logger.info(`${pending.length} file(s) staged — deferred apply (caller will preview): ${pending.join(', ')}`);
+      return; // Don't apply — let REPL show diff preview first
+    }
     await this.sandbox.apply();
     this.logger.info(`Applied ${pending.length} staged file(s) to disk: ${pending.join(', ')}`);
   }
@@ -1194,7 +1199,7 @@ If output has blockers, set approved=false.`,
         totalCost = result.cost;
 
         // Apply any tool-based file writes staged during worker execution
-        await this.flushSandbox();
+        await this.flushSandbox(request);
 
         // Parse and apply file commands from the output
         const { parseDirectFileCommands } = await import('../cli/file-commands.js');
@@ -1245,7 +1250,7 @@ If output has blockers, set approved=false.`,
         totalCost = result.cost;
 
         // Apply any tool-based file writes staged during worker execution
-        await this.flushSandbox();
+        await this.flushSandbox(request);
 
         // Parse and apply file commands from the output
         const { parseDirectFileCommands: parseDirectCmds } = await import('../cli/file-commands.js');
@@ -1294,7 +1299,7 @@ If output has blockers, set approved=false.`,
           totalCost = result.cost;
 
           // Apply any tool-based file writes staged during worker execution
-          await this.flushSandbox();
+          await this.flushSandbox(request);
 
           // Parse and apply file commands from the output
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
@@ -1337,7 +1342,7 @@ If output has blockers, set approved=false.`,
           contextCharsSaved = Number(metrics?.contextCharsSaved || 0);
 
           // Apply any tool-based file writes staged during worker execution
-          await this.flushSandbox();
+          await this.flushSandbox(request);
 
           // Parse and apply file commands from parallel worker outputs
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
