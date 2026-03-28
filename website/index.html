@@ -2063,6 +2063,46 @@ const app = express();
             Gemini, Codex, and OpenCode — built in one session. Switch engines mid-conversation, keep your context.</p>
         </div>
       </div>
+
+      <!-- Real workflow demo -->
+      <div style="max-width: 700px; margin: 2rem auto 0;">
+        <h3 style="text-align: center; font-size: 1.1rem; margin-bottom: 1.5rem; color: var(--text-1);">How you actually use it</h3>
+        <div style="display: grid; gap: 0;">
+          <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: 12px 12px 0 0; background: var(--bg-card);">
+            <span style="font-size: 0.7rem; color: var(--accent); font-weight: 700; font-family: 'SF Mono', monospace;">1</span>
+            <div>
+              <div style="font-size: 0.9rem; font-weight: 600;">"Build a weather dashboard"</div>
+              <div style="font-size: 0.75rem; color: var(--text-3);">crew-coder + crew-coder-front run in parallel (Wave 1)</div>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-3); font-family: 'SF Mono', monospace;">79s</span>
+          </div>
+          <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; padding: 1rem 1.25rem; border: 1px solid var(--border); border-top: none; background: var(--bg-card);">
+            <span style="font-size: 0.7rem; color: var(--accent); font-weight: 700; font-family: 'SF Mono', monospace;">2</span>
+            <div>
+              <div style="font-size: 0.9rem; font-weight: 600;">"Polish the UI"</div>
+              <div style="font-size: 0.75rem; color: var(--text-3);">crew-frontend applies dark theme, hover effects, responsive grid</div>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-3); font-family: 'SF Mono', monospace;">95s</span>
+          </div>
+          <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; padding: 1rem 1.25rem; border: 1px solid var(--border); border-top: none; background: var(--bg-card);">
+            <span style="font-size: 0.7rem; color: var(--accent); font-weight: 700; font-family: 'SF Mono', monospace;">3</span>
+            <div>
+              <div style="font-size: 0.9rem; font-weight: 600;">"Add error handling"</div>
+              <div style="font-size: 0.75rem; color: var(--text-3);">crew-fixer adds try/catch, loading states, user-friendly error messages</div>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-3); font-family: 'SF Mono', monospace;">~30s</span>
+          </div>
+          <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; padding: 1rem 1.25rem; border: 1px solid var(--border); border-top: none; border-radius: 0 0 12px 12px; background: var(--bg-card);">
+            <span style="font-size: 0.7rem; color: var(--accent); font-weight: 700; font-family: 'SF Mono', monospace;">4</span>
+            <div>
+              <div style="font-size: 0.9rem; font-weight: 600;">"Review for security"</div>
+              <div style="font-size: 0.75rem; color: var(--text-3);">crew-security audits XSS, injection, API key exposure</div>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-3); font-family: 'SF Mono', monospace;">~20s</span>
+          </div>
+        </div>
+        <p style="text-align: center; font-size: 0.8rem; color: var(--text-3); margin-top: 1rem;">Four agents, four jobs, real files on disk. Each does what it's best at.</p>
+      </div>
     </div>
   </section>
 
