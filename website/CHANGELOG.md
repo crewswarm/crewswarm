@@ -66,9 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0-beta] - 2026-03-04
 
-### 🎉 Public Beta Release
+### Internal Beta
 
-First public release of crewswarm — PM-led multi-agent orchestration for software development.
+Initial beta milestone — PM-led multi-agent orchestration for software development.
 
 ### Added
 
