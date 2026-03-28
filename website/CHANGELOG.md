@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.2-beta] - 2026-03-27
 
 ### Added
+- Native session resume for all 6 CLI engines (Claude `--resume`, Cursor `--resume`, Gemini `--resume`, Codex resume, OpenCode `--continue`)
+- Clear session button in Vibe + API endpoint
+- 21 new E2E tests (multi-engine dispatch, chat passthrough, session resume, cron workflow, PM loop multi-engine)
 - 12 new LLM providers: Together, HuggingFace, Venice, Moonshot, MiniMax, Volcengine, Qianfan, Fireworks, OpenRouter, vLLM, SGLang (total: 24)
 - OpenClaw plugin published to npm (`crewswarm-openclaw-plugin`) — 22 agents accessible from OpenClaw's 336K user base
 - OpenClaw API key migration in install.sh — auto-detects `~/.openclaw/openclaw.json`
@@ -28,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard service status flapping: bumped timeouts (portListening 350ms→2s, httpOk 900ms→3s)
 - Dashboard restart script: targeted kill prevents cascading service deaths
 - WhatsApp bridge: `@lid` JID allowlist matching (self-chat messages used wrong format)
+- WhatsApp bridge: stop AI replying to other people's @lid chats
+- Stale session auto-cleanup on resume failure
+- `--bare` flag removed from Claude Code runner (was causing "Not logged in")
+- `@whiskeysockets/baileys` moved to optionalDependencies (npm install works without git)
+- Dashboard engine labels fixed (direct-llm, claude-code, gemini-cli, crew-cli)
+- Gemini CLI updated 0.34.0 → 0.35.2 (fixed sysctl crash)
+- crew-cli projectDir string guard (fixed "path argument" error)
 - Removed hardcoded Cursor engine from crew-orchestrator dispatch
 - Claude Code stale session resume causing "no text output" — dispatch tasks now start fresh
 - Vibe IDE: added `--output-format stream-json --verbose` for Claude Code + stream parser
@@ -42,11 +52,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Relinked `crew` binary to repo (was pointing to stale Desktop copy)
 
 ### Website
+- Hero rewrite, competitor table, rate limits section, per-agent model pricing
+- Quickstart video, pricing section, proof points, GitHub badge
 - Mobile-ready: zero horizontal overflow, all grids collapse on mobile
 - Performance: mascot 69KB→48KB, favicon PNG→WebP 46KB→11KB, fetchpriority on LCP
 - Removed demo script section, fake testimonials replaced with AI engine quotes
 - CLI page rewritten: 7 commands, 3-tier pipeline diagram, correct npm package name
-- Case studies updated with real benchmark data
+- Case studies updated with real benchmark data (17s weather dashboard, VS Code 3-model benchmark)
+- SEO optimization across all pages
+
+### Tests
+- 957 total tests, 0 failures (up from 731)
 
 ## [0.8.1-beta] - 2026-03-25
 
