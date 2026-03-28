@@ -29,6 +29,9 @@ RUN printf 'server {\n\
         add_header Content-Type application/xml;\n\
         add_header Cache-Control "public, max-age=3600";\n\
     }\n\
+    location = /index.html {\n\
+        return 301 /;\n\
+    }\n\
     location ~* \\.md$ {\n\
         return 301 https://github.com/crewswarm/crewswarm;\n\
     }\n\
