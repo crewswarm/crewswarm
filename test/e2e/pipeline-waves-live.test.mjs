@@ -134,19 +134,9 @@ describe("pipeline-waves — sequential waves", { skip: SKIP, timeout: 120000 },
   });
 });
 
-describe("pipeline-waves — stub tests", { timeout: 10000 }, () => {
-  it("applies quality gate if crew-qa fails", (t) => {
-    t.skip("Quality gate logic tested in unit tests");
-  });
-
-  it("extends timeout when agent shows activity", (t) => {
-    t.skip("Timeout extension tested in unit tests");
-  });
-
-  it("routes through Cursor CLI when toggle ON", (t) => {
-    t.skip("Cursor CLI routing tested via engine-routing tests");
-  });
-});
+// Quality gate, timeout extension, and Cursor CLI routing are covered by unit tests:
+// - test/unit/wave-dispatcher.test.mjs
+// - test/unit/engine-routing.test.mjs
 
 describe("wave dispatcher integration", { skip: SKIP, timeout: 30000 }, () => {
   it("GET /api/pipeline/:id returns status for a dispatched pipeline", async () => {
