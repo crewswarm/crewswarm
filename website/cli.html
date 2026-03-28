@@ -36,8 +36,8 @@
   <meta name="author" content="crewswarm" />
   <link rel="canonical" href="https://crewswarm.ai/cli.html" />
   <link rel="alternate" hreflang="en" href="https://crewswarm.ai/cli.html" />
-  <link rel="icon" type="image/png" href="favicon.png?v=3" />
-  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <link rel="icon" type="image/png" href="favicon.webp?v=4" />
+  <link rel="apple-touch-icon" href="favicon.webp?v=4" />
   <!-- JSON-LD structured data -->
   <script type="application/ld+json">
   {
@@ -86,7 +86,7 @@
   <nav role="navigation" aria-label="Main navigation">
     <div class="nav-container">
       <a class="nav-logo" href="index.html" aria-label="crewswarm home">
-        <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+        <img class="nav-logo-icon" src="favicon.webp?v=4" alt="" aria-hidden="true" />
         <span class="nav-logo-wordmark">crew<span class="nav-logo-hq">swarm</span></span>
       </a>
       <ul class="nav-links" id="navLinks" role="menubar">
@@ -127,23 +127,104 @@
 
   <section class="hero">
     <div class="hero-glow"></div>
-    <div class="hero-badge">Architecture: 3-Tier AI v2.0 · 34+ Tools · Multimodal</div>
-    <h1 class="gradient-text">High-Performance Swarms.<br />Zero Context Waste.</h1>
+    <div class="hero-badge">3-Tier Pipeline · 24 Providers · 7 Commands</div>
+    <h1 class="gradient-text">Think. Plan. Build.<br />Three tiers, one command.</h1>
     <p class="hero-sub">
-      The <strong>crew-cli</strong> is the high-fidelity execution engine for crewswarm. Built for professional
-      engineers who need multi-agent parallelism, multimodal vision, and 100% reliable local file operations.
+      <strong>crew-cli</strong> doesn't just call a model and hope. It routes your task, plans the work,
+      generates architecture docs, then executes with tool access. Different models for each tier.
     </p>
-    <p style="margin-top:1rem; text-align:center;"><a href="models.html" style="color:var(--accent);">See model board</a> · <a href="vibe.html" style="color:var(--accent);">Compare with Vibe</a> · <a href="deploy.html" style="color:var(--accent);">Deploy crewswarm</a></p>
+    <div style="margin-top: 0.75rem; display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem;">
+      <code style="color: var(--accent);">npm install -g crewswarm-cli</code>
+    </div>
 
-    <div class="terminal-window">
-      <div style="color: #58a6ff; margin-bottom: 8px;">$ crew chat --image screenshot.png "Fix the layout bug in this UI"</div>
-      <div style="color: #8b949e;">[14:30:01] 📷 Image attached: screenshot.png (image/png, 84KB)</div>
-      <div style="color: #8b949e;">[14:30:01] 🚦 Tier 1 (Router): Classifying intent → CODE_FIX</div>
-      <div style="color: #8b949e;">[14:30:02] 🗺️ Tier 2 (Planner): 3-step fix roadmap created.</div>
-      <div style="color: #8b949e;">[14:30:03] 🚀 Tier 3 (Pool): Launching 2 parallel workers...</div>
-      <div style="color: #7ee787;">[14:30:10] ⚙️ Worker 1: @@WRITE_FILE src/components/Layout.tsx</div>
-      <div style="color: #7ee787;">[14:30:12] 🩺 LSP Check: All diagnostics clean</div>
-      <div style="color: #3fb950;">[14:30:14] ✅ Success. Wall-clock: 13s</div>
+    <div class="terminal-window" style="margin-top: 2rem;">
+      <div style="color: #58a6ff; margin-bottom: 8px;">$ crew chat "Build a REST API with JWT auth"</div>
+      <div style="color: #8b949e;">[Router] → EXECUTE-DIRECT (fast model, $0.0001)</div>
+      <div style="color: #8b949e;">[Executor] Trying provider: grok</div>
+      <div style="color: #8b949e;">[Grok] cache hit: 384/844 tokens (45%)</div>
+      <div style="color: #7ee787;">  🔧 write_file(/tmp/api/server.mjs)</div>
+      <div style="color: #7ee787;">  🔧 write_file(/tmp/api/auth.mjs)</div>
+      <div style="color: #7ee787;">  🔧 run_cmd(node --test test.mjs)</div>
+      <div style="color: #3fb950;">✅ 3 files created, tests passing. Cost: $0.004</div>
+    </div>
+  </section>
+
+  <!-- COMMANDS -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Commands</div>
+        <h2>Seven ways to work</h2>
+        <p class="section-desc">Each command uses the same 3-tier pipeline underneath. Simple tasks skip planning. Complex tasks get full artifact generation.</p>
+      </div>
+      <div class="grid-2" style="margin-top: 2rem; gap: 1rem;">
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew chat</h3>
+          <p>One-shot task execution. Describe what you want, get files on disk. Routes automatically — simple tasks execute directly, complex ones get planned first.</p>
+          <code style="font-size: 0.8rem; color: var(--text-3);">crew chat "Add error handling to server.mjs" --apply</code>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew plan</h3>
+          <p>Generate 7 planning artifacts before writing code: PDD, ROADMAP, ARCH, SCAFFOLD, CONTRACT-TESTS, DOD, GOLDEN-BENCHMARKS. Dual-model validation with risk assessment.</p>
+          <code style="font-size: 0.8rem; color: var(--text-3);">crew plan "Build user auth with OAuth"</code>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew test-first</h3>
+          <p>TDD pipeline: generates tests first, implements to pass them, then validates. Catches its own bugs. Three LLM calls, ~$0.0002.</p>
+          <code style="font-size: 0.8rem; color: var(--text-3);">crew test-first "write add(a,b) with full test coverage"</code>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew validate</h3>
+          <p>Blind code review. Scores correctness, security, performance, readability, test coverage. Returns a PASS/FIX verdict with actionable items.</p>
+          <code style="font-size: 0.8rem; color: var(--text-3);">crew validate src/auth.mjs</code>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew auto</h3>
+          <p>Autonomous mode. Iterates until the task is complete — reads files, writes code, runs commands, verifies output. No human in the loop.</p>
+          <code style="font-size: 0.8rem; color: var(--text-3);">crew auto "create a greet function with tests"</code>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew repl</h3>
+          <p>Interactive session with session history, memory, tool progress, and mode switching (manual/assist/autopilot). Full readline + tab completion.</p>
+          <code style="font-size: 0.8rem; color: var(--text-3);">crew repl --mode autopilot</code>
+        </div>
+        <div class="page-card" style="grid-column: 1 / -1;">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew doctor</h3>
+          <p>Health check in 4 seconds: Node.js, Git, API keys, gateway connectivity, MCP servers, CLI updates. Suggests cheapest providers when no keys are configured.</p>
+          <code style="font-size: 0.8rem; color: var(--text-3);">crew doctor</code>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3-TIER PIPELINE -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Architecture</div>
+        <h2>The 3-tier pipeline</h2>
+        <p class="section-desc">Every task flows through three stages. Simple tasks skip straight to execution. Complex tasks get full planning with risk validation.</p>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-top: 2rem;">
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🚦</div>
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Tier 1: Router</h3>
+          <p style="font-size: 0.85rem; color: var(--text-2);">Fast, cheap model decides HOW to handle the task: direct answer, single execution, or parallel decomposition. ~$0.0001, &lt;1 second.</p>
+          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">Groq / Grok / any fast model</div>
+        </div>
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🗺️</div>
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Tier 2: Planner</h3>
+          <p style="font-size: 0.85rem; color: var(--text-2);">Generates 7 planning artifacts (PDD, ROADMAP, ARCH, SCAFFOLD, CONTRACT-TESTS, DOD, BENCHMARKS). A separate validator model checks risk.</p>
+          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">GPT / Claude / reasoning model</div>
+        </div>
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚡</div>
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Tier 3: Executor</h3>
+          <p style="font-size: 0.85rem; color: var(--text-2);">Agentic loop with 34+ tools — file I/O, shell, git, LSP, browser, web search. Writes real files, runs real commands, verifies output.</p>
+          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">Gemini / any coding model</div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -340,7 +421,7 @@
       <div
         style="background:#000; padding:2rem; border-radius:12px; font-family:monospace; color:var(--accent); border:1px solid var(--border); overflow-x: auto;">
         # Install the high-performance CLI<br />
-        <span style="color:#fff;">npm install -g @crewswarm/crew-cli</span><br /><br />
+        <span style="color:#fff;">npm install -g crewswarm-cli</span><br /><br />
         # Or run from the main repo installer<br />
         <span style="color:#fff;">git clone https://github.com/crewswarm/crewswarm && cd crewswarm && bash
           install.sh</span>
