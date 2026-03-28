@@ -499,16 +499,15 @@
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Architecture</div>
-        <h2>Code Engine, control plane, and agent runtime</h2>
-        <p class="section-desc">crewswarm runs as one stack: a <strong>Code Engine</strong> for direct CLI execution, a
-          realtime control plane for targeted dispatch, and product surfaces like the dashboard, Vibe, Telegram,
-          WhatsApp, and crewchat on top.</p>
+        <h2>6 engines, 22 agents, one RT bus</h2>
+        <p class="section-desc">crewswarm runs as one stack: <strong>6 coding engines</strong> for execution, a
+          realtime bus for agent coordination, and surfaces (dashboard, Vibe, crew-cli, Telegram, WhatsApp) on top.</p>
       </div>
       <div class="rt-flow-diagram" aria-label="Architecture flow: PM to specialists to synthesizer over RT channels">
         <div class="rt-flow-row rt-flow-pm">
           <div class="rt-flow-node rt-flow-pm-node">
-            <span class="rt-flow-label">Planning layer</span>
-            <span class="rt-flow-detail">crew-pm · roadmap → tasks</span>
+            <span class="rt-flow-label">Planning</span>
+            <span class="rt-flow-detail">crew-pm · roadmap → phased tasks</span>
           </div>
         </div>
         <div class="rt-flow-arrow">↓ <span class="rt-flow-ch">command · assign</span></div>
@@ -518,16 +517,16 @@
           <div class="rt-flow-node">crew-coder-back</div>
           <div class="rt-flow-node">crew-qa</div>
           <div class="rt-flow-node">crew-fixer</div>
+          <div class="rt-flow-node">crew-security</div>
         </div>
-        <div class="rt-flow-arrow">↓ <span class="rt-flow-ch">done · issues</span></div>
+        <div class="rt-flow-arrow">↓ <span class="rt-flow-ch">done · status</span></div>
         <div class="rt-flow-row rt-flow-synth">
           <div class="rt-flow-node rt-flow-synth-node">
-            <span class="rt-flow-label">Synthesis layer</span>
-            <span class="rt-flow-detail">crew-main · audit &amp; assemble</span>
+            <span class="rt-flow-label">Coordination</span>
+            <span class="rt-flow-detail">crew-lead · route, synthesize, reply</span>
           </div>
         </div>
-        <p class="rt-flow-caption">The RT channels (`command`, `assign`, `done`, `issues`) coordinate targeted dispatch
-          while the Code Engine handles real execution. Same stack, different layers.</p>
+        <p class="rt-flow-caption">RT bus channels (<code>command</code>, <code>assign</code>, <code>done</code>, <code>status</code>, <code>events</code>) coordinate 22 agents across 6 coding engines.</p>
       </div>
       <div class="section-header" style="margin-top: 2.5rem;">
         <h2 style="font-size: 1.35rem;">Three layers, one stack</h2>
@@ -537,30 +536,27 @@
         <div class="layer-card">
           <div class="layer-num">01</div>
           <div class="layer-content">
-            <h3>Code Engine</h3>
-            <span class="layer-tag">OpenCode · Cursor CLI · Claude Code · crew-cli · Gemini · Codex CLI</span>
-            <p>This is the execution layer. It is the part that writes files, runs commands, streams output, and gives
-              each agent a real working environment.</p>
+            <h3>Execution engines</h3>
+            <span class="layer-tag">Claude Code · Cursor CLI · Codex CLI · Gemini CLI · OpenCode · crew-cli</span>
+            <p>Six coding engines that write files, run commands, and stream output. Each agent can use a different engine. Switch from the dashboard.</p>
           </div>
         </div>
         <div class="layer-arrow">↓</div>
         <div class="layer-card">
           <div class="layer-num">02</div>
           <div class="layer-content">
-            <h3>Realtime control plane</h3>
-            <span class="layer-tag">RT bus · targeted dispatch · retries · issues</span>
-            <p>The RT layer coordinates agent daemons, targeted dispatch, retries, fanout, and bridge traffic. It is
-              infrastructure, not a fake animation layer.</p>
+            <h3>RT bus + agent bridges</h3>
+            <span class="layer-tag">WebSocket bus · targeted dispatch · retries · DLQ · wave orchestration</span>
+            <p>22 agent bridges connect via WebSocket. Targeted dispatch sends tasks to specific agents. Failed tasks retry with backoff, then hit the Dead Letter Queue.</p>
           </div>
         </div>
         <div class="layer-arrow">↓</div>
         <div class="layer-card">
           <div class="layer-num">03</div>
           <div class="layer-content">
-            <h3>Orchestration layer</h3>
-            <span class="layer-tag">crewswarm</span>
-            <p>PM planning, phased builds, PM Loop, shared memory, fault recovery, dashboard, Vibe, SwiftBar, Telegram,
-              WhatsApp, MCP, and crewchat all sit here as one coordinated product.</p>
+            <h3>Product surfaces</h3>
+            <span class="layer-tag">Dashboard · Vibe IDE · crew-cli · Telegram · WhatsApp · MCP</span>
+            <p>PM Loop, shared memory, wave orchestration, session resume, and fault recovery — accessible from any surface. Same agents, same RT bus, different interfaces.</p>
           </div>
         </div>
       </div>
