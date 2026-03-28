@@ -37,7 +37,7 @@ RUN printf 'server {\n\
         add_header Cache-Control "public, max-age=3600";\n\
     }\n\
     location ~* \\.(css|js)$ {\n\
-        add_header Cache-Control "public, max-age=300, s-maxage=0";\n\
+        add_header Cache-Control "public, max-age=86400";\n\
     }\n\
     location ~* \\.webp$ {\n\
         add_header Cache-Control "public, max-age=604800";\n\
