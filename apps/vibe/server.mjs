@@ -1369,8 +1369,25 @@ function handleCliChatLocally(req, res, body) {
       }
     },
   })
-    .then(({ exitCode, transcript }) => {
+    .then(async ({ exitCode, transcript }) => {
       if (!clientClosed) {
+        // Scan for files changed during CLI execution and notify frontend for diff preview
+        try {
+          const since = Date.now() - 120_000; // Last 2 minutes
+          const { execSync } = await import("node:child_process");
+          const sinceUnix = Math.floor(since / 1000);
+          const changedFiles = execSync(
+            `find "${projectDir}" -maxdepth 5 -type f -newermt "@${sinceUnix}" ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/.crew/*" 2>/dev/null | head -20`,
+            { encoding: "utf8", timeout: 3000 }
+          ).trim().split("\n").filter(Boolean);
+          for (const filePath of changedFiles) {
+            try {
+              const relPath = path.relative(projectDir, filePath);
+              const content = fs.readFileSync(filePath, "utf8");
+              sendSseEvent(res, { type: "file-changed", path: relPath, content });
+            } catch { /* binary or unreadable */ }
+          }
+        } catch { /* scan failed, non-fatal */ }
         sendSseEvent(res, { type: "done", exitCode, transcript });
         res.end();
       }

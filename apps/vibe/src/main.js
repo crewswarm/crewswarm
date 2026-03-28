@@ -1662,6 +1662,20 @@ async function sendChatMessage() {
                     updateStreamingChatBubble(bubble, rawTranscript, { pending: true });
                   }
                 }
+              } else if (event.type === "file-changed" && event.path && event.content) {
+                // CLI engine wrote a file — show diff preview
+                const oldContent = (activeTab?.path === event.path) ? activeTab.content : "";
+                if (oldContent !== event.content) {
+                  showDiffPreview({ path: event.path, newContent: event.content });
+                  addTerminalLine(`🔄 ${event.path} changed — diff preview shown`, "info");
+                } else {
+                  // Content same or file is new — just refresh
+                  if (activeTab?.path === event.path) {
+                    activeTab.content = event.content;
+                    editor?.setValue(event.content);
+                  }
+                  scheduleFileTreeRefresh();
+                }
               } else if (event.type === "done") {
                 exitCode = event.exitCode ?? 0;
                 const stderrTail = stderrFilter.flush();
