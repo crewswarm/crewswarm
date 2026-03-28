@@ -5,6 +5,49 @@ All notable changes to crewswarm will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2-beta] - 2026-03-27
+
+### Added
+- 12 new LLM providers: Together, HuggingFace, Venice, Moonshot, MiniMax, Volcengine, Qianfan, Fireworks, OpenRouter, vLLM, SGLang (total: 24)
+- OpenClaw plugin published to npm (`crewswarm-openclaw-plugin`) — 22 agents accessible from OpenClaw's 336K user base
+- OpenClaw API key migration in install.sh — auto-detects `~/.openclaw/openclaw.json`
+- CODE_OF_CONDUCT.md (Contributor Covenant v2.1)
+- docs/TESTING.md — all ~1,100 test cases documented across 8 suites
+- docs/ADDING-AGENTS.md — how to add new agents
+- docs/CUSTOM-SKILLS.md — API and knowledge skill creation guide
+- docs/OPENCLAW-PLUGIN.md — plugin install, config, publishing
+- Website: API reference (Redoc), blog (3 posts), changelog page, OpenClaw comparison
+- Website: 22 provider cards, npm copy button, "Works with" logo strip
+- npm auto-publish CI workflow on version tags
+- Dashboard: 9 new provider cards in models tab and setup wizard
+
+### Fixed
+- Removed all hardcoded `/Users/jeffhobbs` paths (39 files cleaned)
+- Scrubbed Telegram chat IDs from git history (`git filter-repo`)
+- `/api/health` returns liveness without auth (was 401, broke monitoring and CI)
+- Dashboard service status flapping: bumped timeouts (portListening 350ms→2s, httpOk 900ms→3s)
+- Dashboard restart script: targeted kill prevents cascading service deaths
+- WhatsApp bridge: `@lid` JID allowlist matching (self-chat messages used wrong format)
+- Removed hardcoded Cursor engine from crew-orchestrator dispatch
+- Claude Code stale session resume causing "no text output" — dispatch tasks now start fresh
+- Vibe IDE: added `--output-format stream-json --verbose` for Claude Code + stream parser
+- Reverted `--bare` flag (breaks OAuth auth)
+
+### crew-cli (0.2.4)
+- Fixed file writes: path traversal guard blocked all absolute paths — now writes directly for absolute, sandbox for relative
+- Fixed `[object Object]` response serialization — tool results now extract `.output`/`.error`
+- Fixed REPL hang from home directory — repo indexer skips `~` and `/`
+- Added all providers from `crewswarm.json` to status dashboard (was hardcoded to 6)
+- REPL mode picker: error logging instead of silent swallow
+- Relinked `crew` binary to repo (was pointing to stale Desktop copy)
+
+### Website
+- Mobile-ready: zero horizontal overflow, all grids collapse on mobile
+- Performance: mascot 69KB→48KB, favicon PNG→WebP 46KB→11KB, fetchpriority on LCP
+- Removed demo script section, fake testimonials replaced with AI engine quotes
+- CLI page rewritten: 7 commands, 3-tier pipeline diagram, correct npm package name
+- Case studies updated with real benchmark data
+
 ## [0.8.1-beta] - 2026-03-25
 
 ### Security
