@@ -14,32 +14,38 @@ Post to: https://news.ycombinator.com/submit
 
 **Title:**
 ```
-Show HN: CrewSwarm – Open-source multi-agent coding orchestration (local-first)
+Show HN: CrewSwarm – Switch between Claude, Cursor, Gemini mid-session. Open source
 ```
 
 **URL:**
 ```
-https://github.com/crewswarm/crewswarm
+https://crewswarm.ai
 ```
 
-**Text (leave blank or short):**
+**Text:**
 ```
-CrewSwarm is a local-first multi-agent orchestration platform for software development. Instead of one AI model doing everything, it runs 22 specialist agents (PM, coder, QA, security, etc.) coordinated by an autonomous PM loop.
+I kept hitting rate limits. Claude caps out, switch to Cursor, caps out, switch to Codex. Every tool locks you into one model and one conversation.
 
-Key differences from single-agent tools (Claude Code, Cursor, Codex):
-- 3-tier pipeline in crew-cli: Router → Planner → Executor (different models per tier)
-- 6 coding engines: Claude Code, Cursor, Codex, Gemini CLI, OpenCode, crew-cli
-- 24 LLM providers — mix per agent (cheap for routing, powerful for coding)
-- PM Loop reads a ROADMAP.md and ships features autonomously
-- Shared memory across all agents — no agent works blind
-- Dashboard, Vibe IDE, crew-cli, Telegram, WhatsApp — same crew, any surface
+CrewSwarm runs 6 coding engines (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, crew-cli) and 24 LLM providers on your local machine. Switch per agent, per task, mid-session. No restarts.
 
-Everything runs on your machine. Your code, your keys, no cloud proxy. MIT licensed.
+But it's more than engine switching:
+
+- 22 specialist agents (PM, coder, QA, security, fixer, etc.) with shared memory
+- crew-cli has a 3-tier pipeline: Router ($0.0001) → Planner (generates 7 docs) → Executor (writes files)
+- PM Loop reads ROADMAP.md and ships features autonomously — you describe a feature, the crew builds it
+- crew test-first: generates tests, implements, validates. TDD in one command for $0.0002
+- 731 tests passing, everything runs locally, MIT licensed
+
+Surfaces: Dashboard (localhost:4319), Vibe IDE (browser), crew-cli (terminal), Telegram, WhatsApp — same agents, any surface.
 
 npm install -g crewswarm
+
+https://crewswarm.ai
+https://github.com/crewswarm/crewswarm
+https://www.npmjs.com/package/crewswarm-cli
 ```
 
-**Best time to post:** 8-9am ET weekday (highest HN traffic)
+**Best time to post:** Wednesday April 2, 9am ET (peak HN traffic, avoids April Fools confusion)
 
 ## Twitter/X Thread
 
@@ -47,12 +53,13 @@ Post from @crewswarm (or personal account):
 
 **Tweet 1 (hook):**
 ```
-We just open-sourced CrewSwarm — a local-first multi-agent orchestration platform for software development.
+I kept hitting rate limits on Claude. Then Cursor. Then Codex.
 
-22 specialist AI agents. 6 coding engines. One crew.
+So we built CrewSwarm — switch between 6 coding engines mid-session. 24 LLM providers. 22 specialist agents. All local.
 
-Instead of one model doing everything, we split the work: PM plans, coder builds, QA tests, fixer debugs.
+Open source today.
 
+crewswarm.ai
 github.com/crewswarm/crewswarm
 ```
 
