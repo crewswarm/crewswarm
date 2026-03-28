@@ -40,7 +40,13 @@ function loadTgToken() {
 }
 
 const TOKEN = loadTgToken();
-const OWNER_CHAT_ID = 123456789; // from telegram-bridge.jsonl
+// Load owner chat ID from config (not hardcoded)
+const OWNER_CHAT_ID = (() => {
+  try {
+    const tgCfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "telegram-bridge.json"), "utf8"));
+    return tgCfg?.allowedChatIds?.[0] || parseInt(process.env.TELEGRAM_CHAT_ID || "0", 10);
+  } catch { return parseInt(process.env.TELEGRAM_CHAT_ID || "0", 10); }
+})();
 
 const SKIP = !TOKEN;
 
