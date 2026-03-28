@@ -26,23 +26,24 @@ https://crewswarm.ai
 ```
 I kept hitting rate limits. Claude caps out, switch to Cursor, caps out, switch to Codex. Every tool locks you into one model and one conversation.
 
-CrewSwarm runs 6 coding engines (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, crew-cli) and 24 LLM providers on your local machine. Switch per agent, per task, mid-session. No restarts.
+CrewSwarm runs 6 coding engines (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, crew-cli) and 24 LLM providers on your local machine. Switch per agent, mid-session. Sessions resume across engines.
 
-But it's more than engine switching:
+It's a full local dev platform, not just a CLI:
 
-- 22 specialist agents (PM, coder, QA, security, fixer, etc.) with shared memory
-- crew-cli has a 3-tier pipeline: Router ($0.0001) → Planner (generates 7 docs) → Executor (writes files)
-- PM Loop reads ROADMAP.md and ships features autonomously — you describe a feature, the crew builds it
-- crew test-first: generates tests, implements, validates. TDD in one command for $0.0002
-- 731 tests passing, everything runs locally, MIT licensed
+- Dashboard (localhost:4319) — web control plane for agents, services, models, spending
+- Vibe IDE (localhost:3333) — browser-native Monaco editor with agent chat and terminal
+- crew-cli — 3-tier pipeline: Router → Planner (generates 7 docs) → Executor
+- Telegram + WhatsApp bridges — chat with your crew from your phone
+- PM Loop — describe a feature, the crew plans, builds, tests, and ships it autonomously
 
-Surfaces: Dashboard (localhost:4319), Vibe IDE (browser), crew-cli (terminal), Telegram, WhatsApp — same agents, any surface.
+22 specialist agents run in parallel waves (PM plans → coder + QA + security execute simultaneously → fixer patches). Each agent gets its own model — cheap for routing, powerful for coding. Shared memory means no agent works blind.
+
+957 tests, 0 failures. Docker install for teams. MIT licensed. Everything local.
 
 npm install -g crewswarm
 
 https://crewswarm.ai
 https://github.com/crewswarm/crewswarm
-https://www.npmjs.com/package/crewswarm-cli
 ```
 
 **Best time to post:** Wednesday April 2, 9am ET (peak HN traffic, avoids April Fools confusion)
@@ -51,61 +52,62 @@ https://www.npmjs.com/package/crewswarm-cli
 
 Post from @crewswarm (or personal account):
 
-**Tweet 1 (hook):**
+**Tweet 1 (hook — the pain):**
 ```
 I kept hitting rate limits on Claude. Then Cursor. Then Codex.
 
-So we built CrewSwarm — switch between 6 coding engines mid-session. 24 LLM providers. 22 specialist agents. All local.
+So we built CrewSwarm — 6 coding engines, switch mid-session. Sessions resume across engines. 24 LLM providers, all local.
 
-Open source today.
-
-crewswarm.ai
-github.com/crewswarm/crewswarm
+Open source today. crewswarm.ai
 ```
 
-**Tweet 2 (the pipeline):**
+**Tweet 2 (the product — visual):**
 ```
-The crew-cli has a 3-tier pipeline that no other CLI agent has:
+It's not just a CLI. It's a full local dev platform:
 
-1. Router (fast model, $0.0001) — decides HOW to handle the task
-2. Planner — generates 7 docs (PDD, ROADMAP, ARCH) before code
-3. Executor — writes files, runs commands, verifies output
+- Dashboard: web control plane for 22 agents
+- Vibe IDE: Monaco editor + agent chat in the browser
+- crew-cli: 3-tier pipeline (Router → Planner → Executor)
+- Telegram + WhatsApp: chat with your crew from your phone
 
-Simple tasks skip planning. Complex ones get the full treatment.
-```
-
-**Tweet 3 (cost):**
-```
-Cost comparison for a real feature build:
-
-Single-agent (Claude/GPT): $3-5 per feature
-CrewSwarm: $0.004-0.05 per feature
-
-How? Cheap models for routing ($0.0001), free models for QA (Gemini CLI), expensive models only for the hard stuff.
+Same agents, any surface.
 ```
 
-**Tweet 4 (engines):**
+**Tweet 3 (wave orchestration — speed):**
 ```
-6 coding engines, your choice per agent:
-- Claude Code (reasoning)
-- Cursor CLI (fast edits)
-- Codex CLI (sandboxed)
-- Gemini CLI (free tier)
-- OpenCode (any provider)
-- crew-cli (3-tier pipeline)
+Single-agent tools do everything in sequence. CrewSwarm runs agents in parallel waves:
 
-Switch from the dashboard. No restarts.
+Wave 1: PM plans the feature
+Wave 2: crew-coder + crew-qa + crew-security all execute simultaneously
+Wave 3: crew-fixer patches anything that broke
+
+3x faster than one agent doing everything.
 ```
 
-**Tweet 5 (CTA):**
+**Tweet 4 (cost — money):**
 ```
+Per-agent model config = massive cost savings:
+
+- Router: Groq Llama 3.3 (free) — decides what to do
+- QA: Gemini CLI (free) — runs tests
+- Coder: Claude Sonnet — writes the code
+- PM: Grok Fast — plans quickly
+
+$0.004 per feature vs $3-5 on a single frontier model.
+```
+
+**Tweet 5 (trust — proof):**
+```
+957 tests, 0 failures.
+24 providers configured.
+Docker install for teams.
+MIT licensed.
+OpenClaw plugin for their 336K users.
+
 npm install -g crewswarm
 
-24 providers. 22 agents. 7 surfaces. MIT licensed.
-
 github.com/crewswarm/crewswarm
 crewswarm.ai
-npm: crewswarm
 ```
 
 ## Reddit
