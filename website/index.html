@@ -2052,9 +2052,9 @@ const app = express();
           <p style="font-size:0.85rem;color:var(--text-2);margin:0;">Same prompt, three models: DeepSeek (929 lines), Grok (194 lines), Gemini (159 lines). Each produced a working VS Code extension with chat panel, status bar, and WebSocket connection. Two patches to ship the best one.</p>
         </div>
         <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:1.5rem;">
-          <div style="font-size:2rem;font-weight:700;color:var(--accent);margin-bottom:0.25rem;">79 sec</div>
+          <div style="font-size:2rem;font-weight:700;color:var(--accent);margin-bottom:0.25rem;">17 sec</div>
           <div style="font-weight:600;margin-bottom:0.5rem;">Weather Dashboard</div>
-          <p style="font-size:0.85rem;color:var(--text-2);margin:0;">207 lines of working code — HTML + CSS + JS. Claude Code and Cursor CLI ran in parallel across 2 waves. Open it in a browser and it works. Real app, not a demo.</p>
+          <p style="font-size:0.85rem;color:var(--text-2);margin:0;">149 lines — HTML + CSS + JS. One command via crew-cli on Grok. Dark theme, city search, live weather from wttr.in. Open it in a browser and it works.</p>
         </div>
         <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:1.5rem;">
           <div style="font-size:2rem;font-weight:700;color:var(--accent);margin-bottom:0.25rem;">6 engines</div>
@@ -2074,15 +2074,15 @@ const app = express();
               <div style="font-size: 0.9rem; font-weight: 600;">"Build a weather dashboard"</div>
               <div style="font-size: 0.75rem; color: var(--text-3);">crew-coder + crew-coder-front run in parallel (Wave 1)</div>
             </div>
-            <span style="font-size: 0.75rem; color: var(--text-3); font-family: 'SF Mono', monospace;">79s</span>
+            <span style="font-size: 0.75rem; color: var(--text-3); font-family: 'SF Mono', monospace;">17s</span>
           </div>
           <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; padding: 1rem 1.25rem; border: 1px solid var(--border); border-top: none; background: var(--bg-card);">
             <span style="font-size: 0.7rem; color: var(--accent); font-weight: 700; font-family: 'SF Mono', monospace;">2</span>
             <div>
               <div style="font-size: 0.9rem; font-weight: 600;">"Polish the UI"</div>
-              <div style="font-size: 0.75rem; color: var(--text-3);">crew-frontend applies dark theme, hover effects, responsive grid</div>
+              <div style="font-size: 0.75rem; color: var(--text-3);">crew-frontend applies gradients, glassmorphism, animations</div>
             </div>
-            <span style="font-size: 0.75rem; color: var(--text-3); font-family: 'SF Mono', monospace;">95s</span>
+            <span style="font-size: 0.75rem; color: var(--text-3); font-family: 'SF Mono', monospace;">36s</span>
           </div>
           <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; padding: 1rem 1.25rem; border: 1px solid var(--border); border-top: none; background: var(--bg-card);">
             <span style="font-size: 0.7rem; color: var(--accent); font-weight: 700; font-family: 'SF Mono', monospace;">3</span>
