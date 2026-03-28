@@ -37,6 +37,7 @@ let chatMode = "crew-lead"; // 'crew-lead', 'direct', or 'cli'
 let selectedAgent = null;
 let ws = null;
 let watchWs = null; // WebSocket for CLI file changes
+let cliTaskActive = false; // True while a CLI engine is working (for diff preview)
 let crewLeadEvents = null;
 let crewLeadEventsReconnectTimer = null;
 let lastAppendedAssistantContent = "";
@@ -1493,6 +1494,9 @@ async function sendChatMessage() {
   renderImagePreview();
   lastAppendedUserContent = message;
 
+  // Track CLI task for diff preview
+  cliTaskActive = true;
+
   // Typing indicator
   const typingDiv = document.createElement("div");
   typingDiv.id = "typing-indicator";
@@ -1821,7 +1825,9 @@ async function sendChatMessage() {
     }
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
+    cliTaskActive = false;
   } catch (err) {
+    cliTaskActive = false;
     document.getElementById("typing-indicator")?.remove();
     // sourceInfo is now accessible here since it's declared outside the try block
     const respondingAgent = getErrorBubbleAgentId();
@@ -2463,11 +2469,29 @@ window.acceptDiff = async function () {
   }
 };
 
-window.rejectDiff = function () {
-  addTerminalLine(
-    `🗑️ Dismissed proposed changes for ${pendingChange?.path}`,
-    "warning",
-  );
+window.rejectDiff = async function () {
+  if (pendingChange) {
+    // For CLI-originated changes, restore the old content (file was already written to disk by CLI)
+    const openTab = openTabs.find((tab) => tab.path === pendingChange.path);
+    if (openTab && openTab.content !== pendingChange.newContent) {
+      // Old content is still in the tab — restore it to disk
+      try {
+        await fetchJSON(`${STUDIO_API}/api/studio/file-content`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: pendingChange.path, content: openTab.content }),
+        });
+        if (activeTab?.path === pendingChange.path) {
+          editor?.setValue(openTab.content);
+        }
+        addTerminalLine(`↩️ Reverted ${pendingChange.path} to previous version`, "warning");
+      } catch {
+        addTerminalLine(`⚠️ Could not revert ${pendingChange.path} — file may have the CLI's version`, "error");
+      }
+    } else {
+      addTerminalLine(`🗑️ Dismissed proposed changes for ${pendingChange.path}`, "warning");
+    }
+  }
   closeDiffPreview();
 };
 
@@ -2595,8 +2619,15 @@ function connectStudioWatch() {
         // File changed by CLI
         addTerminalLine(`🔄 ${msg.path} updated by CLI`, "info");
 
-        // If file is currently open in editor, reload it
-        if (activeTab && activeTab.path === msg.path && msg.content) {
+        // If file is open in editor AND a CLI task is active, show diff preview
+        if (cliTaskActive && activeTab && activeTab.path === msg.path && msg.content) {
+          const oldContent = activeTab.content || "";
+          if (oldContent !== msg.content) {
+            showDiffPreview({ path: msg.path, newContent: msg.content });
+            addTerminalLine(`  ↳ Diff preview shown — accept or dismiss`, "info");
+          }
+        } else if (activeTab && activeTab.path === msg.path && msg.content) {
+          // No active task — silently reload as before
           activeTab.content = msg.content;
           editor?.setValue(msg.content);
           addTerminalLine(`  ↳ Reloaded in editor`, "success");
@@ -2605,7 +2636,13 @@ function connectStudioWatch() {
         // Refresh file tree to show changes
         scheduleFileTreeRefresh();
       } else if (msg.type === "file-created") {
-        addTerminalLine(`✨ ${msg.path} created by CLI`, "success");
+        // For new files during active CLI task, show diff (old content is empty)
+        if (cliTaskActive && msg.content) {
+          showDiffPreview({ path: msg.path, newContent: msg.content });
+          addTerminalLine(`✨ ${msg.path} created by CLI — diff preview shown`, "success");
+        } else {
+          addTerminalLine(`✨ ${msg.path} created by CLI`, "success");
+        }
         scheduleFileTreeRefresh();
       } else if (msg.type === "file-deleted") {
         addTerminalLine(`🗑️  ${msg.path} deleted by CLI`, "warning");
