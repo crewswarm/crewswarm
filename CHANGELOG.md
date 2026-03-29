@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Git worktree isolation**: new `tools/worktree.ts` with `enter_worktree`, `exit_worktree`, `merge_worktree`, `list_worktrees` tools — agents work in isolated git worktrees on separate branches, auto-cleanup if no changes, squash merge back if changes made
 - **Dashboard env vars**: added `CREW_NO_STREAM`, `CREW_HOOKS_FILE`, `CREW_MAX_SESSION_TOKENS` to Settings → crew-cli section
 - **Session manager**: `setSessionId()` method for switching sessions on `/resume`
+- **tmux-bridge session layer**: persistent tmux sessions that survive across pipeline waves — agents hand off live execution context (running servers, env vars, cwd) instead of cold-starting. New `lib/bridges/tmux-bridge.mjs` wraps smux's tmux-bridge CLI; `lib/sessions/session-manager.mjs` manages session lifecycle with lock enforcement (one writer at a time), handoff, and JSONL transcripts. Opt-in via `CREWSWARM_TMUX_BRIDGE=1` or Dashboard → Settings → Engines toggle. Requires `tmux` + `smux`.
 
 ### Changed
 - crew-cli version: 0.3.0 → 0.3.1

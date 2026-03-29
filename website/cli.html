@@ -127,7 +127,7 @@
 
   <section class="hero">
     <div class="hero-glow"></div>
-    <div class="hero-badge">3-Tier Pipeline · 24 Providers · 7 Commands</div>
+    <div class="hero-badge">3-Tier Pipeline · 24 Providers · 8 Commands</div>
     <h1 class="gradient-text">Think. Plan. Build.<br />Three tiers, one command.</h1>
     <p class="hero-sub">
       <strong>crew-cli</strong> doesn't just call a model and hope. It routes your task, plans the work,
@@ -154,7 +154,7 @@
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Commands</div>
-        <h2>Seven ways to work</h2>
+        <h2>Eight ways to work</h2>
         <p class="section-desc">Each command uses the same 3-tier pipeline underneath. Simple tasks skip planning. Complex tasks get full artifact generation.</p>
       </div>
       <div class="grid-2" style="margin-top: 2rem; gap: 1rem;">
@@ -185,10 +185,15 @@
         </div>
         <div class="page-card">
           <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew repl</h3>
-          <p>Interactive session with colored diff preview before applying changes, session history, memory, and mode switching (manual/assist/autopilot). <code>/preview</code> to review, <code>/apply</code> or <code>/rollback</code>.</p>
+          <p>Interactive session with colored diff preview before applying changes, session history, memory, and mode switching (manual/assist/autopilot). <code>/preview</code> to review, <code>/apply</code> or <code>/rollback</code>. <code>/sessions</code> to list past sessions, <code>/resume [id]</code> to continue one.</p>
           <code style="font-size: 0.8rem; color: var(--text-3);">crew repl --mode autopilot</code>
         </div>
-        <div class="page-card" style="grid-column: 1 / -1;">
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew apply</h3>
+          <p>Apply sandbox changes with safety gates. Blast-radius analysis blocks risky diffs. <code>--check</code> runs your test suite and <strong>parses diagnostics</strong> — TSC, ESLint, Go, Rust, pytest errors get fed back to crew-fixer for targeted retry.</p>
+          <code style="font-size: 0.8rem; color: var(--text-3);">crew apply --check "npm test" --retries 3</code>
+        </div>
+        <div class="page-card">
           <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">crew doctor</h3>
           <p>Health check in 4 seconds: Node.js, Git, API keys, gateway connectivity, MCP servers, CLI updates. Suggests cheapest providers when no keys are configured.</p>
           <code style="font-size: 0.8rem; color: var(--text-3);">crew doctor</code>
@@ -262,8 +267,12 @@
           <p>Persistent cross-session memory with MemoryBroker. Agents recall facts, decisions, and prior task results across conversations.</p>
         </div>
         <div class="page-card">
-          <h3>CI Auto-Fix</h3>
-          <p>Link the CLI to your test suite. <code>crew ci-fix --check "npm test"</code> automatically iterates until your tests pass.</p>
+          <h3>Diagnostic Lint-Loop</h3>
+          <p>Not just pass/fail — <code>--check</code> <strong>parses error output</strong> into structured diagnostics (TSC, ESLint, GCC, Go, Rust, pytest). Feeds specific <code>file:line:col</code> errors to crew-fixer. Stops early when no progress is detected.</p>
+        </div>
+        <div class="page-card">
+          <h3>Checkpoint-at-Interval</h3>
+          <p>Git stash snapshots every 60 seconds during long pipeline runs. Roll back to any point via <code>git stash list</code>. Configure with <code>CREW_CHECKPOINT_INTERVAL_MS</code>. Zero overhead when idle.</p>
         </div>
         <div class="page-card">
           <h3>Speculative Explore</h3>
@@ -279,11 +288,27 @@
         </div>
         <div class="page-card">
           <h3>🔄 Session Continuity</h3>
-          <p>Full conversation history persists across REPL sessions via <code>SessionManager</code>. Resume where you left off with <code>/history</code>, <code>/status</code>, and <code>/clear</code>.</p>
+          <p>Full conversation history persists across REPL sessions via <code>SessionManager</code>. Resume where you left off with <code>/history</code>, <code>/status</code>, <code>/clear</code>, <code>/sessions</code>, and <code>/resume</code>.</p>
         </div>
         <div class="page-card">
           <h3>🩺 crew doctor</h3>
           <p>Built-in diagnostics: checks Node.js version, Git, API keys, gateway, MCP, and CLI updates in under 4 seconds. Suggests cheapest providers when no keys are set.</p>
+        </div>
+        <div class="page-card">
+          <h3>🔄 Session Resume</h3>
+          <p><code>/sessions</code> lists past sessions, <code>/resume [id]</code> picks up where you left off. JSONL crash-safe transcripts survive mid-write crashes — no lost context, ever.</p>
+        </div>
+        <div class="page-card">
+          <h3>🪝 Tool Hooks</h3>
+          <p><code>.crew/hooks.json</code> lets you intercept any tool call. <strong>PreToolUse</strong> can block dangerous commands, <strong>PostToolUse</strong> can log everything. Shell commands with JSON on stdin.</p>
+        </div>
+        <div class="page-card">
+          <h3>🌳 Git Worktree Isolation</h3>
+          <p>Agents work in isolated git worktrees on separate branches. No file conflicts during parallel work. Auto-cleanup if no changes, squash merge if changes made.</p>
+        </div>
+        <div class="page-card">
+          <h3>📊 Token-Aware Compaction</h3>
+          <p>Context compression adapts to how full your context window is. Light compression at 50%, aggressive at 75%+. Per-model context window awareness keeps agents sharp.</p>
         </div>
       </div>
     </div>
@@ -345,10 +370,10 @@
             <tr>
               <td>Parallel Dispatch</td>
               <td class="check-val">✅ 21 Specialists</td>
+              <td class="check-val">✅ Subagents</td>
               <td class="cross-val">❌ Single Agent</td>
               <td class="cross-val">❌ Single Agent</td>
-              <td class="cross-val">❌ Single Agent</td>
-              <td class="cross-val">❌ Sequential</td>
+              <td class="check-val">✅ Subagents</td>
             </tr>
             <tr>
               <td>Agent Memory</td>
@@ -359,12 +384,12 @@
               <td class="cross-val">❌ Per-Session</td>
             </tr>
             <tr>
-              <td>CI Auto-fix Loop</td>
-              <td class="check-val">✅ Integrated</td>
+              <td>Diagnostic Lint-Loop</td>
+              <td class="check-val">✅ Parsed Errors</td>
               <td class="cross-val">❌ Manual</td>
               <td class="cross-val">❌ Manual</td>
               <td class="cross-val">❌ Manual</td>
-              <td class="cross-val">❌ Manual</td>
+              <td class="check-val">✅ loop_on_lints</td>
             </tr>
             <tr>
               <td>Browser Debugging</td>

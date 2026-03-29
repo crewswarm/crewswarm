@@ -39,6 +39,13 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 | `CURSOR_DEFAULT_MODEL` | — | Optional alternative default model (passthrough) |
 | `CURSOR_API_KEY` | — | Cursor CLI auth without Keychain; see [CANONICAL/CURSOR-CLI.md](CANONICAL/CURSOR-CLI.md) |
 
+## tmux-bridge sessions
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CREWSWARM_TMUX_BRIDGE` | `off` | Enable persistent tmux sessions with cross-agent handoff. Requires `tmux` + `smux` installed. Toggle via Dashboard → Settings → Engines. |
+| `SMUX_BRIDGE_BIN` | `tmux-bridge` | Path to `tmux-bridge` binary (auto-detected from `~/.smux/bin`) |
+
 ## Ports
 
 | Variable | Default |

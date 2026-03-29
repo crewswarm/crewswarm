@@ -20475,7 +20475,7 @@ function parseDiagnosticOutput(output, command) {
   const lines = output.split("\n");
   for (const line of lines) {
     let match;
-    match = line.match(/^(.+?)[:(](\d+)[,:](\d+)[):]?\s*[-–]\s*(error|warning|info)\s+(.+)/i);
+    match = line.match(/^(.+?)[:(](\d+)[,:](\d+)[):]?\s*[-–:]\s*(error|warning|info)\s+(.+)/i);
     if (!match) {
       match = line.match(/^(.+?):(\d+):(\d+):\s*(error|warning|note|fatal error):\s*(.+)/i);
     }

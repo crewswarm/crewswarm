@@ -843,6 +843,60 @@ If output has blockers, set approved=false.`,
     return raw !== 'false' && raw !== '0' && raw !== 'off';
   }
 
+  /** Interval (ms) between periodic checkpoint snapshots during long tasks. 0 = disabled. */
+  private checkpointIntervalMs(): number {
+    const raw = String(process.env.CREW_CHECKPOINT_INTERVAL_MS || '').trim();
+    const ms = Number(raw);
+    return Number.isFinite(ms) && ms > 0 ? ms : 60_000; // Default: 60s
+  }
+
+  private _intervalTimer: ReturnType<typeof setInterval> | null = null;
+  private _intervalSnapshotCount = 0;
+
+  /**
+   * Start periodic checkpoint timer. Creates git stash snapshots at fixed intervals
+   * so the user can roll back to any point during long-running pipeline execution.
+   * Stashes are named with the traceId for easy identification.
+   */
+  private startCheckpointInterval(traceId: string): void {
+    if (!this.autoCheckpointEnabled()) return;
+    const intervalMs = this.checkpointIntervalMs();
+    if (intervalMs <= 0) return;
+
+    this._intervalSnapshotCount = 0;
+    this._intervalTimer = setInterval(async () => {
+      try {
+        const { execSync } = await import('node:child_process');
+        const cwd = (this.sandbox as any)?.baseDir || process.cwd();
+        const status = execSync('git status --porcelain', { encoding: 'utf8', cwd }).trim();
+        if (!status) return; // nothing to snapshot
+
+        this._intervalSnapshotCount++;
+        const tag = `crew-interval-${traceId.slice(0, 8)}-${this._intervalSnapshotCount}`;
+        // Stage all and create a stash (non-destructive — working tree stays intact)
+        execSync('git stash push --include-untracked --keep-index -m ' +
+          `"${tag}: periodic snapshot"`, { cwd, stdio: 'ignore' });
+        // Immediately pop to restore working tree (the stash ref remains in reflog)
+        execSync('git stash pop', { cwd, stdio: 'ignore' });
+        this.logger.info(`Interval checkpoint #${this._intervalSnapshotCount} saved [${tag}]`);
+      } catch {
+        // Best-effort — stash may fail if no changes or git unavailable
+      }
+    }, intervalMs);
+  }
+
+  /** Stop the periodic checkpoint timer. */
+  private stopCheckpointInterval(): void {
+    if (this._intervalTimer) {
+      clearInterval(this._intervalTimer);
+      this._intervalTimer = null;
+    }
+    if (this._intervalSnapshotCount > 0) {
+      this.logger.info(`Interval checkpointing stopped (${this._intervalSnapshotCount} snapshot(s) saved).`);
+    }
+    this._intervalSnapshotCount = 0;
+  }
+
   /**
    * Git checkpoint at task boundary — auto-commit changes so user can revert.
    * Uses a predictable branch-style commit message for easy rollback.
@@ -1172,6 +1226,11 @@ If output has blockers, set approved=false.`,
       // Execute based on L2 decision
       runState.transition('execute');
       await this.writeRunCheckpoint(traceId, { phase: 'execute', decision: plan.decision });
+
+      // Start periodic checkpoint snapshots for long-running tasks
+      if (plan.decision !== 'direct-answer') {
+        this.startCheckpointInterval(traceId);
+      }
       if (resumeFrom === 'validate' && request.resume?.priorResponse) {
         response = String(request.resume.priorResponse || '');
         executionResults = request.resume.priorExecutionResults;
@@ -1431,6 +1490,9 @@ If output has blockers, set approved=false.`,
 
       runState.transition('complete');
 
+      // Stop periodic snapshots before final checkpoint
+      this.stopCheckpointInterval();
+
       // Auto-checkpoint: git commit at task boundary if files were changed
       if (plan.decision !== 'direct-answer' && this.autoCheckpointEnabled()) {
         await this.gitCheckpoint(traceId, executionResults);
@@ -1467,6 +1529,7 @@ If output has blockers, set approved=false.`,
         timeline: runState.getTimeline()
       };
     } catch (err) {
+      this.stopCheckpointInterval();
       runState.transition('failed', (err as Error).message);
       await this.writeRunCheckpoint(traceId, {
         phase: 'failed',

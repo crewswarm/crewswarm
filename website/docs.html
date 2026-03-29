@@ -257,6 +257,121 @@ bash install.sh</code></pre>
         </div>
       </section>
 
+      <!-- SESSION MANAGEMENT -->
+      <section class="docs-section">
+        <h2>Session Management</h2>
+        <p>The CLI persists every conversation as a crash-safe JSONL transcript. Sessions survive unexpected exits and can be resumed at any time.</p>
+
+        <div style="margin-top: 2rem;">
+          <p><strong><code>/sessions</code></strong> &mdash; List past sessions with turn count, token usage, and the first message of each conversation.</p>
+          <pre><code>crew /sessions</code></pre>
+
+          <p><strong><code>/resume [id]</code></strong> &mdash; Resume a previous session. When called without an ID, an interactive picker is displayed. Pass a session ID directly to skip the picker.</p>
+          <pre><code># Interactive picker
+crew /resume
+
+# Resume a specific session
+crew /resume abc123</code></pre>
+
+          <p><strong><code>/clear</code></strong> &mdash; Wipe the current session transcript and start fresh.</p>
+          <pre><code>crew /clear</code></pre>
+        </div>
+        <p>Transcripts are stored in JSONL format &mdash; one JSON object per line &mdash; so partial writes from crashes never corrupt the file. Each line records the role, content, timestamp, and token count.</p>
+      </section>
+
+      <!-- TOOL HOOKS -->
+      <section class="docs-section">
+        <h2>Tool Hooks</h2>
+        <p>Hooks let you intercept tool calls before or after execution. Define them in <code>.crew/hooks.json</code> at your project root.</p>
+
+        <div style="margin-top: 2rem;">
+          <p><strong>Configuration format</strong></p>
+          <pre><code>{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "shell|run_cmd",
+        "command": "node .crew/validate-shell.js",
+        "timeout": 5000
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "command": "node .crew/log-tool.js",
+        "timeout": 3000
+      }
+    ]
+  }
+}</code></pre>
+        </div>
+
+        <p><strong>PreToolUse</strong> hooks fire before a tool runs. The tool input is piped as JSON on <code>stdin</code>. Your hook script can:</p>
+        <ul style="list-style: none; padding: 0;">
+          <li style="margin-bottom: 0.75rem; padding-left: 2rem; border-left: 2px solid var(--accent);"><strong>Allow</strong> &mdash; exit 0 with no output to let the call proceed unchanged.</li>
+          <li style="margin-bottom: 0.75rem; padding-left: 2rem; border-left: 2px solid var(--accent);"><strong>Deny</strong> &mdash; exit non-zero to block the tool call entirely.</li>
+          <li style="margin-bottom: 0.75rem; padding-left: 2rem; border-left: 2px solid var(--accent);"><strong>Modify</strong> &mdash; exit 0 and write modified JSON to <code>stdout</code> to change the tool input.</li>
+        </ul>
+
+        <p><strong>PostToolUse</strong> hooks fire after a tool completes. The tool output is piped as JSON on <code>stdin</code>. Use these for logging, auditing, or triggering side effects.</p>
+
+        <p>The <code>matcher</code> field is a regex tested against the tool name. The <code>timeout</code> field (in milliseconds) kills the hook process if it exceeds the limit.</p>
+      </section>
+
+      <!-- GIT WORKTREE ISOLATION -->
+      <section class="docs-section">
+        <h2>Git Worktree Isolation</h2>
+        <p>Agents can work in an isolated Git worktree so your main working directory stays untouched.</p>
+
+        <div style="margin-top: 2rem;">
+          <p><strong><code>enter_worktree</code></strong> &mdash; Creates a new branch and a separate working directory. The agent operates entirely inside this worktree, leaving your checked-out files unchanged.</p>
+          <pre><code>crew enter_worktree feature/new-api</code></pre>
+
+          <p><strong><code>exit_worktree</code></strong> &mdash; Tears down the worktree. If no changes were made, the branch and directory are automatically cleaned up. If the branch has commits, it is kept so you can review or merge later.</p>
+          <pre><code>crew exit_worktree</code></pre>
+
+          <p><strong><code>merge_worktree</code></strong> &mdash; Merges the worktree branch back into your current branch and cleans up the worktree directory.</p>
+          <pre><code>crew merge_worktree feature/new-api</code></pre>
+        </div>
+        <p>This is especially useful for long-running or speculative tasks where you want to inspect results before they affect your working tree.</p>
+      </section>
+
+      <!-- CLI ENVIRONMENT VARIABLES -->
+      <section class="docs-section">
+        <h2>CLI Environment Variables</h2>
+        <p>These environment variables control CLI behavior. Set them in your shell profile or pass them inline.</p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th>Default</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>CREW_NO_STREAM</code></td>
+              <td><code>false</code></td>
+              <td>Set to <code>true</code> to disable streaming and receive the full response at once.</td>
+            </tr>
+            <tr>
+              <td><code>CREW_HOOKS_FILE</code></td>
+              <td><code>.crew/hooks.json</code></td>
+              <td>Path to the hooks configuration file. Override to use a custom location.</td>
+            </tr>
+            <tr>
+              <td><code>CREW_MAX_SESSION_TOKENS</code></td>
+              <td><code>100000</code></td>
+              <td>Token budget for a single session. The CLI warns and pauses when the limit is approached.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <pre><code># Example: run with streaming disabled and a 50K token budget
+CREW_NO_STREAM=true CREW_MAX_SESSION_TOKENS=50000 crew "refactor auth module"</code></pre>
+      </section>
+
       <!-- BEST PRACTICES -->
       <section class="docs-section">
         <h2>Best Practices</h2>

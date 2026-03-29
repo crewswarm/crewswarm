@@ -33,8 +33,10 @@ import {
   DISPATCH_TIMEOUT_MS,
   DISPATCH_CLAIMED_TIMEOUT_MS,
   loadCursorWavesEnabled,
-  loadClaudeCodeEnabled
+  loadClaudeCodeEnabled,
+  loadTmuxBridgeEnabled
 } from "./lib/runtime/config.mjs";
+import { _reset as resetTmuxBridge } from "./lib/bridges/tmux-bridge.mjs";
 import {
   CREWSWARM_TOOL_NAMES,
   readAgentTools,
@@ -157,6 +159,7 @@ function broadcastSSE(payload) {
 
 let _cursorWavesEnabled = loadCursorWavesEnabled();
 let _claudeCodeEnabled = loadClaudeCodeEnabled();
+let _tmuxBridgeEnabled = loadTmuxBridgeEnabled();
 
 const BG_CONSCIOUSNESS_INTERVAL_MS = Number(process.env.CREWSWARM_BG_CONSCIOUSNESS_INTERVAL_MS) || 15 * 60 * 1000;
 let BG_CONSCIOUSNESS_MODEL = (() => {
@@ -501,6 +504,15 @@ const bgConsciousnessRef = {
 };
 const cursorWavesRef = { get enabled() { return _cursorWavesEnabled; }, set enabled(v) { _cursorWavesEnabled = v; } };
 const claudeCodeRef = { get enabled() { return _claudeCodeEnabled; }, set enabled(v) { _claudeCodeEnabled = v; } };
+const tmuxBridgeRef = {
+  get enabled() { return _tmuxBridgeEnabled; },
+  set enabled(v) {
+    _tmuxBridgeEnabled = v;
+    // Sync env var and reset detection cache so tmux-bridge module picks up runtime changes
+    process.env.CREWSWARM_TMUX_BRIDGE = v ? "1" : "0";
+    resetTmuxBridge();
+  },
+};
 
 // connectRT is initialized after RT_URL/RT_TOKEN — use a mutable ref so HTTP server can call it
 let _connectRT = () => { throw new Error("connectRT not initialized yet"); };
@@ -544,6 +556,7 @@ initHttpServer({
   bgConsciousnessIntervalMs: BG_CONSCIOUSNESS_INTERVAL_MS,
   cursorWavesRef,
   claudeCodeRef,
+  tmuxBridgeRef,
 });
 createAndStartServer(PORT);
 

@@ -144,6 +144,67 @@ function extractValidationSignals(result: any, requireValidation: boolean) {
   };
 }
 
+interface ParsedDiagnostic {
+  file: string;
+  line: number;
+  column: number;
+  category: string;
+  message: string;
+}
+
+/**
+ * Parse structured diagnostics from command output.
+ * Handles common formats: TSC, ESLint, Jest, pytest, gcc/clang, Go, Rust.
+ */
+function parseDiagnosticOutput(output: string, command: string): ParsedDiagnostic[] {
+  const diagnostics: ParsedDiagnostic[] = [];
+  const seen = new Set<string>();
+  const lines = output.split('\n');
+
+  for (const line of lines) {
+    let match: RegExpMatchArray | null;
+
+    // TypeScript / ESLint: src/foo.ts(10,5): error TS2345: ...
+    // Also: src/foo.ts:10:5 - error TS2345: ...
+    match = line.match(/^(.+?)[:(](\d+)[,:](\d+)[):]?\s*[-–:]\s*(error|warning|info)\s+(.+)/i);
+    if (!match) {
+      // GCC / Clang / Go: foo.go:10:5: error: ...
+      match = line.match(/^(.+?):(\d+):(\d+):\s*(error|warning|note|fatal error):\s*(.+)/i);
+    }
+    if (!match) {
+      // Simple file:line: message (pytest, generic)
+      match = line.match(/^(.+?):(\d+):\s*(error|Error|FAIL|FAILED|E\s)(.+)/);
+      if (match) {
+        match = [match[0], match[1], match[2], '1', 'error', match[4].trim()];
+      }
+    }
+    if (!match) {
+      // Jest: "FAIL src/foo.test.ts" then indented errors — skip these for now
+      // Rust: error[E0308]: ...  at --> src/main.rs:10:5
+      match = line.match(/^\s*--> (.+?):(\d+):(\d+)/);
+      if (match) {
+        match = [match[0], match[1], match[2], match[3], 'error', 'see above'];
+      }
+    }
+
+    if (match) {
+      const key = `${match[1]}:${match[2]}:${match[5]?.slice(0, 80)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        diagnostics.push({
+          file: match[1].trim(),
+          line: Number(match[2]),
+          column: Number(match[3]) || 1,
+          category: String(match[4]).toLowerCase().startsWith('warn') ? 'warning' : 'error',
+          message: String(match[5]).trim()
+        });
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
 type SubscriptionEngineId = 'cursor' | 'claude-cli' | 'codex-cli';
 
 interface SubscriptionEngineProbe {
@@ -3916,6 +3977,7 @@ export async function main(args = []) {
     .description('Apply all pending changes in the sandbox to the filesystem')
     .argument('[branch]', 'Optional branch name to apply')
     .option('-c, --check <command>', 'Command to run after apply (e.g. "npm test")')
+    .option('--retries <n>', 'Max retry attempts for --check with diagnostic parsing (default: 3)', '3')
     .option('--risk-threshold <level>', 'Block apply when risk is >= threshold (low|medium|high)', 'high')
     .option('--force', 'Bypass risk gate', false)
     .action(async (branch, options) => {
@@ -3940,27 +4002,73 @@ export async function main(args = []) {
         logger.success(`Applied changes from branch "${active}" to: ${paths.join(', ')}`);
 
         if (options.check) {
-          logger.info(`Running check: ${options.check}`);
+          const maxRetries = Number(options.retries ?? 3);
           const { execSync } = await import('node:child_process');
-          try {
-            execSync(options.check, { stdio: 'inherit', cwd: process.cwd() });
-            logger.success('Check passed!');
-          } catch (err) {
-            logger.error(`Check failed: ${err.message}`);
-            logger.warn('Attempting auto-fix by dispatching to crew-fixer...');
+          let attempt = 0;
+          let lastOutput = '';
+          let passed = false;
+
+          while (attempt < maxRetries && !passed) {
+            attempt++;
+            logger.info(`Running check (attempt ${attempt}/${maxRetries}): ${options.check}`);
             try {
-              const fixResult = await agentRouter.dispatch(
-                'crew-fixer',
-                `The command "${options.check}" failed after applying sandbox changes to files: ${paths.join(', ')}. Diagnose and provide a fix.`,
-                {
-                  sessionId: await sessionManager.getSessionId(),
-                  project: process.cwd()
+              execSync(options.check, { stdio: 'inherit', cwd: process.cwd() });
+              logger.success('Check passed!');
+              passed = true;
+            } catch (err: any) {
+              // Capture stderr/stdout for diagnostic parsing
+              const output = String(err.stderr || err.stdout || err.message || '');
+              const diagnostics = parseDiagnosticOutput(output, options.check);
+
+              if (diagnostics.length > 0) {
+                logger.error(`Check failed with ${diagnostics.length} diagnostic(s):`);
+                for (const d of diagnostics.slice(0, 10)) {
+                  logger.warn(`  ${d.file}:${d.line} ${d.message}`);
                 }
-              );
-              logger.printWithHighlight(String(fixResult.result || ''));
-            } catch (fixError) {
-              logger.warn(`Auto-fixer failed: ${(fixError as Error).message}`);
+              } else {
+                logger.error(`Check failed: ${output.slice(0, 500)}`);
+              }
+
+              // Don't retry if output is identical to last attempt (no progress)
+              if (output === lastOutput && attempt > 1) {
+                logger.warn('No progress detected — stopping retry loop.');
+                break;
+              }
+              lastOutput = output;
+
+              if (attempt < maxRetries) {
+                logger.warn(`Dispatching crew-fixer with parsed diagnostics (attempt ${attempt})...`);
+                try {
+                  const fixPrompt = diagnostics.length > 0
+                    ? [
+                        `The command "${options.check}" failed after applying changes to: ${paths.join(', ')}.`,
+                        `${diagnostics.length} diagnostic(s) found:`,
+                        ...diagnostics.slice(0, 30).map(d =>
+                          `  ${d.file}:${d.line}:${d.column} [${d.category}] ${d.message}`
+                        ),
+                        'Fix these specific errors. Apply minimal, targeted changes only.'
+                      ].join('\n')
+                    : `The command "${options.check}" failed after applying sandbox changes to files: ${paths.join(', ')}. Output:\n${output.slice(0, 2000)}\nDiagnose and provide a fix.`;
+
+                  const fixResult = await agentRouter.dispatch(
+                    'crew-fixer',
+                    fixPrompt,
+                    {
+                      sessionId: await sessionManager.getSessionId(),
+                      project: process.cwd()
+                    }
+                  );
+                  logger.printWithHighlight(String(fixResult.result || ''));
+                } catch (fixError) {
+                  logger.warn(`Auto-fixer failed: ${(fixError as Error).message}`);
+                  break;
+                }
+              }
             }
+          }
+
+          if (!passed) {
+            logger.error(`Check failed after ${attempt} attempt(s).`);
           }
         }
       } catch (error) {

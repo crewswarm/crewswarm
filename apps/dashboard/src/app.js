@@ -181,6 +181,8 @@ import {
   loadLoopBrain,
   saveLoopBrain,
   loadEnvAdvanced,
+  loadTmuxBridge,
+  toggleTmuxBridge,
 } from "./tabs/settings-tab.js";
 import {
   initCommsTab,
@@ -1739,6 +1741,7 @@ function showSettingsTab(tab) {
     loadGlobalFallback();
     loadConfigLockStatus();
     loadCursorWaves();
+    loadTmuxBridge();
     loadAutonomousMentions();
     loadClaudeCode();
     loadCodexExecutor();
@@ -2181,6 +2184,7 @@ const ACTION_REGISTRY = {
   saveGlobalFallback,
   toggleBgConsciousness,
   toggleCursorWaves,
+  toggleTmuxBridge,
   toggleAutonomousMentions,
   toggleClaudeCode,
   toggleCodexExecutor,
@@ -2772,6 +2776,7 @@ Object.assign(window, {
   toggleAddSkill,
   toggleBgConsciousness,
   toggleCursorWaves,
+  toggleTmuxBridge,
   toggleClaudeCode,
   toggleEmojiPicker,
   updateSkillAuthFields,
