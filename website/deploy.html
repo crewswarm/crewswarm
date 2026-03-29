@@ -6,13 +6,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://cdn.simpleicons.org" crossorigin />
   <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
-  <title>Deploy crewswarm — One-Line Docker Install | crewswarm</title>
+  <title>Install crewswarm — npm, Source, or Docker | crewswarm</title>
   <meta name="description"
-    content="Deploy crewswarm via Docker, npm, or git clone. One-line Docker install with AppArmor and firewall isolation. Works on Linux, macOS, Windows, and any cloud VM." />
+    content="Install crewswarm with npm for the fastest local setup, from source for contributor workflows, or with Docker for server and team deployments." />
   <!-- Open Graph -->
-  <meta property="og:title" content="Deploy crewswarm — Docker, npm, or git clone" />
+  <meta property="og:title" content="Install crewswarm — npm, source, or Docker" />
   <meta property="og:description"
-    content="Deploy crewswarm anywhere: Docker with security isolation, local dev via git clone, or cloud VM. Linux, macOS, Windows." />
+    content="Install crewswarm with npm for most users, from source for contributors, or with Docker for secure server deployments." />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -24,9 +24,9 @@
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@crewswarm" />
-  <meta name="twitter:title" content="Deploy crewswarm — One-Line Docker Install" />
+  <meta name="twitter:title" content="Install crewswarm — npm, Source, or Docker" />
   <meta name="twitter:description"
-    content="Deploy crewswarm via Docker, npm, or git clone. Works on Linux, macOS, Windows, and any cloud VM." />
+    content="Install crewswarm with npm for most users, from source for contributors, or with Docker for secure server deployments." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <!-- SEO -->
   <meta name="robots" content="index, follow" />
@@ -62,8 +62,8 @@
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": "Deploy crewswarm — One-Line Docker Install",
-    "description": "Deploy crewswarm via Docker, npm, or git clone. One-line Docker install with AppArmor and firewall isolation. Works on Linux, macOS, Windows, and any cloud VM.",
+    "name": "Install crewswarm — npm, Source, or Docker",
+    "description": "Install crewswarm with npm for most users, from source for contributors, or with Docker for secure server deployments.",
     "url": "https://crewswarm.ai/deploy.html",
     "isPartOf": { "@type": "WebSite", "name": "crewswarm", "url": "https://crewswarm.ai/" }
   }
@@ -111,10 +111,10 @@
             <li role="none"><a href="contact.html" role="menuitem">Contact</a></li>
           </ul>
         </li>
-        <li role="none" class="nav-mobile-cta"><a href="#docker-install" class="btn btn-sm">Deploy Now</a></li>
+        <li role="none" class="nav-mobile-cta"><a href="#npm-install" class="btn btn-sm">Install Now</a></li>
       </ul>
       <div class="nav-actions">
-        <a href="#docker-install" class="btn btn-sm nav-desktop-cta">Deploy Now</a>
+        <a href="#npm-install" class="btn btn-sm nav-desktop-cta">Install Now</a>
         <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false"
           aria-controls="navLinks">
           <span></span><span></span><span></span>
@@ -126,17 +126,17 @@
   <!-- HERO -->
   <section id="hero" class="hero">
     <div class="hero-glow"></div>
-    <h1>Deploy crewswarm Anywhere</h1>
+    <h1>Install crewswarm Your Way</h1>
     <p class="hero-sub">
-      From local development to enterprise Kubernetes — secure,
-      one-line deployment with Docker isolation.
+      Start with npm for the fastest local setup, use source install for contributor workflows,
+      or choose Docker for server and team deployments.
     </p>
     <div class="hero-badge">
-      ⚡ 3 minutes • 🔒 Bank-grade security • 🌍 Linux, macOS, Windows
+      ⚡ npm for most users • 🔒 Docker for secure deployments • 🌍 Linux, macOS, Windows
     </div>
     <div class="hero-cta-row" style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
-      <a href="#docker-install" class="btn btn-primary">
-        Deploy Now (3 min) &rarr;
+      <a href="#npm-install" class="btn btn-primary">
+        Install with npm &rarr;
       </a>
       <a href="https://github.com/crewswarm/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">
         View on GitHub
@@ -149,63 +149,147 @@
   <section id="deploy-options" class="section">
     <div class="container">
       <div class="section-header">
-        <h2>Choose Your Deployment</h2>
-        <p class="section-desc">crewswarm runs anywhere. Pick the method that fits your workflow.</p>
+        <h2>Choose Your Install Path</h2>
+        <p class="section-desc">One default for most users, plus clear paths for contributors and servers.</p>
       </div>
 
       <div class="grid-3">
-        <!-- Local Development (Recommended) -->
+        <!-- npm Install (Recommended) -->
         <div class="card highlight">
-          <div class="card-badge">💻 Recommended</div>
-          <h3>Native Install</h3>
-          <p class="card-time">⚡ 2 minutes</p>
-          <p>The fastest way to run crewswarm locally with native performance.</p>
+          <div class="card-badge">Recommended for Most Users</div>
+          <h3>npm Install</h3>
+          <p class="card-time">⚡ 1 minute</p>
+          <p>The simplest way to install crewswarm locally and start the full stack.</p>
           <div class="code-block">
-            <pre><code>bash <(curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/install.sh)</code></pre>
+            <pre><code>npm install -g crewswarm
+crewswarm</code></pre>
             <button class="copy-btn">Copy</button>
           </div>
           <ul class="feature-list">
-            <li>✅ One-line install</li>
-            <li>✅ Native performance (0% overhead)</li>
-            <li>✅ Easy debugging</li>
+            <li>✅ Fastest onboarding path</li>
+            <li>✅ Best default for solo users</li>
+            <li>✅ No repo clone required</li>
           </ul>
-          <a href="https://github.com/crewswarm/crewswarm#setup" class="btn btn-primary">Learn more →</a>
+          <a href="#npm-install" class="btn btn-primary">Learn more →</a>
         </div>
 
-        <!-- Docker (Secure) -->
+        <!-- Source Install -->
         <div class="card">
-          <h3>🐳 Docker (Secure)</h3>
+          <h3>Source Install</h3>
           <p class="card-time">⚡ 3 minutes</p>
-          <p>Run via Docker with AppArmor and firewall isolation. Secure by default.</p>
+          <p>Best for contributors, local debugging, and working on crewswarm itself.</p>
           <div class="code-block">
-            <pre><code>git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
-            <button class="copy-btn"
-              data-copy="git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d">Copy</button>
+            <pre><code>git clone https://github.com/crewswarm/crewswarm
+cd crewswarm
+bash install.sh
+npm run restart-all</code></pre>
+            <button class="copy-btn">Copy</button>
           </div>
           <ul class="feature-list">
-            <li>✅ Docker + AppArmor + firewall</li>
-            <li>✅ Mult-arch (amd64/arm64)</li>
-            <li>✅ No ClawJacked vulnerability</li>
+            <li>✅ Best for contributors</li>
+            <li>✅ Full repo access for hacking and debugging</li>
+            <li>✅ Canonical local development path</li>
+          </ul>
+          <a href="#source-install" class="btn">Learn more →</a>
+        </div>
+
+        <!-- Docker -->
+        <div class="card">
+          <h3>Docker</h3>
+          <p class="card-time">⚡ 3 minutes</p>
+          <p>Best for servers, team boxes, and secure isolated deployments.</p>
+          <div class="code-block">
+            <pre><code>curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash</code></pre>
+            <button class="copy-btn">Copy</button>
+          </div>
+          <ul class="feature-list">
+            <li>✅ Safest default for deployments</li>
+            <li>✅ Isolation and restart discipline</li>
+            <li>✅ Works on cloud VMs and team hosts</li>
           </ul>
           <a href="#docker-install" class="btn">Learn more →</a>
         </div>
+      </div>
+    </div>
+  </section>
 
-        <!-- Cloud -->
-        <div class="card">
-          <h3>☁️ Cloud (AWS/GCP/DO)</h3>
-          <p class="card-time">⚡ 5 minutes</p>
-          <p>Deploy to any cloud VM with one command.</p>
-          <div class="code-block">
-            <pre><code># SSH into your VM, then:
-git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
-            <button class="copy-btn">Copy</button>
+  <!-- NPM INSTALL -->
+  <section id="npm-install" class="section bg-card">
+    <div class="container">
+      <div class="section-header">
+        <h2>npm Install (Recommended for Most Users)</h2>
+        <p class="section-desc">The fastest path for local use on a personal machine.</p>
+      </div>
+
+      <div class="install-steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Install and start</h3>
+            <div class="code-block">
+              <pre><code>npm install -g crewswarm
+crewswarm</code></pre>
+              <button class="copy-btn">Copy</button>
+            </div>
+            <p class="step-detail">
+              ✓ Installs the CLI globally<br>
+              ✓ Starts the dashboard and local services<br>
+              ✓ Best default for evaluating crewswarm quickly
+            </p>
           </div>
-          <ul class="feature-list">
-            <li>✅ Works on any cloud provider</li>
-            <li>✅ Auto-configures firewall</li>
-            <li>✅ Production-ready</li>
-          </ul>
-          <a href="#cloud-deploy" class="btn">Learn more →</a>
+        </div>
+
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Add an API key</h3>
+            <p>Open dashboard → <strong>Providers</strong> tab → Add Groq key (free)</p>
+            <p class="step-detail">
+              Get free key: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a>
+            </p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Open the main surfaces</h3>
+            <p>Dashboard at <code>http://127.0.0.1:4319</code> and Vibe at <code>http://127.0.0.1:3333</code></p>
+            <p class="step-detail">
+              Use Dashboard for setup and Vibe for coding work.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SOURCE INSTALL -->
+  <section id="source-install" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2>Source Install (Best for Contributors)</h2>
+        <p class="section-desc">Use this when you want the repo checked out locally for development or debugging.</p>
+      </div>
+
+      <div class="install-steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Clone and bootstrap</h3>
+            <div class="code-block">
+              <pre><code>git clone https://github.com/crewswarm/crewswarm
+cd crewswarm
+bash install.sh
+npm run restart-all</code></pre>
+              <button class="copy-btn">Copy</button>
+            </div>
+            <p class="step-detail">
+              ✓ Canonical contributor setup<br>
+              ✓ Full source available for edits and debugging<br>
+              ✓ Best path for hacking on crewswarm itself
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -215,8 +299,8 @@ git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compo
   <section id="docker-install" class="section bg-card">
     <div class="container">
       <div class="section-header">
-        <h2>Docker Deployment (Recommended)</h2>
-        <p class="section-desc">Secure, one-line install. Auto-configures Docker + AppArmor + firewall.</p>
+        <h2>Docker Install (Best for Servers and Teams)</h2>
+        <p class="section-desc">Use Docker when you want the safest and most isolated deployment path.</p>
       </div>
 
       <div class="install-steps">
@@ -444,9 +528,10 @@ git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compo
       </div>
 
       <div class="cta-box">
-        <h3>Ready to deploy?</h3>
+        <h3>Ready to install?</h3>
         <div class="code-block">
-          <pre><code>git clone https://github.com/crewswarm/crewswarm && cd crewswarm && docker compose up -d</code></pre>
+          <pre><code>npm install -g crewswarm
+crewswarm</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <p class="cta-links">

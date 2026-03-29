@@ -12,9 +12,9 @@ html = html.replace('<h1>One idea.<br/>One build.<br/>', '<h1>One idea.<br/>One 
 html = html.replace(/20 specialist agents/g, '21+ specialist agents');
 html = html.replace(/21-agent specialist crew/g, '21+ specialist agent crew');
 
-// 2. Add Vibe to Control Surfaces (Replacing CrewChat cs-item)
+// 2. Add Vibe to Control Surfaces (replacing crewchat cs-item)
 const crewChatCsItem = `<div class="cs-item cs-native">
-                  <strong>CrewChat</strong>
+                  <strong>crewchat</strong>
                   <span>Menu bar app — same conversation, one click away</span>
                 </div>`;
 
@@ -23,7 +23,7 @@ const vibeCsItem = `<div class="cs-item cs-native">
                   <span>Browser-native IDE with Monaco — real-time file tree + agent chat.</span>
                 </div>
                 <div class="cs-item cs-native">
-                  <strong>CrewChat v2.0</strong>
+                  <strong>crewchat v2.0</strong>
                   <span>Quick & Advanced modes — multimodal image + voice support.</span>
                 </div>`;
 

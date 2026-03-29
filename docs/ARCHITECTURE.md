@@ -11,8 +11,8 @@ System diagram, port map, and request flow.
 | RT message bus | 18889 | WebSocket pub/sub for agent coordination |
 | Code Engine | 4096 | OpenCode / Claude Code / Cursor / Codex |
 | MCP + OpenAI API | 5020 | Optional — Cursor, Claude Code, OpenCode MCP |
-| **Vibe / Studio** | 3333 | Full IDE — Monaco editor, file tree, project-aware chat (`npm run vibe`) |
-| **Studio watch server** | 3334 | CLI → Vibe live reload WebSocket (`npm run studio:watch`) |
+| **Vibe** | 3333 | Full IDE — Monaco editor, file tree, project-aware chat (`npm run vibe:start` or `npm run vibe`) |
+| **Vibe watch server** | 3334 | CLI → Vibe live reload WebSocket (`npm run vibe:watch`) |
 | WhatsApp bridge HTTP | 5015 | WhatsApp send API (`WA_HTTP_PORT`, default 5015) |
 
 ## System diagram

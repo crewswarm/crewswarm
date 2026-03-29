@@ -22,7 +22,27 @@ What it does not do by default:
 - automatically deploy arbitrary generated apps to production
 - choose a hosting platform for you
 
-## Fastest Local Install
+## Recommended Paths
+
+Use these defaults:
+
+- most users: global npm install
+- contributors: source install from a clone
+- servers and teams: Docker
+
+## Most Users: npm Install
+
+```bash
+npm install -g crewswarm
+crewswarm
+```
+
+This is the best path when you want to:
+- evaluate crewswarm quickly
+- run it locally on your machine
+- avoid cloning the repo unless you actually need the source
+
+## Contributors: Source Install
 
 Fresh machine:
 
@@ -45,6 +65,11 @@ npm run doctor
 npm run restart-all
 open http://127.0.0.1:4319
 ```
+
+Use this when you want:
+- the repo checked out locally
+- contributor workflows
+- direct access to scripts, source, and local debugging
 
 ## Cursor / Codex / Headless Install
 
@@ -74,7 +99,7 @@ This is the best path for:
 - Codex or CI bootstrapping a machine without prompts
 - remote shells where you want install + start in one shot
 
-## Docker Install
+## Servers and Teams: Docker Install
 
 For a server or team box:
 
@@ -130,9 +155,9 @@ So the current public claim should be:
 
 For most users:
 
-1. run `bash install.sh`
-2. enable MCP if using Cursor / Claude Code / OpenCode
-3. start with `npm run restart-all`
+1. run `npm install -g crewswarm`
+2. start with `crewswarm`
+3. add at least one provider key in Dashboard → Providers
 4. use Dashboard for setup
 5. use Vibe for project work
 6. use Docker only when moving to a server/team instance

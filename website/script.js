@@ -178,11 +178,11 @@ function initDocsFeed() {
     {
       icon: '🚢',
       title: 'Deployment Paths',
-      description: 'Choose between Docker, local development, Studio, and bridge integrations without digging through the repo.',
+      description: 'Choose between Docker, local development, Vibe, and bridge integrations without digging through the repo.',
       links: [
         { label: 'Docker Guide', href: 'https://github.com/crewswarm/crewswarm/blob/main/docs/docker.md' },
         { label: 'Deploy Page', href: 'deploy.html' },
-        { label: 'Vibe (Studio) README', href: 'https://github.com/crewswarm/crewswarm/blob/main/apps/vibe/README.md' }
+        { label: 'Vibe README', href: 'https://github.com/crewswarm/crewswarm/blob/main/apps/vibe/README.md' }
       ]
     },
     {

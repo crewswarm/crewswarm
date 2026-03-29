@@ -40,8 +40,8 @@ Start here. These are the maintained, authoritative guides:
 | Surface | Port | Doc |
 |---------|------|-----|
 | Dashboard | 4319 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Vibe / Studio | 3333 | [CANONICAL/SURFACES.md](CANONICAL/SURFACES.md) |
-| Studio watch | 3334 | `npm run studio:watch` — live reload WebSocket |
+| Vibe | 3333 | [CANONICAL/SURFACES.md](CANONICAL/SURFACES.md) |
+| Vibe watch | 3334 | `npm run vibe:watch` — live reload WebSocket |
 
 ## Legacy & specialized
 

@@ -400,7 +400,7 @@ These mentions are part of the shared coordination plane. Participants can hand 
 | Service | Port |
 |---|---|
 | Dashboard (Vite frontend + API) | 4319 |
-| **crewswarm Studio (optional)** | 3333 |
+| **Vibe (optional)** | 3333 |
 | crew-lead (chat + dispatch) | 5010 |
 | RT message bus | 18889 |
 | Code Engine (OpenCode / Claude Code / Cursor) | 4096 |
@@ -521,25 +521,25 @@ bash start-studio.sh
 
 **Full-screen IDE with Monaco editor + agent chat** — Cursor-style layout with file tree, editor, chat panel, and terminal. `npm run restart-all` now starts Vibe + file watcher automatically. See `apps/vibe/STUDIO-SETUP-COMPLETE.md` and `docs/CANONICAL/SURFACES.md`.
 
-**Option 3: CrewChat.app** (native macOS)
+**Option 3: crewchat.app** (native macOS)
 
 **✨ New: Multimodal Support**
 
 All platforms now support image recognition and voice transcription:
 
 - **Dashboard**: Click 📷 to upload images, 🎤 to record voice messages
-- **Vibe (Studio)**: Full coding environment with agent chat sidebar — drag/drop images, Ctrl/Cmd+V paste, or click 📷 to attach up to 3 images per message
+- **Vibe**: Full coding environment with agent chat sidebar — drag/drop images, Ctrl/Cmd+V paste, or click 📷 to attach up to 3 images per message
 - **crew-cli**: `crew chat --image photo.png "What is this?"` or `/image path.png` in REPL mode — works with Gemini, Anthropic, and OpenAI vision models
 - **Telegram**: Send photos or voice notes → bot analyzes/transcribes automatically
 - **WhatsApp**: Send images or audio → bot handles media
-- **CrewChat.app v2.0**: Native macOS app with two modes:
+- **crewchat.app v2.0**: Native macOS app with two modes:
   - **⚡️ Quick Mode**: Chat with crew-lead (conversational, AI-routed)
   - **🔧 Advanced Mode**: Direct access to specialists (crew-coder, crew-qa, crew-pm, etc.)
   - Per-agent + per-project chat history isolation
   - Engine visibility (OpenCode/Cursor CLI/Claude Code/Direct API)
   - Native image picker + AVFoundation voice recording
   - Build: `./build-crewchat.sh` (takes ~2 min with optimizations)
-  - Launch: `open -a CrewChat`
+  - Launch: `open -a crewchat`
 
 **Providers**: Groq (fast/cheap) or Gemini 2.0 Flash (best quality). Auto-selects based on API keys.
 
@@ -571,9 +571,9 @@ crew chat --image screenshot.png "What's wrong with this UI?"
 crew exec "fix all TypeScript errors" --ci
 ```
 
-CrewChat.app: sources under `apps/crewchat/`; optional build flags in `docs/CANONICAL/INSTALL.md`.  
+crewchat.app: sources under `apps/crewchat/`; optional build flags in `docs/CANONICAL/INSTALL.md`.  
 Multimodal / surfaces: `docs/CANONICAL/SURFACES.md`, `docs/CANONICAL/DASHBOARD-TABS.md`.  
-Studio (Vibe): `apps/vibe/README.md`, `apps/vibe/STUDIO-SETUP-COMPLETE.md`.
+Vibe: `apps/vibe/README.md`, `apps/vibe/STUDIO-SETUP-COMPLETE.md`.
 
 ---
 

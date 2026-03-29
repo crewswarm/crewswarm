@@ -48,7 +48,7 @@ npm run perf:audit
 ```
 
 `npm run test` runs the standalone smoke, accessibility, performance, and security checks.
-`npm run test:e2e` runs a self-contained local HTTP/API end-to-end check for the shipped Studio bundle and server routes.
+`npm run test:e2e` runs a self-contained local HTTP/API end-to-end check for the shipped Vibe bundle and server routes.
 
 ## Performance Tooling
 
@@ -60,7 +60,7 @@ python3 ../../scripts/bench/load_testing.py \
   --requests 40 \
   --concurrency 4 \
   --profile-command "npm start" \
-  --profile-output /tmp/crewswarm-studio.speedscope.json
+  --profile-output /tmp/crewswarm-vibe.speedscope.json
 ```
 
 Use `npm run perf:audit` for a browser-level audit of the shipped Vibe bundle. It boots the local Vibe server on an isolated port, captures navigation timing, transfer size, long tasks, and heap usage through Playwright + the browser Performance APIs, then writes a report to `apps/vibe/output/performance-audit.json`.

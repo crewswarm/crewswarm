@@ -37,17 +37,27 @@ npm install -g crewswarm
 crewswarm
 ```
 
-That's it. Dashboard opens at `localhost:4319`, Vibe IDE at `localhost:3333`.
+That's the default path for most users. Dashboard opens at `localhost:4319`, Vibe IDE at `localhost:3333`.
 
-### Or install from source
+### Contributor setup from source
 
 ```bash
 git clone https://github.com/crewswarm/crewswarm
 cd crewswarm
 bash install.sh
 npm run doctor
-npm start
+npm run restart-all
 ```
+
+Use source install when you want to work on crewswarm itself or debug local internals.
+
+### Docker for servers and teams
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash
+```
+
+Use Docker when you want stronger isolation, easier restarts, or a shared server/team box.
 
 ### What does it cost?
 
@@ -170,11 +180,12 @@ crew exec "Build X"          # Send task via CLI
 ## Deployment
 
 ```bash
-# Docker
-docker-compose up -d
+# Most users
+npm install -g crewswarm
+crewswarm
 
-# Or the one-liner
-bash <(curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/install.sh)
+# Servers / teams
+curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash
 ```
 
 See [deploy.html](https://crewswarm.ai/deploy.html) for Docker, cloud VM, and production setup.

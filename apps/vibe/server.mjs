@@ -40,9 +40,9 @@ const SHARED_PROJECTS_FILE = path.join(CREWSWARM_CFG_DIR, "projects.json");
 const UI_STATE_FILE = path.join(CREWSWARM_CFG_DIR, "ui-state.json");
 const DEFAULT_PROJECT = {
   id: DEFAULT_PROJECT_ID,
-  name: "Studio Workspace",
+  name: "Vibe Workspace",
   outputDir: WORKSPACE_DIR,
-  description: "Local Studio workspace",
+  description: "Local Vibe workspace",
 };
 
 const MIME_TYPES = {
@@ -1862,7 +1862,7 @@ export const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       if (body.mode !== "cli") {
         sendJson(res, 400, {
-          error: "Local Studio chat only supports CLI passthrough right now",
+          error: "Local Vibe chat only supports CLI passthrough right now",
         });
         return;
       }

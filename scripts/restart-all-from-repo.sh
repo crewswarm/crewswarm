@@ -241,13 +241,13 @@ else
   SVC_STATUS["mcp-server"]="up"
 fi
 
-# ── 8. Vibe Studio + file watcher (ports 3333, 3334) ────────────────────────
+# ── 8. Vibe + file watcher (ports 3333, 3334) ───────────────────────────────
 if [[ "$START_STUDIO" -eq 1 ]]; then
   echo ""
-  echo "Starting Vibe (Studio) + file watcher (ports 3333, 3334)..."
+  echo "Starting Vibe + file watcher (ports 3333, 3334)..."
   if [[ ! -d "$REPO_DIR/apps/vibe/dist" ]]; then
-    echo "  Building Studio (first run)..."
-    (cd "$REPO_DIR" && npm run studio:build) >/dev/null 2>&1 || true
+    echo "  Building Vibe (first run)..."
+    (cd "$REPO_DIR" && npm run vibe:build) >/dev/null 2>&1 || true
   fi
   sleep 1
   nohup "$NODE" "$REPO_DIR/apps/vibe/server.mjs" >> /tmp/studio.log 2>&1 &

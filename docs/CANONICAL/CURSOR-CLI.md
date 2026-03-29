@@ -12,7 +12,7 @@ Run **`agent --help`** on your machine for the current flag list. Commonly relev
 |------------|---------|
 | `-p` / `--print` | Non-interactive / script mode |
 | `--output-format stream-json` | NDJSON events on stdout (what we parse) |
-| `--stream-partial-output` | **Smaller text deltas** with `--print` + `stream-json` (crewswarm passes this for dashboard / Studio / gateway) |
+| `--stream-partial-output` | **Smaller text deltas** with `--print` + `stream-json` (crewswarm passes this for dashboard / Vibe / gateway) |
 | `--force` / `--yolo` | Allow tools without interactive approval |
 | `--trust` | Trust workspace in headless mode |
 | `--workspace <path>` | Project root (we pass your `projectDir`) |

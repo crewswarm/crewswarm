@@ -12,7 +12,7 @@ import {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const RT_WS = "ws://127.0.0.1:18889"; // RT message bus
-const STUDIO_WATCH_WS = "ws://127.0.0.1:3334/ws"; // Studio watch server (CLI file changes)
+const STUDIO_WATCH_WS = "ws://127.0.0.1:3334/ws"; // Vibe watch server (CLI file changes)
 const STUDIO_API = window.location.origin;
 /** Same origin — Vibe server proxies to dashboard :4319 (avoids CORS: localhost:3333 vs 127.0.0.1:4319). */
 const DASHBOARD_API = STUDIO_API;
@@ -21,7 +21,7 @@ const CHAT_MODE_STORAGE_KEY = "vibe-chat-mode";
 window.Terminal = Terminal;
 
 let AUTH_TOKEN = ""; // Loaded from dashboard
-const SESSION_ID = "studio-" + Date.now(); // Unique session per Studio instance
+const SESSION_ID = "studio-" + Date.now(); // Unique session per Vibe instance
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // STATE
@@ -549,7 +549,7 @@ async function loadMonaco() {
       if (window.__studioLanguageRegistrationReady) {
         window.__studioLanguageRegistrationReady.catch((err) => {
           languageBootstrapFailed = true;
-          console.warn("Studio language bootstrap degraded:", err);
+          console.warn("Vibe language bootstrap degraded:", err);
           addTerminalLine(
             "⚠️ Monaco language extras failed to load; continuing with fallback editor mode",
             "warning",
@@ -711,19 +711,19 @@ async function loadProjects() {
   } catch (err) {
     const selector = document.getElementById("projectSelector");
     if (selector) {
-      selector.innerHTML = '<option value="studio-local">Studio Workspace</option>';
+      selector.innerHTML = '<option value="studio-local">Vibe Workspace</option>';
       selector.value = "studio-local";
     }
     allProjects = [
       {
         id: "studio-local",
-        name: "Studio Workspace",
+        name: "Vibe Workspace",
         outputDir: DEFAULT_LOCAL_WORKSPACE_DIR,
       },
     ];
     await switchProject("studio-local");
     addTerminalLine(
-      `⚠️ Studio project store unavailable - using local workspace fallback`,
+      `⚠️ Vibe project store unavailable - using local workspace fallback`,
       "warning",
     );
   }
@@ -732,7 +732,7 @@ async function loadProjects() {
 async function loadAgents() {
   try {
     // Same-origin /api/agents is proxied to dashboard :4319. After restart-all, dashboard (launchd)
-    // can lag Studio; retry 502/503 so the agent list isn't empty on first paint.
+    // can lag Vibe; retry 502/503 so the agent list isn't empty on first paint.
     const maxAttempts = 12;
     const delayMs = 800;
     let response;
@@ -1533,7 +1533,7 @@ async function sendChatMessage() {
     if (chatMode.startsWith("cli:")) {
       // CLI Passthrough mode (cli:crew-cli, cli:cursor, etc.) — SSE STREAM
       const cliName = chatMode.replace("cli:", "");
-      // All CLI engines run locally via Studio server (uses OAuth from each CLI)
+      // All CLI engines run locally via Vibe server (uses OAuth from each CLI)
       apiUrl = `${STUDIO_API}/api/studio/chat/unified`;
       body = {
         mode: "cli",
@@ -2862,8 +2862,8 @@ bindEditorToolbar();
       "info",
     );
   } catch (err) {
-    console.error("Studio init failed:", err);
-    addTerminalLine(`❌ Studio failed to initialize: ${err.message}`, "error");
+    console.error("Vibe init failed:", err);
+    addTerminalLine(`❌ Vibe failed to initialize: ${err.message}`, "error");
   }
 }
 

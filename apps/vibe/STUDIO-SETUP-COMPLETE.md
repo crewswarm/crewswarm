@@ -4,7 +4,8 @@
 
 ```bash
 cd apps/vibe
-bash start-studio.sh
+npm run build
+npm start
 ```
 
 Open `http://127.0.0.1:3333`.

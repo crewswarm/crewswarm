@@ -41,13 +41,13 @@ async function record() {
     await page.goto(VIBE_URL, { waitUntil: "load", timeout: 30_000 });
     await page.waitForTimeout(3_000);
 
-    // Select Studio Workspace project
+    // Select Vibe Workspace project
     console.log("   → Selecting project...");
     try {
       const selects = page.locator("select");
       const count = await selects.count();
       if (count > 0) {
-        await selects.first().selectOption({ label: "Studio Workspace" });
+        await selects.first().selectOption({ label: "Vibe Workspace" });
         await page.waitForTimeout(2_000);
       }
     } catch (e) { console.log("   (skip project select:", e.message, ")"); }

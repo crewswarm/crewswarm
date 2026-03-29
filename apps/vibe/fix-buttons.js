@@ -1,7 +1,7 @@
 /**
- * Studio Button Fix Script
+ * Vibe Button Fix Script
  * 
- * Run this in the browser console (F12) when Studio is open:
+ * Run this in the browser console (F12) when Vibe is open:
  * 1. Copy this entire file
  * 2. Paste into console
  * 3. Press Enter
@@ -9,7 +9,7 @@
  * This will diagnose and fix common issues.
  */
 
-console.log('🔧 Studio Diagnostic & Fix Script Starting...\n');
+console.log('🔧 Vibe Diagnostic & Fix Script Starting...\n');
 
 // Check 1: Files in Explorer
 const fileTree = document.getElementById('file-tree');

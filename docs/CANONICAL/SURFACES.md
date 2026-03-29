@@ -35,7 +35,7 @@ Status:
 
 ## crewchat
 
-App bundle: `/Applications/CrewChat.app`
+App bundle: `/Applications/crewchat.app`
 
 Use it for:
 - fast native macOS chat
@@ -48,7 +48,7 @@ Use it for:
 
 Status & Build:
 - beta native surface
-- Run `./build-crewchat.sh` to compile the `CrewChat.app` bundle in under 2 minutes.
+- Run `./build-crewchat.sh` to compile the `crewchat.app` bundle in under 2 minutes.
 
 ## SwiftBar
 

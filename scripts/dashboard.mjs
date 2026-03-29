@@ -1908,7 +1908,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── Auth Token (for Studio) ───────────────────────────────────────────────────
+    // ── Auth Token (for Vibe) ─────────────────────────────────────────────────────
     if (url.pathname === "/api/auth/token") {
       res.writeHead(200, {
         "content-type": "application/json",
@@ -4690,7 +4690,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── Models API (list available models for CrewChat dropdown) ─────────────
+    // ── Models API (list available models for crewchat dropdown) ─────────────
     if (url.pathname === "/api/models" && req.method === "GET") {
       try {
         const csSwarm = JSON.parse(
@@ -4780,7 +4780,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── CLI Chat API (CrewChat CLI mode passthrough) ──────────────────────
+    // ── CLI Chat API (crewchat CLI mode passthrough) ──────────────────────
     if (url.pathname === "/api/cli/chat" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
@@ -5020,7 +5020,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── Chat Agent API (CrewChat direct agent chat) ──────────────────────────
+    // ── Chat Agent API (crewchat direct agent chat) ──────────────────────────
     if (url.pathname === "/api/chat-agent" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
@@ -5068,7 +5068,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── Dispatch API (CrewChat agent direct mode) ─────────────────────────────
+    // ── Dispatch API (crewchat agent direct mode) ─────────────────────────────
     if (url.pathname === "/api/dispatch" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
@@ -5139,7 +5139,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/transcribe-audio" && req.method === "POST") {
-      // Expects multipart/form-data with audio file (CrewChat: m4a, Dashboard: webm)
+      // Expects multipart/form-data with audio file (crewchat: m4a, Dashboard: webm)
       // Per Groq docs: https://console.groq.com/docs/speech-to-text — file, model required
       const sendJson = (status, body) => {
         if (res.headersSent) return;
@@ -5149,7 +5149,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const busboy = await import("busboy");
         const chunks = [];
-        let mimeType = "audio/m4a"; // CrewChat default
+        let mimeType = "audio/m4a"; // crewchat default
         let resolved = false;
         const resolveOnce = () => {
           if (resolved) return;
@@ -5371,7 +5371,7 @@ const server = http.createServer(async (req, res) => {
           }
 
           if (wantAgentSSE && upstream.body) {
-            // SSE streaming path (Vibe, Studio)
+            // SSE streaming path (Dashboard or Vibe)
             res.writeHead(200, {
               "content-type": "text/event-stream",
               "cache-control": "no-cache",
@@ -5471,7 +5471,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (wantSSE && upstream.body) {
-          // SSE streaming path (Vibe, Studio)
+          // SSE streaming path (Dashboard or Vibe)
           res.writeHead(200, {
             "content-type": "text/event-stream",
             "cache-control": "no-cache",
@@ -8458,7 +8458,7 @@ ORDER BY day DESC, cost DESC;`;
           {
             id: "crew-lead",
             label: "crew-lead",
-            description: "Chat commander — dashboard chat, CrewChat, Telegram",
+            description: "Chat commander — dashboard chat, crewchat, Telegram",
             port: crewLeadPort,
             running: crewLeadUp,
             canRestart: true,
@@ -8590,7 +8590,7 @@ ORDER BY day DESC, cost DESC;`;
             label: "Vibe UI",
             description: studioUp
               ? "Monaco editor + agent chat — Cursor-like IDE for crewswarm"
-              : "Run: npm run studio:start (port 3333)",
+              : "Run: npm run vibe:start (port 3333)",
             port: 3333,
             running: studioUp,
             canRestart: true,
@@ -8602,7 +8602,7 @@ ORDER BY day DESC, cost DESC;`;
             label: "Vibe Watch Server",
             description: watchUp
               ? "CLI → Vibe live reload WebSocket relay (port 3334)"
-              : "Run: npm run studio:watch — enables live file reload in Vibe",
+              : "Run: npm run vibe:watch — enables live file reload in Vibe",
             port: 3334,
             running: watchUp,
             canRestart: true,

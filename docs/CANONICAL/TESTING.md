@@ -10,7 +10,7 @@ Docs explain behavior. Tests enforce it.
 
 - unit tests for intent/routing logic
 - smoke scripts for end-to-end behavior
-- Playwright browser automation for Dashboard and Vibe/Studio UI flows
+- Playwright browser automation for Dashboard and Vibe UI flows
 - runtime/module load checks
 - targeted regression tests for production failures
 
