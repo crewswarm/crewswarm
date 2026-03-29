@@ -404,6 +404,38 @@ export CREWSWARM_TMUX_BRIDGE=1
         <p>The bridge is a built-in bash script (<code>scripts/tmux-bridge</code>) — no external dependencies beyond tmux.</p>
       </section>
 
+      <!-- SYSTEM INFRASTRUCTURE -->
+      <section class="docs-section">
+        <h2>System Infrastructure</h2>
+
+        <div style="margin-top: 2rem;">
+          <p><strong>Cost Tracking</strong></p>
+          <p>Every LLM call records model, tokens, cached tokens, and cost. Pricing is per-provider (Anthropic $3/M input with 90% cache discount, Groq $0.27/M, Google free for Flash). View in Dashboard or via <code>crew cost</code> CLI. Env: no config needed, automatic.</p>
+        </div>
+
+        <div style="margin-top: 2rem;">
+          <p><strong>Intelligent Retry</strong></p>
+          <p>The retry manager (<code>lib/crew-lead/retry-manager.mjs</code>) detects 3 failure patterns:</p>
+          <ul style="list-style: none; padding: 0;">
+            <li style="margin-bottom: 0.75rem; padding-left: 2rem; border-left: 2px solid var(--accent);">Agent asked a question → re-dispatch with "proceed without asking"</li>
+            <li style="margin-bottom: 0.75rem; padding-left: 2rem; border-left: 2px solid var(--accent);">Agent returned a plan → re-dispatch with "write code, not plans"</li>
+            <li style="margin-bottom: 0.75rem; padding-left: 2rem; border-left: 2px solid var(--accent);">Agent bailed out → re-dispatch with "complete the task"</li>
+          </ul>
+          <p>Max 2 retries per task. Stats available via <code>getRetryStats()</code>.</p>
+        </div>
+
+        <div style="margin-top: 2rem;">
+          <p><strong>Task Deduplication</strong></p>
+          <p>File-based distributed locks in <code>~/.crewswarm/runtime/task-leases/</code>. 45-second lease, 10-second heartbeat. Prevents two agents from executing the same task. Env: automatic, no config needed.</p>
+        </div>
+
+        <div style="margin-top: 2rem;">
+          <p><strong>MCP Server</strong></p>
+          <p>Runs on port 5020. Exposes 64 tools via JSON-RPC. Start with <code>npm run mcp</code>. Test:</p>
+          <pre><code>curl http://localhost:5020/health</code></pre>
+        </div>
+      </section>
+
       <!-- BEST PRACTICES -->
       <section class="docs-section">
         <h2>Best Practices</h2>

@@ -157,6 +157,27 @@ crewswarm is built around the idea that the human becomes the PM and the agents 
 **Multiple control surfaces**
 Use crewswarm from the web dashboard, CLI, Telegram, macOS SwiftBar, or MCP/editor integrations.
 
+**Cost tracking + prompt cache savings**
+Every LLM call records model, tokens, cached tokens, and USD cost. Per-provider pricing: Anthropic (90% cache discount), Groq (50% off cached), Google (free for Flash). View per-agent, per-model cost breakdown in Dashboard or via `crew cost` CLI.
+
+**Intelligent retry system**
+The retry manager detects 3 failure modes: agents asking questions instead of working, returning plans instead of code, or bailing out mid-task. Auto-corrects with targeted prompts — not just exponential backoff, but adaptive recovery. Max 2 retries per task.
+
+**Task lease + deduplication**
+File-based distributed locks prevent duplicate task execution across agent instances. 45-second leases with 10-second heartbeat. If two agents claim the same task, only one runs. Production-grade idempotency.
+
+**MCP server (64 tools)**
+Built-in Model Context Protocol server on port 5020 exposes 64 tools and 22 agents via JSON-RPC. dispatch_agent, run_pipeline, chat_send, crewswarm_status — any MCP-compatible client (Claude Code, Cursor, VS Code) can orchestrate the entire fleet.
+
+**tmux session handoff**
+Cross-agent pane communication for multi-wave pipelines. Agents run in labeled tmux panes. Session manager hands off execution context (output, cwd, env vars) between pipeline waves. Zero cold starts between agents.
+
+**PreToolUse / PostToolUse hooks**
+Intercept any tool call via `.crew/hooks.json`. Block dangerous shell commands, log file writes, or transform tool input before execution. JSON piped on stdin to shell scripts.
+
+**Doctor + health diagnostics**
+One-command system validation: Node.js, API keys, service ports, dashboard build, CLI engines, MCP status. Runs in under 4 seconds. Suggests fixes and cheapest providers when keys are missing.
+
 ---
 
 ## Why crewswarm vs other frameworks
@@ -1563,7 +1584,7 @@ Numbers in international format. Leave empty to allow any sender.
 
 crewswarm runs a built-in **MCP server on port 5020**. Connect it to Cursor, Claude Code, OpenCode, or any MCP-compatible client and your full 20-agent crew becomes available as callable tools — from any project, not just the crewswarm repo.
 
-### What's exposed (13 MCP tools)
+### What's exposed (64 MCP tools)
 
 | Tool | What it does |
 |---|---|
