@@ -6,15 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://cdn.simpleicons.org" crossorigin />
   <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
-  <title>crew-cli — The High-Performance AI Engineering Terminal | crewswarm</title>
+  <title>crew-cli — The Portable Execution Engine for AI Coding | crewswarm</title>
   <meta name="description"
-    content="crew-cli is the provider-agnostic engineering terminal for crewswarm. Bring your own keys, fail over across providers, and keep building when one model or CLI hits limits." />
+    content="crew-cli is the portable execution engine for CrewSwarm. Run agentic coding loops with your own keys, local models, and multi-provider failover instead of getting stuck on one vendor runtime." />
   <meta name="keywords"
     content="crew-cli, multi-agent CLI, AI coding, terminal AI, parallel execution, LLM routing, ATAT protocol" />
   <!-- Open Graph -->
-  <meta property="og:title" content="crew-cli — High-Performance AI Engineering Terminal" />
+  <meta property="og:title" content="crew-cli — The Portable Execution Engine for AI Coding" />
   <meta property="og:description"
-    content="Bring your own keys, fail over across providers, and keep building when one model or CLI hits limits. crew-cli is the provider-agnostic engineering terminal." />
+    content="Run agentic coding loops with your own keys, local models, and multi-provider failover. crew-cli is the portable execution engine inside CrewSwarm." />
   <meta property="og:url" content="https://crewswarm.ai/cli.html" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -26,9 +26,9 @@
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@crewswarm" />
-  <meta name="twitter:title" content="crew-cli — High-Performance AI Engineering Terminal" />
+  <meta name="twitter:title" content="crew-cli — The Portable Execution Engine for AI Coding" />
   <meta name="twitter:description"
-    content="Bring your own keys, fail over across providers, and keep building when one model or CLI hits limits. crew-cli is the provider-agnostic engineering terminal." />
+    content="Run agentic coding loops with your own keys, local models, and multi-provider failover. crew-cli is the portable execution engine inside CrewSwarm." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <!-- SEO -->
   <meta name="robots" content="index, follow" />
@@ -63,8 +63,8 @@
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": "crew-cli — The High-Performance AI Engineering Terminal",
-    "description": "crew-cli is the provider-agnostic engineering terminal for crewswarm. Bring your own keys, fail over across providers, and keep building when one model or CLI hits limits.",
+    "name": "crew-cli — The Portable Execution Engine for AI Coding",
+    "description": "crew-cli is the portable execution engine for CrewSwarm. Run agentic coding loops with your own keys, local models, and multi-provider failover instead of getting stuck on one vendor runtime.",
     "url": "https://crewswarm.ai/cli.html",
     "isPartOf": { "@type": "WebSite", "name": "crewswarm", "url": "https://crewswarm.ai/" }
   }
@@ -127,24 +127,19 @@
 
   <section class="hero">
     <div class="hero-glow"></div>
-    <div class="hero-badge">3-Tier Pipeline · 24 Providers · 8 Commands</div>
-    <h1 class="gradient-text">Think. Plan. Build.<br />Three tiers, one command.</h1>
+    <div class="hero-badge">Portable Execution Engine · 24 Providers · Local + Hosted Lanes</div>
+    <h1 class="gradient-text">One agent is too sequential.<br />crew-cli keeps the work moving.</h1>
     <p class="hero-sub">
-      <strong>crew-cli</strong> doesn't just call a model and hope. It routes your task, plans the work,
-      generates architecture docs, then executes with tool access. Use cheap or local models for routing and worker lanes,
-      and reserve premium models for the planning brains that actually need them.
+      <strong>crew-cli</strong> is the portable execution engine inside CrewSwarm. It runs real agentic coding loops:
+      route the task, plan when needed, use tools, write files, run commands, validate the result, and keep going until the work is done.
     </p>
     <p class="hero-sub" style="max-width: 54rem; margin-top: 0.85rem;">
-      Bring whatever keys you have. If Claude, OpenAI, Anthropic, or another path is rate-limited, out of credits,
-      or unavailable, <strong>crew-cli</strong> can keep going through another configured provider instead of locking
-      you to one vendor runtime.
+      The point is not just "another CLI." The point is escaping the one-agent, one-vendor bottleneck. Bring whatever keys
+      you have, mix in local lanes, and keep building when Claude, OpenAI, Anthropic, or another runtime hits limits.
     </p>
     <p class="hero-sub" style="max-width: 54rem; margin-top: 0.65rem;">
-      You can also mix in local model lanes for effectively free parallel work. Use hosted models for hard reasoning,
-      and run local glue tasks, summaries, routing, or background execution without paying per request.
-    </p>
-    <p class="hero-sub" style="max-width: 54rem; margin-top: 0.65rem;">
-      Bring any configured provider at any tier. Pay for intelligence where it matters, not on every token of every step.
+      Use cheap or local models for routing and worker churn. Reserve premium models for planning, validation, and hard reasoning.
+      Pay for intelligence where it matters, not on every token of every step.
     </p>
     <div style="margin-top: 0.75rem; display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem;">
       <code style="color: var(--accent);">npm install -g crewswarm-cli</code>
@@ -159,6 +154,30 @@
       <div style="color: #7ee787;">  🔧 write_file(/tmp/api/auth.mjs)</div>
       <div style="color: #7ee787;">  🔧 run_cmd(node --test test.mjs)</div>
       <div style="color: #3fb950;">✅ 3 files created, tests passing. Cost: $0.004</div>
+    </div>
+  </section>
+
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Why It Exists</div>
+        <h2>Built for the real bottleneck</h2>
+        <p class="section-desc">Most AI coding tools still assume one person driving one model in one lane. That breaks down fast when the work needs retries, tools, parallelism, or another provider.</p>
+      </div>
+      <div class="grid-3" style="margin-top: 2rem;">
+        <div class="page-card">
+          <h3>One Agent Is Too Sequential</h3>
+          <p>A single chat thread is fine for small fixes. Real engineering work needs planning, execution, validation, retries, and sometimes multiple lanes moving at once.</p>
+        </div>
+        <div class="page-card">
+          <h3>One Vendor Is Too Fragile</h3>
+          <p>Rate limits, quota, outages, and model drift should not stop the job. crew-cli is built to keep moving across providers, local models, and external runtimes.</p>
+        </div>
+        <div class="page-card">
+          <h3>One Price Tier Is Wasteful</h3>
+          <p>Not every step needs premium reasoning. crew-cli lets you spend on the planning brains and keep cheap or local lanes doing the glue work.</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -233,7 +252,7 @@
         </div>
         <div class="page-card">
           <h3>CLI Limits Aren’t Terminal</h3>
-          <p>Claude Code, Codex CLI, Cursor, and direct APIs each have different strengths and failure modes. crew-cli is the escape hatch when one runtime hits a wall mid-task.</p>
+          <p>Claude Code, Codex CLI, Cursor, Gemini, and direct APIs each have different strengths and failure modes. crew-cli is the portable execution lane when one runtime hits a wall mid-task.</p>
         </div>
         <div class="page-card">
           <h3>Local Lanes Stay Cheap</h3>
@@ -259,7 +278,7 @@
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
           <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🚦</div>
           <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Tier 1: Router</h3>
-          <p style="font-size: 0.85rem; color: var(--text-2);">Fast, cheap lane decides HOW to handle the task: direct answer, single execution, or parallel decomposition. This is where cheap hosted models or local routing lanes shine.</p>
+          <p style="font-size: 0.85rem; color: var(--text-2);">Fast, cheap lane decides how to handle the task: direct answer, single execution, or decomposition into more work. This is where cheap hosted models or local router lanes shine.</p>
           <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">Groq / Grok / Gemini Flash / local router lanes</div>
         </div>
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
@@ -271,7 +290,7 @@
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
           <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚡</div>
           <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Tier 3: Executor</h3>
-          <p style="font-size: 0.85rem; color: var(--text-2);">Tool-using worker lane with 38+ tools: file I/O, shell, git, LSP, browser, web search. Use strong cheap models, premium coders, or local workers depending on cost and quality needs.</p>
+          <p style="font-size: 0.85rem; color: var(--text-2);">Tool-using worker lane with 38+ tools: file I/O, shell, git, LSP, browser, and web search. Use strong cheap models, premium coders, or local workers depending on cost and quality needs.</p>
           <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">Gemini / Codex / Claude / Groq / local worker lanes</div>
         </div>
       </div>
