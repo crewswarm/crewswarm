@@ -126,8 +126,12 @@
   <section class="hero">
     <div class="hero-glow"></div>
 
-    <div class="hero-badge">Master the Swarm</div>
-    <h1>Documentation &<br /><span class="gradient-text">Quick Start Guide.</span></h1>
+    <div class="hero-badge">Docs</div>
+    <h1>Install it fast.<br /><span class="gradient-text">Understand the system.</span></h1>
+    <p class="hero-sub" style="max-width: 48rem; margin: 1rem auto 0;">
+      Start with the npm path for the quickest setup, then use the docs to understand how CrewSwarm, Vibe,
+      crew-cli, and the agent runtime fit together.
+    </p>
 
   </section>
 
@@ -137,22 +141,26 @@
       <!-- INSTALLATION -->
       <section class="docs-section">
         <h2>Installation</h2>
-        <p>crewswarm is a local-first system. Ensure you have Node.js 20+ installed.</p>
+        <p>For most users, the fastest path is the npm install. Source install is best when you want to work on crewswarm itself.</p>
 
         <div style="margin-top: 2rem;">
-          <p><strong>1. Clone the repository</strong></p>
+          <p><strong>Fastest path: npm</strong></p>
+          <pre><code>npm install -g crewswarm
+crewswarm</code></pre>
+
+          <p><strong>Contributor path: clone the repo</strong></p>
           <pre><code>git clone https://github.com/crewswarm/crewswarm.git
 cd crewswarm</code></pre>
 
-          <p><strong>2. Install dependencies & Setup</strong></p>
+          <p><strong>Install dependencies and run setup</strong></p>
           <pre><code>npm install
 bash install.sh</code></pre>
 
-          <p><strong>3. Start all services</strong></p>
+          <p><strong>Start the local stack</strong></p>
           <pre><code>npm run restart-all</code></pre>
         </div>
-        <p>Once running, the dashboard is accessible at <a href="http://127.0.0.1:4319"
-            style="color: var(--accent);">http://127.0.0.1:4319</a>.</p>
+        <p>Once running, open the dashboard at <a href="http://127.0.0.1:4319"
+            style="color: var(--accent);">http://127.0.0.1:4319</a> and Vibe at <code>http://127.0.0.1:3333</code>.</p>
       </section>
 
       <!-- SERVICES -->
@@ -195,12 +203,12 @@ bash install.sh</code></pre>
             <tr>
               <td><strong>Code Engine</strong></td>
               <td><code>4096</code></td>
-              <td>Coding execution server (OpenCode / Claude Code / Cursor).</td>
+              <td>Coding execution server for external runtimes and engine lanes.</td>
             </tr>
             <tr>
               <td><strong>Dashboard</strong></td>
               <td><code>4319</code></td>
-              <td>The UI for agent management, model assignment, and cost tracking.</td>
+              <td>Setup, providers, agent management, chat, and runtime visibility.</td>
             </tr>
             <tr>
               <td><strong>MCP + OpenAI API</strong></td>
@@ -210,7 +218,7 @@ bash install.sh</code></pre>
             <tr>
               <td><strong>Vibe UI</strong></td>
               <td><code>3333</code></td>
-              <td>Monaco editor + agent chat — Cursor-like IDE for crewswarm.</td>
+              <td>Browser workspace for files, quick edits, engine chat, and live agent visibility.</td>
             </tr>
             <tr>
               <td><strong>Vibe Watch Server</strong></td>
@@ -225,7 +233,7 @@ bash install.sh</code></pre>
             <tr>
               <td><strong>PM Loops</strong></td>
               <td><code>-</code></td>
-              <td>Autonomous project manager loops (managed externally).</td>
+              <td>Planning, delegation, and review loops coordinated by crew-lead and the runtime.</td>
             </tr>
           </tbody>
         </table>
@@ -242,18 +250,15 @@ bash install.sh</code></pre>
           </div>
           <div class="page-card">
             <h3>OpenCode (Default)</h3>
-            <p>Recommended for coding. Agents run in a sandboxed session with full system access. OpenCode routes
-              reasoning to models like GPT-5.3 Codex, Claude 3.5, and Gemini.</p>
+            <p>Recommended coding runtime for many agent tasks. Good fit when you want tool access, file edits, and sandboxed execution in one lane.</p>
           </div>
           <div class="page-card">
             <h3>Claude Code CLI</h3>
-            <p>Integrates directly with Anthropic's native `claude -p` CLI for tasks that benefit from its specific
-              codebase reasoning capabilities.</p>
+            <p>Uses Anthropic's native <code>claude -p</code> CLI for tasks that benefit from its codebase reasoning and workflow style.</p>
           </div>
           <div class="page-card">
             <h3>Cursor CLI</h3>
-            <p>Integrates directly with the Cursor editor's CLI, leveraging its internal codebase indexing and MCP
-              models.</p>
+            <p>Uses Cursor's CLI when you want its composer workflow, model access, and editor-style coding lane inside the swarm.</p>
           </div>
         </div>
       </section>

@@ -120,8 +120,8 @@
   <section class="hero">
     <div class="hero-glow"></div>
     
-      <div class="hero-badge">Our Mission</div>
-      <h1>About crewswarm — <span class="gradient-text">Our Mission</span></h1>
+      <div class="hero-badge">About</div>
+      <h1>Why crewswarm exists</h1>
       <p style="margin-top:1rem;"><a href="models.html" style="color:var(--accent);">See model picks</a> · <a href="vibe.html" style="color:var(--accent);">Explore Vibe</a> · <a href="cli.html" style="color:var(--accent);">Open crew-cli</a> · <a href="pm-loop.html" style="color:var(--accent);">Read PM Loop</a></p>
     
   </section>
@@ -130,36 +130,29 @@
     <div class="container">
       <div class="grid-2">
         <section class="page-card" style="grid-column: 1 / -1;">
-          <p style="font-size: 1.125rem;">crewswarm was born from a simple observation: LLMs are incredible coders, but
-            they struggle with project management, testing, and long-term architectural consistency. To build real
-            software, you don't just need a model—you need a crew.</p>
-          <p style="font-size: 1.125rem;">We built the orchestration layer that brings specialist AI agents together
-            under a unified PM-led workflow. By coordinating planners, builders, and testers, crewswarm transforms a
-            single requirement into a fully realized build on your local disk.</p>
+          <p style="font-size: 1.125rem;">crewswarm started from a simple observation: one person driving one coding agent is still too sequential. Real software work needs planning, implementation, testing, fixes, and review moving together.</p>
+          <p style="font-size: 1.125rem;">So we built the orchestration layer around that workflow. The human acts more like the PM, the agents act more like the engineers, and the whole system runs locally with your models, your keys, and your files.</p>
         </section>
 
         <section class="page-card">
-          <h2>Research-Driven Foundations</h2>
-          <p>Our approach is grounded in leading AI research to ensure that autonomous development is both factual and
-            robust. We incorporate key findings from:</p>
+          <h2>What we are actually building</h2>
+          <p>crewswarm is not just another chat wrapper. It is a local-first operating layer for AI engineering:</p>
           <ul>
-            <li><strong>Generative Engine Optimization (GEO):</strong> Based on research from Princeton and Georgia
-              Tech, we prioritize authoritative content and structural markers that improve AI citation and factual
-              accuracy.</li>
-            <li><strong>Agentic Reasoning:</strong> Our loops are inspired by frameworks like <em>Reflexion</em>,
-              allowing agents to self-correct and iterate before shipping code.</li>
+            <li><strong>Parallel specialist agents:</strong> planners, coders, QA, fixers, docs, and more.</li>
+            <li><strong>Multiple engine lanes:</strong> Claude Code, Cursor, Codex, Gemini, OpenCode, and crew-cli.</li>
+            <li><strong>Provider flexibility:</strong> use your own API keys, local models, or both.</li>
+            <li><strong>Local control:</strong> your code and runtime stay on your machine unless you choose otherwise.</li>
           </ul>
         </section>
 
         <section class="page-card">
-          <h2>Local-First AI & Verified Trust</h2>
-          <p>We believe your intellectual property belongs to you. crewswarm is a "local-first" orchestrator—your
-            models, your keys, and your files stay on your machine. We provide the glue, you provide the vision.</p>
+          <h2>Local-first on purpose</h2>
+          <p>We think the default for serious engineering should be local control, not blind dependency on one hosted platform. crewswarm is designed so your files, keys, and execution surfaces stay under your control.</p>
         </section>
 
         <section class="page-card">
-          <h2>Authoritative Expertise (E-E-A-T)</h2>
-          <p>Built with transparency and open source collaboration natively on <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;">GitHub</a>. We maintain rigorous security policies and hold ourselves accountable to the broader developer ecosystem. Our architecture is heavily cited as the secure standard for preventing prompt-injection attacks inherent to cloud-orchestrated alternatives.</p>
+          <h2>Open source and inspectable</h2>
+          <p>Everything important is in the open on <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;">GitHub</a>. The goal is not to hide magic prompts behind a black box, but to build a system developers can inspect, run, adapt, and trust.</p>
         </section>
       </div>
     </div>
