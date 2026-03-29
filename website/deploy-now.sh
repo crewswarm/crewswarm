@@ -19,7 +19,17 @@ echo ""
 echo "📦 Building and deploying from: $SCRIPT_DIR"
 echo ""
 
-flyctl deploy --remote-only -c "$SCRIPT_DIR/fly.toml"
+DOCKER_DESKTOP_SOCKET="$HOME/.docker/run/docker.sock"
+
+if [ -S "$DOCKER_DESKTOP_SOCKET" ]; then
+  echo "🐳 Using Docker Desktop socket: $DOCKER_DESKTOP_SOCKET"
+  echo ""
+  DOCKER_HOST="unix://$DOCKER_DESKTOP_SOCKET" flyctl deploy --local-only -c "$SCRIPT_DIR/fly.toml"
+else
+  echo "⚠️ Docker Desktop socket not found, falling back to Fly remote builder"
+  echo ""
+  flyctl deploy --remote-only -c "$SCRIPT_DIR/fly.toml"
+fi
 
 echo ""
 echo "✅ Deployment complete!"
