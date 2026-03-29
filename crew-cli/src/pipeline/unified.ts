@@ -30,6 +30,7 @@ export interface L1Request {
   context?: string;
   sessionId: string;
   deferApply?: boolean; // If true, don't auto-flush sandbox — let caller handle preview/apply
+  autoApply?: boolean; // If true, auto-apply sandbox changes after execution
   resume?: {
     fromPhase?: 'plan' | 'execute' | 'validate';
     priorPlan?: L2Plan;
@@ -536,6 +537,7 @@ export class UnifiedPipeline {
       toolsUsed?: string[];
       history?: Array<{ tool: string; params: Record<string, any>; result?: any; error?: string }>;
       stopReason?: string;
+      turns?: number;
     }
   ) {
     const history = Array.isArray(workerResult.history) ? workerResult.history : [];

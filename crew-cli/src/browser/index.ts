@@ -202,12 +202,12 @@ export async function runBrowserDebug(url: string, options: { port?: number; dur
     try {
       ws?.close();
     } catch (e) {
-      console.error(`Failed to close WebSocket: ${e.message}`);
+      console.error(`Failed to close WebSocket: ${(e as Error).message}`);
     }
     try {
       proc.kill('SIGTERM');
     } catch (e) {
-      console.error(`Failed to kill browser process: ${e.message}`);
+      console.error(`Failed to kill browser process: ${(e as Error).message}`);
     }
   }
 }

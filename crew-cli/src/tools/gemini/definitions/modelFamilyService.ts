@@ -8,7 +8,7 @@
  * Single source of truth for mapping model IDs to tool families.
  */
 
-import { isGemini3Model } from '../../config/models.js';
+import { isGemini3Model } from '../../../config/models';
 import { type ToolFamily } from './types.js';
 
 /**

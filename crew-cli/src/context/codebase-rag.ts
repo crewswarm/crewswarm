@@ -111,7 +111,7 @@ async function generateEmbedding(text: string, provider?: EmbeddingProvider): Pr
     });
     if (!response.ok) throw new Error(`OpenAI embedding failed: ${response.statusText}`);
     const data = await response.json();
-    return data.data[0].embedding;
+    return (data as any).data[0].embedding;
   }
 
   if (p === 'gemini') {
@@ -130,7 +130,7 @@ async function generateEmbedding(text: string, provider?: EmbeddingProvider): Pr
     );
     if (!response.ok) throw new Error(`Gemini embedding failed: ${response.statusText}`);
     const data = await response.json();
-    return data.embedding?.values || [];
+    return (data as any).embedding?.values || [];
   }
 
   // Local: hashed vector (zero-cost, ~80% as good for code search)
@@ -395,7 +395,7 @@ async function expandWithImports(
       }
     }
   } catch (err) {
-    console.warn('[RAG] Import graph expansion failed:', err.message);
+    console.warn('[RAG] Import graph expansion failed:', (err as Error).message);
   }
   return expanded;
 }
@@ -429,7 +429,7 @@ export async function autoLoadRelevantFiles(
       const index = CodebaseIndex.getInstance(cwd);
       scoredFiles = await index.query(query, maxFiles * 2);
     } catch (err) {
-      console.warn('[RAG] Semantic search failed, falling back to keyword:', err.message);
+      console.warn('[RAG] Semantic search failed, falling back to keyword:', (err as Error).message);
       scoredFiles = await keywordBasedSearch(query, cwd, options);
     }
   } else {

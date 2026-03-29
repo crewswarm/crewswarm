@@ -8,7 +8,18 @@
  * Speed: <5ms
  */
 
-import type { ProjectStructure } from '../utils/structure-analyzer.js';
+// StructureResult is not exported as ProjectStructure from structure-analyzer
+// Define a local alias matching the shape used in this file
+interface ProjectStructure {
+  language?: string;
+  framework?: string;
+  buildTool?: string;
+  hasSrc?: boolean;
+  packageName?: string;
+  hasTsConfig?: boolean;
+  testFramework?: string;
+  [key: string]: any;
+}
 
 export interface TemplateOptions {
   projectName?: string;
@@ -20,7 +31,7 @@ export interface TemplateOptions {
 
 export type TemplateGenerator = (
   structure: ProjectStructure,
-  options?: TemplateOptions
+  options?: TemplateOptions | undefined
 ) => string;
 
 /**
@@ -145,7 +156,7 @@ export function matchTemplate(
 // TEMPLATE GENERATORS
 // ============================================================================
 
-function generateGitignore(structure: ProjectStructure, options: TemplateOptions): string {
+function generateGitignore(structure: ProjectStructure, options?: TemplateOptions): string {
   const lines = [
     '# Dependencies',
     'node_modules/',
@@ -190,7 +201,8 @@ function generateGitignore(structure: ProjectStructure, options: TemplateOptions
   return lines.join('\n') + '\n';
 }
 
-function generatePackageJson(structure: ProjectStructure, options: TemplateOptions): string {
+function generatePackageJson(structure: ProjectStructure, options?: TemplateOptions): string {
+  if (!options) options = {};
   const pkg: any = {
     name: options.projectName || structure.packageName || 'my-project',
     version: '1.0.0',
@@ -245,7 +257,7 @@ function generatePackageJson(structure: ProjectStructure, options: TemplateOptio
   return JSON.stringify(pkg, null, 2) + '\n';
 }
 
-function generateTsConfig(structure: ProjectStructure, options: TemplateOptions): string {
+function generateTsConfig(structure: ProjectStructure, options?: TemplateOptions): string {
   const config: any = {
     compilerOptions: {
       target: 'ES2020',
@@ -278,7 +290,7 @@ function generateTsConfig(structure: ProjectStructure, options: TemplateOptions)
   return JSON.stringify(config, null, 2) + '\n';
 }
 
-function generateEnvExample(structure: ProjectStructure, options: TemplateOptions): string {
+function generateEnvExample(structure: ProjectStructure, options?: TemplateOptions): string {
   const lines = ['# Environment Variables', ''];
   
   if (structure.framework === 'react') {
@@ -298,12 +310,13 @@ function generateEnvExample(structure: ProjectStructure, options: TemplateOption
   return lines.join('\n') + '\n';
 }
 
-function generateEnv(structure: ProjectStructure, options: TemplateOptions): string {
+function generateEnv(structure: ProjectStructure, options?: TemplateOptions): string {
   // Same as .env.example but with placeholder values
   return generateEnvExample(structure, options);
 }
 
-function generateReadme(structure: ProjectStructure, options: TemplateOptions): string {
+function generateReadme(structure: ProjectStructure, options?: TemplateOptions): string {
+  if (!options) options = {};
   const name = options.projectName || structure.packageName || 'My Project';
   const description = options.description || 'A new project';
   
@@ -342,7 +355,7 @@ ${options.license || 'MIT'}
 `;
 }
 
-function generatePrettierConfig(structure: ProjectStructure, options: TemplateOptions): string {
+function generatePrettierConfig(structure: ProjectStructure, options?: TemplateOptions): string {
   return JSON.stringify({
     semi: true,
     trailingComma: 'es5',
@@ -352,7 +365,7 @@ function generatePrettierConfig(structure: ProjectStructure, options: TemplateOp
   }, null, 2) + '\n';
 }
 
-function generateEslintConfig(structure: ProjectStructure, options: TemplateOptions): string {
+function generateEslintConfig(structure: ProjectStructure, options?: TemplateOptions): string {
   const config: any = {
     env: {
       browser: structure.framework === 'react' || structure.framework === 'vue',
@@ -380,7 +393,7 @@ function generateEslintConfig(structure: ProjectStructure, options: TemplateOpti
   return JSON.stringify(config, null, 2) + '\n';
 }
 
-function generateJestConfig(structure: ProjectStructure, options: TemplateOptions): string {
+function generateJestConfig(structure: ProjectStructure, options?: TemplateOptions): string {
   return `module.exports = {
   testEnvironment: '${structure.framework === 'react' ? 'jsdom' : 'node'}',
   roots: ['<rootDir>/${structure.hasSrc ? 'src' : '.'}'],
@@ -397,7 +410,7 @@ function generateJestConfig(structure: ProjectStructure, options: TemplateOption
 `;
 }
 
-function generateVitestConfig(structure: ProjectStructure, options: TemplateOptions): string {
+function generateVitestConfig(structure: ProjectStructure, options?: TemplateOptions): string {
   return `import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -413,7 +426,7 @@ export default defineConfig({
 `;
 }
 
-function generateDockerignore(structure: ProjectStructure, options: TemplateOptions): string {
+function generateDockerignore(structure: ProjectStructure, options?: TemplateOptions): string {
   return `node_modules/
 npm-debug.log
 .git/
@@ -427,7 +440,7 @@ coverage/
 `;
 }
 
-function generateDockerfile(structure: ProjectStructure, options: TemplateOptions): string {
+function generateDockerfile(structure: ProjectStructure, options?: TemplateOptions): string {
   if (structure.framework === 'react') {
     return `FROM node:20-alpine AS build
 WORKDIR /app
@@ -455,7 +468,7 @@ CMD ["node", "${structure.language === 'typescript' ? 'dist/index.js' : 'src/ind
 `;
 }
 
-function generateEditorConfig(structure: ProjectStructure, options: TemplateOptions): string {
+function generateEditorConfig(structure: ProjectStructure, options?: TemplateOptions): string {
   return `root = true
 
 [*]

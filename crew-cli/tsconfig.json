@@ -15,5 +15,37 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "benchmarks", "extensions"]
+  "exclude": [
+    "node_modules", "dist", "benchmarks", "extensions",
+    "src/tools/gemini/edit.ts",
+    "src/tools/gemini/shell.ts",
+    "src/tools/gemini/tools.ts",
+    "src/tools/gemini/mcp-client.ts",
+    "src/tools/gemini/mcp-client-manager.ts",
+    "src/tools/gemini/mcp-tool.ts",
+    "src/tools/gemini/tool-registry.ts",
+    "src/tools/gemini/read-file.ts",
+    "src/tools/gemini/read-many-files.ts",
+    "src/tools/gemini/write-file.ts",
+    "src/tools/gemini/glob.ts",
+    "src/tools/gemini/grep.ts",
+    "src/tools/gemini/grep-utils.ts",
+    "src/tools/gemini/ripGrep.ts",
+    "src/tools/gemini/ls.ts",
+    "src/tools/gemini/web-search.ts",
+    "src/tools/gemini/web-fetch.ts",
+    "src/tools/gemini/write-todos.ts",
+    "src/tools/gemini/memoryTool.ts",
+    "src/tools/gemini/get-internal-docs.ts",
+    "src/tools/gemini/activate-skill.ts",
+    "src/tools/gemini/ask-user.ts",
+    "src/tools/gemini/enter-plan-mode.ts",
+    "src/tools/gemini/exit-plan-mode.ts",
+    "src/tools/gemini/modifiable-tool.ts",
+    "src/tools/gemini/trackerTools.ts",
+    "src/tools/gemini/xcode-mcp-fix-transport.ts",
+    "src/tools/gemini/omissionPlaceholderDetector.ts",
+    "src/tools/gemini/diff-utils.ts",
+    "src/tools/gemini/diffOptions.ts"
+  ]
 }

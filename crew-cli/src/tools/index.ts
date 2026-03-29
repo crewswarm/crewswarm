@@ -9,11 +9,11 @@
 import { Sandbox } from '../sandbox/index.js';
 import { createVirtualFS, type VirtualFS } from './virtual-fs.js';
 
-// Import Gemini CLI tools directly
-import type { EditToolParams } from '../../external/gemini-cli/packages/core/src/tools/edit.js';
-import type { WriteFileToolParams } from '../../external/gemini-cli/packages/core/src/tools/write-file.js';
-import type { ShellToolParams } from '../../external/gemini-cli/packages/core/src/tools/shell.js';
-import type { ReadFileToolParams } from '../../external/gemini-cli/packages/core/src/tools/read-file.js';
+// Tool parameter types (originally from Gemini CLI)
+interface EditToolParams { file_path: string; old_string: string; new_string: string; allow_multiple?: boolean; }
+interface WriteFileToolParams { file_path: string; content: string; }
+interface ShellToolParams { command: string; }
+interface ReadFileToolParams { file_path: string; start_line?: number; end_line?: number; }
 
 // Tool declarations for function calling
 export const CREW_TOOL_DECLARATIONS = [
@@ -181,8 +181,8 @@ export class CrewToolExecutor {
 
     // Check if we have staged files → use Docker
     if (this.sandbox.hasChanges()) {
-      const { getDockerSandbox } = await import('./docker-sandbox.js');
-      const docker = await getDockerSandbox();
+      const dockerModule = await import('./docker-sandbox.js');
+      const docker = await (dockerModule as any).getDockerSandbox?.() ?? null;
       
       if (docker) {
         console.log(`[Crew] Running in Docker (${this.sandbox.getPendingPaths().length} files staged)`);

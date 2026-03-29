@@ -156,7 +156,7 @@ export class Planner {
     if (useMemory && steps.length > 0) {
       const saved = await this.keeper.recordSafe({
         runId: options.runId || traceId,
-        tier: 'dual-l2-planner',
+        tier: 'planner' as const,
         task,
         result: JSON.stringify(plan, null, 2),
         agent: 'dual-l2-system',

@@ -135,7 +135,7 @@ export function buildModelSummary(projectDir: string, state: ReplState): ModelSu
 
   const swarmCfg = readJsonFile(join(homedir(), '.crewswarm', 'crewswarm.json')) || {};
   const agents = Array.isArray(swarmCfg?.agents) ? swarmCfg.agents : [];
-  const agentModels = Array.from(
+  const agentModels: string[] = Array.from(
     new Set(
       agents
         .map((a: any) => String(a?.model || '').trim())

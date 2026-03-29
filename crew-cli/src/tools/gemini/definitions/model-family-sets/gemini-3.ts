@@ -83,7 +83,7 @@ import {
   DEFAULT_MAX_LINES_TEXT_FILE,
   MAX_LINE_LENGTH_TEXT_FILE,
   MAX_FILE_SIZE_MB,
-} from '../../../utils/constants.js';
+} from '../../../../utils/constants';
 
 /**
  * Gemini 3 tool set. Initially a copy of the default legacy set.

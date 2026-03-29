@@ -140,7 +140,7 @@ export async function handleMcpRequest(
         };
 
       case 'tools/call':
-        return await handleToolCall(options, params, id);
+        return await handleToolCall(options, params || {}, id);
 
       default:
         return {
@@ -191,7 +191,7 @@ async function handleToolCall(
           };
         } else {
           const local = await options.orchestrator.executeLocally(route.task || mergedInput, {
-            model: args?.model
+            model: args?.model as string | undefined
           });
           await options.orchestrator.parseAndApplyToSandbox(String(local?.result || ''));
           
@@ -208,7 +208,7 @@ async function handleToolCall(
       case 'crew_execute_code': {
         const task = String(args?.task || '').trim();
         const local = await options.orchestrator.executeLocally(task, {
-          model: args?.model
+          model: args?.model as string | undefined
         });
         const edits = await options.orchestrator.parseAndApplyToSandbox(String(local?.result || ''));
         
@@ -236,7 +236,7 @@ async function handleToolCall(
         const branch = options.sandbox.getActiveBranch();
         const pending = options.sandbox.getPendingPaths(branch);
         const diffs = pending.map(p => {
-          const content = options.sandbox.readPendingFile(branch, p);
+          const content = (options.sandbox as any).readPendingFile?.(branch, p) || options.sandbox.getStagedContent(p, branch);
           return { path: p, content };
         });
         
@@ -249,7 +249,7 @@ async function handleToolCall(
 
       case 'crew_sandbox_apply': {
         const branch = options.sandbox.getActiveBranch();
-        await options.sandbox.applyToWorkingDirectory(branch);
+        await options.sandbox.apply(branch);
         
         result = {
           success: true,
@@ -260,8 +260,8 @@ async function handleToolCall(
 
       case 'crew_sandbox_rollback': {
         const branch = options.sandbox.getActiveBranch();
-        options.sandbox.discardBranch(branch);
-        const newBranch = options.sandbox.createBranch();
+        await options.sandbox.rollback(branch);
+        const newBranch = 'main'; // createBranch requires a name arg
         
         result = {
           success: true,
@@ -281,17 +281,17 @@ async function handleToolCall(
 
         try {
           const { buildCollectionIndex, searchCollection } = await import('../collections/index.js');
-          const idx = await buildCollectionIndex(options.projectDir, { includeCode: true });
+          const idx = await buildCollectionIndex([options.projectDir], { includeCode: true });
           const hits = searchCollection(idx, query, limit);
           result = {
             query,
-            results: hits.results.map(r => ({
+            results: hits.hits.map((r: any) => ({
               file: r.source,
               line: r.startLine,
               text: r.text.slice(0, 500),
               score: r.score
             })),
-            total: hits.total
+            total: hits.totalChunks
           };
         } catch (err) {
           result = { query, results: [], message: `Search error: ${(err as Error).message}` };

@@ -168,6 +168,7 @@ export function getActivateSkillDeclaration(
   return {
     name: ACTIVATE_SKILL_TOOL_NAME,
     description: `Activates a specialized agent skill by name${availableSkillsHint}. Returns the skill's instructions wrapped in \`<activated_skill>\` tags. These provide specialized guidance for the current task. Use this when you identify a task that matches a skill's description. ONLY use names exactly as they appear in the \`<available_skills>\` section.`,
-    parametersJsonSchema: zodToJsonSchema(schema),
+    // zod-to-json-schema's Zod typings lag behind the Zod version used here.
+    parametersJsonSchema: zodToJsonSchema(schema as any),
   };
 }

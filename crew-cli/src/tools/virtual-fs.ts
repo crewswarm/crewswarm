@@ -30,7 +30,7 @@ export class VirtualFS {
     const fullPath = this.resolvePath(path);
     
     // Check if staged in sandbox
-    const branch = this.sandbox.state?.branches?.[this.sandbox.getActiveBranch()];
+    const branch = this.sandbox.getState()?.branches?.[this.sandbox.getActiveBranch()];
     const staged = branch?.[fullPath];
     
     if (staged?.modified) {
@@ -56,7 +56,7 @@ export class VirtualFS {
     const fullPath = this.resolvePath(path);
     
     // Check sandbox first
-    const branch = this.sandbox.state?.branches?.[this.sandbox.getActiveBranch()];
+    const branch = this.sandbox.getState()?.branches?.[this.sandbox.getActiveBranch()];
     if (branch?.[fullPath]) return true;
     
     // Check real disk
@@ -75,7 +75,7 @@ export class VirtualFS {
     const fullPath = this.resolvePath(path);
     
     // Check sandbox first
-    const branch = this.sandbox.state?.branches?.[this.sandbox.getActiveBranch()];
+    const branch = this.sandbox.getState()?.branches?.[this.sandbox.getActiveBranch()];
     const staged = branch?.[fullPath];
     
     if (staged?.modified) {
@@ -121,7 +121,7 @@ export class VirtualFS {
    */
   isStaged(path: string): boolean {
     const fullPath = this.resolvePath(path);
-    const branch = this.sandbox.state?.branches?.[this.sandbox.getActiveBranch()];
+    const branch = this.sandbox.getState()?.branches?.[this.sandbox.getActiveBranch()];
     return !!branch?.[fullPath];
   }
 

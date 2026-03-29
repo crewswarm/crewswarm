@@ -5,6 +5,7 @@
  * Call this from crew-cli when commands run in project context
  */
 
+// @ts-ignore — JS module without type declarations
 import { saveProjectMessage, loadProjectMessages } from '../../../lib/chat/project-messages.mjs';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -17,7 +18,7 @@ import { join } from 'path';
  * @param {string} route - Routing info (e.g., 'opencode', 'cursor', 'direct')
  * @param {string} agent - Agent used (if any)
  */
-export function saveCliToProjectMessages(projectDir, { input, output, route, agent }) {
+export function saveCliToProjectMessages(projectDir: any, { input, output, route, agent }: { input: any; output: any; route: any; agent: any }) {
   if (!projectDir || !input) return;
   
   // Try to determine project ID from projectDir
@@ -48,7 +49,7 @@ export function saveCliToProjectMessages(projectDir, { input, output, route, age
  * Extract project ID from directory path.
  * Checks the dashboard projects registry first, falls back to directory name.
  */
-function extractProjectIdFromDir(projectDir) {
+function extractProjectIdFromDir(projectDir: any) {
   // Try to look up project ID from dashboard projects registry
   try {
     const registryPath = join(
@@ -59,7 +60,7 @@ function extractProjectIdFromDir(projectDir) {
     if (existsSync(registryPath)) {
       const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
       const projects = Array.isArray(registry) ? registry : (registry.projects || []);
-      const match = projects.find(p =>
+      const match = projects.find((p: any) =>
         p.path === projectDir ||
         p.directory === projectDir ||
         p.dir === projectDir
@@ -84,7 +85,7 @@ function extractProjectIdFromDir(projectDir) {
  * @param {object} options - Filter options
  * @returns {Array} CLI messages for this project
  */
-export function loadCliProjectHistory(projectDir, options = {}) {
+export function loadCliProjectHistory(projectDir: any, options: any = {}) {
   const projectId = extractProjectIdFromDir(projectDir);
   if (!projectId) return [];
   

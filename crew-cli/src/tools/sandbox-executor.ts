@@ -285,7 +285,7 @@ export async function executeToolsWithSandbox(
           continue;
         }
         
-        const data = await res.json();
+        const data = await res.json() as any;
         const hits = (data.web?.results || []).slice(0, 5);
         const formatted = hits.map((r: any, i: number) =>
           `${i + 1}. **${r.title}** — ${r.url}\n   ${r.description || ''}`

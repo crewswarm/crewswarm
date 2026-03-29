@@ -17,7 +17,7 @@ export interface SandboxState {
 }
 
 export class Sandbox {
-  private state: SandboxState = {
+  protected state: SandboxState = {
     updatedAt: new Date().toISOString(),
     activeBranch: 'main',
     branches: { main: {} }
@@ -180,6 +180,11 @@ export class Sandbox {
     }
 
     await this.persist();
+  }
+
+  /** Expose state for read-only access by VirtualFS and similar utilities. */
+  getState(): SandboxState {
+    return this.state;
   }
 
   getActiveBranch(): string {

@@ -149,7 +149,7 @@ function composeChatPayloadFromOpenAI(messages: unknown): {
   const system = normalized.filter(m => m.role === 'system').map(m => m.text);
   const assistant = normalized.filter(m => m.role === 'assistant').map(m => m.text);
   const userTurns = normalized.filter(m => m.role === 'user');
-  const lastUser = userTurns.at(-1)?.text || '';
+  const lastUser = (userTurns.length > 0 ? userTurns[userTurns.length - 1]?.text : '') || '';
   const priorUser = userTurns.slice(0, -1).map(m => m.text);
   const historyTail = [...priorUser, ...assistant].slice(-8);
   const contextSections: string[] = [];
@@ -256,7 +256,7 @@ function selectToolCallName(body: Record<string, unknown>, userMessage: string):
   const choice = body?.tool_choice;
   if (choice === 'none') return null;
   if (choice && typeof choice === 'object') {
-    const forced = String(choice?.function?.name || '').trim();
+    const forced = String((choice as any)?.function?.name || '').trim();
     if (forced && names.includes(forced)) return forced;
   }
   if (choice === 'required') return names[0];
@@ -362,7 +362,7 @@ async function handleStandaloneChat(options: UnifiedServerOptions, body: Record<
       cwd: String(body?.projectDir || options.projectDir || process.cwd()),
       projectDir: String(body?.projectDir || options.projectDir || process.cwd()),
       sessionId: String(body?.sessionId || ''),
-      timeoutMs: Number(body?.options?.timeoutMs || body?.timeoutMs || 600000)
+      timeoutMs: Number((body?.options as any)?.timeoutMs || body?.timeoutMs || 600000)
     });
     if (!run.success) {
       return {
@@ -414,7 +414,7 @@ async function handleConnectedChat(options: UnifiedServerOptions, body: Record<s
   const context = String(body?.context || '').trim();
   const mergedInput = context ? `${message}\n\n${context}` : message;
   const control = getChatControl(body);
-  const gateway = body?.gateway || options.gateway || 'http://127.0.0.1:5010';
+  const gateway = String(body?.gateway || options.gateway || 'http://127.0.0.1:5010');
 
   if (control.passthroughRequested || control.engine) {
     try {
@@ -500,7 +500,7 @@ async function handleOpenAIChatCompletions(options: UnifiedServerOptions, body: 
       : `${composed.message}\n\nPREFERRED_AGENT: ${model}`,
     context: composed.context,
     options: {
-      model: typeof body?.metadata?.modelOverride === 'string' ? body.metadata.modelOverride : undefined
+      model: typeof (body?.metadata as any)?.modelOverride === 'string' ? (body!.metadata as any).modelOverride : undefined
     }
   };
 
@@ -568,7 +568,7 @@ async function enqueueStandaloneTask(options: UnifiedServerOptions, body: Record
     rec.status = 'running';
     try {
       const result = await options.orchestrator.executeLocally(taskText, {
-        model: body?.options?.model
+        model: (body?.options as any)?.model
       });
       rec.status = 'done';
       rec.result = result?.result || '';
@@ -584,14 +584,14 @@ async function enqueueStandaloneTask(options: UnifiedServerOptions, body: Record
 }
 
 async function enqueueConnectedTask(options: UnifiedServerOptions, body: Record<string, unknown>) {
-  const gateway = body?.gateway || options.gateway || 'http://127.0.0.1:5010';
+  const gateway = String(body?.gateway || options.gateway || 'http://127.0.0.1:5010');
   const payload = {
     agent: body?.agent,
     task: body?.task,
     sessionId: body?.sessionId || 'api',
     ...(body?.options || {})
   };
-  const forwarded = await forwardJson(gateway, '/api/dispatch', 'POST', payload);
+  const forwarded = await forwardJson(String(gateway), '/api/dispatch', 'POST', payload);
   const taskId = forwarded.data?.taskId || '';
   return {
     status: forwarded.ok ? 202 : forwarded.status,
@@ -643,7 +643,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
         });
 
         if (options.mode === 'connected') {
-          const gateway = body?.gateway || options.gateway || 'http://127.0.0.1:5010';
+          const gateway = String(body?.gateway || options.gateway || 'http://127.0.0.1:5010');
           const token = readRtToken();
           const headers: Record<string, string> = { 'content-type': 'application/json' };
           if (token) headers.authorization = `Bearer ${token}`;
@@ -966,8 +966,8 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
         if (options.mode === 'connected') {
           try {
             const status = await options.router.getStatus();
-            gatewayStatus = status?.gateway || 'unknown';
-            queueDepth = Number(status?.queueDepth || 0);
+            gatewayStatus = (status as any)?.gateway || 'unknown';
+            queueDepth = Number((status as any)?.queueDepth || 0);
           } catch {
             gatewayStatus = 'error';
           }
@@ -1009,7 +1009,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       if (req.method === 'POST' && path === '/v1/sandbox/apply') {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const branch = body?.branch || options.sandbox.getActiveBranch();
+        const branch = String(body?.branch || options.sandbox.getActiveBranch());
         const files = options.sandbox.getPendingPaths(branch);
         await options.sandbox.apply(branch);
         return json(res, 200, {
@@ -1021,7 +1021,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       if (req.method === 'POST' && path === '/v1/sandbox/rollback') {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const branch = body?.branch || options.sandbox.getActiveBranch();
+        const branch = String(body?.branch || options.sandbox.getActiveBranch());
         await options.sandbox.rollback(branch);
         return json(res, 200, { success: true });
       }
@@ -1047,7 +1047,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
         });
         latestIndexId = `idx-${randomUUID()}`;
         latestIndexStats = {
-          files: Number(latestIndex?.docs?.length || 0),
+          files: Number(latestIndex?.fileCount || 0),
           chunks: Number(latestIndex?.chunks?.length || 0)
         };
         return json(res, 200, {
@@ -1066,12 +1066,12 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
           latestIndex = fallback;
           latestIndexId = `idx-${randomUUID()}`;
           latestIndexStats = {
-            files: Number(latestIndex?.docs?.length || 0),
+            files: Number(latestIndex?.fileCount || 0),
             chunks: Number(latestIndex?.chunks?.length || 0)
           };
         }
         const result = searchCollection(latestIndex, q, 8);
-        const hits = (result?.hits || []).map((h: Record<string, unknown>) => ({
+        const hits = (result?.hits || []).map((h: CollectionChunk) => ({
           path: h.source,
           score: Number(h.score || 0),
           snippet: h.text
@@ -1083,7 +1083,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       if (req.method === 'POST' && path === '/mcp') {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const mcpResponse = await handleMcpRequest(options, body);
+        const mcpResponse = await handleMcpRequest(options, body as any);
         if (mcpResponse && !(mcpResponse as any)._skip) {
           return json(res, 200, mcpResponse);
         } else {

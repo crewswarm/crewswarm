@@ -3,7 +3,7 @@
  * Sends file changes from CLI to Studio via WebSocket
  */
 
-import { WebSocket } from 'ws';
+import WebSocket from 'ws';
 import { readFile } from 'node:fs/promises';
 import { Logger } from '../utils/logger.js';
 
@@ -23,7 +23,7 @@ export class StudioBroadcaster {
 
   constructor(studioUrl = 'ws://127.0.0.1:3334/ws', logger?: Logger) {
     this.studioUrl = studioUrl;
-    this.logger = logger || new Logger('studio');
+    this.logger = logger || new Logger({ prefix: 'studio' });
   }
 
   async connect(): Promise<void> {
@@ -43,7 +43,7 @@ export class StudioBroadcaster {
           this.scheduleReconnect();
         });
 
-        this.ws.on('error', (err) => {
+        this.ws.on('error', (err: any) => {
           this.logger.error('Studio WebSocket error:', err.message);
           if (!this.connected) {
             reject(err);

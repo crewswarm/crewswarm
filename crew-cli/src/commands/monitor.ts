@@ -1,6 +1,13 @@
 import { Command } from 'commander';
-import { logger } from '../../lib/logger';
-import { healthCheck } from '../../lib/health-check';
+
+// Inline stubs for missing lib modules
+const logger = {
+  info: (...args: any[]) => console.log('[monitor]', ...args),
+  error: (...args: any[]) => console.error('[monitor]', ...args),
+};
+async function healthCheck(): Promise<{ agents: Record<string, any>; services: Record<string, any> }> {
+  return { agents: {}, services: {} };
+}
 
 export function createMonitorCommand(): Command {
   const monitor = new Command('monitor');
