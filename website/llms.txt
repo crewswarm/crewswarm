@@ -22,6 +22,7 @@ It combines:
 - Security: https://crewswarm.ai/security.html
 - Documentation: https://crewswarm.ai/docs.html
 - CLI Guide: https://crewswarm.ai/cli.html
+- PM Loop: https://crewswarm.ai/pm-loop.html
 - ATAT Protocol: https://crewswarm.ai/atat.html
 - OpenClaw Comparison: https://crewswarm.ai/openclaw-comparison.html
 - About: https://crewswarm.ai/about.html
@@ -32,6 +33,9 @@ It combines:
 Useful search phrases:
 - local-first AI workspace
 - multi-agent developer platform
+- AI engineering manager workflow
+- PM loop for software engineering
+- parallel AI agents for coding
 - browser IDE for AI agents
 - codex claude cursor gemini opencode in one stack
 - best ai models for coding and agents
@@ -41,5 +45,6 @@ Useful search phrases:
 ## Best-fit use cases
 - AI-native software teams that want more than one editor chat sidebar
 - Solo builders who want orchestration, memory, and runtime control
+- Teams adopting a "human as PM, agents as engineers" workflow
 - Local-first developers who do not want SaaS lock-in
 - Teams that want dashboard + IDE + native chat on top of one shared agent stack

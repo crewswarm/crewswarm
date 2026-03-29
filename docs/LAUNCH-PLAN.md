@@ -17,7 +17,7 @@ Post to: https://news.ycombinator.com/submit
 
 **Title:**
 ```
-Show HN: CrewSwarm – Switch between Claude, Cursor, Gemini mid-session. Open source
+Show HN: CrewSwarm – You are the PM, the agents are the engineers
 ```
 
 **URL:**
@@ -27,9 +27,11 @@ https://crewswarm.ai
 
 **Text:**
 ```
-I kept hitting rate limits. Claude caps out, switch to Cursor, caps out, switch to Codex. Every tool locks you into one model and one conversation.
+I kept hitting rate limits and single-agent bottlenecks. Claude caps out, switch to Cursor, caps out, switch to Codex. Even when the model is good, one agent doing everything sequentially is still the wrong operating model.
 
-CrewSwarm runs 6 coding engines (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, crew-cli) and 24 LLM providers on your local machine. Switch per agent, mid-session. Sessions resume across engines.
+The mental model that ended up working better was: you are the PM, the agents are the engineers.
+
+CrewSwarm is built around that. It runs 6 coding engines (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, crew-cli) and 24 LLM providers on your local machine. Different agents use different engines and models. Sessions resume across engines.
 
 It's a full local dev platform, not just a CLI:
 
@@ -39,7 +41,7 @@ It's a full local dev platform, not just a CLI:
 - Telegram + WhatsApp bridges — chat with your crew from your phone
 - PM Loop — describe a feature, the crew plans, builds, tests, and ships it autonomously
 
-22 specialist agents run in parallel waves (PM plans → coder + QA + security execute simultaneously → fixer patches). Each agent gets its own model — cheap for routing, powerful for coding. Shared memory means no agent works blind.
+22 specialist agents run in parallel waves (PM plans → coder + QA + security execute simultaneously → fixer patches). Each agent gets its own model — cheap or local for routing and worker glue, premium for planning and hard reasoning. Shared memory means no agent works blind.
 
 957 tests, 0 failures. Docker install for teams. MIT licensed. Everything local.
 
@@ -59,7 +61,9 @@ Post from @crewswarm (or personal account):
 ```
 I kept hitting rate limits on Claude. Then Cursor. Then Codex.
 
-So we built CrewSwarm — 6 coding engines, switch mid-session. Sessions resume across engines. 24 LLM providers, all local.
+The deeper problem: one person driving one agent is still too sequential.
+
+So we built CrewSwarm — the PM loop for AI engineering. You are the PM, the agents are the engineers. 6 coding engines. 24 providers. All local.
 
 Open source today. crewswarm.ai
 ```
@@ -84,19 +88,19 @@ Wave 1: PM plans the feature
 Wave 2: crew-coder + crew-qa + crew-security all execute simultaneously
 Wave 3: crew-fixer patches anything that broke
 
-3x faster than one agent doing everything.
+The job becomes orchestration: keep the workers unblocked, not watch one agent type.
 ```
 
 **Tweet 4 (cost — money):**
 ```
 Per-agent model config = massive cost savings:
 
-- Router: Groq Llama 3.3 (free) — decides what to do
-- QA: Gemini CLI (free) — runs tests
-- Coder: Claude Sonnet — writes the code
-- PM: Grok Fast — plans quickly
+- Router: cheap or local lane — decides what to do
+- PM brain: premium model — planning + hard reasoning
+- QA/worker glue: cheap models or local lanes
+- Coder: premium only where code quality matters most
 
-$0.004 per feature vs $3-5 on a single frontier model.
+Pay for the brain, not the glue.
 ```
 
 **Tweet 5 (trust — proof):**
@@ -124,7 +128,7 @@ Body: [same as HN text, add: "Works with Ollama for fully offline operation"]
 
 **r/programming:**
 ```
-Title: Show r/programming: We built a multi-agent coding platform that uses different models for different jobs
+Title: Show r/programming: We built a PM loop for AI engineering instead of one giant coding agent
 
 Body: [shorter version, focus on the architecture]
 ```
@@ -140,7 +144,7 @@ Body: Every $20/month plan has rate limits. I kept hitting the wall mid-feature.
 ```
 Title: CrewSwarm — 22 AI agents that build features for you while you eat dinner (open source)
 
-Body: PM Loop reads your ROADMAP.md and ships. Agents run in parallel waves — backend, frontend, tests all built simultaneously. Built the crewswarm.ai website itself in 30 minutes. npm install -g crewswarm
+Body: PM Loop reads your ROADMAP.md and ships. The human acts more like a PM than a typist: define the goal, keep workers unblocked, review outputs. Agents run in parallel waves — backend, frontend, tests all built simultaneously. Built the crewswarm.ai website itself in 30 minutes. npm install -g crewswarm
 ```
 
 ## Product Hunt
@@ -153,7 +157,7 @@ Save for Week 2 — don't split attention on launch day. PH needs a dedicated ta
 > Those are Python frameworks for building multi-agent systems from scratch. CrewSwarm is a ready-to-run platform — install, configure models, start building. Dashboard, IDE, CLI, messaging bridges all included. No Python, no framework code, no orchestration boilerplate.
 
 **"Why not just use Claude Code?"**
-> Claude Code is one agent, one model, one conversation. CrewSwarm runs Claude Code as one of 6 engines — plus Cursor, Codex, Gemini, OpenCode, crew-cli. Different agents use different engines. When Claude hits rate limits, your coder switches to Codex. When you need fast QA, Gemini CLI runs for free. The PM Loop plans and ships features autonomously across all of them.
+> Claude Code is one excellent coding lane. CrewSwarm is the PM loop around many coding lanes. It runs Claude Code as one of 6 engines — plus Cursor, Codex, Gemini, OpenCode, crew-cli. Different agents use different engines. When Claude hits rate limits, your coder can switch to Codex. When you need fast QA, Gemini or a local lane can run cheaply. The PM Loop plans and ships features autonomously across all of them.
 
 **"This seems over-engineered"**
 > For "fix this bug" — yes, use Claude Code directly. CrewSwarm's value shows on multi-step work: "build user auth, test it, review for security." That's 3 agents working in parallel waves, each with the right model. One agent doing all 3 sequentially is slower and more expensive.

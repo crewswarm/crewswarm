@@ -151,6 +151,9 @@ Potentially risky shell commands require approval before execution.
 **Multi-engine support**
 Route work through different engines and environments, including Codex, Claude Code, Cursor, Gemini, OpenCode, and `crew-cli`.
 
+**PM loop operating model**
+crewswarm is built around the idea that the human becomes the PM and the agents become the engineers. Instead of one person driving one model sequentially, the system supports parallel specialist lanes, delegated execution, and iterative re-planning across multiple engines and providers.
+
 **Multiple control surfaces**
 Use crewswarm from the web dashboard, CLI, Telegram, macOS SwiftBar, or MCP/editor integrations.
 
@@ -184,6 +187,18 @@ Use crewswarm from the web dashboard, CLI, Telegram, macOS SwiftBar, or MCP/edit
 | `dashboard` | browser-based control surface |
 | `crew-cli` | command-line interface |
 | `crew-scribe` | memory and task summarization |
+
+---
+
+## PM loop page
+
+Public page:
+- `https://crewswarm.ai/pm-loop.html`
+
+Purpose:
+- explain the "you are the PM, the agents are the engineers" operating model
+- frame crewswarm as a system for orchestrating parallel AI labor, not just using one coding chatbot
+- connect the workflow to multi-engine execution, provider flexibility, and tiered cost control
 
 ---
 

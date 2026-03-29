@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
   <title>crewswarm — The Multi-Engine AI Coding Platform</title>
   <meta name="description"
-    content="The only multi-engine AI coding platform. Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. 20+ agents, parallel waves, persistent sessions. Free, open source, local-first." />
+    content="The PM loop for AI engineering. Run a crew of agents across Claude Code, Cursor, Gemini, Codex, OpenCode, and direct providers. Parallel waves, persistent sessions, local-first." />
   <meta name="keywords"
     content="multi-engine AI coding, Claude Code alternative, Cursor alternative, AI coding platform, local-first AI, multi-agent orchestration, Vibe IDE, crew-cli, session resume, parallel agents, Gemini CLI, Codex CLI, OpenCode, rate limits" />
   <!-- Open Graph -->
@@ -16,7 +16,7 @@
   <meta property="og:locale" content="en_US" />
   <meta property="og:title" content="crewswarm — Local-First AI Orchestration for Real Files and Tools" />
   <meta property="og:description"
-    content="The only multi-engine AI coding platform. 6 CLI engines, parallel agents, persistent sessions, PM-led builds. Open source, local-first, no vendor lock-in." />
+    content="The PM loop for AI engineering. You are the PM, the agents are the engineers. Multi-engine, parallel, local-first, and open source." />
   <meta property="og:url" content="https://crewswarm.ai/" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -28,7 +28,7 @@
   <meta name="twitter:site" content="@crewswarm" />
   <meta name="twitter:title" content="crewswarm — Local-First AI Orchestration" />
   <meta name="twitter:description"
-    content="The only multi-engine AI coding platform. Switch between Claude, Cursor, Gemini, Codex mid-conversation. Parallel agents, persistent sessions, open source." />
+    content="The PM loop for AI engineering. You are the PM, the agents are the engineers. Multi-engine, parallel, local-first, open source." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <meta name="twitter:image:alt" content="crewswarm — multi-agent AI orchestration" />
   <!-- Misc SEO -->
@@ -47,7 +47,7 @@
       "@type": "SoftwareApplication",
       "name": "crewswarm",
       "url": "https://crewswarm.ai/",
-      "description": "The only multi-engine AI coding platform. Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. 20+ specialist agents, parallel waves, persistent sessions, PM-led builds. Free, open source, local-first.",
+      "description": "The PM loop for AI engineering. Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode while coordinating a crew of specialist agents in parallel. Free, open source, local-first.",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux, Windows",
       "offers": {
@@ -195,6 +195,7 @@
         style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">multi-engine AI
         coding platform</a>. Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation.
       Parallel agents. Persistent sessions. No vendor lock-in.</p>
+    <p class="hero-sub" style="max-width: 54rem; margin-top: 0.85rem;">The mental model is different: you are the PM, the agents are your engineers. Keep multiple workers moving in parallel, unblock them, and ship faster than one person hand-typing everything.</p>
     <div class="proof-bar visible">
       <span class="proof-item">6 CLI engines</span>
       <span class="proof-sep" aria-hidden="true">•</span>
@@ -215,6 +216,7 @@
       <a href="https://github.com/crewswarm/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.npmjs.com/package/crewswarm" class="btn btn-ghost" target="_blank" rel="noopener">npm</a>
       <a href="vibe.html" class="btn btn-ghost">Explore Vibe</a>
+      <a href="pm-loop.html" class="btn btn-ghost">PM Loop</a>
     </div>
     <div style="margin-top: 0.75rem; display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;" onclick="navigator.clipboard.writeText('npm install -g crewswarm').then(()=>{this.querySelector('.copy-icon').textContent='copied';setTimeout(()=>this.querySelector('.copy-icon').textContent='copy',2000)})" title="Click to copy">
       <code style="color: var(--accent);">npm install -g crewswarm</code>
@@ -376,6 +378,31 @@
         }
       }
     </script>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Operating Model</div>
+        <h2>You are the PM. The agents are the engineers.</h2>
+        <p class="section-desc">Single-agent tools still assume one human driving one model. crewswarm is built for a different workflow: define the goal, split the work, run multiple specialists in parallel, and spend your time unblocking and reviewing instead of waiting for one agent to finish.</p>
+      </div>
+      <div class="grid-3" style="margin-top: 2rem;">
+        <div class="page-card">
+          <h3>Parallel by default</h3>
+          <p>Frontend, backend, QA, PM, and security lanes can all move at once. Idle time should start another worker, not watch one agent type.</p>
+        </div>
+        <div class="page-card">
+          <h3>Delegate, don’t babysit</h3>
+          <p>Assign concrete tasks, constraints, and acceptance criteria. The system routes work to the right agent and engine instead of forcing one model to do everything sequentially.</p>
+        </div>
+        <div class="page-card">
+          <h3>Keep the crew unblocked</h3>
+          <p>The human job moves up a layer: approve direction, resolve blockers, review outputs, and redirect effort. That is the PM loop.</p>
+        </div>
+      </div>
+      <p style="margin-top: 1.5rem; text-align:center;"><a href="pm-loop.html" style="color:var(--accent);">Read the PM Loop manifesto</a></p>
     </div>
   </section>
 

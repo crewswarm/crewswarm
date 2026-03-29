@@ -8,13 +8,13 @@
   <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
   <title>crew-cli — The High-Performance AI Engineering Terminal | crewswarm</title>
   <meta name="description"
-    content="crew-cli is the high-performance engine for crewswarm. 3-tier LLM architecture, parallel speculative execution, and ATAT protocol for zero-risk autonomous coding." />
+    content="crew-cli is the provider-agnostic engineering terminal for crewswarm. Bring your own keys, fail over across providers, and keep building when one model or CLI hits limits." />
   <meta name="keywords"
     content="crew-cli, multi-agent CLI, AI coding, terminal AI, parallel execution, LLM routing, ATAT protocol" />
   <!-- Open Graph -->
   <meta property="og:title" content="crew-cli — High-Performance AI Engineering Terminal" />
   <meta property="og:description"
-    content="3-tier LLM architecture, 3x parallel speedup, and ATAT protocol. The professional terminal for autonomous coding." />
+    content="Bring your own keys, fail over across providers, and keep building when one model or CLI hits limits. crew-cli is the provider-agnostic engineering terminal." />
   <meta property="og:url" content="https://crewswarm.ai/cli.html" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -28,7 +28,7 @@
   <meta name="twitter:site" content="@crewswarm" />
   <meta name="twitter:title" content="crew-cli — High-Performance AI Engineering Terminal" />
   <meta name="twitter:description"
-    content="3-tier LLM architecture, 3x parallel speedup, and ATAT protocol. The professional terminal for autonomous coding." />
+    content="Bring your own keys, fail over across providers, and keep building when one model or CLI hits limits. crew-cli is the provider-agnostic engineering terminal." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <!-- SEO -->
   <meta name="robots" content="index, follow" />
@@ -64,7 +64,7 @@
     "@context": "https://schema.org",
     "@type": "WebPage",
     "name": "crew-cli — The High-Performance AI Engineering Terminal",
-    "description": "crew-cli is the high-performance engine for crewswarm. 3-tier LLM architecture, parallel speculative execution, and ATAT protocol for zero-risk autonomous coding.",
+    "description": "crew-cli is the provider-agnostic engineering terminal for crewswarm. Bring your own keys, fail over across providers, and keep building when one model or CLI hits limits.",
     "url": "https://crewswarm.ai/cli.html",
     "isPartOf": { "@type": "WebSite", "name": "crewswarm", "url": "https://crewswarm.ai/" }
   }
@@ -131,7 +131,20 @@
     <h1 class="gradient-text">Think. Plan. Build.<br />Three tiers, one command.</h1>
     <p class="hero-sub">
       <strong>crew-cli</strong> doesn't just call a model and hope. It routes your task, plans the work,
-      generates architecture docs, then executes with tool access. Different models for each tier.
+      generates architecture docs, then executes with tool access. Use cheap or local models for routing and worker lanes,
+      and reserve premium models for the planning brains that actually need them.
+    </p>
+    <p class="hero-sub" style="max-width: 54rem; margin-top: 0.85rem;">
+      Bring whatever keys you have. If Claude, OpenAI, Anthropic, or another path is rate-limited, out of credits,
+      or unavailable, <strong>crew-cli</strong> can keep going through another configured provider instead of locking
+      you to one vendor runtime.
+    </p>
+    <p class="hero-sub" style="max-width: 54rem; margin-top: 0.65rem;">
+      You can also mix in local model lanes for effectively free parallel work. Use hosted models for hard reasoning,
+      and run local glue tasks, summaries, routing, or background execution without paying per request.
+    </p>
+    <p class="hero-sub" style="max-width: 54rem; margin-top: 0.65rem;">
+      Bring any configured provider at any tier. Pay for intelligence where it matters, not on every token of every step.
     </p>
     <div style="margin-top: 0.75rem; display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem;">
       <code style="color: var(--accent);">npm install -g crewswarm-cli</code>
@@ -202,6 +215,38 @@
     </div>
   </section>
 
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Resilience</div>
+        <h2>No single-provider trap</h2>
+        <p class="section-desc">crew-cli is built for the real constraint in AI terminals: one vendor hits a wall, but the job still needs to finish.</p>
+      </div>
+      <div class="grid-3" style="margin-top: 2rem;">
+        <div class="page-card">
+          <h3>Bring Your Own Keys</h3>
+          <p>Use the providers you already pay for: OpenAI, Anthropic, Google, Groq, DeepSeek, xAI, OpenRouter, local models, and more. No middleman markup, no platform lock-in.</p>
+        </div>
+        <div class="page-card">
+          <h3>Fail Over, Don’t Stall</h3>
+          <p>If one model path is rate-limited, out of quota, or temporarily unavailable, crew-cli can fall through to another configured provider instead of dying on a single stack.</p>
+        </div>
+        <div class="page-card">
+          <h3>CLI Limits Aren’t Terminal</h3>
+          <p>Claude Code, Codex CLI, Cursor, and direct APIs each have different strengths and failure modes. crew-cli is the escape hatch when one runtime hits a wall mid-task.</p>
+        </div>
+        <div class="page-card">
+          <h3>Local Lanes Stay Cheap</h3>
+          <p>Mix local models into the same workflow for effectively free parallel throughput. Keep premium APIs for the hard parts and offload glue work, summaries, and background execution to local lanes.</p>
+        </div>
+        <div class="page-card">
+          <h3>Pay For The Brain, Not The Glue</h3>
+          <p>Use fast cheap lanes for L1 routing and L3 worker churn. Spend premium tokens on L2 planning, validation, and hard reasoning only when the task actually justifies it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- 3-TIER PIPELINE -->
   <section class="section">
     <div class="container">
@@ -214,20 +259,20 @@
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
           <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🚦</div>
           <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Tier 1: Router</h3>
-          <p style="font-size: 0.85rem; color: var(--text-2);">Fast, cheap model decides HOW to handle the task: direct answer, single execution, or parallel decomposition. ~$0.0001, &lt;1 second.</p>
-          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">Groq / Grok / any fast model</div>
+          <p style="font-size: 0.85rem; color: var(--text-2);">Fast, cheap lane decides HOW to handle the task: direct answer, single execution, or parallel decomposition. This is where cheap hosted models or local routing lanes shine.</p>
+          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">Groq / Grok / Gemini Flash / local router lanes</div>
         </div>
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
           <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🗺️</div>
           <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Tier 2: Planner</h3>
-          <p style="font-size: 0.85rem; color: var(--text-2);">Generates 7 planning artifacts (PDD, ROADMAP, ARCH, SCAFFOLD, CONTRACT-TESTS, DOD, BENCHMARKS). A separate validator model checks risk.</p>
-          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">GPT / Claude / reasoning model</div>
+          <p style="font-size: 0.85rem; color: var(--text-2);">This is the expensive brain layer: planning, validation, risk checks, and hard reasoning. Use your premium context-heavy models here when the task actually needs them.</p>
+          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">GPT / Claude / Gemini Pro / premium reasoning models</div>
         </div>
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center;">
           <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚡</div>
           <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Tier 3: Executor</h3>
-          <p style="font-size: 0.85rem; color: var(--text-2);">Agentic loop with 38+ tools — file I/O, shell, git, LSP, browser, web search. Writes real files, runs real commands, verifies output.</p>
-          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">Gemini / any coding model</div>
+          <p style="font-size: 0.85rem; color: var(--text-2);">Tool-using worker lane with 38+ tools: file I/O, shell, git, LSP, browser, web search. Use strong cheap models, premium coders, or local workers depending on cost and quality needs.</p>
+          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-3);">Gemini / Codex / Claude / Groq / local worker lanes</div>
         </div>
       </div>
     </div>
