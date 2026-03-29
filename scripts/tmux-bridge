@@ -1,0 +1,130 @@
+#!/bin/bash
+# tmux-bridge — lightweight replacement for smux's tmux-bridge
+# Implements the same CLI interface using raw tmux commands.
+# No external dependencies beyond tmux itself.
+
+set -euo pipefail
+
+CMD="${1:-help}"
+shift 2>/dev/null || true
+
+# Storage for pane labels (agent ID → pane ID mapping)
+LABEL_DIR="${CREWSWARM_TMUX_LABEL_DIR:-${HOME}/.crewswarm/state/tmux-labels}"
+mkdir -p "$LABEL_DIR" 2>/dev/null || true
+
+case "$CMD" in
+
+  id)
+    # Print this process's tmux pane ID
+    tmux display-message -p '#{pane_id}' 2>/dev/null
+    ;;
+
+  name|label)
+    # Label a pane with an agent ID
+    # Usage: tmux-bridge name %0 crew-coder
+    PANE_ID="${1:?pane_id required}"
+    AGENT_ID="${2:?agent_id required}"
+    # Store label mapping
+    echo "$PANE_ID" > "$LABEL_DIR/$AGENT_ID"
+    # Also set tmux pane title
+    tmux select-pane -t "$PANE_ID" -T "$AGENT_ID" 2>/dev/null
+    echo "ok"
+    ;;
+
+  resolve)
+    # Resolve agent ID to pane ID
+    # Usage: tmux-bridge resolve crew-coder
+    AGENT_ID="${1:?agent_id required}"
+    LABEL_FILE="$LABEL_DIR/$AGENT_ID"
+    if [ -f "$LABEL_FILE" ]; then
+      PANE_ID=$(cat "$LABEL_FILE")
+      # Verify pane still exists
+      if tmux has-session -t "$PANE_ID" 2>/dev/null || tmux display-message -t "$PANE_ID" -p '#{pane_id}' 2>/dev/null >/dev/null; then
+        echo "$PANE_ID"
+      else
+        # Pane gone, clean up stale label
+        rm -f "$LABEL_FILE"
+        exit 1
+      fi
+    else
+      # Try finding by pane title
+      PANE_ID=$(tmux list-panes -a -F '#{pane_id} #{pane_title}' 2>/dev/null | grep " ${AGENT_ID}$" | head -1 | cut -d' ' -f1)
+      if [ -n "$PANE_ID" ]; then
+        echo "$PANE_ID" > "$LABEL_FILE"
+        echo "$PANE_ID"
+      else
+        exit 1
+      fi
+    fi
+    ;;
+
+  read)
+    # Read last N lines from a pane
+    # Usage: tmux-bridge read %0 50
+    PANE_ID="${1:?pane_id required}"
+    LINES="${2:-50}"
+    tmux capture-pane -t "$PANE_ID" -p -S "-${LINES}" 2>/dev/null
+    ;;
+
+  type)
+    # Type text into a pane (without pressing Enter)
+    # Usage: tmux-bridge type %0 "ls -la"
+    PANE_ID="${1:?pane_id required}"
+    TEXT="${2:?text required}"
+    tmux send-keys -t "$PANE_ID" -l "$TEXT" 2>/dev/null
+    echo "ok"
+    ;;
+
+  keys)
+    # Send a key to a pane
+    # Usage: tmux-bridge keys %0 Enter
+    PANE_ID="${1:?pane_id required}"
+    KEY="${2:?key required}"
+    tmux send-keys -t "$PANE_ID" "$KEY" 2>/dev/null
+    echo "ok"
+    ;;
+
+  list)
+    # List all panes with labels
+    printf "%-8s %-20s %-12s %-25s %-15s %s\n" "TARGET" "SESSION:WIN" "SIZE" "PROCESS" "LABEL" "CWD"
+    tmux list-panes -a -F '#{pane_id} #{session_name}:#{window_index} #{pane_width}x#{pane_height} #{pane_current_command} #{pane_title} #{pane_current_path}' 2>/dev/null | while read -r PANE_ID SESSION SIZE PROC TITLE CWD; do
+      # Check if we have a stored label for this pane
+      LABEL="-"
+      for f in "$LABEL_DIR"/*; do
+        [ -f "$f" ] || continue
+        if [ "$(cat "$f" 2>/dev/null)" = "$PANE_ID" ]; then
+          LABEL=$(basename "$f")
+          break
+        fi
+      done
+      # Use pane title as label if no stored label
+      if [ "$LABEL" = "-" ] && [ -n "$TITLE" ] && [ "$TITLE" != "$PROC" ]; then
+        LABEL="$TITLE"
+      fi
+      printf "%-8s %-20s %-12s %-25s %-15s %s\n" "$PANE_ID" "$SESSION" "$SIZE" "$PROC" "$LABEL" "$CWD"
+    done
+    ;;
+
+  help|--help|-h)
+    echo "tmux-bridge — CrewSwarm tmux pane communication"
+    echo ""
+    echo "Commands:"
+    echo "  id                      Print current pane ID"
+    echo "  name <pane> <agent>     Label a pane with agent ID"
+    echo "  resolve <agent>         Find pane ID by agent label"
+    echo "  read <pane> [lines]     Read last N lines from pane"
+    echo "  type <pane> <text>      Type text into pane"
+    echo "  keys <pane> <key>       Send key to pane (e.g. Enter)"
+    echo "  list                    List all panes with labels"
+    echo ""
+    echo "Environment:"
+    echo "  CREWSWARM_TMUX_BRIDGE=1   Enable bridge"
+    echo "  SMUX_BRIDGE_BIN=path      Override binary path"
+    ;;
+
+  *)
+    echo "Unknown command: $CMD" >&2
+    echo "Run 'tmux-bridge help' for usage" >&2
+    exit 1
+    ;;
+esac
