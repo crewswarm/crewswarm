@@ -41,10 +41,12 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 
 ## tmux-bridge sessions
 
+Cross-agent pane communication for multi-wave pipelines. When enabled, agents can read each other's output and the session manager can hand off execution context between pipeline waves. Requires `tmux` installed (no other dependencies — the bridge is a built-in bash script at `scripts/tmux-bridge`).
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CREWSWARM_TMUX_BRIDGE` | `off` | Enable persistent tmux sessions with cross-agent handoff. Requires `tmux` + `smux` installed. Toggle via Dashboard → Settings → Engines. |
-| `SMUX_BRIDGE_BIN` | `tmux-bridge` | Path to `tmux-bridge` binary (auto-detected from `~/.smux/bin`) |
+| `CREWSWARM_TMUX_BRIDGE` | `off` | Enable persistent tmux sessions with cross-agent handoff. Requires `tmux`. Toggle via Dashboard → Settings → Engines. |
+| `SMUX_BRIDGE_BIN` | `tmux-bridge` | Override path to tmux-bridge binary (default: auto-detected from PATH) |
 
 ## Ports
 

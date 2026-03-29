@@ -1607,34 +1607,22 @@ export function initChatActions(deps) {
   }
 
   function getAgentRouteAndModel(agent) {
-    if (agent.useCursorCli) {
-      return { route: "cursor", model: agent.cursorCliModel || "auto" };
-    }
-    if (agent.useClaudeCode) {
-      return { route: "claude", model: agent.claudeCodeModel || "auto" };
-    }
-    if (agent.useCodex) {
-      return { route: "codex", model: agent.codexModel || "auto" };
-    }
-    if (agent.useGeminiCli) {
-      return { route: "gemini", model: agent.geminiCliModel || "auto" };
-    }
-    if (agent.useCrewCLI) {
-      return { route: "crew-cli", model: agent.crewCliModel || "auto" };
-    }
-    if (agent.useOpenCode === true) {
-      return {
-        route: "opencode",
-        model: agent.opencodeModel || agent.model || "default",
-      };
-    }
-    return { route: "llm", model: agent.model || "no model" };
+    // Primary label is always the agent's direct LLM model (used for chat).
+    // CLI engines only activate for coding tasks, shown as secondary info.
+    const cliEngine = agent.useCursorCli ? { route: "cursor", model: agent.cursorCliModel || "auto" }
+      : agent.useClaudeCode ? { route: "claude", model: agent.claudeCodeModel || "auto" }
+      : agent.useCodex ? { route: "codex", model: agent.codexModel || "auto" }
+      : agent.useGeminiCli ? { route: "gemini", model: agent.geminiCliModel || "auto" }
+      : agent.useCrewCLI ? { route: "crew-cli", model: agent.crewCliModel || "auto" }
+      : agent.useOpenCode === true ? { route: "opencode", model: agent.opencodeModel || agent.model || "default" }
+      : null;
+    return { route: "llm", model: agent.model || "no model", cliEngine };
   }
 
   function formatAgentModelLabel(agent) {
-    const { route, model } = getAgentRouteAndModel(agent);
-    if (route === "llm") return model;
-    return `${route}:${model}`;
+    const { model, cliEngine } = getAgentRouteAndModel(agent);
+    if (cliEngine) return `${model} (code: ${cliEngine.route})`;
+    return model;
   }
 
   let lastAgentSelectorRefreshAt = 0;

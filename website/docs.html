@@ -391,6 +391,19 @@ CREW_NO_STREAM=true CREW_MAX_SESSION_TOKENS=50000 crew "refactor auth module"</c
         <p>Set <code>CREW_MAX_SESSION_TOKENS</code> to control the token budget for session transcripts (default: 100K).</p>
       </section>
 
+      <!-- TMUX BRIDGE -->
+      <section class="docs-section">
+        <h2>tmux Bridge (Multi-Agent Sessions)</h2>
+        <p>When running multi-wave pipelines, agents can share execution context via tmux panes. The bridge lets the orchestrator label panes with agent IDs, read agent output, and hand off sessions between pipeline waves.</p>
+        <pre><code># Enable the bridge (requires tmux installed)
+export CREWSWARM_TMUX_BRIDGE=1
+
+# Or toggle in Dashboard → Settings → Engines</code></pre>
+        <p><strong>How it works:</strong> When Agent A finishes wave 1, the session manager transfers the tmux pane to Agent B. Agent B can read Agent A's output and continue in the same working directory. No context is lost between waves.</p>
+        <p><strong>When to use:</strong> PM loop pipelines, multi-step builds where agents chain (coder → QA → fixer). Not needed for single-task dispatch.</p>
+        <p>The bridge is a built-in bash script (<code>scripts/tmux-bridge</code>) — no external dependencies beyond tmux.</p>
+      </section>
+
       <!-- BEST PRACTICES -->
       <section class="docs-section">
         <h2>Best Practices</h2>
