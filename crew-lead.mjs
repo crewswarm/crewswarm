@@ -101,6 +101,7 @@ import {
 } from "./lib/crew-lead/wave-dispatcher.mjs";
 import { normalizeRtAgentId } from "./lib/agent-registry.mjs";
 import { handleAutonomousMentions } from "./lib/chat/autonomous-mentions.mjs";
+import { saveProjectMessage } from "./lib/chat/project-messages.mjs";
 import { initIntervalManagers } from "./lib/crew-lead/interval-manager.mjs";
 
 // ── Single instance + canonical PID (dashboard / restart-crew-lead.sh use this path) ──
@@ -646,6 +647,7 @@ const connectRT = initWsRouter({
   appendHistory,
   pendingPipelines,
   handleAutonomousMentions,
+  saveProjectMessage,
   checkWaveQualityGate,
   failPipelineOnQualityGate,
   savePipelineState,
