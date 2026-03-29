@@ -1,10 +1,11 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 echo "🚀 Deploying crewswarm website with new screenshots..."
 echo ""
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Check auth
 if ! flyctl auth whoami &>/dev/null; then
@@ -15,10 +16,10 @@ fi
 
 echo "✅ Authenticated with Fly.io"
 echo ""
-echo "📦 Building and deploying..."
+echo "📦 Building and deploying from: $SCRIPT_DIR"
 echo ""
 
-flyctl deploy --remote-only
+flyctl deploy --remote-only -c "$SCRIPT_DIR/fly.toml"
 
 echo ""
 echo "✅ Deployment complete!"

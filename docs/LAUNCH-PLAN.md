@@ -5,7 +5,7 @@
 - [ ] Flip GitHub repo to public: https://github.com/crewswarm/crewswarm/settings → Danger Zone → Make public
 - [ ] Enable GitHub Discussions: Settings → Features → Discussions (gives users a place to talk without opening issues)
 - [ ] Uncomment stars badge in `website/index.html` (~line 224)
-- [ ] `git push && cd website && flyctl deploy`
+- [ ] `git push && ./website/deploy-now.sh`
 - [ ] Verify: https://crewswarm.ai shows stars badge
 - [ ] Verify: `npm view crewswarm` and `npm view crewswarm-cli` both work
 - [ ] Upload quickstart.mp4 to YouTube (unlisted or public) for embedding in posts
