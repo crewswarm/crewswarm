@@ -200,6 +200,26 @@ Purpose:
 - frame crewswarm as a system for orchestrating parallel AI labor, not just using one coding chatbot
 - connect the workflow to multi-engine execution, provider flexibility, and tiered cost control
 
+## PM loop walkthrough page
+
+Public page:
+- `https://crewswarm.ai/pm-loop-walkthrough.html`
+
+Purpose:
+- show one concrete PM-loop run from request to shipped files
+- explain planning, parallel specialist lanes, validation, and fixer loops in a practical sequence
+- make the PM-loop thesis easier to understand for first-time visitors
+
+## Engine comparison page
+
+Public page:
+- `https://crewswarm.ai/engine-comparison.html`
+
+Purpose:
+- compare Claude Code, Codex CLI, Cursor CLI, Gemini CLI, OpenCode, and crew-cli
+- distinguish raw single-agent coding quality from broader system fit inside CrewSwarm
+- explain why crew-cli matters as a portable execution engine even when vendor-native tools may win on polish
+
 ---
 
 ## Architecture

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PM Loop Walkthrough — From Prompt to Shipped Files | crewswarm</title>
+  <meta name="description" content="See a concrete CrewSwarm PM-loop run: from one product ask to planning, parallel agents, validation, fixes, and shipped files." />
+  <meta name="keywords" content="PM loop walkthrough, AI engineering workflow, parallel coding agents example, CrewSwarm demo, agent orchestration example" />
+  <meta property="og:title" content="PM Loop Walkthrough — From Prompt to Shipped Files" />
+  <meta property="og:description" content="A concrete example of how CrewSwarm turns one product request into plans, parallel work, QA, fixes, and shipped code." />
+  <meta property="og:url" content="https://crewswarm.ai/pm-loop-walkthrough.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="PM Loop Walkthrough — From Prompt to Shipped Files" />
+  <meta name="twitter:description" content="See how a real PM loop run works: planning, delegation, engine choice, QA, fixes, and final ship." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#060a10" />
+  <meta name="author" content="crewswarm" />
+  <link rel="canonical" href="https://crewswarm.ai/pm-loop-walkthrough.html" />
+  <link rel="alternate" hreflang="en" href="https://crewswarm.ai/pm-loop-walkthrough.html" />
+  <link rel="icon" type="image/png" href="favicon.webp?v=4" />
+  <link rel="apple-touch-icon" href="favicon.webp?v=4" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "How a CrewSwarm PM loop run works",
+    "description": "A walkthrough of how CrewSwarm turns one product ask into planned, parallel, validated software work.",
+    "step": [
+      { "@type": "HowToStep", "name": "Define the outcome" },
+      { "@type": "HowToStep", "name": "Plan and decompose the work" },
+      { "@type": "HowToStep", "name": "Dispatch parallel specialist lanes" },
+      { "@type": "HowToStep", "name": "Validate and fix" },
+      { "@type": "HowToStep", "name": "Ship the result" }
+    ]
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <section id="ai-summary" style="position:absolute;width:1px;height:1px;max-width:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border-width:0;">This page shows a concrete CrewSwarm PM-loop run. One product request becomes planning artifacts, parallel specialist work, validation, fixes, and final shipped files, with different engines used where they fit best.</section>
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.webp?v=4" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">crew<span class="nav-logo-hq">swarm</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks" role="menubar">
+        <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+        <li role="none"><a href="pm-loop.html" role="menuitem" class="nav-link-item">PM Loop</a></li>
+        <li role="none"><a href="engine-comparison.html" role="menuitem" class="nav-link-item">Comparison</a></li>
+        <li role="none"><a href="cli.html" role="menuitem" class="nav-link-item">CLI</a></li>
+        <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-badge">Concrete Example · Planning → Parallel Work → QA → Fix → Ship</div>
+    <h1 class="gradient-text">What a PM-loop run actually looks like</h1>
+    <p class="hero-sub">This is the concrete version of the thesis. One request comes in, the PM layer plans it, specialists move in parallel, QA and fixer close the loop, and the result lands as real files instead of one endless chat transcript.</p>
+    <div class="hero-cta">
+      <a href="index.html#get-started" class="btn btn-primary">Install crewswarm</a>
+      <a href="engine-comparison.html" class="btn btn-ghost">Compare the engine lanes</a>
+      <a href="pm-loop.html" class="btn btn-ghost">Read the PM Loop</a>
+    </div>
+  </section>
+
+  <section class="section section-alt visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Example input</div>
+        <h2>The request</h2>
+      </div>
+      <div class="page-card" style="margin-top:2rem;">
+        <p><strong>User asks:</strong> "Add JWT auth to the app. I need login, signup, protected routes, tests, and basic docs."</p>
+        <p style="margin-top:1rem;">That is not one coding step. It is product framing, API design, implementation, tests, validation, and cleanup. A PM loop treats it that way from the start.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Step 1</div>
+        <h2>Plan before typing</h2>
+      </div>
+      <div class="grid-2" style="margin-top:2rem; gap:1rem;">
+        <div class="page-card">
+          <h3>PM layer frames the work</h3>
+          <p>The PM lane turns the request into a clearer outcome: auth endpoints, middleware, route protection, tests, docs, and acceptance criteria.</p>
+        </div>
+        <div class="page-card">
+          <h3>Artifacts get generated</h3>
+          <p>Depending on the flow, CrewSwarm can write planning artifacts like a roadmap, technical spec, and validation criteria before workers touch the code.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Step 2</div>
+        <h2>Dispatch parallel lanes</h2>
+      </div>
+      <div class="grid-3" style="margin-top:2rem;">
+        <div class="page-card"><h3>Backend lane</h3><p><strong>crew-coder-back</strong> handles the auth routes, JWT helpers, middleware, and data flow.</p></div>
+        <div class="page-card"><h3>QA lane</h3><p><strong>crew-qa</strong> prepares test expectations and reviews whether the implementation meets the acceptance criteria.</p></div>
+        <div class="page-card"><h3>Docs lane</h3><p><strong>crew-copywriter</strong> or a docs lane updates the README, route docs, or setup notes in parallel with coding.</p></div>
+      </div>
+      <p style="margin-top:1.5rem; text-align:center;">This is the key difference: the system keeps multiple useful lanes moving instead of forcing one assistant to do everything in sequence.</p>
+    </div>
+  </section>
+
+  <section class="section visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Step 3</div>
+        <h2>Choose the right engine per lane</h2>
+      </div>
+      <div class="grid-3" style="margin-top:2rem;">
+        <div class="page-card"><h3>Planning lane</h3><p>Use a stronger premium model for decomposition, validation, or architecture judgment when the task needs it.</p></div>
+        <div class="page-card"><h3>Execution lane</h3><p>Use Claude Code, Codex, Cursor, Gemini, OpenCode, or crew-cli depending on codebase fit, availability, and cost.</p></div>
+        <div class="page-card"><h3>Cheap/local lanes</h3><p>Use local or cheaper hosted models for routing, summaries, glue work, and worker churn instead of burning premium tokens everywhere.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Step 4</div>
+        <h2>Validate, fix, and re-route</h2>
+      </div>
+      <div class="grid-2" style="margin-top:2rem; gap:1rem;">
+        <div class="page-card"><h3>Run the checks</h3><p>Tests, lint, typecheck, or route-level validation catch what the first pass missed. The point is not to trust the first output. The point is to close the loop.</p></div>
+        <div class="page-card"><h3>Use a fixer lane if needed</h3><p>If tests fail or output is incomplete, the PM loop can assign a fixer lane, patch the result, and re-run validation instead of making the human manually restart the whole process.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Step 5</div>
+        <h2>What lands at the end</h2>
+      </div>
+      <div class="grid-2" style="margin-top:2rem; gap:1rem;">
+        <div class="page-card"><h3>Real outputs</h3><p>By the end of the run, you have actual files on disk: auth routes, middleware, tests, docs, and whatever fixes were needed to make them hold together.</p></div>
+        <div class="page-card"><h3>Human role stays high-leverage</h3><p>The human reviews the result, adjusts acceptance criteria, and decides whether to ship. That is much closer to PM plus tech lead work than line-by-line typing.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Takeaway</div>
+        <h2>This is why the PM loop matters</h2>
+      </div>
+      <div class="page-card" style="margin-top:2rem;">
+        <p>Single-agent chat tools are still useful. But once the work has planning, validation, retries, docs, and multiple implementation lanes, the bottleneck stops being typing and starts being coordination.</p>
+        <p style="margin-top:1rem;">CrewSwarm is built around that reality. The PM loop keeps the queue full, the specialist lanes moving, and the human operating at the level of goals, tradeoffs, and judgment.</p>
+        <p style="margin-top:1rem;"><a href="engine-comparison.html" style="color:var(--accent);">Compare the engine lanes</a> · <a href="cli.html" style="color:var(--accent);">Read crew-cli</a> · <a href="vibe.html" style="color:var(--accent);">See Vibe</a></p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Read next</div>
+          <a href="pm-loop.html">PM Loop</a>
+          <a href="engine-comparison.html">Engine Comparison</a>
+          <a href="cli.html">CLI</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="vibe.html">Vibe</a>
+          <a href="docs.html">Docs</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom"><div class="container"><span>&copy; 2026 crewswarm. All rights reserved.</span></div></div>
+  </footer>
+  <script src="script.js"></script>
+</body>
+</html>

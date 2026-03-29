@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Coding Engine Comparison — Claude, Codex, Cursor, Gemini, OpenCode, crew-cli | crewswarm</title>
+  <meta name="description" content="Compare Claude Code, Codex CLI, Cursor CLI, Gemini CLI, OpenCode, and crew-cli for agentic coding, tool use, runtime polish, and fit inside the CrewSwarm PM loop." />
+  <meta name="keywords" content="Claude Code vs Codex, Cursor CLI comparison, Gemini CLI comparison, OpenCode, crew-cli, AI coding tools comparison, agentic coding terminal" />
+  <meta property="og:title" content="AI Coding Engine Comparison — Claude, Codex, Cursor, Gemini, OpenCode, crew-cli" />
+  <meta property="og:description" content="A practical comparison of the main coding runtimes: raw coding strength, tool execution, runtime polish, and where each fits inside CrewSwarm." />
+  <meta property="og:url" content="https://crewswarm.ai/engine-comparison.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:image:alt" content="CrewSwarm AI coding engine comparison" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@crewswarm" />
+  <meta name="twitter:title" content="AI Coding Engine Comparison — Claude, Codex, Cursor, Gemini, OpenCode, crew-cli" />
+  <meta name="twitter:description" content="Compare the top coding runtimes by agentic coding quality, tool use, polish, and system fit." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#060a10" />
+  <meta name="author" content="crewswarm" />
+  <link rel="canonical" href="https://crewswarm.ai/engine-comparison.html" />
+  <link rel="alternate" hreflang="en" href="https://crewswarm.ai/engine-comparison.html" />
+  <link rel="icon" type="image/png" href="favicon.webp?v=4" />
+  <link rel="apple-touch-icon" href="favicon.webp?v=4" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "AI Coding Engine Comparison",
+    "description": "Compare Claude Code, Codex CLI, Cursor CLI, Gemini CLI, OpenCode, and crew-cli for agentic coding, tool use, runtime polish, and fit inside the CrewSwarm PM loop.",
+    "url": "https://crewswarm.ai/engine-comparison.html",
+    "isPartOf": { "@type": "WebSite", "name": "crewswarm", "url": "https://crewswarm.ai/" }
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <section id="ai-summary" style="position:absolute;width:1px;height:1px;max-width:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border-width:0;">This page compares Claude Code, Codex CLI, Cursor CLI, Gemini CLI, OpenCode, and crew-cli. It covers raw agentic coding strength, tool use, runtime polish, and how each runtime fits inside the CrewSwarm PM loop.</section>
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.webp?v=4" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">crew<span class="nav-logo-hq">swarm</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks" role="menubar">
+        <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+        <li role="none"><a href="cli.html" role="menuitem" class="nav-link-item">CLI</a></li>
+        <li role="none"><a href="pm-loop.html" role="menuitem" class="nav-link-item">PM Loop</a></li>
+        <li role="none"><a href="pm-loop-walkthrough.html" role="menuitem" class="nav-link-item">Walkthrough</a></li>
+        <li role="none"><a href="models.html" role="menuitem" class="nav-link-item">Models</a></li>
+        <li role="none"><a href="docs.html" role="menuitem" class="nav-link-item">Docs</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-badge">Claude · Codex · Cursor · Gemini · OpenCode · crew-cli</div>
+    <h1 class="gradient-text">Which coding engine should run the work?</h1>
+    <p class="hero-sub">There is no single winner for every job. Some runtimes win on raw coding quality, some on polish, some on price, and some on system flexibility. The useful question is not "best overall?" but "best for this lane?"</p>
+    <p class="hero-sub" style="max-width:54rem;margin-top:0.85rem;">CrewSwarm treats these as execution lanes inside a larger PM loop. That means you can pick the strongest engine for each lane instead of forcing one runtime to do every step.</p>
+    <div class="hero-cta">
+      <a href="cli.html" class="btn btn-primary">Read crew-cli</a>
+      <a href="pm-loop-walkthrough.html" class="btn btn-ghost">See a real PM-loop run</a>
+      <a href="index.html#get-started" class="btn btn-ghost">Install crewswarm</a>
+    </div>
+  </section>
+
+  <section class="section section-alt visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Quick verdict</div>
+        <h2>The short version</h2>
+      </div>
+      <div class="grid-3" style="margin-top:2rem;">
+        <div class="page-card">
+          <h3>Best single coding lane</h3>
+          <p><strong>Claude Code</strong> still feels strongest for raw autonomous coding and multi-step repo work.</p>
+        </div>
+        <div class="page-card">
+          <h3>Best polished executor</h3>
+          <p><strong>Codex CLI</strong> is extremely strong on runtime discipline, tool use, and headless execution feel.</p>
+        </div>
+        <div class="page-card">
+          <h3>Best system fit inside CrewSwarm</h3>
+          <p><strong>crew-cli</strong> wins on provider flexibility, failover, local-model mixing, and PM-loop compatibility.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Comparison table</div>
+        <h2>How the main runtimes stack up</h2>
+        <p class="section-desc">These are practical ratings for agentic coding and tool execution, not benchmark scores.</p>
+      </div>
+      <div style="overflow-x:auto; margin-top:2rem;">
+        <table style="width:100%; border-collapse:collapse; min-width:980px;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:0.9rem; border-bottom:1px solid var(--border);">Runtime</th>
+              <th style="text-align:left; padding:0.9rem; border-bottom:1px solid var(--border);">Best at</th>
+              <th style="text-align:center; padding:0.9rem; border-bottom:1px solid var(--border);">Agentic coding</th>
+              <th style="text-align:center; padding:0.9rem; border-bottom:1px solid var(--border);">Tool use</th>
+              <th style="text-align:center; padding:0.9rem; border-bottom:1px solid var(--border);">Polish</th>
+              <th style="text-align:center; padding:0.9rem; border-bottom:1px solid var(--border);">System fit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="padding:0.85rem; border-bottom:1px solid var(--border);"><strong>Claude Code</strong></td><td style="padding:0.85rem; border-bottom:1px solid var(--border);">Strongest raw coding lane</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">9.5</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">9.5</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.8</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">9.0</td></tr>
+            <tr><td style="padding:0.85rem; border-bottom:1px solid var(--border);"><strong>Codex CLI</strong></td><td style="padding:0.85rem; border-bottom:1px solid var(--border);">Polished execution lane</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">9.2</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">9.4</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">9.1</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.6</td></tr>
+            <tr><td style="padding:0.85rem; border-bottom:1px solid var(--border);"><strong>Cursor CLI</strong></td><td style="padding:0.85rem; border-bottom:1px solid var(--border);">Fast composer-style coding lane</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.8</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.7</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.7</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.7</td></tr>
+            <tr><td style="padding:0.85rem; border-bottom:1px solid var(--border);"><strong>Gemini CLI</strong></td><td style="padding:0.85rem; border-bottom:1px solid var(--border);">Open official runtime with broad tooling</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.2</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.8</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.3</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.8</td></tr>
+            <tr><td style="padding:0.85rem; border-bottom:1px solid var(--border);"><strong>crew-cli</strong></td><td style="padding:0.85rem; border-bottom:1px solid var(--border);">Portable execution engine for CrewSwarm</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.1</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.6</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.2</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">9.7</td></tr>
+            <tr><td style="padding:0.85rem; border-bottom:1px solid var(--border);"><strong>OpenCode</strong></td><td style="padding:0.85rem; border-bottom:1px solid var(--border);">Open-source hacker workflow</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">7.8</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.3</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">8.4</td><td style="text-align:center; padding:0.85rem; border-bottom:1px solid var(--border);">9.0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">What matters</div>
+        <h2>The useful way to think about these tools</h2>
+      </div>
+      <div class="grid-2" style="margin-top:2rem; gap:1rem;">
+        <div class="page-card">
+          <h3>Single-agent quality still matters</h3>
+          <p>If you are giving one runtime a hard repo task, Claude Code and Codex still set the pace. They feel the most mature as autonomous solo coding lanes.</p>
+        </div>
+        <div class="page-card">
+          <h3>But system fit matters more at scale</h3>
+          <p>Once you are running a PM loop, the question changes. Provider failover, local-model mixing, runtime cost control, and execution portability matter as much as raw coding quality.</p>
+        </div>
+        <div class="page-card">
+          <h3>crew-cli is different by design</h3>
+          <p>crew-cli is not trying to win purely as a vendor-native coding lane. Its strength is that it can keep work moving across providers, local models, and runtime modes without locking the system to one stack.</p>
+        </div>
+        <div class="page-card">
+          <h3>CrewSwarm sits above the lanes</h3>
+          <p>The point of CrewSwarm is not that one runtime wins forever. The point is that the PM loop can route each lane to the runtime that fits the task best.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section visible">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Recommendations</div>
+        <h2>Which one should you use?</h2>
+      </div>
+      <div class="grid-3" style="margin-top:2rem;">
+        <div class="page-card"><h3>Use Claude Code when</h3><p>You want the strongest raw single-agent coding lane and do not mind vendor dependence.</p></div>
+        <div class="page-card"><h3>Use Codex when</h3><p>You want a polished execution lane with strong headless behavior and OpenAI-side workflow integration.</p></div>
+        <div class="page-card"><h3>Use Cursor when</h3><p>You like the composer workflow and want a strong practical coding lane tied to the Cursor ecosystem.</p></div>
+        <div class="page-card"><h3>Use Gemini when</h3><p>You want a broad open official tool surface and good value for execution-heavy work.</p></div>
+        <div class="page-card"><h3>Use crew-cli when</h3><p>You want one portable execution engine that can survive rate limits, mix local and hosted lanes, and fit cleanly into CrewSwarm agents and Vibe.</p></div>
+        <div class="page-card"><h3>Use CrewSwarm when</h3><p>You are no longer optimizing one agent. You are optimizing the whole engineering workflow.</p></div>
+      </div>
+      <p style="margin-top:1.5rem; text-align:center;"><a href="pm-loop-walkthrough.html" style="color:var(--accent);">See how CrewSwarm uses these lanes in one PM-loop run</a></p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="cli.html">CLI</a>
+          <a href="pm-loop.html">PM Loop</a>
+          <a href="pm-loop-walkthrough.html">Walkthrough</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Compare</div>
+          <a href="engine-comparison.html">Engine Comparison</a>
+          <a href="openclaw-comparison.html">OpenClaw</a>
+          <a href="models.html">Models</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom"><div class="container"><span>&copy; 2026 crewswarm. All rights reserved.</span></div></div>
+  </footer>
+  <script src="script.js"></script>
+</body>
+</html>
