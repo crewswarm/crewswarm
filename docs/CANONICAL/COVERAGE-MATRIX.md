@@ -32,10 +32,16 @@ This document tracks what is genuinely covered, what is verified by bounded or l
 
 - Dashboard Services, Engines, and Workflows tabs
   - `tests/e2e/dashboard-tabs.spec.js`
+- Dashboard Chat, Memory, and Benchmarks core surfaces
+  - `tests/e2e/dashboard-core-surfaces.spec.js`
 - Dashboard Agents tab engine assignment wiring
   - `tests/e2e/agents-tab.spec.js`
+- Dashboard Providers and Settings save wiring
+  - `tests/e2e/providers-settings.spec.js`
 - Vibe editor, autosave, and chat basics
   - `tests/e2e/vibe-editor.spec.js`
+- Vibe project routing and deterministic chat mode wiring
+  - `tests/e2e/vibe-chat-routing.spec.js`
 
 ## Live / Environment-Dependent
 
@@ -50,6 +56,7 @@ This document tracks what is genuinely covered, what is verified by bounded or l
 ## Manual QA Still Required
 
 - Full native macOS `crewchat` interaction
+- Full Dashboard/Vibe visual and responsive polish pass across every sub-view
 - Provider billing and real vendor quota edge cases across every provider
 - Production deploy health for external services
 - Cross-surface visual polish and accessibility checks

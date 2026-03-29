@@ -77,16 +77,24 @@ Current browser coverage includes:
 - Dashboard Services tab rendering and status badges
 - Dashboard Engines tab rendering and engine toggle POST wiring
 - Dashboard Workflows tab list/editor flows, `New`, `Add Stage`, and `Run Now`
-- Dashboard chat dispatch through crew-lead
+- Dashboard chat history/send wiring
+- Dashboard Memory stats and search rendering
+- Dashboard Benchmarks leaderboard rendering
+- Dashboard Agents tab per-engine assignment wiring
+- Dashboard Providers / Settings persistence wiring
 - Vibe project selector readiness and file tree loading
 - Vibe Monaco file open and autosave persistence via API
 - Vibe chat send/render, project-switch chat isolation, and chat mode switching
+- Vibe deterministic project routing and agent-mode chat wiring
 
 Main specs:
 
 - `tests/e2e/dashboard-tabs.spec.js`
-- `tests/e2e/dispatch-surfaces.spec.js`
+- `tests/e2e/dashboard-core-surfaces.spec.js`
+- `tests/e2e/agents-tab.spec.js`
+- `tests/e2e/providers-settings.spec.js`
 - `tests/e2e/vibe-editor.spec.js`
+- `tests/e2e/vibe-chat-routing.spec.js`
 
 Run:
 
