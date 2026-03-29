@@ -638,6 +638,24 @@ export async function main(args = []) {
 
   // (fast-path for doctor/update/version is at the top of main())
 
+  // Load env vars from ~/.crewswarm/crewswarm.json (set via Dashboard → Settings)
+  // These override process.env only if not already set (env vars take precedence)
+  try {
+    const swarmCfgPath = join(homedir(), '.crewswarm', 'crewswarm.json');
+    if (existsSync(swarmCfgPath)) {
+      const swarmCfg = JSON.parse(await readFile(swarmCfgPath, 'utf8'));
+      if (swarmCfg.env && typeof swarmCfg.env === 'object') {
+        for (const [k, v] of Object.entries(swarmCfg.env)) {
+          if (!process.env[k] && v != null) {
+            process.env[k] = String(v);
+          }
+        }
+      }
+    }
+  } catch {
+    // Never fail startup due to config read
+  }
+
   const logger = new Logger();
   const config = new ConfigManager();
   const toolManager = new ToolManager(config);
