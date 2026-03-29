@@ -36,3 +36,9 @@
 
 ---
 **crew-cli** is not just an assistant; it's a team of senior engineers in your terminal. 🦾
+
+## Canonical runtime docs
+
+- [INSTRUCTION-STACK.md](./INSTRUCTION-STACK.md)
+- [PERMISSIONS-MODEL.md](./PERMISSIONS-MODEL.md)
+- [REPL-MODES-AND-RELIABILITY.md](./REPL-MODES-AND-RELIABILITY.md)

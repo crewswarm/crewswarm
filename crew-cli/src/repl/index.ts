@@ -90,8 +90,8 @@ const SLASH_COMMAND_GROUPS: Array<{ title: string; commands: string[] }> = [
   { title: 'Session', commands: ['/help', '/info', '/status', '/history', '/clear', '/exit'] },
   { title: 'Model & Engine', commands: ['/models', '/model', '/engines', '/engine', '/mode', '/stack'] },
   { title: 'Sandbox', commands: ['/preview', '/apply', '/rollback', '/branch', '/branches'] },
-  { title: 'Runtime', commands: ['/tools', '/trace', '/timeline', '/cost', '/system'] },
-  { title: 'Context', commands: ['/image', '/search', '/recall', '/sessions', '/resume'] }
+  { title: 'Runtime', commands: ['/tools', '/trace', '/timeline', '/cost', '/system', '/permissions'] },
+  { title: 'Context', commands: ['/image', '/search', '/recall', '/sessions', '/resume', '/skills'] }
 ];
 
 interface ModelSummary {
@@ -138,6 +138,27 @@ function printSlashCommandMenu(filter = '') {
     console.log(`    ${matches.join('   ')}`);
   }
   console.log(chalk.gray('\n  Type a command directly or press Tab to autocomplete.\n'));
+}
+
+async function listInstalledSkills(): Promise<Array<{ name: string; type: 'knowledge' | 'api'; path: string }>> {
+  const skillsRoot = join(homedir(), '.crewswarm', 'skills');
+  const out: Array<{ name: string; type: 'knowledge' | 'api'; path: string }> = [];
+  try {
+    const entries = await readdir(skillsRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.json')) {
+        out.push({ name: entry.name.replace(/\.json$/i, ''), type: 'api', path: join(skillsRoot, entry.name) });
+      } else if (entry.isDirectory()) {
+        const skillDoc = join(skillsRoot, entry.name, 'SKILL.md');
+        if (existsSync(skillDoc)) {
+          out.push({ name: entry.name, type: 'knowledge', path: skillDoc });
+        }
+      }
+    }
+  } catch {
+    return [];
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function resolveConfiguredReplModel(repoConfig?: Required<RepoConfig>): string {
@@ -435,6 +456,8 @@ function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
   console.log(chalk.green.bold('  🧠 Memory & LSP:'));
   console.log('    /memory [query]    Show memory stats or recall');
   console.log('    /tools             Show tool capability matrix by mode/path');
+  console.log('    /skills [name]     List installed skills or inspect one');
+  console.log('    /permissions       Explain current read/write/shell approval model');
   console.log('    /lsp check [files] Run TypeScript diagnostics');
   console.log('    /lsp complete <file> <line> <column> [prefix]  Get completions\n');
 
@@ -1193,6 +1216,51 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       console.log('  LSP checks/completion: enabled');
       console.log('  PTY tooling: available via `crew exec`');
       console.log('  Notes: actual tool usage depends on routing, permissions, and parser acceptance.\n');
+      return true;
+    }
+
+    if (command === '/permissions') {
+      const summary = buildModelSummary(projectDir, replState);
+      const behavior = modeBehavior(replState.mode);
+      console.log(chalk.blue('\n--- Permissions Model ---\n'));
+      console.log(`  Interface mode: ${summary.mode}`);
+      console.log(`  REPL mode: ${replState.mode}`);
+      console.log('  Read files: yes');
+      console.log('  Stage edits in sandbox: yes');
+      console.log(`  Write to disk: ${replState.autoApply || behavior.autoApply ? 'auto-apply may occur' : 'via /apply'}`);
+      console.log('  Shell / PTY: available');
+      console.log('  Network/model calls: available');
+      console.log(`  Execution confirm: ${behavior.executionConfirm ? 'enabled' : 'disabled'}`);
+      console.log(chalk.gray('\n  Canonical docs: docs/PERMISSIONS-MODEL.md and docs/INSTRUCTION-STACK.md\n'));
+      return true;
+    }
+
+    if (command === '/skills') {
+      const skills = await listInstalledSkills();
+      const requested = args.join(' ').trim().toLowerCase();
+      if (skills.length === 0) {
+        console.log(chalk.yellow('\n  No installed skills found in ~/.crewswarm/skills\n'));
+        return true;
+      }
+      if (requested) {
+        const match = skills.find((s) => s.name.toLowerCase() === requested);
+        if (!match) {
+          console.log(chalk.red(`\n  ✗ Skill "${requested}" not found. Use /skills to list installed skills.\n`));
+          return true;
+        }
+        console.log(chalk.blue('\n--- Skill ---\n'));
+        console.log(`  Name : ${match.name}`);
+        console.log(`  Type : ${match.type}`);
+        console.log(`  Path : ${match.path}`);
+        console.log(chalk.gray('\n  API skills run via `crew skill <name>`. Knowledge skills are activated by the runtime when needed.\n'));
+        return true;
+      }
+      console.log(chalk.blue('\n--- Installed Skills ---\n'));
+      for (const skill of skills) {
+        const kind = skill.type === 'knowledge' ? chalk.cyan('knowledge') : chalk.green('api');
+        console.log(`  ${skill.name} ${chalk.gray('·')} ${kind}`);
+      }
+      console.log(chalk.gray('\n  Use /skills <name> to inspect one skill.\n'));
       return true;
     }
 
@@ -2097,14 +2165,17 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
       console.log('  └─');
 
       // Provider + cost footer (novel feature)
-      const providerInfo = (result as any).providerId || (result as any).model || replState.model;
-      const modelUsed = (result as any).modelUsed || providerInfo;
+      const providerInfo = (result as any).providerId || (result as any).provider || (result as any).model || replState.model;
+      const modelUsed = (result as any).modelUsed || (result as any).model || providerInfo;
+      const engineUsed = (result as any).engine || (standaloneMode ? 'crew-cli' : (dispatchOpts.engine || replState.engine || 'gateway'));
+      const routeUsed = route.decision || (standaloneMode ? 'EXECUTE' : 'DISPATCH');
       const responseCost = (result as any).costUsd || (result as any).cost || 0;
       const turnsUsed = (result as any).turns || 1;
       const toolCount = (result as any).toolsUsed?.length || toolProgressLog.length || 0;
       if (modelUsed || responseCost) {
         const costStr = responseCost > 0 ? `$${Number(responseCost).toFixed(4)}` : 'free';
-        console.log(chalk.gray(`  ⚡ ${modelUsed} · ${turnsUsed} turn${turnsUsed > 1 ? 's' : ''} · ${toolCount} tool${toolCount !== 1 ? 's' : ''} · ${costStr}`));
+        console.log(chalk.gray(`  ⚡ route=${routeUsed} · engine=${engineUsed} · provider=${providerInfo}`));
+        console.log(chalk.gray(`  ⚡ model=${modelUsed} · ${turnsUsed} turn${turnsUsed > 1 ? 's' : ''} · ${toolCount} tool${toolCount !== 1 ? 's' : ''} · ${costStr}`));
       }
       if (Array.isArray((result as any).timeline) && (result as any).timeline.length > 0) {
         console.log(chalk.gray('\n  Timeline'));

@@ -4,6 +4,8 @@ Command-line interface for CrewSwarm agent orchestration with local safety rails
 
 ---
 **[OVERVIEW.md](docs/OVERVIEW.md)** - 🚀 1-minute summary of what this is and how it works.
+**[INSTRUCTION-STACK.md](docs/INSTRUCTION-STACK.md)** - canonical instruction precedence and composition
+**[PERMISSIONS-MODEL.md](docs/PERMISSIONS-MODEL.md)** - canonical read/write/shell/approval behavior by mode
 ---
 
 ## Requirements
@@ -199,6 +201,8 @@ Latest local QA pass (2026-03-01):
 ## Documentation
 
 - [QUICKSTART.md](docs/QUICKSTART.md)
+- [INSTRUCTION-STACK.md](docs/INSTRUCTION-STACK.md)
+- [PERMISSIONS-MODEL.md](docs/PERMISSIONS-MODEL.md)
 - [EXAMPLES.md](docs/EXAMPLES.md)
 - [API.md](docs/API.md)
 - [API-UNIFIED-v1.md](docs/API-UNIFIED-v1.md) — unified dashboard/CLI/headless contract
