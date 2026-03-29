@@ -374,6 +374,14 @@
           <h3>📊 Token-Aware Compaction</h3>
           <p>Context compression adapts to how full your context window is. Light compression at 50%, aggressive at 75%+. Per-model context window awareness keeps agents sharp.</p>
         </div>
+        <div class="page-card">
+          <h3>🖥️ tmux Session Handoff</h3>
+          <p>Multi-wave pipelines use labeled tmux panes for cross-agent context sharing. Agent A's output, cwd, and env vars are handed off to Agent B via the session manager. Zero cold starts between pipeline waves.</p>
+        </div>
+        <div class="page-card">
+          <h3>📡 PreToolUse / PostToolUse Hooks</h3>
+          <p>Intercept any tool call with <code>.crew/hooks.json</code>. Block dangerous shell commands, log every file write, or transform tool input before execution. JSON piped on stdin to your shell scripts.</p>
+        </div>
       </div>
     </div>
   </section>

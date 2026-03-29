@@ -2037,9 +2037,15 @@ const app = express();
             happens naturally without a central bottleneck.</p>
         </div>
         <div class="wwd-card">
+          <div class="wwd-icon">🖥️</div>
+          <h3>tmux session handoff</h3>
+          <p>Agents run in labeled tmux panes with cross-agent discovery. When a pipeline wave completes, the session
+            manager hands off execution context — output history, working directory, env vars — to the next agent. No cold starts between waves.</p>
+        </div>
+        <div class="wwd-card">
           <div class="wwd-icon">🔁</div>
           <h3>Automatic fault recovery</h3>
-          <p>Failed tasks land in a Dead Letter Queue and are automatically retried. Builds keep moving even when
+          <p>Failed tasks land in a Dead Letter Queue with JSONL crash-safe transcripts and are automatically retried. Builds keep moving even when
             individual agents hit errors or timeouts.</p>
         </div>
         <div class="wwd-card">
