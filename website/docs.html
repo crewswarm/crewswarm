@@ -393,6 +393,19 @@ CREW_NO_STREAM=true CREW_MAX_SESSION_TOKENS=50000 crew "refactor auth module"</c
 
       <!-- TMUX BRIDGE -->
       <section class="docs-section">
+        <h2>Swarm Chat &amp; @Mentions</h2>
+        <p>Swarm Chat is a shared channel where you and agents communicate. Use <code>@agent-name</code> to dispatch tasks directly to any agent — results flow back into the channel automatically.</p>
+        <pre><code># In Dashboard → Swarm Chat:
+@crew-coder build a REST API for /users
+@crew-qa test the /users endpoint
+@crew-copywriter write API docs for the users service</code></pre>
+        <p><strong>How it works:</strong> When you <code>@mention</code> an agent with a work order (verb + specific task), the system classifies the intent and dispatches via the RT bus. The agent executes using its configured engine (Claude Code, Gemini, etc.) and the result is persisted to the shared project message history.</p>
+        <p><strong>Agent-to-agent:</strong> Agents can chain work autonomously. If crew-coder responds with "let me ask <code>@crew-qa</code> to test this", the system auto-dispatches to crew-qa. A hop limit (default 4) prevents infinite loops — send <code>/continue</code> to resume.</p>
+        <p><strong>Chat vs code routing:</strong> Conversational messages ("hi", "what's your status?") go directly to the agent's LLM model. Only coding tasks route through CLI engines. This keeps chat fast and cheap.</p>
+        <p><strong>Toggle:</strong> Autonomous mentions are on by default. Disable in Dashboard → Settings or via <code>crewswarm.json</code> → <code>settings.autonomousMentionsEnabled</code>.</p>
+      </section>
+
+      <section class="docs-section">
         <h2>tmux Bridge (Multi-Agent Sessions)</h2>
         <p>When running multi-wave pipelines, agents can share execution context via tmux panes. The bridge lets the orchestrator label panes with agent IDs, read agent output, and hand off sessions between pipeline waves.</p>
         <pre><code># Enable the bridge (requires tmux installed)

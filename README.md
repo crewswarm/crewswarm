@@ -75,6 +75,7 @@ Use Docker when you want stronger isolation, easier restarts, or a shared server
 | Browser IDE + terminal | Vibe | Desktop | Desktop | Yes | Yes |
 | 20+ specialist agents | Yes | 1 | 1 | 1 | 1 |
 | PM Loop (autonomous roadmap) | Yes | No | No | Partial | No |
+| Swarm Chat (@mention dispatch) | Yes | No | No | No | No |
 | Local-first / no cloud | Yes | Partial | No | No | No |
 | Open source | Yes | No | No | No | No |
 
