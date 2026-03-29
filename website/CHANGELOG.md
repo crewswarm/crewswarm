@@ -5,6 +5,60 @@ All notable changes to crewswarm will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-03-29
+
+### Added
+- **Streaming output for all providers**: local.ts and multi-turn-drivers.ts now stream tokens incrementally for Groq, Grok, Gemini, DeepSeek, Anthropic, OpenAI, Mistral, and Cerebras — no more blank screen while waiting for full response
+- **Shared SSE stream helpers**: new `stream-helpers.ts` with `streamOpenAIResponse()`, `streamAnthropicResponse()`, `streamGeminiResponse()` — reusable across all code paths
+- **PreToolUse/PostToolUse hook system**: new `hooks/index.ts` — define hooks in `.crew/hooks.json` with regex matchers and shell commands; PreToolUse can allow/deny/modify tool input, PostToolUse fires after execution; tool input piped as JSON on stdin
+- **Token-aware auto-compaction**: new `context/token-compaction.ts` with `estimateTokens()`, `getContextWindow()` (model-specific), `adaptiveCompressionRatio()` — history compression now adapts to context window usage instead of fixed 3+5 ratios
+- **JSONL crash-safe transcripts**: `conversation-transcript.ts` rewritten to append-only JSONL — each turn is one JSON line, survives mid-write crashes, corrupt lines skipped on load
+- **Multi-session resume**: `/sessions` lists all past sessions with turn count, token usage, and first message; `/resume [id]` loads and continues any previous session with interactive picker
+- **Git worktree isolation**: new `tools/worktree.ts` with `enter_worktree`, `exit_worktree`, `merge_worktree`, `list_worktrees` tools — agents work in isolated git worktrees on separate branches, auto-cleanup if no changes, squash merge back if changes made
+- **Dashboard env vars**: added `CREW_NO_STREAM`, `CREW_HOOKS_FILE`, `CREW_MAX_SESSION_TOKENS` to Settings → crew-cli section
+- **Session manager**: `setSessionId()` method for switching sessions on `/resume`
+
+### Changed
+- crew-cli version: 0.3.0 → 0.3.1
+- `historyToGeminiContents()` and `historyToOpenAIMessages()` now accept model parameter for context-window-aware compression
+- `ConversationTranscriptStore` now stores per-session JSONL files (`transcript-{id}.jsonl`) instead of single JSON blob
+- Token-aware trimming in session store via `CREW_MAX_SESSION_TOKENS` (default 100K)
+
+## [0.9.1] - 2026-03-28
+
+### Fixed
+- **Dashboard direct agent chat**: `/chat` endpoint now respects `agentId` — selecting an agent in the dashboard routes directly to that agent's model and prompt instead of crew-lead
+- **Claude Code `--bare` flag**: removed — broke OAuth auth, caused "Not logged in" / "no text output" for all Claude Code dispatch tasks
+- **WhatsApp self-chat**: stop AI replying to other people's chats — only `@lid` JIDs matching the bot's own linked identity are treated as self-chat
+- **Dashboard engine labels**: added `direct-llm`, `claude-code`, `gemini-cli`, `crew-cli` to badge display (was showing raw IDs or wrong engine)
+- **crew-cli projectDir**: guard as string — `Sandbox({ baseDir: null })` threw "path argument must be of type string"
+- **Gemini CLI**: updated 0.34.0 → 0.35.2 (fixed `sysctl` crash on macOS), removed broken `MCP_DOCKER` from config
+- **Stale session cleanup**: when `--resume` fails (expired session), clear the stored ID so next call starts fresh
+- **Pipeline wave warmup**: 30s → 90s timeout (Claude Code takes ~45s through dispatch)
+- **E2E test fixes**: pm-loop-flow hang (detached process group), pm-loop-live timeout (30s → 60s), whatsapp-roundtrip skip when bridge down, performance-tooling missing Python script, folder picker code check, Telegram chatId from config
+- **llm-direct routing**: added `envelope.to` lookup for dispatched agent model config (partial fix — multi-gateway architecture still needs work)
+
+### Added
+- **Native session resume** for all 6 CLI engines via passthrough (Dashboard + Vibe):
+  - Claude Code: `--resume <session-id>` (per-project, was global `--continue`)
+  - Cursor CLI: `--resume=<session-id>` (captured from `result` event)
+  - Codex CLI: `codex resume <thread-id>` (captured from `thread.started` event)
+  - Gemini CLI + OpenCode: already working, no changes needed
+- **Clear session** button in Vibe UI + `POST /api/engine-passthrough/clear-session` endpoint
+- **21 new E2E tests**: multi-engine dispatch (7), chat passthrough + session resume (6), cron workflow lifecycle (5), PM loop multi-engine (1), surfaces dispatch (2)
+- **Multi-engine file creation test**: all 6 engines verified creating real HTML files (Cursor 12s, Codex 33s, Claude 33s, Gemini 21s, OpenCode 6s, crew-cli 3s)
+- **Session resume E2E**: proved Claude remembers "MANGO_42" across two separate passthrough messages
+- **Website overhaul**: hero rewrite ("The only multi-engine AI coding platform"), competitor table (vs Cursor/Windsurf/Devin/Copilot), rate limits section, per-agent model pricing, $0 pricing section, "Built with crewswarm" proof points, quickstart terminal video (6 frames), 14-slide demo slideshow, GitHub stars badge, SEO (title, meta, schema, keywords, aria-labels), sitemap + robots.txt
+- **Shareable GIFs**: quickstart.gif (442KB), demo.gif (1.1MB) for Reddit/X
+- **Launch plan**: docs/LAUNCH-PLAN.md with HN, Reddit, X posts, FAQ for HN comments
+- **FUNDING.yml**: GitHub Sponsors enabled
+- **README rewrite**: multi-engine pitch, competitor table, per-agent model config, 957 tests badge, proof points
+
+### Changed
+- npm package: `@whiskeysockets/baileys` moved to optionalDependencies (install works without git)
+- Version: dropped `-beta` suffix — 957 tests, 0 failures
+- Website deployed to Fly.io with all updates
+
 ## [0.8.3-beta] - 2026-03-28
 
 ### Added

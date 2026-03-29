@@ -27,6 +27,7 @@ import { collectMultiRepoContext } from '../multirepo/index.js';
 import { AgentKeeper } from '../memory/agentkeeper.js';
 import { MemoryBroker } from '../memory/broker.js';
 import { CheckpointStore } from '../checkpoint/store.js';
+import { ConversationTranscriptStore } from '../session/conversation-transcript.js';
 import { loadPipelineMetricsSummary } from '../metrics/pipeline.js';
 import { estimateCost } from '../cost/predictor.js';
 import { getExecutionPolicy, isRiskBlocked, withRetries } from '../runtime/execution-policy.js';
@@ -704,7 +705,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     '/mode', '/auto-apply', '/verbose', '/stack', '/preview', '/apply',
     '/rollback', '/branches', '/info', '/status', '/history', '/clear',
     '/system', '/image', '/search', '/cost', '/recall', '/checkpoint',
-    '/trace', '/timeline', '/audit', '/validate', '/test', '/commit'
+    '/trace', '/timeline', '/audit', '/validate', '/test', '/commit',
+    '/sessions', '/resume'
   ];
 
   const tabCompleter = (line: string): [string[], string] => {
@@ -1400,6 +1402,102 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         console.log(chalk.yellow('\n  ✓ Session history cleared.\n'));
       } catch (err) {
         console.log(chalk.red(`\n  ✗ Clear failed: ${(err as Error).message}\n`));
+      }
+      return true;
+    }
+
+    // ─── /sessions — list all past sessions ──────────────────────────
+    if (command === '/sessions') {
+      try {
+        const transcriptStore = new ConversationTranscriptStore(projectDir);
+        const sessions = await transcriptStore.listSessions();
+        if (sessions.length === 0) {
+          console.log(chalk.yellow('\n  No sessions found.\n'));
+          return true;
+        }
+        console.log(chalk.blue('\n╔══════════════════════════════════════════════════════════════╗'));
+        console.log(chalk.blue('║                       SESSIONS                               ║'));
+        console.log(chalk.blue('╚══════════════════════════════════════════════════════════════╝\n'));
+        for (const s of sessions) {
+          const summary = await transcriptStore.getSessionSummary(s.sessionId);
+          if (!summary) continue;
+          const age = summary.lastActivity ? new Date(summary.lastActivity).toLocaleString() : 'unknown';
+          console.log(chalk.cyan(`  ${s.sessionId}`));
+          console.log(chalk.gray(`    ${summary.turnCount} turns | ${summary.totalTokens} tokens | Last: ${age}`));
+          console.log(chalk.white(`    "${summary.firstMessage}"`));
+          console.log('');
+        }
+        console.log(chalk.gray('  Use /resume <session-id> to continue a session.\n'));
+      } catch (err) {
+        console.log(chalk.red(`\n  ✗ Failed to list sessions: ${(err as Error).message}\n`));
+      }
+      return true;
+    }
+
+    // ─── /resume [id] — resume a previous session ───────────────────
+    if (command === '/resume') {
+      const targetId = args[0];
+      try {
+        const transcriptStore = new ConversationTranscriptStore(projectDir);
+        if (!targetId) {
+          // Interactive picker if no ID given
+          const sessions = await transcriptStore.listSessions();
+          if (sessions.length === 0) {
+            console.log(chalk.yellow('\n  No sessions to resume.\n'));
+            return true;
+          }
+          const summaries = [];
+          for (const s of sessions) {
+            const summary = await transcriptStore.getSessionSummary(s.sessionId);
+            if (summary) summaries.push(summary);
+          }
+          if (summaries.length === 0) {
+            console.log(chalk.yellow('\n  No sessions with content found.\n'));
+            return true;
+          }
+          const inquirer = await getInquirer();
+          const { chosen } = await inquirer.prompt([{
+            type: 'list',
+            name: 'chosen',
+            message: 'Select session to resume:',
+            choices: summaries.map(s => ({
+              name: `${s.sessionId.slice(0, 8)}… — ${s.turnCount} turns — "${s.firstMessage}"`,
+              value: s.sessionId
+            }))
+          }]);
+          if (!chosen) return true;
+          // Load the session transcript into the current session
+          const turns = await transcriptStore.loadTurns(chosen);
+          await session.setSessionId(chosen);
+          console.log(chalk.green(`\n  ✓ Resumed session ${chosen} (${turns.length} turns loaded)\n`));
+          // Show last few messages for context
+          const recent = turns.slice(-4);
+          for (const t of recent) {
+            const role = t.role === 'user' ? chalk.cyan('You') : chalk.green('Assistant');
+            const text = String(t.text || '').slice(0, 120);
+            console.log(chalk.gray(`  [${role}] ${text}${t.text.length > 120 ? '…' : ''}`));
+          }
+          console.log('');
+          return true;
+        }
+
+        // Direct resume by ID
+        const turns = await transcriptStore.loadTurns(targetId);
+        if (turns.length === 0) {
+          console.log(chalk.yellow(`\n  No transcript found for session: ${targetId}\n`));
+          return true;
+        }
+        await session.setSessionId(targetId);
+        console.log(chalk.green(`\n  ✓ Resumed session ${targetId} (${turns.length} turns loaded)\n`));
+        const recent = turns.slice(-4);
+        for (const t of recent) {
+          const role = t.role === 'user' ? chalk.cyan('You') : chalk.green('Assistant');
+          const text = String(t.text || '').slice(0, 120);
+          console.log(chalk.gray(`  [${role}] ${text}${t.text.length > 120 ? '…' : ''}`));
+        }
+        console.log('');
+      } catch (err) {
+        console.log(chalk.red(`\n  ✗ Resume failed: ${(err as Error).message}\n`));
       }
       return true;
     }

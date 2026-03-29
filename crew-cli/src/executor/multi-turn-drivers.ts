@@ -7,6 +7,7 @@
  */
 
 import type { ToolCall, TurnResult } from '../worker/autonomous-loop.js';
+import { streamOpenAIResponse, streamAnthropicResponse, writeToStdout, isStreamingDisabled } from './stream-helpers.js';
 
 /** Tool declaration in a provider-agnostic format */
 export interface ToolDeclaration {
@@ -104,12 +105,14 @@ export async function openAICompatibleTurn(
   const temp = (config.model?.startsWith?.('gpt-5') || config.model?.startsWith?.('gpt-6'))
     ? 1
     : (config.temperature ?? 0.3);
+  const stream = !isStreamingDisabled();
   const requestBody: any = {
     model: config.model,
     messages,
     temperature: temp,
     max_tokens: config.maxTokens ?? 16000,
-    tools: toOpenAITools(tools)
+    tools: toOpenAITools(tools),
+    ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
   };
 
   const response = await fetch(config.apiUrl, {
@@ -125,6 +128,23 @@ export async function openAICompatibleTurn(
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
     throw new Error(`API error ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  if (stream && response.body) {
+    const result = await streamOpenAIResponse(response, writeToStdout);
+    if (result.text) process.stdout.write('\n');
+    const usage = result.usage || {};
+    const cost = (usage.prompt_tokens || 0) * 3 / 1_000_000 + (usage.completion_tokens || 0) * 10 / 1_000_000;
+
+    if (result.toolCalls.length > 0) {
+      const toolCalls: ToolCall[] = result.toolCalls.map(tc => {
+        let params = {};
+        try { params = JSON.parse(tc.arguments || '{}'); } catch { /* ignore */ }
+        return { tool: tc.name, params };
+      });
+      return { toolCalls, response: result.text, cost };
+    }
+    return { response: result.text, status: 'COMPLETE', cost };
   }
 
   const data = await response.json() as any;
@@ -192,13 +212,15 @@ export async function anthropicTurn(
     userContent = parts;
   }
 
+  const stream = !isStreamingDisabled();
   const requestBody: any = {
     model: config.model,
     max_tokens: config.maxTokens ?? 16000,
     system: config.systemPrompt,
     messages: [{ role: 'user', content: userContent }],
     temperature: config.temperature ?? 0.3,
-    tools: toAnthropicTools(tools)
+    tools: toAnthropicTools(tools),
+    ...(stream ? { stream: true } : {})
   };
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -215,6 +237,22 @@ export async function anthropicTurn(
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
     throw new Error(`Anthropic API error ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  if (stream && response.body) {
+    const result = await streamAnthropicResponse(response, writeToStdout);
+    if (result.text) process.stdout.write('\n');
+    const usage = result.usage || {};
+    const cost = (usage.input_tokens || 0) * 3 / 1_000_000 + (usage.output_tokens || 0) * 15 / 1_000_000;
+
+    if (result.toolCalls.length > 0) {
+      const toolCalls: ToolCall[] = result.toolCalls.map(tc => ({
+        tool: tc.name,
+        params: tc.input || {}
+      }));
+      return { toolCalls, response: result.text, cost };
+    }
+    return { response: result.text, status: 'COMPLETE', cost };
   }
 
   const data = await response.json() as any;

@@ -5,6 +5,7 @@
  */
 
 import { Logger } from '../utils/logger.js';
+import { streamOpenAIResponse, streamAnthropicResponse, streamGeminiResponse, writeToStdout, isStreamingDisabled } from './stream-helpers.js';
 
 export interface ExecutorOptions {
   model?: string;
@@ -164,6 +165,7 @@ export class LocalExecutor {
   private async executeWithGroq(task: string, options: ExecutorOptions, systemPrompt: string): Promise<ExecutorResult | null> {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return null;
+    const stream = !isStreamingDisabled();
 
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -180,12 +182,20 @@ export class LocalExecutor {
             { role: 'user', content: task }
           ],
           temperature: options.temperature || 0.7,
-          max_tokens: options.maxTokens || 2000
+          max_tokens: options.maxTokens || 2000,
+          ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
         })
       });
 
       if (!response.ok) {
         throw new Error(`Groq API error: ${response.statusText}`);
+      }
+
+      if (stream && response.body) {
+        const result = await streamOpenAIResponse(response, writeToStdout);
+        if (result.text) process.stdout.write('\n');
+        const cost = this.calculateCost('groq-llama', result.usage?.prompt_tokens || 0, result.usage?.completion_tokens || 0);
+        return { success: true, result: result.text, costUsd: cost, model: 'llama-3.3-70b-versatile' };
       }
 
       const data = await response.json();
@@ -224,6 +234,7 @@ export class LocalExecutor {
         headers['x-grok-conv-id'] = sessionId;
       }
       
+      const stream = !isStreamingDisabled();
       const response = await fetch('https://api.x.ai/v1/chat/completions', {
         method: 'POST',
         headers,
@@ -235,7 +246,8 @@ export class LocalExecutor {
             { role: 'user', content: task }
           ],
           temperature: options.temperature || 0.7,
-          max_tokens: options.maxTokens || 4000
+          max_tokens: options.maxTokens || 4000,
+          ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
         })
       });
 
@@ -245,6 +257,24 @@ export class LocalExecutor {
         const errorText = await response.text().catch(() => response.statusText);
         console.log(`[Grok] API error: ${response.status} - ${errorText}`);
         return null;
+      }
+
+      if (stream && response.body) {
+        const result = await streamOpenAIResponse(response, writeToStdout);
+        if (result.text) process.stdout.write('\n');
+        const cachedTokens = result.usage?.prompt_tokens_details?.cached_tokens || 0;
+        if (cachedTokens > 0) {
+          const totalPrompt = result.usage?.prompt_tokens || 0;
+          const pct = Math.round((cachedTokens / totalPrompt) * 100);
+          console.log(`[Grok] cache hit: ${cachedTokens}/${totalPrompt} tokens cached (${pct}%) — 50% cost savings`);
+        }
+        return {
+          success: true, result: result.text, model,
+          promptTokens: result.usage?.prompt_tokens,
+          completionTokens: result.usage?.completion_tokens,
+          cachedTokens,
+          costUsd: this.calculateGrokCostWithCache(result.usage)
+        };
       }
 
       const data = await response.json() as any;
@@ -333,9 +363,12 @@ export class LocalExecutor {
         requestBody.generationConfig.responseMimeType = 'application/json';
       }
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
-        {
+      const stream = !isStreamingDisabled() && !expectsJson;
+      const endpoint = stream
+        ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`
+        : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+
+      const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: AbortSignal.timeout(this.timeoutMs),
@@ -346,13 +379,24 @@ export class LocalExecutor {
       if (verbose) {
         console.log(`[Gemini] Response received (status: ${response.status})`);
       }
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         if (verbose) {
           console.log(`[Gemini] API error: ${response.status} - ${errorText}`);
         }
         return null;
+      }
+
+      if (stream && response.body) {
+        const result = await streamGeminiResponse(response, writeToStdout);
+        if (result.text) process.stdout.write('\n');
+        return {
+          success: true, result: result.text, model,
+          promptTokens: result.usage?.promptTokenCount,
+          completionTokens: result.usage?.candidatesTokenCount,
+          costUsd: this.calculateCost(model, result.usage?.promptTokenCount || 0, result.usage?.candidatesTokenCount || 0)
+        };
       }
 
       const data = await response.json() as any;
@@ -365,7 +409,7 @@ export class LocalExecutor {
         model: model,
         promptTokens: data?.usageMetadata?.promptTokenCount,
         completionTokens: data?.usageMetadata?.candidatesTokenCount,
-        costUsd: this.calculateCost(model, 
+        costUsd: this.calculateCost(model,
           data?.usageMetadata?.promptTokenCount || 0,
           data?.usageMetadata?.candidatesTokenCount || 0)
       };
@@ -392,6 +436,7 @@ export class LocalExecutor {
     console.log(`[DeepSeek] Starting API call (model: ${model}, timeout: ${timeoutMs/1000}s)...`);
 
     try {
+      const stream = !isStreamingDisabled() && !model.includes('reasoner');
       const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -406,7 +451,8 @@ export class LocalExecutor {
             { role: 'user', content: task }
           ],
           temperature: options.temperature || 0.7,
-          max_tokens: options.maxTokens || 4000
+          max_tokens: options.maxTokens || 4000,
+          ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
         })
       });
 
@@ -418,8 +464,20 @@ export class LocalExecutor {
         return null;
       }
 
+      if (stream && response.body) {
+        const result = await streamOpenAIResponse(response, writeToStdout);
+        if (result.text) process.stdout.write('\n');
+        if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[DeepSeek] ✓ Success (${result.usage?.prompt_tokens || 0} in, ${result.usage?.completion_tokens || 0} out)`);
+        return {
+          success: true, result: result.text, model,
+          promptTokens: result.usage?.prompt_tokens,
+          completionTokens: result.usage?.completion_tokens,
+          costUsd: this.calculateCost(model, result.usage?.prompt_tokens || 0, result.usage?.completion_tokens || 0)
+        };
+      }
+
       const data = await response.json() as any;
-      
+
       // deepseek-reasoner returns reasoning_content + content
       // deepseek-chat returns only content
       const reasoning_content = data?.choices?.[0]?.message?.reasoning_content;
@@ -506,6 +564,7 @@ export class LocalExecutor {
       const callStart = Date.now();
 
       // Use explicit cache control for 90% savings on system prompt
+      const stream = !isStreamingDisabled();
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -517,6 +576,7 @@ export class LocalExecutor {
         body: JSON.stringify({
           model,
           max_tokens: options.maxTokens || 4000,
+          ...(stream ? { stream: true } : {}),
           system: [
             {
               type: 'text',
@@ -538,6 +598,29 @@ export class LocalExecutor {
         return null;
       }
 
+      if (stream && response.body) {
+        const result = await streamAnthropicResponse(response, writeToStdout);
+        if (result.text) process.stdout.write('\n');
+        const usage = result.usage || {};
+        const cacheReadTokens = usage.cache_read_input_tokens || 0;
+        const cacheCreateTokens = usage.cache_creation_input_tokens || 0;
+        const inputTokens = usage.input_tokens || 0;
+        if (cacheReadTokens > 0) {
+          const totalInput = inputTokens + cacheReadTokens;
+          const pct = Math.round((cacheReadTokens / totalInput) * 100);
+          console.log(`[Anthropic] cache hit: ${cacheReadTokens}/${totalInput} tokens cached (${pct}%) — 90% cost savings`);
+        } else if (cacheCreateTokens > 0) {
+          console.log(`[Anthropic] cache write: ${cacheCreateTokens} tokens cached for future requests`);
+        }
+        return {
+          success: true, result: result.text, model,
+          promptTokens: inputTokens,
+          completionTokens: usage.output_tokens,
+          cachedTokens: cacheReadTokens,
+          costUsd: this.calculateAnthropicCostWithCache(usage)
+        };
+      }
+
       const data = await response.json() as any;
       const content = data?.content?.[0]?.text;
       if (!content) return null;
@@ -546,7 +629,7 @@ export class LocalExecutor {
       const cacheCreateTokens = data?.usage?.cache_creation_input_tokens || 0;
       const cacheReadTokens = data?.usage?.cache_read_input_tokens || 0;
       const inputTokens = data?.usage?.input_tokens || 0;
-      
+
       if (cacheReadTokens > 0) {
         const totalInput = inputTokens + cacheReadTokens;
         const pct = Math.round((cacheReadTokens / totalInput) * 100);
@@ -610,6 +693,7 @@ export class LocalExecutor {
       const temp = (model.startsWith('gpt-5') || model.startsWith('gpt-6'))
         ? 1
         : (options.temperature ?? 0.7);
+      const stream = !isStreamingDisabled() && !options.jsonMode;
       const requestBody: any = {
         model,
         messages: [
@@ -617,9 +701,10 @@ export class LocalExecutor {
           { role: 'user', content: task }
         ],
         temperature: temp,
-        [maxTokensParam]: options.maxTokens || 4000
+        [maxTokensParam]: options.maxTokens || 4000,
+        ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
       };
-      
+
       if (options.jsonMode) {
         requestBody.response_format = { type: 'json_object' };
       }
@@ -642,9 +727,22 @@ export class LocalExecutor {
         return null;
       }
 
+      if (stream && response.body) {
+        const result = await streamOpenAIResponse(response, writeToStdout);
+        if (result.text) process.stdout.write('\n');
+        if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[OpenAI] ✓ Success (${result.usage?.prompt_tokens || 0} in, ${result.usage?.completion_tokens || 0} out)`);
+        return {
+          success: true, result: result.text, model,
+          promptTokens: result.usage?.prompt_tokens,
+          completionTokens: result.usage?.completion_tokens,
+          cachedTokens: 0,
+          costUsd: this.calculateOpenAICost(model, result.usage?.prompt_tokens || 0, result.usage?.completion_tokens || 0)
+        };
+      }
+
       const data = await response.json() as any;
       const content = data?.choices?.[0]?.message?.content;
-      
+
       if (!content) {
         console.log('[OpenAI] No content in response');
         return null;

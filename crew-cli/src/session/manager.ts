@@ -134,6 +134,14 @@ export class SessionManager {
     return session.sessionId;
   }
 
+  /** Switch to a different session ID (for /resume) */
+  async setSessionId(newId: string) {
+    const session = await this.loadSession();
+    session.sessionId = newId;
+    session.updatedAt = nowIso();
+    await this.saveSession(session);
+  }
+
   /** Save JIT discovered files so subsequent CLI invocations inherit context */
   async saveJITContext(discoveredFiles: string[]) {
     await this.ensureInitialized();

@@ -3,6 +3,8 @@
  */
 
 import { Sandbox } from '../../sandbox/index.js';
+import { runPreToolUseHooks, runPostToolUseHooks } from '../../hooks/index.js';
+import { enterWorktree, exitWorktree, mergeWorktree, listWorktrees } from '../worktree.js';
 import { execSync } from 'node:child_process';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -245,9 +247,26 @@ export class GeminiToolAdapter {
   }
 
   /**
-   * Execute a tool call from LLM
+   * Execute a tool call from LLM (with PreToolUse/PostToolUse hooks)
    */
   async executeTool(toolName: string, params: any): Promise<ToolResult> {
+    // Run PreToolUse hooks
+    const preResult = await runPreToolUseHooks(toolName, params);
+    if (preResult.decision === 'deny') {
+      return { success: false, error: `Blocked by hook: ${preResult.reason || 'denied'}` };
+    }
+    // Allow hooks to modify input
+    const effectiveParams = preResult.updatedInput || params;
+
+    const result = await this._executeTool(toolName, effectiveParams);
+
+    // Run PostToolUse hooks (fire-and-forget, don't block)
+    runPostToolUseHooks(toolName, effectiveParams, result).catch(() => {});
+
+    return result;
+  }
+
+  private async _executeTool(toolName: string, params: any): Promise<ToolResult> {
     try {
       switch (toolName) {
         // Canonical Gemini names + local aliases
@@ -334,6 +353,14 @@ export class GeminiToolAdapter {
           return await this.spawnAgentTool(params);
         case 'check_background_task':
           return await this.checkBackgroundTask(params);
+        case 'enter_worktree':
+          return this.enterWorktreeTool(params);
+        case 'exit_worktree':
+          return await this.exitWorktreeTool(params);
+        case 'merge_worktree':
+          return this.mergeWorktreeTool(params);
+        case 'list_worktrees':
+          return this.listWorktreesTool();
         default:
           return {
             success: false,
@@ -1602,5 +1629,77 @@ export class GeminiToolAdapter {
         }
       }
     ];
+  }
+
+  // ─── Worktree Isolation Tools ────────────────────────────────────
+
+  private enterWorktreeTool(params: { branch_prefix?: string; agent_id?: string }): ToolResult {
+    try {
+      const info = enterWorktree((this.sandbox as any).baseDir || process.cwd(), {
+        branchPrefix: params.branch_prefix,
+        agentId: params.agent_id
+      });
+      return {
+        success: true,
+        output: JSON.stringify({
+          worktreePath: info.worktreePath,
+          branchName: info.branchName,
+          baseBranch: info.baseBranch,
+          message: `Created worktree at ${info.worktreePath} on branch ${info.branchName}`
+        })
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  private async exitWorktreeTool(params: { branch_name: string }): Promise<ToolResult> {
+    if (!params.branch_name) return { success: false, error: 'exit_worktree requires branch_name' };
+    try {
+      const result = await exitWorktree((this.sandbox as any).baseDir || process.cwd(), params.branch_name);
+      return {
+        success: true,
+        output: JSON.stringify({
+          hasChanges: result.hasChanges,
+          branchName: result.branchName,
+          commitCount: result.commitCount,
+          message: result.hasChanges
+            ? `Worktree exited with ${result.commitCount} commits on ${result.branchName}. Use merge_worktree to merge.`
+            : `Worktree cleaned up — no changes were made.`
+        })
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  private mergeWorktreeTool(params: { branch_name: string; strategy?: 'merge' | 'squash' }): ToolResult {
+    if (!params.branch_name) return { success: false, error: 'merge_worktree requires branch_name' };
+    try {
+      const result = mergeWorktree(
+        (this.sandbox as any).baseDir || process.cwd(),
+        params.branch_name,
+        params.strategy || 'squash'
+      );
+      return { success: result.success, output: result.message, error: result.success ? undefined : result.message };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  private listWorktreesTool(): ToolResult {
+    const trees = listWorktrees();
+    if (trees.length === 0) {
+      return { success: true, output: 'No active worktrees.' };
+    }
+    return {
+      success: true,
+      output: JSON.stringify(trees.map(t => ({
+        branch: t.branchName,
+        path: t.worktreePath,
+        baseBranch: t.baseBranch,
+        createdAt: t.createdAt
+      })), null, 2)
+    };
   }
 }

@@ -5,6 +5,27 @@ All notable changes to crewswarm will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-03-29
+
+### Added
+- **Diagnostic lint-loop for `--check` gates**: `crew apply --check "npm test" --retries 3` now parses structured error output (TSC, ESLint, GCC, Go, Rust, pytest), feeds specific file:line diagnostics to crew-fixer, retries up to N times, and stops early if no progress is detected
+- **Checkpoint-at-interval**: pipeline execution now creates periodic git stash snapshots every 60s (configurable via `CREW_CHECKPOINT_INTERVAL_MS`) so users can roll back to any point during long-running tasks via `git stash list`
+- **Streaming output for all providers**: local.ts and multi-turn-drivers.ts now stream tokens incrementally for Groq, Grok, Gemini, DeepSeek, Anthropic, OpenAI, Mistral, and Cerebras — no more blank screen while waiting for full response
+- **Shared SSE stream helpers**: new `stream-helpers.ts` with `streamOpenAIResponse()`, `streamAnthropicResponse()`, `streamGeminiResponse()` — reusable across all code paths
+- **PreToolUse/PostToolUse hook system**: new `hooks/index.ts` — define hooks in `.crew/hooks.json` with regex matchers and shell commands; PreToolUse can allow/deny/modify tool input, PostToolUse fires after execution; tool input piped as JSON on stdin
+- **Token-aware auto-compaction**: new `context/token-compaction.ts` with `estimateTokens()`, `getContextWindow()` (model-specific), `adaptiveCompressionRatio()` — history compression now adapts to context window usage instead of fixed 3+5 ratios
+- **JSONL crash-safe transcripts**: `conversation-transcript.ts` rewritten to append-only JSONL — each turn is one JSON line, survives mid-write crashes, corrupt lines skipped on load
+- **Multi-session resume**: `/sessions` lists all past sessions with turn count, token usage, and first message; `/resume [id]` loads and continues any previous session with interactive picker
+- **Git worktree isolation**: new `tools/worktree.ts` with `enter_worktree`, `exit_worktree`, `merge_worktree`, `list_worktrees` tools — agents work in isolated git worktrees on separate branches, auto-cleanup if no changes, squash merge back if changes made
+- **Dashboard env vars**: added `CREW_NO_STREAM`, `CREW_HOOKS_FILE`, `CREW_MAX_SESSION_TOKENS` to Settings → crew-cli section
+- **Session manager**: `setSessionId()` method for switching sessions on `/resume`
+
+### Changed
+- crew-cli version: 0.3.0 → 0.3.1
+- `historyToGeminiContents()` and `historyToOpenAIMessages()` now accept model parameter for context-window-aware compression
+- `ConversationTranscriptStore` now stores per-session JSONL files (`transcript-{id}.jsonl`) instead of single JSON blob
+- Token-aware trimming in session store via `CREW_MAX_SESSION_TOKENS` (default 100K)
+
 ## [0.9.1] - 2026-03-28
 
 ### Fixed

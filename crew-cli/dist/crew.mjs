@@ -515,7 +515,7 @@ async function runPtyCommand(command, options = {}) {
   return runWithInherit(command, options);
 }
 async function runWithNodePty(command, options, ptyPackage) {
-  return new Promise((resolve18) => {
+  return new Promise((resolve19) => {
     const shell = options.shell || process.env.SHELL || "/bin/bash";
     const pty = ptyPackage.spawn(shell, ["-lc", command], {
       name: "xterm-color",
@@ -531,7 +531,7 @@ async function runWithNodePty(command, options, ptyPackage) {
       if (done) return;
       done = true;
       pty.kill();
-      resolve18({ success: false, exitCode: -1, signal: "SIGTERM", output });
+      resolve19({ success: false, exitCode: -1, signal: "SIGTERM", output });
     }, timeoutMs) : null;
     const onData = (data) => {
       output += data;
@@ -552,7 +552,7 @@ async function runWithNodePty(command, options, ptyPackage) {
       done = true;
       if (timer) clearTimeout(timer);
       process.stdout.off("resize", onResize);
-      resolve18({
+      resolve19({
         success: exitCode === 0,
         exitCode,
         signal: signal ? String(signal) : null,
@@ -562,7 +562,7 @@ async function runWithNodePty(command, options, ptyPackage) {
   });
 }
 async function runWithInherit(command, options) {
-  return new Promise((resolve18) => {
+  return new Promise((resolve19) => {
     const shell = options.shell || process.env.SHELL || "/bin/bash";
     const child = spawnChild(shell, ["-lc", command], {
       cwd: options.cwd || process.cwd(),
@@ -574,7 +574,7 @@ async function runWithInherit(command, options) {
     }, timeoutMs) : null;
     child.on("close", (code, signal) => {
       if (timer) clearTimeout(timer);
-      resolve18({
+      resolve19({
         success: (code ?? -1) === 0,
         exitCode: code ?? -1,
         signal: signal ?? null,
@@ -614,18 +614,18 @@ function categoryToText(cat) {
 }
 function loadProject(projectDir, ts) {
   const root = resolve2(projectDir);
-  const configPath2 = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
-  if (!configPath2) {
+  const configPath3 = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
+  if (!configPath3) {
     throw new Error(`No tsconfig.json found at or above ${root}`);
   }
-  const configFile = ts.readConfigFile(configPath2, ts.sys.readFile);
+  const configFile = ts.readConfigFile(configPath3, ts.sys.readFile);
   if (configFile.error) {
     throw new Error(ts.flattenDiagnosticMessageText(configFile.error.messageText, "\n"));
   }
   const parsed = ts.parseJsonConfigFileContent(
     configFile.config,
     ts.sys,
-    dirname2(configPath2)
+    dirname2(configPath3)
   );
   if (parsed.errors.length > 0) {
     const first = parsed.errors[0];
@@ -897,12 +897,174 @@ var init_strategies = __esm({
   }
 });
 
+// src/executor/stream-helpers.ts
+async function streamOpenAIResponse(response, onText) {
+  if (!response.body) throw new Error("No response body for streaming");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  const toolCallAccumulator = /* @__PURE__ */ new Map();
+  let usage = null;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr || jsonStr === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(jsonStr);
+          const delta = chunk?.choices?.[0]?.delta;
+          if (!delta) {
+            if (chunk?.usage) usage = chunk.usage;
+            continue;
+          }
+          if (delta.content) {
+            onText?.(delta.content);
+            fullText += delta.content;
+          }
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0;
+              if (!toolCallAccumulator.has(idx)) {
+                toolCallAccumulator.set(idx, { name: "", args: "" });
+              }
+              const acc = toolCallAccumulator.get(idx);
+              if (tc.function?.name) acc.name = tc.function.name;
+              if (tc.function?.arguments) acc.args += tc.function.arguments;
+            }
+          }
+        } catch {
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const toolCalls = [...toolCallAccumulator.values()].filter((tc) => tc.name).map((tc) => ({ name: tc.name, arguments: tc.args }));
+  return { text: fullText, toolCalls, usage };
+}
+async function streamAnthropicResponse(response, onText) {
+  if (!response.body) throw new Error("No response body for streaming");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  const toolBlocks = /* @__PURE__ */ new Map();
+  let usage = null;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+        try {
+          const event = JSON.parse(jsonStr);
+          if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+            toolBlocks.set(event.index, { name: event.content_block.name || "", inputJson: "" });
+          }
+          if (event.type === "content_block_delta") {
+            if (event.delta?.type === "text_delta" && event.delta.text) {
+              onText?.(event.delta.text);
+              fullText += event.delta.text;
+            }
+            if (event.delta?.type === "input_json_delta" && event.delta.partial_json) {
+              const block = toolBlocks.get(event.index);
+              if (block) block.inputJson += event.delta.partial_json;
+            }
+          }
+          if (event.type === "message_delta" && event.usage) {
+            usage = event.usage;
+          }
+          if (event.type === "message_start" && event.message?.usage) {
+            usage = { ...event.message.usage, ...usage || {} };
+          }
+        } catch {
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const toolCalls = [...toolBlocks.values()].filter((b) => b.name).map((b) => {
+    let input = {};
+    try {
+      input = JSON.parse(b.inputJson);
+    } catch {
+    }
+    return { name: b.name, input };
+  });
+  return { text: fullText, toolCalls, usage };
+}
+async function streamGeminiResponse(response, onText) {
+  if (!response.body) throw new Error("No response body for streaming");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  const toolCalls = [];
+  let usage = null;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+        try {
+          const chunk = JSON.parse(jsonStr);
+          const parts = chunk?.candidates?.[0]?.content?.parts ?? [];
+          for (const part of parts) {
+            if (part.text) {
+              onText?.(part.text);
+              fullText += part.text;
+            }
+            if (part.functionCall) {
+              toolCalls.push({ name: part.functionCall.name || "", args: part.functionCall.args || {} });
+            }
+          }
+          if (chunk?.usageMetadata) usage = chunk.usageMetadata;
+        } catch {
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { text: fullText, toolCalls, usage };
+}
+function isStreamingDisabled() {
+  return String(process.env.CREW_NO_STREAM || "").toLowerCase() === "true";
+}
+var writeToStdout;
+var init_stream_helpers = __esm({
+  "src/executor/stream-helpers.ts"() {
+    "use strict";
+    writeToStdout = (chunk) => process.stdout.write(chunk);
+  }
+});
+
 // src/executor/local.ts
 var EXECUTOR_SYSTEM_PROMPT, LocalExecutor;
 var init_local = __esm({
   "src/executor/local.ts"() {
     "use strict";
     init_logger();
+    init_stream_helpers();
     EXECUTOR_SYSTEM_PROMPT = `You are the conversational interface for CrewSwarm CLI.
 
 ## Your Role
@@ -1017,6 +1179,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
       async executeWithGroq(task, options, systemPrompt) {
         const apiKey = process.env.GROQ_API_KEY;
         if (!apiKey) return null;
+        const stream = !isStreamingDisabled();
         try {
           const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
@@ -1032,11 +1195,18 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
                 { role: "user", content: task }
               ],
               temperature: options.temperature || 0.7,
-              max_tokens: options.maxTokens || 2e3
+              max_tokens: options.maxTokens || 2e3,
+              ...stream ? { stream: true, stream_options: { include_usage: true } } : {}
             })
           });
           if (!response.ok) {
             throw new Error(`Groq API error: ${response.statusText}`);
+          }
+          if (stream && response.body) {
+            const result2 = await streamOpenAIResponse(response, writeToStdout);
+            if (result2.text) process.stdout.write("\n");
+            const cost2 = this.calculateCost("groq-llama", result2.usage?.prompt_tokens || 0, result2.usage?.completion_tokens || 0);
+            return { success: true, result: result2.text, costUsd: cost2, model: "llama-3.3-70b-versatile" };
           }
           const data = await response.json();
           const cost = this.calculateCost("groq-llama", data.usage?.prompt_tokens || 0, data.usage?.completion_tokens || 0);
@@ -1065,6 +1235,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
           if (sessionId) {
             headers["x-grok-conv-id"] = sessionId;
           }
+          const stream = !isStreamingDisabled();
           const response = await fetch("https://api.x.ai/v1/chat/completions", {
             method: "POST",
             headers,
@@ -1076,7 +1247,8 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
                 { role: "user", content: task }
               ],
               temperature: options.temperature || 0.7,
-              max_tokens: options.maxTokens || 4e3
+              max_tokens: options.maxTokens || 4e3,
+              ...stream ? { stream: true, stream_options: { include_usage: true } } : {}
             })
           });
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[Grok] Response received in ${Date.now() - callStart}ms (status: ${response.status})`);
@@ -1084,6 +1256,25 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
             const errorText = await response.text().catch(() => response.statusText);
             console.log(`[Grok] API error: ${response.status} - ${errorText}`);
             return null;
+          }
+          if (stream && response.body) {
+            const result2 = await streamOpenAIResponse(response, writeToStdout);
+            if (result2.text) process.stdout.write("\n");
+            const cachedTokens2 = result2.usage?.prompt_tokens_details?.cached_tokens || 0;
+            if (cachedTokens2 > 0) {
+              const totalPrompt = result2.usage?.prompt_tokens || 0;
+              const pct = Math.round(cachedTokens2 / totalPrompt * 100);
+              console.log(`[Grok] cache hit: ${cachedTokens2}/${totalPrompt} tokens cached (${pct}%) \u2014 50% cost savings`);
+            }
+            return {
+              success: true,
+              result: result2.text,
+              model,
+              promptTokens: result2.usage?.prompt_tokens,
+              completionTokens: result2.usage?.completion_tokens,
+              cachedTokens: cachedTokens2,
+              costUsd: this.calculateGrokCostWithCache(result2.usage)
+            };
           }
           const data = await response.json();
           const content = data?.choices?.[0]?.message?.content;
@@ -1150,8 +1341,10 @@ User task: ${task}`
           if (expectsJson) {
             requestBody.generationConfig.responseMimeType = "application/json";
           }
+          const stream = !isStreamingDisabled() && !expectsJson;
+          const endpoint = stream ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}` : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
           const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+            endpoint,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1168,6 +1361,18 @@ User task: ${task}`
               console.log(`[Gemini] API error: ${response.status} - ${errorText}`);
             }
             return null;
+          }
+          if (stream && response.body) {
+            const result2 = await streamGeminiResponse(response, writeToStdout);
+            if (result2.text) process.stdout.write("\n");
+            return {
+              success: true,
+              result: result2.text,
+              model,
+              promptTokens: result2.usage?.promptTokenCount,
+              completionTokens: result2.usage?.candidatesTokenCount,
+              costUsd: this.calculateCost(model, result2.usage?.promptTokenCount || 0, result2.usage?.candidatesTokenCount || 0)
+            };
           }
           const data = await response.json();
           const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -1199,6 +1404,7 @@ User task: ${task}`
         const timeoutMs = model.includes("reasoner") && (options.maxTokens || 0) > 6e3 ? 10 * 60 * 1e3 : this.timeoutMs;
         console.log(`[DeepSeek] Starting API call (model: ${model}, timeout: ${timeoutMs / 1e3}s)...`);
         try {
+          const stream = !isStreamingDisabled() && !model.includes("reasoner");
           const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -1213,7 +1419,8 @@ User task: ${task}`
                 { role: "user", content: task }
               ],
               temperature: options.temperature || 0.7,
-              max_tokens: options.maxTokens || 4e3
+              max_tokens: options.maxTokens || 4e3,
+              ...stream ? { stream: true, stream_options: { include_usage: true } } : {}
             })
           });
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[DeepSeek] Response received (status: ${response.status})`);
@@ -1221,6 +1428,19 @@ User task: ${task}`
             const errorText = await response.text();
             console.log(`[DeepSeek] API error: ${response.status} - ${errorText}`);
             return null;
+          }
+          if (stream && response.body) {
+            const result2 = await streamOpenAIResponse(response, writeToStdout);
+            if (result2.text) process.stdout.write("\n");
+            if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[DeepSeek] \u2713 Success (${result2.usage?.prompt_tokens || 0} in, ${result2.usage?.completion_tokens || 0} out)`);
+            return {
+              success: true,
+              result: result2.text,
+              model,
+              promptTokens: result2.usage?.prompt_tokens,
+              completionTokens: result2.usage?.completion_tokens,
+              costUsd: this.calculateCost(model, result2.usage?.prompt_tokens || 0, result2.usage?.completion_tokens || 0)
+            };
           }
           const data = await response.json();
           const reasoning_content = data?.choices?.[0]?.message?.reasoning_content;
@@ -1285,6 +1505,7 @@ User task: ${task}`
         try {
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[Anthropic] Starting API call (model: ${model})...`);
           const callStart = Date.now();
+          const stream = !isStreamingDisabled();
           const response = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: {
@@ -1296,6 +1517,7 @@ User task: ${task}`
             body: JSON.stringify({
               model,
               max_tokens: options.maxTokens || 4e3,
+              ...stream ? { stream: true } : {},
               system: [
                 {
                   type: "text",
@@ -1314,6 +1536,30 @@ User task: ${task}`
             const errorText = await response.text().catch(() => response.statusText);
             console.log(`[Anthropic] API error: ${response.status} - ${errorText}`);
             return null;
+          }
+          if (stream && response.body) {
+            const result2 = await streamAnthropicResponse(response, writeToStdout);
+            if (result2.text) process.stdout.write("\n");
+            const usage = result2.usage || {};
+            const cacheReadTokens2 = usage.cache_read_input_tokens || 0;
+            const cacheCreateTokens2 = usage.cache_creation_input_tokens || 0;
+            const inputTokens2 = usage.input_tokens || 0;
+            if (cacheReadTokens2 > 0) {
+              const totalInput = inputTokens2 + cacheReadTokens2;
+              const pct = Math.round(cacheReadTokens2 / totalInput * 100);
+              console.log(`[Anthropic] cache hit: ${cacheReadTokens2}/${totalInput} tokens cached (${pct}%) \u2014 90% cost savings`);
+            } else if (cacheCreateTokens2 > 0) {
+              console.log(`[Anthropic] cache write: ${cacheCreateTokens2} tokens cached for future requests`);
+            }
+            return {
+              success: true,
+              result: result2.text,
+              model,
+              promptTokens: inputTokens2,
+              completionTokens: usage.output_tokens,
+              cachedTokens: cacheReadTokens2,
+              costUsd: this.calculateAnthropicCostWithCache(usage)
+            };
           }
           const data = await response.json();
           const content = data?.content?.[0]?.text;
@@ -1365,6 +1611,7 @@ User task: ${task}`
         try {
           const maxTokensParam = model.startsWith("gpt-5") || model.startsWith("gpt-6") ? "max_completion_tokens" : "max_tokens";
           const temp = model.startsWith("gpt-5") || model.startsWith("gpt-6") ? 1 : options.temperature ?? 0.7;
+          const stream = !isStreamingDisabled() && !options.jsonMode;
           const requestBody = {
             model,
             messages: [
@@ -1372,7 +1619,8 @@ User task: ${task}`
               { role: "user", content: task }
             ],
             temperature: temp,
-            [maxTokensParam]: options.maxTokens || 4e3
+            [maxTokensParam]: options.maxTokens || 4e3,
+            ...stream ? { stream: true, stream_options: { include_usage: true } } : {}
           };
           if (options.jsonMode) {
             requestBody.response_format = { type: "json_object" };
@@ -1391,6 +1639,20 @@ User task: ${task}`
             const errorText = await response.text();
             console.log(`[OpenAI] API error: ${response.status} - ${errorText}`);
             return null;
+          }
+          if (stream && response.body) {
+            const result2 = await streamOpenAIResponse(response, writeToStdout);
+            if (result2.text) process.stdout.write("\n");
+            if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[OpenAI] \u2713 Success (${result2.usage?.prompt_tokens || 0} in, ${result2.usage?.completion_tokens || 0} out)`);
+            return {
+              success: true,
+              result: result2.text,
+              model,
+              promptTokens: result2.usage?.prompt_tokens,
+              completionTokens: result2.usage?.completion_tokens,
+              cachedTokens: 0,
+              costUsd: this.calculateOpenAICost(model, result2.usage?.prompt_tokens || 0, result2.usage?.completion_tokens || 0)
+            };
           }
           const data = await response.json();
           const content = data?.choices?.[0]?.message?.content;
@@ -1565,6 +1827,257 @@ var init_autonomous_loop = __esm({
   }
 });
 
+// src/hooks/index.ts
+import { spawn } from "node:child_process";
+import { readFile as readFile4 } from "node:fs/promises";
+import { existsSync as existsSync4 } from "node:fs";
+import { join as join5 } from "node:path";
+function getConfigPath(baseDir = process.cwd()) {
+  return process.env.CREW_HOOKS_FILE || join5(baseDir, ".crew", "hooks.json");
+}
+async function loadHookConfig(baseDir) {
+  const path3 = getConfigPath(baseDir);
+  if (cachedConfig && configPath === path3) return cachedConfig;
+  if (!existsSync4(path3)) {
+    cachedConfig = { hooks: {} };
+    configPath = path3;
+    return cachedConfig;
+  }
+  try {
+    const raw = await readFile4(path3, "utf8");
+    cachedConfig = JSON.parse(raw);
+    configPath = path3;
+    return cachedConfig;
+  } catch {
+    cachedConfig = { hooks: {} };
+    configPath = path3;
+    return cachedConfig;
+  }
+}
+function matchesHook(toolName, hook) {
+  try {
+    return new RegExp(hook.matcher).test(toolName);
+  } catch {
+    return false;
+  }
+}
+async function executeHookCommand(command, stdinData, timeoutMs) {
+  return new Promise((resolve19) => {
+    const proc = spawn("sh", ["-c", command], {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: timeoutMs
+    });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (d) => {
+      stdout += d.toString();
+    });
+    proc.stderr.on("data", (d) => {
+      stderr += d.toString();
+    });
+    proc.on("error", () => {
+      resolve19({});
+    });
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        resolve19({
+          permissionDecision: "deny",
+          permissionDecisionReason: stderr.trim() || `Hook exited with code ${code}`
+        });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout.trim());
+        resolve19(parsed);
+      } catch {
+        resolve19({ message: stdout.trim() || void 0 });
+      }
+    });
+    proc.stdin.write(stdinData);
+    proc.stdin.end();
+  });
+}
+async function runPreToolUseHooks(toolName, toolInput, baseDir) {
+  const config = await loadHookConfig(baseDir);
+  const hooks = config.hooks.PreToolUse || [];
+  for (const hook of hooks) {
+    if (!matchesHook(toolName, hook)) continue;
+    const stdinData = JSON.stringify({ tool: toolName, input: toolInput });
+    const result2 = await executeHookCommand(hook.command, stdinData, hook.timeout || 1e4);
+    if (result2.permissionDecision === "deny") {
+      return {
+        decision: "deny",
+        reason: result2.permissionDecisionReason || "Denied by PreToolUse hook"
+      };
+    }
+    if (result2.permissionDecision === "ask") {
+      return {
+        decision: "ask",
+        reason: result2.permissionDecisionReason
+      };
+    }
+    if (result2.updatedInput) {
+      return { decision: "allow", updatedInput: result2.updatedInput };
+    }
+  }
+  return { decision: "allow" };
+}
+async function runPostToolUseHooks(toolName, toolInput, toolOutput, baseDir) {
+  const config = await loadHookConfig(baseDir);
+  const hooks = config.hooks.PostToolUse || [];
+  for (const hook of hooks) {
+    if (!matchesHook(toolName, hook)) continue;
+    const stdinData = JSON.stringify({ tool: toolName, input: toolInput, output: toolOutput });
+    const result2 = await executeHookCommand(hook.command, stdinData, hook.timeout || 1e4);
+    if (result2.message) {
+      return { message: result2.message };
+    }
+  }
+  return {};
+}
+var cachedConfig, configPath;
+var init_hooks = __esm({
+  "src/hooks/index.ts"() {
+    "use strict";
+    cachedConfig = null;
+    configPath = null;
+  }
+});
+
+// src/tools/worktree.ts
+import { execSync } from "node:child_process";
+import { existsSync as existsSync5 } from "node:fs";
+import { join as join6, resolve as resolve3 } from "node:path";
+import { randomUUID as randomUUID2 } from "node:crypto";
+import { rm as rm2 } from "node:fs/promises";
+function git(cmd, cwd) {
+  return execSync(`git ${cmd}`, { cwd, encoding: "utf8", timeout: 3e4 }).trim();
+}
+function isGitRepo(dir) {
+  try {
+    git("rev-parse --is-inside-work-tree", dir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function getCurrentBranch(cwd) {
+  try {
+    return git("rev-parse --abbrev-ref HEAD", cwd);
+  } catch {
+    return "main";
+  }
+}
+function hasUncommittedChanges(cwd) {
+  try {
+    const status = git("status --porcelain", cwd);
+    return status.length > 0;
+  } catch {
+    return false;
+  }
+}
+function enterWorktree(projectDir, opts) {
+  const cwd = resolve3(projectDir);
+  if (!isGitRepo(cwd)) {
+    throw new Error("Not a git repository \u2014 cannot create worktree");
+  }
+  const baseBranch = getCurrentBranch(cwd);
+  const prefix = opts?.branchPrefix || "crew-agent";
+  const suffix = (opts?.agentId || randomUUID2()).slice(0, 8);
+  const branchName = `${prefix}/${suffix}`;
+  const worktreeBase = join6(cwd, ".crew", "worktrees");
+  const worktreePath = join6(worktreeBase, suffix);
+  try {
+    execSync(`mkdir -p "${worktreeBase}"`, { cwd });
+    git(`worktree add -b "${branchName}" "${worktreePath}" HEAD`, cwd);
+  } catch (err) {
+    throw new Error(`Failed to create worktree: ${err.message}`);
+  }
+  const info = {
+    worktreePath,
+    branchName,
+    baseBranch,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  activeWorktrees.set(branchName, info);
+  return info;
+}
+async function exitWorktree(projectDir, branchName) {
+  const cwd = resolve3(projectDir);
+  const info = activeWorktrees.get(branchName);
+  if (!info) {
+    throw new Error(`No active worktree found for branch: ${branchName}`);
+  }
+  const wt = info.worktreePath;
+  let commitCount = 0;
+  try {
+    const log = git(`log ${info.baseBranch}..${branchName} --oneline`, cwd);
+    commitCount = log ? log.split("\n").filter((l) => l.trim()).length : 0;
+  } catch {
+    commitCount = 0;
+  }
+  const uncommitted = existsSync5(wt) && hasUncommittedChanges(wt);
+  if (uncommitted) {
+    try {
+      git("add -A", wt);
+      git('commit -m "Auto-commit: agent work in progress"', wt);
+      commitCount++;
+    } catch {
+    }
+  }
+  const hasChanges = commitCount > 0;
+  try {
+    git(`worktree remove "${wt}" --force`, cwd);
+  } catch {
+    try {
+      await rm2(wt, { recursive: true, force: true });
+      git("worktree prune", cwd);
+    } catch {
+    }
+  }
+  if (!hasChanges) {
+    try {
+      git(`branch -D "${branchName}"`, cwd);
+    } catch {
+    }
+  }
+  activeWorktrees.delete(branchName);
+  return {
+    hasChanges,
+    branchName,
+    commitCount,
+    worktreePath: hasChanges ? wt : void 0
+  };
+}
+function listWorktrees() {
+  return [...activeWorktrees.values()];
+}
+function mergeWorktree(projectDir, branchName, strategy = "squash") {
+  const cwd = resolve3(projectDir);
+  try {
+    if (strategy === "squash") {
+      git(`merge --squash "${branchName}"`, cwd);
+      git(`commit -m "Merge agent work from ${branchName}"`, cwd);
+    } else {
+      git(`merge "${branchName}" --no-edit`, cwd);
+    }
+    try {
+      git(`branch -D "${branchName}"`, cwd);
+    } catch {
+    }
+    return { success: true, message: `Merged ${branchName} into current branch` };
+  } catch (err) {
+    return { success: false, message: `Merge failed: ${err.message}` };
+  }
+}
+var activeWorktrees;
+var init_worktree = __esm({
+  "src/tools/worktree.ts"() {
+    "use strict";
+    activeWorktrees = /* @__PURE__ */ new Map();
+  }
+});
+
 // src/tools/gemini/definitions/base-declarations.ts
 var GLOB_TOOL_NAME, GREP_TOOL_NAME, LS_TOOL_NAME, READ_FILE_TOOL_NAME, SHELL_TOOL_NAME, WRITE_FILE_TOOL_NAME, EDIT_TOOL_NAME, WEB_SEARCH_TOOL_NAME, WRITE_TODOS_TOOL_NAME, WEB_FETCH_TOOL_NAME, READ_MANY_FILES_TOOL_NAME, MEMORY_TOOL_NAME, GET_INTERNAL_DOCS_TOOL_NAME, ACTIVATE_SKILL_TOOL_NAME, ASK_USER_TOOL_NAME, EXIT_PLAN_MODE_TOOL_NAME, ENTER_PLAN_MODE_TOOL_NAME;
 var init_base_declarations = __esm({
@@ -1595,10 +2108,10 @@ var docker_sandbox_exports = {};
 __export(docker_sandbox_exports, {
   DockerSandbox: () => DockerSandbox
 });
-import { execSync } from "child_process";
+import { execSync as execSync2 } from "child_process";
 import fs from "fs";
 import path from "path";
-import { randomUUID as randomUUID2 } from "crypto";
+import { randomUUID as randomUUID3 } from "crypto";
 var DockerSandbox;
 var init_docker_sandbox = __esm({
   "src/tools/docker-sandbox.ts"() {
@@ -1614,7 +2127,7 @@ var init_docker_sandbox = __esm({
        */
       async isDockerAvailable() {
         try {
-          execSync("docker info", {
+          execSync2("docker info", {
             stdio: "ignore",
             timeout: 5e3
           });
@@ -1649,7 +2162,7 @@ var init_docker_sandbox = __esm({
        */
       async runCommand(command, sandbox, options = {}) {
         const startTime = Date.now();
-        const tempDir = path.join("/tmp", `crew-sandbox-${randomUUID2()}`);
+        const tempDir = path.join("/tmp", `crew-sandbox-${randomUUID3()}`);
         const image = options.image || this.defaultImage;
         const timeout = options.timeout || this.defaultTimeout;
         const workDir = options.workDir || process.cwd();
@@ -1668,7 +2181,7 @@ var init_docker_sandbox = __esm({
             const nodeModulesPath = path.join(workDir, "node_modules");
             if (fs.existsSync(nodeModulesPath)) {
               console.log(`[Docker] Copying node_modules (this may take a few seconds)...`);
-              execSync(`cp -r "${nodeModulesPath}" "${tempDir}/"`, {
+              execSync2(`cp -r "${nodeModulesPath}" "${tempDir}/"`, {
                 stdio: "ignore",
                 timeout: 1e4
               });
@@ -1677,7 +2190,7 @@ var init_docker_sandbox = __esm({
           const envFlags = options.env ? Object.entries(options.env).map(([k, v]) => `-e ${k}="${v}"`).join(" ") : "";
           console.log(`[Docker] Running: ${command}`);
           const dockerCmd = `docker run --rm -v "${tempDir}":/work -w /work ${envFlags} ${image} sh -c "${command.replace(/"/g, '\\"')}"`;
-          const output = execSync(dockerCmd, {
+          const output = execSync2(dockerCmd, {
             encoding: "utf8",
             timeout,
             stdio: ["ignore", "pipe", "pipe"]
@@ -1715,7 +2228,7 @@ var init_docker_sandbox = __esm({
        */
       async ensureImage(image = this.defaultImage) {
         try {
-          execSync(`docker image inspect ${image}`, {
+          execSync2(`docker image inspect ${image}`, {
             stdio: "ignore",
             timeout: 5e3
           });
@@ -1723,7 +2236,7 @@ var init_docker_sandbox = __esm({
         } catch {
           console.log(`[Docker] Pulling image ${image}...`);
           try {
-            execSync(`docker pull ${image}`, {
+            execSync2(`docker pull ${image}`, {
               stdio: "inherit",
               // Show progress
               timeout: 12e4
@@ -1742,9 +2255,9 @@ var init_docker_sandbox = __esm({
 });
 
 // src/tools/gemini/crew-adapter.ts
-import { execSync as execSync2 } from "node:child_process";
-import { mkdir as mkdir3, readFile as readFile4, readdir as readdir2, writeFile as writeFile3 } from "node:fs/promises";
-import { join as join5, resolve as resolve3 } from "node:path";
+import { execSync as execSync3 } from "node:child_process";
+import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, writeFile as writeFile3 } from "node:fs/promises";
+import { join as join7, resolve as resolve4 } from "node:path";
 function getShellTimeout() {
   const envVal = parseInt(process.env.CREW_SHELL_TIMEOUT || "", 10);
   if (envVal > 0) return Math.min(envVal * 1e3, 6e5);
@@ -1754,6 +2267,8 @@ var CrewConfig, CrewMessageBus, DANGEROUS_SHELL_PATTERNS, _backgroundProcesses, 
 var init_crew_adapter = __esm({
   "src/tools/gemini/crew-adapter.ts"() {
     "use strict";
+    init_hooks();
+    init_worktree();
     init_base_declarations();
     CrewConfig = class {
       constructor(workspaceRoot) {
@@ -1952,9 +2467,20 @@ var init_crew_adapter = __esm({
         ];
       }
       /**
-       * Execute a tool call from LLM
+       * Execute a tool call from LLM (with PreToolUse/PostToolUse hooks)
        */
       async executeTool(toolName, params) {
+        const preResult = await runPreToolUseHooks(toolName, params);
+        if (preResult.decision === "deny") {
+          return { success: false, error: `Blocked by hook: ${preResult.reason || "denied"}` };
+        }
+        const effectiveParams = preResult.updatedInput || params;
+        const result2 = await this._executeTool(toolName, effectiveParams);
+        runPostToolUseHooks(toolName, effectiveParams, result2).catch(() => {
+        });
+        return result2;
+      }
+      async _executeTool(toolName, params) {
         try {
           switch (toolName) {
             // Canonical Gemini names + local aliases
@@ -2041,6 +2567,14 @@ var init_crew_adapter = __esm({
               return await this.spawnAgentTool(params);
             case "check_background_task":
               return await this.checkBackgroundTask(params);
+            case "enter_worktree":
+              return this.enterWorktreeTool(params);
+            case "exit_worktree":
+              return await this.exitWorktreeTool(params);
+            case "merge_worktree":
+              return this.mergeWorktreeTool(params);
+            case "list_worktrees":
+              return this.listWorktreesTool();
             default:
               return {
                 success: false,
@@ -2058,11 +2592,11 @@ var init_crew_adapter = __esm({
         const isAbsolute = params.file_path.startsWith("/");
         if (isAbsolute) {
           try {
-            const { mkdir: mkdir26, writeFile: writeFile26 } = await import("node:fs/promises");
+            const { mkdir: mkdir26, writeFile: writeFile25 } = await import("node:fs/promises");
             const { dirname: dirname9 } = await import("node:path");
             const dir = dirname9(params.file_path);
             await mkdir26(dir, { recursive: true });
-            await writeFile26(params.file_path, params.content, "utf8");
+            await writeFile25(params.file_path, params.content, "utf8");
             return {
               success: true,
               output: `Wrote ${params.file_path} (${params.content.length} bytes)`
@@ -2071,8 +2605,8 @@ var init_crew_adapter = __esm({
             return { success: false, error: `Write failed: ${err.message}` };
           }
         }
-        const fullPath = resolve3(this.config.getWorkspaceRoot(), params.file_path);
-        const wsRoot = resolve3(this.config.getWorkspaceRoot());
+        const fullPath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
+        const wsRoot = resolve4(this.config.getWorkspaceRoot());
         if (!fullPath.startsWith(wsRoot + "/") && fullPath !== wsRoot) {
           return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
         }
@@ -2083,11 +2617,11 @@ var init_crew_adapter = __esm({
         };
       }
       async appendFile(params) {
-        const filePath = resolve3(this.config.getWorkspaceRoot(), params.file_path);
+        const filePath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
         let existing = "";
         try {
           const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
-          existing = stagedContent ?? await readFile4(filePath, "utf8");
+          existing = stagedContent ?? await readFile5(filePath, "utf8");
         } catch {
           existing = "";
         }
@@ -2099,15 +2633,15 @@ var init_crew_adapter = __esm({
         };
       }
       async readFile(params) {
-        const filePath = resolve3(this.config.getWorkspaceRoot(), params.file_path);
-        const wsRoot = resolve3(this.config.getWorkspaceRoot());
+        const filePath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
+        const wsRoot = resolve4(this.config.getWorkspaceRoot());
         if (!filePath.startsWith(wsRoot + "/") && filePath !== wsRoot) {
           return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
         }
         this._filesRead.add(params.file_path);
         this._filesRead.add(filePath);
         const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
-        const content = stagedContent ?? await readFile4(filePath, "utf8");
+        const content = stagedContent ?? await readFile5(filePath, "utf8");
         if (params.start_line || params.end_line) {
           const lines = content.split("\n");
           const start = (params.start_line || 1) - 1;
@@ -2118,8 +2652,8 @@ var init_crew_adapter = __esm({
         return { success: true, output: content };
       }
       async editFile(params) {
-        const filePath = resolve3(this.config.getWorkspaceRoot(), params.file_path);
-        const wsRoot = resolve3(this.config.getWorkspaceRoot());
+        const filePath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
+        const wsRoot = resolve4(this.config.getWorkspaceRoot());
         if (!filePath.startsWith(wsRoot + "/") && filePath !== wsRoot) {
           return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
         }
@@ -2130,7 +2664,7 @@ var init_crew_adapter = __esm({
           };
         }
         const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
-        const content = stagedContent ?? await readFile4(filePath, "utf8");
+        const content = stagedContent ?? await readFile5(filePath, "utf8");
         if (!content.includes(params.old_string)) {
           return {
             success: false,
@@ -2191,13 +2725,13 @@ Fix these before moving on.`;
       async mkdirTool(params) {
         const dir = (params.path || params.dir_path || "").trim();
         if (!dir) return { success: false, error: "mkdir requires path" };
-        const keep = join5(dir, ".gitkeep");
+        const keep = join7(dir, ".gitkeep");
         await this.sandbox.addChange(keep, "");
         return { success: true, output: `Staged directory ${dir}` };
       }
       async listTool(params) {
         const target = (params.path || params.dir_path || ".").trim();
-        const abs = resolve3(process.cwd(), target);
+        const abs = resolve4(process.cwd(), target);
         const items = await readdir2(abs, { withFileTypes: true });
         const lines = items.map((i) => `${i.isDirectory() ? "d" : "f"} ${i.name}`);
         return { success: true, output: lines.join("\n") };
@@ -2206,7 +2740,7 @@ Fix these before moving on.`;
         const pattern = String(params.pattern || "").trim();
         if (!pattern) return { success: false, error: "glob requires pattern" };
         try {
-          const out = execSync2(`rg --files -g ${JSON.stringify(pattern)}`, { cwd: process.cwd(), stdio: "pipe", encoding: "utf8" });
+          const out = execSync3(`rg --files -g ${JSON.stringify(pattern)}`, { cwd: process.cwd(), stdio: "pipe", encoding: "utf8" });
           return { success: true, output: out.trim() };
         } catch (err) {
           return { success: false, error: err?.stderr?.toString?.() || err?.message || "glob failed" };
@@ -2235,7 +2769,7 @@ Fix these before moving on.`;
         if (params.max_results) args.push(`-m${params.max_results}`);
         args.push(JSON.stringify(pattern), JSON.stringify(searchPath));
         try {
-          const out = execSync2(args.join(" "), {
+          const out = execSync3(args.join(" "), {
             cwd: process.cwd(),
             stdio: "pipe",
             encoding: "utf8"
@@ -2296,9 +2830,9 @@ ${err?.stderr?.toString?.() || ""}`.trim();
           const taskId = `bg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
           const bgPromise = (async () => {
             try {
-              const { spawn: spawn4 } = await import("node:child_process");
-              return new Promise((resolve18) => {
-                const proc = spawn4("sh", ["-c", command], {
+              const { spawn: spawn5 } = await import("node:child_process");
+              return new Promise((resolve19) => {
+                const proc = spawn5("sh", ["-c", command], {
                   cwd: this.config.getWorkspaceRoot(),
                   stdio: "pipe"
                 });
@@ -2311,11 +2845,11 @@ ${err?.stderr?.toString?.() || ""}`.trim();
                 });
                 const timeout = setTimeout(() => {
                   proc.kill("SIGTERM");
-                  resolve18({ success: false, error: "Background task timed out" });
+                  resolve19({ success: false, error: "Background task timed out" });
                 }, getShellTimeout());
                 proc.on("close", (code) => {
                   clearTimeout(timeout);
-                  resolve18(code === 0 ? { success: true, output: stdout.trim() } : { success: false, error: (stderr || stdout).trim() || `exit code ${code}` });
+                  resolve19(code === 0 ? { success: true, output: stdout.trim() } : { success: false, error: (stderr || stdout).trim() || `exit code ${code}` });
                 });
               });
             } catch (err) {
@@ -2347,7 +2881,7 @@ Use check_background_task with this ID to get the result.` };
               console.warn("[GeminiAdapter] Docker unavailable - running natively (staged files not available to command)");
             }
           }
-          const out = execSync2(command, {
+          const out = execSync3(command, {
             cwd: this.config.getWorkspaceRoot(),
             stdio: "pipe",
             encoding: "utf8",
@@ -2413,7 +2947,7 @@ ${r.description || ""}`
       async readManyFilesTool(params) {
         const include = String(params.include || "**/*").trim();
         try {
-          const out = execSync2(`rg --files -g ${JSON.stringify(include)}`, {
+          const out = execSync3(`rg --files -g ${JSON.stringify(include)}`, {
             cwd: this.config.getWorkspaceRoot(),
             stdio: "pipe",
             encoding: "utf8"
@@ -2421,9 +2955,9 @@ ${r.description || ""}`
           const files = out.split("\n").filter(Boolean).slice(0, 20);
           const chunks = [];
           for (const rel of files) {
-            const full = resolve3(this.config.getWorkspaceRoot(), rel);
+            const full = resolve4(this.config.getWorkspaceRoot(), rel);
             try {
-              const content = await readFile4(full, "utf8");
+              const content = await readFile5(full, "utf8");
               chunks.push(`--- ${rel} ---
 ${content.slice(0, 2e3)}`);
             } catch {
@@ -2437,12 +2971,12 @@ ${content.slice(0, 2e3)}`);
       async saveMemoryTool(params) {
         const fact = String(params.fact || "").trim();
         if (!fact) return { success: false, error: "save_memory requires fact" };
-        const memDir = resolve3(this.config.getWorkspaceRoot(), ".crew");
+        const memDir = resolve4(this.config.getWorkspaceRoot(), ".crew");
         await mkdir3(memDir, { recursive: true });
-        const memFile = resolve3(memDir, "memory-facts.log");
+        const memFile = resolve4(memDir, "memory-facts.log");
         let prior = "";
         try {
-          prior = await readFile4(memFile, "utf8");
+          prior = await readFile5(memFile, "utf8");
         } catch {
         }
         await writeFile3(memFile, `${prior}${(/* @__PURE__ */ new Date()).toISOString()} ${fact}
@@ -2451,17 +2985,17 @@ ${content.slice(0, 2e3)}`);
       }
       async writeTodosTool(params) {
         const todos = Array.isArray(params.todos) ? params.todos : [];
-        const memDir = resolve3(this.config.getWorkspaceRoot(), ".crew");
+        const memDir = resolve4(this.config.getWorkspaceRoot(), ".crew");
         await mkdir3(memDir, { recursive: true });
-        const todoFile = resolve3(memDir, "todos.json");
+        const todoFile = resolve4(memDir, "todos.json");
         await writeFile3(todoFile, JSON.stringify(todos, null, 2), "utf8");
         return { success: true, output: `Saved ${todos.length} todos` };
       }
       async getInternalDocsTool(params) {
         const target = String(params.path || "AGENTS.md").trim();
-        const abs = resolve3(this.config.getWorkspaceRoot(), target);
+        const abs = resolve4(this.config.getWorkspaceRoot(), target);
         try {
-          const content = await readFile4(abs, "utf8");
+          const content = await readFile5(abs, "utf8");
           return { success: true, output: content.slice(0, 12e3) };
         } catch (err) {
           return { success: false, error: `get_internal_docs failed: ${err?.message || target}` };
@@ -2513,7 +3047,7 @@ ${summary}`
         await mkdir3(crewDir, { recursive: true });
         let prior = {};
         try {
-          prior = JSON.parse(await readFile4(this.planModeStatePath(), "utf8"));
+          prior = JSON.parse(await readFile5(this.planModeStatePath(), "utf8"));
         } catch {
           prior = {};
         }
@@ -2536,7 +3070,7 @@ ${summary}`
         await mkdir3(crewDir, { recursive: true });
         let state = { active: [] };
         try {
-          state = JSON.parse(await readFile4(this.activeSkillsPath(), "utf8"));
+          state = JSON.parse(await readFile5(this.activeSkillsPath(), "utf8"));
         } catch {
           state = { active: [] };
         }
@@ -2550,19 +3084,19 @@ ${summary}`
         return { success: true, output: `Skill activated: ${name} (${this.relativeCrewPath(this.activeSkillsPath())})` };
       }
       crewDirPath() {
-        return resolve3(this.config.getWorkspaceRoot(), ".crew");
+        return resolve4(this.config.getWorkspaceRoot(), ".crew");
       }
       askUserRequestsPath() {
-        return resolve3(this.crewDirPath(), "ask-user-requests.jsonl");
+        return resolve4(this.crewDirPath(), "ask-user-requests.jsonl");
       }
       askUserLatestPath() {
-        return resolve3(this.crewDirPath(), "ask-user-latest.json");
+        return resolve4(this.crewDirPath(), "ask-user-latest.json");
       }
       planModeStatePath() {
-        return resolve3(this.crewDirPath(), "plan-mode.json");
+        return resolve4(this.crewDirPath(), "plan-mode.json");
       }
       activeSkillsPath() {
-        return resolve3(this.crewDirPath(), "active-skills.json");
+        return resolve4(this.crewDirPath(), "active-skills.json");
       }
       relativeCrewPath(absPath) {
         return absPath.replace(this.config.getWorkspaceRoot(), ".");
@@ -2570,7 +3104,7 @@ ${summary}`
       async appendJsonLine(filePath, data) {
         let prior = "";
         try {
-          prior = await readFile4(filePath, "utf8");
+          prior = await readFile5(filePath, "utf8");
         } catch {
           prior = "";
         }
@@ -2579,11 +3113,11 @@ ${summary}`
         await writeFile3(filePath, `${prior}${line}`, "utf8");
       }
       trackerFilePath() {
-        return resolve3(this.config.getWorkspaceRoot(), ".crew", "tracker.json");
+        return resolve4(this.config.getWorkspaceRoot(), ".crew", "tracker.json");
       }
       async readTracker() {
         try {
-          const raw = await readFile4(this.trackerFilePath(), "utf8");
+          const raw = await readFile5(this.trackerFilePath(), "utf8");
           const parsed = JSON.parse(raw);
           return Array.isArray(parsed) ? parsed : [];
         } catch {
@@ -2591,7 +3125,7 @@ ${summary}`
         }
       }
       async writeTracker(tasks) {
-        const dir = resolve3(this.config.getWorkspaceRoot(), ".crew");
+        const dir = resolve4(this.config.getWorkspaceRoot(), ".crew");
         await mkdir3(dir, { recursive: true });
         await writeFile3(this.trackerFilePath(), JSON.stringify(tasks, null, 2), "utf8");
       }
@@ -2707,7 +3241,7 @@ ${summary}`
         if (!bg) return { success: false, error: `No background task found with ID: ${taskId}` };
         const done = await Promise.race([
           bg.promise.then((r) => ({ done: true, result: r })),
-          new Promise((resolve18) => setTimeout(() => resolve18({ done: false }), 50))
+          new Promise((resolve19) => setTimeout(() => resolve19({ done: false }), 50))
         ]);
         if (!done.done) {
           const elapsed = Math.round((Date.now() - bg.startedAt) / 1e3);
@@ -3194,14 +3728,79 @@ ${summary}`
           }
         ];
       }
+      // ─── Worktree Isolation Tools ────────────────────────────────────
+      enterWorktreeTool(params) {
+        try {
+          const info = enterWorktree(this.sandbox.baseDir || process.cwd(), {
+            branchPrefix: params.branch_prefix,
+            agentId: params.agent_id
+          });
+          return {
+            success: true,
+            output: JSON.stringify({
+              worktreePath: info.worktreePath,
+              branchName: info.branchName,
+              baseBranch: info.baseBranch,
+              message: `Created worktree at ${info.worktreePath} on branch ${info.branchName}`
+            })
+          };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      }
+      async exitWorktreeTool(params) {
+        if (!params.branch_name) return { success: false, error: "exit_worktree requires branch_name" };
+        try {
+          const result2 = await exitWorktree(this.sandbox.baseDir || process.cwd(), params.branch_name);
+          return {
+            success: true,
+            output: JSON.stringify({
+              hasChanges: result2.hasChanges,
+              branchName: result2.branchName,
+              commitCount: result2.commitCount,
+              message: result2.hasChanges ? `Worktree exited with ${result2.commitCount} commits on ${result2.branchName}. Use merge_worktree to merge.` : `Worktree cleaned up \u2014 no changes were made.`
+            })
+          };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      }
+      mergeWorktreeTool(params) {
+        if (!params.branch_name) return { success: false, error: "merge_worktree requires branch_name" };
+        try {
+          const result2 = mergeWorktree(
+            this.sandbox.baseDir || process.cwd(),
+            params.branch_name,
+            params.strategy || "squash"
+          );
+          return { success: result2.success, output: result2.message, error: result2.success ? void 0 : result2.message };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      }
+      listWorktreesTool() {
+        const trees = listWorktrees();
+        if (trees.length === 0) {
+          return { success: true, output: "No active worktrees." };
+        }
+        return {
+          success: true,
+          output: JSON.stringify(trees.map((t) => ({
+            branch: t.branchName,
+            path: t.worktreePath,
+            baseBranch: t.baseBranch,
+            createdAt: t.createdAt
+          })), null, 2)
+        };
+      }
     };
   }
 });
 
 // src/learning/corrections.ts
-import { access as access2, copyFile, mkdir as mkdir4, readFile as readFile5, writeFile as writeFile4 } from "node:fs/promises";
+import { access as access2, copyFile, mkdir as mkdir4, readFile as readFile6, writeFile as writeFile4 } from "node:fs/promises";
 import { constants as constants2 } from "node:fs";
-import { join as join6 } from "node:path";
+import { join as join8 } from "node:path";
 function nowIso2() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -3220,8 +3819,8 @@ var init_corrections = __esm({
     CorrectionStore = class {
       constructor(baseDir = process.cwd()) {
         this.baseDir = baseDir;
-        this.stateDir = join6(baseDir, ".crew");
-        this.dataPath = join6(this.stateDir, "training-data.jsonl");
+        this.stateDir = join8(baseDir, ".crew");
+        this.dataPath = join8(this.stateDir, "training-data.jsonl");
       }
       async ensureReady() {
         if (!await pathExists(this.stateDir)) {
@@ -3246,7 +3845,7 @@ var init_corrections = __esm({
       }
       async loadAll() {
         await this.ensureReady();
-        const raw = await readFile5(this.dataPath, "utf8");
+        const raw = await readFile6(this.dataPath, "utf8");
         const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
         return lines.map((line) => JSON.parse(line));
       }
@@ -3265,14 +3864,62 @@ var init_corrections = __esm({
   }
 });
 
+// src/context/token-compaction.ts
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
+}
+function getContextWindow(model) {
+  const m = String(model || "").toLowerCase();
+  for (const [prefix, size] of Object.entries(CONTEXT_WINDOWS)) {
+    if (m.startsWith(prefix)) return size;
+  }
+  return 128e3;
+}
+function adaptiveCompressionRatio(totalTurns, contextUsagePct) {
+  if (contextUsagePct < 0.5) {
+    return { firstN: 5, lastN: 8 };
+  }
+  if (contextUsagePct < 0.75) {
+    return { firstN: 3, lastN: 5 };
+  }
+  return { firstN: 1, lastN: 3 };
+}
+var CHARS_PER_TOKEN, CONTEXT_WINDOWS;
+var init_token_compaction = __esm({
+  "src/context/token-compaction.ts"() {
+    "use strict";
+    CHARS_PER_TOKEN = 3.7;
+    CONTEXT_WINDOWS = {
+      "gemini-2.5-flash": 1048576,
+      "gemini-2.5-pro": 1048576,
+      "gemini-2.0-flash": 1048576,
+      "gpt-4o": 128e3,
+      "gpt-4o-mini": 128e3,
+      "gpt-5": 256e3,
+      "gpt-5.1": 256e3,
+      "gpt-5.2": 256e3,
+      "claude-3-5-sonnet": 2e5,
+      "claude-opus-4": 2e5,
+      "claude-sonnet-4": 2e5,
+      "claude-haiku-4": 2e5,
+      "grok-4": 131072,
+      "grok-beta": 131072,
+      "deepseek-chat": 128e3,
+      "deepseek-reasoner": 128e3,
+      "llama-3.3": 128e3
+    };
+  }
+});
+
 // src/collections/index.ts
 var collections_exports = {};
 __export(collections_exports, {
   buildCollectionIndex: () => buildCollectionIndex,
   searchCollection: () => searchCollection
 });
-import { readdir as readdir3, readFile as readFile6, stat as stat3 } from "node:fs/promises";
-import { extname as extname2, join as join7, relative as relative2, resolve as resolve4 } from "node:path";
+import { readdir as readdir3, readFile as readFile7, stat as stat3 } from "node:fs/promises";
+import { extname as extname2, join as join9, relative as relative2, resolve as resolve5 } from "node:path";
 function tokenize(text) {
   return text.toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 1);
 }
@@ -3344,7 +3991,7 @@ async function walkDocs(rootDir, includeCode = false) {
     }
     for (const entry of entries) {
       if (IGNORED_DIRS.has(entry)) continue;
-      const fullPath = join7(dir, entry);
+      const fullPath = join9(dir, entry);
       let st;
       try {
         st = await stat3(fullPath);
@@ -3366,7 +4013,7 @@ async function walkDocs(rootDir, includeCode = false) {
 }
 async function buildCollectionIndex(paths, options = {}) {
   const allChunks = [];
-  const roots = paths.map((p) => resolve4(p));
+  const roots = paths.map((p) => resolve5(p));
   let fileCount = 0;
   for (const rootPath of roots) {
     let st;
@@ -3379,12 +4026,12 @@ async function buildCollectionIndex(paths, options = {}) {
     for (const file of files) {
       let content;
       try {
-        content = await readFile6(file, "utf8");
+        content = await readFile7(file, "utf8");
       } catch {
         continue;
       }
       fileCount++;
-      const rel = relative2(resolve4(rootPath, st.isDirectory() ? "." : ".."), file);
+      const rel = relative2(resolve5(rootPath, st.isDirectory() ? "." : ".."), file);
       const chunks = chunkFile(content, rel);
       allChunks.push(...chunks);
     }
@@ -3540,11 +4187,18 @@ function formatToolResult(h, maxLen = 1500) {
   const res = h.error ? `ERROR: ${h.error}` : typeof h.result === "object" && h.result && "output" in h.result ? String(h.result.output ?? "") : String(h.result ?? "");
   return res.slice(0, maxLen);
 }
-function historyToGeminiContents(history) {
+function historyToGeminiContents(history, model) {
   if (history.length === 0) return [];
   const contents = [];
-  const firstN = 3;
-  const lastN = 5;
+  const totalChars = history.reduce((sum, h) => {
+    const paramStr = JSON.stringify(h.params);
+    const resultStr = typeof h.result === "string" ? h.result : JSON.stringify(h.result || "");
+    return sum + paramStr.length + resultStr.length;
+  }, 0);
+  const estimatedHistoryTokens = estimateTokens(String.fromCharCode(0).repeat(totalChars));
+  const contextWindow = getContextWindow(model || "gemini-2.5-flash");
+  const usagePct = estimatedHistoryTokens / contextWindow;
+  const { firstN, lastN } = adaptiveCompressionRatio(history.length, usagePct);
   const needsCompression = history.length > firstN + lastN;
   const headDetailed = needsCompression ? history.slice(0, firstN) : [];
   const middleTurns = needsCompression ? history.slice(firstN, -lastN) : [];
@@ -3582,11 +4236,18 @@ ${summary}` }] },
   }
   return contents;
 }
-function historyToOpenAIMessages(history) {
+function historyToOpenAIMessages(history, model) {
   if (history.length === 0) return [];
   const messages = [];
-  const firstN = 3;
-  const lastN = 5;
+  const totalChars = history.reduce((sum, h) => {
+    const paramStr = JSON.stringify(h.params);
+    const resultStr = typeof h.result === "string" ? h.result : JSON.stringify(h.result || "");
+    return sum + paramStr.length + resultStr.length;
+  }, 0);
+  const estimatedHistoryTokens = estimateTokens(String.fromCharCode(0).repeat(totalChars));
+  const contextWindow = getContextWindow(model || "gpt-4o");
+  const usagePct = estimatedHistoryTokens / contextWindow;
+  const { firstN, lastN } = adaptiveCompressionRatio(history.length, usagePct);
   const needsCompression = history.length > firstN + lastN;
   const headDetailed = needsCompression ? history.slice(0, firstN) : [];
   const middleTurns = needsCompression ? history.slice(firstN, -lastN) : [];
@@ -4068,7 +4729,7 @@ async function executeLLMTurn(task, tools, history, model, systemPrompt, stream,
   }
   const { key, model: effectiveModel, driver, apiUrl, id } = resolved;
   if (driver === "gemini") {
-    const historyMsgs = historyToGeminiContents(history);
+    const historyMsgs = historyToGeminiContents(history, effectiveModel);
     return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
   }
   if (driver === "anthropic") {
@@ -4076,13 +4737,15 @@ async function executeLLMTurn(task, tools, history, model, systemPrompt, stream,
     return executeStreamingAnthropicTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
   }
   if (driver === "openai" || driver === "openrouter") {
-    const historyMsgs = historyToOpenAIMessages(history);
+    const historyMsgs = historyToOpenAIMessages(history, effectiveModel);
     return executeStreamingOpenAITurn(task, tools, apiUrl, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
   }
   throw new Error(`Unsupported driver: ${driver}`);
 }
 async function buildRepoMapContext(task, projectDir) {
   try {
+    const { homedir: homedir12 } = await import("node:os");
+    if (projectDir === homedir12() || projectDir === "/") return "";
     const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
     const index = await buildCollectionIndex2([projectDir], { includeCode: true });
     if (index.chunkCount === 0) return "";
@@ -4263,6 +4926,7 @@ var init_agentic_executor = __esm({
     init_autonomous_loop();
     init_crew_adapter();
     init_corrections();
+    init_token_compaction();
     L3_SYSTEM_PROMPT = `You are a senior AI engineer executing coding tasks autonomously.
 
 ## Cognitive Loop: THINK \u2192 ACT \u2192 OBSERVE
@@ -5626,7 +6290,7 @@ var init_structured_json = __esm({
 
 // src/prompts/dual-l2.ts
 import { mkdir as mkdir5, writeFile as writeFile5 } from "node:fs/promises";
-import { resolve as resolve5, join as join8 } from "node:path";
+import { resolve as resolve6, join as join10 } from "node:path";
 var DualL2Planner;
 var init_dual_l2 = __esm({
   "src/prompts/dual-l2.ts"() {
@@ -5853,16 +6517,16 @@ ${context}`.toLowerCase();
         const implResult = await this.generateImplArtifacts(task, coreResult, traceId);
         console.log("[L2A Planning] Pass 3/3: Quality gates (DOD + GOLDEN-BENCHMARKS)...");
         const gateResult = await this.generateGateArtifacts(task, coreResult, traceId);
-        const baseDir = process.env.CREW_PIPELINE_ARTIFACT_DIR ? resolve5(process.env.CREW_PIPELINE_ARTIFACT_DIR) : resolve5(process.cwd(), ".crew", "pipeline-artifacts", traceId);
+        const baseDir = process.env.CREW_PIPELINE_ARTIFACT_DIR ? resolve6(process.env.CREW_PIPELINE_ARTIFACT_DIR) : resolve6(process.cwd(), ".crew", "pipeline-artifacts", traceId);
         await mkdir5(baseDir, { recursive: true });
         const files = {
-          pdd: join8(baseDir, "PDD.md"),
-          roadmap: join8(baseDir, "ROADMAP.md"),
-          architecture: join8(baseDir, "ARCH.md"),
-          scaffold: join8(baseDir, "SCAFFOLD.md"),
-          contractTests: join8(baseDir, "CONTRACT-TESTS.md"),
-          definitionOfDone: join8(baseDir, "DOD.md"),
-          goldenBenchmarks: join8(baseDir, "GOLDEN-BENCHMARKS.md")
+          pdd: join10(baseDir, "PDD.md"),
+          roadmap: join10(baseDir, "ROADMAP.md"),
+          architecture: join10(baseDir, "ARCH.md"),
+          scaffold: join10(baseDir, "SCAFFOLD.md"),
+          contractTests: join10(baseDir, "CONTRACT-TESTS.md"),
+          definitionOfDone: join10(baseDir, "DOD.md"),
+          goldenBenchmarks: join10(baseDir, "GOLDEN-BENCHMARKS.md")
         };
         await Promise.all([
           writeFile5(files.pdd, coreResult.pdd, "utf8"),
@@ -6372,8 +7036,8 @@ REJECT: Remote agent personas (crew-coder, crew-qa, etc.) - not available in sta
 
 // src/pipeline/context-pack.ts
 import { createHash } from "node:crypto";
-import { existsSync as existsSync4, mkdirSync, readFileSync as readFileSync3, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { join as join9, resolve as resolve6 } from "node:path";
+import { existsSync as existsSync6, mkdirSync, readFileSync as readFileSync3, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { join as join11, resolve as resolve7 } from "node:path";
 var ContextPackManager;
 var init_context_pack = __esm({
   "src/pipeline/context-pack.ts"() {
@@ -6381,7 +7045,7 @@ var init_context_pack = __esm({
     ContextPackManager = class {
       constructor() {
         this.packs = /* @__PURE__ */ new Map();
-        this.cacheDir = resolve6(process.cwd(), ".crew", "context-packs");
+        this.cacheDir = resolve7(process.cwd(), ".crew", "context-packs");
         this.ttlHours = this.resolveTtlHours();
       }
       createPack(traceId, artifacts) {
@@ -6389,9 +7053,9 @@ var init_context_pack = __esm({
         this.compactCache();
         const key = this.computePackKey(artifacts);
         const id = `pack-${key.slice(0, 12)}`;
-        const path3 = join9(this.cacheDir, `${key}.json`);
+        const path3 = join11(this.cacheDir, `${key}.json`);
         const nowIso7 = (/* @__PURE__ */ new Date()).toISOString();
-        if (existsSync4(path3)) {
+        if (existsSync6(path3)) {
           try {
             const parsed = JSON.parse(readFileSync3(path3, "utf8"));
             const chunks2 = Array.isArray(parsed?.chunks) ? parsed.chunks : [];
@@ -6477,7 +7141,7 @@ ${c.text}`).join("\n\n");
         return Math.min(24 * 14, Math.floor(raw));
       }
       ensureCacheDir() {
-        if (!existsSync4(this.cacheDir)) {
+        if (!existsSync6(this.cacheDir)) {
           mkdirSync(this.cacheDir, { recursive: true });
         }
       }
@@ -6494,11 +7158,11 @@ ${c.text}`).join("\n\n");
         return createHash("sha256").update(body).digest("hex");
       }
       compactCache() {
-        if (!existsSync4(this.cacheDir)) return;
+        if (!existsSync6(this.cacheDir)) return;
         const now = Date.now();
         const ttlMs = this.ttlHours * 60 * 60 * 1e3;
         for (const entry of readdirSync(this.cacheDir)) {
-          const full = join9(this.cacheDir, entry);
+          const full = join11(this.cacheDir, entry);
           try {
             const stat5 = statSync(full);
             if (now - stat5.mtimeMs > ttlMs) {
@@ -6542,9 +7206,9 @@ ${c.text}`).join("\n\n");
 });
 
 // src/pipeline/agent-memory.ts
-import { randomUUID as randomUUID3 } from "node:crypto";
-import { existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join10, resolve as resolve7 } from "node:path";
+import { randomUUID as randomUUID4 } from "node:crypto";
+import { existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join12, resolve as resolve8 } from "node:path";
 function getPipelineMemory(agentId = "pipeline") {
   if (!_pipelineMemory) {
     _pipelineMemory = new AgentMemory(agentId);
@@ -6558,7 +7222,7 @@ var init_agent_memory = __esm({
     AgentMemory = class {
       constructor(agentId, options) {
         const baseDir = options?.storageDir || process.env.CREW_MEMORY_DIR || process.cwd();
-        this.storageDir = resolve7(baseDir, ".crew", "agent-memory");
+        this.storageDir = resolve8(baseDir, ".crew", "agent-memory");
         this.ensureStorageDir();
         this.state = this.loadOrCreate(agentId);
       }
@@ -6567,7 +7231,7 @@ var init_agent_memory = __esm({
        */
       remember(content, options = {}) {
         const fact = {
-          id: randomUUID3(),
+          id: randomUUID4(),
           content,
           critical: options.critical || false,
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -6691,7 +7355,7 @@ var init_agent_memory = __esm({
       }
       loadOrCreate(agentId) {
         const path3 = this.getStatePath(agentId);
-        if (existsSync5(path3)) {
+        if (existsSync7(path3)) {
           try {
             const raw = readFileSync4(path3, "utf8");
             return JSON.parse(raw);
@@ -6712,10 +7376,10 @@ var init_agent_memory = __esm({
         writeFileSync2(path3, JSON.stringify(this.state, null, 2), "utf8");
       }
       getStatePath(agentId) {
-        return join10(this.storageDir, `${agentId}.json`);
+        return join12(this.storageDir, `${agentId}.json`);
       }
       ensureStorageDir() {
-        if (!existsSync5(this.storageDir)) {
+        if (!existsSync7(this.storageDir)) {
           mkdirSync2(this.storageDir, { recursive: true });
         }
       }
@@ -6788,12 +7452,12 @@ var init_json_schemas = __esm({
 
 // src/metrics/json-parse.ts
 import { appendFile, mkdir as mkdir6 } from "node:fs/promises";
-import { join as join11, resolve as resolve8 } from "node:path";
+import { join as join13, resolve as resolve9 } from "node:path";
 async function recordJsonParseMetric(entry) {
   try {
-    const dir = resolve8(process.cwd(), ".crew");
+    const dir = resolve9(process.cwd(), ".crew");
     await mkdir6(dir, { recursive: true });
-    const path3 = join11(dir, "json-parse-metrics.jsonl");
+    const path3 = join13(dir, "json-parse-metrics.jsonl");
     await appendFile(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
 `, "utf8");
   } catch {
@@ -7128,9 +7792,9 @@ var init_file_commands = __esm({
 });
 
 // src/pipeline/unified.ts
-import { randomUUID as randomUUID4 } from "crypto";
-import { appendFile as appendFile2, mkdir as mkdir7, readFile as readFile7 } from "node:fs/promises";
-import { resolve as resolve9, join as join12, normalize } from "node:path";
+import { randomUUID as randomUUID5 } from "crypto";
+import { appendFile as appendFile2, mkdir as mkdir7, readFile as readFile8 } from "node:fs/promises";
+import { resolve as resolve10, join as join14, normalize } from "node:path";
 var UnifiedPipeline;
 var init_unified = __esm({
   "src/pipeline/unified.ts"() {
@@ -7156,6 +7820,8 @@ var init_unified = __esm({
         this.executor = new LocalExecutor();
         this.planner = new DualL2Planner();
         this.contextPacks = new ContextPackManager();
+        this._intervalTimer = null;
+        this._intervalSnapshotCount = 0;
         this.sandbox = sandbox;
         this.session = session;
       }
@@ -7464,7 +8130,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
             continue;
           }
           try {
-            const content = await readFile7(resolve9(process.cwd(), relPath), "utf8");
+            const content = await readFile8(resolve10(process.cwd(), relPath), "utf8");
             contents.set(relPath, content);
           } catch {
             return false;
@@ -7543,9 +8209,9 @@ ${this.buildExecutionAuditContext(executionResults)}`;
       }
       async recordPipelineMetrics(entry) {
         try {
-          const dir = resolve9(process.cwd(), ".crew");
+          const dir = resolve10(process.cwd(), ".crew");
           await mkdir7(dir, { recursive: true });
-          const path3 = join12(dir, "pipeline-metrics.jsonl");
+          const path3 = join14(dir, "pipeline-metrics.jsonl");
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
 `, "utf8");
         } catch {
@@ -7553,9 +8219,9 @@ ${this.buildExecutionAuditContext(executionResults)}`;
       }
       async writeRunCheckpoint(traceId, payload) {
         try {
-          const dir = resolve9(process.cwd(), ".crew", "pipeline-runs");
+          const dir = resolve10(process.cwd(), ".crew", "pipeline-runs");
           await mkdir7(dir, { recursive: true });
-          const path3 = join12(dir, `${traceId}.jsonl`);
+          const path3 = join14(dir, `${traceId}.jsonl`);
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...payload })}
 `, "utf8");
         } catch {
@@ -7736,10 +8402,14 @@ ${response}`,
        * Workers stage files via write_file/edit tools → sandbox.addChange(),
        * but those changes need to be flushed to disk after execution.
        */
-      async flushSandbox() {
+      async flushSandbox(request) {
         if (!this.sandbox) return;
         const pending = this.sandbox.getPendingPaths();
         if (pending.length === 0) return;
+        if (request?.deferApply) {
+          this.logger.info(`${pending.length} file(s) staged \u2014 deferred apply (caller will preview): ${pending.join(", ")}`);
+          return;
+        }
         await this.sandbox.apply();
         this.logger.info(`Applied ${pending.length} staged file(s) to disk: ${pending.join(", ")}`);
       }
@@ -7747,21 +8417,63 @@ ${response}`,
         const raw = String(process.env.CREW_AUTO_CHECKPOINT || "true").trim().toLowerCase();
         return raw !== "false" && raw !== "0" && raw !== "off";
       }
+      /** Interval (ms) between periodic checkpoint snapshots during long tasks. 0 = disabled. */
+      checkpointIntervalMs() {
+        const raw = String(process.env.CREW_CHECKPOINT_INTERVAL_MS || "").trim();
+        const ms = Number(raw);
+        return Number.isFinite(ms) && ms > 0 ? ms : 6e4;
+      }
+      /**
+       * Start periodic checkpoint timer. Creates git stash snapshots at fixed intervals
+       * so the user can roll back to any point during long-running pipeline execution.
+       * Stashes are named with the traceId for easy identification.
+       */
+      startCheckpointInterval(traceId) {
+        if (!this.autoCheckpointEnabled()) return;
+        const intervalMs = this.checkpointIntervalMs();
+        if (intervalMs <= 0) return;
+        this._intervalSnapshotCount = 0;
+        this._intervalTimer = setInterval(async () => {
+          try {
+            const { execSync: execSync7 } = await import("node:child_process");
+            const cwd = this.sandbox?.baseDir || process.cwd();
+            const status = execSync7("git status --porcelain", { encoding: "utf8", cwd }).trim();
+            if (!status) return;
+            this._intervalSnapshotCount++;
+            const tag = `crew-interval-${traceId.slice(0, 8)}-${this._intervalSnapshotCount}`;
+            execSync7(`git stash push --include-untracked --keep-index -m "${tag}: periodic snapshot"`, { cwd, stdio: "ignore" });
+            execSync7("git stash pop", { cwd, stdio: "ignore" });
+            this.logger.info(`Interval checkpoint #${this._intervalSnapshotCount} saved [${tag}]`);
+          } catch {
+          }
+        }, intervalMs);
+      }
+      /** Stop the periodic checkpoint timer. */
+      stopCheckpointInterval() {
+        if (this._intervalTimer) {
+          clearInterval(this._intervalTimer);
+          this._intervalTimer = null;
+        }
+        if (this._intervalSnapshotCount > 0) {
+          this.logger.info(`Interval checkpointing stopped (${this._intervalSnapshotCount} snapshot(s) saved).`);
+        }
+        this._intervalSnapshotCount = 0;
+      }
       /**
        * Git checkpoint at task boundary — auto-commit changes so user can revert.
        * Uses a predictable branch-style commit message for easy rollback.
        */
       async gitCheckpoint(traceId, executionResults) {
         try {
-          const { execSync: execSync6 } = await import("node:child_process");
+          const { execSync: execSync7 } = await import("node:child_process");
           const cwd = this.sandbox?.baseDir || process.cwd();
-          const status = execSync6("git status --porcelain", { encoding: "utf8", cwd }).trim();
+          const status = execSync7("git status --porcelain", { encoding: "utf8", cwd }).trim();
           if (!status) return;
           const filesChanged = (executionResults?.results || []).flatMap((r) => r.filesChanged || []).filter(Boolean);
           const filesSummary = filesChanged.length > 0 ? filesChanged.slice(0, 5).join(", ") + (filesChanged.length > 5 ? ` (+${filesChanged.length - 5} more)` : "") : "pipeline changes";
           const msg = `checkpoint(crew-cli): ${filesSummary} [${traceId.slice(0, 8)}]`;
-          execSync6("git add -A", { cwd, stdio: "ignore" });
-          execSync6(`git commit -m "${msg.replace(/"/g, '\\"')}" --no-verify`, { cwd, stdio: "ignore" });
+          execSync7("git add -A", { cwd, stdio: "ignore" });
+          execSync7(`git commit -m "${msg.replace(/"/g, '\\"')}" --no-verify`, { cwd, stdio: "ignore" });
           this.logger.info(`Checkpoint committed: ${msg}`);
         } catch {
         }
@@ -8003,7 +8715,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
        * Execute request through unified pipeline
        */
       async execute(request) {
-        const traceId = `pipeline-${randomUUID4()}`;
+        const traceId = `pipeline-${randomUUID5()}`;
         const executionPath = ["l1-interface"];
         const startTime = Date.now();
         const runState = new PipelineRunState();
@@ -8039,6 +8751,9 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
           let parallelExecuted = false;
           runState.transition("execute");
           await this.writeRunCheckpoint(traceId, { phase: "execute", decision: plan.decision });
+          if (plan.decision !== "direct-answer") {
+            this.startCheckpointInterval(traceId);
+          }
           if (resumeFrom === "validate" && request.resume?.priorResponse) {
             response = String(request.resume.priorResponse || "");
             executionResults = request.resume.priorExecutionResults;
@@ -8062,7 +8777,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
             );
             response = result2.output;
             totalCost = result2.cost;
-            await this.flushSandbox();
+            await this.flushSandbox(request);
             const { parseDirectFileCommands: parseDirectFileCommands2 } = await Promise.resolve().then(() => (init_file_commands(), file_commands_exports));
             const fileCommands = this.shouldParseLegacyCommands(result2) ? parseDirectFileCommands2(response) : [];
             if (fileCommands.length > 0 && this.sandbox) {
@@ -8103,7 +8818,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
             );
             response = result2.output;
             totalCost = result2.cost;
-            await this.flushSandbox();
+            await this.flushSandbox(request);
             const { parseDirectFileCommands: parseDirectCmds } = await Promise.resolve().then(() => (init_file_commands(), file_commands_exports));
             const directFileCommands = this.shouldParseLegacyCommands(result2) ? parseDirectCmds(response) : [];
             if (directFileCommands.length > 0 && this.sandbox) {
@@ -8146,7 +8861,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               );
               response = result2.output;
               totalCost = result2.cost;
-              await this.flushSandbox();
+              await this.flushSandbox(request);
               const { parseDirectFileCommands: parseDirectFileCommands2 } = await Promise.resolve().then(() => (init_file_commands(), file_commands_exports));
               const fileCommands = this.shouldParseLegacyCommands(result2) ? parseDirectFileCommands2(response) : [];
               if (fileCommands.length > 0 && this.sandbox) {
@@ -8184,7 +8899,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               const metrics = executionResults?.metrics;
               contextChunksUsed = Number(metrics?.contextChunksUsed || 0);
               contextCharsSaved = Number(metrics?.contextCharsSaved || 0);
-              await this.flushSandbox();
+              await this.flushSandbox(request);
               const { parseDirectFileCommands: parseDirectFileCommands2 } = await Promise.resolve().then(() => (init_file_commands(), file_commands_exports));
               const allFileCommands = [];
               for (const result2 of executionResults.results) {
@@ -8262,6 +8977,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
             }
           }
           runState.transition("complete");
+          this.stopCheckpointInterval();
           if (plan.decision !== "direct-answer" && this.autoCheckpointEnabled()) {
             await this.gitCheckpoint(traceId, executionResults);
           }
@@ -8294,6 +9010,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
             timeline: runState.getTimeline()
           };
         } catch (err) {
+          this.stopCheckpointInterval();
           runState.transition("failed", err.message);
           await this.writeRunCheckpoint(traceId, {
             phase: "failed",
@@ -8309,7 +9026,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
        * This runs L2 reasoning (and optional dual-L2 planning) without executing L3 workers.
        */
       async routeOnly(request) {
-        const traceId = `pipeline-${randomUUID4()}`;
+        const traceId = `pipeline-${randomUUID5()}`;
         const plan = await this.l2Orchestrate(request, traceId, request.sessionId);
         if (plan.decision === "direct-answer") {
           return {
@@ -8919,10 +9636,10 @@ var init_worker_pool = __esm({
       }
       async runAll(options) {
         const results = [];
-        return new Promise((resolve18) => {
+        return new Promise((resolve19) => {
           const checkQueue = async () => {
             if (this.queue.length === 0 && this.activeWorkers === 0) {
-              resolve18(results);
+              resolve19(results);
               return;
             }
             while (this.activeWorkers < this.concurrency && this.queue.length > 0) {
@@ -9013,7 +9730,7 @@ __export(orchestrator_exports, {
   RouteDecision: () => RouteDecision,
   WorkerPool: () => WorkerPool
 });
-import { readFile as readFile8 } from "node:fs/promises";
+import { readFile as readFile9 } from "node:fs/promises";
 var ROUTING_SYSTEM_PROMPT, RouteDecision, Orchestrator;
 var init_orchestrator = __esm({
   "src/orchestrator/index.ts"() {
@@ -9148,8 +9865,8 @@ Return ONLY a JSON object in this exact format:
       async getGeminiADCToken() {
         try {
           const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || `${process.env.HOME}/.config/gcloud/application_default_credentials.json`;
-          const { readFile: readFile32 } = await import("node:fs/promises");
-          const credentialsJson = await readFile32(adcPath, "utf8");
+          const { readFile: readFile33 } = await import("node:fs/promises");
+          const credentialsJson = await readFile33(adcPath, "utf8");
           const credentials = JSON.parse(credentialsJson);
           if (credentials.type !== "authorized_user" || !credentials.refresh_token) {
             return null;
@@ -9514,7 +10231,8 @@ ${task}` : task;
           const result2 = await this.pipeline.execute({
             userInput: fullTask,
             sessionId: options.sessionId || "crew-cli",
-            context: options.conversationContext
+            context: options.conversationContext,
+            deferApply: options.deferApply
           });
           return {
             success: result2.phase === "complete",
@@ -9585,7 +10303,7 @@ ${task}` : task;
                 this.logger.info(`Detected edit block for ${filePath}`);
                 let originalContent = "";
                 try {
-                  originalContent = await readFile8(filePath, "utf8");
+                  originalContent = await readFile9(filePath, "utf8");
                 } catch {
                   originalContent = "";
                 }
@@ -9619,9 +10337,9 @@ var agentkeeper_exports = {};
 __export(agentkeeper_exports, {
   AgentKeeper: () => AgentKeeper
 });
-import { appendFile as appendFile3, mkdir as mkdir9, readFile as readFile11, stat as stat4, writeFile as writeFile7 } from "node:fs/promises";
-import { dirname as dirname5, join as join15 } from "node:path";
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { appendFile as appendFile3, mkdir as mkdir9, readFile as readFile12, stat as stat4, writeFile as writeFile7 } from "node:fs/promises";
+import { dirname as dirname5, join as join17 } from "node:path";
+import { randomUUID as randomUUID6 } from "node:crypto";
 function tokenize2(text) {
   return new Set(
     text.toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 2)
@@ -9643,7 +10361,7 @@ var init_agentkeeper = __esm({
       constructor(baseDir, options = {}) {
         this.writeCount = 0;
         const storageBase = options.storageDir || process.env.CREW_MEMORY_DIR || baseDir;
-        this.storePath = join15(storageBase, ".crew", "agentkeeper.jsonl");
+        this.storePath = join17(storageBase, ".crew", "agentkeeper.jsonl");
         this.maxEntries = options.maxEntries ?? 500;
         this.maxBytes = options.maxBytes ?? 2e6;
         this.maxAgeDays = options.maxAgeDays ?? 30;
@@ -9775,7 +10493,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
         await mkdir9(dirname5(this.storePath), { recursive: true });
         const full = {
           ...entry,
-          id: randomUUID5(),
+          id: randomUUID6(),
           task: this.sanitizeText(entry.task, 1200),
           result: this.sanitizeText(entry.result, 6e3),
           structured: this.normalizeStructured(entry.structured),
@@ -9800,7 +10518,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
       async loadAll() {
         let raw;
         try {
-          raw = await readFile11(this.storePath, "utf8");
+          raw = await readFile12(this.storePath, "utf8");
         } catch {
           return [];
         }
@@ -10033,7 +10751,7 @@ __export(blast_radius_exports, {
 });
 import { execFile as execFile8 } from "node:child_process";
 import { promisify as promisify9 } from "node:util";
-import { relative as relative3, resolve as resolve16 } from "node:path";
+import { relative as relative3, resolve as resolve17 } from "node:path";
 function severityRank(level) {
   if (level === "high") return 3;
   if (level === "medium") return 2;
@@ -10094,14 +10812,14 @@ function assessRisk(changedCount, impactCount, totalNodes) {
   return "low";
 }
 async function analyzeBlastRadius(cwd, options = {}) {
-  const rootDir = resolve16(cwd);
+  const rootDir = resolve17(cwd);
   const maxDepth = options.maxDepth ?? 5;
   let rawChanged = options.changedFiles ?? await getChangedFiles(rootDir, options.diffRef);
   const graph = await buildRepositoryGraph(rootDir);
   const graphPaths = new Set(graph.nodes.map((n) => n.path));
   const changedSet = /* @__PURE__ */ new Set();
   for (const file of rawChanged) {
-    const rel = relative3(rootDir, resolve16(rootDir, file));
+    const rel = relative3(rootDir, resolve17(rootDir, file));
     if (graphPaths.has(rel)) changedSet.add(rel);
   }
   const affectedFiles = collectImporters(graph, changedSet, maxDepth);
@@ -10145,10 +10863,10 @@ __export(codebase_rag_exports, {
   rebuildEmbeddingsIndex: () => rebuildEmbeddingsIndex,
   shouldUseRag: () => shouldUseRag
 });
-import { execSync as execSync3 } from "node:child_process";
-import { readFile as readFile25, writeFile as writeFile18, mkdir as mkdir18 } from "node:fs/promises";
-import { existsSync as existsSync13 } from "node:fs";
-import { relative as relative4, join as join29 } from "node:path";
+import { execSync as execSync4 } from "node:child_process";
+import { readFile as readFile26, writeFile as writeFile17, mkdir as mkdir18 } from "node:fs/promises";
+import { existsSync as existsSync15 } from "node:fs";
+import { relative as relative4, join as join31 } from "node:path";
 function extractKeywords(query) {
   return (query.toLowerCase().match(/\b[a-z]{3,}\b/g) || []).filter((kw) => !STOP_WORDS.has(kw));
 }
@@ -10157,7 +10875,7 @@ async function keywordBasedSearch(query, cwd, options) {
   if (keywords.length === 0) return [];
   try {
     const pattern = keywords.slice(0, 5).join("|");
-    const stdout = execSync3(
+    const stdout = execSync4(
       `rg -l "${pattern}" --type-add 'code:*.{ts,js,tsx,jsx,py,go,rs,java}' -t code`,
       {
         cwd,
@@ -10187,7 +10905,7 @@ async function expandWithImports(files, cwd, maxDepth = 1) {
   try {
     const graph = await buildRepositoryGraph(cwd);
     for (const file of files) {
-      const node = graph.nodes.find((n) => n.path === file || join29(cwd, n.path) === file);
+      const node = graph.nodes.find((n) => n.path === file || join31(cwd, n.path) === file);
       if (node) {
         for (const importPath of node.imports.slice(0, 5)) {
           expanded.add(importPath);
@@ -10238,30 +10956,30 @@ async function generateEmbedding(text) {
   return data.data[0].embedding;
 }
 async function loadEmbeddingsIndex(cacheDir) {
-  const indexPath = join29(cacheDir, "embeddings.json");
-  if (!existsSync13(indexPath)) {
+  const indexPath = join31(cacheDir, "embeddings.json");
+  if (!existsSync15(indexPath)) {
     return [];
   }
   try {
-    const raw = await readFile25(indexPath, "utf8");
+    const raw = await readFile26(indexPath, "utf8");
     return JSON.parse(raw);
   } catch {
     return [];
   }
 }
 async function saveEmbeddingsIndex(cacheDir, embeddings) {
-  const indexPath = join29(cacheDir, "embeddings.json");
+  const indexPath = join31(cacheDir, "embeddings.json");
   await mkdir18(cacheDir, { recursive: true });
-  await writeFile18(indexPath, JSON.stringify(embeddings, null, 2), "utf8");
+  await writeFile17(indexPath, JSON.stringify(embeddings, null, 2), "utf8");
 }
 async function semanticSearch(query, cwd, options) {
-  const cacheDir = options.cacheDir || join29(cwd, ".crew", "rag-cache");
+  const cacheDir = options.cacheDir || join31(cwd, ".crew", "rag-cache");
   let embeddings = await loadEmbeddingsIndex(cacheDir);
   if (embeddings.length === 0) {
     console.log("[RAG] No embeddings index found. Building index...");
     console.log("[RAG] This is a one-time operation (~30s for 1K files)");
     try {
-      const stdout = execSync3(
+      const stdout = execSync4(
         `rg --files --type-add 'code:*.{ts,js,tsx,jsx,py,go,rs,java}' -t code`,
         { cwd, encoding: "utf8", maxBuffer: 1024 * 1024 }
       );
@@ -10272,7 +10990,7 @@ async function semanticSearch(query, cwd, options) {
         const batch = files.slice(i, i + batchSize);
         for (const file of batch) {
           try {
-            const content = await readFile25(join29(cwd, file), "utf8");
+            const content = await readFile26(join31(cwd, file), "utf8");
             const embedding = await generateEmbedding(content);
             embeddings.push({
               file,
@@ -10349,8 +11067,8 @@ async function autoLoadRelevantFiles(query, cwd, options = {}) {
   finalScored.sort((a, b) => b.score - a.score);
   for (const { file } of finalScored.slice(0, maxFiles)) {
     try {
-      const fullPath = join29(cwd, file);
-      const content = await readFile25(fullPath, "utf8");
+      const fullPath = join31(cwd, file);
+      const content = await readFile26(fullPath, "utf8");
       if (charsUsed + content.length > charBudget) {
         break;
       }
@@ -10390,10 +11108,10 @@ function shouldUseRag(query) {
   return hasExecutionIntent || hasCodeReference || hasFileOperation;
 }
 async function rebuildEmbeddingsIndex(cwd, cacheDir) {
-  const dir = cacheDir || join29(cwd, ".crew", "rag-cache");
-  const indexPath = join29(dir, "embeddings.json");
-  if (existsSync13(indexPath)) {
-    await writeFile18(indexPath, "[]", "utf8");
+  const dir = cacheDir || join31(cwd, ".crew", "rag-cache");
+  const indexPath = join31(dir, "embeddings.json");
+  if (existsSync15(indexPath)) {
+    await writeFile17(indexPath, "[]", "utf8");
   }
   await semanticSearch("rebuild index", cwd, { cacheDir: dir });
 }
@@ -10442,6 +11160,7 @@ __export(dashboard_exports, {
   renderStatusDashboard: () => renderStatusDashboard
 });
 import chalk2 from "chalk";
+import { homedir as homedir8 } from "os";
 async function getSystemStatus() {
   const status = {
     online: false,
@@ -10453,20 +11172,43 @@ async function getSystemStatus() {
     version: "0.1.0-alpha"
   };
   const providers = [];
-  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) providers.push("Gemini");
-  if (process.env.GROQ_API_KEY) providers.push("Groq");
-  if (process.env.XAI_API_KEY) providers.push("Grok");
-  if (process.env.OPENAI_API_KEY) providers.push("OpenAI");
-  if (process.env.ANTHROPIC_API_KEY) providers.push("Anthropic");
-  if (process.env.DEEPSEEK_API_KEY) providers.push("DeepSeek");
+  try {
+    const { readFileSync: readFileSync8 } = await import("node:fs");
+    const cfgPath = `${homedir8()}/.crewswarm/crewswarm.json`;
+    const cfg = JSON.parse(readFileSync8(cfgPath, "utf8"));
+    const providerEntries = cfg.providers || {};
+    for (const [id, p] of Object.entries(providerEntries)) {
+      if (p.apiKey && String(p.apiKey).trim()) {
+        providers.push(id);
+      }
+    }
+  } catch {
+  }
+  const envMap = {
+    GEMINI_API_KEY: "google",
+    GOOGLE_API_KEY: "google",
+    GROQ_API_KEY: "groq",
+    XAI_API_KEY: "xai",
+    OPENAI_API_KEY: "openai",
+    ANTHROPIC_API_KEY: "anthropic",
+    DEEPSEEK_API_KEY: "deepseek",
+    MISTRAL_API_KEY: "mistral",
+    PERPLEXITY_API_KEY: "perplexity",
+    TOGETHER_API_KEY: "together",
+    FIREWORKS_API_KEY: "fireworks",
+    HUGGINGFACE_API_KEY: "huggingface"
+  };
+  for (const [envKey, id] of Object.entries(envMap)) {
+    if (process.env[envKey] && !providers.includes(id)) providers.push(id);
+  }
   status.models = providers;
   status.online = providers.length > 0;
   try {
     let authToken = "";
     try {
       const { readFileSync: readFileSync8 } = await import("node:fs");
-      const { homedir: homedir11 } = await import("node:os");
-      const cfg = JSON.parse(readFileSync8(`${homedir11()}/.crewswarm/config.json`, "utf8"));
+      const { homedir: homedir12 } = await import("node:os");
+      const cfg = JSON.parse(readFileSync8(`${homedir12()}/.crewswarm/config.json`, "utf8"));
       authToken = cfg?.rt?.authToken || "";
     } catch {
     }
@@ -10494,7 +11236,7 @@ function renderStatusDashboard(status) {
   const value = chalk2.white.bold;
   const accent = chalk2.blue;
   const providerCount = models.length;
-  const maxProviders = 6;
+  const maxProviders = 24;
   const filled = Math.min(10, Math.floor(providerCount / maxProviders * 10));
   const empty = 10 - filled;
   const progressBar = chalk2.green("\u2588".repeat(filled)) + chalk2.gray("\u2591".repeat(empty));
@@ -11001,7 +11743,7 @@ var AgentRouter = class extends EventEmitter {
           fatal.fatal = true;
           throw fatal;
         }
-        await new Promise((resolve18) => setTimeout(resolve18, pollInterval));
+        await new Promise((resolve19) => setTimeout(resolve19, pollInterval));
       } catch (error) {
         if (error && error.fatal) {
           throw error;
@@ -11512,6 +12254,13 @@ var SessionManager = class {
     const session = await this.loadSession();
     return session.sessionId;
   }
+  /** Switch to a different session ID (for /resume) */
+  async setSessionId(newId) {
+    const session = await this.loadSession();
+    session.sessionId = newId;
+    session.updatedAt = nowIso();
+    await this.saveSession(session);
+  }
   /** Save JIT discovered files so subsequent CLI invocations inherit context */
   async saveJITContext(discoveredFiles) {
     await this.ensureInitialized();
@@ -11801,9 +12550,9 @@ var Sandbox = class {
 init_orchestrator();
 
 // src/auth/token-finder.ts
-import { readFile as readFile9, access as access3 } from "node:fs/promises";
+import { readFile as readFile10, access as access3 } from "node:fs/promises";
 import { constants as constants3 } from "node:fs";
-import { join as join13 } from "node:path";
+import { join as join15 } from "node:path";
 import { homedir as homedir2 } from "node:os";
 import { execFile as execFile2 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
@@ -11811,27 +12560,27 @@ var execFileAsync2 = promisify2(execFile2);
 var TokenFinder = class {
   async findTokens() {
     const tokens = {};
-    const claudePath = join13(homedir2(), ".claude", "session.json");
+    const claudePath = join15(homedir2(), ".claude", "session.json");
     if (await this.exists(claudePath)) {
       try {
-        const data = await readFile9(claudePath, "utf8");
+        const data = await readFile10(claudePath, "utf8");
         const parsed = JSON.parse(data);
         if (parsed.sessionToken) tokens.claude = parsed.sessionToken;
       } catch (e) {
         console.error(`Failed to parse Claude config: ${e.message}`);
       }
     }
-    const openaiPath = join13(homedir2(), ".openai", "config");
+    const openaiPath = join15(homedir2(), ".openai", "config");
     if (await this.exists(openaiPath)) {
       try {
-        const data = await readFile9(openaiPath, "utf8");
+        const data = await readFile10(openaiPath, "utf8");
         const match = data.match(/api_key[:=]\s*([a-zA-Z0-9\-]+)/);
         if (match) tokens.openai = match[1];
       } catch (e) {
         console.error(`Failed to parse OpenAI config: ${e.message}`);
       }
     }
-    const geminiPath = join13(homedir2(), ".config", "gcloud", "application_default_credentials.json");
+    const geminiPath = join15(homedir2(), ".config", "gcloud", "application_default_credentials.json");
     if (await this.exists(geminiPath)) {
       try {
         tokens.gemini = "(detected via ADC)";
@@ -11839,7 +12588,7 @@ var TokenFinder = class {
         console.error(`Failed to check Gemini ADC: ${e.message}`);
       }
     }
-    const cursorDbPath = join13(homedir2(), ".cursor", "User", "globalStorage", "state.vscdb");
+    const cursorDbPath = join15(homedir2(), ".cursor", "User", "globalStorage", "state.vscdb");
     if (await this.exists(cursorDbPath)) {
       try {
         const { stdout } = await execFileAsync2("sqlite3", [
@@ -11873,9 +12622,9 @@ init_logger();
 
 // src/cache/token-cache.ts
 import { createHash as createHash2 } from "node:crypto";
-import { mkdir as mkdir8, readFile as readFile10, writeFile as writeFile6 } from "node:fs/promises";
-import { existsSync as existsSync6 } from "node:fs";
-import { join as join14 } from "node:path";
+import { mkdir as mkdir8, readFile as readFile11, writeFile as writeFile6 } from "node:fs/promises";
+import { existsSync as existsSync8 } from "node:fs";
+import { join as join16 } from "node:path";
 function nowIso3() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -11886,21 +12635,21 @@ function toTimestamp(iso) {
 var TokenCache = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = baseDir;
-    this.cachePath = join14(baseDir, ".crew", "token-cache.json");
+    this.cachePath = join16(baseDir, ".crew", "token-cache.json");
   }
   static hashKey(input) {
     return createHash2("sha256").update(String(input || "")).digest("hex");
   }
   async ensureStore() {
-    const dir = join14(this.baseDir, ".crew");
+    const dir = join16(this.baseDir, ".crew");
     await mkdir8(dir, { recursive: true });
-    if (!existsSync6(this.cachePath)) {
+    if (!existsSync8(this.cachePath)) {
       const initial = { version: 1, namespaces: {} };
       await writeFile6(this.cachePath, JSON.stringify(initial, null, 2), "utf8");
       return initial;
     }
     try {
-      const raw = await readFile10(this.cachePath, "utf8");
+      const raw = await readFile11(this.cachePath, "utf8");
       const parsed = JSON.parse(raw);
       return {
         version: parsed.version || 1,
@@ -12093,13 +12842,13 @@ var Planner = class {
 };
 
 // src/cli/index.ts
-import { existsSync as existsSync20 } from "node:fs";
-import { homedir as homedir10 } from "node:os";
+import { existsSync as existsSync22 } from "node:fs";
+import { homedir as homedir11 } from "node:os";
 
 // src/diagnostics/doctor.ts
 import { access as access4 } from "node:fs/promises";
 import { constants as constants4 } from "node:fs";
-import { join as join17 } from "node:path";
+import { join as join19 } from "node:path";
 import { dirname as dirname6 } from "node:path";
 import { homedir as homedir4 } from "node:os";
 import { execFile as execFile3 } from "node:child_process";
@@ -12108,20 +12857,20 @@ import { fileURLToPath } from "node:url";
 
 // src/mcp/index.ts
 import { execFileSync } from "node:child_process";
-import { mkdir as mkdir10, readFile as readFile12, writeFile as writeFile8 } from "node:fs/promises";
-import { existsSync as existsSync7 } from "node:fs";
-import { join as join16 } from "node:path";
+import { mkdir as mkdir10, readFile as readFile13, writeFile as writeFile8 } from "node:fs/promises";
+import { existsSync as existsSync9 } from "node:fs";
+import { join as join18 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 function localStorePath(baseDir = process.cwd()) {
-  return join16(baseDir, ".crew", "mcp-servers.json");
+  return join18(baseDir, ".crew", "mcp-servers.json");
 }
 function clientPath(client) {
   const home = homedir3();
   const key = String(client || "").toLowerCase();
-  if (key === "cursor") return join16(home, ".cursor", "mcp.json");
-  if (key === "claude") return join16(home, ".claude", "mcp.json");
-  if (key === "opencode") return join16(home, ".config", "opencode", "mcp.json");
-  if (key === "codex") return join16(home, ".codex", "mcp", "config.json");
+  if (key === "cursor") return join18(home, ".cursor", "mcp.json");
+  if (key === "claude") return join18(home, ".claude", "mcp.json");
+  if (key === "opencode") return join18(home, ".config", "opencode", "mcp.json");
+  if (key === "codex") return join18(home, ".codex", "mcp", "config.json");
   throw new Error(`Unsupported client: ${client}`);
 }
 function isCodexClient(client) {
@@ -12150,9 +12899,9 @@ function removeServerFromCodex(name) {
   execFileSync("codex", ["mcp", "remove", name], { stdio: "ignore" });
 }
 async function loadStore(path3) {
-  if (!existsSync7(path3)) return { mcpServers: {} };
+  if (!existsSync9(path3)) return { mcpServers: {} };
   try {
-    const raw = await readFile12(path3, "utf8");
+    const raw = await readFile13(path3, "utf8");
     const parsed = JSON.parse(raw);
     return { mcpServers: parsed.mcpServers || {} };
   } catch {
@@ -12160,7 +12909,7 @@ async function loadStore(path3) {
   }
 }
 async function saveStore(path3, store) {
-  await mkdir10(join16(path3, ".."), { recursive: true });
+  await mkdir10(join18(path3, ".."), { recursive: true });
   await writeFile8(path3, `${JSON.stringify(store, null, 2)}
 `, "utf8");
 }
@@ -12290,12 +13039,12 @@ async function gatewayReachable(url) {
   }
 }
 async function configExists() {
-  const configPath2 = join17(homedir4(), ".crewswarm", "crewswarm.json");
+  const configPath3 = join19(homedir4(), ".crewswarm", "crewswarm.json");
   try {
-    await access4(configPath2, constants4.F_OK);
-    return { ok: true, path: configPath2 };
+    await access4(configPath3, constants4.F_OK);
+    return { ok: true, path: configPath3 };
   } catch {
-    return { ok: false, path: configPath2 };
+    return { ok: false, path: configPath3 };
   }
 }
 function parseVersionParts(version) {
@@ -12320,16 +13069,16 @@ async function getInstalledCliVersion() {
   }
   const here = dirname6(fileURLToPath(import.meta.url));
   const candidates = [
-    join17(here, "..", "package.json"),
-    join17(here, "..", "..", "package.json"),
-    join17(process.cwd(), "package.json")
+    join19(here, "..", "package.json"),
+    join19(here, "..", "..", "package.json"),
+    join19(process.cwd(), "package.json")
   ];
   for (const candidate of candidates) {
     try {
       const raw = await (await import("node:fs/promises")).readFile(candidate, "utf8");
       const parsed = JSON.parse(raw);
       const pkgName = String(parsed?.name || "");
-      const looksLikeCli = pkgName === "crewswarm-cli" || pkgName === "@crewswarm/crew-cli" || candidate.includes(`${join17("crew-cli", "package.json")}`);
+      const looksLikeCli = pkgName === "crewswarm-cli" || pkgName === "@crewswarm/crew-cli" || candidate.includes(`${join19("crew-cli", "package.json")}`);
       if (looksLikeCli && typeof parsed?.version === "string" && parsed.version.trim()) {
         return parsed.version.trim();
       }
@@ -12397,8 +13146,8 @@ async function runDoctorChecks(options = {}) {
   const nodeMajor = parseMajorNodeVersion(process.version);
   const withTimeout = (promise, fallback, label) => Promise.race([
     promise,
-    new Promise((resolve18) => setTimeout(() => {
-      resolve18(fallback);
+    new Promise((resolve19) => setTimeout(() => {
+      resolve19(fallback);
     }, 2e3))
   ]);
   const gitOk = await commandExists("git");
@@ -12487,7 +13236,7 @@ function normalizeModel(model) {
   }
   return model;
 }
-function estimateTokens(text) {
+function estimateTokens2(text) {
   const safe = text || "";
   const pieces = safe.match(/[A-Za-z_]+|\d+|[^\sA-Za-z0-9_]|[\s]+/g) || [];
   let tokens = 0;
@@ -12507,7 +13256,7 @@ function estimateTokens(text) {
 function estimateCost(text, model, outputTokens = DEFAULT_OUTPUT_TOKENS) {
   const selected = normalizeModel(model);
   const pricing = MODEL_PRICING[selected] || MODEL_PRICING["openai/gpt-4o-mini"];
-  const inputTokens = estimateTokens(text);
+  const inputTokens = estimateTokens2(text);
   const inputUsd = inputTokens / 1e6 * pricing.inputPerMillion;
   const outputUsd = Math.max(1, outputTokens) / 1e6 * pricing.outputPerMillion;
   return {
@@ -12531,16 +13280,16 @@ init_corrections();
 
 // src/engines/index.ts
 init_logger();
-import { spawn } from "node:child_process";
-import { randomUUID as randomUUID7 } from "node:crypto";
+import { spawn as spawn2 } from "node:child_process";
+import { randomUUID as randomUUID8 } from "node:crypto";
 import fs2 from "node:fs";
 import os from "node:os";
 import path2 from "node:path";
 
 // src/engines/session-layer.ts
-import { mkdir as mkdir11, readFile as readFile13, writeFile as writeFile9 } from "node:fs/promises";
-import { existsSync as existsSync8 } from "node:fs";
-import { join as join18, resolve as resolve10 } from "node:path";
+import { mkdir as mkdir11, readFile as readFile14, writeFile as writeFile9 } from "node:fs/promises";
+import { existsSync as existsSync10 } from "node:fs";
+import { join as join20, resolve as resolve11 } from "node:path";
 function nowIso4() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -12552,23 +13301,23 @@ function clip2(text, maxChars) {
 }
 var EngineSessionLayer = class {
   constructor(baseDir = process.cwd()) {
-    this.baseDir = resolve10(baseDir);
-    this.stateDir = join18(this.baseDir, ".crew");
-    this.sessionsPath = join18(this.stateDir, "engine-sessions.json");
+    this.baseDir = resolve11(baseDir);
+    this.stateDir = join20(this.baseDir, ".crew");
+    this.sessionsPath = join20(this.stateDir, "engine-sessions.json");
   }
   makeKey(engine, sessionId) {
     return `${String(engine || "").trim().toLowerCase()}::${String(sessionId || "").trim()}`;
   }
   async ensureInitialized() {
     await mkdir11(this.stateDir, { recursive: true });
-    if (!existsSync8(this.sessionsPath)) {
+    if (!existsSync10(this.sessionsPath)) {
       await writeFile9(this.sessionsPath, JSON.stringify({}, null, 2), "utf8");
     }
   }
   async loadStore() {
     await this.ensureInitialized();
     try {
-      const raw = await readFile13(this.sessionsPath, "utf8");
+      const raw = await readFile14(this.sessionsPath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -12680,9 +13429,10 @@ function buildSessionPromptEnvelope(params) {
 }
 
 // src/session/conversation-transcript.ts
-import { mkdir as mkdir12, readFile as readFile14, writeFile as writeFile10 } from "node:fs/promises";
-import { existsSync as existsSync9 } from "node:fs";
-import { join as join19, resolve as resolve11 } from "node:path";
+init_token_compaction();
+import { appendFile as appendFile4, mkdir as mkdir12, readFile as readFile15, readdir as readdir4 } from "node:fs/promises";
+import { existsSync as existsSync11 } from "node:fs";
+import { join as join21, resolve as resolve12 } from "node:path";
 function nowIso5() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -12694,60 +13444,117 @@ function clip3(text, maxChars) {
 }
 var ConversationTranscriptStore = class {
   constructor(baseDir = process.cwd()) {
-    const root = resolve11(baseDir);
-    this.stateDir = join19(root, ".crew");
-    this.filePath = join19(this.stateDir, "conversation-transcript.json");
+    const root = resolve12(baseDir);
+    this.stateDir = join21(root, ".crew");
+  }
+  transcriptPath(sessionId) {
+    const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return join21(this.stateDir, `transcript-${safe}.jsonl`);
   }
   async ensureInitialized() {
     await mkdir12(this.stateDir, { recursive: true });
-    if (!existsSync9(this.filePath)) {
-      await writeFile10(this.filePath, JSON.stringify({}, null, 2), "utf8");
-    }
   }
-  async loadStore() {
-    await this.ensureInitialized();
-    try {
-      const raw = await readFile14(this.filePath, "utf8");
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-      return parsed;
-    } catch {
-      return {};
-    }
-  }
-  async saveStore(store) {
-    await this.ensureInitialized();
-    await writeFile10(this.filePath, JSON.stringify(store, null, 2), "utf8");
-  }
+  /**
+   * Append a turn to the transcript — single atomic append, crash-safe.
+   */
   async appendTurn(params) {
     const sessionId = String(params.sessionId || "").trim();
     if (!sessionId) return;
-    const keepTurns = Math.max(2, Number(params.keepTurns || 40));
-    const store = await this.loadStore();
-    const rec = store[sessionId] || {
-      sessionId,
-      createdAt: nowIso5(),
-      updatedAt: nowIso5(),
-      turns: []
-    };
-    rec.turns.push({
+    await this.ensureInitialized();
+    const clippedText = clip3(params.text, 8e3);
+    const turn = {
       ts: nowIso5(),
       role: params.role,
-      text: clip3(params.text, 8e3),
-      engine: params.engine
-    });
-    rec.turns = rec.turns.slice(-keepTurns);
-    rec.updatedAt = nowIso5();
-    store[sessionId] = rec;
-    await this.saveStore(store);
+      text: clippedText,
+      engine: params.engine,
+      estimatedTokens: estimateTokens(clippedText),
+      sessionId
+    };
+    const line = JSON.stringify(turn) + "\n";
+    await appendFile4(this.transcriptPath(sessionId), line, "utf8");
   }
-  async getRecentTurns(sessionId, maxTurns = 8) {
+  /**
+   * Load all turns for a session from JSONL file.
+   * Skips corrupt/incomplete lines gracefully.
+   */
+  async loadTurns(sessionId) {
     const key = String(sessionId || "").trim();
     if (!key) return [];
-    const store = await this.loadStore();
-    const rec = store[key];
-    if (!rec) return [];
-    return rec.turns.slice(-Math.max(1, Number(maxTurns || 8)));
+    const path3 = this.transcriptPath(key);
+    if (!existsSync11(path3)) return [];
+    try {
+      const raw = await readFile15(path3, "utf8");
+      const turns = [];
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          turns.push(JSON.parse(trimmed));
+        } catch {
+        }
+      }
+      return turns;
+    } catch {
+      return [];
+    }
+  }
+  /**
+   * Get recent turns with token-aware trimming.
+   */
+  async getRecentTurns(sessionId, maxTurns = 8) {
+    const turns = await this.loadTurns(sessionId);
+    if (turns.length === 0) return [];
+    const maxSessionTokens = Number(process.env.CREW_MAX_SESSION_TOKENS) || 1e5;
+    let totalTokens = 0;
+    const result2 = [];
+    for (let i = turns.length - 1; i >= 0 && result2.length < maxTurns; i--) {
+      const t = turns[i];
+      const tokens = t.estimatedTokens || estimateTokens(t.text);
+      if (totalTokens + tokens > maxSessionTokens && result2.length >= 4) break;
+      totalTokens += tokens;
+      result2.unshift(t);
+    }
+    return result2;
+  }
+  /**
+   * List all session IDs that have transcripts.
+   */
+  async listSessions() {
+    await this.ensureInitialized();
+    const sessions = [];
+    try {
+      const files = await readdir4(this.stateDir);
+      for (const f of files) {
+        const match = f.match(/^transcript-(.+)\.jsonl$/);
+        if (!match) continue;
+        const sessionId = match[1];
+        const fullPath = join21(this.stateDir, f);
+        try {
+          const raw = await readFile15(fullPath, "utf8");
+          const lines = raw.split("\n").filter((l) => l.trim()).length;
+          sessions.push({ sessionId, path: fullPath, lines });
+        } catch {
+          sessions.push({ sessionId, path: fullPath, lines: 0 });
+        }
+      }
+    } catch {
+    }
+    return sessions;
+  }
+  /**
+   * Get a summary of a session (first user message + turn count + last activity).
+   */
+  async getSessionSummary(sessionId) {
+    const turns = await this.loadTurns(sessionId);
+    if (turns.length === 0) return null;
+    const firstUser = turns.find((t) => t.role === "user");
+    return {
+      sessionId,
+      turnCount: turns.length,
+      firstMessage: clip3(firstUser?.text || "(no user message)", 80),
+      lastActivity: turns[turns.length - 1].ts,
+      totalTokens: turns.reduce((sum, t) => sum + (t.estimatedTokens || estimateTokens(t.text)), 0)
+    };
   }
 };
 function buildConversationHydrationPrompt(params) {
@@ -12767,11 +13574,11 @@ function buildConversationHydrationPrompt(params) {
 }
 
 // src/engines/native-session.ts
-import { mkdir as mkdir13, readFile as readFile15, writeFile as writeFile11 } from "node:fs/promises";
-import { existsSync as existsSync10 } from "node:fs";
+import { mkdir as mkdir13, readFile as readFile16, writeFile as writeFile10 } from "node:fs/promises";
+import { existsSync as existsSync12 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join20, resolve as resolve12 } from "node:path";
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { join as join22, resolve as resolve13 } from "node:path";
+import { randomUUID as randomUUID7 } from "node:crypto";
 function nowIso6() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -12785,23 +13592,23 @@ var NativeEngineSessionManager = class {
     this.runtime = /* @__PURE__ */ new Map();
     this.ptySpawn = null;
     this.ptyLoadFailed = false;
-    this.baseDir = resolve12(baseDir);
-    this.stateDir = join20(this.baseDir, ".crew");
-    this.statePath = join20(this.stateDir, "engine-native-sessions.json");
+    this.baseDir = resolve13(baseDir);
+    this.stateDir = join22(this.baseDir, ".crew");
+    this.statePath = join22(this.stateDir, "engine-native-sessions.json");
   }
   makeKey(engine, sessionId) {
     return `${String(engine || "").trim().toLowerCase()}::${String(sessionId || "").trim()}`;
   }
   async ensureStore() {
     await mkdir13(this.stateDir, { recursive: true });
-    if (!existsSync10(this.statePath)) {
-      await writeFile11(this.statePath, JSON.stringify({}, null, 2), "utf8");
+    if (!existsSync12(this.statePath)) {
+      await writeFile10(this.statePath, JSON.stringify({}, null, 2), "utf8");
     }
   }
   async loadStore() {
     await this.ensureStore();
     try {
-      const raw = await readFile15(this.statePath, "utf8");
+      const raw = await readFile16(this.statePath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -12811,7 +13618,7 @@ var NativeEngineSessionManager = class {
   }
   async saveStore(store) {
     await this.ensureStore();
-    await writeFile11(this.statePath, JSON.stringify(store, null, 2), "utf8");
+    await writeFile10(this.statePath, JSON.stringify(store, null, 2), "utf8");
   }
   async getPtySpawn() {
     if (this.ptySpawn) return this.ptySpawn;
@@ -12829,10 +13636,10 @@ var NativeEngineSessionManager = class {
     const key = this.makeKey(engine, sessionId);
     const existing = this.runtime.get(key);
     if (existing) return existing;
-    const spawn4 = await this.getPtySpawn();
-    if (!spawn4) return null;
+    const spawn5 = await this.getPtySpawn();
+    if (!spawn5) return null;
     const chosenShell = shell || process.env.SHELL || "/bin/bash";
-    const pty = spawn4(chosenShell, ["-l"], {
+    const pty = spawn5(chosenShell, ["-l"], {
       name: "xterm-color",
       cwd,
       cols: process.stdout.columns || 120,
@@ -12928,12 +13735,12 @@ var NativeEngineSessionManager = class {
     session.updatedAt = nowIso6();
     session.turns += 1;
     await this.persistSessionMeta(session);
-    const sentinel = `__CREW_DONE_${randomUUID6().replace(/-/g, "")}__`;
+    const sentinel = `__CREW_DONE_${randomUUID7().replace(/-/g, "")}__`;
     const markerCmd = `${params.command}
 echo ${shellQuote(`${sentinel}$?`)}
 `;
     const timeoutMs = Number(params.timeoutMs || 6e5);
-    return new Promise((resolve18) => {
+    return new Promise((resolve19) => {
       let stdout = "";
       let stderr = "";
       let done = false;
@@ -12941,7 +13748,7 @@ echo ${shellQuote(`${sentinel}$?`)}
         if (done) return;
         done = true;
         session.busy = false;
-        resolve18({
+        resolve19({
           success: false,
           exitCode: -1,
           stdout,
@@ -12968,7 +13775,7 @@ Timed out after ${timeoutMs}ms`,
             session.updatedAt = nowIso6();
             void this.persistSessionMeta(session);
             session.pty.off?.("data", onData);
-            resolve18({
+            resolve19({
               success: exitCode === 0,
               exitCode,
               stdout: stdout.trim(),
@@ -12990,7 +13797,7 @@ Timed out after ${timeoutMs}ms`,
           clearTimeout(timer);
           session.busy = false;
           session.pty.off?.("data", onData);
-          resolve18({
+          resolve19({
             success: false,
             exitCode: -1,
             stdout,
@@ -13005,8 +13812,8 @@ Timed out after ${timeoutMs}ms`,
 function resolveCursorAgentBinQuoted() {
   const fromEnv = String(process.env.CURSOR_CLI_BIN || "").trim();
   if (fromEnv) return shellQuote(fromEnv);
-  const agentLocal = join20(homedir5(), ".local", "bin", "agent");
-  if (existsSync10(agentLocal)) return shellQuote(agentLocal);
+  const agentLocal = join22(homedir5(), ".local", "bin", "agent");
+  if (existsSync12(agentLocal)) return shellQuote(agentLocal);
   return "agent";
 }
 function buildEngineShellCommand(engine, prompt, model, cwd) {
@@ -13032,9 +13839,9 @@ function buildEngineShellCommand(engine, prompt, model, cwd) {
 }
 
 // src/engines/tool-audit.ts
-import { appendFile as appendFile4, mkdir as mkdir14, readFile as readFile16, writeFile as writeFile12 } from "node:fs/promises";
-import { existsSync as existsSync11 } from "node:fs";
-import { join as join21, resolve as resolve13 } from "node:path";
+import { appendFile as appendFile5, mkdir as mkdir14, readFile as readFile17, writeFile as writeFile11 } from "node:fs/promises";
+import { existsSync as existsSync13 } from "node:fs";
+import { join as join23, resolve as resolve14 } from "node:path";
 function clip4(text, max = 3e3) {
   const value = String(text || "");
   if (value.length <= max) return value;
@@ -13107,18 +13914,18 @@ function extractToolCalls(raw) {
 }
 var ToolAuditStore = class {
   constructor(baseDir = process.cwd()) {
-    this.baseDir = resolve13(baseDir);
-    this.dir = join21(this.baseDir, ".crew", "tool-audit");
-    this.indexPath = join21(this.baseDir, ".crew", "tool-audit.jsonl");
+    this.baseDir = resolve14(baseDir);
+    this.dir = join23(this.baseDir, ".crew", "tool-audit");
+    this.indexPath = join23(this.baseDir, ".crew", "tool-audit.jsonl");
   }
   async ensureDir() {
     await mkdir14(this.dir, { recursive: true });
   }
   async record(run) {
     await this.ensureDir();
-    const runPath = join21(this.dir, `${run.runId}.json`);
-    await writeFile12(runPath, JSON.stringify(run, null, 2), "utf8");
-    await appendFile4(this.indexPath, `${JSON.stringify({
+    const runPath = join23(this.dir, `${run.runId}.json`);
+    await writeFile11(runPath, JSON.stringify(run, null, 2), "utf8");
+    await appendFile5(this.indexPath, `${JSON.stringify({
       runId: run.runId,
       ts: run.ts,
       engine: run.engine,
@@ -13131,15 +13938,15 @@ var ToolAuditStore = class {
   }
   async loadRun(runId) {
     try {
-      const raw = await readFile16(join21(this.dir, `${runId}.json`), "utf8");
+      const raw = await readFile17(join23(this.dir, `${runId}.json`), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
     }
   }
   async list(limit = 30) {
-    if (!existsSync11(this.indexPath)) return [];
-    const raw = await readFile16(this.indexPath, "utf8");
+    if (!existsSync13(this.indexPath)) return [];
+    const raw = await readFile17(this.indexPath, "utf8");
     const rows = raw.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
       try {
         return JSON.parse(line);
@@ -13287,11 +14094,11 @@ async function runCommand(command, args, options = {}, stdin) {
     sessionId: options.sessionId,
     mode: "spawn"
   });
-  return new Promise((resolve18) => {
+  return new Promise((resolve19) => {
     const cleanEnv = { ...process.env };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE;
-    const child = spawn(command, args, {
+    const child = spawn2(command, args, {
       cwd: options.cwd || process.cwd(),
       stdio: [stdin ? "pipe" : "ignore", "pipe", "pipe"],
       env: cleanEnv
@@ -13328,7 +14135,7 @@ async function runCommand(command, args, options = {}, stdin) {
         }
       }, 2e3);
       done = true;
-      resolve18({
+      resolve19({
         success: false,
         engine: command,
         stdout,
@@ -13362,7 +14169,7 @@ Timed out after ${timeoutMs}ms`,
       done = true;
       clearTimeout(timer);
       logger2.error(`[${command}] process error:`, err);
-      resolve18({
+      resolve19({
         success: false,
         engine: command,
         stdout,
@@ -13375,7 +14182,7 @@ Process error: ${err.message}`,
       if (done) return;
       done = true;
       clearTimeout(timer);
-      resolve18({
+      resolve19({
         success: code === 0,
         engine: command,
         stdout: stdout.trim(),
@@ -13581,7 +14388,7 @@ async function runOpenCodeCli(prompt, options = {}) {
 async function runEngine(engine, prompt, options = {}) {
   const normalizedEngine = String(engine || "").trim().toLowerCase();
   const start = Date.now();
-  const runId = String(options.runId || `eng-${randomUUID7()}`);
+  const runId = String(options.runId || `eng-${randomUUID8()}`);
   const optionsWithRunId = { ...options, runId };
   const { effectivePrompt, engineStore, transcriptStore } = await preparePromptWithSession(normalizedEngine, prompt, options);
   let result2;
@@ -13673,13 +14480,13 @@ async function getToolAuditReplayPlan(baseDir, runId) {
 
 // src/watch/index.ts
 import { watch } from "node:fs";
-import { readFile as readFile18 } from "node:fs/promises";
-import { join as join22 } from "node:path";
+import { readFile as readFile19 } from "node:fs/promises";
+import { join as join24 } from "node:path";
 
 // src/studio/broadcaster.ts
 init_logger();
 import { WebSocket } from "ws";
-import { readFile as readFile17 } from "node:fs/promises";
+import { readFile as readFile18 } from "node:fs/promises";
 var StudioBroadcaster = class {
   constructor(studioUrl = "ws://127.0.0.1:3334/ws", logger3) {
     this.ws = null;
@@ -13689,13 +14496,13 @@ var StudioBroadcaster = class {
     this.logger = logger3 || new Logger("studio");
   }
   async connect() {
-    return new Promise((resolve18, reject) => {
+    return new Promise((resolve19, reject) => {
       try {
         this.ws = new WebSocket(this.studioUrl);
         this.ws.on("open", () => {
           this.connected = true;
           this.logger.info("Connected to Studio watch server");
-          resolve18();
+          resolve19();
         });
         this.ws.on("close", () => {
           this.connected = false;
@@ -13734,7 +14541,7 @@ var StudioBroadcaster = class {
       };
       if (includeContent) {
         try {
-          event.content = await readFile17(filePath, "utf8");
+          event.content = await readFile18(filePath, "utf8");
         } catch {
           event.content = void 0;
         }
@@ -13801,7 +14608,7 @@ function extractTodos(content) {
 async function inspectFileForTodos(path3) {
   let content = "";
   try {
-    content = await readFile18(path3, "utf8");
+    content = await readFile19(path3, "utf8");
   } catch {
     return { type: "file_changed", file: path3 };
   }
@@ -13852,7 +14659,7 @@ function startWatchMode(rootDir, onEvent, ignored = ["node_modules", ".git", "di
     if (!filename) return;
     const relative5 = String(filename);
     if (ignored.some((p) => relative5.includes(p))) return;
-    const fullPath = join22(rootDir, relative5);
+    const fullPath = join24(rootDir, relative5);
     const event = await inspectFileForTodos(fullPath);
     await onEvent(event);
     if (broadcaster) {
@@ -13891,9 +14698,9 @@ function getBanner() {
 }
 
 // src/multirepo/index.ts
-import { readdir as readdir4, access as access5, mkdir as mkdir15, writeFile as writeFile13 } from "node:fs/promises";
+import { readdir as readdir5, access as access5, mkdir as mkdir15, writeFile as writeFile12 } from "node:fs/promises";
 import { constants as constants5 } from "node:fs";
-import { dirname as dirname7, join as join23, resolve as resolve14 } from "node:path";
+import { dirname as dirname7, join as join25, resolve as resolve15 } from "node:path";
 import { execFile as execFile4 } from "node:child_process";
 import { promisify as promisify4 } from "node:util";
 var execFileAsync4 = promisify4(execFile4);
@@ -13913,16 +14720,16 @@ async function runGit2(repoPath, args) {
   return stdout.trim();
 }
 async function findSiblingRepos(baseDir = process.cwd()) {
-  const abs = resolve14(baseDir);
+  const abs = resolve15(baseDir);
   const parent = dirname7(abs);
   const currentName = abs.split("/").pop() || "";
-  const entries = await readdir4(parent, { withFileTypes: true });
+  const entries = await readdir5(parent, { withFileTypes: true });
   const repos = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name === currentName) continue;
-    const repoPath = join23(parent, entry.name);
-    if (await exists(join23(repoPath, ".git"))) {
+    const repoPath = join25(parent, entry.name);
+    if (await exists(join25(repoPath, ".git"))) {
       repos.push(repoPath);
     }
   }
@@ -13960,10 +14767,10 @@ async function collectMultiRepoContext(baseDir = process.cwd()) {
 async function syncRepoSnapshots(baseDir = process.cwd()) {
   const siblings = await findSiblingRepos(baseDir);
   const summaries = await Promise.all(siblings.map((path3) => getRepoSummary(path3)));
-  const outDir = join23(baseDir, ".crew");
+  const outDir = join25(baseDir, ".crew");
   await mkdir15(outDir, { recursive: true });
-  const outPath = join23(outDir, "multi-repo-sync.json");
-  await writeFile13(
+  const outPath = join25(outDir, "multi-repo-sync.json");
+  await writeFile12(
     outPath,
     JSON.stringify({ syncedAt: (/* @__PURE__ */ new Date()).toISOString(), repos: summaries }, null, 2),
     "utf8"
@@ -13995,11 +14802,11 @@ async function detectBreakingApiSignals(repoPath) {
 init_ci();
 
 // src/browser/index.ts
-import { spawn as spawn2 } from "node:child_process";
-import { access as access6, readFile as readFile19, writeFile as writeFile14 } from "node:fs/promises";
+import { spawn as spawn3 } from "node:child_process";
+import { access as access6, readFile as readFile20, writeFile as writeFile13 } from "node:fs/promises";
 import { constants as constants6 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join as join24 } from "node:path";
+import { join as join26 } from "node:path";
 import { execFile as execFile5 } from "node:child_process";
 import { promisify as promisify6 } from "node:util";
 import WebSocket2 from "ws";
@@ -14041,7 +14848,7 @@ async function launchChromeDebug(url, port = 9222) {
   if (!chrome) {
     throw new Error("Chrome/Chromium binary not found. Set CHROME_BIN or install Chrome.");
   }
-  const userDataDir = join24(tmpdir(), `crew-browser-debug-${Date.now()}`);
+  const userDataDir = join26(tmpdir(), `crew-browser-debug-${Date.now()}`);
   const args = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
@@ -14051,7 +14858,7 @@ async function launchChromeDebug(url, port = 9222) {
     "--disable-gpu",
     url
   ];
-  const proc = spawn2(chrome, args, { stdio: "ignore" });
+  const proc = spawn3(chrome, args, { stdio: "ignore" });
   return proc;
 }
 var CdpClient = class {
@@ -14074,8 +14881,8 @@ var CdpClient = class {
   }
   send(method, params = {}) {
     const id = ++this.id;
-    return new Promise((resolve18, reject) => {
-      this.pending.set(id, resolve18);
+    return new Promise((resolve19, reject) => {
+      this.pending.set(id, resolve19);
       this.ws.send(JSON.stringify({ id, method, params }), (err) => {
         if (err) reject(err);
       });
@@ -14098,7 +14905,7 @@ async function waitForWsDebuggerUrl(port, timeoutMs = 1e4) {
       }
     } catch {
     }
-    await new Promise((resolve18) => setTimeout(resolve18, 300));
+    await new Promise((resolve19) => setTimeout(resolve19, 300));
   }
   throw new Error("Timed out waiting for Chrome DevTools endpoint.");
 }
@@ -14110,8 +14917,8 @@ async function runBrowserDebug(url, options = {}) {
   try {
     const wsUrl = await waitForWsDebuggerUrl(port);
     ws = new WebSocket2(wsUrl);
-    await new Promise((resolve18, reject) => {
-      ws?.once("open", () => resolve18());
+    await new Promise((resolve19, reject) => {
+      ws?.once("open", () => resolve19());
       ws?.once("error", reject);
     });
     const client = new CdpClient(ws);
@@ -14137,13 +14944,13 @@ async function runBrowserDebug(url, options = {}) {
     await client.send("Log.enable");
     await client.send("Page.enable");
     await client.send("Page.navigate", { url });
-    await new Promise((resolve18) => setTimeout(resolve18, durationMs));
+    await new Promise((resolve19) => setTimeout(resolve19, durationMs));
     let screenshotPath = options.screenshotPath;
     const screenshotRes = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true });
     if (!screenshotPath) {
-      screenshotPath = join24(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
+      screenshotPath = join26(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
     }
-    await writeFile14(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data, "base64"));
+    await writeFile13(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data, "base64"));
     return { consoleErrors: errors, screenshotPath };
   } finally {
     try {
@@ -14173,15 +14980,15 @@ function compareScreenshotBuffers(a, b) {
   };
 }
 async function compareScreenshots(pathA, pathB) {
-  const [a, b] = await Promise.all([readFile19(pathA), readFile19(pathB)]);
+  const [a, b] = await Promise.all([readFile20(pathA), readFile20(pathB)]);
   return compareScreenshotBuffers(a, b);
 }
 
 // src/team/index.ts
-import { access as access7, copyFile as copyFile2, mkdir as mkdir16, readFile as readFile20, readdir as readdir5, writeFile as writeFile15 } from "node:fs/promises";
+import { access as access7, copyFile as copyFile2, mkdir as mkdir16, readFile as readFile21, readdir as readdir6, writeFile as writeFile14 } from "node:fs/promises";
 import { constants as constants7 } from "node:fs";
 import { hostname } from "node:os";
-import { join as join25 } from "node:path";
+import { join as join27 } from "node:path";
 var DEFAULT_PRIVACY = {
   sharePrompt: true,
   shareOriginal: true,
@@ -14197,13 +15004,13 @@ async function exists3(path3) {
   }
 }
 function getStateDir(baseDir = process.cwd()) {
-  return join25(baseDir, ".crew");
+  return join27(baseDir, ".crew");
 }
 function getTeamSyncDir(baseDir = process.cwd()) {
-  return process.env.TEAM_SYNC_DIR || join25(getStateDir(baseDir), "team-sync");
+  return process.env.TEAM_SYNC_DIR || join27(getStateDir(baseDir), "team-sync");
 }
 function getPrivacyPath(baseDir = process.cwd()) {
-  return join25(getStateDir(baseDir), "privacy.json");
+  return join27(getStateDir(baseDir), "privacy.json");
 }
 function applyPrivacyToCorrection(entry, privacy) {
   const output = {
@@ -14220,11 +15027,11 @@ async function loadPrivacyControls(baseDir = process.cwd()) {
   const path3 = getPrivacyPath(baseDir);
   if (!await exists3(path3)) {
     await mkdir16(getStateDir(baseDir), { recursive: true });
-    await writeFile15(path3, JSON.stringify(DEFAULT_PRIVACY, null, 2), "utf8");
+    await writeFile14(path3, JSON.stringify(DEFAULT_PRIVACY, null, 2), "utf8");
     return { ...DEFAULT_PRIVACY };
   }
   try {
-    const raw = await readFile20(path3, "utf8");
+    const raw = await readFile21(path3, "utf8");
     const parsed = JSON.parse(raw);
     return {
       sharePrompt: parsed.sharePrompt !== false,
@@ -14238,26 +15045,26 @@ async function loadPrivacyControls(baseDir = process.cwd()) {
 }
 async function savePrivacyControls(privacy, baseDir = process.cwd()) {
   await mkdir16(getStateDir(baseDir), { recursive: true });
-  await writeFile15(getPrivacyPath(baseDir), JSON.stringify(privacy, null, 2), "utf8");
+  await writeFile14(getPrivacyPath(baseDir), JSON.stringify(privacy, null, 2), "utf8");
 }
 async function uploadTeamContext(baseDir = process.cwd()) {
   const stateDir = getStateDir(baseDir);
   const teamDir = getTeamSyncDir(baseDir);
   await mkdir16(teamDir, { recursive: true });
-  const sessionPath = join25(stateDir, "session.json");
-  const correctionsPath = join25(stateDir, "training-data.jsonl");
+  const sessionPath = join27(stateDir, "session.json");
+  const correctionsPath = join27(stateDir, "training-data.jsonl");
   const host = hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
-  const sessionOut = join25(teamDir, `${host}-session.json`);
-  const correctionsOut = join25(teamDir, `${host}-training-data.jsonl`);
+  const sessionOut = join27(teamDir, `${host}-session.json`);
+  const correctionsOut = join27(teamDir, `${host}-training-data.jsonl`);
   if (await exists3(sessionPath)) {
     if (process.env.TEAM_S3_SESSION_PUT_URL) {
-      const body = await readFile20(sessionPath, "utf8");
+      const body = await readFile21(sessionPath, "utf8");
       await fetch(process.env.TEAM_S3_SESSION_PUT_URL, { method: "PUT", body });
     }
     await copyFile2(sessionPath, sessionOut);
   }
   if (await exists3(correctionsPath)) {
-    let correctionsRaw = await readFile20(correctionsPath, "utf8");
+    let correctionsRaw = await readFile21(correctionsPath, "utf8");
     const privacy = await loadPrivacyControls(baseDir);
     if (correctionsRaw.trim().length > 0) {
       const lines = correctionsRaw.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -14268,7 +15075,7 @@ async function uploadTeamContext(baseDir = process.cwd()) {
     if (process.env.TEAM_S3_CORRECTIONS_PUT_URL) {
       await fetch(process.env.TEAM_S3_CORRECTIONS_PUT_URL, { method: "PUT", body: correctionsRaw });
     }
-    await writeFile15(correctionsOut, correctionsRaw, "utf8");
+    await writeFile14(correctionsOut, correctionsRaw, "utf8");
   }
   return { sessionOut, correctionsOut };
 }
@@ -14277,33 +15084,33 @@ async function downloadTeamContext(baseDir = process.cwd()) {
   const teamDir = getTeamSyncDir(baseDir);
   await mkdir16(stateDir, { recursive: true });
   await mkdir16(teamDir, { recursive: true });
-  const localSessionPath = join25(stateDir, "session.json");
-  const localCorrectionsPath = join25(stateDir, "training-data.jsonl");
+  const localSessionPath = join27(stateDir, "session.json");
+  const localCorrectionsPath = join27(stateDir, "training-data.jsonl");
   if (process.env.TEAM_S3_SESSION_GET_URL) {
     const response = await fetch(process.env.TEAM_S3_SESSION_GET_URL);
     if (response.ok) {
       const text = await response.text();
-      await writeFile15(localSessionPath, text, "utf8");
+      await writeFile14(localSessionPath, text, "utf8");
     }
   }
   if (process.env.TEAM_S3_CORRECTIONS_GET_URL) {
     const response = await fetch(process.env.TEAM_S3_CORRECTIONS_GET_URL);
     if (response.ok) {
       const text = await response.text();
-      await writeFile15(localCorrectionsPath, text, "utf8");
+      await writeFile14(localCorrectionsPath, text, "utf8");
     }
   }
-  const files = await readdir5(teamDir);
+  const files = await readdir6(teamDir);
   const sessionCandidates = files.filter((name) => name.endsWith("-session.json"));
   const correctionCandidates = files.filter((name) => name.endsWith("-training-data.jsonl"));
   if (sessionCandidates.length > 0 && !await exists3(localSessionPath)) {
-    const src = join25(teamDir, sessionCandidates.sort().at(-1));
+    const src = join27(teamDir, sessionCandidates.sort().at(-1));
     await copyFile2(src, localSessionPath);
   }
   let mergedCorrections = "";
   const seen = /* @__PURE__ */ new Set();
   if (await exists3(localCorrectionsPath)) {
-    const local = await readFile20(localCorrectionsPath, "utf8");
+    const local = await readFile21(localCorrectionsPath, "utf8");
     for (const line of local.split("\n").map((s) => s.trim()).filter(Boolean)) {
       seen.add(line);
       mergedCorrections += `${line}
@@ -14311,7 +15118,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
     }
   }
   for (const file of correctionCandidates) {
-    const raw = await readFile20(join25(teamDir, file), "utf8");
+    const raw = await readFile21(join27(teamDir, file), "utf8");
     for (const line of raw.split("\n").map((s) => s.trim()).filter(Boolean)) {
       if (!seen.has(line)) {
         seen.add(line);
@@ -14321,7 +15128,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
     }
   }
   if (mergedCorrections.length > 0) {
-    await writeFile15(localCorrectionsPath, mergedCorrections, "utf8");
+    await writeFile14(localCorrectionsPath, mergedCorrections, "utf8");
   }
   return {
     sessionPath: localSessionPath,
@@ -14332,7 +15139,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
 async function getTeamSyncStatus(baseDir = process.cwd()) {
   const teamDir = getTeamSyncDir(baseDir);
   await mkdir16(teamDir, { recursive: true });
-  const files = await readdir5(teamDir);
+  const files = await readdir6(teamDir);
   const privacy = await loadPrivacyControls(baseDir);
   return {
     teamDir,
@@ -14344,8 +15151,8 @@ async function getTeamSyncStatus(baseDir = process.cwd()) {
 // src/voice/listener.ts
 import { execFile as execFile6 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
-import { readFile as readFile21, writeFile as writeFile16 } from "node:fs/promises";
-import { join as join26 } from "node:path";
+import { readFile as readFile22, writeFile as writeFile15 } from "node:fs/promises";
+import { join as join28 } from "node:path";
 import { tmpdir as tmpdir2 } from "node:os";
 var execFileAsync6 = promisify7(execFile6);
 async function commandExists2(command) {
@@ -14385,7 +15192,7 @@ function selectRecorderPlan(platform2, hasSox, hasFfmpeg, outputPath, durationSe
 }
 async function recordAudio(options = {}) {
   const durationSec = Math.max(1, options.durationSec || 6);
-  const outputPath = options.outputPath || join26(tmpdir2(), `crew-listen-${Date.now()}.wav`);
+  const outputPath = options.outputPath || join28(tmpdir2(), `crew-listen-${Date.now()}.wav`);
   const hasSox = await commandExists2("sox");
   const hasFfmpeg = await commandExists2("ffmpeg");
   const plan = selectRecorderPlan(process.platform, hasSox, hasFfmpeg, outputPath, durationSec);
@@ -14400,7 +15207,7 @@ async function transcribeWithOpenAi(audioPath) {
   if (!key) {
     throw new Error("OPENAI_API_KEY is required for OpenAI Whisper transcription.");
   }
-  const audioBuffer = await readFile21(audioPath);
+  const audioBuffer = await readFile22(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-1");
@@ -14422,7 +15229,7 @@ async function transcribeWithGroq(audioPath) {
   if (!key) {
     throw new Error("GROQ_API_KEY is required for Groq Whisper transcription.");
   }
-  const audioBuffer = await readFile21(audioPath);
+  const audioBuffer = await readFile22(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-large-v3-turbo");
@@ -14447,15 +15254,15 @@ async function transcribeWithWhisperCli(audioPath) {
     throw new Error("Local whisper CLI is not installed. Install with: pip install faster-whisper");
   }
   const whisperCmd = hasFasterWhisper ? "faster-whisper" : "whisper";
-  const outDir = join26(tmpdir2(), `crew-whisper-${Date.now()}`);
+  const outDir = join28(tmpdir2(), `crew-whisper-${Date.now()}`);
   await execFileAsync6("mkdir", ["-p", outDir]);
   const model = hasFasterWhisper ? "tiny" : "base";
   await execFileAsync6(whisperCmd, [audioPath, "--model", model, "--output_format", "txt", "--output_dir", outDir], {
     maxBuffer: 1024 * 1024 * 16
   });
   const baseName = audioPath.split("/").pop()?.replace(/\.[^.]+$/, "") || "audio";
-  const txtPath = join26(outDir, `${baseName}.txt`);
-  const text = await readFile21(txtPath, "utf8");
+  const txtPath = join28(outDir, `${baseName}.txt`);
+  const text = await readFile22(txtPath, "utf8");
   return text.trim();
 }
 async function transcribeAudio(audioPath, options = {}) {
@@ -14487,20 +15294,20 @@ async function speakWithSkill(router, text, skill = "elevenlabs.tts") {
   return router.callSkill(skill, { text });
 }
 async function appendVoiceTranscript(baseDir, role, text) {
-  const path3 = join26(baseDir, ".crew", "voice-transcript.log");
-  await execFileAsync6("mkdir", ["-p", join26(baseDir, ".crew")]);
+  const path3 = join28(baseDir, ".crew", "voice-transcript.log");
+  await execFileAsync6("mkdir", ["-p", join28(baseDir, ".crew")]);
   const line = JSON.stringify({
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     role,
     text
   });
-  await writeFile16(path3, `${line}
+  await writeFile15(path3, `${line}
 `, { encoding: "utf8", flag: "a" });
 }
 
 // src/context/augment.ts
-import { readFile as readFile22 } from "node:fs/promises";
-import { extname as extname3, resolve as resolve15 } from "node:path";
+import { readFile as readFile23 } from "node:fs/promises";
+import { extname as extname3, resolve as resolve16 } from "node:path";
 function collectOption(value, previous = []) {
   if (!value) return previous;
   return [...previous, value];
@@ -14530,9 +15337,9 @@ async function buildFileContextBlock(paths = [], maxChars = 8e3) {
   if (!paths.length) return "";
   const sections = [];
   for (const rawPath of paths) {
-    const abs = resolve15(rawPath);
+    const abs = resolve16(rawPath);
     try {
-      const content = await readFile22(abs, "utf8");
+      const content = await readFile23(abs, "utf8");
       sections.push([
         `### File Context: ${abs}`,
         "```text",
@@ -14551,7 +15358,7 @@ async function buildRepoContextBlock(repos = []) {
   if (!repos.length) return "";
   const sections = [];
   for (const repo of repos) {
-    const abs = resolve15(repo);
+    const abs = resolve16(repo);
     const gitBlock = await getProjectContext(abs).catch((error) => `## Git Context
 ${error.message}`);
     sections.push(`### Repo Context: ${abs}
@@ -14564,7 +15371,7 @@ async function buildImageContextBlock(paths = [], maxBytes = 25e4) {
   if (!paths.length) return "";
   const sections = [];
   for (const rawPath of paths) {
-    const abs = resolve15(rawPath);
+    const abs = resolve16(rawPath);
     try {
       const mime = inferImageMime(abs);
       if (!mime) {
@@ -14572,7 +15379,7 @@ async function buildImageContextBlock(paths = [], maxBytes = 25e4) {
 (unsupported image type; supported: png, jpg, jpeg, webp, gif)`);
         continue;
       }
-      const buf = await readFile22(abs);
+      const buf = await readFile23(abs);
       const used = buf.subarray(0, maxBytes);
       const truncated = buf.length > maxBytes;
       const dataUri = `data:${mime};base64,${used.toString("base64")}`;
@@ -14600,16 +15407,16 @@ function mergeTaskWithContext(task, blocks) {
 
 ${filtered.join("\n\n")}`;
 }
-function estimateTokens2(text) {
+function estimateTokens3(text) {
   if (!text) return 0;
   return Math.ceil(text.length / 4);
 }
 function enforceContextBudget(task, blocks, maxTokens, mode = "trim") {
   const merged = mergeTaskWithContext(task, blocks);
   if (!maxTokens || maxTokens <= 0) {
-    return { task: merged, estimatedTokens: estimateTokens2(merged), trimmed: false, exceeded: false };
+    return { task: merged, estimatedTokens: estimateTokens3(merged), trimmed: false, exceeded: false };
   }
-  const estimated = estimateTokens2(merged);
+  const estimated = estimateTokens3(merged);
   if (estimated <= maxTokens) {
     return { task: merged, estimatedTokens: estimated, trimmed: false, exceeded: false };
   }
@@ -14627,7 +15434,7 @@ function enforceContextBudget(task, blocks, maxTokens, mode = "trim") {
 ${clippedContext}` : baseTask.slice(0, maxChars);
   return {
     task: clipped,
-    estimatedTokens: estimateTokens2(clipped),
+    estimatedTokens: estimateTokens3(clipped),
     trimmed: true,
     exceeded: false
   };
@@ -14708,9 +15515,9 @@ function detectHighSeverityFindings(text) {
 }
 
 // src/headless/index.ts
-import { mkdir as mkdir17, readFile as readFile23, writeFile as writeFile17 } from "node:fs/promises";
-import { existsSync as existsSync12 } from "node:fs";
-import { join as join27 } from "node:path";
+import { mkdir as mkdir17, readFile as readFile24, writeFile as writeFile16 } from "node:fs/promises";
+import { existsSync as existsSync14 } from "node:fs";
+import { join as join29 } from "node:path";
 
 // src/runtime/execution-policy.ts
 init_capabilities();
@@ -14736,7 +15543,7 @@ function isRetryableError(error) {
   return text.includes("rate limit") || text.includes("429") || text.includes("timeout") || text.includes("temporar") || text.includes("unavailable") || text.includes("quota") || text.includes("connection reset") || text.includes("econnreset");
 }
 function sleep(ms) {
-  return new Promise((resolve18) => setTimeout(resolve18, ms));
+  return new Promise((resolve19) => setTimeout(resolve19, ms));
 }
 async function withRetries(fn, policy, opts = {}) {
   const attempts = Math.max(1, policy.retryAttempts);
@@ -14785,19 +15592,19 @@ function isRiskBlocked(risk, threshold, force = false) {
 // src/headless/index.ts
 init_blast_radius();
 function statePath(baseDir) {
-  return join27(baseDir, ".crew", "headless-state.json");
+  return join29(baseDir, ".crew", "headless-state.json");
 }
 async function ensureState(baseDir) {
   const path3 = statePath(baseDir);
-  await mkdir17(join27(baseDir, ".crew"), { recursive: true });
-  if (!existsSync12(path3)) {
-    await writeFile17(path3, JSON.stringify({ paused: false, updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, null, 2), "utf8");
+  await mkdir17(join29(baseDir, ".crew"), { recursive: true });
+  if (!existsSync14(path3)) {
+    await writeFile16(path3, JSON.stringify({ paused: false, updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, null, 2), "utf8");
   }
 }
 async function getHeadlessState(baseDir = process.cwd()) {
   await ensureState(baseDir);
   try {
-    const raw = await readFile23(statePath(baseDir), "utf8");
+    const raw = await readFile24(statePath(baseDir), "utf8");
     const parsed = JSON.parse(raw);
     return { paused: Boolean(parsed.paused), updatedAt: parsed.updatedAt };
   } catch {
@@ -14806,7 +15613,7 @@ async function getHeadlessState(baseDir = process.cwd()) {
 }
 async function setHeadlessPaused(paused, baseDir = process.cwd()) {
   await ensureState(baseDir);
-  await writeFile17(
+  await writeFile16(
     statePath(baseDir),
     JSON.stringify({ paused: Boolean(paused), updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, null, 2),
     "utf8"
@@ -14814,10 +15621,10 @@ async function setHeadlessPaused(paused, baseDir = process.cwd()) {
 }
 async function appendOutLine(baseDir, outPath, payload) {
   if (!outPath) return;
-  const fullPath = join27(baseDir, outPath);
-  await mkdir17(join27(fullPath, ".."), { recursive: true });
-  const prev = existsSync12(fullPath) ? await readFile23(fullPath, "utf8") : "";
-  await writeFile17(fullPath, `${prev}${JSON.stringify(payload)}
+  const fullPath = join29(baseDir, outPath);
+  await mkdir17(join29(fullPath, ".."), { recursive: true });
+  const prev = existsSync14(fullPath) ? await readFile24(fullPath, "utf8") : "";
+  await writeFile16(fullPath, `${prev}${JSON.stringify(payload)}
 `, "utf8");
 }
 async function emit(baseDir, jsonMode, outPath, event, data = {}) {
@@ -14902,9 +15709,9 @@ async function runHeadlessTask(options) {
 init_collections();
 import { createServer } from "node:http";
 import { homedir as homedir7 } from "node:os";
-import { join as join30 } from "node:path";
+import { join as join32 } from "node:path";
 import { readFileSync as readFileSync5 } from "node:fs";
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 
 // src/interface/mcp-handler.ts
 async function handleMcpRequest(options, body) {
@@ -15204,12 +16011,12 @@ ${context}` : message;
 }
 
 // src/metrics/pipeline.ts
-import { readFile as readFile24 } from "node:fs/promises";
-import { join as join28 } from "node:path";
+import { readFile as readFile25 } from "node:fs/promises";
+import { join as join30 } from "node:path";
 async function loadPipelineMetricsSummary(baseDir) {
-  const path3 = join28(baseDir, ".crew", "pipeline-metrics.jsonl");
+  const path3 = join30(baseDir, ".crew", "pipeline-metrics.jsonl");
   try {
-    const raw = await readFile24(path3, "utf8");
+    const raw = await readFile25(path3, "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     let runs = 0;
     let qaApproved = 0;
@@ -15253,7 +16060,7 @@ var latestIndexStats = { files: 0, chunks: 0 };
 var latestIndexId = "";
 function readRtToken() {
   try {
-    const p = join30(homedir7(), ".crewswarm", "crewswarm.json");
+    const p = join32(homedir7(), ".crewswarm", "crewswarm.json");
     const cfg = JSON.parse(readFileSync5(p, "utf8"));
     return String(cfg?.rt?.authToken || "");
   } catch {
@@ -15335,9 +16142,9 @@ ${toolResults.join("\n\n")}`);
   };
 }
 function buildToolCallResponse(params) {
-  const completionId = `chatcmpl-${randomUUID8()}`;
+  const completionId = `chatcmpl-${randomUUID9()}`;
   const created = Math.floor(Date.now() / 1e3);
-  const toolCallId = `call_${randomUUID8().replace(/-/g, "").slice(0, 20)}`;
+  const toolCallId = `call_${randomUUID9().replace(/-/g, "").slice(0, 20)}`;
   const toolCall = {
     id: toolCallId,
     type: "function",
@@ -15615,7 +16422,7 @@ PREFERRED_AGENT: ${model}`,
   };
   const out = options.mode === "connected" ? await handleConnectedChat(options, chatBody) : await handleStandaloneChat(options, chatBody);
   const reply = String(out?.data?.reply || "");
-  const completionId = `chatcmpl-${randomUUID8()}`;
+  const completionId = `chatcmpl-${randomUUID9()}`;
   const created = Math.floor(Date.now() / 1e3);
   const promptTokens = Math.ceil(composed.inputChars / 4);
   const completionTokens = Math.ceil(reply.length / 4);
@@ -15663,7 +16470,7 @@ PREFERRED_AGENT: ${model}`,
 async function enqueueStandaloneTask(options, body) {
   const taskText = String(body?.task || "").trim();
   if (!taskText) return { status: 400, data: { error: "task is required" } };
-  const taskId = randomUUID8();
+  const taskId = randomUUID9();
   taskStore.set(taskId, { id: taskId, status: "queued", createdAt: Date.now() });
   queueMicrotask(async () => {
     const rec = taskStore.get(taskId);
@@ -15915,18 +16722,18 @@ async function startUnifiedServer(options) {
       if (req.method === "GET" && path3 === "/api/rag/stats") {
         if (!checkAuth(req, res)) return;
         try {
-          const { existsSync: existsSync21 } = await import("node:fs");
+          const { existsSync: existsSync23 } = await import("node:fs");
           const query = getQuery(req);
           const projectDir = query.get("projectDir") || options.projectDir;
           const cacheDir = process.env.CREW_RAG_CACHE_DIR || `${projectDir}/.crew/rag-cache`;
           return json(res, 200, {
             projectDir,
             cacheDir,
-            exists: existsSync21(cacheDir),
+            exists: existsSync23(cacheDir),
             modes: {
               keyword: "always available (no cache)",
               importGraph: "always available (no cache)",
-              semantic: existsSync21(`${cacheDir}/embeddings.json`) ? "cached" : "not cached"
+              semantic: existsSync23(`${cacheDir}/embeddings.json`) ? "cached" : "not cached"
             }
           });
         } catch (error) {
@@ -16099,11 +16906,11 @@ async function startUnifiedServer(options) {
       if (req.method === "POST" && path3 === "/v1/index/rebuild") {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const paths = Array.isArray(body?.paths) && body.paths.length > 0 ? body.paths : [join30(options.projectDir, "docs"), options.projectDir];
+        const paths = Array.isArray(body?.paths) && body.paths.length > 0 ? body.paths : [join32(options.projectDir, "docs"), options.projectDir];
         latestIndex = await buildCollectionIndex(paths, {
           includeCode: Boolean(body?.includeCode)
         });
-        latestIndexId = `idx-${randomUUID8()}`;
+        latestIndexId = `idx-${randomUUID9()}`;
         latestIndexStats = {
           files: Number(latestIndex?.docs?.length || 0),
           chunks: Number(latestIndex?.chunks?.length || 0)
@@ -16117,11 +16924,11 @@ async function startUnifiedServer(options) {
         const q = String(getQuery(req).get("q") || "").trim();
         if (!q) return json(res, 400, { error: "q is required" });
         if (!latestIndex) {
-          const fallback = await buildCollectionIndex([join30(options.projectDir, "docs"), options.projectDir], {
+          const fallback = await buildCollectionIndex([join32(options.projectDir, "docs"), options.projectDir], {
             includeCode: false
           });
           latestIndex = fallback;
-          latestIndexId = `idx-${randomUUID8()}`;
+          latestIndexId = `idx-${randomUUID9()}`;
           latestIndexStats = {
             files: Number(latestIndex?.docs?.length || 0),
             chunks: Number(latestIndex?.chunks?.length || 0)
@@ -16162,9 +16969,9 @@ async function startUnifiedServer(options) {
       return json(res, 500, { error: String(err?.message || err) });
     }
   });
-  await new Promise((resolve18, reject) => {
+  await new Promise((resolve19, reject) => {
     server.once("error", reject);
-    server.listen(options.port, options.host, () => resolve18());
+    server.listen(options.port, options.host, () => resolve19());
   });
   const bound = server.address();
   const actualPort = typeof bound === "object" && bound ? bound.port : options.port;
@@ -16173,18 +16980,18 @@ async function startUnifiedServer(options) {
   return {
     address,
     close: async () => {
-      await new Promise((resolve18, reject) => server.close((err) => err ? reject(err) : resolve18()));
+      await new Promise((resolve19, reject) => server.close((err) => err ? reject(err) : resolve19()));
     }
   };
 }
 
 // src/sourcegraph/index.ts
-import { spawn as spawn3 } from "node:child_process";
-import { mkdir as mkdir19, writeFile as writeFile19 } from "node:fs/promises";
-import { join as join31 } from "node:path";
+import { spawn as spawn4 } from "node:child_process";
+import { mkdir as mkdir19, writeFile as writeFile18 } from "node:fs/promises";
+import { join as join33 } from "node:path";
 function runSrcCli(args, cwd = process.cwd()) {
-  return new Promise((resolve18) => {
-    const child = spawn3("src", args, {
+  return new Promise((resolve19) => {
+    const child = spawn4("src", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env
@@ -16198,7 +17005,7 @@ function runSrcCli(args, cwd = process.cwd()) {
       stderr += String(chunk);
     });
     child.on("error", (error) => {
-      resolve18({
+      resolve19({
         success: false,
         code: 1,
         stdout,
@@ -16206,7 +17013,7 @@ function runSrcCli(args, cwd = process.cwd()) {
       });
     });
     child.on("close", (code) => {
-      resolve18({
+      resolve19({
         success: code === 0,
         code: code ?? 1,
         stdout,
@@ -16221,8 +17028,8 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
   }
   const repos = options.repos.length ? options.repos : ["repo:^github\\.com/.+"];
   const specPath = options.specPath || ".crew/src-batch.spec.yaml";
-  const full = join31(cwd, specPath);
-  await mkdir19(join31(full, ".."), { recursive: true });
+  const full = join33(cwd, specPath);
+  await mkdir19(join33(full, ".."), { recursive: true });
   const yaml = [
     "name: crew-src-batch-plan",
     "description: Generated by crew src batch-plan",
@@ -16237,7 +17044,7 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
     "  body: |",
     "    Generated by `crew src batch-plan` in dry-run mode."
   ].join("\n");
-  await writeFile19(full, `${yaml}
+  await writeFile18(full, `${yaml}
 `, "utf8");
   if (!options.execute) {
     return {
@@ -16255,11 +17062,11 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
 
 // src/repl/index.ts
 import { createInterface, emitKeypressEvents } from "node:readline";
-import { randomUUID as randomUUID9 } from "node:crypto";
-import { existsSync as existsSync15, readFileSync as readFileSync6 } from "node:fs";
-import { appendFile as appendFile5, mkdir as mkdir21, readFile as readFile27, readdir as readdir7, writeFile as writeFile21 } from "node:fs/promises";
-import { join as join34 } from "node:path";
-import { homedir as homedir8 } from "node:os";
+import { randomUUID as randomUUID10 } from "node:crypto";
+import { existsSync as existsSync17, readFileSync as readFileSync6 } from "node:fs";
+import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile28, readdir as readdir8, writeFile as writeFile20 } from "node:fs/promises";
+import { join as join36 } from "node:path";
+import { homedir as homedir9 } from "node:os";
 import chalk3 from "chalk";
 init_agentkeeper();
 
@@ -16267,7 +17074,7 @@ init_agentkeeper();
 init_agentkeeper();
 init_agent_memory();
 init_collections();
-import { resolve as resolve17, join as join32 } from "node:path";
+import { resolve as resolve18, join as join34 } from "node:path";
 function tokenize3(text) {
   return new Set(
     String(text || "").toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 2)
@@ -16328,7 +17135,7 @@ function normalizeCollectionPathForDedupe(input) {
 var MemoryBroker = class {
   constructor(projectDir, options = {}) {
     this.docsIndexCache = /* @__PURE__ */ new Map();
-    this.projectDir = resolve17(projectDir);
+    this.projectDir = resolve18(projectDir);
     this.keeper = new AgentKeeper(this.projectDir, {
       storageDir: options.storageDir || process.env.CREW_MEMORY_DIR
     });
@@ -16352,7 +17159,7 @@ var MemoryBroker = class {
     return scored.slice(0, max).map((x) => mapFactHit(x.fact, x.score));
   }
   async getDocsIndex(paths, includeCode) {
-    const key = `${paths.map((p) => resolve17(p)).join("|")}::${includeCode ? "code" : "docs"}`;
+    const key = `${paths.map((p) => resolve18(p)).join("|")}::${includeCode ? "code" : "docs"}`;
     if (this.docsIndexCache.has(key)) return this.docsIndexCache.get(key);
     const idx = await buildCollectionIndex(paths, { includeCode });
     this.docsIndexCache.set(key, idx);
@@ -16362,7 +17169,7 @@ var MemoryBroker = class {
     const maxResults = Math.max(1, Number(options.maxResults || 5));
     const includeDocs = options.includeDocs !== false;
     const includeCode = Boolean(options.includeCode);
-    const docsPaths = options.docsPaths && options.docsPaths.length > 0 ? options.docsPaths : [join32(this.projectDir, "docs"), this.projectDir];
+    const docsPaths = options.docsPaths && options.docsPaths.length > 0 ? options.docsPaths : [join34(this.projectDir, "docs"), this.projectDir];
     const [keeperHits, factHits, collectionHits] = await Promise.all([
       this.keeper.recall(query, Math.max(maxResults, 8), {
         preferSuccessful: options.preferSuccessful !== false,
@@ -16411,15 +17218,15 @@ var MemoryBroker = class {
 };
 
 // src/checkpoint/store.ts
-import { mkdir as mkdir20, readFile as readFile26, readdir as readdir6, writeFile as writeFile20 } from "node:fs/promises";
-import { existsSync as existsSync14 } from "node:fs";
-import { join as join33 } from "node:path";
+import { mkdir as mkdir20, readFile as readFile27, readdir as readdir7, writeFile as writeFile19 } from "node:fs/promises";
+import { existsSync as existsSync16 } from "node:fs";
+import { join as join35 } from "node:path";
 var CheckpointStore = class {
   constructor(baseDir = process.cwd()) {
-    this.dir = join33(baseDir, ".crew", "checkpoints");
+    this.dir = join35(baseDir, ".crew", "checkpoints");
   }
   filePath(runId) {
-    return join33(this.dir, `${runId}.json`);
+    return join35(this.dir, `${runId}.json`);
   }
   async beginRun(run) {
     await mkdir20(this.dir, { recursive: true });
@@ -16431,7 +17238,7 @@ var CheckpointStore = class {
       status: "running",
       events: []
     };
-    await writeFile20(this.filePath(run.runId), JSON.stringify(payload, null, 2), "utf8");
+    await writeFile19(this.filePath(run.runId), JSON.stringify(payload, null, 2), "utf8");
     return payload;
   }
   async append(runId, type, data = {}) {
@@ -16443,7 +17250,7 @@ var CheckpointStore = class {
       data
     });
     run.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await writeFile20(this.filePath(runId), JSON.stringify(run, null, 2), "utf8");
+    await writeFile19(this.filePath(runId), JSON.stringify(run, null, 2), "utf8");
     return true;
   }
   async finish(runId, status) {
@@ -16451,24 +17258,24 @@ var CheckpointStore = class {
     if (!run) return false;
     run.status = status;
     run.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await writeFile20(this.filePath(runId), JSON.stringify(run, null, 2), "utf8");
+    await writeFile19(this.filePath(runId), JSON.stringify(run, null, 2), "utf8");
     return true;
   }
   async load(runId) {
     try {
-      const raw = await readFile26(this.filePath(runId), "utf8");
+      const raw = await readFile27(this.filePath(runId), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
     }
   }
   async list(limit = 20) {
-    if (!existsSync14(this.dir)) return [];
-    const files = (await readdir6(this.dir)).filter((f) => f.endsWith(".json")).slice(-Math.max(1, limit));
+    if (!existsSync16(this.dir)) return [];
+    const files = (await readdir7(this.dir)).filter((f) => f.endsWith(".json")).slice(-Math.max(1, limit));
     const runs = [];
     for (const file of files) {
       try {
-        const raw = await readFile26(join33(this.dir, file), "utf8");
+        const raw = await readFile27(join35(this.dir, file), "utf8");
         runs.push(JSON.parse(raw));
       } catch {
       }
@@ -16579,7 +17386,7 @@ var AVAILABLE_ENGINES = ["auto", "cursor", "claude", "gemini", "codex", "crew-cl
 var REPL_MODE_ORDER = ["manual", "assist", "autopilot"];
 function readJsonFile(filePath) {
   try {
-    if (!existsSync15(filePath)) return null;
+    if (!existsSync17(filePath)) return null;
     return JSON.parse(readFileSync6(filePath, "utf8"));
   } catch {
     return null;
@@ -16588,7 +17395,7 @@ function readJsonFile(filePath) {
 function buildModelSummary(projectDir, state) {
   const envMode = String(process.env.CREW_INTERFACE_MODE || "").toLowerCase();
   const mode = envMode === "connected" ? "connected" : state.useGateway ? "connected" : "standalone";
-  const policyPath = join34(projectDir, ".crew", "model-policy.json");
+  const policyPath = join36(projectDir, ".crew", "model-policy.json");
   const policy = readJsonFile(policyPath) || {};
   const tiers = policy?.tiers || {};
   const policyTierModels = Array.from(
@@ -16599,7 +17406,7 @@ function buildModelSummary(projectDir, state) {
       })
     )
   );
-  const swarmCfg = readJsonFile(join34(homedir8(), ".crewswarm", "crewswarm.json")) || {};
+  const swarmCfg = readJsonFile(join36(homedir9(), ".crewswarm", "crewswarm.json")) || {};
   const agents = Array.isArray(swarmCfg?.agents) ? swarmCfg.agents : [];
   const agentModels = Array.from(
     new Set(
@@ -16635,14 +17442,14 @@ async function buildRepoBootstrap(projectDir) {
   const ignored = /* @__PURE__ */ new Set([".git", "node_modules", ".crew", "dist"]);
   let topEntries = [];
   try {
-    const entries = await readdir7(projectDir, { withFileTypes: true });
+    const entries = await readdir8(projectDir, { withFileTypes: true });
     topEntries = entries.filter((e) => !ignored.has(e.name)).map((e) => e.isDirectory() ? `${e.name}/` : e.name).sort().slice(0, 20);
   } catch {
     topEntries = [];
   }
   let docs = [];
   try {
-    const docsEntries = await readdir7(join34(projectDir, "docs"), { withFileTypes: true });
+    const docsEntries = await readdir8(join36(projectDir, "docs"), { withFileTypes: true });
     docs = docsEntries.filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md")).map((e) => `docs/${e.name}`).sort().slice(0, 15);
   } catch {
     docs = [];
@@ -16657,10 +17464,10 @@ async function buildRepoBootstrap(projectDir) {
     "src/repl/index.ts",
     "src/interface/server.ts"
   ];
-  const keyFiles = keyCandidates.filter((p) => existsSync15(join34(projectDir, p)));
+  const keyFiles = keyCandidates.filter((p) => existsSync17(join36(projectDir, p)));
   let readmeSummary = "";
   try {
-    const raw = await readFile27(join34(projectDir, "README.md"), "utf8");
+    const raw = await readFile28(join36(projectDir, "README.md"), "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     readmeSummary = lines.slice(0, 3).join(" ").slice(0, 260);
   } catch {
@@ -16851,7 +17658,7 @@ async function renderBannerAnimated(banner) {
   for (const line of lines) {
     process.stdout.write(`${chalk3.cyan(line)}
 `);
-    await new Promise((resolve18) => setTimeout(resolve18, 10));
+    await new Promise((resolve19) => setTimeout(resolve19, 10));
   }
 }
 function nextMode(current) {
@@ -16883,11 +17690,13 @@ async function startRepl(options) {
   const memoryBroker = new MemoryBroker(projectDir);
   const checkpoints = new CheckpointStore(projectDir);
   const sessionId = await session.getSessionId();
-  const replRunId = `repl-${randomUUID9()}`;
+  const replRunId = `repl-${randomUUID10()}`;
   let selectedMode = options.initialMode || repoConfig?.repl?.mode || "manual";
   if (!options.initialMode && !repoConfig?.repl?.mode && process.stdin.isTTY) {
     try {
-      const modeAnswer = await (await getInquirer()).prompt([
+      console.log("");
+      const inquirer = await getInquirer();
+      const modeAnswer = await inquirer.prompt([
         {
           type: "list",
           name: "mode",
@@ -16914,7 +17723,8 @@ async function startRepl(options) {
         }
       ]);
       selectedMode = modeAnswer.mode;
-    } catch {
+    } catch (err) {
+      console.error("[repl] Mode picker failed, using manual:", err.message);
       selectedMode = "manual";
     }
   }
@@ -16923,7 +17733,8 @@ async function startRepl(options) {
   let selectedInterfaceMode = options.initialInterfaceMode || (envInterfaceMode === "connected" ? "connected" : envInterfaceMode === "standalone" ? "standalone" : repoDefaultInterface);
   if (options.promptInterfaceMode && process.stdin.isTTY) {
     try {
-      const ifaceAnswer = await (await getInquirer()).prompt([
+      const inquirer2 = await getInquirer();
+      const ifaceAnswer = await inquirer2.prompt([
         {
           type: "list",
           name: "interfaceMode",
@@ -16966,11 +17777,14 @@ async function startRepl(options) {
   const bannerEnabled = repoConfig?.repl?.bannerEnabled !== false;
   const bannerAnimated = repoConfig?.repl?.animatedBanner !== false;
   const bannerFirstLaunchOnly = repoConfig?.repl?.bannerFirstLaunchOnly === true;
-  const bannerSeenFile = join34(projectDir, ".crew", "repl-banner-seen");
-  const replAuditPath = join34(projectDir, ".crew", "repl-events.jsonl");
-  const shouldRenderBanner = bannerEnabled && (!bannerFirstLaunchOnly || !existsSync15(bannerSeenFile));
+  const bannerSeenFile = join36(projectDir, ".crew", "repl-banner-seen");
+  const replAuditPath = join36(projectDir, ".crew", "repl-events.jsonl");
+  const shouldRenderBanner = bannerEnabled && (!bannerFirstLaunchOnly || !existsSync17(bannerSeenFile));
   let auditSeq = 0;
   let checkpointEnabled = true;
+  if (projectDir === homedir9()) {
+    console.log(chalk3.yellow("\n  \u26A0 Running from home directory (~). For best results, cd into a project folder first.\n"));
+  }
   let repoBootstrap = { projectDir, topEntries: [], docs: [], keyFiles: [], readmeSummary: "" };
   const repoBootstrapPromise = buildRepoBootstrap(projectDir).then((b) => {
     repoBootstrap = b;
@@ -16999,8 +17813,8 @@ async function startRepl(options) {
       console.log(chalk3.cyan(BANNER2));
     }
     try {
-      await mkdir21(join34(projectDir, ".crew"), { recursive: true });
-      await writeFile21(bannerSeenFile, (/* @__PURE__ */ new Date()).toISOString(), "utf8");
+      await mkdir21(join36(projectDir, ".crew"), { recursive: true });
+      await writeFile20(bannerSeenFile, (/* @__PURE__ */ new Date()).toISOString(), "utf8");
     } catch {
     }
   }
@@ -17038,8 +17852,8 @@ async function startRepl(options) {
           ...payload
         });
       }
-      await mkdir21(join34(projectDir, ".crew"), { recursive: true });
-      await appendFile5(replAuditPath, `${JSON.stringify(event)}
+      await mkdir21(join36(projectDir, ".crew"), { recursive: true });
+      await appendFile6(replAuditPath, `${JSON.stringify(event)}
 `, "utf8");
     } catch {
     }
@@ -17103,7 +17917,9 @@ async function startRepl(options) {
     "/audit",
     "/validate",
     "/test",
-    "/commit"
+    "/commit",
+    "/sessions",
+    "/resume"
   ];
   const tabCompleter = (line) => {
     const trimmed = line.trim();
@@ -17116,7 +17932,7 @@ async function startRepl(options) {
         const { readdirSync: readdirSync2, statSync: statSync2 } = __require("fs");
         const { dirname: dirname9, basename } = __require("path");
         const partial = trimmed.split(/\s+/).pop() || "";
-        const dir = partial.includes("/") ? join34(projectDir, dirname9(partial)) : projectDir;
+        const dir = partial.includes("/") ? join36(projectDir, dirname9(partial)) : projectDir;
         const prefix = partial.includes("/") ? basename(partial) : partial;
         const entries = readdirSync2(dir, { withFileTypes: true }).filter((e) => e.name.startsWith(prefix) && !e.name.startsWith(".")).slice(0, 20).map((e) => {
           const full = partial.includes("/") ? dirname9(partial) + "/" + e.name : e.name;
@@ -17678,12 +18494,12 @@ async function startRepl(options) {
 `));
           if (wantCommit) {
             try {
-              const { execSync: execSync6 } = await import("node:child_process");
-              const diff = execSync6("git diff --cached --stat", { encoding: "utf8", cwd: projectDir }).trim() || execSync6("git diff --stat", { encoding: "utf8", cwd: projectDir }).trim();
+              const { execSync: execSync7 } = await import("node:child_process");
+              const diff = execSync7("git diff --cached --stat", { encoding: "utf8", cwd: projectDir }).trim() || execSync7("git diff --stat", { encoding: "utf8", cwd: projectDir }).trim();
               if (!diff) {
                 console.log(chalk3.yellow("  No git changes to commit.\n"));
               } else {
-                execSync6("git add -A", { cwd: projectDir });
+                execSync7("git add -A", { cwd: projectDir });
                 const commitResult = await orchestrator.executeLocally(
                   `Generate a concise conventional commit message (type: description, max 72 chars) for this diff. Reply with ONLY the commit message:
 
@@ -17691,7 +18507,7 @@ ${diff.slice(0, 2e3)}`,
                   { model: replState.model }
                 );
                 const commitMsg = String(commitResult.result || "chore: update files").trim().replace(/^['"`]|['"`]$/g, "").split("\n")[0];
-                execSync6(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: projectDir });
+                execSync7(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: projectDir });
                 console.log(chalk3.green(`  \u2713 Committed: ${commitMsg}
 `));
               }
@@ -17775,6 +18591,103 @@ ${diff.slice(0, 2e3)}`,
       } catch (err) {
         console.log(chalk3.red(`
   \u2717 Clear failed: ${err.message}
+`));
+      }
+      return true;
+    }
+    if (command === "/sessions") {
+      try {
+        const transcriptStore = new ConversationTranscriptStore(projectDir);
+        const sessions = await transcriptStore.listSessions();
+        if (sessions.length === 0) {
+          console.log(chalk3.yellow("\n  No sessions found.\n"));
+          return true;
+        }
+        console.log(chalk3.blue("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557"));
+        console.log(chalk3.blue("\u2551                       SESSIONS                               \u2551"));
+        console.log(chalk3.blue("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n"));
+        for (const s of sessions) {
+          const summary = await transcriptStore.getSessionSummary(s.sessionId);
+          if (!summary) continue;
+          const age = summary.lastActivity ? new Date(summary.lastActivity).toLocaleString() : "unknown";
+          console.log(chalk3.cyan(`  ${s.sessionId}`));
+          console.log(chalk3.gray(`    ${summary.turnCount} turns | ${summary.totalTokens} tokens | Last: ${age}`));
+          console.log(chalk3.white(`    "${summary.firstMessage}"`));
+          console.log("");
+        }
+        console.log(chalk3.gray("  Use /resume <session-id> to continue a session.\n"));
+      } catch (err) {
+        console.log(chalk3.red(`
+  \u2717 Failed to list sessions: ${err.message}
+`));
+      }
+      return true;
+    }
+    if (command === "/resume") {
+      const targetId = args[0];
+      try {
+        const transcriptStore = new ConversationTranscriptStore(projectDir);
+        if (!targetId) {
+          const sessions = await transcriptStore.listSessions();
+          if (sessions.length === 0) {
+            console.log(chalk3.yellow("\n  No sessions to resume.\n"));
+            return true;
+          }
+          const summaries = [];
+          for (const s of sessions) {
+            const summary = await transcriptStore.getSessionSummary(s.sessionId);
+            if (summary) summaries.push(summary);
+          }
+          if (summaries.length === 0) {
+            console.log(chalk3.yellow("\n  No sessions with content found.\n"));
+            return true;
+          }
+          const inquirer = await getInquirer();
+          const { chosen } = await inquirer.prompt([{
+            type: "list",
+            name: "chosen",
+            message: "Select session to resume:",
+            choices: summaries.map((s) => ({
+              name: `${s.sessionId.slice(0, 8)}\u2026 \u2014 ${s.turnCount} turns \u2014 "${s.firstMessage}"`,
+              value: s.sessionId
+            }))
+          }]);
+          if (!chosen) return true;
+          const turns2 = await transcriptStore.loadTurns(chosen);
+          await session.setSessionId(chosen);
+          console.log(chalk3.green(`
+  \u2713 Resumed session ${chosen} (${turns2.length} turns loaded)
+`));
+          const recent2 = turns2.slice(-4);
+          for (const t of recent2) {
+            const role = t.role === "user" ? chalk3.cyan("You") : chalk3.green("Assistant");
+            const text = String(t.text || "").slice(0, 120);
+            console.log(chalk3.gray(`  [${role}] ${text}${t.text.length > 120 ? "\u2026" : ""}`));
+          }
+          console.log("");
+          return true;
+        }
+        const turns = await transcriptStore.loadTurns(targetId);
+        if (turns.length === 0) {
+          console.log(chalk3.yellow(`
+  No transcript found for session: ${targetId}
+`));
+          return true;
+        }
+        await session.setSessionId(targetId);
+        console.log(chalk3.green(`
+  \u2713 Resumed session ${targetId} (${turns.length} turns loaded)
+`));
+        const recent = turns.slice(-4);
+        for (const t of recent) {
+          const role = t.role === "user" ? chalk3.cyan("You") : chalk3.green("Assistant");
+          const text = String(t.text || "").slice(0, 120);
+          console.log(chalk3.gray(`  [${role}] ${text}${t.text.length > 120 ? "\u2026" : ""}`));
+        }
+        console.log("");
+      } catch (err) {
+        console.log(chalk3.red(`
+  \u2717 Resume failed: ${err.message}
 `));
       }
       return true;
@@ -17981,7 +18894,7 @@ Completions (${completions.length}):`));
         return true;
       }
       const { resolve: resolvePath } = await import("node:path");
-      const { existsSync: existsSync21 } = await import("node:fs");
+      const { existsSync: existsSync23 } = await import("node:fs");
       const absPath = resolvePath(projectDir, imgPath);
       const ext = absPath.split(".").pop()?.toLowerCase();
       if (!["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "")) {
@@ -17990,7 +18903,7 @@ Completions (${completions.length}):`));
 `));
         return true;
       }
-      if (!existsSync21(absPath)) {
+      if (!existsSync23(absPath)) {
         console.log(chalk3.red(`
   \u2717 File not found: ${absPath}
 `));
@@ -18005,9 +18918,9 @@ Completions (${completions.length}):`));
     }
     if (command === "/diff") {
       try {
-        const { execSync: execSync6 } = await import("node:child_process");
-        const staged = execSync6("git diff --cached", { encoding: "utf8", cwd: projectDir }).trim();
-        const unstaged = execSync6("git diff", { encoding: "utf8", cwd: projectDir }).trim();
+        const { execSync: execSync7 } = await import("node:child_process");
+        const staged = execSync7("git diff --cached", { encoding: "utf8", cwd: projectDir }).trim();
+        const unstaged = execSync7("git diff", { encoding: "utf8", cwd: projectDir }).trim();
         const fullDiff = (staged + "\n" + unstaged).trim();
         if (!fullDiff) {
           console.log(chalk3.yellow("\n  No git changes.\n"));
@@ -18034,19 +18947,19 @@ Completions (${completions.length}):`));
     if (command === "/validate") {
       console.log(chalk3.cyan("\n  \u{1F50D} Running blind validation...\n"));
       try {
-        const { execSync: execSync6 } = await import("node:child_process");
+        const { execSync: execSync7 } = await import("node:child_process");
         let diffStat = "";
         try {
-          diffStat = execSync6("git diff HEAD~1 --stat", { encoding: "utf8", cwd: projectDir }).slice(0, 2e3);
+          diffStat = execSync7("git diff HEAD~1 --stat", { encoding: "utf8", cwd: projectDir }).slice(0, 2e3);
         } catch {
         }
         let codeSnippets = "";
         try {
-          const changedFiles = execSync6("git diff HEAD~1 --name-only", { encoding: "utf8", cwd: projectDir }).split("\n").filter(Boolean).slice(0, 5);
+          const changedFiles = execSync7("git diff HEAD~1 --name-only", { encoding: "utf8", cwd: projectDir }).split("\n").filter(Boolean).slice(0, 5);
           for (const f of changedFiles) {
             try {
               const { readFileSync: readFileSync8 } = await import("node:fs");
-              const content = readFileSync8(join34(projectDir, f), "utf8");
+              const content = readFileSync8(join36(projectDir, f), "utf8");
               codeSnippets += `
 ### ${f}
 \`\`\`
@@ -18397,7 +19310,9 @@ ${memoryContext}`;
           model: dispatchOpts.model,
           onToolCall,
           conversationContext,
-          sessionId: dispatchOpts.sessionId
+          sessionId: dispatchOpts.sessionId,
+          deferApply: !replState.autoApply
+          // In manual/assist mode, defer so REPL can show diff
         }),
         policy
       ) : await withRetries(
@@ -18582,14 +19497,14 @@ init_blast_radius();
 init_agentkeeper();
 
 // src/xai/search.ts
-import { existsSync as existsSync16, readFileSync as readFileSync7 } from "node:fs";
-import { join as join35 } from "node:path";
-import { homedir as homedir9 } from "node:os";
+import { existsSync as existsSync18, readFileSync as readFileSync7 } from "node:fs";
+import { join as join37 } from "node:path";
+import { homedir as homedir10 } from "node:os";
 function getXaiApiKey() {
   if (process.env.XAI_API_KEY) return process.env.XAI_API_KEY;
   if (process.env.GROK_API_KEY) return process.env.GROK_API_KEY;
-  const cfgPath = join35(homedir9(), ".crewswarm", "crewswarm.json");
-  if (!existsSync16(cfgPath)) return null;
+  const cfgPath = join37(homedir10(), ".crewswarm", "crewswarm.json");
+  if (!existsSync18(cfgPath)) return null;
   try {
     const raw = readFileSync7(cfgPath, "utf8");
     const cfg = JSON.parse(raw);
@@ -18655,9 +19570,9 @@ async function runXSearch(query, options = {}) {
 }
 
 // src/config/repo-config.ts
-import { mkdir as mkdir22, readFile as readFile28, writeFile as writeFile22 } from "node:fs/promises";
-import { existsSync as existsSync17 } from "node:fs";
-import { join as join36 } from "node:path";
+import { mkdir as mkdir22, readFile as readFile29, writeFile as writeFile21 } from "node:fs/promises";
+import { existsSync as existsSync19 } from "node:fs";
+import { join as join38 } from "node:path";
 var DEFAULT_CONFIG = {
   cli: {
     model: "",
@@ -18703,8 +19618,8 @@ function parseJsonOrEmpty(raw) {
     return {};
   }
 }
-function configPath(baseDir, scope) {
-  return join36(baseDir, ".crew", scope === "team" ? "crewswarm.json" : "config.local.json");
+function configPath2(baseDir, scope) {
+  return join38(baseDir, ".crew", scope === "team" ? "crewswarm.json" : "config.local.json");
 }
 function assertNoSecrets(input, prefix = "") {
   if (Array.isArray(input)) {
@@ -18736,9 +19651,9 @@ function redactSecrets(input) {
   return out;
 }
 async function readRepoConfig(baseDir, scope) {
-  const path3 = configPath(baseDir, scope);
-  if (!existsSync17(path3)) return {};
-  const raw = await readFile28(path3, "utf8");
+  const path3 = configPath2(baseDir, scope);
+  if (!existsSync19(path3)) return {};
+  const raw = await readFile29(path3, "utf8");
   return parseJsonOrEmpty(raw);
 }
 async function loadResolvedRepoConfig(baseDir = process.cwd()) {
@@ -18747,12 +19662,12 @@ async function loadResolvedRepoConfig(baseDir = process.cwd()) {
   return deepMerge(deepMerge(DEFAULT_CONFIG, team), user);
 }
 async function writeRepoConfig(baseDir, scope, config) {
-  const path3 = configPath(baseDir, scope);
-  await mkdir22(join36(baseDir, ".crew"), { recursive: true });
+  const path3 = configPath2(baseDir, scope);
+  await mkdir22(join38(baseDir, ".crew"), { recursive: true });
   if (scope === "team") {
     assertNoSecrets(config);
   }
-  await writeFile22(path3, JSON.stringify(config, null, 2), "utf8");
+  await writeFile21(path3, JSON.stringify(config, null, 2), "utf8");
 }
 async function setRepoConfigValue(baseDir, scope, keyPath, value) {
   if (scope === "team" && SECRET_KEY_RE.test(keyPath)) {
@@ -18990,9 +19905,9 @@ async function runGitHubDoctor(cwd = process.cwd(), repo) {
 }
 
 // src/config/model-policy.ts
-import { existsSync as existsSync18 } from "node:fs";
-import { readFile as readFile29 } from "node:fs/promises";
-import { join as join37 } from "node:path";
+import { existsSync as existsSync20 } from "node:fs";
+import { readFile as readFile30 } from "node:fs/promises";
+import { join as join39 } from "node:path";
 function sanitizeTier(input) {
   const out = {};
   if (!input || typeof input !== "object") return out;
@@ -19007,11 +19922,11 @@ function sanitizeTier(input) {
   return out;
 }
 async function loadModelPolicy(baseDir = process.cwd()) {
-  const path3 = join37(baseDir, ".crew", "model-policy.json");
-  if (!existsSync18(path3)) return {};
+  const path3 = join39(baseDir, ".crew", "model-policy.json");
+  if (!existsSync20(path3)) return {};
   let parsed;
   try {
-    parsed = JSON.parse(await readFile29(path3, "utf8"));
+    parsed = JSON.parse(await readFile30(path3, "utf8"));
   } catch {
     return {};
   }
@@ -19028,10 +19943,10 @@ async function loadModelPolicy(baseDir = process.cwd()) {
 }
 
 // src/autofix/store.ts
-import { mkdir as mkdir23, readFile as readFile30, writeFile as writeFile23 } from "node:fs/promises";
-import { existsSync as existsSync19 } from "node:fs";
-import { join as join38 } from "node:path";
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { mkdir as mkdir23, readFile as readFile31, writeFile as writeFile22 } from "node:fs/promises";
+import { existsSync as existsSync21 } from "node:fs";
+import { join as join40 } from "node:path";
+import { randomUUID as randomUUID11 } from "node:crypto";
 function createDefaultState() {
   return {
     version: 1,
@@ -19040,13 +19955,13 @@ function createDefaultState() {
 }
 var AutoFixStore = class {
   constructor(baseDir = process.cwd()) {
-    this.dir = join38(baseDir, ".crew", "autofix");
-    this.file = join38(this.dir, "queue.json");
+    this.dir = join40(baseDir, ".crew", "autofix");
+    this.file = join40(this.dir, "queue.json");
   }
   async readState() {
-    if (!existsSync19(this.file)) return createDefaultState();
+    if (!existsSync21(this.file)) return createDefaultState();
     try {
-      const raw = await readFile30(this.file, "utf8");
+      const raw = await readFile31(this.file, "utf8");
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.jobs)) return createDefaultState();
       return {
@@ -19102,13 +20017,13 @@ var AutoFixStore = class {
   }
   async writeState(state) {
     await mkdir23(this.dir, { recursive: true });
-    await writeFile23(this.file, JSON.stringify(state, null, 2), "utf8");
+    await writeFile22(this.file, JSON.stringify(state, null, 2), "utf8");
   }
   async enqueue(input) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const state = await this.readState();
     const job = this.sanitizeJob({
-      id: `af-${randomUUID10()}`,
+      id: `af-${randomUUID11()}`,
       task: String(input.task || "").trim(),
       projectDir: input.projectDir || process.cwd(),
       status: "queued",
@@ -19204,9 +20119,9 @@ var AutoFixStore = class {
 
 // src/autofix/runner.ts
 init_blast_radius();
-import { execSync as execSync4 } from "node:child_process";
-import { mkdir as mkdir24, writeFile as writeFile24 } from "node:fs/promises";
-import { join as join39 } from "node:path";
+import { execSync as execSync5 } from "node:child_process";
+import { mkdir as mkdir24, writeFile as writeFile23 } from "node:fs/promises";
+import { join as join41 } from "node:path";
 function hasCompletionSignal(text) {
   const lower = text.toLowerCase();
   const signals = [
@@ -19268,7 +20183,7 @@ function runValidationCommands(commands = [], cwd = process.cwd()) {
   if (!commands.length) return { passed: true, failedCommand: "", output: "" };
   for (const cmd of commands) {
     try {
-      execSync4(cmd, {
+      execSync5(cmd, {
         cwd,
         stdio: "pipe",
         encoding: "utf8",
@@ -19443,10 +20358,10 @@ async function runAutoFixJob(job, deps) {
         validationFailedCommand: validation.failedCommand || void 0
       };
     }
-    const proposalDir = join39(job.projectDir, ".crew", "autofix", "proposals");
+    const proposalDir = join41(job.projectDir, ".crew", "autofix", "proposals");
     await mkdir24(proposalDir, { recursive: true });
-    const proposalPath = join39(proposalDir, `${job.id}.diff`);
-    await writeFile24(proposalPath, sandbox.preview(changedBranch), "utf8");
+    const proposalPath = join41(proposalDir, `${job.id}.diff`);
+    await writeFile23(proposalPath, sandbox.preview(changedBranch), "utf8");
     await sandbox.rollback(changedBranch);
     await checkpoints.append(runId, "autofix.proposal", {
       policy: job.config.autoApplyPolicy,
@@ -19482,10 +20397,10 @@ async function runAutoFixJob(job, deps) {
 }
 
 // src/cli/index.ts
-import { randomUUID as randomUUID11 } from "node:crypto";
-import { mkdir as mkdir25, readFile as readFile31, writeFile as writeFile25 } from "node:fs/promises";
-import { dirname as dirname8, join as join40 } from "node:path";
-import { execSync as execSync5 } from "node:child_process";
+import { randomUUID as randomUUID12 } from "node:crypto";
+import { mkdir as mkdir25, readFile as readFile32, writeFile as writeFile24 } from "node:fs/promises";
+import { dirname as dirname8, join as join42 } from "node:path";
+import { execSync as execSync6 } from "node:child_process";
 var program = new Command();
 function parseHeadlessShortcutArgs(args) {
   const enabled = args.includes("--headless");
@@ -19554,9 +20469,47 @@ function extractValidationSignals(result2, requireValidation) {
     notes
   };
 }
+function parseDiagnosticOutput(output, command) {
+  const diagnostics = [];
+  const seen = /* @__PURE__ */ new Set();
+  const lines = output.split("\n");
+  for (const line of lines) {
+    let match;
+    match = line.match(/^(.+?)[:(](\d+)[,:](\d+)[):]?\s*[-–]\s*(error|warning|info)\s+(.+)/i);
+    if (!match) {
+      match = line.match(/^(.+?):(\d+):(\d+):\s*(error|warning|note|fatal error):\s*(.+)/i);
+    }
+    if (!match) {
+      match = line.match(/^(.+?):(\d+):\s*(error|Error|FAIL|FAILED|E\s)(.+)/);
+      if (match) {
+        match = [match[0], match[1], match[2], "1", "error", match[4].trim()];
+      }
+    }
+    if (!match) {
+      match = line.match(/^\s*--> (.+?):(\d+):(\d+)/);
+      if (match) {
+        match = [match[0], match[1], match[2], match[3], "error", "see above"];
+      }
+    }
+    if (match) {
+      const key = `${match[1]}:${match[2]}:${match[5]?.slice(0, 80)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        diagnostics.push({
+          file: match[1].trim(),
+          line: Number(match[2]),
+          column: Number(match[3]) || 1,
+          category: String(match[4]).toLowerCase().startsWith("warn") ? "warning" : "error",
+          message: String(match[5]).trim()
+        });
+      }
+    }
+  }
+  return diagnostics;
+}
 function hasBinary(bin) {
   try {
-    execSync5(`command -v ${bin}`, { stdio: "ignore" });
+    execSync6(`command -v ${bin}`, { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -19564,14 +20517,14 @@ function hasBinary(bin) {
 }
 function readBinaryVersion(bin) {
   try {
-    return String(execSync5(`${bin} --version`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })).trim();
+    return String(execSync6(`${bin} --version`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })).trim();
   } catch {
     return "";
   }
 }
 function commandOutput(command) {
   try {
-    const output = String(execSync5(`${command} 2>&1`, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })).trim();
+    const output = String(execSync6(`${command} 2>&1`, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })).trim();
     return { ok: true, output };
   } catch (error) {
     const output = String(error?.stdout || error?.stderr || "").trim();
@@ -19592,7 +20545,7 @@ function detectCliAuthStatus() {
     const text = (result2.output || "").toLowerCase();
     return text.includes("logged in");
   })() : false;
-  const cursor = hasBinary("cursor") && existsSync20(join40(homedir10(), ".cursor", "User", "globalStorage", "state.vscdb"));
+  const cursor = hasBinary("cursor") && existsSync22(join42(homedir11(), ".cursor", "User", "globalStorage", "state.vscdb"));
   return { claude, codex, cursor };
 }
 function detectSubscriptionEngines(tokens) {
@@ -19655,8 +20608,8 @@ function printJsonEnvelope(kind, payload) {
   }, null, 2));
 }
 async function loadPipelineRunEvents(traceId, baseDir = process.cwd()) {
-  const path3 = join40(baseDir, ".crew", "pipeline-runs", `${traceId}.jsonl`);
-  const raw = await readFile31(path3, "utf8");
+  const path3 = join42(baseDir, ".crew", "pipeline-runs", `${traceId}.jsonl`);
+  const raw = await readFile32(path3, "utf8");
   return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
     try {
       return JSON.parse(line);
@@ -19690,7 +20643,7 @@ async function runValidationCommands2(commands = [], cwd = process.cwd()) {
   }
   for (const cmd of commands) {
     try {
-      const out = execSync5(cmd, {
+      const out = execSync6(cmd, {
         cwd,
         stdio: "pipe",
         encoding: "utf8",
@@ -19858,9 +20811,9 @@ async function main(args = []) {
     normalizedArgs.splice(idx, 1);
     args = normalizedArgs;
   }
-  const bannerFile = join40(process.env.HOME || homedir10(), ".crew", "cli-banner-seen");
+  const bannerFile = join42(process.env.HOME || homedir11(), ".crew", "cli-banner-seen");
   const showAlways = process.env.CREW_SHOW_BANNER === "1";
-  if (showAlways || !existsSync20(bannerFile)) {
+  if (showAlways || !existsSync22(bannerFile)) {
     const banner = `
 \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557
 \u2551                                                                           \u2551
@@ -19878,7 +20831,7 @@ async function main(args = []) {
     console.log(chalk5.cyan(banner));
     try {
       await mkdir25(dirname8(bannerFile), { recursive: true });
-      await writeFile25(bannerFile, (/* @__PURE__ */ new Date()).toISOString());
+      await writeFile24(bannerFile, (/* @__PURE__ */ new Date()).toISOString());
     } catch (e) {
       logger3.error(`Failed to mark banner as seen: ${e.message}`);
     }
@@ -19979,7 +20932,7 @@ ${stdinText}
       let docsBlock = "";
       if (options.docs) {
         const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
-        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join40(process.cwd(), "docs"), process.cwd()];
+        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join42(process.cwd(), "docs"), process.cwd()];
         const index = await buildCollectionIndex2(docsPaths, {
           includeCode: Boolean(options.docsCode)
         });
@@ -20086,7 +21039,7 @@ ${multiContext}`;
           },
           fallbackModels,
           checkpoints,
-          `chat-${randomUUID11()}`
+          `chat-${randomUUID12()}`
         );
         const rawResponse = result2.response || result2.result || "";
         const responseText = typeof rawResponse === "object" ? rawResponse.result || rawResponse.output || rawResponse.message || JSON.stringify(rawResponse, null, 2) : String(rawResponse);
@@ -20146,7 +21099,7 @@ ${multiContext}`;
     let currentTask = task;
     let iteration = 0;
     let failedRun = false;
-    const runId = `auto-${randomUUID11()}`;
+    const runId = `auto-${randomUUID12()}`;
     const useMemory = options.memory !== false;
     await checkpoints.beginRun({ runId, mode: "auto", task });
     if (useMemory) {
@@ -20537,7 +21490,7 @@ Total session cost: $${cost.totalUsd.toFixed(4)}`));
       const job = await autoFixStore.claimNext(workerId);
       if (!job) {
         if (once || maxJobs > 0 && processed >= maxJobs) break;
-        await new Promise((resolve18) => setTimeout(resolve18, pollMs));
+        await new Promise((resolve19) => setTimeout(resolve19, pollMs));
         continue;
       }
       logger3.info(`Running ${job.id}: ${job.task}`);
@@ -20626,7 +21579,7 @@ Total session cost: $${cost.totalUsd.toFixed(4)}`));
   });
   program.command("dispatch").description("Dispatch a task to an agent").argument("<agent>", "Agent name").argument("<task>", "Task description").option("-p, --project <path>", "Project directory").option("-g, --gateway <url>", "Override gateway URL").option("-t, --timeout <ms>", "Timeout in milliseconds", "30000").option("-m, --model <id>", "Model ID for cost estimate", executorPrimary || "openai/gpt-4o-mini").option("--fallback-model <id>", "Fallback model chain entry (repeatable)", collectOption, []).option("--engine <id>", "Engine override for direct/bypass gateway paths (e.g. cursor)").option("--direct", "Request direct execution path on gateway", false).option("--bypass", "Request bypass/orchestrator-skip path on gateway", false).option("--output-tokens <count>", "Expected completion tokens for estimate", "1200").option("--max-cost <usd>", "Require confirmation if estimate exceeds this USD amount", String(executorPolicy.maxCostUsd ?? 1)).option("--skip-cost-check", "Skip cost estimate confirmation gate", false).option("--cross-repo", "Inject sibling repository context", false).option("--cache", "Enable output cache for dispatch result", false).option("--cache-ttl <sec>", "Output cache TTL in seconds", "1800").option("--no-memory", "Disable shared AgentKeeper memory").option("--memory-max <n>", "Max recalled memory entries", String(cliDefaults.memoryMax ?? 3)).option("--memory-require-validation", "Store memory only when validation is marked passed", false).option("--image <path>", "Attach an image file to the task (repeatable)", collectOption, []).option("--context-image <path>", "Attach an image file as context (repeatable)", collectOption, []).option("--image-max-bytes <n>", "Max bytes per image context payload", "250000").option("--context-file <path>", "Attach a file as additional context (repeatable)", collectOption, []).option("--context-repo <path>", "Attach git context from another repo (repeatable)", collectOption, []).option("--stdin", "Read additional context from stdin", false).option("--max-context-tokens <n>", "Max context token budget (approx, chars/4)").option("--context-budget-mode <mode>", "trim | stop when budget exceeded", "trim").option("--docs", "Inject matching docs context via collections search", false).option("--docs-path <paths...>", "Custom paths for docs search (default: docs/ + project root)").option("--docs-code", "Include source code files in docs retrieval index", Boolean(cliDefaults.docsCode)).option("--escalate-risk", "Escalate high-risk patches to QA and Security", false).option("--risk-threshold <level>", "Escalation threshold: low|medium|high", "high").option("--retry-attempts <n>", "Retry attempts for transient failures", "2").option("--strict-preflight", "Block execution if doctor checks fail", false).option("--json", "Output machine-readable JSON envelope", false).action(async (agent, task, options) => {
     let finalTask = task;
-    const runId = `dispatch-${randomUUID11()}`;
+    const runId = `dispatch-${randomUUID12()}`;
     const fallbackModels = options.fallbackModel && options.fallbackModel.length > 0 ? options.fallbackModel : executorPolicy.fallback || [];
     try {
       const policy = getExecutionPolicy({
@@ -20675,7 +21628,7 @@ ${stdinText}
       let docsBlock = "";
       if (options.docs) {
         const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
-        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join40(process.cwd(), "docs"), process.cwd()];
+        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join42(process.cwd(), "docs"), process.cwd()];
         const index = await buildCollectionIndex2(docsPaths, {
           includeCode: Boolean(options.docsCode)
         });
@@ -21047,7 +22000,7 @@ Please review for correctness, regressions, and security concerns.`;
       process.exit(1);
     }
   });
-  program.command("map").description("Generate a repository structure graph respecting .gitignore").option("--graph", "Emit dependency graph instead of tree output", false).option("--visualize", "Generate interactive HTML graph (implies --graph)", false).option("--out <path>", "Output path for --visualize HTML", join40(process.cwd(), ".crew", "repo-graph.html")).option("--json", "Emit graph as JSON", false).option("--max-nodes <n>", "Limit graph nodes in text mode", "200").action(async (options) => {
+  program.command("map").description("Generate a repository structure graph respecting .gitignore").option("--graph", "Emit dependency graph instead of tree output", false).option("--visualize", "Generate interactive HTML graph (implies --graph)", false).option("--out <path>", "Output path for --visualize HTML", join42(process.cwd(), ".crew", "repo-graph.html")).option("--json", "Emit graph as JSON", false).option("--max-nodes <n>", "Limit graph nodes in text mode", "200").action(async (options) => {
     const {
       buildRepositoryGraph: buildRepositoryGraph2,
       buildRepositoryMap: buildRepositoryMap2,
@@ -21058,12 +22011,12 @@ Please review for correctness, regressions, and security concerns.`;
       if (options.graph || options.visualize) {
         const graph = await buildRepositoryGraph2(process.cwd());
         if (options.visualize) {
-          const htmlPath = String(options.out || join40(process.cwd(), ".crew", "repo-graph.html"));
+          const htmlPath = String(options.out || join42(process.cwd(), ".crew", "repo-graph.html"));
           await mkdir25(dirname8(htmlPath), { recursive: true });
           const html = buildRepositoryGraphHtml2(graph);
-          await writeFile25(htmlPath, html, "utf8");
+          await writeFile24(htmlPath, html, "utf8");
           const dotPath = `${htmlPath}.dot`;
-          await writeFile25(dotPath, buildRepositoryGraphDot2(graph), "utf8");
+          await writeFile24(dotPath, buildRepositoryGraphDot2(graph), "utf8");
           logger3.success(`Wrote graph visualization: ${htmlPath}`);
           logger3.info(`Wrote Graphviz DOT: ${dotPath}`);
           return;
@@ -21617,7 +22570,7 @@ Please review for correctness, regressions, and security concerns.`;
         "## Recent activity",
         ...last.map((entry) => `- ${entry.timestamp} ${entry.type}${entry.agent ? ` (${entry.agent})` : ""}`)
       ].join("\n");
-      await writeFile25(join40(process.cwd(), ".crew", "context-summary.md"), `${summary}
+      await writeFile24(join42(process.cwd(), ".crew", "context-summary.md"), `${summary}
 `, "utf8");
     }
     logger3.success(
@@ -21892,7 +22845,7 @@ Please review for correctness, regressions, and security concerns.`;
   program.command("plan").description("Generate a detailed plan for a task and execute it step-by-step or in parallel").argument("<task...>", "Task to plan and execute").option("--parallel", "Execute plan steps in parallel using worker pool", false).option("--concurrency <n>", "Maximum parallel workers", "3").option("-m, --model <id>", "Model override for plan execution", plannerPrimary || void 0).option("--fallback-model <id>", "Fallback model chain entry (repeatable)", collectOption, []).option("--resume <runId>", "Resume a prior plan run from checkpoint").option("--validate-cmd <cmd>", "Validation command (repeatable, hard gate)", collectOption, []).option("--reflect-agent <id>", "Agent used for reflect step", "crew-main").option("--no-cache", "Disable planner cache").option("--cache-ttl <sec>", "Planner cache TTL in seconds", "3600").option("--no-memory", "Disable shared AgentKeeper memory").option("--memory-max <n>", "Max recalled memory entries", "3").option("--memory-require-validation", "Store memory only when validation is marked passed", false).option("--json", "Output machine-readable JSON envelope and skip interactive prompts", false).option("--yes", "Auto-approve plan execution without confirmation", false).action(async (taskArray, options) => {
     const task = taskArray.join(" ");
     const planner = new Planner(agentRouter, sessionManager, process.cwd());
-    const runId = options.resume ? String(options.resume) : `plan-${randomUUID11()}`;
+    const runId = options.resume ? String(options.resume) : `plan-${randomUUID12()}`;
     const validationCommands = options.validateCmd || [];
     const fallbackModels = options.fallbackModel && options.fallbackModel.length > 0 ? options.fallbackModel : plannerPolicy.fallback || [];
     const existingRun = options.resume ? await checkpoints.load(runId) : null;
@@ -22196,8 +23149,8 @@ Recommended default engine: ${recommended}`));
               tags: entry.tags || []
             }
           }));
-          const { writeFile: writeFile26 } = await import("node:fs/promises");
-          await writeFile26(options.export, `${lines.join("\n")}
+          const { writeFile: writeFile25 } = await import("node:fs/promises");
+          await writeFile25(options.export, `${lines.join("\n")}
 `, "utf8");
         } else {
           await corrections.exportTo(options.export);
@@ -22320,11 +23273,11 @@ ${check.stderr.slice(0, 4e3)}
       process.exit(1);
     }
     if (options.push) {
-      const { execSync: execSync6 } = await import("node:child_process");
+      const { execSync: execSync7 } = await import("node:child_process");
       try {
-        execSync6("git add -A", { stdio: "inherit", cwd: process.cwd() });
-        execSync6(`git commit -m "${String(options.commitMessage || "").replace(/"/g, '\\"')}"`, { stdio: "inherit", cwd: process.cwd() });
-        execSync6("git push", { stdio: "inherit", cwd: process.cwd() });
+        execSync7("git add -A", { stdio: "inherit", cwd: process.cwd() });
+        execSync7(`git commit -m "${String(options.commitMessage || "").replace(/"/g, '\\"')}"`, { stdio: "inherit", cwd: process.cwd() });
+        execSync7("git push", { stdio: "inherit", cwd: process.cwd() });
         logger3.success("Committed and pushed ci-fix changes.");
       } catch (pushErr) {
         logger3.warn(`ci-fix succeeded, but push failed: ${pushErr.message}`);
@@ -22429,15 +23382,15 @@ ${check.stderr.slice(0, 4e3)}
           return;
         }
       }
-      const { spawn: spawn4 } = await import("node:child_process");
-      await new Promise((resolve18, reject) => {
-        const child = spawn4("npm", ["install", "-g", `crewswarm-cli@${options.tag || "latest"}`], {
+      const { spawn: spawn5 } = await import("node:child_process");
+      await new Promise((resolve19, reject) => {
+        const child = spawn5("npm", ["install", "-g", `crewswarm-cli@${options.tag || "latest"}`], {
           stdio: "inherit",
           shell: false
         });
         child.on("error", reject);
         child.on("close", (code) => {
-          if (code === 0) resolve18(null);
+          if (code === 0) resolve19(null);
           else reject(new Error(`npm install exited with code ${code}`));
         });
       });
@@ -22457,7 +23410,7 @@ ${check.stderr.slice(0, 4e3)}
     console.log(chalk5.blue(`--- Sandbox Preview [${active}] ---`));
     console.log(logger3.highlightDiff(sandbox.preview(active)));
   });
-  program.command("apply").description("Apply all pending changes in the sandbox to the filesystem").argument("[branch]", "Optional branch name to apply").option("-c, --check <command>", 'Command to run after apply (e.g. "npm test")').option("--risk-threshold <level>", "Block apply when risk is >= threshold (low|medium|high)", "high").option("--force", "Bypass risk gate", false).action(async (branch, options) => {
+  program.command("apply").description("Apply all pending changes in the sandbox to the filesystem").argument("[branch]", "Optional branch name to apply").option("-c, --check <command>", 'Command to run after apply (e.g. "npm test")').option("--retries <n>", "Max retry attempts for --check with diagnostic parsing (default: 3)", "3").option("--risk-threshold <level>", "Block apply when risk is >= threshold (low|medium|high)", "high").option("--force", "Bypass risk gate", false).action(async (branch, options) => {
     const active = branch || sandbox.getActiveBranch();
     if (!sandbox.hasChanges(active)) {
       console.log(chalk5.yellow(`No changes to apply on branch "${active}".`));
@@ -22478,27 +23431,65 @@ ${check.stderr.slice(0, 4e3)}
       await sandbox.apply(active);
       logger3.success(`Applied changes from branch "${active}" to: ${paths.join(", ")}`);
       if (options.check) {
-        logger3.info(`Running check: ${options.check}`);
-        const { execSync: execSync6 } = await import("node:child_process");
-        try {
-          execSync6(options.check, { stdio: "inherit", cwd: process.cwd() });
-          logger3.success("Check passed!");
-        } catch (err) {
-          logger3.error(`Check failed: ${err.message}`);
-          logger3.warn("Attempting auto-fix by dispatching to crew-fixer...");
+        const maxRetries = Number(options.retries ?? 3);
+        const { execSync: execSync7 } = await import("node:child_process");
+        let attempt = 0;
+        let lastOutput = "";
+        let passed = false;
+        while (attempt < maxRetries && !passed) {
+          attempt++;
+          logger3.info(`Running check (attempt ${attempt}/${maxRetries}): ${options.check}`);
           try {
-            const fixResult = await agentRouter.dispatch(
-              "crew-fixer",
-              `The command "${options.check}" failed after applying sandbox changes to files: ${paths.join(", ")}. Diagnose and provide a fix.`,
-              {
-                sessionId: await sessionManager.getSessionId(),
-                project: process.cwd()
+            execSync7(options.check, { stdio: "inherit", cwd: process.cwd() });
+            logger3.success("Check passed!");
+            passed = true;
+          } catch (err) {
+            const output = String(err.stderr || err.stdout || err.message || "");
+            const diagnostics = parseDiagnosticOutput(output, options.check);
+            if (diagnostics.length > 0) {
+              logger3.error(`Check failed with ${diagnostics.length} diagnostic(s):`);
+              for (const d of diagnostics.slice(0, 10)) {
+                logger3.warn(`  ${d.file}:${d.line} ${d.message}`);
               }
-            );
-            logger3.printWithHighlight(String(fixResult.result || ""));
-          } catch (fixError) {
-            logger3.warn(`Auto-fixer failed: ${fixError.message}`);
+            } else {
+              logger3.error(`Check failed: ${output.slice(0, 500)}`);
+            }
+            if (output === lastOutput && attempt > 1) {
+              logger3.warn("No progress detected \u2014 stopping retry loop.");
+              break;
+            }
+            lastOutput = output;
+            if (attempt < maxRetries) {
+              logger3.warn(`Dispatching crew-fixer with parsed diagnostics (attempt ${attempt})...`);
+              try {
+                const fixPrompt = diagnostics.length > 0 ? [
+                  `The command "${options.check}" failed after applying changes to: ${paths.join(", ")}.`,
+                  `${diagnostics.length} diagnostic(s) found:`,
+                  ...diagnostics.slice(0, 30).map(
+                    (d) => `  ${d.file}:${d.line}:${d.column} [${d.category}] ${d.message}`
+                  ),
+                  "Fix these specific errors. Apply minimal, targeted changes only."
+                ].join("\n") : `The command "${options.check}" failed after applying sandbox changes to files: ${paths.join(", ")}. Output:
+${output.slice(0, 2e3)}
+Diagnose and provide a fix.`;
+                const fixResult = await agentRouter.dispatch(
+                  "crew-fixer",
+                  fixPrompt,
+                  {
+                    sessionId: await sessionManager.getSessionId(),
+                    project: process.cwd()
+                  }
+                );
+                logger3.printWithHighlight(String(fixResult.result || ""));
+              } catch (fixError) {
+                logger3.warn(`Auto-fixer failed: ${fixError.message}`);
+                break;
+              }
+            }
           }
+        }
+        if (!passed) {
+          logger3.error(`Check failed after ${attempt} attempt(s).`);
         }
       }
     } catch (error) {
@@ -22519,7 +23510,7 @@ ${check.stderr.slice(0, 4e3)}
   program.command("docs").description("Search project docs and optionally code with source-attributed local RAG").argument("<query...>", "Search query").option("--path <paths...>", "Paths to index (default: docs/ and project root)").option("--code", "Include source code files in the index", false).option("--max <n>", "Max results to return", "8").option("--json", "Output as JSON", false).action(async (queryArray, options) => {
     const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
     const query = queryArray.join(" ");
-    const paths = options.path && options.path.length > 0 ? options.path : [join40(process.cwd(), "docs"), process.cwd()];
+    const paths = options.path && options.path.length > 0 ? options.path : [join42(process.cwd(), "docs"), process.cwd()];
     try {
       const index = await buildCollectionIndex2(paths, {
         includeCode: Boolean(options.code)
@@ -22812,16 +23803,16 @@ ${check.stderr.slice(0, 4e3)}
       const n = Math.max(1, parseInt(options.commits || "1", 10));
       let diffStat = "";
       try {
-        diffStat = execSync5(`git diff HEAD~${n} --stat`, { encoding: "utf8", cwd: process.cwd() }).slice(0, 2e3);
+        diffStat = execSync6(`git diff HEAD~${n} --stat`, { encoding: "utf8", cwd: process.cwd() }).slice(0, 2e3);
       } catch {
       }
       let codeSnippets = "";
       try {
-        const changedFiles = execSync5(`git diff HEAD~${n} --name-only`, { encoding: "utf8", cwd: process.cwd() }).split("\n").filter(Boolean).slice(0, 5);
+        const changedFiles = execSync6(`git diff HEAD~${n} --name-only`, { encoding: "utf8", cwd: process.cwd() }).split("\n").filter(Boolean).slice(0, 5);
         for (const f of changedFiles) {
           try {
             const { readFileSync: readFileSync8 } = await import("node:fs");
-            const content = readFileSync8(join40(process.cwd(), f), "utf8");
+            const content = readFileSync8(join42(process.cwd(), f), "utf8");
             codeSnippets += `
 ### ${f}
 \`\`\`
@@ -22870,8 +23861,8 @@ ${codeSnippets || "No code to review"}`;
   program.command("diff").description("Show colored git diff of working directory").option("--staged", "Show only staged changes", false).option("--stat", "Show diffstat only", false).action(async (options) => {
     try {
       const statFlag = options.stat ? " --stat" : "";
-      const staged = execSync5(`git diff --cached${statFlag}`, { encoding: "utf8", cwd: process.cwd() }).trim();
-      const unstaged = options.staged ? "" : execSync5(`git diff${statFlag}`, { encoding: "utf8", cwd: process.cwd() }).trim();
+      const staged = execSync6(`git diff --cached${statFlag}`, { encoding: "utf8", cwd: process.cwd() }).trim();
+      const unstaged = options.staged ? "" : execSync6(`git diff${statFlag}`, { encoding: "utf8", cwd: process.cwd() }).trim();
       const fullDiff = (staged + "\n" + unstaged).trim();
       if (!fullDiff) {
         console.log(chalk5.yellow("No git changes."));

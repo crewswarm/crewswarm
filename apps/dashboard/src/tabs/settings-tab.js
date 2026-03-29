@@ -290,6 +290,36 @@ export async function toggleCursorWaves() {
   } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
 }
 
+export async function loadTmuxBridge() {
+  const btn = document.getElementById('tmuxBridgeBtn');
+  const status = document.getElementById('tmuxBridgeStatus');
+  try {
+    const d = await getJSON('/api/settings/tmux-bridge');
+    const on = d.enabled;
+    if (btn) {
+      btn.textContent = on ? '🔌 ON' : '⚫ OFF';
+      btn.style.background = on ? 'rgba(52,211,153,0.15)' : 'var(--surface-2)';
+      btn.style.borderColor = on ? 'rgba(52,211,153,0.3)' : 'var(--border)';
+      btn.style.color = on ? 'var(--green)' : 'var(--text-2)';
+    }
+    if (status) status.textContent = on
+      ? 'Active — agents can share persistent tmux sessions across pipeline waves. Requires tmux + smux.'
+      : 'Off — agents use standard cold-start execution (no session persistence).';
+  } catch(e) {
+    if (btn) btn.textContent = 'Error';
+    if (status) status.textContent = 'Could not load: ' + e.message;
+  }
+}
+
+export async function toggleTmuxBridge() {
+  try {
+    const current = await getJSON('/api/settings/tmux-bridge');
+    const d = await postJSON('/api/settings/tmux-bridge', { enabled: !current.enabled });
+    showNotification('tmux-bridge ' + (d.enabled ? 'ENABLED 🔌' : 'DISABLED'));
+    loadTmuxBridge();
+  } catch(e) { showNotification('Failed: ' + e.message, 'error'); }
+}
+
 export async function loadAutonomousMentions() {
   const btn = document.getElementById('autonomousMentionsBtn');
   const status = document.getElementById('autonomousMentionsStatus');
@@ -689,6 +719,15 @@ const ENV_GROUPS = [
     vars: [
       { key: 'SHARED_MEMORY_NAMESPACE', hint: 'Namespace prefix for shared memory keys', default: 'crewswarm' },
       { key: 'SHARED_MEMORY_DIR',       hint: 'Directory for shared memory files',       default: '~/.crewswarm/memory' },
+    ],
+  },
+  {
+    label: 'crew-cli — Streaming & Hooks',
+    note: 'Controls for crew-cli streaming output, tool hooks, and session token limits.',
+    vars: [
+      { key: 'CREW_NO_STREAM',          hint: 'Disable streaming output — tokens arrive after full response (true/false)', default: 'false' },
+      { key: 'CREW_HOOKS_FILE',         hint: 'Path to hooks.json for PreToolUse/PostToolUse hooks',                       default: '.crew/hooks.json' },
+      { key: 'CREW_MAX_SESSION_TOKENS',  hint: 'Max estimated tokens per session before oldest turns are trimmed',          default: '100000' },
     ],
   },
   {

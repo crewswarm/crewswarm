@@ -22,6 +22,7 @@ import {
   type LLMTurnResult
 } from './multi-turn-drivers.js';
 import { CorrectionStore } from '../learning/corrections.js';
+import { estimateTokens, getContextWindow, adaptiveCompressionRatio } from '../context/token-compaction.js';
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -218,13 +219,22 @@ function formatToolResult(h: TurnResult, maxLen = 1500): string {
  * For long histories, middle turns are compressed to text summary while
  * the first 3 (initial context) and last 5 (recent work) use full structured format.
  */
-function historyToGeminiContents(history: TurnResult[]): any[] {
+function historyToGeminiContents(history: TurnResult[], model?: string): any[] {
   if (history.length === 0) return [];
   const contents: any[] = [];
 
-  // Selective compression: keep first 3 + last 5 detailed, compress only middle
-  const firstN = 3;
-  const lastN = 5;
+  // Estimate current token usage to pick adaptive compression ratio
+  const totalChars = history.reduce((sum, h) => {
+    const paramStr = JSON.stringify(h.params);
+    const resultStr = typeof h.result === 'string' ? h.result : JSON.stringify(h.result || '');
+    return sum + paramStr.length + resultStr.length;
+  }, 0);
+  const estimatedHistoryTokens = estimateTokens(String.fromCharCode(0).repeat(totalChars));
+  const contextWindow = getContextWindow(model || 'gemini-2.5-flash');
+  const usagePct = estimatedHistoryTokens / contextWindow;
+
+  // Adaptive compression: more aggressive as context fills up
+  const { firstN, lastN } = adaptiveCompressionRatio(history.length, usagePct);
   const needsCompression = history.length > firstN + lastN;
   const headDetailed = needsCompression ? history.slice(0, firstN) : [];
   const middleTurns = needsCompression ? history.slice(firstN, -lastN) : [];
@@ -273,13 +283,21 @@ function historyToGeminiContents(history: TurnResult[]): any[] {
   return contents;
 }
 
-function historyToOpenAIMessages(history: TurnResult[]): any[] {
+function historyToOpenAIMessages(history: TurnResult[], model?: string): any[] {
   if (history.length === 0) return [];
   const messages: any[] = [];
 
-  // Selective compression: keep first 3 + last 5 detailed, compress only middle
-  const firstN = 3;
-  const lastN = 5;
+  // Estimate token usage for adaptive compression
+  const totalChars = history.reduce((sum, h) => {
+    const paramStr = JSON.stringify(h.params);
+    const resultStr = typeof h.result === 'string' ? h.result : JSON.stringify(h.result || '');
+    return sum + paramStr.length + resultStr.length;
+  }, 0);
+  const estimatedHistoryTokens = estimateTokens(String.fromCharCode(0).repeat(totalChars));
+  const contextWindow = getContextWindow(model || 'gpt-4o');
+  const usagePct = estimatedHistoryTokens / contextWindow;
+
+  const { firstN, lastN } = adaptiveCompressionRatio(history.length, usagePct);
   const needsCompression = history.length > firstN + lastN;
   const headDetailed = needsCompression ? history.slice(0, firstN) : [];
   const middleTurns = needsCompression ? history.slice(firstN, -lastN) : [];
@@ -961,7 +979,7 @@ async function executeLLMTurn(
 
   // Gemini: structured multi-turn with functionCall/functionResponse
   if (driver === 'gemini') {
-    const historyMsgs = historyToGeminiContents(history);
+    const historyMsgs = historyToGeminiContents(history, effectiveModel);
     return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
   }
 
@@ -973,7 +991,7 @@ async function executeLLMTurn(
 
   // OpenAI-compatible: structured multi-turn with tool_calls/tool messages
   if (driver === 'openai' || driver === 'openrouter') {
-    const historyMsgs = historyToOpenAIMessages(history);
+    const historyMsgs = historyToOpenAIMessages(history, effectiveModel);
     return executeStreamingOpenAITurn(task, tools, apiUrl!, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
   }
 
