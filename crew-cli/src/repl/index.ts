@@ -86,6 +86,14 @@ interface ReplState {
 type ReplMode = 'manual' | 'assist' | 'autopilot';
 const REPL_MODE_ORDER: ReplMode[] = ['manual', 'assist', 'autopilot'];
 
+const SLASH_COMMAND_GROUPS: Array<{ title: string; commands: string[] }> = [
+  { title: 'Session', commands: ['/help', '/info', '/status', '/history', '/clear', '/exit'] },
+  { title: 'Model & Engine', commands: ['/models', '/model', '/engines', '/engine', '/mode', '/stack'] },
+  { title: 'Sandbox', commands: ['/preview', '/apply', '/rollback', '/branch', '/branches'] },
+  { title: 'Runtime', commands: ['/tools', '/trace', '/timeline', '/cost', '/system'] },
+  { title: 'Context', commands: ['/image', '/search', '/recall', '/sessions', '/resume'] }
+];
+
 interface ModelSummary {
   mode: 'connected' | 'standalone';
   replModel: string;
@@ -113,6 +121,23 @@ function readJsonFile(filePath: string): any | null {
   } catch {
     return null;
   }
+}
+
+function getSlashCommands(): string[] {
+  const flat = SLASH_COMMAND_GROUPS.flatMap((group) => group.commands);
+  return Array.from(new Set(flat));
+}
+
+function printSlashCommandMenu(filter = '') {
+  const normalized = filter.trim().toLowerCase();
+  console.log(chalk.blue('\n--- Slash Commands ---\n'));
+  for (const group of SLASH_COMMAND_GROUPS) {
+    const matches = group.commands.filter((command) => !normalized || command.startsWith(normalized));
+    if (matches.length === 0) continue;
+    console.log(chalk.cyan(`  ${group.title}:`));
+    console.log(`    ${matches.join('   ')}`);
+  }
+  console.log(chalk.gray('\n  Type a command directly or press Tab to autocomplete.\n'));
 }
 
 function resolveConfiguredReplModel(repoConfig?: Required<RepoConfig>): string {
@@ -726,12 +751,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
   // Tab completion for commands and file paths
   const SLASH_COMMANDS = [
-    '/help', '/exit', '/quit', '/model', '/models', '/engine', '/engines',
-    '/mode', '/auto-apply', '/verbose', '/stack', '/preview', '/apply',
-    '/rollback', '/branches', '/info', '/status', '/history', '/clear',
-    '/system', '/image', '/search', '/cost', '/recall', '/checkpoint',
-    '/trace', '/timeline', '/audit', '/validate', '/test', '/commit',
-    '/sessions', '/resume'
+    ...getSlashCommands(),
+    '/quit', '/auto-apply', '/verbose', '/checkpoint', '/audit', '/validate', '/test', '/commit'
   ];
 
   const tabCompleter = (line: string): [string[], string] => {
@@ -814,6 +835,22 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     const trimmed = applySlashAlias(rawInput.trim(), slashAliases);
     if (!trimmed.startsWith('/')) return false;
     const [command, ...args] = trimmed.split(/\s+/);
+
+    if (trimmed === '/') {
+      printSlashCommandMenu();
+      return true;
+    }
+
+    if (!SLASH_COMMANDS.includes(command)) {
+      const matches = SLASH_COMMANDS.filter((item) => item.startsWith(command));
+      if (matches.length > 0) {
+        printSlashCommandMenu(command);
+        return true;
+      }
+      console.log(chalk.red(`\n  ✗ Unknown command "${command}"`));
+      console.log(chalk.gray('  Type / for command suggestions or /help for full help.\n'));
+      return true;
+    }
 
     if (command === '/exit' || command === '/quit') {
       console.log(chalk.cyan('\n  👋 Goodbye! Session saved to .crew/\n'));
@@ -1745,6 +1782,12 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
     const trimmed = input.trim();
 
     if (!trimmed) {
+      rl.prompt();
+      return;
+    }
+
+    if (trimmed === '/') {
+      printSlashCommandMenu();
       rl.prompt();
       return;
     }

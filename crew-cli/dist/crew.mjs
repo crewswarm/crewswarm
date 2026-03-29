@@ -17664,6 +17664,13 @@ var AVAILABLE_MODELS = [
 ];
 var AVAILABLE_ENGINES = ["auto", "cursor", "claude", "gemini", "codex", "crew-cli"];
 var REPL_MODE_ORDER = ["manual", "assist", "autopilot"];
+var SLASH_COMMAND_GROUPS = [
+  { title: "Session", commands: ["/help", "/info", "/status", "/history", "/clear", "/exit"] },
+  { title: "Model & Engine", commands: ["/models", "/model", "/engines", "/engine", "/mode", "/stack"] },
+  { title: "Sandbox", commands: ["/preview", "/apply", "/rollback", "/branch", "/branches"] },
+  { title: "Runtime", commands: ["/tools", "/trace", "/timeline", "/cost", "/system"] },
+  { title: "Context", commands: ["/image", "/search", "/recall", "/sessions", "/resume"] }
+];
 function readJsonFile(filePath) {
   try {
     if (!existsSync17(filePath)) return null;
@@ -17671,6 +17678,21 @@ function readJsonFile(filePath) {
   } catch {
     return null;
   }
+}
+function getSlashCommands() {
+  const flat = SLASH_COMMAND_GROUPS.flatMap((group) => group.commands);
+  return Array.from(new Set(flat));
+}
+function printSlashCommandMenu(filter = "") {
+  const normalized = filter.trim().toLowerCase();
+  console.log(chalk3.blue("\n--- Slash Commands ---\n"));
+  for (const group of SLASH_COMMAND_GROUPS) {
+    const matches = group.commands.filter((command) => !normalized || command.startsWith(normalized));
+    if (matches.length === 0) continue;
+    console.log(chalk3.cyan(`  ${group.title}:`));
+    console.log(`    ${matches.join("   ")}`);
+  }
+  console.log(chalk3.gray("\n  Type a command directly or press Tab to autocomplete.\n"));
 }
 function resolveConfiguredReplModel(repoConfig) {
   const repoModel = String(repoConfig?.repl?.model || "").trim();
@@ -18187,39 +18209,15 @@ async function startRepl(options) {
 `));
   }
   const SLASH_COMMANDS = [
-    "/help",
-    "/exit",
+    ...getSlashCommands(),
     "/quit",
-    "/model",
-    "/models",
-    "/engine",
-    "/engines",
-    "/mode",
     "/auto-apply",
     "/verbose",
-    "/stack",
-    "/preview",
-    "/apply",
-    "/rollback",
-    "/branches",
-    "/info",
-    "/status",
-    "/history",
-    "/clear",
-    "/system",
-    "/image",
-    "/search",
-    "/cost",
-    "/recall",
     "/checkpoint",
-    "/trace",
-    "/timeline",
     "/audit",
     "/validate",
     "/test",
-    "/commit",
-    "/sessions",
-    "/resume"
+    "/commit"
   ];
   const tabCompleter = (line) => {
     const trimmed = line.trim();
@@ -18286,6 +18284,21 @@ async function startRepl(options) {
     const trimmed = applySlashAlias(rawInput.trim(), slashAliases);
     if (!trimmed.startsWith("/")) return false;
     const [command, ...args] = trimmed.split(/\s+/);
+    if (trimmed === "/") {
+      printSlashCommandMenu();
+      return true;
+    }
+    if (!SLASH_COMMANDS.includes(command)) {
+      const matches = SLASH_COMMANDS.filter((item) => item.startsWith(command));
+      if (matches.length > 0) {
+        printSlashCommandMenu(command);
+        return true;
+      }
+      console.log(chalk3.red(`
+  \u2717 Unknown command "${command}"`));
+      console.log(chalk3.gray("  Type / for command suggestions or /help for full help.\n"));
+      return true;
+    }
     if (command === "/exit" || command === "/quit") {
       console.log(chalk3.cyan("\n  \u{1F44B} Goodbye! Session saved to .crew/\n"));
       isClosing = true;
@@ -19267,6 +19280,11 @@ ${implCode}`,
   rl.on("line", async (input) => {
     const trimmed = input.trim();
     if (!trimmed) {
+      rl.prompt();
+      return;
+    }
+    if (trimmed === "/") {
+      printSlashCommandMenu();
       rl.prompt();
       return;
     }
