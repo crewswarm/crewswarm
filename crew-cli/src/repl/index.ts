@@ -115,6 +115,29 @@ function readJsonFile(filePath: string): any | null {
   }
 }
 
+function resolveConfiguredReplModel(repoConfig?: Required<RepoConfig>): string {
+  const repoModel = String(repoConfig?.repl?.model || '').trim();
+  if (repoModel) return repoModel;
+
+  const envCandidates = [
+    process.env.CREW_CHAT_MODEL,
+    process.env.CREW_ROUTER_MODEL,
+    process.env.CREW_EXECUTION_MODEL
+  ].map(value => String(value || '').trim()).filter(Boolean);
+  if (envCandidates.length > 0) return envCandidates[0];
+
+  const swarmCfg = readJsonFile(join(homedir(), '.crewswarm', 'crewswarm.json')) || {};
+  const sharedEnv = swarmCfg?.env && typeof swarmCfg.env === 'object' ? swarmCfg.env : {};
+  const sharedCandidates = [
+    sharedEnv.CREW_CHAT_MODEL,
+    sharedEnv.CREW_ROUTER_MODEL,
+    sharedEnv.CREW_EXECUTION_MODEL
+  ].map((value: unknown) => String(value || '').trim()).filter(Boolean);
+  if (sharedCandidates.length > 0) return sharedCandidates[0];
+
+  return 'grok-4-1-fast-reasoning';
+}
+
 function buildModelSummary(projectDir: string, state: ReplState): ModelSummary {
   const envMode = String(process.env.CREW_INTERFACE_MODE || '').toLowerCase();
   const mode: 'connected' | 'standalone' =
@@ -560,8 +583,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   }
   process.env.CREW_INTERFACE_MODE = selectedInterfaceMode;
 
+  const defaultReplModel = resolveConfiguredReplModel(repoConfig);
+
   const replState: ReplState = {
-    model: String(repoConfig?.repl?.model || 'deepseek-chat'),
+    model: defaultReplModel,
     engine: String(repoConfig?.repl?.engine || 'auto'),
     autoApply: Boolean(repoConfig?.repl?.autoApply),
     memoryMax: Number(repoConfig?.repl?.memoryMax ?? 5),
@@ -631,7 +656,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   // Show dynamic status dashboard on REPL startup
   try {
     const { displayStatus } = await import('../status/dashboard.ts');
-    await displayStatus();
+    await displayStatus({ interfaceMode: selectedInterfaceMode });
   } catch (err) {
     // Silently fail if status dashboard can't be shown
   }

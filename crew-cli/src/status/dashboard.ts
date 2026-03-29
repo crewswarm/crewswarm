@@ -12,6 +12,7 @@ import { homedir } from 'os';
 interface StatusInfo {
   online: boolean;
   activeAgents: number;
+  gatewayReachable: boolean;
   queuedTasks: number;
   runningTasks: number;
   models: string[];
@@ -19,10 +20,15 @@ interface StatusInfo {
   version: string;
 }
 
+interface StatusRenderOptions {
+  interfaceMode?: 'connected' | 'standalone';
+}
+
 export async function getSystemStatus(): Promise<StatusInfo> {
   const status: StatusInfo = {
     online: false,
     activeAgents: 0,
+    gatewayReachable: false,
     queuedTasks: 0,
     runningTasks: 0,
     models: [],
@@ -77,6 +83,7 @@ export async function getSystemStatus(): Promise<StatusInfo> {
     });
     clearTimeout(timeoutId);
     if (statusCheck.ok) {
+      status.gatewayReachable = true;
       const data = await statusCheck.json() as any;
       status.activeAgents = Array.isArray(data.agents) ? data.agents.length : 1;
     }
@@ -87,8 +94,8 @@ export async function getSystemStatus(): Promise<StatusInfo> {
   return status;
 }
 
-export function renderStatusDashboard(status: StatusInfo): string {
-  const { online, activeAgents, models } = status;
+export function renderStatusDashboard(status: StatusInfo, options: StatusRenderOptions = {}): string {
+  const { online, activeAgents, gatewayReachable, models } = status;
   
   // Colors
   const border = chalk.cyan;
@@ -104,16 +111,21 @@ export function renderStatusDashboard(status: StatusInfo): string {
   const progressBar = chalk.green('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
 
   const statusText = online ? chalk.green('READY') : chalk.red('NO API KEYS');
-  const gatewayText = activeAgents > 0 
-    ? chalk.green(`CONNECTED`) + chalk.gray(` (${activeAgents} agents)`)
+  const interfaceMode = options.interfaceMode || (gatewayReachable ? 'connected' : 'standalone');
+  const interfaceText = interfaceMode === 'connected'
+    ? chalk.green('CONNECTED')
     : chalk.gray('STANDALONE');
+  const gatewayText = gatewayReachable
+    ? chalk.green('AVAILABLE') + chalk.gray(activeAgents > 0 ? ` (${activeAgents} agents)` : '')
+    : chalk.gray('UNREACHABLE');
   const modelStack = models.length > 0 ? models.join(' / ') : chalk.red('None — add API keys');
 
   const lines = [
     border('┌─[ CREW-CLI :: AGENTIC CODING ENGINE ]──────────────────────────┐'),
     '',
     `   ${label('STATUS')}     : ${statusText}`,
-    `   ${label('MODE')}       : ${gatewayText}`,
+    `   ${label('INTERFACE')}  : ${interfaceText}`,
+    `   ${label('GATEWAY')}    : ${gatewayText}`,
     `   ${label('PROVIDERS')}  : ${value(modelStack)}`,
     '',
     `   ${accent('Provider Coverage')}: ${progressBar} ${providerCount}/${maxProviders}`,
@@ -126,7 +138,7 @@ export function renderStatusDashboard(status: StatusInfo): string {
   return lines.join('\n');
 }
 
-export async function displayStatus(): Promise<void> {
+export async function displayStatus(options: StatusRenderOptions = {}): Promise<void> {
   const status = await getSystemStatus();
-  console.log('\n' + renderStatusDashboard(status) + '\n');
+  console.log('\n' + renderStatusDashboard(status, options) + '\n');
 }

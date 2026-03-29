@@ -35,7 +35,7 @@ const DEFAULT_CONFIG: Required<RepoConfig> = {
     memoryMax: 3
   },
   repl: {
-    model: 'deepseek-chat',
+    model: '',
     engine: 'auto',
     autoApply: false,
     memoryMax: 5,

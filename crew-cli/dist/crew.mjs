@@ -11433,6 +11433,7 @@ async function getSystemStatus() {
   const status = {
     online: false,
     activeAgents: 0,
+    gatewayReachable: false,
     queuedTasks: 0,
     runningTasks: 0,
     models: [],
@@ -11490,6 +11491,7 @@ async function getSystemStatus() {
     });
     clearTimeout(timeoutId);
     if (statusCheck.ok) {
+      status.gatewayReachable = true;
       const data = await statusCheck.json();
       status.activeAgents = Array.isArray(data.agents) ? data.agents.length : 1;
     }
@@ -11497,8 +11499,8 @@ async function getSystemStatus() {
   }
   return status;
 }
-function renderStatusDashboard(status) {
-  const { online, activeAgents, models } = status;
+function renderStatusDashboard(status, options = {}) {
+  const { online, activeAgents, gatewayReachable: gatewayReachable2, models } = status;
   const border = chalk2.cyan;
   const label = chalk2.gray;
   const value = chalk2.white.bold;
@@ -11509,13 +11511,16 @@ function renderStatusDashboard(status) {
   const empty = 10 - filled;
   const progressBar = chalk2.green("\u2588".repeat(filled)) + chalk2.gray("\u2591".repeat(empty));
   const statusText = online ? chalk2.green("READY") : chalk2.red("NO API KEYS");
-  const gatewayText = activeAgents > 0 ? chalk2.green(`CONNECTED`) + chalk2.gray(` (${activeAgents} agents)`) : chalk2.gray("STANDALONE");
+  const interfaceMode = options.interfaceMode || (gatewayReachable2 ? "connected" : "standalone");
+  const interfaceText = interfaceMode === "connected" ? chalk2.green("CONNECTED") : chalk2.gray("STANDALONE");
+  const gatewayText = gatewayReachable2 ? chalk2.green("AVAILABLE") + chalk2.gray(activeAgents > 0 ? ` (${activeAgents} agents)` : "") : chalk2.gray("UNREACHABLE");
   const modelStack = models.length > 0 ? models.join(" / ") : chalk2.red("None \u2014 add API keys");
   const lines = [
     border("\u250C\u2500[ CREW-CLI :: AGENTIC CODING ENGINE ]\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510"),
     "",
     `   ${label("STATUS")}     : ${statusText}`,
-    `   ${label("MODE")}       : ${gatewayText}`,
+    `   ${label("INTERFACE")}  : ${interfaceText}`,
+    `   ${label("GATEWAY")}    : ${gatewayText}`,
     `   ${label("PROVIDERS")}  : ${value(modelStack)}`,
     "",
     `   ${accent("Provider Coverage")}: ${progressBar} ${providerCount}/${maxProviders}`,
@@ -11526,9 +11531,9 @@ function renderStatusDashboard(status) {
   ];
   return lines.join("\n");
 }
-async function displayStatus() {
+async function displayStatus(options = {}) {
   const status = await getSystemStatus();
-  console.log("\n" + renderStatusDashboard(status) + "\n");
+  console.log("\n" + renderStatusDashboard(status, options) + "\n");
 }
 var init_dashboard = __esm({
   "src/status/dashboard.ts"() {
@@ -17667,6 +17672,25 @@ function readJsonFile(filePath) {
     return null;
   }
 }
+function resolveConfiguredReplModel(repoConfig) {
+  const repoModel = String(repoConfig?.repl?.model || "").trim();
+  if (repoModel) return repoModel;
+  const envCandidates = [
+    process.env.CREW_CHAT_MODEL,
+    process.env.CREW_ROUTER_MODEL,
+    process.env.CREW_EXECUTION_MODEL
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  if (envCandidates.length > 0) return envCandidates[0];
+  const swarmCfg = readJsonFile(join36(homedir9(), ".crewswarm", "crewswarm.json")) || {};
+  const sharedEnv = swarmCfg?.env && typeof swarmCfg.env === "object" ? swarmCfg.env : {};
+  const sharedCandidates = [
+    sharedEnv.CREW_CHAT_MODEL,
+    sharedEnv.CREW_ROUTER_MODEL,
+    sharedEnv.CREW_EXECUTION_MODEL
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  if (sharedCandidates.length > 0) return sharedCandidates[0];
+  return "grok-4-1-fast-reasoning";
+}
 function buildModelSummary(projectDir, state) {
   const envMode = String(process.env.CREW_INTERFACE_MODE || "").toLowerCase();
   const mode = envMode === "connected" ? "connected" : state.useGateway ? "connected" : "standalone";
@@ -18035,8 +18059,9 @@ async function startRepl(options) {
     }
   }
   process.env.CREW_INTERFACE_MODE = selectedInterfaceMode;
+  const defaultReplModel = resolveConfiguredReplModel(repoConfig);
   const replState = {
-    model: String(repoConfig?.repl?.model || "deepseek-chat"),
+    model: defaultReplModel,
     engine: String(repoConfig?.repl?.engine || "auto"),
     autoApply: Boolean(repoConfig?.repl?.autoApply),
     memoryMax: Number(repoConfig?.repl?.memoryMax ?? 5),
@@ -18096,7 +18121,7 @@ async function startRepl(options) {
   await repoBootstrapPromise;
   try {
     const { displayStatus: displayStatus2 } = await Promise.resolve().then(() => (init_dashboard(), dashboard_exports));
-    await displayStatus2();
+    await displayStatus2({ interfaceMode: selectedInterfaceMode });
   } catch (err) {
   }
   let isProcessing = false;
@@ -19858,7 +19883,7 @@ var DEFAULT_CONFIG = {
     memoryMax: 3
   },
   repl: {
-    model: "deepseek-chat",
+    model: "",
     engine: "auto",
     autoApply: false,
     memoryMax: 5,
