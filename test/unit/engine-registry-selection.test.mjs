@@ -13,7 +13,7 @@ describe("engine-registry selection", () => {
     });
 
     const selected = selectEngine(
-      { agentId: "crew-main", agent: "crew-main" },
+      { agentId: "crew-main", agent: "crew-main", engine: "codex", prompt: "implement a new function" },
       "command.run_task",
     );
 

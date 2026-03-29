@@ -14,7 +14,7 @@ describe("engine registry", () => {
     });
 
     const selected = selectEngine(
-      { agentId: "crew-fixer", agent: "crew-fixer" },
+      { agentId: "crew-fixer", agent: "crew-fixer", engine: "codex", prompt: "fix the broken build script" },
       "command.run_task",
     );
 

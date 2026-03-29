@@ -67,6 +67,8 @@ crew-cli/*-PROOF.md
 
 # Agent-written garbage (project files that don't belong)
 *.pyc
+*.bak
+*.tgz
 __pycache__/
 *.prof
 *.prof.run
@@ -81,8 +83,9 @@ models/
 routes/
 backend/
 src/api/
-tests/
-__tests__/
+# Keep test directories tracked — CI needs them
+# tests/
+# __tests__/
 .ai-pm-notes.md
 security-considerations-*.md
 
