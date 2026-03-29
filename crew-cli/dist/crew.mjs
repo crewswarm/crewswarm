@@ -17885,24 +17885,24 @@ function printHelp(uiMode = "repl") {
   console.log("    /apply [--commit]  Write sandbox to disk + auto-commit");
   console.log("    /rollback          Discard all pending changes");
   console.log("    /diff              Show colored git diff");
-  console.log("    /branch            Interactive branch selector");
+  console.log("    /branch [name]     List sandbox branches or switch directly");
   console.log("    /branches          Same as /branch");
   console.log("    /undo              Undo last change");
   console.log("    /validate          Blind AI code review of recent changes");
   console.log("    /test-first <task> TDD: tests -> implement -> validate");
   console.log("    /image <path>      Attach image for next task (multimodal)\n");
   console.log(chalk3.magenta.bold("  \u{1F39B}\uFE0F  Model & Engine:"));
-  console.log("    /models            Interactive model selector (use arrow keys)");
+  console.log("    /models [name]     List available models or switch directly");
   console.log("    /models-config     Show configured models/providers from local config");
   console.log("    /model <name>      Switch execution model directly");
-  console.log("    /engines           Interactive engine selector (use arrow keys)");
-  console.log("    /engine <name>     Switch engine directly (cursor|claude|gemini|auto)");
-  console.log("    /mode [name]       Interactive mode selector or set directly");
+  console.log("    /engines [name]    List engines or switch directly");
+  console.log("    /engine <name>     Switch engine directly (auto|cursor|claude|gemini|codex|crew-cli)");
+  console.log("    /mode [name]       Cycle mode or set directly");
   console.log("    /mode-info         Explain manual/assist/autopilot execution semantics");
   console.log("    Shift+Tab          Cycle REPL mode");
   console.log("    /auto-apply        Toggle auto-apply sandbox changes");
   console.log("    /verbose           Toggle verbose routing output");
-  console.log("    /stack             Configure 3-tier LLM stack (router, executor, gateway)\n");
+  console.log("    /stack ...         Show or set 3-tier stack values without a picker\n");
   console.log(chalk3.green.bold("  \u{1F9E0} Memory & LSP:"));
   console.log("    /memory [query]    Show memory stats or recall");
   console.log("    /tools             Show tool capability matrix by mode/path");
@@ -18267,6 +18267,19 @@ async function startRepl(options) {
     process.stdin.on("keypress", keypressListener);
   }
   const refreshPrompt = () => rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
+  const confirmInline = async (message, defaultYes = true) => {
+    const suffix = defaultYes ? " [Y/n] " : " [y/N] ";
+    return await new Promise((resolve19) => {
+      rl.question(`${message}${suffix}`, (answer) => {
+        const normalized = String(answer || "").trim().toLowerCase();
+        if (!normalized) {
+          resolve19(defaultYes);
+          return;
+        }
+        resolve19(normalized === "y" || normalized === "yes");
+      });
+    });
+  };
   rl.prompt();
   const pendingImages = [];
   const handleSlashCommand = async (rawInput) => {
@@ -18362,35 +18375,20 @@ async function startRepl(options) {
       return true;
     }
     if (command === "/models") {
-      if (!process.stdin.isTTY) {
-        console.log(chalk3.yellow("\n  /models requires an interactive TTY.\n"));
+      const requestedModel = args.join(" ").trim();
+      if (requestedModel) {
+        replState.model = requestedModel;
+        console.log(chalk3.green(`
+  \u2713 Model set to: ${requestedModel}
+`));
         return true;
       }
-      try {
-        const answer = await (await getInquirer()).prompt([
-          {
-            type: "list",
-            name: "model",
-            message: "Select a model:",
-            choices: AVAILABLE_MODELS.map((m) => ({
-              name: m === replState.model ? `${m} ${chalk3.green("(current)")}` : m,
-              value: m
-            })),
-            default: replState.model,
-            loop: false
-          }
-        ]);
-        if (answer.model !== replState.model) {
-          replState.model = answer.model;
-          console.log(chalk3.green(`
-  \u2713 Model set to: ${answer.model}
-`));
-        } else {
-          console.log(chalk3.gray("\n  No change.\n"));
-        }
-      } catch (err) {
-        console.log(chalk3.gray("\n  Cancelled.\n"));
+      console.log(chalk3.blue("\n--- Available Models ---\n"));
+      for (const model of AVAILABLE_MODELS) {
+        const current = model === replState.model ? chalk3.green(" (current)") : "";
+        console.log(`  ${model}${current}`);
       }
+      console.log(chalk3.gray("\n  Use /model <name> or /models <name> to switch.\n"));
       return true;
     }
     if (command === "/model") {
@@ -18446,35 +18444,26 @@ async function startRepl(options) {
       return true;
     }
     if (command === "/engines") {
-      if (!process.stdin.isTTY) {
-        console.log(chalk3.yellow("\n  /engines requires an interactive TTY.\n"));
+      const requestedEngine = (args[0] || "").trim();
+      if (requestedEngine) {
+        if (!AVAILABLE_ENGINES.includes(requestedEngine)) {
+          console.log(chalk3.red(`
+  \u2717 Unknown engine "${requestedEngine}". Available: ${AVAILABLE_ENGINES.join(", ")}
+`));
+          return true;
+        }
+        replState.engine = requestedEngine;
+        console.log(chalk3.green(`
+  \u2713 Engine set to: ${requestedEngine}
+`));
         return true;
       }
-      try {
-        const answer = await (await getInquirer()).prompt([
-          {
-            type: "list",
-            name: "engine",
-            message: "Select an engine:",
-            choices: AVAILABLE_ENGINES.map((e) => ({
-              name: e === replState.engine ? `${e} ${chalk3.green("(current)")}` : e,
-              value: e
-            })),
-            default: replState.engine,
-            loop: false
-          }
-        ]);
-        if (answer.engine !== replState.engine) {
-          replState.engine = answer.engine;
-          console.log(chalk3.green(`
-  \u2713 Engine set to: ${answer.engine}
-`));
-        } else {
-          console.log(chalk3.gray("\n  No change.\n"));
-        }
-      } catch (err) {
-        console.log(chalk3.gray("\n  Cancelled.\n"));
+      console.log(chalk3.blue("\n--- Available Engines ---\n"));
+      for (const engine of AVAILABLE_ENGINES) {
+        const current = engine === replState.engine ? chalk3.green(" (current)") : "";
+        console.log(`  ${engine}${current}`);
       }
+      console.log(chalk3.gray("\n  Use /engine <name> or /engines <name> to switch.\n"));
       return true;
     }
     if (command === "/engine") {
@@ -18512,7 +18501,18 @@ async function startRepl(options) {
       return true;
     }
     if (command === "/stack") {
-      if (args[0] === "show") {
+      const subcommand = (args[0] || "show").trim().toLowerCase();
+      const stackValue = args.slice(1).join(" ").trim();
+      const stackFieldMap = {
+        "router-model": "CREW_ROUTER_MODEL",
+        "reasoning-model": "CREW_REASONING_MODEL",
+        "l2a-model": "CREW_L2A_MODEL",
+        "l2b-model": "CREW_L2B_MODEL",
+        "qa-model": "CREW_QA_MODEL",
+        "extra-validators": "CREW_L2_EXTRA_VALIDATORS",
+        "max-parallel-workers": "CREW_MAX_PARALLEL_WORKERS"
+      };
+      if (subcommand === "show") {
         console.log(chalk3.blue("\n--- Stack (session) ---\n"));
         console.log(`  Tier 1 router provider : ${replState.routerProvider}`);
         console.log(`  Tier 2 executor provider: ${replState.executorProvider}`);
@@ -18524,113 +18524,71 @@ async function startRepl(options) {
         console.log(`  CREW_QA_MODEL          : ${process.env.CREW_QA_MODEL || "(unset)"}`);
         console.log(`  CREW_MAX_PARALLEL_WORKERS: ${process.env.CREW_MAX_PARALLEL_WORKERS || "(unset)"}
 `);
+        console.log(chalk3.gray("  Set values with:"));
+        console.log(chalk3.gray("    /stack router <grok|gemini|deepseek>"));
+        console.log(chalk3.gray("    /stack executor <grok|gemini|deepseek>"));
+        console.log(chalk3.gray("    /stack gateway <on|off>"));
+        console.log(chalk3.gray("    /stack router-model <value>"));
+        console.log(chalk3.gray("    /stack reasoning-model <value>"));
+        console.log(chalk3.gray("    /stack l2a-model <value>"));
+        console.log(chalk3.gray("    /stack l2b-model <value>"));
+        console.log(chalk3.gray("    /stack qa-model <value>"));
+        console.log(chalk3.gray("    /stack extra-validators <csv>"));
+        console.log(chalk3.gray("    /stack max-parallel-workers <1-32>\n"));
         return true;
       }
-      if (!process.stdin.isTTY) {
-        console.log(chalk3.yellow("\n  /stack requires an interactive TTY.\n"));
-        return true;
-      }
-      try {
-        console.log(chalk3.blue("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557"));
-        console.log(chalk3.blue("\u2551           3-TIER LLM STACK CONFIGURATION                     \u2551"));
-        console.log(chalk3.blue("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n"));
-        const answers = await (await getInquirer()).prompt([
-          {
-            type: "list",
-            name: "routerProvider",
-            message: "Tier 1: Router (decides CHAT/CODE/DISPATCH):",
-            choices: [
-              { name: "Grok (x.ai) - Fast, smart", value: "grok" },
-              { name: "Gemini - Cheap, 2M context", value: "gemini" },
-              { name: "DeepSeek - Code specialist", value: "deepseek" }
-            ],
-            default: replState.routerProvider,
-            loop: false
-          },
-          {
-            type: "list",
-            name: "executorProvider",
-            message: "Tier 2: Executor (runs tasks locally):",
-            choices: [
-              { name: "Grok (x.ai) - Fast, smart", value: "grok" },
-              { name: "Gemini - Cheap, 2M context", value: "gemini" },
-              { name: "DeepSeek - Code specialist", value: "deepseek" }
-            ],
-            default: replState.executorProvider,
-            loop: false
-          },
-          {
-            type: "confirm",
-            name: "useGateway",
-            message: "Tier 3: Enable gateway for specialists (crew-qa, crew-pm, etc)?",
-            default: replState.useGateway
-          },
-          {
-            type: "input",
-            name: "routerModel",
-            message: "L2 router model (CREW_ROUTER_MODEL, optional):",
-            default: String(process.env.CREW_ROUTER_MODEL || "")
-          },
-          {
-            type: "input",
-            name: "reasoningModel",
-            message: "L2 planner baseline model (CREW_REASONING_MODEL, optional):",
-            default: String(process.env.CREW_REASONING_MODEL || "")
-          },
-          {
-            type: "input",
-            name: "l2aModel",
-            message: "L2A decomposer model (CREW_L2A_MODEL, optional):",
-            default: String(process.env.CREW_L2A_MODEL || "")
-          },
-          {
-            type: "input",
-            name: "l2bModel",
-            message: "L2B validator model (CREW_L2B_MODEL, optional):",
-            default: String(process.env.CREW_L2B_MODEL || "")
-          },
-          {
-            type: "input",
-            name: "qaModel",
-            message: "QA gate model (CREW_QA_MODEL, optional):",
-            default: String(process.env.CREW_QA_MODEL || "")
-          },
-          {
-            type: "input",
-            name: "extraL2Validators",
-            message: "Extra L2 validator models CSV (CREW_L2_EXTRA_VALIDATORS, optional):",
-            default: String(process.env.CREW_L2_EXTRA_VALIDATORS || "")
-          },
-          {
-            type: "input",
-            name: "maxParallelWorkers",
-            message: "Tier 3 max parallel workers (CREW_MAX_PARALLEL_WORKERS):",
-            default: String(process.env.CREW_MAX_PARALLEL_WORKERS || "6"),
-            validate: (value) => {
-              const n = Number.parseInt(String(value || ""), 10);
-              return Number.isFinite(n) && n >= 1 && n <= 32 ? true : "Enter a number between 1 and 32";
-            }
-          }
-        ]);
-        replState.routerProvider = answers.routerProvider;
-        replState.executorProvider = answers.executorProvider;
-        replState.useGateway = answers.useGateway;
-        console.log(chalk3.green("\n  \u2713 Stack configured:"));
-        console.log(chalk3.cyan(`    Tier 1 (Router)  : ${replState.routerProvider}`));
-        console.log(chalk3.cyan(`    Tier 2 (Executor): ${replState.executorProvider}`));
-        console.log(chalk3.cyan(`    Tier 3 (Gateway) : ${replState.useGateway ? "ENABLED" : "DISABLED"}`));
-        console.log();
+      if (subcommand === "router" || subcommand === "executor") {
+        if (!["grok", "gemini", "deepseek"].includes(stackValue)) {
+          console.log(chalk3.red(`
+  \u2717 ${subcommand} must be one of: grok, gemini, deepseek
+`));
+          return true;
+        }
+        if (subcommand === "router") replState.routerProvider = stackValue;
+        if (subcommand === "executor") replState.executorProvider = stackValue;
         process.env.CREW_ROUTING_ORDER = `${replState.routerProvider},${replState.executorProvider}`;
-        process.env.CREW_ROUTER_MODEL = String(answers.routerModel || "").trim();
-        process.env.CREW_REASONING_MODEL = String(answers.reasoningModel || "").trim();
-        process.env.CREW_L2A_MODEL = String(answers.l2aModel || "").trim();
-        process.env.CREW_L2B_MODEL = String(answers.l2bModel || "").trim();
-        process.env.CREW_QA_MODEL = String(answers.qaModel || "").trim();
-        process.env.CREW_L2_EXTRA_VALIDATORS = String(answers.extraL2Validators || "").trim();
-        process.env.CREW_MAX_PARALLEL_WORKERS = String(Math.max(1, Math.min(32, Number.parseInt(String(answers.maxParallelWorkers || "6"), 10) || 6)));
-      } catch (err) {
-        console.log(chalk3.gray("\n  Cancelled.\n"));
+        console.log(chalk3.green(`
+  \u2713 Stack ${subcommand} set to: ${stackValue}
+`));
+        return true;
       }
+      if (subcommand === "gateway") {
+        if (!["on", "off", "true", "false", "1", "0"].includes(stackValue)) {
+          console.log(chalk3.red("\n  \u2717 gateway must be one of: on, off, true, false, 1, 0\n"));
+          return true;
+        }
+        replState.useGateway = ["on", "true", "1"].includes(stackValue);
+        console.log(chalk3.green(`
+  \u2713 Stack gateway: ${replState.useGateway ? "ENABLED" : "DISABLED"}
+`));
+        return true;
+      }
+      if (stackFieldMap[subcommand]) {
+        const envKey = stackFieldMap[subcommand];
+        if (!stackValue) {
+          console.log(chalk3.red(`
+  \u2717 Provide a value for ${subcommand}.
+`));
+          return true;
+        }
+        if (envKey === "CREW_MAX_PARALLEL_WORKERS") {
+          const n = Number.parseInt(stackValue, 10);
+          if (!Number.isFinite(n) || n < 1 || n > 32) {
+            console.log(chalk3.red("\n  \u2717 max-parallel-workers must be a number between 1 and 32.\n"));
+            return true;
+          }
+          process.env[envKey] = String(n);
+        } else {
+          process.env[envKey] = stackValue;
+        }
+        console.log(chalk3.green(`
+  \u2713 ${envKey} set for this session.
+`));
+        return true;
+      }
+      console.log(chalk3.red(`
+  \u2717 Unknown /stack subcommand "${subcommand}". Use /stack show for options.
+`));
       return true;
     }
     if (command === "/verbose") {
@@ -18643,56 +18601,16 @@ async function startRepl(options) {
     if (command === "/mode") {
       const requested = (args[0] || "").trim().toLowerCase();
       if (!requested) {
-        if (!process.stdin.isTTY) {
-          console.log(chalk3.yellow("\n  /mode (interactive) requires an interactive TTY. Use /mode <manual|assist|autopilot>.\n"));
-          return true;
-        }
-        try {
-          const answer = await (await getInquirer()).prompt([
-            {
-              type: "list",
-              name: "mode",
-              message: "Select REPL mode:",
-              choices: [
-                {
-                  name: "manual - Requires approval for all changes",
-                  value: "manual",
-                  short: "manual"
-                },
-                {
-                  name: "assist - Memory-enhanced assistance",
-                  value: "assist",
-                  short: "assist"
-                },
-                {
-                  name: "autopilot - Full autonomous mode (auto-apply)",
-                  value: "autopilot",
-                  short: "autopilot"
-                }
-              ].map((choice) => ({
-                ...choice,
-                name: choice.value === replState.mode ? `${choice.name} ${chalk3.green("(current)")}` : choice.name
-              })),
-              default: replState.mode,
-              loop: false
-            }
-          ]);
-          if (answer.mode !== replState.mode) {
-            const from2 = replState.mode;
-            replState.mode = answer.mode;
-            if (replState.mode === "manual") replState.autoApply = false;
-            if (replState.mode === "autopilot") replState.autoApply = true;
-            rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
-            await recordReplEvent("mode_change", { from: from2, to: replState.mode, source: "interactive" });
-            console.log(chalk3.green(`
+        const from2 = replState.mode;
+        replState.mode = nextMode(replState.mode);
+        if (replState.mode === "manual") replState.autoApply = false;
+        if (replState.mode === "autopilot") replState.autoApply = true;
+        rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
+        await recordReplEvent("mode_change", { from: from2, to: replState.mode, source: "cycle" });
+        console.log(chalk3.green(`
   \u2713 Mode set to: ${replState.mode}
 `));
-          } else {
-            console.log(chalk3.gray("\n  No change.\n"));
-          }
-        } catch (err) {
-          console.log(chalk3.gray("\n  Cancelled.\n"));
-        }
+        console.log(chalk3.gray("  Use /mode <manual|assist|autopilot> to set a specific mode.\n"));
         return true;
       }
       if (!REPL_MODE_ORDER.includes(requested)) {
@@ -18839,13 +18757,9 @@ ${diff.slice(0, 2e3)}`,
       return true;
     }
     if (command === "/branches" || command === "/branch") {
-      if (!process.stdin.isTTY) {
-        console.log(chalk3.yellow("\n  /branch requires an interactive TTY.\n"));
-        return true;
-      }
       const active = sandbox.getActiveBranch();
       const branches = sandbox.getBranches();
-      if (branches.length <= 1) {
+      if (!args[0]) {
         console.log(chalk3.blue("\n\u250C\u2500 Sandbox Branches"));
         branches.forEach((b) => {
           if (b === active) {
@@ -18855,33 +18769,24 @@ ${diff.slice(0, 2e3)}`,
           }
         });
         console.log("\u2514\u2500\n");
+        console.log(chalk3.gray("  Use /branch <name> to switch.\n"));
         return true;
       }
-      try {
-        const answer = await (await getInquirer()).prompt([
-          {
-            type: "list",
-            name: "branch",
-            message: "Select sandbox branch:",
-            choices: branches.map((b) => ({
-              name: b === active ? `${b} ${chalk3.green("(active)")}` : b,
-              value: b
-            })),
-            default: active,
-            loop: false
-          }
-        ]);
-        if (answer.branch !== active) {
-          sandbox.switchBranch(answer.branch);
-          console.log(chalk3.green(`
-  \u2713 Switched to branch: ${answer.branch}
+      const targetBranch = args[0];
+      if (!branches.includes(targetBranch)) {
+        console.log(chalk3.red(`
+  \u2717 Unknown sandbox branch "${targetBranch}".
 `));
-        } else {
-          console.log(chalk3.gray("\n  No change.\n"));
-        }
-      } catch (err) {
-        console.log(chalk3.gray("\n  Cancelled.\n"));
+        return true;
       }
+      if (targetBranch === active) {
+        console.log(chalk3.gray("\n  No change.\n"));
+        return true;
+      }
+      sandbox.switchBranch(targetBranch);
+      console.log(chalk3.green(`
+  \u2713 Switched to branch: ${targetBranch}
+`));
       return true;
     }
     if (command === "/clear") {
@@ -18942,29 +18847,13 @@ ${diff.slice(0, 2e3)}`,
             console.log(chalk3.yellow("\n  No sessions with content found.\n"));
             return true;
           }
-          const inquirer = await getInquirer();
-          const { chosen } = await inquirer.prompt([{
-            type: "list",
-            name: "chosen",
-            message: "Select session to resume:",
-            choices: summaries.map((s) => ({
-              name: `${s.sessionId.slice(0, 8)}\u2026 \u2014 ${s.turnCount} turns \u2014 "${s.firstMessage}"`,
-              value: s.sessionId
-            }))
-          }]);
-          if (!chosen) return true;
-          const turns2 = await transcriptStore.loadTurns(chosen);
-          await session.setSessionId(chosen);
-          console.log(chalk3.green(`
-  \u2713 Resumed session ${chosen} (${turns2.length} turns loaded)
-`));
-          const recent2 = turns2.slice(-4);
-          for (const t of recent2) {
-            const role = t.role === "user" ? chalk3.cyan("You") : chalk3.green("Assistant");
-            const text = String(t.text || "").slice(0, 120);
-            console.log(chalk3.gray(`  [${role}] ${text}${t.text.length > 120 ? "\u2026" : ""}`));
+          console.log(chalk3.blue("\n--- Resumable Sessions ---\n"));
+          for (const s of summaries) {
+            console.log(chalk3.cyan(`  ${s.sessionId}`));
+            console.log(chalk3.gray(`    ${s.turnCount} turns | ${s.totalTokens} tokens`));
+            console.log(chalk3.white(`    "${s.firstMessage}"`));
           }
-          console.log("");
+          console.log(chalk3.gray("\n  Use /resume <session-id> to continue one of these sessions.\n"));
           return true;
         }
         const turns = await transcriptStore.loadTurns(targetId);
@@ -19549,15 +19438,11 @@ ${memoryContext}`;
       if (behavior.executionConfirm && process.stdin.isTTY) {
         stopSpinner();
         const estimate = estimateCost(taskInput, replState.model || void 0, 1800);
-        const answer = await (await getInquirer()).prompt([
-          {
-            type: "confirm",
-            name: "ok",
-            message: `Execute ${route.decision} via ${agent}? est ~$${estimate.totalUsd.toFixed(4)}`,
-            default: true
-          }
-        ]);
-        if (!answer.ok) {
+        const ok = await confirmInline(
+          `Execute ${route.decision} via ${agent}? est ~$${estimate.totalUsd.toFixed(4)}`,
+          true
+        );
+        if (!ok) {
           console.log(chalk3.yellow("\n  Skipped execution.\n"));
           isProcessing = false;
           rl.prompt();
