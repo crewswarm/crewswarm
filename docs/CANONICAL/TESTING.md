@@ -30,6 +30,12 @@ Routing changes should keep tests for:
 # Full Node test aggregate
 npm run test:all
 
+# Repo-wide coverage summary
+npm run test:coverage
+
+# Root runtime coverage only
+npm run test:coverage:root
+
 # Unit tests (no services required)
 node --test test/unit/mention-routing-intent.test.mjs
 node --test test/unit/thread-binding.test.mjs
@@ -92,6 +98,14 @@ npx playwright install   # if browsers not installed
 Use browser automation for UI state that shell smoke cannot validate: project creation, editor/chat controls, persisted chat history after reload.
 
 Legacy root verification scripts were archived under `docs/archive/legacy-tests/root/`. Keep new tests in `test/` (unit/integration/e2e) or `tests/e2e/` (Playwright).
+
+## Coverage notes
+
+- Root repo coverage is reported by `npm run test:coverage:root` using Node's built-in test coverage.
+- `crew-cli` coverage is reported by `cd crew-cli && npm run test:coverage`.
+- `npm run test:coverage` at repo root runs both and writes a combined markdown report to `coverage/coverage-report.md`.
+- The current coverage report is strongest for hermetic unit/integration surfaces. Live services, messaging bridges, and browser flows still rely partly on smoke and E2E checks rather than a single unified percentage.
+- See `docs/CANONICAL/COVERAGE-MATRIX.md` for a feature-by-feature status view instead of treating one percentage as universal truth.
 
 ## Rule for contributors
 
