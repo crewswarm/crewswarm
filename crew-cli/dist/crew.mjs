@@ -7791,10 +7791,420 @@ var init_file_commands = __esm({
   }
 });
 
+// src/context/codebase-rag.ts
+var codebase_rag_exports = {};
+__export(codebase_rag_exports, {
+  CodebaseIndex: () => CodebaseIndex,
+  autoLoadRelevantFiles: () => autoLoadRelevantFiles,
+  rebuildEmbeddingsIndex: () => rebuildEmbeddingsIndex,
+  shouldUseRag: () => shouldUseRag
+});
+import { execSync as execSync4 } from "node:child_process";
+import { readFile as readFile8, writeFile as writeFile6, mkdir as mkdir7 } from "node:fs/promises";
+import { existsSync as existsSync8 } from "node:fs";
+import { createHash as createHash2 } from "node:crypto";
+import { relative as relative3, join as join14 } from "node:path";
+function extractKeywords(query) {
+  return (query.toLowerCase().match(/\b[a-z]{3,}\b/g) || []).filter((kw) => !STOP_WORDS.has(kw));
+}
+function contentHash(content) {
+  return createHash2("sha256").update(content).digest("hex").slice(0, 16);
+}
+function toHashedVector2(text, dim = 256) {
+  const vec = new Float64Array(dim);
+  const tokens = text.toLowerCase().split(/\W+/).filter((t) => t.length > 2);
+  for (const token of tokens) {
+    let h = 0;
+    for (let i = 0; i < token.length; i++) {
+      h = (h << 5) - h + token.charCodeAt(i) | 0;
+    }
+    const idx = (h % dim + dim) % dim;
+    vec[idx] += 1;
+  }
+  let norm = 0;
+  for (let i = 0; i < dim; i++) norm += vec[i] * vec[i];
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < dim; i++) vec[i] /= norm;
+  return vec;
+}
+function cosineSimilarity2(a, b) {
+  if (a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
+}
+function detectEmbeddingProvider() {
+  const explicit = String(process.env.CREW_EMBEDDING_PROVIDER || "").toLowerCase();
+  if (explicit === "openai" || explicit === "gemini" || explicit === "local") return explicit;
+  if (process.env.OPENAI_API_KEY) return "openai";
+  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) return "gemini";
+  return "local";
+}
+async function generateEmbedding(text, provider) {
+  const p = provider || detectEmbeddingProvider();
+  if (p === "openai") {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("OPENAI_API_KEY not set");
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8e3) })
+    });
+    if (!response.ok) throw new Error(`OpenAI embedding failed: ${response.statusText}`);
+    const data = await response.json();
+    return data.data[0].embedding;
+  }
+  if (p === "gemini") {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY not set");
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "models/text-embedding-004",
+          content: { parts: [{ text: text.slice(0, 8e3) }] }
+        })
+      }
+    );
+    if (!response.ok) throw new Error(`Gemini embedding failed: ${response.statusText}`);
+    const data = await response.json();
+    return data.embedding?.values || [];
+  }
+  return Array.from(toHashedVector2(text));
+}
+async function keywordBasedSearch(query, cwd, options) {
+  const keywords = extractKeywords(query);
+  if (keywords.length === 0) return [];
+  try {
+    const pattern = keywords.slice(0, 5).join("|");
+    const stdout = execSync4(
+      `rg -l "${pattern}" --type-add 'code:*.{ts,js,tsx,jsx,py,go,rs,java}' -t code`,
+      { cwd, encoding: "utf8", maxBuffer: 1024 * 1024, stdio: ["pipe", "pipe", "ignore"] }
+    );
+    const files = stdout.trim().split("\n").filter(Boolean);
+    return files.map((file) => {
+      let score = 0;
+      const lowerFile = file.toLowerCase();
+      for (const kw of keywords) {
+        if (lowerFile.includes(kw)) score += 2;
+      }
+      for (const entry of options.sessionHistory || []) {
+        if (entry.output?.includes(file)) score += 3;
+      }
+      return { file, score };
+    });
+  } catch {
+    return [];
+  }
+}
+async function expandWithImports(files, cwd, maxDepth = 1) {
+  const expanded = new Set(files);
+  try {
+    const graph = await buildRepositoryGraph(cwd);
+    for (const file of files) {
+      const node = graph.nodes.find((n) => n.path === file || join14(cwd, n.path) === file);
+      if (node) {
+        for (const importPath of node.imports.slice(0, 5)) expanded.add(importPath);
+        for (const importedByPath of node.importedBy.slice(0, 3)) expanded.add(importedByPath);
+      }
+    }
+  } catch (err) {
+    console.warn("[RAG] Import graph expansion failed:", err.message);
+  }
+  return expanded;
+}
+async function autoLoadRelevantFiles(query, cwd, options = {}) {
+  const rawMode = options.mode || String(process.env.CREW_RAG_MODE || "auto").toLowerCase();
+  const tokenBudget = options.tokenBudget || Number(process.env.CREW_RAG_TOKEN_BUDGET || 8e3);
+  const maxFiles = options.maxFiles || Number(process.env.CREW_RAG_MAX_FILES_LOAD || 10);
+  let mode = rawMode;
+  if (mode === "auto") {
+    const index = CodebaseIndex.getInstance(cwd);
+    mode = index.isReady() ? "semantic" : "keyword";
+  }
+  if (mode === "off") {
+    return { context: "", filesLoaded: [], mode: "off", tokenEstimate: 0 };
+  }
+  let scoredFiles = [];
+  if (mode === "semantic") {
+    try {
+      const index = CodebaseIndex.getInstance(cwd);
+      scoredFiles = await index.query(query, maxFiles * 2);
+    } catch (err) {
+      console.warn("[RAG] Semantic search failed, falling back to keyword:", err.message);
+      scoredFiles = await keywordBasedSearch(query, cwd, options);
+    }
+  } else {
+    scoredFiles = await keywordBasedSearch(query, cwd, options);
+  }
+  if (scoredFiles.length === 0) {
+    return { context: "", filesLoaded: [], mode, tokenEstimate: 0 };
+  }
+  let filesToLoad = scoredFiles.map((x) => x.file);
+  if (mode === "import-graph" || mode === "semantic") {
+    const expanded = await expandWithImports(filesToLoad.slice(0, 5), cwd);
+    filesToLoad = Array.from(expanded);
+  }
+  const loaded = [];
+  const contextParts = [];
+  let charsUsed = 0;
+  const charBudget = tokenBudget * 4;
+  const originalSet = new Set(scoredFiles.slice(0, 10).map((x) => x.file));
+  const finalScored = filesToLoad.map((file) => ({
+    file,
+    score: originalSet.has(file) ? 10 : 1
+  }));
+  finalScored.sort((a, b) => b.score - a.score);
+  for (const { file } of finalScored.slice(0, maxFiles)) {
+    try {
+      const fullPath = join14(cwd, file);
+      const content = await readFile8(fullPath, "utf8");
+      if (charsUsed + content.length > charBudget) break;
+      const relPath = relative3(cwd, file);
+      contextParts.push(`
+=== ${relPath} ===
+${content}`);
+      loaded.push(relPath);
+      charsUsed += content.length;
+    } catch {
+    }
+  }
+  if (loaded.length === 0) {
+    return { context: "", filesLoaded: [], mode, tokenEstimate: 0 };
+  }
+  const context = `## Relevant Codebase Context (${loaded.length} files loaded via ${mode} RAG)
+${contextParts.join("\n\n")}`;
+  const tokenEstimate = Math.ceil(charsUsed / 4);
+  return { context, filesLoaded: loaded, mode, tokenEstimate };
+}
+function shouldUseRag(query) {
+  const lower = query.toLowerCase();
+  const hasExecutionIntent = /\b(implement|create|build|write|fix|refactor|modify|update|add|patch|test|debug|investigate|explain|how)\b/.test(lower);
+  const hasCodeReference = /\/src\/|\.ts\b|\.js\b|\.tsx\b|\.py\b|\.go\b/.test(query);
+  const hasFileOperation = /\b(file|function|class|component|endpoint|route|middleware|module|service|handler|controller)\b/.test(lower);
+  return hasExecutionIntent || hasCodeReference || hasFileOperation;
+}
+async function rebuildEmbeddingsIndex(cwd, cacheDir) {
+  const dir = cacheDir || join14(cwd, ".crew", "rag-cache");
+  const indexPath = join14(dir, "embeddings.json");
+  if (existsSync8(indexPath)) {
+    await writeFile6(indexPath, "[]", "utf8");
+  }
+  const index = CodebaseIndex.getInstance(cwd);
+  await index.ensureIndex();
+}
+var STOP_WORDS, CodebaseIndex;
+var init_codebase_rag = __esm({
+  "src/context/codebase-rag.ts"() {
+    "use strict";
+    init_mapping();
+    STOP_WORDS = /* @__PURE__ */ new Set([
+      "the",
+      "and",
+      "for",
+      "with",
+      "this",
+      "that",
+      "from",
+      "are",
+      "was",
+      "were",
+      "will",
+      "can",
+      "could",
+      "should",
+      "would",
+      "add",
+      "create",
+      "make",
+      "write",
+      "update",
+      "fix",
+      "change",
+      "modify",
+      "delete",
+      "remove",
+      "get",
+      "set"
+    ]);
+    CodebaseIndex = class _CodebaseIndex {
+      constructor(cwd) {
+        this.entries = [];
+        this.entryMap = /* @__PURE__ */ new Map();
+        this.meta = null;
+        this.loaded = false;
+        this.building = false;
+        this.cwd = cwd;
+        this.cacheDir = join14(cwd, ".crew", "rag-cache");
+        this.provider = detectEmbeddingProvider();
+      }
+      static {
+        this.instances = /* @__PURE__ */ new Map();
+      }
+      static getInstance(cwd) {
+        const existing = _CodebaseIndex.instances.get(cwd);
+        if (existing) return existing;
+        const inst = new _CodebaseIndex(cwd);
+        _CodebaseIndex.instances.set(cwd, inst);
+        return inst;
+      }
+      indexPath() {
+        return join14(this.cacheDir, "embeddings.json");
+      }
+      metaPath() {
+        return join14(this.cacheDir, "index-meta.json");
+      }
+      /** Load index from disk if not already loaded. */
+      async load() {
+        if (this.loaded) return;
+        try {
+          if (existsSync8(this.indexPath())) {
+            const raw = await readFile8(this.indexPath(), "utf8");
+            this.entries = JSON.parse(raw);
+            this.entryMap.clear();
+            for (const e of this.entries) this.entryMap.set(e.file, e);
+          }
+          if (existsSync8(this.metaPath())) {
+            this.meta = JSON.parse(await readFile8(this.metaPath(), "utf8"));
+          }
+        } catch {
+        }
+        this.loaded = true;
+      }
+      /** Save index to disk. */
+      async save() {
+        await mkdir7(this.cacheDir, { recursive: true });
+        await writeFile6(this.indexPath(), JSON.stringify(this.entries), "utf8");
+        this.meta = {
+          provider: this.provider,
+          dim: this.entries[0]?.embedding.length || 0,
+          fileCount: this.entries.length,
+          lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        await writeFile6(this.metaPath(), JSON.stringify(this.meta, null, 2), "utf8");
+      }
+      /** List code files in the repo (respects .gitignore). */
+      listFiles() {
+        try {
+          const maxFiles = Number(process.env.CREW_RAG_MAX_FILES || 2e3);
+          const stdout = execSync4(
+            `rg --files --type-add 'code:*.{ts,js,tsx,jsx,py,go,rs,java,rb,php,c,cpp,h,hpp,cs,swift,kt,scala,lua,sh,bash,zsh,sql,proto,graphql,vue,svelte}' -t code`,
+            { cwd: this.cwd, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["pipe", "pipe", "ignore"] }
+          );
+          return stdout.trim().split("\n").filter(Boolean).slice(0, maxFiles);
+        } catch {
+          return [];
+        }
+      }
+      /**
+       * Ensure the index is built and up-to-date. Incrementally re-embeds only changed files.
+       * Safe to call from background — non-blocking if already building.
+       */
+      async ensureIndex(opts) {
+        if (this.building) return { indexed: 0, skipped: 0, removed: 0 };
+        this.building = true;
+        try {
+          await this.load();
+          const files = this.listFiles();
+          if (files.length === 0) return { indexed: 0, skipped: 0, removed: 0 };
+          if (this.meta && this.meta.provider !== this.provider) {
+            this.entries = [];
+            this.entryMap.clear();
+          }
+          const currentFiles = new Set(files);
+          let indexed = 0;
+          let skipped = 0;
+          const removed = this.entries.filter((e) => !currentFiles.has(e.file)).length;
+          this.entries = this.entries.filter((e) => currentFiles.has(e.file));
+          this.entryMap.clear();
+          for (const e of this.entries) this.entryMap.set(e.file, e);
+          const batchSize = Number(process.env.CREW_RAG_BATCH_SIZE || 20);
+          for (let i = 0; i < files.length; i += batchSize) {
+            const batch = files.slice(i, i + batchSize);
+            const work = [];
+            for (const file of batch) {
+              try {
+                const content = await readFile8(join14(this.cwd, file), "utf8");
+                if (content.length < 10) continue;
+                if (content.length > 1e5) continue;
+                const hash = contentHash(content);
+                const existing = this.entryMap.get(file);
+                if (existing && existing.hash === hash) {
+                  skipped++;
+                  continue;
+                }
+                work.push({ file, content, hash });
+              } catch {
+              }
+            }
+            const results = await Promise.allSettled(
+              work.map(async ({ file, content, hash }) => {
+                const embedding = await generateEmbedding(content, this.provider);
+                return { file, embedding, hash };
+              })
+            );
+            for (const result2 of results) {
+              if (result2.status === "fulfilled") {
+                const entry = result2.value;
+                const existing = this.entryMap.get(entry.file);
+                if (existing) {
+                  existing.embedding = entry.embedding;
+                  existing.hash = entry.hash;
+                } else {
+                  this.entries.push(entry);
+                  this.entryMap.set(entry.file, entry);
+                }
+                indexed++;
+              }
+            }
+            opts?.onProgress?.(Math.min(i + batchSize, files.length), files.length);
+          }
+          if (indexed > 0 || removed > 0) {
+            await this.save();
+          }
+          return { indexed, skipped, removed };
+        } finally {
+          this.building = false;
+        }
+      }
+      /** Query the index for files most relevant to a query string. */
+      async query(query, topK = 10) {
+        await this.load();
+        if (this.entries.length === 0) return [];
+        const queryEmb = await generateEmbedding(query, this.provider);
+        const scored = this.entries.map((entry) => ({
+          file: entry.file,
+          score: cosineSimilarity2(queryEmb, entry.embedding)
+        }));
+        scored.sort((a, b) => b.score - a.score);
+        return scored.slice(0, topK);
+      }
+      /** Get index stats. */
+      stats() {
+        return {
+          files: this.entries.length,
+          provider: this.provider,
+          lastUpdated: this.meta?.lastUpdated || null,
+          building: this.building
+        };
+      }
+      isReady() {
+        return this.loaded && this.entries.length > 0 && !this.building;
+      }
+    };
+  }
+});
+
 // src/pipeline/unified.ts
 import { randomUUID as randomUUID5 } from "crypto";
-import { appendFile as appendFile2, mkdir as mkdir7, readFile as readFile8 } from "node:fs/promises";
-import { resolve as resolve10, join as join14, normalize } from "node:path";
+import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile9 } from "node:fs/promises";
+import { resolve as resolve10, join as join15, normalize } from "node:path";
 var UnifiedPipeline;
 var init_unified = __esm({
   "src/pipeline/unified.ts"() {
@@ -8130,7 +8540,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
             continue;
           }
           try {
-            const content = await readFile8(resolve10(process.cwd(), relPath), "utf8");
+            const content = await readFile9(resolve10(process.cwd(), relPath), "utf8");
             contents.set(relPath, content);
           } catch {
             return false;
@@ -8210,8 +8620,8 @@ ${this.buildExecutionAuditContext(executionResults)}`;
       async recordPipelineMetrics(entry) {
         try {
           const dir = resolve10(process.cwd(), ".crew");
-          await mkdir7(dir, { recursive: true });
-          const path3 = join14(dir, "pipeline-metrics.jsonl");
+          await mkdir8(dir, { recursive: true });
+          const path3 = join15(dir, "pipeline-metrics.jsonl");
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
 `, "utf8");
         } catch {
@@ -8220,8 +8630,8 @@ ${this.buildExecutionAuditContext(executionResults)}`;
       async writeRunCheckpoint(traceId, payload) {
         try {
           const dir = resolve10(process.cwd(), ".crew", "pipeline-runs");
-          await mkdir7(dir, { recursive: true });
-          const path3 = join14(dir, `${traceId}.jsonl`);
+          await mkdir8(dir, { recursive: true });
+          const path3 = join15(dir, `${traceId}.jsonl`);
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...payload })}
 `, "utf8");
         } catch {
@@ -9238,6 +9648,40 @@ Use CREW_ALLOW_CRITICAL=true to override (not recommended).`
         if (context) {
           overlays.push({ type: "context", content: context, priority: 2 });
         }
+        try {
+          const { CodebaseIndex: CodebaseIndex2, shouldUseRag: shouldUseRag2 } = await Promise.resolve().then(() => (init_codebase_rag(), codebase_rag_exports));
+          const codebaseIndex = CodebaseIndex2.getInstance(process.cwd());
+          if (codebaseIndex.isReady() && shouldUseRag2(enhancedTask)) {
+            const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4e3);
+            const hits = await codebaseIndex.query(enhancedTask, 5);
+            if (hits.length > 0) {
+              const { readFile: rf } = await import("node:fs/promises");
+              const { join: pj } = await import("node:path");
+              const parts = [];
+              let chars = 0;
+              const charLimit = ragBudget * 4;
+              for (const hit of hits) {
+                try {
+                  const content = await rf(pj(process.cwd(), hit.file), "utf8");
+                  if (chars + content.length > charLimit) break;
+                  parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===
+${content}`);
+                  chars += content.length;
+                } catch {
+                }
+              }
+              if (parts.length > 0) {
+                overlays.push({
+                  type: "context",
+                  content: `## Codebase Context (auto-retrieved, ${parts.length} files)
+${parts.join("\n\n")}`,
+                  priority: 3
+                });
+              }
+            }
+          }
+        } catch {
+        }
         overlays.push({
           type: "constraints",
           content: `Worker task contract:
@@ -9321,6 +9765,40 @@ Use CREW_ALLOW_CRITICAL=true to override (not recommended).`
                 content: memoryContext,
                 priority: 0
               });
+            }
+            try {
+              const { CodebaseIndex: CodebaseIndex2, shouldUseRag: shouldUseRag2 } = await Promise.resolve().then(() => (init_codebase_rag(), codebase_rag_exports));
+              const codebaseIndex = CodebaseIndex2.getInstance(process.cwd());
+              if (codebaseIndex.isReady() && shouldUseRag2(unit.goal)) {
+                const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4e3);
+                const hits = await codebaseIndex.query(unit.goal, 5);
+                if (hits.length > 0) {
+                  const { readFile: readFile33 } = await import("node:fs/promises");
+                  const { join: pathJoin, relative: pathRelative } = await import("node:path");
+                  const parts = [];
+                  let chars = 0;
+                  const charLimit = ragBudget * 4;
+                  for (const hit of hits) {
+                    try {
+                      const content = await readFile33(pathJoin(process.cwd(), hit.file), "utf8");
+                      if (chars + content.length > charLimit) break;
+                      parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===
+${content}`);
+                      chars += content.length;
+                    } catch {
+                    }
+                  }
+                  if (parts.length > 0) {
+                    overlays.push({
+                      type: "context",
+                      content: `## Codebase Context (auto-retrieved, ${parts.length} files)
+${parts.join("\n\n")}`,
+                      priority: 3
+                    });
+                  }
+                }
+              }
+            } catch {
             }
             if (artifactPackId) {
               const fullArtifactChars = (workGraph.planningArtifacts?.pdd?.length || 0) + (workGraph.planningArtifacts?.roadmap?.length || 0) + (workGraph.planningArtifacts?.architecture?.length || 0);
@@ -9730,7 +10208,7 @@ __export(orchestrator_exports, {
   RouteDecision: () => RouteDecision,
   WorkerPool: () => WorkerPool
 });
-import { readFile as readFile9 } from "node:fs/promises";
+import { readFile as readFile10 } from "node:fs/promises";
 var ROUTING_SYSTEM_PROMPT, RouteDecision, Orchestrator;
 var init_orchestrator = __esm({
   "src/orchestrator/index.ts"() {
@@ -10303,7 +10781,7 @@ ${task}` : task;
                 this.logger.info(`Detected edit block for ${filePath}`);
                 let originalContent = "";
                 try {
-                  originalContent = await readFile9(filePath, "utf8");
+                  originalContent = await readFile10(filePath, "utf8");
                 } catch {
                   originalContent = "";
                 }
@@ -10337,8 +10815,8 @@ var agentkeeper_exports = {};
 __export(agentkeeper_exports, {
   AgentKeeper: () => AgentKeeper
 });
-import { appendFile as appendFile3, mkdir as mkdir9, readFile as readFile12, stat as stat4, writeFile as writeFile7 } from "node:fs/promises";
-import { dirname as dirname5, join as join17 } from "node:path";
+import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile13, stat as stat4, writeFile as writeFile8 } from "node:fs/promises";
+import { dirname as dirname5, join as join18 } from "node:path";
 import { randomUUID as randomUUID6 } from "node:crypto";
 function tokenize2(text) {
   return new Set(
@@ -10361,7 +10839,7 @@ var init_agentkeeper = __esm({
       constructor(baseDir, options = {}) {
         this.writeCount = 0;
         const storageBase = options.storageDir || process.env.CREW_MEMORY_DIR || baseDir;
-        this.storePath = join17(storageBase, ".crew", "agentkeeper.jsonl");
+        this.storePath = join18(storageBase, ".crew", "agentkeeper.jsonl");
         this.maxEntries = options.maxEntries ?? 500;
         this.maxBytes = options.maxBytes ?? 2e6;
         this.maxAgeDays = options.maxAgeDays ?? 30;
@@ -10490,7 +10968,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
       }
       /** Append a new memory entry. */
       async record(entry) {
-        await mkdir9(dirname5(this.storePath), { recursive: true });
+        await mkdir10(dirname5(this.storePath), { recursive: true });
         const full = {
           ...entry,
           id: randomUUID6(),
@@ -10518,7 +10996,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
       async loadAll() {
         let raw;
         try {
-          raw = await readFile12(this.storePath, "utf8");
+          raw = await readFile13(this.storePath, "utf8");
         } catch {
           return [];
         }
@@ -10633,7 +11111,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
           return { entriesBefore, entriesAfter: kept.length, bytesFreed: 0 };
         }
         const content = kept.map((e) => JSON.stringify(e)).join("\n") + "\n";
-        await writeFile7(this.storePath, content, "utf8");
+        await writeFile8(this.storePath, content, "utf8");
         let bytesAfter = 0;
         try {
           const st = await stat4(this.storePath);
@@ -10751,7 +11229,7 @@ __export(blast_radius_exports, {
 });
 import { execFile as execFile8 } from "node:child_process";
 import { promisify as promisify9 } from "node:util";
-import { relative as relative3, resolve as resolve17 } from "node:path";
+import { relative as relative4, resolve as resolve17 } from "node:path";
 function severityRank(level) {
   if (level === "high") return 3;
   if (level === "medium") return 2;
@@ -10819,7 +11297,7 @@ async function analyzeBlastRadius(cwd, options = {}) {
   const graphPaths = new Set(graph.nodes.map((n) => n.path));
   const changedSet = /* @__PURE__ */ new Set();
   for (const file of rawChanged) {
-    const rel = relative3(rootDir, resolve17(rootDir, file));
+    const rel = relative4(rootDir, resolve17(rootDir, file));
     if (graphPaths.has(rel)) changedSet.add(rel);
   }
   const affectedFiles = collectImporters(graph, changedSet, maxDepth);
@@ -10853,302 +11331,6 @@ var init_blast_radius = __esm({
     "use strict";
     init_mapping();
     execFileAsync8 = promisify9(execFile8);
-  }
-});
-
-// src/context/codebase-rag.ts
-var codebase_rag_exports = {};
-__export(codebase_rag_exports, {
-  autoLoadRelevantFiles: () => autoLoadRelevantFiles,
-  rebuildEmbeddingsIndex: () => rebuildEmbeddingsIndex,
-  shouldUseRag: () => shouldUseRag
-});
-import { execSync as execSync4 } from "node:child_process";
-import { readFile as readFile26, writeFile as writeFile17, mkdir as mkdir18 } from "node:fs/promises";
-import { existsSync as existsSync15 } from "node:fs";
-import { relative as relative4, join as join31 } from "node:path";
-function extractKeywords(query) {
-  return (query.toLowerCase().match(/\b[a-z]{3,}\b/g) || []).filter((kw) => !STOP_WORDS.has(kw));
-}
-async function keywordBasedSearch(query, cwd, options) {
-  const keywords = extractKeywords(query);
-  if (keywords.length === 0) return [];
-  try {
-    const pattern = keywords.slice(0, 5).join("|");
-    const stdout = execSync4(
-      `rg -l "${pattern}" --type-add 'code:*.{ts,js,tsx,jsx,py,go,rs,java}' -t code`,
-      {
-        cwd,
-        encoding: "utf8",
-        maxBuffer: 1024 * 1024,
-        stdio: ["pipe", "pipe", "ignore"]
-      }
-    );
-    const files = stdout.trim().split("\n").filter(Boolean);
-    return files.map((file) => {
-      let score = 0;
-      const lowerFile = file.toLowerCase();
-      for (const kw of keywords) {
-        if (lowerFile.includes(kw)) score += 2;
-      }
-      for (const entry of options.sessionHistory || []) {
-        if (entry.output?.includes(file)) score += 3;
-      }
-      return { file, score };
-    });
-  } catch (err) {
-    return [];
-  }
-}
-async function expandWithImports(files, cwd, maxDepth = 1) {
-  const expanded = new Set(files);
-  try {
-    const graph = await buildRepositoryGraph(cwd);
-    for (const file of files) {
-      const node = graph.nodes.find((n) => n.path === file || join31(cwd, n.path) === file);
-      if (node) {
-        for (const importPath of node.imports.slice(0, 5)) {
-          expanded.add(importPath);
-        }
-        for (const importedByPath of node.importedBy.slice(0, 3)) {
-          expanded.add(importedByPath);
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("[RAG] Import graph expansion failed:", err.message);
-  }
-  return expanded;
-}
-function cosineSimilarity2(a, b) {
-  if (a.length !== b.length) return 0;
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-async function generateEmbedding(text) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY not set - required for semantic RAG");
-  }
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "text-embedding-3-small",
-      input: text.slice(0, 8e3)
-      // Max ~8K chars
-    })
-  });
-  if (!response.ok) {
-    throw new Error(`Embedding API failed: ${response.statusText}`);
-  }
-  const data = await response.json();
-  return data.data[0].embedding;
-}
-async function loadEmbeddingsIndex(cacheDir) {
-  const indexPath = join31(cacheDir, "embeddings.json");
-  if (!existsSync15(indexPath)) {
-    return [];
-  }
-  try {
-    const raw = await readFile26(indexPath, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-async function saveEmbeddingsIndex(cacheDir, embeddings) {
-  const indexPath = join31(cacheDir, "embeddings.json");
-  await mkdir18(cacheDir, { recursive: true });
-  await writeFile17(indexPath, JSON.stringify(embeddings, null, 2), "utf8");
-}
-async function semanticSearch(query, cwd, options) {
-  const cacheDir = options.cacheDir || join31(cwd, ".crew", "rag-cache");
-  let embeddings = await loadEmbeddingsIndex(cacheDir);
-  if (embeddings.length === 0) {
-    console.log("[RAG] No embeddings index found. Building index...");
-    console.log("[RAG] This is a one-time operation (~30s for 1K files)");
-    try {
-      const stdout = execSync4(
-        `rg --files --type-add 'code:*.{ts,js,tsx,jsx,py,go,rs,java}' -t code`,
-        { cwd, encoding: "utf8", maxBuffer: 1024 * 1024 }
-      );
-      const files = stdout.trim().split("\n").filter(Boolean).slice(0, 1e3);
-      console.log(`[RAG] Generating embeddings for ${files.length} files...`);
-      const batchSize = 10;
-      for (let i = 0; i < files.length; i += batchSize) {
-        const batch = files.slice(i, i + batchSize);
-        for (const file of batch) {
-          try {
-            const content = await readFile26(join31(cwd, file), "utf8");
-            const embedding = await generateEmbedding(content);
-            embeddings.push({
-              file,
-              embedding,
-              hash: ""
-              // Could add content hash for staleness detection
-            });
-          } catch (err) {
-            console.warn(`[RAG] Failed to embed ${file}:`, err.message);
-          }
-        }
-        console.log(`[RAG] Progress: ${Math.min(i + batchSize, files.length)}/${files.length}`);
-      }
-      await saveEmbeddingsIndex(cacheDir, embeddings);
-      console.log(`[RAG] Index saved to ${cacheDir}/embeddings.json`);
-    } catch (err) {
-      console.warn("[RAG] Failed to build embeddings index:", err.message);
-      return [];
-    }
-  }
-  const queryEmbedding = await generateEmbedding(query);
-  const scored = embeddings.map((entry) => ({
-    file: entry.file,
-    score: cosineSimilarity2(queryEmbedding, entry.embedding)
-  }));
-  scored.sort((a, b) => b.score - a.score);
-  return scored;
-}
-async function autoLoadRelevantFiles(query, cwd, options = {}) {
-  const mode = options.mode || "keyword";
-  const tokenBudget = options.tokenBudget || 8e3;
-  const maxFiles = options.maxFiles || 10;
-  if (mode === "off") {
-    return {
-      context: "",
-      filesLoaded: [],
-      mode: "off",
-      tokenEstimate: 0
-    };
-  }
-  let scoredFiles = [];
-  if (mode === "semantic") {
-    try {
-      scoredFiles = await semanticSearch(query, cwd, options);
-    } catch (err) {
-      console.warn("[RAG] Semantic search failed, falling back to keyword:", err.message);
-      scoredFiles = await keywordBasedSearch(query, cwd, options);
-    }
-  } else {
-    scoredFiles = await keywordBasedSearch(query, cwd, options);
-  }
-  if (scoredFiles.length === 0) {
-    return {
-      context: "",
-      filesLoaded: [],
-      mode,
-      tokenEstimate: 0
-    };
-  }
-  let filesToLoad = scoredFiles.map((x) => x.file);
-  if (mode === "import-graph" || mode === "semantic") {
-    const expanded = await expandWithImports(filesToLoad.slice(0, 5), cwd);
-    filesToLoad = Array.from(expanded);
-  }
-  const loaded = [];
-  let contextParts = [];
-  let charsUsed = 0;
-  const charBudget = tokenBudget * 4;
-  const originalSet = new Set(scoredFiles.slice(0, 10).map((x) => x.file));
-  const finalScored = filesToLoad.map((file) => ({
-    file,
-    score: originalSet.has(file) ? 10 : 1
-  }));
-  finalScored.sort((a, b) => b.score - a.score);
-  for (const { file } of finalScored.slice(0, maxFiles)) {
-    try {
-      const fullPath = join31(cwd, file);
-      const content = await readFile26(fullPath, "utf8");
-      if (charsUsed + content.length > charBudget) {
-        break;
-      }
-      const relPath = relative4(cwd, file);
-      contextParts.push(`
-=== ${relPath} ===
-${content}`);
-      loaded.push(relPath);
-      charsUsed += content.length;
-    } catch (err) {
-      console.warn(`[RAG] Failed to read ${file}:`, err.message);
-    }
-  }
-  if (loaded.length === 0) {
-    return {
-      context: "",
-      filesLoaded: [],
-      mode,
-      tokenEstimate: 0
-    };
-  }
-  const context = `## Relevant Codebase Context (${loaded.length} files loaded)
-${contextParts.join("\n\n")}`;
-  const tokenEstimate = Math.ceil(charsUsed / 4);
-  return {
-    context,
-    filesLoaded: loaded,
-    mode,
-    tokenEstimate
-  };
-}
-function shouldUseRag(query) {
-  const lower = query.toLowerCase();
-  const hasExecutionIntent = /\b(implement|create|build|write|fix|refactor|modify|update|add|patch|test)\b/.test(lower);
-  const hasCodeReference = /\/src\/|\.ts\b|\.js\b|\.tsx\b|\.py\b|\.go\b/.test(query);
-  const hasFileOperation = /\b(file|function|class|component|endpoint|route|middleware)\b/.test(lower);
-  return hasExecutionIntent || hasCodeReference || hasFileOperation;
-}
-async function rebuildEmbeddingsIndex(cwd, cacheDir) {
-  const dir = cacheDir || join31(cwd, ".crew", "rag-cache");
-  const indexPath = join31(dir, "embeddings.json");
-  if (existsSync15(indexPath)) {
-    await writeFile17(indexPath, "[]", "utf8");
-  }
-  await semanticSearch("rebuild index", cwd, { cacheDir: dir });
-}
-var STOP_WORDS;
-var init_codebase_rag = __esm({
-  "src/context/codebase-rag.ts"() {
-    "use strict";
-    init_mapping();
-    STOP_WORDS = /* @__PURE__ */ new Set([
-      "the",
-      "and",
-      "for",
-      "with",
-      "this",
-      "that",
-      "from",
-      "are",
-      "was",
-      "were",
-      "will",
-      "can",
-      "could",
-      "should",
-      "would",
-      "add",
-      "create",
-      "make",
-      "write",
-      "update",
-      "fix",
-      "change",
-      "modify",
-      "delete",
-      "remove",
-      "get",
-      "set"
-    ]);
   }
 });
 
@@ -12550,9 +12732,9 @@ var Sandbox = class {
 init_orchestrator();
 
 // src/auth/token-finder.ts
-import { readFile as readFile10, access as access3 } from "node:fs/promises";
+import { readFile as readFile11, access as access3 } from "node:fs/promises";
 import { constants as constants3 } from "node:fs";
-import { join as join15 } from "node:path";
+import { join as join16 } from "node:path";
 import { homedir as homedir2 } from "node:os";
 import { execFile as execFile2 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
@@ -12560,27 +12742,27 @@ var execFileAsync2 = promisify2(execFile2);
 var TokenFinder = class {
   async findTokens() {
     const tokens = {};
-    const claudePath = join15(homedir2(), ".claude", "session.json");
+    const claudePath = join16(homedir2(), ".claude", "session.json");
     if (await this.exists(claudePath)) {
       try {
-        const data = await readFile10(claudePath, "utf8");
+        const data = await readFile11(claudePath, "utf8");
         const parsed = JSON.parse(data);
         if (parsed.sessionToken) tokens.claude = parsed.sessionToken;
       } catch (e) {
         console.error(`Failed to parse Claude config: ${e.message}`);
       }
     }
-    const openaiPath = join15(homedir2(), ".openai", "config");
+    const openaiPath = join16(homedir2(), ".openai", "config");
     if (await this.exists(openaiPath)) {
       try {
-        const data = await readFile10(openaiPath, "utf8");
+        const data = await readFile11(openaiPath, "utf8");
         const match = data.match(/api_key[:=]\s*([a-zA-Z0-9\-]+)/);
         if (match) tokens.openai = match[1];
       } catch (e) {
         console.error(`Failed to parse OpenAI config: ${e.message}`);
       }
     }
-    const geminiPath = join15(homedir2(), ".config", "gcloud", "application_default_credentials.json");
+    const geminiPath = join16(homedir2(), ".config", "gcloud", "application_default_credentials.json");
     if (await this.exists(geminiPath)) {
       try {
         tokens.gemini = "(detected via ADC)";
@@ -12588,7 +12770,7 @@ var TokenFinder = class {
         console.error(`Failed to check Gemini ADC: ${e.message}`);
       }
     }
-    const cursorDbPath = join15(homedir2(), ".cursor", "User", "globalStorage", "state.vscdb");
+    const cursorDbPath = join16(homedir2(), ".cursor", "User", "globalStorage", "state.vscdb");
     if (await this.exists(cursorDbPath)) {
       try {
         const { stdout } = await execFileAsync2("sqlite3", [
@@ -12621,10 +12803,10 @@ var TokenFinder = class {
 init_logger();
 
 // src/cache/token-cache.ts
-import { createHash as createHash2 } from "node:crypto";
-import { mkdir as mkdir8, readFile as readFile11, writeFile as writeFile6 } from "node:fs/promises";
-import { existsSync as existsSync8 } from "node:fs";
-import { join as join16 } from "node:path";
+import { createHash as createHash3 } from "node:crypto";
+import { mkdir as mkdir9, readFile as readFile12, writeFile as writeFile7 } from "node:fs/promises";
+import { existsSync as existsSync9 } from "node:fs";
+import { join as join17 } from "node:path";
 function nowIso3() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -12635,21 +12817,21 @@ function toTimestamp(iso) {
 var TokenCache = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = baseDir;
-    this.cachePath = join16(baseDir, ".crew", "token-cache.json");
+    this.cachePath = join17(baseDir, ".crew", "token-cache.json");
   }
   static hashKey(input) {
-    return createHash2("sha256").update(String(input || "")).digest("hex");
+    return createHash3("sha256").update(String(input || "")).digest("hex");
   }
   async ensureStore() {
-    const dir = join16(this.baseDir, ".crew");
-    await mkdir8(dir, { recursive: true });
-    if (!existsSync8(this.cachePath)) {
+    const dir = join17(this.baseDir, ".crew");
+    await mkdir9(dir, { recursive: true });
+    if (!existsSync9(this.cachePath)) {
       const initial = { version: 1, namespaces: {} };
-      await writeFile6(this.cachePath, JSON.stringify(initial, null, 2), "utf8");
+      await writeFile7(this.cachePath, JSON.stringify(initial, null, 2), "utf8");
       return initial;
     }
     try {
-      const raw = await readFile11(this.cachePath, "utf8");
+      const raw = await readFile12(this.cachePath, "utf8");
       const parsed = JSON.parse(raw);
       return {
         version: parsed.version || 1,
@@ -12660,7 +12842,7 @@ var TokenCache = class {
     }
   }
   async saveStore(store) {
-    await writeFile6(this.cachePath, JSON.stringify(store, null, 2), "utf8");
+    await writeFile7(this.cachePath, JSON.stringify(store, null, 2), "utf8");
   }
   async get(namespace, key) {
     const store = await this.ensureStore();
@@ -12848,7 +13030,7 @@ import { homedir as homedir11 } from "node:os";
 // src/diagnostics/doctor.ts
 import { access as access4 } from "node:fs/promises";
 import { constants as constants4 } from "node:fs";
-import { join as join19 } from "node:path";
+import { join as join20 } from "node:path";
 import { dirname as dirname6 } from "node:path";
 import { homedir as homedir4 } from "node:os";
 import { execFile as execFile3 } from "node:child_process";
@@ -12857,20 +13039,20 @@ import { fileURLToPath } from "node:url";
 
 // src/mcp/index.ts
 import { execFileSync } from "node:child_process";
-import { mkdir as mkdir10, readFile as readFile13, writeFile as writeFile8 } from "node:fs/promises";
-import { existsSync as existsSync9 } from "node:fs";
-import { join as join18 } from "node:path";
+import { mkdir as mkdir11, readFile as readFile14, writeFile as writeFile9 } from "node:fs/promises";
+import { existsSync as existsSync10 } from "node:fs";
+import { join as join19 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 function localStorePath(baseDir = process.cwd()) {
-  return join18(baseDir, ".crew", "mcp-servers.json");
+  return join19(baseDir, ".crew", "mcp-servers.json");
 }
 function clientPath(client) {
   const home = homedir3();
   const key = String(client || "").toLowerCase();
-  if (key === "cursor") return join18(home, ".cursor", "mcp.json");
-  if (key === "claude") return join18(home, ".claude", "mcp.json");
-  if (key === "opencode") return join18(home, ".config", "opencode", "mcp.json");
-  if (key === "codex") return join18(home, ".codex", "mcp", "config.json");
+  if (key === "cursor") return join19(home, ".cursor", "mcp.json");
+  if (key === "claude") return join19(home, ".claude", "mcp.json");
+  if (key === "opencode") return join19(home, ".config", "opencode", "mcp.json");
+  if (key === "codex") return join19(home, ".codex", "mcp", "config.json");
   throw new Error(`Unsupported client: ${client}`);
 }
 function isCodexClient(client) {
@@ -12899,9 +13081,9 @@ function removeServerFromCodex(name) {
   execFileSync("codex", ["mcp", "remove", name], { stdio: "ignore" });
 }
 async function loadStore(path3) {
-  if (!existsSync9(path3)) return { mcpServers: {} };
+  if (!existsSync10(path3)) return { mcpServers: {} };
   try {
-    const raw = await readFile13(path3, "utf8");
+    const raw = await readFile14(path3, "utf8");
     const parsed = JSON.parse(raw);
     return { mcpServers: parsed.mcpServers || {} };
   } catch {
@@ -12909,8 +13091,8 @@ async function loadStore(path3) {
   }
 }
 async function saveStore(path3, store) {
-  await mkdir10(join18(path3, ".."), { recursive: true });
-  await writeFile8(path3, `${JSON.stringify(store, null, 2)}
+  await mkdir11(join19(path3, ".."), { recursive: true });
+  await writeFile9(path3, `${JSON.stringify(store, null, 2)}
 `, "utf8");
 }
 async function listMcpServers(baseDir = process.cwd()) {
@@ -13039,7 +13221,7 @@ async function gatewayReachable(url) {
   }
 }
 async function configExists() {
-  const configPath3 = join19(homedir4(), ".crewswarm", "crewswarm.json");
+  const configPath3 = join20(homedir4(), ".crewswarm", "crewswarm.json");
   try {
     await access4(configPath3, constants4.F_OK);
     return { ok: true, path: configPath3 };
@@ -13069,16 +13251,16 @@ async function getInstalledCliVersion() {
   }
   const here = dirname6(fileURLToPath(import.meta.url));
   const candidates = [
-    join19(here, "..", "package.json"),
-    join19(here, "..", "..", "package.json"),
-    join19(process.cwd(), "package.json")
+    join20(here, "..", "package.json"),
+    join20(here, "..", "..", "package.json"),
+    join20(process.cwd(), "package.json")
   ];
   for (const candidate of candidates) {
     try {
       const raw = await (await import("node:fs/promises")).readFile(candidate, "utf8");
       const parsed = JSON.parse(raw);
       const pkgName = String(parsed?.name || "");
-      const looksLikeCli = pkgName === "crewswarm-cli" || pkgName === "@crewswarm/crew-cli" || candidate.includes(`${join19("crew-cli", "package.json")}`);
+      const looksLikeCli = pkgName === "crewswarm-cli" || pkgName === "@crewswarm/crew-cli" || candidate.includes(`${join20("crew-cli", "package.json")}`);
       if (looksLikeCli && typeof parsed?.version === "string" && parsed.version.trim()) {
         return parsed.version.trim();
       }
@@ -13287,9 +13469,9 @@ import os from "node:os";
 import path2 from "node:path";
 
 // src/engines/session-layer.ts
-import { mkdir as mkdir11, readFile as readFile14, writeFile as writeFile9 } from "node:fs/promises";
-import { existsSync as existsSync10 } from "node:fs";
-import { join as join20, resolve as resolve11 } from "node:path";
+import { mkdir as mkdir12, readFile as readFile15, writeFile as writeFile10 } from "node:fs/promises";
+import { existsSync as existsSync11 } from "node:fs";
+import { join as join21, resolve as resolve11 } from "node:path";
 function nowIso4() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -13302,22 +13484,22 @@ function clip2(text, maxChars) {
 var EngineSessionLayer = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = resolve11(baseDir);
-    this.stateDir = join20(this.baseDir, ".crew");
-    this.sessionsPath = join20(this.stateDir, "engine-sessions.json");
+    this.stateDir = join21(this.baseDir, ".crew");
+    this.sessionsPath = join21(this.stateDir, "engine-sessions.json");
   }
   makeKey(engine, sessionId) {
     return `${String(engine || "").trim().toLowerCase()}::${String(sessionId || "").trim()}`;
   }
   async ensureInitialized() {
-    await mkdir11(this.stateDir, { recursive: true });
-    if (!existsSync10(this.sessionsPath)) {
-      await writeFile9(this.sessionsPath, JSON.stringify({}, null, 2), "utf8");
+    await mkdir12(this.stateDir, { recursive: true });
+    if (!existsSync11(this.sessionsPath)) {
+      await writeFile10(this.sessionsPath, JSON.stringify({}, null, 2), "utf8");
     }
   }
   async loadStore() {
     await this.ensureInitialized();
     try {
-      const raw = await readFile14(this.sessionsPath, "utf8");
+      const raw = await readFile15(this.sessionsPath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -13327,7 +13509,7 @@ var EngineSessionLayer = class {
   }
   async saveStore(store) {
     await this.ensureInitialized();
-    await writeFile9(this.sessionsPath, JSON.stringify(store, null, 2), "utf8");
+    await writeFile10(this.sessionsPath, JSON.stringify(store, null, 2), "utf8");
   }
   async appendTurn(params) {
     const engine = String(params.engine || "").trim().toLowerCase();
@@ -13429,10 +13611,13 @@ function buildSessionPromptEnvelope(params) {
 }
 
 // src/session/conversation-transcript.ts
-init_token_compaction();
-import { appendFile as appendFile4, mkdir as mkdir12, readFile as readFile15, readdir as readdir4 } from "node:fs/promises";
-import { existsSync as existsSync11 } from "node:fs";
-import { join as join21, resolve as resolve12 } from "node:path";
+import { appendFile as appendFile4, mkdir as mkdir13, readFile as readFile16, readdir as readdir4 } from "node:fs/promises";
+import { existsSync as existsSync12 } from "node:fs";
+import { join as join22, resolve as resolve12 } from "node:path";
+function estimateTokens3(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 3.7);
+}
 function nowIso5() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -13445,14 +13630,14 @@ function clip3(text, maxChars) {
 var ConversationTranscriptStore = class {
   constructor(baseDir = process.cwd()) {
     const root = resolve12(baseDir);
-    this.stateDir = join21(root, ".crew");
+    this.stateDir = join22(root, ".crew");
   }
   transcriptPath(sessionId) {
     const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    return join21(this.stateDir, `transcript-${safe}.jsonl`);
+    return join22(this.stateDir, `transcript-${safe}.jsonl`);
   }
   async ensureInitialized() {
-    await mkdir12(this.stateDir, { recursive: true });
+    await mkdir13(this.stateDir, { recursive: true });
   }
   /**
    * Append a turn to the transcript — single atomic append, crash-safe.
@@ -13467,7 +13652,7 @@ var ConversationTranscriptStore = class {
       role: params.role,
       text: clippedText,
       engine: params.engine,
-      estimatedTokens: estimateTokens(clippedText),
+      estimatedTokens: estimateTokens3(clippedText),
       sessionId
     };
     const line = JSON.stringify(turn) + "\n";
@@ -13481,9 +13666,9 @@ var ConversationTranscriptStore = class {
     const key = String(sessionId || "").trim();
     if (!key) return [];
     const path3 = this.transcriptPath(key);
-    if (!existsSync11(path3)) return [];
+    if (!existsSync12(path3)) return [];
     try {
-      const raw = await readFile15(path3, "utf8");
+      const raw = await readFile16(path3, "utf8");
       const turns = [];
       for (const line of raw.split("\n")) {
         const trimmed = line.trim();
@@ -13509,7 +13694,7 @@ var ConversationTranscriptStore = class {
     const result2 = [];
     for (let i = turns.length - 1; i >= 0 && result2.length < maxTurns; i--) {
       const t = turns[i];
-      const tokens = t.estimatedTokens || estimateTokens(t.text);
+      const tokens = t.estimatedTokens || estimateTokens3(t.text);
       if (totalTokens + tokens > maxSessionTokens && result2.length >= 4) break;
       totalTokens += tokens;
       result2.unshift(t);
@@ -13528,9 +13713,9 @@ var ConversationTranscriptStore = class {
         const match = f.match(/^transcript-(.+)\.jsonl$/);
         if (!match) continue;
         const sessionId = match[1];
-        const fullPath = join21(this.stateDir, f);
+        const fullPath = join22(this.stateDir, f);
         try {
-          const raw = await readFile15(fullPath, "utf8");
+          const raw = await readFile16(fullPath, "utf8");
           const lines = raw.split("\n").filter((l) => l.trim()).length;
           sessions.push({ sessionId, path: fullPath, lines });
         } catch {
@@ -13553,7 +13738,7 @@ var ConversationTranscriptStore = class {
       turnCount: turns.length,
       firstMessage: clip3(firstUser?.text || "(no user message)", 80),
       lastActivity: turns[turns.length - 1].ts,
-      totalTokens: turns.reduce((sum, t) => sum + (t.estimatedTokens || estimateTokens(t.text)), 0)
+      totalTokens: turns.reduce((sum, t) => sum + (t.estimatedTokens || estimateTokens3(t.text)), 0)
     };
   }
 };
@@ -13574,10 +13759,10 @@ function buildConversationHydrationPrompt(params) {
 }
 
 // src/engines/native-session.ts
-import { mkdir as mkdir13, readFile as readFile16, writeFile as writeFile10 } from "node:fs/promises";
-import { existsSync as existsSync12 } from "node:fs";
+import { mkdir as mkdir14, readFile as readFile17, writeFile as writeFile11 } from "node:fs/promises";
+import { existsSync as existsSync13 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join22, resolve as resolve13 } from "node:path";
+import { join as join23, resolve as resolve13 } from "node:path";
 import { randomUUID as randomUUID7 } from "node:crypto";
 function nowIso6() {
   return (/* @__PURE__ */ new Date()).toISOString();
@@ -13593,22 +13778,22 @@ var NativeEngineSessionManager = class {
     this.ptySpawn = null;
     this.ptyLoadFailed = false;
     this.baseDir = resolve13(baseDir);
-    this.stateDir = join22(this.baseDir, ".crew");
-    this.statePath = join22(this.stateDir, "engine-native-sessions.json");
+    this.stateDir = join23(this.baseDir, ".crew");
+    this.statePath = join23(this.stateDir, "engine-native-sessions.json");
   }
   makeKey(engine, sessionId) {
     return `${String(engine || "").trim().toLowerCase()}::${String(sessionId || "").trim()}`;
   }
   async ensureStore() {
-    await mkdir13(this.stateDir, { recursive: true });
-    if (!existsSync12(this.statePath)) {
-      await writeFile10(this.statePath, JSON.stringify({}, null, 2), "utf8");
+    await mkdir14(this.stateDir, { recursive: true });
+    if (!existsSync13(this.statePath)) {
+      await writeFile11(this.statePath, JSON.stringify({}, null, 2), "utf8");
     }
   }
   async loadStore() {
     await this.ensureStore();
     try {
-      const raw = await readFile16(this.statePath, "utf8");
+      const raw = await readFile17(this.statePath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -13618,7 +13803,7 @@ var NativeEngineSessionManager = class {
   }
   async saveStore(store) {
     await this.ensureStore();
-    await writeFile10(this.statePath, JSON.stringify(store, null, 2), "utf8");
+    await writeFile11(this.statePath, JSON.stringify(store, null, 2), "utf8");
   }
   async getPtySpawn() {
     if (this.ptySpawn) return this.ptySpawn;
@@ -13812,8 +13997,8 @@ Timed out after ${timeoutMs}ms`,
 function resolveCursorAgentBinQuoted() {
   const fromEnv = String(process.env.CURSOR_CLI_BIN || "").trim();
   if (fromEnv) return shellQuote(fromEnv);
-  const agentLocal = join22(homedir5(), ".local", "bin", "agent");
-  if (existsSync12(agentLocal)) return shellQuote(agentLocal);
+  const agentLocal = join23(homedir5(), ".local", "bin", "agent");
+  if (existsSync13(agentLocal)) return shellQuote(agentLocal);
   return "agent";
 }
 function buildEngineShellCommand(engine, prompt, model, cwd) {
@@ -13839,9 +14024,9 @@ function buildEngineShellCommand(engine, prompt, model, cwd) {
 }
 
 // src/engines/tool-audit.ts
-import { appendFile as appendFile5, mkdir as mkdir14, readFile as readFile17, writeFile as writeFile11 } from "node:fs/promises";
-import { existsSync as existsSync13 } from "node:fs";
-import { join as join23, resolve as resolve14 } from "node:path";
+import { appendFile as appendFile5, mkdir as mkdir15, readFile as readFile18, writeFile as writeFile12 } from "node:fs/promises";
+import { existsSync as existsSync14 } from "node:fs";
+import { join as join24, resolve as resolve14 } from "node:path";
 function clip4(text, max = 3e3) {
   const value = String(text || "");
   if (value.length <= max) return value;
@@ -13915,16 +14100,16 @@ function extractToolCalls(raw) {
 var ToolAuditStore = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = resolve14(baseDir);
-    this.dir = join23(this.baseDir, ".crew", "tool-audit");
-    this.indexPath = join23(this.baseDir, ".crew", "tool-audit.jsonl");
+    this.dir = join24(this.baseDir, ".crew", "tool-audit");
+    this.indexPath = join24(this.baseDir, ".crew", "tool-audit.jsonl");
   }
   async ensureDir() {
-    await mkdir14(this.dir, { recursive: true });
+    await mkdir15(this.dir, { recursive: true });
   }
   async record(run) {
     await this.ensureDir();
-    const runPath = join23(this.dir, `${run.runId}.json`);
-    await writeFile11(runPath, JSON.stringify(run, null, 2), "utf8");
+    const runPath = join24(this.dir, `${run.runId}.json`);
+    await writeFile12(runPath, JSON.stringify(run, null, 2), "utf8");
     await appendFile5(this.indexPath, `${JSON.stringify({
       runId: run.runId,
       ts: run.ts,
@@ -13938,15 +14123,15 @@ var ToolAuditStore = class {
   }
   async loadRun(runId) {
     try {
-      const raw = await readFile17(join23(this.dir, `${runId}.json`), "utf8");
+      const raw = await readFile18(join24(this.dir, `${runId}.json`), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
     }
   }
   async list(limit = 30) {
-    if (!existsSync13(this.indexPath)) return [];
-    const raw = await readFile17(this.indexPath, "utf8");
+    if (!existsSync14(this.indexPath)) return [];
+    const raw = await readFile18(this.indexPath, "utf8");
     const rows = raw.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
       try {
         return JSON.parse(line);
@@ -14480,13 +14665,13 @@ async function getToolAuditReplayPlan(baseDir, runId) {
 
 // src/watch/index.ts
 import { watch } from "node:fs";
-import { readFile as readFile19 } from "node:fs/promises";
-import { join as join24 } from "node:path";
+import { readFile as readFile20 } from "node:fs/promises";
+import { join as join25 } from "node:path";
 
 // src/studio/broadcaster.ts
 init_logger();
 import { WebSocket } from "ws";
-import { readFile as readFile18 } from "node:fs/promises";
+import { readFile as readFile19 } from "node:fs/promises";
 var StudioBroadcaster = class {
   constructor(studioUrl = "ws://127.0.0.1:3334/ws", logger3) {
     this.ws = null;
@@ -14541,7 +14726,7 @@ var StudioBroadcaster = class {
       };
       if (includeContent) {
         try {
-          event.content = await readFile18(filePath, "utf8");
+          event.content = await readFile19(filePath, "utf8");
         } catch {
           event.content = void 0;
         }
@@ -14608,7 +14793,7 @@ function extractTodos(content) {
 async function inspectFileForTodos(path3) {
   let content = "";
   try {
-    content = await readFile19(path3, "utf8");
+    content = await readFile20(path3, "utf8");
   } catch {
     return { type: "file_changed", file: path3 };
   }
@@ -14659,7 +14844,7 @@ function startWatchMode(rootDir, onEvent, ignored = ["node_modules", ".git", "di
     if (!filename) return;
     const relative5 = String(filename);
     if (ignored.some((p) => relative5.includes(p))) return;
-    const fullPath = join24(rootDir, relative5);
+    const fullPath = join25(rootDir, relative5);
     const event = await inspectFileForTodos(fullPath);
     await onEvent(event);
     if (broadcaster) {
@@ -14698,9 +14883,9 @@ function getBanner() {
 }
 
 // src/multirepo/index.ts
-import { readdir as readdir5, access as access5, mkdir as mkdir15, writeFile as writeFile12 } from "node:fs/promises";
+import { readdir as readdir5, access as access5, mkdir as mkdir16, writeFile as writeFile13 } from "node:fs/promises";
 import { constants as constants5 } from "node:fs";
-import { dirname as dirname7, join as join25, resolve as resolve15 } from "node:path";
+import { dirname as dirname7, join as join26, resolve as resolve15 } from "node:path";
 import { execFile as execFile4 } from "node:child_process";
 import { promisify as promisify4 } from "node:util";
 var execFileAsync4 = promisify4(execFile4);
@@ -14728,8 +14913,8 @@ async function findSiblingRepos(baseDir = process.cwd()) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name === currentName) continue;
-    const repoPath = join25(parent, entry.name);
-    if (await exists(join25(repoPath, ".git"))) {
+    const repoPath = join26(parent, entry.name);
+    if (await exists(join26(repoPath, ".git"))) {
       repos.push(repoPath);
     }
   }
@@ -14767,10 +14952,10 @@ async function collectMultiRepoContext(baseDir = process.cwd()) {
 async function syncRepoSnapshots(baseDir = process.cwd()) {
   const siblings = await findSiblingRepos(baseDir);
   const summaries = await Promise.all(siblings.map((path3) => getRepoSummary(path3)));
-  const outDir = join25(baseDir, ".crew");
-  await mkdir15(outDir, { recursive: true });
-  const outPath = join25(outDir, "multi-repo-sync.json");
-  await writeFile12(
+  const outDir = join26(baseDir, ".crew");
+  await mkdir16(outDir, { recursive: true });
+  const outPath = join26(outDir, "multi-repo-sync.json");
+  await writeFile13(
     outPath,
     JSON.stringify({ syncedAt: (/* @__PURE__ */ new Date()).toISOString(), repos: summaries }, null, 2),
     "utf8"
@@ -14803,10 +14988,10 @@ init_ci();
 
 // src/browser/index.ts
 import { spawn as spawn3 } from "node:child_process";
-import { access as access6, readFile as readFile20, writeFile as writeFile13 } from "node:fs/promises";
+import { access as access6, readFile as readFile21, writeFile as writeFile14 } from "node:fs/promises";
 import { constants as constants6 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join as join26 } from "node:path";
+import { join as join27 } from "node:path";
 import { execFile as execFile5 } from "node:child_process";
 import { promisify as promisify6 } from "node:util";
 import WebSocket2 from "ws";
@@ -14848,7 +15033,7 @@ async function launchChromeDebug(url, port = 9222) {
   if (!chrome) {
     throw new Error("Chrome/Chromium binary not found. Set CHROME_BIN or install Chrome.");
   }
-  const userDataDir = join26(tmpdir(), `crew-browser-debug-${Date.now()}`);
+  const userDataDir = join27(tmpdir(), `crew-browser-debug-${Date.now()}`);
   const args = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
@@ -14948,9 +15133,9 @@ async function runBrowserDebug(url, options = {}) {
     let screenshotPath = options.screenshotPath;
     const screenshotRes = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true });
     if (!screenshotPath) {
-      screenshotPath = join26(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
+      screenshotPath = join27(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
     }
-    await writeFile13(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data, "base64"));
+    await writeFile14(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data, "base64"));
     return { consoleErrors: errors, screenshotPath };
   } finally {
     try {
@@ -14980,15 +15165,15 @@ function compareScreenshotBuffers(a, b) {
   };
 }
 async function compareScreenshots(pathA, pathB) {
-  const [a, b] = await Promise.all([readFile20(pathA), readFile20(pathB)]);
+  const [a, b] = await Promise.all([readFile21(pathA), readFile21(pathB)]);
   return compareScreenshotBuffers(a, b);
 }
 
 // src/team/index.ts
-import { access as access7, copyFile as copyFile2, mkdir as mkdir16, readFile as readFile21, readdir as readdir6, writeFile as writeFile14 } from "node:fs/promises";
+import { access as access7, copyFile as copyFile2, mkdir as mkdir17, readFile as readFile22, readdir as readdir6, writeFile as writeFile15 } from "node:fs/promises";
 import { constants as constants7 } from "node:fs";
 import { hostname } from "node:os";
-import { join as join27 } from "node:path";
+import { join as join28 } from "node:path";
 var DEFAULT_PRIVACY = {
   sharePrompt: true,
   shareOriginal: true,
@@ -15004,13 +15189,13 @@ async function exists3(path3) {
   }
 }
 function getStateDir(baseDir = process.cwd()) {
-  return join27(baseDir, ".crew");
+  return join28(baseDir, ".crew");
 }
 function getTeamSyncDir(baseDir = process.cwd()) {
-  return process.env.TEAM_SYNC_DIR || join27(getStateDir(baseDir), "team-sync");
+  return process.env.TEAM_SYNC_DIR || join28(getStateDir(baseDir), "team-sync");
 }
 function getPrivacyPath(baseDir = process.cwd()) {
-  return join27(getStateDir(baseDir), "privacy.json");
+  return join28(getStateDir(baseDir), "privacy.json");
 }
 function applyPrivacyToCorrection(entry, privacy) {
   const output = {
@@ -15026,12 +15211,12 @@ function applyPrivacyToCorrection(entry, privacy) {
 async function loadPrivacyControls(baseDir = process.cwd()) {
   const path3 = getPrivacyPath(baseDir);
   if (!await exists3(path3)) {
-    await mkdir16(getStateDir(baseDir), { recursive: true });
-    await writeFile14(path3, JSON.stringify(DEFAULT_PRIVACY, null, 2), "utf8");
+    await mkdir17(getStateDir(baseDir), { recursive: true });
+    await writeFile15(path3, JSON.stringify(DEFAULT_PRIVACY, null, 2), "utf8");
     return { ...DEFAULT_PRIVACY };
   }
   try {
-    const raw = await readFile21(path3, "utf8");
+    const raw = await readFile22(path3, "utf8");
     const parsed = JSON.parse(raw);
     return {
       sharePrompt: parsed.sharePrompt !== false,
@@ -15044,27 +15229,27 @@ async function loadPrivacyControls(baseDir = process.cwd()) {
   }
 }
 async function savePrivacyControls(privacy, baseDir = process.cwd()) {
-  await mkdir16(getStateDir(baseDir), { recursive: true });
-  await writeFile14(getPrivacyPath(baseDir), JSON.stringify(privacy, null, 2), "utf8");
+  await mkdir17(getStateDir(baseDir), { recursive: true });
+  await writeFile15(getPrivacyPath(baseDir), JSON.stringify(privacy, null, 2), "utf8");
 }
 async function uploadTeamContext(baseDir = process.cwd()) {
   const stateDir = getStateDir(baseDir);
   const teamDir = getTeamSyncDir(baseDir);
-  await mkdir16(teamDir, { recursive: true });
-  const sessionPath = join27(stateDir, "session.json");
-  const correctionsPath = join27(stateDir, "training-data.jsonl");
+  await mkdir17(teamDir, { recursive: true });
+  const sessionPath = join28(stateDir, "session.json");
+  const correctionsPath = join28(stateDir, "training-data.jsonl");
   const host = hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
-  const sessionOut = join27(teamDir, `${host}-session.json`);
-  const correctionsOut = join27(teamDir, `${host}-training-data.jsonl`);
+  const sessionOut = join28(teamDir, `${host}-session.json`);
+  const correctionsOut = join28(teamDir, `${host}-training-data.jsonl`);
   if (await exists3(sessionPath)) {
     if (process.env.TEAM_S3_SESSION_PUT_URL) {
-      const body = await readFile21(sessionPath, "utf8");
+      const body = await readFile22(sessionPath, "utf8");
       await fetch(process.env.TEAM_S3_SESSION_PUT_URL, { method: "PUT", body });
     }
     await copyFile2(sessionPath, sessionOut);
   }
   if (await exists3(correctionsPath)) {
-    let correctionsRaw = await readFile21(correctionsPath, "utf8");
+    let correctionsRaw = await readFile22(correctionsPath, "utf8");
     const privacy = await loadPrivacyControls(baseDir);
     if (correctionsRaw.trim().length > 0) {
       const lines = correctionsRaw.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -15075,42 +15260,42 @@ async function uploadTeamContext(baseDir = process.cwd()) {
     if (process.env.TEAM_S3_CORRECTIONS_PUT_URL) {
       await fetch(process.env.TEAM_S3_CORRECTIONS_PUT_URL, { method: "PUT", body: correctionsRaw });
     }
-    await writeFile14(correctionsOut, correctionsRaw, "utf8");
+    await writeFile15(correctionsOut, correctionsRaw, "utf8");
   }
   return { sessionOut, correctionsOut };
 }
 async function downloadTeamContext(baseDir = process.cwd()) {
   const stateDir = getStateDir(baseDir);
   const teamDir = getTeamSyncDir(baseDir);
-  await mkdir16(stateDir, { recursive: true });
-  await mkdir16(teamDir, { recursive: true });
-  const localSessionPath = join27(stateDir, "session.json");
-  const localCorrectionsPath = join27(stateDir, "training-data.jsonl");
+  await mkdir17(stateDir, { recursive: true });
+  await mkdir17(teamDir, { recursive: true });
+  const localSessionPath = join28(stateDir, "session.json");
+  const localCorrectionsPath = join28(stateDir, "training-data.jsonl");
   if (process.env.TEAM_S3_SESSION_GET_URL) {
     const response = await fetch(process.env.TEAM_S3_SESSION_GET_URL);
     if (response.ok) {
       const text = await response.text();
-      await writeFile14(localSessionPath, text, "utf8");
+      await writeFile15(localSessionPath, text, "utf8");
     }
   }
   if (process.env.TEAM_S3_CORRECTIONS_GET_URL) {
     const response = await fetch(process.env.TEAM_S3_CORRECTIONS_GET_URL);
     if (response.ok) {
       const text = await response.text();
-      await writeFile14(localCorrectionsPath, text, "utf8");
+      await writeFile15(localCorrectionsPath, text, "utf8");
     }
   }
   const files = await readdir6(teamDir);
   const sessionCandidates = files.filter((name) => name.endsWith("-session.json"));
   const correctionCandidates = files.filter((name) => name.endsWith("-training-data.jsonl"));
   if (sessionCandidates.length > 0 && !await exists3(localSessionPath)) {
-    const src = join27(teamDir, sessionCandidates.sort().at(-1));
+    const src = join28(teamDir, sessionCandidates.sort().at(-1));
     await copyFile2(src, localSessionPath);
   }
   let mergedCorrections = "";
   const seen = /* @__PURE__ */ new Set();
   if (await exists3(localCorrectionsPath)) {
-    const local = await readFile21(localCorrectionsPath, "utf8");
+    const local = await readFile22(localCorrectionsPath, "utf8");
     for (const line of local.split("\n").map((s) => s.trim()).filter(Boolean)) {
       seen.add(line);
       mergedCorrections += `${line}
@@ -15118,7 +15303,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
     }
   }
   for (const file of correctionCandidates) {
-    const raw = await readFile21(join27(teamDir, file), "utf8");
+    const raw = await readFile22(join28(teamDir, file), "utf8");
     for (const line of raw.split("\n").map((s) => s.trim()).filter(Boolean)) {
       if (!seen.has(line)) {
         seen.add(line);
@@ -15128,7 +15313,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
     }
   }
   if (mergedCorrections.length > 0) {
-    await writeFile14(localCorrectionsPath, mergedCorrections, "utf8");
+    await writeFile15(localCorrectionsPath, mergedCorrections, "utf8");
   }
   return {
     sessionPath: localSessionPath,
@@ -15138,7 +15323,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
 }
 async function getTeamSyncStatus(baseDir = process.cwd()) {
   const teamDir = getTeamSyncDir(baseDir);
-  await mkdir16(teamDir, { recursive: true });
+  await mkdir17(teamDir, { recursive: true });
   const files = await readdir6(teamDir);
   const privacy = await loadPrivacyControls(baseDir);
   return {
@@ -15151,8 +15336,8 @@ async function getTeamSyncStatus(baseDir = process.cwd()) {
 // src/voice/listener.ts
 import { execFile as execFile6 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
-import { readFile as readFile22, writeFile as writeFile15 } from "node:fs/promises";
-import { join as join28 } from "node:path";
+import { readFile as readFile23, writeFile as writeFile16 } from "node:fs/promises";
+import { join as join29 } from "node:path";
 import { tmpdir as tmpdir2 } from "node:os";
 var execFileAsync6 = promisify7(execFile6);
 async function commandExists2(command) {
@@ -15192,7 +15377,7 @@ function selectRecorderPlan(platform2, hasSox, hasFfmpeg, outputPath, durationSe
 }
 async function recordAudio(options = {}) {
   const durationSec = Math.max(1, options.durationSec || 6);
-  const outputPath = options.outputPath || join28(tmpdir2(), `crew-listen-${Date.now()}.wav`);
+  const outputPath = options.outputPath || join29(tmpdir2(), `crew-listen-${Date.now()}.wav`);
   const hasSox = await commandExists2("sox");
   const hasFfmpeg = await commandExists2("ffmpeg");
   const plan = selectRecorderPlan(process.platform, hasSox, hasFfmpeg, outputPath, durationSec);
@@ -15207,7 +15392,7 @@ async function transcribeWithOpenAi(audioPath) {
   if (!key) {
     throw new Error("OPENAI_API_KEY is required for OpenAI Whisper transcription.");
   }
-  const audioBuffer = await readFile22(audioPath);
+  const audioBuffer = await readFile23(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-1");
@@ -15229,7 +15414,7 @@ async function transcribeWithGroq(audioPath) {
   if (!key) {
     throw new Error("GROQ_API_KEY is required for Groq Whisper transcription.");
   }
-  const audioBuffer = await readFile22(audioPath);
+  const audioBuffer = await readFile23(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-large-v3-turbo");
@@ -15254,15 +15439,15 @@ async function transcribeWithWhisperCli(audioPath) {
     throw new Error("Local whisper CLI is not installed. Install with: pip install faster-whisper");
   }
   const whisperCmd = hasFasterWhisper ? "faster-whisper" : "whisper";
-  const outDir = join28(tmpdir2(), `crew-whisper-${Date.now()}`);
+  const outDir = join29(tmpdir2(), `crew-whisper-${Date.now()}`);
   await execFileAsync6("mkdir", ["-p", outDir]);
   const model = hasFasterWhisper ? "tiny" : "base";
   await execFileAsync6(whisperCmd, [audioPath, "--model", model, "--output_format", "txt", "--output_dir", outDir], {
     maxBuffer: 1024 * 1024 * 16
   });
   const baseName = audioPath.split("/").pop()?.replace(/\.[^.]+$/, "") || "audio";
-  const txtPath = join28(outDir, `${baseName}.txt`);
-  const text = await readFile22(txtPath, "utf8");
+  const txtPath = join29(outDir, `${baseName}.txt`);
+  const text = await readFile23(txtPath, "utf8");
   return text.trim();
 }
 async function transcribeAudio(audioPath, options = {}) {
@@ -15294,19 +15479,19 @@ async function speakWithSkill(router, text, skill = "elevenlabs.tts") {
   return router.callSkill(skill, { text });
 }
 async function appendVoiceTranscript(baseDir, role, text) {
-  const path3 = join28(baseDir, ".crew", "voice-transcript.log");
-  await execFileAsync6("mkdir", ["-p", join28(baseDir, ".crew")]);
+  const path3 = join29(baseDir, ".crew", "voice-transcript.log");
+  await execFileAsync6("mkdir", ["-p", join29(baseDir, ".crew")]);
   const line = JSON.stringify({
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     role,
     text
   });
-  await writeFile15(path3, `${line}
+  await writeFile16(path3, `${line}
 `, { encoding: "utf8", flag: "a" });
 }
 
 // src/context/augment.ts
-import { readFile as readFile23 } from "node:fs/promises";
+import { readFile as readFile24 } from "node:fs/promises";
 import { extname as extname3, resolve as resolve16 } from "node:path";
 function collectOption(value, previous = []) {
   if (!value) return previous;
@@ -15339,7 +15524,7 @@ async function buildFileContextBlock(paths = [], maxChars = 8e3) {
   for (const rawPath of paths) {
     const abs = resolve16(rawPath);
     try {
-      const content = await readFile23(abs, "utf8");
+      const content = await readFile24(abs, "utf8");
       sections.push([
         `### File Context: ${abs}`,
         "```text",
@@ -15379,7 +15564,7 @@ async function buildImageContextBlock(paths = [], maxBytes = 25e4) {
 (unsupported image type; supported: png, jpg, jpeg, webp, gif)`);
         continue;
       }
-      const buf = await readFile23(abs);
+      const buf = await readFile24(abs);
       const used = buf.subarray(0, maxBytes);
       const truncated = buf.length > maxBytes;
       const dataUri = `data:${mime};base64,${used.toString("base64")}`;
@@ -15407,16 +15592,16 @@ function mergeTaskWithContext(task, blocks) {
 
 ${filtered.join("\n\n")}`;
 }
-function estimateTokens3(text) {
+function estimateTokens4(text) {
   if (!text) return 0;
   return Math.ceil(text.length / 4);
 }
 function enforceContextBudget(task, blocks, maxTokens, mode = "trim") {
   const merged = mergeTaskWithContext(task, blocks);
   if (!maxTokens || maxTokens <= 0) {
-    return { task: merged, estimatedTokens: estimateTokens3(merged), trimmed: false, exceeded: false };
+    return { task: merged, estimatedTokens: estimateTokens4(merged), trimmed: false, exceeded: false };
   }
-  const estimated = estimateTokens3(merged);
+  const estimated = estimateTokens4(merged);
   if (estimated <= maxTokens) {
     return { task: merged, estimatedTokens: estimated, trimmed: false, exceeded: false };
   }
@@ -15434,7 +15619,7 @@ function enforceContextBudget(task, blocks, maxTokens, mode = "trim") {
 ${clippedContext}` : baseTask.slice(0, maxChars);
   return {
     task: clipped,
-    estimatedTokens: estimateTokens3(clipped),
+    estimatedTokens: estimateTokens4(clipped),
     trimmed: true,
     exceeded: false
   };
@@ -15515,9 +15700,9 @@ function detectHighSeverityFindings(text) {
 }
 
 // src/headless/index.ts
-import { mkdir as mkdir17, readFile as readFile24, writeFile as writeFile16 } from "node:fs/promises";
-import { existsSync as existsSync14 } from "node:fs";
-import { join as join29 } from "node:path";
+import { mkdir as mkdir18, readFile as readFile25, writeFile as writeFile17 } from "node:fs/promises";
+import { existsSync as existsSync15 } from "node:fs";
+import { join as join30 } from "node:path";
 
 // src/runtime/execution-policy.ts
 init_capabilities();
@@ -15592,19 +15777,19 @@ function isRiskBlocked(risk, threshold, force = false) {
 // src/headless/index.ts
 init_blast_radius();
 function statePath(baseDir) {
-  return join29(baseDir, ".crew", "headless-state.json");
+  return join30(baseDir, ".crew", "headless-state.json");
 }
 async function ensureState(baseDir) {
   const path3 = statePath(baseDir);
-  await mkdir17(join29(baseDir, ".crew"), { recursive: true });
-  if (!existsSync14(path3)) {
-    await writeFile16(path3, JSON.stringify({ paused: false, updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, null, 2), "utf8");
+  await mkdir18(join30(baseDir, ".crew"), { recursive: true });
+  if (!existsSync15(path3)) {
+    await writeFile17(path3, JSON.stringify({ paused: false, updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, null, 2), "utf8");
   }
 }
 async function getHeadlessState(baseDir = process.cwd()) {
   await ensureState(baseDir);
   try {
-    const raw = await readFile24(statePath(baseDir), "utf8");
+    const raw = await readFile25(statePath(baseDir), "utf8");
     const parsed = JSON.parse(raw);
     return { paused: Boolean(parsed.paused), updatedAt: parsed.updatedAt };
   } catch {
@@ -15613,7 +15798,7 @@ async function getHeadlessState(baseDir = process.cwd()) {
 }
 async function setHeadlessPaused(paused, baseDir = process.cwd()) {
   await ensureState(baseDir);
-  await writeFile16(
+  await writeFile17(
     statePath(baseDir),
     JSON.stringify({ paused: Boolean(paused), updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, null, 2),
     "utf8"
@@ -15621,10 +15806,10 @@ async function setHeadlessPaused(paused, baseDir = process.cwd()) {
 }
 async function appendOutLine(baseDir, outPath, payload) {
   if (!outPath) return;
-  const fullPath = join29(baseDir, outPath);
-  await mkdir17(join29(fullPath, ".."), { recursive: true });
-  const prev = existsSync14(fullPath) ? await readFile24(fullPath, "utf8") : "";
-  await writeFile16(fullPath, `${prev}${JSON.stringify(payload)}
+  const fullPath = join30(baseDir, outPath);
+  await mkdir18(join30(fullPath, ".."), { recursive: true });
+  const prev = existsSync15(fullPath) ? await readFile25(fullPath, "utf8") : "";
+  await writeFile17(fullPath, `${prev}${JSON.stringify(payload)}
 `, "utf8");
 }
 async function emit(baseDir, jsonMode, outPath, event, data = {}) {
@@ -16011,12 +16196,12 @@ ${context}` : message;
 }
 
 // src/metrics/pipeline.ts
-import { readFile as readFile25 } from "node:fs/promises";
-import { join as join30 } from "node:path";
+import { readFile as readFile26 } from "node:fs/promises";
+import { join as join31 } from "node:path";
 async function loadPipelineMetricsSummary(baseDir) {
-  const path3 = join30(baseDir, ".crew", "pipeline-metrics.jsonl");
+  const path3 = join31(baseDir, ".crew", "pipeline-metrics.jsonl");
   try {
-    const raw = await readFile25(path3, "utf8");
+    const raw = await readFile26(path3, "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     let runs = 0;
     let qaApproved = 0;
@@ -20836,6 +21021,20 @@ async function main(args = []) {
       logger3.error(`Failed to mark banner as seen: ${e.message}`);
     }
   }
+  try {
+    const swarmCfgPath = join42(homedir11(), ".crewswarm", "crewswarm.json");
+    if (existsSync22(swarmCfgPath)) {
+      const swarmCfg = JSON.parse(await readFile32(swarmCfgPath, "utf8"));
+      if (swarmCfg.env && typeof swarmCfg.env === "object") {
+        for (const [k, v] of Object.entries(swarmCfg.env)) {
+          if (!process.env[k] && v != null) {
+            process.env[k] = String(v);
+          }
+        }
+      }
+    }
+  } catch {
+  }
   const logger3 = new Logger();
   const config = new ConfigManager();
   const toolManager = new ToolManager(config);
@@ -20883,6 +21082,25 @@ async function main(args = []) {
   try {
     await agentKeeper.compact();
   } catch {
+  }
+  if (String(process.env.CREW_RAG_MODE || "auto").toLowerCase() !== "off") {
+    Promise.resolve().then(() => (init_codebase_rag(), codebase_rag_exports)).then(async ({ CodebaseIndex: CodebaseIndex2 }) => {
+      try {
+        const index = CodebaseIndex2.getInstance(process.cwd());
+        const result2 = await index.ensureIndex({
+          onProgress: (done, total) => {
+            if (done === total && done > 0) {
+              logger3.info(`[RAG] Codebase index ready (${index.stats().files} files, provider: ${index.stats().provider})`);
+            }
+          }
+        });
+        if (result2.indexed > 0) {
+          logger3.info(`[RAG] Indexed ${result2.indexed} new/changed files, skipped ${result2.skipped} unchanged${result2.removed > 0 ? `, removed ${result2.removed} deleted` : ""}`);
+        }
+      } catch {
+      }
+    }).catch(() => {
+    });
   }
   const headlessShortcut = parseHeadlessShortcutArgs(args);
   if (headlessShortcut.enabled) {
