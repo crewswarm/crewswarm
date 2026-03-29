@@ -731,6 +731,25 @@ const ENV_GROUPS = [
     ],
   },
   {
+    label: 'crew-cli — Codebase Index & RAG',
+    note: 'Codebase embedding index auto-builds on startup. Injects relevant file context into every worker prompt.',
+    vars: [
+      { key: 'CREW_RAG_MODE',            hint: 'RAG mode: auto (use index when ready, else keyword), semantic, keyword, import-graph, off', default: 'auto' },
+      { key: 'CREW_EMBEDDING_PROVIDER',  hint: 'Embedding provider: local (zero-cost), openai (best), gemini (free tier)',                  default: 'local' },
+      { key: 'CREW_RAG_WORKER_BUDGET',   hint: 'Max tokens of RAG context injected per worker (approximate)',                               default: '4000' },
+      { key: 'CREW_RAG_MAX_FILES',       hint: 'Max code files to index (larger repos should increase this)',                                default: '2000' },
+      { key: 'CREW_RAG_BATCH_SIZE',      hint: 'Files per embedding batch (higher = faster but more API calls)',                             default: '20' },
+    ],
+  },
+  {
+    label: 'crew-cli — Checkpointing',
+    note: 'Automatic git checkpoints during pipeline execution for easy rollback.',
+    vars: [
+      { key: 'CREW_AUTO_CHECKPOINT',         hint: 'Enable auto-commit at task boundaries (true/false)',                     default: 'true' },
+      { key: 'CREW_CHECKPOINT_INTERVAL_MS',  hint: 'Periodic git stash snapshot interval during long tasks (ms, 0=off)',     default: '60000' },
+    ],
+  },
+  {
     label: 'PM Loop',
     vars: [
       { key: 'PM_MAX_ITEMS',           hint: 'Max roadmap items per PM loop run',                                        default: '10' },

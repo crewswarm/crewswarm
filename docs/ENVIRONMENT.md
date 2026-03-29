@@ -55,6 +55,25 @@ All variables can be set in `~/.crewswarm/crewswarm.json` under the `env` key, o
 | `WA_HTTP_PORT` | `5015` (whatsapp-bridge.mjs) |
 | `STUDIO_WATCH_PORT` | `3334` (apps/vibe/watch-server.mjs) |
 
+## Codebase index & RAG (crew-cli)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CREW_RAG_MODE` | `auto` | RAG mode: `auto` (semantic when ready, else keyword), `semantic`, `keyword`, `import-graph`, `off` |
+| `CREW_EMBEDDING_PROVIDER` | `local` | Embedding provider: `local` (zero-cost hashed vectors), `openai` ($0.02/1K files), `gemini` (free tier) |
+| `CREW_RAG_WORKER_BUDGET` | `4000` | Max tokens of RAG context injected per L3 worker (approximate) |
+| `CREW_RAG_MAX_FILES` | `2000` | Max code files to index |
+| `CREW_RAG_BATCH_SIZE` | `20` | Files per embedding batch |
+| `CREW_RAG_MAX_FILES_LOAD` | `10` | Max files loaded per query result |
+| `CREW_RAG_TOKEN_BUDGET` | `8000` | Total token budget for autoLoadRelevantFiles |
+
+## Checkpointing (crew-cli)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CREW_AUTO_CHECKPOINT` | `true` | Auto-commit at task boundaries for easy rollback |
+| `CREW_CHECKPOINT_INTERVAL_MS` | `60000` | Periodic git stash snapshot interval during long tasks (ms, 0 = disabled) |
+
 ## Background consciousness
 
 | Variable | Default | Description |
