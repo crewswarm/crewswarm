@@ -192,22 +192,47 @@ export class LocalExecutor {
     options: ExecutorOptions,
     systemPrompt: string
   ): Promise<ExecutorResult | null> {
+    const providerOptions = this.getProviderOptions(provider, model, options);
     switch (provider) {
       case 'openai':
-        return this.executeWithOpenAI(task, options, systemPrompt, options.sessionId);
+        return this.executeWithOpenAI(task, providerOptions, systemPrompt, providerOptions.sessionId);
       case 'groq':
-        return this.executeWithGroq(task, options, systemPrompt);
+        return this.executeWithGroq(task, providerOptions, systemPrompt);
       case 'grok':
-        return this.executeWithGrok(task, options, systemPrompt, options.sessionId);
+        return this.executeWithGrok(task, providerOptions, systemPrompt, providerOptions.sessionId);
       case 'gemini':
-        return this.executeWithGemini(task, options, systemPrompt);
+        return this.executeWithGemini(task, providerOptions, systemPrompt);
       case 'deepseek':
-        return this.executeWithDeepSeek(task, options, systemPrompt);
+        return this.executeWithDeepSeek(task, providerOptions, systemPrompt);
       case 'anthropic':
-        return this.executeWithAnthropic(task, options, systemPrompt, options.sessionId);
+        return this.executeWithAnthropic(task, providerOptions, systemPrompt, providerOptions.sessionId);
       default:
         return null;
     }
+  }
+
+  private getProviderOptions(provider: string, requestedModel: string, options: ExecutorOptions): ExecutorOptions {
+    if (options.explicitModel === true) {
+      return options;
+    }
+
+    const normalized = String(requestedModel || '').trim().toLowerCase();
+    const matchesProvider =
+      (provider === 'openai' && normalized.startsWith('gpt-')) ||
+      (provider === 'anthropic' && normalized.startsWith('claude')) ||
+      (provider === 'grok' && normalized.startsWith('grok')) ||
+      (provider === 'gemini' && normalized.startsWith('gemini')) ||
+      (provider === 'deepseek' && normalized.startsWith('deepseek')) ||
+      (provider === 'groq' && (normalized.includes('llama') || normalized.includes('mixtral')));
+
+    if (matchesProvider) {
+      return options;
+    }
+
+    return {
+      ...options,
+      model: undefined
+    };
   }
 
   private async executeWithGroq(task: string, options: ExecutorOptions, systemPrompt: string): Promise<ExecutorResult | null> {

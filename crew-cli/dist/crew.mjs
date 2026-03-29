@@ -1196,22 +1196,37 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
         return "grok-beta";
       }
       async executeWithProvider(provider, task, model, options, systemPrompt) {
+        const providerOptions = this.getProviderOptions(provider, model, options);
         switch (provider) {
           case "openai":
-            return this.executeWithOpenAI(task, options, systemPrompt, options.sessionId);
+            return this.executeWithOpenAI(task, providerOptions, systemPrompt, providerOptions.sessionId);
           case "groq":
-            return this.executeWithGroq(task, options, systemPrompt);
+            return this.executeWithGroq(task, providerOptions, systemPrompt);
           case "grok":
-            return this.executeWithGrok(task, options, systemPrompt, options.sessionId);
+            return this.executeWithGrok(task, providerOptions, systemPrompt, providerOptions.sessionId);
           case "gemini":
-            return this.executeWithGemini(task, options, systemPrompt);
+            return this.executeWithGemini(task, providerOptions, systemPrompt);
           case "deepseek":
-            return this.executeWithDeepSeek(task, options, systemPrompt);
+            return this.executeWithDeepSeek(task, providerOptions, systemPrompt);
           case "anthropic":
-            return this.executeWithAnthropic(task, options, systemPrompt, options.sessionId);
+            return this.executeWithAnthropic(task, providerOptions, systemPrompt, providerOptions.sessionId);
           default:
             return null;
         }
+      }
+      getProviderOptions(provider, requestedModel, options) {
+        if (options.explicitModel === true) {
+          return options;
+        }
+        const normalized = String(requestedModel || "").trim().toLowerCase();
+        const matchesProvider = provider === "openai" && normalized.startsWith("gpt-") || provider === "anthropic" && normalized.startsWith("claude") || provider === "grok" && normalized.startsWith("grok") || provider === "gemini" && normalized.startsWith("gemini") || provider === "deepseek" && normalized.startsWith("deepseek") || provider === "groq" && (normalized.includes("llama") || normalized.includes("mixtral"));
+        if (matchesProvider) {
+          return options;
+        }
+        return {
+          ...options,
+          model: void 0
+        };
       }
       async executeWithGroq(task, options, systemPrompt) {
         const apiKey = process.env.GROQ_API_KEY;
