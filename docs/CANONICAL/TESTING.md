@@ -113,6 +113,8 @@ Legacy root verification scripts were archived under `docs/archive/legacy-tests/
 - `crew-cli` coverage is reported by `cd crew-cli && npm run test:coverage`.
 - `npm run test:coverage` at repo root runs both and writes a combined markdown report to `coverage/coverage-report.md`.
 - The current coverage report is strongest for hermetic unit/integration surfaces. Live services, messaging bridges, and browser flows still rely partly on smoke and E2E checks rather than a single unified percentage.
+- `crewchat` runtime decisions, bridge contracts, startup guard behavior, and restart/health script failure paths now have dedicated automated tests in `test/unit/`.
+- Provider failover classification now has a bounded integration matrix in `test/integration/llm-failover-matrix.test.mjs`.
 - See `docs/CANONICAL/COVERAGE-MATRIX.md` for a feature-by-feature status view instead of treating one percentage as universal truth.
 
 ## Rule for contributors

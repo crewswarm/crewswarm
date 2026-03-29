@@ -18,6 +18,14 @@ This document tracks what is genuinely covered, what is verified by bounded or l
 - `crew-cli` runtime and REPL behavior
   - `crew-cli/tests/*`
   - `crew-cli/tests/unit/*`
+- `crewchat` runtime selection and source-label contracts
+  - `test/unit/crewchat-runtime-contract.test.mjs`
+- Messaging bridge integration and contract coverage
+  - `test/unit/bridge-integration.test.mjs`
+  - `test/unit/messaging-bridges-contract.test.mjs`
+- Startup guard and restart/health contract behavior
+  - `test/unit/startup-guard.test.mjs`
+  - `test/unit/restart-health-contract.test.mjs`
 
 ## Integration / Bounded Verification
 
@@ -27,6 +35,9 @@ This document tracks what is genuinely covered, what is verified by bounded or l
   - `test/integration/llm-direct.test.mjs`
 - Dashboard agent settings persistence and backup creation
   - `test/integration/agents-config-settings.test.mjs`
+- Provider failover classification and fallback matrix
+  - `test/integration/llm-direct.test.mjs`
+  - `test/integration/llm-failover-matrix.test.mjs`
 
 ## UI / Browser Coverage
 
@@ -52,6 +63,8 @@ This document tracks what is genuinely covered, what is verified by bounded or l
 - Telegram / WhatsApp bridges
   - `test/e2e/telegram-roundtrip.test.mjs`
   - `test/e2e/whatsapp-roundtrip.test.mjs`
+- Real provider quota/credit behavior across funded vendor accounts
+  - verified via live smoke / manual matrix, not fully hermetic
 
 ## Manual QA Still Required
 
@@ -60,6 +73,7 @@ This document tracks what is genuinely covered, what is verified by bounded or l
 - Provider billing and real vendor quota edge cases across every provider
 - Production deploy health for external services
 - Cross-surface visual polish and accessibility checks
+- Real Telegram/WhatsApp delivery through external networks
 
 ## Interpretation
 
