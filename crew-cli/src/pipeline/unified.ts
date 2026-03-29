@@ -1802,7 +1802,7 @@ Return ONLY valid JSON:
       throw new Error(`Invalid single worker task: ${check.errors.join(', ')}`);
     }
     const enhancedTask = task.goal;
-    
+
     const overlays: PromptOverlay[] = [
       { type: 'task', content: enhancedTask, priority: 1 }
     ];
@@ -1810,6 +1810,41 @@ Return ONLY valid JSON:
     if (context) {
       overlays.push({ type: 'context', content: context, priority: 2 });
     }
+
+    // Auto-inject codebase RAG context for single execution
+    try {
+      const { CodebaseIndex, shouldUseRag } = await import('../context/codebase-rag.js');
+      const codebaseIndex = CodebaseIndex.getInstance(process.cwd());
+      if (codebaseIndex.isReady() && shouldUseRag(enhancedTask)) {
+        const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4000);
+        const hits = await codebaseIndex.query(enhancedTask, 5);
+        if (hits.length > 0) {
+          const { readFile: rf } = await import('node:fs/promises');
+          const { join: pj } = await import('node:path');
+          const parts: string[] = [];
+          let chars = 0;
+          const charLimit = ragBudget * 4;
+          for (const hit of hits) {
+            try {
+              const content = await rf(pj(process.cwd(), hit.file), 'utf8');
+              if (chars + content.length > charLimit) break;
+              parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===\n${content}`);
+              chars += content.length;
+            } catch { /* skip */ }
+          }
+          if (parts.length > 0) {
+            overlays.push({
+              type: 'context',
+              content: `## Codebase Context (auto-retrieved, ${parts.length} files)\n${parts.join('\n\n')}`,
+              priority: 3
+            });
+          }
+        }
+      }
+    } catch {
+      // Never fail a worker due to RAG injection
+    }
+
     overlays.push({
       type: 'constraints',
       content: `Worker task contract:
@@ -1930,6 +1965,40 @@ Return ONLY valid JSON:
             content: memoryContext,
             priority: 0
           });
+        }
+
+        // Auto-inject codebase RAG context (always-on when index is ready)
+        try {
+          const { CodebaseIndex, shouldUseRag } = await import('../context/codebase-rag.js');
+          const codebaseIndex = CodebaseIndex.getInstance(process.cwd());
+          if (codebaseIndex.isReady() && shouldUseRag(unit.goal)) {
+            const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4000);
+            const hits = await codebaseIndex.query(unit.goal, 5);
+            if (hits.length > 0) {
+              const { readFile } = await import('node:fs/promises');
+              const { join: pathJoin, relative: pathRelative } = await import('node:path');
+              const parts: string[] = [];
+              let chars = 0;
+              const charLimit = ragBudget * 4;
+              for (const hit of hits) {
+                try {
+                  const content = await readFile(pathJoin(process.cwd(), hit.file), 'utf8');
+                  if (chars + content.length > charLimit) break;
+                  parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===\n${content}`);
+                  chars += content.length;
+                } catch { /* skip */ }
+              }
+              if (parts.length > 0) {
+                overlays.push({
+                  type: 'context',
+                  content: `## Codebase Context (auto-retrieved, ${parts.length} files)\n${parts.join('\n\n')}`,
+                  priority: 3
+                });
+              }
+            }
+          }
+        } catch {
+          // Never fail a worker due to RAG injection
         }
 
         if (artifactPackId) {

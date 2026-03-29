@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.2] - 2026-03-29
 
 ### Added
+- **Codebase embedding index**: auto-builds on startup, incremental (only re-embeds changed files via content hashing), supports 3 providers (OpenAI, Gemini free tier, or zero-cost local hashed vectors as fallback). Always-on context injection into every L3 worker prompt — no `--docs` flag needed. `CREW_RAG_MODE=auto` (default) uses semantic index when ready, falls back to keyword search. Configurable via `CREW_EMBEDDING_PROVIDER`, `CREW_RAG_WORKER_BUDGET`, `CREW_RAG_MAX_FILES`, `CREW_RAG_BATCH_SIZE`
 - **Diagnostic lint-loop for `--check` gates**: `crew apply --check "npm test" --retries 3` now parses structured error output (TSC, ESLint, GCC, Go, Rust, pytest), feeds specific file:line diagnostics to crew-fixer, retries up to N times, and stops early if no progress is detected
 - **Checkpoint-at-interval**: pipeline execution now creates periodic git stash snapshots every 60s (configurable via `CREW_CHECKPOINT_INTERVAL_MS`) so users can roll back to any point during long-running tasks via `git stash list`
 - **Streaming output for all providers**: local.ts and multi-turn-drivers.ts now stream tokens incrementally for Groq, Grok, Gemini, DeepSeek, Anthropic, OpenAI, Mistral, and Cerebras — no more blank screen while waiting for full response

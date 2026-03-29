@@ -693,6 +693,27 @@ export async function main(args = []) {
     // Never fail startup due to maintenance compaction.
   }
 
+  // Background codebase indexing — non-blocking, incremental
+  if (String(process.env.CREW_RAG_MODE || 'auto').toLowerCase() !== 'off') {
+    import('../context/codebase-rag.js').then(async ({ CodebaseIndex }) => {
+      try {
+        const index = CodebaseIndex.getInstance(process.cwd());
+        const result = await index.ensureIndex({
+          onProgress: (done, total) => {
+            if (done === total && done > 0) {
+              logger.info(`[RAG] Codebase index ready (${index.stats().files} files, provider: ${index.stats().provider})`);
+            }
+          }
+        });
+        if (result.indexed > 0) {
+          logger.info(`[RAG] Indexed ${result.indexed} new/changed files, skipped ${result.skipped} unchanged${result.removed > 0 ? `, removed ${result.removed} deleted` : ''}`);
+        }
+      } catch {
+        // Never fail startup due to indexing
+      }
+    }).catch(() => {});
+  }
+
   const headlessShortcut = parseHeadlessShortcutArgs(args);
   if (headlessShortcut.enabled) {
     if (!headlessShortcut.task) {
