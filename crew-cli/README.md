@@ -6,6 +6,7 @@ Command-line interface for CrewSwarm agent orchestration with local safety rails
 **[OVERVIEW.md](docs/OVERVIEW.md)** - 🚀 1-minute summary of what this is and how it works.
 **[INSTRUCTION-STACK.md](docs/INSTRUCTION-STACK.md)** - canonical instruction precedence and composition
 **[PERMISSIONS-MODEL.md](docs/PERMISSIONS-MODEL.md)** - canonical read/write/shell/approval behavior by mode
+**[MODES-AND-FLAGS.md](docs/MODES-AND-FLAGS.md)** - which knobs matter, recommended defaults, and what to ignore at first
 ---
 
 ## Requirements
@@ -25,6 +26,23 @@ Run the CLI:
 
 ```bash
 node bin/crew.js --help
+```
+
+## Recommended Defaults
+
+For most users:
+
+- start in `assist`
+- keep engine on `auto`
+- leave model unset unless you need a specific one
+- use `--preset balanced` first
+
+Examples:
+
+```bash
+crew repl --mode assist
+crew chat "fix auth tests" --preset balanced
+crew dispatch crew-coder "harden auth middleware" --preset quality
 ```
 
 ## Core Commands
@@ -203,6 +221,7 @@ Latest local QA pass (2026-03-01):
 - [QUICKSTART.md](docs/QUICKSTART.md)
 - [INSTRUCTION-STACK.md](docs/INSTRUCTION-STACK.md)
 - [PERMISSIONS-MODEL.md](docs/PERMISSIONS-MODEL.md)
+- [MODES-AND-FLAGS.md](docs/MODES-AND-FLAGS.md)
 - [EXAMPLES.md](docs/EXAMPLES.md)
 - [API.md](docs/API.md)
 - [API-UNIFIED-v1.md](docs/API-UNIFIED-v1.md) — unified dashboard/CLI/headless contract

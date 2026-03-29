@@ -1162,8 +1162,15 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
           try {
             console.log(`[Executor] Trying provider: ${provider}`);
             const result2 = await this.executeWithProvider(provider, task, model, options, systemPrompt);
-            if (result2) return result2;
-            failures.push(`${provider}: returned null (API key missing or timed out)`);
+            if (result2) {
+              return {
+                ...result2,
+                providerId: result2.providerId || provider,
+                attemptedProviders: [...providers.slice(0, providers.indexOf(provider) + 1)],
+                providerFailures: [...failures]
+              };
+            }
+            failures.push(`${provider}: no usable response (missing key, timeout, or empty body)`);
           } catch (err) {
             const errMsg = err.message;
             failures.push(`${provider}: ${errMsg}`);
@@ -1178,7 +1185,13 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
           GEMINI: !!process.env.GEMINI_API_KEY,
           DEEPSEEK: !!process.env.DEEPSEEK_API_KEY
         }));
-        throw new Error("No LLM providers available. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY");
+        const configured = this.getConfiguredProviderOrder();
+        const configuredText = configured.length > 0 ? configured.join(", ") : "none";
+        const triedText = providers.join(", ");
+        const failureText = failures.length > 0 ? ` Failures: ${failures.join(" | ")}` : "";
+        throw new Error(
+          `No LLM providers succeeded. Configured providers: ${configuredText}. Tried: ${triedText}.${failureText} Set at least one working provider key such as OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, GEMINI_API_KEY, DEEPSEEK_API_KEY, or GROQ_API_KEY.`
+        );
       }
       getTimeoutMs() {
         const raw = Number(process.env.CREW_EXECUTOR_TIMEOUT_MS || 9e4);
@@ -1258,7 +1271,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
             const result2 = await streamOpenAIResponse(response, writeToStdout);
             if (result2.text) process.stdout.write("\n");
             const cost2 = this.calculateCost("groq-llama", result2.usage?.prompt_tokens || 0, result2.usage?.completion_tokens || 0);
-            return { success: true, result: result2.text, costUsd: cost2, model: "llama-3.3-70b-versatile" };
+            return { success: true, result: result2.text, costUsd: cost2, model: "llama-3.3-70b-versatile", providerId: "groq" };
           }
           const data = await response.json();
           const cost = this.calculateCost("groq-llama", data.usage?.prompt_tokens || 0, data.usage?.completion_tokens || 0);
@@ -1266,7 +1279,8 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
             success: true,
             result: data.choices[0].message.content,
             costUsd: cost,
-            model: "llama-3.3-70b-versatile"
+            model: "llama-3.3-70b-versatile",
+            providerId: "groq"
           };
         } catch (err) {
           this.logger.error(`Groq execution failed: ${err.message}`);
@@ -1324,6 +1338,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
                 success: true,
                 result: result2.text,
                 model,
+                providerId: "grok",
                 promptTokens: result2.usage?.prompt_tokens,
                 completionTokens: result2.usage?.completion_tokens,
                 cachedTokens: cachedTokens2,
@@ -1354,6 +1369,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
                 success: true,
                 result: retryContent,
                 model,
+                providerId: "grok",
                 promptTokens: retryData?.usage?.prompt_tokens,
                 completionTokens: retryData?.usage?.completion_tokens,
                 cachedTokens: cachedTokens2,
@@ -1374,6 +1390,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
             success: true,
             result: content,
             model,
+            providerId: "grok",
             promptTokens: data?.usage?.prompt_tokens,
             completionTokens: data?.usage?.completion_tokens,
             cachedTokens,
@@ -1454,6 +1471,7 @@ User task: ${task}`
               success: true,
               result: result2.text,
               model,
+              providerId: "gemini",
               promptTokens: result2.usage?.promptTokenCount,
               completionTokens: result2.usage?.candidatesTokenCount,
               costUsd: this.calculateCost(model, result2.usage?.promptTokenCount || 0, result2.usage?.candidatesTokenCount || 0)
@@ -1466,6 +1484,7 @@ User task: ${task}`
             success: true,
             result: content,
             model,
+            providerId: "gemini",
             promptTokens: data?.usageMetadata?.promptTokenCount,
             completionTokens: data?.usageMetadata?.candidatesTokenCount,
             costUsd: this.calculateCost(

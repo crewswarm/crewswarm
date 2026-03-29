@@ -21,6 +21,9 @@ export interface ExecutorResult {
   success: boolean;
   result: string;
   model: string;
+  providerId?: string;
+  attemptedProviders?: string[];
+  providerFailures?: string[];
   promptTokens?: number;
   completionTokens?: number;
   cachedTokens?: number;  // Cache hit tokens (Grok, OpenAI, Anthropic)
@@ -144,8 +147,15 @@ export class LocalExecutor {
       try {
         console.log(`[Executor] Trying provider: ${provider}`);
         const result = await this.executeWithProvider(provider, task, model, options, systemPrompt);
-        if (result) return result;
-        failures.push(`${provider}: returned null (API key missing or timed out)`);
+        if (result) {
+          return {
+            ...result,
+            providerId: result.providerId || provider,
+            attemptedProviders: [...providers.slice(0, providers.indexOf(provider) + 1)],
+            providerFailures: [...failures]
+          };
+        }
+        failures.push(`${provider}: no usable response (missing key, timeout, or empty body)`);
       } catch (err) {
         const errMsg = (err as Error).message;
         failures.push(`${provider}: ${errMsg}`);
@@ -162,7 +172,13 @@ export class LocalExecutor {
       DEEPSEEK: !!process.env.DEEPSEEK_API_KEY
     }));
     
-    throw new Error('No LLM providers available. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY');
+    const configured = this.getConfiguredProviderOrder();
+    const configuredText = configured.length > 0 ? configured.join(', ') : 'none';
+    const triedText = providers.join(', ');
+    const failureText = failures.length > 0 ? ` Failures: ${failures.join(' | ')}` : '';
+    throw new Error(
+      `No LLM providers succeeded. Configured providers: ${configuredText}. Tried: ${triedText}.${failureText} Set at least one working provider key such as OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, GEMINI_API_KEY, DEEPSEEK_API_KEY, or GROQ_API_KEY.`
+    );
   }
 
   private getTimeoutMs(): number {
@@ -268,7 +284,7 @@ export class LocalExecutor {
         const result = await streamOpenAIResponse(response, writeToStdout);
         if (result.text) process.stdout.write('\n');
         const cost = this.calculateCost('groq-llama', result.usage?.prompt_tokens || 0, result.usage?.completion_tokens || 0);
-        return { success: true, result: result.text, costUsd: cost, model: 'llama-3.3-70b-versatile' };
+        return { success: true, result: result.text, costUsd: cost, model: 'llama-3.3-70b-versatile', providerId: 'groq' };
       }
 
       const data = await response.json();
@@ -278,7 +294,8 @@ export class LocalExecutor {
         success: true,
         result: data.choices[0].message.content,
         costUsd: cost,
-        model: 'llama-3.3-70b-versatile'
+        model: 'llama-3.3-70b-versatile',
+        providerId: 'groq'
       };
     } catch (err) {
       this.logger.error(`Groq execution failed: ${(err as Error).message}`);
@@ -345,6 +362,7 @@ export class LocalExecutor {
           }
           return {
             success: true, result: result.text, model,
+            providerId: 'grok',
             promptTokens: result.usage?.prompt_tokens,
             completionTokens: result.usage?.completion_tokens,
             cachedTokens,
@@ -375,6 +393,7 @@ export class LocalExecutor {
             success: true,
             result: retryContent,
             model,
+            providerId: 'grok',
             promptTokens: retryData?.usage?.prompt_tokens,
             completionTokens: retryData?.usage?.completion_tokens,
             cachedTokens,
@@ -399,6 +418,7 @@ export class LocalExecutor {
         success: true,
         result: content,
         model,
+        providerId: 'grok',
         promptTokens: data?.usage?.prompt_tokens,
         completionTokens: data?.usage?.completion_tokens,
         cachedTokens,
@@ -499,6 +519,7 @@ export class LocalExecutor {
         if (result.text) process.stdout.write('\n');
         return {
           success: true, result: result.text, model,
+          providerId: 'gemini',
           promptTokens: result.usage?.promptTokenCount,
           completionTokens: result.usage?.candidatesTokenCount,
           costUsd: this.calculateCost(model, result.usage?.promptTokenCount || 0, result.usage?.candidatesTokenCount || 0)
@@ -513,6 +534,7 @@ export class LocalExecutor {
         success: true,
         result: content,
         model: model,
+        providerId: 'gemini',
         promptTokens: data?.usageMetadata?.promptTokenCount,
         completionTokens: data?.usageMetadata?.candidatesTokenCount,
         costUsd: this.calculateCost(model,
