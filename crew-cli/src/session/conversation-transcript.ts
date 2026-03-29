@@ -9,7 +9,12 @@
 import { appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { estimateTokens } from '../context/token-compaction.js';
+
+// Inline token estimation to avoid cross-module .js/.ts resolution issues in Node ESM
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 3.7);
+}
 
 export interface ConversationTurn {
   ts: string;

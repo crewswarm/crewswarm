@@ -67,12 +67,12 @@
     "url": "https://github.com/crewswarm/crewswarm.git",
     "directory": "crew-cli"
   },
-  "homepage": "https://crewswarm.com/cli",
+  "homepage": "https://crewswarm.ai/cli.html",
   "bugs": {
     "url": "https://github.com/crewswarm/crewswarm/issues"
   },
-  "author": "CrewSwarm <hello@crewswarm.com>",
-  "license": "ISC",
+  "author": "CrewSwarm <hello@crewswarm.ai>",
+  "license": "MIT",
   "publishConfig": {
     "access": "public"
   },

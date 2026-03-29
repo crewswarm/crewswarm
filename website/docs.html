@@ -372,6 +372,19 @@ crew /resume abc123</code></pre>
 CREW_NO_STREAM=true CREW_MAX_SESSION_TOKENS=50000 crew "refactor auth module"</code></pre>
       </section>
 
+      <!-- TOKEN-AWARE COMPACTION -->
+      <section class="docs-section">
+        <h2>Token-Aware Compaction</h2>
+        <p>Long sessions accumulate context. Instead of blindly truncating old messages, crew-cli adapts compression based on how full the context window is:</p>
+        <ul>
+          <li><strong>&lt; 50% used</strong> — light compression, keeps first 5 + last 8 turns in full detail</li>
+          <li><strong>50–75% used</strong> — standard compression, first 3 + last 5 detailed, middle summarized</li>
+          <li><strong>&gt; 75% used</strong> — aggressive, first 1 + last 3 detailed, everything else compressed</li>
+        </ul>
+        <p>Per-model context window sizes are known (Gemini 1M, GPT-4o 128K, Claude 200K, etc.) so compression is tuned automatically. Token estimation uses a ~3.7 chars/token ratio — no external tokenizer dependency.</p>
+        <p>Set <code>CREW_MAX_SESSION_TOKENS</code> to control the token budget for session transcripts (default: 100K).</p>
+      </section>
+
       <!-- BEST PRACTICES -->
       <section class="docs-section">
         <h2>Best Practices</h2>
