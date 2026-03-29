@@ -1097,14 +1097,42 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
         this.logger = new Logger();
         this.timeoutMs = this.getTimeoutMs();
       }
+      hasExplicitModelOverride(options) {
+        return options.explicitModel === true;
+      }
+      getConfiguredProviderOrder() {
+        const envOrder = String(process.env.CREW_EXECUTION_PROVIDER_ORDER || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+        const baseOrder = envOrder.length > 0 ? envOrder : ["openai", "anthropic", "gemini", "deepseek", "groq", "grok"];
+        return baseOrder.filter((provider) => {
+          switch (provider) {
+            case "openai":
+              return Boolean(process.env.OPENAI_API_KEY);
+            case "anthropic":
+              return Boolean(process.env.ANTHROPIC_API_KEY);
+            case "gemini":
+              return Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+            case "deepseek":
+              return Boolean(process.env.DEEPSEEK_API_KEY);
+            case "groq":
+              return Boolean(process.env.GROQ_API_KEY);
+            case "grok":
+              return Boolean(process.env.XAI_API_KEY);
+            default:
+              return false;
+          }
+        });
+      }
       /**
        * Execute a task using local LLM (no gateway required)
        */
       async execute(task, options = {}) {
         const model = options.model || this.getDefaultModel();
         const systemPrompt = options.systemPrompt || EXECUTOR_SYSTEM_PROMPT;
+        const explicitModel = this.hasExplicitModelOverride(options);
         let providers = [];
-        if (model.startsWith("gemini")) {
+        if (!explicitModel) {
+          providers = this.getConfiguredProviderOrder();
+        } else if (model.startsWith("gemini")) {
           providers = ["gemini"];
         } else if (model.startsWith("deepseek")) {
           providers = ["deepseek"];
@@ -1117,6 +1145,15 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
         } else if (model.includes("llama") || model.includes("mixtral")) {
           providers = ["groq", "grok", "deepseek"];
         } else {
+          providers = ["openai", "anthropic", "grok", "gemini", "deepseek"];
+        }
+        if (!options.model && providers.length === 1) {
+          const fallbackProviders = this.getConfiguredProviderOrder().filter(
+            (provider) => provider !== providers[0]
+          );
+          providers = [...providers, ...fallbackProviders];
+        }
+        if (providers.length === 0) {
           providers = ["openai", "anthropic", "grok", "gemini", "deepseek"];
         }
         const failures = [];
@@ -1179,7 +1216,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
       async executeWithGroq(task, options, systemPrompt) {
         const apiKey = process.env.GROQ_API_KEY;
         if (!apiKey) return null;
-        const stream = !isStreamingDisabled();
+        const stream = !isStreamingDisabled() && options.jsonMode !== true;
         try {
           const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
@@ -1235,21 +1272,22 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
           if (sessionId) {
             headers["x-grok-conv-id"] = sessionId;
           }
-          const stream = !isStreamingDisabled();
+          const stream = !isStreamingDisabled() && options.jsonMode !== true && process.env.CREW_GROK_STREAMING !== "0";
+          const requestBody = {
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: task }
+            ],
+            temperature: options.temperature || 0.7,
+            max_tokens: options.maxTokens || 4e3,
+            ...stream ? { stream: true, stream_options: { include_usage: true } } : {}
+          };
           const response = await fetch("https://api.x.ai/v1/chat/completions", {
             method: "POST",
             headers,
             signal: AbortSignal.timeout(this.timeoutMs),
-            body: JSON.stringify({
-              model,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: task }
-              ],
-              temperature: options.temperature || 0.7,
-              max_tokens: options.maxTokens || 4e3,
-              ...stream ? { stream: true, stream_options: { include_usage: true } } : {}
-            })
+            body: JSON.stringify(requestBody)
           });
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[Grok] Response received in ${Date.now() - callStart}ms (status: ${response.status})`);
           if (!response.ok) {
@@ -1258,23 +1296,55 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
             return null;
           }
           if (stream && response.body) {
-            const result2 = await streamOpenAIResponse(response, writeToStdout);
-            if (result2.text) process.stdout.write("\n");
-            const cachedTokens2 = result2.usage?.prompt_tokens_details?.cached_tokens || 0;
-            if (cachedTokens2 > 0) {
-              const totalPrompt = result2.usage?.prompt_tokens || 0;
-              const pct = Math.round(cachedTokens2 / totalPrompt * 100);
-              console.log(`[Grok] cache hit: ${cachedTokens2}/${totalPrompt} tokens cached (${pct}%) \u2014 50% cost savings`);
+            try {
+              const result2 = await streamOpenAIResponse(response, writeToStdout);
+              if (result2.text) process.stdout.write("\n");
+              const cachedTokens2 = result2.usage?.prompt_tokens_details?.cached_tokens || 0;
+              if (cachedTokens2 > 0) {
+                const totalPrompt = result2.usage?.prompt_tokens || 0;
+                const pct = Math.round(cachedTokens2 / totalPrompt * 100);
+                console.log(`[Grok] cache hit: ${cachedTokens2}/${totalPrompt} tokens cached (${pct}%) \u2014 50% cost savings`);
+              }
+              return {
+                success: true,
+                result: result2.text,
+                model,
+                promptTokens: result2.usage?.prompt_tokens,
+                completionTokens: result2.usage?.completion_tokens,
+                cachedTokens: cachedTokens2,
+                costUsd: this.calculateGrokCostWithCache(result2.usage)
+              };
+            } catch (streamErr) {
+              this.logger.warn(`Grok streaming failed, retrying without stream: ${streamErr.message}`);
+              const retryResponse = await fetch("https://api.x.ai/v1/chat/completions", {
+                method: "POST",
+                headers,
+                signal: AbortSignal.timeout(this.timeoutMs),
+                body: JSON.stringify({
+                  ...requestBody,
+                  stream: false,
+                  stream_options: void 0
+                })
+              });
+              if (!retryResponse.ok) {
+                const retryText = await retryResponse.text().catch(() => retryResponse.statusText);
+                console.log(`[Grok] Retry API error: ${retryResponse.status} - ${retryText}`);
+                return null;
+              }
+              const retryData = await retryResponse.json();
+              const retryContent = retryData?.choices?.[0]?.message?.content;
+              if (!retryContent) return null;
+              const cachedTokens2 = retryData?.usage?.prompt_tokens_details?.cached_tokens || 0;
+              return {
+                success: true,
+                result: retryContent,
+                model,
+                promptTokens: retryData?.usage?.prompt_tokens,
+                completionTokens: retryData?.usage?.completion_tokens,
+                cachedTokens: cachedTokens2,
+                costUsd: this.calculateGrokCostWithCache(retryData?.usage)
+              };
             }
-            return {
-              success: true,
-              result: result2.text,
-              model,
-              promptTokens: result2.usage?.prompt_tokens,
-              completionTokens: result2.usage?.completion_tokens,
-              cachedTokens: cachedTokens2,
-              costUsd: this.calculateGrokCostWithCache(result2.usage)
-            };
           }
           const data = await response.json();
           const content = data?.choices?.[0]?.message?.content;
@@ -10635,6 +10705,7 @@ User request: ${input}`
         try {
           const result2 = await this.localExecutor.execute(task, {
             model: options.model,
+            explicitModel: Boolean(options.explicitModel),
             temperature: 0.7,
             maxTokens: 4e3
           });
@@ -12703,6 +12774,10 @@ var Sandbox = class {
     }
     await this.persist();
   }
+  /** Expose state for read-only access by VirtualFS and similar utilities. */
+  getState() {
+    return this.state;
+  }
   getActiveBranch() {
     return this.state.activeBranch;
   }
@@ -12964,7 +13039,7 @@ var Planner = class {
     if (useMemory && steps.length > 0) {
       const saved = await this.keeper.recordSafe({
         runId: options.runId || traceId,
-        tier: "dual-l2-planner",
+        tier: "planner",
         task,
         result: JSON.stringify(plan, null, 2),
         agent: "dual-l2-system",
@@ -14670,7 +14745,7 @@ import { join as join25 } from "node:path";
 
 // src/studio/broadcaster.ts
 init_logger();
-import { WebSocket } from "ws";
+import WebSocket from "ws";
 import { readFile as readFile19 } from "node:fs/promises";
 var StudioBroadcaster = class {
   constructor(studioUrl = "ws://127.0.0.1:3334/ws", logger3) {
@@ -14678,7 +14753,7 @@ var StudioBroadcaster = class {
     this.connected = false;
     this.reconnectTimer = null;
     this.studioUrl = studioUrl;
-    this.logger = logger3 || new Logger("studio");
+    this.logger = logger3 || new Logger({ prefix: "studio" });
   }
   async connect() {
     return new Promise((resolve19, reject) => {
@@ -16013,7 +16088,7 @@ async function handleMcpRequest(options, body) {
           }
         };
       case "tools/call":
-        return await handleToolCall(options, params, id);
+        return await handleToolCall(options, params || {}, id);
       default:
         return {
           jsonrpc: "2.0",
@@ -16095,7 +16170,7 @@ ${context}` : message;
         const branch = options.sandbox.getActiveBranch();
         const pending = options.sandbox.getPendingPaths(branch);
         const diffs = pending.map((p) => {
-          const content = options.sandbox.readPendingFile(branch, p);
+          const content = options.sandbox.readPendingFile?.(branch, p) || options.sandbox.getStagedContent(p, branch);
           return { path: p, content };
         });
         result2 = {
@@ -16106,7 +16181,7 @@ ${context}` : message;
       }
       case "crew_sandbox_apply": {
         const branch = options.sandbox.getActiveBranch();
-        await options.sandbox.applyToWorkingDirectory(branch);
+        await options.sandbox.apply(branch);
         result2 = {
           success: true,
           message: "Changes applied to working directory"
@@ -16115,8 +16190,8 @@ ${context}` : message;
       }
       case "crew_sandbox_rollback": {
         const branch = options.sandbox.getActiveBranch();
-        options.sandbox.discardBranch(branch);
-        const newBranch = options.sandbox.createBranch();
+        await options.sandbox.rollback(branch);
+        const newBranch = "main";
         result2 = {
           success: true,
           message: `Rolled back ${branch}, created ${newBranch}`
@@ -16132,17 +16207,17 @@ ${context}` : message;
         }
         try {
           const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
-          const idx = await buildCollectionIndex2(options.projectDir, { includeCode: true });
+          const idx = await buildCollectionIndex2([options.projectDir], { includeCode: true });
           const hits = searchCollection2(idx, query, limit);
           result2 = {
             query,
-            results: hits.results.map((r) => ({
+            results: hits.hits.map((r) => ({
               file: r.source,
               line: r.startLine,
               text: r.text.slice(0, 500),
               score: r.score
             })),
-            total: hits.total
+            total: hits.totalChunks
           };
         } catch (err) {
           result2 = { query, results: [], message: `Search error: ${err.message}` };
@@ -16305,7 +16380,7 @@ function composeChatPayloadFromOpenAI(messages) {
   const system = normalized.filter((m) => m.role === "system").map((m) => m.text);
   const assistant = normalized.filter((m) => m.role === "assistant").map((m) => m.text);
   const userTurns = normalized.filter((m) => m.role === "user");
-  const lastUser = userTurns.at(-1)?.text || "";
+  const lastUser = (userTurns.length > 0 ? userTurns[userTurns.length - 1]?.text : "") || "";
   const priorUser = userTurns.slice(0, -1).map((m) => m.text);
   const historyTail = [...priorUser, ...assistant].slice(-8);
   const contextSections = [];
@@ -16526,7 +16601,7 @@ async function handleConnectedChat(options, body) {
 
 ${context}` : message;
   const control = getChatControl(body);
-  const gateway = body?.gateway || options.gateway || "http://127.0.0.1:5010";
+  const gateway = String(body?.gateway || options.gateway || "http://127.0.0.1:5010");
   if (control.passthroughRequested || control.engine) {
     try {
       const agent = String(body?.agent || "crew-main");
@@ -16678,14 +16753,14 @@ async function enqueueStandaloneTask(options, body) {
   return { status: 202, data: { accepted: true, taskId } };
 }
 async function enqueueConnectedTask(options, body) {
-  const gateway = body?.gateway || options.gateway || "http://127.0.0.1:5010";
+  const gateway = String(body?.gateway || options.gateway || "http://127.0.0.1:5010");
   const payload = {
     agent: body?.agent,
     task: body?.task,
     sessionId: body?.sessionId || "api",
     ...body?.options || {}
   };
-  const forwarded = await forwardJson(gateway, "/api/dispatch", "POST", payload);
+  const forwarded = await forwardJson(String(gateway), "/api/dispatch", "POST", payload);
   const taskId = forwarded.data?.taskId || "";
   return {
     status: forwarded.ok ? 202 : forwarded.status,
@@ -16725,7 +16800,7 @@ async function startUnifiedServer(options) {
           "access-control-allow-methods": "GET,POST,OPTIONS"
         });
         if (options.mode === "connected") {
-          const gateway = body?.gateway || options.gateway || "http://127.0.0.1:5010";
+          const gateway = String(body?.gateway || options.gateway || "http://127.0.0.1:5010");
           const token = readRtToken();
           const headers = { "content-type": "application/json" };
           if (token) headers.authorization = `Bearer ${token}`;
@@ -17064,7 +17139,7 @@ async function startUnifiedServer(options) {
       if (req.method === "POST" && path3 === "/v1/sandbox/apply") {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const branch = body?.branch || options.sandbox.getActiveBranch();
+        const branch = String(body?.branch || options.sandbox.getActiveBranch());
         const files = options.sandbox.getPendingPaths(branch);
         await options.sandbox.apply(branch);
         return json(res, 200, {
@@ -17075,7 +17150,7 @@ async function startUnifiedServer(options) {
       if (req.method === "POST" && path3 === "/v1/sandbox/rollback") {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const branch = body?.branch || options.sandbox.getActiveBranch();
+        const branch = String(body?.branch || options.sandbox.getActiveBranch());
         await options.sandbox.rollback(branch);
         return json(res, 200, { success: true });
       }
@@ -17097,7 +17172,7 @@ async function startUnifiedServer(options) {
         });
         latestIndexId = `idx-${randomUUID9()}`;
         latestIndexStats = {
-          files: Number(latestIndex?.docs?.length || 0),
+          files: Number(latestIndex?.fileCount || 0),
           chunks: Number(latestIndex?.chunks?.length || 0)
         };
         return json(res, 200, {
@@ -17115,7 +17190,7 @@ async function startUnifiedServer(options) {
           latestIndex = fallback;
           latestIndexId = `idx-${randomUUID9()}`;
           latestIndexStats = {
-            files: Number(latestIndex?.docs?.length || 0),
+            files: Number(latestIndex?.fileCount || 0),
             chunks: Number(latestIndex?.chunks?.length || 0)
           };
         }
@@ -21025,10 +21100,33 @@ async function main(args = []) {
     const swarmCfgPath = join42(homedir11(), ".crewswarm", "crewswarm.json");
     if (existsSync22(swarmCfgPath)) {
       const swarmCfg = JSON.parse(await readFile32(swarmCfgPath, "utf8"));
+      const providerEnvMap = {
+        openai: "OPENAI_API_KEY",
+        anthropic: "ANTHROPIC_API_KEY",
+        xai: "XAI_API_KEY",
+        grok: "XAI_API_KEY",
+        google: "GEMINI_API_KEY",
+        gemini: "GEMINI_API_KEY",
+        deepseek: "DEEPSEEK_API_KEY",
+        groq: "GROQ_API_KEY",
+        mistral: "MISTRAL_API_KEY",
+        perplexity: "PERPLEXITY_API_KEY",
+        cerebras: "CEREBRAS_API_KEY",
+        openrouter: "OPENROUTER_API_KEY"
+      };
       if (swarmCfg.env && typeof swarmCfg.env === "object") {
         for (const [k, v] of Object.entries(swarmCfg.env)) {
           if (!process.env[k] && v != null) {
             process.env[k] = String(v);
+          }
+        }
+      }
+      if (swarmCfg.providers && typeof swarmCfg.providers === "object") {
+        for (const [provider, config2] of Object.entries(swarmCfg.providers)) {
+          const envKey = providerEnvMap[String(provider).toLowerCase()];
+          const apiKey = config2 && typeof config2 === "object" ? config2.apiKey : null;
+          if (envKey && !process.env[envKey] && apiKey) {
+            process.env[envKey] = String(apiKey);
           }
         }
       }

@@ -6,7 +6,7 @@
     <title>crewswarm dashboard</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <!-- Font: system stack only to avoid CORS when dashboard (4319) and studio (3333) both load Inter from Google -->
-    <script type="module" crossorigin src="/assets/index-DnClJ1ee.js"></script>
+    <script type="module" crossorigin src="/assets/index-D09xL8Tq.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/core-utils-CmOkXgzi.js">
     <link rel="modulepreload" crossorigin href="/assets/setup-wizard-CA0Or47w.js">
     <link rel="modulepreload" crossorigin href="/assets/components-BS9fQjE_.js">
@@ -26,7 +26,7 @@
     <link rel="modulepreload" crossorigin href="/assets/tab-swarm-tab-B1AcjL1W.js">
     <link rel="modulepreload" crossorigin href="/assets/tab-models-tab-BLEjmd19.js">
     <link rel="modulepreload" crossorigin href="/assets/tab-projects-tab-DhNWnlzt.js">
-    <link rel="modulepreload" crossorigin href="/assets/tab-settings-tab-Bn4nXtDe.js">
+    <link rel="modulepreload" crossorigin href="/assets/tab-settings-tab-z1J3j0mX.js">
     <link rel="modulepreload" crossorigin href="/assets/tab-comms-tab-kguqTIzD.js">
     <link rel="modulepreload" crossorigin href="/assets/tab-usage-tab-BIOOnB-Y.js">
     <link rel="modulepreload" crossorigin href="/assets/tab-spending-tab-DEccQHnt.js">
@@ -4423,6 +4423,76 @@
             </div>
             <div
               id="cursorWavesStatus"
+              style="margin-top: 8px; font-size: 12px; color: var(--text-3)"
+            ></div>
+          </div>
+
+          <div class="card" style="margin-top: 16px">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 12px;
+              "
+            >
+              <div>
+                <div class="card-title" style="margin-bottom: 2px">
+                  🔌 tmux-bridge Sessions
+                </div>
+                <div
+                  style="
+                    font-size: 11px;
+                    color: var(--text-3);
+                    line-height: 1.5;
+                  "
+                >
+                  Enable persistent tmux sessions that survive across pipeline
+                  waves. Agents can hand off live execution context (running
+                  servers, env vars, cwd) to the next wave instead of
+                  cold-starting. Requires
+                  <code
+                    style="
+                      background: var(--bg-1);
+                      padding: 1px 4px;
+                      border-radius: 3px;
+                    "
+                    >tmux</code
+                  >
+                  +
+                  <code
+                    style="
+                      background: var(--bg-1);
+                      padding: 1px 4px;
+                      border-radius: 3px;
+                    "
+                    >smux</code
+                  >
+                  installed. One writer per session (lock enforced).
+                </div>
+              </div>
+              <button
+                id="tmuxBridgeBtn"
+                data-action="toggleTmuxBridge"
+                style="
+                  font-size: 12px;
+                  font-weight: 700;
+                  padding: 8px 18px;
+                  border-radius: 8px;
+                  cursor: pointer;
+                  border: 1px solid var(--border);
+                  background: var(--surface-2);
+                  color: var(--text-2);
+                  white-space: nowrap;
+                  min-width: 80px;
+                "
+              >
+                Loading…
+              </button>
+            </div>
+            <div
+              id="tmuxBridgeStatus"
               style="margin-top: 8px; font-size: 12px; color: var(--text-3)"
             ></div>
           </div>

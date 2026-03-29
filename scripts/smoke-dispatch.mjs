@@ -108,7 +108,10 @@ async function run() {
 
   const chatMarker = `SMOKE_CHAT_OK_${runId}`;
   console.log("[1/4] chat...");
-  const chatResult = await chat(`say: ${chatMarker}`, `smoke-chat-${runId}`);
+  const chatResult = await chat(
+    `Reply with exactly: ${chatMarker}`,
+    `smoke-chat-${runId}`,
+  );
   const chatReply = String(chatResult?.reply || chatResult?.message || "");
   assert(chatReply.includes(chatMarker), `chat reply missing marker (${chatMarker})`);
   console.log("[ok] /chat");

@@ -7,14 +7,13 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { getStatePath, resetPaths } from "../../lib/runtime/paths.mjs";
 
 // Set test mode BEFORE importing session-manager so it picks up the test state dir
 process.env.CREWSWARM_TEST_MODE = "true";
 resetPaths();
 
-import {
+const {
   create,
   attach,
   exec,
@@ -24,11 +23,11 @@ import {
   terminate,
   getSession,
   listSessions,
-} from "../../lib/sessions/session-manager.mjs";
+} = await import("../../lib/sessions/session-manager.mjs");
 
 import { _reset as resetTmuxBridge } from "../../lib/bridges/tmux-bridge.mjs";
 
-describe("session-manager", () => {
+describe("session-manager", { concurrency: false }, () => {
   beforeEach(() => {
     // Ensure tmux-bridge is unavailable (no TMUX env)
     delete process.env.TMUX;
@@ -75,7 +74,7 @@ describe("session-manager", () => {
   describe("metadata operations with manually created session files", () => {
     // The session-manager uses getStatePath("sessions") set at module load time.
     // We write test files there directly and clean up after.
-    const sessionDir = path.join(os.homedir(), ".crewswarm", "sessions");
+    const sessionDir = getStatePath("sessions");
 
     beforeEach(() => {
       try { fs.mkdirSync(sessionDir, { recursive: true }); } catch {}

@@ -514,10 +514,11 @@ export class Orchestrator {
   /**
    * Execute a task locally without gateway (Tier 2 direct execution)
    */
-  async executeLocally(task: string, options: { model?: string } = {}): Promise<any> {
+  async executeLocally(task: string, options: { model?: string; explicitModel?: boolean } = {}): Promise<any> {
     try {
       const result = await this.localExecutor.execute(task, {
         model: options.model,
+        explicitModel: Boolean(options.explicitModel),
         temperature: 0.7,
         maxTokens: 4000
       });

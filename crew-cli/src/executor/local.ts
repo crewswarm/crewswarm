@@ -9,6 +9,7 @@ import { streamOpenAIResponse, streamAnthropicResponse, streamGeminiResponse, wr
 
 export interface ExecutorOptions {
   model?: string;
+  explicitModel?: boolean;
   temperature?: number;
   maxTokens?: number;
   systemPrompt?: string;  // Override default executor prompt with specialized persona
@@ -59,19 +60,55 @@ export class LocalExecutor {
   private logger = new Logger();
   private readonly timeoutMs = this.getTimeoutMs();
 
+  private hasExplicitModelOverride(options: ExecutorOptions): boolean {
+    return options.explicitModel === true;
+  }
+
+  private getConfiguredProviderOrder(): string[] {
+    const envOrder = String(process.env.CREW_EXECUTION_PROVIDER_ORDER || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+    const baseOrder = envOrder.length > 0
+      ? envOrder
+      : ["openai", "anthropic", "gemini", "deepseek", "groq", "grok"];
+
+    return baseOrder.filter((provider) => {
+      switch (provider) {
+        case "openai":
+          return Boolean(process.env.OPENAI_API_KEY);
+        case "anthropic":
+          return Boolean(process.env.ANTHROPIC_API_KEY);
+        case "gemini":
+          return Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+        case "deepseek":
+          return Boolean(process.env.DEEPSEEK_API_KEY);
+        case "groq":
+          return Boolean(process.env.GROQ_API_KEY);
+        case "grok":
+          return Boolean(process.env.XAI_API_KEY);
+        default:
+          return false;
+      }
+    });
+  }
+
   /**
    * Execute a task using local LLM (no gateway required)
    */
   async execute(task: string, options: ExecutorOptions = {}): Promise<ExecutorResult> {
     const model = options.model || this.getDefaultModel();
     const systemPrompt = options.systemPrompt || EXECUTOR_SYSTEM_PROMPT;
+    const explicitModel = this.hasExplicitModelOverride(options);
     
     // Determine provider from model name
-    // If a specific model is requested, ONLY try that provider (no fallbacks)
-    // Fallbacks only apply for default/generic models
+    // Explicit model choice stays locked to its provider.
+    // Auto-selected defaults should fall through across configured providers.
     let providers: string[] = [];
     
-    if (model.startsWith('gemini')) {
+    if (!explicitModel) {
+      providers = this.getConfiguredProviderOrder();
+    } else if (model.startsWith('gemini')) {
       providers = ['gemini'];  // Only Gemini for gemini-* models
     } else if (model.startsWith('deepseek')) {
       providers = ['deepseek'];  // Only DeepSeek for deepseek-* models
@@ -85,6 +122,17 @@ export class LocalExecutor {
       providers = ['groq', 'grok', 'deepseek'];  // Try multiple for generic models
     } else {
       // Generic/unknown model - try all providers
+      providers = ['openai', 'anthropic', 'grok', 'gemini', 'deepseek'];
+    }
+
+    if (!options.model && providers.length === 1) {
+      const fallbackProviders = this.getConfiguredProviderOrder().filter(
+        (provider) => provider !== providers[0]
+      );
+      providers = [...providers, ...fallbackProviders];
+    }
+
+    if (providers.length === 0) {
       providers = ['openai', 'anthropic', 'grok', 'gemini', 'deepseek'];
     }
     
@@ -165,7 +213,7 @@ export class LocalExecutor {
   private async executeWithGroq(task: string, options: ExecutorOptions, systemPrompt: string): Promise<ExecutorResult | null> {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return null;
-    const stream = !isStreamingDisabled();
+    const stream = !isStreamingDisabled() && options.jsonMode !== true;
 
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -234,21 +282,22 @@ export class LocalExecutor {
         headers['x-grok-conv-id'] = sessionId;
       }
       
-      const stream = !isStreamingDisabled();
+      const stream = !isStreamingDisabled() && options.jsonMode !== true && process.env.CREW_GROK_STREAMING !== '0';
+      const requestBody = {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: task }
+        ],
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 4000,
+        ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
+      };
       const response = await fetch('https://api.x.ai/v1/chat/completions', {
         method: 'POST',
         headers,
         signal: AbortSignal.timeout(this.timeoutMs),
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: task }
-          ],
-          temperature: options.temperature || 0.7,
-          max_tokens: options.maxTokens || 4000,
-          ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[Grok] Response received in ${Date.now() - callStart}ms (status: ${response.status})`);
@@ -260,21 +309,53 @@ export class LocalExecutor {
       }
 
       if (stream && response.body) {
-        const result = await streamOpenAIResponse(response, writeToStdout);
-        if (result.text) process.stdout.write('\n');
-        const cachedTokens = result.usage?.prompt_tokens_details?.cached_tokens || 0;
-        if (cachedTokens > 0) {
-          const totalPrompt = result.usage?.prompt_tokens || 0;
-          const pct = Math.round((cachedTokens / totalPrompt) * 100);
-          console.log(`[Grok] cache hit: ${cachedTokens}/${totalPrompt} tokens cached (${pct}%) — 50% cost savings`);
+        try {
+          const result = await streamOpenAIResponse(response, writeToStdout);
+          if (result.text) process.stdout.write('\n');
+          const cachedTokens = result.usage?.prompt_tokens_details?.cached_tokens || 0;
+          if (cachedTokens > 0) {
+            const totalPrompt = result.usage?.prompt_tokens || 0;
+            const pct = Math.round((cachedTokens / totalPrompt) * 100);
+            console.log(`[Grok] cache hit: ${cachedTokens}/${totalPrompt} tokens cached (${pct}%) — 50% cost savings`);
+          }
+          return {
+            success: true, result: result.text, model,
+            promptTokens: result.usage?.prompt_tokens,
+            completionTokens: result.usage?.completion_tokens,
+            cachedTokens,
+            costUsd: this.calculateGrokCostWithCache(result.usage)
+          };
+        } catch (streamErr) {
+          this.logger.warn(`Grok streaming failed, retrying without stream: ${(streamErr as Error).message}`);
+          const retryResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+            method: 'POST',
+            headers,
+            signal: AbortSignal.timeout(this.timeoutMs),
+            body: JSON.stringify({
+              ...requestBody,
+              stream: false,
+              stream_options: undefined
+            })
+          });
+          if (!retryResponse.ok) {
+            const retryText = await retryResponse.text().catch(() => retryResponse.statusText);
+            console.log(`[Grok] Retry API error: ${retryResponse.status} - ${retryText}`);
+            return null;
+          }
+          const retryData = await retryResponse.json() as any;
+          const retryContent = retryData?.choices?.[0]?.message?.content;
+          if (!retryContent) return null;
+          const cachedTokens = retryData?.usage?.prompt_tokens_details?.cached_tokens || 0;
+          return {
+            success: true,
+            result: retryContent,
+            model,
+            promptTokens: retryData?.usage?.prompt_tokens,
+            completionTokens: retryData?.usage?.completion_tokens,
+            cachedTokens,
+            costUsd: this.calculateGrokCostWithCache(retryData?.usage)
+          };
         }
-        return {
-          success: true, result: result.text, model,
-          promptTokens: result.usage?.prompt_tokens,
-          completionTokens: result.usage?.completion_tokens,
-          cachedTokens,
-          costUsd: this.calculateGrokCostWithCache(result.usage)
-        };
       }
 
       const data = await response.json() as any;

@@ -644,10 +644,33 @@ export async function main(args = []) {
     const swarmCfgPath = join(homedir(), '.crewswarm', 'crewswarm.json');
     if (existsSync(swarmCfgPath)) {
       const swarmCfg = JSON.parse(await readFile(swarmCfgPath, 'utf8'));
+      const providerEnvMap = {
+        openai: "OPENAI_API_KEY",
+        anthropic: "ANTHROPIC_API_KEY",
+        xai: "XAI_API_KEY",
+        grok: "XAI_API_KEY",
+        google: "GEMINI_API_KEY",
+        gemini: "GEMINI_API_KEY",
+        deepseek: "DEEPSEEK_API_KEY",
+        groq: "GROQ_API_KEY",
+        mistral: "MISTRAL_API_KEY",
+        perplexity: "PERPLEXITY_API_KEY",
+        cerebras: "CEREBRAS_API_KEY",
+        openrouter: "OPENROUTER_API_KEY",
+      };
       if (swarmCfg.env && typeof swarmCfg.env === 'object') {
         for (const [k, v] of Object.entries(swarmCfg.env)) {
           if (!process.env[k] && v != null) {
             process.env[k] = String(v);
+          }
+        }
+      }
+      if (swarmCfg.providers && typeof swarmCfg.providers === "object") {
+        for (const [provider, config] of Object.entries(swarmCfg.providers)) {
+          const envKey = providerEnvMap[String(provider).toLowerCase()];
+          const apiKey = config && typeof config === "object" ? config.apiKey : null;
+          if (envKey && !process.env[envKey] && apiKey) {
+            process.env[envKey] = String(apiKey);
           }
         }
       }
