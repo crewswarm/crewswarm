@@ -538,7 +538,7 @@
           <div class="layer-content">
             <h3>Execution engines</h3>
             <span class="layer-tag">Claude Code · Cursor CLI · Codex CLI · Gemini CLI · OpenCode · crew-cli</span>
-            <p>Six coding engines that write files, run commands, and stream output. Each agent can use a different engine. Switch from the dashboard.</p>
+            <p>Six coding engines that write files, run commands, and stream output across all 22 providers. Each agent can use a different engine. Switch from the dashboard.</p>
           </div>
         </div>
         <div class="layer-arrow">↓</div>
@@ -641,7 +641,7 @@
           <p>Every agent can run inside <strong>Claude Code</strong>, <strong>Cursor CLI</strong>,
             <strong>Gemini CLI</strong>, <strong>Codex CLI</strong>, <strong>OpenCode</strong>, or
             <strong>crew-cli</strong>. Switch per agent from the dashboard — no config files, no restarts.
-            Each engine keeps native session resume so context persists across messages.
+            Each engine keeps native multi-session resume so context persists across messages and restarts.
           </p>
         </div>
         <div class="differs-card">
@@ -653,12 +653,12 @@
         </div>
         <div class="differs-card">
           <h3>Execution layer included</h3>
-          <p>Tool calls (<code>@@WRITE_FILE</code>, <code>@@RUN_CMD</code>, etc.) are executed by the gateway with
+          <p>38+ built-in tools (<code>@@WRITE_FILE</code>, <code>@@RUN_CMD</code>, etc.) are executed by the gateway with
             allowlists and path sandboxing. You don’t have to build a runner or wire a framework to one.</p>
         </div>
         <div class="differs-card">
           <h3>DLQ and fault recovery</h3>
-          <p>Failed tasks go to a Dead Letter Queue. Retry with backoff, replay from the dashboard. Framework-only
+          <p>Failed tasks go to a Dead Letter Queue with JSONL crash-safe transcripts. Retry with backoff, replay from the dashboard. Framework-only
             stacks leave retries and observability to you.</p>
         </div>
         <div class="differs-card">
@@ -800,7 +800,7 @@
         <div class="feature-card">
           <div class="feature-icon">🔌</div>
           <h3>Skill-powered</h3>
-          <p>Extend agents with data-driven <code>SKILL.md</code> or JSON plugins. Add Twitter, Fly.io, or custom API
+          <p>Extend agents with data-driven <code>SKILL.md</code> or JSON plugins, plus PreToolUse/PostToolUse hooks for fine-grained control. Add Twitter, Fly.io, or custom API
             tools without writing JS code.</p>
         </div>
         <div class="feature-card feature-card-wide">
@@ -1180,7 +1180,7 @@ const app = express();
           <div class="flow-content">
             <h3>Parallel Execution</h3>
             <p>Wave 2 tasks run <strong>simultaneously</strong> — crew-coder + crew-qa + crew-security all working at
-              once.</p>
+              once. Git worktree isolation prevents file conflicts between parallel agents.</p>
           </div>
         </div>
         <div class="flow-step">
