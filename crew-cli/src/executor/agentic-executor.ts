@@ -29,7 +29,7 @@ import { estimateTokens, getContextWindow, adaptiveCompressionRatio } from '../c
 // ---------------------------------------------------------------------------
 
 // Repair common JSON quirks from provider tool call responses
-function repairJson(raw: string): string {
+export function repairJson(raw: string): string {
   if (!raw || raw.trim() === '') return '{}';
   let s = raw.trim();
   // Remove trailing commas before } or ]
@@ -174,7 +174,7 @@ interface CompressedTurn {
   outcome: string; // success/fail + short result
 }
 
-function compressTurnHistory(history: TurnResult[]): CompressedTurn[] {
+export function compressTurnHistory(history: TurnResult[]): CompressedTurn[] {
   return history.map(h => {
     const paramStr = JSON.stringify(h.params);
     // Extract the most important param (usually file_path, pattern, or command)
@@ -204,7 +204,7 @@ function compressTurnHistory(history: TurnResult[]): CompressedTurn[] {
 }
 
 /** Format a tool result as a string, truncated for context */
-function formatToolResult(h: TurnResult, maxLen = 1500): string {
+export function formatToolResult(h: TurnResult, maxLen = 1500): string {
   const res = h.error
     ? `ERROR: ${h.error}`
     : (typeof h.result === 'object' && h.result && 'output' in h.result)
@@ -219,7 +219,7 @@ function formatToolResult(h: TurnResult, maxLen = 1500): string {
  * For long histories, middle turns are compressed to text summary while
  * the first 3 (initial context) and last 5 (recent work) use full structured format.
  */
-function historyToGeminiContents(history: TurnResult[], model?: string): any[] {
+export function historyToGeminiContents(history: TurnResult[], model?: string): any[] {
   if (history.length === 0) return [];
   const contents: any[] = [];
 
@@ -283,7 +283,7 @@ function historyToGeminiContents(history: TurnResult[], model?: string): any[] {
   return contents;
 }
 
-function historyToOpenAIMessages(history: TurnResult[], model?: string): any[] {
+export function historyToOpenAIMessages(history: TurnResult[], model?: string): any[] {
   if (history.length === 0) return [];
   const messages: any[] = [];
 
