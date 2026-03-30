@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logTestEvidence } from "../helpers/test-log.mjs";
 
 // ── Dashboard connectivity ────────────────────────────────────────────────────
 
@@ -43,8 +44,25 @@ function skipIfDown(t) {
 
 // ── HTTP helpers (uses http.request — Node 25 fetch unreliable on localhost) ──
 
-async function api(endpoint, method = "GET", body = null) {
-  return httpRequest(`${DASHBOARD_BASE}${endpoint}`, { method, body });
+async function api(endpoint, method = "GET", body = null, trace = null) {
+  const actualTrace = trace || {
+    test: `${method} ${endpoint}`,
+    file: import.meta.filename,
+    operation: `${method} ${endpoint}`,
+  };
+  const response = await httpRequest(`${DASHBOARD_BASE}${endpoint}`, { method, body, trace: actualTrace });
+  if (actualTrace) {
+    logTestEvidence({
+      category: "workflow_api",
+      test: actualTrace.test,
+      file: import.meta.filename,
+      endpoint,
+      method,
+      status: response.status,
+      response_preview: JSON.stringify(response.data).slice(0, 200),
+    });
+  }
+  return response;
 }
 
 // ── Temp state dir for file-system tests ─────────────────────────────────────
