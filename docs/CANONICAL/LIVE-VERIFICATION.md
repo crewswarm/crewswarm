@@ -11,6 +11,8 @@ These checks cover the last parts of the system that cannot be made fully hermet
 Run:
 
 ```bash
+node scripts/live-provider-matrix.mjs
+node scripts/live-provider-matrix.mjs --smoke
 node scripts/live-provider-failover-matrix.mjs
 ```
 
@@ -79,6 +81,17 @@ Verify:
 - voice note send
 - per-project history isolation
 - visible runtime/source labeling
+
+## CLI Engines
+
+Run:
+
+```bash
+node scripts/live-cli-matrix.mjs
+node scripts/live-cli-matrix.mjs --smoke
+```
+
+This verifies which CLI lanes are installed and, in smoke mode, runs one tiny one-shot through each available CLI.
 
 ## Interpretation
 

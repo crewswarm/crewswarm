@@ -58,7 +58,11 @@ node --test test/e2e/*.test.mjs
 node node_modules/playwright/cli.js test tests/e2e --reporter=list
 
 # Live external verification
+node scripts/live-provider-matrix.mjs
+node scripts/live-provider-matrix.mjs --smoke
 node scripts/live-provider-failover-matrix.mjs
+node scripts/live-cli-matrix.mjs
+node scripts/live-cli-matrix.mjs --smoke
 node scripts/live-bridge-matrix.mjs
 node scripts/live-crewchat-check.mjs
 ```
