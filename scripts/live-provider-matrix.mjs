@@ -24,6 +24,19 @@ function modelFromConfig(providerId, providerCfg, agents) {
   ).trim();
   if (directModel) return directModel;
 
+  const listed = Array.isArray(providerCfg?.models)
+    ? providerCfg.models.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
+    : [];
+
+  const preferredDefaults = {
+    nvidia: "meta/llama-3.1-8b-instruct",
+    ollama: "qwen3-coder:480b-cloud",
+    "openai-local": "gpt-5.1",
+    opencode: "big-pickle",
+  };
+  const preferred = preferredDefaults[providerId];
+  if (preferred && listed.includes(preferred)) return preferred;
+
   const prefixMap = {
     google: ["google/", "gemini"],
     anthropic: ["anthropic/", "claude"],
@@ -47,7 +60,7 @@ function modelFromConfig(providerId, providerCfg, agents) {
   });
   if (found?.model) return String(found.model);
 
-  const firstListed = providerCfg?.models?.[0]?.id;
+  const firstListed = listed[0];
   if (firstListed) return String(firstListed);
 
   const hardcoded = {
