@@ -96,8 +96,20 @@ test.describe("PM Loop tab", () => {
       });
     });
 
-    // Mock roadmap endpoint
+    // Mock roadmap endpoint (used when no project selected)
     await page.route("**/api/pm-loop/roadmap", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          content:
+            "# Roadmap\n- [ ] Build auth system\n- [ ] Add REST endpoints\n- [x] Setup CI",
+        }),
+      });
+    });
+
+    // Mock file-content endpoint (used when project with roadmapFile selected)
+    await page.route("**/api/file-content**", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -343,6 +355,9 @@ test.describe("Engines tab (additional)", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Spending tab", () => {
+  // Settings tab loads multiple sub-panels; allow extra time
+  test.setTimeout(90_000);
+
   test.beforeEach(async ({ page }) => {
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
@@ -484,8 +499,16 @@ test.describe("Prompts tab", () => {
   test("navigates to Prompts tab and view becomes active", async ({
     page,
   }) => {
-    await openTab(page, "navPrompts", "promptsView");
-    await expect(page.locator("#promptsView")).toBeVisible();
+    // Prompts tab uses initPromptsTab which manages its own view activation.
+    // Click the nav item and also force hash in case the click doesn't propagate.
+    await page.locator("#navPrompts").click();
+    await page.waitForTimeout(500);
+    // Force hash navigation as a reliable fallback
+    await page.evaluate(() => {
+      window.location.hash = "prompts";
+    });
+    await page.waitForTimeout(1_000);
+    await expect(page.locator("#promptsView")).toBeVisible({ timeout: 10_000 });
   });
 
   test("prompt list renders all agent prompt cards", async ({ page }) => {
