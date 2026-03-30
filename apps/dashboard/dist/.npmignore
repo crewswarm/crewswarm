@@ -1,0 +1,4 @@
+*.br
+*.gz
+assets/*.br
+assets/*.gz

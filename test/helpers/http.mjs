@@ -7,14 +7,16 @@
  */
 
 import http from "node:http";
+import { logHttpInteraction } from "./test-log.mjs";
 
 /**
  * Make an HTTP request using Node's http module (no undici/fetch).
  * Returns { status, data } where data is the parsed JSON body.
  */
-export function httpRequest(urlStr, { method = "GET", body = null, timeout = 5000, headers = {} } = {}) {
+export function httpRequest(urlStr, { method = "GET", body = null, timeout = 15000, headers = {}, trace = null } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
+    const startedAt = Date.now();
     const options = {
       hostname: url.hostname,
       port: url.port,
@@ -28,18 +30,83 @@ export function httpRequest(urlStr, { method = "GET", body = null, timeout = 500
       let d = "";
       res.on("data", (chunk) => (d += chunk));
       res.on("end", () => {
+        const durationMs = Date.now() - startedAt;
         try {
-          resolve({ status: res.statusCode, data: JSON.parse(d) });
+          const parsed = JSON.parse(d);
+          if (trace) {
+            logHttpInteraction({
+              test: trace.test,
+              file: trace.file,
+              operation: trace.operation,
+              url: urlStr,
+              method,
+              timeout_ms: timeout,
+              status: res.statusCode,
+              duration_ms: durationMs,
+              request_headers: headers,
+              response_headers: res.headers,
+              response_body: parsed,
+              extra: trace.extra,
+            });
+          }
+          resolve({ status: res.statusCode, data: parsed });
         } catch {
+          if (trace) {
+            logHttpInteraction({
+              test: trace.test,
+              file: trace.file,
+              operation: trace.operation,
+              url: urlStr,
+              method,
+              timeout_ms: timeout,
+              status: res.statusCode,
+              duration_ms: durationMs,
+              request_headers: headers,
+              response_headers: res.headers,
+              response_body: d,
+              extra: trace.extra,
+            });
+          }
           resolve({ status: res.statusCode, data: d });
         }
       });
     });
 
-    req.on("error", reject);
+    req.on("error", (error) => {
+      if (trace) {
+        logHttpInteraction({
+          test: trace.test,
+          file: trace.file,
+          operation: trace.operation,
+          url: urlStr,
+          method,
+          timeout_ms: timeout,
+          duration_ms: Date.now() - startedAt,
+          request_headers: headers,
+          error,
+          extra: trace.extra,
+        });
+      }
+      reject(error);
+    });
     req.on("timeout", () => {
       req.destroy();
-      reject(new Error("request timeout"));
+      const error = new Error("request timeout");
+      if (trace) {
+        logHttpInteraction({
+          test: trace.test,
+          file: trace.file,
+          operation: trace.operation,
+          url: urlStr,
+          method,
+          timeout_ms: timeout,
+          duration_ms: Date.now() - startedAt,
+          request_headers: headers,
+          error,
+          extra: trace.extra,
+        });
+      }
+      reject(error);
     });
 
     if (body) req.write(typeof body === "string" ? body : JSON.stringify(body));

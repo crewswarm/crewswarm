@@ -3,9 +3,11 @@
 
 # Build artifacts
 apps/dashboard/dist/
-apps/dashboard/*.gz
-apps/dashboard/*.br
 apps/vibe/.tmp*
+apps/dashboard/dist/**/*.br
+apps/dashboard/dist/**/*.gz
+apps/vibe/dist/**/*.br
+apps/vibe/dist/**/*.gz
 
 # Test files
 test/
@@ -28,6 +30,9 @@ reports/
 .env
 .env.*
 !.env.example
+apps/vibe/.crew/
+apps/vibe/.crewswarm/
+apps/vibe/.studio-data/
 
 # Large assets
 website/
@@ -39,3 +44,4 @@ website/
 *.pid
 .tmp*
 .DS_Store
+*.backup-current

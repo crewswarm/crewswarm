@@ -1,19 +1,36 @@
 /**
- * E2E: Multi-engine dispatch — verify all CLI engines can CREATE FILES (not just chat).
+ * E2E: Multi-Engine File Creation Diagnostics
  *
- * Each engine is assigned to a different agent and asked to create an HTML file.
- * We verify the file exists and has valid HTML content.
+ * Verifies each CLI engine can CREATE FILES on disk (not just chat).
+ * Each engine is assigned to a different agent and asked to write an HTML file
+ * into a temp directory. We verify the file exists and has valid content.
  *
- * Agent → Engine mapping (set in crewswarm.json):
- *   crew-coder       → Claude Code
- *   crew-coder-front → Cursor CLI
- *   crew-seo         → Gemini CLI
- *   crew-coder-back  → Codex CLI
- *   crew-fixer       → OpenCode
- *   crew-qa          → crew-cli
- *   crew-github      → LLM Direct (no CLI)
+ * WHAT THIS TESTS:
+ *   - crew-lead dispatch API accepts and routes tasks to agents
+ *   - Each CLI engine can write files to a specified project directory
+ *   - Engine selection routes coding tasks to the correct CLI engine
+ *   - Mixed-engine wave: two engines running in parallel via pipeline API
  *
- * REQUIRES: crew-lead on :5010, engines installed.
+ * HOW TO READ FAILURES:
+ *   - "request timeout" on dispatch → agent not connected to RT bus.
+ *     Check: are agent bridges running? `curl localhost:5010/api/agents`
+ *   - "RT bus not connected — agent unreachable" → agent bridge is down.
+ *   - "Expected done, got timeout" → engine started but didn't finish in 2min.
+ *     Check engine logs and rate limits.
+ *   - "File not found" → engine ran but wrote to wrong path or didn't write.
+ *     Check if engine respects projectDir.
+ *
+ * Agent → Engine mapping (from crewswarm.json use* flags):
+ *   crew-coder       → Codex (useCodex)
+ *   crew-coder-front → Cursor CLI (useCursorCli)
+ *   crew-seo         → Gemini CLI (useGeminiCli)
+ *   crew-coder-back  → Cursor CLI (useCursorCli)
+ *   crew-fixer       → OpenCode (useOpenCode)
+ *   crew-qa          → crew-cli (useCrewCLI)
+ *
+ * REQUIRES: crew-lead on :5010, engines installed, agents on RT bus.
+ * RUN: node --test test/e2e/multi-engine-dispatch.test.mjs
+ * NOTE: Run SOLO — concurrent tests starve engines of resources.
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -23,6 +40,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logEngineTestContext } from "../helpers/test-context.mjs";
+import { logFileVerification, logTestEvidence } from "../helpers/test-log.mjs";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
 const TEST_DIR = join(tmpdir(), `crewswarm-engine-test-${Date.now()}`);
@@ -50,6 +69,12 @@ async function dispatch(agent, task) {
     headers: { "Authorization": token ? `Bearer ${token}` : "" },
     body: { agent, task, projectDir: TEST_DIR },
     timeout: 15000,
+    trace: {
+      test: `dispatch:${agent}`,
+      file: import.meta.filename,
+      operation: "dispatch-task",
+      extra: { agent, project_dir: TEST_DIR },
+    },
   });
   if (status < 200 || status >= 300) throw new Error(`Dispatch failed: ${status} ${JSON.stringify(data)}`);
   return data;
@@ -58,12 +83,20 @@ async function dispatch(agent, task) {
 async function pollTask(taskId, maxWaitMs = 120000) {
   const token = await getAuthToken();
   const start = Date.now();
+  let lastData = null;
   while (Date.now() - start < maxWaitMs) {
     try {
       const { data } = await httpRequest(`${CREW_LEAD_URL}/api/status/${taskId}`, {
         headers: { "Authorization": token ? `Bearer ${token}` : "" },
         timeout: 10000,
+        trace: {
+          test: `poll:${taskId}`,
+          file: import.meta.filename,
+          operation: "poll-task-status",
+          extra: { taskId },
+        },
       });
+      lastData = data;
       if (data.status === "done" || data.status === "completed") return data;
       if (data.status === "failed" || data.status === "timeout") {
         return data; // Don't throw — let the test assert
@@ -71,7 +104,16 @@ async function pollTask(taskId, maxWaitMs = 120000) {
     } catch { /* retry */ }
     await new Promise(r => setTimeout(r, 3000));
   }
-  return { status: "timeout", result: "Timed out waiting" };
+  logTestEvidence({
+    category: "task_timeout",
+    test: `poll:${taskId}`,
+    file: import.meta.filename,
+    taskId,
+    timeout_ms: maxWaitMs,
+    last_status: lastData?.status || "unknown",
+    last_result_preview: String(lastData?.result || "").slice(0, 300),
+  });
+  return { status: "timeout", result: "Timed out waiting", taskId, lastStatus: lastData?.status || "unknown" };
 }
 
 async function dispatchFileTask(agent, filename, title) {
@@ -90,6 +132,12 @@ Write ONLY the file. Do not explain. Do not ask questions.`;
 async function verifyHtmlFile(filename, title) {
   const filepath = join(TEST_DIR, filename);
   assert.ok(existsSync(filepath), `File ${filename} should exist`);
+  logFileVerification({
+    test: `verify:${filename}`,
+    file: filepath,
+    expected: { filename, title },
+    extra: { source_file: import.meta.filename },
+  });
   const content = await readFile(filepath, "utf8");
   assert.ok(content.includes("<!DOCTYPE html>") || content.includes("<html"), `${filename} should be valid HTML`);
   assert.ok(content.includes(title), `${filename} should contain title "${title}"`);
@@ -125,6 +173,15 @@ describe("engine: Claude Code → crew-coder", {
   timeout: 180000
 }, () => {
   it("creates an HTML file via Claude Code", async () => {
+    logEngineTestContext({
+      test: "creates an HTML file via Claude Code",
+      file: import.meta.filename,
+      engine: "claude",
+      agent: "crew-coder",
+      timeout_ms: 180000,
+      target_file: join(TEST_DIR, "claude-test.html"),
+      project_dir: TEST_DIR,
+    });
     const result = await dispatchFileTask("crew-coder", "claude-test.html", "Claude Code Test");
     console.log(`    Status: ${result.status} | Output: ${(result.result || "").slice(0, 80)}`);
     if (result.status === "done") {
@@ -145,6 +202,15 @@ describe("engine: Cursor CLI → crew-coder-front", {
   timeout: 180000
 }, () => {
   it("creates an HTML file via Cursor CLI", async () => {
+    logEngineTestContext({
+      test: "creates an HTML file via Cursor CLI",
+      file: import.meta.filename,
+      engine: "cursor",
+      agent: "crew-coder-front",
+      timeout_ms: 180000,
+      target_file: join(TEST_DIR, "cursor-test.html"),
+      project_dir: TEST_DIR,
+    });
     const result = await dispatchFileTask("crew-coder-front", "cursor-test.html", "Cursor CLI Test");
     console.log(`    Status: ${result.status} | Output: ${(result.result || "").slice(0, 80)}`);
     if (result.status === "done" && existsSync(join(TEST_DIR, "cursor-test.html"))) {
@@ -160,6 +226,15 @@ describe("engine: Gemini CLI → crew-seo", {
   timeout: 180000
 }, () => {
   it("creates an HTML file via Gemini CLI", async () => {
+    logEngineTestContext({
+      test: "creates an HTML file via Gemini CLI",
+      file: import.meta.filename,
+      engine: "gemini",
+      agent: "crew-seo",
+      timeout_ms: 180000,
+      target_file: join(TEST_DIR, "gemini-test.html"),
+      project_dir: TEST_DIR,
+    });
     const result = await dispatchFileTask("crew-seo", "gemini-test.html", "Gemini CLI Test");
     console.log(`    Status: ${result.status} | Output: ${(result.result || "").slice(0, 80)}`);
     if (result.status === "done" && existsSync(join(TEST_DIR, "gemini-test.html"))) {
@@ -175,6 +250,15 @@ describe("engine: Codex CLI → crew-coder-back", {
   timeout: 180000
 }, () => {
   it("creates an HTML file via Codex CLI", async () => {
+    logEngineTestContext({
+      test: "creates an HTML file via Codex CLI",
+      file: import.meta.filename,
+      engine: "codex",
+      agent: "crew-coder-back",
+      timeout_ms: 180000,
+      target_file: join(TEST_DIR, "codex-test.html"),
+      project_dir: TEST_DIR,
+    });
     const result = await dispatchFileTask("crew-coder-back", "codex-test.html", "Codex CLI Test");
     console.log(`    Status: ${result.status} | Output: ${(result.result || "").slice(0, 80)}`);
     if (result.status === "done" && existsSync(join(TEST_DIR, "codex-test.html"))) {
@@ -190,6 +274,15 @@ describe("engine: OpenCode → crew-fixer", {
   timeout: 180000
 }, () => {
   it("creates an HTML file via OpenCode", async () => {
+    logEngineTestContext({
+      test: "creates an HTML file via OpenCode",
+      file: import.meta.filename,
+      engine: "opencode",
+      agent: "crew-fixer",
+      timeout_ms: 180000,
+      target_file: join(TEST_DIR, "opencode-test.html"),
+      project_dir: TEST_DIR,
+    });
     const result = await dispatchFileTask("crew-fixer", "opencode-test.html", "OpenCode Test");
     console.log(`    Status: ${result.status} | Output: ${(result.result || "").slice(0, 80)}`);
     if (result.status === "done" && existsSync(join(TEST_DIR, "opencode-test.html"))) {
@@ -205,6 +298,15 @@ describe("engine: crew-cli → crew-qa", {
   timeout: 180000
 }, () => {
   it("creates an HTML file via crew-cli", async () => {
+    logEngineTestContext({
+      test: "creates an HTML file via crew-cli",
+      file: import.meta.filename,
+      engine: "crew-cli",
+      agent: "crew-qa",
+      timeout_ms: 180000,
+      target_file: join(TEST_DIR, "crewcli-test.html"),
+      project_dir: TEST_DIR,
+    });
     const result = await dispatchFileTask("crew-qa", "crewcli-test.html", "Crew CLI Test");
     console.log(`    Status: ${result.status} | Output: ${(result.result || "").slice(0, 80)}`);
     if (result.status === "done" && existsSync(join(TEST_DIR, "crewcli-test.html"))) {
@@ -222,6 +324,14 @@ describe("mixed-engine wave — Claude + Cursor in parallel", {
   timeout: 180000
 }, () => {
   it("runs parallel wave with 2 different engines creating files", async () => {
+    logEngineTestContext({
+      test: "runs parallel wave with 2 different engines creating files",
+      file: import.meta.filename,
+      engine: "pipeline",
+      timeout_ms: 180000,
+      project_dir: TEST_DIR,
+      notes: "Wave 1 dispatches crew-coder and crew-coder-front in parallel",
+    });
     const token = await getAuthToken();
     const pipeline = [
       { wave: 1, agent: "crew-coder", task: `Create ${TEST_DIR}/wave-claude.html with <h1>Wave Claude</h1>. Write the file only.` },
@@ -233,6 +343,12 @@ describe("mixed-engine wave — Claude + Cursor in parallel", {
       headers: { "Authorization": token ? `Bearer ${token}` : "" },
       body: { pipeline, projectDir: TEST_DIR },
       timeout: 15000,
+      trace: {
+        test: "runs parallel wave with 2 different engines creating files",
+        file: import.meta.filename,
+        operation: "dispatch-pipeline",
+        extra: { project_dir: TEST_DIR },
+      },
     });
     assert.ok(data.pipelineId, "Should return pipelineId");
 

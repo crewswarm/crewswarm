@@ -6,13 +6,19 @@
  *
  * REQUIRES: dashboard on :4319 and whichever CLIs you want to exercise.
  */
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logEngineTestContext } from "../helpers/test-context.mjs";
+import { logTestEvidence } from "../helpers/test-log.mjs";
+
+// Use a temp directory so planner engines don't clobber the repo
+const TEST_DIR = join(tmpdir(), `crewswarm-planner-test-${Date.now()}`);
+mkdirSync(TEST_DIR, { recursive: true });
 
 const DASHBOARD_BASE = process.env.DASHBOARD_BASE || "http://127.0.0.1:4319";
 const dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/health`);
@@ -41,6 +47,12 @@ async function planWithDashboard(engine) {
   const { status, data } = await httpRequest(`${DASHBOARD_BASE}/api/enhance-prompt`, {
     method: "POST",
     timeout: 300000,
+    trace: {
+      test: `planner:${engine}`,
+      file: import.meta.filename,
+      operation: "dashboard-enhance-prompt",
+      extra: { engine, expected_timeout_ms: 300000 },
+    },
     body: {
       text: "Build a lightweight dashboard feature to show agent health and recent failures.",
       engine,
@@ -53,6 +65,10 @@ async function planWithDashboard(engine) {
   assert.ok(data.enhanced.trim().length > 50, `planner output should be substantive for ${engine} (got ${data.enhanced.trim().length} chars)`);
   return data;
 }
+
+after(() => {
+  try { rmSync(TEST_DIR, { recursive: true, force: true }); } catch {}
+});
 
 // Run sequentially — each planner spawns a CLI process; concurrent requests crash the dashboard
 describe("dashboard build planner", { skip: SKIP, concurrency: 1, timeout: 300000 }, () => {
@@ -67,7 +83,24 @@ describe("dashboard build planner", { skip: SKIP, concurrency: 1, timeout: 30000
 
   for (const { name, engine, bin } of engines) {
     it(`${name}: returns a structured build brief`, { skip: !isInstalled(bin) ? `${name} not available` : false }, async () => {
+      logEngineTestContext({
+        test: `${name}: returns a structured build brief`,
+        file: import.meta.filename,
+        engine,
+        timeout_ms: 300000,
+        project_dir: TEST_DIR,
+        notes: "Dashboard planner endpoint should return substantive build text",
+      });
       const data = await planWithDashboard(engine);
+      logTestEvidence({
+        category: "planner_result",
+        test: `${name}: returns a structured build brief`,
+        file: import.meta.filename,
+        engine,
+        planner_engine: data.engine || null,
+        planner_mode: data.mode || null,
+        enhanced_length: data.enhanced?.length || 0,
+      });
       console.log(`    ${name} planner engine=${data.engine} mode=${data.mode}`);
     });
   }

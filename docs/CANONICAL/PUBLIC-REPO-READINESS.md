@@ -57,7 +57,7 @@ Before calling the repo public-ready, these should be true:
 
 ## Practical Go/No-Go
 
-Go for a public release now.
+Go for a public release once `npm run release:check` is green on the release commit.
 
 Be honest about polish:
 - stable: dashboard, RT bus, `crew-lead`, agent routing, install flow, project history, MCP

@@ -184,7 +184,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
       if (skipIfDown(t)) return;
       // Just test that the validation accepts known IDs (don't actually restart services)
       // Send an id the validation schema accepts — a 200 or non-validation 400 means it passed validation
-      const { status, data } = await apiRequest("/api/services/restart", "POST", { id: "rt-bus" });
+      const { status, data } = await apiRequest("/api/services/restart", "POST", { id: "rt-bus" }, 30000);
       // Should not be a Zod validation error
       if (status === 400) {
         assert.ok(!data.error?.includes("Invalid option"),

@@ -617,6 +617,7 @@ initWaveDispatcher({
   bumpOpsCounter,
   tryRead,
   _cursorWavesEnabled,
+  loadAgentList: loadAgentListFromConfig,
   getClaudeCodeEnabled: () => _claudeCodeEnabled,
   dispatchTimeoutMs: DISPATCH_TIMEOUT_MS,
   dispatchClaimedTimeoutMs: DISPATCH_CLAIMED_TIMEOUT_MS,

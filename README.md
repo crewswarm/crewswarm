@@ -3,7 +3,7 @@
 **The only multi-engine AI coding platform.** Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. Parallel agents. Persistent sessions. No vendor lock-in.
 
 [![npm version](https://img.shields.io/npm/v/crewswarm)](https://www.npmjs.com/package/crewswarm)
-[![Tests](https://img.shields.io/badge/tests-957%20passed-brightgreen)]()
+[![Release Check](https://img.shields.io/badge/release_check-required-blue)](https://github.com/crewswarm/crewswarm)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org)
 [![Website](https://img.shields.io/badge/website-crewswarm.ai-blue)](https://crewswarm.ai)
