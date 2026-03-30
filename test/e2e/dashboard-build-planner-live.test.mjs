@@ -70,8 +70,9 @@ after(() => {
   try { rmSync(TEST_DIR, { recursive: true, force: true }); } catch {}
 });
 
-// Run sequentially — each planner spawns a CLI process; concurrent requests crash the dashboard
-describe("dashboard build planner", { skip: SKIP, concurrency: 1, timeout: 300000 }, () => {
+// Run sequentially — each planner spawns a CLI process; concurrent requests crash the dashboard.
+// Total timeout must accommodate all engines (each can take 30-120s).
+describe("dashboard build planner", { skip: SKIP, concurrency: 1, timeout: 900000 }, () => {
   const engines = [
     { name: "Claude Code", engine: "claude", bin: "claude" },
     { name: "Codex", engine: "codex", bin: "codex" },
@@ -82,7 +83,10 @@ describe("dashboard build planner", { skip: SKIP, concurrency: 1, timeout: 30000
   ];
 
   for (const { name, engine, bin } of engines) {
-    it(`${name}: returns a structured build brief`, { skip: !isInstalled(bin) ? `${name} not available` : false }, async () => {
+    it(`${name}: returns a structured build brief`, { skip: !isInstalled(bin) ? `${name} not available` : false, timeout: 300000 }, async () => {
+      // Verify dashboard is still alive before each engine test
+      const up = await checkServiceUp(`${DASHBOARD_BASE}/health`);
+      assert.ok(up, `Dashboard down before ${name} test — previous engine may have crashed it`);
       logEngineTestContext({
         test: `${name}: returns a structured build brief`,
         file: import.meta.filename,

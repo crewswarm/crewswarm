@@ -34,7 +34,11 @@ if (summary.failedTests?.length) {
   for (const failure of summary.failedTests) {
     console.log(`- ${failure.name}`);
     console.log(`  file: ${failure.file}`);
+    console.log(`  reason: ${failure.reason_code} (${failure.reason_summary})`);
     console.log(`  error: ${failure.error || "unknown"}`);
+    if (failure.engine?.engine || failure.engine?.provider || failure.engine?.model) {
+      console.log(`  engine: ${failure.engine?.engine || "n/a"} | provider: ${failure.engine?.provider || "n/a"} | model: ${failure.engine?.model || "n/a"}`);
+    }
     console.log(`  artifacts: ${failure.artifactDir}`);
     console.log(`  rerun: ${rerunCommand(failure)}`);
   }
@@ -45,6 +49,7 @@ if (summary.skippedTests?.length) {
   for (const skipped of summary.skippedTests) {
     console.log(`- ${skipped.name}`);
     console.log(`  file: ${skipped.file}`);
+    console.log(`  reason: ${skipped.reason_code} (${skipped.reason_summary})`);
     console.log(`  reason: ${skipped.skip_reason}`);
     console.log(`  artifacts: ${skipped.artifactDir}`);
     console.log(`  rerun: ${rerunCommand(skipped)}`);

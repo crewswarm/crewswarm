@@ -15,6 +15,12 @@ const {
   logHttpInteraction,
 } = await import("../../test/helpers/test-log.mjs");
 
+const {
+  buildSelector,
+  classifyFailure,
+  classifySkip,
+} = await import("../../scripts/test-reporter.mjs");
+
 describe("test log helpers", () => {
   const logPath = path.join(tmpDir, "test-log.jsonl");
   const currentRunPath = path.join(tmpDir, ".current-run.json");
@@ -88,5 +94,35 @@ describe("test log helpers", () => {
     assert.equal(meta.provider, "openai");
     assert.equal(meta.engine, "codex");
     assert.ok("binary" in meta);
+  });
+
+  it("buildSelector creates a one-by-one rerun command", () => {
+    const selector = buildSelector("/repo/test/e2e/example.test.mjs", "engine times out");
+    assert.equal(selector.file, "/repo/test/e2e/example.test.mjs");
+    assert.equal(selector.test_name, "engine times out");
+    assert.match(selector.command, /--test-name-pattern='engine times out'/);
+    assert.match(selector.command, /example\.test\.mjs'/);
+  });
+
+  it("classifyFailure detects timeout and agent connectivity failures", () => {
+    const timeout = classifyFailure(
+      { error: "Passthrough timeout after 120s", error_name: "Error" },
+      {}
+    );
+    assert.equal(timeout.reason_code, "timeout");
+
+    const unreachable = classifyFailure(
+      { error: "RT bus not connected - agent unreachable", error_name: "Error" },
+      {}
+    );
+    assert.equal(unreachable.reason_code, "agent_unreachable");
+  });
+
+  it("classifySkip detects service and engine availability skips", () => {
+    const service = classifySkip({ skip_reason: "crew-lead not running on :5010" });
+    assert.equal(service.reason_code, "service_down");
+
+    const engine = classifySkip({ skip_reason: "Claude Code not available" });
+    assert.equal(engine.reason_code, "engine_unavailable");
   });
 });

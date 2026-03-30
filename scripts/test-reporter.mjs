@@ -51,6 +51,10 @@ function truncate(value, limit = 800) {
   return text.length <= limit ? text : `${text.slice(0, limit)}...`;
 }
 
+function compactText(value) {
+  return truncate(String(value ?? "").replace(/\s+/g, " ").trim());
+}
+
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
@@ -71,6 +75,15 @@ function buildRerunCommand(filePath, testName) {
   return `node --test --test-reporter=./scripts/test-reporter.mjs --test-name-pattern=${shellQuote(testName)} ${shellQuote(filePath)}`;
 }
 
+function buildSelector(filePath, testName) {
+  return {
+    file: filePath || null,
+    test_name: testName || null,
+    test_name_pattern: testName || null,
+    command: buildRerunCommand(filePath, testName),
+  };
+}
+
 function getArtifactDir(testId) {
   return path.join(RUNS_DIR, runId, testId);
 }
@@ -84,6 +97,10 @@ function ensureArtifactDir(testId) {
 function writeArtifactJson(testId, filename, value) {
   const artifactDir = ensureArtifactDir(testId);
   fs.writeFileSync(path.join(artifactDir, filename), JSON.stringify(value, null, 2) + "\n");
+}
+
+function artifactPath(testId, filename) {
+  return path.join(getArtifactDir(testId), filename);
 }
 
 function upsertTestArtifact(entry) {
@@ -110,6 +127,204 @@ function fingerprintFile(filePath) {
   } catch {
     return null;
   }
+}
+
+function readEvidence(testId) {
+  const evidencePath = artifactPath(testId, "evidence.jsonl");
+  if (!fs.existsSync(evidencePath)) return [];
+  try {
+    return fs.readFileSync(evidencePath, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  } catch {
+    return [];
+  }
+}
+
+function collectTestContext(testId) {
+  const evidence = readEvidence(testId);
+  const engineContext = [...evidence].reverse().find((entry) => entry.category === "engine_context") || null;
+  const latestHttp = [...evidence].reverse().find((entry) => entry.category === "http") || null;
+  const latestFileVerification = [...evidence].reverse().find((entry) => entry.category === "file_verification") || null;
+  const latestTimeout = [...evidence].reverse().find((entry) =>
+    entry.category === "task_timeout" || entry.category === "passthrough_timeout"
+  ) || null;
+  const latestPassthroughError = [...evidence].reverse().find((entry) => entry.category === "passthrough_error") || null;
+  const latestWorkflowEvent = [...evidence].reverse().find((entry) =>
+    /workflow|dispatch|task/i.test(String(entry.category || ""))
+  ) || null;
+  return {
+    evidence_count: evidence.length,
+    engine_context: engineContext,
+    latest_http: latestHttp,
+    latest_file_verification: latestFileVerification,
+    latest_timeout: latestTimeout,
+    latest_passthrough_error: latestPassthroughError,
+    latest_workflow_event: latestWorkflowEvent,
+  };
+}
+
+function extractSkipReason(data = {}) {
+  return data.skipReason ||
+    data.skip ||
+    data.details?.skipReason ||
+    data.details?.skip ||
+    (data.details?.skipped ? data.details?.message || "skipped" : null) ||
+    (data.details?.status === "skipped" ? data.details?.message || "skipped" : null) ||
+    null;
+}
+
+function classifyFailure(entry, context) {
+  const errorText = compactText([
+    entry.error,
+    entry.error_name,
+    entry.error_code,
+    context.latest_timeout?.error,
+    context.latest_passthrough_error?.error,
+    context.latest_http?.error,
+    context.latest_workflow_event?.last_result_preview,
+  ].filter(Boolean).join(" | "));
+
+  const checks = [
+    {
+      code: "timeout",
+      matches: /timeout|timed out|did not finish|deadline exceeded/i,
+      summary: "test or engine timed out",
+    },
+    {
+      code: "cancelled",
+      matches: /cancelled|canceled|abort|aborted/i,
+      summary: "test was cancelled",
+    },
+    {
+      code: "agent_unreachable",
+      matches: /rt bus not connected|agent unreachable|econnrefused|connect econrefused|socket hang up/i,
+      summary: "agent or service was unreachable",
+    },
+    {
+      code: "missing_task_id",
+      matches: /no taskid|missing taskid/i,
+      summary: "dispatch returned no task id",
+    },
+    {
+      code: "file_missing",
+      matches: /should exist|file not found|enoent/i,
+      summary: "expected output file was missing",
+    },
+    {
+      code: "empty_response",
+      matches: /non-empty response|returned nothing|response length/i,
+      summary: "engine returned an empty or unusable response",
+    },
+    {
+      code: "http_error",
+      matches: /dispatch failed: \d+|http|status code|unexpected status/i,
+      summary: "http request or api contract failed",
+    },
+    {
+      code: "assertion",
+      matches: /assert|expected .* got/i,
+      summary: "assertion failed",
+    },
+  ];
+
+  const match = checks.find((item) => item.matches.test(errorText));
+  return {
+    reason_code: match?.code || "unknown_failure",
+    reason_summary: match?.summary || "unclassified failure",
+    reason_detail: errorText || "no detailed failure message captured",
+  };
+}
+
+function classifySkip(entry) {
+  const reasonText = compactText(entry.skip_reason || "skipped");
+  const checks = [
+    {
+      code: "service_down",
+      matches: /not running|service unavailable|health check/i,
+      summary: "required local service was not running",
+    },
+    {
+      code: "engine_unavailable",
+      matches: /not available|not installed|missing/i,
+      summary: "required engine or dependency was unavailable",
+    },
+    {
+      code: "explicit_skip",
+      matches: /skip|skipped/i,
+      summary: "test was skipped intentionally",
+    },
+  ];
+  const match = checks.find((item) => item.matches.test(reasonText));
+  return {
+    reason_code: match?.code || "unknown_skip",
+    reason_summary: match?.summary || "unclassified skip",
+    reason_detail: reasonText,
+  };
+}
+
+export { buildSelector, classifyFailure, classifySkip };
+
+function buildFailureBundle(entry) {
+  const context = collectTestContext(entry.testId);
+  const classification = classifyFailure(entry, context);
+  const engineRuntime = context.engine_context?.engine_runtime || {};
+  const agentRuntime = context.engine_context?.agent_runtime || {};
+  return {
+    ...entry,
+    ...classification,
+    selector: buildSelector(entry.file, entry.name),
+    isolation: {
+      isolated_rerun_command: entry.rerun_command,
+      latest_http_status: context.latest_http?.status ?? null,
+      latest_http_operation: context.latest_http?.operation ?? null,
+      latest_timeout_ms: context.latest_timeout?.timeout_ms ?? context.engine_context?.timeout_ms ?? null,
+      evidence_count: context.evidence_count,
+    },
+    engine: {
+      engine: context.engine_context?.engine || entry.engine || null,
+      provider: engineRuntime.provider || agentRuntime.provider || null,
+      model: agentRuntime.model || agentRuntime.cursorCliModel || agentRuntime.opencodeModel || null,
+      agent: context.engine_context?.agent || null,
+      binary_path: engineRuntime.binary?.path || null,
+      binary_version: engineRuntime.binary?.version || null,
+      route_flags: agentRuntime.routeFlags || null,
+      enabled_route: agentRuntime.enabledRoute || null,
+    },
+    artifacts: {
+      artifact_dir: entry.artifactDir,
+      manifest_json: artifactPath(entry.testId, "manifest.json"),
+      failure_json: artifactPath(entry.testId, "failure.json"),
+      evidence_jsonl: artifactPath(entry.testId, "evidence.jsonl"),
+      triage_json: artifactPath(entry.testId, "triage.json"),
+    },
+    latest_evidence: {
+      http: context.latest_http || null,
+      file_verification: context.latest_file_verification || null,
+      timeout: context.latest_timeout || null,
+      passthrough_error: context.latest_passthrough_error || null,
+      workflow: context.latest_workflow_event || null,
+    },
+  };
+}
+
+function buildSkipBundle(entry) {
+  const classification = classifySkip(entry);
+  return {
+    ...entry,
+    ...classification,
+    selector: buildSelector(entry.file, entry.name),
+    isolation: {
+      isolated_rerun_command: entry.rerun_command,
+    },
+    artifacts: {
+      artifact_dir: entry.artifactDir,
+      manifest_json: artifactPath(entry.testId, "manifest.json"),
+      evidence_jsonl: artifactPath(entry.testId, "evidence.jsonl"),
+      triage_json: artifactPath(entry.testId, "triage.json"),
+    },
+  };
 }
 
 const runMeta = {
@@ -164,6 +379,7 @@ export default async function* reporter(source) {
         line: event.data.line ?? null,
         column: event.data.column ?? null,
         rerun_command: buildRerunCommand(event.data.file, event.data.name),
+        selector: buildSelector(event.data.file, event.data.name),
       };
       upsertTestArtifact({
         testId,
@@ -182,11 +398,13 @@ export default async function* reporter(source) {
       // Only log leaf tests (not suite/describe wrappers)
       if (event.data.details?.type === "suite") continue;
 
-      const status = event.type === "test:pass" ? "pass" : "fail";
+      const inferredSkipReason = event.type === "test:pass" ? extractSkipReason(event.data) : null;
+      const status = inferredSkipReason ? "skip" : event.type === "test:pass" ? "pass" : "fail";
       const duration = event.data.details?.duration_ms ?? 0;
       totalDuration += duration;
 
       if (status === "pass") passed++;
+      else if (status === "skip") skipped++;
       else failed++;
 
       const entry = {
@@ -206,6 +424,8 @@ export default async function* reporter(source) {
         line: event.data.line ?? null,
         column: event.data.column ?? null,
         rerun_command: buildRerunCommand(event.data.file, event.data.name),
+        selector: buildSelector(event.data.file, event.data.name),
+        ...(status === "skip" ? { skip_reason: truncate(inferredSkipReason || "skipped") } : {}),
         ...(status === "fail" && event.data.details?.error
           ? {
               error: truncate(event.data.details.error.message || event.data.details.error),
@@ -237,11 +457,15 @@ export default async function* reporter(source) {
       });
       if (status === "fail") {
         writeArtifactJson(entry.testId, "failure.json", entry);
+        writeArtifactJson(entry.testId, "triage.json", buildFailureBundle(entry));
+      } else if (status === "skip") {
+        writeArtifactJson(entry.testId, "triage.json", buildSkipBundle(entry));
       }
       logStream.write(JSON.stringify(entry) + "\n");
     }
 
     if (event.type === "test:skip") {
+      if (event.data.details?.type === "suite") continue;
       skipped++;
       const entry = {
         runId,
@@ -253,13 +477,9 @@ export default async function* reporter(source) {
         artifactDir: getArtifactDir(buildTestId(event.data.file, event.data.name)),
         name: event.data.name,
         file: event.data.file,
-        skip_reason: truncate(
-          event.data.skipReason ||
-          event.data.details?.skip ||
-          event.data.details?.message ||
-          "skipped"
-        ),
+        skip_reason: truncate(extractSkipReason(event.data) || "skipped"),
         rerun_command: buildRerunCommand(event.data.file, event.data.name),
+        selector: buildSelector(event.data.file, event.data.name),
       };
       results.push(entry);
       upsertTestArtifact({
@@ -270,11 +490,14 @@ export default async function* reporter(source) {
         status: "skip",
       });
       writeArtifactJson(entry.testId, "manifest.json", entry);
+      writeArtifactJson(entry.testId, "triage.json", buildSkipBundle(entry));
       logStream.write(JSON.stringify(entry) + "\n");
     }
 
     // Pass through to default spec output
-    if (event.type === "test:pass") {
+    if (event.type === "test:pass" && extractSkipReason(event.data)) {
+      yield `  - ${event.data.name} (skipped)\n`;
+    } else if (event.type === "test:pass") {
       yield `  ✓ ${event.data.name}\n`;
     } else if (event.type === "test:fail") {
       yield `  ✗ ${event.data.name}\n`;
@@ -305,29 +528,33 @@ export default async function* reporter(source) {
     duration_ms: Math.round(totalDuration * 100) / 100,
     failedTests: results
       .filter((r) => r.status === "fail")
-      .map((r) => ({
-        testId: r.testId,
-        name: r.name,
-        file: r.file,
-        error: r.error,
-        error_name: r.error_name,
-        timeout_detected: r.timeout_detected || false,
-        artifactDir: r.artifactDir,
-        rerun_command: r.rerun_command,
-      })),
+      .map((r) => buildFailureBundle(r)),
     skippedTests: results
       .filter((r) => r.status === "skip")
-      .map((r) => ({
-        testId: r.testId,
-        name: r.name,
-        file: r.file,
-        skip_reason: r.skip_reason || "skipped",
-        artifactDir: r.artifactDir,
-        rerun_command: r.rerun_command,
-      })),
+      .map((r) => buildSkipBundle(r)),
   };
   fs.writeFileSync(SUMMARY_PATH, JSON.stringify(summary, null, 2) + "\n");
   fs.writeFileSync(path.join(RUNS_DIR, runId, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+  fs.writeFileSync(path.join(RUNS_DIR, runId, "failures.json"), JSON.stringify(summary.failedTests, null, 2) + "\n");
+  fs.writeFileSync(path.join(RUNS_DIR, runId, "skips.json"), JSON.stringify(summary.skippedTests, null, 2) + "\n");
+  fs.writeFileSync(path.join(RUNS_DIR, runId, "rerun-plan.json"), JSON.stringify({
+    runId,
+    generated_at: new Date().toISOString(),
+    failed: summary.failedTests.map((test) => ({
+      testId: test.testId,
+      name: test.name,
+      reason_code: test.reason_code,
+      reason_summary: test.reason_summary,
+      rerun_command: test.rerun_command,
+    })),
+    skipped: summary.skippedTests.map((test) => ({
+      testId: test.testId,
+      name: test.name,
+      reason_code: test.reason_code,
+      reason_summary: test.reason_summary,
+      rerun_command: test.rerun_command,
+    })),
+  }, null, 2) + "\n");
 
   const markdown = [
     `# Test Run ${runId}`,
@@ -354,7 +581,13 @@ export default async function* reporter(source) {
         `- File: \`${failure.file}\``,
         `- Error: ${failure.error || "unknown"}`,
         `- Error Name: ${failure.error_name || "n/a"}`,
+        `- Reason Code: ${failure.reason_code}`,
+        `- Reason Summary: ${failure.reason_summary}`,
         `- Timeout: ${failure.timeout_detected ? "yes" : "no"}`,
+        `- Engine: ${failure.engine.engine || "n/a"}`,
+        `- Provider: ${failure.engine.provider || "n/a"}`,
+        `- Model: ${failure.engine.model || "n/a"}`,
+        `- Agent: ${failure.engine.agent || "n/a"}`,
         `- Artifacts: \`${failure.artifactDir}\``,
         `- Re-run: \`${failure.rerun_command}\``
       );
@@ -370,6 +603,7 @@ export default async function* reporter(source) {
         `### ${skippedTest.name}`,
         `- Test ID: \`${skippedTest.testId}\``,
         `- File: \`${skippedTest.file}\``,
+        `- Reason Code: ${skippedTest.reason_code}`,
         `- Reason: ${skippedTest.skip_reason}`,
         `- Artifacts: \`${skippedTest.artifactDir}\``,
         `- Re-run: \`${skippedTest.rerun_command}\``
