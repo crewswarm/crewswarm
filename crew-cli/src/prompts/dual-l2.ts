@@ -264,68 +264,82 @@ export class DualL2Planner {
    * L2B: Validate work graph against policy
    */
   /**
-   * Agentic repo scan — runs a mini L3 executor with read-only tools
-   * to analyze the codebase before planning. This gives L2 the same
-   * iterative file reading that Cursor/Claude/Codex have.
+   * Deep repo scan — reads key files directly and uses grep to find
+   * task-relevant code. Gives L2 the same codebase awareness that
+   * Cursor/Claude/Codex achieve through their iterative tool calls.
    */
   private async agenticRepoScan(task: string): Promise<string> {
+    const cwd = process.cwd();
+    const sections: string[] = [];
+
     try {
-      const scanPrompt = `You are analyzing a codebase to prepare context for a build planner.
-The task is: "${task}"
-
-Your job is to explore the repository and produce a CODEBASE CONTEXT REPORT.
-Do NOT write any files. Only READ and SEARCH.
-
-Steps:
-1. List the project structure (top-level dirs and key files)
-2. Read package.json for project name, dependencies, and scripts
-3. Search for files related to the task keywords (grep for relevant terms)
-4. Read the 2-3 most relevant files (first 100 lines each)
-5. Check git log for recent related changes
-
-Output format:
-## Project Structure
-(list key dirs and files)
-
-## Key Dependencies
-(from package.json)
-
-## Relevant Files
-(files that relate to the task, with brief descriptions)
-
-## Code Context
-(key code snippets from the most relevant files — API endpoints, component structure, types)
-
-## Recent Changes
-(relevant git commits)
-
-Be specific — reference real file names, function names, API endpoints, and types.`;
-
-      const sandbox = new Sandbox(process.cwd());
-      // Use gemini-2.5-flash for agentic scan — it has reliable tool calling
-      // The L2A reasoning model (grok) may not support tool calling in the executor
-      const scanModel = process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash';
-      const result = await runAgenticWorker(scanPrompt, sandbox, {
-        model: scanModel,
-        maxTurns: 8,       // Enough turns to ls, grep, read a few files
-        stream: false,
-        verbose: Boolean(process.env.CREW_DEBUG),
-        tier: 'fast',
-        projectDir: process.cwd(),
-      });
-
-      if (result.success && result.finalResponse) {
-        const scanOutput = String(result.finalResponse).trim();
-        console.log(`[L2 Planner] Agentic scan: ${scanOutput.length} chars, ${result.turns} turns`);
-        return scanOutput;
+      // 1. Project structure
+      const tree = this.shellSafe(`find ${cwd} -maxdepth 2 -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/.crew/*' | head -60`);
+      if (tree) {
+        const paths = tree.split('\n').map(p => relative(cwd, p)).filter(p => p && !p.startsWith('.'));
+        sections.push(`## Project Structure\n${paths.join('\n')}`);
       }
-      console.log('[L2 Planner] Agentic scan: no output, falling back to static scan');
+
+      // 2. package.json
+      const pkgPath = join(cwd, 'package.json');
+      if (existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+          sections.push(`## package.json\nName: ${pkg.name}\nVersion: ${pkg.version}\nScripts: ${Object.keys(pkg.scripts || {}).slice(0, 15).join(', ')}\nDeps: ${Object.keys(pkg.dependencies || {}).slice(0, 15).join(', ')}`);
+        } catch {}
+      }
+
+      // 3. Keyword grep — find files related to the task
+      const keywords = task.match(/\b(dashboard|widget|agent|health|failure|status|api|endpoint|component|tab|server|route|monitor)\b/gi) || [];
+      const uniqueKw = [...new Set(keywords.map(k => k.toLowerCase()))].slice(0, 5);
+      const relevantFiles = new Set<string>();
+
+      for (const kw of uniqueKw) {
+        const grep = this.shellSafe(`grep -rl "${kw}" ${cwd} --include="*.ts" --include="*.js" --include="*.mjs" --include="*.html" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" 2>/dev/null | head -8`);
+        if (grep) {
+          for (const f of grep.split('\n').filter(Boolean)) {
+            relevantFiles.add(f);
+          }
+        }
+      }
+
+      if (relevantFiles.size > 0) {
+        const relPaths = [...relevantFiles].map(f => relative(cwd, f)).slice(0, 15);
+        sections.push(`## Files matching task keywords [${uniqueKw.join(', ')}]\n${relPaths.join('\n')}`);
+      }
+
+      // 4. Read the most relevant files (the key differentiator vs other engines)
+      const topFiles = [...relevantFiles].slice(0, 5);
+      for (const file of topFiles) {
+        try {
+          const content = await readFile(file, 'utf8');
+          const relPath = relative(cwd, file);
+          // Extract key patterns: exports, functions, API routes, class names
+          const lines = content.split('\n');
+          const keyLines = lines.filter(l =>
+            /export |function |class |app\.(get|post|put)|router\.|endpoint|\/api\/|interface |type /.test(l)
+          ).slice(0, 20);
+
+          if (keyLines.length > 0) {
+            sections.push(`## ${relPath} — key exports/routes\n\`\`\`\n${keyLines.join('\n')}\n\`\`\``);
+          } else {
+            // Just show first 40 lines
+            sections.push(`## ${relPath} (first 40 lines)\n\`\`\`\n${lines.slice(0, 40).join('\n')}\n\`\`\``);
+          }
+        } catch {}
+      }
+
+      // 5. Git log
+      const gitLog = this.shellSafe(`git -C ${cwd} log --oneline -8 2>/dev/null`);
+      if (gitLog) sections.push(`## Recent commits\n${gitLog}`);
+
     } catch (err) {
-      this.logger.warn(`Agentic scan failed: ${(err as Error).message}, falling back to static scan`);
+      this.logger.warn(`Repo scan failed: ${(err as Error).message}`);
     }
 
-    // Fallback to static scan
-    return this.staticRepoScan(task);
+    const result = sections.join('\n\n');
+    console.log(`[L2 Planner] Repo scan: ${sections.length} sections, ${result.length} chars, ${[...new Set(sections.map(s => s.split('\n')[0]))].length} unique files read`);
+    return result;
   }
 
   /**
