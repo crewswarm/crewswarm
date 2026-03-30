@@ -1705,7 +1705,9 @@ Return ONLY valid JSON:
 
     const dualL2Enabled = process.env.CREW_DUAL_L2_ENABLED === 'true';
 
-    if (normalizedDecision === 'execute-parallel' && dualL2Enabled) {
+    // CREW_FORCE_L2=true bypasses L1 routing and always runs L2 planner (used by enhance-prompt)
+    const forceL2 = process.env.CREW_FORCE_L2 === 'true';
+    if ((normalizedDecision === 'execute-parallel' || forceL2) && dualL2Enabled) {
       console.log('[L2 Planner] Dual-L2 enabled, calling DualL2Planner...');
       
       const planStart = Date.now();

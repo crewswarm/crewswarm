@@ -1122,6 +1122,7 @@ async function collectPassthroughText({
   model = null,
   permissionMode = null,
   sandbox = null,
+  forceL2 = false,
 }) {
   if (engine === "claude") {
     return collectClaudePlannerTextDirect({ message, projectDir, model });
@@ -1143,6 +1144,7 @@ async function collectPassthroughText({
       ...(model ? { model } : {}),
       ...(permissionMode ? { permissionMode } : {}),
       ...(sandbox ? { sandbox } : {}),
+      ...(forceL2 ? { forceL2: true } : {}),
     }),
   });
 
@@ -2564,7 +2566,9 @@ const server = http.createServer(async (req, res) => {
       }
       const { text, projectId, engine: requestedEngine, model: requestedModel } = vr.data;
       try {
-        let projectDir = process.cwd();
+        // Default to a temp dir for prompt enhancement — engines should NOT write to the repo root.
+        // Only use a real project dir if the caller explicitly passes a projectId.
+        let projectDir = path.join(os.tmpdir(), `crewswarm-planner-${Date.now()}`);
         if (projectId) {
           const regPath = path.join(CFG_DIR, "projects.json");
           if (fs.existsSync(regPath)) {
@@ -2573,6 +2577,7 @@ const server = http.createServer(async (req, res) => {
             if (proj?.outputDir) projectDir = proj.outputDir;
           }
         }
+        fs.mkdirSync(projectDir, { recursive: true });
 
         const planner = resolvePlannerEngine(requestedEngine, requestedModel);
         if (!planner) throw new Error("No planning engine is configured or installed");
@@ -2584,6 +2589,7 @@ const server = http.createServer(async (req, res) => {
           model: planner.model,
           permissionMode: planner.permissionMode,
           sandbox: planner.sandbox,
+          forceL2: planner.engine === "crew-cli",
         });
 
         res.writeHead(200, { "content-type": "application/json" });
