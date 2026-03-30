@@ -34,6 +34,21 @@ import {
   StartPMLoopSchema,
   ServiceActionSchema,
   ImportSkillSchema,
+  AgentConfigCreateSchema,
+  AgentConfigDeleteSchema,
+  AgentResetSessionSchema,
+  ProviderAddSchema,
+  ProviderSaveSchema,
+  ProviderTestSchema,
+  ProviderBuiltinTestSchema,
+  ContinuousBuildSchema,
+  ReplayDLQSchema,
+  DeleteProjectSchema,
+  UpdateProjectSchema,
+  RoadmapWriteSchema,
+  RoadmapRetryFailedSchema,
+  ContactDeleteSchema,
+  ContactSendSchema,
   validate,
 } from "./dashboard-validation.mjs";
 import { execCrewLeadTools } from "../lib/crew-lead/tools.mjs";
@@ -2737,9 +2752,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/continuous-build" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { requirement, projectId } = JSON.parse(body || "{}");
-      if (!requirement || typeof requirement !== "string")
-        throw new Error("missing requirement");
+      let parsed;
+      try { parsed = JSON.parse(body || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(ContinuousBuildSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { requirement, projectId } = vr.data;
       let projectEnv = {};
       if (projectId) {
         const { existsSync: ex } = await import("node:fs");
@@ -3377,8 +3402,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/projects/delete" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { projectId } = JSON.parse(body || "{}");
-      if (!projectId) throw new Error("projectId required");
+      let parsed;
+      try { parsed = JSON.parse(body || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(DeleteProjectSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { projectId } = vr.data;
       const registryFile = path.join(CFG_DIR, "projects.json");
       const { existsSync, rmSync, writeFileSync, unlinkSync } = await import("node:fs");
       const { readFile: rf, writeFile: wf } = await import("node:fs/promises");
@@ -3426,9 +3462,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/projects/update" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { projectId, autoAdvance, name, description, outputDir } =
-        JSON.parse(body || "{}");
-      if (!projectId) throw new Error("projectId required");
+      let parsed;
+      try { parsed = JSON.parse(body || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(UpdateProjectSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { projectId, autoAdvance, name, description, outputDir } = vr.data;
       const registryFile = path.join(CFG_DIR, "projects.json");
       const { existsSync } = await import("node:fs");
       const { readFile: rf, writeFile: wf } = await import("node:fs/promises");
@@ -3703,8 +3749,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/dlq/replay" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { key } = JSON.parse(body);
-      if (!key) throw new Error("missing key");
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(ReplayDLQSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { key } = vr.data;
       const { execSync } = await import("node:child_process");
       execSync(`"${ctlPath}" dlq-replay "${key}"`, {
         encoding: "utf8",
@@ -4059,7 +4116,19 @@ const server = http.createServer(async (req, res) => {
     ) {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { providerId } = JSON.parse(body);
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(ProviderBuiltinTestSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { providerId } = vr.data;
       const apiKey = getBuiltinKey(providerId);
       const baseUrl = BUILTIN_URLS[providerId] || "";
       if (providerId === "ollama") {
@@ -6100,9 +6169,19 @@ const server = http.createServer(async (req, res) => {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { providerId, apiKey } = JSON.parse(body);
-      if (!providerId || !apiKey)
-        throw new Error("providerId and apiKey required");
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(ProviderSaveSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { providerId, apiKey } = vr.data;
       const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
       const fromModels = cfg?.models?.providers?.[providerId];
@@ -6150,8 +6229,19 @@ const server = http.createServer(async (req, res) => {
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { id, baseUrl, apiKey, api } = JSON.parse(body);
-      if (!id || !baseUrl) throw new Error("id and baseUrl required");
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(ProviderAddSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { id, baseUrl, apiKey, api } = vr.data;
       const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
       if (!cfg.models) cfg.models = {};
@@ -6471,7 +6561,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/providers/test" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { providerId } = JSON.parse(body);
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(ProviderTestSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { providerId } = vr.data;
       const { readFile } = await import("node:fs/promises");
       const cfgPath = CFG_FILE;
       const cfg = JSON.parse(await readFile(cfgPath, "utf8").catch(() => "{}"));
@@ -7484,6 +7586,18 @@ ORDER BY day DESC, cost DESC;`;
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = "";
       for await (const chunk of req) body += chunk;
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(AgentConfigCreateSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
       const {
         id,
         model,
@@ -7492,7 +7606,7 @@ ORDER BY day DESC, cost DESC;`;
         theme,
         systemPrompt,
         alsoAllow: reqAlsoAllow,
-      } = JSON.parse(body);
+      } = vr.data;
       const rawId = String(id || "");
       const normalizedId =
         rawId && !rawId.startsWith("crew-")
@@ -7582,8 +7696,19 @@ ORDER BY day DESC, cost DESC;`;
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { agentId } = JSON.parse(body);
-      if (!agentId) throw new Error("agentId required");
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(AgentConfigDeleteSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { agentId } = vr.data;
       const cfgPath = CFG_FILE;
       const promptsPath = path.join(CFG_DIR, "agent-prompts.json");
       const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
@@ -7631,12 +7756,19 @@ ORDER BY day DESC, cost DESC;`;
     ) {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { agentId } = JSON.parse(body || "{}");
-      if (!agentId) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: "agentId required" }));
+      let parsed;
+      try { parsed = JSON.parse(body || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
         return;
       }
+      const vr = validate(AgentResetSessionSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { agentId } = vr.data;
       const { execFile } = await import("node:child_process");
       const bridgePath = path.join(CREWSWARM_DIR, "gateway-bridge.mjs");
       // 1. Reset the agent session via gateway-bridge --reset-session
@@ -7714,9 +7846,19 @@ ORDER BY day DESC, cost DESC;`;
       const { writeFile } = await import("node:fs/promises");
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { roadmapFile, content } = JSON.parse(body);
-      if (!roadmapFile || content === undefined)
-        throw new Error("roadmapFile and content required");
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(RoadmapWriteSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { roadmapFile, content } = vr.data;
       await writeFile(roadmapFile, content, "utf8");
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -7728,8 +7870,19 @@ ORDER BY day DESC, cost DESC;`;
       const { readFile, writeFile } = await import("node:fs/promises");
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { roadmapFile } = JSON.parse(body);
-      if (!roadmapFile) throw new Error("roadmapFile required");
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(RoadmapRetryFailedSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { roadmapFile } = vr.data;
       const content = await readFile(roadmapFile, "utf8");
       // Strip [!] markers back to [ ] and remove failure timestamps
       const reset = content
@@ -8397,11 +8550,22 @@ ORDER BY day DESC, cost DESC;`;
     }
 
     if (url.pathname === "/api/contacts/delete" && req.method === "POST") {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      let parsed;
+      try { parsed = JSON.parse(raw || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vr = validate(ContactDeleteSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { contactId } = vr.data;
       try {
-        let raw = "";
-        for await (const chunk of req) raw += chunk;
-        const { contactId } = JSON.parse(raw || "{}");
-        if (!contactId) throw new Error("contactId required");
         const { deleteContact } = await import("../lib/contacts/index.mjs");
         deleteContact(contactId);
         res.writeHead(200, { "content-type": "application/json" });
@@ -8414,12 +8578,22 @@ ORDER BY day DESC, cost DESC;`;
     }
 
     if (url.pathname === "/api/contacts/send" && req.method === "POST") {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      let parsedSend;
+      try { parsedSend = JSON.parse(raw || "{}"); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        return;
+      }
+      const vrSend = validate(ContactSendSchema, parsedSend);
+      if (!vrSend.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vrSend.error }));
+        return;
+      }
+      const { contactId, platform, message } = vrSend.data;
       try {
-        let raw = "";
-        for await (const chunk of req) raw += chunk;
-        const { contactId, platform, message } = JSON.parse(raw || "{}");
-        if (!contactId || !message)
-          throw new Error("contactId and message required");
 
         const { getContact } = await import("../lib/contacts/index.mjs");
         const contact = getContact(contactId);

@@ -194,6 +194,73 @@ export const UpdateConfigSchema = z.object({
   geminiCliModel: z.string().optional(),
 });
 
+// ── Agent Config (create / delete / reset) ───────────────────────────────
+export const AgentConfigCreateSchema = z.object({
+  id: z.string().min(1).max(50),
+  model: ModelNameSchema.optional(),
+  name: z.string().max(100).optional(),
+  emoji: z.string().max(10).optional(),
+  theme: z.string().max(200).optional(),
+  systemPrompt: z.string().max(50000).optional(),
+  alsoAllow: z.array(z.string()).optional(),
+});
+
+export const AgentConfigDeleteSchema = z.object({
+  agentId: z.string().min(1).max(50),
+});
+
+export const AgentResetSessionSchema = z.object({
+  agentId: z.string().min(1).max(50),
+});
+
+// ── Providers ────────────────────────────────────────────────────────────
+export const ProviderAddSchema = z.object({
+  id: z.string().min(1).max(100),
+  baseUrl: z.string().min(1).max(1000),
+  apiKey: z.string().optional(),
+  api: z.string().max(100).optional(),
+});
+
+export const ProviderSaveSchema = z.object({
+  providerId: z.string().min(1).max(100),
+  apiKey: z.string().min(1),
+});
+
+export const ProviderTestSchema = z.object({
+  providerId: z.string().min(1).max(100),
+});
+
+export const ProviderBuiltinTestSchema = z.object({
+  providerId: z.string().min(1).max(100),
+});
+
+// ── Continuous Build ─────────────────────────────────────────────────────
+export const ContinuousBuildSchema = z.object({
+  requirement: z.string().min(1).max(10000),
+  projectId: ProjectIdSchema.optional(),
+});
+
+// ── Roadmap ──────────────────────────────────────────────────────────────
+export const RoadmapWriteSchema = z.object({
+  roadmapFile: z.string().min(1).max(500),
+  content: z.string(),
+});
+
+export const RoadmapRetryFailedSchema = z.object({
+  roadmapFile: z.string().min(1).max(500),
+});
+
+// ── Contacts ─────────────────────────────────────────────────────────────
+export const ContactDeleteSchema = z.object({
+  contactId: z.string().min(1).max(200),
+});
+
+export const ContactSendSchema = z.object({
+  contactId: z.string().min(1).max(200),
+  message: z.string().min(1).max(10000),
+  platform: z.string().max(50).optional(),
+});
+
 // ── Validation Helper ─────────────────────────────────────────────────────
 export function validate(schema, data) {
   try {

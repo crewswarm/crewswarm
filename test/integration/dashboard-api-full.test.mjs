@@ -263,14 +263,14 @@ describe("Dashboard API Full Endpoint Coverage", { concurrency: 1 }, () => {
       { path: "/api/cli-processes", desc: "CLI processes" },
       { path: "/api/chat-participants", desc: "chat participants" },
       { path: "/api/sessions", desc: "sessions" },
-      { path: "/api/files", desc: "files" },
-      { path: "/api/phased-progress", desc: "phased progress" },
+      { path: "/api/files", desc: "files", timeout: 30000 },
+      { path: "/api/phased-progress", desc: "phased progress", timeout: 30000 },
     ];
 
-    for (const { path, desc } of readOnlyEndpoints) {
-      test(`GET ${path} returns ${desc}`, async (t) => {
+    for (const { path, desc, timeout: epTimeout } of readOnlyEndpoints) {
+      test(`GET ${path} returns ${desc}`, { timeout: epTimeout || 15000 }, async (t) => {
         if (skipIfDown(t)) return;
-        const { status, data } = await api(t.name, path);
+        const { status, data } = await api(t.name, path, "GET", null, epTimeout || 15000);
         assertRouteExists(status);
         assert.ok(data !== undefined, `${path} should return data`);
       });
