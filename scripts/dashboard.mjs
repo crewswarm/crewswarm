@@ -8155,12 +8155,19 @@ ORDER BY day DESC, cost DESC;`;
               : platformLinks.whatsapp;
           if (waJid) {
             // Call WhatsApp bridge's sendMessage function
-            const waUrl = `http://127.0.0.1:${process.env.WA_HTTP_PORT || 3000}/send`;
-            await fetch(waUrl, {
+            const waUrl = `http://127.0.0.1:${process.env.WA_HTTP_PORT || 5015}/send`;
+            const waRes = await fetch(waUrl, {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ jid: waJid, message }),
+              body: JSON.stringify({ jid: waJid, text: message }),
             });
+            const waData = await waRes.json().catch(() => ({}));
+            if (!waRes.ok || !waData.ok) {
+              throw new Error(
+                waData.error ||
+                  `WhatsApp send failed (${waRes.status})`,
+              );
+            }
           }
         }
 
@@ -8179,7 +8186,7 @@ ORDER BY day DESC, cost DESC;`;
             const tgCfg = JSON.parse(fs.readFileSync(TG_CONFIG_PATH, "utf8"));
             const botToken = tgCfg.token;
             if (botToken) {
-              await fetch(
+              const tgRes = await fetch(
                 `https://api.telegram.org/bot${botToken}/sendMessage`,
                 {
                   method: "POST",
@@ -8187,6 +8194,14 @@ ORDER BY day DESC, cost DESC;`;
                   body: JSON.stringify({ chat_id: tgChatId, text: message }),
                 },
               );
+              const tgData = await tgRes.json().catch(() => ({}));
+              if (!tgRes.ok || !tgData.ok) {
+                throw new Error(
+                  tgData.description ||
+                    tgData.error ||
+                    `Telegram send failed (${tgRes.status})`,
+                );
+              }
             }
           }
         }

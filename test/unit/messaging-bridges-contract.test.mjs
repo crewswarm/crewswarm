@@ -5,6 +5,7 @@ import path from "node:path";
 
 const telegramSource = fs.readFileSync(path.resolve("telegram-bridge.mjs"), "utf8");
 const whatsappSource = fs.readFileSync(path.resolve("whatsapp-bridge.mjs"), "utf8");
+const dashboardSource = fs.readFileSync(path.resolve("scripts/dashboard.mjs"), "utf8");
 
 test("telegram bridge uses startup lock, RT bus, and crew-lead chat/events paths", () => {
   assert.match(telegramSource, /acquireStartupLock\("telegram-bridge", \{ killStale: false \}\)/);
@@ -27,6 +28,13 @@ test("whatsapp bridge exposes local send and health endpoints plus RT and crew-l
   assert.match(whatsappSource, /httpServer\.listen\(HTTP_PORT, "127\.0\.0\.1"/);
   assert.match(whatsappSource, /saveBridgeMessage\(/);
   assert.match(whatsappSource, /fetch\(`\$\{CREW_LEAD_URL\}\/chat`/);
+});
+
+test("dashboard contacts send route matches bridge contract for WhatsApp and checks downstream send status", () => {
+  assert.match(dashboardSource, /WA_HTTP_PORT \|\| 5015/);
+  assert.match(dashboardSource, /JSON\.stringify\(\{ jid: waJid, text: message \}\)/);
+  assert.match(dashboardSource, /WhatsApp send failed/);
+  assert.match(dashboardSource, /Telegram send failed/);
 });
 
 test("messaging bridges persist pid and message logs for resilience and auditing", () => {

@@ -56,6 +56,11 @@ node --test test/e2e/*.test.mjs
 
 # Browser E2E (requires dashboard + vibe + crew-lead)
 node node_modules/playwright/cli.js test tests/e2e --reporter=list
+
+# Live external verification
+node scripts/live-provider-failover-matrix.mjs
+node scripts/live-bridge-matrix.mjs
+node scripts/live-crewchat-check.mjs
 ```
 
 ## Live smoke (npm run smoke)
@@ -115,6 +120,7 @@ Legacy root verification scripts were archived under `docs/archive/legacy-tests/
 - The current coverage report is strongest for hermetic unit/integration surfaces. Live services, messaging bridges, and browser flows still rely partly on smoke and E2E checks rather than a single unified percentage.
 - `crewchat` runtime decisions, bridge contracts, startup guard behavior, and restart/health script failure paths now have dedicated automated tests in `test/unit/`.
 - Provider failover classification now has a bounded integration matrix in `test/integration/llm-failover-matrix.test.mjs`.
+- External/provider/native surfaces now also have explicit live harnesses documented in `docs/CANONICAL/LIVE-VERIFICATION.md`.
 - See `docs/CANONICAL/COVERAGE-MATRIX.md` for a feature-by-feature status view instead of treating one percentage as universal truth.
 
 ## Rule for contributors

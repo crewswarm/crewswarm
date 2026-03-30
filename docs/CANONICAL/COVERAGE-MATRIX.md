@@ -65,6 +65,11 @@ This document tracks what is genuinely covered, what is verified by bounded or l
   - `test/e2e/whatsapp-roundtrip.test.mjs`
 - Real provider quota/credit behavior across funded vendor accounts
   - verified via live smoke / manual matrix, not fully hermetic
+  - `scripts/live-provider-failover-matrix.mjs`
+- Native `crewchat` live verification
+  - `scripts/live-crewchat-check.mjs`
+- Messaging bridge live verification
+  - `scripts/live-bridge-matrix.mjs`
 
 ## Manual QA Still Required
 
@@ -80,3 +85,4 @@ This document tracks what is genuinely covered, what is verified by bounded or l
 - `Hermetic Coverage` means the test can run locally or in CI without external services.
 - `Integration / Bounded Verification` means the test verifies a real code path but may depend on spawned services or bounded runtime assumptions.
 - `Live / Environment-Dependent` means credentials, running services, or third-party systems are required.
+- See `docs/CANONICAL/LIVE-VERIFICATION.md` for the executable live matrix and release-time checks.
