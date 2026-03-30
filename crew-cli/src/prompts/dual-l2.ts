@@ -7,8 +7,10 @@
 import { PromptComposer, PromptOverlay } from './registry.js';
 import { LocalExecutor } from '../executor/local.js';
 import { Logger } from '../utils/logger.js';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { mkdir, writeFile, readFile, readdir, stat } from 'node:fs/promises';
+import { resolve, join, relative } from 'node:path';
+import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { parseJsonObjectWithRepair } from '../utils/structured-json.js';
 
 export interface WorkUnit {
@@ -259,6 +261,82 @@ export class DualL2Planner {
    * L2A: Decompose task into work graph
    * L2B: Validate work graph against policy
    */
+  /**
+   * Scan the repo for context before planning.
+   * Reads project structure, key files, and searches for relevant patterns.
+   * Returns a context string to feed into the LLM planner.
+   */
+  private async scanRepoContext(task: string): Promise<string> {
+    const cwd = process.cwd();
+    const sections: string[] = [];
+
+    try {
+      // 1. Project structure (top 2 levels, no node_modules)
+      const tree = this.shellSafe(`find ${cwd} -maxdepth 2 -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' | head -80`);
+      if (tree) {
+        const relPaths = tree.split('\n').map(p => relative(cwd, p)).filter(Boolean);
+        sections.push(`## Project Structure\n${relPaths.join('\n')}`);
+      }
+
+      // 2. Package.json for dependencies and scripts
+      const pkgPath = join(cwd, 'package.json');
+      if (existsSync(pkgPath)) {
+        const pkg = await readFile(pkgPath, 'utf8').catch(() => '');
+        if (pkg) {
+          try {
+            const parsed = JSON.parse(pkg);
+            sections.push(`## package.json\nName: ${parsed.name}\nScripts: ${Object.keys(parsed.scripts || {}).join(', ')}\nDeps: ${Object.keys(parsed.dependencies || {}).join(', ')}`);
+          } catch {}
+        }
+      }
+
+      // 3. Grep for relevant patterns from the task
+      const keywords = task.match(/\b(dashboard|widget|agent|health|api|endpoint|component|tab|server|route)\b/gi) || [];
+      const uniqueKeywords = [...new Set(keywords.map(k => k.toLowerCase()))].slice(0, 4);
+      for (const kw of uniqueKeywords) {
+        const grepResult = this.shellSafe(`grep -rl "${kw}" ${cwd} --include="*.ts" --include="*.js" --include="*.mjs" --include="*.html" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" 2>/dev/null | head -10`);
+        if (grepResult) {
+          const files = grepResult.split('\n').map(p => relative(cwd, p)).filter(Boolean);
+          sections.push(`## Files matching "${kw}"\n${files.join('\n')}`);
+        }
+      }
+
+      // 4. Read key files that match the task (first 100 lines each)
+      const relevantFiles = this.shellSafe(`grep -rl "${uniqueKeywords[0] || 'index'}" ${cwd} --include="*.ts" --include="*.js" --include="*.mjs" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" 2>/dev/null | head -3`);
+      if (relevantFiles) {
+        for (const file of relevantFiles.split('\n').filter(Boolean).slice(0, 3)) {
+          const content = await readFile(file, 'utf8').catch(() => '');
+          if (content) {
+            const relPath = relative(cwd, file);
+            const preview = content.split('\n').slice(0, 80).join('\n');
+            sections.push(`## ${relPath} (first 80 lines)\n\`\`\`\n${preview}\n\`\`\``);
+          }
+        }
+      }
+
+      // 5. Git recent changes
+      const gitLog = this.shellSafe(`git -C ${cwd} log --oneline -10 2>/dev/null`);
+      if (gitLog) sections.push(`## Recent git commits\n${gitLog}`);
+
+    } catch (err) {
+      this.logger.warn(`Repo scan failed: ${(err as Error).message}`);
+    }
+
+    const repoContext = sections.join('\n\n');
+    if (repoContext) {
+      console.log(`[L2 Planner] Repo scan: ${sections.length} sections, ${repoContext.length} chars`);
+    }
+    return repoContext;
+  }
+
+  private shellSafe(cmd: string): string {
+    try {
+      return execSync(cmd, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+      return '';
+    }
+  }
+
   async plan(
     task: string,
     context: string = '',
@@ -272,13 +350,18 @@ export class DualL2Planner {
         return this.buildLightweightPlan(task, context, traceId);
       }
 
+      // L2-PHASE-0: Scan repo for codebase context
+      executionPath.push('l2-repo-scan');
+      const repoContext = await this.scanRepoContext(task);
+      const enrichedContext = repoContext ? `${context}\n\n${repoContext}` : context;
+
       // L2A-PHASE-0: Generate planning artifacts (PDD, ROADMAP, ARCH)
       executionPath.push('l2a-planning-artifacts');
-      const planningArtifacts = await this.generatePlanningArtifacts(task, context, traceId);
+      const planningArtifacts = await this.generatePlanningArtifacts(task, enrichedContext, traceId);
 
       // L2A-PHASE-1: Decomposer - break down the task with artifacts
       executionPath.push('l2a-decomposer');
-      const rawGraph = await this.decompose(task, context, traceId, planningArtifacts);
+      const rawGraph = await this.decompose(task, enrichedContext, traceId, planningArtifacts);
       const workGraph = this.enforceMandatoryExecutionGraph(rawGraph);
 
       // L2B: Policy Validator - validate the plan
