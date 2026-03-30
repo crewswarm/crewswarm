@@ -6802,8 +6802,9 @@ Output format:
 
 Be specific \u2014 reference real file names, function names, API endpoints, and types.`;
           const sandbox = new Sandbox(process.cwd());
+          const scanModel = process.env.CREW_EXECUTION_MODEL || "gemini-2.5-flash";
           const result2 = await runAgenticWorker(scanPrompt, sandbox, {
-            model: this.getL2AModel(),
+            model: scanModel,
             maxTurns: 8,
             // Enough turns to ls, grep, read a few files
             stream: false,
