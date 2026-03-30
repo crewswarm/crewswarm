@@ -78,11 +78,17 @@ async function passthroughChat(engine, message, sessionId = "e2e-test", projectD
 
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ engine, message, sessionId, projectDir });
-    const req = http.request(`${CREW_LEAD_URL}/api/engine-passthrough`, {
+    const url = new URL(`${CREW_LEAD_URL}/api/engine-passthrough`);
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
       method: "POST",
+      agent: false, // Disable connection pooling — prevents ECONNRESET on rapid sequential calls
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
+        "Connection": "close",
       },
     }, (res) => {
       let chunks = "";
