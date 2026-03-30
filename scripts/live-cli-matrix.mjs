@@ -7,6 +7,7 @@ const jsonMode = process.argv.includes("--json");
 const smokeMode = process.argv.includes("--smoke");
 const cwd = process.cwd();
 const PROMPT = "Reply with exactly CLI_MATRIX_OK and nothing else.";
+const openCodeModel = process.env.CREWSWARM_OPENCODE_MODEL || "opencode/big-pickle";
 
 function hasBin(bin) {
   try {
@@ -98,7 +99,7 @@ const clis = [
   {
     id: "opencode",
     available: hasBin("opencode"),
-    command: ["opencode", ["run", PROMPT]],
+    command: ["opencode", ["run", "--model", openCodeModel, PROMPT]],
   },
   {
     id: "crew-cli",
