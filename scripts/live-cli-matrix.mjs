@@ -18,7 +18,7 @@ function hasBin(bin) {
   }
 }
 
-function runCli(bin, args, timeoutMs = 12000) {
+function runCli(bin, args, timeoutMs = Number(process.env.CREWSWARM_LIVE_CLI_TIMEOUT_MS || 30000)) {
   return new Promise((resolve) => {
     const child = spawn(bin, args, {
       cwd,
