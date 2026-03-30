@@ -54,62 +54,21 @@ async function planWithDashboard(engine) {
   return data;
 }
 
-describe("dashboard build planner: Claude Code", {
-  skip: SKIP || !isInstalled("claude") ? "Claude Code not available" : false,
-  timeout: 300000,
-}, () => {
-  it("returns a structured build brief", async () => {
-    const data = await planWithDashboard("claude");
-    console.log(`    Claude planner engine=${data.engine} mode=${data.mode}`);
-  });
-});
+// Run sequentially — each planner spawns a CLI process; concurrent requests crash the dashboard
+describe("dashboard build planner", { skip: SKIP, concurrency: 1, timeout: 300000 }, () => {
+  const engines = [
+    { name: "Claude Code", engine: "claude", bin: "claude" },
+    { name: "Codex", engine: "codex", bin: "codex" },
+    { name: "Cursor CLI", engine: "cursor", bin: "agent" },
+    { name: "Gemini CLI", engine: "gemini", bin: "gemini" },
+    { name: "crew-cli", engine: "crew-cli", bin: "crew" },
+    { name: "OpenCode", engine: "opencode", bin: "opencode" },
+  ];
 
-describe("dashboard build planner: Codex", {
-  skip: SKIP || !isInstalled("codex") ? "Codex not available" : false,
-  timeout: 180000,
-}, () => {
-  it("returns a structured build brief", async () => {
-    const data = await planWithDashboard("codex");
-    console.log(`    Codex planner engine=${data.engine} mode=${data.mode}`);
-  });
-});
-
-describe("dashboard build planner: Cursor CLI", {
-  skip: SKIP || !isInstalled("agent") ? "Cursor CLI not available" : false,
-  timeout: 300000,
-}, () => {
-  it("returns a structured build brief", async () => {
-    const data = await planWithDashboard("cursor");
-    console.log(`    Cursor planner engine=${data.engine} mode=${data.mode}`);
-  });
-});
-
-describe("dashboard build planner: Gemini CLI", {
-  skip: SKIP || !isInstalled("gemini") ? "Gemini CLI not available" : false,
-  timeout: 300000,
-}, () => {
-  it("returns a structured build brief", async () => {
-    const data = await planWithDashboard("gemini");
-    console.log(`    Gemini planner engine=${data.engine} mode=${data.mode}`);
-  });
-});
-
-describe("dashboard build planner: crew-cli", {
-  skip: SKIP || !isInstalled("crew") ? "crew-cli not available" : false,
-  timeout: 300000,
-}, () => {
-  it("returns a structured build brief", async () => {
-    const data = await planWithDashboard("crew-cli");
-    console.log(`    crew-cli planner engine=${data.engine} mode=${data.mode}`);
-  });
-});
-
-describe("dashboard build planner: OpenCode", {
-  skip: SKIP || !isInstalled("opencode") ? "OpenCode not available" : false,
-  timeout: 300000,
-}, () => {
-  it("returns a structured build brief", async () => {
-    const data = await planWithDashboard("opencode");
-    console.log(`    OpenCode planner engine=${data.engine} mode=${data.mode}`);
-  });
+  for (const { name, engine, bin } of engines) {
+    it(`${name}: returns a structured build brief`, { skip: !isInstalled(bin) ? `${name} not available` : false }, async () => {
+      const data = await planWithDashboard(engine);
+      console.log(`    ${name} planner engine=${data.engine} mode=${data.mode}`);
+    });
+  }
 });

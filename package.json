@@ -1,124 +1,20 @@
 {
-  "name": "crewswarm",
-  "version": "0.9.2",
-  "description": "Local-first multi-agent orchestration platform — coordinate AI coding agents, LLMs, and tools from a single dashboard",
-  "type": "module",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/crewswarm/crewswarm.git"
-  },
-  "keywords": [
-    "ai",
-    "agents",
-    "orchestration",
-    "multi-agent",
-    "local-first",
-    "llm",
-    "coding-agents",
-    "claude",
-    "codex",
-    "cursor"
-  ],
-  "bin": {
-    "crewswarm": "scripts/start.mjs"
-  },
-  "files": [
-    "scripts/",
-    "lib/",
-    "engines/",
-    "prompts/",
-    "apps/dashboard/dist/",
-    "apps/dashboard/src/",
-    "apps/dashboard/index.html",
-    "apps/dashboard/package.json",
-    "apps/vibe/",
-    "contrib/openclaw-plugin/",
-    "crew-lead.mjs",
-    "gateway-bridge.mjs",
-    "whatsapp-bridge.mjs",
-    "telegram-bridge.mjs",
-    "unified-orchestrator.mjs",
-    "pm-loop.mjs",
-    "install.sh",
-    ".env.example",
-    "README.md",
-    "LICENSE"
-  ],
-  "engines": {
-    "node": ">=20"
+  "name": "dashboard-widget",
+  "version": "1.0.0",
+  "description": "A lightweight dashboard widget for displaying agent health and recent failures.",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2",
-    "busboy": "^1.6.0",
-    "pino": "^10.3.1",
-    "playwright": "^1.58.2",
-    "qrcode-terminal": "^0.12.0",
-    "ws": "^8.16.0",
-    "zod": "^4.3.6"
-  },
-  "optionalDependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.9"
-  },
-  "scripts": {
-    "postinstall": "node -e \"try{require('child_process').execSync('git --version',{stdio:'pipe'})}catch{console.log('\\n⚠️  git not found. Install git for full functionality (WhatsApp bridge, crew-cli git tools).\\n   macOS: xcode-select --install\\n   Ubuntu: sudo apt install git\\n   Alpine: apk add git\\n')}\"",
-    "start": "node scripts/start.mjs",
-    "test": "node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs test/mention-participants.test.mjs test/project-messages-chat-protocol.test.mjs && npm --prefix crew-cli test",
-    "test:unit": "node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs",
-    "test:integration": "PM_LOOP_TEST_MODE=1 node --test --test-reporter=./scripts/test-reporter.mjs test/integration/*.test.mjs",
-    "test:integration:bounded": "node scripts/run-integration-bounded.mjs",
-    "test:e2e": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/*.test.mjs",
-    "test:all": "PM_LOOP_TEST_MODE=1 node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs test/integration/*.test.mjs test/e2e/*.test.mjs",
-    "test:coverage:root": "node --test --experimental-test-coverage test/unit/*.test.mjs",
-    "test:coverage": "node scripts/coverage-report.mjs",
-    "test:live:providers": "node scripts/live-provider-failover-matrix.mjs",
-    "test:live:providers:matrix": "node scripts/live-provider-matrix.mjs",
-    "test:live:providers:smoke": "node scripts/live-provider-matrix.mjs --smoke",
-    "test:live:clis": "node scripts/live-cli-matrix.mjs",
-    "test:live:clis:smoke": "node scripts/live-cli-matrix.mjs --smoke",
-    "test:live:bridges": "node scripts/live-bridge-matrix.mjs",
-    "test:live:crewchat": "node scripts/live-crewchat-check.mjs",
-    "test:live": "node scripts/live-provider-failover-matrix.mjs && node scripts/live-bridge-matrix.mjs && node scripts/live-crewchat-check.mjs",
-    "docs:api": "node scripts/generate-api-docs.mjs",
-    "changelog:generate": "node scripts/generate-changelog.mjs",
-    "changelog:release": "node scripts/generate-changelog.mjs --release",
-    "accessibility:audit": "node scripts/run-accessibility-audit.mjs",
-    "load:test": "node scripts/bench/load-testing.js",
-    "perf:load": "node scripts/bench/load-testing.js",
-    "perf:analyze": "python3 scripts/bench/performance_optimization.py --url http://127.0.0.1:4319/api/health --profile all",
-    "perf:analyze:offline": "python3 scripts/bench/performance_optimization.py --url http://127.0.0.1:4319/api/health --profile all --force-synthetic",
-    "test:performance:tooling": "node test/performance-tooling.test.mjs",
-    "restart": "bash scripts/restart-all-from-repo.sh",
-    "restart-all": "bash scripts/restart-all-from-repo.sh",
-    "restart-dashboard": "bash scripts/restart-dashboard.sh",
-    "start-crew": "node scripts/start-crew.mjs",
-    "restart-crew": "node scripts/start-crew.mjs --force",
-    "stop-crew": "node scripts/start-crew.mjs --stop",
-    "dashboard": "node scripts/dashboard.mjs",
-    "vibe": "node apps/vibe/server.mjs",
-    "vibe:build": "cd apps/vibe && npm run build",
-    "vibe:start": "cd apps/vibe && NODE_DISABLE_COMPILE_CACHE=1 npm start",
-    "vibe:watch": "NODE_DISABLE_COMPILE_CACHE=1 node apps/vibe/watch-server.mjs",
-    "vibe:full": "bash scripts/start-studio-full.sh",
-    "test:e2e:vibe": "node node_modules/playwright/cli.js test --config=playwright.config.js",
-    "test:e2e:vibe:headed": "node node_modules/playwright/cli.js test --config=playwright.config.js --headed",
-    "crew-lead": "node crew-lead.mjs",
-    "mcp": "node scripts/mcp-server.mjs",
-    "studio": "cd apps/vibe && npm run dev",
-    "studio:build": "cd apps/vibe && npm run build",
-    "studio:start": "cd apps/vibe && NODE_DISABLE_COMPILE_CACHE=1 npm start",
-    "studio:watch": "NODE_DISABLE_COMPILE_CACHE=1 node apps/vibe/watch-server.mjs",
-    "studio:full": "bash scripts/start-studio-full.sh",
-    "test:e2e:studio": "node node_modules/playwright/cli.js test --config=playwright.config.js",
-    "test:e2e:studio:headed": "node node_modules/playwright/cli.js test --config=playwright.config.js --headed",
-    "smoke": "node scripts/smoke-dispatch.mjs",
-    "smoke:static": "bash scripts/smoke.sh",
-    "health": "node scripts/health-check.mjs",
-    "doctor": "node scripts/doctor.mjs",
-    "release:check": "bash scripts/release-check.sh"
+    "react": "^18.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "puppeteer-core": "^24.40.0"
-  }
+    "typescript": "^4.0.0",
+    "@types/react": "^18.0.0"
+  },
+  "type": "module",
+  "author": "",
+  "license": "ISC"
 }
