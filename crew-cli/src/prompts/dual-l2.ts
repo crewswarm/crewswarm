@@ -302,8 +302,11 @@ Output format:
 Be specific — reference real file names, function names, API endpoints, and types.`;
 
       const sandbox = new Sandbox(process.cwd());
+      // Use gemini-2.5-flash for agentic scan — it has reliable tool calling
+      // The L2A reasoning model (grok) may not support tool calling in the executor
+      const scanModel = process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash';
       const result = await runAgenticWorker(scanPrompt, sandbox, {
-        model: this.getL2AModel(),
+        model: scanModel,
         maxTurns: 8,       // Enough turns to ls, grep, read a few files
         stream: false,
         verbose: Boolean(process.env.CREW_DEBUG),
