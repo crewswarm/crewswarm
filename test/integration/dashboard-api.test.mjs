@@ -68,6 +68,35 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
     });
   });
 
+  describe("POST /api/enhance-prompt", () => {
+    test("rejects request with missing text", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/enhance-prompt", "POST", {});
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("rejects invalid engine name", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/enhance-prompt", "POST", {
+        text: "build auth",
+        engine: "totally-invalid",
+      });
+      assert.equal(status, 400);
+      assert.equal(data.ok, false);
+    });
+
+    test("accepts valid planner request shape", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await apiRequest("/api/enhance-prompt", "POST", {
+        text: "Build a JWT auth API",
+        engine: "claude",
+      });
+      assert.equal(status, 200);
+      assert.ok("enhanced" in data, "Response should include enhanced field");
+    });
+  });
+
   describe("POST /api/pm-loop/start", () => {
     test("accepts request with no body (all fields optional)", async (t) => {
       if (skipIfDown(t)) return;

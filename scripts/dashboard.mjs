@@ -30,6 +30,7 @@ import {
 } from "../lib/agents/tool-instructions.mjs";
 import {
   StartBuildSchema,
+  EnhancePromptSchema,
   StartPMLoopSchema,
   ServiceActionSchema,
   ImportSkillSchema,
@@ -958,6 +959,181 @@ Keep the same intent; make it specific enough for a PM to break into small tasks
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) throw new Error("Empty response from Groq");
   return content;
+}
+
+function getRtAuthToken() {
+  try {
+    return readSwarmConfigSafe()?.rt?.authToken || "";
+  } catch {
+    return "";
+  }
+}
+
+function resolvePlannerEngine(preferredEngine = null, preferredModel = null) {
+  if (preferredEngine) {
+    return {
+      engine: preferredEngine,
+      model: preferredModel || null,
+      permissionMode: preferredEngine === "claude" ? "plan" : null,
+      sandbox: preferredEngine === "codex" ? "read-only" : null,
+      source: "request",
+    };
+  }
+
+  const cfg = readSwarmConfigSafe();
+  const agents = Array.isArray(cfg?.agents) ? cfg.agents : [];
+  const pm = agents.find((agent) => agent?.id === "crew-pm") || {};
+
+  if (pm.useClaudeCode) {
+    return {
+      engine: "claude",
+      model: pm.claudeCodeModel || null,
+      permissionMode: "plan",
+      sandbox: null,
+      source: "crew-pm",
+    };
+  }
+  if (pm.useCodex) {
+    return {
+      engine: "codex",
+      model: pm.codexModel || null,
+      permissionMode: null,
+      sandbox: "read-only",
+      source: "crew-pm",
+    };
+  }
+  if (pm.useCursorCli) {
+    return {
+      engine: "cursor",
+      model: pm.cursorCliModel || null,
+      permissionMode: null,
+      sandbox: null,
+      source: "crew-pm",
+    };
+  }
+  if (pm.useGeminiCli) {
+    return {
+      engine: "gemini",
+      model: pm.geminiCliModel || null,
+      permissionMode: null,
+      sandbox: null,
+      source: "crew-pm",
+    };
+  }
+  if (pm.useCrewCLI) {
+    return {
+      engine: "crew-cli",
+      model: pm.crewCliModel || null,
+      permissionMode: null,
+      sandbox: null,
+      source: "crew-pm",
+    };
+  }
+  if (pm.useOpenCode) {
+    return {
+      engine: "opencode",
+      model: pm.opencodeModel || null,
+      permissionMode: null,
+      sandbox: null,
+      source: "crew-pm",
+    };
+  }
+
+  const fallbacks = [
+    commandExists(process.env.CLAUDE_CODE_BIN || "claude") && { engine: "claude", model: process.env.CREWSWARM_CLAUDE_CODE_MODEL || null, permissionMode: "plan", sandbox: null, source: "fallback" },
+    commandExists(process.env.CODEX_CLI_BIN || "codex") && { engine: "codex", model: process.env.CREWSWARM_CODEX_MODEL || null, permissionMode: null, sandbox: "read-only", source: "fallback" },
+    commandExists(process.env.CURSOR_CLI_BIN || path.join(os.homedir(), ".local", "bin", "agent"), [path.join(os.homedir(), ".local", "bin", "agent")]) && { engine: "cursor", model: process.env.CREWSWARM_CURSOR_MODEL || process.env.CURSOR_DEFAULT_MODEL || null, permissionMode: null, sandbox: null, source: "fallback" },
+    commandExists(process.env.GEMINI_CLI_BIN || "gemini") && { engine: "gemini", model: process.env.CREWSWARM_GEMINI_CLI_MODEL || null, permissionMode: null, sandbox: null, source: "fallback" },
+    commandExists(process.env.CREWSWARM_OPENCODE_BIN || "opencode") && { engine: "opencode", model: process.env.CREWSWARM_OPENCODE_MODEL || null, permissionMode: null, sandbox: null, source: "fallback" },
+  ].filter(Boolean);
+
+  return fallbacks[0] || null;
+}
+
+function buildRequirementPlanningPrompt(userText, projectDir = null) {
+  return [
+    "You are the planning stage for CrewSwarm's Build tab.",
+    "Transform the user's rough build idea into a concrete build brief that crew-pm can execute.",
+    "If repository context is relevant, inspect the workspace before answering. Do not edit files.",
+    "",
+    "Output format:",
+    "## Build Brief",
+    "A 1-2 paragraph concrete requirement with explicit scope and deliverables.",
+    "",
+    "## Acceptance Criteria",
+    "- 3 to 7 flat bullets",
+    "",
+    "## Constraints / Assumptions",
+    "- Flat bullets only when needed",
+    "",
+    "Rules:",
+    "- Preserve the user's intent; do not invent a different product.",
+    "- Make it specific enough for PM decomposition and agent dispatch.",
+    "- Mention likely subsystems or files only if you have evidence from the repo.",
+    "- Keep it concise and actionable.",
+    "- Do not include implementation code, shell commands, or extra commentary.",
+    projectDir ? `- Current project directory: ${projectDir}` : "",
+    "",
+    "User idea:",
+    userText.trim(),
+  ].filter(Boolean).join("\n");
+}
+
+async function collectPassthroughText({
+  engine,
+  message,
+  projectDir,
+  model = null,
+  permissionMode = null,
+  sandbox = null,
+}) {
+  const token = getRtAuthToken();
+  const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
+  const upstream = await fetch(`http://127.0.0.1:${crewLeadPort}/api/engine-passthrough`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      "x-passthrough-continue": "false",
+    },
+    body: JSON.stringify({
+      engine,
+      message,
+      projectDir: projectDir || process.cwd(),
+      sessionId: "build-planner",
+      ...(model ? { model } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+      ...(sandbox ? { sandbox } : {}),
+    }),
+  });
+
+  if (!upstream.ok) {
+    throw new Error(`planner upstream ${upstream.status}`);
+  }
+
+  const rawSSE = await upstream.text();
+  let text = "";
+  let stderr = "";
+  let exitCode = 0;
+
+  for (const line of rawSSE.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    try {
+      const ev = JSON.parse(line.slice(6));
+      if (ev.type === "chunk" && ev.text) text += ev.text;
+      else if (ev.type === "stderr" && ev.text) stderr += ev.text;
+      else if (ev.type === "done") exitCode = ev.exitCode ?? 0;
+    } catch {}
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed && stderr.trim()) {
+    throw new Error(stderr.trim());
+  }
+  if (!trimmed) {
+    throw new Error(`planner produced no output${exitCode ? ` (exit ${exitCode})` : ""}`);
+  }
+  return trimmed;
 }
 
 async function getPhasedProgress(limit = 80) {
@@ -2335,24 +2511,71 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/enhance-prompt" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { text } = JSON.parse(body || "{}");
-      if (!text || typeof text !== "string") {
+      let parsed;
+      try { parsed = JSON.parse(body || "{}"); } catch {
         res.writeHead(400, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: "missing text" }));
+        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
         return;
       }
+      const vr = validate(EnhancePromptSchema, parsed);
+      if (!vr.ok) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: vr.error }));
+        return;
+      }
+      const { text, projectId, engine: requestedEngine, model: requestedModel } = vr.data;
       try {
-        const enhanced = await enhancePromptWithGroq(text);
+        let projectDir = process.cwd();
+        if (projectId) {
+          const regPath = path.join(CFG_DIR, "projects.json");
+          if (fs.existsSync(regPath)) {
+            const reg = JSON.parse(fs.readFileSync(regPath, "utf8") || "{}");
+            const proj = reg[projectId];
+            if (proj?.outputDir) projectDir = proj.outputDir;
+          }
+        }
+
+        const planner = resolvePlannerEngine(requestedEngine, requestedModel);
+        if (!planner) throw new Error("No planning engine is configured or installed");
+
+        const planned = await collectPassthroughText({
+          engine: planner.engine,
+          message: buildRequirementPlanningPrompt(text, projectDir),
+          projectDir,
+          model: planner.model,
+          permissionMode: planner.permissionMode,
+          sandbox: planner.sandbox,
+        });
+
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ enhanced }));
+        res.end(JSON.stringify({
+          enhanced: planned,
+          engine: planner.engine,
+          model: planner.model,
+          mode: planner.permissionMode || planner.sandbox || "prompt",
+          source: planner.source,
+        }));
       } catch (err) {
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: err?.message || String(err),
-            enhanced: null,
-          }),
-        );
+        try {
+          const enhanced = await enhancePromptWithGroq(text);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            enhanced,
+            engine: "groq",
+            model: "llama-3.3-70b-versatile",
+            mode: "fallback-rewrite",
+            source: "fallback",
+            warning: err?.message || String(err),
+          }));
+        } catch (fallbackErr) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: fallbackErr?.message || err?.message || String(fallbackErr || err),
+              enhanced: null,
+            }),
+          );
+        }
       }
       return;
     }

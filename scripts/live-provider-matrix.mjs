@@ -64,6 +64,7 @@ function modelFromConfig(providerId, providerCfg, agents) {
     openrouter: "meta-llama/llama-3.1-8b-instruct:free",
     fireworks: "accounts/fireworks/models/gpt-oss-20b",
     opencode: "gpt-5.4-mini",
+    ollama: "qwen3-coder:480b-cloud",
     "openai-local": "gpt-5.1",
   };
   return hardcoded[providerId] || "(unknown)";

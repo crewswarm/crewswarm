@@ -595,14 +595,20 @@ export async function enhancePrompt() {
   const ta = document.getElementById('buildRequirement');
   const raw = ta.value.trim();
   const btn = document.getElementById('enhancePromptBtn');
+  const projectId = document.getElementById('buildProjectPicker')?.value || '';
   if (!raw) { showNotification('Type an idea first', true); return; }
   try {
     btn.disabled = true;
-    document.getElementById('buildStatus').textContent = 'Enhancing...';
-    const r = await postJSON('/api/enhance-prompt', { text: raw });
-    if (r.enhanced) { ta.value = r.enhanced; showNotification('Prompt updated'); }
+    document.getElementById('buildStatus').textContent = 'Planning...';
+    const r = await postJSON('/api/enhance-prompt', { text: raw, projectId });
+    if (r.enhanced) {
+      ta.value = r.enhanced;
+      const engineLabel = r.engine ? ` via ${r.engine}` : '';
+      const fallbackLabel = r.warning ? ` (${r.warning})` : '';
+      showNotification(`Requirement planned${engineLabel}${fallbackLabel}`);
+    }
     else { showNotification(r.error || 'No result', true); }
-  } catch (e) { showNotification('Enhance failed: ' + e.message, true); }
+  } catch (e) { showNotification('Planning failed: ' + e.message, true); }
   finally { btn.disabled = false; document.getElementById('buildStatus').textContent = ''; }
 }
 

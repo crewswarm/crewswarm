@@ -88,6 +88,13 @@ export const StartBuildSchema = z.object({
   projectId: ProjectIdSchema.optional(),
 });
 
+export const EnhancePromptSchema = z.object({
+  text: z.string().min(1).max(10000),
+  projectId: ProjectIdSchema.optional(),
+  engine: z.enum(['claude', 'codex', 'cursor', 'gemini', 'gemini-cli', 'opencode', 'crew-cli']).optional(),
+  model: z.string().max(200).optional(),
+});
+
 export const StopBuildSchema = z.object({
   projectId: ProjectIdSchema.optional(),
 });

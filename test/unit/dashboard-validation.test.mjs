@@ -27,6 +27,7 @@ import {
   ServiceActionSchema,
   UpdateAgentConfigSchema,
   StartBuildSchema,
+  EnhancePromptSchema,
   SearchMemorySchema,
   DeleteSkillSchema,
   validate,
@@ -199,6 +200,33 @@ describe("CreateSkillSchema", () => {
         url: "https://example.com",
         method: "INVALID",
       })
+    );
+  });
+});
+
+// ── EnhancePromptSchema ───────────────────────────────────────────────────
+
+describe("EnhancePromptSchema", () => {
+  it("accepts minimal planning request", () => {
+    const result = EnhancePromptSchema.parse({ text: "build auth" });
+    assert.equal(result.text, "build auth");
+  });
+
+  it("accepts optional engine, model, and projectId", () => {
+    const result = EnhancePromptSchema.parse({
+      text: "build auth",
+      engine: "claude",
+      model: "claude-sonnet-4-5",
+      projectId: "demo-project",
+    });
+    assert.equal(result.engine, "claude");
+    assert.equal(result.model, "claude-sonnet-4-5");
+    assert.equal(result.projectId, "demo-project");
+  });
+
+  it("rejects invalid engine", () => {
+    assert.throws(() =>
+      EnhancePromptSchema.parse({ text: "build auth", engine: "invalid-engine" })
     );
   });
 });
