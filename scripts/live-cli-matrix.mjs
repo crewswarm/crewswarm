@@ -66,11 +66,13 @@ const clis = [
     id: "claude",
     available: hasBin("claude"),
     command: ["claude", ["-p", "--print", PROMPT]],
+    timeoutMs: Number(process.env.CREWSWARM_LIVE_CLAUDE_TIMEOUT_MS || 120000),
   },
   {
     id: "codex",
     available: hasBin("codex"),
     command: ["codex", ["exec", "--sandbox", "read-only", "--json", PROMPT]],
+    timeoutMs: Number(process.env.CREWSWARM_LIVE_CODEX_TIMEOUT_MS || 30000),
   },
   {
     id: "cursor",
@@ -90,21 +92,25 @@ const clis = [
         cwd,
       ],
     ],
+    timeoutMs: Number(process.env.CREWSWARM_LIVE_CURSOR_TIMEOUT_MS || 30000),
   },
   {
     id: "gemini",
     available: hasBin("gemini"),
     command: ["gemini", ["-p", PROMPT]],
+    timeoutMs: Number(process.env.CREWSWARM_LIVE_GEMINI_TIMEOUT_MS || 120000),
   },
   {
     id: "opencode",
     available: hasBin("opencode"),
     command: ["opencode", ["run", "--model", openCodeModel, PROMPT]],
+    timeoutMs: Number(process.env.CREWSWARM_LIVE_OPENCODE_TIMEOUT_MS || 120000),
   },
   {
     id: "crew-cli",
     available: true,
     command: ["node", ["crew-cli/bin/crew.js", "exec", PROMPT]],
+    timeoutMs: Number(process.env.CREWSWARM_LIVE_CREWCLI_TIMEOUT_MS || 30000),
   },
 ];
 
@@ -113,7 +119,7 @@ if (smokeMode) {
   for (const cli of clis.filter((item) => item.available)) {
     const [bin, args] = cli.command;
     const started = Date.now();
-    const result = await runCli(bin, args);
+    const result = await runCli(bin, args, cli.timeoutMs);
     results.push({
       cli: cli.id,
       durationMs: Date.now() - started,
