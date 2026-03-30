@@ -6869,10 +6869,10 @@ CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
           priority: 3
         });
         const composedPrompt = this.composer.compose("specialist-pm-v1", overlays, `${traceId}-core`);
-        const reasoningModel = this.getReasoningModel();
-        console.log(`[DualL2] Core artifacts - model: ${reasoningModel || "undefined (will use executor default)"}`);
+        const l2aModel = this.getL2AModel();
+        console.log(`[DualL2] Core artifacts - model: ${l2aModel || "undefined (will use executor default)"}`);
         const result2 = await this.executor.execute(composedPrompt.finalPrompt, {
-          model: reasoningModel,
+          model: l2aModel,
           temperature: 0,
           // Deterministic for JSON
           maxTokens: 4e3,
@@ -6936,7 +6936,7 @@ CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
         ];
         const composedPrompt = this.composer.compose("specialist-pm-v1", overlays, `${traceId}-impl`);
         const result2 = await this.executor.execute(composedPrompt.finalPrompt, {
-          model: this.getReasoningModel(),
+          model: this.getL2AModel(),
           temperature: 0,
           // Deterministic for JSON
           maxTokens: 3e3,
@@ -6995,7 +6995,7 @@ CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
         ];
         const composedPrompt = this.composer.compose("specialist-pm-v1", overlays, `${traceId}-gates`);
         const result2 = await this.executor.execute(composedPrompt.finalPrompt, {
-          model: this.getReasoningModel(),
+          model: this.getL2AModel(),
           temperature: 0,
           // Deterministic for JSON
           maxTokens: 2e3,
