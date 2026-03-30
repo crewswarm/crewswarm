@@ -33,7 +33,7 @@ function modelFromConfig(providerId, providerCfg, agents) {
     nvidia: "meta/llama-3.1-8b-instruct",
     ollama: "qwen3-coder:480b-cloud",
     "openai-local": "gpt-5.1",
-    opencode: "big-pickle",
+    opencode: "gpt-5.1",
   };
   const preferred = preferredDefaults[providerId];
   if (preferred && listed.includes(preferred)) return preferred;
@@ -77,7 +77,7 @@ function modelFromConfig(providerId, providerCfg, agents) {
     cerebras: "llama-3.3-70b",
     openrouter: "meta-llama/llama-3.1-8b-instruct:free",
     fireworks: "accounts/fireworks/models/gpt-oss-20b",
-    opencode: "gpt-5.4-mini",
+    opencode: "gpt-5.1",
     ollama: "qwen3-coder:480b-cloud",
     "openai-local": "gpt-5.1",
   };
