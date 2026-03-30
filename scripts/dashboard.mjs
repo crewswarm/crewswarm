@@ -2566,9 +2566,10 @@ const server = http.createServer(async (req, res) => {
       }
       const { text, projectId, engine: requestedEngine, model: requestedModel } = vr.data;
       try {
-        // Default to a temp dir for prompt enhancement — engines should NOT write to the repo root.
-        // Only use a real project dir if the caller explicitly passes a projectId.
-        let projectDir = path.join(os.tmpdir(), `crewswarm-planner-${Date.now()}`);
+        // Default to cwd for planner context — engines need repo access to produce aware briefs.
+        // Claude/Cursor/Codex use --add-dir for safe read access; crew-cli uses --project.
+        // Fall back to temp dir only if no project context is available.
+        let projectDir = process.cwd();
         if (projectId) {
           const regPath = path.join(CFG_DIR, "projects.json");
           if (fs.existsSync(regPath)) {
