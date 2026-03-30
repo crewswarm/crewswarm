@@ -352,3 +352,72 @@ describe("process-status.md path (bg consciousness)", () => {
     assert.ok(statusPath.endsWith(".crewswarm/process-status.md"));
   });
 });
+
+// ── Tests for actual exports from background.mjs ─────────────────────────────
+
+describe("recordAgentTimeout (exported)", () => {
+  it("records timeouts and updates _agentTimeoutCounts", async () => {
+    const bg = await import("../../lib/crew-lead/background.mjs");
+    // Clear any existing state
+    bg._agentTimeoutCounts.clear();
+    bg.recordAgentTimeout("crew-test-agent");
+    bg.recordAgentTimeout("crew-test-agent");
+    bg.recordAgentTimeout("crew-test-other");
+    assert.equal(bg._agentTimeoutCounts.get("crew-test-agent"), 2);
+    assert.equal(bg._agentTimeoutCounts.get("crew-test-other"), 1);
+  });
+});
+
+describe("RATE_LIMIT_PATTERN (exported)", () => {
+  it("matches 429 status codes", async () => {
+    const bg = await import("../../lib/crew-lead/background.mjs");
+    assert.ok(bg.RATE_LIMIT_PATTERN.test("Error 429: Too many requests"));
+  });
+
+  it("matches rate limit phrases", async () => {
+    const bg = await import("../../lib/crew-lead/background.mjs");
+    assert.ok(bg.RATE_LIMIT_PATTERN.test("rate limit exceeded"));
+    assert.ok(bg.RATE_LIMIT_PATTERN.test("throttled by provider"));
+    assert.ok(bg.RATE_LIMIT_PATTERN.test("quota exceeded for model"));
+    assert.ok(bg.RATE_LIMIT_PATTERN.test("too many requests"));
+    assert.ok(bg.RATE_LIMIT_PATTERN.test("resource_exhausted"));
+    assert.ok(bg.RATE_LIMIT_PATTERN.test("server overloaded"));
+  });
+
+  it("does not match normal error messages", async () => {
+    const bg = await import("../../lib/crew-lead/background.mjs");
+    assert.equal(bg.RATE_LIMIT_PATTERN.test("connection refused"), false);
+    assert.equal(bg.RATE_LIMIT_PATTERN.test("syntax error in file"), false);
+    assert.equal(bg.RATE_LIMIT_PATTERN.test("timeout after 30s"), false);
+  });
+});
+
+describe("initBackground (exported)", () => {
+  it("accepts configuration without throwing", async () => {
+    const bg = await import("../../lib/crew-lead/background.mjs");
+    assert.doesNotThrow(() => {
+      bg.initBackground({
+        broadcastSSE: () => {},
+        appendHistory: () => {},
+        appendToBrain: () => {},
+        bgConsciousnessEnabled: false,
+        bgConsciousnessIntervalMs: 60000,
+        brainPath: "/tmp/test-brain.md",
+      });
+    });
+  });
+});
+
+describe("getRateLimitFallback (exported)", () => {
+  it("returns expected fallback for known agents", async () => {
+    const bg = await import("../../lib/crew-lead/background.mjs");
+    assert.equal(bg.getRateLimitFallback("crew-coder-back"), "crew-coder");
+    assert.equal(bg.getRateLimitFallback("crew-coder"), "crew-main");
+    assert.equal(bg.getRateLimitFallback("crew-qa"), "crew-main");
+  });
+
+  it("returns crew-main for completely unknown agents", async () => {
+    const bg = await import("../../lib/crew-lead/background.mjs");
+    assert.equal(bg.getRateLimitFallback("crew-nonexistent-xyz"), "crew-main");
+  });
+});
