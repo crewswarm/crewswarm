@@ -6,6 +6,8 @@
 
 import { PromptComposer, PromptOverlay } from './registry.js';
 import { LocalExecutor } from '../executor/local.js';
+import { runAgenticWorker } from '../executor/agentic-executor.js';
+import { Sandbox } from '../sandbox/index.js';
 import { Logger } from '../utils/logger.js';
 import { mkdir, writeFile, readFile, readdir, stat } from 'node:fs/promises';
 import { resolve, join, relative } from 'node:path';
@@ -262,11 +264,72 @@ export class DualL2Planner {
    * L2B: Validate work graph against policy
    */
   /**
-   * Scan the repo for context before planning.
-   * Reads project structure, key files, and searches for relevant patterns.
-   * Returns a context string to feed into the LLM planner.
+   * Agentic repo scan — runs a mini L3 executor with read-only tools
+   * to analyze the codebase before planning. This gives L2 the same
+   * iterative file reading that Cursor/Claude/Codex have.
    */
-  private async scanRepoContext(task: string): Promise<string> {
+  private async agenticRepoScan(task: string): Promise<string> {
+    try {
+      const scanPrompt = `You are analyzing a codebase to prepare context for a build planner.
+The task is: "${task}"
+
+Your job is to explore the repository and produce a CODEBASE CONTEXT REPORT.
+Do NOT write any files. Only READ and SEARCH.
+
+Steps:
+1. List the project structure (top-level dirs and key files)
+2. Read package.json for project name, dependencies, and scripts
+3. Search for files related to the task keywords (grep for relevant terms)
+4. Read the 2-3 most relevant files (first 100 lines each)
+5. Check git log for recent related changes
+
+Output format:
+## Project Structure
+(list key dirs and files)
+
+## Key Dependencies
+(from package.json)
+
+## Relevant Files
+(files that relate to the task, with brief descriptions)
+
+## Code Context
+(key code snippets from the most relevant files — API endpoints, component structure, types)
+
+## Recent Changes
+(relevant git commits)
+
+Be specific — reference real file names, function names, API endpoints, and types.`;
+
+      const sandbox = new Sandbox(process.cwd());
+      const result = await runAgenticWorker(scanPrompt, sandbox, {
+        model: this.getL2AModel(),
+        maxTurns: 8,       // Enough turns to ls, grep, read a few files
+        stream: false,
+        verbose: Boolean(process.env.CREW_DEBUG),
+        tier: 'fast',
+        projectDir: process.cwd(),
+      });
+
+      if (result.success && result.finalResponse) {
+        const scanOutput = String(result.finalResponse).trim();
+        console.log(`[L2 Planner] Agentic scan: ${scanOutput.length} chars, ${result.turns} turns`);
+        return scanOutput;
+      }
+      console.log('[L2 Planner] Agentic scan: no output, falling back to static scan');
+    } catch (err) {
+      this.logger.warn(`Agentic scan failed: ${(err as Error).message}, falling back to static scan`);
+    }
+
+    // Fallback to static scan
+    return this.staticRepoScan(task);
+  }
+
+  /**
+   * Static repo scan fallback — uses shell commands directly.
+   * Less accurate than agentic scan but faster and more reliable.
+   */
+  private async staticRepoScan(task: string): Promise<string> {
     const cwd = process.cwd();
     const sections: string[] = [];
 
@@ -350,9 +413,10 @@ export class DualL2Planner {
         return this.buildLightweightPlan(task, context, traceId);
       }
 
-      // L2-PHASE-0: Scan repo for codebase context
-      executionPath.push('l2-repo-scan');
-      const repoContext = await this.scanRepoContext(task);
+      // L2-PHASE-0: Agentic repo scan — uses L3 tools (read_file, glob, grep, git)
+      // to build codebase context like Cursor/Claude/Codex do
+      executionPath.push('l2-agentic-scan');
+      const repoContext = await this.agenticRepoScan(task);
       const enrichedContext = repoContext ? `${context}\n\n${repoContext}` : context;
 
       // L2A-PHASE-0: Generate planning artifacts (PDD, ROADMAP, ARCH)
