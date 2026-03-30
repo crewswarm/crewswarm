@@ -16,6 +16,10 @@ import { execSync } from "node:child_process";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
 const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
+const PASSTHROUGH_TIMEOUT_MS = {
+  default: 90000,
+  gemini: 150000,
+};
 
 let authToken;
 async function getAuthToken() {
@@ -74,7 +78,8 @@ async function passthroughChat(engine, message, sessionId = "e2e-test", projectD
       res.on("error", reject);
     });
     req.on("error", reject);
-    req.setTimeout(90000, () => { req.destroy(); reject(new Error("Passthrough timeout")); });
+    const timeoutMs = PASSTHROUGH_TIMEOUT_MS[engine] || PASSTHROUGH_TIMEOUT_MS.default;
+    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error("Passthrough timeout")); });
     req.write(body);
     req.end();
   });
