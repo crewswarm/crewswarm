@@ -11,6 +11,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   initLlmCaller,
+  normalizeExternalModelId,
   patchMessagesWithActiveModel,
   trimMessagesForFallback,
 } from "../../lib/crew-lead/llm-caller.mjs";
@@ -26,6 +27,41 @@ describe("initLlmCaller", () => {
 
   it("accepts a custom llmTimeout", () => {
     assert.doesNotThrow(() => initLlmCaller({ llmTimeout: 5000 }));
+  });
+});
+
+describe("normalizeExternalModelId", () => {
+  it("strips openrouter prefix for raw OpenRouter API calls", () => {
+    assert.equal(
+      normalizeExternalModelId(
+        "openrouter/ai21/jamba-large-1.7",
+        "openrouter",
+        "https://openrouter.ai/api/v1",
+      ),
+      "ai21/jamba-large-1.7",
+    );
+  });
+
+  it("strips perplexity prefix for raw Perplexity API calls", () => {
+    assert.equal(
+      normalizeExternalModelId(
+        "perplexity/sonar",
+        "perplexity",
+        "https://api.perplexity.ai",
+      ),
+      "sonar",
+    );
+  });
+
+  it("leaves normal provider-native model IDs unchanged", () => {
+    assert.equal(
+      normalizeExternalModelId(
+        "claude-3-haiku-20240307",
+        "anthropic",
+        "https://api.anthropic.com/v1",
+      ),
+      "claude-3-haiku-20240307",
+    );
   });
 });
 
