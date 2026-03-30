@@ -2349,8 +2349,36 @@ footer {
 }
 
 .lt-agent {
-  color: #a371f7;
   font-weight: 600;
+}
+
+.lt-agent.agent-pm { color: #58a6ff; }
+.lt-agent.agent-coder { color: #a371f7; }
+.lt-agent.agent-coder-back { color: #d2a8ff; }
+.lt-agent.agent-coder-front { color: #f778ba; }
+.lt-agent.agent-qa { color: #ffa657; }
+
+.lt-check {
+  color: #3fb950;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.lt-check.visible {
+  opacity: 1;
+}
+
+.lt-indent {
+  color: #8b949e;
+}
+
+.lt-cmd {
+  color: #e2e8f0;
+}
+
+.lt-parallel-group .lt-line {
+  margin-bottom: 2px;
 }
 
 .lt-task {

@@ -259,7 +259,7 @@
       </div>
       <div class="hero-terminal-input-row">
         <span class="lt-prompt">$</span>
-        <input id="hero-input" class="hero-terminal-input" placeholder='node pm-loop.mjs "your requirement here"'
+        <input id="hero-input" class="hero-terminal-input" placeholder='crew exec "your requirement here"'
           spellcheck="false" autocomplete="off" aria-label="Enter your build requirement" />
         <button class="hero-run-btn" onclick="runCustomHeroTerminal()" aria-label="Run">▶ Run</button>
       </div>
@@ -380,6 +380,180 @@
         }
       }
     </script>
+    </div>
+  </section>
+
+  <!-- BUILD FLOW -->
+  <style>
+    .build-flow { padding: 5rem 2rem; background: linear-gradient(180deg, var(--bg) 0%, #080c14 50%, var(--bg) 100%); }
+    .build-flow .section-header { text-align: center; margin-bottom: 3rem; }
+    .build-flow .eyebrow { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.75rem; }
+    .build-flow .section-header h2 { font-size: clamp(1.75rem, 4vw, 2.75rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; margin-bottom: 1rem; }
+    .build-flow .section-desc { color: var(--text-2); max-width: 520px; margin: 0 auto; font-size: 1rem; }
+
+    .build-flow-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    /* Connecting line behind steps */
+    .build-flow-strip::before {
+      content: '';
+      position: absolute;
+      top: 24px;
+      left: calc(10% + 12px);
+      right: calc(10% + 12px);
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 50%, var(--green) 100%);
+      opacity: 0.3;
+      z-index: 0;
+    }
+
+    .build-flow-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .build-flow-num {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 2px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 1.25rem;
+      flex-shrink: 0;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+      font-family: var(--font-mono);
+    }
+    .build-flow-step:hover .build-flow-num {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+    }
+
+    .build-flow-img-wrap {
+      width: 100%;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+      cursor: pointer;
+    }
+    .build-flow-step:hover .build-flow-img-wrap {
+      border-color: rgba(56, 189, 248, 0.25);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(56, 189, 248, 0.1);
+    }
+
+    .build-flow-img-wrap img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .build-flow-caption {
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-2);
+      line-height: 1.45;
+      font-weight: 500;
+    }
+
+    /* Tablet: 3 columns, then 2 */
+    @media (max-width: 1024px) {
+      .build-flow-strip {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 2rem 1.5rem;
+      }
+      .build-flow-strip::before { display: none; }
+    }
+
+    /* Mobile: horizontal scroll strip */
+    @media (max-width: 640px) {
+      .build-flow { padding: 3.5rem 0; }
+      .build-flow .section-header,
+      .build-flow .section-desc { padding: 0 1.5rem; }
+      .build-flow-strip {
+        display: flex;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        gap: 1.25rem;
+        padding: 0 1.5rem 1rem;
+        scrollbar-width: none;
+      }
+      .build-flow-strip::-webkit-scrollbar { display: none; }
+      .build-flow-step {
+        min-width: 260px;
+        scroll-snap-align: center;
+        flex-shrink: 0;
+      }
+      .build-flow-strip::before { display: none; }
+    }
+  </style>
+
+  <section class="build-flow section" aria-label="Build flow walkthrough">
+    <div class="section-header">
+      <div class="eyebrow">How a build works</div>
+      <h2>From idea to shipping in five steps</h2>
+      <p class="section-desc">Every crewswarm build follows the same flow. Type a requirement, watch the crew work, ship.</p>
+    </div>
+    <div class="build-flow-strip" role="list">
+
+      <div class="build-flow-step" role="listitem">
+        <div class="build-flow-num" aria-hidden="true">1</div>
+        <a href="screenshots/dashboard-build.webp" target="_blank" rel="noopener" class="build-flow-img-wrap" aria-label="View full size: Type your requirement">
+          <img src="screenshots/dashboard-build.webp" alt="Dashboard build view — type your requirement" loading="lazy" width="800" height="500" />
+        </a>
+        <p class="build-flow-caption">Type your requirement</p>
+      </div>
+
+      <div class="build-flow-step" role="listitem">
+        <div class="build-flow-num" aria-hidden="true">2</div>
+        <a href="screenshots/dashboard-chat.webp" target="_blank" rel="noopener" class="build-flow-img-wrap" aria-label="View full size: crew-lead plans and dispatches">
+          <img src="screenshots/dashboard-chat.webp" alt="Dashboard chat view — crew-lead plans and dispatches work" loading="lazy" width="800" height="500" />
+        </a>
+        <p class="build-flow-caption">crew-lead plans and dispatches</p>
+      </div>
+
+      <div class="build-flow-step" role="listitem">
+        <div class="build-flow-num" aria-hidden="true">3</div>
+        <a href="screenshots/dashboard-swarm.webp" target="_blank" rel="noopener" class="build-flow-img-wrap" aria-label="View full size: Agents work in parallel">
+          <img src="screenshots/dashboard-swarm.webp" alt="Dashboard swarm view — agents working in parallel" loading="lazy" width="800" height="500" />
+        </a>
+        <p class="build-flow-caption">Agents work in parallel</p>
+      </div>
+
+      <div class="build-flow-step" role="listitem">
+        <div class="build-flow-num" aria-hidden="true">4</div>
+        <a href="screenshots/dashboard-rt-messages.webp" target="_blank" rel="noopener" class="build-flow-img-wrap" aria-label="View full size: Watch real-time progress">
+          <img src="screenshots/dashboard-rt-messages.webp" alt="Dashboard real-time messages — watch build progress live" loading="lazy" width="800" height="500" />
+        </a>
+        <p class="build-flow-caption">Watch real-time progress</p>
+      </div>
+
+      <div class="build-flow-step" role="listitem">
+        <div class="build-flow-num" aria-hidden="true">5</div>
+        <a href="screenshots/dashboard-services.webp" target="_blank" rel="noopener" class="build-flow-img-wrap" aria-label="View full size: Everything stays healthy">
+          <img src="screenshots/dashboard-services.webp" alt="Dashboard services view — everything stays healthy" loading="lazy" width="800" height="500" />
+        </a>
+        <p class="build-flow-caption">Everything stays healthy</p>
+      </div>
+
     </div>
   </section>
 
