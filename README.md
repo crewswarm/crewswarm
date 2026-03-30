@@ -172,7 +172,7 @@ crewswarm                    # Start all services
 crewswarm pm-loop            # Run autonomous PM loop
 npm run doctor               # Preflight check
 npm run restart-all          # Restart the stack
-npm test                     # Run 957 tests
+npm test                     # Run thousands of tests
 crew exec "Build X"          # Send task via CLI
 ```
 
