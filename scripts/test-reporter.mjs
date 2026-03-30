@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execSync } from "node:child_process";
+import { buildDependencySnapshot, getWorkspaceState } from "./test-blast-radius.mjs";
 
 const ROOT = process.env.TEST_RESULTS_DIR || path.join(process.cwd(), "test-results");
 const LOG_PATH = path.join(ROOT, "test-log.jsonl");
@@ -32,6 +33,7 @@ let skipped = 0;
 let totalDuration = 0;
 const fileFingerprintCache = new Map();
 const testArtifacts = new Map();
+const workspaceStateAtRunStart = getWorkspaceState();
 
 function safeExec(command) {
   try {
@@ -342,6 +344,7 @@ const runMeta = {
   git_branch: safeExec("git branch --show-current"),
   git_commit: safeExec("git rev-parse HEAD"),
   git_dirty: !!safeExec("git status --short"),
+  workspace_state: workspaceStateAtRunStart,
   package_version: (() => {
     try {
       return JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")).version || null;
@@ -380,6 +383,7 @@ export default async function* reporter(source) {
         column: event.data.column ?? null,
         rerun_command: buildRerunCommand(event.data.file, event.data.name),
         selector: buildSelector(event.data.file, event.data.name),
+        dependency_snapshot: buildDependencySnapshot(event.data.file),
       };
       upsertTestArtifact({
         testId,
@@ -389,6 +393,7 @@ export default async function* reporter(source) {
         status: "start",
         line: event.data.line ?? null,
         column: event.data.column ?? null,
+        dependency_snapshot: startEntry.dependency_snapshot,
       });
       writeArtifactJson(testId, "manifest.json", startEntry);
       logStream.write(JSON.stringify(startEntry) + "\n");
@@ -425,6 +430,7 @@ export default async function* reporter(source) {
         column: event.data.column ?? null,
         rerun_command: buildRerunCommand(event.data.file, event.data.name),
         selector: buildSelector(event.data.file, event.data.name),
+        dependency_snapshot: (testArtifacts.get(buildTestId(event.data.file, event.data.name)) || {}).dependency_snapshot || buildDependencySnapshot(event.data.file),
         ...(status === "skip" ? { skip_reason: truncate(inferredSkipReason || "skipped") } : {}),
         ...(status === "fail" && event.data.details?.error
           ? {
@@ -480,6 +486,7 @@ export default async function* reporter(source) {
         skip_reason: truncate(extractSkipReason(event.data) || "skipped"),
         rerun_command: buildRerunCommand(event.data.file, event.data.name),
         selector: buildSelector(event.data.file, event.data.name),
+        dependency_snapshot: (testArtifacts.get(buildTestId(event.data.file, event.data.name)) || {}).dependency_snapshot || buildDependencySnapshot(event.data.file),
       };
       results.push(entry);
       upsertTestArtifact({
@@ -526,6 +533,20 @@ export default async function* reporter(source) {
     skipped,
     total: passed + failed + skipped,
     duration_ms: Math.round(totalDuration * 100) / 100,
+    workspace_state_at_run_start: workspaceStateAtRunStart,
+    tests: results.map((r) => ({
+      testId: r.testId,
+      name: r.name,
+      file: r.file,
+      status: r.status,
+      artifactDir: r.artifactDir,
+      rerun_command: r.rerun_command,
+      reason_code: r.reason_code || null,
+      reason_summary: r.reason_summary || null,
+      skip_reason: r.skip_reason || null,
+      dependency_snapshot: r.dependency_snapshot || null,
+      engine: r.engine || null,
+    })),
     failedTests: results
       .filter((r) => r.status === "fail")
       .map((r) => buildFailureBundle(r)),

@@ -1129,30 +1129,41 @@ async function collectPassthroughText({
   }
   const token = getRtAuthToken();
   const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
-  const upstream = await fetch(`http://127.0.0.1:${crewLeadPort}/api/engine-passthrough`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      "x-passthrough-continue": "false",
-    },
-    body: JSON.stringify({
-      engine,
-      message,
-      projectDir: projectDir || process.cwd(),
-      sessionId: "build-planner",
-      ...(model ? { model } : {}),
-      ...(permissionMode ? { permissionMode } : {}),
-      ...(sandbox ? { sandbox } : {}),
-      ...(forceL2 ? { forceL2: true } : {}),
-    }),
-  });
+  let upstream;
+  try {
+    upstream = await fetch(`http://127.0.0.1:${crewLeadPort}/api/engine-passthrough`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        "x-passthrough-continue": "false",
+      },
+      body: JSON.stringify({
+        engine,
+        message,
+        projectDir: projectDir || process.cwd(),
+        sessionId: "build-planner",
+        ...(model ? { model } : {}),
+        ...(permissionMode ? { permissionMode } : {}),
+        ...(sandbox ? { sandbox } : {}),
+        ...(forceL2 ? { forceL2: true } : {}),
+      }),
+      signal: AbortSignal.timeout(300_000),
+    });
+  } catch (fetchErr) {
+    throw new Error(`planner fetch failed for ${engine}: ${fetchErr.message}`);
+  }
 
   if (!upstream.ok) {
     throw new Error(`planner upstream ${upstream.status}`);
   }
 
-  const rawSSE = await upstream.text();
+  let rawSSE;
+  try {
+    rawSSE = await upstream.text();
+  } catch (readErr) {
+    throw new Error(`planner SSE read failed for ${engine}: ${readErr.message}`);
+  }
   let text = "";
   let stderr = "";
   let exitCode = 0;
