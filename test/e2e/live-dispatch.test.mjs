@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logTestEvidence } from "../helpers/test-log.mjs";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
 const DASHBOARD_URL = "http://127.0.0.1:4319";
@@ -53,12 +54,20 @@ function authHeaders() {
   return h;
 }
 
+function trace(testName, operation, extra = {}) {
+  return { test: testName, file: import.meta.filename, operation, extra };
+}
+
 // ── Health check ─────────────────────────────────────────────────────────────
 
 describe("Health check", { timeout: 10000 }, () => {
   test("GET /health returns 200 OK", async (t) => {
     if (skipIfDown(t)) return;
-    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/health`, { timeout: 8000 });
+    const testName = "GET /health returns 200 OK";
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/health`, {
+      timeout: 8000,
+      trace: trace(testName, "health-check"),
+    });
     assert.equal(status, 200);
     assert.equal(data.ok, true);
     assert.equal(data.agent, "crew-lead");
@@ -70,11 +79,20 @@ describe("Health check", { timeout: 10000 }, () => {
 describe("Chat round-trip", { timeout: 90000 }, () => {
   test("POST /chat with PONG request returns reply containing PONG", async (t) => {
     if (skipIfDown(t)) return;
+    const testName = "POST /chat with PONG request returns reply containing PONG";
     const { status, data } = await httpRequest(`${CREW_LEAD_URL}/chat`, {
       method: "POST",
       headers: authHeaders(),
       body: { message: "reply with exactly: PONG", sessionId: E2E_SESSION },
       timeout: 80000,
+      trace: trace(testName, "chat-roundtrip", { sessionId: E2E_SESSION }),
+    });
+    logTestEvidence({
+      category: "chat_reply",
+      test: testName,
+      file: import.meta.filename,
+      sessionId: E2E_SESSION,
+      reply_preview: String(data.reply || "").slice(0, 200),
     });
     assert.equal(status, 200);
     assert.ok(data.reply, "response should have reply field");
@@ -90,11 +108,22 @@ describe("Chat round-trip", { timeout: 90000 }, () => {
 describe("Direct dispatch to crew-seo", { timeout: 90000 }, () => {
   test("dispatch crew-seo returns reply within 60s", async (t) => {
     if (skipIfDown(t)) return;
+    const testName = "dispatch crew-seo returns reply within 60s";
+    const sessionId = `e2e-dispatch-${Date.now()}`;
     const { status, data } = await httpRequest(`${CREW_LEAD_URL}/chat`, {
       method: "POST",
       headers: authHeaders(),
-      body: { message: "dispatch crew-seo to say hello in exactly 3 words", sessionId: `e2e-dispatch-${Date.now()}` },
+      body: { message: "dispatch crew-seo to say hello in exactly 3 words", sessionId },
       timeout: 80000,
+      trace: trace(testName, "dispatch-via-chat", { sessionId, agent: "crew-seo" }),
+    });
+    logTestEvidence({
+      category: "dispatch_context",
+      test: testName,
+      file: import.meta.filename,
+      sessionId,
+      agent: "crew-seo",
+      reply_preview: String(data.reply || "").slice(0, 200),
     });
     assert.equal(status, 200);
     assert.ok(data.reply, "response should have reply");
@@ -107,10 +136,14 @@ describe("Direct dispatch to crew-seo", { timeout: 90000 }, () => {
 describe("History saved", { timeout: 15000 }, () => {
   test("GET /history?sessionId=e2e-test contains PONG message after chat", async (t) => {
     if (skipIfDown(t)) return;
+    const testName = "GET /history?sessionId=e2e-test contains PONG message after chat";
     const authHdrs = authToken ? { authorization: `Bearer ${authToken}` } : {};
     const { status, data } = await httpRequest(
       `${CREW_LEAD_URL}/history?sessionId=${encodeURIComponent(E2E_SESSION)}`,
-      { headers: authHdrs }
+      {
+        headers: authHdrs,
+        trace: trace(testName, "history-fetch", { sessionId: E2E_SESSION }),
+      }
     );
     assert.equal(status, 200);
     assert.ok(Array.isArray(data.history), "history should be array");
@@ -126,8 +159,12 @@ describe("History saved", { timeout: 15000 }, () => {
 describe("Agents online", { timeout: 10000 }, () => {
   test("GET /api/agents returns agent list with crew-seo", async (t) => {
     if (skipIfDown(t)) return;
+    const testName = "GET /api/agents returns agent list with crew-seo";
     const authHdrs = authToken ? { authorization: `Bearer ${authToken}` } : {};
-    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/agents`, { headers: authHdrs });
+    const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/agents`, {
+      headers: authHdrs,
+      trace: trace(testName, "agents-list"),
+    });
     assert.equal(status, 200);
     assert.ok(data.ok !== false, "response should be ok");
     const agents = data.agents || data;
@@ -144,6 +181,7 @@ describe("Agents online", { timeout: 10000 }, () => {
 describe("Wave pipeline", { timeout: 180000 }, () => {
   test("@@PIPELINE with 2 agents returns pipeline result within 120s", async (t) => {
     if (skipIfDown(t)) return;
+    const testName = "@@PIPELINE with 2 agents returns pipeline result within 120s";
     const sessionId = `e2e-pipeline-${Date.now()}`;
     const pipelineMsg = `@@PIPELINE [
   {"wave":1,"agent":"crew-seo","task":"say the word APPLE"},
@@ -155,6 +193,7 @@ describe("Wave pipeline", { timeout: 180000 }, () => {
       headers: authHeaders(),
       body: { message: pipelineMsg, sessionId },
       timeout: 120000,
+      trace: trace(testName, "pipeline-via-chat", { sessionId }),
     });
     assert.equal(status, 200);
     assert.ok(data.reply, "response should have reply");
@@ -167,7 +206,10 @@ describe("Wave pipeline", { timeout: 180000 }, () => {
       try {
         const hist = await httpRequest(
           `${CREW_LEAD_URL}/history?sessionId=${encodeURIComponent(sessionId)}`,
-          { headers: authHdrs }
+          {
+            headers: authHdrs,
+            trace: trace(testName, "pipeline-history-poll", { sessionId }),
+          }
         );
         if (hist.status !== 200) continue;
         const hasApple = (hist.data.history || []).some(

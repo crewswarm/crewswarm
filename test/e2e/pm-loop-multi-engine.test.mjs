@@ -14,6 +14,8 @@ import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logEngineTestContext } from "../helpers/test-context.mjs";
+import { logFileVerification, logTestEvidence } from "../helpers/test-log.mjs";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
 const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
@@ -51,6 +53,15 @@ describe("PM Loop multi-engine dispatch", { skip: SKIP, timeout: 300000 }, () =>
   });
 
   it("dispatches a multi-agent pipeline and all agents complete", async () => {
+    const testName = "dispatches a multi-agent pipeline and all agents complete";
+    logEngineTestContext({
+      test: testName,
+      file: import.meta.filename,
+      engine: "pipeline",
+      timeout_ms: 300000,
+      project_dir: TEST_DIR,
+      notes: "crew-coder + crew-coder-front",
+    });
     const token = await getAuthToken();
 
     // Use pipeline API with agents on different engines
@@ -73,6 +84,12 @@ describe("PM Loop multi-engine dispatch", { skip: SKIP, timeout: 300000 }, () =>
       headers: { "Authorization": token ? `Bearer ${token}` : "" },
       body: { pipeline, projectDir: TEST_DIR },
       timeout: 15000,
+      trace: {
+        test: testName,
+        file: import.meta.filename,
+        operation: "dispatch-pipeline",
+        extra: { projectDir: TEST_DIR },
+      },
     });
     assert.ok(data.pipelineId, "Should return pipelineId");
     console.log(`    Pipeline: ${data.pipelineId}`);
@@ -83,6 +100,12 @@ describe("PM Loop multi-engine dispatch", { skip: SKIP, timeout: 300000 }, () =>
     while (Date.now() - start < 240000) {
       const { data: s } = await httpRequest(`${CREW_LEAD_URL}/api/pipeline/${data.pipelineId}`, {
         headers: { "Authorization": token ? `Bearer ${token}` : "" },
+        trace: {
+          test: testName,
+          file: import.meta.filename,
+          operation: "poll-pipeline",
+          extra: { pipelineId: data.pipelineId },
+        },
       });
       if (s.status === "completed" || s.status === "done") {
         finalState = s;
@@ -97,6 +120,14 @@ describe("PM Loop multi-engine dispatch", { skip: SKIP, timeout: 300000 }, () =>
 
     const elapsed = Math.round((Date.now() - start) / 1000);
     console.log(`    Pipeline ${finalState?.status || "timeout"} in ${elapsed}s`);
+    logTestEvidence({
+      category: "pipeline_result",
+      test: testName,
+      file: import.meta.filename,
+      pipelineId: data.pipelineId,
+      final_status: finalState?.status || "timeout",
+      elapsed_s: elapsed,
+    });
 
     assert.ok(finalState, "Pipeline should complete within 4 minutes");
     assert.ok(
@@ -106,6 +137,12 @@ describe("PM Loop multi-engine dispatch", { skip: SKIP, timeout: 300000 }, () =>
 
     // Check if files were created (agents on different engines should have written them)
     if (existsSync(join(TEST_DIR, "index.html"))) {
+      logFileVerification({
+        test: testName,
+        file: join(TEST_DIR, "index.html"),
+        expected: { type: "html" },
+        extra: { source_file: import.meta.filename },
+      });
       const html = await readFile(join(TEST_DIR, "index.html"), "utf8");
       console.log(`    index.html: ${html.length} chars`);
       assert.ok(html.includes("<"), "index.html should be valid HTML");
@@ -114,6 +151,12 @@ describe("PM Loop multi-engine dispatch", { skip: SKIP, timeout: 300000 }, () =>
     }
 
     if (existsSync(join(TEST_DIR, "style.css"))) {
+      logFileVerification({
+        test: testName,
+        file: join(TEST_DIR, "style.css"),
+        expected: { type: "css" },
+        extra: { source_file: import.meta.filename },
+      });
       const css = await readFile(join(TEST_DIR, "style.css"), "utf8");
       console.log(`    style.css: ${css.length} chars`);
       assert.ok(css.includes("{"), "style.css should have CSS rules");

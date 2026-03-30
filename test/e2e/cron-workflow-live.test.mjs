@@ -16,6 +16,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logTestEvidence } from "../helpers/test-log.mjs";
 
 const DASHBOARD_URL = "http://127.0.0.1:4319";
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
@@ -33,13 +34,14 @@ async function getAuthToken() {
   } catch { return ""; }
 }
 
-async function api(endpoint, method = "GET", body = null) {
+async function api(endpoint, method = "GET", body = null, trace = null) {
   const token = await getAuthToken();
   return httpRequest(`${DASHBOARD_URL}${endpoint}`, {
     method,
     headers: { "Authorization": token ? `Bearer ${token}` : "" },
     body,
     timeout: 15000,
+    trace,
   });
 }
 
@@ -62,6 +64,7 @@ describe("cron workflow lifecycle", { skip: SKIP, timeout: 120000 }, () => {
   });
 
   it("creates a workflow", async () => {
+    const testName = "creates a workflow";
     const { status, data } = await api("/api/workflows/save", "POST", {
       name: WF_NAME,
       description: "E2E test workflow — dispatches a single task",
@@ -72,13 +75,25 @@ describe("cron workflow lifecycle", { skip: SKIP, timeout: 120000 }, () => {
           task: "Reply with WORKFLOW_CRON_OK",
         }
       ],
+    }, {
+      test: testName,
+      file: import.meta.filename,
+      operation: "workflow-save",
+      extra: { workflowName: WF_NAME },
     });
+    logTestEvidence({ category: "workflow", test: testName, file: import.meta.filename, workflowName: WF_NAME, action: "save" });
     assert.ok(status >= 200 && status < 300, `Save failed: ${status}`);
     console.log(`    Created workflow: ${WF_NAME}`);
   });
 
   it("lists the workflow", async () => {
-    const { data } = await api("/api/workflows/list");
+    const testName = "lists the workflow";
+    const { data } = await api("/api/workflows/list", "GET", null, {
+      test: testName,
+      file: import.meta.filename,
+      operation: "workflow-list",
+      extra: { workflowName: WF_NAME },
+    });
     const workflows = data.workflows || data.items || [];
     const found = workflows.find(w => w.name === WF_NAME);
     assert.ok(found, `Workflow ${WF_NAME} should appear in list`);
@@ -86,7 +101,13 @@ describe("cron workflow lifecycle", { skip: SKIP, timeout: 120000 }, () => {
   });
 
   it("gets workflow detail", async () => {
-    const { status, data } = await api(`/api/workflows/item?name=${encodeURIComponent(WF_NAME)}`);
+    const testName = "gets workflow detail";
+    const { status, data } = await api(`/api/workflows/item?name=${encodeURIComponent(WF_NAME)}`, "GET", null, {
+      test: testName,
+      file: import.meta.filename,
+      operation: "workflow-item",
+      extra: { workflowName: WF_NAME },
+    });
     // Endpoint may return the workflow object directly or nested
     assert.ok(status >= 200 && status < 300, `Get item failed: ${status} ${JSON.stringify(data).slice(0, 100)}`);
     assert.ok(data.ok !== false, `Item lookup failed: ${data.error || "unknown"}`);
@@ -94,20 +115,38 @@ describe("cron workflow lifecycle", { skip: SKIP, timeout: 120000 }, () => {
   });
 
   it("triggers a workflow run", async () => {
+    const testName = "triggers a workflow run";
     const { status, data } = await api("/api/workflows/run", "POST", {
       name: WF_NAME,
+    }, {
+      test: testName,
+      file: import.meta.filename,
+      operation: "workflow-run",
+      extra: { workflowName: WF_NAME },
     });
+    logTestEvidence({ category: "workflow_run", test: testName, file: import.meta.filename, workflowName: WF_NAME, response_preview: JSON.stringify(data).slice(0, 200) });
     // run might return 200 with runId, or dispatch the task
     console.log(`    Run response: ${status} — ${JSON.stringify(data).slice(0, 100)}`);
     assert.ok(status >= 200 && status < 400, `Run failed: ${status}`);
   });
 
   it("deletes the workflow", async () => {
-    const { status } = await api("/api/workflows/delete", "POST", { name: WF_NAME });
+    const testName = "deletes the workflow";
+    const { status } = await api("/api/workflows/delete", "POST", { name: WF_NAME }, {
+      test: testName,
+      file: import.meta.filename,
+      operation: "workflow-delete",
+      extra: { workflowName: WF_NAME },
+    });
     assert.ok(status >= 200 && status < 300, `Delete failed: ${status}`);
 
     // Verify it's gone
-    const { data } = await api("/api/workflows/list");
+    const { data } = await api("/api/workflows/list", "GET", null, {
+      test: testName,
+      file: import.meta.filename,
+      operation: "workflow-list-after-delete",
+      extra: { workflowName: WF_NAME },
+    });
     const workflows = data.workflows || data.items || [];
     const found = workflows.find(w => w.name === WF_NAME);
     assert.ok(!found, "Workflow should be deleted");

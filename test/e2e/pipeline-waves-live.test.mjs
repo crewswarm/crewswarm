@@ -16,6 +16,8 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logTestEvidence } from "../helpers/test-log.mjs";
+import { logEngineTestContext } from "../helpers/test-context.mjs";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
 const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
@@ -40,6 +42,12 @@ async function dispatchPipeline(pipeline) {
     headers: { "Authorization": token ? `Bearer ${token}` : "" },
     body: { pipeline },
     timeout: 60000,
+    trace: {
+      test: "pipeline-waves dispatch",
+      file: import.meta.filename,
+      operation: "dispatch-pipeline",
+      extra: { pipeline },
+    },
   });
   if (status < 200 || status >= 300) {
     throw new Error(`Pipeline dispatch failed: ${status}`);
@@ -56,6 +64,12 @@ async function pollPipelineStatus(pipelineId, maxWaitMs = 60000) {
       const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/pipeline/${pipelineId}`, {
         headers: { "Authorization": token ? `Bearer ${token}` : "" },
         timeout: 15000,
+        trace: {
+          test: `pipeline-status:${pipelineId}`,
+          file: import.meta.filename,
+          operation: "poll-pipeline",
+          extra: { pipelineId },
+        },
       });
       if (status < 200 || status >= 300) {
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -102,6 +116,13 @@ const SKIP = !crewLeadUp
 
 describe("pipeline-waves — parallel execution", { skip: SKIP, timeout: 120000 }, () => {
   it("runs 2-agent wave in parallel", async () => {
+    logEngineTestContext({
+      test: "runs 2-agent wave in parallel",
+      file: import.meta.filename,
+      engine: "pipeline",
+      timeout_ms: 120000,
+      notes: "Parallel same-agent wave",
+    });
     const pipeline = [
       { wave: 1, agent: "crew-coder", task: "Reply with OK" },
       { wave: 1, agent: "crew-coder", task: "Reply with OK" }
@@ -113,6 +134,14 @@ describe("pipeline-waves — parallel execution", { skip: SKIP, timeout: 120000 
 
     const finalState = await pollPipelineStatus(result.pipelineId, 90000);
     const elapsed = Date.now() - start;
+    logTestEvidence({
+      category: "pipeline_result",
+      test: "runs 2-agent wave in parallel",
+      file: import.meta.filename,
+      pipelineId: result.pipelineId,
+      elapsed_ms: elapsed,
+      final_status: finalState.status,
+    });
 
     assert.equal(finalState.status, "completed", "Pipeline should complete successfully");
     assert.ok(finalState.results, "Should have results");
@@ -122,6 +151,13 @@ describe("pipeline-waves — parallel execution", { skip: SKIP, timeout: 120000 
 
 describe("pipeline-waves — sequential waves", { skip: SKIP, timeout: 120000 }, () => {
   it("executes waves in sequence (wave 1 before wave 2)", async () => {
+    logEngineTestContext({
+      test: "executes waves in sequence (wave 1 before wave 2)",
+      file: import.meta.filename,
+      engine: "pipeline",
+      timeout_ms: 120000,
+      notes: "Sequential waves",
+    });
     const pipeline = [
       { wave: 1, agent: "crew-coder", task: "Reply with WAVE1" },
       { wave: 2, agent: "crew-coder", task: "Reply with WAVE2" }
@@ -140,6 +176,7 @@ describe("pipeline-waves — sequential waves", { skip: SKIP, timeout: 120000 },
 
 describe("wave dispatcher integration", { skip: SKIP, timeout: 30000 }, () => {
   it("GET /api/pipeline/:id returns status for a dispatched pipeline", async () => {
+    const testName = "GET /api/pipeline/:id returns status for a dispatched pipeline";
     const pipeline = [
       { wave: 1, agent: "crew-coder", task: "Reply with PING" }
     ];
@@ -149,6 +186,12 @@ describe("wave dispatcher integration", { skip: SKIP, timeout: 30000 }, () => {
     const token = await getAuthToken();
     const { status, data } = await httpRequest(`${CREW_LEAD_URL}/api/pipeline/${result.pipelineId}`, {
       headers: { Authorization: token ? `Bearer ${token}` : "" },
+      trace: {
+        test: testName,
+        file: import.meta.filename,
+        operation: "get-pipeline-status",
+        extra: { pipelineId: result.pipelineId },
+      },
     });
     assert.equal(status, 200, "Status endpoint should return 200");
     assert.ok(data.status, "Should have a status field");

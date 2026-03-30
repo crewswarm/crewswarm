@@ -6,6 +6,7 @@
 import { test, describe, before } from "node:test";
 import assert from "node:assert/strict";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logTestEvidence } from "../helpers/test-log.mjs";
 
 const DASHBOARD_BASE = process.env.DASHBOARD_BASE || "http://127.0.0.1:4319";
 
@@ -17,8 +18,13 @@ function skipIfDown(t) {
 }
 
 // Helper to make API requests (uses http.request — Node 25 fetch unreliable on localhost)
-async function apiRequest(endpoint, method = "GET", body = null, timeout = 5000) {
-  return httpRequest(`${DASHBOARD_BASE}${endpoint}`, { method, body, timeout });
+async function apiRequest(testName, endpoint, method = "GET", body = null, timeout = 5000) {
+  return httpRequest(`${DASHBOARD_BASE}${endpoint}`, {
+    method,
+    body,
+    timeout,
+    trace: { test: testName, file: import.meta.filename, operation: `${method} ${endpoint}` },
+  });
 }
 
 before(async () => {
@@ -31,7 +37,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
   describe("POST /api/build", () => {
     test("rejects request with missing requirement", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/build", "POST", {});
+      const { status, data } = await apiRequest("rejects request with missing requirement", "/api/build", "POST", {});
       assert.equal(status, 400, "Should return 400 for missing requirement");
       assert.equal(data.ok, false);
       assert.ok(data.error, "Should have error message");
@@ -39,21 +45,21 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects request with invalid requirement type", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/build", "POST", { requirement: 123 });
+      const { status, data } = await apiRequest("rejects request with invalid requirement type", "/api/build", "POST", { requirement: 123 });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
     test("rejects request with empty requirement", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/build", "POST", { requirement: "" });
+      const { status, data } = await apiRequest("rejects request with empty requirement", "/api/build", "POST", { requirement: "" });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
     test("rejects request with requirement too long", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/build", "POST", {
+      const { status, data } = await apiRequest("rejects request with requirement too long", "/api/build", "POST", {
         requirement: "x".repeat(10001)
       });
       assert.equal(status, 400);
@@ -71,14 +77,14 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
   describe("POST /api/enhance-prompt", () => {
     test("rejects request with missing text", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/enhance-prompt", "POST", {});
+      const { status, data } = await apiRequest("rejects request with missing text", "/api/enhance-prompt", "POST", {});
       assert.equal(status, 400);
       assert.equal(data.ok, false);
     });
 
     test("rejects invalid engine name", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/enhance-prompt", "POST", {
+      const { status, data } = await apiRequest("rejects invalid engine name", "/api/enhance-prompt", "POST", {
         text: "build auth",
         engine: "totally-invalid",
       });
@@ -99,7 +105,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
   describe("POST /api/pm-loop/start", () => {
     test("accepts request with no body (all fields optional)", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {});
+      const { status, data } = await apiRequest("accepts request with no body (all fields optional)", "/api/pm-loop/start", "POST", {});
       // Should not be a validation error (fields are optional)
       // May fail for other reasons (e.g., already running)
       if (status === 400) {
@@ -109,7 +115,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("accepts valid dryRun option", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", { dryRun: true });
+      const { status, data } = await apiRequest("accepts valid dryRun option", "/api/pm-loop/start", "POST", { dryRun: true });
       // Should not fail validation
       if (status === 400) {
         assert.ok(!data.error?.toLowerCase().includes("dryrun"), "Should accept dryRun boolean");
@@ -118,7 +124,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("accepts valid projectId", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {
+      const { status, data } = await apiRequest("accepts valid projectId", "/api/pm-loop/start", "POST", {
         projectId: "test-project-123"
       });
       // Should not fail validation
@@ -129,7 +135,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("accepts valid pmOptions", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {
+      const { status, data } = await apiRequest("accepts valid pmOptions", "/api/pm-loop/start", "POST", {
         pmOptions: {
           autoAdvance: true,
           maxIterations: 5,
@@ -145,7 +151,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects invalid maxIterations", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {
+      const { status, data } = await apiRequest("rejects invalid maxIterations", "/api/pm-loop/start", "POST", {
         pmOptions: { maxIterations: 0 }
       });
       assert.equal(status, 400);
@@ -154,7 +160,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects maxIterations over limit", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/pm-loop/start", "POST", {
+      const { status, data } = await apiRequest("rejects maxIterations over limit", "/api/pm-loop/start", "POST", {
         pmOptions: { maxIterations: 1001 }
       });
       assert.equal(status, 400);
@@ -165,7 +171,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
   describe("POST /api/services/restart", () => {
     test("rejects request with missing id", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/services/restart", "POST", {});
+      const { status, data } = await apiRequest("rejects request with missing id", "/api/services/restart", "POST", {});
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error, "Should have error message");
@@ -173,7 +179,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects request with invalid service id", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/services/restart", "POST", {
+      const { status, data } = await apiRequest("rejects request with invalid service id", "/api/services/restart", "POST", {
         id: "invalid-service-xyz"
       });
       assert.equal(status, 400);
@@ -184,7 +190,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
       if (skipIfDown(t)) return;
       // Just test that the validation accepts known IDs (don't actually restart services)
       // Send an id the validation schema accepts — a 200 or non-validation 400 means it passed validation
-      const { status, data } = await apiRequest("/api/services/restart", "POST", { id: "rt-bus" }, 30000);
+      const { status, data } = await apiRequest("accepts valid service id", "/api/services/restart", "POST", { id: "rt-bus" }, 30000);
       // Should not be a Zod validation error
       if (status === 400) {
         assert.ok(!data.error?.includes("Invalid option"),
@@ -196,7 +202,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
   describe("POST /api/skills/import", () => {
     test("rejects request with missing url", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/skills/import", "POST", {});
+      const { status, data } = await apiRequest("rejects request with missing url", "/api/skills/import", "POST", {});
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error, "Should have error message");
@@ -204,7 +210,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects request with invalid url format", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+      const { status, data } = await apiRequest("rejects request with invalid url format", "/api/skills/import", "POST", {
         url: "not-a-valid-url"
       });
       assert.equal(status, 400);
@@ -213,7 +219,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects request with non-HTTPS url", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+      const { status, data } = await apiRequest("rejects request with non-HTTPS url", "/api/skills/import", "POST", {
         url: "http://example.com/skill.json"
       });
       assert.equal(status, 400);
@@ -223,7 +229,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects request with localhost url", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+      const { status, data } = await apiRequest("rejects request with localhost url", "/api/skills/import", "POST", {
         url: "https://localhost/skill.json"
       });
       assert.equal(status, 400);
@@ -233,7 +239,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects request with private IP url", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+      const { status, data } = await apiRequest("rejects request with private IP url", "/api/skills/import", "POST", {
         url: "https://192.168.1.1/skill.json"
       });
       assert.equal(status, 400);
@@ -243,7 +249,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("rejects url that's too long", async (t) => {
       if (skipIfDown(t)) return;
-      const { status, data } = await apiRequest("/api/skills/import", "POST", {
+      const { status, data } = await apiRequest("rejects url that's too long", "/api/skills/import", "POST", {
         url: "https://example.com/" + "x".repeat(2000)
       });
       assert.equal(status, 400);
@@ -263,10 +269,13 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
   describe("Error Handling", () => {
     test("returns 400 for malformed JSON", async (t) => {
       if (skipIfDown(t)) return;
+      const testName = "returns 400 for malformed JSON";
       const { status, data } = await httpRequest(`${DASHBOARD_BASE}/api/build`, {
         method: "POST",
-        body: "{ invalid json"
+        body: "{ invalid json",
+        trace: { test: testName, file: import.meta.filename, operation: "POST /api/build malformed-json" },
       });
+      logTestEvidence({ category: "error_handling", test: testName, file: import.meta.filename, status, response_preview: JSON.stringify(data).slice(0, 200) });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error.toLowerCase().includes("json"));
@@ -274,10 +283,13 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
 
     test("returns 400 for empty request body", async (t) => {
       if (skipIfDown(t)) return;
+      const testName = "returns 400 for empty request body";
       const { status, data } = await httpRequest(`${DASHBOARD_BASE}/api/build`, {
         method: "POST",
-        body: ""
+        body: "",
+        trace: { test: testName, file: import.meta.filename, operation: "POST /api/build empty-body" },
       });
+      logTestEvidence({ category: "error_handling", test: testName, file: import.meta.filename, status, response_preview: JSON.stringify(data).slice(0, 200) });
       assert.equal(status, 400);
       assert.equal(data.ok, false);
       assert.ok(data.error, "Should have error message");
@@ -288,7 +300,7 @@ describe("Dashboard API Validation Tests", { concurrency: 1 }, () => {
     test("commandExists helper replaced execSync", async (t) => {
       if (skipIfDown(t)) return;
       // This is a smoke test - if the dashboard starts, commandExists works
-      const { status } = await apiRequest("/health", "GET");
+      const { status } = await apiRequest("commandExists helper replaced execSync", "/health", "GET");
       assert.ok(status === 200 || status === 404, "Dashboard should be responding");
     });
 

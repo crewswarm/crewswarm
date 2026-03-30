@@ -23,6 +23,7 @@ import os from "node:os";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { checkServiceUp, httpRequest } from "../helpers/http.mjs";
+import { logTestEvidence, logFileVerification } from "../helpers/test-log.mjs";
 
 const DASH_BASE = "http://127.0.0.1:4319";
 const CL_BASE   = "http://127.0.0.1:5010";
@@ -41,16 +42,16 @@ function loadAuthToken() {
 }
 const TOKEN = loadAuthToken();
 
-async function apiGet(base, path_, token) {
+async function apiGet(base, path_, token, trace = null) {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const { status, data } = await httpRequest(`${base}${path_}`, { headers, timeout: 30000 });
+  const { status, data } = await httpRequest(`${base}${path_}`, { headers, timeout: 30000, trace });
   return { status, body: data };
 }
 
-async function apiPost(base, path_, body, token) {
+async function apiPost(base, path_, body, token, trace = null) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  const { status, data } = await httpRequest(`${base}${path_}`, { method: "POST", headers, body, timeout: 30000 });
+  const { status, data } = await httpRequest(`${base}${path_}`, { method: "POST", headers, body, timeout: 30000, trace });
   return { status, body: data };
 }
 
@@ -72,11 +73,17 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
 
   describe("project creation via dashboard API", { skip: SKIP_FULL }, () => {
     it("POST /api/projects creates a test project with ROADMAP.md", async () => {
+      const testName = "POST /api/projects creates a test project with ROADMAP.md";
       testDir = await mkdtemp(path.join(tmpdir(), "crewswarm-pm-test-"));
       const { status, body } = await apiPost(DASH_BASE, "/api/projects", {
         name: "PM Loop E2E Test",
         description: "Automated test project — safe to delete",
         outputDir: testDir,
+      }, null, {
+        test: testName,
+        file: import.meta.filename,
+        operation: "create-project",
+        extra: { outputDir: testDir },
       });
       assert.ok([200, 201].includes(status), `Expected 200/201, got ${status}: ${JSON.stringify(body)}`);
       assert.ok(body.project?.id || body.id, "No project ID returned");
@@ -85,6 +92,12 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
       // Should have created ROADMAP.md in testDir
       const roadmap = path.join(testDir, "ROADMAP.md");
       assert.ok(fs.existsSync(roadmap), `ROADMAP.md not created at ${roadmap}`);
+      logFileVerification({
+        test: testName,
+        file: roadmap,
+        expected: { type: "ROADMAP.md" },
+        extra: { source_file: import.meta.filename },
+      });
     });
 
     it("ROADMAP.md has at least one unchecked item", () => {
@@ -115,6 +128,7 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
 
     it("dry-run: PM loop starts, picks item, logs it, does not dispatch", async () => {
       if (!testDir || !testProjectId) return;
+      const testName = "dry-run: PM loop starts, picks item, logs it, does not dispatch";
 
       const { status, body } = await apiPost(DASH_BASE, "/api/pm-loop/start", {
         dryRun: true,
@@ -126,6 +140,19 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
           maxItems: 3,
           taskTimeoutMin: 1,
         },
+      }, null, {
+        test: testName,
+        file: import.meta.filename,
+        operation: "pm-loop-start",
+        extra: { projectId: testProjectId, dryRun: true },
+      });
+      logTestEvidence({
+        category: "pm_loop",
+        test: testName,
+        file: import.meta.filename,
+        projectId: testProjectId,
+        dryRun: true,
+        response_preview: JSON.stringify(body).slice(0, 200),
       });
       // Should start or report already running
       assert.ok([200, 201].includes(status), `PM loop start failed: ${status} ${JSON.stringify(body)}`);
@@ -134,10 +161,16 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
 
     it("PM loop status shows running or completed after dry-run start", async () => {
       if (!testProjectId) return;
+      const testName = "PM loop status shows running or completed after dry-run start";
       // Give it a moment to start
       await new Promise(r => setTimeout(r, 2000));
 
-      const { status, body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
+      const { status, body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`, null, {
+        test: testName,
+        file: import.meta.filename,
+        operation: "pm-loop-status",
+        extra: { projectId: testProjectId },
+      });
       assert.ok([200].includes(status), `Status check failed: ${status}`);
       // Should be running or already completed (dry-run is fast)
       assert.ok(
@@ -171,10 +204,16 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
   describe("stop file halts execution", { skip: SKIP_FULL }, () => {
     it("creating stop file causes PM loop to halt", async () => {
       if (!testProjectId) return;
+      const testName = "creating stop file causes PM loop to halt";
 
       // Wait for any previous PM loop to finish first
       for (let i = 0; i < 15; i++) {
-        const { body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
+        const { body } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`, null, {
+          test: testName,
+          file: import.meta.filename,
+          operation: "pm-loop-status-wait",
+          extra: { projectId: testProjectId },
+        });
         if (!body.running) break;
         await new Promise(r => setTimeout(r, 1000));
       }
@@ -206,6 +245,11 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
           maxItems: 50,
           taskTimeoutMin: 1,
         },
+      }, null, {
+        test: testName,
+        file: import.meta.filename,
+        operation: "pm-loop-start",
+        extra: { projectId: testProjectId, dryRun: true },
       });
       assert.ok([200, 201].includes(status), `PM loop start failed: ${status}`);
       assert.ok(body.ok);
@@ -221,7 +265,12 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
       let stopped = false;
       for (let i = 0; i < 60; i++) {
         await new Promise(r => setTimeout(r, 1000));
-        const { body: st } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`);
+        const { body: st } = await apiGet(DASH_BASE, `/api/pm-loop/status?projectId=${testProjectId}`, null, {
+          test: testName,
+          file: import.meta.filename,
+          operation: "pm-loop-status-poll",
+          extra: { projectId: testProjectId },
+        });
         if (!st.running) {
           stopped = true;
           break;
@@ -229,6 +278,14 @@ describe("PM loop E2E", { concurrency: 1, timeout: 120000 }, () => {
       }
       // Clean up stop file
       await rm(stopFile, { force: true }).catch(() => {});
+      logTestEvidence({
+        category: "pm_loop_stop",
+        test: testName,
+        file: import.meta.filename,
+        projectId: testProjectId,
+        stopFile,
+        stopped,
+      });
       assert.ok(stopped, "PM loop should stop within 60 seconds of stop file being created");
     });
   });
