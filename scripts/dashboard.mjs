@@ -974,7 +974,7 @@ function resolvePlannerEngine(preferredEngine = null, preferredModel = null) {
     return {
       engine: preferredEngine,
       model: preferredModel || null,
-      permissionMode: preferredEngine === "claude" ? "plan" : null,
+      permissionMode: null,
       sandbox: preferredEngine === "codex" ? "read-only" : null,
       source: "request",
     };
@@ -988,7 +988,9 @@ function resolvePlannerEngine(preferredEngine = null, preferredModel = null) {
     return {
       engine: "claude",
       model: pm.claudeCodeModel || null,
-      permissionMode: "plan",
+      // Claude's plan mode can exit 0 with no streamed text for this planner path.
+      // Use the normal direct lane here; the build-planner prompt already forbids edits.
+      permissionMode: null,
       sandbox: null,
       source: "crew-pm",
     };
@@ -1040,7 +1042,7 @@ function resolvePlannerEngine(preferredEngine = null, preferredModel = null) {
   }
 
   const fallbacks = [
-    commandExists(process.env.CLAUDE_CODE_BIN || "claude") && { engine: "claude", model: process.env.CREWSWARM_CLAUDE_CODE_MODEL || null, permissionMode: "plan", sandbox: null, source: "fallback" },
+    commandExists(process.env.CLAUDE_CODE_BIN || "claude") && { engine: "claude", model: process.env.CREWSWARM_CLAUDE_CODE_MODEL || null, permissionMode: null, sandbox: null, source: "fallback" },
     commandExists(process.env.CODEX_CLI_BIN || "codex") && { engine: "codex", model: process.env.CREWSWARM_CODEX_MODEL || null, permissionMode: null, sandbox: "read-only", source: "fallback" },
     commandExists(process.env.CURSOR_CLI_BIN || path.join(os.homedir(), ".local", "bin", "agent"), [path.join(os.homedir(), ".local", "bin", "agent")]) && { engine: "cursor", model: process.env.CREWSWARM_CURSOR_MODEL || process.env.CURSOR_DEFAULT_MODEL || null, permissionMode: null, sandbox: null, source: "fallback" },
     commandExists(process.env.GEMINI_CLI_BIN || "gemini") && { engine: "gemini", model: process.env.CREWSWARM_GEMINI_CLI_MODEL || null, permissionMode: null, sandbox: null, source: "fallback" },
@@ -1079,6 +1081,40 @@ function buildRequirementPlanningPrompt(userText, projectDir = null) {
   ].filter(Boolean).join("\n");
 }
 
+async function collectClaudePlannerTextDirect({ message, projectDir, model = null }) {
+  const claudeBin = resolveCommandPath(process.env.CLAUDE_CODE_BIN || "claude", [
+    path.join(os.homedir(), ".local", "bin", "claude"),
+    "/usr/local/bin/claude",
+    "/opt/homebrew/bin/claude",
+  ]) || (process.env.CLAUDE_CODE_BIN || "claude");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFileAsync = promisify(execFile);
+  const args = ["-p"];
+  if (projectDir) args.push("--add-dir", projectDir);
+  if (model) args.push("--model", model);
+  // Match the fixed engine-passthrough Claude invocation:
+  // skip user MCP startup and terminate option parsing before the prompt.
+  args.push(
+    "--strict-mcp-config",
+    "--mcp-config",
+    path.join(os.homedir(), ".crewswarm", "config", "empty-mcp.json"),
+    "--",
+    message,
+  );
+  const { stdout, stderr } = await execFileAsync(claudeBin, args, {
+    cwd: projectDir || process.cwd(),
+    env: process.env,
+    timeout: Number(process.env.CREWSWARM_PLANNER_TIMEOUT_MS || 300000),
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  const trimmed = String(stdout || "").trim();
+  if (trimmed) return trimmed;
+  const stderrText = String(stderr || "").trim();
+  if (stderrText) throw new Error(stderrText);
+  throw new Error("planner produced no output");
+}
+
 async function collectPassthroughText({
   engine,
   message,
@@ -1087,6 +1123,9 @@ async function collectPassthroughText({
   permissionMode = null,
   sandbox = null,
 }) {
+  if (engine === "claude") {
+    return collectClaudePlannerTextDirect({ message, projectDir, model });
+  }
   const token = getRtAuthToken();
   const crewLeadPort = process.env.CREW_LEAD_PORT || "5010";
   const upstream = await fetch(`http://127.0.0.1:${crewLeadPort}/api/engine-passthrough`, {
