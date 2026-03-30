@@ -277,6 +277,7 @@ function buildFailureBundle(entry) {
     ...entry,
     ...classification,
     selector: buildSelector(entry.file, entry.name),
+    workspace_state_at_run_start: workspaceStateAtRunStart,
     isolation: {
       isolated_rerun_command: entry.rerun_command,
       latest_http_status: context.latest_http?.status ?? null,
@@ -317,6 +318,7 @@ function buildSkipBundle(entry) {
     ...entry,
     ...classification,
     selector: buildSelector(entry.file, entry.name),
+    workspace_state_at_run_start: workspaceStateAtRunStart,
     isolation: {
       isolated_rerun_command: entry.rerun_command,
     },
@@ -546,6 +548,7 @@ export default async function* reporter(source) {
       skip_reason: r.skip_reason || null,
       dependency_snapshot: r.dependency_snapshot || null,
       engine: r.engine || null,
+      workspace_state_at_run_start: workspaceStateAtRunStart,
     })),
     failedTests: results
       .filter((r) => r.status === "fail")

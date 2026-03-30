@@ -113,7 +113,7 @@ export function getWorkspaceState() {
   };
 }
 
-export function assessTestFreshness(test, workspaceState = getWorkspaceState()) {
+export function assessTestFreshness(test, workspaceState = getWorkspaceState(), baselineWorkspaceState = test.workspace_state_at_run_start || null) {
   const snapshotFiles = test.dependency_snapshot?.files || [];
   if (snapshotFiles.length === 0) {
     return {
@@ -126,9 +126,13 @@ export function assessTestFreshness(test, workspaceState = getWorkspaceState()) 
   }
 
   const changedSet = new Set(workspaceState.changed_files || []);
+  const baselineChangedSet = new Set(baselineWorkspaceState?.changed_files || []);
+  const newlyChangedSet = new Set(
+    [...changedSet].filter((file) => !baselineChangedSet.has(file))
+  );
   const changedRelevant = snapshotFiles
     .map((file) => file.relative_file)
-    .filter((relativeFile) => changedSet.has(relativeFile));
+    .filter((relativeFile) => newlyChangedSet.has(relativeFile));
 
   const dependencyChanges = [];
   for (const dependency of snapshotFiles) {
@@ -177,7 +181,9 @@ export function assessTestFreshness(test, workspaceState = getWorkspaceState()) 
   return {
     status: "fresh",
     rerun_advice: "rerun_not_needed",
-    reason: "workspace changed, but not in this test's dependency graph",
+    reason: baselineWorkspaceState
+      ? "workspace changed, but not since this test run in this test's dependency graph"
+      : "workspace changed, but not in this test's dependency graph",
     changed_relevant_files: [],
     dependency_changes: [],
   };

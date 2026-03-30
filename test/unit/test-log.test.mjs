@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { buildDependencySnapshot, assessTestFreshness } from "../../scripts/test-blast-radius.mjs";
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "crewswarm-test-log-"));
 process.env.TEST_RESULTS_DIR = tmpDir;
@@ -124,5 +125,48 @@ describe("test log helpers", () => {
 
     const engine = classifySkip({ skip_reason: "Claude Code not available" });
     assert.equal(engine.reason_code, "engine_unavailable");
+  });
+
+  it("buildDependencySnapshot captures local helper imports", () => {
+    const snapshot = buildDependencySnapshot(path.join(process.cwd(), "test/unit/test-log.test.mjs"));
+    const relativeFiles = snapshot.files.map((item) => item.relative_file);
+    assert.ok(relativeFiles.includes("test/unit/test-log.test.mjs"));
+    assert.ok(relativeFiles.includes("scripts/test-blast-radius.mjs"));
+  });
+
+  it("assessTestFreshness marks unaffected tests as fresh and touched deps as stale", () => {
+    const freshSnapshot = buildDependencySnapshot(path.join(process.cwd(), "test/unit/test-log.test.mjs"));
+    const dependencySnapshot = {
+      files: freshSnapshot.files.map((item) =>
+        item.relative_file === "scripts/test-blast-radius.mjs"
+          ? { ...item, sha256: "old-sha" }
+          : item
+      ),
+    };
+
+    const stale = assessTestFreshness(
+      { dependency_snapshot: dependencySnapshot },
+      { dirty: true, changed_files: ["scripts/test-blast-radius.mjs"] }
+    );
+    assert.equal(stale.status, "stale");
+    assert.equal(stale.rerun_advice, "rerun_required");
+
+    const fresh = assessTestFreshness(
+      { dependency_snapshot: freshSnapshot },
+      { dirty: true, changed_files: ["README.md"] }
+    );
+    assert.equal(fresh.status, "fresh");
+    assert.equal(fresh.rerun_advice, "rerun_not_needed");
+  });
+
+  it("assessTestFreshness treats files already dirty at run time as fresh", () => {
+    const snapshot = buildDependencySnapshot(path.join(process.cwd(), "test/unit/test-log.test.mjs"));
+    const freshness = assessTestFreshness(
+      { dependency_snapshot: snapshot },
+      { dirty: true, changed_files: ["test/unit/test-log.test.mjs"] },
+      { dirty: true, changed_files: ["test/unit/test-log.test.mjs"] }
+    );
+    assert.equal(freshness.status, "fresh");
+    assert.equal(freshness.rerun_advice, "rerun_not_needed");
   });
 });

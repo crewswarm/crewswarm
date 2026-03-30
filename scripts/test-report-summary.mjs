@@ -16,7 +16,11 @@ const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
 const runDir = path.join(resultsDir, "runs", summary.runId);
 const markdownPath = path.join(runDir, "summary.md");
 const workspaceState = getWorkspaceState();
-const freshnessSummary = summarizeFreshness(summary.tests || [], workspaceState);
+const baselineWorkspaceState = summary.workspace_state_at_run_start || null;
+const freshnessSummary = summarizeFreshness(
+  (summary.tests || []).map((test) => ({ ...test, workspace_state_at_run_start: baselineWorkspaceState })),
+  workspaceState
+);
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
@@ -45,7 +49,7 @@ if (!workspaceState.dirty) {
 if (summary.failedTests?.length) {
   console.log("\nFailed tests:");
   for (const failure of summary.failedTests) {
-    const freshness = assessTestFreshness(failure, workspaceState);
+    const freshness = assessTestFreshness(failure, workspaceState, baselineWorkspaceState);
     console.log(`- ${failure.name}`);
     console.log(`  file: ${failure.file}`);
     console.log(`  reason: ${failure.reason_code} (${failure.reason_summary})`);
@@ -65,7 +69,7 @@ if (summary.failedTests?.length) {
 if (summary.skippedTests?.length) {
   console.log("\nSkipped tests:");
   for (const skipped of summary.skippedTests) {
-    const freshness = assessTestFreshness(skipped, workspaceState);
+    const freshness = assessTestFreshness(skipped, workspaceState, baselineWorkspaceState);
     console.log(`- ${skipped.name}`);
     console.log(`  file: ${skipped.file}`);
     console.log(`  reason: ${skipped.reason_code} (${skipped.reason_summary})`);

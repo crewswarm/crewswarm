@@ -9978,14 +9978,35 @@ if (process.argv.includes("--print-html")) {
 }
 
 process.on("uncaughtException", (err) => {
+  const msg = String(err?.message || err || "");
   console.error(
     "[dashboard] uncaughtException:",
-    err?.stack || err?.message || err,
+    err?.stack || msg,
   );
 
-  // Always exit on uncaught exceptions — process is in undefined state
-  console.error("[dashboard] FATAL — exiting due to uncaught exception");
-  process.exit(1);
+  // Benign errors from engine passthrough / SSE streams — keep alive
+  if (
+    msg === "terminated" ||
+    msg === "aborted" ||
+    /client.*disconnect/i.test(msg) ||
+    /socket hang up/i.test(msg) ||
+    /ECONNRESET/i.test(msg) ||
+    /EPIPE/i.test(msg) ||
+    /fetch failed/i.test(msg) ||
+    /UND_ERR/i.test(msg)
+  ) {
+    console.error("[dashboard] Non-fatal uncaughtException — keeping alive");
+    return;
+  }
+
+  // Fatal errors: port conflicts, permissions, OOM — must exit
+  if (/EADDRINUSE|EACCES|out of memory|cannot allocate/i.test(msg)) {
+    console.error("[dashboard] FATAL — exiting due to uncaught exception");
+    process.exit(1);
+  }
+
+  // Default: log but keep alive — engine passthrough errors shouldn't kill the dashboard
+  console.error("[dashboard] Unexpected uncaughtException — keeping alive (not fatal)");
 });
 
 process.on("unhandledRejection", (reason) => {
