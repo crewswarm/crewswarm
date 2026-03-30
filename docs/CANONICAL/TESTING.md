@@ -57,6 +57,12 @@ node --test test/e2e/*.test.mjs
 # Browser E2E (requires dashboard + vibe + crew-lead)
 node node_modules/playwright/cli.js test tests/e2e --reporter=list
 
+# Dashboard-focused browser regression file
+node node_modules/playwright/cli.js test tests/e2e/dashboard-additional-tabs.spec.js
+
+# Rerun one dashboard test by title
+node node_modules/playwright/cli.js test tests/e2e/dashboard-additional-tabs.spec.js -g "prompt cards show preview text and edit buttons"
+
 # Live external verification
 node scripts/live-provider-matrix.mjs
 node scripts/live-provider-matrix.mjs --smoke
@@ -100,10 +106,19 @@ Main specs:
 
 - `tests/e2e/dashboard-tabs.spec.js`
 - `tests/e2e/dashboard-core-surfaces.spec.js`
+- `tests/e2e/dashboard-additional-tabs.spec.js`
 - `tests/e2e/agents-tab.spec.js`
 - `tests/e2e/providers-settings.spec.js`
 - `tests/e2e/vibe-editor.spec.js`
 - `tests/e2e/vibe-chat-routing.spec.js`
+
+Recent dashboard regressions also cover:
+
+- PM Loop roadmap loading paths, including `/api/file-content` when a selected project points at a roadmap file
+- Spending tab readiness with longer settings-panel initialization
+- Prompts tab navigation fallback and prompt-card rendering checks
+- Build-tab planner endpoint validation in `test/integration/dashboard-api.test.mjs`
+- Live Build-tab planner verification across installed CLIs in `test/e2e/dashboard-build-planner-live.test.mjs`
 
 Run:
 
