@@ -6617,7 +6617,7 @@ Deps: ${Object.keys(pkg.dependencies || {}).slice(0, 15).join(", ")}`);
           const uniqueKw = [...new Set(keywords.map((k) => k.toLowerCase()))].slice(0, 5);
           const relevantFiles = /* @__PURE__ */ new Set();
           for (const kw of uniqueKw) {
-            const grep = this.shellSafe(`grep -rl "${kw}" ${cwd} --include="*.ts" --include="*.js" --include="*.mjs" --include="*.html" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" 2>/dev/null | head -8`);
+            const grep = this.shellSafe(`find ${cwd} -type f \\( -name "*.ts" -o -name "*.js" -o -name "*.mjs" -o -name "*.html" \\) -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" | xargs grep -l "${kw}" 2>/dev/null | head -8`);
             if (grep) {
               for (const f of grep.split("\n").filter(Boolean)) {
                 relevantFiles.add(f);

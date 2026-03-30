@@ -129,6 +129,11 @@ const agentLastHeartbeat = new Map();   // agentId → timestamp (ms) — tracks
 // SSE message throttling to prevent dashboard flashing
 const SSE_THROTTLE_MS = 500; // Only send same agent_working/idle once per 500ms
 const sseThrottle = new Map(); // key → lastSentMs
+// Clean stale throttle entries every 10 minutes (#17)
+setInterval(() => {
+  const cutoff = Date.now() - 3600_000; // 1 hour TTL
+  for (const [k, v] of sseThrottle) { if (v < cutoff) sseThrottle.delete(k); }
+}, 600_000);
 
 
 
