@@ -29,6 +29,7 @@ function modelFromConfig(providerId, providerCfg, agents) {
     : [];
 
   const preferredDefaults = {
+    anthropic: "claude-3-haiku-20240307",
     nvidia: "meta/llama-3.1-8b-instruct",
     ollama: "qwen3-coder:480b-cloud",
     "openai-local": "gpt-5.1",
@@ -65,7 +66,7 @@ function modelFromConfig(providerId, providerCfg, agents) {
 
   const hardcoded = {
     google: "gemini-2.5-flash",
-    anthropic: "claude-3-5-haiku-latest",
+    anthropic: "claude-3-haiku-20240307",
     openai: "gpt-5.1",
     xai: "grok-4.1-fast",
     deepseek: "deepseek-chat",
