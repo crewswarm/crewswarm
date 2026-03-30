@@ -72,6 +72,7 @@
     "test:all": "PM_LOOP_TEST_MODE=1 node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs test/integration/*.test.mjs test/e2e/*.test.mjs",
     "test:coverage:root": "node --test --experimental-test-coverage test/unit/*.test.mjs",
     "test:coverage": "node scripts/coverage-report.mjs",
+    "test:coverage:summary": "node scripts/coverage-summary.mjs",
     "test:live:providers": "node scripts/live-provider-failover-matrix.mjs",
     "test:live:providers:matrix": "node scripts/live-provider-matrix.mjs",
     "test:live:providers:smoke": "node scripts/live-provider-matrix.mjs --smoke",

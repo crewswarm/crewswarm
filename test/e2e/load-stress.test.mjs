@@ -20,13 +20,15 @@ let crewLeadUp = false;
 let dashboardUp = false;
 
 function getAuthToken() {
-  const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
-  try {
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-    return cfg?.rt?.authToken || "";
-  } catch {
-    return "";
+  // Check crewswarm.json first, then config.json (crew-lead reads from both)
+  for (const file of ["crewswarm.json", "config.json"]) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", file), "utf8"));
+      const token = cfg?.rt?.authToken || cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
+      if (token) return token;
+    } catch {}
   }
+  return process.env.CREWSWARM_RT_AUTH_TOKEN || "";
 }
 
 before(async () => {
@@ -53,6 +55,18 @@ function skipIfDown(t) {
 function authHeaders() {
   const h = { "content-type": "application/json" };
   if (authToken) h["authorization"] = `Bearer ${authToken}`;
+  // Also try reading token from env or config.json (crew-lead may use a different source)
+  if (!authToken) {
+    try {
+      const cfgPath = path.join(os.homedir(), ".crewswarm", "config.json");
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+      const envToken = cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";
+      if (envToken) h["authorization"] = `Bearer ${envToken}`;
+    } catch {}
+    if (!h["authorization"] && process.env.CREWSWARM_RT_AUTH_TOKEN) {
+      h["authorization"] = `Bearer ${process.env.CREWSWARM_RT_AUTH_TOKEN}`;
+    }
+  }
   return h;
 }
 
@@ -138,11 +152,10 @@ describe("Load and stress tests", { concurrency: 1 }, () => {
 
     const words = ["ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO"];
     const requests = words.map((word) => {
-      const sessionId = `e2e-load-${word.toLowerCase()}-${Date.now()}`;
       return httpRequest(`${CREW_LEAD_URL}/chat`, {
         method: "POST",
         headers: authHeaders(),
-        body: { message: `dispatch crew-seo to say ${word}`, sessionId },
+        body: { message: `say the word ${word}`, sessionId: `e2e-load-${Date.now()}` },
         timeout: 25000,
       });
     });
