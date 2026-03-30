@@ -66,7 +66,7 @@ function modelFromConfig(providerId, providerCfg, agents) {
   const hardcoded = {
     google: "gemini-2.5-flash",
     anthropic: "claude-3-5-haiku-latest",
-    openai: "gpt-4o-mini",
+    openai: "gpt-5.1",
     xai: "grok-4.1-fast",
     deepseek: "deepseek-chat",
     groq: "llama-3.1-8b-instant",
