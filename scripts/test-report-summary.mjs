@@ -15,6 +15,14 @@ const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
 const runDir = path.join(resultsDir, "runs", summary.runId);
 const markdownPath = path.join(runDir, "summary.md");
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function rerunCommand(test) {
+  return test.rerun_command || `node --test --test-reporter=./scripts/test-reporter.mjs --test-name-pattern=${shellQuote(test.name)} ${shellQuote(test.file)}`;
+}
+
 console.log(`Run: ${summary.runId}`);
 console.log(`Status: ${summary.status}`);
 console.log(`Passed: ${summary.passed}  Failed: ${summary.failed}  Skipped: ${summary.skipped}`);
@@ -28,6 +36,18 @@ if (summary.failedTests?.length) {
     console.log(`  file: ${failure.file}`);
     console.log(`  error: ${failure.error || "unknown"}`);
     console.log(`  artifacts: ${failure.artifactDir}`);
+    console.log(`  rerun: ${rerunCommand(failure)}`);
+  }
+}
+
+if (summary.skippedTests?.length) {
+  console.log("\nSkipped tests:");
+  for (const skipped of summary.skippedTests) {
+    console.log(`- ${skipped.name}`);
+    console.log(`  file: ${skipped.file}`);
+    console.log(`  reason: ${skipped.skip_reason}`);
+    console.log(`  artifacts: ${skipped.artifactDir}`);
+    console.log(`  rerun: ${rerunCommand(skipped)}`);
   }
 }
 

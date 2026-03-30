@@ -811,6 +811,182 @@ var init_lsp = __esm({
   }
 });
 
+// src/sandbox/index.ts
+import { createTwoFilesPatch } from "diff";
+import { readFile as readFile3, writeFile as writeFile2, mkdir as mkdir2, access } from "node:fs/promises";
+import { constants } from "node:fs";
+import { join as join4, dirname as dirname3 } from "node:path";
+var Sandbox;
+var init_sandbox = __esm({
+  "src/sandbox/index.ts"() {
+    "use strict";
+    Sandbox = class {
+      constructor(baseDir = process.cwd()) {
+        this.state = {
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          activeBranch: "main",
+          branches: { main: {} }
+        };
+        this.baseDir = baseDir;
+        this.stateFilePath = join4(baseDir, ".crew", "sandbox.json");
+      }
+      async exists(path3) {
+        try {
+          await access(path3, constants.F_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      async load() {
+        if (await this.exists(this.stateFilePath)) {
+          try {
+            const data = await readFile3(this.stateFilePath, "utf8");
+            const parsed = JSON.parse(data);
+            this.state = {
+              ...this.state,
+              ...parsed,
+              branches: parsed.branches || { main: {} },
+              activeBranch: parsed.activeBranch || "main"
+            };
+          } catch (err) {
+            console.error(`Failed to load sandbox state: ${err.message}`);
+          }
+        }
+      }
+      async persist() {
+        this.state.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        const dir = dirname3(this.stateFilePath);
+        if (!await this.exists(dir)) {
+          await mkdir2(dir, { recursive: true });
+        }
+        await writeFile2(this.stateFilePath, JSON.stringify(this.state, null, 2), "utf8");
+      }
+      /** Alias for persist() to match external API expectations */
+      async save() {
+        await this.persist();
+      }
+      async addChange(filePath, modifiedContent) {
+        const fullPath = join4(this.baseDir, filePath);
+        let original = "";
+        if (!this.state.branches[this.state.activeBranch] || Array.isArray(this.state.branches[this.state.activeBranch])) {
+          this.state.branches[this.state.activeBranch] = {};
+        }
+        const activeChanges = this.state.branches[this.state.activeBranch];
+        if (activeChanges[filePath]) {
+          original = activeChanges[filePath].original;
+        } else if (await this.exists(fullPath)) {
+          original = await readFile3(fullPath, "utf8");
+        }
+        activeChanges[filePath] = {
+          path: filePath,
+          original,
+          modified: modifiedContent,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        await this.persist();
+      }
+      preview(branchName = this.state.activeBranch) {
+        const branch = this.state.branches[branchName];
+        if (!branch) return `Branch "${branchName}" not found.`;
+        let diff = "";
+        for (const [path3, change] of Object.entries(branch)) {
+          diff += createTwoFilesPatch(
+            `a/${path3}`,
+            `b/${path3}`,
+            change.original,
+            change.modified,
+            void 0,
+            void 0,
+            { context: 3 }
+          );
+        }
+        return diff || "No pending changes.";
+      }
+      async apply(branchName = this.state.activeBranch) {
+        const branch = this.state.branches[branchName];
+        if (!branch) throw new Error(`Branch "${branchName}" not found.`);
+        for (const [path3, change] of Object.entries(branch)) {
+          const fullPath = join4(this.baseDir, path3);
+          const dir = dirname3(fullPath);
+          if (!await this.exists(dir)) {
+            await mkdir2(dir, { recursive: true });
+          }
+          await writeFile2(fullPath, change.modified, "utf8");
+        }
+        await this.rollback(branchName);
+      }
+      async rollback(branchName = this.state.activeBranch) {
+        if (this.state.branches[branchName]) {
+          this.state.branches[branchName] = {};
+          await this.persist();
+        }
+      }
+      async createBranch(name, fromBranch = this.state.activeBranch) {
+        if (this.state.branches[name]) {
+          throw new Error(`Branch "${name}" already exists.`);
+        }
+        const sourceBranch = this.state.branches[fromBranch] || {};
+        this.state.branches[name] = JSON.parse(JSON.stringify(sourceBranch));
+        this.state.activeBranch = name;
+        await this.persist();
+      }
+      async switchBranch(name) {
+        if (!this.state.branches[name]) {
+          throw new Error(`Branch "${name}" does not exist.`);
+        }
+        this.state.activeBranch = name;
+        await this.persist();
+      }
+      async deleteBranch(name) {
+        if (name === "main") throw new Error("Cannot delete main branch.");
+        if (this.state.activeBranch === name) {
+          this.state.activeBranch = "main";
+        }
+        delete this.state.branches[name];
+        await this.persist();
+      }
+      async mergeBranch(source, target = this.state.activeBranch) {
+        if (!this.state.branches[source]) throw new Error(`Source branch "${source}" not found.`);
+        if (!this.state.branches[target]) throw new Error(`Target branch "${target}" not found.`);
+        const sourceChanges = this.state.branches[source];
+        const targetChanges = this.state.branches[target];
+        for (const [path3, change] of Object.entries(sourceChanges)) {
+          targetChanges[path3] = JSON.parse(JSON.stringify(change));
+        }
+        await this.persist();
+      }
+      /** Expose state for read-only access by VirtualFS and similar utilities. */
+      getState() {
+        return this.state;
+      }
+      getActiveBranch() {
+        return this.state.activeBranch;
+      }
+      getBranches() {
+        return Object.keys(this.state.branches);
+      }
+      getPendingPaths(branchName = this.state.activeBranch) {
+        return Object.keys(this.state.branches[branchName] || {});
+      }
+      hasChanges(branchName = this.state.activeBranch) {
+        return Object.keys(this.state.branches[branchName] || {}).length > 0;
+      }
+      /**
+       * Get staged content for a file path (returns undefined if not staged).
+       * Used by tool adapter so agentic workers can read their own staged files.
+       */
+      getStagedContent(filePath, branchName = this.state.activeBranch) {
+        const branch = this.state.branches[branchName];
+        if (!branch) return void 0;
+        const change = branch[filePath];
+        if (change) return change.modified;
+        return void 0;
+      }
+    };
+  }
+});
+
 // src/strategies/index.ts
 import { applyPatch } from "diff";
 function getStrategy(name) {
@@ -6408,6 +6584,8 @@ var init_dual_l2 = __esm({
     "use strict";
     init_registry();
     init_local();
+    init_agentic_executor();
+    init_sandbox();
     init_logger();
     init_structured_json();
     DualL2Planner = class {
@@ -6587,11 +6765,68 @@ ${context}`.toLowerCase();
        * L2B: Validate work graph against policy
        */
       /**
-       * Scan the repo for context before planning.
-       * Reads project structure, key files, and searches for relevant patterns.
-       * Returns a context string to feed into the LLM planner.
+       * Agentic repo scan — runs a mini L3 executor with read-only tools
+       * to analyze the codebase before planning. This gives L2 the same
+       * iterative file reading that Cursor/Claude/Codex have.
        */
-      async scanRepoContext(task) {
+      async agenticRepoScan(task) {
+        try {
+          const scanPrompt = `You are analyzing a codebase to prepare context for a build planner.
+The task is: "${task}"
+
+Your job is to explore the repository and produce a CODEBASE CONTEXT REPORT.
+Do NOT write any files. Only READ and SEARCH.
+
+Steps:
+1. List the project structure (top-level dirs and key files)
+2. Read package.json for project name, dependencies, and scripts
+3. Search for files related to the task keywords (grep for relevant terms)
+4. Read the 2-3 most relevant files (first 100 lines each)
+5. Check git log for recent related changes
+
+Output format:
+## Project Structure
+(list key dirs and files)
+
+## Key Dependencies
+(from package.json)
+
+## Relevant Files
+(files that relate to the task, with brief descriptions)
+
+## Code Context
+(key code snippets from the most relevant files \u2014 API endpoints, component structure, types)
+
+## Recent Changes
+(relevant git commits)
+
+Be specific \u2014 reference real file names, function names, API endpoints, and types.`;
+          const sandbox = new Sandbox(process.cwd());
+          const result2 = await runAgenticWorker(scanPrompt, sandbox, {
+            model: this.getL2AModel(),
+            maxTurns: 8,
+            // Enough turns to ls, grep, read a few files
+            stream: false,
+            verbose: Boolean(process.env.CREW_DEBUG),
+            tier: "fast",
+            projectDir: process.cwd()
+          });
+          if (result2.success && result2.finalResponse) {
+            const scanOutput = String(result2.finalResponse).trim();
+            console.log(`[L2 Planner] Agentic scan: ${scanOutput.length} chars, ${result2.turns} turns`);
+            return scanOutput;
+          }
+          console.log("[L2 Planner] Agentic scan: no output, falling back to static scan");
+        } catch (err) {
+          this.logger.warn(`Agentic scan failed: ${err.message}, falling back to static scan`);
+        }
+        return this.staticRepoScan(task);
+      }
+      /**
+       * Static repo scan fallback — uses shell commands directly.
+       * Less accurate than agentic scan but faster and more reliable.
+       */
+      async staticRepoScan(task) {
         const cwd = process.cwd();
         const sections = [];
         try {
@@ -6665,8 +6900,8 @@ ${gitLog}`);
             executionPath.push("l2a-lightweight");
             return this.buildLightweightPlan(task, context, traceId);
           }
-          executionPath.push("l2-repo-scan");
-          const repoContext = await this.scanRepoContext(task);
+          executionPath.push("l2-agentic-scan");
+          const repoContext = await this.agenticRepoScan(task);
           const enrichedContext = repoContext ? `${context}
 
 ${repoContext}` : context;
@@ -12775,177 +13010,8 @@ var SessionManager = class {
   }
 };
 
-// src/sandbox/index.ts
-import { createTwoFilesPatch } from "diff";
-import { readFile as readFile3, writeFile as writeFile2, mkdir as mkdir2, access } from "node:fs/promises";
-import { constants } from "node:fs";
-import { join as join4, dirname as dirname3 } from "node:path";
-var Sandbox = class {
-  constructor(baseDir = process.cwd()) {
-    this.state = {
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      activeBranch: "main",
-      branches: { main: {} }
-    };
-    this.baseDir = baseDir;
-    this.stateFilePath = join4(baseDir, ".crew", "sandbox.json");
-  }
-  async exists(path3) {
-    try {
-      await access(path3, constants.F_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async load() {
-    if (await this.exists(this.stateFilePath)) {
-      try {
-        const data = await readFile3(this.stateFilePath, "utf8");
-        const parsed = JSON.parse(data);
-        this.state = {
-          ...this.state,
-          ...parsed,
-          branches: parsed.branches || { main: {} },
-          activeBranch: parsed.activeBranch || "main"
-        };
-      } catch (err) {
-        console.error(`Failed to load sandbox state: ${err.message}`);
-      }
-    }
-  }
-  async persist() {
-    this.state.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    const dir = dirname3(this.stateFilePath);
-    if (!await this.exists(dir)) {
-      await mkdir2(dir, { recursive: true });
-    }
-    await writeFile2(this.stateFilePath, JSON.stringify(this.state, null, 2), "utf8");
-  }
-  /** Alias for persist() to match external API expectations */
-  async save() {
-    await this.persist();
-  }
-  async addChange(filePath, modifiedContent) {
-    const fullPath = join4(this.baseDir, filePath);
-    let original = "";
-    if (!this.state.branches[this.state.activeBranch] || Array.isArray(this.state.branches[this.state.activeBranch])) {
-      this.state.branches[this.state.activeBranch] = {};
-    }
-    const activeChanges = this.state.branches[this.state.activeBranch];
-    if (activeChanges[filePath]) {
-      original = activeChanges[filePath].original;
-    } else if (await this.exists(fullPath)) {
-      original = await readFile3(fullPath, "utf8");
-    }
-    activeChanges[filePath] = {
-      path: filePath,
-      original,
-      modified: modifiedContent,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    await this.persist();
-  }
-  preview(branchName = this.state.activeBranch) {
-    const branch = this.state.branches[branchName];
-    if (!branch) return `Branch "${branchName}" not found.`;
-    let diff = "";
-    for (const [path3, change] of Object.entries(branch)) {
-      diff += createTwoFilesPatch(
-        `a/${path3}`,
-        `b/${path3}`,
-        change.original,
-        change.modified,
-        void 0,
-        void 0,
-        { context: 3 }
-      );
-    }
-    return diff || "No pending changes.";
-  }
-  async apply(branchName = this.state.activeBranch) {
-    const branch = this.state.branches[branchName];
-    if (!branch) throw new Error(`Branch "${branchName}" not found.`);
-    for (const [path3, change] of Object.entries(branch)) {
-      const fullPath = join4(this.baseDir, path3);
-      const dir = dirname3(fullPath);
-      if (!await this.exists(dir)) {
-        await mkdir2(dir, { recursive: true });
-      }
-      await writeFile2(fullPath, change.modified, "utf8");
-    }
-    await this.rollback(branchName);
-  }
-  async rollback(branchName = this.state.activeBranch) {
-    if (this.state.branches[branchName]) {
-      this.state.branches[branchName] = {};
-      await this.persist();
-    }
-  }
-  async createBranch(name, fromBranch = this.state.activeBranch) {
-    if (this.state.branches[name]) {
-      throw new Error(`Branch "${name}" already exists.`);
-    }
-    const sourceBranch = this.state.branches[fromBranch] || {};
-    this.state.branches[name] = JSON.parse(JSON.stringify(sourceBranch));
-    this.state.activeBranch = name;
-    await this.persist();
-  }
-  async switchBranch(name) {
-    if (!this.state.branches[name]) {
-      throw new Error(`Branch "${name}" does not exist.`);
-    }
-    this.state.activeBranch = name;
-    await this.persist();
-  }
-  async deleteBranch(name) {
-    if (name === "main") throw new Error("Cannot delete main branch.");
-    if (this.state.activeBranch === name) {
-      this.state.activeBranch = "main";
-    }
-    delete this.state.branches[name];
-    await this.persist();
-  }
-  async mergeBranch(source, target = this.state.activeBranch) {
-    if (!this.state.branches[source]) throw new Error(`Source branch "${source}" not found.`);
-    if (!this.state.branches[target]) throw new Error(`Target branch "${target}" not found.`);
-    const sourceChanges = this.state.branches[source];
-    const targetChanges = this.state.branches[target];
-    for (const [path3, change] of Object.entries(sourceChanges)) {
-      targetChanges[path3] = JSON.parse(JSON.stringify(change));
-    }
-    await this.persist();
-  }
-  /** Expose state for read-only access by VirtualFS and similar utilities. */
-  getState() {
-    return this.state;
-  }
-  getActiveBranch() {
-    return this.state.activeBranch;
-  }
-  getBranches() {
-    return Object.keys(this.state.branches);
-  }
-  getPendingPaths(branchName = this.state.activeBranch) {
-    return Object.keys(this.state.branches[branchName] || {});
-  }
-  hasChanges(branchName = this.state.activeBranch) {
-    return Object.keys(this.state.branches[branchName] || {}).length > 0;
-  }
-  /**
-   * Get staged content for a file path (returns undefined if not staged).
-   * Used by tool adapter so agentic workers can read their own staged files.
-   */
-  getStagedContent(filePath, branchName = this.state.activeBranch) {
-    const branch = this.state.branches[branchName];
-    if (!branch) return void 0;
-    const change = branch[filePath];
-    if (change) return change.modified;
-    return void 0;
-  }
-};
-
 // src/cli/index.ts
+init_sandbox();
 init_orchestrator();
 
 // src/auth/token-finder.ts

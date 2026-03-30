@@ -51,6 +51,10 @@ function truncate(value, limit = 800) {
   return text.length <= limit ? text : `${text.slice(0, limit)}...`;
 }
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function slugify(value) {
   return String(value || "unnamed")
     .toLowerCase()
@@ -61,6 +65,10 @@ function slugify(value) {
 
 function buildTestId(filePath, name) {
   return `${slugify(path.relative(process.cwd(), filePath || "no-file"))}__${slugify(name || "unnamed-test")}`;
+}
+
+function buildRerunCommand(filePath, testName) {
+  return `node --test --test-reporter=./scripts/test-reporter.mjs --test-name-pattern=${shellQuote(testName)} ${shellQuote(filePath)}`;
 }
 
 function getArtifactDir(testId) {
@@ -155,6 +163,7 @@ export default async function* reporter(source) {
         nesting: event.data.nesting ?? null,
         line: event.data.line ?? null,
         column: event.data.column ?? null,
+        rerun_command: buildRerunCommand(event.data.file, event.data.name),
       };
       upsertTestArtifact({
         testId,
@@ -196,6 +205,7 @@ export default async function* reporter(source) {
         nesting: event.data.nesting ?? null,
         line: event.data.line ?? null,
         column: event.data.column ?? null,
+        rerun_command: buildRerunCommand(event.data.file, event.data.name),
         ...(status === "fail" && event.data.details?.error
           ? {
               error: truncate(event.data.details.error.message || event.data.details.error),
@@ -243,6 +253,13 @@ export default async function* reporter(source) {
         artifactDir: getArtifactDir(buildTestId(event.data.file, event.data.name)),
         name: event.data.name,
         file: event.data.file,
+        skip_reason: truncate(
+          event.data.skipReason ||
+          event.data.details?.skip ||
+          event.data.details?.message ||
+          "skipped"
+        ),
+        rerun_command: buildRerunCommand(event.data.file, event.data.name),
       };
       results.push(entry);
       upsertTestArtifact({
@@ -296,6 +313,17 @@ export default async function* reporter(source) {
         error_name: r.error_name,
         timeout_detected: r.timeout_detected || false,
         artifactDir: r.artifactDir,
+        rerun_command: r.rerun_command,
+      })),
+    skippedTests: results
+      .filter((r) => r.status === "skip")
+      .map((r) => ({
+        testId: r.testId,
+        name: r.name,
+        file: r.file,
+        skip_reason: r.skip_reason || "skipped",
+        artifactDir: r.artifactDir,
+        rerun_command: r.rerun_command,
       })),
   };
   fs.writeFileSync(SUMMARY_PATH, JSON.stringify(summary, null, 2) + "\n");
@@ -327,7 +355,24 @@ export default async function* reporter(source) {
         `- Error: ${failure.error || "unknown"}`,
         `- Error Name: ${failure.error_name || "n/a"}`,
         `- Timeout: ${failure.timeout_detected ? "yes" : "no"}`,
-        `- Artifacts: \`${failure.artifactDir}\``
+        `- Artifacts: \`${failure.artifactDir}\``,
+        `- Re-run: \`${failure.rerun_command}\``
+      );
+    }
+  }
+  markdown.push("", "## Skipped Tests");
+  if (summary.skippedTests.length === 0) {
+    markdown.push("", "None.");
+  } else {
+    for (const skippedTest of summary.skippedTests) {
+      markdown.push(
+        "",
+        `### ${skippedTest.name}`,
+        `- Test ID: \`${skippedTest.testId}\``,
+        `- File: \`${skippedTest.file}\``,
+        `- Reason: ${skippedTest.skip_reason}`,
+        `- Artifacts: \`${skippedTest.artifactDir}\``,
+        `- Re-run: \`${skippedTest.rerun_command}\``
       );
     }
   }

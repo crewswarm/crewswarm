@@ -117,7 +117,8 @@
     "health": "node scripts/health-check.mjs",
     "doctor": "node scripts/doctor.mjs",
     "release:check": "bash scripts/release-check.sh",
-    "test:report": "node scripts/test-report-summary.mjs"
+    "test:report": "node scripts/test-report-summary.mjs",
+    "test:rerun": "node scripts/test-rerun.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
