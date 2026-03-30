@@ -1340,7 +1340,7 @@ If output has blockers, set approved=false.`,
           executionTimeMs: Date.now() - startTime
         };
       }
-      else if (plan.decision === 'execute-parallel' && process.env.CREW_FORCE_L2 === 'true' && plan.workGraph) {
+      else if (process.env.CREW_FORCE_L2 === 'true' && plan.workGraph) {
         // FORCE_L2 mode: return the L2 plan as text without executing L3 workers
         // Used by enhance-prompt to get the build brief without writing files
         executionPath.push('l2-plan-only');
