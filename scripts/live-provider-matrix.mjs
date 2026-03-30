@@ -64,7 +64,7 @@ function modelFromConfig(providerId, providerCfg, agents) {
     openrouter: "meta-llama/llama-3.1-8b-instruct:free",
     fireworks: "accounts/fireworks/models/gpt-oss-20b",
     opencode: "gpt-5.4-mini",
-    "openai-local": "gpt-4o-mini",
+    "openai-local": "gpt-5.1",
   };
   return hardcoded[providerId] || "(unknown)";
 }
@@ -120,13 +120,19 @@ async function smokeProvider(providerId, providerCfg, modelId) {
   const messages = [{ role: "user", content: SMOKE_PROMPT }];
   const started = Date.now();
   try {
+    const timeoutMs =
+      providerId === "ollama"
+        ? Number(process.env.CREWSWARM_LIVE_OLLAMA_TIMEOUT_MS || 90000)
+        : providerId === "openai-local"
+          ? Number(process.env.CREWSWARM_LIVE_OPENAI_LOCAL_TIMEOUT_MS || 45000)
+          : Number(process.env.CREWSWARM_LIVE_PROVIDER_TIMEOUT_MS || 20000);
     const reply = await _callLLMOnce(
       providerCfg.baseUrl,
       providerCfg.apiKey,
       modelId,
       mapProviderKey(providerId),
       messages,
-      { stream: false },
+      { stream: false, timeoutMs },
     );
     const text = String(reply || "").trim();
     return {
