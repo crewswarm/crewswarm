@@ -1340,6 +1340,27 @@ If output has blockers, set approved=false.`,
           executionTimeMs: Date.now() - startTime
         };
       }
+      else if (plan.decision === 'execute-parallel' && process.env.CREW_FORCE_L2 === 'true' && plan.workGraph) {
+        // FORCE_L2 mode: return the L2 plan as text without executing L3 workers
+        // Used by enhance-prompt to get the build brief without writing files
+        executionPath.push('l2-plan-only');
+        const units = plan.workGraph.units || [];
+        const planText = [
+          '## Build Brief',
+          plan.workGraph.summary || plan.reasoning || request.userInput,
+          '',
+          '## Work Units',
+          ...units.map((u: any, i: number) => `${i + 1}. **${u.id}** (${u.requiredPersona}): ${u.goal}`),
+          '',
+          '## Acceptance Criteria',
+          ...(plan.workGraph.acceptanceCriteria || []).map((c: string) => `- ${c}`),
+          '',
+          plan.validation ? `## Risk: ${plan.validation.riskLevel}` : '',
+          ...(plan.validation?.concerns || []).map((c: string) => `- ${c}`),
+        ].filter(Boolean).join('\n');
+        response = planText;
+        totalCost = 0.01;
+      }
       else if (plan.decision === 'execute-parallel') {
         if (!plan.workGraph) {
           this.logger.warn('execute-parallel without workGraph — routing to execute-direct instead');
