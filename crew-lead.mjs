@@ -587,11 +587,33 @@ process.on("unhandledRejection", (reason) => {
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("[crew-lead] uncaught exception:", err?.stack || err?.message);
+  const msg = String(err?.message || err || "");
+  console.error("[crew-lead] uncaught exception:", err?.stack || msg);
 
-  // Always exit on uncaught exceptions — they leave process in undefined state
-  console.error("[crew-lead] FATAL — exiting due to uncaught exception");
-  process.exit(1);
+  // Benign errors from engine passthrough / WebSocket streams — keep alive
+  if (
+    msg === "terminated" ||
+    msg === "aborted" ||
+    /client.*disconnect/i.test(msg) ||
+    /socket hang up/i.test(msg) ||
+    /ECONNRESET/i.test(msg) ||
+    /EPIPE/i.test(msg) ||
+    /fetch failed/i.test(msg) ||
+    /UND_ERR/i.test(msg) ||
+    /ECONNREFUSED/i.test(msg)
+  ) {
+    console.error("[crew-lead] Non-fatal uncaughtException — keeping alive");
+    return;
+  }
+
+  // Fatal errors: port conflicts, permissions, OOM — must exit
+  if (/EADDRINUSE|EACCES|out of memory|cannot allocate/i.test(msg)) {
+    console.error("[crew-lead] FATAL — exiting due to uncaught exception");
+    process.exit(1);
+  }
+
+  // Default: log but keep alive
+  console.error("[crew-lead] Unexpected uncaughtException — keeping alive (not fatal)");
 });
 
 // ── RT Bus listener — receives replies from agents ────────────────────────────
