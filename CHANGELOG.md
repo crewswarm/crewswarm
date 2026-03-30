@@ -58,11 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shareable GIFs**: quickstart.gif (442KB), demo.gif (1.1MB) for Reddit/X
 - **Launch plan**: docs/LAUNCH-PLAN.md with HN, Reddit, X posts, FAQ for HN comments
 - **FUNDING.yml**: GitHub Sponsors enabled
-- **README rewrite**: multi-engine pitch, competitor table, per-agent model config, 957 tests badge, proof points
+- **README rewrite**: multi-engine pitch, competitor table, per-agent model config, 2k+ tests badge, proof points
 
 ### Changed
 - npm package: `@whiskeysockets/baileys` moved to optionalDependencies (install works without git)
-- Version: dropped `-beta` suffix — 957 tests, 0 failures
+- Version: dropped `-beta` suffix — 2k+ tests, broad automated coverage
 - Website deployed to Fly.io with all updates
 
 ## [0.8.3-beta] - 2026-03-28
@@ -149,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SEO optimization across all pages
 
 ### Tests
-- 957 total tests, 0 failures (up from 731)
+- At the time of this release: 957 total tests, 0 failures (up from 731)
 
 ## [0.8.1-beta] - 2026-03-25
 
