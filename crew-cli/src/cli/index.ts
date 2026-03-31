@@ -319,6 +319,16 @@ function detectSubscriptionEngines(tokens: Record<string, string | undefined>): 
   ];
 }
 
+function normalizeStandaloneEngine(engine: string): string {
+  const raw = String(engine || '').trim().toLowerCase();
+  if (!raw || raw === 'auto') return 'auto';
+  if (raw === 'claude' || raw === 'claude-code') return 'claude-cli';
+  if (raw === 'gemini' || raw === 'gemini-api') return 'gemini-cli';
+  if (raw === 'codex') return 'codex-cli';
+  if (raw === 'cursor') return 'cursor-cli';
+  return raw;
+}
+
 function shouldRetryWithFallback(error: unknown): boolean {
   const text = String((error as Error)?.message || '').toLowerCase();
   return isRetryableError(error) || text.includes('empty');
@@ -880,6 +890,41 @@ export async function main(args = []) {
         const capabilityHandshake = getCapabilityHandshake(useConnected ? 'connected' : 'standalone');
 
         // crew-CLI uses agentic executor (standalone) unless explicitly connected
+        const selectedStandaloneEngine = normalizeStandaloneEngine(options.engine || '');
+        const useDirectCliEngine = !useConnected && !useLegacyStandalone && selectedStandaloneEngine !== 'auto' && selectedStandaloneEngine !== 'crew-cli';
+
+        if (useDirectCliEngine) {
+          logger.info(`Executing in standalone direct-engine mode (${selectedStandaloneEngine})`);
+          const result = await withRetries(
+            async () => runEngine(selectedStandaloneEngine, input, {
+              model: options.model,
+              cwd: projectDir,
+              projectDir
+            }),
+            policy
+          );
+          const responseText = String(result.stdout || result.stderr || '');
+          console.log(
+            JSON.stringify(
+              {
+                version: 'v1',
+                kind: 'chat.result',
+                ts: new Date().toISOString(),
+                route: { decision: 'EXECUTE', explanation: `Direct standalone engine (${selectedStandaloneEngine})` },
+                agent: selectedStandaloneEngine,
+                response: responseText,
+                engine: result.engine,
+                success: result.success,
+                exitCode: result.exitCode,
+                capabilityHandshake
+              },
+              null,
+              2
+            )
+          );
+          return;
+        }
+
         if (!useConnected && !useLegacyStandalone) {
           logger.info('Executing in standalone mode (agentic executor with file tools)');
           const standaloneRuntime = await getStandaloneRuntime(projectDir);

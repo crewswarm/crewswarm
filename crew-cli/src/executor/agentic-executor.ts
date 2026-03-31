@@ -535,20 +535,20 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     // what model was requested — the model name just came from a default config.
 
     // 1. Claude OAuth (macOS Keychain — Claude Max/Pro subscription)
+    // Uses Haiku via OAuth (free). Opus/Sonnet are server-side restricted to Claude Code app.
+    // Set CREW_OAUTH_CLAUDE_MODEL to override (e.g. claude-opus-4-6 if Anthropic opens it).
     try {
       const oauth = await getOAuthToken();
       if (oauth?.accessToken) {
         return {
           key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-sonnet-4-20250514'),
+          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-haiku-4-5-20251001'),
           driver: 'anthropic',
           id: `anthropic-oauth-${oauth.subscriptionType || 'unknown'}`,
           isOAuth: true
         };
       }
-    } catch {
-      // Claude OAuth unavailable — try next
-    }
+    } catch {}
 
     // 2. OpenAI OAuth (Codex CLI auth — ChatGPT Plus/Pro subscription)
     try {
@@ -556,7 +556,7 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
       if (oauth?.accessToken) {
         return {
           key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_OPENAI_MODEL || 'gpt-4.1'),
+          model: String(process.env.CREW_OAUTH_OPENAI_MODEL || 'gpt-5.4'),
           driver: 'openai',
           apiUrl: OPENAI_CODEX_API_URL,
           id: 'openai-oauth-codex',
@@ -1228,14 +1228,16 @@ async function executeAnthropicSDKTurn(
   historyMessages?: any[]
 ): Promise<LLMTurnResult> {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
-  const sessionHeader = `crew-${Date.now()}`;
+  const { randomUUID } = await import('node:crypto');
+  const sessionHeader = randomUUID();
   const client = new Anthropic({
     authToken,
     apiKey: null as any,
+    timeout: 120000,
     defaultHeaders: {
       'x-app': 'cli',
-      'User-Agent': 'claude-cli/crew-cli',
-      'X-Claude-Code-Session-Id': sessionHeader
+      'X-Claude-Code-Session-Id': sessionHeader,
+      'anthropic-dangerous-direct-browser-access': 'true'
     }
   });
 
@@ -1302,7 +1304,7 @@ async function executeAnthropicSDKTurn(
       },
       thinking: { type: 'adaptive' },
       output_config: { effort: 'medium' },
-      stream: false
+      stream: true
     });
 
     const usage = (response as any).usage || {} as any;
@@ -1347,11 +1349,6 @@ async function executeStreamingAnthropicTurn(
   historyMessages?: any[],
   isOAuth?: boolean
 ): Promise<LLMTurnResult> {
-  // ── SDK path for OAuth (uses @anthropic-ai/sdk with authToken) ──
-  if (isOAuth) {
-    return executeAnthropicSDKTurn(fullTask, tools, apiKey, model, systemPrompt, images, historyMessages);
-  }
-
   // Build user content: text + optional images
   let userContent: any = fullTask;
   if (images?.length) {

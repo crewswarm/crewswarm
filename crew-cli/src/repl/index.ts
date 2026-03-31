@@ -33,6 +33,7 @@ import { estimateCost } from '../cost/predictor.js';
 import { getExecutionPolicy, isRiskBlocked, withRetries } from '../runtime/execution-policy.js';
 import { analyzeBlastRadius } from '../blast-radius/index.js';
 import { scorePatchRisk } from '../risk/score.js';
+import { runEngine } from '../engines/index.js';
 
 const BANNER = `
  ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -55,7 +56,7 @@ const AVAILABLE_MODELS = [
   'deepseek-v3.2', 'qwen3.5-397b', 'kimi-k2.5', 'llama-3.3-70b'
 ];
 
-const AVAILABLE_ENGINES = ['auto', 'cursor', 'claude', 'gemini', 'codex', 'crew-cli'];
+const AVAILABLE_ENGINES = ['auto', 'cursor', 'cursor-cli', 'claude', 'claude-cli', 'gemini', 'gemini-cli', 'codex', 'codex-cli', 'crew-cli'];
 
 export interface ReplOptions {
   router: AgentRouter;
@@ -531,6 +532,16 @@ function buildPrompt(state: ReplState, isProcessing: boolean, uiMode: 'repl' | '
   if (mode === 'autopilot') return chalk.magenta(`${prefix}(${mode})> `);
   if (mode === 'assist') return chalk.cyan(`${prefix}(${mode})> `);
   return chalk.green(`${prefix}(${mode})> `);
+}
+
+function normalizeStandaloneEngine(engine: string): string {
+  const raw = String(engine || '').trim().toLowerCase();
+  if (!raw || raw === 'auto') return 'auto';
+  if (raw === 'claude' || raw === 'claude-code') return 'claude-cli';
+  if (raw === 'gemini' || raw === 'gemini-api') return 'gemini-cli';
+  if (raw === 'codex') return 'codex-cli';
+  if (raw === 'cursor') return 'cursor-cli';
+  return raw;
 }
 
 function printTuiScaffold() {
@@ -1046,8 +1057,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           console.log(chalk.red(`\n  ✗ Unknown engine "${requestedEngine}". Available: ${AVAILABLE_ENGINES.join(', ')}\n`));
           return true;
         }
-        replState.engine = requestedEngine;
-        console.log(chalk.green(`\n  ✓ Engine set to: ${requestedEngine}\n`));
+        replState.engine = normalizeStandaloneEngine(requestedEngine);
+        console.log(chalk.green(`\n  ✓ Engine set to: ${replState.engine}\n`));
         return true;
       }
       console.log(chalk.blue('\n--- Available Engines ---\n'));
@@ -1066,8 +1077,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       } else if (!AVAILABLE_ENGINES.includes(engineName)) {
         console.log(chalk.red(`\n  ✗ Unknown engine "${engineName}". Type /engines to see options.\n`));
       } else {
-        replState.engine = engineName;
-        console.log(chalk.green(`\n  ✓ Engine set to: ${engineName}\n`));
+        replState.engine = normalizeStandaloneEngine(engineName);
+        console.log(chalk.green(`\n  ✓ Engine set to: ${replState.engine}\n`));
       }
       return true;
     }
@@ -2126,7 +2137,20 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
       // Inject onToolCall into orchestrator/executor options if available
       if (dispatchOpts) (dispatchOpts as any).onToolCall = onToolCall;
 
-      const result = standaloneMode
+      const selectedStandaloneEngine = normalizeStandaloneEngine(replState.engine);
+      const useDirectCliEngine = standaloneMode && selectedStandaloneEngine !== 'auto' && selectedStandaloneEngine !== 'crew-cli';
+
+      const result = useDirectCliEngine
+        ? await withRetries(
+            async () => runEngine(selectedStandaloneEngine, route.task || taskInput, {
+              model: dispatchOpts.model,
+              cwd: projectDir,
+              projectDir,
+              sessionId: dispatchOpts.sessionId
+            }),
+            policy
+          )
+        : standaloneMode
         ? (useLegacyStandalone
           ? await withRetries(
               async () => orchestrator.executeLocally(route.task || taskInput, {
@@ -2179,7 +2203,7 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
         });
       }
 
-      const responseText = String(result.response || result.result || '');
+      const responseText = String(result.stdout || result.response || result.result || result.stderr || '');
       console.log(chalk.cyan('\n  ┌─ Response'));
       logger.printWithHighlight(responseText);
       console.log('  └─');
@@ -2187,7 +2211,7 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
       // Provider + cost footer (novel feature)
       const providerInfo = (result as any).providerId || (result as any).provider || (result as any).model || replState.model;
       const modelUsed = (result as any).modelUsed || (result as any).model || providerInfo;
-      const engineUsed = (result as any).engine || (standaloneMode ? 'crew-cli' : (dispatchOpts.engine || replState.engine || 'gateway'));
+      const engineUsed = (result as any).engine || (useDirectCliEngine ? selectedStandaloneEngine : (standaloneMode ? 'crew-cli' : (dispatchOpts.engine || replState.engine || 'gateway')));
       const routeUsed = route.decision || (standaloneMode ? 'EXECUTE' : 'DISPATCH');
       const responseCost = (result as any).costUsd || (result as any).cost || 0;
       const turnsUsed = (result as any).turns || 1;

@@ -5762,24 +5762,11 @@ async function resolveProvider(modelOverride, preferTier) {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || "").trim().toLowerCase();
   if (process.env.CREW_NO_OAUTH !== "true") {
     try {
-      const oauth = await getOAuthToken();
-      if (oauth?.accessToken) {
-        return {
-          key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-sonnet-4-20250514"),
-          driver: "anthropic",
-          id: `anthropic-oauth-${oauth.subscriptionType || "unknown"}`,
-          isOAuth: true
-        };
-      }
-    } catch {
-    }
-    try {
       const oauth = await getOpenAIOAuthToken();
       if (oauth?.accessToken) {
         return {
           key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_OPENAI_MODEL || "gpt-4.1"),
+          model: String(process.env.CREW_OAUTH_OPENAI_MODEL || "gpt-5.4"),
           driver: "openai",
           apiUrl: OPENAI_CODEX_API_URL,
           id: "openai-oauth-codex",
@@ -6316,104 +6303,7 @@ async function streamOpenAIResponsesOAuthTurn(res) {
   }
   return { response: fullText.trim(), status: "COMPLETE", cost };
 }
-async function executeAnthropicSDKTurn(fullTask, tools, authToken, model, systemPrompt, images, historyMessages) {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const sessionHeader = `crew-${Date.now()}`;
-  const client = new Anthropic({
-    authToken,
-    apiKey: null,
-    defaultHeaders: {
-      "x-app": "cli",
-      "User-Agent": "claude-cli/crew-cli",
-      "X-Claude-Code-Session-Id": sessionHeader
-    }
-  });
-  let userContent = fullTask;
-  if (images?.length) {
-    const parts = [{ type: "text", text: fullTask }];
-    for (const img of images) {
-      parts.push({
-        type: "image",
-        source: { type: "base64", media_type: img.mimeType, data: img.data }
-      });
-    }
-    userContent = parts;
-  }
-  const anthropicTools = tools.map((t) => ({
-    name: t.name,
-    description: t.description || "",
-    input_schema: t.parameters
-  }));
-  let deviceId = "";
-  let accountUuid = "";
-  try {
-    const { readFileSync: readFileSync8 } = await import("node:fs");
-    const { join: pj } = await import("node:path");
-    const { homedir: hd } = await import("node:os");
-    try {
-      const cfg = JSON.parse(readFileSync8(pj(hd(), ".claude", "config.json"), "utf8"));
-      deviceId = cfg.userID || "";
-    } catch {
-    }
-  } catch {
-  }
-  try {
-    const response = await client.beta.messages.create({
-      model,
-      max_tokens: 64e3,
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: userContent },
-        ...historyMessages || []
-      ],
-      temperature: 0.3,
-      tools: anthropicTools,
-      betas: [
-        "claude-code-20250219",
-        "oauth-2025-04-20",
-        "interleaved-thinking-2025-05-14",
-        "effort-2025-11-24"
-      ],
-      metadata: {
-        user_id: JSON.stringify({
-          device_id: deviceId,
-          account_uuid: accountUuid,
-          session_id: sessionHeader
-        })
-      },
-      thinking: { type: "adaptive" },
-      output_config: { effort: "medium" },
-      stream: false
-    });
-    const usage = response.usage || {};
-    const cost = ((usage.input_tokens || 0) * 3 + (usage.output_tokens || 0) * 15) / 1e6;
-    const content = response.content || [];
-    const toolUseBlocks = content.filter((b) => b.type === "tool_use");
-    const textBlocks = content.filter((b) => b.type === "text");
-    const textResponse = textBlocks.map((b) => b.text).join("\n");
-    if (textResponse) process.stdout.write(textResponse);
-    if (toolUseBlocks.length > 0) {
-      const toolCalls = toolUseBlocks.map((b) => ({
-        tool: b.name,
-        params: b.input || {}
-      }));
-      return { toolCalls, response: textResponse, cost };
-    }
-    return { response: textResponse, status: "COMPLETE", cost };
-  } catch (err) {
-    if (err?.status === 401) {
-      const refreshed = await forceRefreshOAuthToken();
-      if (refreshed?.accessToken && refreshed.accessToken !== authToken) {
-        return executeAnthropicSDKTurn(fullTask, tools, refreshed.accessToken, model, systemPrompt, images, historyMessages);
-      }
-    }
-    throw err;
-  }
-}
 async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, systemPrompt, stream, images, historyMessages, isOAuth) {
-  if (isOAuth) {
-    return executeAnthropicSDKTurn(fullTask, tools, apiKey, model, systemPrompt, images, historyMessages);
-  }
   let userContent = fullTask;
   if (images?.length) {
     const parts = [{ type: "text", text: fullTask }];
