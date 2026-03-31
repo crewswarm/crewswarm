@@ -1107,7 +1107,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride, resume
     case "claude":
       // Claude Code uses OAuth — no API key needed
       {
-        const args = ["-p", "--setting-sources", "user", "--output-format", "stream-json", "--verbose"];
+        const args = ["-p", "--setting-sources", "user", "--output-format", "stream-json", "--verbose", "--permission-mode", "auto"];
         const model = modelOverride || process.env.CREWSWARM_CLAUDE_CODE_MODEL || "";
         // Add workspace directory context
         if (projectDir) args.push("--add-dir", projectDir);
