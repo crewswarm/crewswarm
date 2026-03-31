@@ -2362,18 +2362,101 @@ var init_docker_sandbox = __esm({
 import { execSync as execSync3 } from "node:child_process";
 import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, writeFile as writeFile3 } from "node:fs/promises";
 import { join as join7, resolve as resolve4 } from "node:path";
+function toolAllowedAtLevel(toolName, level) {
+  switch (level) {
+    case "read-only":
+      return READ_ONLY_TOOLS.has(toolName);
+    case "edit":
+      return EDIT_TOOLS.has(toolName);
+    case "full":
+      return FULL_TOOLS.has(toolName);
+    default:
+      return true;
+  }
+}
+function levenshteinDistance(a, b) {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  let curr = new Array(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[b.length];
+}
+function constraintLevelForPersona(persona) {
+  const lower = persona.toLowerCase();
+  if (lower.includes("planner") || lower.includes("reviewer") || lower.includes("qa") || lower.includes("architect")) {
+    return "read-only";
+  }
+  if (lower.includes("scaffold") || lower.includes("init") || lower.includes("setup")) {
+    return "full";
+  }
+  return "edit";
+}
 function getShellTimeout() {
   const envVal = parseInt(process.env.CREW_SHELL_TIMEOUT || "", 10);
   if (envVal > 0) return Math.min(envVal * 1e3, 6e5);
   return 12e4;
 }
-var CrewConfig, CrewMessageBus, DANGEROUS_SHELL_PATTERNS, _backgroundProcesses, GeminiToolAdapter;
+var READ_ONLY_TOOLS, EDIT_TOOLS, FULL_TOOLS, CrewConfig, CrewMessageBus, DANGEROUS_SHELL_PATTERNS, _backgroundProcesses, GeminiToolAdapter;
 var init_crew_adapter = __esm({
   "src/tools/gemini/crew-adapter.ts"() {
     "use strict";
     init_hooks();
     init_worktree();
     init_base_declarations();
+    READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
+      "read_file",
+      "read_many_files",
+      "glob",
+      "grep_search",
+      "grep_search_ripgrep",
+      "list_directory",
+      "list",
+      "get_internal_docs",
+      "web_fetch",
+      "google_web_search",
+      "web_search",
+      "grep",
+      "save_memory",
+      "write_todos",
+      "tracker_get_task",
+      "tracker_list_tasks",
+      "tracker_visualize",
+      "check_background_task",
+      "ask_user",
+      "enter_plan_mode",
+      "exit_plan_mode",
+      "lsp",
+      "git"
+      // git is read-safe (force-push/--no-verify already blocked)
+    ]);
+    EDIT_TOOLS = /* @__PURE__ */ new Set([
+      ...READ_ONLY_TOOLS,
+      "replace",
+      "edit",
+      "append_file",
+      "run_shell_command",
+      "shell",
+      "run_cmd",
+      "tracker_create_task",
+      "tracker_update_task",
+      "tracker_add_dependency",
+      "mkdir",
+      "activate_skill"
+    ]);
+    FULL_TOOLS = /* @__PURE__ */ new Set([
+      ...EDIT_TOOLS,
+      "write_file",
+      "spawn_agent"
+    ]);
     CrewConfig = class {
       constructor(workspaceRoot) {
         this.workspaceRoot = workspaceRoot;
@@ -2412,13 +2495,16 @@ var init_crew_adapter = __esm({
     ];
     _backgroundProcesses = /* @__PURE__ */ new Map();
     GeminiToolAdapter = class _GeminiToolAdapter {
-      // Track reads for read-before-edit guard
-      constructor(sandbox) {
+      constructor(sandbox, constraintLevel = "full") {
         this.sandbox = sandbox;
         this._filesRead = /* @__PURE__ */ new Set();
         const workspaceRoot = sandbox.baseDir || process.cwd();
         this.config = new CrewConfig(workspaceRoot);
         this.messageBus = new CrewMessageBus();
+        this._constraintLevel = constraintLevel;
+      }
+      get constraintLevel() {
+        return this._constraintLevel;
       }
       buildDynamicDeclarations() {
         const staticDecls = this.getStaticToolDeclarations();
@@ -2574,6 +2660,14 @@ var init_crew_adapter = __esm({
        * Execute a tool call from LLM (with PreToolUse/PostToolUse hooks)
        */
       async executeTool(toolName, params) {
+        if (!toolAllowedAtLevel(toolName, this._constraintLevel)) {
+          return {
+            success: false,
+            error: `Tool "${toolName}" is not available at constraint level "${this._constraintLevel}". Use allowed tools only.`,
+            handled: false,
+            recovery: this._constraintLevel === "read-only" ? "This is a read-only worker. Use read_file, grep_search, glob, or list_directory." : "This is an edit worker. Use replace/edit for changes, not write_file."
+          };
+        }
         const preResult = await runPreToolUseHooks(toolName, params);
         if (preResult.decision === "deny") {
           return { success: false, error: `Blocked by hook: ${preResult.reason || "denied"}` };
@@ -2694,6 +2788,20 @@ var init_crew_adapter = __esm({
       }
       async writeFile(params) {
         const isAbsolute = params.file_path.startsWith("/");
+        const { existsSync: existsSync24 } = await import("node:fs");
+        const checkPath = isAbsolute ? params.file_path : resolve4(this.config.getWorkspaceRoot(), params.file_path);
+        if (existsSync24(checkPath)) {
+          const { statSync: statSync2 } = await import("node:fs");
+          const size = statSync2(checkPath).size;
+          if (size > 0) {
+            return {
+              success: false,
+              error: `File "${params.file_path}" already exists (${size} bytes). Use "replace" tool to edit existing files (read_file first, then replace with old_string/new_string). Use "append_file" to add content at the end. write_file is only for creating NEW files.`,
+              handled: false,
+              recovery: `Read the file first with read_file, then use replace with old_string/new_string for surgical edits.`
+            };
+          }
+        }
         if (isAbsolute) {
           try {
             const { mkdir: mkdir26, writeFile: writeFile25 } = await import("node:fs/promises");
@@ -2722,6 +2830,15 @@ var init_crew_adapter = __esm({
       }
       async appendFile(params) {
         const filePath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
+        const { existsSync: existsSync24 } = await import("node:fs");
+        if (existsSync24(filePath) && !this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
+          return {
+            success: false,
+            error: `You must read_file "${params.file_path}" before appending to it. Read first to understand the existing content and where your addition should go.`,
+            handled: false,
+            recovery: `Call read_file with file_path="${params.file_path}" first, then retry append_file.`
+          };
+        }
         let existing = "";
         try {
           const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
@@ -2764,25 +2881,29 @@ var init_crew_adapter = __esm({
         if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
           return {
             success: false,
-            error: `You must read_file "${params.file_path}" before editing it. Never guess at file contents.`
+            error: `You must read_file "${params.file_path}" before editing it. Never guess at file contents.`,
+            handled: false,
+            recovery: `Call read_file with file_path="${params.file_path}" first, then retry this edit.`
           };
         }
         const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
         const content = stagedContent ?? await readFile5(filePath, "utf8");
-        if (!content.includes(params.old_string)) {
+        const { match, strategy, occurrences } = this.findEditMatch(content, params.old_string);
+        if (!match) {
           return {
             success: false,
-            error: `String not found in ${params.file_path}`
+            error: `String not found in ${params.file_path}. Tried: exact match, flexible whitespace, fuzzy (Levenshtein).`,
+            handled: false,
+            recovery: `Re-read the file with read_file and use the exact text from the file as old_string.`
           };
         }
-        const occurrences = content.split(params.old_string).length - 1;
         if (params.replace_all) {
-          const updated2 = content.split(params.old_string).join(params.new_string);
+          const updated2 = content.split(match).join(params.new_string);
           await this.sandbox.addChange(params.file_path, updated2);
           const diagnostics2 = await this.shadowValidate(params.file_path);
           return {
             success: true,
-            output: `Edited ${params.file_path} (${occurrences} replacements)${diagnostics2}`
+            output: `Edited ${params.file_path} (${occurrences} replacements, strategy: ${strategy})${diagnostics2}`
           };
         }
         if (occurrences > 1) {
@@ -2791,13 +2912,80 @@ var init_crew_adapter = __esm({
             error: `old_string matches ${occurrences} locations in ${params.file_path}. Provide more context to make it unique, or use replace_all:true to replace all occurrences.`
           };
         }
-        const updated = content.replace(params.old_string, params.new_string);
+        const updated = content.replace(match, params.new_string);
         await this.sandbox.addChange(params.file_path, updated);
         const diagnostics = await this.shadowValidate(params.file_path);
         return {
           success: true,
-          output: `Edited ${params.file_path}${diagnostics}`
+          output: `Edited ${params.file_path}${strategy !== "exact" ? ` (matched via ${strategy})` : ""}${diagnostics}`
         };
+      }
+      /**
+       * Edit strategy chain: exact → flexible whitespace → fuzzy (Levenshtein).
+       * Returns the actual matched string in the content and which strategy succeeded.
+       */
+      findEditMatch(content, oldString) {
+        if (content.includes(oldString)) {
+          return { match: oldString, strategy: "exact", occurrences: content.split(oldString).length - 1 };
+        }
+        const normalizeWS = (s) => s.replace(/[ \t]+/g, " ").replace(/\r\n/g, "\n");
+        const normOld = normalizeWS(oldString);
+        const normContent = normalizeWS(content);
+        if (normContent.includes(normOld)) {
+          const lines2 = content.split("\n");
+          const normLines = normContent.split("\n");
+          const normOldLines = normOld.split("\n");
+          const firstNormLine = normOldLines[0];
+          for (let i = 0; i <= lines2.length - normOldLines.length; i++) {
+            if (normLines[i].includes(firstNormLine) || normLines[i] === firstNormLine) {
+              const candidate = lines2.slice(i, i + normOldLines.length).join("\n");
+              if (normalizeWS(candidate) === normOld) {
+                return { match: candidate, strategy: "whitespace-flex", occurrences: 1 };
+              }
+            }
+          }
+          const idx = normContent.indexOf(normOld);
+          if (idx >= 0) {
+            let origIdx = 0, normIdx = 0;
+            while (normIdx < idx && origIdx < content.length) {
+              if (/[ \t]/.test(content[origIdx]) && origIdx + 1 < content.length && /[ \t]/.test(content[origIdx + 1])) {
+                origIdx++;
+                continue;
+              }
+              origIdx++;
+              normIdx++;
+            }
+            const chunk = content.substring(origIdx, origIdx + oldString.length + 50);
+            for (let len = oldString.length - 5; len <= oldString.length + 20; len++) {
+              const tryChunk = content.substring(origIdx, origIdx + len);
+              if (normalizeWS(tryChunk) === normOld) {
+                return { match: tryChunk, strategy: "whitespace-flex", occurrences: 1 };
+              }
+            }
+          }
+        }
+        const FUZZY_THRESHOLD = 0.1;
+        const lines = content.split("\n");
+        const oldLines = oldString.split("\n");
+        const oldLen = oldString.length;
+        if (oldLen > 0 && oldLen < 5e3) {
+          let bestMatch = "";
+          let bestDist = Infinity;
+          for (let i = 0; i <= lines.length - oldLines.length; i++) {
+            const candidate = lines.slice(i, i + oldLines.length).join("\n");
+            const dist = levenshteinDistance(candidate, oldString);
+            const maxLen = Math.max(candidate.length, oldLen);
+            const ratio = dist / maxLen;
+            if (ratio < FUZZY_THRESHOLD && dist < bestDist) {
+              bestDist = dist;
+              bestMatch = candidate;
+            }
+          }
+          if (bestMatch) {
+            return { match: bestMatch, strategy: "fuzzy", occurrences: 1 };
+          }
+        }
+        return { match: null, strategy: "none", occurrences: 0 };
       }
       /**
        * Shadow validation: after an edit, check for type/lint errors using LSP.
@@ -3423,414 +3611,421 @@ ${summary}`
        */
       getToolDeclarations() {
         const dynamicEnabled = process.env.CREW_GEMINI_DYNAMIC_DECLARATIONS !== "false";
+        let allDecls;
         if (dynamicEnabled) {
           try {
             const decls = this.buildDynamicDeclarations();
-            if (decls.length > 0) return decls;
+            allDecls = decls.length > 0 ? decls : void 0;
           } catch {
           }
         }
-        return [
-          {
-            name: "read_file",
-            description: "Read the contents of a file. ALWAYS read files before editing them. Use start_line/end_line for large files.",
-            parameters: {
-              type: "object",
-              properties: {
-                file_path: { type: "string", description: "Relative path from project root" },
-                start_line: { type: "number", description: "Start line number (1-based, optional)" },
-                end_line: { type: "number", description: "End line number (inclusive, optional)" }
-              },
-              required: ["file_path"]
+        if (!allDecls) {
+          allDecls = [
+            {
+              name: "read_file",
+              description: "Read the contents of a file. ALWAYS read files before editing them. Use start_line/end_line for large files.",
+              parameters: {
+                type: "object",
+                properties: {
+                  file_path: { type: "string", description: "Relative path from project root" },
+                  start_line: { type: "number", description: "Start line number (1-based, optional)" },
+                  end_line: { type: "number", description: "End line number (inclusive, optional)" }
+                },
+                required: ["file_path"]
+              }
+            },
+            {
+              name: "glob",
+              description: 'Find files matching a glob pattern. Use this to discover file structure. Examples: "**/*.ts", "src/**/*.tsx", "*.json"',
+              parameters: {
+                type: "object",
+                properties: {
+                  pattern: { type: "string", description: 'Glob pattern (e.g. "src/**/*.ts")' }
+                },
+                required: ["pattern"]
+              }
+            },
+            {
+              name: "grep",
+              description: "Search for text/regex patterns in files. Returns matching lines with file paths and line numbers.",
+              parameters: {
+                type: "object",
+                properties: {
+                  pattern: { type: "string", description: "Regex or text pattern to search for" },
+                  path: { type: "string", description: 'Directory or file to search in (default: ".")' }
+                },
+                required: ["pattern"]
+              }
+            },
+            {
+              name: "grep_search",
+              description: "Canonical alias for grep. Search for regex/text in files.",
+              parameters: {
+                type: "object",
+                properties: {
+                  pattern: { type: "string", description: "Regex/text pattern" },
+                  dir_path: { type: "string", description: "Path to search (default: .)" }
+                },
+                required: ["pattern"]
+              }
+            },
+            {
+              name: "grep_search_ripgrep",
+              description: "Ripgrep-optimized canonical name. Routed to grep tool in this adapter.",
+              parameters: {
+                type: "object",
+                properties: {
+                  pattern: { type: "string", description: "Regex/text pattern" },
+                  dir_path: { type: "string", description: "Path to search (default: .)" },
+                  path: { type: "string", description: "Alternative path field" }
+                },
+                required: ["pattern"]
+              }
+            },
+            {
+              name: "write_file",
+              description: "Write content to a file (creates or overwrites). Changes are staged in sandbox. Use for new files or full rewrites.",
+              parameters: {
+                type: "object",
+                properties: {
+                  file_path: { type: "string", description: "Relative path from project root" },
+                  content: { type: "string", description: "Complete file content" }
+                },
+                required: ["file_path", "content"]
+              }
+            },
+            {
+              name: "append_file",
+              description: "Append content to an existing file. Creates file if it does not exist. Changes are staged in sandbox.",
+              parameters: {
+                type: "object",
+                properties: {
+                  file_path: { type: "string", description: "Relative path from project root" },
+                  content: { type: "string", description: "Content to append" }
+                },
+                required: ["file_path", "content"]
+              }
+            },
+            {
+              name: "edit",
+              description: "Edit a file by replacing an exact string match. ALWAYS read the file first to get the exact string. Use for targeted changes.",
+              parameters: {
+                type: "object",
+                properties: {
+                  file_path: { type: "string", description: "Relative path from project root" },
+                  old_string: { type: "string", description: "Exact string to find (must match precisely)" },
+                  new_string: { type: "string", description: "Replacement string" }
+                },
+                required: ["file_path", "old_string", "new_string"]
+              }
+            },
+            {
+              name: "replace",
+              description: "Canonical alias for edit. Replace exact old_string with new_string.",
+              parameters: {
+                type: "object",
+                properties: {
+                  file_path: { type: "string", description: "Relative path from project root" },
+                  old_string: { type: "string", description: "Exact string to replace" },
+                  new_string: { type: "string", description: "Replacement string" }
+                },
+                required: ["file_path", "old_string", "new_string"]
+              }
+            },
+            {
+              name: "shell",
+              description: "Run a shell command (e.g. npm test, node script.js, cat, ls). Use for build verification, running tests, or commands not covered by other tools.",
+              parameters: {
+                type: "object",
+                properties: {
+                  command: { type: "string", description: "Shell command to execute" }
+                },
+                required: ["command"]
+              }
+            },
+            {
+              name: "run_cmd",
+              description: "Alias for shell. Run a shell command. Prefer this for compatibility with existing prompts.",
+              parameters: {
+                type: "object",
+                properties: {
+                  command: { type: "string", description: "Shell command to execute" }
+                },
+                required: ["command"]
+              }
+            },
+            {
+              name: "run_shell_command",
+              description: "Canonical alias for shell/run_cmd.",
+              parameters: {
+                type: "object",
+                properties: {
+                  command: { type: "string", description: "Shell command to execute" }
+                },
+                required: ["command"]
+              }
+            },
+            {
+              name: "mkdir",
+              description: "Create a directory (staged via .gitkeep in sandbox).",
+              parameters: {
+                type: "object",
+                properties: {
+                  path: { type: "string", description: "Directory path to create" },
+                  dir_path: { type: "string", description: "Alternate directory path field" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "list",
+              description: "List files and directories for a path.",
+              parameters: {
+                type: "object",
+                properties: {
+                  path: { type: "string", description: "Path to list (default: .)" },
+                  dir_path: { type: "string", description: "Alternate path field" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "list_directory",
+              description: "Canonical alias for list.",
+              parameters: {
+                type: "object",
+                properties: {
+                  dir_path: { type: "string", description: "Directory path to list (default: .)" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "git",
+              description: "Run git subcommands (status, diff, log, show, branch). Use to understand repo state and recent changes.",
+              parameters: {
+                type: "object",
+                properties: {
+                  command: { type: "string", description: 'Git subcommand (e.g. "diff HEAD~3", "log --oneline -10")' }
+                },
+                required: ["command"]
+              }
+            },
+            {
+              name: "lsp",
+              description: 'Code intelligence: "symbols <file>" for outline, "refs <file:line:col>" for references, "goto <file:line:col>" for definition, "diagnostics" for type errors.',
+              parameters: {
+                type: "object",
+                properties: {
+                  query: { type: "string", description: 'LSP query (e.g. "symbols src/app.ts", "goto src/app.ts:42:5")' }
+                },
+                required: ["query"]
+              }
+            },
+            {
+              name: "web_search",
+              description: "Search the web via Brave Search API (requires BRAVE_API_KEY).",
+              parameters: {
+                type: "object",
+                properties: {
+                  query: { type: "string", description: "Search query" }
+                },
+                required: ["query"]
+              }
+            },
+            {
+              name: "google_web_search",
+              description: "Canonical alias for web_search.",
+              parameters: {
+                type: "object",
+                properties: {
+                  query: { type: "string", description: "Search query" }
+                },
+                required: ["query"]
+              }
+            },
+            {
+              name: "web_fetch",
+              description: "Fetch content from a URL and return cleaned text for analysis.",
+              parameters: {
+                type: "object",
+                properties: {
+                  url: { type: "string", description: "http(s) URL to fetch" }
+                },
+                required: ["url"]
+              }
+            },
+            {
+              name: "read_many_files",
+              description: "Read multiple files by include glob and return concatenated excerpts.",
+              parameters: {
+                type: "object",
+                properties: {
+                  include: { type: "string", description: "Glob include pattern (default: **/*)" },
+                  exclude: { type: "string", description: "Optional exclude glob" },
+                  recursive: { type: "boolean", description: "Recursive search (optional)" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "save_memory",
+              description: "Save a memory fact to local project memory log.",
+              parameters: {
+                type: "object",
+                properties: {
+                  fact: { type: "string", description: "Memory fact to persist" }
+                },
+                required: ["fact"]
+              }
+            },
+            {
+              name: "write_todos",
+              description: "Persist todo items for the current project.",
+              parameters: {
+                type: "object",
+                properties: {
+                  todos: { type: "array", description: "Todo items array" }
+                },
+                required: ["todos"]
+              }
+            },
+            {
+              name: "get_internal_docs",
+              description: "Read internal docs by relative path (default AGENTS.md).",
+              parameters: {
+                type: "object",
+                properties: {
+                  path: { type: "string", description: "Relative doc path" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "ask_user",
+              description: "Non-interactive placeholder for ask-user; returns summarized questions.",
+              parameters: {
+                type: "object",
+                properties: {
+                  questions: { type: "array", description: "Question descriptors" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "enter_plan_mode",
+              description: "Enter plan mode (no-op marker in CLI adapter).",
+              parameters: {
+                type: "object",
+                properties: {
+                  reason: { type: "string", description: "Plan mode reason" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "exit_plan_mode",
+              description: "Exit plan mode (no-op marker in CLI adapter).",
+              parameters: {
+                type: "object",
+                properties: {
+                  plan_path: { type: "string", description: "Optional plan file path" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "activate_skill",
+              description: "Activate a named skill (adapter acknowledgment).",
+              parameters: {
+                type: "object",
+                properties: {
+                  name: { type: "string", description: "Skill name" }
+                },
+                required: ["name"]
+              }
+            },
+            {
+              name: "tracker_create_task",
+              description: "Create tracker task in local .crew/tracker.json.",
+              parameters: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  description: { type: "string" },
+                  type: { type: "string" },
+                  parentId: { type: "string" },
+                  dependencies: { type: "array" }
+                },
+                required: ["title", "description", "type"]
+              }
+            },
+            {
+              name: "tracker_update_task",
+              description: "Update tracker task by id.",
+              parameters: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  title: { type: "string" },
+                  description: { type: "string" },
+                  status: { type: "string" },
+                  dependencies: { type: "array" }
+                },
+                required: ["id"]
+              }
+            },
+            {
+              name: "tracker_get_task",
+              description: "Get tracker task by id.",
+              parameters: {
+                type: "object",
+                properties: {
+                  id: { type: "string" }
+                },
+                required: ["id"]
+              }
+            },
+            {
+              name: "tracker_list_tasks",
+              description: "List tracker tasks with optional filters.",
+              parameters: {
+                type: "object",
+                properties: {
+                  status: { type: "string" },
+                  type: { type: "string" },
+                  parentId: { type: "string" }
+                },
+                required: []
+              }
+            },
+            {
+              name: "tracker_add_dependency",
+              description: "Add dependency between tracker tasks.",
+              parameters: {
+                type: "object",
+                properties: {
+                  taskId: { type: "string" },
+                  dependencyId: { type: "string" }
+                },
+                required: ["taskId", "dependencyId"]
+              }
+            },
+            {
+              name: "tracker_visualize",
+              description: "Visualize tracker tasks as ASCII list.",
+              parameters: {
+                type: "object",
+                properties: {},
+                required: []
+              }
             }
-          },
-          {
-            name: "glob",
-            description: 'Find files matching a glob pattern. Use this to discover file structure. Examples: "**/*.ts", "src/**/*.tsx", "*.json"',
-            parameters: {
-              type: "object",
-              properties: {
-                pattern: { type: "string", description: 'Glob pattern (e.g. "src/**/*.ts")' }
-              },
-              required: ["pattern"]
-            }
-          },
-          {
-            name: "grep",
-            description: "Search for text/regex patterns in files. Returns matching lines with file paths and line numbers.",
-            parameters: {
-              type: "object",
-              properties: {
-                pattern: { type: "string", description: "Regex or text pattern to search for" },
-                path: { type: "string", description: 'Directory or file to search in (default: ".")' }
-              },
-              required: ["pattern"]
-            }
-          },
-          {
-            name: "grep_search",
-            description: "Canonical alias for grep. Search for regex/text in files.",
-            parameters: {
-              type: "object",
-              properties: {
-                pattern: { type: "string", description: "Regex/text pattern" },
-                dir_path: { type: "string", description: "Path to search (default: .)" }
-              },
-              required: ["pattern"]
-            }
-          },
-          {
-            name: "grep_search_ripgrep",
-            description: "Ripgrep-optimized canonical name. Routed to grep tool in this adapter.",
-            parameters: {
-              type: "object",
-              properties: {
-                pattern: { type: "string", description: "Regex/text pattern" },
-                dir_path: { type: "string", description: "Path to search (default: .)" },
-                path: { type: "string", description: "Alternative path field" }
-              },
-              required: ["pattern"]
-            }
-          },
-          {
-            name: "write_file",
-            description: "Write content to a file (creates or overwrites). Changes are staged in sandbox. Use for new files or full rewrites.",
-            parameters: {
-              type: "object",
-              properties: {
-                file_path: { type: "string", description: "Relative path from project root" },
-                content: { type: "string", description: "Complete file content" }
-              },
-              required: ["file_path", "content"]
-            }
-          },
-          {
-            name: "append_file",
-            description: "Append content to an existing file. Creates file if it does not exist. Changes are staged in sandbox.",
-            parameters: {
-              type: "object",
-              properties: {
-                file_path: { type: "string", description: "Relative path from project root" },
-                content: { type: "string", description: "Content to append" }
-              },
-              required: ["file_path", "content"]
-            }
-          },
-          {
-            name: "edit",
-            description: "Edit a file by replacing an exact string match. ALWAYS read the file first to get the exact string. Use for targeted changes.",
-            parameters: {
-              type: "object",
-              properties: {
-                file_path: { type: "string", description: "Relative path from project root" },
-                old_string: { type: "string", description: "Exact string to find (must match precisely)" },
-                new_string: { type: "string", description: "Replacement string" }
-              },
-              required: ["file_path", "old_string", "new_string"]
-            }
-          },
-          {
-            name: "replace",
-            description: "Canonical alias for edit. Replace exact old_string with new_string.",
-            parameters: {
-              type: "object",
-              properties: {
-                file_path: { type: "string", description: "Relative path from project root" },
-                old_string: { type: "string", description: "Exact string to replace" },
-                new_string: { type: "string", description: "Replacement string" }
-              },
-              required: ["file_path", "old_string", "new_string"]
-            }
-          },
-          {
-            name: "shell",
-            description: "Run a shell command (e.g. npm test, node script.js, cat, ls). Use for build verification, running tests, or commands not covered by other tools.",
-            parameters: {
-              type: "object",
-              properties: {
-                command: { type: "string", description: "Shell command to execute" }
-              },
-              required: ["command"]
-            }
-          },
-          {
-            name: "run_cmd",
-            description: "Alias for shell. Run a shell command. Prefer this for compatibility with existing prompts.",
-            parameters: {
-              type: "object",
-              properties: {
-                command: { type: "string", description: "Shell command to execute" }
-              },
-              required: ["command"]
-            }
-          },
-          {
-            name: "run_shell_command",
-            description: "Canonical alias for shell/run_cmd.",
-            parameters: {
-              type: "object",
-              properties: {
-                command: { type: "string", description: "Shell command to execute" }
-              },
-              required: ["command"]
-            }
-          },
-          {
-            name: "mkdir",
-            description: "Create a directory (staged via .gitkeep in sandbox).",
-            parameters: {
-              type: "object",
-              properties: {
-                path: { type: "string", description: "Directory path to create" },
-                dir_path: { type: "string", description: "Alternate directory path field" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "list",
-            description: "List files and directories for a path.",
-            parameters: {
-              type: "object",
-              properties: {
-                path: { type: "string", description: "Path to list (default: .)" },
-                dir_path: { type: "string", description: "Alternate path field" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "list_directory",
-            description: "Canonical alias for list.",
-            parameters: {
-              type: "object",
-              properties: {
-                dir_path: { type: "string", description: "Directory path to list (default: .)" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "git",
-            description: "Run git subcommands (status, diff, log, show, branch). Use to understand repo state and recent changes.",
-            parameters: {
-              type: "object",
-              properties: {
-                command: { type: "string", description: 'Git subcommand (e.g. "diff HEAD~3", "log --oneline -10")' }
-              },
-              required: ["command"]
-            }
-          },
-          {
-            name: "lsp",
-            description: 'Code intelligence: "symbols <file>" for outline, "refs <file:line:col>" for references, "goto <file:line:col>" for definition, "diagnostics" for type errors.',
-            parameters: {
-              type: "object",
-              properties: {
-                query: { type: "string", description: 'LSP query (e.g. "symbols src/app.ts", "goto src/app.ts:42:5")' }
-              },
-              required: ["query"]
-            }
-          },
-          {
-            name: "web_search",
-            description: "Search the web via Brave Search API (requires BRAVE_API_KEY).",
-            parameters: {
-              type: "object",
-              properties: {
-                query: { type: "string", description: "Search query" }
-              },
-              required: ["query"]
-            }
-          },
-          {
-            name: "google_web_search",
-            description: "Canonical alias for web_search.",
-            parameters: {
-              type: "object",
-              properties: {
-                query: { type: "string", description: "Search query" }
-              },
-              required: ["query"]
-            }
-          },
-          {
-            name: "web_fetch",
-            description: "Fetch content from a URL and return cleaned text for analysis.",
-            parameters: {
-              type: "object",
-              properties: {
-                url: { type: "string", description: "http(s) URL to fetch" }
-              },
-              required: ["url"]
-            }
-          },
-          {
-            name: "read_many_files",
-            description: "Read multiple files by include glob and return concatenated excerpts.",
-            parameters: {
-              type: "object",
-              properties: {
-                include: { type: "string", description: "Glob include pattern (default: **/*)" },
-                exclude: { type: "string", description: "Optional exclude glob" },
-                recursive: { type: "boolean", description: "Recursive search (optional)" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "save_memory",
-            description: "Save a memory fact to local project memory log.",
-            parameters: {
-              type: "object",
-              properties: {
-                fact: { type: "string", description: "Memory fact to persist" }
-              },
-              required: ["fact"]
-            }
-          },
-          {
-            name: "write_todos",
-            description: "Persist todo items for the current project.",
-            parameters: {
-              type: "object",
-              properties: {
-                todos: { type: "array", description: "Todo items array" }
-              },
-              required: ["todos"]
-            }
-          },
-          {
-            name: "get_internal_docs",
-            description: "Read internal docs by relative path (default AGENTS.md).",
-            parameters: {
-              type: "object",
-              properties: {
-                path: { type: "string", description: "Relative doc path" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "ask_user",
-            description: "Non-interactive placeholder for ask-user; returns summarized questions.",
-            parameters: {
-              type: "object",
-              properties: {
-                questions: { type: "array", description: "Question descriptors" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "enter_plan_mode",
-            description: "Enter plan mode (no-op marker in CLI adapter).",
-            parameters: {
-              type: "object",
-              properties: {
-                reason: { type: "string", description: "Plan mode reason" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "exit_plan_mode",
-            description: "Exit plan mode (no-op marker in CLI adapter).",
-            parameters: {
-              type: "object",
-              properties: {
-                plan_path: { type: "string", description: "Optional plan file path" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "activate_skill",
-            description: "Activate a named skill (adapter acknowledgment).",
-            parameters: {
-              type: "object",
-              properties: {
-                name: { type: "string", description: "Skill name" }
-              },
-              required: ["name"]
-            }
-          },
-          {
-            name: "tracker_create_task",
-            description: "Create tracker task in local .crew/tracker.json.",
-            parameters: {
-              type: "object",
-              properties: {
-                title: { type: "string" },
-                description: { type: "string" },
-                type: { type: "string" },
-                parentId: { type: "string" },
-                dependencies: { type: "array" }
-              },
-              required: ["title", "description", "type"]
-            }
-          },
-          {
-            name: "tracker_update_task",
-            description: "Update tracker task by id.",
-            parameters: {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                title: { type: "string" },
-                description: { type: "string" },
-                status: { type: "string" },
-                dependencies: { type: "array" }
-              },
-              required: ["id"]
-            }
-          },
-          {
-            name: "tracker_get_task",
-            description: "Get tracker task by id.",
-            parameters: {
-              type: "object",
-              properties: {
-                id: { type: "string" }
-              },
-              required: ["id"]
-            }
-          },
-          {
-            name: "tracker_list_tasks",
-            description: "List tracker tasks with optional filters.",
-            parameters: {
-              type: "object",
-              properties: {
-                status: { type: "string" },
-                type: { type: "string" },
-                parentId: { type: "string" }
-              },
-              required: []
-            }
-          },
-          {
-            name: "tracker_add_dependency",
-            description: "Add dependency between tracker tasks.",
-            parameters: {
-              type: "object",
-              properties: {
-                taskId: { type: "string" },
-                dependencyId: { type: "string" }
-              },
-              required: ["taskId", "dependencyId"]
-            }
-          },
-          {
-            name: "tracker_visualize",
-            description: "Visualize tracker tasks as ASCII list.",
-            parameters: {
-              type: "object",
-              properties: {},
-              required: []
-            }
-          }
-        ];
+          ];
+        }
+        if (this._constraintLevel !== "full") {
+          allDecls = allDecls.filter((d) => toolAllowedAtLevel(d.name, this._constraintLevel));
+        }
+        return allDecls;
       }
       // ─── Worktree Isolation Tools ────────────────────────────────────
       enterWorktreeTool(params) {
@@ -3980,6 +4175,81 @@ function getContextWindow(model) {
   }
   return 128e3;
 }
+function calculateTokenBudget(messages, model, systemPromptTokens = 0, compactThreshold = 0.75) {
+  const contextWindow = getContextWindow(model);
+  let estimatedUsed = systemPromptTokens;
+  for (const msg of messages) {
+    estimatedUsed += estimateTokens(msg.content) + 4;
+  }
+  const remainingTokens = contextWindow - estimatedUsed;
+  const remainingPct = remainingTokens / contextWindow;
+  return {
+    contextWindow,
+    estimatedUsed,
+    remainingTokens,
+    remainingPct,
+    shouldCompact: estimatedUsed / contextWindow >= compactThreshold
+  };
+}
+async function compactConversation(messages, opts = {}) {
+  const keepFirst = opts.keepFirst ?? 2;
+  const keepLast = opts.keepLast ?? 6;
+  const targetTokens = opts.targetTokens ?? 2e3;
+  if (messages.length <= keepFirst + keepLast) {
+    return messages;
+  }
+  const head = messages.slice(0, keepFirst);
+  const middle = messages.slice(keepFirst, messages.length - keepLast);
+  const tail = messages.slice(-keepLast);
+  if (middle.length === 0) return messages;
+  const middleText = middle.map((m) => {
+    const role = m.role.toUpperCase();
+    const text = m.content.slice(0, 2e3);
+    return `[${role}] ${text}`;
+  }).join("\n\n");
+  let summary;
+  if (opts.summarizer) {
+    const prompt = `Summarize this conversation segment concisely, preserving key decisions, file changes, errors, and outcomes. Focus on what was done and what state things are in now:
+
+${middleText}`;
+    summary = await opts.summarizer(prompt, targetTokens);
+  } else {
+    summary = extractiveCompress(middle, targetTokens);
+  }
+  const summaryMessage = {
+    role: "assistant",
+    content: `[Context Summary \u2014 ${middle.length} earlier messages compressed]
+${summary}`,
+    isCompacted: true
+  };
+  return [...head, summaryMessage, ...tail];
+}
+function extractiveCompress(messages, targetTokens) {
+  const maxChars = targetTokens * CHARS_PER_TOKEN;
+  const lines = [];
+  for (const msg of messages) {
+    const role = msg.role === "assistant" ? "A" : "U";
+    const content = msg.content || "";
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.length < 5) continue;
+      let priority = 1;
+      if (/error|fail|exception/i.test(trimmed)) priority = 5;
+      if (/\.(ts|js|py|go|rs|tsx|jsx|json)/.test(trimmed)) priority = 3;
+      if (/wrote|created|edited|deleted|fixed/i.test(trimmed)) priority = 4;
+      if (/→|✓|✗|COMPLETE|OK:|FAIL:/i.test(trimmed)) priority = 3;
+      if (/decision|chose|decided|because/i.test(trimmed)) priority = 4;
+      lines.push({ text: `[${role}] ${trimmed}`, priority });
+    }
+  }
+  lines.sort((a, b) => b.priority - a.priority);
+  let result2 = "";
+  for (const line of lines) {
+    if (result2.length + line.text.length > maxChars) break;
+    result2 += line.text + "\n";
+  }
+  return result2 || "[No significant content to summarize]";
+}
 function adaptiveCompressionRatio(totalTurns, contextUsagePct) {
   if (contextUsagePct < 0.5) {
     return { firstN: 5, lastN: 8 };
@@ -4016,14 +4286,584 @@ var init_token_compaction = __esm({
   }
 });
 
+// src/execution/transcript.ts
+var ExecutionTranscript;
+var init_transcript = __esm({
+  "src/execution/transcript.ts"() {
+    "use strict";
+    ExecutionTranscript = class {
+      constructor() {
+        this._entries = [];
+        this._frozen = false;
+      }
+      /** Append a tool call entry. Throws if transcript is frozen. */
+      record(entry) {
+        if (this._frozen) throw new Error("Transcript is frozen \u2014 cannot append after completion");
+        this._entries.push(Object.freeze(entry));
+      }
+      /** Freeze the transcript — no more entries can be added. */
+      freeze() {
+        this._frozen = true;
+      }
+      /** Read-only access to all entries. */
+      get entries() {
+        return this._entries;
+      }
+      get length() {
+        return this._entries.length;
+      }
+      /** All unique tool names used. */
+      get toolsUsed() {
+        return [...new Set(this._entries.map((e) => e.toolName))];
+      }
+      /** Count of failed tool calls. */
+      get failedCalls() {
+        return this._entries.filter((e) => !e.success).length;
+      }
+      /** Total duration of all tool calls. */
+      get totalDurationMs() {
+        return this._entries.reduce((sum, e) => sum + e.durationMs, 0);
+      }
+      /** Files that were read (from read_file/read_many_files calls). */
+      get filesRead() {
+        const files = /* @__PURE__ */ new Set();
+        for (const e of this._entries) {
+          if (!e.success) continue;
+          if (e.toolName === "read_file" && e.params.file_path) {
+            files.add(e.params.file_path);
+          }
+          if (e.toolName === "read_many_files" && e.params.include) {
+            files.add(e.params.include);
+          }
+        }
+        return files;
+      }
+      /** Files that were edited (replace/edit/append_file). */
+      get filesEdited() {
+        const files = /* @__PURE__ */ new Set();
+        const editTools = /* @__PURE__ */ new Set(["replace", "edit", "append_file"]);
+        for (const e of this._entries) {
+          if (!e.success) continue;
+          if (editTools.has(e.toolName) && e.params.file_path) {
+            files.add(e.params.file_path);
+          }
+        }
+        return files;
+      }
+      /** Files that were written (write_file — new files only). */
+      get filesWritten() {
+        const files = /* @__PURE__ */ new Set();
+        for (const e of this._entries) {
+          if (!e.success) continue;
+          if (e.toolName === "write_file" && e.params.file_path) {
+            files.add(e.params.file_path);
+          }
+        }
+        return files;
+      }
+      /** Files edited without a prior read_file call. */
+      get unreadEdits() {
+        const readFiles = this.filesRead;
+        const edited = this.filesEdited;
+        return [...edited].filter((f) => !readFiles.has(f));
+      }
+      /** Shell commands that failed (non-zero exit or error). */
+      get failedShellCommands() {
+        return this._entries.filter(
+          (e) => (e.toolName === "run_shell_command" || e.toolName === "shell" || e.toolName === "run_cmd") && !e.success
+        );
+      }
+      /** Serialize transcript to JSONL string for persistence. */
+      toJSONL() {
+        return this._entries.map((e) => JSON.stringify(e)).join("\n");
+      }
+      /** Summary stats for logging. */
+      toSummary() {
+        return {
+          totalCalls: this._entries.length,
+          failedCalls: this.failedCalls,
+          toolsUsed: this.toolsUsed,
+          filesRead: this.filesRead.size,
+          filesEdited: this.filesEdited.size,
+          filesWritten: this.filesWritten.size,
+          unreadEdits: this.unreadEdits,
+          totalDurationMs: this.totalDurationMs
+        };
+      }
+    };
+  }
+});
+
+// src/auth/oauth-keychain.ts
+import { execFile as execFile2 } from "node:child_process";
+import { promisify as promisify2 } from "node:util";
+import { userInfo } from "node:os";
+async function readFromKeychain() {
+  if (process.platform !== "darwin") return null;
+  try {
+    let stdout = "";
+    const username = userInfo().username;
+    for (const acct of [username, "unknown"]) {
+      try {
+        const result2 = await execFileAsync2("security", [
+          "find-generic-password",
+          "-a",
+          acct,
+          "-s",
+          KEYCHAIN_SERVICE,
+          "-w"
+        ], { timeout: 5e3 });
+        const parsed = JSON.parse(result2.stdout.trim() || "{}");
+        if (parsed.claudeAiOauth?.accessToken) {
+          stdout = result2.stdout;
+          break;
+        }
+      } catch {
+      }
+    }
+    if (!stdout) {
+      const result2 = await execFileAsync2("security", [
+        "find-generic-password",
+        "-s",
+        KEYCHAIN_SERVICE,
+        "-w"
+      ], { timeout: 5e3 });
+      stdout = result2.stdout;
+    }
+    const raw = stdout.trim();
+    if (!raw) return null;
+    let jsonStr;
+    if (raw.startsWith("{")) {
+      jsonStr = raw;
+    } else {
+      jsonStr = Buffer.from(raw, "hex").toString("utf8");
+    }
+    const data = JSON.parse(jsonStr);
+    const oauth = data.claudeAiOauth;
+    if (!oauth?.accessToken) return null;
+    return oauth;
+  } catch {
+    return null;
+  }
+}
+async function refreshToken(currentTokens) {
+  if (!currentTokens.refreshToken) return null;
+  try {
+    const response = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: currentTokens.refreshToken,
+        client_id: CLIENT_ID
+      }),
+      signal: AbortSignal.timeout(1e4)
+    });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const data = await response.json();
+    if (!data.access_token) return null;
+    const refreshed = {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || currentTokens.refreshToken,
+      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null,
+      scopes: data.scope ? data.scope.split(" ") : currentTokens.scopes,
+      subscriptionType: currentTokens.subscriptionType,
+      rateLimitTier: currentTokens.rateLimitTier
+    };
+    return refreshed;
+  } catch (err) {
+    console.error(`[OAuth] Token refresh error: ${err.message}`);
+    return null;
+  }
+}
+function isTokenExpired(tokens) {
+  if (!tokens.expiresAt) return false;
+  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS;
+}
+async function getOAuthToken() {
+  if (_cachedTokens && Date.now() - _cacheTimestamp < CACHE_TTL_MS) {
+    if (!isTokenExpired(_cachedTokens)) return _cachedTokens;
+  }
+  let tokens = await readFromKeychain();
+  if (!tokens) return null;
+  if (isTokenExpired(tokens)) {
+    if (!_refreshInFlight) {
+      _refreshInFlight = refreshToken(tokens).finally(() => {
+        _refreshInFlight = null;
+      });
+    }
+    const refreshed = await _refreshInFlight;
+    if (refreshed) {
+      tokens = refreshed;
+    } else {
+    }
+  }
+  _cachedTokens = tokens;
+  _cacheTimestamp = Date.now();
+  return tokens;
+}
+async function forceRefreshOAuthToken() {
+  _cachedTokens = null;
+  _cacheTimestamp = 0;
+  const tokens = await readFromKeychain();
+  if (!tokens) return null;
+  if (tokens.refreshToken) {
+    if (!_refreshInFlight) {
+      _refreshInFlight = refreshToken(tokens).finally(() => {
+        _refreshInFlight = null;
+      });
+    }
+    const refreshed = await _refreshInFlight;
+    if (refreshed) {
+      _cachedTokens = refreshed;
+      _cacheTimestamp = Date.now();
+      return refreshed;
+    }
+  }
+  _cachedTokens = tokens;
+  _cacheTimestamp = Date.now();
+  return tokens;
+}
+var execFileAsync2, KEYCHAIN_SERVICE, TOKEN_EXPIRY_BUFFER_MS, CACHE_TTL_MS, TOKEN_URL, CLIENT_ID, _cachedTokens, _cacheTimestamp, _refreshInFlight;
+var init_oauth_keychain = __esm({
+  "src/auth/oauth-keychain.ts"() {
+    "use strict";
+    execFileAsync2 = promisify2(execFile2);
+    KEYCHAIN_SERVICE = "Claude Code-credentials";
+    TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1e3;
+    CACHE_TTL_MS = 3e4;
+    TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+    CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+    _cachedTokens = null;
+    _cacheTimestamp = 0;
+    _refreshInFlight = null;
+  }
+});
+
+// src/auth/openai-oauth.ts
+import { readFile as readFile7, access as access3 } from "node:fs/promises";
+import { constants as constants3 } from "node:fs";
+import { join as join9 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+async function fileExists(path3) {
+  try {
+    await access3(path3, constants3.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function readTokenFile() {
+  for (const tokenPath of TOKEN_PATHS) {
+    if (!await fileExists(tokenPath)) continue;
+    try {
+      const raw = await readFile7(tokenPath, "utf8");
+      const data = JSON.parse(raw);
+      const codexEntry = data["openai-codex"] || data["codex"] || data["openai"];
+      if (codexEntry?.access) {
+        return {
+          accessToken: codexEntry.access,
+          refreshToken: codexEntry.refresh || null,
+          expiresAt: codexEntry.expires || null
+        };
+      }
+      if (data.access_token) {
+        return {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token || null,
+          expiresAt: data.expires_at || data.expires || null
+        };
+      }
+      if (data.token) {
+        return {
+          accessToken: data.token,
+          refreshToken: data.refresh_token || null,
+          expiresAt: data.expires_at || null
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+async function refreshToken2(current) {
+  if (!current.refreshToken) return null;
+  try {
+    const response = await fetch(TOKEN_URL2, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: current.refreshToken,
+        client_id: CLIENT_ID2
+      }).toString(),
+      signal: AbortSignal.timeout(1e4)
+    });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[OpenAI OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const data = await response.json();
+    if (!data.access_token) return null;
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || current.refreshToken,
+      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null
+    };
+  } catch (err) {
+    console.error(`[OpenAI OAuth] Token refresh error: ${err.message}`);
+    return null;
+  }
+}
+function isTokenExpired2(tokens) {
+  if (!tokens.expiresAt) return false;
+  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS2;
+}
+async function getOpenAIOAuthToken() {
+  if (_cachedTokens2 && Date.now() - _cacheTimestamp2 < CACHE_TTL_MS2) {
+    if (!isTokenExpired2(_cachedTokens2)) return _cachedTokens2;
+  }
+  let tokens = await readTokenFile();
+  if (!tokens) return null;
+  if (isTokenExpired2(tokens)) {
+    if (!_refreshInFlight2) {
+      _refreshInFlight2 = refreshToken2(tokens).finally(() => {
+        _refreshInFlight2 = null;
+      });
+    }
+    const refreshed = await _refreshInFlight2;
+    if (refreshed) {
+      tokens = refreshed;
+    }
+  }
+  _cachedTokens2 = tokens;
+  _cacheTimestamp2 = Date.now();
+  return tokens;
+}
+async function forceRefreshOpenAIOAuth() {
+  _cachedTokens2 = null;
+  _cacheTimestamp2 = 0;
+  const tokens = await readTokenFile();
+  if (!tokens) return null;
+  if (tokens.refreshToken) {
+    if (!_refreshInFlight2) {
+      _refreshInFlight2 = refreshToken2(tokens).finally(() => {
+        _refreshInFlight2 = null;
+      });
+    }
+    const refreshed = await _refreshInFlight2;
+    if (refreshed) {
+      _cachedTokens2 = refreshed;
+      _cacheTimestamp2 = Date.now();
+      return refreshed;
+    }
+  }
+  _cachedTokens2 = tokens;
+  _cacheTimestamp2 = Date.now();
+  return tokens;
+}
+var TOKEN_EXPIRY_BUFFER_MS2, CACHE_TTL_MS2, CLIENT_ID2, TOKEN_URL2, OPENAI_CODEX_API_URL, TOKEN_PATHS, _cachedTokens2, _cacheTimestamp2, _refreshInFlight2;
+var init_openai_oauth = __esm({
+  "src/auth/openai-oauth.ts"() {
+    "use strict";
+    TOKEN_EXPIRY_BUFFER_MS2 = 5 * 60 * 1e3;
+    CACHE_TTL_MS2 = 3e4;
+    CLIENT_ID2 = "app_EMoamEEZ73f0CkXaXp7hrann";
+    TOKEN_URL2 = "https://auth.openai.com/oauth/token";
+    OPENAI_CODEX_API_URL = "https://chatgpt.com/backend-api/codex/responses";
+    TOKEN_PATHS = [
+      join9(homedir2(), ".codex", "auth.json"),
+      join9(homedir2(), ".local", "share", "opencode", "auth.json"),
+      join9(homedir2(), ".codex-auth", "auth.json")
+    ];
+    _cachedTokens2 = null;
+    _cacheTimestamp2 = 0;
+    _refreshInFlight2 = null;
+  }
+});
+
+// src/auth/gemini-oauth.ts
+import { readFile as readFile8, access as access4 } from "node:fs/promises";
+import { constants as constants4 } from "node:fs";
+import { join as join10 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+async function fileExists2(path3) {
+  try {
+    await access4(path3, constants4.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function readTokenFiles() {
+  if (await fileExists2(GEMINI_CLI_PATH)) {
+    try {
+      const raw = await readFile8(GEMINI_CLI_PATH, "utf8");
+      const data = JSON.parse(raw);
+      if (data.access_token) {
+        return {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token || null,
+          expiresAt: data.expiry_date || null,
+          clientId: GEMINI_CLI_CLIENT_ID,
+          clientSecret: GEMINI_CLI_CLIENT_SECRET
+        };
+      }
+    } catch {
+    }
+  }
+  if (await fileExists2(ADC_PATH)) {
+    try {
+      const raw = await readFile8(ADC_PATH, "utf8");
+      const data = JSON.parse(raw);
+      if (data.refresh_token && data.client_id) {
+        const refreshed = await exchangeRefreshToken(
+          data.refresh_token,
+          data.client_id,
+          data.client_secret
+        );
+        if (refreshed) {
+          return {
+            ...refreshed,
+            clientId: data.client_id,
+            clientSecret: data.client_secret
+          };
+        }
+      }
+      if (data.access_token) {
+        return {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token || null,
+          expiresAt: null,
+          clientId: data.client_id || null,
+          clientSecret: data.client_secret || null
+        };
+      }
+    } catch {
+    }
+  }
+  return null;
+}
+async function exchangeRefreshToken(refreshToken3, clientId, clientSecret) {
+  try {
+    const response = await fetch(TOKEN_URL3, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken3,
+        client_id: clientId,
+        client_secret: clientSecret
+      }).toString(),
+      signal: AbortSignal.timeout(1e4)
+    });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[Gemini OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const data = await response.json();
+    if (!data.access_token) return null;
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || refreshToken3,
+      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null
+    };
+  } catch (err) {
+    console.error(`[Gemini OAuth] Token exchange error: ${err.message}`);
+    return null;
+  }
+}
+async function refreshTokens(current) {
+  if (!current.refreshToken) return null;
+  const clientId = current.clientId || GEMINI_CLI_CLIENT_ID;
+  const clientSecret = current.clientSecret || GEMINI_CLI_CLIENT_SECRET;
+  const result2 = await exchangeRefreshToken(current.refreshToken, clientId, clientSecret);
+  if (!result2) return null;
+  return {
+    ...result2,
+    clientId,
+    clientSecret
+  };
+}
+function isTokenExpired3(tokens) {
+  if (!tokens.expiresAt) return false;
+  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS3;
+}
+async function getGeminiOAuthToken() {
+  if (_cachedTokens3 && Date.now() - _cacheTimestamp3 < CACHE_TTL_MS3) {
+    if (!isTokenExpired3(_cachedTokens3)) return _cachedTokens3;
+  }
+  let tokens = await readTokenFiles();
+  if (!tokens) return null;
+  if (isTokenExpired3(tokens)) {
+    if (!_refreshInFlight3) {
+      _refreshInFlight3 = refreshTokens(tokens).finally(() => {
+        _refreshInFlight3 = null;
+      });
+    }
+    const refreshed = await _refreshInFlight3;
+    if (refreshed) {
+      tokens = refreshed;
+    }
+  }
+  _cachedTokens3 = tokens;
+  _cacheTimestamp3 = Date.now();
+  return tokens;
+}
+async function forceRefreshGeminiOAuth() {
+  _cachedTokens3 = null;
+  _cacheTimestamp3 = 0;
+  const tokens = await readTokenFiles();
+  if (!tokens) return null;
+  if (tokens.refreshToken) {
+    if (!_refreshInFlight3) {
+      _refreshInFlight3 = refreshTokens(tokens).finally(() => {
+        _refreshInFlight3 = null;
+      });
+    }
+    const refreshed = await _refreshInFlight3;
+    if (refreshed) {
+      _cachedTokens3 = refreshed;
+      _cacheTimestamp3 = Date.now();
+      return refreshed;
+    }
+  }
+  _cachedTokens3 = tokens;
+  _cacheTimestamp3 = Date.now();
+  return tokens;
+}
+var TOKEN_EXPIRY_BUFFER_MS3, CACHE_TTL_MS3, TOKEN_URL3, GEMINI_CLI_CLIENT_ID, GEMINI_CLI_CLIENT_SECRET, ADC_PATH, GEMINI_CLI_PATH, _cachedTokens3, _cacheTimestamp3, _refreshInFlight3;
+var init_gemini_oauth = __esm({
+  "src/auth/gemini-oauth.ts"() {
+    "use strict";
+    TOKEN_EXPIRY_BUFFER_MS3 = 5 * 60 * 1e3;
+    CACHE_TTL_MS3 = 3e4;
+    TOKEN_URL3 = "https://oauth2.googleapis.com/token";
+    GEMINI_CLI_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
+    GEMINI_CLI_CLIENT_SECRET = "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";
+    ADC_PATH = join10(homedir3(), ".config", "gcloud", "application_default_credentials.json");
+    GEMINI_CLI_PATH = join10(homedir3(), ".gemini", "oauth_creds.json");
+    _cachedTokens3 = null;
+    _cacheTimestamp3 = 0;
+    _refreshInFlight3 = null;
+  }
+});
+
 // src/collections/index.ts
 var collections_exports = {};
 __export(collections_exports, {
   buildCollectionIndex: () => buildCollectionIndex,
   searchCollection: () => searchCollection
 });
-import { readdir as readdir3, readFile as readFile7, stat as stat3 } from "node:fs/promises";
-import { extname as extname2, join as join9, relative as relative2, resolve as resolve5 } from "node:path";
+import { readdir as readdir3, readFile as readFile9, stat as stat3 } from "node:fs/promises";
+import { extname as extname2, join as join11, relative as relative2, resolve as resolve5 } from "node:path";
 function tokenize(text) {
   return text.toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 1);
 }
@@ -4095,7 +4935,7 @@ async function walkDocs(rootDir, includeCode = false) {
     }
     for (const entry of entries) {
       if (IGNORED_DIRS.has(entry)) continue;
-      const fullPath = join9(dir, entry);
+      const fullPath = join11(dir, entry);
       let st;
       try {
         st = await stat3(fullPath);
@@ -4130,7 +4970,7 @@ async function buildCollectionIndex(paths, options = {}) {
     for (const file of files) {
       let content;
       try {
-        content = await readFile7(file, "utf8");
+        content = await readFile9(file, "utf8");
       } catch {
         continue;
       }
@@ -4464,8 +5304,62 @@ ${summary}` },
   }
   return messages;
 }
-function resolveProvider(modelOverride, preferTier) {
+async function resolveProvider(modelOverride, preferTier) {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || "").trim().toLowerCase();
+  if (process.env.CREW_OAUTH === "true") {
+    const wantsClaude = !effectiveModel || effectiveModel.includes("claude") || effectiveModel.includes("anthropic");
+    if (wantsClaude) {
+      try {
+        const oauth = await getOAuthToken();
+        if (oauth?.accessToken) {
+          const oauthModel = effectiveModel && effectiveModel.includes("claude") ? modelOverride || process.env.CREW_EXECUTION_MODEL || "claude-sonnet-4-20250514" : "claude-sonnet-4-20250514";
+          return {
+            key: oauth.accessToken,
+            model: oauthModel,
+            driver: "anthropic",
+            id: `anthropic-oauth-${oauth.subscriptionType || "unknown"}`,
+            isOAuth: true
+          };
+        }
+      } catch {
+      }
+    }
+    const wantsOpenAI = !effectiveModel || effectiveModel.includes("gpt") || effectiveModel.includes("openai") || effectiveModel.includes("codex");
+    if (wantsOpenAI) {
+      try {
+        const oauth = await getOpenAIOAuthToken();
+        if (oauth?.accessToken) {
+          const oauthModel = effectiveModel && (effectiveModel.includes("gpt") || effectiveModel.includes("codex")) ? modelOverride || process.env.CREW_EXECUTION_MODEL || "gpt-4.1" : "gpt-4.1";
+          return {
+            key: oauth.accessToken,
+            model: oauthModel,
+            driver: "openai",
+            apiUrl: OPENAI_CODEX_API_URL,
+            id: "openai-oauth-codex",
+            isOAuth: true
+          };
+        }
+      } catch {
+      }
+    }
+    const wantsGemini = !effectiveModel || effectiveModel.includes("gemini") || effectiveModel.includes("google");
+    if (wantsGemini) {
+      try {
+        const oauth = await getGeminiOAuthToken();
+        if (oauth?.accessToken) {
+          const oauthModel = effectiveModel && effectiveModel.includes("gemini") ? modelOverride || process.env.CREW_EXECUTION_MODEL || "gemini-2.5-flash" : "gemini-2.5-flash";
+          return {
+            key: oauth.accessToken,
+            model: oauthModel,
+            driver: "gemini",
+            id: "gemini-oauth-adc",
+            isOAuth: true
+          };
+        }
+      } catch {
+      }
+    }
+  }
   if (effectiveModel) {
     for (const p of PROVIDER_ORDER) {
       const key = process.env[p.envKey];
@@ -4489,7 +5383,7 @@ function resolveProvider(modelOverride, preferTier) {
   }
   return null;
 }
-async function executeStreamingGeminiTurn(fullTask, tools, key, model, systemPrompt, stream, images, historyMessages) {
+async function executeStreamingGeminiTurn(fullTask, tools, key, model, systemPrompt, stream, images, historyMessages, isOAuth) {
   const functionDeclarations = tools.map((t) => ({
     name: t.name,
     description: t.description,
@@ -4512,10 +5406,14 @@ ${fullTask}` }];
     ...historyMessages?.length ? [{ role: "user", parts: [{ text: "Continue executing the task based on the results above." }] }] : []
   ];
   const endpoint = stream ? "streamGenerateContent" : "generateContent";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${endpoint}?key=${encodeURIComponent(key)}${stream ? "&alt=sse" : ""}`;
+  const url = isOAuth ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:${endpoint}${stream ? "?alt=sse" : ""}` : `https://generativelanguage.googleapis.com/v1beta/models/${model}:${endpoint}?key=${encodeURIComponent(key)}${stream ? "&alt=sse" : ""}`;
+  const headers = { "Content-Type": "application/json" };
+  if (isOAuth) {
+    headers["Authorization"] = `Bearer ${key}`;
+  }
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     signal: AbortSignal.timeout(12e4),
     body: JSON.stringify({
       contents,
@@ -4524,6 +5422,22 @@ ${fullTask}` }];
     })
   });
   if (!res.ok) {
+    if (res.status === 401 && isOAuth) {
+      const refreshed = await forceRefreshGeminiOAuth();
+      if (refreshed?.accessToken && refreshed.accessToken !== key) {
+        return executeStreamingGeminiTurn(
+          fullTask,
+          tools,
+          refreshed.accessToken,
+          model,
+          systemPrompt,
+          stream,
+          images,
+          historyMessages,
+          true
+        );
+      }
+    }
     const err = await res.text();
     throw new Error(`Gemini API ${res.status}: ${err.slice(0, 300)}`);
   }
@@ -4591,7 +5505,7 @@ ${fullTask}` }];
   const textPart = parts.find((p) => p.text);
   return { response: textPart?.text ?? "", status: "COMPLETE", cost };
 }
-async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model, systemPrompt, stream, images, historyMessages) {
+async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model, systemPrompt, stream, images, historyMessages, isOAuth) {
   let userContent = fullTask;
   if (images?.length) {
     const parts = [{ type: "text", text: fullTask }];
@@ -4622,6 +5536,9 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
     max_tokens: 8192,
     stream
   };
+  if (isOAuth && apiUrl === OPENAI_CODEX_API_URL) {
+    body.store = false;
+  }
   const res = await fetch(apiUrl, {
     method: "POST",
     headers: {
@@ -4632,6 +5549,23 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
     body: JSON.stringify(body)
   });
   if (!res.ok) {
+    if (res.status === 401 && isOAuth) {
+      const refreshed = await forceRefreshOpenAIOAuth();
+      if (refreshed?.accessToken && refreshed.accessToken !== apiKey) {
+        return executeStreamingOpenAITurn(
+          fullTask,
+          tools,
+          apiUrl,
+          refreshed.accessToken,
+          model,
+          systemPrompt,
+          stream,
+          images,
+          historyMessages,
+          true
+        );
+      }
+    }
     const err = await res.text();
     throw new Error(`OpenAI API ${res.status}: ${err.slice(0, 300)}`);
   }
@@ -4709,7 +5643,79 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
   }
   return { response: msg?.content || "", status: "COMPLETE", cost: 0 };
 }
-async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, systemPrompt, stream, images, historyMessages) {
+async function executeAnthropicSDKTurn(fullTask, tools, authToken, model, systemPrompt, images, historyMessages) {
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const client = new Anthropic({
+    authToken,
+    apiKey: null,
+    defaultHeaders: { "x-app": "cli" }
+  });
+  let userContent = fullTask;
+  if (images?.length) {
+    const parts = [{ type: "text", text: fullTask }];
+    for (const img of images) {
+      parts.push({
+        type: "image",
+        source: { type: "base64", media_type: img.mimeType, data: img.data }
+      });
+    }
+    userContent = parts;
+  }
+  const anthropicTools = tools.map((t) => ({
+    name: t.name,
+    description: t.description || "",
+    input_schema: t.parameters
+  }));
+  try {
+    const response = await client.beta.messages.create({
+      model,
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [
+        { role: "user", content: userContent },
+        ...historyMessages || []
+      ],
+      temperature: 0.3,
+      tools: anthropicTools,
+      betas: [
+        "oauth-2025-04-20",
+        // Required for OAuth auth
+        "interleaved-thinking-2025-05-14",
+        // Think between tool calls
+        "prompt-caching-2025-04-11"
+        // Better prompt caching
+      ],
+      stream: false
+    });
+    const usage = response.usage || {};
+    const cost = ((usage.input_tokens || 0) * 3 + (usage.output_tokens || 0) * 15) / 1e6;
+    const content = response.content || [];
+    const toolUseBlocks = content.filter((b) => b.type === "tool_use");
+    const textBlocks = content.filter((b) => b.type === "text");
+    const textResponse = textBlocks.map((b) => b.text).join("\n");
+    if (textResponse) process.stdout.write(textResponse);
+    if (toolUseBlocks.length > 0) {
+      const toolCalls = toolUseBlocks.map((b) => ({
+        tool: b.name,
+        params: b.input || {}
+      }));
+      return { toolCalls, response: textResponse, cost };
+    }
+    return { response: textResponse, status: "COMPLETE", cost };
+  } catch (err) {
+    if (err?.status === 401) {
+      const refreshed = await forceRefreshOAuthToken();
+      if (refreshed?.accessToken && refreshed.accessToken !== authToken) {
+        return executeAnthropicSDKTurn(fullTask, tools, refreshed.accessToken, model, systemPrompt, images, historyMessages);
+      }
+    }
+    throw err;
+  }
+}
+async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, systemPrompt, stream, images, historyMessages, isOAuth) {
+  if (isOAuth) {
+    return executeAnthropicSDKTurn(fullTask, tools, apiKey, model, systemPrompt, images, historyMessages);
+  }
   let userContent = fullTask;
   if (images?.length) {
     const parts = [{ type: "text", text: fullTask }];
@@ -4739,17 +5745,34 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
     tools: anthropicTools,
     stream
   };
+  const authHeaders = { "x-api-key": apiKey };
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
+      ...authHeaders,
       "anthropic-version": "2023-06-01"
     },
     signal: AbortSignal.timeout(12e4),
     body: JSON.stringify(body)
   });
   if (!res.ok) {
+    if (res.status === 401 && isOAuth) {
+      const refreshed = await forceRefreshOAuthToken();
+      if (refreshed?.accessToken && refreshed.accessToken !== apiKey) {
+        return executeStreamingAnthropicTurn(
+          fullTask,
+          tools,
+          refreshed.accessToken,
+          model,
+          systemPrompt,
+          stream,
+          images,
+          historyMessages,
+          true
+        );
+      }
+    }
     const err = await res.text();
     throw new Error(`Anthropic API ${res.status}: ${err.slice(0, 300)}`);
   }
@@ -4830,31 +5853,33 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
   return { response: textResponse, status: "COMPLETE", cost };
 }
 async function executeLLMTurn(task, tools, history, model, systemPrompt, stream, images) {
-  const resolved = resolveProvider(model);
+  const resolved = await resolveProvider(model);
   if (!resolved) {
     throw new Error(
-      'No LLM providers available. Set at least one API key:\n  \u2192 GEMINI_API_KEY (free tier \u2014 https://aistudio.google.com/apikey)\n  \u2192 GROQ_API_KEY   (free \u2014 https://console.groq.com/keys)\n  \u2192 XAI_API_KEY    ($5/mo free credits \u2014 https://console.x.ai)\nOr any of: OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY\nRun "crew doctor" to check your setup.'
+      'No LLM providers available. Use OAuth (free with subscriptions) or set an API key:\n  OAuth (auto-detected, no config needed):\n  \u2192 Claude Code login  \u2192 uses Claude Max/Pro subscription\n  \u2192 Codex CLI login    \u2192 uses ChatGPT Plus/Pro subscription\n  \u2192 gcloud auth login  \u2192 uses Google account for Gemini\n  API keys (fallback):\n  \u2192 GEMINI_API_KEY (free tier \u2014 https://aistudio.google.com/apikey)\n  \u2192 GROQ_API_KEY   (free \u2014 https://console.groq.com/keys)\n  \u2192 XAI_API_KEY    ($5/mo free credits \u2014 https://console.x.ai)\nOr any of: OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY\nRun "crew doctor" to check your setup.'
     );
   }
-  const { key, model: effectiveModel, driver, apiUrl, id } = resolved;
+  const { key, model: effectiveModel, driver, apiUrl, id, isOAuth } = resolved;
+  const authBadge = isOAuth ? "OAuth" : "API";
+  console.error(`\x1B[2m[${effectiveModel} ${authBadge}]\x1B[0m`);
   if (driver === "gemini") {
     const historyMsgs = historyToGeminiContents(history, effectiveModel);
-    return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
+    return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
   }
   if (driver === "anthropic") {
     const historyMsgs = historyToAnthropicMessages(history);
-    return executeStreamingAnthropicTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
+    return executeStreamingAnthropicTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
   }
   if (driver === "openai" || driver === "openrouter") {
     const historyMsgs = historyToOpenAIMessages(history, effectiveModel);
-    return executeStreamingOpenAITurn(task, tools, apiUrl, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
+    return executeStreamingOpenAITurn(task, tools, apiUrl, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
   }
   throw new Error(`Unsupported driver: ${driver}`);
 }
 async function buildRepoMapContext(task, projectDir) {
   try {
-    const { homedir: homedir12 } = await import("node:os");
-    if (projectDir === homedir12() || projectDir === "/") return "";
+    const { homedir: homedir14 } = await import("node:os");
+    if (projectDir === homedir14() || projectDir === "/") return "";
     const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
     const index = await buildCollectionIndex2([projectDir], { includeCode: true });
     if (index.chunkCount === 0) return "";
@@ -4877,6 +5902,12 @@ async function executeToolWithRetry(adapter, name, params, verbose) {
     const result2 = await adapter.executeTool(name, params);
     if (result2.success) {
       return { output: result2.output ?? "", success: true };
+    }
+    if (result2.handled === false && result2.recovery) {
+      const msg = result2.recovery ? `${result2.error}
+
+[RECOVERY HINT]: ${result2.recovery}` : result2.error || "Tool blocked";
+      return { output: msg, success: false, error: result2.error, handled: false, recovery: result2.recovery };
     }
     if (attempt < MAX_RETRIES) {
       if (verbose) {
@@ -4901,16 +5932,17 @@ ${freshRead.output.slice(0, 3e3)}`,
       } else if (result2.error?.includes("No such file") && params.file_path) {
         params.file_path = params.file_path.replace(/^\.\//, "");
       } else {
-        return { output: result2.output ?? "", success: false, error: result2.error };
+        return { output: result2.output ?? "", success: false, error: result2.error, handled: result2.handled, recovery: result2.recovery };
       }
     } else {
-      return { output: result2.output ?? "", success: false, error: result2.error };
+      return { output: result2.output ?? "", success: false, error: result2.error, handled: result2.handled, recovery: result2.recovery };
     }
   }
   return { output: "", success: false, error: "Max retries exceeded" };
 }
 async function runAgenticWorker(task, sandbox, options = {}) {
-  const adapter = new GeminiToolAdapter(sandbox);
+  const constraintLevel = options.constraintLevel || (options.persona ? constraintLevelForPersona(options.persona) : "full");
+  const adapter = new GeminiToolAdapter(sandbox, constraintLevel);
   const allTools = adapter.getToolDeclarations();
   const systemPrompt = options.systemPrompt || L3_SYSTEM_PROMPT;
   const model = options.model || process.env.CREW_EXECUTION_MODEL || "";
@@ -4919,10 +5951,14 @@ async function runAgenticWorker(task, sandbox, options = {}) {
   const verbose = options.verbose ?? Boolean(process.env.CREW_DEBUG);
   const stream = options.stream ?? !process.env.CREW_NO_STREAM;
   const jit = options.priorDiscoveredFiles?.length ? JITContextTracker.fromPrior(options.priorDiscoveredFiles) : new JITContextTracker();
-  const resolvedProvider = resolveProvider(model, options.tier);
+  const resolvedProvider = await resolveProvider(model, options.tier);
+  if (resolvedProvider) {
+    const authMethod = resolvedProvider.isOAuth ? "OAuth" : "API key";
+    console.error(`\x1B[2m[auth] ${resolvedProvider.model} via ${authMethod} (${resolvedProvider.id})\x1B[0m`);
+  }
   if (verbose) {
     const prov = resolvedProvider ? `${resolvedProvider.id}/${resolvedProvider.model}` : "none";
-    console.log(`[AgenticExecutor] Provider: ${prov} | Stream: ${stream} | Tools: ${allTools.length}`);
+    console.log(`[AgenticExecutor] Provider: ${prov} | Stream: ${stream} | Tools: ${allTools.length} | Constraint: ${constraintLevel}`);
   }
   let enrichedTask = task;
   try {
@@ -4950,6 +5986,7 @@ async function runAgenticWorker(task, sandbox, options = {}) {
   }
   let totalCost = 0;
   const toolsUsed = /* @__PURE__ */ new Set();
+  const transcript = new ExecutionTranscript();
   const executeTool = async (name, params) => {
     toolsUsed.add(name);
     options.onToolCall?.(name, params);
@@ -4957,7 +5994,20 @@ async function runAgenticWorker(task, sandbox, options = {}) {
       const paramStr = JSON.stringify(params).slice(0, 120);
       process.stdout.write(`  \u{1F527} ${name}(${paramStr})...`);
     }
+    const toolStart = Date.now();
     const result3 = await executeToolWithRetry(adapter, name, params, verbose);
+    const durationMs = Date.now() - toolStart;
+    transcript.record({
+      ts: toolStart,
+      toolName: name,
+      params,
+      success: result3.success,
+      outputPreview: (result3.output || result3.error || "").slice(0, 200),
+      durationMs,
+      error: result3.error,
+      handled: result3.handled,
+      recovery: result3.recovery
+    });
     if (name === "read_file" && result3.success && result3.output) {
       const outputLen = result3.output.length;
       if (outputLen > 8e3 && (result3.output.includes("... (truncated)") || result3.output.includes("content truncated"))) {
@@ -4990,6 +6040,28 @@ async function runAgenticWorker(task, sandbox, options = {}) {
         } catch {
         }
       }
+      if (turnCount > 4 && history.length > 8) {
+        const historyText = history.map((h) => JSON.stringify(h)).join("\n");
+        const budget = calculateTokenBudget(
+          [{ content: systemPrompt }, { content: taskWithJIT }, { content: historyText }],
+          model
+        );
+        if (budget.shouldCompact) {
+          const { firstN, lastN } = adaptiveCompressionRatio(history.length, 1 - budget.remainingPct);
+          const historyMsgs = history.map((h) => ({
+            role: "assistant",
+            content: `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 100)}) \u2192 ${typeof h.result === "string" ? h.result.slice(0, 200) : JSON.stringify(h.result || h.error || "").slice(0, 200)}`
+          }));
+          const compacted = await compactConversation(historyMsgs, {
+            keepFirst: firstN,
+            keepLast: lastN,
+            targetTokens: 1e3
+          });
+          if (verbose && compacted.length < historyMsgs.length) {
+            console.log(`  [Compaction] ${historyMsgs.length} \u2192 ${compacted.length} messages (${Math.round(budget.remainingPct * 100)}% context remaining)`);
+          }
+        }
+      }
       const turnImages = turnCount === 1 ? options.images : void 0;
       const turnResult = await executeLLMTurn(taskWithJIT, allTools, history, model, systemPrompt, stream, turnImages);
       totalCost += turnResult.cost || 0;
@@ -5010,6 +6082,7 @@ async function runAgenticWorker(task, sandbox, options = {}) {
       } : void 0
     }
   );
+  transcript.freeze();
   return {
     success: result2.success ?? false,
     output: result2.finalResponse ?? result2.history?.map((h) => {
@@ -5025,7 +6098,9 @@ async function runAgenticWorker(task, sandbox, options = {}) {
     filesDiscovered: jit.fileCount,
     discoveredFiles: jit.toFileList(),
     history: result2.history,
-    stopReason: result2.reason
+    stopReason: result2.reason,
+    transcript,
+    constraintLevel
   };
 }
 var L3_SYSTEM_PROMPT, PROVIDER_ORDER, JITContextTracker, MAX_RETRIES;
@@ -5036,6 +6111,10 @@ var init_agentic_executor = __esm({
     init_crew_adapter();
     init_corrections();
     init_token_compaction();
+    init_transcript();
+    init_oauth_keychain();
+    init_openai_oauth();
+    init_gemini_oauth();
     L3_SYSTEM_PROMPT = `You are a senior AI engineer executing coding tasks autonomously.
 
 ## Cognitive Loop: THINK \u2192 ACT \u2192 OBSERVE
@@ -6398,8 +7477,8 @@ var init_structured_json = __esm({
 });
 
 // src/prompts/dual-l2.ts
-import { mkdir as mkdir5, writeFile as writeFile5, readFile as readFile8 } from "node:fs/promises";
-import { resolve as resolve6, join as join10, relative as relative3 } from "node:path";
+import { mkdir as mkdir5, writeFile as writeFile5, readFile as readFile10 } from "node:fs/promises";
+import { resolve as resolve6, join as join12, relative as relative3 } from "node:path";
 import { execSync as execSync4 } from "node:child_process";
 import { existsSync as existsSync6 } from "node:fs";
 var DualL2Planner;
@@ -6601,10 +7680,10 @@ ${context}`.toLowerCase();
             sections.push(`## Project Structure
 ${paths.join("\n")}`);
           }
-          const pkgPath = join10(cwd, "package.json");
+          const pkgPath = join12(cwd, "package.json");
           if (existsSync6(pkgPath)) {
             try {
-              const pkg = JSON.parse(await readFile8(pkgPath, "utf8"));
+              const pkg = JSON.parse(await readFile10(pkgPath, "utf8"));
               sections.push(`## package.json
 Name: ${pkg.name}
 Version: ${pkg.version}
@@ -6632,7 +7711,7 @@ ${relPaths.join("\n")}`);
           const topFiles = [...relevantFiles].slice(0, 5);
           for (const file of topFiles) {
             try {
-              const content = await readFile8(file, "utf8");
+              const content = await readFile10(file, "utf8");
               const relPath = relative3(cwd, file);
               const lines = content.split("\n");
               const keyLines = lines.filter(
@@ -6676,9 +7755,9 @@ ${gitLog}`);
             sections.push(`## Project Structure
 ${relPaths.join("\n")}`);
           }
-          const pkgPath = join10(cwd, "package.json");
+          const pkgPath = join12(cwd, "package.json");
           if (existsSync6(pkgPath)) {
-            const pkg = await readFile8(pkgPath, "utf8").catch(() => "");
+            const pkg = await readFile10(pkgPath, "utf8").catch(() => "");
             if (pkg) {
               try {
                 const parsed = JSON.parse(pkg);
@@ -6703,7 +7782,7 @@ ${files.join("\n")}`);
           const relevantFiles = this.shellSafe(`grep -rl "${uniqueKeywords[0] || "index"}" ${cwd} --include="*.ts" --include="*.js" --include="*.mjs" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" 2>/dev/null | head -3`);
           if (relevantFiles) {
             for (const file of relevantFiles.split("\n").filter(Boolean).slice(0, 3)) {
-              const content = await readFile8(file, "utf8").catch(() => "");
+              const content = await readFile10(file, "utf8").catch(() => "");
               if (content) {
                 const relPath = relative3(cwd, file);
                 const preview = content.split("\n").slice(0, 80).join("\n");
@@ -6783,13 +7862,13 @@ ${repoContext}` : context;
         const baseDir = process.env.CREW_PIPELINE_ARTIFACT_DIR ? resolve6(process.env.CREW_PIPELINE_ARTIFACT_DIR) : resolve6(process.cwd(), ".crew", "pipeline-artifacts", traceId);
         await mkdir5(baseDir, { recursive: true });
         const files = {
-          pdd: join10(baseDir, "PDD.md"),
-          roadmap: join10(baseDir, "ROADMAP.md"),
-          architecture: join10(baseDir, "ARCH.md"),
-          scaffold: join10(baseDir, "SCAFFOLD.md"),
-          contractTests: join10(baseDir, "CONTRACT-TESTS.md"),
-          definitionOfDone: join10(baseDir, "DOD.md"),
-          goldenBenchmarks: join10(baseDir, "GOLDEN-BENCHMARKS.md")
+          pdd: join12(baseDir, "PDD.md"),
+          roadmap: join12(baseDir, "ROADMAP.md"),
+          architecture: join12(baseDir, "ARCH.md"),
+          scaffold: join12(baseDir, "SCAFFOLD.md"),
+          contractTests: join12(baseDir, "CONTRACT-TESTS.md"),
+          definitionOfDone: join12(baseDir, "DOD.md"),
+          goldenBenchmarks: join12(baseDir, "GOLDEN-BENCHMARKS.md")
         };
         await Promise.all([
           writeFile5(files.pdd, coreResult.pdd, "utf8"),
@@ -7300,7 +8379,7 @@ REJECT: Remote agent personas (crew-coder, crew-qa, etc.) - not available in sta
 // src/pipeline/context-pack.ts
 import { createHash } from "node:crypto";
 import { existsSync as existsSync7, mkdirSync, readFileSync as readFileSync3, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { join as join11, resolve as resolve7 } from "node:path";
+import { join as join13, resolve as resolve7 } from "node:path";
 var ContextPackManager;
 var init_context_pack = __esm({
   "src/pipeline/context-pack.ts"() {
@@ -7316,7 +8395,7 @@ var init_context_pack = __esm({
         this.compactCache();
         const key = this.computePackKey(artifacts);
         const id = `pack-${key.slice(0, 12)}`;
-        const path3 = join11(this.cacheDir, `${key}.json`);
+        const path3 = join13(this.cacheDir, `${key}.json`);
         const nowIso7 = (/* @__PURE__ */ new Date()).toISOString();
         if (existsSync7(path3)) {
           try {
@@ -7425,10 +8504,10 @@ ${c.text}`).join("\n\n");
         const now = Date.now();
         const ttlMs = this.ttlHours * 60 * 60 * 1e3;
         for (const entry of readdirSync(this.cacheDir)) {
-          const full = join11(this.cacheDir, entry);
+          const full = join13(this.cacheDir, entry);
           try {
-            const stat6 = statSync(full);
-            if (now - stat6.mtimeMs > ttlMs) {
+            const stat7 = statSync(full);
+            if (now - stat7.mtimeMs > ttlMs) {
               unlinkSync(full);
             }
           } catch {
@@ -7471,7 +8550,7 @@ ${c.text}`).join("\n\n");
 // src/pipeline/agent-memory.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
 import { existsSync as existsSync8, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join12, resolve as resolve8 } from "node:path";
+import { join as join14, resolve as resolve8 } from "node:path";
 function getPipelineMemory(agentId = "pipeline") {
   if (!_pipelineMemory) {
     _pipelineMemory = new AgentMemory(agentId);
@@ -7639,7 +8718,7 @@ var init_agent_memory = __esm({
         writeFileSync2(path3, JSON.stringify(this.state, null, 2), "utf8");
       }
       getStatePath(agentId) {
-        return join12(this.storageDir, `${agentId}.json`);
+        return join14(this.storageDir, `${agentId}.json`);
       }
       ensureStorageDir() {
         if (!existsSync8(this.storageDir)) {
@@ -7715,12 +8794,12 @@ var init_json_schemas = __esm({
 
 // src/metrics/json-parse.ts
 import { appendFile, mkdir as mkdir6 } from "node:fs/promises";
-import { join as join13, resolve as resolve9 } from "node:path";
+import { join as join15, resolve as resolve9 } from "node:path";
 async function recordJsonParseMetric(entry) {
   try {
     const dir = resolve9(process.cwd(), ".crew");
     await mkdir6(dir, { recursive: true });
-    const path3 = join13(dir, "json-parse-metrics.jsonl");
+    const path3 = join15(dir, "json-parse-metrics.jsonl");
     await appendFile(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
 `, "utf8");
   } catch {
@@ -7737,33 +8816,66 @@ var ORDER, PipelineRunState;
 var init_run_state = __esm({
   "src/pipeline/run-state.ts"() {
     "use strict";
-    ORDER = ["init", "plan", "execute", "validate", "complete"];
+    ORDER = [
+      "init",
+      "scan",
+      "route",
+      "plan",
+      "validate-plan",
+      "execute",
+      "evidence",
+      "validate",
+      "qa",
+      "checkpoint",
+      "complete"
+    ];
     PipelineRunState = class {
       constructor() {
         this.phase = "init";
         this.timeline = [
           { phase: "init", ts: (/* @__PURE__ */ new Date()).toISOString() }
         ];
+        this.phaseStartTime = Date.now();
       }
       transition(next, note) {
+        const now = Date.now();
+        const durationMs = now - this.phaseStartTime;
+        if (this.timeline.length > 0) {
+          this.timeline[this.timeline.length - 1].durationMs = durationMs;
+        }
         if (next === "failed") {
           this.phase = "failed";
           this.timeline.push({ phase: "failed", ts: (/* @__PURE__ */ new Date()).toISOString(), note });
           return;
         }
+        const effectiveNext = next === "validate" ? next : next;
         const currentIdx = ORDER.indexOf(this.phase);
-        const nextIdx = ORDER.indexOf(next);
-        if (currentIdx < 0 || nextIdx < 0 || nextIdx < currentIdx || nextIdx - currentIdx > 1) {
-          throw new Error(`Invalid phase transition: ${this.phase} -> ${next}`);
+        const nextIdx = ORDER.indexOf(effectiveNext);
+        if (currentIdx < 0 || nextIdx < 0 || nextIdx <= currentIdx) {
+          if (nextIdx <= currentIdx) {
+            throw new Error(`Invalid phase transition: ${this.phase} -> ${next} (cannot go backward)`);
+          }
         }
-        this.phase = next;
-        this.timeline.push({ phase: next, ts: (/* @__PURE__ */ new Date()).toISOString(), note });
+        this.phase = effectiveNext;
+        this.phaseStartTime = now;
+        this.timeline.push({ phase: effectiveNext, ts: (/* @__PURE__ */ new Date()).toISOString(), note });
       }
       current() {
         return this.phase;
       }
       getTimeline() {
         return [...this.timeline];
+      }
+      /** Total elapsed time from init to current phase. */
+      totalElapsedMs() {
+        if (this.timeline.length < 2) return 0;
+        const first = new Date(this.timeline[0].ts).getTime();
+        return Date.now() - first;
+      }
+      /** Get timing for a specific phase. */
+      phaseDuration(phase) {
+        const entry = this.timeline.find((e) => e.phase === phase);
+        return entry?.durationMs;
       }
     };
   }
@@ -7952,6 +9064,292 @@ var init_task_envelope = __esm({
   }
 });
 
+// src/execution/qa-gate.ts
+function runDeterministicQA(transcript, options = {}) {
+  const checks = [];
+  const unreadEdits = transcript.unreadEdits;
+  checks.push({
+    name: "read-before-edit",
+    passed: unreadEdits.length === 0,
+    detail: unreadEdits.length > 0 ? `Files edited without prior read: ${unreadEdits.join(", ")}` : void 0
+  });
+  const editedFiles = transcript.filesEdited;
+  const writtenFiles = transcript.filesWritten;
+  const overwrites = [...writtenFiles].filter((f) => editedFiles.has(f));
+  checks.push({
+    name: "no-overwrites",
+    passed: overwrites.length === 0,
+    detail: overwrites.length > 0 ? `Files both written and edited (possible overwrite): ${overwrites.join(", ")}` : void 0
+  });
+  const failedShell = transcript.failedShellCommands;
+  checks.push({
+    name: "shell-success",
+    passed: failedShell.length === 0,
+    detail: failedShell.length > 0 ? `${failedShell.length} shell command(s) failed: ${failedShell.map((e) => e.params.command || "?").join("; ").slice(0, 200)}` : void 0
+  });
+  const maxTurns = options.maxTurns ?? 25;
+  const toolCallCount = transcript.length;
+  const toolBudget = maxTurns * 3;
+  checks.push({
+    name: "within-budget",
+    passed: toolCallCount <= toolBudget,
+    detail: toolCallCount > toolBudget ? `${toolCallCount} tool calls exceeds budget of ${toolBudget} (${maxTurns} turns \xD7 3)` : void 0
+  });
+  if (options.requireFileChanges !== false) {
+    const anyFileChanges = transcript.filesEdited.size > 0 || transcript.filesWritten.size > 0;
+    checks.push({
+      name: "files-changed",
+      passed: anyFileChanges,
+      detail: !anyFileChanges ? "No file edits or writes recorded in transcript" : void 0
+    });
+  }
+  const unhandledErrors = transcript.entries.filter((e) => !e.success && e.handled === false);
+  checks.push({
+    name: "no-unhandled-errors",
+    passed: unhandledErrors.length === 0,
+    detail: unhandledErrors.length > 0 ? `${unhandledErrors.length} unhandled error(s): ${unhandledErrors.map((e) => e.error || "?").join("; ").slice(0, 200)}` : void 0
+  });
+  const failedSignatures = transcript.entries.filter((e) => !e.success).map((e) => `${e.toolName}:${JSON.stringify(e.params)}`);
+  const failedCounts = /* @__PURE__ */ new Map();
+  for (const sig of failedSignatures) {
+    failedCounts.set(sig, (failedCounts.get(sig) || 0) + 1);
+  }
+  const stuckLoops = [...failedCounts.entries()].filter(([, count]) => count >= 3);
+  checks.push({
+    name: "no-stuck-loops",
+    passed: stuckLoops.length === 0,
+    detail: stuckLoops.length > 0 ? `Repeated failing tool calls detected (stuck loop): ${stuckLoops.map(([sig]) => sig.slice(0, 80)).join("; ")}` : void 0
+  });
+  const passed = checks.every((c) => c.passed);
+  const failed = checks.filter((c) => !c.passed);
+  const summary = passed ? `All ${checks.length} QA checks passed` : `${failed.length}/${checks.length} QA checks failed: ${failed.map((c) => c.name).join(", ")}`;
+  return { passed, checks, summary };
+}
+var init_qa_gate = __esm({
+  "src/execution/qa-gate.ts"() {
+    "use strict";
+  }
+});
+
+// src/context/project-context.ts
+import { readFile as readFile11, readdir as readdir5, stat as stat5 } from "node:fs/promises";
+import { join as join16, extname as extname3, relative as relative4 } from "node:path";
+async function buildProjectContext(projectRoot) {
+  const fileTree = [];
+  await walkDir(projectRoot, projectRoot, fileTree, 0, 3, 500);
+  const config = await detectConfig(projectRoot);
+  const techStack = detectTechStack(fileTree, config);
+  const summary = formatContextSummary(projectRoot, techStack, fileTree, config);
+  const ctx = Object.freeze({
+    root: projectRoot,
+    techStack,
+    fileTree: Object.freeze(fileTree),
+    config: Object.freeze(config),
+    summary,
+    builtAt: Date.now()
+  });
+  return ctx;
+}
+async function walkDir(base, dir, entries, depth, maxDepth, maxFiles) {
+  if (depth > maxDepth || entries.length >= maxFiles) return;
+  let dirEntries;
+  try {
+    dirEntries = await readdir5(dir);
+  } catch {
+    return;
+  }
+  for (const name of dirEntries) {
+    if (entries.length >= maxFiles) break;
+    if (name.startsWith(".") && name !== ".gitignore") continue;
+    if (IGNORE_DIRS.has(name)) continue;
+    const fullPath = join16(dir, name);
+    try {
+      const s = await stat5(fullPath);
+      const relPath = relative4(base, fullPath);
+      const ext = extname3(name);
+      if (s.isDirectory()) {
+        entries.push({ path: relPath, type: "dir", size: 0, ext: "" });
+        await walkDir(base, fullPath, entries, depth + 1, maxDepth, maxFiles);
+      } else if (s.isFile() && !IGNORE_EXTS.has(ext.toLowerCase())) {
+        entries.push({ path: relPath, type: "file", size: s.size, ext });
+      }
+    } catch {
+    }
+  }
+}
+async function detectConfig(root) {
+  const config = {};
+  try {
+    const pkg = JSON.parse(await readFile11(join16(root, "package.json"), "utf8"));
+    config.name = pkg.name;
+    config.dependencies = pkg.dependencies;
+    config.devDependencies = pkg.devDependencies;
+    config.scripts = pkg.scripts;
+    if (pkg.packageManager?.startsWith("yarn")) config.packageManager = "yarn";
+    else if (pkg.packageManager?.startsWith("pnpm")) config.packageManager = "pnpm";
+    else if (pkg.packageManager?.startsWith("bun")) config.packageManager = "bun";
+    else config.packageManager = "npm";
+  } catch {
+  }
+  try {
+    await stat5(join16(root, "tsconfig.json"));
+    config.tsconfig = true;
+  } catch {
+    config.tsconfig = false;
+  }
+  try {
+    const gi = await readFile11(join16(root, ".gitignore"), "utf8");
+    config.gitignorePatterns = gi.split("\n").filter((l) => l.trim() && !l.startsWith("#")).slice(0, 20);
+  } catch {
+  }
+  return config;
+}
+function detectTechStack(files, config) {
+  const exts = new Set(files.filter((f) => f.type === "file").map((f) => f.ext.toLowerCase()));
+  const hasTS = exts.has(".ts") || exts.has(".tsx") || config.tsconfig;
+  const hasJS = exts.has(".js") || exts.has(".jsx") || exts.has(".mjs");
+  const hasPy = exts.has(".py");
+  const hasGo = exts.has(".go");
+  const hasRust = exts.has(".rs");
+  const hasJava = exts.has(".java");
+  const hasRuby = exts.has(".rb");
+  const hasPHP = exts.has(".php");
+  const hasHTML = exts.has(".html") || exts.has(".htm");
+  if (hasTS && config.dependencies) return "node-ts";
+  if (hasJS && config.dependencies) return "node-js";
+  if (hasPy) return "python";
+  if (hasGo) return "go";
+  if (hasRust) return "rust";
+  if (hasJava) return "java";
+  if (hasRuby) return "ruby";
+  if (hasPHP) return "php";
+  if (hasHTML && !config.dependencies) return "static-html";
+  if (hasJS && !config.dependencies) return "static-html";
+  return "unknown";
+}
+function formatContextSummary(root, techStack, files, config) {
+  const lines = [];
+  lines.push(`## Project Context (auto-detected, frozen at session start)`);
+  lines.push(`- **Root**: ${root}`);
+  lines.push(`- **Tech stack**: ${techStack}`);
+  lines.push(`- **Files scanned**: ${files.length}`);
+  if (config.name) lines.push(`- **Package**: ${config.name}`);
+  if (config.packageManager) lines.push(`- **Package manager**: ${config.packageManager}`);
+  if (config.tsconfig) lines.push(`- **TypeScript**: yes (tsconfig.json present)`);
+  const allDeps = { ...config.dependencies, ...config.devDependencies };
+  const importantDeps = Object.keys(allDeps).filter(
+    (d) => [
+      "react",
+      "vue",
+      "svelte",
+      "angular",
+      "next",
+      "nuxt",
+      "express",
+      "fastify",
+      "hono",
+      "tailwindcss",
+      "prisma",
+      "drizzle",
+      "mongoose",
+      "sequelize",
+      "jest",
+      "vitest",
+      "mocha",
+      "webpack",
+      "vite",
+      "esbuild",
+      "rollup",
+      "turbo"
+    ].includes(d)
+  );
+  if (importantDeps.length > 0) {
+    lines.push(`- **Key deps**: ${importantDeps.join(", ")}`);
+  }
+  const constraints = [];
+  if (techStack === "static-html") {
+    constraints.push("This is a static HTML/CSS/JS project. Do NOT use require(), import/export, or Node.js APIs.");
+    constraints.push("Do NOT create package.json or node_modules. Keep all JS in <script> tags or vanilla .js files.");
+  }
+  if (techStack === "node-ts") {
+    constraints.push("This is a TypeScript project. Use .ts extensions, type annotations, and import/export syntax.");
+  }
+  if (techStack === "node-js") {
+    constraints.push("This is a Node.js JavaScript project. Check existing files for module style (ESM vs CJS) before writing new code.");
+  }
+  if (constraints.length > 0) {
+    lines.push(`
+### Constraints`);
+    for (const c of constraints) lines.push(`- ${c}`);
+  }
+  const dirs = files.filter((f) => f.type === "dir").map((f) => f.path).sort();
+  if (dirs.length > 0) {
+    lines.push(`
+### Directory Structure`);
+    lines.push("```");
+    for (const d of dirs.slice(0, 30)) lines.push(`  ${d}/`);
+    lines.push("```");
+  }
+  return lines.join("\n");
+}
+async function getProjectContext2(projectRoot) {
+  if (_cachedContext && _cachedContext.root === projectRoot) return _cachedContext;
+  _cachedContext = await buildProjectContext(projectRoot);
+  return _cachedContext;
+}
+var IGNORE_DIRS, IGNORE_EXTS, _cachedContext;
+var init_project_context = __esm({
+  "src/context/project-context.ts"() {
+    "use strict";
+    IGNORE_DIRS = /* @__PURE__ */ new Set([
+      "node_modules",
+      ".git",
+      ".crew",
+      "dist",
+      "build",
+      ".next",
+      "__pycache__",
+      ".venv",
+      "venv",
+      "target",
+      ".idea",
+      ".vscode",
+      "coverage",
+      ".turbo",
+      ".cache",
+      ".parcel-cache",
+      ".output",
+      ".nuxt",
+      ".svelte-kit"
+    ]);
+    IGNORE_EXTS = /* @__PURE__ */ new Set([
+      ".map",
+      ".lock",
+      ".log",
+      ".DS_Store",
+      ".ico",
+      ".woff",
+      ".woff2",
+      ".eot",
+      ".ttf",
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".gif",
+      ".svg",
+      ".webp",
+      ".mp4",
+      ".mp3",
+      ".wav",
+      ".pdf",
+      ".zip",
+      ".tar",
+      ".gz"
+    ]);
+    _cachedContext = null;
+  }
+});
+
 // src/cli/file-commands.ts
 var file_commands_exports = {};
 __export(file_commands_exports, {
@@ -8063,10 +9461,10 @@ __export(codebase_rag_exports, {
   shouldUseRag: () => shouldUseRag
 });
 import { execSync as execSync5 } from "node:child_process";
-import { readFile as readFile9, writeFile as writeFile6, mkdir as mkdir7 } from "node:fs/promises";
+import { readFile as readFile12, writeFile as writeFile6, mkdir as mkdir7 } from "node:fs/promises";
 import { existsSync as existsSync9 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
-import { relative as relative4, join as join14 } from "node:path";
+import { relative as relative5, join as join17 } from "node:path";
 function extractKeywords(query) {
   return (query.toLowerCase().match(/\b[a-z]{3,}\b/g) || []).filter((kw) => !STOP_WORDS.has(kw));
 }
@@ -8171,7 +9569,7 @@ async function expandWithImports(files, cwd, maxDepth = 1) {
   try {
     const graph = await buildRepositoryGraph(cwd);
     for (const file of files) {
-      const node = graph.nodes.find((n) => n.path === file || join14(cwd, n.path) === file);
+      const node = graph.nodes.find((n) => n.path === file || join17(cwd, n.path) === file);
       if (node) {
         for (const importPath of node.imports.slice(0, 5)) expanded.add(importPath);
         for (const importedByPath of node.importedBy.slice(0, 3)) expanded.add(importedByPath);
@@ -8226,10 +9624,10 @@ async function autoLoadRelevantFiles(query, cwd, options = {}) {
   finalScored.sort((a, b) => b.score - a.score);
   for (const { file } of finalScored.slice(0, maxFiles)) {
     try {
-      const fullPath = join14(cwd, file);
-      const content = await readFile9(fullPath, "utf8");
+      const fullPath = join17(cwd, file);
+      const content = await readFile12(fullPath, "utf8");
       if (charsUsed + content.length > charBudget) break;
-      const relPath = relative4(cwd, file);
+      const relPath = relative5(cwd, file);
       contextParts.push(`
 === ${relPath} ===
 ${content}`);
@@ -8254,8 +9652,8 @@ function shouldUseRag(query) {
   return hasExecutionIntent || hasCodeReference || hasFileOperation;
 }
 async function rebuildEmbeddingsIndex(cwd, cacheDir) {
-  const dir = cacheDir || join14(cwd, ".crew", "rag-cache");
-  const indexPath = join14(dir, "embeddings.json");
+  const dir = cacheDir || join17(cwd, ".crew", "rag-cache");
+  const indexPath = join17(dir, "embeddings.json");
   if (existsSync9(indexPath)) {
     await writeFile6(indexPath, "[]", "utf8");
   }
@@ -8304,7 +9702,7 @@ var init_codebase_rag = __esm({
         this.loaded = false;
         this.building = false;
         this.cwd = cwd;
-        this.cacheDir = join14(cwd, ".crew", "rag-cache");
+        this.cacheDir = join17(cwd, ".crew", "rag-cache");
         this.provider = detectEmbeddingProvider();
       }
       static {
@@ -8318,23 +9716,23 @@ var init_codebase_rag = __esm({
         return inst;
       }
       indexPath() {
-        return join14(this.cacheDir, "embeddings.json");
+        return join17(this.cacheDir, "embeddings.json");
       }
       metaPath() {
-        return join14(this.cacheDir, "index-meta.json");
+        return join17(this.cacheDir, "index-meta.json");
       }
       /** Load index from disk if not already loaded. */
       async load() {
         if (this.loaded) return;
         try {
           if (existsSync9(this.indexPath())) {
-            const raw = await readFile9(this.indexPath(), "utf8");
+            const raw = await readFile12(this.indexPath(), "utf8");
             this.entries = JSON.parse(raw);
             this.entryMap.clear();
             for (const e of this.entries) this.entryMap.set(e.file, e);
           }
           if (existsSync9(this.metaPath())) {
-            this.meta = JSON.parse(await readFile9(this.metaPath(), "utf8"));
+            this.meta = JSON.parse(await readFile12(this.metaPath(), "utf8"));
           }
         } catch {
         }
@@ -8393,7 +9791,7 @@ var init_codebase_rag = __esm({
             const work = [];
             for (const file of batch) {
               try {
-                const content = await readFile9(join14(this.cwd, file), "utf8");
+                const content = await readFile12(join17(this.cwd, file), "utf8");
                 if (content.length < 10) continue;
                 if (content.length > 1e5) continue;
                 const hash = contentHash(content);
@@ -8466,8 +9864,8 @@ var init_codebase_rag = __esm({
 
 // src/pipeline/unified.ts
 import { randomUUID as randomUUID5 } from "crypto";
-import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile10 } from "node:fs/promises";
-import { resolve as resolve10, join as join15, normalize } from "node:path";
+import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile13 } from "node:fs/promises";
+import { resolve as resolve10, join as join18, normalize } from "node:path";
 var UnifiedPipeline;
 var init_unified = __esm({
   "src/pipeline/unified.ts"() {
@@ -8485,6 +9883,8 @@ var init_unified = __esm({
     init_run_state();
     init_capabilities();
     init_task_envelope();
+    init_qa_gate();
+    init_project_context();
     UnifiedPipeline = class {
       // Optional SessionManager for cache tracking
       constructor(sandbox, session) {
@@ -8803,7 +10203,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
             continue;
           }
           try {
-            const content = await readFile10(resolve10(process.cwd(), relPath), "utf8");
+            const content = await readFile13(resolve10(process.cwd(), relPath), "utf8");
             contents.set(relPath, content);
           } catch {
             return false;
@@ -8877,14 +10277,15 @@ ${this.buildExecutionAuditContext(executionResults)}`;
           failedToolCalls,
           turns: workerResult.turns,
           stopReason: workerResult.stopReason,
-          shellResults
+          shellResults,
+          transcript: workerResult.transcript
         };
       }
       async recordPipelineMetrics(entry) {
         try {
           const dir = resolve10(process.cwd(), ".crew");
           await mkdir8(dir, { recursive: true });
-          const path3 = join15(dir, "pipeline-metrics.jsonl");
+          const path3 = join18(dir, "pipeline-metrics.jsonl");
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
 `, "utf8");
         } catch {
@@ -8894,7 +10295,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
         try {
           const dir = resolve10(process.cwd(), ".crew", "pipeline-runs");
           await mkdir8(dir, { recursive: true });
-          const path3 = join15(dir, `${traceId}.jsonl`);
+          const path3 = join18(dir, `${traceId}.jsonl`);
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...payload })}
 `, "utf8");
         } catch {
@@ -9394,8 +10795,14 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
         const runState = new PipelineRunState();
         const sessionId = request.sessionId || (this.session ? await this.session.getSessionId() : void 0);
         try {
+          runState.transition("scan", "Building project context");
+          try {
+            await getProjectContext2(process.cwd());
+            executionPath.push("scan-project-context");
+          } catch {
+          }
+          runState.transition("plan", "L2 orchestration");
           executionPath.push("l2-orchestrator");
-          runState.transition("plan");
           await this.writeRunCheckpoint(traceId, { phase: "plan", userInput: request.userInput, sessionId: request.sessionId });
           const resumeFrom = request.resume?.fromPhase;
           const canReusePlan = (resumeFrom === "execute" || resumeFrom === "validate") && Boolean(request.resume?.priorPlan);
@@ -9471,20 +10878,27 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
             await this.flushSandbox(request);
             const { parseDirectFileCommands: parseDirectFileCommands2 } = await Promise.resolve().then(() => (init_file_commands(), file_commands_exports));
             const fileCommands = this.shouldParseLegacyCommands(result2) ? parseDirectFileCommands2(response) : [];
-            if (fileCommands.length > 0 && this.sandbox) {
-              await this.sandbox.load();
-              for (const cmd of fileCommands) {
-                if (cmd.type === "write") {
-                  await this.sandbox.addChange(cmd.path, cmd.content || "");
-                  this.logger.info(`Staged file: ${cmd.path}`);
-                } else if (cmd.type === "mkdir") {
-                  await this.sandbox.addChange(cmd.path + "/.gitkeep", "");
-                  this.logger.info(`Staged directory: ${cmd.path}`);
-                }
+            if (fileCommands.length > 0) {
+              const writtenPaths = fileCommands.filter((c) => c.type === "write").map((c) => c.path);
+              if (writtenPaths.length > 0) {
+                result2.filesChanged = [...result2.filesChanged || [], ...writtenPaths];
+                result2.toolsUsed = [...result2.toolsUsed || [], "write_file"];
               }
-              if (request.autoApply) {
-                await this.sandbox.apply();
-                this.logger.info(`Applied ${fileCommands.length} file change(s)`);
+              if (this.sandbox) {
+                await this.sandbox.load();
+                for (const cmd of fileCommands) {
+                  if (cmd.type === "write") {
+                    await this.sandbox.addChange(cmd.path, cmd.content || "");
+                    this.logger.info(`Staged file: ${cmd.path}`);
+                  } else if (cmd.type === "mkdir") {
+                    await this.sandbox.addChange(cmd.path + "/.gitkeep", "");
+                    this.logger.info(`Staged directory: ${cmd.path}`);
+                  }
+                }
+                if (request.autoApply) {
+                  await this.sandbox.apply();
+                  this.logger.info(`Applied ${fileCommands.length} file change(s)`);
+                }
               }
             }
             executionResults = {
@@ -9555,20 +10969,27 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               await this.flushSandbox(request);
               const { parseDirectFileCommands: parseDirectFileCommands2 } = await Promise.resolve().then(() => (init_file_commands(), file_commands_exports));
               const fileCommands = this.shouldParseLegacyCommands(result2) ? parseDirectFileCommands2(response) : [];
-              if (fileCommands.length > 0 && this.sandbox) {
-                await this.sandbox.load();
-                for (const cmd of fileCommands) {
-                  if (cmd.type === "write") {
-                    await this.sandbox.addChange(cmd.path, cmd.content || "");
-                    this.logger.info(`Staged file: ${cmd.path}`);
-                  } else if (cmd.type === "mkdir") {
-                    await this.sandbox.addChange(cmd.path + "/.gitkeep", "");
-                    this.logger.info(`Staged directory: ${cmd.path}`);
-                  }
+              if (fileCommands.length > 0) {
+                const writtenPaths = fileCommands.filter((c) => c.type === "write").map((c) => c.path);
+                if (writtenPaths.length > 0) {
+                  result2.filesChanged = [...result2.filesChanged || [], ...writtenPaths];
+                  result2.toolsUsed = [...result2.toolsUsed || [], "write_file"];
                 }
-                if (request.autoApply) {
-                  await this.sandbox.apply();
-                  this.logger.info(`Applied ${fileCommands.length} file change(s)`);
+                if (this.sandbox) {
+                  await this.sandbox.load();
+                  for (const cmd of fileCommands) {
+                    if (cmd.type === "write") {
+                      await this.sandbox.addChange(cmd.path, cmd.content || "");
+                      this.logger.info(`Staged file: ${cmd.path}`);
+                    } else if (cmd.type === "mkdir") {
+                      await this.sandbox.addChange(cmd.path + "/.gitkeep", "");
+                      this.logger.info(`Staged directory: ${cmd.path}`);
+                    }
+                  }
+                  if (request.autoApply) {
+                    await this.sandbox.apply();
+                    this.logger.info(`Applied ${fileCommands.length} file change(s)`);
+                  }
                 }
               }
               executionResults = {
@@ -9596,6 +11017,11 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               for (const result2 of executionResults.results) {
                 if (!this.shouldParseLegacyCommands(result2)) continue;
                 const commands = parseDirectFileCommands2(result2.output);
+                const writtenPaths = commands.filter((c) => c.type === "write").map((c) => c.path);
+                if (writtenPaths.length > 0) {
+                  result2.filesChanged = [...result2.filesChanged || [], ...writtenPaths];
+                  result2.toolsUsed = [...result2.toolsUsed || [], "write_file"];
+                }
                 allFileCommands.push(...commands);
               }
               if (allFileCommands.length > 0 && this.sandbox) {
@@ -9619,6 +11045,29 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
             throw new Error(`Unknown decision: ${plan.decision}`);
           }
           if (plan.decision !== "direct-answer") {
+            if (executionResults?.results?.length) {
+              for (const r of executionResults.results) {
+                const transcript = r.transcript;
+                if (transcript) {
+                  const qaResult = runDeterministicQA(transcript, {
+                    requireFileChanges: plan.decision !== "execute-direct"
+                  });
+                  if (!qaResult.passed) {
+                    const verbose = process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true";
+                    if (verbose) {
+                      console.log(`[QA Gate] ${r.workUnitId}: ${qaResult.summary}`);
+                      for (const check of qaResult.checks.filter((c) => !c.passed)) {
+                        console.log(`  \u2717 ${check.name}: ${check.detail}`);
+                      }
+                    }
+                    r.escalationNeeded = true;
+                    r.escalationReason = `Deterministic QA failed: ${qaResult.summary}`;
+                  }
+                  r.qaGateResult = qaResult;
+                }
+              }
+              executionPath.push("l3-transcript-qa");
+            }
             const deterministicQaApproved = await this.passesDeterministicSmallTaskGate(request, plan, executionResults);
             if (deterministicQaApproved) {
               qaApproved = true;
@@ -9637,7 +11086,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               }
             }
           }
-          runState.transition("validate");
+          runState.transition("validate", "QA validation");
           await this.writeRunCheckpoint(traceId, {
             phase: "validate.input",
             response,
@@ -9667,11 +11116,12 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               throw new Error(`Golden benchmark gate failed. ${bench.summary}`.trim());
             }
           }
-          runState.transition("complete");
+          runState.transition("checkpoint", "Auto-checkpoint");
           this.stopCheckpointInterval();
           if (plan.decision !== "direct-answer" && this.autoCheckpointEnabled()) {
             await this.gitCheckpoint(traceId, executionResults);
           }
+          runState.transition("complete");
           await this.writeRunCheckpoint(traceId, {
             phase: "complete",
             decision: plan.decision,
@@ -9749,6 +11199,41 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
        * Combines routing + reasoning + planning into single decision
        */
       async l2Orchestrate(request, traceId, sessionId) {
+        const projectDir = this.sandbox?.baseDir || process.cwd();
+        let projectContext = "";
+        try {
+          const { readdirSync: readdirSync2, statSync: statSync2, readFileSync: readFileSync8, existsSync: existsSync24 } = await import("node:fs");
+          const { join: join46 } = await import("node:path");
+          const entries = readdirSync2(projectDir).filter((f) => !f.startsWith(".") && f !== "node_modules").slice(0, 30);
+          const fileList = entries.map((f) => {
+            const s = statSync2(join46(projectDir, f));
+            return s.isDirectory() ? `${f}/` : f;
+          });
+          projectContext = `Project files: ${fileList.join(", ")}`;
+          const hasPackageJson = existsSync24(join46(projectDir, "package.json"));
+          const hasIndexHtml = existsSync24(join46(projectDir, "index.html"));
+          const hasTsConfig = existsSync24(join46(projectDir, "tsconfig.json"));
+          if (hasIndexHtml && !hasTsConfig) {
+            projectContext += "\nTech: Static HTML/CSS/JS site (vanilla, no build step, no Node.js modules). All JS must be browser-compatible (no require/import/export, no Node APIs).";
+          } else if (hasPackageJson) {
+            try {
+              const pkg = JSON.parse(readFileSync8(join46(projectDir, "package.json"), "utf8"));
+              const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).slice(0, 10);
+              projectContext += `
+Tech: Node.js project. Dependencies: ${deps.join(", ")}`;
+            } catch {
+            }
+          }
+          if (hasIndexHtml) {
+            try {
+              const html = readFileSync8(join46(projectDir, "index.html"), "utf8");
+              projectContext += `
+index.html: ${html.length} chars, ${(html.match(/<script/g) || []).length} script tags, ${(html.match(/<link.*css/g) || []).length} CSS links`;
+            } catch {
+            }
+          }
+        } catch {
+        }
         const overlays = [
           {
             type: "task",
@@ -9764,7 +11249,13 @@ ${request.context}`,
             priority: 2
           });
         }
-        const projectDir = this.sandbox?.baseDir || process.cwd();
+        if (projectContext) {
+          overlays.push({
+            type: "context",
+            content: projectContext,
+            priority: 2
+          });
+        }
         overlays.push(
           {
             type: "constraints",
@@ -9929,7 +11420,15 @@ Use CREW_ALLOW_CRITICAL=true to override (not recommended).`
         if (!check.ok) {
           throw new Error(`Invalid single worker task: ${check.errors.join(", ")}`);
         }
-        const enhancedTask = task.goal;
+        let projectContextSummary = "";
+        try {
+          const projCtx = await getProjectContext2(process.cwd());
+          projectContextSummary = projCtx.summary;
+        } catch {
+        }
+        const enhancedTask = projectContextSummary ? `${projectContextSummary}
+
+${task.goal}` : task.goal;
         const overlays = [
           { type: "task", content: enhancedTask, priority: 1 }
         ];
@@ -9981,7 +11480,7 @@ ${parts.join("\n\n")}`,
         const sessionId = this.session ? await this.session.getSessionId() : void 0;
         const composedPrompt = this.composer.compose("executor-code-v1", overlays, traceId);
         const result2 = await runAgenticWorker(enhancedTask, this.sandbox, {
-          model: process.env.CREW_EXECUTION_MODEL || "gemini-2.5-flash",
+          model: process.env.CREW_EXECUTION_MODEL || "",
           maxTurns: 25
         });
         const parsed = this.parseWorkerOutput(String(result2.output || ""));
@@ -10036,7 +11535,15 @@ ${parts.join("\n\n")}`,
               }
             }
             const templateId = getTemplateForPersona(unit.persona);
-            const enhancedDescription = unit.goal;
+            let projectContextSummary = "";
+            try {
+              const projCtx = await getProjectContext2(process.cwd());
+              projectContextSummary = projCtx.summary;
+            } catch {
+            }
+            const enhancedDescription = projectContextSummary ? `${projectContextSummary}
+
+${unit.goal}` : unit.goal;
             const overlays = [
               { type: "task", content: enhancedDescription, priority: 1 },
               { type: "context", content: context, priority: 2 }
@@ -10061,14 +11568,14 @@ ${parts.join("\n\n")}`,
                 const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4e3);
                 const hits = await codebaseIndex.query(unit.goal, 5);
                 if (hits.length > 0) {
-                  const { readFile: readFile34 } = await import("node:fs/promises");
+                  const { readFile: readFile37 } = await import("node:fs/promises");
                   const { join: pathJoin, relative: pathRelative } = await import("node:path");
                   const parts = [];
                   let chars = 0;
                   const charLimit = ragBudget * 4;
                   for (const hit of hits) {
                     try {
-                      const content = await readFile34(pathJoin(process.cwd(), hit.file), "utf8");
+                      const content = await readFile37(pathJoin(process.cwd(), hit.file), "utf8");
                       if (chars + content.length > charLimit) break;
                       parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===
 ${content}`);
@@ -10137,30 +11644,27 @@ ${dependencyOutputs.join("\n\n")}`,
 - Escalate when: ${(unit.escalationHints || []).join(" | ")}`,
               priority: 3
             });
-            const codingPersonas = ["crew-coder", "crew-coder-front", "crew-coder-back", "crew-frontend", "crew-fixer", "crew-mega"];
-            if (!codingPersonas.includes(unit.persona)) {
-              overlays.push({
-                type: "constraints",
-                content: `Return ONLY valid JSON:
-{
-  "output": "primary result text for this unit",
-  "summary": "short summary",
-  "edits": ["optional changed files or actions"],
-  "validation": ["optional checks or caveats"]
-}`,
-                priority: 4
-              });
-            }
+            overlays.push({
+              type: "constraints",
+              content: `IMPORTANT RULES:
+1. ALWAYS read_file before editing any file. Never guess at contents.
+2. Use "replace" tool for editing existing files (with old_string/new_string). write_file is ONLY for NEW files.
+3. Do NOT output @@WRITE_FILE or @@EDIT markers \u2014 use structured tool calls.
+4. Match the existing code style exactly. If the project uses vanilla JS (no modules), do NOT use require/import/export or Node.js APIs.
+5. After completing work, return a JSON summary: {"output":"what you did","summary":"short summary","edits":["files changed"],"validation":["verification steps"]}`,
+              priority: 4
+            });
             const composedPrompt = this.composer.compose(templateId, overlays, `${traceId}-${unit.id}`);
             if (verbose) {
               console.log(`  [${unit.id}] ${unit.persona} executing (agentic)...`);
             }
             const unitStart = Date.now();
             const result2 = await this.runWorker(composedPrompt.finalPrompt, {
-              model: process.env.CREW_EXECUTION_MODEL || "gemini-2.5-flash",
+              model: process.env.CREW_EXECUTION_MODEL || "",
               maxTurns: 25,
               verbose,
-              priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : void 0
+              priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : void 0,
+              persona: unit.persona
             });
             const parsed = this.parseWorkerOutput(String(result2.output || ""));
             if (result2.discoveredFiles?.length) {
@@ -10291,10 +11795,6 @@ ${r.output}`;
        * Can be overridden in tests to use a mock executor.
        */
       async runWorker(prompt, options) {
-        if (this.executor && typeof this.executor.execute === "function") {
-          const result2 = await this.executor.execute(prompt, options);
-          return { output: String(result2.result || ""), cost: result2.costUsd || 0, turns: 1 };
-        }
         return runAgenticWorker(prompt, this.sandbox, options);
       }
       /**
@@ -10496,7 +11996,7 @@ __export(orchestrator_exports, {
   RouteDecision: () => RouteDecision,
   WorkerPool: () => WorkerPool
 });
-import { readFile as readFile11 } from "node:fs/promises";
+import { readFile as readFile14 } from "node:fs/promises";
 var ROUTING_SYSTEM_PROMPT, RouteDecision, Orchestrator;
 var init_orchestrator = __esm({
   "src/orchestrator/index.ts"() {
@@ -10631,8 +12131,8 @@ Return ONLY a JSON object in this exact format:
       async getGeminiADCToken() {
         try {
           const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || `${process.env.HOME}/.config/gcloud/application_default_credentials.json`;
-          const { readFile: readFile34 } = await import("node:fs/promises");
-          const credentialsJson = await readFile34(adcPath, "utf8");
+          const { readFile: readFile37 } = await import("node:fs/promises");
+          const credentialsJson = await readFile37(adcPath, "utf8");
           const credentials = JSON.parse(credentialsJson);
           if (credentials.type !== "authorized_user" || !credentials.refresh_token) {
             return null;
@@ -11070,7 +12570,7 @@ ${task}` : task;
                 this.logger.info(`Detected edit block for ${filePath}`);
                 let originalContent = "";
                 try {
-                  originalContent = await readFile11(filePath, "utf8");
+                  originalContent = await readFile14(filePath, "utf8");
                 } catch {
                   originalContent = "";
                 }
@@ -11104,8 +12604,8 @@ var agentkeeper_exports = {};
 __export(agentkeeper_exports, {
   AgentKeeper: () => AgentKeeper
 });
-import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile14, stat as stat5, writeFile as writeFile8 } from "node:fs/promises";
-import { dirname as dirname5, join as join18 } from "node:path";
+import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile17, stat as stat6, writeFile as writeFile8 } from "node:fs/promises";
+import { dirname as dirname5, join as join21 } from "node:path";
 import { randomUUID as randomUUID6 } from "node:crypto";
 function tokenize2(text) {
   return new Set(
@@ -11128,7 +12628,7 @@ var init_agentkeeper = __esm({
       constructor(baseDir, options = {}) {
         this.writeCount = 0;
         const storageBase = options.storageDir || process.env.CREW_MEMORY_DIR || baseDir;
-        this.storePath = join18(storageBase, ".crew", "agentkeeper.jsonl");
+        this.storePath = join21(storageBase, ".crew", "agentkeeper.jsonl");
         this.maxEntries = options.maxEntries ?? 500;
         this.maxBytes = options.maxBytes ?? 2e6;
         this.maxAgeDays = options.maxAgeDays ?? 30;
@@ -11285,7 +12785,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
       async loadAll() {
         let raw;
         try {
-          raw = await readFile14(this.storePath, "utf8");
+          raw = await readFile17(this.storePath, "utf8");
         } catch {
           return [];
         }
@@ -11389,7 +12889,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
         const entriesBefore = entries.length;
         let bytesBefore = 0;
         try {
-          const st = await stat5(this.storePath);
+          const st = await stat6(this.storePath);
           bytesBefore = st.size;
         } catch {
           bytesBefore = 0;
@@ -11403,7 +12903,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
         await writeFile8(this.storePath, content, "utf8");
         let bytesAfter = 0;
         try {
-          const st = await stat5(this.storePath);
+          const st = await stat6(this.storePath);
           bytesAfter = st.size;
         } catch {
           bytesAfter = content.length;
@@ -11436,7 +12936,7 @@ __export(ci_exports, {
   runCiFixLoop: () => runCiFixLoop
 });
 import { exec } from "node:child_process";
-import { promisify as promisify5 } from "node:util";
+import { promisify as promisify6 } from "node:util";
 async function runCheckCommand(command, cwd = process.cwd()) {
   try {
     const { stdout, stderr } = await execAsync(command, {
@@ -11506,7 +13006,7 @@ var execAsync;
 var init_ci = __esm({
   "src/ci/index.ts"() {
     "use strict";
-    execAsync = promisify5(exec);
+    execAsync = promisify6(exec);
   }
 });
 
@@ -11516,9 +13016,9 @@ __export(blast_radius_exports, {
   analyzeBlastRadius: () => analyzeBlastRadius,
   isSeverityAtLeast: () => isSeverityAtLeast
 });
-import { execFile as execFile8 } from "node:child_process";
-import { promisify as promisify9 } from "node:util";
-import { relative as relative5, resolve as resolve17 } from "node:path";
+import { execFile as execFile9 } from "node:child_process";
+import { promisify as promisify10 } from "node:util";
+import { relative as relative6, resolve as resolve17 } from "node:path";
 function severityRank(level) {
   if (level === "high") return 3;
   if (level === "medium") return 2;
@@ -11530,11 +13030,11 @@ function isSeverityAtLeast(actual, threshold) {
 async function getChangedFiles(cwd, diffRef) {
   const args = diffRef ? ["diff", "--name-only", diffRef] : ["diff", "--name-only", "HEAD"];
   try {
-    const { stdout } = await execFileAsync8("git", args, { cwd, maxBuffer: 1024 * 1024 });
+    const { stdout } = await execFileAsync9("git", args, { cwd, maxBuffer: 1024 * 1024 });
     return stdout.trim().split("\n").filter(Boolean);
   } catch {
     try {
-      const { stdout } = await execFileAsync8("git", ["diff", "--name-only"], { cwd, maxBuffer: 1024 * 1024 });
+      const { stdout } = await execFileAsync9("git", ["diff", "--name-only"], { cwd, maxBuffer: 1024 * 1024 });
       return stdout.trim().split("\n").filter(Boolean);
     } catch {
       return [];
@@ -11586,7 +13086,7 @@ async function analyzeBlastRadius(cwd, options = {}) {
   const graphPaths = new Set(graph.nodes.map((n) => n.path));
   const changedSet = /* @__PURE__ */ new Set();
   for (const file of rawChanged) {
-    const rel = relative5(rootDir, resolve17(rootDir, file));
+    const rel = relative6(rootDir, resolve17(rootDir, file));
     if (graphPaths.has(rel)) changedSet.add(rel);
   }
   const affectedFiles = collectImporters(graph, changedSet, maxDepth);
@@ -11614,12 +13114,12 @@ async function analyzeBlastRadius(cwd, options = {}) {
     summary: lines.join("\n")
   };
 }
-var execFileAsync8;
+var execFileAsync9;
 var init_blast_radius = __esm({
   "src/blast-radius/index.ts"() {
     "use strict";
     init_mapping();
-    execFileAsync8 = promisify9(execFile8);
+    execFileAsync9 = promisify10(execFile9);
   }
 });
 
@@ -11631,7 +13131,7 @@ __export(dashboard_exports, {
   renderStatusDashboard: () => renderStatusDashboard
 });
 import chalk2 from "chalk";
-import { homedir as homedir8 } from "os";
+import { homedir as homedir10 } from "os";
 async function getSystemStatus() {
   const status = {
     online: false,
@@ -11646,7 +13146,7 @@ async function getSystemStatus() {
   const providers = [];
   try {
     const { readFileSync: readFileSync8 } = await import("node:fs");
-    const cfgPath = `${homedir8()}/.crewswarm/crewswarm.json`;
+    const cfgPath = `${homedir10()}/.crewswarm/crewswarm.json`;
     const cfg = JSON.parse(readFileSync8(cfgPath, "utf8"));
     const providerEntries = cfg.providers || {};
     for (const [id, p] of Object.entries(providerEntries)) {
@@ -11679,8 +13179,8 @@ async function getSystemStatus() {
     let authToken = "";
     try {
       const { readFileSync: readFileSync8 } = await import("node:fs");
-      const { homedir: homedir12 } = await import("node:os");
-      const cfg = JSON.parse(readFileSync8(`${homedir12()}/.crewswarm/config.json`, "utf8"));
+      const { homedir: homedir14 } = await import("node:os");
+      const cfg = JSON.parse(readFileSync8(`${homedir14()}/.crewswarm/config.json`, "utf8"));
       authToken = cfg?.rt?.authToken || "";
     } catch {
     }
@@ -12499,8 +13999,8 @@ var ToolManager = class {
       throw new Error("Shell tool requires command parameter");
     }
     const { exec: exec2 } = await import("node:child_process");
-    const { promisify: promisify11 } = await import("node:util");
-    const execAsync2 = promisify11(exec2);
+    const { promisify: promisify12 } = await import("node:util");
+    const execAsync2 = promisify12(exec2);
     try {
       const options = cwd ? { cwd } : {};
       const { stdout, stderr } = await execAsync2(command, options);
@@ -13030,37 +14530,37 @@ var Sandbox = class {
 init_orchestrator();
 
 // src/auth/token-finder.ts
-import { readFile as readFile12, access as access3 } from "node:fs/promises";
-import { constants as constants3 } from "node:fs";
-import { join as join16 } from "node:path";
-import { homedir as homedir2 } from "node:os";
-import { execFile as execFile2 } from "node:child_process";
-import { promisify as promisify2 } from "node:util";
-var execFileAsync2 = promisify2(execFile2);
+import { readFile as readFile15, access as access5 } from "node:fs/promises";
+import { constants as constants5 } from "node:fs";
+import { join as join19 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { execFile as execFile3 } from "node:child_process";
+import { promisify as promisify3 } from "node:util";
+var execFileAsync3 = promisify3(execFile3);
 var TokenFinder = class {
   async findTokens() {
     const tokens = {};
-    const claudePath = join16(homedir2(), ".claude", "session.json");
+    const claudePath = join19(homedir4(), ".claude", "session.json");
     if (await this.exists(claudePath)) {
       try {
-        const data = await readFile12(claudePath, "utf8");
+        const data = await readFile15(claudePath, "utf8");
         const parsed = JSON.parse(data);
         if (parsed.sessionToken) tokens.claude = parsed.sessionToken;
       } catch (e) {
         console.error(`Failed to parse Claude config: ${e.message}`);
       }
     }
-    const openaiPath = join16(homedir2(), ".openai", "config");
+    const openaiPath = join19(homedir4(), ".openai", "config");
     if (await this.exists(openaiPath)) {
       try {
-        const data = await readFile12(openaiPath, "utf8");
+        const data = await readFile15(openaiPath, "utf8");
         const match = data.match(/api_key[:=]\s*([a-zA-Z0-9\-]+)/);
         if (match) tokens.openai = match[1];
       } catch (e) {
         console.error(`Failed to parse OpenAI config: ${e.message}`);
       }
     }
-    const geminiPath = join16(homedir2(), ".config", "gcloud", "application_default_credentials.json");
+    const geminiPath = join19(homedir4(), ".config", "gcloud", "application_default_credentials.json");
     if (await this.exists(geminiPath)) {
       try {
         tokens.gemini = "(detected via ADC)";
@@ -13068,10 +14568,10 @@ var TokenFinder = class {
         console.error(`Failed to check Gemini ADC: ${e.message}`);
       }
     }
-    const cursorDbPath = join16(homedir2(), ".cursor", "User", "globalStorage", "state.vscdb");
+    const cursorDbPath = join19(homedir4(), ".cursor", "User", "globalStorage", "state.vscdb");
     if (await this.exists(cursorDbPath)) {
       try {
-        const { stdout } = await execFileAsync2("sqlite3", [
+        const { stdout } = await execFileAsync3("sqlite3", [
           cursorDbPath,
           "SELECT value FROM ItemTable WHERE key LIKE '%token%' OR key LIKE '%auth%' LIMIT 20;"
         ]);
@@ -13089,7 +14589,7 @@ var TokenFinder = class {
   }
   async exists(path3) {
     try {
-      await access3(path3, constants3.F_OK);
+      await access5(path3, constants5.F_OK);
       return true;
     } catch {
       return false;
@@ -13102,9 +14602,9 @@ init_logger();
 
 // src/cache/token-cache.ts
 import { createHash as createHash3 } from "node:crypto";
-import { mkdir as mkdir9, readFile as readFile13, writeFile as writeFile7 } from "node:fs/promises";
+import { mkdir as mkdir9, readFile as readFile16, writeFile as writeFile7 } from "node:fs/promises";
 import { existsSync as existsSync10 } from "node:fs";
-import { join as join17 } from "node:path";
+import { join as join20 } from "node:path";
 function nowIso3() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -13115,13 +14615,13 @@ function toTimestamp(iso) {
 var TokenCache = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = baseDir;
-    this.cachePath = join17(baseDir, ".crew", "token-cache.json");
+    this.cachePath = join20(baseDir, ".crew", "token-cache.json");
   }
   static hashKey(input) {
     return createHash3("sha256").update(String(input || "")).digest("hex");
   }
   async ensureStore() {
-    const dir = join17(this.baseDir, ".crew");
+    const dir = join20(this.baseDir, ".crew");
     await mkdir9(dir, { recursive: true });
     if (!existsSync10(this.cachePath)) {
       const initial = { version: 1, namespaces: {} };
@@ -13129,7 +14629,7 @@ var TokenCache = class {
       return initial;
     }
     try {
-      const raw = await readFile13(this.cachePath, "utf8");
+      const raw = await readFile16(this.cachePath, "utf8");
       const parsed = JSON.parse(raw);
       return {
         version: parsed.version || 1,
@@ -13323,34 +14823,34 @@ var Planner = class {
 
 // src/cli/index.ts
 import { existsSync as existsSync23 } from "node:fs";
-import { homedir as homedir11 } from "node:os";
+import { homedir as homedir13 } from "node:os";
 
 // src/diagnostics/doctor.ts
-import { access as access4 } from "node:fs/promises";
-import { constants as constants4 } from "node:fs";
-import { join as join20 } from "node:path";
+import { access as access6 } from "node:fs/promises";
+import { constants as constants6 } from "node:fs";
+import { join as join23 } from "node:path";
 import { dirname as dirname6 } from "node:path";
-import { homedir as homedir4 } from "node:os";
-import { execFile as execFile3 } from "node:child_process";
-import { promisify as promisify3 } from "node:util";
+import { homedir as homedir6 } from "node:os";
+import { execFile as execFile4 } from "node:child_process";
+import { promisify as promisify4 } from "node:util";
 import { fileURLToPath } from "node:url";
 
 // src/mcp/index.ts
 import { execFileSync } from "node:child_process";
-import { mkdir as mkdir11, readFile as readFile15, writeFile as writeFile9 } from "node:fs/promises";
+import { mkdir as mkdir11, readFile as readFile18, writeFile as writeFile9 } from "node:fs/promises";
 import { existsSync as existsSync11 } from "node:fs";
-import { join as join19 } from "node:path";
-import { homedir as homedir3 } from "node:os";
+import { join as join22 } from "node:path";
+import { homedir as homedir5 } from "node:os";
 function localStorePath(baseDir = process.cwd()) {
-  return join19(baseDir, ".crew", "mcp-servers.json");
+  return join22(baseDir, ".crew", "mcp-servers.json");
 }
 function clientPath(client) {
-  const home = homedir3();
+  const home = homedir5();
   const key = String(client || "").toLowerCase();
-  if (key === "cursor") return join19(home, ".cursor", "mcp.json");
-  if (key === "claude") return join19(home, ".claude", "mcp.json");
-  if (key === "opencode") return join19(home, ".config", "opencode", "mcp.json");
-  if (key === "codex") return join19(home, ".codex", "mcp", "config.json");
+  if (key === "cursor") return join22(home, ".cursor", "mcp.json");
+  if (key === "claude") return join22(home, ".claude", "mcp.json");
+  if (key === "opencode") return join22(home, ".config", "opencode", "mcp.json");
+  if (key === "codex") return join22(home, ".codex", "mcp", "config.json");
   throw new Error(`Unsupported client: ${client}`);
 }
 function isCodexClient(client) {
@@ -13381,7 +14881,7 @@ function removeServerFromCodex(name) {
 async function loadStore(path3) {
   if (!existsSync11(path3)) return { mcpServers: {} };
   try {
-    const raw = await readFile15(path3, "utf8");
+    const raw = await readFile18(path3, "utf8");
     const parsed = JSON.parse(raw);
     return { mcpServers: parsed.mcpServers || {} };
   } catch {
@@ -13389,7 +14889,7 @@ async function loadStore(path3) {
   }
 }
 async function saveStore(path3, store) {
-  await mkdir11(join19(path3, ".."), { recursive: true });
+  await mkdir11(join22(path3, ".."), { recursive: true });
   await writeFile9(path3, `${JSON.stringify(store, null, 2)}
 `, "utf8");
 }
@@ -13496,7 +14996,7 @@ async function doctorMcpServers(baseDir = process.cwd()) {
 }
 
 // src/diagnostics/doctor.ts
-var execFileAsync3 = promisify3(execFile3);
+var execFileAsync4 = promisify4(execFile4);
 function parseMajorNodeVersion(version) {
   const cleaned = String(version || "").replace(/^v/, "");
   const major = Number.parseInt(cleaned.split(".")[0] || "0", 10);
@@ -13504,7 +15004,7 @@ function parseMajorNodeVersion(version) {
 }
 async function commandExists(command) {
   try {
-    await execFileAsync3("which", [command]);
+    await execFileAsync4("which", [command]);
     return true;
   } catch {
     return false;
@@ -13519,9 +15019,9 @@ async function gatewayReachable(url) {
   }
 }
 async function configExists() {
-  const configPath3 = join20(homedir4(), ".crewswarm", "crewswarm.json");
+  const configPath3 = join23(homedir6(), ".crewswarm", "crewswarm.json");
   try {
-    await access4(configPath3, constants4.F_OK);
+    await access6(configPath3, constants6.F_OK);
     return { ok: true, path: configPath3 };
   } catch {
     return { ok: false, path: configPath3 };
@@ -13549,16 +15049,16 @@ async function getInstalledCliVersion() {
   }
   const here = dirname6(fileURLToPath(import.meta.url));
   const candidates = [
-    join20(here, "..", "package.json"),
-    join20(here, "..", "..", "package.json"),
-    join20(process.cwd(), "package.json")
+    join23(here, "..", "package.json"),
+    join23(here, "..", "..", "package.json"),
+    join23(process.cwd(), "package.json")
   ];
   for (const candidate of candidates) {
     try {
       const raw = await (await import("node:fs/promises")).readFile(candidate, "utf8");
       const parsed = JSON.parse(raw);
       const pkgName = String(parsed?.name || "");
-      const looksLikeCli = pkgName === "crewswarm-cli" || pkgName === "@crewswarm/crew-cli" || candidate.includes(`${join20("crew-cli", "package.json")}`);
+      const looksLikeCli = pkgName === "crewswarm-cli" || pkgName === "@crewswarm/crew-cli" || candidate.includes(`${join23("crew-cli", "package.json")}`);
       if (looksLikeCli && typeof parsed?.version === "string" && parsed.version.trim()) {
         return parsed.version.trim();
       }
@@ -13570,7 +15070,7 @@ async function getInstalledCliVersion() {
 }
 async function getLatestCliVersion(tag = "latest") {
   try {
-    const { stdout } = await execFileAsync3("npm", ["view", `crewswarm-cli@${tag}`, "version"], {
+    const { stdout } = await execFileAsync4("npm", ["view", `crewswarm-cli@${tag}`, "version"], {
       timeout: 8e3
     });
     const version = String(stdout || "").trim().split("\n").pop()?.trim();
@@ -13581,7 +15081,7 @@ async function getLatestCliVersion(tag = "latest") {
 }
 async function isGlobalInstallLinked() {
   try {
-    const { stdout } = await execFileAsync3("npm", ["-g", "ls", "crewswarm-cli", "--depth=0"]);
+    const { stdout } = await execFileAsync4("npm", ["-g", "ls", "crewswarm-cli", "--depth=0"]);
     return String(stdout || "").includes("->");
   } catch {
     return false;
@@ -13767,9 +15267,9 @@ import os from "node:os";
 import path2 from "node:path";
 
 // src/engines/session-layer.ts
-import { mkdir as mkdir12, readFile as readFile16, writeFile as writeFile10 } from "node:fs/promises";
+import { mkdir as mkdir12, readFile as readFile19, writeFile as writeFile10 } from "node:fs/promises";
 import { existsSync as existsSync12 } from "node:fs";
-import { join as join21, resolve as resolve11 } from "node:path";
+import { join as join24, resolve as resolve11 } from "node:path";
 function nowIso4() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -13782,8 +15282,8 @@ function clip2(text, maxChars) {
 var EngineSessionLayer = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = resolve11(baseDir);
-    this.stateDir = join21(this.baseDir, ".crew");
-    this.sessionsPath = join21(this.stateDir, "engine-sessions.json");
+    this.stateDir = join24(this.baseDir, ".crew");
+    this.sessionsPath = join24(this.stateDir, "engine-sessions.json");
   }
   makeKey(engine, sessionId) {
     return `${String(engine || "").trim().toLowerCase()}::${String(sessionId || "").trim()}`;
@@ -13797,7 +15297,7 @@ var EngineSessionLayer = class {
   async loadStore() {
     await this.ensureInitialized();
     try {
-      const raw = await readFile16(this.sessionsPath, "utf8");
+      const raw = await readFile19(this.sessionsPath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -13909,9 +15409,9 @@ function buildSessionPromptEnvelope(params) {
 }
 
 // src/session/conversation-transcript.ts
-import { appendFile as appendFile4, mkdir as mkdir13, readFile as readFile17, readdir as readdir5 } from "node:fs/promises";
+import { appendFile as appendFile4, mkdir as mkdir13, readFile as readFile20, readdir as readdir6 } from "node:fs/promises";
 import { existsSync as existsSync13 } from "node:fs";
-import { join as join22, resolve as resolve12 } from "node:path";
+import { join as join25, resolve as resolve12 } from "node:path";
 function estimateTokens3(text) {
   if (!text) return 0;
   return Math.ceil(text.length / 3.7);
@@ -13928,11 +15428,11 @@ function clip3(text, maxChars) {
 var ConversationTranscriptStore = class {
   constructor(baseDir = process.cwd()) {
     const root = resolve12(baseDir);
-    this.stateDir = join22(root, ".crew");
+    this.stateDir = join25(root, ".crew");
   }
   transcriptPath(sessionId) {
     const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    return join22(this.stateDir, `transcript-${safe}.jsonl`);
+    return join25(this.stateDir, `transcript-${safe}.jsonl`);
   }
   async ensureInitialized() {
     await mkdir13(this.stateDir, { recursive: true });
@@ -13966,7 +15466,7 @@ var ConversationTranscriptStore = class {
     const path3 = this.transcriptPath(key);
     if (!existsSync13(path3)) return [];
     try {
-      const raw = await readFile17(path3, "utf8");
+      const raw = await readFile20(path3, "utf8");
       const turns = [];
       for (const line of raw.split("\n")) {
         const trimmed = line.trim();
@@ -14006,14 +15506,14 @@ var ConversationTranscriptStore = class {
     await this.ensureInitialized();
     const sessions = [];
     try {
-      const files = await readdir5(this.stateDir);
+      const files = await readdir6(this.stateDir);
       for (const f of files) {
         const match = f.match(/^transcript-(.+)\.jsonl$/);
         if (!match) continue;
         const sessionId = match[1];
-        const fullPath = join22(this.stateDir, f);
+        const fullPath = join25(this.stateDir, f);
         try {
-          const raw = await readFile17(fullPath, "utf8");
+          const raw = await readFile20(fullPath, "utf8");
           const lines = raw.split("\n").filter((l) => l.trim()).length;
           sessions.push({ sessionId, path: fullPath, lines });
         } catch {
@@ -14057,10 +15557,10 @@ function buildConversationHydrationPrompt(params) {
 }
 
 // src/engines/native-session.ts
-import { mkdir as mkdir14, readFile as readFile18, writeFile as writeFile11 } from "node:fs/promises";
+import { mkdir as mkdir14, readFile as readFile21, writeFile as writeFile11 } from "node:fs/promises";
 import { existsSync as existsSync14 } from "node:fs";
-import { homedir as homedir5 } from "node:os";
-import { join as join23, resolve as resolve13 } from "node:path";
+import { homedir as homedir7 } from "node:os";
+import { join as join26, resolve as resolve13 } from "node:path";
 import { randomUUID as randomUUID7 } from "node:crypto";
 function nowIso6() {
   return (/* @__PURE__ */ new Date()).toISOString();
@@ -14076,8 +15576,8 @@ var NativeEngineSessionManager = class {
     this.ptySpawn = null;
     this.ptyLoadFailed = false;
     this.baseDir = resolve13(baseDir);
-    this.stateDir = join23(this.baseDir, ".crew");
-    this.statePath = join23(this.stateDir, "engine-native-sessions.json");
+    this.stateDir = join26(this.baseDir, ".crew");
+    this.statePath = join26(this.stateDir, "engine-native-sessions.json");
   }
   makeKey(engine, sessionId) {
     return `${String(engine || "").trim().toLowerCase()}::${String(sessionId || "").trim()}`;
@@ -14091,7 +15591,7 @@ var NativeEngineSessionManager = class {
   async loadStore() {
     await this.ensureStore();
     try {
-      const raw = await readFile18(this.statePath, "utf8");
+      const raw = await readFile21(this.statePath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -14295,7 +15795,7 @@ Timed out after ${timeoutMs}ms`,
 function resolveCursorAgentBinQuoted() {
   const fromEnv = String(process.env.CURSOR_CLI_BIN || "").trim();
   if (fromEnv) return shellQuote(fromEnv);
-  const agentLocal = join23(homedir5(), ".local", "bin", "agent");
+  const agentLocal = join26(homedir7(), ".local", "bin", "agent");
   if (existsSync14(agentLocal)) return shellQuote(agentLocal);
   return "agent";
 }
@@ -14322,9 +15822,9 @@ function buildEngineShellCommand(engine, prompt, model, cwd) {
 }
 
 // src/engines/tool-audit.ts
-import { appendFile as appendFile5, mkdir as mkdir15, readFile as readFile19, writeFile as writeFile12 } from "node:fs/promises";
+import { appendFile as appendFile5, mkdir as mkdir15, readFile as readFile22, writeFile as writeFile12 } from "node:fs/promises";
 import { existsSync as existsSync15 } from "node:fs";
-import { join as join24, resolve as resolve14 } from "node:path";
+import { join as join27, resolve as resolve14 } from "node:path";
 function clip4(text, max = 3e3) {
   const value = String(text || "");
   if (value.length <= max) return value;
@@ -14398,15 +15898,15 @@ function extractToolCalls(raw) {
 var ToolAuditStore = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = resolve14(baseDir);
-    this.dir = join24(this.baseDir, ".crew", "tool-audit");
-    this.indexPath = join24(this.baseDir, ".crew", "tool-audit.jsonl");
+    this.dir = join27(this.baseDir, ".crew", "tool-audit");
+    this.indexPath = join27(this.baseDir, ".crew", "tool-audit.jsonl");
   }
   async ensureDir() {
     await mkdir15(this.dir, { recursive: true });
   }
   async record(run) {
     await this.ensureDir();
-    const runPath = join24(this.dir, `${run.runId}.json`);
+    const runPath = join27(this.dir, `${run.runId}.json`);
     await writeFile12(runPath, JSON.stringify(run, null, 2), "utf8");
     await appendFile5(this.indexPath, `${JSON.stringify({
       runId: run.runId,
@@ -14421,7 +15921,7 @@ var ToolAuditStore = class {
   }
   async loadRun(runId) {
     try {
-      const raw = await readFile19(join24(this.dir, `${runId}.json`), "utf8");
+      const raw = await readFile22(join27(this.dir, `${runId}.json`), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
@@ -14429,7 +15929,7 @@ var ToolAuditStore = class {
   }
   async list(limit = 30) {
     if (!existsSync15(this.indexPath)) return [];
-    const raw = await readFile19(this.indexPath, "utf8");
+    const raw = await readFile22(this.indexPath, "utf8");
     const rows = raw.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
       try {
         return JSON.parse(line);
@@ -14581,6 +16081,9 @@ async function runCommand(command, args, options = {}, stdin) {
     const cleanEnv = { ...process.env };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE;
+    if (/(^|[\\/])claude$/.test(engineLabel)) {
+      delete cleanEnv.ANTHROPIC_API_KEY;
+    }
     const child = spawn2(command, args, {
       cwd: options.cwd || process.cwd(),
       stdio: [stdin ? "pipe" : "ignore", "pipe", "pipe"],
@@ -14963,13 +16466,13 @@ async function getToolAuditReplayPlan(baseDir, runId) {
 
 // src/watch/index.ts
 import { watch } from "node:fs";
-import { readFile as readFile21 } from "node:fs/promises";
-import { join as join25 } from "node:path";
+import { readFile as readFile24 } from "node:fs/promises";
+import { join as join28 } from "node:path";
 
 // src/studio/broadcaster.ts
 init_logger();
 import WebSocket from "ws";
-import { readFile as readFile20 } from "node:fs/promises";
+import { readFile as readFile23 } from "node:fs/promises";
 var StudioBroadcaster = class {
   constructor(studioUrl = "ws://127.0.0.1:3334/ws", logger3) {
     this.ws = null;
@@ -15024,7 +16527,7 @@ var StudioBroadcaster = class {
       };
       if (includeContent) {
         try {
-          event.content = await readFile20(filePath, "utf8");
+          event.content = await readFile23(filePath, "utf8");
         } catch {
           event.content = void 0;
         }
@@ -15091,7 +16594,7 @@ function extractTodos(content) {
 async function inspectFileForTodos(path3) {
   let content = "";
   try {
-    content = await readFile21(path3, "utf8");
+    content = await readFile24(path3, "utf8");
   } catch {
     return { type: "file_changed", file: path3 };
   }
@@ -15140,9 +16643,9 @@ function startWatchMode(rootDir, onEvent, ignored = ["node_modules", ".git", "di
   }
   const watcher = watch(rootDir, { recursive: true }, async (eventType, filename) => {
     if (!filename) return;
-    const relative6 = String(filename);
-    if (ignored.some((p) => relative6.includes(p))) return;
-    const fullPath = join25(rootDir, relative6);
+    const relative7 = String(filename);
+    if (ignored.some((p) => relative7.includes(p))) return;
+    const fullPath = join28(rootDir, relative7);
     const event = await inspectFileForTodos(fullPath);
     await onEvent(event);
     if (broadcaster) {
@@ -15181,22 +16684,22 @@ function getBanner() {
 }
 
 // src/multirepo/index.ts
-import { readdir as readdir6, access as access5, mkdir as mkdir16, writeFile as writeFile13 } from "node:fs/promises";
-import { constants as constants5 } from "node:fs";
-import { dirname as dirname7, join as join26, resolve as resolve15 } from "node:path";
-import { execFile as execFile4 } from "node:child_process";
-import { promisify as promisify4 } from "node:util";
-var execFileAsync4 = promisify4(execFile4);
+import { readdir as readdir7, access as access7, mkdir as mkdir16, writeFile as writeFile13 } from "node:fs/promises";
+import { constants as constants7 } from "node:fs";
+import { dirname as dirname7, join as join29, resolve as resolve15 } from "node:path";
+import { execFile as execFile5 } from "node:child_process";
+import { promisify as promisify5 } from "node:util";
+var execFileAsync5 = promisify5(execFile5);
 async function exists(path3) {
   try {
-    await access5(path3, constants5.F_OK);
+    await access7(path3, constants7.F_OK);
     return true;
   } catch {
     return false;
   }
 }
 async function runGit2(repoPath, args) {
-  const { stdout } = await execFileAsync4("git", args, {
+  const { stdout } = await execFileAsync5("git", args, {
     cwd: repoPath,
     maxBuffer: 1024 * 1024 * 2
   });
@@ -15206,13 +16709,13 @@ async function findSiblingRepos(baseDir = process.cwd()) {
   const abs = resolve15(baseDir);
   const parent = dirname7(abs);
   const currentName = abs.split("/").pop() || "";
-  const entries = await readdir6(parent, { withFileTypes: true });
+  const entries = await readdir7(parent, { withFileTypes: true });
   const repos = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name === currentName) continue;
-    const repoPath = join26(parent, entry.name);
-    if (await exists(join26(repoPath, ".git"))) {
+    const repoPath = join29(parent, entry.name);
+    if (await exists(join29(repoPath, ".git"))) {
       repos.push(repoPath);
     }
   }
@@ -15250,9 +16753,9 @@ async function collectMultiRepoContext(baseDir = process.cwd()) {
 async function syncRepoSnapshots(baseDir = process.cwd()) {
   const siblings = await findSiblingRepos(baseDir);
   const summaries = await Promise.all(siblings.map((path3) => getRepoSummary(path3)));
-  const outDir = join26(baseDir, ".crew");
+  const outDir = join29(baseDir, ".crew");
   await mkdir16(outDir, { recursive: true });
-  const outPath = join26(outDir, "multi-repo-sync.json");
+  const outPath = join29(outDir, "multi-repo-sync.json");
   await writeFile13(
     outPath,
     JSON.stringify({ syncedAt: (/* @__PURE__ */ new Date()).toISOString(), repos: summaries }, null, 2),
@@ -15286,17 +16789,17 @@ init_ci();
 
 // src/browser/index.ts
 import { spawn as spawn3 } from "node:child_process";
-import { access as access6, readFile as readFile22, writeFile as writeFile14 } from "node:fs/promises";
-import { constants as constants6 } from "node:fs";
+import { access as access8, readFile as readFile25, writeFile as writeFile14 } from "node:fs/promises";
+import { constants as constants8 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join as join27 } from "node:path";
-import { execFile as execFile5 } from "node:child_process";
-import { promisify as promisify6 } from "node:util";
+import { join as join30 } from "node:path";
+import { execFile as execFile6 } from "node:child_process";
+import { promisify as promisify7 } from "node:util";
 import WebSocket2 from "ws";
-var execFileAsync5 = promisify6(execFile5);
+var execFileAsync6 = promisify7(execFile6);
 async function exists2(path3) {
   try {
-    await access6(path3, constants6.F_OK);
+    await access8(path3, constants8.F_OK);
     return true;
   } catch {
     return false;
@@ -15318,7 +16821,7 @@ async function findChromeExecutable() {
       continue;
     }
     try {
-      const { stdout } = await execFileAsync5("which", [candidate]);
+      const { stdout } = await execFileAsync6("which", [candidate]);
       const bin = stdout.trim();
       if (bin) return bin;
     } catch {
@@ -15331,7 +16834,7 @@ async function launchChromeDebug(url, port = 9222) {
   if (!chrome) {
     throw new Error("Chrome/Chromium binary not found. Set CHROME_BIN or install Chrome.");
   }
-  const userDataDir = join27(tmpdir(), `crew-browser-debug-${Date.now()}`);
+  const userDataDir = join30(tmpdir(), `crew-browser-debug-${Date.now()}`);
   const args = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
@@ -15431,7 +16934,7 @@ async function runBrowserDebug(url, options = {}) {
     let screenshotPath = options.screenshotPath;
     const screenshotRes = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true });
     if (!screenshotPath) {
-      screenshotPath = join27(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
+      screenshotPath = join30(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
     }
     await writeFile14(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data, "base64"));
     return { consoleErrors: errors, screenshotPath };
@@ -15463,15 +16966,15 @@ function compareScreenshotBuffers(a, b) {
   };
 }
 async function compareScreenshots(pathA, pathB) {
-  const [a, b] = await Promise.all([readFile22(pathA), readFile22(pathB)]);
+  const [a, b] = await Promise.all([readFile25(pathA), readFile25(pathB)]);
   return compareScreenshotBuffers(a, b);
 }
 
 // src/team/index.ts
-import { access as access7, copyFile as copyFile2, mkdir as mkdir17, readFile as readFile23, readdir as readdir7, writeFile as writeFile15 } from "node:fs/promises";
-import { constants as constants7 } from "node:fs";
+import { access as access9, copyFile as copyFile2, mkdir as mkdir17, readFile as readFile26, readdir as readdir8, writeFile as writeFile15 } from "node:fs/promises";
+import { constants as constants9 } from "node:fs";
 import { hostname } from "node:os";
-import { join as join28 } from "node:path";
+import { join as join31 } from "node:path";
 var DEFAULT_PRIVACY = {
   sharePrompt: true,
   shareOriginal: true,
@@ -15480,20 +16983,20 @@ var DEFAULT_PRIVACY = {
 };
 async function exists3(path3) {
   try {
-    await access7(path3, constants7.F_OK);
+    await access9(path3, constants9.F_OK);
     return true;
   } catch {
     return false;
   }
 }
 function getStateDir(baseDir = process.cwd()) {
-  return join28(baseDir, ".crew");
+  return join31(baseDir, ".crew");
 }
 function getTeamSyncDir(baseDir = process.cwd()) {
-  return process.env.TEAM_SYNC_DIR || join28(getStateDir(baseDir), "team-sync");
+  return process.env.TEAM_SYNC_DIR || join31(getStateDir(baseDir), "team-sync");
 }
 function getPrivacyPath(baseDir = process.cwd()) {
-  return join28(getStateDir(baseDir), "privacy.json");
+  return join31(getStateDir(baseDir), "privacy.json");
 }
 function applyPrivacyToCorrection(entry, privacy) {
   const output = {
@@ -15514,7 +17017,7 @@ async function loadPrivacyControls(baseDir = process.cwd()) {
     return { ...DEFAULT_PRIVACY };
   }
   try {
-    const raw = await readFile23(path3, "utf8");
+    const raw = await readFile26(path3, "utf8");
     const parsed = JSON.parse(raw);
     return {
       sharePrompt: parsed.sharePrompt !== false,
@@ -15534,20 +17037,20 @@ async function uploadTeamContext(baseDir = process.cwd()) {
   const stateDir = getStateDir(baseDir);
   const teamDir = getTeamSyncDir(baseDir);
   await mkdir17(teamDir, { recursive: true });
-  const sessionPath = join28(stateDir, "session.json");
-  const correctionsPath = join28(stateDir, "training-data.jsonl");
+  const sessionPath = join31(stateDir, "session.json");
+  const correctionsPath = join31(stateDir, "training-data.jsonl");
   const host = hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
-  const sessionOut = join28(teamDir, `${host}-session.json`);
-  const correctionsOut = join28(teamDir, `${host}-training-data.jsonl`);
+  const sessionOut = join31(teamDir, `${host}-session.json`);
+  const correctionsOut = join31(teamDir, `${host}-training-data.jsonl`);
   if (await exists3(sessionPath)) {
     if (process.env.TEAM_S3_SESSION_PUT_URL) {
-      const body = await readFile23(sessionPath, "utf8");
+      const body = await readFile26(sessionPath, "utf8");
       await fetch(process.env.TEAM_S3_SESSION_PUT_URL, { method: "PUT", body });
     }
     await copyFile2(sessionPath, sessionOut);
   }
   if (await exists3(correctionsPath)) {
-    let correctionsRaw = await readFile23(correctionsPath, "utf8");
+    let correctionsRaw = await readFile26(correctionsPath, "utf8");
     const privacy = await loadPrivacyControls(baseDir);
     if (correctionsRaw.trim().length > 0) {
       const lines = correctionsRaw.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -15567,8 +17070,8 @@ async function downloadTeamContext(baseDir = process.cwd()) {
   const teamDir = getTeamSyncDir(baseDir);
   await mkdir17(stateDir, { recursive: true });
   await mkdir17(teamDir, { recursive: true });
-  const localSessionPath = join28(stateDir, "session.json");
-  const localCorrectionsPath = join28(stateDir, "training-data.jsonl");
+  const localSessionPath = join31(stateDir, "session.json");
+  const localCorrectionsPath = join31(stateDir, "training-data.jsonl");
   if (process.env.TEAM_S3_SESSION_GET_URL) {
     const response = await fetch(process.env.TEAM_S3_SESSION_GET_URL);
     if (response.ok) {
@@ -15583,17 +17086,17 @@ async function downloadTeamContext(baseDir = process.cwd()) {
       await writeFile15(localCorrectionsPath, text, "utf8");
     }
   }
-  const files = await readdir7(teamDir);
+  const files = await readdir8(teamDir);
   const sessionCandidates = files.filter((name) => name.endsWith("-session.json"));
   const correctionCandidates = files.filter((name) => name.endsWith("-training-data.jsonl"));
   if (sessionCandidates.length > 0 && !await exists3(localSessionPath)) {
-    const src = join28(teamDir, sessionCandidates.sort().at(-1));
+    const src = join31(teamDir, sessionCandidates.sort().at(-1));
     await copyFile2(src, localSessionPath);
   }
   let mergedCorrections = "";
   const seen = /* @__PURE__ */ new Set();
   if (await exists3(localCorrectionsPath)) {
-    const local = await readFile23(localCorrectionsPath, "utf8");
+    const local = await readFile26(localCorrectionsPath, "utf8");
     for (const line of local.split("\n").map((s) => s.trim()).filter(Boolean)) {
       seen.add(line);
       mergedCorrections += `${line}
@@ -15601,7 +17104,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
     }
   }
   for (const file of correctionCandidates) {
-    const raw = await readFile23(join28(teamDir, file), "utf8");
+    const raw = await readFile26(join31(teamDir, file), "utf8");
     for (const line of raw.split("\n").map((s) => s.trim()).filter(Boolean)) {
       if (!seen.has(line)) {
         seen.add(line);
@@ -15622,7 +17125,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
 async function getTeamSyncStatus(baseDir = process.cwd()) {
   const teamDir = getTeamSyncDir(baseDir);
   await mkdir17(teamDir, { recursive: true });
-  const files = await readdir7(teamDir);
+  const files = await readdir8(teamDir);
   const privacy = await loadPrivacyControls(baseDir);
   return {
     teamDir,
@@ -15632,15 +17135,15 @@ async function getTeamSyncStatus(baseDir = process.cwd()) {
 }
 
 // src/voice/listener.ts
-import { execFile as execFile6 } from "node:child_process";
-import { promisify as promisify7 } from "node:util";
-import { readFile as readFile24, writeFile as writeFile16 } from "node:fs/promises";
-import { join as join29 } from "node:path";
+import { execFile as execFile7 } from "node:child_process";
+import { promisify as promisify8 } from "node:util";
+import { readFile as readFile27, writeFile as writeFile16 } from "node:fs/promises";
+import { join as join32 } from "node:path";
 import { tmpdir as tmpdir2 } from "node:os";
-var execFileAsync6 = promisify7(execFile6);
+var execFileAsync7 = promisify8(execFile7);
 async function commandExists2(command) {
   try {
-    await execFileAsync6("which", [command]);
+    await execFileAsync7("which", [command]);
     return true;
   } catch {
     return false;
@@ -15675,14 +17178,14 @@ function selectRecorderPlan(platform2, hasSox, hasFfmpeg, outputPath, durationSe
 }
 async function recordAudio(options = {}) {
   const durationSec = Math.max(1, options.durationSec || 6);
-  const outputPath = options.outputPath || join29(tmpdir2(), `crew-listen-${Date.now()}.wav`);
+  const outputPath = options.outputPath || join32(tmpdir2(), `crew-listen-${Date.now()}.wav`);
   const hasSox = await commandExists2("sox");
   const hasFfmpeg = await commandExists2("ffmpeg");
   const plan = selectRecorderPlan(process.platform, hasSox, hasFfmpeg, outputPath, durationSec);
   if (!plan) {
     throw new Error("No audio recorder found. Install sox or ffmpeg, or use --text.");
   }
-  await execFileAsync6(plan.command, plan.args, { maxBuffer: 1024 * 1024 * 16 });
+  await execFileAsync7(plan.command, plan.args, { maxBuffer: 1024 * 1024 * 16 });
   return outputPath;
 }
 async function transcribeWithOpenAi(audioPath) {
@@ -15690,7 +17193,7 @@ async function transcribeWithOpenAi(audioPath) {
   if (!key) {
     throw new Error("OPENAI_API_KEY is required for OpenAI Whisper transcription.");
   }
-  const audioBuffer = await readFile24(audioPath);
+  const audioBuffer = await readFile27(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-1");
@@ -15712,7 +17215,7 @@ async function transcribeWithGroq(audioPath) {
   if (!key) {
     throw new Error("GROQ_API_KEY is required for Groq Whisper transcription.");
   }
-  const audioBuffer = await readFile24(audioPath);
+  const audioBuffer = await readFile27(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-large-v3-turbo");
@@ -15737,15 +17240,15 @@ async function transcribeWithWhisperCli(audioPath) {
     throw new Error("Local whisper CLI is not installed. Install with: pip install faster-whisper");
   }
   const whisperCmd = hasFasterWhisper ? "faster-whisper" : "whisper";
-  const outDir = join29(tmpdir2(), `crew-whisper-${Date.now()}`);
-  await execFileAsync6("mkdir", ["-p", outDir]);
+  const outDir = join32(tmpdir2(), `crew-whisper-${Date.now()}`);
+  await execFileAsync7("mkdir", ["-p", outDir]);
   const model = hasFasterWhisper ? "tiny" : "base";
-  await execFileAsync6(whisperCmd, [audioPath, "--model", model, "--output_format", "txt", "--output_dir", outDir], {
+  await execFileAsync7(whisperCmd, [audioPath, "--model", model, "--output_format", "txt", "--output_dir", outDir], {
     maxBuffer: 1024 * 1024 * 16
   });
   const baseName = audioPath.split("/").pop()?.replace(/\.[^.]+$/, "") || "audio";
-  const txtPath = join29(outDir, `${baseName}.txt`);
-  const text = await readFile24(txtPath, "utf8");
+  const txtPath = join32(outDir, `${baseName}.txt`);
+  const text = await readFile27(txtPath, "utf8");
   return text.trim();
 }
 async function transcribeAudio(audioPath, options = {}) {
@@ -15777,8 +17280,8 @@ async function speakWithSkill(router, text, skill = "elevenlabs.tts") {
   return router.callSkill(skill, { text });
 }
 async function appendVoiceTranscript(baseDir, role, text) {
-  const path3 = join29(baseDir, ".crew", "voice-transcript.log");
-  await execFileAsync6("mkdir", ["-p", join29(baseDir, ".crew")]);
+  const path3 = join32(baseDir, ".crew", "voice-transcript.log");
+  await execFileAsync7("mkdir", ["-p", join32(baseDir, ".crew")]);
   const line = JSON.stringify({
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     role,
@@ -15789,8 +17292,8 @@ async function appendVoiceTranscript(baseDir, role, text) {
 }
 
 // src/context/augment.ts
-import { readFile as readFile25 } from "node:fs/promises";
-import { extname as extname3, resolve as resolve16 } from "node:path";
+import { readFile as readFile28 } from "node:fs/promises";
+import { extname as extname4, resolve as resolve16 } from "node:path";
 function collectOption(value, previous = []) {
   if (!value) return previous;
   return [...previous, value];
@@ -15809,7 +17312,7 @@ function clip5(text, maxChars) {
 ... [truncated ${text.length - maxChars} chars]`;
 }
 function inferImageMime(path3) {
-  const ext = extname3(path3).toLowerCase();
+  const ext = extname4(path3).toLowerCase();
   if (ext === ".png") return "image/png";
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   if (ext === ".webp") return "image/webp";
@@ -15822,7 +17325,7 @@ async function buildFileContextBlock(paths = [], maxChars = 8e3) {
   for (const rawPath of paths) {
     const abs = resolve16(rawPath);
     try {
-      const content = await readFile25(abs, "utf8");
+      const content = await readFile28(abs, "utf8");
       sections.push([
         `### File Context: ${abs}`,
         "```text",
@@ -15862,7 +17365,7 @@ async function buildImageContextBlock(paths = [], maxBytes = 25e4) {
 (unsupported image type; supported: png, jpg, jpeg, webp, gif)`);
         continue;
       }
-      const buf = await readFile25(abs);
+      const buf = await readFile28(abs);
       const used = buf.subarray(0, maxBytes);
       const truncated = buf.length > maxBytes;
       const dataUri = `data:${mime};base64,${used.toString("base64")}`;
@@ -15924,9 +17427,9 @@ ${clippedContext}` : baseTask.slice(0, maxChars);
 }
 
 // src/review/index.ts
-import { execFile as execFile7 } from "node:child_process";
-import { promisify as promisify8 } from "node:util";
-var execFileAsync7 = promisify8(execFile7);
+import { execFile as execFile8 } from "node:child_process";
+import { promisify as promisify9 } from "node:util";
+var execFileAsync8 = promisify9(execFile8);
 function clip6(text, maxChars = 2e4) {
   if (!text) return "(none)";
   if (text.length <= maxChars) return text;
@@ -15934,7 +17437,7 @@ function clip6(text, maxChars = 2e4) {
 ... [truncated ${text.length - maxChars} chars]`;
 }
 async function runGit3(args, cwd) {
-  const { stdout } = await execFileAsync7("git", args, { cwd, maxBuffer: 1024 * 1024 * 8 });
+  const { stdout } = await execFileAsync8("git", args, { cwd, maxBuffer: 1024 * 1024 * 8 });
   return stdout.trim();
 }
 async function getReviewPayload(cwd = process.cwd()) {
@@ -15998,9 +17501,9 @@ function detectHighSeverityFindings(text) {
 }
 
 // src/headless/index.ts
-import { mkdir as mkdir18, readFile as readFile26, writeFile as writeFile17 } from "node:fs/promises";
+import { mkdir as mkdir18, readFile as readFile29, writeFile as writeFile17 } from "node:fs/promises";
 import { existsSync as existsSync16 } from "node:fs";
-import { join as join30 } from "node:path";
+import { join as join33 } from "node:path";
 
 // src/runtime/execution-policy.ts
 init_capabilities();
@@ -16075,11 +17578,11 @@ function isRiskBlocked(risk, threshold, force = false) {
 // src/headless/index.ts
 init_blast_radius();
 function statePath(baseDir) {
-  return join30(baseDir, ".crew", "headless-state.json");
+  return join33(baseDir, ".crew", "headless-state.json");
 }
 async function ensureState(baseDir) {
   const path3 = statePath(baseDir);
-  await mkdir18(join30(baseDir, ".crew"), { recursive: true });
+  await mkdir18(join33(baseDir, ".crew"), { recursive: true });
   if (!existsSync16(path3)) {
     await writeFile17(path3, JSON.stringify({ paused: false, updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, null, 2), "utf8");
   }
@@ -16087,7 +17590,7 @@ async function ensureState(baseDir) {
 async function getHeadlessState(baseDir = process.cwd()) {
   await ensureState(baseDir);
   try {
-    const raw = await readFile26(statePath(baseDir), "utf8");
+    const raw = await readFile29(statePath(baseDir), "utf8");
     const parsed = JSON.parse(raw);
     return { paused: Boolean(parsed.paused), updatedAt: parsed.updatedAt };
   } catch {
@@ -16104,9 +17607,9 @@ async function setHeadlessPaused(paused, baseDir = process.cwd()) {
 }
 async function appendOutLine(baseDir, outPath, payload) {
   if (!outPath) return;
-  const fullPath = join30(baseDir, outPath);
-  await mkdir18(join30(fullPath, ".."), { recursive: true });
-  const prev = existsSync16(fullPath) ? await readFile26(fullPath, "utf8") : "";
+  const fullPath = join33(baseDir, outPath);
+  await mkdir18(join33(fullPath, ".."), { recursive: true });
+  const prev = existsSync16(fullPath) ? await readFile29(fullPath, "utf8") : "";
   await writeFile17(fullPath, `${prev}${JSON.stringify(payload)}
 `, "utf8");
 }
@@ -16191,8 +17694,8 @@ async function runHeadlessTask(options) {
 // src/interface/server.ts
 init_collections();
 import { createServer } from "node:http";
-import { homedir as homedir7 } from "node:os";
-import { join as join32 } from "node:path";
+import { homedir as homedir9 } from "node:os";
+import { join as join35 } from "node:path";
 import { readFileSync as readFileSync5 } from "node:fs";
 import { randomUUID as randomUUID9 } from "node:crypto";
 
@@ -16494,12 +17997,12 @@ ${context}` : message;
 }
 
 // src/metrics/pipeline.ts
-import { readFile as readFile27 } from "node:fs/promises";
-import { join as join31 } from "node:path";
+import { readFile as readFile30 } from "node:fs/promises";
+import { join as join34 } from "node:path";
 async function loadPipelineMetricsSummary(baseDir) {
-  const path3 = join31(baseDir, ".crew", "pipeline-metrics.jsonl");
+  const path3 = join34(baseDir, ".crew", "pipeline-metrics.jsonl");
   try {
-    const raw = await readFile27(path3, "utf8");
+    const raw = await readFile30(path3, "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     let runs = 0;
     let qaApproved = 0;
@@ -16543,7 +18046,7 @@ var latestIndexStats = { files: 0, chunks: 0 };
 var latestIndexId = "";
 function readRtToken() {
   try {
-    const p = join32(homedir7(), ".crewswarm", "crewswarm.json");
+    const p = join35(homedir9(), ".crewswarm", "crewswarm.json");
     const cfg = JSON.parse(readFileSync5(p, "utf8"));
     return String(cfg?.rt?.authToken || "");
   } catch {
@@ -17389,7 +18892,7 @@ async function startUnifiedServer(options) {
       if (req.method === "POST" && path3 === "/v1/index/rebuild") {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const paths = Array.isArray(body?.paths) && body.paths.length > 0 ? body.paths : [join32(options.projectDir, "docs"), options.projectDir];
+        const paths = Array.isArray(body?.paths) && body.paths.length > 0 ? body.paths : [join35(options.projectDir, "docs"), options.projectDir];
         latestIndex = await buildCollectionIndex(paths, {
           includeCode: Boolean(body?.includeCode)
         });
@@ -17407,7 +18910,7 @@ async function startUnifiedServer(options) {
         const q = String(getQuery(req).get("q") || "").trim();
         if (!q) return json(res, 400, { error: "q is required" });
         if (!latestIndex) {
-          const fallback = await buildCollectionIndex([join32(options.projectDir, "docs"), options.projectDir], {
+          const fallback = await buildCollectionIndex([join35(options.projectDir, "docs"), options.projectDir], {
             includeCode: false
           });
           latestIndex = fallback;
@@ -17471,7 +18974,7 @@ async function startUnifiedServer(options) {
 // src/sourcegraph/index.ts
 import { spawn as spawn4 } from "node:child_process";
 import { mkdir as mkdir19, writeFile as writeFile18 } from "node:fs/promises";
-import { join as join33 } from "node:path";
+import { join as join36 } from "node:path";
 function runSrcCli(args, cwd = process.cwd()) {
   return new Promise((resolve19) => {
     const child = spawn4("src", args, {
@@ -17511,8 +19014,8 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
   }
   const repos = options.repos.length ? options.repos : ["repo:^github\\.com/.+"];
   const specPath = options.specPath || ".crew/src-batch.spec.yaml";
-  const full = join33(cwd, specPath);
-  await mkdir19(join33(full, ".."), { recursive: true });
+  const full = join36(cwd, specPath);
+  await mkdir19(join36(full, ".."), { recursive: true });
   const yaml = [
     "name: crew-src-batch-plan",
     "description: Generated by crew src batch-plan",
@@ -17547,9 +19050,9 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
 import { createInterface, emitKeypressEvents } from "node:readline";
 import { randomUUID as randomUUID10 } from "node:crypto";
 import { existsSync as existsSync18, readFileSync as readFileSync6 } from "node:fs";
-import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile29, readdir as readdir9, writeFile as writeFile20 } from "node:fs/promises";
-import { join as join36 } from "node:path";
-import { homedir as homedir9 } from "node:os";
+import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile32, readdir as readdir10, writeFile as writeFile20 } from "node:fs/promises";
+import { join as join39 } from "node:path";
+import { homedir as homedir11 } from "node:os";
 import chalk3 from "chalk";
 init_agentkeeper();
 
@@ -17557,7 +19060,7 @@ init_agentkeeper();
 init_agentkeeper();
 init_agent_memory();
 init_collections();
-import { resolve as resolve18, join as join34 } from "node:path";
+import { resolve as resolve18, join as join37 } from "node:path";
 function tokenize3(text) {
   return new Set(
     String(text || "").toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 2)
@@ -17652,7 +19155,7 @@ var MemoryBroker = class {
     const maxResults = Math.max(1, Number(options.maxResults || 5));
     const includeDocs = options.includeDocs !== false;
     const includeCode = Boolean(options.includeCode);
-    const docsPaths = options.docsPaths && options.docsPaths.length > 0 ? options.docsPaths : [join34(this.projectDir, "docs"), this.projectDir];
+    const docsPaths = options.docsPaths && options.docsPaths.length > 0 ? options.docsPaths : [join37(this.projectDir, "docs"), this.projectDir];
     const [keeperHits, factHits, collectionHits] = await Promise.all([
       this.keeper.recall(query, Math.max(maxResults, 8), {
         preferSuccessful: options.preferSuccessful !== false,
@@ -17701,15 +19204,15 @@ var MemoryBroker = class {
 };
 
 // src/checkpoint/store.ts
-import { mkdir as mkdir20, readFile as readFile28, readdir as readdir8, writeFile as writeFile19 } from "node:fs/promises";
+import { mkdir as mkdir20, readFile as readFile31, readdir as readdir9, writeFile as writeFile19 } from "node:fs/promises";
 import { existsSync as existsSync17 } from "node:fs";
-import { join as join35 } from "node:path";
+import { join as join38 } from "node:path";
 var CheckpointStore = class {
   constructor(baseDir = process.cwd()) {
-    this.dir = join35(baseDir, ".crew", "checkpoints");
+    this.dir = join38(baseDir, ".crew", "checkpoints");
   }
   filePath(runId) {
-    return join35(this.dir, `${runId}.json`);
+    return join38(this.dir, `${runId}.json`);
   }
   async beginRun(run) {
     await mkdir20(this.dir, { recursive: true });
@@ -17746,7 +19249,7 @@ var CheckpointStore = class {
   }
   async load(runId) {
     try {
-      const raw = await readFile28(this.filePath(runId), "utf8");
+      const raw = await readFile31(this.filePath(runId), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
@@ -17754,11 +19257,11 @@ var CheckpointStore = class {
   }
   async list(limit = 20) {
     if (!existsSync17(this.dir)) return [];
-    const files = (await readdir8(this.dir)).filter((f) => f.endsWith(".json")).slice(-Math.max(1, limit));
+    const files = (await readdir9(this.dir)).filter((f) => f.endsWith(".json")).slice(-Math.max(1, limit));
     const runs = [];
     for (const file of files) {
       try {
-        const raw = await readFile28(join35(this.dir, file), "utf8");
+        const raw = await readFile31(join38(this.dir, file), "utf8");
         runs.push(JSON.parse(raw));
       } catch {
       }
@@ -17898,15 +19401,15 @@ function printSlashCommandMenu(filter = "") {
   console.log(chalk3.gray("\n  Type a command directly or press Tab to autocomplete.\n"));
 }
 async function listInstalledSkills() {
-  const skillsRoot = join36(homedir9(), ".crewswarm", "skills");
+  const skillsRoot = join39(homedir11(), ".crewswarm", "skills");
   const out = [];
   try {
-    const entries = await readdir9(skillsRoot, { withFileTypes: true });
+    const entries = await readdir10(skillsRoot, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isFile() && entry.name.endsWith(".json")) {
-        out.push({ name: entry.name.replace(/\.json$/i, ""), type: "api", path: join36(skillsRoot, entry.name) });
+        out.push({ name: entry.name.replace(/\.json$/i, ""), type: "api", path: join39(skillsRoot, entry.name) });
       } else if (entry.isDirectory()) {
-        const skillDoc = join36(skillsRoot, entry.name, "SKILL.md");
+        const skillDoc = join39(skillsRoot, entry.name, "SKILL.md");
         if (existsSync18(skillDoc)) {
           out.push({ name: entry.name, type: "knowledge", path: skillDoc });
         }
@@ -17926,7 +19429,7 @@ function resolveConfiguredReplModel(repoConfig) {
     process.env.CREW_EXECUTION_MODEL
   ].map((value) => String(value || "").trim()).filter(Boolean);
   if (envCandidates.length > 0) return envCandidates[0];
-  const swarmCfg = readJsonFile(join36(homedir9(), ".crewswarm", "crewswarm.json")) || {};
+  const swarmCfg = readJsonFile(join39(homedir11(), ".crewswarm", "crewswarm.json")) || {};
   const sharedEnv = swarmCfg?.env && typeof swarmCfg.env === "object" ? swarmCfg.env : {};
   const sharedCandidates = [
     sharedEnv.CREW_CHAT_MODEL,
@@ -17939,7 +19442,7 @@ function resolveConfiguredReplModel(repoConfig) {
 function buildModelSummary(projectDir, state) {
   const envMode = String(process.env.CREW_INTERFACE_MODE || "").toLowerCase();
   const mode = envMode === "connected" ? "connected" : state.useGateway ? "connected" : "standalone";
-  const policyPath = join36(projectDir, ".crew", "model-policy.json");
+  const policyPath = join39(projectDir, ".crew", "model-policy.json");
   const policy = readJsonFile(policyPath) || {};
   const tiers = policy?.tiers || {};
   const policyTierModels = Array.from(
@@ -17950,7 +19453,7 @@ function buildModelSummary(projectDir, state) {
       })
     )
   );
-  const swarmCfg = readJsonFile(join36(homedir9(), ".crewswarm", "crewswarm.json")) || {};
+  const swarmCfg = readJsonFile(join39(homedir11(), ".crewswarm", "crewswarm.json")) || {};
   const agents = Array.isArray(swarmCfg?.agents) ? swarmCfg.agents : [];
   const agentModels = Array.from(
     new Set(
@@ -17986,14 +19489,14 @@ async function buildRepoBootstrap(projectDir) {
   const ignored = /* @__PURE__ */ new Set([".git", "node_modules", ".crew", "dist"]);
   let topEntries = [];
   try {
-    const entries = await readdir9(projectDir, { withFileTypes: true });
+    const entries = await readdir10(projectDir, { withFileTypes: true });
     topEntries = entries.filter((e) => !ignored.has(e.name)).map((e) => e.isDirectory() ? `${e.name}/` : e.name).sort().slice(0, 20);
   } catch {
     topEntries = [];
   }
   let docs = [];
   try {
-    const docsEntries = await readdir9(join36(projectDir, "docs"), { withFileTypes: true });
+    const docsEntries = await readdir10(join39(projectDir, "docs"), { withFileTypes: true });
     docs = docsEntries.filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md")).map((e) => `docs/${e.name}`).sort().slice(0, 15);
   } catch {
     docs = [];
@@ -18008,10 +19511,10 @@ async function buildRepoBootstrap(projectDir) {
     "src/repl/index.ts",
     "src/interface/server.ts"
   ];
-  const keyFiles = keyCandidates.filter((p) => existsSync18(join36(projectDir, p)));
+  const keyFiles = keyCandidates.filter((p) => existsSync18(join39(projectDir, p)));
   let readmeSummary = "";
   try {
-    const raw = await readFile29(join36(projectDir, "README.md"), "utf8");
+    const raw = await readFile32(join39(projectDir, "README.md"), "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     readmeSummary = lines.slice(0, 3).join(" ").slice(0, 260);
   } catch {
@@ -18324,12 +19827,12 @@ async function startRepl(options) {
   const bannerEnabled = repoConfig?.repl?.bannerEnabled !== false;
   const bannerAnimated = repoConfig?.repl?.animatedBanner !== false;
   const bannerFirstLaunchOnly = repoConfig?.repl?.bannerFirstLaunchOnly === true;
-  const bannerSeenFile = join36(projectDir, ".crew", "repl-banner-seen");
-  const replAuditPath = join36(projectDir, ".crew", "repl-events.jsonl");
+  const bannerSeenFile = join39(projectDir, ".crew", "repl-banner-seen");
+  const replAuditPath = join39(projectDir, ".crew", "repl-events.jsonl");
   const shouldRenderBanner = bannerEnabled && (!bannerFirstLaunchOnly || !existsSync18(bannerSeenFile));
   let auditSeq = 0;
   let checkpointEnabled = true;
-  if (projectDir === homedir9()) {
+  if (projectDir === homedir11()) {
     console.log(chalk3.yellow("\n  \u26A0 Running from home directory (~). For best results, cd into a project folder first.\n"));
   }
   let repoBootstrap = { projectDir, topEntries: [], docs: [], keyFiles: [], readmeSummary: "" };
@@ -18360,7 +19863,7 @@ async function startRepl(options) {
       console.log(chalk3.cyan(BANNER2));
     }
     try {
-      await mkdir21(join36(projectDir, ".crew"), { recursive: true });
+      await mkdir21(join39(projectDir, ".crew"), { recursive: true });
       await writeFile20(bannerSeenFile, (/* @__PURE__ */ new Date()).toISOString(), "utf8");
     } catch {
     }
@@ -18399,7 +19902,7 @@ async function startRepl(options) {
           ...payload
         });
       }
-      await mkdir21(join36(projectDir, ".crew"), { recursive: true });
+      await mkdir21(join39(projectDir, ".crew"), { recursive: true });
       await appendFile6(replAuditPath, `${JSON.stringify(event)}
 `, "utf8");
     } catch {
@@ -18455,7 +19958,7 @@ async function startRepl(options) {
         const { readdirSync: readdirSync2, statSync: statSync2 } = __require("fs");
         const { dirname: dirname9, basename } = __require("path");
         const partial = trimmed.split(/\s+/).pop() || "";
-        const dir = partial.includes("/") ? join36(projectDir, dirname9(partial)) : projectDir;
+        const dir = partial.includes("/") ? join39(projectDir, dirname9(partial)) : projectDir;
         const prefix = partial.includes("/") ? basename(partial) : partial;
         const entries = readdirSync2(dir, { withFileTypes: true }).filter((e) => e.name.startsWith(prefix) && !e.name.startsWith(".")).slice(0, 20).map((e) => {
           const full = partial.includes("/") ? dirname9(partial) + "/" + e.name : e.name;
@@ -19431,7 +20934,7 @@ Completions (${completions.length}):`));
           for (const f of changedFiles) {
             try {
               const { readFileSync: readFileSync8 } = await import("node:fs");
-              const content = readFileSync8(join36(projectDir, f), "utf8");
+              const content = readFileSync8(join39(projectDir, f), "utf8");
               codeSnippets += `
 ### ${f}
 \`\`\`
@@ -19974,12 +21477,12 @@ init_agentkeeper();
 
 // src/xai/search.ts
 import { existsSync as existsSync19, readFileSync as readFileSync7 } from "node:fs";
-import { join as join37 } from "node:path";
-import { homedir as homedir10 } from "node:os";
+import { join as join40 } from "node:path";
+import { homedir as homedir12 } from "node:os";
 function getXaiApiKey() {
   if (process.env.XAI_API_KEY) return process.env.XAI_API_KEY;
   if (process.env.GROK_API_KEY) return process.env.GROK_API_KEY;
-  const cfgPath = join37(homedir10(), ".crewswarm", "crewswarm.json");
+  const cfgPath = join40(homedir12(), ".crewswarm", "crewswarm.json");
   if (!existsSync19(cfgPath)) return null;
   try {
     const raw = readFileSync7(cfgPath, "utf8");
@@ -20046,9 +21549,9 @@ async function runXSearch(query, options = {}) {
 }
 
 // src/config/repo-config.ts
-import { mkdir as mkdir22, readFile as readFile30, writeFile as writeFile21 } from "node:fs/promises";
+import { mkdir as mkdir22, readFile as readFile33, writeFile as writeFile21 } from "node:fs/promises";
 import { existsSync as existsSync20 } from "node:fs";
-import { join as join38 } from "node:path";
+import { join as join41 } from "node:path";
 var DEFAULT_CONFIG = {
   cli: {
     model: "",
@@ -20095,7 +21598,7 @@ function parseJsonOrEmpty(raw) {
   }
 }
 function configPath2(baseDir, scope) {
-  return join38(baseDir, ".crew", scope === "team" ? "crewswarm.json" : "config.local.json");
+  return join41(baseDir, ".crew", scope === "team" ? "crewswarm.json" : "config.local.json");
 }
 function assertNoSecrets(input, prefix = "") {
   if (Array.isArray(input)) {
@@ -20129,7 +21632,7 @@ function redactSecrets(input) {
 async function readRepoConfig(baseDir, scope) {
   const path3 = configPath2(baseDir, scope);
   if (!existsSync20(path3)) return {};
-  const raw = await readFile30(path3, "utf8");
+  const raw = await readFile33(path3, "utf8");
   return parseJsonOrEmpty(raw);
 }
 async function loadResolvedRepoConfig(baseDir = process.cwd()) {
@@ -20139,7 +21642,7 @@ async function loadResolvedRepoConfig(baseDir = process.cwd()) {
 }
 async function writeRepoConfig(baseDir, scope, config) {
   const path3 = configPath2(baseDir, scope);
-  await mkdir22(join38(baseDir, ".crew"), { recursive: true });
+  await mkdir22(join41(baseDir, ".crew"), { recursive: true });
   if (scope === "team") {
     assertNoSecrets(config);
   }
@@ -20179,9 +21682,9 @@ function redactRepoConfigForDisplay(value) {
 }
 
 // src/github/nl.ts
-import { execFile as execFile9 } from "node:child_process";
-import { promisify as promisify10 } from "node:util";
-var execFileAsync9 = promisify10(execFile9);
+import { execFile as execFile10 } from "node:child_process";
+import { promisify as promisify11 } from "node:util";
+var execFileAsync10 = promisify11(execFile10);
 function readQuoted(text) {
   const m = text.match(/"([^"]+)"/);
   return (m?.[1] || "").trim();
@@ -20246,7 +21749,7 @@ function parseGitHubIntent(input, options = {}) {
 }
 async function runGh(args, cwd = process.cwd()) {
   try {
-    const { stdout, stderr } = await execFileAsync9("gh", args, {
+    const { stdout, stderr } = await execFileAsync10("gh", args, {
       cwd,
       maxBuffer: 1024 * 1024 * 8
     });
@@ -20313,7 +21816,7 @@ function describeIntent(intent) {
 async function runGitHubDoctor(cwd = process.cwd(), repo) {
   const checks = [];
   try {
-    const { stdout } = await execFileAsync9("gh", ["--version"], { cwd, maxBuffer: 1024 * 1024 });
+    const { stdout } = await execFileAsync10("gh", ["--version"], { cwd, maxBuffer: 1024 * 1024 });
     checks.push({
       name: "gh installed",
       ok: true,
@@ -20338,7 +21841,7 @@ async function runGitHubDoctor(cwd = process.cwd(), repo) {
     return checks;
   }
   try {
-    const { stdout, stderr } = await execFileAsync9("gh", ["auth", "status"], {
+    const { stdout, stderr } = await execFileAsync10("gh", ["auth", "status"], {
       cwd,
       maxBuffer: 1024 * 1024
     });
@@ -20357,7 +21860,7 @@ async function runGitHubDoctor(cwd = process.cwd(), repo) {
   }
   const repoArgs = repo ? ["--repo", repo] : [];
   try {
-    const { stdout } = await execFileAsync9(
+    const { stdout } = await execFileAsync10(
       "gh",
       ["repo", "view", ...repoArgs, "--json", "nameWithOwner,viewerPermission"],
       { cwd, maxBuffer: 1024 * 1024 }
@@ -20382,8 +21885,8 @@ async function runGitHubDoctor(cwd = process.cwd(), repo) {
 
 // src/config/model-policy.ts
 import { existsSync as existsSync21 } from "node:fs";
-import { readFile as readFile31 } from "node:fs/promises";
-import { join as join39 } from "node:path";
+import { readFile as readFile34 } from "node:fs/promises";
+import { join as join42 } from "node:path";
 function sanitizeTier(input) {
   const out = {};
   if (!input || typeof input !== "object") return out;
@@ -20398,11 +21901,11 @@ function sanitizeTier(input) {
   return out;
 }
 async function loadModelPolicy(baseDir = process.cwd()) {
-  const path3 = join39(baseDir, ".crew", "model-policy.json");
+  const path3 = join42(baseDir, ".crew", "model-policy.json");
   if (!existsSync21(path3)) return {};
   let parsed;
   try {
-    parsed = JSON.parse(await readFile31(path3, "utf8"));
+    parsed = JSON.parse(await readFile34(path3, "utf8"));
   } catch {
     return {};
   }
@@ -20419,9 +21922,9 @@ async function loadModelPolicy(baseDir = process.cwd()) {
 }
 
 // src/autofix/store.ts
-import { mkdir as mkdir23, readFile as readFile32, writeFile as writeFile22 } from "node:fs/promises";
+import { mkdir as mkdir23, readFile as readFile35, writeFile as writeFile22 } from "node:fs/promises";
 import { existsSync as existsSync22 } from "node:fs";
-import { join as join40 } from "node:path";
+import { join as join43 } from "node:path";
 import { randomUUID as randomUUID11 } from "node:crypto";
 function createDefaultState() {
   return {
@@ -20431,13 +21934,13 @@ function createDefaultState() {
 }
 var AutoFixStore = class {
   constructor(baseDir = process.cwd()) {
-    this.dir = join40(baseDir, ".crew", "autofix");
-    this.file = join40(this.dir, "queue.json");
+    this.dir = join43(baseDir, ".crew", "autofix");
+    this.file = join43(this.dir, "queue.json");
   }
   async readState() {
     if (!existsSync22(this.file)) return createDefaultState();
     try {
-      const raw = await readFile32(this.file, "utf8");
+      const raw = await readFile35(this.file, "utf8");
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.jobs)) return createDefaultState();
       return {
@@ -20597,7 +22100,7 @@ var AutoFixStore = class {
 init_blast_radius();
 import { execSync as execSync6 } from "node:child_process";
 import { mkdir as mkdir24, writeFile as writeFile23 } from "node:fs/promises";
-import { join as join41 } from "node:path";
+import { join as join44 } from "node:path";
 function hasCompletionSignal(text) {
   const lower = text.toLowerCase();
   const signals = [
@@ -20834,9 +22337,9 @@ async function runAutoFixJob(job, deps) {
         validationFailedCommand: validation.failedCommand || void 0
       };
     }
-    const proposalDir = join41(job.projectDir, ".crew", "autofix", "proposals");
+    const proposalDir = join44(job.projectDir, ".crew", "autofix", "proposals");
     await mkdir24(proposalDir, { recursive: true });
-    const proposalPath = join41(proposalDir, `${job.id}.diff`);
+    const proposalPath = join44(proposalDir, `${job.id}.diff`);
     await writeFile23(proposalPath, sandbox.preview(changedBranch), "utf8");
     await sandbox.rollback(changedBranch);
     await checkpoints.append(runId, "autofix.proposal", {
@@ -20874,8 +22377,8 @@ async function runAutoFixJob(job, deps) {
 
 // src/cli/index.ts
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { mkdir as mkdir25, readFile as readFile33, writeFile as writeFile24 } from "node:fs/promises";
-import { dirname as dirname8, join as join42 } from "node:path";
+import { mkdir as mkdir25, readFile as readFile36, writeFile as writeFile24 } from "node:fs/promises";
+import { dirname as dirname8, join as join45 } from "node:path";
 import { execSync as execSync7 } from "node:child_process";
 var program = new Command();
 function parseHeadlessShortcutArgs(args) {
@@ -21021,7 +22524,7 @@ function detectCliAuthStatus() {
     const text = (result2.output || "").toLowerCase();
     return text.includes("logged in");
   })() : false;
-  const cursor = hasBinary("cursor") && existsSync23(join42(homedir11(), ".cursor", "User", "globalStorage", "state.vscdb"));
+  const cursor = hasBinary("cursor") && existsSync23(join45(homedir13(), ".cursor", "User", "globalStorage", "state.vscdb"));
   return { claude, codex, cursor };
 }
 function detectSubscriptionEngines(tokens) {
@@ -21030,7 +22533,7 @@ function detectSubscriptionEngines(tokens) {
   const codexInstalled = hasBinary("codex");
   const cliAuth = detectCliAuthStatus();
   const cursorAuth = Boolean(tokens.cursor || cliAuth.cursor);
-  const claudeAuth = Boolean(tokens.claude || process.env.ANTHROPIC_API_KEY || cliAuth.claude);
+  const claudeAuth = Boolean(tokens.claude || cliAuth.claude);
   const codexAuth = Boolean(tokens.openai || process.env.OPENAI_API_KEY || cliAuth.codex);
   return [
     {
@@ -21084,8 +22587,8 @@ function printJsonEnvelope(kind, payload) {
   }, null, 2));
 }
 async function loadPipelineRunEvents(traceId, baseDir = process.cwd()) {
-  const path3 = join42(baseDir, ".crew", "pipeline-runs", `${traceId}.jsonl`);
-  const raw = await readFile33(path3, "utf8");
+  const path3 = join45(baseDir, ".crew", "pipeline-runs", `${traceId}.jsonl`);
+  const raw = await readFile36(path3, "utf8");
   return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
     try {
       return JSON.parse(line);
@@ -21287,7 +22790,7 @@ async function main(args = []) {
     normalizedArgs.splice(idx, 1);
     args = normalizedArgs;
   }
-  const bannerFile = join42(process.env.HOME || homedir11(), ".crew", "cli-banner-seen");
+  const bannerFile = join45(process.env.HOME || homedir13(), ".crew", "cli-banner-seen");
   const showAlways = process.env.CREW_SHOW_BANNER === "1";
   if (showAlways || !existsSync23(bannerFile)) {
     const banner = `
@@ -21313,9 +22816,9 @@ async function main(args = []) {
     }
   }
   try {
-    const swarmCfgPath = join42(homedir11(), ".crewswarm", "crewswarm.json");
+    const swarmCfgPath = join45(homedir13(), ".crewswarm", "crewswarm.json");
     if (existsSync23(swarmCfgPath)) {
-      const swarmCfg = JSON.parse(await readFile33(swarmCfgPath, "utf8"));
+      const swarmCfg = JSON.parse(await readFile36(swarmCfgPath, "utf8"));
       const providerEnvMap = {
         openai: "OPENAI_API_KEY",
         anthropic: "ANTHROPIC_API_KEY",
@@ -21464,7 +22967,7 @@ ${stdinText}
       let docsBlock = "";
       if (options.docs) {
         const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
-        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join42(process.cwd(), "docs"), process.cwd()];
+        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join45(process.cwd(), "docs"), process.cwd()];
         const index = await buildCollectionIndex2(docsPaths, {
           includeCode: Boolean(options.docsCode)
         });
@@ -22160,7 +23663,7 @@ ${stdinText}
       let docsBlock = "";
       if (options.docs) {
         const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
-        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join42(process.cwd(), "docs"), process.cwd()];
+        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join45(process.cwd(), "docs"), process.cwd()];
         const index = await buildCollectionIndex2(docsPaths, {
           includeCode: Boolean(options.docsCode)
         });
@@ -22532,7 +24035,7 @@ Please review for correctness, regressions, and security concerns.`;
       process.exit(1);
     }
   });
-  program.command("map").description("Generate a repository structure graph respecting .gitignore").option("--graph", "Emit dependency graph instead of tree output", false).option("--visualize", "Generate interactive HTML graph (implies --graph)", false).option("--out <path>", "Output path for --visualize HTML", join42(process.cwd(), ".crew", "repo-graph.html")).option("--json", "Emit graph as JSON", false).option("--max-nodes <n>", "Limit graph nodes in text mode", "200").action(async (options) => {
+  program.command("map").description("Generate a repository structure graph respecting .gitignore").option("--graph", "Emit dependency graph instead of tree output", false).option("--visualize", "Generate interactive HTML graph (implies --graph)", false).option("--out <path>", "Output path for --visualize HTML", join45(process.cwd(), ".crew", "repo-graph.html")).option("--json", "Emit graph as JSON", false).option("--max-nodes <n>", "Limit graph nodes in text mode", "200").action(async (options) => {
     const {
       buildRepositoryGraph: buildRepositoryGraph2,
       buildRepositoryMap: buildRepositoryMap2,
@@ -22543,7 +24046,7 @@ Please review for correctness, regressions, and security concerns.`;
       if (options.graph || options.visualize) {
         const graph = await buildRepositoryGraph2(process.cwd());
         if (options.visualize) {
-          const htmlPath = String(options.out || join42(process.cwd(), ".crew", "repo-graph.html"));
+          const htmlPath = String(options.out || join45(process.cwd(), ".crew", "repo-graph.html"));
           await mkdir25(dirname8(htmlPath), { recursive: true });
           const html = buildRepositoryGraphHtml2(graph);
           await writeFile24(htmlPath, html, "utf8");
@@ -23102,7 +24605,7 @@ Please review for correctness, regressions, and security concerns.`;
         "## Recent activity",
         ...last.map((entry) => `- ${entry.timestamp} ${entry.type}${entry.agent ? ` (${entry.agent})` : ""}`)
       ].join("\n");
-      await writeFile24(join42(process.cwd(), ".crew", "context-summary.md"), `${summary}
+      await writeFile24(join45(process.cwd(), ".crew", "context-summary.md"), `${summary}
 `, "utf8");
     }
     logger3.success(
@@ -24042,7 +25545,7 @@ Diagnose and provide a fix.`;
   program.command("docs").description("Search project docs and optionally code with source-attributed local RAG").argument("<query...>", "Search query").option("--path <paths...>", "Paths to index (default: docs/ and project root)").option("--code", "Include source code files in the index", false).option("--max <n>", "Max results to return", "8").option("--json", "Output as JSON", false).action(async (queryArray, options) => {
     const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
     const query = queryArray.join(" ");
-    const paths = options.path && options.path.length > 0 ? options.path : [join42(process.cwd(), "docs"), process.cwd()];
+    const paths = options.path && options.path.length > 0 ? options.path : [join45(process.cwd(), "docs"), process.cwd()];
     try {
       const index = await buildCollectionIndex2(paths, {
         includeCode: Boolean(options.code)
@@ -24344,7 +25847,7 @@ Diagnose and provide a fix.`;
         for (const f of changedFiles) {
           try {
             const { readFileSync: readFileSync8 } = await import("node:fs");
-            const content = readFileSync8(join42(process.cwd(), f), "utf8");
+            const content = readFileSync8(join45(process.cwd(), f), "utf8");
             codeSnippets += `
 ### ${f}
 \`\`\`

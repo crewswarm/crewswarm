@@ -15,14 +15,18 @@ import type { AutonomousResult, TurnResult } from '../worker/autonomous-loop.js'
 import type { ToolDeclaration } from '../tools/base.js';
 import type { Sandbox } from '../sandbox/index.js';
 import { executeAutonomous } from '../worker/autonomous-loop.js';
-import { GeminiToolAdapter } from '../tools/gemini/crew-adapter.js';
+import { GeminiToolAdapter, type ConstraintLevel, constraintLevelForPersona } from '../tools/gemini/crew-adapter.js';
 import {
   openAICompatibleTurn,
   anthropicTurn,
   type LLMTurnResult
 } from './multi-turn-drivers.js';
 import { CorrectionStore } from '../learning/corrections.js';
-import { estimateTokens, getContextWindow, adaptiveCompressionRatio } from '../context/token-compaction.js';
+import { estimateTokens, getContextWindow, adaptiveCompressionRatio, calculateTokenBudget, compactConversation, type CompactedMessage } from '../context/token-compaction.js';
+import { ExecutionTranscript } from '../execution/transcript.js';
+import { getOAuthToken, forceRefreshOAuthToken } from '../auth/oauth-keychain.js';
+import { getOpenAIOAuthToken, forceRefreshOpenAIOAuth, OPENAI_CODEX_API_URL } from '../auth/openai-oauth.js';
+import { getGeminiOAuthToken, forceRefreshGeminiOAuth } from '../auth/gemini-oauth.js';
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -480,9 +484,89 @@ const PROVIDER_ORDER: ProviderEntry[] = [
   { id: 'fireworks', envKey: 'FIREWORKS_API_KEY', model: 'accounts/fireworks/models/qwen3.5-397b-a17b', driver: 'openai', apiUrl: 'https://api.fireworks.ai/inference/v1/chat/completions', modelPrefix: 'fireworks', tier: 'standard' },
 ];
 
-function resolveProvider(modelOverride?: string, preferTier?: string): { key: string; model: string; driver: string; apiUrl?: string; id: string } | null {
+export type ResolvedProvider = { key: string; model: string; driver: string; apiUrl?: string; id: string; isOAuth?: boolean };
+
+async function resolveProvider(modelOverride?: string, preferTier?: string): Promise<ResolvedProvider | null> {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || '').trim().toLowerCase();
 
+  // ── OAuth first: subscription-based auth (free, highest priority) ──
+  // Try all three OAuth providers before falling back to API keys.
+  // Each OAuth provider is only tried if the requested model matches (or no model specified).
+
+  // OAuth: Claude Max subscription — disabled by default.
+  // The Anthropic API validates that OAuth tokens come from Claude Code's client ID.
+  // Third-party apps get 400 even with the correct beta header.
+  // Set CREW_OAUTH=true if Anthropic opens this to third-party clients.
+  if (process.env.CREW_OAUTH === 'true') {
+    // 1. Claude OAuth (macOS Keychain — Claude Max/Pro subscription)
+    const wantsClaude = !effectiveModel || effectiveModel.includes('claude') || effectiveModel.includes('anthropic');
+    if (wantsClaude) {
+      try {
+        const oauth = await getOAuthToken();
+        if (oauth?.accessToken) {
+          const oauthModel = effectiveModel && effectiveModel.includes('claude')
+            ? (modelOverride || process.env.CREW_EXECUTION_MODEL || 'claude-sonnet-4-20250514')
+            : 'claude-sonnet-4-20250514';
+          return {
+            key: oauth.accessToken,
+            model: oauthModel,
+            driver: 'anthropic',
+            id: `anthropic-oauth-${oauth.subscriptionType || 'unknown'}`,
+            isOAuth: true
+          };
+        }
+      } catch {
+        // Claude OAuth unavailable — try next
+      }
+    }
+
+    // 2. OpenAI OAuth (Codex CLI auth — ChatGPT Plus/Pro subscription)
+    const wantsOpenAI = !effectiveModel || effectiveModel.includes('gpt') || effectiveModel.includes('openai') || effectiveModel.includes('codex');
+    if (wantsOpenAI) {
+      try {
+        const oauth = await getOpenAIOAuthToken();
+        if (oauth?.accessToken) {
+          const oauthModel = effectiveModel && (effectiveModel.includes('gpt') || effectiveModel.includes('codex'))
+            ? (modelOverride || process.env.CREW_EXECUTION_MODEL || 'gpt-4.1')
+            : 'gpt-4.1';
+          return {
+            key: oauth.accessToken,
+            model: oauthModel,
+            driver: 'openai',
+            apiUrl: OPENAI_CODEX_API_URL,
+            id: 'openai-oauth-codex',
+            isOAuth: true
+          };
+        }
+      } catch {
+        // OpenAI OAuth unavailable — try next
+      }
+    }
+
+    // 3. Gemini OAuth (Google ADC or Gemini CLI — Google account)
+    const wantsGemini = !effectiveModel || effectiveModel.includes('gemini') || effectiveModel.includes('google');
+    if (wantsGemini) {
+      try {
+        const oauth = await getGeminiOAuthToken();
+        if (oauth?.accessToken) {
+          const oauthModel = effectiveModel && effectiveModel.includes('gemini')
+            ? (modelOverride || process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash')
+            : 'gemini-2.5-flash';
+          return {
+            key: oauth.accessToken,
+            model: oauthModel,
+            driver: 'gemini',
+            id: 'gemini-oauth-adc',
+            isOAuth: true
+          };
+        }
+      } catch {
+        // Gemini OAuth unavailable — try next
+      }
+    }
+  }
+
+  // ── API key providers (fallback when OAuth unavailable) ──
   // If a specific model is requested, find the matching provider
   if (effectiveModel) {
     for (const p of PROVIDER_ORDER) {
@@ -530,7 +614,8 @@ async function executeStreamingGeminiTurn(
   systemPrompt: string,
   stream: boolean,
   images?: ImageAttachment[],
-  historyMessages?: any[]
+  historyMessages?: any[],
+  isOAuth?: boolean
 ): Promise<LLMTurnResult> {
   const functionDeclarations = tools.map(t => ({
     name: t.name,
@@ -554,11 +639,20 @@ async function executeStreamingGeminiTurn(
   ];
 
   const endpoint = stream ? 'streamGenerateContent' : 'generateContent';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${endpoint}?key=${encodeURIComponent(key)}${stream ? '&alt=sse' : ''}`;
+
+  // OAuth uses Bearer auth header; API keys use ?key= query parameter
+  const url = isOAuth
+    ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:${endpoint}${stream ? '?alt=sse' : ''}`
+    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:${endpoint}?key=${encodeURIComponent(key)}${stream ? '&alt=sse' : ''}`;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (isOAuth) {
+    headers['Authorization'] = `Bearer ${key}`;
+  }
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     signal: AbortSignal.timeout(120000),
     body: JSON.stringify({
       contents,
@@ -568,6 +662,16 @@ async function executeStreamingGeminiTurn(
   });
 
   if (!res.ok) {
+    // On 401 with OAuth, try refreshing the token and retrying once
+    if (res.status === 401 && isOAuth) {
+      const refreshed = await forceRefreshGeminiOAuth();
+      if (refreshed?.accessToken && refreshed.accessToken !== key) {
+        return executeStreamingGeminiTurn(
+          fullTask, tools, refreshed.accessToken, model,
+          systemPrompt, stream, images, historyMessages, true
+        );
+      }
+    }
     const err = await res.text();
     throw new Error(`Gemini API ${res.status}: ${err.slice(0, 300)}`);
   }
@@ -664,7 +768,8 @@ async function executeStreamingOpenAITurn(
   systemPrompt: string,
   stream: boolean,
   images?: ImageAttachment[],
-  historyMessages?: any[]
+  historyMessages?: any[],
+  isOAuth?: boolean
 ): Promise<LLMTurnResult> {
   // Build user content: text + optional images as content array
   let userContent: any = fullTask;
@@ -701,6 +806,11 @@ async function executeStreamingOpenAITurn(
     stream
   };
 
+  // Codex OAuth endpoint uses store:false for stateless requests
+  if (isOAuth && apiUrl === OPENAI_CODEX_API_URL) {
+    body.store = false;
+  }
+
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
@@ -712,6 +822,16 @@ async function executeStreamingOpenAITurn(
   });
 
   if (!res.ok) {
+    // On 401 with OAuth, try refreshing the token and retrying once
+    if (res.status === 401 && isOAuth) {
+      const refreshed = await forceRefreshOpenAIOAuth();
+      if (refreshed?.accessToken && refreshed.accessToken !== apiKey) {
+        return executeStreamingOpenAITurn(
+          fullTask, tools, apiUrl, refreshed.accessToken, model,
+          systemPrompt, stream, images, historyMessages, true
+        );
+      }
+    }
     const err = await res.text();
     throw new Error(`OpenAI API ${res.status}: ${err.slice(0, 300)}`);
   }
@@ -804,6 +924,96 @@ async function executeStreamingOpenAITurn(
   return { response: msg?.content || '', status: 'COMPLETE', cost: 0 };
 }
 
+// ---------------------------------------------------------------------------
+// Anthropic SDK path — uses official SDK with authToken for OAuth
+// ---------------------------------------------------------------------------
+
+async function executeAnthropicSDKTurn(
+  fullTask: string,
+  tools: ToolDeclaration[],
+  authToken: string,
+  model: string,
+  systemPrompt: string,
+  images?: ImageAttachment[],
+  historyMessages?: any[]
+): Promise<LLMTurnResult> {
+  const Anthropic = (await import('@anthropic-ai/sdk')).default;
+  const client = new Anthropic({
+    authToken,
+    apiKey: null as any,
+    defaultHeaders: { 'x-app': 'cli' }
+  });
+
+  // Build user content
+  let userContent: any = fullTask;
+  if (images?.length) {
+    const parts: any[] = [{ type: 'text', text: fullTask }];
+    for (const img of images) {
+      parts.push({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mimeType, data: img.data }
+      });
+    }
+    userContent = parts;
+  }
+
+  const anthropicTools = tools.map(t => ({
+    name: t.name,
+    description: t.description || '',
+    input_schema: t.parameters as any
+  }));
+
+  try {
+    // Use beta.messages.create with oauth-2025-04-20 to enable OAuth auth
+    const response = await (client.beta.messages.create as any)({
+      model,
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [
+        { role: 'user' as const, content: userContent },
+        ...(historyMessages || [])
+      ],
+      temperature: 0.3,
+      tools: anthropicTools,
+      betas: [
+        'oauth-2025-04-20',           // Required for OAuth auth
+        'interleaved-thinking-2025-05-14', // Think between tool calls
+        'prompt-caching-2025-04-11',   // Better prompt caching
+      ],
+      stream: false
+    });
+
+    const usage = (response as any).usage || {} as any;
+    const cost = ((usage.input_tokens || 0) * 3 + (usage.output_tokens || 0) * 15) / 1_000_000;
+
+    const content = response.content || [];
+    const toolUseBlocks = content.filter((b: any) => b.type === 'tool_use');
+    const textBlocks = content.filter((b: any) => b.type === 'text');
+    const textResponse = textBlocks.map((b: any) => b.text).join('\n');
+
+    if (textResponse) process.stdout.write(textResponse);
+
+    if (toolUseBlocks.length > 0) {
+      const toolCalls = toolUseBlocks.map((b: any) => ({
+        tool: b.name,
+        params: b.input || {}
+      }));
+      return { toolCalls, response: textResponse, cost };
+    }
+
+    return { response: textResponse, status: 'COMPLETE', cost };
+  } catch (err: any) {
+    // On auth error, try refreshing token
+    if (err?.status === 401) {
+      const refreshed = await forceRefreshOAuthToken();
+      if (refreshed?.accessToken && refreshed.accessToken !== authToken) {
+        return executeAnthropicSDKTurn(fullTask, tools, refreshed.accessToken, model, systemPrompt, images, historyMessages);
+      }
+    }
+    throw err;
+  }
+}
+
 async function executeStreamingAnthropicTurn(
   fullTask: string,
   tools: ToolDeclaration[],
@@ -812,8 +1022,14 @@ async function executeStreamingAnthropicTurn(
   systemPrompt: string,
   stream: boolean,
   images?: ImageAttachment[],
-  historyMessages?: any[]
+  historyMessages?: any[],
+  isOAuth?: boolean
 ): Promise<LLMTurnResult> {
+  // ── SDK path for OAuth (uses @anthropic-ai/sdk with authToken) ──
+  if (isOAuth) {
+    return executeAnthropicSDKTurn(fullTask, tools, apiKey, model, systemPrompt, images, historyMessages);
+  }
+
   // Build user content: text + optional images
   let userContent: any = fullTask;
   if (images?.length) {
@@ -847,11 +1063,14 @@ async function executeStreamingAnthropicTurn(
     stream
   };
 
+  // API keys use x-api-key
+  const authHeaders: Record<string, string> = { 'x-api-key': apiKey };
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
+      ...authHeaders,
       'anthropic-version': '2023-06-01'
     },
     signal: AbortSignal.timeout(120000),
@@ -859,6 +1078,16 @@ async function executeStreamingAnthropicTurn(
   });
 
   if (!res.ok) {
+    // On 401 with OAuth, try refreshing the token and retrying once
+    if (res.status === 401 && isOAuth) {
+      const refreshed = await forceRefreshOAuthToken();
+      if (refreshed?.accessToken && refreshed.accessToken !== apiKey) {
+        return executeStreamingAnthropicTurn(
+          fullTask, tools, refreshed.accessToken, model,
+          systemPrompt, stream, images, historyMessages, true
+        );
+      }
+    }
     const err = await res.text();
     throw new Error(`Anthropic API ${res.status}: ${err.slice(0, 300)}`);
   }
@@ -963,10 +1192,15 @@ async function executeLLMTurn(
   stream: boolean,
   images?: ImageAttachment[]
 ): Promise<LLMTurnResult> {
-  const resolved = resolveProvider(model);
+  const resolved = await resolveProvider(model);
   if (!resolved) {
     throw new Error(
-      'No LLM providers available. Set at least one API key:\n' +
+      'No LLM providers available. Use OAuth (free with subscriptions) or set an API key:\n' +
+      '  OAuth (auto-detected, no config needed):\n' +
+      '  → Claude Code login  → uses Claude Max/Pro subscription\n' +
+      '  → Codex CLI login    → uses ChatGPT Plus/Pro subscription\n' +
+      '  → gcloud auth login  → uses Google account for Gemini\n' +
+      '  API keys (fallback):\n' +
       '  → GEMINI_API_KEY (free tier — https://aistudio.google.com/apikey)\n' +
       '  → GROQ_API_KEY   (free — https://console.groq.com/keys)\n' +
       '  → XAI_API_KEY    ($5/mo free credits — https://console.x.ai)\n' +
@@ -975,24 +1209,28 @@ async function executeLLMTurn(
     );
   }
 
-  const { key, model: effectiveModel, driver, apiUrl, id } = resolved;
+  const { key, model: effectiveModel, driver, apiUrl, id, isOAuth } = resolved;
+
+  // Show auth method per turn so user knows OAuth vs API key
+  const authBadge = isOAuth ? 'OAuth' : 'API';
+  console.error(`\x1b[2m[${effectiveModel} ${authBadge}]\x1b[0m`);
 
   // Gemini: structured multi-turn with functionCall/functionResponse
   if (driver === 'gemini') {
     const historyMsgs = historyToGeminiContents(history, effectiveModel);
-    return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
+    return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
   }
 
   // Anthropic: structured multi-turn with tool_use/tool_result
   if (driver === 'anthropic') {
     const historyMsgs = historyToAnthropicMessages(history);
-    return executeStreamingAnthropicTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
+    return executeStreamingAnthropicTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
   }
 
   // OpenAI-compatible: structured multi-turn with tool_calls/tool messages
   if (driver === 'openai' || driver === 'openrouter') {
     const historyMsgs = historyToOpenAIMessages(history, effectiveModel);
-    return executeStreamingOpenAITurn(task, tools, apiUrl!, key, effectiveModel, systemPrompt, stream, images, historyMsgs);
+    return executeStreamingOpenAITurn(task, tools, apiUrl!, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
   }
 
   throw new Error(`Unsupported driver: ${driver}`);
@@ -1131,16 +1369,32 @@ async function buildRepoMapContext(task: string, projectDir: string): Promise<st
 
 const MAX_RETRIES = 3;
 
+interface ToolExecResult {
+  output: string;
+  success: boolean;
+  error?: string;
+  handled?: boolean;       // false = worker MUST address this, not ignore it
+  recovery?: string;       // hint for how to fix
+}
+
 async function executeToolWithRetry(
   adapter: GeminiToolAdapter,
   name: string,
   params: Record<string, any>,
   verbose: boolean
-): Promise<{ output: string; success: boolean; error?: string }> {
+): Promise<ToolExecResult> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const result = await adapter.executeTool(name, params);
     if (result.success) {
       return { output: result.output ?? '', success: true };
+    }
+
+    // Constraint-level blocks are never retryable — propagate immediately with recovery hint
+    if (result.handled === false && result.recovery) {
+      const msg = result.recovery
+        ? `${result.error}\n\n[RECOVERY HINT]: ${result.recovery}`
+        : result.error || 'Tool blocked';
+      return { output: msg, success: false, error: result.error, handled: false, recovery: result.recovery };
     }
 
     // If first attempt failed and we have retries left, try with corrections
@@ -1171,11 +1425,11 @@ async function executeToolWithRetry(
         // For file ops: try without leading ./
         params.file_path = params.file_path.replace(/^\.\//, '');
       } else {
-        // No auto-correction available, don't retry
-        return { output: result.output ?? '', success: false, error: result.error };
+        // No auto-correction available, don't retry — propagate handled/recovery
+        return { output: result.output ?? '', success: false, error: result.error, handled: result.handled, recovery: result.recovery };
       }
     } else {
-      return { output: result.output ?? '', success: false, error: result.error };
+      return { output: result.output ?? '', success: false, error: result.error, handled: result.handled, recovery: result.recovery };
     }
   }
 
@@ -1198,6 +1452,8 @@ export interface AgenticExecutorResult {
   discoveredFiles?: string[];
   history?: TurnResult[];
   stopReason?: string;
+  transcript?: ExecutionTranscript;
+  constraintLevel?: ConstraintLevel;
 }
 
 export async function runAgenticWorker(
@@ -1214,9 +1470,14 @@ export async function runAgenticWorker(
     images?: ImageAttachment[];
     onToolCall?: (name: string, params: Record<string, any>) => void;
     priorDiscoveredFiles?: string[];
+    constraintLevel?: ConstraintLevel;
+    persona?: string;
   } = {}
 ): Promise<AgenticExecutorResult> {
-  const adapter = new GeminiToolAdapter(sandbox);
+  // Resolve constraint level: explicit > persona-derived > full (default)
+  const constraintLevel = options.constraintLevel
+    || (options.persona ? constraintLevelForPersona(options.persona) : 'full');
+  const adapter = new GeminiToolAdapter(sandbox, constraintLevel);
   const allTools = adapter.getToolDeclarations() as ToolDeclaration[];
   const systemPrompt = options.systemPrompt || L3_SYSTEM_PROMPT;
   const model = options.model || process.env.CREW_EXECUTION_MODEL || '';
@@ -1229,11 +1490,17 @@ export async function runAgenticWorker(
     : new JITContextTracker();
 
   // Resolve provider early to report which model/provider is being used
-  const resolvedProvider = resolveProvider(model, options.tier);
+  const resolvedProvider = await resolveProvider(model, options.tier);
+
+  // Auth summary — always show so user knows OAuth vs API key
+  if (resolvedProvider) {
+    const authMethod = resolvedProvider.isOAuth ? 'OAuth' : 'API key';
+    console.error(`\x1b[2m[auth] ${resolvedProvider.model} via ${authMethod} (${resolvedProvider.id})\x1b[0m`);
+  }
 
   if (verbose) {
     const prov = resolvedProvider ? `${resolvedProvider.id}/${resolvedProvider.model}` : 'none';
-    console.log(`[AgenticExecutor] Provider: ${prov} | Stream: ${stream} | Tools: ${allTools.length}`);
+    console.log(`[AgenticExecutor] Provider: ${prov} | Stream: ${stream} | Tools: ${allTools.length} | Constraint: ${constraintLevel}`);
   }
 
   // Inject repo-map context
@@ -1269,6 +1536,7 @@ export async function runAgenticWorker(
 
   let totalCost = 0;
   const toolsUsed = new Set<string>();
+  const transcript = new ExecutionTranscript();
 
   const executeTool = async (name: string, params: Record<string, any>) => {
     toolsUsed.add(name);
@@ -1281,7 +1549,22 @@ export async function runAgenticWorker(
       process.stdout.write(`  🔧 ${name}(${paramStr})...`);
     }
 
+    const toolStart = Date.now();
     const result = await executeToolWithRetry(adapter, name, params, verbose);
+    const durationMs = Date.now() - toolStart;
+
+    // Record in transcript (immutable log)
+    transcript.record({
+      ts: toolStart,
+      toolName: name,
+      params,
+      success: result.success,
+      outputPreview: (result.output || result.error || '').slice(0, 200),
+      durationMs,
+      error: result.error,
+      handled: result.handled,
+      recovery: result.recovery
+    });
 
     // Auto-pagination: if read_file result looks truncated, hint for narrower read
     if (name === 'read_file' && result.success && result.output) {
@@ -1325,6 +1608,31 @@ export async function runAgenticWorker(
         }
       }
 
+      // Token compaction: check if history is getting too large for context window
+      if (turnCount > 4 && history.length > 8) {
+        const historyText = history.map(h => JSON.stringify(h)).join('\n');
+        const budget = calculateTokenBudget(
+          [{ content: systemPrompt }, { content: taskWithJIT }, { content: historyText }],
+          model
+        );
+        if (budget.shouldCompact) {
+          const { firstN, lastN } = adaptiveCompressionRatio(history.length, 1 - budget.remainingPct);
+          // Compact history by keeping first N + last M tool results and summarizing middle
+          const historyMsgs: CompactedMessage[] = history.map(h => ({
+            role: 'assistant',
+            content: `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 100)}) → ${typeof h.result === 'string' ? h.result.slice(0, 200) : JSON.stringify(h.result || h.error || '').slice(0, 200)}`
+          }));
+          const compacted = await compactConversation(historyMsgs, {
+            keepFirst: firstN,
+            keepLast: lastN,
+            targetTokens: 1000
+          });
+          if (verbose && compacted.length < historyMsgs.length) {
+            console.log(`  [Compaction] ${historyMsgs.length} → ${compacted.length} messages (${Math.round(budget.remainingPct * 100)}% context remaining)`);
+          }
+        }
+      }
+
       // Only inject images on the first turn to avoid context bloat
       const turnImages = turnCount === 1 ? options.images : undefined;
       const turnResult = await executeLLMTurn(taskWithJIT, allTools, history, model, systemPrompt, stream, turnImages);
@@ -1349,6 +1657,9 @@ export async function runAgenticWorker(
     }
   );
 
+  // Freeze transcript — immutable after execution completes
+  transcript.freeze();
+
   return {
     success: result.success ?? false,
     output: result.finalResponse ?? result.history?.map(h => {
@@ -1364,6 +1675,8 @@ export async function runAgenticWorker(
     filesDiscovered: jit.fileCount,
     discoveredFiles: jit.toFileList(),
     history: result.history,
-    stopReason: result.reason
+    stopReason: result.reason,
+    transcript,
+    constraintLevel
   };
 }

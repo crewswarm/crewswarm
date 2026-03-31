@@ -22,6 +22,9 @@ import { recordJsonParseMetric } from '../metrics/json-parse.js';
 import { PipelineRunState } from './run-state.js';
 import { missingForRequiredCapabilities, resolveCapabilityMap } from '../capabilities/index.js';
 import { buildWorkerTasks, createAdHocWorkerTask, validateWorkerTaskEnvelope, type WorkerTaskEnvelope } from './task-envelope.js';
+import { runDeterministicQA } from '../execution/qa-gate.js';
+import type { ExecutionTranscript } from '../execution/transcript.js';
+import { getProjectContext } from '../context/project-context.js';
 // Structure analyzer temporarily disabled - file missing
 // import { analyzeProjectStructure, formatStructureContext } from '../utils/structure-analyzer.js';
 
@@ -538,6 +541,7 @@ export class UnifiedPipeline {
       history?: Array<{ tool: string; params: Record<string, any>; result?: any; error?: string }>;
       stopReason?: string;
       turns?: number;
+      transcript?: ExecutionTranscript;
     }
   ) {
     const history = Array.isArray(workerResult.history) ? workerResult.history : [];
@@ -598,8 +602,9 @@ export class UnifiedPipeline {
       failedToolCalls,
       turns: workerResult.turns,
       stopReason: workerResult.stopReason,
-      shellResults
-    };
+      shellResults,
+      transcript: workerResult.transcript
+    } as any;
   }
 
   private async recordPipelineMetrics(entry: {
@@ -1190,9 +1195,16 @@ If output has blockers, set approved=false.`,
     const sessionId = request.sessionId || (this.session ? await this.session.getSessionId() : undefined);
 
     try {
-      // L2: Router + Reasoner + Planner (or resume from prior plan)
+      // SCAN: Build ProjectContext (frozen snapshot)
+      runState.transition('scan', 'Building project context');
+      try {
+        await getProjectContext(process.cwd());
+        executionPath.push('scan-project-context');
+      } catch { /* non-fatal — workers will proceed without context */ }
+
+      // ROUTE + PLAN: L2 Router + Reasoner + Planner (or resume from prior plan)
+      runState.transition('plan', 'L2 orchestration');
       executionPath.push('l2-orchestrator');
-      runState.transition('plan');
       await this.writeRunCheckpoint(traceId, { phase: 'plan', userInput: request.userInput, sessionId: request.sessionId });
       const resumeFrom = request.resume?.fromPhase;
       const canReusePlan = (resumeFrom === 'execute' || resumeFrom === 'validate') && Boolean(request.resume?.priorPlan);
@@ -1476,6 +1488,32 @@ If output has blockers, set approved=false.`,
       }
 
       if (plan.decision !== 'direct-answer') {
+        // Transcript-based deterministic QA (runs on ALL executions, not just small tasks)
+        if (executionResults?.results?.length) {
+          for (const r of executionResults.results) {
+            const transcript = (r as any).transcript as ExecutionTranscript | undefined;
+            if (transcript) {
+              const qaResult = runDeterministicQA(transcript, {
+                requireFileChanges: plan.decision !== 'execute-direct'
+              });
+              if (!qaResult.passed) {
+                const verbose = process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true';
+                if (verbose) {
+                  console.log(`[QA Gate] ${r.workUnitId}: ${qaResult.summary}`);
+                  for (const check of qaResult.checks.filter(c => !c.passed)) {
+                    console.log(`  ✗ ${check.name}: ${check.detail}`);
+                  }
+                }
+                r.escalationNeeded = true;
+                r.escalationReason = `Deterministic QA failed: ${qaResult.summary}`;
+              }
+              // Store QA results in execution metadata
+              (r as any).qaGateResult = qaResult;
+            }
+          }
+          executionPath.push('l3-transcript-qa');
+        }
+
         const deterministicQaApproved = await this.passesDeterministicSmallTaskGate(request, plan, executionResults);
         if (deterministicQaApproved) {
           qaApproved = true;
@@ -1495,7 +1533,8 @@ If output has blockers, set approved=false.`,
         }
       }
 
-      runState.transition('validate');
+      // EVIDENCE: transcript + file diffs collected (already on results)
+      runState.transition('validate', 'QA validation');
       await this.writeRunCheckpoint(traceId, {
         phase: 'validate.input',
         response,
@@ -1528,7 +1567,8 @@ If output has blockers, set approved=false.`,
         }
       }
 
-      runState.transition('complete');
+      // CHECKPOINT: git commit if changes made
+      runState.transition('checkpoint', 'Auto-checkpoint');
 
       // Stop periodic snapshots before final checkpoint
       this.stopCheckpointInterval();
@@ -1537,6 +1577,8 @@ If output has blockers, set approved=false.`,
       if (plan.decision !== 'direct-answer' && this.autoCheckpointEnabled()) {
         await this.gitCheckpoint(traceId, executionResults);
       }
+
+      runState.transition('complete');
 
       await this.writeRunCheckpoint(traceId, {
         phase: 'complete',
@@ -1884,15 +1926,19 @@ Return ONLY valid JSON:
     escalationReason?: string;
     toolsUsed?: string[];
   }> {
-    // Structure analyzer temporarily disabled
-    // const structure = await analyzeProjectStructure(process.cwd());
-    // const structureContext = formatStructureContext(structure);
-    // const enhancedTask = `${structureContext}\n\n${task}`;
     const check = validateWorkerTaskEnvelope(task);
     if (!check.ok) {
       throw new Error(`Invalid single worker task: ${check.errors.join(', ')}`);
     }
-    const enhancedTask = task.goal;
+    // Inject frozen ProjectContext so workers know the tech stack
+    let projectContextSummary = '';
+    try {
+      const projCtx = await getProjectContext(process.cwd());
+      projectContextSummary = projCtx.summary;
+    } catch { /* non-fatal */ }
+    const enhancedTask = projectContextSummary
+      ? `${projectContextSummary}\n\n${task.goal}`
+      : task.goal;
 
     const overlays: PromptOverlay[] = [
       { type: 'task', content: enhancedTask, priority: 1 }
@@ -1952,7 +1998,7 @@ Return ONLY valid JSON:
 
     // Use built-in L3_SYSTEM_PROMPT (has THINK→ACT→OBSERVE + tool list)
     const result = await runAgenticWorker(enhancedTask, this.sandbox, {
-      model: process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash',
+      model: process.env.CREW_EXECUTION_MODEL || '',
       maxTurns: 25
     });
 
@@ -2032,11 +2078,15 @@ Return ONLY valid JSON:
         // Resolve prompt template from persona registry (covers full standalone role set).
         const templateId = getTemplateForPersona(unit.persona);
 
-        // Structure analyzer temporarily disabled
-        // const structure = await analyzeProjectStructure(process.cwd());
-        // const structureContext = formatStructureContext(structure);
-        // const enhancedDescription = `${structureContext}\n\n${unit.description}`;
-        const enhancedDescription = unit.goal;
+        // Inject frozen ProjectContext so workers know the tech stack
+        let projectContextSummary = '';
+        try {
+          const projCtx = await getProjectContext(process.cwd());
+          projectContextSummary = projCtx.summary;
+        } catch { /* non-fatal */ }
+        const enhancedDescription = projectContextSummary
+          ? `${projectContextSummary}\n\n${unit.goal}`
+          : unit.goal;
 
         const overlays: PromptOverlay[] = [
           { type: 'task', content: enhancedDescription, priority: 1 },
@@ -2167,10 +2217,11 @@ Return ONLY valid JSON:
         // Use built-in L3_SYSTEM_PROMPT (has THINK→ACT→OBSERVE + tool list)
         // Do NOT override with template basePrompt — those are generic and don't mention tools
         const result = await this.runWorker(composedPrompt.finalPrompt, {
-          model: process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash',
+          model: process.env.CREW_EXECUTION_MODEL || '',
           maxTurns: 25,
           verbose,
-          priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : undefined
+          priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : undefined,
+          persona: unit.persona
         });
         const parsed = this.parseWorkerOutput(String(result.output || ''));
 
@@ -2337,7 +2388,7 @@ Return ONLY valid JSON:
    * Run a worker unit — delegates to agentic executor by default.
    * Can be overridden in tests to use a mock executor.
    */
-  async runWorker(prompt: string, options: { model?: string; maxTurns?: number; verbose?: boolean; priorDiscoveredFiles?: string[] }): Promise<{ output: string; cost?: number; turns?: number; discoveredFiles?: string[] }> {
+  async runWorker(prompt: string, options: { model?: string; maxTurns?: number; verbose?: boolean; priorDiscoveredFiles?: string[]; persona?: string; constraintLevel?: import('../tools/gemini/crew-adapter.js').ConstraintLevel }): Promise<{ output: string; cost?: number; turns?: number; discoveredFiles?: string[] }> {
     // Always use the agentic executor with full tool suite (write_file, replace, etc.)
     // The LocalExecutor is a single-turn LLM call with no tools — workers need tools to write files.
     return runAgenticWorker(prompt, this.sandbox, options);

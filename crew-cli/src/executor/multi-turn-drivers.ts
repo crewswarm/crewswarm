@@ -187,6 +187,7 @@ interface AnthropicDriverConfig {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  isOAuth?: boolean;  // Use Authorization: Bearer instead of x-api-key
 }
 
 export async function anthropicTurn(
@@ -223,11 +224,16 @@ export async function anthropicTurn(
     ...(stream ? { stream: true } : {})
   };
 
+  // OAuth tokens use Bearer auth; API keys use x-api-key
+  const authHeaders: Record<string, string> = config.isOAuth
+    ? { 'Authorization': `Bearer ${config.apiKey}`, 'x-app': 'cli' }
+    : { 'x-api-key': config.apiKey };
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': config.apiKey,
+      ...authHeaders,
       'anthropic-version': '2023-06-01'
     },
     signal: AbortSignal.timeout(config.timeoutMs ?? 120000),

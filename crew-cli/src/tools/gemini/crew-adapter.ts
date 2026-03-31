@@ -33,6 +33,76 @@ export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
+  handled?: boolean;       // false = worker must address this error
+  recovery?: string;       // hint for how to fix (e.g. "call read_file first")
+}
+
+// ---------------------------------------------------------------------------
+// Constraint levels — filter tools by worker trust
+// ---------------------------------------------------------------------------
+export type ConstraintLevel = 'read-only' | 'edit' | 'full';
+
+const READ_ONLY_TOOLS = new Set([
+  'read_file', 'read_many_files', 'glob', 'grep_search', 'grep_search_ripgrep',
+  'list_directory', 'list', 'get_internal_docs', 'web_fetch', 'google_web_search',
+  'web_search', 'grep', 'save_memory', 'write_todos',
+  'tracker_get_task', 'tracker_list_tasks', 'tracker_visualize',
+  'check_background_task', 'ask_user', 'enter_plan_mode', 'exit_plan_mode',
+  'lsp', 'git'  // git is read-safe (force-push/--no-verify already blocked)
+]);
+
+const EDIT_TOOLS = new Set([
+  ...READ_ONLY_TOOLS,
+  'replace', 'edit', 'append_file',
+  'run_shell_command', 'shell', 'run_cmd',
+  'tracker_create_task', 'tracker_update_task', 'tracker_add_dependency',
+  'mkdir', 'activate_skill'
+]);
+
+const FULL_TOOLS = new Set([
+  ...EDIT_TOOLS,
+  'write_file', 'spawn_agent'
+]);
+
+function toolAllowedAtLevel(toolName: string, level: ConstraintLevel): boolean {
+  switch (level) {
+    case 'read-only': return READ_ONLY_TOOLS.has(toolName);
+    case 'edit':      return EDIT_TOOLS.has(toolName);
+    case 'full':      return FULL_TOOLS.has(toolName);
+    default:          return true;
+  }
+}
+
+/** Simple Levenshtein distance (no external deps) */
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  // Use two rows for space efficiency
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  let curr = new Array(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[b.length];
+}
+
+/** Map persona names to constraint levels */
+export function constraintLevelForPersona(persona: string): ConstraintLevel {
+  const lower = persona.toLowerCase();
+  if (lower.includes('planner') || lower.includes('reviewer') || lower.includes('qa') || lower.includes('architect')) {
+    return 'read-only';
+  }
+  if (lower.includes('scaffold') || lower.includes('init') || lower.includes('setup')) {
+    return 'full';
+  }
+  // Default for coders: edit (no write_file to prevent overwrites)
+  return 'edit';
 }
 
 // Create config adapter for Gemini tools
@@ -83,11 +153,17 @@ export class GeminiToolAdapter {
   private config: CrewConfig;
   private messageBus: CrewMessageBus;
   private _filesRead = new Set<string>(); // Track reads for read-before-edit guard
+  private _constraintLevel: ConstraintLevel;
 
-  constructor(private sandbox: Sandbox) {
+  constructor(private sandbox: Sandbox, constraintLevel: ConstraintLevel = 'full') {
     const workspaceRoot = (sandbox as any).baseDir || process.cwd();
     this.config = new CrewConfig(workspaceRoot);
     this.messageBus = new CrewMessageBus();
+    this._constraintLevel = constraintLevel;
+  }
+
+  get constraintLevel(): ConstraintLevel {
+    return this._constraintLevel;
   }
 
   private buildDynamicDeclarations(): any[] {
@@ -250,6 +326,18 @@ export class GeminiToolAdapter {
    * Execute a tool call from LLM (with PreToolUse/PostToolUse hooks)
    */
   async executeTool(toolName: string, params: any): Promise<ToolResult> {
+    // Constraint level enforcement — hard block even if LLM hallucinates a removed tool
+    if (!toolAllowedAtLevel(toolName, this._constraintLevel)) {
+      return {
+        success: false,
+        error: `Tool "${toolName}" is not available at constraint level "${this._constraintLevel}". Use allowed tools only.`,
+        handled: false,
+        recovery: this._constraintLevel === 'read-only'
+          ? 'This is a read-only worker. Use read_file, grep_search, glob, or list_directory.'
+          : 'This is an edit worker. Use replace/edit for changes, not write_file.'
+      };
+    }
+
     // Run PreToolUse hooks
     const preResult = await runPreToolUseHooks(toolName, params);
     if (preResult.decision === 'deny') {
@@ -387,7 +475,9 @@ export class GeminiToolAdapter {
       if (size > 0) {
         return {
           success: false,
-          error: `File "${params.file_path}" already exists (${size} bytes). Use "replace" tool to edit existing files (read_file first, then replace with old_string/new_string). Use "append_file" to add content at the end. write_file is only for creating NEW files.`
+          error: `File "${params.file_path}" already exists (${size} bytes). Use "replace" tool to edit existing files (read_file first, then replace with old_string/new_string). Use "append_file" to add content at the end. write_file is only for creating NEW files.`,
+          handled: false,
+          recovery: `Read the file first with read_file, then use replace with old_string/new_string for surgical edits.`
         };
       }
     }
@@ -429,7 +519,9 @@ export class GeminiToolAdapter {
     if (existsSync(filePath) && !this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
       return {
         success: false,
-        error: `You must read_file "${params.file_path}" before appending to it. Read first to understand the existing content and where your addition should go.`
+        error: `You must read_file "${params.file_path}" before appending to it. Read first to understand the existing content and where your addition should go.`,
+        handled: false,
+        recovery: `Call read_file with file_path="${params.file_path}" first, then retry append_file.`
       };
     }
 
@@ -491,7 +583,9 @@ export class GeminiToolAdapter {
     if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
       return {
         success: false,
-        error: `You must read_file "${params.file_path}" before editing it. Never guess at file contents.`
+        error: `You must read_file "${params.file_path}" before editing it. Never guess at file contents.`,
+        handled: false,
+        recovery: `Call read_file with file_path="${params.file_path}" first, then retry this edit.`
       };
     }
 
@@ -500,23 +594,26 @@ export class GeminiToolAdapter {
       || this.sandbox.getStagedContent?.(filePath);
     const content = stagedContent ?? await readFile(filePath, 'utf8');
 
-    if (!content.includes(params.old_string)) {
+    // ── Edit Strategy Chain: exact → whitespace-flex → fuzzy (Levenshtein) ──
+    const { match, strategy, occurrences } = this.findEditMatch(content, params.old_string);
+
+    if (!match) {
       return {
         success: false,
-        error: `String not found in ${params.file_path}`
+        error: `String not found in ${params.file_path}. Tried: exact match, flexible whitespace, fuzzy (Levenshtein).`,
+        handled: false,
+        recovery: `Re-read the file with read_file and use the exact text from the file as old_string.`
       };
     }
 
-    const occurrences = content.split(params.old_string).length - 1;
-
     // replace_all mode: replace every occurrence (useful for renames)
     if (params.replace_all) {
-      const updated = content.split(params.old_string).join(params.new_string);
+      const updated = content.split(match).join(params.new_string);
       await this.sandbox.addChange(params.file_path, updated);
       const diagnostics = await this.shadowValidate(params.file_path);
       return {
         success: true,
-        output: `Edited ${params.file_path} (${occurrences} replacements)${diagnostics}`
+        output: `Edited ${params.file_path} (${occurrences} replacements, strategy: ${strategy})${diagnostics}`
       };
     }
 
@@ -528,7 +625,7 @@ export class GeminiToolAdapter {
       };
     }
 
-    const updated = content.replace(params.old_string, params.new_string);
+    const updated = content.replace(match, params.new_string);
     await this.sandbox.addChange(params.file_path, updated);
 
     // Shadow validation: run diagnostics on the edited file (Cursor-style)
@@ -536,8 +633,95 @@ export class GeminiToolAdapter {
 
     return {
       success: true,
-      output: `Edited ${params.file_path}${diagnostics}`
+      output: `Edited ${params.file_path}${strategy !== 'exact' ? ` (matched via ${strategy})` : ''}${diagnostics}`
     };
+  }
+
+  /**
+   * Edit strategy chain: exact → flexible whitespace → fuzzy (Levenshtein).
+   * Returns the actual matched string in the content and which strategy succeeded.
+   */
+  private findEditMatch(content: string, oldString: string): { match: string | null; strategy: string; occurrences: number } {
+    // Strategy 1: Exact match
+    if (content.includes(oldString)) {
+      return { match: oldString, strategy: 'exact', occurrences: content.split(oldString).length - 1 };
+    }
+
+    // Strategy 2: Flexible whitespace — normalize whitespace in both sides
+    const normalizeWS = (s: string) => s.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n');
+    const normOld = normalizeWS(oldString);
+    const normContent = normalizeWS(content);
+    if (normContent.includes(normOld)) {
+      // Find the actual text in original content that matches
+      const lines = content.split('\n');
+      const normLines = normContent.split('\n');
+      const normOldLines = normOld.split('\n');
+      // Find start line
+      const firstNormLine = normOldLines[0];
+      for (let i = 0; i <= lines.length - normOldLines.length; i++) {
+        if (normLines[i].includes(firstNormLine) || normLines[i] === firstNormLine) {
+          // Check if all lines match
+          const candidate = lines.slice(i, i + normOldLines.length).join('\n');
+          if (normalizeWS(candidate) === normOld) {
+            return { match: candidate, strategy: 'whitespace-flex', occurrences: 1 };
+          }
+        }
+      }
+      // Fallback: just use the normalized match on the normalized content
+      // and find it by position
+      const idx = normContent.indexOf(normOld);
+      if (idx >= 0) {
+        // Map back to original by counting chars (approximate)
+        let origIdx = 0, normIdx = 0;
+        while (normIdx < idx && origIdx < content.length) {
+          if (/[ \t]/.test(content[origIdx]) && origIdx + 1 < content.length && /[ \t]/.test(content[origIdx + 1])) {
+            origIdx++;
+            continue;
+          }
+          origIdx++;
+          normIdx++;
+        }
+        // Extract same-length chunk from original
+        const chunk = content.substring(origIdx, origIdx + oldString.length + 50);
+        // Find the actual boundary in original that matches when normalized
+        for (let len = oldString.length - 5; len <= oldString.length + 20; len++) {
+          const tryChunk = content.substring(origIdx, origIdx + len);
+          if (normalizeWS(tryChunk) === normOld) {
+            return { match: tryChunk, strategy: 'whitespace-flex', occurrences: 1 };
+          }
+        }
+      }
+    }
+
+    // Strategy 3: Fuzzy match (Levenshtein) — find best-matching substring
+    const FUZZY_THRESHOLD = 0.10; // Allow up to 10% weighted difference
+    const lines = content.split('\n');
+    const oldLines = oldString.split('\n');
+    const oldLen = oldString.length;
+
+    if (oldLen > 0 && oldLen < 5000) { // Don't fuzzy-match huge strings
+      let bestMatch = '';
+      let bestDist = Infinity;
+
+      // Sliding window over content lines
+      for (let i = 0; i <= lines.length - oldLines.length; i++) {
+        const candidate = lines.slice(i, i + oldLines.length).join('\n');
+        const dist = levenshteinDistance(candidate, oldString);
+        const maxLen = Math.max(candidate.length, oldLen);
+        const ratio = dist / maxLen;
+
+        if (ratio < FUZZY_THRESHOLD && dist < bestDist) {
+          bestDist = dist;
+          bestMatch = candidate;
+        }
+      }
+
+      if (bestMatch) {
+        return { match: bestMatch, strategy: 'fuzzy', occurrences: 1 };
+      }
+    }
+
+    return { match: null, strategy: 'none', occurrences: 0 };
   }
 
   /**
@@ -1243,15 +1427,17 @@ export class GeminiToolAdapter {
    */
   getToolDeclarations() {
     const dynamicEnabled = process.env.CREW_GEMINI_DYNAMIC_DECLARATIONS !== 'false';
+    let allDecls: any[];
     if (dynamicEnabled) {
       try {
         const decls = this.buildDynamicDeclarations();
-        if (decls.length > 0) return decls;
+        allDecls = decls.length > 0 ? decls : undefined as any;
       } catch {
         // Fallback to static declarations below.
       }
     }
-    return [
+    if (!allDecls!) {
+      allDecls = [
       {
         name: 'read_file',
         description: 'Read the contents of a file. ALWAYS read files before editing them. Use start_line/end_line for large files.',
@@ -1652,6 +1838,13 @@ export class GeminiToolAdapter {
         }
       }
     ];
+    }
+
+    // Filter by constraint level — removes tools the worker shouldn't see
+    if (this._constraintLevel !== 'full') {
+      allDecls = allDecls.filter((d: any) => toolAllowedAtLevel(d.name, this._constraintLevel));
+    }
+    return allDecls;
   }
 
   // ─── Worktree Isolation Tools ────────────────────────────────────

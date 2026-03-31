@@ -1,7 +1,7 @@
 {
   "name": "crewswarm-cli",
   "version": "0.3.4",
-  "description": "Multi-model AI coding CLI with 34+ tools, multi-agent swarm, and real-time streaming \u2014 works with GPT, Claude, Gemini, Grok, DeepSeek, and more",
+  "description": "Multi-model AI coding CLI with 34+ tools, multi-agent swarm, and real-time streaming — works with GPT, Claude, Gemini, Grok, DeepSeek, and more",
   "type": "module",
   "main": "dist/crew.mjs",
   "bin": {
@@ -77,6 +77,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@google/genai": "^1.44.0",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
