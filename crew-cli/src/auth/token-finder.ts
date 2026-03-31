@@ -2,7 +2,7 @@
 import { readFile, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -19,16 +19,10 @@ export class TokenFinder {
   async findTokens(): Promise<AuthTokens> {
     const tokens: AuthTokens = {};
 
-    // 1. Claude Code (~/.claude/session.json)
-    const claudePath = join(homedir(), '.claude', 'session.json');
-    if (await this.exists(claudePath)) {
-      try {
-        const data = await readFile(claudePath, 'utf8');
-        const parsed = JSON.parse(data);
-        if (parsed.sessionToken) tokens.claude = parsed.sessionToken;
-      } catch (e) {
-        console.error(`Failed to parse Claude config: ${e.message}`);
-      }
+    // 1. Claude Code OAuth (macOS Keychain)
+    const claudeToken = await this.findClaudeOauthToken();
+    if (claudeToken) {
+      tokens.claude = claudeToken;
     }
 
     // 2. OpenAI (~/.openai/config)
@@ -76,6 +70,32 @@ export class TokenFinder {
     }
 
     return tokens;
+  }
+
+  private async findClaudeOauthToken(): Promise<string | undefined> {
+    if (process.platform !== 'darwin') return undefined;
+
+    const accounts = [userInfo().username, 'unknown'];
+    for (const account of accounts) {
+      try {
+        const { stdout } = await execFileAsync('security', [
+          'find-generic-password',
+          '-a', account,
+          '-s', 'Claude Code-credentials',
+          '-w'
+        ]);
+        const raw = stdout.trim();
+        if (!raw) continue;
+        const jsonStr = raw.startsWith('{') ? raw : Buffer.from(raw, 'hex').toString('utf8');
+        const parsed = JSON.parse(jsonStr);
+        const accessToken = parsed?.claudeAiOauth?.accessToken;
+        if (accessToken) return accessToken;
+      } catch {
+        // Try the next account variant.
+      }
+    }
+
+    return undefined;
   }
 
   private async exists(path: string): Promise<boolean> {

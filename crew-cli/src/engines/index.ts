@@ -451,7 +451,7 @@ export async function runClaudeApi(prompt: string, options: EngineRunOptions = {
 }
 
 export async function runGeminiCli(prompt: string, options: EngineRunOptions = {}): Promise<EngineRunResult> {
-  const args = ['-p', prompt];
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--yolo'];
   if (options.model) {
     args.push('-m', options.model);
   }
@@ -459,16 +459,17 @@ export async function runGeminiCli(prompt: string, options: EngineRunOptions = {
 }
 
 export async function runCodexCli(prompt: string, options: EngineRunOptions = {}): Promise<EngineRunResult> {
-  const args = ['-a', 'never', 'exec', '--sandbox', 'danger-full-access', '--json'];
-  return runCommand('codex', args, options, prompt);
+  const args = ['-a', 'never', 'exec', '--sandbox', 'danger-full-access', '--skip-git-repo-check', '--json', prompt];
+  return runCommand('codex', args, options);
 }
 
 export async function runClaudeCli(prompt: string, options: EngineRunOptions = {}): Promise<EngineRunResult> {
-  const args = ['-p', '--setting-sources', 'user'];
-  if (process.env.CREW_CLAUDE_SKIP_PERMISSIONS === 'true') {
+  const args = ['-p', '--setting-sources', 'user', '--output-format', 'stream-json', '--verbose'];
+  if (process.env.CREW_CLAUDE_SKIP_PERMISSIONS !== 'false') {
     args.push('--dangerously-skip-permissions');
   }
-  return runCommand('claude', args, options, prompt);
+  args.push('--', prompt);
+  return runCommand('claude', args, options);
 }
 
 /**

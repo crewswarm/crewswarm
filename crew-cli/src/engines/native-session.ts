@@ -304,8 +304,8 @@ export function buildEngineShellCommand(engine: string, prompt: string, model?: 
   const p = shellQuote(prompt);
   const m = model ? ` -m ${shellQuote(model)}` : '';
   const e = String(engine || '').trim().toLowerCase();
-  if (e === 'codex-cli') return `printf %s ${p} | codex -a never exec --sandbox danger-full-access --json`;
-  if (e === 'claude-cli') return `printf %s ${p} | claude -p --setting-sources user${String(process.env.CREW_CLAUDE_SKIP_PERMISSIONS || '') === 'true' ? ' --dangerously-skip-permissions' : ''}`;
+  if (e === 'codex-cli') return `codex -a never exec --sandbox danger-full-access --skip-git-repo-check --json ${p}`;
+  if (e === 'claude-cli') return `claude -p --setting-sources user --output-format stream-json --verbose${String(process.env.CREW_CLAUDE_SKIP_PERMISSIONS || 'true') !== 'false' ? ' --dangerously-skip-permissions' : ''} -- ${p}`;
   if (e === 'cursor-cli' || e === 'cursor') {
     const ws = shellQuote(cwd || process.cwd());
     const cursorDefault = process.env.CREWSWARM_CURSOR_MODEL || 'composer-2-fast';
@@ -317,7 +317,7 @@ export function buildEngineShellCommand(engine: string, prompt: string, model?: 
     const bin = resolveCursorAgentBinQuoted();
     return `${bin} -p --force --trust --output-format stream-json ${p} --model ${mq} --workspace ${ws}`;
   }
-  if (e === 'gemini-cli') return `gemini -p ${p}${model ? ` -m ${shellQuote(model)}` : ''}`;
+  if (e === 'gemini-cli') return `gemini -p ${p}${model ? ` -m ${shellQuote(model)}` : ''} --output-format stream-json --yolo`;
   if (e === 'opencode-cli' || e === 'opencode') return `opencode run${m} ${p}`;
   return '';
 }
