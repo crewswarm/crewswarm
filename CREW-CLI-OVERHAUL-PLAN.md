@@ -126,6 +126,90 @@
 
 ---
 
+## Phase 6: Effort-Based Routing (TODO)
+
+### 6a. Explicit effort tiers per request
+- Classify user input into effort levels at L1:
+  - `low`: typo fix, rename, one-liner → 1-3 turns, cheapest model (gemini-flash)
+  - `medium`: single feature, bug fix, add section → 5-10 turns, mid model (gpt-5.2)
+  - `high`: multi-file feature, API, refactor → 15-25 turns, best model (opus via OAuth)
+- L1 router already classifies DIRECT-ANSWER vs EXECUTE-DIRECT vs EXECUTE-PARALLEL
+- Extend: add `estimatedEffort: low|medium|high` to the routing decision
+- Wire into `runAgenticWorker()` → pick model + maxTurns based on effort
+- User can override: `crew chat --effort high "fix the typo"` forces best model
+- File: update `crew-cli/src/pipeline/unified.ts` L1 routing prompt + `resolveProvider()`
+
+### 6b. Per-layer model selection
+- Currently hardcoded: L3 workers always use `CREW_EXECUTION_MODEL || gemini-2.5-flash`
+- Make configurable per layer:
+  ```
+  CREW_L1_MODEL=gemini-2.5-flash          # routing (free, fast)
+  CREW_L2A_MODEL=gpt-5.2                  # planning (medium)
+  CREW_L2B_MODEL=gemini-2.5-flash         # plan validation (free)
+  CREW_L3_MODEL=gemini-2.5-flash          # execution (free, has tools)
+  CREW_L3_REVIEW_MODEL=gemini-2.5-flash   # reviewer (cheap is fine)
+  CREW_L3_FIXER_MODEL=gpt-5.2-codex      # fixer (needs coding skill)
+  ```
+- With OAuth (Phase 0): swap any layer to opus/gpt-5.4 for free
+
+---
+
+## Phase 7: Dual-Model Advisor (L3 Review) (TODO)
+
+### 7a. L3 reviewer as separate model pass
+- After L3 worker completes, run a DIFFERENT model as reviewer:
+  1. Worker (model A) writes code → produces transcript + diff
+  2. Reviewer (model B) reads the diff + transcript + ProjectContext
+  3. Reviewer outputs: `{ approved: bool, issues: string[], severity: string }`
+  4. If issues found → L3 fixer (model C or A) addresses them
+- Reviewer prompt is simple — doesn't need tools, just reads context:
+  ```
+  Review this diff against the original task. Check:
+  - Does it match the tech stack? (no Node.js in browser projects)
+  - Are there obvious bugs? (undefined vars, broken imports, missing functions)
+  - Did the worker follow the task requirements?
+  - Any security issues? (hardcoded secrets, injection, XSS)
+  Return JSON: { approved, issues[], severity }
+  ```
+- Cheap model (gemini-flash) is perfect — review is pattern matching, not creation
+- File: new `crew-cli/src/executor/reviewer.ts`
+- Wire into pipeline after execute phase, before QA validate
+
+### 7b. Cross-model blind spot elimination
+- Key insight: different models have different failure modes
+  - Gemini hallucinates imports, Claude hallucinates file contents, GPT over-abstracts
+  - Model A's bugs are model B's obvious catches
+- Reviewer model should be a DIFFERENT provider than the worker:
+  - Worker: gemini-flash → Reviewer: gpt-5.2 (or claude-sonnet via OAuth)
+  - Worker: gpt-5.2-codex → Reviewer: gemini-flash
+- Configurable via `CREW_L3_REVIEW_MODEL` env var
+- Cost: one extra cheap LLM call per task (~$0.001 for flash review)
+
+### 7c. Deterministic + LLM hybrid review
+- Phase 4b deterministic QA runs FIRST (7 mechanical checks)
+- If mechanical checks pass → L3 reviewer runs (LLM review with different model)
+- If reviewer flags issues → fixer runs → re-review
+- Max 2 review cycles (prevent infinite loops)
+- Pipeline: execute → deterministic QA → LLM review → fix → re-review → checkpoint
+
+---
+
+## Phase 8: Token Efficiency (TODO)
+
+### 8a. Compressed tool schemas after first turn
+- First turn: send full tool declarations (names, descriptions, parameter schemas)
+- Subsequent turns: send only tool names (model already knows the schemas)
+- OpenAI and Gemini cache function declarations per-conversation
+- For Anthropic: use `token-efficient-tools` beta header when available
+- Estimated savings: ~2K tokens per turn × 10 turns = 20K tokens saved per task
+
+### 8b. Token compaction (Phase 5b)
+- Already exists at `crew-cli/src/context/token-compaction.ts` — verify active
+- At 75% context: summarize middle messages, keep first 2 + last 6
+- Critical for L3 workers doing 15+ turn sessions
+
+---
+
 ## Remaining TODO (priority order)
 
 | # | Phase | What | Effort | Impact |
@@ -133,9 +217,13 @@
 | 1 | 0a | Claude OAuth from keychain | 2-3 hrs | Free Opus 4.6 for all crew-cli ops |
 | 2 | 0b | Codex/OpenCode OAuth tokens | 1-2 hrs | Free GPT-5.4 for crew-cli |
 | 3 | 0c | Provider fallback chain | 1 hr | OAuth → API key → free model |
-| 4 | 3b | Edit strategy layering | 1-2 hrs | Better edit success rate |
-| 5 | 2b | Codebase RAG for parallel workers | 1 hr | Better context per worker |
-| 6 | 5b | Token compaction | 1 hr | Handles long sessions |
+| 4 | 7a | L3 reviewer (cheap model, different provider) | 2 hrs | Catches cross-model blind spots |
+| 5 | 6a | Effort-based routing | 1-2 hrs | Right model for the job |
+| 6 | 6b | Per-layer model selection | 1 hr | Full control over cost/quality |
+| 7 | 3b | Edit strategy layering | 1-2 hrs | Better edit success rate |
+| 8 | 2b | Codebase RAG for parallel workers | 1 hr | Better context per worker |
+| 9 | 8a | Compressed tool schemas | 1 hr | ~20K tokens saved per task |
+| 10 | 5b/8b | Token compaction | 1 hr | Handles long sessions |
 
 ---
 
