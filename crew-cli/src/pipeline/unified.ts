@@ -1285,26 +1285,31 @@ If output has blockers, set approved=false.`,
         // Parse and apply file commands from the output
         const { parseDirectFileCommands } = await import('../cli/file-commands.js');
         const fileCommands = this.shouldParseLegacyCommands(result) ? parseDirectFileCommands(response) : [];
-        if (fileCommands.length > 0 && this.sandbox) {
-          await this.sandbox.load(); // Ensure sandbox is loaded
-          
-          for (const cmd of fileCommands) {
-            if (cmd.type === 'write') {
-              await this.sandbox.addChange(cmd.path, cmd.content || '');
-              this.logger.info(`Staged file: ${cmd.path}`);
-            } else if (cmd.type === 'mkdir') {
-              await this.sandbox.addChange(cmd.path + '/.gitkeep', '');
-              this.logger.info(`Staged directory: ${cmd.path}`);
+        if (fileCommands.length > 0) {
+          // Update result so QA gate knows files were written
+          const writtenPaths = fileCommands.filter(c => c.type === 'write').map(c => c.path);
+          if (writtenPaths.length > 0) {
+            result.filesChanged = [...(result.filesChanged || []), ...writtenPaths];
+            result.toolsUsed = [...(result.toolsUsed || []), 'write_file'];
+          }
+          if (this.sandbox) {
+            await this.sandbox.load();
+            for (const cmd of fileCommands) {
+              if (cmd.type === 'write') {
+                await this.sandbox.addChange(cmd.path, cmd.content || '');
+                this.logger.info(`Staged file: ${cmd.path}`);
+              } else if (cmd.type === 'mkdir') {
+                await this.sandbox.addChange(cmd.path + '/.gitkeep', '');
+                this.logger.info(`Staged directory: ${cmd.path}`);
+              }
+            }
+            if (request.autoApply) {
+              await this.sandbox.apply();
+              this.logger.info(`Applied ${fileCommands.length} file change(s)`);
             }
           }
-          
-          // Auto-apply if --apply flag was used
-          if (request.autoApply) {
-            await this.sandbox.apply();
-            this.logger.info(`Applied ${fileCommands.length} file change(s)`);
-          }
         }
-        
+
         executionResults = {
           success: true,
           results: [result],
@@ -1385,20 +1390,27 @@ If output has blockers, set approved=false.`,
           // Parse and apply file commands from the output
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
           const fileCommands = this.shouldParseLegacyCommands(result) ? parseDirectFileCommands(response) : [];
-          if (fileCommands.length > 0 && this.sandbox) {
-            await this.sandbox.load();
-            for (const cmd of fileCommands) {
-              if (cmd.type === 'write') {
-                await this.sandbox.addChange(cmd.path, cmd.content || '');
-                this.logger.info(`Staged file: ${cmd.path}`);
-              } else if (cmd.type === 'mkdir') {
-                await this.sandbox.addChange(cmd.path + '/.gitkeep', '');
-                this.logger.info(`Staged directory: ${cmd.path}`);
-              }
+          if (fileCommands.length > 0) {
+            const writtenPaths = fileCommands.filter(c => c.type === 'write').map(c => c.path);
+            if (writtenPaths.length > 0) {
+              result.filesChanged = [...(result.filesChanged || []), ...writtenPaths];
+              result.toolsUsed = [...(result.toolsUsed || []), 'write_file'];
             }
-            if (request.autoApply) {
-              await this.sandbox.apply();
-              this.logger.info(`Applied ${fileCommands.length} file change(s)`);
+            if (this.sandbox) {
+              await this.sandbox.load();
+              for (const cmd of fileCommands) {
+                if (cmd.type === 'write') {
+                  await this.sandbox.addChange(cmd.path, cmd.content || '');
+                  this.logger.info(`Staged file: ${cmd.path}`);
+                } else if (cmd.type === 'mkdir') {
+                  await this.sandbox.addChange(cmd.path + '/.gitkeep', '');
+                  this.logger.info(`Staged directory: ${cmd.path}`);
+                }
+              }
+              if (request.autoApply) {
+                await this.sandbox.apply();
+                this.logger.info(`Applied ${fileCommands.length} file change(s)`);
+              }
             }
           }
 
@@ -1431,9 +1443,15 @@ If output has blockers, set approved=false.`,
           for (const result of executionResults.results) {
             if (!this.shouldParseLegacyCommands(result)) continue;
             const commands = parseDirectFileCommands(result.output);
+            // Update result.filesChanged so QA gate knows work was done
+            const writtenPaths = commands.filter(c => c.type === 'write').map(c => c.path);
+            if (writtenPaths.length > 0) {
+              result.filesChanged = [...(result.filesChanged || []), ...writtenPaths];
+              result.toolsUsed = [...(result.toolsUsed || []), 'write_file'];
+            }
             allFileCommands.push(...commands);
           }
-          
+
           if (allFileCommands.length > 0 && this.sandbox) {
             await this.sandbox.load();
             for (const cmd of allFileCommands) {
@@ -1445,7 +1463,7 @@ If output has blockers, set approved=false.`,
                 this.logger.info(`Staged directory: ${cmd.path}`);
               }
             }
-            
+
             if (request.autoApply) {
               await this.sandbox.apply();
               this.logger.info(`Applied ${allFileCommands.length} file change(s)`);
