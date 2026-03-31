@@ -486,27 +486,55 @@ const PROVIDER_ORDER: ProviderEntry[] = [
 
 export type ResolvedProvider = { key: string; model: string; driver: string; apiUrl?: string; id: string; isOAuth?: boolean };
 
+function stripSchemaMetadata(value: any): any {
+  if (Array.isArray(value)) return value.map(stripSchemaMetadata);
+  if (!value || typeof value !== 'object') return value;
+
+  const out: Record<string, any> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (['description', 'title', 'examples', 'default', '$comment'].includes(key)) continue;
+    if (key === 'properties' && child && typeof child === 'object') {
+      out.properties = Object.fromEntries(
+        Object.entries(child).map(([prop, schema]) => [prop, stripSchemaMetadata(schema)])
+      );
+      continue;
+    }
+    out[key] = stripSchemaMetadata(child);
+  }
+  return out;
+}
+
+function compactToolDeclarations(tools: ToolDeclaration[], turn: number): ToolDeclaration[] {
+  const enabled = String(process.env.CREW_TOOL_SCHEMA_COMPACTION || 'true').trim().toLowerCase();
+  if (turn <= 1 || enabled === 'false' || enabled === '0' || enabled === 'off') return tools;
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: '',
+    parameters: stripSchemaMetadata(tool.parameters)
+  }));
+}
+
 async function resolveProvider(modelOverride?: string, preferTier?: string): Promise<ResolvedProvider | null> {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || '').trim().toLowerCase();
 
-  // ── OAuth first: subscription-based auth (free, highest priority) ──
-  // Try all three OAuth providers before falling back to API keys.
-  // Each OAuth provider is only tried if the requested model matches (or no model specified).
+  // Is this an explicit user-chosen model (via CREW_EXECUTION_MODEL env)?
+  // If not, the model was auto-selected by the router and we should prefer OAuth regardless.
+  const userExplicitModel = (process.env.CREW_EXECUTION_MODEL || '').trim().toLowerCase();
 
-  // OAuth: Claude Max subscription — disabled by default.
-  // The Anthropic API validates that OAuth tokens come from Claude Code's client ID.
-  // Third-party apps get 400 even with the correct beta header.
-  // Set CREW_OAUTH=true if Anthropic opens this to third-party clients.
-  if (process.env.CREW_OAUTH === 'true') {
+  // ── OAuth first: subscription-based auth (free, highest priority) ──
+  // When no explicit model override is set, try ALL OAuth providers (Claude > OpenAI > Gemini).
+  // When user explicitly chose a model, only try the matching OAuth provider.
+
+  if (process.env.CREW_NO_OAUTH !== 'true') {
     // 1. Claude OAuth (macOS Keychain — Claude Max/Pro subscription)
-    const wantsClaude = !effectiveModel || effectiveModel.includes('claude') || effectiveModel.includes('anthropic');
+    const wantsClaude = !userExplicitModel || userExplicitModel.includes('claude') || userExplicitModel.includes('anthropic');
     if (wantsClaude) {
       try {
         const oauth = await getOAuthToken();
         if (oauth?.accessToken) {
-          const oauthModel = effectiveModel && effectiveModel.includes('claude')
-            ? (modelOverride || process.env.CREW_EXECUTION_MODEL || 'claude-sonnet-4-20250514')
-            : 'claude-sonnet-4-20250514';
+          const oauthModel = userExplicitModel && userExplicitModel.includes('claude')
+            ? userExplicitModel
+            : String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-opus-4.6');
           return {
             key: oauth.accessToken,
             model: oauthModel,
@@ -521,14 +549,14 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     }
 
     // 2. OpenAI OAuth (Codex CLI auth — ChatGPT Plus/Pro subscription)
-    const wantsOpenAI = !effectiveModel || effectiveModel.includes('gpt') || effectiveModel.includes('openai') || effectiveModel.includes('codex');
+    const wantsOpenAI = !userExplicitModel || userExplicitModel.includes('gpt') || userExplicitModel.includes('openai') || userExplicitModel.includes('codex');
     if (wantsOpenAI) {
       try {
         const oauth = await getOpenAIOAuthToken();
         if (oauth?.accessToken) {
-          const oauthModel = effectiveModel && (effectiveModel.includes('gpt') || effectiveModel.includes('codex'))
-            ? (modelOverride || process.env.CREW_EXECUTION_MODEL || 'gpt-4.1')
-            : 'gpt-4.1';
+          const oauthModel = userExplicitModel && (userExplicitModel.includes('gpt') || userExplicitModel.includes('codex'))
+            ? userExplicitModel
+            : String(process.env.CREW_OAUTH_OPENAI_MODEL || 'gpt-5.4');
           return {
             key: oauth.accessToken,
             model: oauthModel,
@@ -544,14 +572,14 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     }
 
     // 3. Gemini OAuth (Google ADC or Gemini CLI — Google account)
-    const wantsGemini = !effectiveModel || effectiveModel.includes('gemini') || effectiveModel.includes('google');
+    const wantsGemini = !userExplicitModel || userExplicitModel.includes('gemini') || userExplicitModel.includes('google');
     if (wantsGemini) {
       try {
         const oauth = await getGeminiOAuthToken();
         if (oauth?.accessToken) {
-          const oauthModel = effectiveModel && effectiveModel.includes('gemini')
-            ? (modelOverride || process.env.CREW_EXECUTION_MODEL || 'gemini-2.5-flash')
-            : 'gemini-2.5-flash';
+          const oauthModel = userExplicitModel && userExplicitModel.includes('gemini')
+            ? userExplicitModel
+            : String(process.env.CREW_OAUTH_GEMINI_MODEL || 'gemini-2.5-flash');
           return {
             key: oauth.accessToken,
             model: oauthModel,
@@ -1594,6 +1622,7 @@ export async function runAgenticWorker(
 
       // JIT: inject discovered context every 3 turns
       let taskWithJIT = enrichedTask;
+      let historyForTurn = history;
       if (turnCount > 1 && turnCount % 3 === 0 && jit.fileCount > 0) {
         try {
           const jitContext = await jit.buildJITContext(projectDir);
@@ -1617,7 +1646,7 @@ export async function runAgenticWorker(
         );
         if (budget.shouldCompact) {
           const { firstN, lastN } = adaptiveCompressionRatio(history.length, 1 - budget.remainingPct);
-          // Compact history by keeping first N + last M tool results and summarizing middle
+          // Compact history by keeping first N + last M tool results and summarizing the middle.
           const historyMsgs: CompactedMessage[] = history.map(h => ({
             role: 'assistant',
             content: `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 100)}) → ${typeof h.result === 'string' ? h.result.slice(0, 200) : JSON.stringify(h.result || h.error || '').slice(0, 200)}`
@@ -1627,6 +1656,13 @@ export async function runAgenticWorker(
             keepLast: lastN,
             targetTokens: 1000
           });
+          const summary = compacted.find(msg => msg.isCompacted)?.content;
+          if (summary) {
+            taskWithJIT = `${taskWithJIT}\n\n${summary}`;
+            const keepHead = history.slice(0, Math.min(firstN, history.length));
+            const tailStart = Math.max(keepHead.length, history.length - lastN);
+            historyForTurn = [...keepHead, ...history.slice(tailStart)];
+          }
           if (verbose && compacted.length < historyMsgs.length) {
             console.log(`  [Compaction] ${historyMsgs.length} → ${compacted.length} messages (${Math.round(budget.remainingPct * 100)}% context remaining)`);
           }
@@ -1635,7 +1671,8 @@ export async function runAgenticWorker(
 
       // Only inject images on the first turn to avoid context bloat
       const turnImages = turnCount === 1 ? options.images : undefined;
-      const turnResult = await executeLLMTurn(taskWithJIT, allTools, history, model, systemPrompt, stream, turnImages);
+      const turnTools = compactToolDeclarations(allTools, turnCount);
+      const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages);
       totalCost += turnResult.cost || 0;
       return {
         toolCalls: turnResult.toolCalls,

@@ -515,7 +515,7 @@ async function runPtyCommand(command, options = {}) {
   return runWithInherit(command, options);
 }
 async function runWithNodePty(command, options, ptyPackage) {
-  return new Promise((resolve19) => {
+  return new Promise((resolve20) => {
     const shell = options.shell || process.env.SHELL || "/bin/bash";
     const pty = ptyPackage.spawn(shell, ["-lc", command], {
       name: "xterm-color",
@@ -531,7 +531,7 @@ async function runWithNodePty(command, options, ptyPackage) {
       if (done) return;
       done = true;
       pty.kill();
-      resolve19({ success: false, exitCode: -1, signal: "SIGTERM", output });
+      resolve20({ success: false, exitCode: -1, signal: "SIGTERM", output });
     }, timeoutMs) : null;
     const onData = (data) => {
       output += data;
@@ -552,7 +552,7 @@ async function runWithNodePty(command, options, ptyPackage) {
       done = true;
       if (timer) clearTimeout(timer);
       process.stdout.off("resize", onResize);
-      resolve19({
+      resolve20({
         success: exitCode === 0,
         exitCode,
         signal: signal ? String(signal) : null,
@@ -562,7 +562,7 @@ async function runWithNodePty(command, options, ptyPackage) {
   });
 }
 async function runWithInherit(command, options) {
-  return new Promise((resolve19) => {
+  return new Promise((resolve20) => {
     const shell = options.shell || process.env.SHELL || "/bin/bash";
     const child = spawnChild(shell, ["-lc", command], {
       cwd: options.cwd || process.cwd(),
@@ -574,7 +574,7 @@ async function runWithInherit(command, options) {
     }, timeoutMs) : null;
     child.on("close", (code, signal) => {
       if (timer) clearTimeout(timer);
-      resolve19({
+      resolve20({
         success: (code ?? -1) === 0,
         exitCode: code ?? -1,
         signal: signal ?? null,
@@ -1966,7 +1966,7 @@ function matchesHook(toolName, hook) {
   }
 }
 async function executeHookCommand(command, stdinData, timeoutMs) {
-  return new Promise((resolve19) => {
+  return new Promise((resolve20) => {
     const proc = spawn("sh", ["-c", command], {
       stdio: ["pipe", "pipe", "pipe"],
       timeout: timeoutMs
@@ -1980,11 +1980,11 @@ async function executeHookCommand(command, stdinData, timeoutMs) {
       stderr += d.toString();
     });
     proc.on("error", () => {
-      resolve19({});
+      resolve20({});
     });
     proc.on("close", (code) => {
       if (code !== 0) {
-        resolve19({
+        resolve20({
           permissionDecision: "deny",
           permissionDecisionReason: stderr.trim() || `Hook exited with code ${code}`
         });
@@ -1992,9 +1992,9 @@ async function executeHookCommand(command, stdinData, timeoutMs) {
       }
       try {
         const parsed = JSON.parse(stdout.trim());
-        resolve19(parsed);
+        resolve20(parsed);
       } catch {
-        resolve19({ message: stdout.trim() || void 0 });
+        resolve20({ message: stdout.trim() || void 0 });
       }
     });
     proc.stdin.write(stdinData);
@@ -2921,7 +2921,7 @@ var init_crew_adapter = __esm({
         };
       }
       /**
-       * Edit strategy chain: exact → flexible whitespace → fuzzy (Levenshtein).
+       * Edit strategy chain: exact → flexible whitespace → regex-ish token match → fuzzy.
        * Returns the actual matched string in the content and which strategy succeeded.
        */
       findEditMatch(content, oldString) {
@@ -2962,6 +2962,18 @@ var init_crew_adapter = __esm({
                 return { match: tryChunk, strategy: "whitespace-flex", occurrences: 1 };
               }
             }
+          }
+        }
+        const escaped = oldString.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+").replace(/\\([(){}\[\]:;,=<>+\-/*])/g, "\\s*$1\\s*");
+        if (escaped.length > 0) {
+          try {
+            const regex = new RegExp(escaped, "m");
+            const matches = content.match(new RegExp(escaped, "gm"));
+            const regexMatch = content.match(regex);
+            if (regexMatch?.[0]) {
+              return { match: regexMatch[0], strategy: "regex", occurrences: matches?.length || 1 };
+            }
+          } catch {
           }
         }
         const FUZZY_THRESHOLD = 0.1;
@@ -3123,7 +3135,7 @@ ${err?.stderr?.toString?.() || ""}`.trim();
           const bgPromise = (async () => {
             try {
               const { spawn: spawn5 } = await import("node:child_process");
-              return new Promise((resolve19) => {
+              return new Promise((resolve20) => {
                 const proc = spawn5("sh", ["-c", command], {
                   cwd: this.config.getWorkspaceRoot(),
                   stdio: "pipe"
@@ -3137,11 +3149,11 @@ ${err?.stderr?.toString?.() || ""}`.trim();
                 });
                 const timeout = setTimeout(() => {
                   proc.kill("SIGTERM");
-                  resolve19({ success: false, error: "Background task timed out" });
+                  resolve20({ success: false, error: "Background task timed out" });
                 }, getShellTimeout());
                 proc.on("close", (code) => {
                   clearTimeout(timeout);
-                  resolve19(code === 0 ? { success: true, output: stdout.trim() } : { success: false, error: (stderr || stdout).trim() || `exit code ${code}` });
+                  resolve20(code === 0 ? { success: true, output: stdout.trim() } : { success: false, error: (stderr || stdout).trim() || `exit code ${code}` });
                 });
               });
             } catch (err) {
@@ -3533,7 +3545,7 @@ ${summary}`
         if (!bg) return { success: false, error: `No background task found with ID: ${taskId}` };
         const done = await Promise.race([
           bg.promise.then((r) => ({ done: true, result: r })),
-          new Promise((resolve19) => setTimeout(() => resolve19({ done: false }), 50))
+          new Promise((resolve20) => setTimeout(() => resolve20({ done: false }), 50))
         ]);
         if (!done.done) {
           const elapsed = Math.round((Date.now() - bg.startedAt) / 1e3);
@@ -4271,9 +4283,12 @@ var init_token_compaction = __esm({
       "gpt-4o": 128e3,
       "gpt-4o-mini": 128e3,
       "gpt-5": 256e3,
+      "gpt-5.4": 256e3,
+      "gpt-5.3": 256e3,
       "gpt-5.1": 256e3,
       "gpt-5.2": 256e3,
       "claude-3-5-sonnet": 2e5,
+      "claude-opus-4.6": 2e5,
       "claude-opus-4": 2e5,
       "claude-sonnet-4": 2e5,
       "claude-haiku-4": 2e5,
@@ -4569,6 +4584,14 @@ async function readTokenFile() {
           accessToken: codexEntry.access,
           refreshToken: codexEntry.refresh || null,
           expiresAt: codexEntry.expires || null
+        };
+      }
+      const nestedAuth = data.auth || data.oauth || data.credentials;
+      if (nestedAuth?.accessToken || nestedAuth?.access_token || nestedAuth?.access) {
+        return {
+          accessToken: nestedAuth.accessToken || nestedAuth.access_token || nestedAuth.access,
+          refreshToken: nestedAuth.refreshToken || nestedAuth.refresh_token || nestedAuth.refresh || null,
+          expiresAt: nestedAuth.expiresAt || nestedAuth.expires_at || nestedAuth.expires || null
         };
       }
       if (data.access_token) {
@@ -5304,15 +5327,41 @@ ${summary}` },
   }
   return messages;
 }
+function stripSchemaMetadata(value) {
+  if (Array.isArray(value)) return value.map(stripSchemaMetadata);
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (["description", "title", "examples", "default", "$comment"].includes(key)) continue;
+    if (key === "properties" && child && typeof child === "object") {
+      out.properties = Object.fromEntries(
+        Object.entries(child).map(([prop, schema]) => [prop, stripSchemaMetadata(schema)])
+      );
+      continue;
+    }
+    out[key] = stripSchemaMetadata(child);
+  }
+  return out;
+}
+function compactToolDeclarations(tools, turn) {
+  const enabled = String(process.env.CREW_TOOL_SCHEMA_COMPACTION || "true").trim().toLowerCase();
+  if (turn <= 1 || enabled === "false" || enabled === "0" || enabled === "off") return tools;
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: "",
+    parameters: stripSchemaMetadata(tool.parameters)
+  }));
+}
 async function resolveProvider(modelOverride, preferTier) {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || "").trim().toLowerCase();
-  if (process.env.CREW_OAUTH === "true") {
-    const wantsClaude = !effectiveModel || effectiveModel.includes("claude") || effectiveModel.includes("anthropic");
+  const userExplicitModel = (process.env.CREW_EXECUTION_MODEL || "").trim().toLowerCase();
+  if (process.env.CREW_NO_OAUTH !== "true") {
+    const wantsClaude = !userExplicitModel || userExplicitModel.includes("claude") || userExplicitModel.includes("anthropic");
     if (wantsClaude) {
       try {
         const oauth = await getOAuthToken();
         if (oauth?.accessToken) {
-          const oauthModel = effectiveModel && effectiveModel.includes("claude") ? modelOverride || process.env.CREW_EXECUTION_MODEL || "claude-sonnet-4-20250514" : "claude-sonnet-4-20250514";
+          const oauthModel = userExplicitModel && userExplicitModel.includes("claude") ? userExplicitModel : String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-opus-4.6");
           return {
             key: oauth.accessToken,
             model: oauthModel,
@@ -5324,12 +5373,12 @@ async function resolveProvider(modelOverride, preferTier) {
       } catch {
       }
     }
-    const wantsOpenAI = !effectiveModel || effectiveModel.includes("gpt") || effectiveModel.includes("openai") || effectiveModel.includes("codex");
+    const wantsOpenAI = !userExplicitModel || userExplicitModel.includes("gpt") || userExplicitModel.includes("openai") || userExplicitModel.includes("codex");
     if (wantsOpenAI) {
       try {
         const oauth = await getOpenAIOAuthToken();
         if (oauth?.accessToken) {
-          const oauthModel = effectiveModel && (effectiveModel.includes("gpt") || effectiveModel.includes("codex")) ? modelOverride || process.env.CREW_EXECUTION_MODEL || "gpt-4.1" : "gpt-4.1";
+          const oauthModel = userExplicitModel && (userExplicitModel.includes("gpt") || userExplicitModel.includes("codex")) ? userExplicitModel : String(process.env.CREW_OAUTH_OPENAI_MODEL || "gpt-5.4");
           return {
             key: oauth.accessToken,
             model: oauthModel,
@@ -5342,12 +5391,12 @@ async function resolveProvider(modelOverride, preferTier) {
       } catch {
       }
     }
-    const wantsGemini = !effectiveModel || effectiveModel.includes("gemini") || effectiveModel.includes("google");
+    const wantsGemini = !userExplicitModel || userExplicitModel.includes("gemini") || userExplicitModel.includes("google");
     if (wantsGemini) {
       try {
         const oauth = await getGeminiOAuthToken();
         if (oauth?.accessToken) {
-          const oauthModel = effectiveModel && effectiveModel.includes("gemini") ? modelOverride || process.env.CREW_EXECUTION_MODEL || "gemini-2.5-flash" : "gemini-2.5-flash";
+          const oauthModel = userExplicitModel && userExplicitModel.includes("gemini") ? userExplicitModel : String(process.env.CREW_OAUTH_GEMINI_MODEL || "gemini-2.5-flash");
           return {
             key: oauth.accessToken,
             model: oauthModel,
@@ -6028,6 +6077,7 @@ async function runAgenticWorker(task, sandbox, options = {}) {
     async (prompt, tools, history) => {
       turnCount++;
       let taskWithJIT = enrichedTask;
+      let historyForTurn = history;
       if (turnCount > 1 && turnCount % 3 === 0 && jit.fileCount > 0) {
         try {
           const jitContext = await jit.buildJITContext(projectDir);
@@ -6057,13 +6107,23 @@ async function runAgenticWorker(task, sandbox, options = {}) {
             keepLast: lastN,
             targetTokens: 1e3
           });
+          const summary = compacted.find((msg) => msg.isCompacted)?.content;
+          if (summary) {
+            taskWithJIT = `${taskWithJIT}
+
+${summary}`;
+            const keepHead = history.slice(0, Math.min(firstN, history.length));
+            const tailStart = Math.max(keepHead.length, history.length - lastN);
+            historyForTurn = [...keepHead, ...history.slice(tailStart)];
+          }
           if (verbose && compacted.length < historyMsgs.length) {
             console.log(`  [Compaction] ${historyMsgs.length} \u2192 ${compacted.length} messages (${Math.round(budget.remainingPct * 100)}% context remaining)`);
           }
         }
       }
       const turnImages = turnCount === 1 ? options.images : void 0;
-      const turnResult = await executeLLMTurn(taskWithJIT, allTools, history, model, systemPrompt, stream, turnImages);
+      const turnTools = compactToolDeclarations(allTools, turnCount);
+      const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages);
       totalCost += turnResult.cost || 0;
       return {
         toolCalls: turnResult.toolCalls,
@@ -9350,6 +9410,122 @@ var init_project_context = __esm({
   }
 });
 
+// src/executor/reviewer.ts
+import { readFile as readFile12 } from "node:fs/promises";
+import { resolve as resolve10 } from "node:path";
+async function loadFileSnippets(input) {
+  const snippets = [];
+  let chars = 0;
+  const limit = Number(process.env.CREW_L3_REVIEW_SNIPPET_CHARS || 6e3);
+  for (const relPath of input.filesChanged.slice(0, 4)) {
+    try {
+      const staged = input.stagedContentForPath?.(relPath);
+      const content = staged ?? await readFile12(resolve10(input.projectDir, relPath), "utf8");
+      const trimmed = content.slice(0, 1800);
+      if (chars + trimmed.length > limit) break;
+      snippets.push(`## ${relPath}
+\`\`\`
+${trimmed}
+\`\`\``);
+      chars += trimmed.length;
+    } catch {
+    }
+  }
+  return snippets.join("\n\n");
+}
+function normalizeSeverity(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (value === "high" || value === "medium" || value === "low") return value;
+  return "low";
+}
+async function reviewWorkerExecution(input) {
+  const fileSnippets = await loadFileSnippets(input);
+  const prompt = [
+    "Review this worker result for correctness against the requested task.",
+    "Focus on implementation bugs, stack mismatches, obvious regressions, missing requirements, and unsafe changes.",
+    "Prefer concrete issues over style feedback.",
+    "",
+    input.projectContextSummary ? `Project context:
+${input.projectContextSummary}` : "",
+    `Work unit: ${input.workUnitId}`,
+    `Persona: ${input.persona}`,
+    `Task:
+${input.taskGoal}`,
+    "",
+    `Files changed: ${input.filesChanged.join(", ") || "(none)"}`,
+    `Verification: ${input.verification.join(" | ") || "(none)"}`,
+    `Shell results: ${JSON.stringify(input.shellResults || [])}`,
+    "",
+    `Worker output:
+${input.workerOutput}`,
+    "",
+    fileSnippets ? `Changed file snippets:
+${fileSnippets}` : "",
+    "",
+    "Return ONLY valid JSON:",
+    "{",
+    '  "approved": true,',
+    '  "severity": "low|medium|high",',
+    '  "summary": "short summary",',
+    '  "issues": [',
+    "    {",
+    '      "severity": "low|medium|high",',
+    '      "problem": "what is wrong",',
+    '      "requiredFix": "specific fix guidance"',
+    "    }",
+    "  ]",
+    "}",
+    "",
+    "Approve when the code appears correct and aligned with the task. Reject if there are concrete defects or requirement misses."
+  ].filter(Boolean).join("\n");
+  const result2 = await input.executor.execute(prompt, {
+    model: input.model,
+    temperature: 0,
+    maxTokens: 1800,
+    jsonMode: true,
+    sessionId: input.sessionId
+  });
+  const raw = String(result2.result || "").trim();
+  try {
+    const parsed = JSON.parse(raw);
+    const issues = Array.isArray(parsed.issues) ? parsed.issues.map((issue) => ({
+      severity: normalizeSeverity(issue?.severity),
+      problem: String(issue?.problem || "").trim(),
+      requiredFix: String(issue?.requiredFix || "").trim()
+    })).filter((issue) => issue.problem && issue.requiredFix) : [];
+    return {
+      approved: Boolean(parsed.approved),
+      severity: normalizeSeverity(parsed.severity),
+      summary: String(parsed.summary || "").trim() || (issues.length === 0 ? "Approved" : "Issues found"),
+      issues,
+      model: result2.model,
+      cost: Number(result2.costUsd || 0),
+      raw
+    };
+  } catch {
+    const lower = raw.toLowerCase();
+    const approved = lower.includes("approved") && !lower.includes("not approved") && !lower.includes("reject");
+    return {
+      approved,
+      severity: approved ? "low" : "medium",
+      summary: approved ? "Reviewer returned non-JSON approval text" : "Reviewer returned non-JSON rejection text",
+      issues: approved ? [] : [{
+        severity: "medium",
+        problem: "Reviewer response was not valid JSON.",
+        requiredFix: "Re-run review or inspect the worker output manually."
+      }],
+      model: result2.model,
+      cost: Number(result2.costUsd || 0),
+      raw
+    };
+  }
+}
+var init_reviewer = __esm({
+  "src/executor/reviewer.ts"() {
+    "use strict";
+  }
+});
+
 // src/cli/file-commands.ts
 var file_commands_exports = {};
 __export(file_commands_exports, {
@@ -9461,7 +9637,7 @@ __export(codebase_rag_exports, {
   shouldUseRag: () => shouldUseRag
 });
 import { execSync as execSync5 } from "node:child_process";
-import { readFile as readFile12, writeFile as writeFile6, mkdir as mkdir7 } from "node:fs/promises";
+import { readFile as readFile13, writeFile as writeFile6, mkdir as mkdir7 } from "node:fs/promises";
 import { existsSync as existsSync9 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
 import { relative as relative5, join as join17 } from "node:path";
@@ -9625,7 +9801,7 @@ async function autoLoadRelevantFiles(query, cwd, options = {}) {
   for (const { file } of finalScored.slice(0, maxFiles)) {
     try {
       const fullPath = join17(cwd, file);
-      const content = await readFile12(fullPath, "utf8");
+      const content = await readFile13(fullPath, "utf8");
       if (charsUsed + content.length > charBudget) break;
       const relPath = relative5(cwd, file);
       contextParts.push(`
@@ -9726,13 +9902,13 @@ var init_codebase_rag = __esm({
         if (this.loaded) return;
         try {
           if (existsSync9(this.indexPath())) {
-            const raw = await readFile12(this.indexPath(), "utf8");
+            const raw = await readFile13(this.indexPath(), "utf8");
             this.entries = JSON.parse(raw);
             this.entryMap.clear();
             for (const e of this.entries) this.entryMap.set(e.file, e);
           }
           if (existsSync9(this.metaPath())) {
-            this.meta = JSON.parse(await readFile12(this.metaPath(), "utf8"));
+            this.meta = JSON.parse(await readFile13(this.metaPath(), "utf8"));
           }
         } catch {
         }
@@ -9791,7 +9967,7 @@ var init_codebase_rag = __esm({
             const work = [];
             for (const file of batch) {
               try {
-                const content = await readFile12(join17(this.cwd, file), "utf8");
+                const content = await readFile13(join17(this.cwd, file), "utf8");
                 if (content.length < 10) continue;
                 if (content.length > 1e5) continue;
                 const hash = contentHash(content);
@@ -9864,8 +10040,8 @@ var init_codebase_rag = __esm({
 
 // src/pipeline/unified.ts
 import { randomUUID as randomUUID5 } from "crypto";
-import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile13 } from "node:fs/promises";
-import { resolve as resolve10, join as join18, normalize } from "node:path";
+import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile14 } from "node:fs/promises";
+import { resolve as resolve11, join as join18, normalize } from "node:path";
 var UnifiedPipeline;
 var init_unified = __esm({
   "src/pipeline/unified.ts"() {
@@ -9885,6 +10061,7 @@ var init_unified = __esm({
     init_task_envelope();
     init_qa_gate();
     init_project_context();
+    init_reviewer();
     UnifiedPipeline = class {
       // Optional SessionManager for cache tracking
       constructor(sandbox, session) {
@@ -9936,8 +10113,67 @@ var init_unified = __esm({
         const model = String(process.env.CREW_REASONING_MODEL || process.env.CREW_CHAT_MODEL || "").trim();
         return model || void 0;
       }
+      normalizeEffort(raw, fallback = "medium") {
+        const value = String(raw || "").trim().toLowerCase();
+        if (value === "low" || value === "medium" || value === "high") return value;
+        return fallback;
+      }
+      getRequestedEffortOverride() {
+        const env = String(process.env.CREW_EFFORT || "").trim().toLowerCase();
+        if (env === "low" || env === "medium" || env === "high") return env;
+        return void 0;
+      }
+      inferEffortFromInput(text) {
+        const lower = String(text || "").toLowerCase();
+        if (lower.length < 120 && /\b(typo|rename|small|one line|one-liner|quick|minor|simple)\b/.test(lower)) return "low";
+        if (lower.length > 500 || /\b(api|refactor|architecture|pipeline|multi-file|parallel|worker|oauth|reviewer)\b/.test(lower)) return "high";
+        return "medium";
+      }
+      getExecutionEffort(taskOrRequest, fallback) {
+        const override = this.getRequestedEffortOverride();
+        if (override) return override;
+        if (taskOrRequest.estimatedComplexity) {
+          return this.normalizeEffort(taskOrRequest.estimatedComplexity, fallback || "medium");
+        }
+        if (taskOrRequest.goal) return this.inferEffortFromInput(taskOrRequest.goal);
+        if (taskOrRequest.userInput) return this.inferEffortFromInput(taskOrRequest.userInput);
+        return fallback || "medium";
+      }
+      getModelForLayer(layer, effort = "medium") {
+        const envByLayer = {
+          l1: ["CREW_L1_MODEL", "CREW_ROUTER_MODEL"],
+          l3: ["CREW_L3_MODEL", "CREW_EXECUTION_MODEL"],
+          "l3-review": ["CREW_L3_REVIEW_MODEL", "CREW_QA_MODEL"],
+          "l3-fixer": ["CREW_L3_FIXER_MODEL", "CREW_EXECUTION_MODEL"]
+        };
+        for (const envKey of envByLayer[layer]) {
+          const value = String(process.env[envKey] || "").trim();
+          if (value) return value;
+        }
+        if (layer === "l1") return this.getReasoningModel() || "gemini-2.5-flash";
+        if (layer === "l3-review") return "gemini-2.5-flash";
+        if (layer === "l3-fixer") {
+          if (effort === "high") return "gpt-5.2-codex";
+          return "gpt-5.2";
+        }
+        if (effort === "low") return "gemini-2.5-flash";
+        if (effort === "high") return "claude-opus-4.6";
+        return "gpt-5.2";
+      }
+      getTierForEffort(effort) {
+        if (effort === "low") return "fast";
+        if (effort === "high") return "heavy";
+        return "standard";
+      }
+      getMaxTurnsForEffort(effort) {
+        const explicit = Number(process.env.CREW_MAX_TURNS || 0);
+        if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.floor(explicit));
+        if (effort === "low") return 3;
+        if (effort === "high") return 25;
+        return 10;
+      }
       getRouterModel() {
-        const routerModel = String(process.env.CREW_ROUTER_MODEL || "").trim();
+        const routerModel = this.getModelForLayer("l1", "low");
         if (routerModel) return routerModel;
         const reasoningModel = String(process.env.CREW_REASONING_MODEL || "").trim();
         if (reasoningModel && !reasoningModel.includes("deepseek-reasoner") && !reasoningModel.includes("-preview")) {
@@ -9946,7 +10182,7 @@ var init_unified = __esm({
         return String(process.env.CREW_CHAT_MODEL || "").trim() || void 0;
       }
       getQaModel() {
-        const model = String(process.env.CREW_QA_MODEL || process.env.CREW_REASONING_MODEL || "").trim();
+        const model = String(process.env.CREW_QA_MODEL || process.env.CREW_L3_REVIEW_MODEL || process.env.CREW_REASONING_MODEL || "").trim();
         return model || void 0;
       }
       getJsonRepairModel() {
@@ -9989,6 +10225,24 @@ var init_unified = __esm({
         const raw = Number(process.env.CREW_MAX_PARALLEL_WORKERS || 6);
         if (!Number.isFinite(raw) || raw < 1) return 6;
         return Math.min(32, Math.floor(raw));
+      }
+      reviewerEnabled() {
+        const raw = String(process.env.CREW_L3_REVIEW_ENABLED || "true").trim().toLowerCase();
+        return raw !== "false" && raw !== "0" && raw !== "off";
+      }
+      getReviewerMaxCycles() {
+        const raw = Number(process.env.CREW_L3_REVIEW_MAX_CYCLES || 2);
+        if (!Number.isFinite(raw) || raw < 1) return 2;
+        return Math.min(3, Math.floor(raw));
+      }
+      async getFileReviewSnippet(filePath) {
+        const staged = this.sandbox?.getStagedContent?.(filePath);
+        if (typeof staged === "string") return staged;
+        try {
+          return await readFile14(resolve11(process.cwd(), filePath), "utf8");
+        } catch {
+          return void 0;
+        }
       }
       parseWorkerOutput(raw) {
         const text = String(raw || "").trim();
@@ -10203,7 +10457,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
             continue;
           }
           try {
-            const content = await readFile13(resolve10(process.cwd(), relPath), "utf8");
+            const content = await readFile14(resolve11(process.cwd(), relPath), "utf8");
             contents.set(relPath, content);
           } catch {
             return false;
@@ -10281,9 +10535,75 @@ ${this.buildExecutionAuditContext(executionResults)}`;
           transcript: workerResult.transcript
         };
       }
+      async reviewAndFixWorkerResult(task, result2, traceId, context, sessionId) {
+        if (!this.reviewerEnabled()) return result2;
+        let current = result2;
+        let lastReview;
+        const maxCycles = this.getReviewerMaxCycles();
+        for (let cycle = 1; cycle <= maxCycles; cycle += 1) {
+          let projectContextSummary = "";
+          try {
+            const projCtx = await getProjectContext2(process.cwd());
+            projectContextSummary = projCtx.summary;
+          } catch {
+          }
+          const review = await reviewWorkerExecution({
+            executor: this.executor,
+            model: this.getModelForLayer("l3-review", this.getExecutionEffort(task)),
+            sessionId,
+            projectDir: process.cwd(),
+            projectContextSummary,
+            workUnitId: current.workUnitId,
+            persona: current.persona,
+            taskGoal: task.goal,
+            workerOutput: current.output,
+            filesChanged: current.filesChanged || [],
+            verification: current.verification || [],
+            shellResults: current.shellResults || [],
+            stagedContentForPath: (filePath) => this.sandbox?.getStagedContent?.(filePath)
+          });
+          lastReview = review;
+          current.reviewer = review;
+          if (review.approved || review.issues.length === 0) {
+            return current;
+          }
+          if (cycle >= maxCycles) break;
+          const fixTask = createAdHocWorkerTask({
+            id: `${task.id}-review-fix-${cycle}`,
+            goal: [
+              task.goal,
+              "",
+              "Reviewer issues to fix:",
+              ...review.issues.map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.problem} -> ${issue.requiredFix}`),
+              "",
+              "Apply only the concrete fixes above and preserve any correct changes already made."
+            ].join("\n"),
+            persona: task.persona,
+            sourceRefs: task.sourceRefs || ["request#user-input"],
+            estimatedComplexity: task.estimatedComplexity || this.getExecutionEffort(task),
+            requiredCapabilities: task.requiredCapabilities,
+            maxFilesTouched: task.maxFilesTouched
+          });
+          const fixResult = await this.runWorker(context ? `${context}
+
+${fixTask.goal}` : fixTask.goal, {
+            model: this.getModelForLayer("l3-fixer", this.getExecutionEffort(task)),
+            maxTurns: this.getMaxTurnsForEffort(this.getExecutionEffort(task)),
+            verbose: process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true",
+            persona: task.persona,
+            constraintLevel: void 0
+          });
+          const parsed = this.parseWorkerOutput(String(fixResult.output || ""));
+          current = this.buildWorkerExecutionResult(task, parsed, fixResult);
+        }
+        current.escalationNeeded = true;
+        current.escalationReason = `Reviewer rejected result: ${lastReview?.summary || "issues remain after review cycles"}`;
+        current.reviewer = lastReview;
+        return current;
+      }
       async recordPipelineMetrics(entry) {
         try {
-          const dir = resolve10(process.cwd(), ".crew");
+          const dir = resolve11(process.cwd(), ".crew");
           await mkdir8(dir, { recursive: true });
           const path3 = join18(dir, "pipeline-metrics.jsonl");
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
@@ -10293,7 +10613,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
       }
       async writeRunCheckpoint(traceId, payload) {
         try {
-          const dir = resolve10(process.cwd(), ".crew", "pipeline-runs");
+          const dir = resolve11(process.cwd(), ".crew", "pipeline-runs");
           await mkdir8(dir, { recursive: true });
           const path3 = join18(dir, `${traceId}.jsonl`);
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...payload })}
@@ -10868,7 +11188,8 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
                 id: "single-task",
                 goal: request.userInput,
                 persona: "executor-code",
-                sourceRefs: ["request#user-input"]
+                sourceRefs: ["request#user-input"],
+                estimatedComplexity: plan.estimatedEffort || "medium"
               }),
               request.context || "",
               traceId
@@ -10914,7 +11235,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               goal: request.userInput,
               persona: "executor-code",
               sourceRefs: ["request#user-input"],
-              estimatedComplexity: "low"
+              estimatedComplexity: plan.estimatedEffort || "low"
             });
             const result2 = await this.l3ExecuteSingle(
               directTask,
@@ -10957,7 +11278,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
                 goal: request.userInput,
                 persona: "executor-code",
                 sourceRefs: ["request#user-input"],
-                estimatedComplexity: "low"
+                estimatedComplexity: plan.estimatedEffort || "low"
               });
               const result2 = await this.l3ExecuteSingle(
                 fallbackTask,
@@ -11344,6 +11665,7 @@ Return ONLY valid JSON:
         }
         const decision = await this.parseRouterDecision(String(result2.result || ""), traceId, sessionId);
         const normalizedDecision = this.normalizeDecision(decision.decision);
+        const estimatedEffort = this.getRequestedEffortOverride() || this.normalizeEffort(decision.complexity, this.inferEffortFromInput(request.userInput));
         let workGraph;
         let validation;
         const dualL2Enabled = process.env.CREW_DUAL_L2_ENABLED === "true";
@@ -11409,6 +11731,7 @@ Use CREW_ALLOW_CRITICAL=true to override (not recommended).`
           workGraph,
           validation,
           directResponse: decision.directResponse,
+          estimatedEffort,
           traceId
         };
       }
@@ -11436,35 +11759,19 @@ ${task.goal}` : task.goal;
           overlays.push({ type: "context", content: context, priority: 2 });
         }
         try {
-          const { CodebaseIndex: CodebaseIndex2, shouldUseRag: shouldUseRag2 } = await Promise.resolve().then(() => (init_codebase_rag(), codebase_rag_exports));
-          const codebaseIndex = CodebaseIndex2.getInstance(process.cwd());
-          if (codebaseIndex.isReady() && shouldUseRag2(enhancedTask)) {
-            const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4e3);
-            const hits = await codebaseIndex.query(enhancedTask, 5);
-            if (hits.length > 0) {
-              const { readFile: rf } = await import("node:fs/promises");
-              const { join: pj } = await import("node:path");
-              const parts = [];
-              let chars = 0;
-              const charLimit = ragBudget * 4;
-              for (const hit of hits) {
-                try {
-                  const content = await rf(pj(process.cwd(), hit.file), "utf8");
-                  if (chars + content.length > charLimit) break;
-                  parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===
-${content}`);
-                  chars += content.length;
-                } catch {
-                }
-              }
-              if (parts.length > 0) {
-                overlays.push({
-                  type: "context",
-                  content: `## Codebase Context (auto-retrieved, ${parts.length} files)
-${parts.join("\n\n")}`,
-                  priority: 3
-                });
-              }
+          const { autoLoadRelevantFiles: autoLoadRelevantFiles2, shouldUseRag: shouldUseRag2 } = await Promise.resolve().then(() => (init_codebase_rag(), codebase_rag_exports));
+          if (shouldUseRag2(enhancedTask)) {
+            const ragContext = await autoLoadRelevantFiles2(enhancedTask, process.cwd(), {
+              mode: process.env.CREW_RAG_MODE || "auto",
+              tokenBudget: Number(process.env.CREW_RAG_WORKER_BUDGET || 4e3),
+              maxFiles: Number(process.env.CREW_RAG_MAX_FILES_LOAD || 6)
+            });
+            if (ragContext.context) {
+              overlays.push({
+                type: "context",
+                content: ragContext.context,
+                priority: 3
+              });
             }
           }
         } catch {
@@ -11479,12 +11786,16 @@ ${parts.join("\n\n")}`,
         });
         const sessionId = this.session ? await this.session.getSessionId() : void 0;
         const composedPrompt = this.composer.compose("executor-code-v1", overlays, traceId);
-        const result2 = await runAgenticWorker(enhancedTask, this.sandbox, {
-          model: process.env.CREW_EXECUTION_MODEL || "",
-          maxTurns: 25
+        const effort = this.getExecutionEffort(task);
+        const result2 = await runAgenticWorker(composedPrompt.finalPrompt, this.sandbox, {
+          model: this.getModelForLayer("l3", effort) || "",
+          maxTurns: this.getMaxTurnsForEffort(effort),
+          tier: this.getTierForEffort(effort),
+          persona: task.persona
         });
         const parsed = this.parseWorkerOutput(String(result2.output || ""));
-        return this.buildWorkerExecutionResult(task, parsed, result2);
+        const built = this.buildWorkerExecutionResult(task, parsed, result2);
+        return this.reviewAndFixWorkerResult(task, built, traceId, context, sessionId);
       }
       /**
        * L3: Parallel Executors
@@ -11562,35 +11873,24 @@ ${unit.goal}` : unit.goal;
               });
             }
             try {
-              const { CodebaseIndex: CodebaseIndex2, shouldUseRag: shouldUseRag2 } = await Promise.resolve().then(() => (init_codebase_rag(), codebase_rag_exports));
-              const codebaseIndex = CodebaseIndex2.getInstance(process.cwd());
-              if (codebaseIndex.isReady() && shouldUseRag2(unit.goal)) {
-                const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4e3);
-                const hits = await codebaseIndex.query(unit.goal, 5);
-                if (hits.length > 0) {
-                  const { readFile: readFile37 } = await import("node:fs/promises");
-                  const { join: pathJoin, relative: pathRelative } = await import("node:path");
-                  const parts = [];
-                  let chars = 0;
-                  const charLimit = ragBudget * 4;
-                  for (const hit of hits) {
-                    try {
-                      const content = await readFile37(pathJoin(process.cwd(), hit.file), "utf8");
-                      if (chars + content.length > charLimit) break;
-                      parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===
-${content}`);
-                      chars += content.length;
-                    } catch {
-                    }
-                  }
-                  if (parts.length > 0) {
-                    overlays.push({
-                      type: "context",
-                      content: `## Codebase Context (auto-retrieved, ${parts.length} files)
-${parts.join("\n\n")}`,
-                      priority: 3
-                    });
-                  }
+              const { autoLoadRelevantFiles: autoLoadRelevantFiles2, shouldUseRag: shouldUseRag2 } = await Promise.resolve().then(() => (init_codebase_rag(), codebase_rag_exports));
+              const ragQuery = [
+                unit.goal,
+                accumulatedDiscoveredFiles.slice(0, 8).join(" ")
+              ].filter(Boolean).join("\n");
+              if (shouldUseRag2(ragQuery)) {
+                const ragContext = await autoLoadRelevantFiles2(ragQuery, process.cwd(), {
+                  mode: process.env.CREW_RAG_MODE || "auto",
+                  tokenBudget: Number(process.env.CREW_RAG_WORKER_BUDGET || 4e3),
+                  maxFiles: Number(process.env.CREW_RAG_MAX_FILES_LOAD || 6),
+                  sessionHistory: accumulatedDiscoveredFiles.map((file) => ({ output: file }))
+                });
+                if (ragContext.context) {
+                  overlays.push({
+                    type: "context",
+                    content: ragContext.context,
+                    priority: 3
+                  });
                 }
               }
             } catch {
@@ -11655,16 +11955,18 @@ ${dependencyOutputs.join("\n\n")}`,
               priority: 4
             });
             const composedPrompt = this.composer.compose(templateId, overlays, `${traceId}-${unit.id}`);
+            const effort = this.getExecutionEffort(unit);
             if (verbose) {
               console.log(`  [${unit.id}] ${unit.persona} executing (agentic)...`);
             }
             const unitStart = Date.now();
             const result2 = await this.runWorker(composedPrompt.finalPrompt, {
-              model: process.env.CREW_EXECUTION_MODEL || "",
-              maxTurns: 25,
+              model: this.getModelForLayer("l3", effort) || "",
+              maxTurns: this.getMaxTurnsForEffort(effort),
               verbose,
               priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : void 0,
-              persona: unit.persona
+              persona: unit.persona,
+              constraintLevel: void 0
             });
             const parsed = this.parseWorkerOutput(String(result2.output || ""));
             if (result2.discoveredFiles?.length) {
@@ -11681,7 +11983,8 @@ ${dependencyOutputs.join("\n\n")}`,
               `Worker ${unit.id} (${unit.persona}): ${parsed.output.substring(0, 300)}...`,
               { critical: false, tags: ["l3-output", traceId, unit.id], provider: "pipeline" }
             );
-            return this.buildWorkerExecutionResult(unit, parsed, result2);
+            const built = this.buildWorkerExecutionResult(unit, parsed, result2);
+            return this.reviewAndFixWorkerResult(unit, built, `${traceId}-${unit.id}`, context, sessionId);
           };
           const batchResults = [];
           const queue = batch.slice();
@@ -11902,10 +12205,10 @@ var init_worker_pool = __esm({
       }
       async runAll(options) {
         const results = [];
-        return new Promise((resolve19) => {
+        return new Promise((resolve20) => {
           const checkQueue = async () => {
             if (this.queue.length === 0 && this.activeWorkers === 0) {
-              resolve19(results);
+              resolve20(results);
               return;
             }
             while (this.activeWorkers < this.concurrency && this.queue.length > 0) {
@@ -11996,7 +12299,7 @@ __export(orchestrator_exports, {
   RouteDecision: () => RouteDecision,
   WorkerPool: () => WorkerPool
 });
-import { readFile as readFile14 } from "node:fs/promises";
+import { readFile as readFile15 } from "node:fs/promises";
 var ROUTING_SYSTEM_PROMPT, RouteDecision, Orchestrator;
 var init_orchestrator = __esm({
   "src/orchestrator/index.ts"() {
@@ -12131,8 +12434,8 @@ Return ONLY a JSON object in this exact format:
       async getGeminiADCToken() {
         try {
           const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || `${process.env.HOME}/.config/gcloud/application_default_credentials.json`;
-          const { readFile: readFile37 } = await import("node:fs/promises");
-          const credentialsJson = await readFile37(adcPath, "utf8");
+          const { readFile: readFile38 } = await import("node:fs/promises");
+          const credentialsJson = await readFile38(adcPath, "utf8");
           const credentials = JSON.parse(credentialsJson);
           if (credentials.type !== "authorized_user" || !credentials.refresh_token) {
             return null;
@@ -12570,7 +12873,7 @@ ${task}` : task;
                 this.logger.info(`Detected edit block for ${filePath}`);
                 let originalContent = "";
                 try {
-                  originalContent = await readFile14(filePath, "utf8");
+                  originalContent = await readFile15(filePath, "utf8");
                 } catch {
                   originalContent = "";
                 }
@@ -12604,7 +12907,7 @@ var agentkeeper_exports = {};
 __export(agentkeeper_exports, {
   AgentKeeper: () => AgentKeeper
 });
-import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile17, stat as stat6, writeFile as writeFile8 } from "node:fs/promises";
+import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile18, stat as stat6, writeFile as writeFile8 } from "node:fs/promises";
 import { dirname as dirname5, join as join21 } from "node:path";
 import { randomUUID as randomUUID6 } from "node:crypto";
 function tokenize2(text) {
@@ -12785,7 +13088,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
       async loadAll() {
         let raw;
         try {
-          raw = await readFile17(this.storePath, "utf8");
+          raw = await readFile18(this.storePath, "utf8");
         } catch {
           return [];
         }
@@ -13018,7 +13321,7 @@ __export(blast_radius_exports, {
 });
 import { execFile as execFile9 } from "node:child_process";
 import { promisify as promisify10 } from "node:util";
-import { relative as relative6, resolve as resolve17 } from "node:path";
+import { relative as relative6, resolve as resolve18 } from "node:path";
 function severityRank(level) {
   if (level === "high") return 3;
   if (level === "medium") return 2;
@@ -13079,14 +13382,14 @@ function assessRisk(changedCount, impactCount, totalNodes) {
   return "low";
 }
 async function analyzeBlastRadius(cwd, options = {}) {
-  const rootDir = resolve17(cwd);
+  const rootDir = resolve18(cwd);
   const maxDepth = options.maxDepth ?? 5;
   let rawChanged = options.changedFiles ?? await getChangedFiles(rootDir, options.diffRef);
   const graph = await buildRepositoryGraph(rootDir);
   const graphPaths = new Set(graph.nodes.map((n) => n.path));
   const changedSet = /* @__PURE__ */ new Set();
   for (const file of rawChanged) {
-    const rel = relative6(rootDir, resolve17(rootDir, file));
+    const rel = relative6(rootDir, resolve18(rootDir, file));
     if (graphPaths.has(rel)) changedSet.add(rel);
   }
   const affectedFiles = collectImporters(graph, changedSet, maxDepth);
@@ -13719,7 +14022,7 @@ var AgentRouter = class extends EventEmitter {
           fatal.fatal = true;
           throw fatal;
         }
-        await new Promise((resolve19) => setTimeout(resolve19, pollInterval));
+        await new Promise((resolve20) => setTimeout(resolve20, pollInterval));
       } catch (error) {
         if (error && error.fatal) {
           throw error;
@@ -14530,30 +14833,24 @@ var Sandbox = class {
 init_orchestrator();
 
 // src/auth/token-finder.ts
-import { readFile as readFile15, access as access5 } from "node:fs/promises";
+import { readFile as readFile16, access as access5 } from "node:fs/promises";
 import { constants as constants5 } from "node:fs";
 import { join as join19 } from "node:path";
-import { homedir as homedir4 } from "node:os";
+import { homedir as homedir4, userInfo as userInfo2 } from "node:os";
 import { execFile as execFile3 } from "node:child_process";
 import { promisify as promisify3 } from "node:util";
 var execFileAsync3 = promisify3(execFile3);
 var TokenFinder = class {
   async findTokens() {
     const tokens = {};
-    const claudePath = join19(homedir4(), ".claude", "session.json");
-    if (await this.exists(claudePath)) {
-      try {
-        const data = await readFile15(claudePath, "utf8");
-        const parsed = JSON.parse(data);
-        if (parsed.sessionToken) tokens.claude = parsed.sessionToken;
-      } catch (e) {
-        console.error(`Failed to parse Claude config: ${e.message}`);
-      }
+    const claudeToken = await this.findClaudeOauthToken();
+    if (claudeToken) {
+      tokens.claude = claudeToken;
     }
     const openaiPath = join19(homedir4(), ".openai", "config");
     if (await this.exists(openaiPath)) {
       try {
-        const data = await readFile15(openaiPath, "utf8");
+        const data = await readFile16(openaiPath, "utf8");
         const match = data.match(/api_key[:=]\s*([a-zA-Z0-9\-]+)/);
         if (match) tokens.openai = match[1];
       } catch (e) {
@@ -14587,6 +14884,30 @@ var TokenFinder = class {
     }
     return tokens;
   }
+  async findClaudeOauthToken() {
+    if (process.platform !== "darwin") return void 0;
+    const accounts = [userInfo2().username, "unknown"];
+    for (const account of accounts) {
+      try {
+        const { stdout } = await execFileAsync3("security", [
+          "find-generic-password",
+          "-a",
+          account,
+          "-s",
+          "Claude Code-credentials",
+          "-w"
+        ]);
+        const raw = stdout.trim();
+        if (!raw) continue;
+        const jsonStr = raw.startsWith("{") ? raw : Buffer.from(raw, "hex").toString("utf8");
+        const parsed = JSON.parse(jsonStr);
+        const accessToken = parsed?.claudeAiOauth?.accessToken;
+        if (accessToken) return accessToken;
+      } catch {
+      }
+    }
+    return void 0;
+  }
   async exists(path3) {
     try {
       await access5(path3, constants5.F_OK);
@@ -14602,7 +14923,7 @@ init_logger();
 
 // src/cache/token-cache.ts
 import { createHash as createHash3 } from "node:crypto";
-import { mkdir as mkdir9, readFile as readFile16, writeFile as writeFile7 } from "node:fs/promises";
+import { mkdir as mkdir9, readFile as readFile17, writeFile as writeFile7 } from "node:fs/promises";
 import { existsSync as existsSync10 } from "node:fs";
 import { join as join20 } from "node:path";
 function nowIso3() {
@@ -14629,7 +14950,7 @@ var TokenCache = class {
       return initial;
     }
     try {
-      const raw = await readFile16(this.cachePath, "utf8");
+      const raw = await readFile17(this.cachePath, "utf8");
       const parsed = JSON.parse(raw);
       return {
         version: parsed.version || 1,
@@ -14837,7 +15158,7 @@ import { fileURLToPath } from "node:url";
 
 // src/mcp/index.ts
 import { execFileSync } from "node:child_process";
-import { mkdir as mkdir11, readFile as readFile18, writeFile as writeFile9 } from "node:fs/promises";
+import { mkdir as mkdir11, readFile as readFile19, writeFile as writeFile9 } from "node:fs/promises";
 import { existsSync as existsSync11 } from "node:fs";
 import { join as join22 } from "node:path";
 import { homedir as homedir5 } from "node:os";
@@ -14881,7 +15202,7 @@ function removeServerFromCodex(name) {
 async function loadStore(path3) {
   if (!existsSync11(path3)) return { mcpServers: {} };
   try {
-    const raw = await readFile18(path3, "utf8");
+    const raw = await readFile19(path3, "utf8");
     const parsed = JSON.parse(raw);
     return { mcpServers: parsed.mcpServers || {} };
   } catch {
@@ -15126,8 +15447,8 @@ async function runDoctorChecks(options = {}) {
   const nodeMajor = parseMajorNodeVersion(process.version);
   const withTimeout = (promise, fallback, label) => Promise.race([
     promise,
-    new Promise((resolve19) => setTimeout(() => {
-      resolve19(fallback);
+    new Promise((resolve20) => setTimeout(() => {
+      resolve20(fallback);
     }, 2e3))
   ]);
   const gitOk = await commandExists("git");
@@ -15267,9 +15588,9 @@ import os from "node:os";
 import path2 from "node:path";
 
 // src/engines/session-layer.ts
-import { mkdir as mkdir12, readFile as readFile19, writeFile as writeFile10 } from "node:fs/promises";
+import { mkdir as mkdir12, readFile as readFile20, writeFile as writeFile10 } from "node:fs/promises";
 import { existsSync as existsSync12 } from "node:fs";
-import { join as join24, resolve as resolve11 } from "node:path";
+import { join as join24, resolve as resolve12 } from "node:path";
 function nowIso4() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -15281,7 +15602,7 @@ function clip2(text, maxChars) {
 }
 var EngineSessionLayer = class {
   constructor(baseDir = process.cwd()) {
-    this.baseDir = resolve11(baseDir);
+    this.baseDir = resolve12(baseDir);
     this.stateDir = join24(this.baseDir, ".crew");
     this.sessionsPath = join24(this.stateDir, "engine-sessions.json");
   }
@@ -15297,7 +15618,7 @@ var EngineSessionLayer = class {
   async loadStore() {
     await this.ensureInitialized();
     try {
-      const raw = await readFile19(this.sessionsPath, "utf8");
+      const raw = await readFile20(this.sessionsPath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -15409,9 +15730,9 @@ function buildSessionPromptEnvelope(params) {
 }
 
 // src/session/conversation-transcript.ts
-import { appendFile as appendFile4, mkdir as mkdir13, readFile as readFile20, readdir as readdir6 } from "node:fs/promises";
+import { appendFile as appendFile4, mkdir as mkdir13, readFile as readFile21, readdir as readdir6 } from "node:fs/promises";
 import { existsSync as existsSync13 } from "node:fs";
-import { join as join25, resolve as resolve12 } from "node:path";
+import { join as join25, resolve as resolve13 } from "node:path";
 function estimateTokens3(text) {
   if (!text) return 0;
   return Math.ceil(text.length / 3.7);
@@ -15427,7 +15748,7 @@ function clip3(text, maxChars) {
 }
 var ConversationTranscriptStore = class {
   constructor(baseDir = process.cwd()) {
-    const root = resolve12(baseDir);
+    const root = resolve13(baseDir);
     this.stateDir = join25(root, ".crew");
   }
   transcriptPath(sessionId) {
@@ -15466,7 +15787,7 @@ var ConversationTranscriptStore = class {
     const path3 = this.transcriptPath(key);
     if (!existsSync13(path3)) return [];
     try {
-      const raw = await readFile20(path3, "utf8");
+      const raw = await readFile21(path3, "utf8");
       const turns = [];
       for (const line of raw.split("\n")) {
         const trimmed = line.trim();
@@ -15513,7 +15834,7 @@ var ConversationTranscriptStore = class {
         const sessionId = match[1];
         const fullPath = join25(this.stateDir, f);
         try {
-          const raw = await readFile20(fullPath, "utf8");
+          const raw = await readFile21(fullPath, "utf8");
           const lines = raw.split("\n").filter((l) => l.trim()).length;
           sessions.push({ sessionId, path: fullPath, lines });
         } catch {
@@ -15557,10 +15878,10 @@ function buildConversationHydrationPrompt(params) {
 }
 
 // src/engines/native-session.ts
-import { mkdir as mkdir14, readFile as readFile21, writeFile as writeFile11 } from "node:fs/promises";
+import { mkdir as mkdir14, readFile as readFile22, writeFile as writeFile11 } from "node:fs/promises";
 import { existsSync as existsSync14 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
-import { join as join26, resolve as resolve13 } from "node:path";
+import { join as join26, resolve as resolve14 } from "node:path";
 import { randomUUID as randomUUID7 } from "node:crypto";
 function nowIso6() {
   return (/* @__PURE__ */ new Date()).toISOString();
@@ -15575,7 +15896,7 @@ var NativeEngineSessionManager = class {
     this.runtime = /* @__PURE__ */ new Map();
     this.ptySpawn = null;
     this.ptyLoadFailed = false;
-    this.baseDir = resolve13(baseDir);
+    this.baseDir = resolve14(baseDir);
     this.stateDir = join26(this.baseDir, ".crew");
     this.statePath = join26(this.stateDir, "engine-native-sessions.json");
   }
@@ -15591,7 +15912,7 @@ var NativeEngineSessionManager = class {
   async loadStore() {
     await this.ensureStore();
     try {
-      const raw = await readFile21(this.statePath, "utf8");
+      const raw = await readFile22(this.statePath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -15723,7 +16044,7 @@ var NativeEngineSessionManager = class {
 echo ${shellQuote(`${sentinel}$?`)}
 `;
     const timeoutMs = Number(params.timeoutMs || 6e5);
-    return new Promise((resolve19) => {
+    return new Promise((resolve20) => {
       let stdout = "";
       let stderr = "";
       let done = false;
@@ -15731,7 +16052,7 @@ echo ${shellQuote(`${sentinel}$?`)}
         if (done) return;
         done = true;
         session.busy = false;
-        resolve19({
+        resolve20({
           success: false,
           exitCode: -1,
           stdout,
@@ -15758,7 +16079,7 @@ Timed out after ${timeoutMs}ms`,
             session.updatedAt = nowIso6();
             void this.persistSessionMeta(session);
             session.pty.off?.("data", onData);
-            resolve19({
+            resolve20({
               success: exitCode === 0,
               exitCode,
               stdout: stdout.trim(),
@@ -15780,7 +16101,7 @@ Timed out after ${timeoutMs}ms`,
           clearTimeout(timer);
           session.busy = false;
           session.pty.off?.("data", onData);
-          resolve19({
+          resolve20({
             success: false,
             exitCode: -1,
             stdout,
@@ -15803,8 +16124,8 @@ function buildEngineShellCommand(engine, prompt, model, cwd) {
   const p = shellQuote(prompt);
   const m = model ? ` -m ${shellQuote(model)}` : "";
   const e = String(engine || "").trim().toLowerCase();
-  if (e === "codex-cli") return `printf %s ${p} | codex -a never exec --sandbox danger-full-access --json`;
-  if (e === "claude-cli") return `printf %s ${p} | claude -p --setting-sources user${String(process.env.CREW_CLAUDE_SKIP_PERMISSIONS || "") === "true" ? " --dangerously-skip-permissions" : ""}`;
+  if (e === "codex-cli") return `codex -a never exec --sandbox danger-full-access --skip-git-repo-check --json ${p}`;
+  if (e === "claude-cli") return `claude -p --setting-sources user --output-format stream-json --verbose${String(process.env.CREW_CLAUDE_SKIP_PERMISSIONS || "true") !== "false" ? " --dangerously-skip-permissions" : ""} -- ${p}`;
   if (e === "cursor-cli" || e === "cursor") {
     const ws = shellQuote(cwd || process.cwd());
     const cursorDefault = process.env.CREWSWARM_CURSOR_MODEL || "composer-2-fast";
@@ -15816,15 +16137,15 @@ function buildEngineShellCommand(engine, prompt, model, cwd) {
     const bin = resolveCursorAgentBinQuoted();
     return `${bin} -p --force --trust --output-format stream-json ${p} --model ${mq} --workspace ${ws}`;
   }
-  if (e === "gemini-cli") return `gemini -p ${p}${model ? ` -m ${shellQuote(model)}` : ""}`;
+  if (e === "gemini-cli") return `gemini -p ${p}${model ? ` -m ${shellQuote(model)}` : ""} --output-format stream-json --yolo`;
   if (e === "opencode-cli" || e === "opencode") return `opencode run${m} ${p}`;
   return "";
 }
 
 // src/engines/tool-audit.ts
-import { appendFile as appendFile5, mkdir as mkdir15, readFile as readFile22, writeFile as writeFile12 } from "node:fs/promises";
+import { appendFile as appendFile5, mkdir as mkdir15, readFile as readFile23, writeFile as writeFile12 } from "node:fs/promises";
 import { existsSync as existsSync15 } from "node:fs";
-import { join as join27, resolve as resolve14 } from "node:path";
+import { join as join27, resolve as resolve15 } from "node:path";
 function clip4(text, max = 3e3) {
   const value = String(text || "");
   if (value.length <= max) return value;
@@ -15897,7 +16218,7 @@ function extractToolCalls(raw) {
 }
 var ToolAuditStore = class {
   constructor(baseDir = process.cwd()) {
-    this.baseDir = resolve14(baseDir);
+    this.baseDir = resolve15(baseDir);
     this.dir = join27(this.baseDir, ".crew", "tool-audit");
     this.indexPath = join27(this.baseDir, ".crew", "tool-audit.jsonl");
   }
@@ -15921,7 +16242,7 @@ var ToolAuditStore = class {
   }
   async loadRun(runId) {
     try {
-      const raw = await readFile22(join27(this.dir, `${runId}.json`), "utf8");
+      const raw = await readFile23(join27(this.dir, `${runId}.json`), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
@@ -15929,7 +16250,7 @@ var ToolAuditStore = class {
   }
   async list(limit = 30) {
     if (!existsSync15(this.indexPath)) return [];
-    const raw = await readFile22(this.indexPath, "utf8");
+    const raw = await readFile23(this.indexPath, "utf8");
     const rows = raw.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
       try {
         return JSON.parse(line);
@@ -16077,7 +16398,7 @@ async function runCommand(command, args, options = {}, stdin) {
     sessionId: options.sessionId,
     mode: "spawn"
   });
-  return new Promise((resolve19) => {
+  return new Promise((resolve20) => {
     const cleanEnv = { ...process.env };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE;
@@ -16121,7 +16442,7 @@ async function runCommand(command, args, options = {}, stdin) {
         }
       }, 2e3);
       done = true;
-      resolve19({
+      resolve20({
         success: false,
         engine: command,
         stdout,
@@ -16155,7 +16476,7 @@ Timed out after ${timeoutMs}ms`,
       done = true;
       clearTimeout(timer);
       logger2.error(`[${command}] process error:`, err);
-      resolve19({
+      resolve20({
         success: false,
         engine: command,
         stdout,
@@ -16168,7 +16489,7 @@ Process error: ${err.message}`,
       if (done) return;
       done = true;
       clearTimeout(timer);
-      resolve19({
+      resolve20({
         success: code === 0,
         engine: command,
         stdout: stdout.trim(),
@@ -16313,22 +16634,23 @@ async function runClaudeApi(prompt, options = {}) {
   }
 }
 async function runGeminiCli(prompt, options = {}) {
-  const args = ["-p", prompt];
+  const args = ["-p", prompt, "--output-format", "stream-json", "--yolo"];
   if (options.model) {
     args.push("-m", options.model);
   }
   return runCommand("gemini", args, options);
 }
 async function runCodexCli(prompt, options = {}) {
-  const args = ["-a", "never", "exec", "--sandbox", "danger-full-access", "--json"];
-  return runCommand("codex", args, options, prompt);
+  const args = ["-a", "never", "exec", "--sandbox", "danger-full-access", "--skip-git-repo-check", "--json", prompt];
+  return runCommand("codex", args, options);
 }
 async function runClaudeCli(prompt, options = {}) {
-  const args = ["-p", "--setting-sources", "user"];
-  if (process.env.CREW_CLAUDE_SKIP_PERMISSIONS === "true") {
+  const args = ["-p", "--setting-sources", "user", "--output-format", "stream-json", "--verbose"];
+  if (process.env.CREW_CLAUDE_SKIP_PERMISSIONS !== "false") {
     args.push("--dangerously-skip-permissions");
   }
-  return runCommand("claude", args, options, prompt);
+  args.push("--", prompt);
+  return runCommand("claude", args, options);
 }
 function resolveCursorAgentBin() {
   const fromEnv = String(process.env.CURSOR_CLI_BIN || "").trim();
@@ -16466,13 +16788,13 @@ async function getToolAuditReplayPlan(baseDir, runId) {
 
 // src/watch/index.ts
 import { watch } from "node:fs";
-import { readFile as readFile24 } from "node:fs/promises";
+import { readFile as readFile25 } from "node:fs/promises";
 import { join as join28 } from "node:path";
 
 // src/studio/broadcaster.ts
 init_logger();
 import WebSocket from "ws";
-import { readFile as readFile23 } from "node:fs/promises";
+import { readFile as readFile24 } from "node:fs/promises";
 var StudioBroadcaster = class {
   constructor(studioUrl = "ws://127.0.0.1:3334/ws", logger3) {
     this.ws = null;
@@ -16482,13 +16804,13 @@ var StudioBroadcaster = class {
     this.logger = logger3 || new Logger({ prefix: "studio" });
   }
   async connect() {
-    return new Promise((resolve19, reject) => {
+    return new Promise((resolve20, reject) => {
       try {
         this.ws = new WebSocket(this.studioUrl);
         this.ws.on("open", () => {
           this.connected = true;
           this.logger.info("Connected to Studio watch server");
-          resolve19();
+          resolve20();
         });
         this.ws.on("close", () => {
           this.connected = false;
@@ -16527,7 +16849,7 @@ var StudioBroadcaster = class {
       };
       if (includeContent) {
         try {
-          event.content = await readFile23(filePath, "utf8");
+          event.content = await readFile24(filePath, "utf8");
         } catch {
           event.content = void 0;
         }
@@ -16594,7 +16916,7 @@ function extractTodos(content) {
 async function inspectFileForTodos(path3) {
   let content = "";
   try {
-    content = await readFile24(path3, "utf8");
+    content = await readFile25(path3, "utf8");
   } catch {
     return { type: "file_changed", file: path3 };
   }
@@ -16686,7 +17008,7 @@ function getBanner() {
 // src/multirepo/index.ts
 import { readdir as readdir7, access as access7, mkdir as mkdir16, writeFile as writeFile13 } from "node:fs/promises";
 import { constants as constants7 } from "node:fs";
-import { dirname as dirname7, join as join29, resolve as resolve15 } from "node:path";
+import { dirname as dirname7, join as join29, resolve as resolve16 } from "node:path";
 import { execFile as execFile5 } from "node:child_process";
 import { promisify as promisify5 } from "node:util";
 var execFileAsync5 = promisify5(execFile5);
@@ -16706,7 +17028,7 @@ async function runGit2(repoPath, args) {
   return stdout.trim();
 }
 async function findSiblingRepos(baseDir = process.cwd()) {
-  const abs = resolve15(baseDir);
+  const abs = resolve16(baseDir);
   const parent = dirname7(abs);
   const currentName = abs.split("/").pop() || "";
   const entries = await readdir7(parent, { withFileTypes: true });
@@ -16789,7 +17111,7 @@ init_ci();
 
 // src/browser/index.ts
 import { spawn as spawn3 } from "node:child_process";
-import { access as access8, readFile as readFile25, writeFile as writeFile14 } from "node:fs/promises";
+import { access as access8, readFile as readFile26, writeFile as writeFile14 } from "node:fs/promises";
 import { constants as constants8 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as join30 } from "node:path";
@@ -16867,8 +17189,8 @@ var CdpClient = class {
   }
   send(method, params = {}) {
     const id = ++this.id;
-    return new Promise((resolve19, reject) => {
-      this.pending.set(id, resolve19);
+    return new Promise((resolve20, reject) => {
+      this.pending.set(id, resolve20);
       this.ws.send(JSON.stringify({ id, method, params }), (err) => {
         if (err) reject(err);
       });
@@ -16891,7 +17213,7 @@ async function waitForWsDebuggerUrl(port, timeoutMs = 1e4) {
       }
     } catch {
     }
-    await new Promise((resolve19) => setTimeout(resolve19, 300));
+    await new Promise((resolve20) => setTimeout(resolve20, 300));
   }
   throw new Error("Timed out waiting for Chrome DevTools endpoint.");
 }
@@ -16903,8 +17225,8 @@ async function runBrowserDebug(url, options = {}) {
   try {
     const wsUrl = await waitForWsDebuggerUrl(port);
     ws = new WebSocket2(wsUrl);
-    await new Promise((resolve19, reject) => {
-      ws?.once("open", () => resolve19());
+    await new Promise((resolve20, reject) => {
+      ws?.once("open", () => resolve20());
       ws?.once("error", reject);
     });
     const client = new CdpClient(ws);
@@ -16930,7 +17252,7 @@ async function runBrowserDebug(url, options = {}) {
     await client.send("Log.enable");
     await client.send("Page.enable");
     await client.send("Page.navigate", { url });
-    await new Promise((resolve19) => setTimeout(resolve19, durationMs));
+    await new Promise((resolve20) => setTimeout(resolve20, durationMs));
     let screenshotPath = options.screenshotPath;
     const screenshotRes = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true });
     if (!screenshotPath) {
@@ -16966,12 +17288,12 @@ function compareScreenshotBuffers(a, b) {
   };
 }
 async function compareScreenshots(pathA, pathB) {
-  const [a, b] = await Promise.all([readFile25(pathA), readFile25(pathB)]);
+  const [a, b] = await Promise.all([readFile26(pathA), readFile26(pathB)]);
   return compareScreenshotBuffers(a, b);
 }
 
 // src/team/index.ts
-import { access as access9, copyFile as copyFile2, mkdir as mkdir17, readFile as readFile26, readdir as readdir8, writeFile as writeFile15 } from "node:fs/promises";
+import { access as access9, copyFile as copyFile2, mkdir as mkdir17, readFile as readFile27, readdir as readdir8, writeFile as writeFile15 } from "node:fs/promises";
 import { constants as constants9 } from "node:fs";
 import { hostname } from "node:os";
 import { join as join31 } from "node:path";
@@ -17017,7 +17339,7 @@ async function loadPrivacyControls(baseDir = process.cwd()) {
     return { ...DEFAULT_PRIVACY };
   }
   try {
-    const raw = await readFile26(path3, "utf8");
+    const raw = await readFile27(path3, "utf8");
     const parsed = JSON.parse(raw);
     return {
       sharePrompt: parsed.sharePrompt !== false,
@@ -17044,13 +17366,13 @@ async function uploadTeamContext(baseDir = process.cwd()) {
   const correctionsOut = join31(teamDir, `${host}-training-data.jsonl`);
   if (await exists3(sessionPath)) {
     if (process.env.TEAM_S3_SESSION_PUT_URL) {
-      const body = await readFile26(sessionPath, "utf8");
+      const body = await readFile27(sessionPath, "utf8");
       await fetch(process.env.TEAM_S3_SESSION_PUT_URL, { method: "PUT", body });
     }
     await copyFile2(sessionPath, sessionOut);
   }
   if (await exists3(correctionsPath)) {
-    let correctionsRaw = await readFile26(correctionsPath, "utf8");
+    let correctionsRaw = await readFile27(correctionsPath, "utf8");
     const privacy = await loadPrivacyControls(baseDir);
     if (correctionsRaw.trim().length > 0) {
       const lines = correctionsRaw.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -17096,7 +17418,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
   let mergedCorrections = "";
   const seen = /* @__PURE__ */ new Set();
   if (await exists3(localCorrectionsPath)) {
-    const local = await readFile26(localCorrectionsPath, "utf8");
+    const local = await readFile27(localCorrectionsPath, "utf8");
     for (const line of local.split("\n").map((s) => s.trim()).filter(Boolean)) {
       seen.add(line);
       mergedCorrections += `${line}
@@ -17104,7 +17426,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
     }
   }
   for (const file of correctionCandidates) {
-    const raw = await readFile26(join31(teamDir, file), "utf8");
+    const raw = await readFile27(join31(teamDir, file), "utf8");
     for (const line of raw.split("\n").map((s) => s.trim()).filter(Boolean)) {
       if (!seen.has(line)) {
         seen.add(line);
@@ -17137,7 +17459,7 @@ async function getTeamSyncStatus(baseDir = process.cwd()) {
 // src/voice/listener.ts
 import { execFile as execFile7 } from "node:child_process";
 import { promisify as promisify8 } from "node:util";
-import { readFile as readFile27, writeFile as writeFile16 } from "node:fs/promises";
+import { readFile as readFile28, writeFile as writeFile16 } from "node:fs/promises";
 import { join as join32 } from "node:path";
 import { tmpdir as tmpdir2 } from "node:os";
 var execFileAsync7 = promisify8(execFile7);
@@ -17193,7 +17515,7 @@ async function transcribeWithOpenAi(audioPath) {
   if (!key) {
     throw new Error("OPENAI_API_KEY is required for OpenAI Whisper transcription.");
   }
-  const audioBuffer = await readFile27(audioPath);
+  const audioBuffer = await readFile28(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-1");
@@ -17215,7 +17537,7 @@ async function transcribeWithGroq(audioPath) {
   if (!key) {
     throw new Error("GROQ_API_KEY is required for Groq Whisper transcription.");
   }
-  const audioBuffer = await readFile27(audioPath);
+  const audioBuffer = await readFile28(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-large-v3-turbo");
@@ -17248,7 +17570,7 @@ async function transcribeWithWhisperCli(audioPath) {
   });
   const baseName = audioPath.split("/").pop()?.replace(/\.[^.]+$/, "") || "audio";
   const txtPath = join32(outDir, `${baseName}.txt`);
-  const text = await readFile27(txtPath, "utf8");
+  const text = await readFile28(txtPath, "utf8");
   return text.trim();
 }
 async function transcribeAudio(audioPath, options = {}) {
@@ -17292,8 +17614,8 @@ async function appendVoiceTranscript(baseDir, role, text) {
 }
 
 // src/context/augment.ts
-import { readFile as readFile28 } from "node:fs/promises";
-import { extname as extname4, resolve as resolve16 } from "node:path";
+import { readFile as readFile29 } from "node:fs/promises";
+import { extname as extname4, resolve as resolve17 } from "node:path";
 function collectOption(value, previous = []) {
   if (!value) return previous;
   return [...previous, value];
@@ -17323,9 +17645,9 @@ async function buildFileContextBlock(paths = [], maxChars = 8e3) {
   if (!paths.length) return "";
   const sections = [];
   for (const rawPath of paths) {
-    const abs = resolve16(rawPath);
+    const abs = resolve17(rawPath);
     try {
-      const content = await readFile28(abs, "utf8");
+      const content = await readFile29(abs, "utf8");
       sections.push([
         `### File Context: ${abs}`,
         "```text",
@@ -17344,7 +17666,7 @@ async function buildRepoContextBlock(repos = []) {
   if (!repos.length) return "";
   const sections = [];
   for (const repo of repos) {
-    const abs = resolve16(repo);
+    const abs = resolve17(repo);
     const gitBlock = await getProjectContext(abs).catch((error) => `## Git Context
 ${error.message}`);
     sections.push(`### Repo Context: ${abs}
@@ -17357,7 +17679,7 @@ async function buildImageContextBlock(paths = [], maxBytes = 25e4) {
   if (!paths.length) return "";
   const sections = [];
   for (const rawPath of paths) {
-    const abs = resolve16(rawPath);
+    const abs = resolve17(rawPath);
     try {
       const mime = inferImageMime(abs);
       if (!mime) {
@@ -17365,7 +17687,7 @@ async function buildImageContextBlock(paths = [], maxBytes = 25e4) {
 (unsupported image type; supported: png, jpg, jpeg, webp, gif)`);
         continue;
       }
-      const buf = await readFile28(abs);
+      const buf = await readFile29(abs);
       const used = buf.subarray(0, maxBytes);
       const truncated = buf.length > maxBytes;
       const dataUri = `data:${mime};base64,${used.toString("base64")}`;
@@ -17501,7 +17823,7 @@ function detectHighSeverityFindings(text) {
 }
 
 // src/headless/index.ts
-import { mkdir as mkdir18, readFile as readFile29, writeFile as writeFile17 } from "node:fs/promises";
+import { mkdir as mkdir18, readFile as readFile30, writeFile as writeFile17 } from "node:fs/promises";
 import { existsSync as existsSync16 } from "node:fs";
 import { join as join33 } from "node:path";
 
@@ -17529,7 +17851,7 @@ function isRetryableError(error) {
   return text.includes("rate limit") || text.includes("429") || text.includes("timeout") || text.includes("temporar") || text.includes("unavailable") || text.includes("quota") || text.includes("connection reset") || text.includes("econnreset");
 }
 function sleep(ms) {
-  return new Promise((resolve19) => setTimeout(resolve19, ms));
+  return new Promise((resolve20) => setTimeout(resolve20, ms));
 }
 async function withRetries(fn, policy, opts = {}) {
   const attempts = Math.max(1, policy.retryAttempts);
@@ -17590,7 +17912,7 @@ async function ensureState(baseDir) {
 async function getHeadlessState(baseDir = process.cwd()) {
   await ensureState(baseDir);
   try {
-    const raw = await readFile29(statePath(baseDir), "utf8");
+    const raw = await readFile30(statePath(baseDir), "utf8");
     const parsed = JSON.parse(raw);
     return { paused: Boolean(parsed.paused), updatedAt: parsed.updatedAt };
   } catch {
@@ -17609,7 +17931,7 @@ async function appendOutLine(baseDir, outPath, payload) {
   if (!outPath) return;
   const fullPath = join33(baseDir, outPath);
   await mkdir18(join33(fullPath, ".."), { recursive: true });
-  const prev = existsSync16(fullPath) ? await readFile29(fullPath, "utf8") : "";
+  const prev = existsSync16(fullPath) ? await readFile30(fullPath, "utf8") : "";
   await writeFile17(fullPath, `${prev}${JSON.stringify(payload)}
 `, "utf8");
 }
@@ -17997,12 +18319,12 @@ ${context}` : message;
 }
 
 // src/metrics/pipeline.ts
-import { readFile as readFile30 } from "node:fs/promises";
+import { readFile as readFile31 } from "node:fs/promises";
 import { join as join34 } from "node:path";
 async function loadPipelineMetricsSummary(baseDir) {
   const path3 = join34(baseDir, ".crew", "pipeline-metrics.jsonl");
   try {
-    const raw = await readFile30(path3, "utf8");
+    const raw = await readFile31(path3, "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     let runs = 0;
     let qaApproved = 0;
@@ -18955,9 +19277,9 @@ async function startUnifiedServer(options) {
       return json(res, 500, { error: String(err?.message || err) });
     }
   });
-  await new Promise((resolve19, reject) => {
+  await new Promise((resolve20, reject) => {
     server.once("error", reject);
-    server.listen(options.port, options.host, () => resolve19());
+    server.listen(options.port, options.host, () => resolve20());
   });
   const bound = server.address();
   const actualPort = typeof bound === "object" && bound ? bound.port : options.port;
@@ -18966,7 +19288,7 @@ async function startUnifiedServer(options) {
   return {
     address,
     close: async () => {
-      await new Promise((resolve19, reject) => server.close((err) => err ? reject(err) : resolve19()));
+      await new Promise((resolve20, reject) => server.close((err) => err ? reject(err) : resolve20()));
     }
   };
 }
@@ -18976,7 +19298,7 @@ import { spawn as spawn4 } from "node:child_process";
 import { mkdir as mkdir19, writeFile as writeFile18 } from "node:fs/promises";
 import { join as join36 } from "node:path";
 function runSrcCli(args, cwd = process.cwd()) {
-  return new Promise((resolve19) => {
+  return new Promise((resolve20) => {
     const child = spawn4("src", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
@@ -18991,7 +19313,7 @@ function runSrcCli(args, cwd = process.cwd()) {
       stderr += String(chunk);
     });
     child.on("error", (error) => {
-      resolve19({
+      resolve20({
         success: false,
         code: 1,
         stdout,
@@ -18999,7 +19321,7 @@ function runSrcCli(args, cwd = process.cwd()) {
       });
     });
     child.on("close", (code) => {
-      resolve19({
+      resolve20({
         success: code === 0,
         code: code ?? 1,
         stdout,
@@ -19050,7 +19372,7 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
 import { createInterface, emitKeypressEvents } from "node:readline";
 import { randomUUID as randomUUID10 } from "node:crypto";
 import { existsSync as existsSync18, readFileSync as readFileSync6 } from "node:fs";
-import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile32, readdir as readdir10, writeFile as writeFile20 } from "node:fs/promises";
+import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile33, readdir as readdir10, writeFile as writeFile20 } from "node:fs/promises";
 import { join as join39 } from "node:path";
 import { homedir as homedir11 } from "node:os";
 import chalk3 from "chalk";
@@ -19060,7 +19382,7 @@ init_agentkeeper();
 init_agentkeeper();
 init_agent_memory();
 init_collections();
-import { resolve as resolve18, join as join37 } from "node:path";
+import { resolve as resolve19, join as join37 } from "node:path";
 function tokenize3(text) {
   return new Set(
     String(text || "").toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 2)
@@ -19121,7 +19443,7 @@ function normalizeCollectionPathForDedupe(input) {
 var MemoryBroker = class {
   constructor(projectDir, options = {}) {
     this.docsIndexCache = /* @__PURE__ */ new Map();
-    this.projectDir = resolve18(projectDir);
+    this.projectDir = resolve19(projectDir);
     this.keeper = new AgentKeeper(this.projectDir, {
       storageDir: options.storageDir || process.env.CREW_MEMORY_DIR
     });
@@ -19145,7 +19467,7 @@ var MemoryBroker = class {
     return scored.slice(0, max).map((x) => mapFactHit(x.fact, x.score));
   }
   async getDocsIndex(paths, includeCode) {
-    const key = `${paths.map((p) => resolve18(p)).join("|")}::${includeCode ? "code" : "docs"}`;
+    const key = `${paths.map((p) => resolve19(p)).join("|")}::${includeCode ? "code" : "docs"}`;
     if (this.docsIndexCache.has(key)) return this.docsIndexCache.get(key);
     const idx = await buildCollectionIndex(paths, { includeCode });
     this.docsIndexCache.set(key, idx);
@@ -19204,7 +19526,7 @@ var MemoryBroker = class {
 };
 
 // src/checkpoint/store.ts
-import { mkdir as mkdir20, readFile as readFile31, readdir as readdir9, writeFile as writeFile19 } from "node:fs/promises";
+import { mkdir as mkdir20, readFile as readFile32, readdir as readdir9, writeFile as writeFile19 } from "node:fs/promises";
 import { existsSync as existsSync17 } from "node:fs";
 import { join as join38 } from "node:path";
 var CheckpointStore = class {
@@ -19249,7 +19571,7 @@ var CheckpointStore = class {
   }
   async load(runId) {
     try {
-      const raw = await readFile31(this.filePath(runId), "utf8");
+      const raw = await readFile32(this.filePath(runId), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
@@ -19261,7 +19583,7 @@ var CheckpointStore = class {
     const runs = [];
     for (const file of files) {
       try {
-        const raw = await readFile31(join38(this.dir, file), "utf8");
+        const raw = await readFile32(join38(this.dir, file), "utf8");
         runs.push(JSON.parse(raw));
       } catch {
       }
@@ -19514,7 +19836,7 @@ async function buildRepoBootstrap(projectDir) {
   const keyFiles = keyCandidates.filter((p) => existsSync18(join39(projectDir, p)));
   let readmeSummary = "";
   try {
-    const raw = await readFile32(join39(projectDir, "README.md"), "utf8");
+    const raw = await readFile33(join39(projectDir, "README.md"), "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     readmeSummary = lines.slice(0, 3).join(" ").slice(0, 260);
   } catch {
@@ -19707,7 +20029,7 @@ async function renderBannerAnimated(banner) {
   for (const line of lines) {
     process.stdout.write(`${chalk3.cyan(line)}
 `);
-    await new Promise((resolve19) => setTimeout(resolve19, 10));
+    await new Promise((resolve20) => setTimeout(resolve20, 10));
   }
 }
 function nextMode(current) {
@@ -19995,14 +20317,14 @@ async function startRepl(options) {
   const refreshPrompt = () => rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
   const confirmInline = async (message, defaultYes = true) => {
     const suffix = defaultYes ? " [Y/n] " : " [y/N] ";
-    return await new Promise((resolve19) => {
+    return await new Promise((resolve20) => {
       rl.question(`${message}${suffix}`, (answer) => {
         const normalized = String(answer || "").trim().toLowerCase();
         if (!normalized) {
-          resolve19(defaultYes);
+          resolve20(defaultYes);
           return;
         }
-        resolve19(normalized === "y" || normalized === "yes");
+        resolve20(normalized === "y" || normalized === "yes");
       });
     });
   };
@@ -20048,6 +20370,10 @@ async function startRepl(options) {
       const l2aModel = String(process.env.CREW_L2A_MODEL || "(env not set)");
       const l2bModel = String(process.env.CREW_L2B_MODEL || "(env not set)");
       const qaModel = String(process.env.CREW_QA_MODEL || "(env not set)");
+      const l1Model = String(process.env.CREW_L1_MODEL || "(env not set)");
+      const l3Model = String(process.env.CREW_L3_MODEL || "(env not set)");
+      const l3ReviewModel = String(process.env.CREW_L3_REVIEW_MODEL || "(env not set)");
+      const l3FixerModel = String(process.env.CREW_L3_FIXER_MODEL || "(env not set)");
       const extraValidators = String(process.env.CREW_L2_EXTRA_VALIDATORS || "(env not set)");
       const executionModel = String(process.env.CREW_EXECUTION_MODEL || "(env not set)");
       const maxParallelWorkers = String(process.env.CREW_MAX_PARALLEL_WORKERS || "(env not set)");
@@ -20065,11 +20391,15 @@ async function startRepl(options) {
       console.log(`    Tier 2 provider (Executor): ${chalk3.green(replState.executorProvider)}`);
       console.log(`    Tier 3 gateway            : ${replState.useGateway ? chalk3.green("ENABLED") : chalk3.gray("disabled")}`);
       console.log(`    CREW_CHAT_MODEL           : ${chatModel}`);
+      console.log(`    CREW_L1_MODEL             : ${l1Model}`);
       console.log(`    CREW_ROUTER_MODEL         : ${routerModel}`);
       console.log(`    CREW_REASONING_MODEL      : ${reasoningModel}`);
       console.log(`    CREW_L2A_MODEL            : ${l2aModel}`);
       console.log(`    CREW_L2B_MODEL            : ${l2bModel}`);
       console.log(`    CREW_QA_MODEL             : ${qaModel}`);
+      console.log(`    CREW_L3_MODEL             : ${l3Model}`);
+      console.log(`    CREW_L3_REVIEW_MODEL      : ${l3ReviewModel}`);
+      console.log(`    CREW_L3_FIXER_MODEL       : ${l3FixerModel}`);
       console.log(`    CREW_L2_EXTRA_VALIDATORS  : ${extraValidators}`);
       console.log(`    CREW_EXECUTION_MODEL      : ${executionModel}`);
       console.log(`    CREW_MAX_PARALLEL_WORKERS : ${maxParallelWorkers}`);
@@ -20245,11 +20575,15 @@ async function startRepl(options) {
       const subcommand = (args[0] || "show").trim().toLowerCase();
       const stackValue = args.slice(1).join(" ").trim();
       const stackFieldMap = {
+        "l1-model": "CREW_L1_MODEL",
         "router-model": "CREW_ROUTER_MODEL",
         "reasoning-model": "CREW_REASONING_MODEL",
         "l2a-model": "CREW_L2A_MODEL",
         "l2b-model": "CREW_L2B_MODEL",
         "qa-model": "CREW_QA_MODEL",
+        "l3-model": "CREW_L3_MODEL",
+        "l3-review-model": "CREW_L3_REVIEW_MODEL",
+        "l3-fixer-model": "CREW_L3_FIXER_MODEL",
         "extra-validators": "CREW_L2_EXTRA_VALIDATORS",
         "max-parallel-workers": "CREW_MAX_PARALLEL_WORKERS"
       };
@@ -20258,22 +20592,30 @@ async function startRepl(options) {
         console.log(`  Tier 1 router provider : ${replState.routerProvider}`);
         console.log(`  Tier 2 executor provider: ${replState.executorProvider}`);
         console.log(`  Tier 3 gateway         : ${replState.useGateway ? "enabled" : "disabled"}`);
+        console.log(`  CREW_L1_MODEL          : ${process.env.CREW_L1_MODEL || "(unset)"}`);
         console.log(`  CREW_ROUTER_MODEL      : ${process.env.CREW_ROUTER_MODEL || "(unset)"}`);
         console.log(`  CREW_REASONING_MODEL   : ${process.env.CREW_REASONING_MODEL || "(unset)"}`);
         console.log(`  CREW_L2A_MODEL         : ${process.env.CREW_L2A_MODEL || "(unset)"}`);
         console.log(`  CREW_L2B_MODEL         : ${process.env.CREW_L2B_MODEL || "(unset)"}`);
         console.log(`  CREW_QA_MODEL          : ${process.env.CREW_QA_MODEL || "(unset)"}`);
+        console.log(`  CREW_L3_MODEL          : ${process.env.CREW_L3_MODEL || "(unset)"}`);
+        console.log(`  CREW_L3_REVIEW_MODEL   : ${process.env.CREW_L3_REVIEW_MODEL || "(unset)"}`);
+        console.log(`  CREW_L3_FIXER_MODEL    : ${process.env.CREW_L3_FIXER_MODEL || "(unset)"}`);
         console.log(`  CREW_MAX_PARALLEL_WORKERS: ${process.env.CREW_MAX_PARALLEL_WORKERS || "(unset)"}
 `);
         console.log(chalk3.gray("  Set values with:"));
         console.log(chalk3.gray("    /stack router <grok|gemini|deepseek>"));
         console.log(chalk3.gray("    /stack executor <grok|gemini|deepseek>"));
         console.log(chalk3.gray("    /stack gateway <on|off>"));
+        console.log(chalk3.gray("    /stack l1-model <value>"));
         console.log(chalk3.gray("    /stack router-model <value>"));
         console.log(chalk3.gray("    /stack reasoning-model <value>"));
         console.log(chalk3.gray("    /stack l2a-model <value>"));
         console.log(chalk3.gray("    /stack l2b-model <value>"));
         console.log(chalk3.gray("    /stack qa-model <value>"));
+        console.log(chalk3.gray("    /stack l3-model <value>"));
+        console.log(chalk3.gray("    /stack l3-review-model <value>"));
+        console.log(chalk3.gray("    /stack l3-fixer-model <value>"));
         console.log(chalk3.gray("    /stack extra-validators <csv>"));
         console.log(chalk3.gray("    /stack max-parallel-workers <1-32>\n"));
         return true;
@@ -21549,7 +21891,7 @@ async function runXSearch(query, options = {}) {
 }
 
 // src/config/repo-config.ts
-import { mkdir as mkdir22, readFile as readFile33, writeFile as writeFile21 } from "node:fs/promises";
+import { mkdir as mkdir22, readFile as readFile34, writeFile as writeFile21 } from "node:fs/promises";
 import { existsSync as existsSync20 } from "node:fs";
 import { join as join41 } from "node:path";
 var DEFAULT_CONFIG = {
@@ -21632,7 +21974,7 @@ function redactSecrets(input) {
 async function readRepoConfig(baseDir, scope) {
   const path3 = configPath2(baseDir, scope);
   if (!existsSync20(path3)) return {};
-  const raw = await readFile33(path3, "utf8");
+  const raw = await readFile34(path3, "utf8");
   return parseJsonOrEmpty(raw);
 }
 async function loadResolvedRepoConfig(baseDir = process.cwd()) {
@@ -21885,7 +22227,7 @@ async function runGitHubDoctor(cwd = process.cwd(), repo) {
 
 // src/config/model-policy.ts
 import { existsSync as existsSync21 } from "node:fs";
-import { readFile as readFile34 } from "node:fs/promises";
+import { readFile as readFile35 } from "node:fs/promises";
 import { join as join42 } from "node:path";
 function sanitizeTier(input) {
   const out = {};
@@ -21905,7 +22247,7 @@ async function loadModelPolicy(baseDir = process.cwd()) {
   if (!existsSync21(path3)) return {};
   let parsed;
   try {
-    parsed = JSON.parse(await readFile34(path3, "utf8"));
+    parsed = JSON.parse(await readFile35(path3, "utf8"));
   } catch {
     return {};
   }
@@ -21922,7 +22264,7 @@ async function loadModelPolicy(baseDir = process.cwd()) {
 }
 
 // src/autofix/store.ts
-import { mkdir as mkdir23, readFile as readFile35, writeFile as writeFile22 } from "node:fs/promises";
+import { mkdir as mkdir23, readFile as readFile36, writeFile as writeFile22 } from "node:fs/promises";
 import { existsSync as existsSync22 } from "node:fs";
 import { join as join43 } from "node:path";
 import { randomUUID as randomUUID11 } from "node:crypto";
@@ -21940,7 +22282,7 @@ var AutoFixStore = class {
   async readState() {
     if (!existsSync22(this.file)) return createDefaultState();
     try {
-      const raw = await readFile35(this.file, "utf8");
+      const raw = await readFile36(this.file, "utf8");
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.jobs)) return createDefaultState();
       return {
@@ -22377,7 +22719,7 @@ async function runAutoFixJob(job, deps) {
 
 // src/cli/index.ts
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { mkdir as mkdir25, readFile as readFile36, writeFile as writeFile24 } from "node:fs/promises";
+import { mkdir as mkdir25, readFile as readFile37, writeFile as writeFile24 } from "node:fs/promises";
 import { dirname as dirname8, join as join45 } from "node:path";
 import { execSync as execSync7 } from "node:child_process";
 var program = new Command();
@@ -22588,7 +22930,7 @@ function printJsonEnvelope(kind, payload) {
 }
 async function loadPipelineRunEvents(traceId, baseDir = process.cwd()) {
   const path3 = join45(baseDir, ".crew", "pipeline-runs", `${traceId}.jsonl`);
-  const raw = await readFile36(path3, "utf8");
+  const raw = await readFile37(path3, "utf8");
   return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
     try {
       return JSON.parse(line);
@@ -22818,7 +23160,7 @@ async function main(args = []) {
   try {
     const swarmCfgPath = join45(homedir13(), ".crewswarm", "crewswarm.json");
     if (existsSync23(swarmCfgPath)) {
-      const swarmCfg = JSON.parse(await readFile36(swarmCfgPath, "utf8"));
+      const swarmCfg = JSON.parse(await readFile37(swarmCfgPath, "utf8"));
       const providerEnvMap = {
         openai: "OPENAI_API_KEY",
         anthropic: "ANTHROPIC_API_KEY",
@@ -23525,7 +23867,7 @@ Total session cost: $${cost.totalUsd.toFixed(4)}`));
       const job = await autoFixStore.claimNext(workerId);
       if (!job) {
         if (once || maxJobs > 0 && processed >= maxJobs) break;
-        await new Promise((resolve19) => setTimeout(resolve19, pollMs));
+        await new Promise((resolve20) => setTimeout(resolve20, pollMs));
         continue;
       }
       logger3.info(`Running ${job.id}: ${job.task}`);
@@ -25418,14 +25760,14 @@ ${check.stderr.slice(0, 4e3)}
         }
       }
       const { spawn: spawn5 } = await import("node:child_process");
-      await new Promise((resolve19, reject) => {
+      await new Promise((resolve20, reject) => {
         const child = spawn5("npm", ["install", "-g", `crewswarm-cli@${options.tag || "latest"}`], {
           stdio: "inherit",
           shell: false
         });
         child.on("error", reject);
         child.on("close", (code) => {
-          if (code === 0) resolve19(null);
+          if (code === 0) resolve20(null);
           else reject(new Error(`npm install exited with code ${code}`));
         });
       });

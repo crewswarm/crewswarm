@@ -594,7 +594,7 @@ export class GeminiToolAdapter {
       || this.sandbox.getStagedContent?.(filePath);
     const content = stagedContent ?? await readFile(filePath, 'utf8');
 
-    // ── Edit Strategy Chain: exact → whitespace-flex → fuzzy (Levenshtein) ──
+    // ── Edit Strategy Chain: exact → whitespace-flex → regex-ish token match → fuzzy ──
     const { match, strategy, occurrences } = this.findEditMatch(content, params.old_string);
 
     if (!match) {
@@ -638,7 +638,7 @@ export class GeminiToolAdapter {
   }
 
   /**
-   * Edit strategy chain: exact → flexible whitespace → fuzzy (Levenshtein).
+   * Edit strategy chain: exact → flexible whitespace → regex-ish token match → fuzzy.
    * Returns the actual matched string in the content and which strategy succeeded.
    */
   private findEditMatch(content: string, oldString: string): { match: string | null; strategy: string; occurrences: number } {
@@ -693,7 +693,25 @@ export class GeminiToolAdapter {
       }
     }
 
-    // Strategy 3: Fuzzy match (Levenshtein) — find best-matching substring
+    // Strategy 3: Regex-ish token match that tolerates formatting differences around punctuation.
+    const escaped = oldString
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\s+/g, '\\s+')
+      .replace(/\\([(){}\[\]:;,=<>+\-/*])/g, '\\s*$1\\s*');
+    if (escaped.length > 0) {
+      try {
+        const regex = new RegExp(escaped, 'm');
+        const matches = content.match(new RegExp(escaped, 'gm'));
+        const regexMatch = content.match(regex);
+        if (regexMatch?.[0]) {
+          return { match: regexMatch[0], strategy: 'regex', occurrences: matches?.length || 1 };
+        }
+      } catch {
+        // Fall through to fuzzy matching.
+      }
+    }
+
+    // Strategy 4: Fuzzy match (Levenshtein) — find best-matching substring
     const FUZZY_THRESHOLD = 0.10; // Allow up to 10% weighted difference
     const lines = content.split('\n');
     const oldLines = oldString.split('\n');

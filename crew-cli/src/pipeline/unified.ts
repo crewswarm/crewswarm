@@ -25,8 +25,11 @@ import { buildWorkerTasks, createAdHocWorkerTask, validateWorkerTaskEnvelope, ty
 import { runDeterministicQA } from '../execution/qa-gate.js';
 import type { ExecutionTranscript } from '../execution/transcript.js';
 import { getProjectContext } from '../context/project-context.js';
+import { reviewWorkerExecution, type ReviewResult } from '../executor/reviewer.js';
 // Structure analyzer temporarily disabled - file missing
 // import { analyzeProjectStructure, formatStructureContext } from '../utils/structure-analyzer.js';
+
+type EffortLevel = 'low' | 'medium' | 'high';
 
 export interface L1Request {
   userInput: string;
@@ -48,6 +51,7 @@ export interface L2Plan {
   workGraph?: WorkGraph;
   validation?: PolicyValidation;
   directResponse?: string;
+  estimatedEffort?: EffortLevel;
   traceId: string;
 }
 
@@ -157,10 +161,77 @@ export class UnifiedPipeline {
     const model = String(process.env.CREW_REASONING_MODEL || process.env.CREW_CHAT_MODEL || '').trim();
     return model || undefined;
   }
+
+  private normalizeEffort(raw: unknown, fallback: EffortLevel = 'medium'): EffortLevel {
+    const value = String(raw || '').trim().toLowerCase();
+    if (value === 'low' || value === 'medium' || value === 'high') return value;
+    return fallback;
+  }
+
+  private getRequestedEffortOverride(): EffortLevel | undefined {
+    const env = String(process.env.CREW_EFFORT || '').trim().toLowerCase();
+    if (env === 'low' || env === 'medium' || env === 'high') return env;
+    return undefined;
+  }
+
+  private inferEffortFromInput(text: string): EffortLevel {
+    const lower = String(text || '').toLowerCase();
+    if (lower.length < 120 && /\b(typo|rename|small|one line|one-liner|quick|minor|simple)\b/.test(lower)) return 'low';
+    if (lower.length > 500 || /\b(api|refactor|architecture|pipeline|multi-file|parallel|worker|oauth|reviewer)\b/.test(lower)) return 'high';
+    return 'medium';
+  }
+
+  private getExecutionEffort(taskOrRequest: { estimatedComplexity?: string; goal?: string; userInput?: string }, fallback?: EffortLevel): EffortLevel {
+    const override = this.getRequestedEffortOverride();
+    if (override) return override;
+    if (taskOrRequest.estimatedComplexity) {
+      return this.normalizeEffort(taskOrRequest.estimatedComplexity, fallback || 'medium');
+    }
+    if (taskOrRequest.goal) return this.inferEffortFromInput(taskOrRequest.goal);
+    if (taskOrRequest.userInput) return this.inferEffortFromInput(taskOrRequest.userInput);
+    return fallback || 'medium';
+  }
+
+  private getModelForLayer(layer: 'l1' | 'l3' | 'l3-review' | 'l3-fixer', effort: EffortLevel = 'medium'): string | undefined {
+    const envByLayer: Record<typeof layer, string[]> = {
+      l1: ['CREW_L1_MODEL', 'CREW_ROUTER_MODEL'],
+      l3: ['CREW_L3_MODEL', 'CREW_EXECUTION_MODEL'],
+      'l3-review': ['CREW_L3_REVIEW_MODEL', 'CREW_QA_MODEL'],
+      'l3-fixer': ['CREW_L3_FIXER_MODEL', 'CREW_EXECUTION_MODEL']
+    };
+    for (const envKey of envByLayer[layer]) {
+      const value = String(process.env[envKey] || '').trim();
+      if (value) return value;
+    }
+
+    if (layer === 'l1') return this.getReasoningModel() || 'gemini-2.5-flash';
+    if (layer === 'l3-review') return 'gemini-2.5-flash';
+    if (layer === 'l3-fixer') {
+      if (effort === 'high') return 'gpt-5.2-codex';
+      return 'gpt-5.2';
+    }
+    if (effort === 'low') return 'gemini-2.5-flash';
+    if (effort === 'high') return 'claude-opus-4.6';
+    return 'gpt-5.2';
+  }
+
+  private getTierForEffort(effort: EffortLevel): 'fast' | 'standard' | 'heavy' {
+    if (effort === 'low') return 'fast';
+    if (effort === 'high') return 'heavy';
+    return 'standard';
+  }
+
+  private getMaxTurnsForEffort(effort: EffortLevel): number {
+    const explicit = Number(process.env.CREW_MAX_TURNS || 0);
+    if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.floor(explicit));
+    if (effort === 'low') return 3;
+    if (effort === 'high') return 25;
+    return 10;
+  }
   
   private getRouterModel(): string | undefined {
     // Router needs structured JSON, so avoid pure reasoning models
-    const routerModel = String(process.env.CREW_ROUTER_MODEL || '').trim();
+    const routerModel = this.getModelForLayer('l1', 'low');
     if (routerModel) return routerModel;
     
     // If CREW_REASONING_MODEL is a reasoning-only model (deepseek-reasoner, gemini-*-preview),
@@ -177,7 +248,7 @@ export class UnifiedPipeline {
   }
 
   private getQaModel(): string | undefined {
-    const model = String(process.env.CREW_QA_MODEL || process.env.CREW_REASONING_MODEL || '').trim();
+    const model = String(process.env.CREW_QA_MODEL || process.env.CREW_L3_REVIEW_MODEL || process.env.CREW_REASONING_MODEL || '').trim();
     return model || undefined;
   }
 
@@ -232,6 +303,27 @@ export class UnifiedPipeline {
     const raw = Number(process.env.CREW_MAX_PARALLEL_WORKERS || 6);
     if (!Number.isFinite(raw) || raw < 1) return 6;
     return Math.min(32, Math.floor(raw));
+  }
+
+  private reviewerEnabled(): boolean {
+    const raw = String(process.env.CREW_L3_REVIEW_ENABLED || 'true').trim().toLowerCase();
+    return raw !== 'false' && raw !== '0' && raw !== 'off';
+  }
+
+  private getReviewerMaxCycles(): number {
+    const raw = Number(process.env.CREW_L3_REVIEW_MAX_CYCLES || 2);
+    if (!Number.isFinite(raw) || raw < 1) return 2;
+    return Math.min(3, Math.floor(raw));
+  }
+
+  private async getFileReviewSnippet(filePath: string): Promise<string | undefined> {
+    const staged = this.sandbox?.getStagedContent?.(filePath);
+    if (typeof staged === 'string') return staged;
+    try {
+      return await readFile(resolve(process.cwd(), filePath), 'utf8');
+    } catch {
+      return undefined;
+    }
   }
 
   private parseWorkerOutput(raw: string): { output: string; summary?: string; edits?: string[]; validation?: string[] } {
@@ -605,6 +697,87 @@ export class UnifiedPipeline {
       shellResults,
       transcript: workerResult.transcript
     } as any;
+  }
+
+  private async reviewAndFixWorkerResult(
+    task: WorkerTaskEnvelope,
+    result: any,
+    traceId: string,
+    context: string,
+    sessionId?: string
+  ): Promise<any> {
+    if (!this.reviewerEnabled()) return result;
+
+    let current = result;
+    let lastReview: ReviewResult | undefined;
+    const maxCycles = this.getReviewerMaxCycles();
+
+    for (let cycle = 1; cycle <= maxCycles; cycle += 1) {
+      let projectContextSummary = '';
+      try {
+        const projCtx = await getProjectContext(process.cwd());
+        projectContextSummary = projCtx.summary;
+      } catch {
+        // Non-fatal review context.
+      }
+
+      const review = await reviewWorkerExecution({
+        executor: this.executor,
+        model: this.getModelForLayer('l3-review', this.getExecutionEffort(task)),
+        sessionId,
+        projectDir: process.cwd(),
+        projectContextSummary,
+        workUnitId: current.workUnitId,
+        persona: current.persona,
+        taskGoal: task.goal,
+        workerOutput: current.output,
+        filesChanged: current.filesChanged || [],
+        verification: current.verification || [],
+        shellResults: current.shellResults || [],
+        stagedContentForPath: (filePath: string) => this.sandbox?.getStagedContent?.(filePath)
+      });
+
+      lastReview = review;
+      current.reviewer = review;
+
+      if (review.approved || review.issues.length === 0) {
+        return current;
+      }
+
+      if (cycle >= maxCycles) break;
+
+      const fixTask = createAdHocWorkerTask({
+        id: `${task.id}-review-fix-${cycle}`,
+        goal: [
+          task.goal,
+          '',
+          'Reviewer issues to fix:',
+          ...review.issues.map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.problem} -> ${issue.requiredFix}`),
+          '',
+          'Apply only the concrete fixes above and preserve any correct changes already made.'
+        ].join('\n'),
+        persona: task.persona,
+        sourceRefs: task.sourceRefs || ['request#user-input'],
+        estimatedComplexity: task.estimatedComplexity || this.getExecutionEffort(task),
+        requiredCapabilities: task.requiredCapabilities,
+        maxFilesTouched: task.maxFilesTouched
+      });
+
+      const fixResult = await this.runWorker(context ? `${context}\n\n${fixTask.goal}` : fixTask.goal, {
+        model: this.getModelForLayer('l3-fixer', this.getExecutionEffort(task)),
+        maxTurns: this.getMaxTurnsForEffort(this.getExecutionEffort(task)),
+        verbose: process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true',
+        persona: task.persona,
+        constraintLevel: undefined
+      });
+      const parsed = this.parseWorkerOutput(String(fixResult.output || ''));
+      current = this.buildWorkerExecutionResult(task, parsed, fixResult as any);
+    }
+
+    current.escalationNeeded = true;
+    current.escalationReason = `Reviewer rejected result: ${lastReview?.summary || 'issues remain after review cycles'}`;
+    current.reviewer = lastReview;
+    return current;
   }
 
   private async recordPipelineMetrics(entry: {
@@ -1283,7 +1456,8 @@ If output has blockers, set approved=false.`,
             id: 'single-task',
             goal: request.userInput,
             persona: 'executor-code',
-            sourceRefs: ['request#user-input']
+            sourceRefs: ['request#user-input'],
+            estimatedComplexity: plan.estimatedEffort || 'medium'
           }),
           request.context || '',
           traceId
@@ -1337,7 +1511,7 @@ If output has blockers, set approved=false.`,
           goal: request.userInput,
           persona: 'executor-code',
           sourceRefs: ['request#user-input'],
-          estimatedComplexity: 'low'
+          estimatedComplexity: plan.estimatedEffort || 'low'
         });
         const result = await this.l3ExecuteSingle(
           directTask,
@@ -1386,7 +1560,7 @@ If output has blockers, set approved=false.`,
             goal: request.userInput,
             persona: 'executor-code',
             sourceRefs: ['request#user-input'],
-            estimatedComplexity: 'low'
+            estimatedComplexity: plan.estimatedEffort || 'low'
           });
           const result = await this.l3ExecuteSingle(
             fallbackTask,
@@ -1825,8 +1999,10 @@ Return ONLY valid JSON:
       throw new Error(`L2 orchestration failed: ${result.result}`);
     }
 
-    const decision = await this.parseRouterDecision(String(result.result || ''), traceId, sessionId);
+      const decision = await this.parseRouterDecision(String(result.result || ''), traceId, sessionId);
     const normalizedDecision = this.normalizeDecision(decision.decision);
+    const estimatedEffort = this.getRequestedEffortOverride()
+      || this.normalizeEffort(decision.complexity, this.inferEffortFromInput(request.userInput));
 
     // Step 2: If complex AND Dual-L2 enabled, run planner
     let workGraph: WorkGraph | undefined;
@@ -1903,6 +2079,7 @@ Return ONLY valid JSON:
       workGraph,
       validation,
       directResponse: decision.directResponse,
+      estimatedEffort,
       traceId
     };
   }
@@ -1948,38 +2125,24 @@ Return ONLY valid JSON:
       overlays.push({ type: 'context', content: context, priority: 2 });
     }
 
-    // Auto-inject codebase RAG context for single execution
     try {
-      const { CodebaseIndex, shouldUseRag } = await import('../context/codebase-rag.js');
-      const codebaseIndex = CodebaseIndex.getInstance(process.cwd());
-      if (codebaseIndex.isReady() && shouldUseRag(enhancedTask)) {
-        const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4000);
-        const hits = await codebaseIndex.query(enhancedTask, 5);
-        if (hits.length > 0) {
-          const { readFile: rf } = await import('node:fs/promises');
-          const { join: pj } = await import('node:path');
-          const parts: string[] = [];
-          let chars = 0;
-          const charLimit = ragBudget * 4;
-          for (const hit of hits) {
-            try {
-              const content = await rf(pj(process.cwd(), hit.file), 'utf8');
-              if (chars + content.length > charLimit) break;
-              parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===\n${content}`);
-              chars += content.length;
-            } catch { /* skip */ }
-          }
-          if (parts.length > 0) {
-            overlays.push({
-              type: 'context',
-              content: `## Codebase Context (auto-retrieved, ${parts.length} files)\n${parts.join('\n\n')}`,
-              priority: 3
-            });
-          }
+      const { autoLoadRelevantFiles, shouldUseRag } = await import('../context/codebase-rag.js');
+      if (shouldUseRag(enhancedTask)) {
+        const ragContext = await autoLoadRelevantFiles(enhancedTask, process.cwd(), {
+          mode: (process.env.CREW_RAG_MODE as any) || 'auto',
+          tokenBudget: Number(process.env.CREW_RAG_WORKER_BUDGET || 4000),
+          maxFiles: Number(process.env.CREW_RAG_MAX_FILES_LOAD || 6)
+        });
+        if (ragContext.context) {
+          overlays.push({
+            type: 'context',
+            content: ragContext.context,
+            priority: 3
+          });
         }
       }
     } catch {
-      // Never fail a worker due to RAG injection
+      // Never fail a worker due to RAG injection.
     }
 
     overlays.push({
@@ -1996,14 +2159,17 @@ Return ONLY valid JSON:
 
     const composedPrompt = this.composer.compose('executor-code-v1', overlays, traceId);
 
-    // Use built-in L3_SYSTEM_PROMPT (has THINK→ACT→OBSERVE + tool list)
-    const result = await runAgenticWorker(enhancedTask, this.sandbox, {
-      model: process.env.CREW_EXECUTION_MODEL || '',
-      maxTurns: 25
+    const effort = this.getExecutionEffort(task);
+    const result = await runAgenticWorker(composedPrompt.finalPrompt, this.sandbox, {
+      model: this.getModelForLayer('l3', effort) || '',
+      maxTurns: this.getMaxTurnsForEffort(effort),
+      tier: this.getTierForEffort(effort),
+      persona: task.persona
     });
 
     const parsed = this.parseWorkerOutput(String(result.output || ''));
-    return this.buildWorkerExecutionResult(task, parsed, result);
+    const built = this.buildWorkerExecutionResult(task, parsed, result);
+    return this.reviewAndFixWorkerResult(task, built, traceId, context, sessionId);
   }
 
   /**
@@ -2108,38 +2274,29 @@ Return ONLY valid JSON:
           });
         }
 
-        // Auto-inject codebase RAG context (always-on when index is ready)
         try {
-          const { CodebaseIndex, shouldUseRag } = await import('../context/codebase-rag.js');
-          const codebaseIndex = CodebaseIndex.getInstance(process.cwd());
-          if (codebaseIndex.isReady() && shouldUseRag(unit.goal)) {
-            const ragBudget = Number(process.env.CREW_RAG_WORKER_BUDGET || 4000);
-            const hits = await codebaseIndex.query(unit.goal, 5);
-            if (hits.length > 0) {
-              const { readFile } = await import('node:fs/promises');
-              const { join: pathJoin, relative: pathRelative } = await import('node:path');
-              const parts: string[] = [];
-              let chars = 0;
-              const charLimit = ragBudget * 4;
-              for (const hit of hits) {
-                try {
-                  const content = await readFile(pathJoin(process.cwd(), hit.file), 'utf8');
-                  if (chars + content.length > charLimit) break;
-                  parts.push(`=== ${hit.file} (relevance: ${hit.score.toFixed(3)}) ===\n${content}`);
-                  chars += content.length;
-                } catch { /* skip */ }
-              }
-              if (parts.length > 0) {
-                overlays.push({
-                  type: 'context',
-                  content: `## Codebase Context (auto-retrieved, ${parts.length} files)\n${parts.join('\n\n')}`,
-                  priority: 3
-                });
-              }
+          const { autoLoadRelevantFiles, shouldUseRag } = await import('../context/codebase-rag.js');
+          const ragQuery = [
+            unit.goal,
+            accumulatedDiscoveredFiles.slice(0, 8).join(' ')
+          ].filter(Boolean).join('\n');
+          if (shouldUseRag(ragQuery)) {
+            const ragContext = await autoLoadRelevantFiles(ragQuery, process.cwd(), {
+              mode: (process.env.CREW_RAG_MODE as any) || 'auto',
+              tokenBudget: Number(process.env.CREW_RAG_WORKER_BUDGET || 4000),
+              maxFiles: Number(process.env.CREW_RAG_MAX_FILES_LOAD || 6),
+              sessionHistory: accumulatedDiscoveredFiles.map(file => ({ output: file }))
+            });
+            if (ragContext.context) {
+              overlays.push({
+                type: 'context',
+                content: ragContext.context,
+                priority: 3
+              });
             }
           }
         } catch {
-          // Never fail a worker due to RAG injection
+          // Never fail a worker due to RAG injection.
         }
 
         if (artifactPackId) {
@@ -2208,6 +2365,7 @@ Return ONLY valid JSON:
         });
 
         const composedPrompt = this.composer.compose(templateId, overlays, `${traceId}-${unit.id}`);
+        const effort = this.getExecutionEffort(unit);
         
         if (verbose) {
           console.log(`  [${unit.id}] ${unit.persona} executing (agentic)...`);
@@ -2217,11 +2375,12 @@ Return ONLY valid JSON:
         // Use built-in L3_SYSTEM_PROMPT (has THINK→ACT→OBSERVE + tool list)
         // Do NOT override with template basePrompt — those are generic and don't mention tools
         const result = await this.runWorker(composedPrompt.finalPrompt, {
-          model: process.env.CREW_EXECUTION_MODEL || '',
-          maxTurns: 25,
+          model: this.getModelForLayer('l3', effort) || '',
+          maxTurns: this.getMaxTurnsForEffort(effort),
           verbose,
           priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : undefined,
-          persona: unit.persona
+          persona: unit.persona,
+          constraintLevel: undefined
         });
         const parsed = this.parseWorkerOutput(String(result.output || ''));
 
@@ -2245,7 +2404,8 @@ Return ONLY valid JSON:
           { critical: false, tags: ['l3-output', traceId, unit.id], provider: 'pipeline' }
         );
 
-        return this.buildWorkerExecutionResult(unit, parsed, result);
+        const built = this.buildWorkerExecutionResult(unit, parsed, result as any);
+        return this.reviewAndFixWorkerResult(unit, built, `${traceId}-${unit.id}`, context, sessionId);
       };
 
       const batchResults: Array<{

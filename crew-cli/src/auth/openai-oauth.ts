@@ -84,6 +84,16 @@ async function readTokenFile(): Promise<OpenAIOAuthTokens | null> {
         };
       }
 
+      // Format 1b: nested auth object used by some Codex/OpenCode builds
+      const nestedAuth = data.auth || data.oauth || data.credentials;
+      if (nestedAuth?.accessToken || nestedAuth?.access_token || nestedAuth?.access) {
+        return {
+          accessToken: nestedAuth.accessToken || nestedAuth.access_token || nestedAuth.access,
+          refreshToken: nestedAuth.refreshToken || nestedAuth.refresh_token || nestedAuth.refresh || null,
+          expiresAt: nestedAuth.expiresAt || nestedAuth.expires_at || nestedAuth.expires || null,
+        };
+      }
+
       // Format 2: flat { access_token, refresh_token, expires_at }
       if (data.access_token) {
         return {

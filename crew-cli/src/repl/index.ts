@@ -900,6 +900,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       const l2aModel = String(process.env.CREW_L2A_MODEL || '(env not set)');
       const l2bModel = String(process.env.CREW_L2B_MODEL || '(env not set)');
       const qaModel = String(process.env.CREW_QA_MODEL || '(env not set)');
+      const l1Model = String(process.env.CREW_L1_MODEL || '(env not set)');
+      const l3Model = String(process.env.CREW_L3_MODEL || '(env not set)');
+      const l3ReviewModel = String(process.env.CREW_L3_REVIEW_MODEL || '(env not set)');
+      const l3FixerModel = String(process.env.CREW_L3_FIXER_MODEL || '(env not set)');
       const extraValidators = String(process.env.CREW_L2_EXTRA_VALIDATORS || '(env not set)');
       const executionModel = String(process.env.CREW_EXECUTION_MODEL || '(env not set)');
       const maxParallelWorkers = String(process.env.CREW_MAX_PARALLEL_WORKERS || '(env not set)');
@@ -918,11 +922,15 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       console.log(`    Tier 2 provider (Executor): ${chalk.green(replState.executorProvider)}`);
       console.log(`    Tier 3 gateway            : ${replState.useGateway ? chalk.green('ENABLED') : chalk.gray('disabled')}`);
       console.log(`    CREW_CHAT_MODEL           : ${chatModel}`);
+      console.log(`    CREW_L1_MODEL             : ${l1Model}`);
       console.log(`    CREW_ROUTER_MODEL         : ${routerModel}`);
       console.log(`    CREW_REASONING_MODEL      : ${reasoningModel}`);
       console.log(`    CREW_L2A_MODEL            : ${l2aModel}`);
       console.log(`    CREW_L2B_MODEL            : ${l2bModel}`);
       console.log(`    CREW_QA_MODEL             : ${qaModel}`);
+      console.log(`    CREW_L3_MODEL             : ${l3Model}`);
+      console.log(`    CREW_L3_REVIEW_MODEL      : ${l3ReviewModel}`);
+      console.log(`    CREW_L3_FIXER_MODEL       : ${l3FixerModel}`);
       console.log(`    CREW_L2_EXTRA_VALIDATORS  : ${extraValidators}`);
       console.log(`    CREW_EXECUTION_MODEL      : ${executionModel}`);
       console.log(`    CREW_MAX_PARALLEL_WORKERS : ${maxParallelWorkers}`);
@@ -1084,11 +1092,15 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       const subcommand = (args[0] || 'show').trim().toLowerCase();
       const stackValue = args.slice(1).join(' ').trim();
       const stackFieldMap: Record<string, string> = {
+        'l1-model': 'CREW_L1_MODEL',
         'router-model': 'CREW_ROUTER_MODEL',
         'reasoning-model': 'CREW_REASONING_MODEL',
         'l2a-model': 'CREW_L2A_MODEL',
         'l2b-model': 'CREW_L2B_MODEL',
         'qa-model': 'CREW_QA_MODEL',
+        'l3-model': 'CREW_L3_MODEL',
+        'l3-review-model': 'CREW_L3_REVIEW_MODEL',
+        'l3-fixer-model': 'CREW_L3_FIXER_MODEL',
         'extra-validators': 'CREW_L2_EXTRA_VALIDATORS',
         'max-parallel-workers': 'CREW_MAX_PARALLEL_WORKERS'
       };
@@ -1098,21 +1110,29 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         console.log(`  Tier 1 router provider : ${replState.routerProvider}`);
         console.log(`  Tier 2 executor provider: ${replState.executorProvider}`);
         console.log(`  Tier 3 gateway         : ${replState.useGateway ? 'enabled' : 'disabled'}`);
+        console.log(`  CREW_L1_MODEL          : ${process.env.CREW_L1_MODEL || '(unset)'}`);
         console.log(`  CREW_ROUTER_MODEL      : ${process.env.CREW_ROUTER_MODEL || '(unset)'}`);
         console.log(`  CREW_REASONING_MODEL   : ${process.env.CREW_REASONING_MODEL || '(unset)'}`);
         console.log(`  CREW_L2A_MODEL         : ${process.env.CREW_L2A_MODEL || '(unset)'}`);
         console.log(`  CREW_L2B_MODEL         : ${process.env.CREW_L2B_MODEL || '(unset)'}`);
         console.log(`  CREW_QA_MODEL          : ${process.env.CREW_QA_MODEL || '(unset)'}`);
+        console.log(`  CREW_L3_MODEL          : ${process.env.CREW_L3_MODEL || '(unset)'}`);
+        console.log(`  CREW_L3_REVIEW_MODEL   : ${process.env.CREW_L3_REVIEW_MODEL || '(unset)'}`);
+        console.log(`  CREW_L3_FIXER_MODEL    : ${process.env.CREW_L3_FIXER_MODEL || '(unset)'}`);
         console.log(`  CREW_MAX_PARALLEL_WORKERS: ${process.env.CREW_MAX_PARALLEL_WORKERS || '(unset)'}\n`);
         console.log(chalk.gray('  Set values with:'));
         console.log(chalk.gray('    /stack router <grok|gemini|deepseek>'));
         console.log(chalk.gray('    /stack executor <grok|gemini|deepseek>'));
         console.log(chalk.gray('    /stack gateway <on|off>'));
+        console.log(chalk.gray('    /stack l1-model <value>'));
         console.log(chalk.gray('    /stack router-model <value>'));
         console.log(chalk.gray('    /stack reasoning-model <value>'));
         console.log(chalk.gray('    /stack l2a-model <value>'));
         console.log(chalk.gray('    /stack l2b-model <value>'));
         console.log(chalk.gray('    /stack qa-model <value>'));
+        console.log(chalk.gray('    /stack l3-model <value>'));
+        console.log(chalk.gray('    /stack l3-review-model <value>'));
+        console.log(chalk.gray('    /stack l3-fixer-model <value>'));
         console.log(chalk.gray('    /stack extra-validators <csv>'));
         console.log(chalk.gray('    /stack max-parallel-workers <1-32>\n'));
         return true;
