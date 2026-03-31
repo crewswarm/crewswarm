@@ -377,9 +377,22 @@ export class GeminiToolAdapter {
   
   private async writeFile(params: { file_path: string; content: string }): Promise<ToolResult> {
     const isAbsolute = params.file_path.startsWith('/');
+    const { existsSync } = await import('node:fs');
+
+    // Guard: reject write_file on existing files — use replace/append instead
+    const checkPath = isAbsolute ? params.file_path : resolve(this.config.getWorkspaceRoot(), params.file_path);
+    if (existsSync(checkPath)) {
+      const { statSync } = await import('node:fs');
+      const size = statSync(checkPath).size;
+      if (size > 0) {
+        return {
+          success: false,
+          error: `File "${params.file_path}" already exists (${size} bytes). Use "replace" tool to edit existing files (read_file first, then replace with old_string/new_string). Use "append_file" to add content at the end. write_file is only for creating NEW files.`
+        };
+      }
+    }
 
     if (isAbsolute) {
-      // Absolute paths: write directly to disk (user explicitly specified the path)
       try {
         const { mkdir, writeFile } = await import('node:fs/promises');
         const { dirname } = await import('node:path');
