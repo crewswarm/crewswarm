@@ -752,82 +752,54 @@ function createCodexStreamRelay(onChunk) {
 }
 
 function createCrewCliStreamRelay(onChunk) {
-  let transcript = "";
-  let rawTranscript = "";
-  let lineBuffer = "";
-  let collectingAssistant = false;
-
-  const appendAssistant = (text) => {
-    const normalized = String(text || "").replace(/\r/g, "").trimEnd();
-    if (!normalized) return;
-    transcript = appendNormalizedChunk(transcript, normalized);
-    onChunk?.(`${normalized}\n`);
-  };
-
-  const handleLine = (line) => {
-    const cleaned = stripAnsi(line).replace(/\r/g, "");
-    rawTranscript = appendNormalizedChunk(rawTranscript, cleaned);
-    const trimmed = cleaned.trim();
-    if (!trimmed) {
-      if (collectingAssistant && transcript) {
-        appendAssistant("");
-      }
-      return;
-    }
-
-    // Legacy marker format
-    if (trimmed === "--- Agent Response ---") {
-      collectingAssistant = true;
-      return;
-    }
-
-    if (trimmed === "Pipeline timeline:") {
-      collectingAssistant = false;
-      return;
-    }
-
-    // New JSON envelope format — extract response field
-    if (trimmed.startsWith("{") && trimmed.includes('"kind"')) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed.response) {
-          appendAssistant(parsed.response);
-          return;
-        }
-      } catch { /* not valid JSON yet, may span lines */ }
-    }
-
-    if (collectingAssistant) {
-      appendAssistant(cleaned);
-    }
-  };
+  // Buffer ALL output — don't stream anything until we can extract the response.
+  // crew-cli emits logs + a JSON envelope; we only want the response field.
+  let rawOutput = "";
 
   return {
     push(chunk) {
-      lineBuffer += chunk.toString("utf8");
-      while (lineBuffer.includes("\n")) {
-        const newlineIndex = lineBuffer.indexOf("\n");
-        const line = lineBuffer.slice(0, newlineIndex);
-        lineBuffer = lineBuffer.slice(newlineIndex + 1);
-        handleLine(line);
-      }
+      rawOutput += chunk.toString("utf8");
     },
     finish() {
-      if (lineBuffer.trim()) {
-        handleLine(lineBuffer);
-        lineBuffer = "";
+      const cleaned = stripAnsi(rawOutput).replace(/\r/g, "");
+
+      // Strategy 1: Find JSON envelope with "response" field
+      const jsonMatch = cleaned.match(/\{[\s\S]*"kind":\s*"[^"]+\.result"[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.response) {
+            onChunk?.(parsed.response);
+            return parsed.response;
+          }
+        } catch { /* fall through to other strategies */ }
       }
-      // If no transcript from streaming, try to extract from rawTranscript JSON
-      if (!transcript.trim() && rawTranscript.includes('"response"')) {
-        const jsonMatch = rawTranscript.match(/\{[\s\S]*"kind":\s*"[^"]+\.result"[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (parsed.response) return parsed.response;
-          } catch { /* fall through */ }
+
+      // Strategy 2: Extract "response" field via regex (handles malformed JSON)
+      const respMatch = cleaned.match(/"response":\s*"((?:[^"\\]|\\.)*)"/);
+      if (respMatch) {
+        const response = respMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\t/g, "\t");
+        onChunk?.(response);
+        return response;
+      }
+
+      // Strategy 3: Legacy "--- Agent Response ---" marker
+      const markerIdx = cleaned.indexOf("--- Agent Response ---");
+      if (markerIdx >= 0) {
+        let response = cleaned.slice(markerIdx + "--- Agent Response ---".length);
+        const timelineIdx = response.indexOf("Pipeline timeline:");
+        if (timelineIdx >= 0) response = response.slice(0, timelineIdx);
+        response = response.trim();
+        if (response) {
+          onChunk?.(response);
+          return response;
         }
       }
-      return transcript.trim() || summarizeCliFailure("crew-cli", rawTranscript);
+
+      // Fallback: send raw output (stripped of common log prefixes)
+      const fallback = summarizeCliFailure("crew-cli", cleaned);
+      onChunk?.(fallback);
+      return fallback;
     },
   };
 }
