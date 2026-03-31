@@ -197,6 +197,9 @@ async function runCommand(command: string, args: string[], options: EngineRunOpt
     const cleanEnv = { ...process.env };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE;
+    if (/(^|[\\/])claude$/.test(engineLabel)) {
+      delete cleanEnv.ANTHROPIC_API_KEY;
+    }
 
     const child = spawn(command, args, {
       cwd: options.cwd || process.cwd(),

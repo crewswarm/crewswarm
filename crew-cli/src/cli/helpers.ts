@@ -177,7 +177,7 @@ export function detectSubscriptionEngines(tokens: Record<string, string | undefi
   const cliAuth = detectCliAuthStatus();
 
   const cursorAuth = Boolean(tokens.cursor || cliAuth.cursor);
-  const claudeAuth = Boolean(tokens.claude || process.env.ANTHROPIC_API_KEY || cliAuth.claude);
+  const claudeAuth = Boolean(tokens.claude || cliAuth.claude);
   const codexAuth = Boolean(tokens.openai || process.env.OPENAI_API_KEY || cliAuth.codex);
 
   return [

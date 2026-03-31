@@ -13,7 +13,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { shouldSkipGeminiPassthroughLine } from "../../lib/gemini-cli-passthrough-noise.mjs";
@@ -951,6 +951,20 @@ function createCliRelay(engine, onChunk, onDone) {
   return createDefaultCliRelay(onChunk);
 }
 
+function isClaudeOauthAuthenticated() {
+  try {
+    const output = execFileSync("claude", ["auth", "status"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim().toLowerCase();
+    if (!output) return false;
+    if (/"loggedin"\s*:\s*true/.test(output)) return true;
+    return output.includes("logged in");
+  } catch {
+    return false;
+  }
+}
+
 function broadcastTerminalMessage(sessionId, payload) {
   const session = terminalSessions.get(sessionId);
   if (!session) return;
@@ -1211,6 +1225,10 @@ export function runCli({
   resume = true,
 }) {
   return new Promise((resolve, reject) => {
+    if (engine === "claude" && !isClaudeOauthAuthenticated()) {
+      reject(new Error("Claude Code requires CLI OAuth login. Run `claude auth login` and try again."));
+      return;
+    }
     // Look up existing session for resume
     const resumeKey = getCliResumeKey(engine, projectDir);
     const resumeSession = resume ? cliResumeSessions.get(resumeKey) : undefined;
