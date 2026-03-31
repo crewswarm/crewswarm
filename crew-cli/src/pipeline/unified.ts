@@ -1633,6 +1633,43 @@ If output has blockers, set approved=false.`,
     traceId: string,
     sessionId?: string
   ): Promise<L2Plan> {
+    // Step 0: Quick project scan so router + workers understand what we're working with
+    const projectDir = (this.sandbox as any)?.baseDir || process.cwd();
+    let projectContext = '';
+    try {
+      const { readdirSync, statSync, readFileSync, existsSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      // Get top-level file listing
+      const entries = readdirSync(projectDir)
+        .filter(f => !f.startsWith('.') && f !== 'node_modules')
+        .slice(0, 30);
+      const fileList = entries.map(f => {
+        const s = statSync(join(projectDir, f));
+        return s.isDirectory() ? `${f}/` : f;
+      });
+      projectContext = `Project files: ${fileList.join(', ')}`;
+      // Detect tech stack from key files
+      const hasPackageJson = existsSync(join(projectDir, 'package.json'));
+      const hasIndexHtml = existsSync(join(projectDir, 'index.html'));
+      const hasTsConfig = existsSync(join(projectDir, 'tsconfig.json'));
+      if (hasIndexHtml && !hasTsConfig) {
+        projectContext += '\nTech: Static HTML/CSS/JS site (vanilla, no build step, no Node.js modules). All JS must be browser-compatible (no require/import/export, no Node APIs).';
+      } else if (hasPackageJson) {
+        try {
+          const pkg = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf8'));
+          const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).slice(0, 10);
+          projectContext += `\nTech: Node.js project. Dependencies: ${deps.join(', ')}`;
+        } catch { /* skip */ }
+      }
+      // Read a snippet of the main file to understand the style
+      if (hasIndexHtml) {
+        try {
+          const html = readFileSync(join(projectDir, 'index.html'), 'utf8');
+          projectContext += `\nindex.html: ${html.length} chars, ${(html.match(/<script/g) || []).length} script tags, ${(html.match(/<link.*css/g) || []).length} CSS links`;
+        } catch { /* skip */ }
+      }
+    } catch { /* non-fatal */ }
+
     // Step 1: Router - classify the request
     const overlays: PromptOverlay[] = [
       {
@@ -1650,7 +1687,13 @@ If output has blockers, set approved=false.`,
       });
     }
 
-    const projectDir = (this.sandbox as any)?.baseDir || process.cwd();
+    if (projectContext) {
+      overlays.push({
+        type: 'context',
+        content: projectContext,
+        priority: 2
+      });
+    }
     overlays.push({
       type: 'constraints',
       content: `You are operating in project directory: ${projectDir}
@@ -2105,15 +2148,12 @@ Return ONLY valid JSON:
         // NEVER use @@WRITE_FILE text markers — use the write_file tool instead.
         overlays.push({
           type: 'constraints',
-          content: `IMPORTANT: Use the provided tools (write_file, replace, read_file, run_shell_command, etc.) to make changes.
-Do NOT output @@WRITE_FILE or @@EDIT markers in your text response — those are deprecated.
-After completing your work, return a JSON summary:
-{
-  "output": "what you did",
-  "summary": "short summary",
-  "edits": ["list of files changed"],
-  "validation": ["verification steps"]
-}`,
+          content: `IMPORTANT RULES:
+1. ALWAYS read_file before editing any file. Never guess at contents.
+2. Use "replace" tool for editing existing files (with old_string/new_string). write_file is ONLY for NEW files.
+3. Do NOT output @@WRITE_FILE or @@EDIT markers — use structured tool calls.
+4. Match the existing code style exactly. If the project uses vanilla JS (no modules), do NOT use require/import/export or Node.js APIs.
+5. After completing work, return a JSON summary: {"output":"what you did","summary":"short summary","edits":["files changed"],"validation":["verification steps"]}`,
           priority: 4
         });
 
