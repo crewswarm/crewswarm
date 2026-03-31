@@ -1104,7 +1104,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride, resume
           command: "claude",
           args,
           stdin: null,
-          stripEnv: ["CLAUDECODE", "CLAUDE_CODE"],
+          stripEnv: ["CLAUDECODE", "CLAUDE_CODE", "ANTHROPIC_API_KEY"],
         };
       }
     case "cursor":
