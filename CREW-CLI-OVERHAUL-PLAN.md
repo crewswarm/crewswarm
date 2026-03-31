@@ -1,11 +1,44 @@
 # crew-cli Architecture Overhaul Plan
 
-## Status: Ready to implement
+## Status: Phase 0-1a done, Phase 0 next priority
 ## Priority: Ship in order, each builds on the previous
 
 ---
 
-## Phase 1: Tool Safety (PARTIALLY DONE)
+## Phase 0: OAuth Token Reuse ⭐ NEXT
+
+### 0a. Read Claude Max OAuth from macOS Keychain (TODO — HIGHEST PRIORITY)
+- Claude Code stores OAuth tokens in macOS Keychain at service `"Claude Code-credentials"`
+- Read with: `security find-generic-password -a "$(whoami)" -s "Claude Code-credentials" -w`
+- Returns JSON: `{ claudeAiOauth: { accessToken, refreshToken, expiresAt, scopes, subscriptionType } }`
+- Your token: `subscriptionType: "max"`, `rateLimitTier: "default_claude_max_5x"`, scopes include `user:inference`
+- Use `accessToken` as `Authorization: Bearer ${token}` against Anthropic API
+- This gives crew-cli free Claude Opus 4.6 on your Max subscription — no API key charges
+- Need token refresh handling: check `expiresAt`, use `refreshToken` to get new access token
+- File: new `crew-cli/src/auth/oauth-keychain.ts`
+- Wire into `crew-cli/src/executor/agentic-executor.ts` → `resolveProvider()` as highest-priority provider
+
+### 0b. Read Codex/OpenCode OAuth tokens (TODO)
+- Codex CLI stores ChatGPT Pro OAuth somewhere — find keychain entry or `~/.codex/` config
+- OpenCode stores OAuth at `~/.local/share/opencode/auth.json`
+- Extract bearer tokens → crew-cli can call OpenAI models via OAuth too
+- Combined: crew-cli gets Opus 4.6 + GPT-5.4 + Gemini all on subscriptions, zero API cost
+
+### 0c. Provider fallback chain (TODO)
+- Priority: OAuth token (free) → API key (paid) → free-tier model (gemini-2.5-flash)
+- crew-cli tries OAuth first, falls back to API key only if OAuth unavailable/expired
+- File: update `crew-cli/src/executor/agentic-executor.ts` → `resolveProvider()`
+
+### Reference (TS source for OAuth implementation)
+- Token storage: `/tmp/claude-src/src/utils/secureStorage/macOsKeychainStorage.ts`
+- Token loading: `/tmp/claude-src/src/utils/auth.ts` line 1255 `getClaudeAIOAuthTokens()`
+- OAuth client: `/tmp/claude-src/src/services/oauth/client.ts`
+- Token refresh: `/tmp/claude-src/src/services/oauth/client.ts` → `refreshOAuthToken()`
+- Keychain service name: `"Claude Code" + "" + "-credentials"` = `"Claude Code-credentials"`
+
+---
+
+## Phase 1: Tool Safety ✅ DONE
 
 ### 1a. Read-before-edit guard ✅ DONE
 - `write_file` rejects existing files → forces `replace`
