@@ -1,7 +1,7 @@
 {
   "name": "crewswarm",
-  "version": "0.9.2",
-  "description": "Local-first multi-agent orchestration platform — coordinate AI coding agents, LLMs, and tools from a single dashboard",
+  "version": "0.9.3",
+  "description": "Local-first multi-agent orchestration platform \u2014 coordinate AI coding agents, LLMs, and tools from a single dashboard",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -62,7 +62,7 @@
     "@whiskeysockets/baileys": "^7.0.0-rc.9"
   },
   "scripts": {
-    "postinstall": "node -e \"try{require('child_process').execSync('git --version',{stdio:'pipe'})}catch{console.log('\\n⚠️  git not found. Install git for full functionality (WhatsApp bridge, crew-cli git tools).\\n   macOS: xcode-select --install\\n   Ubuntu: sudo apt install git\\n   Alpine: apk add git\\n')}\"",
+    "postinstall": "node -e \"try{require('child_process').execSync('git --version',{stdio:'pipe'})}catch{console.log('\\n\u26a0\ufe0f  git not found. Install git for full functionality (WhatsApp bridge, crew-cli git tools).\\n   macOS: xcode-select --install\\n   Ubuntu: sudo apt install git\\n   Alpine: apk add git\\n')}\"",
     "start": "node scripts/start.mjs",
     "test": "node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs test/mention-participants.test.mjs test/project-messages-chat-protocol.test.mjs && npm --prefix crew-cli test",
     "test:unit": "node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs",
