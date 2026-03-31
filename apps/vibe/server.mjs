@@ -1175,7 +1175,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride, resume
             model = cfg.opencodeModel || "";
           } catch {}
         }
-        if (!model) model = "openai/gpt-5.4";
+        if (!model) model = "openai/gpt-5.2";
         const args = ["run", "-m", model, message];
         // Add workspace directory context
         if (projectDir) args.push("--dir", projectDir);
