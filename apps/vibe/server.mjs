@@ -1087,6 +1087,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride, resume
         command: binary,
         args: codexArgs,
         stdin: null,
+        stripEnv: ["OPENAI_API_KEY"],
       };
     }
     case "claude":
@@ -1147,6 +1148,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride, resume
           command: "gemini",
           args,
           stdin: null,
+          stripEnv: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         };
       }
     case "opencode":
@@ -1169,6 +1171,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride, resume
           command: "opencode",
           args,
           stdin: null,
+          stripEnv: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"],
         };
       }
     case "crew-cli": {
