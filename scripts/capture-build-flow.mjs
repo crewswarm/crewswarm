@@ -49,7 +49,7 @@ async function main() {
   const page = await browser.newPage();
 
   // Step 1 — navigate to #build
-  await page.goto(`${BASE_URL}/#build`, { waitUntil: "networkidle2" });
+  await page.goto(`${BASE_URL}/#build`, { waitUntil: "domcontentloaded" });
   await sleep(2000);
   await screenshot(page, "step1-build-tab");
 
@@ -69,28 +69,26 @@ async function main() {
   await screenshot(page, "step2-requirement");
 
   // Step 3 — click Plan and wait for result
-  const planBtn = await page.evaluateHandle(() => {
+  await page.evaluate(() => {
     const buttons = [...document.querySelectorAll("button")];
-    return buttons.find((b) => /plan/i.test(b.textContent));
+    const planBtn = buttons.find((b) => /plan/i.test(b.textContent));
+    if (planBtn) planBtn.click();
   });
-  if (planBtn) {
-    await planBtn.click();
-  }
   await sleep(20000);
   await screenshot(page, "step3-plan");
 
   // Step 4 — Chat tab
-  await page.goto(`${BASE_URL}/#chat`, { waitUntil: "networkidle2" });
+  await page.goto(`${BASE_URL}/#chat`, { waitUntil: "domcontentloaded" });
   await sleep(3000);
   await screenshot(page, "step4-chat");
 
   // Step 5 — Swarm / agents tab
-  await page.goto(`${BASE_URL}/#swarm`, { waitUntil: "networkidle2" });
+  await page.goto(`${BASE_URL}/#swarm`, { waitUntil: "domcontentloaded" });
   await sleep(2000);
   await screenshot(page, "step5-agents");
 
   // Step 6 — RT messages tab
-  await page.goto(`${BASE_URL}/#rt`, { waitUntil: "networkidle2" });
+  await page.goto(`${BASE_URL}/#rt`, { waitUntil: "domcontentloaded" });
   await sleep(2000);
   await screenshot(page, "step6-rt-messages");
 
