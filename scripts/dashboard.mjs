@@ -2013,7 +2013,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if ((url.pathname === "/health" || url.pathname === "/api/health") && req.method === "GET") {
+    if (url.pathname === "/health" && req.method === "GET") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, uptime: Math.round(process.uptime()) }));
       return;
