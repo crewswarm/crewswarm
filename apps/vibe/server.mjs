@@ -775,6 +775,7 @@ function createCrewCliStreamRelay(onChunk) {
       return;
     }
 
+    // Legacy marker format
     if (trimmed === "--- Agent Response ---") {
       collectingAssistant = true;
       return;
@@ -783,6 +784,17 @@ function createCrewCliStreamRelay(onChunk) {
     if (trimmed === "Pipeline timeline:") {
       collectingAssistant = false;
       return;
+    }
+
+    // New JSON envelope format — extract response field
+    if (trimmed.startsWith("{") && trimmed.includes('"kind"')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.response) {
+          appendAssistant(parsed.response);
+          return;
+        }
+      } catch { /* not valid JSON yet, may span lines */ }
     }
 
     if (collectingAssistant) {
@@ -804,6 +816,16 @@ function createCrewCliStreamRelay(onChunk) {
       if (lineBuffer.trim()) {
         handleLine(lineBuffer);
         lineBuffer = "";
+      }
+      // If no transcript from streaming, try to extract from rawTranscript JSON
+      if (!transcript.trim() && rawTranscript.includes('"response"')) {
+        const jsonMatch = rawTranscript.match(/\{[\s\S]*"kind":\s*"[^"]+\.result"[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed.response) return parsed.response;
+          } catch { /* fall through */ }
+        }
       }
       return transcript.trim() || summarizeCliFailure("crew-cli", rawTranscript);
     },
