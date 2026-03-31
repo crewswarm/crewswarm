@@ -26,6 +26,8 @@ export interface GeminiOAuthTokens {
   expiresAt: number | null;
   clientId: string | null;
   clientSecret: string | null;
+  projectId: string | null;
+  source: 'adc' | 'gemini-cli';
 }
 
 // ---------------------------------------------------------------------------
@@ -67,61 +69,107 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-async function readTokenFiles(): Promise<GeminiOAuthTokens | null> {
-  // Priority 1: Gemini CLI OAuth creds (purpose-built for Gemini API)
-  if (await fileExists(GEMINI_CLI_PATH)) {
-    try {
-      const raw = await readFile(GEMINI_CLI_PATH, 'utf8');
-      const data = JSON.parse(raw);
-      if (data.access_token) {
-        return {
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token || null,
-          expiresAt: data.expiry_date || null,
-          clientId: GEMINI_CLI_CLIENT_ID,
-          clientSecret: GEMINI_CLI_CLIENT_SECRET,
-        };
-      }
-    } catch {
-      // Parse error — try next
-    }
-  }
+async function resolveGoogleProjectId(): Promise<string | null> {
+  const envProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || process.env.ANTHROPIC_VERTEX_PROJECT_ID;
+  if (envProject) return envProject;
 
-  // Priority 2: Google ADC (from gcloud auth application-default login)
   if (await fileExists(ADC_PATH)) {
     try {
       const raw = await readFile(ADC_PATH, 'utf8');
       const data = JSON.parse(raw);
+      return data.quota_project_id || data.project_id || null;
+    } catch {
+      // Ignore malformed ADC files and fall back to null.
+    }
+  }
 
-      // ADC files contain client_id, client_secret, refresh_token (no access_token)
-      if (data.refresh_token && data.client_id) {
-        // Need to exchange refresh token for access token
-        const refreshed = await exchangeRefreshToken(
-          data.refresh_token,
-          data.client_id,
-          data.client_secret
-        );
-        if (refreshed) {
+  return null;
+}
+
+async function readTokenFiles(): Promise<GeminiOAuthTokens | null> {
+  const projectId = await resolveGoogleProjectId();
+  const preference = String(process.env.CREW_GEMINI_OAUTH_SOURCE || 'auto').trim().toLowerCase();
+  const orderedSources =
+    preference === 'gemini-cli'
+      ? ['gemini-cli', 'adc']
+    : preference === 'adc'
+        ? ['adc', 'gemini-cli']
+        : ['gemini-cli', 'adc'];
+
+  for (const source of orderedSources) {
+    if (source === 'adc' && await fileExists(ADC_PATH)) {
+      try {
+        const raw = await readFile(ADC_PATH, 'utf8');
+        const data = JSON.parse(raw);
+
+        // ADC files contain client_id, client_secret, refresh_token (no access_token)
+        if (data.refresh_token && data.client_id) {
+          const refreshed = await exchangeRefreshToken(
+            data.refresh_token,
+            data.client_id,
+            data.client_secret
+          );
+          if (refreshed) {
+            return {
+              ...refreshed,
+              clientId: data.client_id,
+              clientSecret: data.client_secret,
+              projectId: data.quota_project_id || data.project_id || projectId,
+              source: 'adc',
+            };
+          }
+        }
+
+        if (data.access_token) {
           return {
-            ...refreshed,
-            clientId: data.client_id,
-            clientSecret: data.client_secret,
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || null,
+            expiresAt: null,
+            clientId: data.client_id || null,
+            clientSecret: data.client_secret || null,
+            projectId: data.quota_project_id || data.project_id || projectId,
+            source: 'adc',
           };
         }
+      } catch {
+        // Parse error — try next source
       }
+    }
 
-      // Some ADC files may have a direct access token
-      if (data.access_token) {
-        return {
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token || null,
-          expiresAt: null,
-          clientId: data.client_id || null,
-          clientSecret: data.client_secret || null,
-        };
+    if (source === 'gemini-cli' && await fileExists(GEMINI_CLI_PATH)) {
+      try {
+        const raw = await readFile(GEMINI_CLI_PATH, 'utf8');
+        const data = JSON.parse(raw);
+        if (data.refresh_token) {
+          const refreshed = await exchangeRefreshToken(
+            data.refresh_token,
+            GEMINI_CLI_CLIENT_ID,
+            GEMINI_CLI_CLIENT_SECRET
+          );
+          if (refreshed) {
+            return {
+              ...refreshed,
+              clientId: GEMINI_CLI_CLIENT_ID,
+              clientSecret: GEMINI_CLI_CLIENT_SECRET,
+              projectId,
+              source: 'gemini-cli',
+            };
+          }
+        }
+        if (data.access_token) {
+          return {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || null,
+            expiresAt: data.expiry_date || null,
+            clientId: GEMINI_CLI_CLIENT_ID,
+            clientSecret: GEMINI_CLI_CLIENT_SECRET,
+            projectId,
+            source: 'gemini-cli',
+          };
+        }
+      } catch {
+        // Parse error — try next source
       }
-    } catch {
-      // Parse error
     }
   }
 
@@ -183,6 +231,8 @@ async function refreshTokens(current: GeminiOAuthTokens): Promise<GeminiOAuthTok
     ...result,
     clientId,
     clientSecret,
+    projectId: current.projectId || null,
+    source: current.source,
   };
 }
 

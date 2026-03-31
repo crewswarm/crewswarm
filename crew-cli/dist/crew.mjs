@@ -1058,13 +1058,539 @@ var init_stream_helpers = __esm({
   }
 });
 
+// src/auth/oauth-keychain.ts
+import { execFile as execFile2 } from "node:child_process";
+import { promisify as promisify2 } from "node:util";
+import { userInfo } from "node:os";
+async function readFromKeychain() {
+  if (process.platform !== "darwin") return null;
+  try {
+    let stdout = "";
+    const username = userInfo().username;
+    for (const acct of [username, "unknown"]) {
+      try {
+        const result2 = await execFileAsync2("security", [
+          "find-generic-password",
+          "-a",
+          acct,
+          "-s",
+          KEYCHAIN_SERVICE,
+          "-w"
+        ], { timeout: 5e3 });
+        const parsed = JSON.parse(result2.stdout.trim() || "{}");
+        if (parsed.claudeAiOauth?.accessToken) {
+          stdout = result2.stdout;
+          break;
+        }
+      } catch {
+      }
+    }
+    if (!stdout) {
+      const result2 = await execFileAsync2("security", [
+        "find-generic-password",
+        "-s",
+        KEYCHAIN_SERVICE,
+        "-w"
+      ], { timeout: 5e3 });
+      stdout = result2.stdout;
+    }
+    const raw = stdout.trim();
+    if (!raw) return null;
+    let jsonStr;
+    if (raw.startsWith("{")) {
+      jsonStr = raw;
+    } else {
+      jsonStr = Buffer.from(raw, "hex").toString("utf8");
+    }
+    const data = JSON.parse(jsonStr);
+    const oauth = data.claudeAiOauth;
+    if (!oauth?.accessToken) return null;
+    return oauth;
+  } catch {
+    return null;
+  }
+}
+async function refreshToken(currentTokens) {
+  if (!currentTokens.refreshToken) return null;
+  try {
+    const response = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: currentTokens.refreshToken,
+        client_id: CLIENT_ID
+      }),
+      signal: AbortSignal.timeout(1e4)
+    });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const data = await response.json();
+    if (!data.access_token) return null;
+    const refreshed = {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || currentTokens.refreshToken,
+      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null,
+      scopes: data.scope ? data.scope.split(" ") : currentTokens.scopes,
+      subscriptionType: currentTokens.subscriptionType,
+      rateLimitTier: currentTokens.rateLimitTier
+    };
+    return refreshed;
+  } catch (err) {
+    console.error(`[OAuth] Token refresh error: ${err.message}`);
+    return null;
+  }
+}
+function isTokenExpired(tokens) {
+  if (!tokens.expiresAt) return false;
+  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS;
+}
+async function getOAuthToken() {
+  if (_cachedTokens && Date.now() - _cacheTimestamp < CACHE_TTL_MS) {
+    if (!isTokenExpired(_cachedTokens)) return _cachedTokens;
+  }
+  let tokens = await readFromKeychain();
+  if (!tokens) return null;
+  if (isTokenExpired(tokens)) {
+    if (!_refreshInFlight) {
+      _refreshInFlight = refreshToken(tokens).finally(() => {
+        _refreshInFlight = null;
+      });
+    }
+    const refreshed = await _refreshInFlight;
+    if (refreshed) {
+      tokens = refreshed;
+    } else {
+    }
+  }
+  _cachedTokens = tokens;
+  _cacheTimestamp = Date.now();
+  return tokens;
+}
+async function forceRefreshOAuthToken() {
+  _cachedTokens = null;
+  _cacheTimestamp = 0;
+  const tokens = await readFromKeychain();
+  if (!tokens) return null;
+  if (tokens.refreshToken) {
+    if (!_refreshInFlight) {
+      _refreshInFlight = refreshToken(tokens).finally(() => {
+        _refreshInFlight = null;
+      });
+    }
+    const refreshed = await _refreshInFlight;
+    if (refreshed) {
+      _cachedTokens = refreshed;
+      _cacheTimestamp = Date.now();
+      return refreshed;
+    }
+  }
+  _cachedTokens = tokens;
+  _cacheTimestamp = Date.now();
+  return tokens;
+}
+var execFileAsync2, KEYCHAIN_SERVICE, TOKEN_EXPIRY_BUFFER_MS, CACHE_TTL_MS, TOKEN_URL, CLIENT_ID, _cachedTokens, _cacheTimestamp, _refreshInFlight;
+var init_oauth_keychain = __esm({
+  "src/auth/oauth-keychain.ts"() {
+    "use strict";
+    execFileAsync2 = promisify2(execFile2);
+    KEYCHAIN_SERVICE = "Claude Code-credentials";
+    TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1e3;
+    CACHE_TTL_MS = 3e4;
+    TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+    CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+    _cachedTokens = null;
+    _cacheTimestamp = 0;
+    _refreshInFlight = null;
+  }
+});
+
+// src/auth/openai-oauth.ts
+import { readFile as readFile4, access as access2 } from "node:fs/promises";
+import { constants as constants2 } from "node:fs";
+import { join as join5 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+async function fileExists(path3) {
+  try {
+    await access2(path3, constants2.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function readTokenFile() {
+  for (const tokenPath of TOKEN_PATHS) {
+    if (!await fileExists(tokenPath)) continue;
+    try {
+      const raw = await readFile4(tokenPath, "utf8");
+      const data = JSON.parse(raw);
+      const codexEntry = data["openai-codex"] || data["codex"] || data["openai"];
+      if (codexEntry?.access) {
+        return {
+          accessToken: codexEntry.access,
+          refreshToken: codexEntry.refresh || null,
+          expiresAt: codexEntry.expires || null
+        };
+      }
+      const nestedAuth = data.auth || data.oauth || data.credentials;
+      if (nestedAuth?.accessToken || nestedAuth?.access_token || nestedAuth?.access) {
+        return {
+          accessToken: nestedAuth.accessToken || nestedAuth.access_token || nestedAuth.access,
+          refreshToken: nestedAuth.refreshToken || nestedAuth.refresh_token || nestedAuth.refresh || null,
+          expiresAt: nestedAuth.expiresAt || nestedAuth.expires_at || nestedAuth.expires || null
+        };
+      }
+      if (data.access_token) {
+        return {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token || null,
+          expiresAt: data.expires_at || data.expires || null
+        };
+      }
+      if (data.token) {
+        return {
+          accessToken: data.token,
+          refreshToken: data.refresh_token || null,
+          expiresAt: data.expires_at || null
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+async function refreshToken2(current) {
+  if (!current.refreshToken) return null;
+  try {
+    const response = await fetch(TOKEN_URL2, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: current.refreshToken,
+        client_id: CLIENT_ID2
+      }).toString(),
+      signal: AbortSignal.timeout(1e4)
+    });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[OpenAI OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const data = await response.json();
+    if (!data.access_token) return null;
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || current.refreshToken,
+      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null
+    };
+  } catch (err) {
+    console.error(`[OpenAI OAuth] Token refresh error: ${err.message}`);
+    return null;
+  }
+}
+function isTokenExpired2(tokens) {
+  if (!tokens.expiresAt) return false;
+  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS2;
+}
+async function getOpenAIOAuthToken() {
+  if (_cachedTokens2 && Date.now() - _cacheTimestamp2 < CACHE_TTL_MS2) {
+    if (!isTokenExpired2(_cachedTokens2)) return _cachedTokens2;
+  }
+  let tokens = await readTokenFile();
+  if (!tokens) return null;
+  if (isTokenExpired2(tokens)) {
+    if (!_refreshInFlight2) {
+      _refreshInFlight2 = refreshToken2(tokens).finally(() => {
+        _refreshInFlight2 = null;
+      });
+    }
+    const refreshed = await _refreshInFlight2;
+    if (refreshed) {
+      tokens = refreshed;
+    }
+  }
+  _cachedTokens2 = tokens;
+  _cacheTimestamp2 = Date.now();
+  return tokens;
+}
+async function forceRefreshOpenAIOAuth() {
+  _cachedTokens2 = null;
+  _cacheTimestamp2 = 0;
+  const tokens = await readTokenFile();
+  if (!tokens) return null;
+  if (tokens.refreshToken) {
+    if (!_refreshInFlight2) {
+      _refreshInFlight2 = refreshToken2(tokens).finally(() => {
+        _refreshInFlight2 = null;
+      });
+    }
+    const refreshed = await _refreshInFlight2;
+    if (refreshed) {
+      _cachedTokens2 = refreshed;
+      _cacheTimestamp2 = Date.now();
+      return refreshed;
+    }
+  }
+  _cachedTokens2 = tokens;
+  _cacheTimestamp2 = Date.now();
+  return tokens;
+}
+var TOKEN_EXPIRY_BUFFER_MS2, CACHE_TTL_MS2, CLIENT_ID2, TOKEN_URL2, OPENAI_CODEX_API_URL, TOKEN_PATHS, _cachedTokens2, _cacheTimestamp2, _refreshInFlight2;
+var init_openai_oauth = __esm({
+  "src/auth/openai-oauth.ts"() {
+    "use strict";
+    TOKEN_EXPIRY_BUFFER_MS2 = 5 * 60 * 1e3;
+    CACHE_TTL_MS2 = 3e4;
+    CLIENT_ID2 = "app_EMoamEEZ73f0CkXaXp7hrann";
+    TOKEN_URL2 = "https://auth.openai.com/oauth/token";
+    OPENAI_CODEX_API_URL = "https://chatgpt.com/backend-api/codex/responses";
+    TOKEN_PATHS = [
+      join5(homedir2(), ".codex", "auth.json"),
+      join5(homedir2(), ".local", "share", "opencode", "auth.json"),
+      join5(homedir2(), ".codex-auth", "auth.json")
+    ];
+    _cachedTokens2 = null;
+    _cacheTimestamp2 = 0;
+    _refreshInFlight2 = null;
+  }
+});
+
+// src/auth/gemini-oauth.ts
+import { readFile as readFile5, access as access3 } from "node:fs/promises";
+import { constants as constants3 } from "node:fs";
+import { join as join6 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+async function fileExists2(path3) {
+  try {
+    await access3(path3, constants3.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function resolveGoogleProjectId() {
+  const envProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || process.env.ANTHROPIC_VERTEX_PROJECT_ID;
+  if (envProject) return envProject;
+  if (await fileExists2(ADC_PATH)) {
+    try {
+      const raw = await readFile5(ADC_PATH, "utf8");
+      const data = JSON.parse(raw);
+      return data.quota_project_id || data.project_id || null;
+    } catch {
+    }
+  }
+  return null;
+}
+async function readTokenFiles() {
+  const projectId = await resolveGoogleProjectId();
+  const preference = String(process.env.CREW_GEMINI_OAUTH_SOURCE || "auto").trim().toLowerCase();
+  const orderedSources = preference === "gemini-cli" ? ["gemini-cli", "adc"] : preference === "adc" ? ["adc", "gemini-cli"] : ["gemini-cli", "adc"];
+  for (const source of orderedSources) {
+    if (source === "adc" && await fileExists2(ADC_PATH)) {
+      try {
+        const raw = await readFile5(ADC_PATH, "utf8");
+        const data = JSON.parse(raw);
+        if (data.refresh_token && data.client_id) {
+          const refreshed = await exchangeRefreshToken(
+            data.refresh_token,
+            data.client_id,
+            data.client_secret
+          );
+          if (refreshed) {
+            return {
+              ...refreshed,
+              clientId: data.client_id,
+              clientSecret: data.client_secret,
+              projectId: data.quota_project_id || data.project_id || projectId,
+              source: "adc"
+            };
+          }
+        }
+        if (data.access_token) {
+          return {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || null,
+            expiresAt: null,
+            clientId: data.client_id || null,
+            clientSecret: data.client_secret || null,
+            projectId: data.quota_project_id || data.project_id || projectId,
+            source: "adc"
+          };
+        }
+      } catch {
+      }
+    }
+    if (source === "gemini-cli" && await fileExists2(GEMINI_CLI_PATH)) {
+      try {
+        const raw = await readFile5(GEMINI_CLI_PATH, "utf8");
+        const data = JSON.parse(raw);
+        if (data.refresh_token) {
+          const refreshed = await exchangeRefreshToken(
+            data.refresh_token,
+            GEMINI_CLI_CLIENT_ID,
+            GEMINI_CLI_CLIENT_SECRET
+          );
+          if (refreshed) {
+            return {
+              ...refreshed,
+              clientId: GEMINI_CLI_CLIENT_ID,
+              clientSecret: GEMINI_CLI_CLIENT_SECRET,
+              projectId,
+              source: "gemini-cli"
+            };
+          }
+        }
+        if (data.access_token) {
+          return {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || null,
+            expiresAt: data.expiry_date || null,
+            clientId: GEMINI_CLI_CLIENT_ID,
+            clientSecret: GEMINI_CLI_CLIENT_SECRET,
+            projectId,
+            source: "gemini-cli"
+          };
+        }
+      } catch {
+      }
+    }
+  }
+  return null;
+}
+async function exchangeRefreshToken(refreshToken3, clientId, clientSecret) {
+  try {
+    const response = await fetch(TOKEN_URL3, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken3,
+        client_id: clientId,
+        client_secret: clientSecret
+      }).toString(),
+      signal: AbortSignal.timeout(1e4)
+    });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[Gemini OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const data = await response.json();
+    if (!data.access_token) return null;
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || refreshToken3,
+      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null
+    };
+  } catch (err) {
+    console.error(`[Gemini OAuth] Token exchange error: ${err.message}`);
+    return null;
+  }
+}
+async function refreshTokens(current) {
+  if (!current.refreshToken) return null;
+  const clientId = current.clientId || GEMINI_CLI_CLIENT_ID;
+  const clientSecret = current.clientSecret || GEMINI_CLI_CLIENT_SECRET;
+  const result2 = await exchangeRefreshToken(current.refreshToken, clientId, clientSecret);
+  if (!result2) return null;
+  return {
+    ...result2,
+    clientId,
+    clientSecret,
+    projectId: current.projectId || null,
+    source: current.source
+  };
+}
+function isTokenExpired3(tokens) {
+  if (!tokens.expiresAt) return false;
+  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS3;
+}
+async function getGeminiOAuthToken() {
+  if (_cachedTokens3 && Date.now() - _cacheTimestamp3 < CACHE_TTL_MS3) {
+    if (!isTokenExpired3(_cachedTokens3)) return _cachedTokens3;
+  }
+  let tokens = await readTokenFiles();
+  if (!tokens) return null;
+  if (isTokenExpired3(tokens)) {
+    if (!_refreshInFlight3) {
+      _refreshInFlight3 = refreshTokens(tokens).finally(() => {
+        _refreshInFlight3 = null;
+      });
+    }
+    const refreshed = await _refreshInFlight3;
+    if (refreshed) {
+      tokens = refreshed;
+    }
+  }
+  _cachedTokens3 = tokens;
+  _cacheTimestamp3 = Date.now();
+  return tokens;
+}
+async function forceRefreshGeminiOAuth() {
+  _cachedTokens3 = null;
+  _cacheTimestamp3 = 0;
+  const tokens = await readTokenFiles();
+  if (!tokens) return null;
+  if (tokens.refreshToken) {
+    if (!_refreshInFlight3) {
+      _refreshInFlight3 = refreshTokens(tokens).finally(() => {
+        _refreshInFlight3 = null;
+      });
+    }
+    const refreshed = await _refreshInFlight3;
+    if (refreshed) {
+      _cachedTokens3 = refreshed;
+      _cacheTimestamp3 = Date.now();
+      return refreshed;
+    }
+  }
+  _cachedTokens3 = tokens;
+  _cacheTimestamp3 = Date.now();
+  return tokens;
+}
+var TOKEN_EXPIRY_BUFFER_MS3, CACHE_TTL_MS3, TOKEN_URL3, GEMINI_CLI_CLIENT_ID, GEMINI_CLI_CLIENT_SECRET, ADC_PATH, GEMINI_CLI_PATH, _cachedTokens3, _cacheTimestamp3, _refreshInFlight3;
+var init_gemini_oauth = __esm({
+  "src/auth/gemini-oauth.ts"() {
+    "use strict";
+    TOKEN_EXPIRY_BUFFER_MS3 = 5 * 60 * 1e3;
+    CACHE_TTL_MS3 = 3e4;
+    TOKEN_URL3 = "https://oauth2.googleapis.com/token";
+    GEMINI_CLI_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
+    GEMINI_CLI_CLIENT_SECRET = "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";
+    ADC_PATH = join6(homedir3(), ".config", "gcloud", "application_default_credentials.json");
+    GEMINI_CLI_PATH = join6(homedir3(), ".gemini", "oauth_creds.json");
+    _cachedTokens3 = null;
+    _cacheTimestamp3 = 0;
+    _refreshInFlight3 = null;
+  }
+});
+
 // src/executor/local.ts
-var EXECUTOR_SYSTEM_PROMPT, LocalExecutor;
+import { randomUUID as randomUUID2 } from "node:crypto";
+var CLAUDE_OAUTH_BETA_HEADER, EXECUTOR_SYSTEM_PROMPT, LocalExecutor;
 var init_local = __esm({
   "src/executor/local.ts"() {
     "use strict";
     init_logger();
     init_stream_helpers();
+    init_oauth_keychain();
+    init_openai_oauth();
+    init_gemini_oauth();
+    CLAUDE_OAUTH_BETA_HEADER = [
+      "claude-code-20250219",
+      "oauth-2025-04-20",
+      "context-1m-2025-08-07",
+      "interleaved-thinking-2025-05-14",
+      "redact-thinking-2026-02-12",
+      "context-management-2025-06-27",
+      "prompt-caching-scope-2026-01-05",
+      "effort-2025-11-24"
+    ].join(",");
     EXECUTOR_SYSTEM_PROMPT = `You are the conversational interface for CrewSwarm CLI.
 
 ## Your Role
@@ -1100,38 +1626,75 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
       hasExplicitModelOverride(options) {
         return options.explicitModel === true;
       }
-      getConfiguredProviderOrder() {
+      async getConfiguredProviderOrder() {
         const envOrder = String(process.env.CREW_EXECUTION_PROVIDER_ORDER || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
         const baseOrder = envOrder.length > 0 ? envOrder : ["openai", "anthropic", "gemini", "deepseek", "groq", "grok"];
-        return baseOrder.filter((provider) => {
-          switch (provider) {
-            case "openai":
-              return Boolean(process.env.OPENAI_API_KEY);
-            case "anthropic":
-              return Boolean(process.env.ANTHROPIC_API_KEY);
-            case "gemini":
-              return Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-            case "deepseek":
-              return Boolean(process.env.DEEPSEEK_API_KEY);
-            case "groq":
-              return Boolean(process.env.GROQ_API_KEY);
-            case "grok":
-              return Boolean(process.env.XAI_API_KEY);
-            default:
-              return false;
+        const resolved = [];
+        for (const provider of baseOrder) {
+          if (await this.resolveProviderAuth(provider)) {
+            resolved.push(provider);
           }
-        });
+        }
+        return resolved;
+      }
+      async resolveProviderAuth(provider) {
+        switch (provider) {
+          case "openai": {
+            if (process.env.OPENAI_API_KEY) {
+              return { token: process.env.OPENAI_API_KEY, isOAuth: false, apiUrl: "https://api.openai.com/v1/chat/completions" };
+            }
+            const oauth = await getOpenAIOAuthToken();
+            if (oauth?.accessToken) {
+              return { token: oauth.accessToken, isOAuth: true, apiUrl: OPENAI_CODEX_API_URL };
+            }
+            return null;
+          }
+          case "anthropic": {
+            if (process.env.ANTHROPIC_API_KEY) {
+              return { token: process.env.ANTHROPIC_API_KEY, isOAuth: false };
+            }
+            const oauth = await getOAuthToken();
+            if (oauth?.accessToken) {
+              return { token: oauth.accessToken, isOAuth: true };
+            }
+            return null;
+          }
+          case "gemini": {
+            const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+            if (apiKey) {
+              return { token: apiKey, isOAuth: false };
+            }
+            const oauth = await getGeminiOAuthToken();
+            if (oauth?.accessToken) {
+              return {
+                token: oauth.accessToken,
+                isOAuth: true,
+                projectId: oauth.projectId || void 0,
+                oauthSource: oauth.source
+              };
+            }
+            return null;
+          }
+          case "deepseek":
+            return process.env.DEEPSEEK_API_KEY ? { token: process.env.DEEPSEEK_API_KEY, isOAuth: false } : null;
+          case "groq":
+            return process.env.GROQ_API_KEY ? { token: process.env.GROQ_API_KEY, isOAuth: false } : null;
+          case "grok":
+            return process.env.XAI_API_KEY ? { token: process.env.XAI_API_KEY, isOAuth: false } : null;
+          default:
+            return null;
+        }
       }
       /**
        * Execute a task using local LLM (no gateway required)
        */
       async execute(task, options = {}) {
-        const model = options.model || this.getDefaultModel();
+        const model = options.model || await this.getDefaultModel();
         const systemPrompt = options.systemPrompt || EXECUTOR_SYSTEM_PROMPT;
         const explicitModel = this.hasExplicitModelOverride(options);
         let providers = [];
         if (!explicitModel) {
-          providers = this.getConfiguredProviderOrder();
+          providers = await this.getConfiguredProviderOrder();
         } else if (model.startsWith("gemini")) {
           providers = ["gemini"];
         } else if (model.startsWith("deepseek")) {
@@ -1148,7 +1711,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
           providers = ["openai", "anthropic", "grok", "gemini", "deepseek"];
         }
         if (!options.model && providers.length === 1) {
-          const fallbackProviders = this.getConfiguredProviderOrder().filter(
+          const fallbackProviders = (await this.getConfiguredProviderOrder()).filter(
             (provider) => provider !== providers[0]
           );
           providers = [...providers, ...fallbackProviders];
@@ -1185,7 +1748,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
           GEMINI: !!process.env.GEMINI_API_KEY,
           DEEPSEEK: !!process.env.DEEPSEEK_API_KEY
         }));
-        const configured = this.getConfiguredProviderOrder();
+        const configured = await this.getConfiguredProviderOrder();
         const configuredText = configured.length > 0 ? configured.join(", ") : "none";
         const triedText = providers.join(", ");
         const failureText = failures.length > 0 ? ` Failures: ${failures.join(" | ")}` : "";
@@ -1198,14 +1761,14 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
         if (!Number.isFinite(raw) || raw < 1e3) return 9e4;
         return Math.floor(raw);
       }
-      getDefaultModel() {
+      async getDefaultModel() {
         const envModel = process.env.CREW_EXECUTION_MODEL || process.env.CREW_CHAT_MODEL || process.env.CREW_REASONING_MODEL;
         if (envModel) return envModel;
-        if (process.env.OPENAI_API_KEY) return "gpt-4o";
-        if (process.env.ANTHROPIC_API_KEY) return "claude-3-5-sonnet-20241022";
+        if (await this.resolveProviderAuth("openai")) return "gpt-5.4";
+        if (await this.resolveProviderAuth("anthropic")) return "claude-sonnet-4-20250514";
         if (process.env.XAI_API_KEY) return "grok-beta";
-        if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) return "gemini-2.5-flash";
-        if (process.env.DEEPSEEK_API_KEY) return "deepseek-chat";
+        if (await this.resolveProviderAuth("gemini")) return "gemini-2.5-flash";
+        if (await this.resolveProviderAuth("deepseek")) return "deepseek-chat";
         return "grok-beta";
       }
       async executeWithProvider(provider, task, model, options, systemPrompt) {
@@ -1414,19 +1977,22 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
         return regularCost + cachedCost + outputCost;
       }
       async executeWithGemini(task, options, systemPrompt) {
-        const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+        const auth = await this.resolveProviderAuth("gemini");
         const verbose = process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true";
-        if (!key) {
+        if (!auth) {
           if (verbose) console.log("[Gemini] No API key found");
           return null;
         }
-        const model = options.model || this.getDefaultModel();
+        const model = options.model || await this.getDefaultModel();
         if (verbose) console.log(`[Gemini] Starting API call (model: ${model})...`);
         const expectsJson = options.jsonMode === true || options.jsonMode !== false && (task.toLowerCase().includes("return only valid json") || task.includes('{"') && task.includes('"}'));
         if (expectsJson && verbose) {
           console.log("[Gemini] JSON mode enabled");
         }
         try {
+          if (auth.isOAuth) {
+            return this.executeWithGeminiCodeAssist(task, options, systemPrompt, auth);
+          }
           const requestBody = {
             contents: [{
               parts: [{
@@ -1443,13 +2009,22 @@ User task: ${task}`
           if (expectsJson) {
             requestBody.generationConfig.responseMimeType = "application/json";
           }
-          const stream = !isStreamingDisabled() && !expectsJson;
-          const endpoint = stream ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}` : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+          const usingVertexOAuth = auth.isOAuth && !!auth.projectId;
+          const stream = !isStreamingDisabled() && !expectsJson && !usingVertexOAuth;
+          const vertexRegion = process.env.GEMINI_VERTEX_REGION || process.env.CLOUD_ML_REGION || "us-central1";
+          const endpoint = usingVertexOAuth ? `https://${vertexRegion}-aiplatform.googleapis.com/v1/projects/${encodeURIComponent(auth.projectId)}/locations/${encodeURIComponent(vertexRegion)}/publishers/google/models/${model}:generateContent` : auth.isOAuth ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}` : stream ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(auth.token)}` : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(auth.token)}`;
+          const headers = { "Content-Type": "application/json" };
+          if (auth.isOAuth) {
+            headers.Authorization = `Bearer ${auth.token}`;
+            if (usingVertexOAuth) {
+              headers["x-goog-user-project"] = auth.projectId;
+            }
+          }
           const response = await fetch(
             endpoint,
             {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers,
               signal: AbortSignal.timeout(this.timeoutMs),
               body: JSON.stringify(requestBody)
             }
@@ -1458,6 +2033,12 @@ User task: ${task}`
             console.log(`[Gemini] Response received (status: ${response.status})`);
           }
           if (!response.ok) {
+            if (response.status === 401 && auth.isOAuth) {
+              const refreshed = await forceRefreshGeminiOAuth();
+              if (refreshed?.accessToken && refreshed.accessToken !== auth.token) {
+                return this.executeWithGemini(task, options, systemPrompt);
+              }
+            }
             const errorText = await response.text();
             if (verbose) {
               console.log(`[Gemini] API error: ${response.status} - ${errorText}`);
@@ -1497,6 +2078,94 @@ User task: ${task}`
           this.logger.debug(`Gemini execution failed: ${err.message}`);
           return null;
         }
+      }
+      async executeWithGeminiCodeAssist(task, options, systemPrompt, auth) {
+        const model = options.model || await this.getDefaultModel();
+        const projectId = auth.projectId || process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || "";
+        const headers = {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${auth.token}`,
+          "User-Agent": "GeminiCLI/crew-cli"
+        };
+        if (auth.oauthSource === "adc" && projectId) {
+          headers["x-goog-user-project"] = projectId;
+        }
+        const metadata = {
+          ideType: "IDE_UNSPECIFIED",
+          platform: "PLATFORM_UNSPECIFIED",
+          pluginType: "GEMINI",
+          duetProject: projectId || void 0
+        };
+        const loadResponse = await fetch("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
+          method: "POST",
+          headers,
+          signal: AbortSignal.timeout(this.timeoutMs),
+          body: JSON.stringify({
+            cloudaicompanionProject: projectId || void 0,
+            metadata
+          })
+        });
+        if (!loadResponse.ok) {
+          const errorText = await loadResponse.text().catch(() => "");
+          throw new Error(`Gemini Code Assist loadCodeAssist ${loadResponse.status}: ${errorText.slice(0, 300)}`);
+        }
+        const loadData = await loadResponse.json();
+        const resolvedProjectId = loadData?.cloudaicompanionProject || projectId;
+        const requestBody = {
+          model,
+          project: resolvedProjectId || void 0,
+          user_prompt_id: options.sessionId || `crew-${Date.now()}`,
+          request: {
+            contents: [{
+              role: "user",
+              parts: [{ text: `${systemPrompt}
+
+User task: ${task}` }]
+            }],
+            systemInstruction: {
+              role: "user",
+              parts: [{ text: systemPrompt }]
+            },
+            generationConfig: {
+              temperature: options.temperature ?? 0.7,
+              maxOutputTokens: options.maxTokens || 4e3
+            },
+            session_id: options.sessionId || ""
+          }
+        };
+        const response = await fetch("https://cloudcode-pa.googleapis.com/v1internal:generateContent", {
+          method: "POST",
+          headers,
+          signal: AbortSignal.timeout(this.timeoutMs),
+          body: JSON.stringify(requestBody)
+        });
+        if (!response.ok) {
+          if (response.status === 401) {
+            const refreshed = await forceRefreshGeminiOAuth();
+            if (refreshed?.accessToken && refreshed.accessToken !== auth.token) {
+              return this.executeWithGemini(task, options, systemPrompt);
+            }
+          }
+          const errorText = await response.text().catch(() => "");
+          throw new Error(`Gemini Code Assist generateContent ${response.status}: ${errorText.slice(0, 300)}`);
+        }
+        const data = await response.json();
+        const parts = data?.response?.candidates?.[0]?.content?.parts || [];
+        const content = parts.filter((part) => typeof part?.text === "string").map((part) => part.text).join("\n").trim();
+        if (!content) return null;
+        return {
+          success: true,
+          result: content,
+          model,
+          providerId: `gemini-oauth-${auth.oauthSource || "unknown"}`,
+          promptTokens: data?.response?.usageMetadata?.promptTokenCount,
+          completionTokens: data?.response?.usageMetadata?.candidatesTokenCount,
+          costUsd: this.calculateCost(
+            model,
+            data?.response?.usageMetadata?.promptTokenCount || 0,
+            data?.response?.usageMetadata?.candidatesTokenCount || 0
+          )
+        };
       }
       async executeWithDeepSeek(task, options, systemPrompt) {
         const key = process.env.DEEPSEEK_API_KEY;
@@ -1603,17 +2272,69 @@ User task: ${task}`
        * Execute with Anthropic (Claude) - supports explicit prompt caching for 90% savings
        */
       async executeWithAnthropic(task, options, systemPrompt, sessionId) {
-        const apiKey = process.env.ANTHROPIC_API_KEY;
-        if (!apiKey) return null;
+        const auth = await this.resolveProviderAuth("anthropic");
+        if (!auth) return null;
         const model = options.model || "claude-3-5-sonnet-20241022";
         try {
+          if (auth.isOAuth) {
+            const oauthModel = options.model || "claude-opus-4-6";
+            const response2 = await fetch("https://api.anthropic.com/v1/messages?beta=true", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${auth.token}`,
+                "content-type": "application/json",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": CLAUDE_OAUTH_BETA_HEADER,
+                "anthropic-dangerous-direct-browser-access": "true",
+                "x-app": "cli",
+                "user-agent": "claude-cli/2.1.87 (external, cli)",
+                "x-claude-code-session-id": sessionId || randomUUID2()
+              },
+              signal: AbortSignal.timeout(this.timeoutMs),
+              body: JSON.stringify({
+                model: oauthModel,
+                messages: [{ role: "user", content: task }],
+                system: systemPrompt,
+                max_tokens: options.maxTokens || 4e3,
+                metadata: {
+                  user_id: "crew-cli"
+                }
+              })
+            });
+            if (!response2.ok) {
+              if (response2.status === 401) {
+                const refreshed = await forceRefreshOAuthToken();
+                if (refreshed?.accessToken && refreshed.accessToken !== auth.token) {
+                  return this.executeWithAnthropic(task, options, systemPrompt, sessionId);
+                }
+              }
+              const errorText = await response2.text().catch(() => response2.statusText);
+              if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") {
+                console.log(`[Anthropic OAuth] API error: ${response2.status} - ${errorText}`);
+              }
+              return null;
+            }
+            const data2 = await response2.json();
+            const content2 = (data2?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+            const usage = data2?.usage || {};
+            if (!content2) return null;
+            return {
+              success: true,
+              result: content2,
+              model: oauthModel,
+              providerId: "anthropic-oauth",
+              promptTokens: usage.input_tokens,
+              completionTokens: usage.output_tokens,
+              costUsd: this.calculateAnthropicCostWithCache(usage)
+            };
+          }
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[Anthropic] Starting API call (model: ${model})...`);
           const callStart = Date.now();
           const stream = !isStreamingDisabled();
           const response = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: {
-              "x-api-key": apiKey,
+              "x-api-key": auth.token,
               "anthropic-version": "2023-06-01",
               "content-type": "application/json"
             },
@@ -1705,8 +2426,8 @@ User task: ${task}`
        * Execute with OpenAI (GPT-4, GPT-5)
        */
       async executeWithOpenAI(task, options, systemPrompt, sessionId) {
-        const key = process.env.OPENAI_API_KEY;
-        if (!key) {
+        const auth = await this.resolveProviderAuth("openai");
+        if (!auth) {
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log("[OpenAI] No API key found");
           return null;
         }
@@ -1715,8 +2436,23 @@ User task: ${task}`
         try {
           const maxTokensParam = model.startsWith("gpt-5") || model.startsWith("gpt-6") ? "max_completion_tokens" : "max_tokens";
           const temp = model.startsWith("gpt-5") || model.startsWith("gpt-6") ? 1 : options.temperature ?? 0.7;
-          const stream = !isStreamingDisabled() && !options.jsonMode;
-          const requestBody = {
+          const apiUrl = auth.apiUrl || "https://api.openai.com/v1/chat/completions";
+          const isCodexOAuth = auth.isOAuth && apiUrl === OPENAI_CODEX_API_URL;
+          const stream = !isStreamingDisabled() && !options.jsonMode && !isCodexOAuth;
+          const requestBody = isCodexOAuth ? {
+            model,
+            instructions: systemPrompt,
+            input: [
+              {
+                role: "user",
+                content: [
+                  { type: "input_text", text: task }
+                ]
+              }
+            ],
+            store: false,
+            stream: true
+          } : {
             model,
             messages: [
               { role: "system", content: systemPrompt },
@@ -1726,13 +2462,13 @@ User task: ${task}`
             [maxTokensParam]: options.maxTokens || 4e3,
             ...stream ? { stream: true, stream_options: { include_usage: true } } : {}
           };
-          if (options.jsonMode) {
+          if (options.jsonMode && !isCodexOAuth) {
             requestBody.response_format = { type: "json_object" };
           }
-          const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          const response = await fetch(apiUrl, {
             method: "POST",
             headers: {
-              "Authorization": `Bearer ${key}`,
+              "Authorization": `Bearer ${auth.token}`,
               "Content-Type": "application/json"
             },
             signal: AbortSignal.timeout(this.timeoutMs),
@@ -1740,9 +2476,29 @@ User task: ${task}`
           });
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[OpenAI] Response received (status: ${response.status})`);
           if (!response.ok) {
+            if (response.status === 401 && auth.isOAuth) {
+              const refreshed = await forceRefreshOpenAIOAuth();
+              if (refreshed?.accessToken && refreshed.accessToken !== auth.token) {
+                return this.executeWithOpenAI(task, options, systemPrompt, sessionId);
+              }
+            }
             const errorText = await response.text();
             console.log(`[OpenAI] API error: ${response.status} - ${errorText}`);
             return null;
+          }
+          if (isCodexOAuth && response.body) {
+            const result2 = await this.streamOpenAIResponsesOAuth(response);
+            if (result2.text) process.stdout.write("\n");
+            const usage2 = result2.usage || {};
+            return {
+              success: true,
+              result: result2.text,
+              model,
+              promptTokens: usage2.prompt_tokens,
+              completionTokens: usage2.completion_tokens,
+              cachedTokens: 0,
+              costUsd: this.calculateOpenAICost(model, usage2.prompt_tokens || 0, usage2.completion_tokens || 0)
+            };
           }
           if (stream && response.body) {
             const result2 = await streamOpenAIResponse(response, writeToStdout);
@@ -1759,26 +2515,125 @@ User task: ${task}`
             };
           }
           const data = await response.json();
-          const content = data?.choices?.[0]?.message?.content;
+          const content = isCodexOAuth ? this.extractOpenAIResponsesText(data) : data?.choices?.[0]?.message?.content;
           if (!content) {
             console.log("[OpenAI] No content in response");
             return null;
           }
-          if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[OpenAI] \u2713 Success (${data?.usage?.prompt_tokens || 0} in, ${data?.usage?.completion_tokens || 0} out)`);
+          const usage = isCodexOAuth ? {
+            prompt_tokens: data?.usage?.input_tokens,
+            completion_tokens: data?.usage?.output_tokens
+          } : data?.usage;
+          if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[OpenAI] \u2713 Success (${usage?.prompt_tokens || 0} in, ${usage?.completion_tokens || 0} out)`);
           return {
             success: true,
             result: content,
             model,
-            promptTokens: data?.usage?.prompt_tokens,
-            completionTokens: data?.usage?.completion_tokens,
+            promptTokens: usage?.prompt_tokens,
+            completionTokens: usage?.completion_tokens,
             cachedTokens: 0,
-            costUsd: this.calculateOpenAICost(model, data?.usage?.prompt_tokens || 0, data?.usage?.completion_tokens || 0)
+            costUsd: this.calculateOpenAICost(model, usage?.prompt_tokens || 0, usage?.completion_tokens || 0)
           };
         } catch (err) {
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[OpenAI] Exception: ${err.message}`);
           this.logger.debug(`OpenAI execution failed: ${err.message}`);
           return null;
         }
+      }
+      extractOpenAIResponsesText(data) {
+        if (typeof data?.output_text === "string" && data.output_text.trim()) {
+          return data.output_text;
+        }
+        const outputs = Array.isArray(data?.output) ? data.output : [];
+        const textParts = [];
+        for (const item of outputs) {
+          const contents = Array.isArray(item?.content) ? item.content : [];
+          for (const content of contents) {
+            if (typeof content?.text === "string" && content.text) {
+              textParts.push(content.text);
+            }
+          }
+        }
+        return textParts.join("\n").trim();
+      }
+      async streamOpenAIResponsesOAuth(response) {
+        if (!response.body) {
+          return { text: "" };
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        const functionCalls = /* @__PURE__ */ new Map();
+        let buffer = "";
+        let currentEvent = "";
+        let text = "";
+        let usage;
+        const flushEvent = (rawData) => {
+          if (!rawData.trim()) return;
+          let payload;
+          try {
+            payload = JSON.parse(rawData);
+          } catch {
+            return;
+          }
+          const eventType = currentEvent || payload?.type || "";
+          const item = payload?.item || payload?.output_item;
+          const itemId = item?.id || payload?.item_id || payload?.call_id || "";
+          if (eventType === "response.output_text.delta" && typeof payload?.delta === "string") {
+            process.stdout.write(payload.delta);
+            text += payload.delta;
+            return;
+          }
+          if (eventType === "response.function_call_arguments.delta" && itemId) {
+            if (!functionCalls.has(itemId)) {
+              functionCalls.set(itemId, { name: "", args: "" });
+            }
+            const acc = functionCalls.get(itemId);
+            acc.args += String(payload?.delta || "");
+            return;
+          }
+          if ((eventType === "response.output_item.added" || eventType === "response.output_item.done") && item?.type === "function_call") {
+            if (!functionCalls.has(itemId)) {
+              functionCalls.set(itemId, { name: "", args: "" });
+            }
+            const acc = functionCalls.get(itemId);
+            if (item?.name) acc.name = item.name;
+            if (typeof item?.arguments === "string") acc.args = item.arguments;
+            return;
+          }
+          if (eventType === "response.completed") {
+            usage = {
+              prompt_tokens: payload?.response?.usage?.input_tokens,
+              completion_tokens: payload?.response?.usage?.output_tokens
+            };
+            if (!text) {
+              text = this.extractOpenAIResponsesText(payload?.response);
+            }
+          }
+        };
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let boundary = buffer.indexOf("\n\n");
+            while (boundary !== -1) {
+              const chunk = buffer.slice(0, boundary);
+              buffer = buffer.slice(boundary + 2);
+              const lines = chunk.split("\n");
+              currentEvent = "";
+              const dataLines = [];
+              for (const line of lines) {
+                if (line.startsWith("event:")) currentEvent = line.slice(6).trim();
+                if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+              }
+              flushEvent(dataLines.join("\n"));
+              boundary = buffer.indexOf("\n\n");
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+        return { text: text.trim(), usage };
       }
       calculateOpenAICost(model, promptTokens, completionTokens) {
         const pricing = {
@@ -1933,11 +2788,11 @@ var init_autonomous_loop = __esm({
 
 // src/hooks/index.ts
 import { spawn } from "node:child_process";
-import { readFile as readFile4 } from "node:fs/promises";
+import { readFile as readFile6 } from "node:fs/promises";
 import { existsSync as existsSync4 } from "node:fs";
-import { join as join5 } from "node:path";
+import { join as join7 } from "node:path";
 function getConfigPath(baseDir = process.cwd()) {
-  return process.env.CREW_HOOKS_FILE || join5(baseDir, ".crew", "hooks.json");
+  return process.env.CREW_HOOKS_FILE || join7(baseDir, ".crew", "hooks.json");
 }
 async function loadHookConfig(baseDir) {
   const path3 = getConfigPath(baseDir);
@@ -1948,7 +2803,7 @@ async function loadHookConfig(baseDir) {
     return cachedConfig;
   }
   try {
-    const raw = await readFile4(path3, "utf8");
+    const raw = await readFile6(path3, "utf8");
     cachedConfig = JSON.parse(raw);
     configPath = path3;
     return cachedConfig;
@@ -2051,8 +2906,8 @@ var init_hooks = __esm({
 // src/tools/worktree.ts
 import { execSync } from "node:child_process";
 import { existsSync as existsSync5 } from "node:fs";
-import { join as join6, resolve as resolve3 } from "node:path";
-import { randomUUID as randomUUID2 } from "node:crypto";
+import { join as join8, resolve as resolve3 } from "node:path";
+import { randomUUID as randomUUID3 } from "node:crypto";
 import { rm as rm2 } from "node:fs/promises";
 function git(cmd, cwd) {
   return execSync(`git ${cmd}`, { cwd, encoding: "utf8", timeout: 3e4 }).trim();
@@ -2087,10 +2942,10 @@ function enterWorktree(projectDir, opts) {
   }
   const baseBranch = getCurrentBranch(cwd);
   const prefix = opts?.branchPrefix || "crew-agent";
-  const suffix = (opts?.agentId || randomUUID2()).slice(0, 8);
+  const suffix = (opts?.agentId || randomUUID3()).slice(0, 8);
   const branchName = `${prefix}/${suffix}`;
-  const worktreeBase = join6(cwd, ".crew", "worktrees");
-  const worktreePath = join6(worktreeBase, suffix);
+  const worktreeBase = join8(cwd, ".crew", "worktrees");
+  const worktreePath = join8(worktreeBase, suffix);
   try {
     execSync(`mkdir -p "${worktreeBase}"`, { cwd });
     git(`worktree add -b "${branchName}" "${worktreePath}" HEAD`, cwd);
@@ -2215,7 +3070,7 @@ __export(docker_sandbox_exports, {
 import { execSync as execSync2 } from "child_process";
 import fs from "fs";
 import path from "path";
-import { randomUUID as randomUUID3 } from "crypto";
+import { randomUUID as randomUUID4 } from "crypto";
 var DockerSandbox;
 var init_docker_sandbox = __esm({
   "src/tools/docker-sandbox.ts"() {
@@ -2266,7 +3121,7 @@ var init_docker_sandbox = __esm({
        */
       async runCommand(command, sandbox, options = {}) {
         const startTime = Date.now();
-        const tempDir = path.join("/tmp", `crew-sandbox-${randomUUID3()}`);
+        const tempDir = path.join("/tmp", `crew-sandbox-${randomUUID4()}`);
         const image = options.image || this.defaultImage;
         const timeout = options.timeout || this.defaultTimeout;
         const workDir = options.workDir || process.cwd();
@@ -2360,8 +3215,8 @@ var init_docker_sandbox = __esm({
 
 // src/tools/gemini/crew-adapter.ts
 import { execSync as execSync3 } from "node:child_process";
-import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, writeFile as writeFile3 } from "node:fs/promises";
-import { join as join7, resolve as resolve4 } from "node:path";
+import { mkdir as mkdir3, readFile as readFile7, readdir as readdir2, writeFile as writeFile3 } from "node:fs/promises";
+import { join as join9, resolve as resolve4 } from "node:path";
 function toolAllowedAtLevel(toolName, level) {
   switch (level) {
     case "read-only":
@@ -2842,7 +3697,7 @@ var init_crew_adapter = __esm({
         let existing = "";
         try {
           const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
-          existing = stagedContent ?? await readFile5(filePath, "utf8");
+          existing = stagedContent ?? await readFile7(filePath, "utf8");
         } catch {
           existing = "";
         }
@@ -2862,7 +3717,7 @@ var init_crew_adapter = __esm({
         this._filesRead.add(params.file_path);
         this._filesRead.add(filePath);
         const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
-        const content = stagedContent ?? await readFile5(filePath, "utf8");
+        const content = stagedContent ?? await readFile7(filePath, "utf8");
         if (params.start_line || params.end_line) {
           const lines = content.split("\n");
           const start = (params.start_line || 1) - 1;
@@ -2887,7 +3742,7 @@ var init_crew_adapter = __esm({
           };
         }
         const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
-        const content = stagedContent ?? await readFile5(filePath, "utf8");
+        const content = stagedContent ?? await readFile7(filePath, "utf8");
         const { match, strategy, occurrences } = this.findEditMatch(content, params.old_string);
         if (!match) {
           return {
@@ -3029,7 +3884,7 @@ Fix these before moving on.`;
       async mkdirTool(params) {
         const dir = (params.path || params.dir_path || "").trim();
         if (!dir) return { success: false, error: "mkdir requires path" };
-        const keep = join7(dir, ".gitkeep");
+        const keep = join9(dir, ".gitkeep");
         await this.sandbox.addChange(keep, "");
         return { success: true, output: `Staged directory ${dir}` };
       }
@@ -3261,7 +4116,7 @@ ${r.description || ""}`
           for (const rel of files) {
             const full = resolve4(this.config.getWorkspaceRoot(), rel);
             try {
-              const content = await readFile5(full, "utf8");
+              const content = await readFile7(full, "utf8");
               chunks.push(`--- ${rel} ---
 ${content.slice(0, 2e3)}`);
             } catch {
@@ -3280,7 +4135,7 @@ ${content.slice(0, 2e3)}`);
         const memFile = resolve4(memDir, "memory-facts.log");
         let prior = "";
         try {
-          prior = await readFile5(memFile, "utf8");
+          prior = await readFile7(memFile, "utf8");
         } catch {
         }
         await writeFile3(memFile, `${prior}${(/* @__PURE__ */ new Date()).toISOString()} ${fact}
@@ -3299,7 +4154,7 @@ ${content.slice(0, 2e3)}`);
         const target = String(params.path || "AGENTS.md").trim();
         const abs = resolve4(this.config.getWorkspaceRoot(), target);
         try {
-          const content = await readFile5(abs, "utf8");
+          const content = await readFile7(abs, "utf8");
           return { success: true, output: content.slice(0, 12e3) };
         } catch (err) {
           return { success: false, error: `get_internal_docs failed: ${err?.message || target}` };
@@ -3351,7 +4206,7 @@ ${summary}`
         await mkdir3(crewDir, { recursive: true });
         let prior = {};
         try {
-          prior = JSON.parse(await readFile5(this.planModeStatePath(), "utf8"));
+          prior = JSON.parse(await readFile7(this.planModeStatePath(), "utf8"));
         } catch {
           prior = {};
         }
@@ -3374,7 +4229,7 @@ ${summary}`
         await mkdir3(crewDir, { recursive: true });
         let state = { active: [] };
         try {
-          state = JSON.parse(await readFile5(this.activeSkillsPath(), "utf8"));
+          state = JSON.parse(await readFile7(this.activeSkillsPath(), "utf8"));
         } catch {
           state = { active: [] };
         }
@@ -3408,7 +4263,7 @@ ${summary}`
       async appendJsonLine(filePath, data) {
         let prior = "";
         try {
-          prior = await readFile5(filePath, "utf8");
+          prior = await readFile7(filePath, "utf8");
         } catch {
           prior = "";
         }
@@ -3421,7 +4276,7 @@ ${summary}`
       }
       async readTracker() {
         try {
-          const raw = await readFile5(this.trackerFilePath(), "utf8");
+          const raw = await readFile7(this.trackerFilePath(), "utf8");
           const parsed = JSON.parse(raw);
           return Array.isArray(parsed) ? parsed : [];
         } catch {
@@ -4109,15 +4964,15 @@ ${summary}`
 });
 
 // src/learning/corrections.ts
-import { access as access2, copyFile, mkdir as mkdir4, readFile as readFile6, writeFile as writeFile4 } from "node:fs/promises";
-import { constants as constants2 } from "node:fs";
-import { join as join8 } from "node:path";
+import { access as access4, copyFile, mkdir as mkdir4, readFile as readFile8, writeFile as writeFile4 } from "node:fs/promises";
+import { constants as constants4 } from "node:fs";
+import { join as join10 } from "node:path";
 function nowIso2() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
 async function pathExists(path3) {
   try {
-    await access2(path3, constants2.F_OK);
+    await access4(path3, constants4.F_OK);
     return true;
   } catch {
     return false;
@@ -4130,8 +4985,8 @@ var init_corrections = __esm({
     CorrectionStore = class {
       constructor(baseDir = process.cwd()) {
         this.baseDir = baseDir;
-        this.stateDir = join8(baseDir, ".crew");
-        this.dataPath = join8(this.stateDir, "training-data.jsonl");
+        this.stateDir = join10(baseDir, ".crew");
+        this.dataPath = join10(this.stateDir, "training-data.jsonl");
       }
       async ensureReady() {
         if (!await pathExists(this.stateDir)) {
@@ -4156,7 +5011,7 @@ var init_corrections = __esm({
       }
       async loadAll() {
         await this.ensureReady();
-        const raw = await readFile6(this.dataPath, "utf8");
+        const raw = await readFile8(this.dataPath, "utf8");
         const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
         return lines.map((line) => JSON.parse(line));
       }
@@ -4406,476 +5261,6 @@ var init_transcript = __esm({
         };
       }
     };
-  }
-});
-
-// src/auth/oauth-keychain.ts
-import { execFile as execFile2 } from "node:child_process";
-import { promisify as promisify2 } from "node:util";
-import { userInfo } from "node:os";
-async function readFromKeychain() {
-  if (process.platform !== "darwin") return null;
-  try {
-    let stdout = "";
-    const username = userInfo().username;
-    for (const acct of [username, "unknown"]) {
-      try {
-        const result2 = await execFileAsync2("security", [
-          "find-generic-password",
-          "-a",
-          acct,
-          "-s",
-          KEYCHAIN_SERVICE,
-          "-w"
-        ], { timeout: 5e3 });
-        const parsed = JSON.parse(result2.stdout.trim() || "{}");
-        if (parsed.claudeAiOauth?.accessToken) {
-          stdout = result2.stdout;
-          break;
-        }
-      } catch {
-      }
-    }
-    if (!stdout) {
-      const result2 = await execFileAsync2("security", [
-        "find-generic-password",
-        "-s",
-        KEYCHAIN_SERVICE,
-        "-w"
-      ], { timeout: 5e3 });
-      stdout = result2.stdout;
-    }
-    const raw = stdout.trim();
-    if (!raw) return null;
-    let jsonStr;
-    if (raw.startsWith("{")) {
-      jsonStr = raw;
-    } else {
-      jsonStr = Buffer.from(raw, "hex").toString("utf8");
-    }
-    const data = JSON.parse(jsonStr);
-    const oauth = data.claudeAiOauth;
-    if (!oauth?.accessToken) return null;
-    return oauth;
-  } catch {
-    return null;
-  }
-}
-async function refreshToken(currentTokens) {
-  if (!currentTokens.refreshToken) return null;
-  try {
-    const response = await fetch(TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "refresh_token",
-        refresh_token: currentTokens.refreshToken,
-        client_id: CLIENT_ID
-      }),
-      signal: AbortSignal.timeout(1e4)
-    });
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      console.error(`[OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
-      return null;
-    }
-    const data = await response.json();
-    if (!data.access_token) return null;
-    const refreshed = {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token || currentTokens.refreshToken,
-      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null,
-      scopes: data.scope ? data.scope.split(" ") : currentTokens.scopes,
-      subscriptionType: currentTokens.subscriptionType,
-      rateLimitTier: currentTokens.rateLimitTier
-    };
-    return refreshed;
-  } catch (err) {
-    console.error(`[OAuth] Token refresh error: ${err.message}`);
-    return null;
-  }
-}
-function isTokenExpired(tokens) {
-  if (!tokens.expiresAt) return false;
-  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS;
-}
-async function getOAuthToken() {
-  if (_cachedTokens && Date.now() - _cacheTimestamp < CACHE_TTL_MS) {
-    if (!isTokenExpired(_cachedTokens)) return _cachedTokens;
-  }
-  let tokens = await readFromKeychain();
-  if (!tokens) return null;
-  if (isTokenExpired(tokens)) {
-    if (!_refreshInFlight) {
-      _refreshInFlight = refreshToken(tokens).finally(() => {
-        _refreshInFlight = null;
-      });
-    }
-    const refreshed = await _refreshInFlight;
-    if (refreshed) {
-      tokens = refreshed;
-    } else {
-    }
-  }
-  _cachedTokens = tokens;
-  _cacheTimestamp = Date.now();
-  return tokens;
-}
-async function forceRefreshOAuthToken() {
-  _cachedTokens = null;
-  _cacheTimestamp = 0;
-  const tokens = await readFromKeychain();
-  if (!tokens) return null;
-  if (tokens.refreshToken) {
-    if (!_refreshInFlight) {
-      _refreshInFlight = refreshToken(tokens).finally(() => {
-        _refreshInFlight = null;
-      });
-    }
-    const refreshed = await _refreshInFlight;
-    if (refreshed) {
-      _cachedTokens = refreshed;
-      _cacheTimestamp = Date.now();
-      return refreshed;
-    }
-  }
-  _cachedTokens = tokens;
-  _cacheTimestamp = Date.now();
-  return tokens;
-}
-var execFileAsync2, KEYCHAIN_SERVICE, TOKEN_EXPIRY_BUFFER_MS, CACHE_TTL_MS, TOKEN_URL, CLIENT_ID, _cachedTokens, _cacheTimestamp, _refreshInFlight;
-var init_oauth_keychain = __esm({
-  "src/auth/oauth-keychain.ts"() {
-    "use strict";
-    execFileAsync2 = promisify2(execFile2);
-    KEYCHAIN_SERVICE = "Claude Code-credentials";
-    TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1e3;
-    CACHE_TTL_MS = 3e4;
-    TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
-    CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-    _cachedTokens = null;
-    _cacheTimestamp = 0;
-    _refreshInFlight = null;
-  }
-});
-
-// src/auth/openai-oauth.ts
-import { readFile as readFile7, access as access3 } from "node:fs/promises";
-import { constants as constants3 } from "node:fs";
-import { join as join9 } from "node:path";
-import { homedir as homedir2 } from "node:os";
-async function fileExists(path3) {
-  try {
-    await access3(path3, constants3.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-async function readTokenFile() {
-  for (const tokenPath of TOKEN_PATHS) {
-    if (!await fileExists(tokenPath)) continue;
-    try {
-      const raw = await readFile7(tokenPath, "utf8");
-      const data = JSON.parse(raw);
-      const codexEntry = data["openai-codex"] || data["codex"] || data["openai"];
-      if (codexEntry?.access) {
-        return {
-          accessToken: codexEntry.access,
-          refreshToken: codexEntry.refresh || null,
-          expiresAt: codexEntry.expires || null
-        };
-      }
-      const nestedAuth = data.auth || data.oauth || data.credentials;
-      if (nestedAuth?.accessToken || nestedAuth?.access_token || nestedAuth?.access) {
-        return {
-          accessToken: nestedAuth.accessToken || nestedAuth.access_token || nestedAuth.access,
-          refreshToken: nestedAuth.refreshToken || nestedAuth.refresh_token || nestedAuth.refresh || null,
-          expiresAt: nestedAuth.expiresAt || nestedAuth.expires_at || nestedAuth.expires || null
-        };
-      }
-      if (data.access_token) {
-        return {
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token || null,
-          expiresAt: data.expires_at || data.expires || null
-        };
-      }
-      if (data.token) {
-        return {
-          accessToken: data.token,
-          refreshToken: data.refresh_token || null,
-          expiresAt: data.expires_at || null
-        };
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-async function refreshToken2(current) {
-  if (!current.refreshToken) return null;
-  try {
-    const response = await fetch(TOKEN_URL2, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: current.refreshToken,
-        client_id: CLIENT_ID2
-      }).toString(),
-      signal: AbortSignal.timeout(1e4)
-    });
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      console.error(`[OpenAI OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
-      return null;
-    }
-    const data = await response.json();
-    if (!data.access_token) return null;
-    return {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token || current.refreshToken,
-      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null
-    };
-  } catch (err) {
-    console.error(`[OpenAI OAuth] Token refresh error: ${err.message}`);
-    return null;
-  }
-}
-function isTokenExpired2(tokens) {
-  if (!tokens.expiresAt) return false;
-  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS2;
-}
-async function getOpenAIOAuthToken() {
-  if (_cachedTokens2 && Date.now() - _cacheTimestamp2 < CACHE_TTL_MS2) {
-    if (!isTokenExpired2(_cachedTokens2)) return _cachedTokens2;
-  }
-  let tokens = await readTokenFile();
-  if (!tokens) return null;
-  if (isTokenExpired2(tokens)) {
-    if (!_refreshInFlight2) {
-      _refreshInFlight2 = refreshToken2(tokens).finally(() => {
-        _refreshInFlight2 = null;
-      });
-    }
-    const refreshed = await _refreshInFlight2;
-    if (refreshed) {
-      tokens = refreshed;
-    }
-  }
-  _cachedTokens2 = tokens;
-  _cacheTimestamp2 = Date.now();
-  return tokens;
-}
-async function forceRefreshOpenAIOAuth() {
-  _cachedTokens2 = null;
-  _cacheTimestamp2 = 0;
-  const tokens = await readTokenFile();
-  if (!tokens) return null;
-  if (tokens.refreshToken) {
-    if (!_refreshInFlight2) {
-      _refreshInFlight2 = refreshToken2(tokens).finally(() => {
-        _refreshInFlight2 = null;
-      });
-    }
-    const refreshed = await _refreshInFlight2;
-    if (refreshed) {
-      _cachedTokens2 = refreshed;
-      _cacheTimestamp2 = Date.now();
-      return refreshed;
-    }
-  }
-  _cachedTokens2 = tokens;
-  _cacheTimestamp2 = Date.now();
-  return tokens;
-}
-var TOKEN_EXPIRY_BUFFER_MS2, CACHE_TTL_MS2, CLIENT_ID2, TOKEN_URL2, OPENAI_CODEX_API_URL, TOKEN_PATHS, _cachedTokens2, _cacheTimestamp2, _refreshInFlight2;
-var init_openai_oauth = __esm({
-  "src/auth/openai-oauth.ts"() {
-    "use strict";
-    TOKEN_EXPIRY_BUFFER_MS2 = 5 * 60 * 1e3;
-    CACHE_TTL_MS2 = 3e4;
-    CLIENT_ID2 = "app_EMoamEEZ73f0CkXaXp7hrann";
-    TOKEN_URL2 = "https://auth.openai.com/oauth/token";
-    OPENAI_CODEX_API_URL = "https://chatgpt.com/backend-api/codex/responses";
-    TOKEN_PATHS = [
-      join9(homedir2(), ".codex", "auth.json"),
-      join9(homedir2(), ".local", "share", "opencode", "auth.json"),
-      join9(homedir2(), ".codex-auth", "auth.json")
-    ];
-    _cachedTokens2 = null;
-    _cacheTimestamp2 = 0;
-    _refreshInFlight2 = null;
-  }
-});
-
-// src/auth/gemini-oauth.ts
-import { readFile as readFile8, access as access4 } from "node:fs/promises";
-import { constants as constants4 } from "node:fs";
-import { join as join10 } from "node:path";
-import { homedir as homedir3 } from "node:os";
-async function fileExists2(path3) {
-  try {
-    await access4(path3, constants4.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-async function readTokenFiles() {
-  if (await fileExists2(GEMINI_CLI_PATH)) {
-    try {
-      const raw = await readFile8(GEMINI_CLI_PATH, "utf8");
-      const data = JSON.parse(raw);
-      if (data.access_token) {
-        return {
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token || null,
-          expiresAt: data.expiry_date || null,
-          clientId: GEMINI_CLI_CLIENT_ID,
-          clientSecret: GEMINI_CLI_CLIENT_SECRET
-        };
-      }
-    } catch {
-    }
-  }
-  if (await fileExists2(ADC_PATH)) {
-    try {
-      const raw = await readFile8(ADC_PATH, "utf8");
-      const data = JSON.parse(raw);
-      if (data.refresh_token && data.client_id) {
-        const refreshed = await exchangeRefreshToken(
-          data.refresh_token,
-          data.client_id,
-          data.client_secret
-        );
-        if (refreshed) {
-          return {
-            ...refreshed,
-            clientId: data.client_id,
-            clientSecret: data.client_secret
-          };
-        }
-      }
-      if (data.access_token) {
-        return {
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token || null,
-          expiresAt: null,
-          clientId: data.client_id || null,
-          clientSecret: data.client_secret || null
-        };
-      }
-    } catch {
-    }
-  }
-  return null;
-}
-async function exchangeRefreshToken(refreshToken3, clientId, clientSecret) {
-  try {
-    const response = await fetch(TOKEN_URL3, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken3,
-        client_id: clientId,
-        client_secret: clientSecret
-      }).toString(),
-      signal: AbortSignal.timeout(1e4)
-    });
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      console.error(`[Gemini OAuth] Token refresh failed: ${response.status} ${errText.slice(0, 200)}`);
-      return null;
-    }
-    const data = await response.json();
-    if (!data.access_token) return null;
-    return {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token || refreshToken3,
-      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1e3 : null
-    };
-  } catch (err) {
-    console.error(`[Gemini OAuth] Token exchange error: ${err.message}`);
-    return null;
-  }
-}
-async function refreshTokens(current) {
-  if (!current.refreshToken) return null;
-  const clientId = current.clientId || GEMINI_CLI_CLIENT_ID;
-  const clientSecret = current.clientSecret || GEMINI_CLI_CLIENT_SECRET;
-  const result2 = await exchangeRefreshToken(current.refreshToken, clientId, clientSecret);
-  if (!result2) return null;
-  return {
-    ...result2,
-    clientId,
-    clientSecret
-  };
-}
-function isTokenExpired3(tokens) {
-  if (!tokens.expiresAt) return false;
-  return Date.now() >= tokens.expiresAt - TOKEN_EXPIRY_BUFFER_MS3;
-}
-async function getGeminiOAuthToken() {
-  if (_cachedTokens3 && Date.now() - _cacheTimestamp3 < CACHE_TTL_MS3) {
-    if (!isTokenExpired3(_cachedTokens3)) return _cachedTokens3;
-  }
-  let tokens = await readTokenFiles();
-  if (!tokens) return null;
-  if (isTokenExpired3(tokens)) {
-    if (!_refreshInFlight3) {
-      _refreshInFlight3 = refreshTokens(tokens).finally(() => {
-        _refreshInFlight3 = null;
-      });
-    }
-    const refreshed = await _refreshInFlight3;
-    if (refreshed) {
-      tokens = refreshed;
-    }
-  }
-  _cachedTokens3 = tokens;
-  _cacheTimestamp3 = Date.now();
-  return tokens;
-}
-async function forceRefreshGeminiOAuth() {
-  _cachedTokens3 = null;
-  _cacheTimestamp3 = 0;
-  const tokens = await readTokenFiles();
-  if (!tokens) return null;
-  if (tokens.refreshToken) {
-    if (!_refreshInFlight3) {
-      _refreshInFlight3 = refreshTokens(tokens).finally(() => {
-        _refreshInFlight3 = null;
-      });
-    }
-    const refreshed = await _refreshInFlight3;
-    if (refreshed) {
-      _cachedTokens3 = refreshed;
-      _cacheTimestamp3 = Date.now();
-      return refreshed;
-    }
-  }
-  _cachedTokens3 = tokens;
-  _cacheTimestamp3 = Date.now();
-  return tokens;
-}
-var TOKEN_EXPIRY_BUFFER_MS3, CACHE_TTL_MS3, TOKEN_URL3, GEMINI_CLI_CLIENT_ID, GEMINI_CLI_CLIENT_SECRET, ADC_PATH, GEMINI_CLI_PATH, _cachedTokens3, _cacheTimestamp3, _refreshInFlight3;
-var init_gemini_oauth = __esm({
-  "src/auth/gemini-oauth.ts"() {
-    "use strict";
-    TOKEN_EXPIRY_BUFFER_MS3 = 5 * 60 * 1e3;
-    CACHE_TTL_MS3 = 3e4;
-    TOKEN_URL3 = "https://oauth2.googleapis.com/token";
-    GEMINI_CLI_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
-    GEMINI_CLI_CLIENT_SECRET = "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";
-    ADC_PATH = join10(homedir3(), ".config", "gcloud", "application_default_credentials.json");
-    GEMINI_CLI_PATH = join10(homedir3(), ".gemini", "oauth_creds.json");
-    _cachedTokens3 = null;
-    _cacheTimestamp3 = 0;
-    _refreshInFlight3 = null;
   }
 });
 
@@ -5327,6 +5712,27 @@ ${summary}` },
   }
   return messages;
 }
+function historyToContext(history) {
+  if (history.length === 0) return "";
+  if (history.length <= 5) {
+    const lines = history.map((h) => {
+      return `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 200)}) \u2192 ${formatToolResult(h, 800)}`;
+    });
+    return "\n\nPrevious tool results:\n" + lines.join("\n");
+  }
+  const compressed = compressTurnHistory(history);
+  const recentDetailed = history.slice(-3);
+  const olderCompressed = compressed.slice(0, -3);
+  let ctx = "\n\nExecution summary (compressed):\n";
+  ctx += olderCompressed.map(
+    (c) => `[${c.turn}] ${c.action} \u2192 ${c.outcome}`
+  ).join("\n");
+  ctx += "\n\nRecent actions (detailed):\n";
+  ctx += recentDetailed.map((h) => {
+    return `[Turn ${h.turn}] ${h.tool}(${JSON.stringify(h.params).slice(0, 200)}) \u2192 ${formatToolResult(h, 800)}`;
+  }).join("\n");
+  return ctx;
+}
 function stripSchemaMetadata(value) {
   if (Array.isArray(value)) return value.map(stripSchemaMetadata);
   if (!value || typeof value !== "object") return value;
@@ -5354,59 +5760,46 @@ function compactToolDeclarations(tools, turn) {
 }
 async function resolveProvider(modelOverride, preferTier) {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || "").trim().toLowerCase();
-  const userExplicitModel = (process.env.CREW_EXECUTION_MODEL || "").trim().toLowerCase();
   if (process.env.CREW_NO_OAUTH !== "true") {
-    const wantsClaude = !userExplicitModel || userExplicitModel.includes("claude") || userExplicitModel.includes("anthropic");
-    if (wantsClaude) {
-      try {
-        const oauth = await getOAuthToken();
-        if (oauth?.accessToken) {
-          const oauthModel = userExplicitModel && userExplicitModel.includes("claude") ? userExplicitModel : String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-opus-4.6");
-          return {
-            key: oauth.accessToken,
-            model: oauthModel,
-            driver: "anthropic",
-            id: `anthropic-oauth-${oauth.subscriptionType || "unknown"}`,
-            isOAuth: true
-          };
-        }
-      } catch {
+    try {
+      const oauth = await getOAuthToken();
+      if (oauth?.accessToken) {
+        return {
+          key: oauth.accessToken,
+          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-sonnet-4-20250514"),
+          driver: "anthropic",
+          id: `anthropic-oauth-${oauth.subscriptionType || "unknown"}`,
+          isOAuth: true
+        };
       }
+    } catch {
     }
-    const wantsOpenAI = !userExplicitModel || userExplicitModel.includes("gpt") || userExplicitModel.includes("openai") || userExplicitModel.includes("codex");
-    if (wantsOpenAI) {
-      try {
-        const oauth = await getOpenAIOAuthToken();
-        if (oauth?.accessToken) {
-          const oauthModel = userExplicitModel && (userExplicitModel.includes("gpt") || userExplicitModel.includes("codex")) ? userExplicitModel : String(process.env.CREW_OAUTH_OPENAI_MODEL || "gpt-5.4");
-          return {
-            key: oauth.accessToken,
-            model: oauthModel,
-            driver: "openai",
-            apiUrl: OPENAI_CODEX_API_URL,
-            id: "openai-oauth-codex",
-            isOAuth: true
-          };
-        }
-      } catch {
+    try {
+      const oauth = await getOpenAIOAuthToken();
+      if (oauth?.accessToken) {
+        return {
+          key: oauth.accessToken,
+          model: String(process.env.CREW_OAUTH_OPENAI_MODEL || "gpt-4.1"),
+          driver: "openai",
+          apiUrl: OPENAI_CODEX_API_URL,
+          id: "openai-oauth-codex",
+          isOAuth: true
+        };
       }
+    } catch {
     }
-    const wantsGemini = !userExplicitModel || userExplicitModel.includes("gemini") || userExplicitModel.includes("google");
-    if (wantsGemini) {
-      try {
-        const oauth = await getGeminiOAuthToken();
-        if (oauth?.accessToken) {
-          const oauthModel = userExplicitModel && userExplicitModel.includes("gemini") ? userExplicitModel : String(process.env.CREW_OAUTH_GEMINI_MODEL || "gemini-2.5-flash");
-          return {
-            key: oauth.accessToken,
-            model: oauthModel,
-            driver: "gemini",
-            id: "gemini-oauth-adc",
-            isOAuth: true
-          };
-        }
-      } catch {
+    try {
+      const oauth = await getGeminiOAuthToken();
+      if (oauth?.accessToken) {
+        return {
+          key: oauth.accessToken,
+          model: effectiveModel.includes("gemini") ? effectiveModel : "gemini-2.5-flash",
+          driver: "gemini",
+          id: "gemini-oauth-adc",
+          isOAuth: true
+        };
       }
+    } catch {
     }
   }
   if (effectiveModel) {
@@ -5432,7 +5825,20 @@ async function resolveProvider(modelOverride, preferTier) {
   }
   return null;
 }
-async function executeStreamingGeminiTurn(fullTask, tools, key, model, systemPrompt, stream, images, historyMessages, isOAuth) {
+async function executeStreamingGeminiTurn(fullTask, tools, key, model, systemPrompt, stream, images, historyMessages, isOAuth, projectId, oauthSource) {
+  if (isOAuth) {
+    return executeGeminiCodeAssistTurn(
+      fullTask,
+      tools,
+      key,
+      model,
+      systemPrompt,
+      images,
+      historyMessages,
+      projectId,
+      oauthSource
+    );
+  }
   const functionDeclarations = tools.map((t) => ({
     name: t.name,
     description: t.description,
@@ -5554,40 +5960,168 @@ ${fullTask}` }];
   const textPart = parts.find((p) => p.text);
   return { response: textPart?.text ?? "", status: "COMPLETE", cost };
 }
-async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model, systemPrompt, stream, images, historyMessages, isOAuth) {
-  let userContent = fullTask;
-  if (images?.length) {
-    const parts = [{ type: "text", text: fullTask }];
-    for (const img of images) {
-      parts.push({
-        type: "image_url",
-        image_url: { url: `data:${img.mimeType};base64,${img.data}` }
-      });
-    }
-    userContent = parts;
+async function executeGeminiCodeAssistTurn(fullTask, tools, key, model, systemPrompt, images, historyMessages, projectId, oauthSource) {
+  const resolvedProjectId = projectId || process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || "";
+  const headers = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${key}`,
+    "User-Agent": "GeminiCLI/crew-cli"
+  };
+  if (oauthSource === "adc" && resolvedProjectId) {
+    headers["x-goog-user-project"] = resolvedProjectId;
   }
-  const messages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userContent },
-    // Insert structured history (assistant tool_calls + tool results)
-    ...historyMessages || []
-  ];
+  const metadata = {
+    ideType: "IDE_UNSPECIFIED",
+    platform: "PLATFORM_UNSPECIFIED",
+    pluginType: "GEMINI",
+    duetProject: resolvedProjectId || void 0
+  };
+  const loadResponse = await fetch("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
+    method: "POST",
+    headers,
+    signal: AbortSignal.timeout(12e4),
+    body: JSON.stringify({
+      cloudaicompanionProject: resolvedProjectId || void 0,
+      metadata
+    })
+  });
+  if (!loadResponse.ok) {
+    if (loadResponse.status === 401) {
+      const refreshed = await forceRefreshGeminiOAuth();
+      if (refreshed?.accessToken && refreshed.accessToken !== key) {
+        return executeGeminiCodeAssistTurn(
+          fullTask,
+          tools,
+          refreshed.accessToken,
+          model,
+          systemPrompt,
+          images,
+          historyMessages,
+          refreshed.projectId || projectId,
+          refreshed.source
+        );
+      }
+    }
+    const err = await loadResponse.text().catch(() => "");
+    throw new Error(`Gemini Code Assist loadCodeAssist ${loadResponse.status}: ${err.slice(0, 300)}`);
+  }
+  const loadData = await loadResponse.json();
+  const activeProjectId = loadData?.cloudaicompanionProject || resolvedProjectId;
+  const functionDeclarations = tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.parameters
+  }));
+  const userParts = [{ text: `${systemPrompt}
+
+Task:
+${fullTask}` }];
+  if (images?.length) {
+    for (const img of images) {
+      userParts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+    }
+  }
+  const response = await fetch("https://cloudcode-pa.googleapis.com/v1internal:generateContent", {
+    method: "POST",
+    headers,
+    signal: AbortSignal.timeout(12e4),
+    body: JSON.stringify({
+      model,
+      project: activeProjectId || void 0,
+      user_prompt_id: `crew-${Date.now()}`,
+      request: {
+        contents: [
+          { role: "user", parts: userParts },
+          ...historyMessages || [],
+          ...historyMessages?.length ? [{ role: "user", parts: [{ text: "Continue executing the task based on the results above." }] }] : []
+        ],
+        systemInstruction: {
+          role: "user",
+          parts: [{ text: systemPrompt }]
+        },
+        tools: [{ functionDeclarations }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
+        session_id: ""
+      }
+    })
+  });
+  if (!response.ok) {
+    const err = await response.text().catch(() => "");
+    throw new Error(`Gemini Code Assist generateContent ${response.status}: ${err.slice(0, 300)}`);
+  }
+  const data = await response.json();
+  const parts = data?.response?.candidates?.[0]?.content?.parts ?? [];
+  const usage = data?.response?.usageMetadata ?? {};
+  const cost = (usage.promptTokenCount || 0) * 0.075 / 1e6 + (usage.candidatesTokenCount || 0) * 0.3 / 1e6;
+  const toolCalls = [];
+  let fullText = "";
+  for (const part of parts) {
+    if (part.text) {
+      fullText += part.text;
+    }
+    if (part.functionCall) {
+      toolCalls.push({ tool: part.functionCall.name || "", params: part.functionCall.args || {} });
+    }
+  }
+  if (fullText) process.stdout.write(`${fullText}
+`);
+  if (toolCalls.length > 0) return { toolCalls, response: fullText, cost };
+  return { response: fullText, status: "COMPLETE", cost };
+}
+async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model, systemPrompt, stream, images, historyMessages, isOAuth, historyContext) {
   const openaiTools = tools.map((t) => ({
     type: "function",
-    function: { name: t.name, description: t.description, parameters: t.parameters }
+    ...isOAuth && apiUrl === OPENAI_CODEX_API_URL ? { name: t.name, description: t.description, parameters: t.parameters } : { function: { name: t.name, description: t.description, parameters: t.parameters } }
   }));
   const temp = model?.startsWith?.("gpt-5") || model?.startsWith?.("gpt-6") ? 1 : 0.3;
-  const body = {
+  const isCodexOAuth = isOAuth && apiUrl === OPENAI_CODEX_API_URL;
+  const body = isCodexOAuth ? {
     model,
-    messages,
+    instructions: systemPrompt,
+    input: [{
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: historyContext ? `${fullTask}
+
+${historyContext}` : fullTask
+        },
+        ...images?.map((img) => ({
+          type: "input_image",
+          image_url: `data:${img.mimeType};base64,${img.data}`
+        })) || []
+      ]
+    }],
     tools: openaiTools,
-    temperature: temp,
-    max_tokens: 8192,
-    stream
-  };
-  if (isOAuth && apiUrl === OPENAI_CODEX_API_URL) {
-    body.store = false;
-  }
+    store: false,
+    stream: true
+  } : (() => {
+    let userContent = fullTask;
+    if (images?.length) {
+      const parts = [{ type: "text", text: fullTask }];
+      for (const img of images) {
+        parts.push({
+          type: "image_url",
+          image_url: { url: `data:${img.mimeType};base64,${img.data}` }
+        });
+      }
+      userContent = parts;
+    }
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+      ...historyMessages || []
+    ];
+    return {
+      model,
+      messages,
+      tools: openaiTools,
+      temperature: temp,
+      max_tokens: 8192,
+      stream
+    };
+  })();
   const res = await fetch(apiUrl, {
     method: "POST",
     headers: {
@@ -5617,6 +6151,9 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
     }
     const err = await res.text();
     throw new Error(`OpenAI API ${res.status}: ${err.slice(0, 300)}`);
+  }
+  if (isCodexOAuth && res.body) {
+    return streamOpenAIResponsesOAuthTurn(res);
   }
   if (stream && res.body) {
     let fullText = "";
@@ -5692,12 +6229,104 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
   }
   return { response: msg?.content || "", status: "COMPLETE", cost: 0 };
 }
+async function streamOpenAIResponsesOAuthTurn(res) {
+  if (!res.body) {
+    return { response: "", status: "COMPLETE", cost: 0 };
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const toolCallsById = /* @__PURE__ */ new Map();
+  let buffer = "";
+  let fullText = "";
+  let usage = null;
+  const applyEvent = (eventType, payload) => {
+    const item = payload?.item || payload?.output_item;
+    const itemId = item?.id || payload?.item_id || payload?.call_id || "";
+    if (eventType === "response.output_text.delta" && typeof payload?.delta === "string") {
+      process.stdout.write(payload.delta);
+      fullText += payload.delta;
+      return;
+    }
+    if (eventType === "response.function_call_arguments.delta" && itemId) {
+      if (!toolCallsById.has(itemId)) {
+        toolCallsById.set(itemId, { name: "", args: "" });
+      }
+      toolCallsById.get(itemId).args += String(payload?.delta || "");
+      return;
+    }
+    if ((eventType === "response.output_item.added" || eventType === "response.output_item.done") && item?.type === "function_call") {
+      if (!toolCallsById.has(itemId)) {
+        toolCallsById.set(itemId, { name: "", args: "" });
+      }
+      const acc = toolCallsById.get(itemId);
+      if (item?.name) acc.name = item.name;
+      if (typeof item?.arguments === "string") acc.args = item.arguments;
+      return;
+    }
+    if (eventType === "response.completed") {
+      usage = payload?.response?.usage || null;
+      if (!fullText && typeof payload?.response?.output_text === "string") {
+        fullText = payload.response.output_text;
+      }
+    }
+  };
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const chunk = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        let eventType = "";
+        const dataLines = [];
+        for (const line of chunk.split("\n")) {
+          if (line.startsWith("event:")) eventType = line.slice(6).trim();
+          if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+        }
+        const raw = dataLines.join("\n");
+        if (raw) {
+          try {
+            const payload = JSON.parse(raw);
+            applyEvent(eventType || payload?.type || "", payload);
+          } catch {
+          }
+        }
+        boundary = buffer.indexOf("\n\n");
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (fullText) process.stdout.write("\n");
+  const toolCalls = [];
+  for (const [, tc] of toolCallsById) {
+    if (!tc.name) continue;
+    let params = {};
+    try {
+      params = JSON.parse(repairJson(tc.args));
+    } catch {
+    }
+    toolCalls.push({ tool: tc.name, params });
+  }
+  const cost = usage ? ((usage.input_tokens || 0) * 5 + (usage.output_tokens || 0) * 20) / 1e6 : 0;
+  if (toolCalls.length > 0) {
+    return { toolCalls, response: fullText.trim(), cost };
+  }
+  return { response: fullText.trim(), status: "COMPLETE", cost };
+}
 async function executeAnthropicSDKTurn(fullTask, tools, authToken, model, systemPrompt, images, historyMessages) {
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const sessionHeader = `crew-${Date.now()}`;
   const client = new Anthropic({
     authToken,
     apiKey: null,
-    defaultHeaders: { "x-app": "cli" }
+    defaultHeaders: {
+      "x-app": "cli",
+      "User-Agent": "claude-cli/crew-cli",
+      "X-Claude-Code-Session-Id": sessionHeader
+    }
   });
   let userContent = fullTask;
   if (images?.length) {
@@ -5715,10 +6344,23 @@ async function executeAnthropicSDKTurn(fullTask, tools, authToken, model, system
     description: t.description || "",
     input_schema: t.parameters
   }));
+  let deviceId = "";
+  let accountUuid = "";
+  try {
+    const { readFileSync: readFileSync8 } = await import("node:fs");
+    const { join: pj } = await import("node:path");
+    const { homedir: hd } = await import("node:os");
+    try {
+      const cfg = JSON.parse(readFileSync8(pj(hd(), ".claude", "config.json"), "utf8"));
+      deviceId = cfg.userID || "";
+    } catch {
+    }
+  } catch {
+  }
   try {
     const response = await client.beta.messages.create({
       model,
-      max_tokens: 8192,
+      max_tokens: 64e3,
       system: systemPrompt,
       messages: [
         { role: "user", content: userContent },
@@ -5727,13 +6369,20 @@ async function executeAnthropicSDKTurn(fullTask, tools, authToken, model, system
       temperature: 0.3,
       tools: anthropicTools,
       betas: [
+        "claude-code-20250219",
         "oauth-2025-04-20",
-        // Required for OAuth auth
         "interleaved-thinking-2025-05-14",
-        // Think between tool calls
-        "prompt-caching-2025-04-11"
-        // Better prompt caching
+        "effort-2025-11-24"
       ],
+      metadata: {
+        user_id: JSON.stringify({
+          device_id: deviceId,
+          account_uuid: accountUuid,
+          session_id: sessionHeader
+        })
+      },
+      thinking: { type: "adaptive" },
+      output_config: { effort: "medium" },
       stream: false
     });
     const usage = response.usage || {};
@@ -5913,7 +6562,19 @@ async function executeLLMTurn(task, tools, history, model, systemPrompt, stream,
   console.error(`\x1B[2m[${effectiveModel} ${authBadge}]\x1B[0m`);
   if (driver === "gemini") {
     const historyMsgs = historyToGeminiContents(history, effectiveModel);
-    return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
+    return executeStreamingGeminiTurn(
+      task,
+      tools,
+      key,
+      effectiveModel,
+      systemPrompt,
+      stream,
+      images,
+      historyMsgs,
+      isOAuth,
+      resolved.projectId,
+      resolved.oauthSource
+    );
   }
   if (driver === "anthropic") {
     const historyMsgs = historyToAnthropicMessages(history);
@@ -5921,7 +6582,19 @@ async function executeLLMTurn(task, tools, history, model, systemPrompt, stream,
   }
   if (driver === "openai" || driver === "openrouter") {
     const historyMsgs = historyToOpenAIMessages(history, effectiveModel);
-    return executeStreamingOpenAITurn(task, tools, apiUrl, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
+    return executeStreamingOpenAITurn(
+      task,
+      tools,
+      apiUrl,
+      key,
+      effectiveModel,
+      systemPrompt,
+      stream,
+      images,
+      historyMsgs,
+      isOAuth,
+      historyToContext(history)
+    );
   }
   throw new Error(`Unsupported driver: ${driver}`);
 }
@@ -8608,7 +9281,7 @@ ${c.text}`).join("\n\n");
 });
 
 // src/pipeline/agent-memory.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 import { existsSync as existsSync8, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join14, resolve as resolve8 } from "node:path";
 function getPipelineMemory(agentId = "pipeline") {
@@ -8633,7 +9306,7 @@ var init_agent_memory = __esm({
        */
       remember(content, options = {}) {
         const fact = {
-          id: randomUUID4(),
+          id: randomUUID5(),
           content,
           critical: options.critical || false,
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -10039,7 +10712,7 @@ var init_codebase_rag = __esm({
 });
 
 // src/pipeline/unified.ts
-import { randomUUID as randomUUID5 } from "crypto";
+import { randomUUID as randomUUID6 } from "crypto";
 import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile14 } from "node:fs/promises";
 import { resolve as resolve11, join as join18, normalize } from "node:path";
 var UnifiedPipeline;
@@ -11109,7 +11782,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
        * Execute request through unified pipeline
        */
       async execute(request) {
-        const traceId = `pipeline-${randomUUID5()}`;
+        const traceId = `pipeline-${randomUUID6()}`;
         const executionPath = ["l1-interface"];
         const startTime = Date.now();
         const runState = new PipelineRunState();
@@ -11488,7 +12161,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
        * This runs L2 reasoning (and optional dual-L2 planning) without executing L3 workers.
        */
       async routeOnly(request) {
-        const traceId = `pipeline-${randomUUID5()}`;
+        const traceId = `pipeline-${randomUUID6()}`;
         const plan = await this.l2Orchestrate(request, traceId, request.sessionId);
         if (plan.decision === "direct-answer") {
           return {
@@ -12909,7 +13582,7 @@ __export(agentkeeper_exports, {
 });
 import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile18, stat as stat6, writeFile as writeFile8 } from "node:fs/promises";
 import { dirname as dirname5, join as join21 } from "node:path";
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 function tokenize2(text) {
   return new Set(
     text.toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 2)
@@ -13063,7 +13736,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
         await mkdir10(dirname5(this.storePath), { recursive: true });
         const full = {
           ...entry,
-          id: randomUUID6(),
+          id: randomUUID7(),
           task: this.sanitizeText(entry.task, 1200),
           result: this.sanitizeText(entry.result, 6e3),
           structured: this.normalizeStructured(entry.structured),
@@ -15582,7 +16255,7 @@ init_corrections();
 // src/engines/index.ts
 init_logger();
 import { spawn as spawn2 } from "node:child_process";
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 import fs2 from "node:fs";
 import os from "node:os";
 import path2 from "node:path";
@@ -15882,7 +16555,7 @@ import { mkdir as mkdir14, readFile as readFile22, writeFile as writeFile11 } fr
 import { existsSync as existsSync14 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
 import { join as join26, resolve as resolve14 } from "node:path";
-import { randomUUID as randomUUID7 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 function nowIso6() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -16039,7 +16712,7 @@ var NativeEngineSessionManager = class {
     session.updatedAt = nowIso6();
     session.turns += 1;
     await this.persistSessionMeta(session);
-    const sentinel = `__CREW_DONE_${randomUUID7().replace(/-/g, "")}__`;
+    const sentinel = `__CREW_DONE_${randomUUID8().replace(/-/g, "")}__`;
     const markerCmd = `${params.command}
 echo ${shellQuote(`${sentinel}$?`)}
 `;
@@ -16696,7 +17369,7 @@ async function runOpenCodeCli(prompt, options = {}) {
 async function runEngine(engine, prompt, options = {}) {
   const normalizedEngine = String(engine || "").trim().toLowerCase();
   const start = Date.now();
-  const runId = String(options.runId || `eng-${randomUUID8()}`);
+  const runId = String(options.runId || `eng-${randomUUID9()}`);
   const optionsWithRunId = { ...options, runId };
   const { effectivePrompt, engineStore, transcriptStore } = await preparePromptWithSession(normalizedEngine, prompt, options);
   let result2;
@@ -18019,7 +18692,7 @@ import { createServer } from "node:http";
 import { homedir as homedir9 } from "node:os";
 import { join as join35 } from "node:path";
 import { readFileSync as readFileSync5 } from "node:fs";
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { randomUUID as randomUUID10 } from "node:crypto";
 
 // src/interface/mcp-handler.ts
 async function handleMcpRequest(options, body) {
@@ -18450,9 +19123,9 @@ ${toolResults.join("\n\n")}`);
   };
 }
 function buildToolCallResponse(params) {
-  const completionId = `chatcmpl-${randomUUID9()}`;
+  const completionId = `chatcmpl-${randomUUID10()}`;
   const created = Math.floor(Date.now() / 1e3);
-  const toolCallId = `call_${randomUUID9().replace(/-/g, "").slice(0, 20)}`;
+  const toolCallId = `call_${randomUUID10().replace(/-/g, "").slice(0, 20)}`;
   const toolCall = {
     id: toolCallId,
     type: "function",
@@ -18730,7 +19403,7 @@ PREFERRED_AGENT: ${model}`,
   };
   const out = options.mode === "connected" ? await handleConnectedChat(options, chatBody) : await handleStandaloneChat(options, chatBody);
   const reply = String(out?.data?.reply || "");
-  const completionId = `chatcmpl-${randomUUID9()}`;
+  const completionId = `chatcmpl-${randomUUID10()}`;
   const created = Math.floor(Date.now() / 1e3);
   const promptTokens = Math.ceil(composed.inputChars / 4);
   const completionTokens = Math.ceil(reply.length / 4);
@@ -18778,7 +19451,7 @@ PREFERRED_AGENT: ${model}`,
 async function enqueueStandaloneTask(options, body) {
   const taskText = String(body?.task || "").trim();
   if (!taskText) return { status: 400, data: { error: "task is required" } };
-  const taskId = randomUUID9();
+  const taskId = randomUUID10();
   taskStore.set(taskId, { id: taskId, status: "queued", createdAt: Date.now() });
   queueMicrotask(async () => {
     const rec = taskStore.get(taskId);
@@ -19218,7 +19891,7 @@ async function startUnifiedServer(options) {
         latestIndex = await buildCollectionIndex(paths, {
           includeCode: Boolean(body?.includeCode)
         });
-        latestIndexId = `idx-${randomUUID9()}`;
+        latestIndexId = `idx-${randomUUID10()}`;
         latestIndexStats = {
           files: Number(latestIndex?.fileCount || 0),
           chunks: Number(latestIndex?.chunks?.length || 0)
@@ -19236,7 +19909,7 @@ async function startUnifiedServer(options) {
             includeCode: false
           });
           latestIndex = fallback;
-          latestIndexId = `idx-${randomUUID9()}`;
+          latestIndexId = `idx-${randomUUID10()}`;
           latestIndexStats = {
             files: Number(latestIndex?.fileCount || 0),
             chunks: Number(latestIndex?.chunks?.length || 0)
@@ -19370,7 +20043,7 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
 
 // src/repl/index.ts
 import { createInterface, emitKeypressEvents } from "node:readline";
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 import { existsSync as existsSync18, readFileSync as readFileSync6 } from "node:fs";
 import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile33, readdir as readdir10, writeFile as writeFile20 } from "node:fs/promises";
 import { join as join39 } from "node:path";
@@ -19690,7 +20363,7 @@ var AVAILABLE_MODELS = [
   "kimi-k2.5",
   "llama-3.3-70b"
 ];
-var AVAILABLE_ENGINES = ["auto", "cursor", "claude", "gemini", "codex", "crew-cli"];
+var AVAILABLE_ENGINES = ["auto", "cursor", "cursor-cli", "claude", "claude-cli", "gemini", "gemini-cli", "codex", "codex-cli", "crew-cli"];
 var REPL_MODE_ORDER = ["manual", "assist", "autopilot"];
 var SLASH_COMMAND_GROUPS = [
   { title: "Session", commands: ["/help", "/info", "/status", "/history", "/clear", "/exit"] },
@@ -20045,6 +20718,15 @@ function buildPrompt(state, isProcessing, uiMode = "repl") {
   if (mode === "assist") return chalk3.cyan(`${prefix}(${mode})> `);
   return chalk3.green(`${prefix}(${mode})> `);
 }
+function normalizeStandaloneEngine2(engine) {
+  const raw = String(engine || "").trim().toLowerCase();
+  if (!raw || raw === "auto") return "auto";
+  if (raw === "claude" || raw === "claude-code") return "claude-cli";
+  if (raw === "gemini" || raw === "gemini-api") return "gemini-cli";
+  if (raw === "codex") return "codex-cli";
+  if (raw === "cursor") return "cursor-cli";
+  return raw;
+}
 function printTuiScaffold() {
   console.log(chalk3.blue("\n\u250C\u2500[ TUI LAYOUT ]\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510"));
   console.log(chalk3.white("\u2502 Chat + Commands share the same runtime as REPL (no orchestration fork). \u2502"));
@@ -20061,7 +20743,7 @@ async function startRepl(options) {
   const memoryBroker = new MemoryBroker(projectDir);
   const checkpoints = new CheckpointStore(projectDir);
   const sessionId = await session.getSessionId();
-  const replRunId = `repl-${randomUUID10()}`;
+  const replRunId = `repl-${randomUUID11()}`;
   let selectedMode = options.initialMode || repoConfig?.repl?.mode || "manual";
   if (!options.initialMode && !repoConfig?.repl?.mode && process.stdin.isTTY) {
     try {
@@ -20523,9 +21205,9 @@ async function startRepl(options) {
 `));
           return true;
         }
-        replState.engine = requestedEngine;
+        replState.engine = normalizeStandaloneEngine2(requestedEngine);
         console.log(chalk3.green(`
-  \u2713 Engine set to: ${requestedEngine}
+  \u2713 Engine set to: ${replState.engine}
 `));
         return true;
       }
@@ -20546,9 +21228,9 @@ async function startRepl(options) {
   \u2717 Unknown engine "${engineName}". Type /engines to see options.
 `));
       } else {
-        replState.engine = engineName;
+        replState.engine = normalizeStandaloneEngine2(engineName);
         console.log(chalk3.green(`
-  \u2713 Engine set to: ${engineName}
+  \u2713 Engine set to: ${replState.engine}
 `));
       }
       return true;
@@ -21618,7 +22300,17 @@ ${memoryContext}`;
         toolProgressLog.push(display);
       };
       if (dispatchOpts) dispatchOpts.onToolCall = onToolCall;
-      const result2 = standaloneMode ? useLegacyStandalone ? await withRetries(
+      const selectedStandaloneEngine = normalizeStandaloneEngine2(replState.engine);
+      const useDirectCliEngine = standaloneMode && selectedStandaloneEngine !== "auto" && selectedStandaloneEngine !== "crew-cli";
+      const result2 = useDirectCliEngine ? await withRetries(
+        async () => runEngine(selectedStandaloneEngine, route.task || taskInput, {
+          model: dispatchOpts.model,
+          cwd: projectDir,
+          projectDir,
+          sessionId: dispatchOpts.sessionId
+        }),
+        policy
+      ) : standaloneMode ? useLegacyStandalone ? await withRetries(
         async () => orchestrator.executeLocally(route.task || taskInput, {
           model: dispatchOpts.model
         }),
@@ -21663,13 +22355,13 @@ ${memoryContext}`;
           completionTokens: result2.completionTokens || 0
         });
       }
-      const responseText = String(result2.response || result2.result || "");
+      const responseText = String(result2.stdout || result2.response || result2.result || result2.stderr || "");
       console.log(chalk3.cyan("\n  \u250C\u2500 Response"));
       logger3.printWithHighlight(responseText);
       console.log("  \u2514\u2500");
       const providerInfo = result2.providerId || result2.provider || result2.model || replState.model;
       const modelUsed = result2.modelUsed || result2.model || providerInfo;
-      const engineUsed = result2.engine || (standaloneMode ? "crew-cli" : dispatchOpts.engine || replState.engine || "gateway");
+      const engineUsed = result2.engine || (useDirectCliEngine ? selectedStandaloneEngine : standaloneMode ? "crew-cli" : dispatchOpts.engine || replState.engine || "gateway");
       const routeUsed = route.decision || (standaloneMode ? "EXECUTE" : "DISPATCH");
       const responseCost = result2.costUsd || result2.cost || 0;
       const turnsUsed = result2.turns || 1;
@@ -22267,7 +22959,7 @@ async function loadModelPolicy(baseDir = process.cwd()) {
 import { mkdir as mkdir23, readFile as readFile36, writeFile as writeFile22 } from "node:fs/promises";
 import { existsSync as existsSync22 } from "node:fs";
 import { join as join43 } from "node:path";
-import { randomUUID as randomUUID11 } from "node:crypto";
+import { randomUUID as randomUUID12 } from "node:crypto";
 function createDefaultState() {
   return {
     version: 1,
@@ -22344,7 +23036,7 @@ var AutoFixStore = class {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const state = await this.readState();
     const job = this.sanitizeJob({
-      id: `af-${randomUUID11()}`,
+      id: `af-${randomUUID12()}`,
       task: String(input.task || "").trim(),
       projectDir: input.projectDir || process.cwd(),
       status: "queued",
@@ -22718,7 +23410,7 @@ async function runAutoFixJob(job, deps) {
 }
 
 // src/cli/index.ts
-import { randomUUID as randomUUID12 } from "node:crypto";
+import { randomUUID as randomUUID13 } from "node:crypto";
 import { mkdir as mkdir25, readFile as readFile37, writeFile as writeFile24 } from "node:fs/promises";
 import { dirname as dirname8, join as join45 } from "node:path";
 import { execSync as execSync7 } from "node:child_process";
@@ -22915,6 +23607,15 @@ function detectSubscriptionEngines(tokens) {
       version: codexInstalled ? readBinaryVersion("codex") : ""
     }
   ];
+}
+function normalizeStandaloneEngine3(engine) {
+  const raw = String(engine || "").trim().toLowerCase();
+  if (!raw || raw === "auto") return "auto";
+  if (raw === "claude" || raw === "claude-code") return "claude-cli";
+  if (raw === "gemini" || raw === "gemini-api") return "gemini-cli";
+  if (raw === "codex") return "codex-cli";
+  if (raw === "cursor") return "cursor-cli";
+  return raw;
 }
 function shouldRetryWithFallback2(error) {
   const text = String(error?.message || "").toLowerCase();
@@ -23345,6 +24046,39 @@ ${multiContext}`;
       const useLegacyStandalone = String(process.env.CREW_LEGACY_ROUTER || "").toLowerCase() === "true";
       const fallbackModels = options.fallbackModel && options.fallbackModel.length > 0 ? options.fallbackModel : executorPolicy.fallback || [];
       const capabilityHandshake = getCapabilityHandshake(useConnected ? "connected" : "standalone");
+      const selectedStandaloneEngine = normalizeStandaloneEngine3(options.engine || "");
+      const useDirectCliEngine = !useConnected && !useLegacyStandalone && selectedStandaloneEngine !== "auto" && selectedStandaloneEngine !== "crew-cli";
+      if (useDirectCliEngine) {
+        logger3.info(`Executing in standalone direct-engine mode (${selectedStandaloneEngine})`);
+        const result2 = await withRetries(
+          async () => runEngine(selectedStandaloneEngine, input, {
+            model: options.model,
+            cwd: projectDir,
+            projectDir
+          }),
+          policy
+        );
+        const responseText = String(result2.stdout || result2.stderr || "");
+        console.log(
+          JSON.stringify(
+            {
+              version: "v1",
+              kind: "chat.result",
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              route: { decision: "EXECUTE", explanation: `Direct standalone engine (${selectedStandaloneEngine})` },
+              agent: selectedStandaloneEngine,
+              response: responseText,
+              engine: result2.engine,
+              success: result2.success,
+              exitCode: result2.exitCode,
+              capabilityHandshake
+            },
+            null,
+            2
+          )
+        );
+        return;
+      }
       if (!useConnected && !useLegacyStandalone) {
         logger3.info("Executing in standalone mode (agentic executor with file tools)");
         const standaloneRuntime = await getStandaloneRuntime(projectDir);
@@ -23416,7 +24150,7 @@ ${multiContext}`;
           },
           fallbackModels,
           checkpoints,
-          `chat-${randomUUID12()}`
+          `chat-${randomUUID13()}`
         );
         const rawResponse = result2.response || result2.result || "";
         const responseText = typeof rawResponse === "object" ? rawResponse.result || rawResponse.output || rawResponse.message || JSON.stringify(rawResponse, null, 2) : String(rawResponse);
@@ -23476,7 +24210,7 @@ ${multiContext}`;
     let currentTask = task;
     let iteration = 0;
     let failedRun = false;
-    const runId = `auto-${randomUUID12()}`;
+    const runId = `auto-${randomUUID13()}`;
     const useMemory = options.memory !== false;
     await checkpoints.beginRun({ runId, mode: "auto", task });
     if (useMemory) {
@@ -23956,7 +24690,7 @@ Total session cost: $${cost.totalUsd.toFixed(4)}`));
   });
   program.command("dispatch").description("Dispatch a task to an agent").argument("<agent>", "Agent name").argument("<task>", "Task description").option("-p, --project <path>", "Project directory").option("-g, --gateway <url>", "Override gateway URL").option("-t, --timeout <ms>", "Timeout in milliseconds", "30000").option("-m, --model <id>", "Model ID for cost estimate", executorPrimary || "openai/gpt-4o-mini").option("--fallback-model <id>", "Fallback model chain entry (repeatable)", collectOption, []).option("--engine <id>", "Engine override for direct/bypass gateway paths (e.g. cursor)").option("--direct", "Request direct execution path on gateway", false).option("--bypass", "Request bypass/orchestrator-skip path on gateway", false).option("--output-tokens <count>", "Expected completion tokens for estimate", "1200").option("--max-cost <usd>", "Require confirmation if estimate exceeds this USD amount", String(executorPolicy.maxCostUsd ?? 1)).option("--skip-cost-check", "Skip cost estimate confirmation gate", false).option("--cross-repo", "Inject sibling repository context", false).option("--cache", "Enable output cache for dispatch result", false).option("--cache-ttl <sec>", "Output cache TTL in seconds", "1800").option("--no-memory", "Disable shared AgentKeeper memory").option("--memory-max <n>", "Max recalled memory entries", String(cliDefaults.memoryMax ?? 3)).option("--memory-require-validation", "Store memory only when validation is marked passed", false).option("--image <path>", "Attach an image file to the task (repeatable)", collectOption, []).option("--context-image <path>", "Attach an image file as context (repeatable)", collectOption, []).option("--image-max-bytes <n>", "Max bytes per image context payload", "250000").option("--context-file <path>", "Attach a file as additional context (repeatable)", collectOption, []).option("--context-repo <path>", "Attach git context from another repo (repeatable)", collectOption, []).option("--stdin", "Read additional context from stdin", false).option("--max-context-tokens <n>", "Max context token budget (approx, chars/4)").option("--context-budget-mode <mode>", "trim | stop when budget exceeded", "trim").option("--docs", "Inject matching docs context via collections search", false).option("--docs-path <paths...>", "Custom paths for docs search (default: docs/ + project root)").option("--docs-code", "Include source code files in docs retrieval index", Boolean(cliDefaults.docsCode)).option("--escalate-risk", "Escalate high-risk patches to QA and Security", false).option("--risk-threshold <level>", "Escalation threshold: low|medium|high", "high").option("--retry-attempts <n>", "Retry attempts for transient failures", "2").option("--strict-preflight", "Block execution if doctor checks fail", false).option("--json", "Output machine-readable JSON envelope", false).action(async (agent, task, options) => {
     let finalTask = task;
-    const runId = `dispatch-${randomUUID12()}`;
+    const runId = `dispatch-${randomUUID13()}`;
     const fallbackModels = options.fallbackModel && options.fallbackModel.length > 0 ? options.fallbackModel : executorPolicy.fallback || [];
     try {
       const policy = getExecutionPolicy({
@@ -25222,7 +25956,7 @@ Please review for correctness, regressions, and security concerns.`;
   program.command("plan").description("Generate a detailed plan for a task and execute it step-by-step or in parallel").argument("<task...>", "Task to plan and execute").option("--parallel", "Execute plan steps in parallel using worker pool", false).option("--concurrency <n>", "Maximum parallel workers", "3").option("-m, --model <id>", "Model override for plan execution", plannerPrimary || void 0).option("--fallback-model <id>", "Fallback model chain entry (repeatable)", collectOption, []).option("--resume <runId>", "Resume a prior plan run from checkpoint").option("--validate-cmd <cmd>", "Validation command (repeatable, hard gate)", collectOption, []).option("--reflect-agent <id>", "Agent used for reflect step", "crew-main").option("--no-cache", "Disable planner cache").option("--cache-ttl <sec>", "Planner cache TTL in seconds", "3600").option("--no-memory", "Disable shared AgentKeeper memory").option("--memory-max <n>", "Max recalled memory entries", "3").option("--memory-require-validation", "Store memory only when validation is marked passed", false).option("--json", "Output machine-readable JSON envelope and skip interactive prompts", false).option("--yes", "Auto-approve plan execution without confirmation", false).action(async (taskArray, options) => {
     const task = taskArray.join(" ");
     const planner = new Planner(agentRouter, sessionManager, process.cwd());
-    const runId = options.resume ? String(options.resume) : `plan-${randomUUID12()}`;
+    const runId = options.resume ? String(options.resume) : `plan-${randomUUID13()}`;
     const validationCommands = options.validateCmd || [];
     const fallbackModels = options.fallbackModel && options.fallbackModel.length > 0 ? options.fallbackModel : plannerPolicy.fallback || [];
     const existingRun = options.resume ? await checkpoints.load(runId) : null;

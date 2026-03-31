@@ -484,7 +484,16 @@ const PROVIDER_ORDER: ProviderEntry[] = [
   { id: 'fireworks', envKey: 'FIREWORKS_API_KEY', model: 'accounts/fireworks/models/qwen3.5-397b-a17b', driver: 'openai', apiUrl: 'https://api.fireworks.ai/inference/v1/chat/completions', modelPrefix: 'fireworks', tier: 'standard' },
 ];
 
-export type ResolvedProvider = { key: string; model: string; driver: string; apiUrl?: string; id: string; isOAuth?: boolean };
+export type ResolvedProvider = {
+  key: string;
+  model: string;
+  driver: string;
+  apiUrl?: string;
+  id: string;
+  isOAuth?: boolean;
+  projectId?: string;
+  oauthSource?: string;
+};
 
 function stripSchemaMetadata(value: any): any {
   if (Array.isArray(value)) return value.map(stripSchemaMetadata);
@@ -517,80 +526,61 @@ function compactToolDeclarations(tools: ToolDeclaration[], turn: number): ToolDe
 async function resolveProvider(modelOverride?: string, preferTier?: string): Promise<ResolvedProvider | null> {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || '').trim().toLowerCase();
 
-  // Is this an explicit user-chosen model (via CREW_EXECUTION_MODEL env)?
-  // If not, the model was auto-selected by the router and we should prefer OAuth regardless.
-  const userExplicitModel = (process.env.CREW_EXECUTION_MODEL || '').trim().toLowerCase();
-
   // ── OAuth first: subscription-based auth (free, highest priority) ──
-  // When no explicit model override is set, try ALL OAuth providers (Claude > OpenAI > Gemini).
-  // When user explicitly chose a model, only try the matching OAuth provider.
+  // Try all OAuth providers before API keys. OAuth uses existing subscriptions (free).
 
   if (process.env.CREW_NO_OAUTH !== 'true') {
+    // Always try all OAuth providers in priority order: Claude > OpenAI > Gemini.
+    // OAuth is free (uses subscriptions), so prefer it over API keys regardless of
+    // what model was requested — the model name just came from a default config.
+
     // 1. Claude OAuth (macOS Keychain — Claude Max/Pro subscription)
-    const wantsClaude = !userExplicitModel || userExplicitModel.includes('claude') || userExplicitModel.includes('anthropic');
-    if (wantsClaude) {
-      try {
-        const oauth = await getOAuthToken();
-        if (oauth?.accessToken) {
-          const oauthModel = userExplicitModel && userExplicitModel.includes('claude')
-            ? userExplicitModel
-            : String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-opus-4.6');
-          return {
-            key: oauth.accessToken,
-            model: oauthModel,
-            driver: 'anthropic',
-            id: `anthropic-oauth-${oauth.subscriptionType || 'unknown'}`,
-            isOAuth: true
-          };
-        }
-      } catch {
-        // Claude OAuth unavailable — try next
+    try {
+      const oauth = await getOAuthToken();
+      if (oauth?.accessToken) {
+        return {
+          key: oauth.accessToken,
+          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-sonnet-4-20250514'),
+          driver: 'anthropic',
+          id: `anthropic-oauth-${oauth.subscriptionType || 'unknown'}`,
+          isOAuth: true
+        };
       }
+    } catch {
+      // Claude OAuth unavailable — try next
     }
 
     // 2. OpenAI OAuth (Codex CLI auth — ChatGPT Plus/Pro subscription)
-    const wantsOpenAI = !userExplicitModel || userExplicitModel.includes('gpt') || userExplicitModel.includes('openai') || userExplicitModel.includes('codex');
-    if (wantsOpenAI) {
-      try {
-        const oauth = await getOpenAIOAuthToken();
-        if (oauth?.accessToken) {
-          const oauthModel = userExplicitModel && (userExplicitModel.includes('gpt') || userExplicitModel.includes('codex'))
-            ? userExplicitModel
-            : String(process.env.CREW_OAUTH_OPENAI_MODEL || 'gpt-5.4');
-          return {
-            key: oauth.accessToken,
-            model: oauthModel,
-            driver: 'openai',
-            apiUrl: OPENAI_CODEX_API_URL,
-            id: 'openai-oauth-codex',
-            isOAuth: true
-          };
-        }
-      } catch {
-        // OpenAI OAuth unavailable — try next
+    try {
+      const oauth = await getOpenAIOAuthToken();
+      if (oauth?.accessToken) {
+        return {
+          key: oauth.accessToken,
+          model: String(process.env.CREW_OAUTH_OPENAI_MODEL || 'gpt-4.1'),
+          driver: 'openai',
+          apiUrl: OPENAI_CODEX_API_URL,
+          id: 'openai-oauth-codex',
+          isOAuth: true
+        };
       }
+    } catch {
+      // OpenAI OAuth unavailable — try next
     }
 
     // 3. Gemini OAuth (Google ADC or Gemini CLI — Google account)
-    const wantsGemini = !userExplicitModel || userExplicitModel.includes('gemini') || userExplicitModel.includes('google');
-    if (wantsGemini) {
-      try {
-        const oauth = await getGeminiOAuthToken();
-        if (oauth?.accessToken) {
-          const oauthModel = userExplicitModel && userExplicitModel.includes('gemini')
-            ? userExplicitModel
-            : String(process.env.CREW_OAUTH_GEMINI_MODEL || 'gemini-2.5-flash');
-          return {
-            key: oauth.accessToken,
-            model: oauthModel,
-            driver: 'gemini',
-            id: 'gemini-oauth-adc',
-            isOAuth: true
-          };
-        }
-      } catch {
-        // Gemini OAuth unavailable — try next
+    try {
+      const oauth = await getGeminiOAuthToken();
+      if (oauth?.accessToken) {
+        return {
+          key: oauth.accessToken,
+          model: effectiveModel.includes('gemini') ? effectiveModel : 'gemini-2.5-flash',
+          driver: 'gemini',
+          id: 'gemini-oauth-adc',
+          isOAuth: true
+        };
       }
+    } catch {
+      // Gemini OAuth unavailable — try next
     }
   }
 
@@ -643,8 +633,24 @@ async function executeStreamingGeminiTurn(
   stream: boolean,
   images?: ImageAttachment[],
   historyMessages?: any[],
-  isOAuth?: boolean
+  isOAuth?: boolean,
+  projectId?: string,
+  oauthSource?: string
 ): Promise<LLMTurnResult> {
+  if (isOAuth) {
+    return executeGeminiCodeAssistTurn(
+      fullTask,
+      tools,
+      key,
+      model,
+      systemPrompt,
+      images,
+      historyMessages,
+      projectId,
+      oauthSource
+    );
+  }
+
   const functionDeclarations = tools.map(t => ({
     name: t.name,
     description: t.description,
@@ -787,6 +793,131 @@ async function executeStreamingGeminiTurn(
   return { response: textPart?.text ?? '', status: 'COMPLETE', cost };
 }
 
+async function executeGeminiCodeAssistTurn(
+  fullTask: string,
+  tools: ToolDeclaration[],
+  key: string,
+  model: string,
+  systemPrompt: string,
+  images?: ImageAttachment[],
+  historyMessages?: any[],
+  projectId?: string,
+  oauthSource?: string
+): Promise<LLMTurnResult> {
+  const resolvedProjectId = projectId || process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || '';
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${key}`,
+    'User-Agent': 'GeminiCLI/crew-cli'
+  };
+  if (oauthSource === 'adc' && resolvedProjectId) {
+    headers['x-goog-user-project'] = resolvedProjectId;
+  }
+
+  const metadata = {
+    ideType: 'IDE_UNSPECIFIED',
+    platform: 'PLATFORM_UNSPECIFIED',
+    pluginType: 'GEMINI',
+    duetProject: resolvedProjectId || undefined
+  };
+
+  const loadResponse = await fetch('https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', {
+    method: 'POST',
+    headers,
+    signal: AbortSignal.timeout(120000),
+    body: JSON.stringify({
+      cloudaicompanionProject: resolvedProjectId || undefined,
+      metadata
+    })
+  });
+
+  if (!loadResponse.ok) {
+    if (loadResponse.status === 401) {
+      const refreshed = await forceRefreshGeminiOAuth();
+      if (refreshed?.accessToken && refreshed.accessToken !== key) {
+        return executeGeminiCodeAssistTurn(
+          fullTask,
+          tools,
+          refreshed.accessToken,
+          model,
+          systemPrompt,
+          images,
+          historyMessages,
+          refreshed.projectId || projectId,
+          refreshed.source
+        );
+      }
+    }
+    const err = await loadResponse.text().catch(() => '');
+    throw new Error(`Gemini Code Assist loadCodeAssist ${loadResponse.status}: ${err.slice(0, 300)}`);
+  }
+
+  const loadData = await loadResponse.json() as any;
+  const activeProjectId = loadData?.cloudaicompanionProject || resolvedProjectId;
+  const functionDeclarations = tools.map(t => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.parameters
+  }));
+
+  const userParts: any[] = [{ text: `${systemPrompt}\n\nTask:\n${fullTask}` }];
+  if (images?.length) {
+    for (const img of images) {
+      userParts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+    }
+  }
+
+  const response = await fetch('https://cloudcode-pa.googleapis.com/v1internal:generateContent', {
+    method: 'POST',
+    headers,
+    signal: AbortSignal.timeout(120000),
+    body: JSON.stringify({
+      model,
+      project: activeProjectId || undefined,
+      user_prompt_id: `crew-${Date.now()}`,
+      request: {
+        contents: [
+          { role: 'user', parts: userParts },
+          ...(historyMessages || []),
+          ...(historyMessages?.length ? [{ role: 'user', parts: [{ text: 'Continue executing the task based on the results above.' }] }] : [])
+        ],
+        systemInstruction: {
+          role: 'user',
+          parts: [{ text: systemPrompt }]
+        },
+        tools: [{ functionDeclarations }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
+        session_id: ''
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.text().catch(() => '');
+    throw new Error(`Gemini Code Assist generateContent ${response.status}: ${err.slice(0, 300)}`);
+  }
+
+  const data = await response.json() as any;
+  const parts = data?.response?.candidates?.[0]?.content?.parts ?? [];
+  const usage = data?.response?.usageMetadata ?? {};
+  const cost = (usage.promptTokenCount || 0) * 0.075 / 1_000_000 + (usage.candidatesTokenCount || 0) * 0.30 / 1_000_000;
+
+  const toolCalls: Array<{ tool: string; params: Record<string, any> }> = [];
+  let fullText = '';
+  for (const part of parts) {
+    if (part.text) {
+      fullText += part.text;
+    }
+    if (part.functionCall) {
+      toolCalls.push({ tool: part.functionCall.name || '', params: part.functionCall.args || {} });
+    }
+  }
+
+  if (fullText) process.stdout.write(`${fullText}\n`);
+  if (toolCalls.length > 0) return { toolCalls, response: fullText, cost };
+  return { response: fullText, status: 'COMPLETE', cost };
+}
+
 async function executeStreamingOpenAITurn(
   fullTask: string,
   tools: ToolDeclaration[],
@@ -797,47 +928,68 @@ async function executeStreamingOpenAITurn(
   stream: boolean,
   images?: ImageAttachment[],
   historyMessages?: any[],
-  isOAuth?: boolean
+  isOAuth?: boolean,
+  historyContext?: string
 ): Promise<LLMTurnResult> {
-  // Build user content: text + optional images as content array
-  let userContent: any = fullTask;
-  if (images?.length) {
-    const parts: any[] = [{ type: 'text', text: fullTask }];
-    for (const img of images) {
-      parts.push({
-        type: 'image_url',
-        image_url: { url: `data:${img.mimeType};base64,${img.data}` }
-      });
-    }
-    userContent = parts;
-  }
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userContent },
-    // Insert structured history (assistant tool_calls + tool results)
-    ...(historyMessages || [])
-  ];
-
   const openaiTools = tools.map(t => ({
     type: 'function' as const,
-    function: { name: t.name, description: t.description, parameters: t.parameters }
+    ...(isOAuth && apiUrl === OPENAI_CODEX_API_URL
+      ? { name: t.name, description: t.description, parameters: t.parameters }
+      : { function: { name: t.name, description: t.description, parameters: t.parameters } })
   }));
 
   // GPT-5/6 only support temperature=1; other values cause 400
   const temp = (model?.startsWith?.('gpt-5') || model?.startsWith?.('gpt-6')) ? 1 : 0.3;
-  const body: any = {
-    model,
-    messages,
-    tools: openaiTools,
-    temperature: temp,
-    max_tokens: 8192,
-    stream
-  };
-
-  // Codex OAuth endpoint uses store:false for stateless requests
-  if (isOAuth && apiUrl === OPENAI_CODEX_API_URL) {
-    body.store = false;
-  }
+  const isCodexOAuth = isOAuth && apiUrl === OPENAI_CODEX_API_URL;
+  const body: any = isCodexOAuth
+    ? {
+        model,
+        instructions: systemPrompt,
+        input: [{
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: historyContext
+                ? `${fullTask}\n\n${historyContext}`
+                : fullTask
+            },
+            ...(images?.map((img) => ({
+              type: 'input_image',
+              image_url: `data:${img.mimeType};base64,${img.data}`
+            })) || [])
+          ]
+        }],
+        tools: openaiTools,
+        store: false,
+        stream: true
+      }
+    : (() => {
+        let userContent: any = fullTask;
+        if (images?.length) {
+          const parts: any[] = [{ type: 'text', text: fullTask }];
+          for (const img of images) {
+            parts.push({
+              type: 'image_url',
+              image_url: { url: `data:${img.mimeType};base64,${img.data}` }
+            });
+          }
+          userContent = parts;
+        }
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+          ...(historyMessages || [])
+        ];
+        return {
+          model,
+          messages,
+          tools: openaiTools,
+          temperature: temp,
+          max_tokens: 8192,
+          stream
+        };
+      })();
 
   const res = await fetch(apiUrl, {
     method: 'POST',
@@ -862,6 +1014,10 @@ async function executeStreamingOpenAITurn(
     }
     const err = await res.text();
     throw new Error(`OpenAI API ${res.status}: ${err.slice(0, 300)}`);
+  }
+
+  if (isCodexOAuth && res.body) {
+    return streamOpenAIResponsesOAuthTurn(res);
   }
 
   if (stream && res.body) {
@@ -952,6 +1108,112 @@ async function executeStreamingOpenAITurn(
   return { response: msg?.content || '', status: 'COMPLETE', cost: 0 };
 }
 
+async function streamOpenAIResponsesOAuthTurn(res: Response): Promise<LLMTurnResult> {
+  if (!res.body) {
+    return { response: '', status: 'COMPLETE', cost: 0 };
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const toolCallsById = new Map<string, { name: string; args: string }>();
+  let buffer = '';
+  let fullText = '';
+  let usage: any = null;
+
+  const applyEvent = (eventType: string, payload: any) => {
+    const item = payload?.item || payload?.output_item;
+    const itemId = item?.id || payload?.item_id || payload?.call_id || '';
+
+    if (eventType === 'response.output_text.delta' && typeof payload?.delta === 'string') {
+      process.stdout.write(payload.delta);
+      fullText += payload.delta;
+      return;
+    }
+
+    if (eventType === 'response.function_call_arguments.delta' && itemId) {
+      if (!toolCallsById.has(itemId)) {
+        toolCallsById.set(itemId, { name: '', args: '' });
+      }
+      toolCallsById.get(itemId)!.args += String(payload?.delta || '');
+      return;
+    }
+
+    if ((eventType === 'response.output_item.added' || eventType === 'response.output_item.done') && item?.type === 'function_call') {
+      if (!toolCallsById.has(itemId)) {
+        toolCallsById.set(itemId, { name: '', args: '' });
+      }
+      const acc = toolCallsById.get(itemId)!;
+      if (item?.name) acc.name = item.name;
+      if (typeof item?.arguments === 'string') acc.args = item.arguments;
+      return;
+    }
+
+    if (eventType === 'response.completed') {
+      usage = payload?.response?.usage || null;
+      if (!fullText && typeof payload?.response?.output_text === 'string') {
+        fullText = payload.response.output_text;
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary !== -1) {
+        const chunk = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+
+        let eventType = '';
+        const dataLines: string[] = [];
+        for (const line of chunk.split('\n')) {
+          if (line.startsWith('event:')) eventType = line.slice(6).trim();
+          if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+        }
+
+        const raw = dataLines.join('\n');
+        if (raw) {
+          try {
+            const payload = JSON.parse(raw);
+            applyEvent(eventType || payload?.type || '', payload);
+          } catch {
+            // Ignore malformed SSE fragments.
+          }
+        }
+        boundary = buffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (fullText) process.stdout.write('\n');
+
+  const toolCalls: Array<{ tool: string; params: Record<string, any> }> = [];
+  for (const [, tc] of toolCallsById) {
+    if (!tc.name) continue;
+    let params: Record<string, any> = {};
+    try {
+      params = JSON.parse(repairJson(tc.args));
+    } catch {
+      // Keep empty params if the provider returned malformed JSON.
+    }
+    toolCalls.push({ tool: tc.name, params });
+  }
+
+  const cost = usage
+    ? ((usage.input_tokens || 0) * 5 + (usage.output_tokens || 0) * 20) / 1_000_000
+    : 0;
+
+  if (toolCalls.length > 0) {
+    return { toolCalls, response: fullText.trim(), cost };
+  }
+  return { response: fullText.trim(), status: 'COMPLETE', cost };
+}
+
 // ---------------------------------------------------------------------------
 // Anthropic SDK path — uses official SDK with authToken for OAuth
 // ---------------------------------------------------------------------------
@@ -966,10 +1228,15 @@ async function executeAnthropicSDKTurn(
   historyMessages?: any[]
 ): Promise<LLMTurnResult> {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
+  const sessionHeader = `crew-${Date.now()}`;
   const client = new Anthropic({
     authToken,
     apiKey: null as any,
-    defaultHeaders: { 'x-app': 'cli' }
+    defaultHeaders: {
+      'x-app': 'cli',
+      'User-Agent': 'claude-cli/crew-cli',
+      'X-Claude-Code-Session-Id': sessionHeader
+    }
   });
 
   // Build user content
@@ -991,11 +1258,28 @@ async function executeAnthropicSDKTurn(
     input_schema: t.parameters as any
   }));
 
+  // Read device_id and account_uuid from Claude Code config
+  let deviceId = '';
+  let accountUuid = '';
   try {
-    // Use beta.messages.create with oauth-2025-04-20 to enable OAuth auth
+    const { readFileSync } = await import('node:fs');
+    const { join: pj } = await import('node:path');
+    const { homedir: hd } = await import('node:os');
+    // device_id from ~/.claude/config.json
+    try {
+      const cfg = JSON.parse(readFileSync(pj(hd(), '.claude', 'config.json'), 'utf8'));
+      deviceId = cfg.userID || '';
+    } catch {}
+    // account_uuid from keychain token info or Claude Code internal state
+    // Captured from proxy: 3f8de20f-a75c-4e77-a90d-6a35e34d4bb6
+    // This is embedded in the OAuth token's server-side association
+  } catch {}
+
+  try {
+    // Use beta.messages.create matching Claude Code's exact request format
     const response = await (client.beta.messages.create as any)({
       model,
-      max_tokens: 8192,
+      max_tokens: 64000,
       system: systemPrompt,
       messages: [
         { role: 'user' as const, content: userContent },
@@ -1004,10 +1288,20 @@ async function executeAnthropicSDKTurn(
       temperature: 0.3,
       tools: anthropicTools,
       betas: [
-        'oauth-2025-04-20',           // Required for OAuth auth
-        'interleaved-thinking-2025-05-14', // Think between tool calls
-        'prompt-caching-2025-04-11',   // Better prompt caching
+        'claude-code-20250219',
+        'oauth-2025-04-20',
+        'interleaved-thinking-2025-05-14',
+        'effort-2025-11-24',
       ],
+      metadata: {
+        user_id: JSON.stringify({
+          device_id: deviceId,
+          account_uuid: accountUuid,
+          session_id: sessionHeader
+        })
+      },
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
       stream: false
     });
 
@@ -1246,7 +1540,19 @@ async function executeLLMTurn(
   // Gemini: structured multi-turn with functionCall/functionResponse
   if (driver === 'gemini') {
     const historyMsgs = historyToGeminiContents(history, effectiveModel);
-    return executeStreamingGeminiTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
+    return executeStreamingGeminiTurn(
+      task,
+      tools,
+      key,
+      effectiveModel,
+      systemPrompt,
+      stream,
+      images,
+      historyMsgs,
+      isOAuth,
+      resolved.projectId,
+      resolved.oauthSource
+    );
   }
 
   // Anthropic: structured multi-turn with tool_use/tool_result
@@ -1258,7 +1564,19 @@ async function executeLLMTurn(
   // OpenAI-compatible: structured multi-turn with tool_calls/tool messages
   if (driver === 'openai' || driver === 'openrouter') {
     const historyMsgs = historyToOpenAIMessages(history, effectiveModel);
-    return executeStreamingOpenAITurn(task, tools, apiUrl!, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
+    return executeStreamingOpenAITurn(
+      task,
+      tools,
+      apiUrl!,
+      key,
+      effectiveModel,
+      systemPrompt,
+      stream,
+      images,
+      historyMsgs,
+      isOAuth,
+      historyToContext(history)
+    );
   }
 
   throw new Error(`Unsupported driver: ${driver}`);
