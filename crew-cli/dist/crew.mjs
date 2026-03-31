@@ -5762,6 +5762,19 @@ async function resolveProvider(modelOverride, preferTier) {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || "").trim().toLowerCase();
   if (process.env.CREW_NO_OAUTH !== "true") {
     try {
+      const oauth = await getOAuthToken();
+      if (oauth?.accessToken) {
+        return {
+          key: oauth.accessToken,
+          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-haiku-4-5-20251001"),
+          driver: "anthropic",
+          id: `anthropic-oauth-${oauth.subscriptionType || "unknown"}`,
+          isOAuth: true
+        };
+      }
+    } catch {
+    }
+    try {
       const oauth = await getOpenAIOAuthToken();
       if (oauth?.accessToken) {
         return {
@@ -6333,14 +6346,19 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
     tools: anthropicTools,
     stream
   };
-  const authHeaders = { "x-api-key": apiKey };
+  const headers = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01"
+  };
+  if (isOAuth) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["anthropic-beta"] = "oauth-2025-04-20";
+  } else {
+    headers["x-api-key"] = apiKey;
+  }
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      "anthropic-version": "2023-06-01"
-    },
+    headers,
     signal: AbortSignal.timeout(12e4),
     body: JSON.stringify(body)
   });

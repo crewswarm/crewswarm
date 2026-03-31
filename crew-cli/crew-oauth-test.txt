@@ -1,1 +1,1 @@
-OAuth works!
+Claude OAuth works!

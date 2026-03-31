@@ -1260,51 +1260,58 @@ async function executeAnthropicSDKTurn(
     input_schema: t.parameters as any
   }));
 
-  // Read device_id and account_uuid from Claude Code config
+  // Read device_id from Claude Code's session data for metadata
   let deviceId = '';
-  let accountUuid = '';
   try {
-    const { readFileSync } = await import('node:fs');
+    const { readdirSync, readFileSync } = await import('node:fs');
     const { join: pj } = await import('node:path');
     const { homedir: hd } = await import('node:os');
-    // device_id from ~/.claude/config.json
-    try {
-      const cfg = JSON.parse(readFileSync(pj(hd(), '.claude', 'config.json'), 'utf8'));
-      deviceId = cfg.userID || '';
-    } catch {}
-    // account_uuid from keychain token info or Claude Code internal state
-    // Captured from proxy: 3f8de20f-a75c-4e77-a90d-6a35e34d4bb6
-    // This is embedded in the OAuth token's server-side association
+    // Search session files for userID (Claude Code stores it in session JSONL)
+    const projDir = pj(hd(), '.claude', 'projects');
+    if (readdirSync(projDir).length > 0) {
+      const sessionDirs = readdirSync(projDir).slice(0, 5);
+      for (const sd of sessionDirs) {
+        try {
+          const files = readdirSync(pj(projDir, sd)).filter((f: string) => f.endsWith('.jsonl'));
+          for (const f of files.slice(0, 3)) {
+            const content = readFileSync(pj(projDir, sd, f), 'utf8');
+            const match = content.match(/"userID"\s*:\s*"([a-f0-9]{64})"/);
+            if (match) { deviceId = match[1]; break; }
+          }
+          if (deviceId) break;
+        } catch {}
+      }
+    }
   } catch {}
 
   try {
-    // Use beta.messages.create matching Claude Code's exact request format
+    // Use beta.messages.create with OAuth + thinking (proven working with Haiku)
     const response = await (client.beta.messages.create as any)({
       model,
-      max_tokens: 64000,
+      max_tokens: 16000,
       system: systemPrompt,
       messages: [
         { role: 'user' as const, content: userContent },
         ...(historyMessages || [])
       ],
-      temperature: 0.3,
+      temperature: 1, // Required when thinking is enabled
       tools: anthropicTools,
       betas: [
-        'claude-code-20250219',
-        'oauth-2025-04-20',
-        'interleaved-thinking-2025-05-14',
-        'effort-2025-11-24',
+        'oauth-2025-04-20',              // Required for OAuth auth
+        'interleaved-thinking-2025-05-14', // Think between tool calls
+        'context-management-2025-06-27',   // Preserves thinking across compaction
+        'redact-thinking-2026-02-12',      // Hides thinking from output (saves tokens)
       ],
-      metadata: {
-        user_id: JSON.stringify({
-          device_id: deviceId,
-          account_uuid: accountUuid,
-          session_id: sessionHeader
-        })
-      },
-      thinking: { type: 'adaptive' },
-      output_config: { effort: 'medium' },
-      stream: true
+      thinking: { type: 'enabled', budget_tokens: 4096 },
+      ...(deviceId ? {
+        metadata: {
+          user_id: JSON.stringify({
+            device_id: deviceId,
+            account_uuid: '',
+            session_id: sessionHeader
+          })
+        }
+      } : {}),
     });
 
     const usage = (response as any).usage || {} as any;
@@ -1382,16 +1389,21 @@ async function executeStreamingAnthropicTurn(
     stream
   };
 
-  // API keys use x-api-key
-  const authHeaders: Record<string, string> = { 'x-api-key': apiKey };
+  // OAuth tokens use Bearer auth + beta header; API keys use x-api-key
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'anthropic-version': '2023-06-01'
+  };
+  if (isOAuth) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+    headers['anthropic-beta'] = 'oauth-2025-04-20';
+  } else {
+    headers['x-api-key'] = apiKey;
+  }
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders,
-      'anthropic-version': '2023-06-01'
-    },
+    headers,
     signal: AbortSignal.timeout(120000),
     body: JSON.stringify(body)
   });
