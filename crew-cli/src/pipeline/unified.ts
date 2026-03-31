@@ -2298,10 +2298,8 @@ After completing your work, return a JSON summary:
    * Can be overridden in tests to use a mock executor.
    */
   async runWorker(prompt: string, options: { model?: string; maxTurns?: number; verbose?: boolean; priorDiscoveredFiles?: string[] }): Promise<{ output: string; cost?: number; turns?: number; discoveredFiles?: string[] }> {
-    if (this.executor && typeof this.executor.execute === 'function') {
-      const result = await this.executor.execute(prompt, options);
-      return { output: String(result.result || ''), cost: result.costUsd || 0, turns: 1 };
-    }
+    // Always use the agentic executor with full tool suite (write_file, replace, etc.)
+    // The LocalExecutor is a single-turn LLM call with no tools — workers need tools to write files.
     return runAgenticWorker(prompt, this.sandbox, options);
   }
 
