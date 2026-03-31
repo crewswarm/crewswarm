@@ -1640,22 +1640,26 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
       async resolveProviderAuth(provider) {
         switch (provider) {
           case "openai": {
+            if (process.env.CREW_NO_OAUTH !== "true") {
+              const oauth = await getOpenAIOAuthToken();
+              if (oauth?.accessToken) {
+                return { token: oauth.accessToken, isOAuth: true, apiUrl: OPENAI_CODEX_API_URL };
+              }
+            }
             if (process.env.OPENAI_API_KEY) {
               return { token: process.env.OPENAI_API_KEY, isOAuth: false, apiUrl: "https://api.openai.com/v1/chat/completions" };
-            }
-            const oauth = await getOpenAIOAuthToken();
-            if (oauth?.accessToken) {
-              return { token: oauth.accessToken, isOAuth: true, apiUrl: OPENAI_CODEX_API_URL };
             }
             return null;
           }
           case "anthropic": {
+            if (process.env.CREW_NO_OAUTH !== "true") {
+              const oauth = await getOAuthToken();
+              if (oauth?.accessToken) {
+                return { token: oauth.accessToken, isOAuth: true };
+              }
+            }
             if (process.env.ANTHROPIC_API_KEY) {
               return { token: process.env.ANTHROPIC_API_KEY, isOAuth: false };
-            }
-            const oauth = await getOAuthToken();
-            if (oauth?.accessToken) {
-              return { token: oauth.accessToken, isOAuth: true };
             }
             return null;
           }
@@ -1723,7 +1727,9 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
         if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[Executor] Model: ${model}, Providers: [${providers.join(", ")}]`);
         for (const provider of providers) {
           try {
-            console.log(`[Executor] Trying provider: ${provider}`);
+            const auth = await this.resolveProviderAuth(provider);
+            const authBadge = auth?.isOAuth ? "OAuth" : "API";
+            console.error(`\x1B[2m[Executor] ${provider} (${authBadge})\x1B[0m`);
             const result2 = await this.executeWithProvider(provider, task, model, options, systemPrompt);
             if (result2) {
               return {
@@ -2277,7 +2283,7 @@ User task: ${task}` }]
         const model = options.model || "claude-3-5-sonnet-20241022";
         try {
           if (auth.isOAuth) {
-            const oauthModel = options.model || "claude-opus-4-6";
+            const oauthModel = options.model || String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-haiku-4-5-20251001");
             const response2 = await fetch("https://api.anthropic.com/v1/messages?beta=true", {
               method: "POST",
               headers: {
@@ -2431,7 +2437,7 @@ User task: ${task}` }]
           if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log("[OpenAI] No API key found");
           return null;
         }
-        const model = options.model || "gpt-4o";
+        const model = options.model || (auth.isOAuth ? String(process.env.CREW_OAUTH_OPENAI_MODEL || "gpt-5.4") : "gpt-4o");
         if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") console.log(`[OpenAI] Starting API call (model: ${model})...`);
         try {
           const maxTokensParam = model.startsWith("gpt-5") || model.startsWith("gpt-6") ? "max_completion_tokens" : "max_tokens";

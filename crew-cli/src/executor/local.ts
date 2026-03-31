@@ -111,22 +111,28 @@ export class LocalExecutor {
   private async resolveProviderAuth(provider: string): Promise<ProviderAuth | null> {
     switch (provider) {
       case 'openai': {
+        // OAuth first (free via ChatGPT subscription), API key fallback
+        if (process.env.CREW_NO_OAUTH !== 'true') {
+          const oauth = await getOpenAIOAuthToken();
+          if (oauth?.accessToken) {
+            return { token: oauth.accessToken, isOAuth: true, apiUrl: OPENAI_CODEX_API_URL };
+          }
+        }
         if (process.env.OPENAI_API_KEY) {
           return { token: process.env.OPENAI_API_KEY, isOAuth: false, apiUrl: 'https://api.openai.com/v1/chat/completions' };
-        }
-        const oauth = await getOpenAIOAuthToken();
-        if (oauth?.accessToken) {
-          return { token: oauth.accessToken, isOAuth: true, apiUrl: OPENAI_CODEX_API_URL };
         }
         return null;
       }
       case 'anthropic': {
+        // OAuth first (free via Claude Max subscription), API key fallback
+        if (process.env.CREW_NO_OAUTH !== 'true') {
+          const oauth = await getOAuthToken();
+          if (oauth?.accessToken) {
+            return { token: oauth.accessToken, isOAuth: true };
+          }
+        }
         if (process.env.ANTHROPIC_API_KEY) {
           return { token: process.env.ANTHROPIC_API_KEY, isOAuth: false };
-        }
-        const oauth = await getOAuthToken();
-        if (oauth?.accessToken) {
-          return { token: oauth.accessToken, isOAuth: true };
         }
         return null;
       }
@@ -206,7 +212,9 @@ export class LocalExecutor {
     
     for (const provider of providers) {
       try {
-        console.log(`[Executor] Trying provider: ${provider}`);
+        const auth = await this.resolveProviderAuth(provider);
+        const authBadge = auth?.isOAuth ? 'OAuth' : 'API';
+        console.error(`\x1b[2m[Executor] ${provider} (${authBadge})\x1b[0m`);
         const result = await this.executeWithProvider(provider, task, model, options, systemPrompt);
         if (result) {
           return {
@@ -874,7 +882,7 @@ export class LocalExecutor {
     
     try {
       if (auth.isOAuth) {
-        const oauthModel = options.model || 'claude-opus-4-6';
+        const oauthModel = options.model || String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-haiku-4-5-20251001');
         const response = await fetch('https://api.anthropic.com/v1/messages?beta=true', {
           method: 'POST',
           headers: {
@@ -1048,7 +1056,7 @@ export class LocalExecutor {
       return null;
     }
 
-    const model = options.model || 'gpt-4o';
+    const model = options.model || (auth.isOAuth ? String(process.env.CREW_OAUTH_OPENAI_MODEL || 'gpt-5.4') : 'gpt-4o');
     
     if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') console.log(`[OpenAI] Starting API call (model: ${model})...`);
 
