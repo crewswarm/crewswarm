@@ -1,7 +1,6 @@
 # crew-cli Architecture Overhaul Plan
 
-## Status: Phase 0-1a done, Phase 0 next priority
-## Priority: Ship in order, each builds on the previous
+## Status: 7/10 phases complete. Phase 0 (OAuth) is next.
 
 ---
 
@@ -35,6 +34,7 @@
 - OAuth client: `/tmp/claude-src/src/services/oauth/client.ts`
 - Token refresh: `/tmp/claude-src/src/services/oauth/client.ts` → `refreshOAuthToken()`
 - Keychain service name: `"Claude Code" + "" + "-credentials"` = `"Claude Code-credentials"`
+- TS source: extract from `~/Downloads/src.zip` to `/tmp/claude-src/`
 
 ---
 
@@ -44,32 +44,24 @@
 - `write_file` rejects existing files → forces `replace`
 - `replace`/`edit` requires prior `read_file` call
 - `append_file` requires prior `read_file` for existing files
-- Files: `crew-cli/src/tools/gemini/crew-adapter.ts`
 
-### 1b. Trust-gated tool filtering (TODO)
-- Instead of telling the LLM "don't use write_file" → REMOVE it from the tool list
-- Create 3 constraint levels:
-  - `read-only`: read_file, grep, glob, list_directory (for planners/reviewers)
-  - `edit`: above + replace, append_file, run_shell_command (for coders)
-  - `full`: above + write_file, git, spawn_agent (for scaffolders)
-- Worker type determines level: `executor-code` → edit, `executor-scaffold` → full
-- File: `crew-cli/src/tools/gemini/crew-adapter.ts` → new `getToolDeclarationsForLevel(level)` method
-- Wire into `runAgenticWorker()` in `crew-cli/src/executor/agentic-executor.ts`
+### 1b. Trust-gated tool filtering ✅ DONE
+- 3 constraint levels: `read-only`, `edit`, `full`
+- Tools REMOVED from declaration list (LLM can't call what doesn't exist)
+- Hard enforcement at `executeTool()` even if LLM somehow calls a removed tool
+- `constraintLevelForPersona()` auto-maps worker types to levels
+- Wired through `runAgenticWorker()` → `GeminiToolAdapter` → pipeline
 
 ---
 
-## Phase 2: Project Understanding
+## Phase 2: Project Understanding (PARTIAL)
 
-### 2a. Immutable ProjectContext (TODO)
-- Build frozen project snapshot at session start:
-  - File tree (name, type, size, last modified)
-  - Tech stack detection (static HTML, Node.js, TypeScript, Python, etc.)
-  - Key config files (package.json deps, tsconfig, .gitignore patterns)
-  - Import graph (which files import which — for understanding coupling)
-- Inject into EVERY system prompt (L1 router, L2 planner, L3 workers)
-- Workers stop creating Node.js modules for browser projects
-- File: new `crew-cli/src/context/project-context.ts`
-- ~200 lines. Build once, freeze, reuse.
+### 2a. Immutable ProjectContext ✅ DONE
+- Frozen snapshot at session start: file tree, tech stack, key configs
+- 10 tech stacks detected (static-html, node-js, node-ts, python, go, rust, java, ruby, php, unknown)
+- Auto-generates constraints (e.g., "This is static HTML — do NOT use require/import")
+- Injected into both `l3ExecuteSingle` and `l3ExecuteParallel` worker prompts
+- Singleton-cached — built once per session
 
 ### 2b. Codebase RAG improvements (TODO)
 - Already exists at `crew-cli/src/context/codebase-rag.ts`
@@ -79,14 +71,13 @@
 
 ---
 
-## Phase 3: Execution Quality
+## Phase 3: Execution Quality (PARTIAL)
 
-### 3a. Structured failure returns (TODO)
-- Current: tool errors return string `{ success: false, error: "..." }`
-- New: return `{ success: false, error: "...", handled: false, recovery: "call read_file first" }`
-- Execution loop checks `handled` — if false, forces worker to address it
-- Prevents workers from ignoring errors and claiming success
-- File: `crew-cli/src/tools/gemini/crew-adapter.ts` (ToolResult type)
+### 3a. Structured failure returns ✅ DONE
+- `ToolResult` now has `handled` (boolean) and `recovery` (string hint)
+- Guard errors (read-before-edit, write-existing, constraint block) return `handled: false` + recovery hint
+- `executeToolWithRetry` propagates non-retryable errors with `[RECOVERY HINT]` for the LLM
+- QA gate checks for unhandled errors in transcript
 
 ### 3b. Edit strategy layering (TODO)
 - Already partially exists in `crew-cli/src/tools/gemini/edit.ts`
@@ -97,45 +88,34 @@
 
 ---
 
-## Phase 4: Execution Tracking
+## Phase 4: Execution Tracking ✅ DONE
 
-### 4a. Execution transcript/registry (TODO)
-- Append-only log of every tool call per task:
-  ```
-  { ts, toolName, params, success, output_preview, duration_ms }
-  ```
-- Immutable — workers can't modify after completion
-- QA gate reads transcript to verify work
-- File: new `crew-cli/src/execution/transcript.ts`
-- Wire into `executeTool()` in agentic-executor.ts
+### 4a. Execution transcript/registry ✅ DONE
+- New `ExecutionTranscript` class — append-only, immutable after `freeze()`
+- Every tool call logged: `{ts, toolName, params, success, outputPreview, durationMs, error, handled, recovery}`
+- Computed properties: `filesRead`, `filesEdited`, `filesWritten`, `unreadEdits`, `failedShellCommands`
+- Returned on `AgenticExecutorResult` for QA consumption
 
-### 4b. Deterministic QA gate (TODO)
-- Current: LLM judges "did this work?" (unreliable)
-- New: mechanical checks against transcript:
-  - All required files read before edit? ✓/✗
-  - No file overwrites (only surgical edits)? ✓/✗
-  - Worker stayed within turn/token budget? ✓/✗
-  - Shell commands succeeded? ✓/✗
-  - Files actually changed on disk? ✓/✗
-- LLM QA only runs if mechanical checks pass
-- File: update `crew-cli/src/pipeline/unified.ts` → `passesDeterministicSmallTaskGate()`
+### 4b. Deterministic QA gate ✅ DONE
+- 7 mechanical checks before LLM QA runs:
+  1. read-before-edit (all edited files were read first)
+  2. no-overwrites (write_file + edit on same file)
+  3. shell-success (no failed shell commands)
+  4. within-budget (tool call count vs turn budget)
+  5. files-changed (actually produced changes)
+  6. no-unhandled-errors (constraint blocks, etc.)
+  7. no-stuck-loops (same failing tool call >= 3 times)
+- Integrated into pipeline — runs on every execution, flags escalation
 
 ---
 
-## Phase 5: Pipeline Architecture
+## Phase 5: Pipeline Architecture (PARTIAL)
 
-### 5a. Bootstrap graph (TODO)
-- Strict ordered stages replacing the loose pipeline:
-  1. **Scan**: build ProjectContext
-  2. **Route**: L1 classify (with project context)
-  3. **Plan**: L2 decompose (with project context + codebase RAG)
-  4. **Validate plan**: check work units are well-formed
-  5. **Execute**: L3 workers (with tools filtered by trust level)
-  6. **Collect evidence**: build transcript + file diffs
-  7. **QA validate**: deterministic checks + optional LLM review
-  8. **Checkpoint**: git commit if changes made
-- Each stage MUST complete before next starts
-- File: refactor `crew-cli/src/pipeline/unified.ts`
+### 5a. Bootstrap graph ✅ DONE
+- Expanded `PipelineRunState` phases: init → scan → route → plan → validate-plan → execute → evidence → validate → qa → checkpoint → complete
+- Allows forward-skipping (direct-answer skips execute..checkpoint)
+- Phase timing tracked with `durationMs` per entry
+- Pipeline executes: scan (ProjectContext) → plan → execute → transcript QA → validate → checkpoint → complete
 
 ### 5b. Token compaction (TODO)
 - Track context usage per conversation
@@ -146,23 +126,32 @@
 
 ---
 
+## Remaining TODO (priority order)
+
+| # | Phase | What | Effort | Impact |
+|---|-------|------|--------|--------|
+| 1 | 0a | Claude OAuth from keychain | 2-3 hrs | Free Opus 4.6 for all crew-cli ops |
+| 2 | 0b | Codex/OpenCode OAuth tokens | 1-2 hrs | Free GPT-5.4 for crew-cli |
+| 3 | 0c | Provider fallback chain | 1 hr | OAuth → API key → free model |
+| 4 | 3b | Edit strategy layering | 1-2 hrs | Better edit success rate |
+| 5 | 2b | Codebase RAG for parallel workers | 1 hr | Better context per worker |
+| 6 | 5b | Token compaction | 1 hr | Handles long sessions |
+
+---
+
 ## Reference Material
 
-- Claude Code TS source: `/tmp/claude-src/src/` (1,884 files, 33MB)
+- Claude Code TS source: extract `~/Downloads/src.zip` to `/tmp/claude-src/` (1,884 files, 33MB)
   - Tool system: `src/Tool.ts`, `src/tools/`
+  - OAuth: `src/utils/auth.ts`, `src/services/oauth/`, `src/utils/secureStorage/`
   - Context: `src/context.ts`
   - Coordinator: `src/coordinator/`
   - Bootstrap: `src/bootstrap/`
   - Main: `src/main.tsx` (803KB)
-- Python rewrite: `https://github.com/instructkr/claw-code`
+- Python rewrite: `https://github.com/instructkr/claw-code` (35K stars)
 - Architecture analysis: saved in memory `project_crew_cli_overhaul.md`
 
 ---
-
-## Quick Wins (can do in 30 min each)
-1. Trust-gated tool filtering (Phase 1b) — highest impact per effort
-2. Deterministic QA gate (Phase 4b) — stops false "approved" results
-3. ProjectContext injection (Phase 2a) — stops wrong-tech-stack errors
 
 ## Commands to test after each change
 ```bash
@@ -173,7 +162,14 @@ cd crew-cli && npm run build
 NODE_DISABLE_COMPILE_CACHE=1 node bin/crew.js chat "add a hello world section to index.html" --apply --project /Users/jeffhobbs/Chuck
 
 # Verify tools used
-cat /Users/jeffhobbs/Chuck/.crew/pipeline-runs/pipeline-*.jsonl | python3 -c "import sys,json; [print(json.loads(l).get('phase',''),json.loads(l).get('executionResults',{}).get('results',[{}])[0].get('toolsUsed',[])) for l in sys.stdin if 'validate' in json.loads(l).get('phase','')]"
+cat /Users/jeffhobbs/Chuck/.crew/pipeline-runs/pipeline-*.jsonl | python3 -c "
+import sys,json
+for l in sys.stdin:
+    d = json.loads(l)
+    if 'validate' in d.get('phase',''):
+        r = d.get('executionResults',{}).get('results',[{}])[0]
+        print(f'tools={r.get(\"toolsUsed\",[])} files={r.get(\"filesChanged\",[])} turns={r.get(\"turns\",0)}')
+"
 
 # Check no file overwrites
 cd /Users/jeffhobbs/Chuck && git diff --stat
