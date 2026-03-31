@@ -9773,11 +9773,13 @@ You have full file system access with tools: list_directory, read_file, write_fi
 
 Analyze this request and decide:
 
-1. DIRECT-ANSWER: ONLY for greetings ("hi", "hello") or meta-questions about your identity/capabilities
+1. DIRECT-ANSWER: ONLY for pure conversational greetings ("hi", "hello", "how are you") or questions about YOUR identity/capabilities ("what can you do", "who are you")
    \u2192 Provide immediate text response
-   \u2192 Do NOT use this for any question about files, code, project state, or folder contents \u2014 use EXECUTE-DIRECT instead
+   \u2192 NEVER use this if the request implies ANY action, creation, modification, building, designing, or doing
+   \u2192 NEVER use this for questions about files, code, project state, or folder contents
+   \u2192 When in doubt, use EXECUTE-DIRECT instead
 
-2. EXECUTE-DIRECT: Simple task or question that can be answered by reading files, listing directories, or a single focused action
+2. EXECUTE-DIRECT: Simple task, question about project, or single-file action
    \u2192 Questions about files, folder contents, code, project structure \u2192 use tools to answer
    \u2192 Single file create/edit, small bug fix, one-liner change
    \u2192 Bypasses L2 planning overhead entirely
@@ -9792,9 +9794,13 @@ Analyze this request and decide:
    \u2192 If QA fails, expensive fixer runs, then QA again
    \u2192 Use dual-L2 planner for work graph
 
+**CRITICAL: These action words ALWAYS require EXECUTE-DIRECT or EXECUTE-PARALLEL (NEVER DIRECT-ANSWER):**
+add, create, build, design, make, write, edit, update, modify, change, fix, implement, refactor, remove, delete, move, rename, install, configure, set up, deploy, generate, scaffold, do, put, insert, append
+
 **Choose EXECUTE-DIRECT for:**
 - Any question about files, folders, code, or project state (use tools to look)
 - Creating or editing a single file
+- Adding content to an existing file
 - Small, focused bug fixes
 - Simple code generation with obvious scope
 
