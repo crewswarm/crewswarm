@@ -2352,11 +2352,11 @@ footer {
   font-weight: 600;
 }
 
-.lt-agent.agent-pm { color: #58a6ff; }
-.lt-agent.agent-coder { color: #a371f7; }
-.lt-agent.agent-coder-back { color: #d2a8ff; }
-.lt-agent.agent-coder-front { color: #f778ba; }
-.lt-agent.agent-qa { color: #ffa657; }
+.lt-agent.agent-pm { color: #a371f7; }
+.lt-agent.agent-coder { color: #7ee787; }
+.lt-agent.agent-coder-back { color: #7ee787; }
+.lt-agent.agent-coder-front { color: #7ee787; }
+.lt-agent.agent-qa { color: #58a6ff; }
 
 .lt-check {
   color: #3fb950;

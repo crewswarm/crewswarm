@@ -270,23 +270,25 @@
       const PHASES = ['MVP', 'Phase 1', 'Phase 2'];
 
       function makeLines(requirement) {
-        const req = requirement || 'Build a todo API with tests';
+        const req = requirement || 'Build a health widget for the dashboard';
         return [
-          { text: '<span class="lt-dim">▸ Sonar Pro researching best practices...</span>', delay: 900 },
-          { text: '<span class="lt-dim">▸ ROADMAP.md — 6 tasks queued</span>', delay: 700 },
-          { text: '', delay: 300 },
-          { text: '<span class="lt-phase-tag">MVP</span><span class="lt-agent">crew-pm</span> → planning tasks...', delay: 800 },
-          { text: '<span class="lt-phase-tag">MVP</span><span class="lt-agent">crew-coder-back</span> <span class="lt-task">server.js — Express, /health, CRUD routes</span> <span class="lt-time">11.4s</span>', delay: 1600 },
-          { text: '<span class="lt-phase-tag">MVP</span><span class="lt-agent">crew-qa</span> <span class="lt-task">PASS — endpoints valid, no lint errors</span> <span class="lt-time">6.2s</span>', delay: 1000 },
-          { text: '', delay: 300 },
-          { text: '<span class="lt-phase-tag">Phase 1</span><span class="lt-agent">crew-coder-back</span> <span class="lt-task">server.test.js — 14 tests, all CRUD paths</span> <span class="lt-time">18.7s</span>', delay: 1800 },
-          { text: '<span class="lt-phase-tag">Phase 1</span><span class="lt-agent">crew-qa</span> <span class="lt-task">PASS — 14/14 tests green</span> <span class="lt-time">8.1s</span>', delay: 1100 },
           { text: '', delay: 400 },
-          { text: '<span class="lt-phase-tag">Phase 2</span><span class="lt-agent">crew-coder-front</span> <span class="lt-task">index.html — UI scaffold</span> <span class="lt-time">22.3s</span>', delay: 2000 },
-          { text: '<span class="lt-phase-tag">Phase 2</span><span class="lt-agent">crew-fixer</span> <span class="lt-task">Fixed: missing CORS headers on POST route</span> <span class="lt-time">7.4s</span>', delay: 1200 },
+          { text: '<span class="lt-agent agent-pm">[crew-pm]</span> Planning build...', delay: 800 },
+          { text: '<span class="lt-dim">  Phase 1: Dashboard widget component</span>', delay: 500 },
+          { text: '<span class="lt-dim">  Phase 2: Health API endpoint</span>', delay: 400 },
+          { text: '<span class="lt-dim">  Phase 3: QA + integration tests</span>', delay: 400 },
+          { text: '', delay: 300 },
+          { text: '<span class="lt-agent agent-pm">[crew-pm]</span> Dispatching wave 1 <span class="lt-dim">(3 agents parallel)</span>...', delay: 700 },
+          { text: '', delay: 300 },
+          { text: '<span class="lt-agent agent-coder">[crew-coder]</span>       <span class="lt-task">src/widgets/health-widget.js</span>  <span class="lt-success">done</span> <span class="lt-time">12s</span>', delay: 1200 },
+          { text: '<span class="lt-agent agent-coder-back">[crew-coder-back]</span>  <span class="lt-task">src/api/health-endpoint.js</span>    <span class="lt-success">done</span> <span class="lt-time">8s</span>', delay: 800 },
+          { text: '<span class="lt-agent agent-coder-front">[crew-coder-front]</span> <span class="lt-task">src/widgets/health-widget.css</span> <span class="lt-success">done</span> <span class="lt-time">6s</span>', delay: 600 },
           { text: '', delay: 400 },
-          { text: '<span class="lt-success">✓ Build complete — 3 phases, 6 tasks, 75.1s, 0 failures</span>', delay: 800 },
-          { text: '<span class="lt-dim">▸ Generating next roadmap items...</span><span class="lt-cursor-blink">█</span>', delay: 900 },
+          { text: '<span class="lt-agent agent-pm">[crew-pm]</span> Wave 1 complete. Dispatching wave 2...', delay: 700 },
+          { text: '', delay: 300 },
+          { text: '<span class="lt-agent agent-qa">[crew-qa]</span>          <span class="lt-task">4 tests passed, 0 failed</span>       <span class="lt-success">done</span> <span class="lt-time">15s</span>', delay: 1500 },
+          { text: '', delay: 400 },
+          { text: '<span class="lt-success">✓ Build complete. 4 files created, all tests passing.</span><span class="lt-cursor-blink">█</span>', delay: 600 },
         ];
       }
 
@@ -347,7 +349,7 @@
         const input = document.getElementById('hero-input');
         const val = input ? input.value.trim() : '';
         if (heroTimeout) clearTimeout(heroTimeout);
-        runHeroLines(makeLines(val || 'Build a todo API with tests'));
+        runHeroLines(makeLines(val || 'Build a health widget for the dashboard'));
       }
 
       document.addEventListener('DOMContentLoaded', function () {
