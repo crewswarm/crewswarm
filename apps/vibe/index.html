@@ -3132,38 +3132,10 @@
 
       if (!overlay || !box || !renderRoot || !previewButton) return;
 
-      const sampleChange = {
-        path: "src/components/AgentPanel.jsx",
-        label: "Sample agent patch",
-        oldContent: [
-          "export function AgentPanel({ agents }) {",
-          "  return (",
-          "    <section className=\"agent-panel\">",
-          "      <h2>Active Agents</h2>",
-          "      <ul>{agents.map((agent) => <li key={agent.id}>{agent.name}</li>)}</ul>",
-          "    </section>",
-          "  );",
-          "}",
-        ].join("\\n"),
-        newContent: [
-          "export function AgentPanel({ agents, status }) {",
-          "  return (",
-          "    <section className=\"agent-panel agent-panel--elevated\">",
-          "      <header className=\"agent-panel__header\">",
-          "        <h2>Active Agents</h2>",
-          "        <span className=\"agent-panel__status\">{status}</span>",
-          "      </header>",
-          "      <ul>{agents.map((agent) => <li key={agent.id}>{agent.name}</li>)}</ul>",
-          "    </section>",
-          "  );",
-          "}",
-        ].join("\\n"),
-      };
-
       const state = {
-        mode: "sample",
+        mode: "empty",
         activeView: "side-by-side",
-        currentChange: sampleChange,
+        currentChange: null,
         originalAcceptDiff: window.acceptDiff,
         originalRejectDiff: window.rejectDiff,
       };
@@ -3307,11 +3279,21 @@
             : sideBySideMarkup(rows);
       }
 
-      function openSampleDiff(change = sampleChange) {
-        state.mode = "sample";
+      function openDiffOverlay(change) {
+        if (!change) {
+          state.mode = "empty";
+          state.currentChange = null;
+          filePathEl.textContent = "";
+          badgeEl.textContent = "No changes to review";
+          renderRoot.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-3);font-size:14px;">No proposed changes yet. Run a coding engine to see diffs here.</div>';
+          overlay.classList.add("visible");
+          overlay.setAttribute("aria-hidden", "false");
+          return;
+        }
+        state.mode = "real";
         state.currentChange = change;
         filePathEl.textContent = change.path;
-        badgeEl.textContent = change.label || "Sample agent patch";
+        badgeEl.textContent = change.label || "Agent change preview";
         renderDiff(change);
         overlay.classList.add("visible");
         overlay.setAttribute("aria-hidden", "false");
@@ -3323,7 +3305,7 @@
       }
 
       previewButton.addEventListener("click", () => {
-        openSampleDiff();
+        openDiffOverlay(state.currentChange);
       });
 
       closeButton?.addEventListener("click", closeDiffPreviewModal);
@@ -3365,7 +3347,7 @@
         }
 
         if (
-          state.mode !== "sample" &&
+          state.mode === "real" &&
           typeof state.originalAcceptDiff === "function"
         ) {
           return state.originalAcceptDiff();
@@ -3376,7 +3358,7 @@
         closeDiffPreviewModal();
 
         if (
-          state.mode !== "sample" &&
+          state.mode === "real" &&
           typeof state.originalRejectDiff === "function"
         ) {
           return state.originalRejectDiff();
@@ -3385,19 +3367,12 @@
 
       window.__studioDiffPreview = {
         open(change) {
-          const normalized = {
-            path: change?.path || sampleChange.path,
-            label: change?.label || "Agent change preview",
-            oldContent: change?.oldContent || sampleChange.oldContent,
-            newContent: change?.newContent || sampleChange.newContent,
-          };
-          openSampleDiff(normalized);
+          openDiffOverlay(change || null);
         },
         close: closeDiffPreviewModal,
       };
 
       updateViewButtons();
-      renderDiff(sampleChange);
     });
   </script>
 </body>
