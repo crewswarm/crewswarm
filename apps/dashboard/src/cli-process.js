@@ -85,11 +85,11 @@ async function loadCLIProcessConfig() {
         const el = document.getElementById(id);
         if (!el) return;
         const value = v || '';
-        if (value && !Array.from(el.options).some((opt) => opt.value === value)) {
+        if (value && !Array.from(el.options || []).some((opt) => opt.value === value)) {
           const option = document.createElement('option');
           option.value = value;
           option.textContent = `${value} (saved custom)`;
-          const customMarker = Array.from(el.options).find((opt) => opt.value === '__custom__');
+          const customMarker = Array.from(el.options || []).find((opt) => opt.value === '__custom__');
           if (customMarker) {
             el.insertBefore(option, customMarker);
           } else {

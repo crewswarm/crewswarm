@@ -8,8 +8,17 @@ import { showNotification } from '../core/dom.js';
 
 let _skillsCache = [];
 
+function hideAllViews() {
+  document.querySelectorAll('.view, .view-sessions').forEach(el => {
+    el.classList.remove('active');
+    if (el.style.display) el.style.display = '';
+  });
+  const mb = document.querySelector('.msg-bar');
+  if (mb) mb.style.display = '';
+}
+
 export function showSkills() {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  hideAllViews();
   document.getElementById('skillsView').classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const nav = document.getElementById('navSkills');
@@ -19,7 +28,7 @@ export function showSkills() {
 }
 
 export function showRunSkills() {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  hideAllViews();
   const view = document.getElementById('runSkillsView');
   if (view) view.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
