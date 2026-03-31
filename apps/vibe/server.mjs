@@ -1851,6 +1851,36 @@ export const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // GET /api/studio/git-diff — return changed files with old/new content for diff preview
+  if (parsedUrl.pathname === "/api/studio/git-diff" && req.method === "GET") {
+    const projDir = parsedUrl.searchParams.get("projectDir") || WORKSPACE_DIR;
+    const resolved = resolveStudioProjectPath(projDir, WORKSPACE_DIR);
+    try {
+      const { execSync } = await import("node:child_process");
+      const hasGit = fs.existsSync(path.join(resolved, ".git"));
+      if (!hasGit) {
+        sendJson(res, 200, { ok: true, files: [], message: "Not a git repository" });
+        return;
+      }
+      const filesRaw = execSync("git diff --name-only", { cwd: resolved, encoding: "utf8", timeout: 3000 }).trim();
+      const files = filesRaw ? filesRaw.split("\n").filter(Boolean) : [];
+      // For each changed file, get old (HEAD) and new (working tree) content
+      const changes = [];
+      for (const f of files.slice(0, 20)) {
+        try {
+          let oldContent = "";
+          try { oldContent = execSync(`git show HEAD:${f}`, { cwd: resolved, encoding: "utf8", timeout: 3000 }); } catch { /* new file */ }
+          const newContent = fs.readFileSync(path.join(resolved, f), "utf8");
+          changes.push({ path: f, oldContent, newContent });
+        } catch { /* skip unreadable */ }
+      }
+      sendJson(res, 200, { ok: true, files, changes });
+    } catch (e) {
+      sendJson(res, 200, { ok: true, files: [], changes: [], error: e.message });
+    }
+    return;
+  }
+
   if (parsedUrl.pathname === "/api/studio/chat/unified" && req.method === "POST") {
     try {
       const body = await readBody(req);

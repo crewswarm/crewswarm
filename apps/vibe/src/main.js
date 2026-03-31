@@ -1794,6 +1794,32 @@ async function sendChatMessage() {
         exitCode,
       });
       activityTrace?.finish(exitCode);
+
+      // After engine completes successfully, fetch git diff and show in preview
+      if (exitCode === 0 && chatMode.startsWith("cli:")) {
+        try {
+          const projDir = currentProject?.outputDir || "";
+          const diffRes = await fetchJSON(`${STUDIO_API}/api/studio/git-diff?projectDir=${encodeURIComponent(projDir)}`);
+          if (diffRes.changes && diffRes.changes.length > 0) {
+            const engineName = chatMode.replace("cli:", "");
+            const fileList = diffRes.files.map(f => `  ${f}`).join("\n");
+            addTerminalLine(`📝 ${diffRes.files.length} file(s) changed:\n${fileList}`, "info");
+            // Queue all changed files into the diff preview
+            for (const change of diffRes.changes) {
+              showDiffPreview({
+                path: change.path,
+                label: `Changed by ${engineName}`,
+                oldContent: change.oldContent,
+                newContent: change.newContent,
+              });
+            }
+            scheduleFileTreeRefresh();
+          }
+        } catch (e) {
+          console.warn("Failed to fetch post-engine git diff:", e);
+        }
+      }
+
       if (
         chatMode === "crew-lead" &&
         /dispatch(?:ed)?\s+to\b|reply will show here|working/i.test(rawTranscript)
