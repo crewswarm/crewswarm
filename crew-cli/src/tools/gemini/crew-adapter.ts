@@ -423,6 +423,16 @@ export class GeminiToolAdapter {
 
   private async appendFile(params: { file_path: string; content: string }): Promise<ToolResult> {
     const filePath = resolve(this.config.getWorkspaceRoot(), params.file_path);
+
+    // Read-before-edit guard: must read_file before appending to existing files
+    const { existsSync } = await import('node:fs');
+    if (existsSync(filePath) && !this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
+      return {
+        success: false,
+        error: `You must read_file "${params.file_path}" before appending to it. Read first to understand the existing content and where your addition should go.`
+      };
+    }
+
     let existing = '';
     try {
       const stagedContent = this.sandbox.getStagedContent?.(params.file_path)
