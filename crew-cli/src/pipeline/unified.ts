@@ -2101,23 +2101,21 @@ Return ONLY valid JSON:
           priority: 3
         });
         
-        // Only add JSON constraint for non-coding workers
-        // Coding workers (crew-coder, crew-coder-front, crew-coder-back, crew-frontend, crew-fixer) 
-        // should use @@WRITE_FILE format instead
-        const codingPersonas = ['crew-coder', 'crew-coder-front', 'crew-coder-back', 'crew-frontend', 'crew-fixer', 'crew-mega'];
-        if (!codingPersonas.includes(unit.persona)) {
-          overlays.push({
-            type: 'constraints',
-            content: `Return ONLY valid JSON:
+        // All workers use structured tool calls (write_file, replace, read_file, etc.)
+        // NEVER use @@WRITE_FILE text markers — use the write_file tool instead.
+        overlays.push({
+          type: 'constraints',
+          content: `IMPORTANT: Use the provided tools (write_file, replace, read_file, run_shell_command, etc.) to make changes.
+Do NOT output @@WRITE_FILE or @@EDIT markers in your text response — those are deprecated.
+After completing your work, return a JSON summary:
 {
-  "output": "primary result text for this unit",
+  "output": "what you did",
   "summary": "short summary",
-  "edits": ["optional changed files or actions"],
-  "validation": ["optional checks or caveats"]
+  "edits": ["list of files changed"],
+  "validation": ["verification steps"]
 }`,
-            priority: 4
-          });
-        }
+          priority: 4
+        });
 
         const composedPrompt = this.composer.compose(templateId, overlays, `${traceId}-${unit.id}`);
         
