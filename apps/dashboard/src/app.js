@@ -1785,6 +1785,10 @@ function showEngines() {
 // showSkills / showRunSkills → skills-tab.js
 
 const showBenchmarks = async () => {
+  hideAllViews();
+  setNavActive("navBenchmarks");
+  const view = document.getElementById("benchmarksView");
+  if (view) view.classList.add("active");
   const { showBenchmarks: showBenchmarksTab } = await loadBenchmarksTabModule();
   showBenchmarksTab({ hideAllViews, setNavActive });
 };
