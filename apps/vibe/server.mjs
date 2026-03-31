@@ -1174,7 +1174,7 @@ export function getCliCommand(engine, projectDir, message, modelOverride, resume
     case "crew-cli": {
       const crewBin = path.join(__dirname, "..", "..", "crew-cli", "bin", "crew.js");
       const model = modelOverride || process.env.CREWSWARM_CREW_CLI_MODEL || "";
-      const crewArgs = [crewBin, "chat", message, ...(projectDir ? ["--project", projectDir] : []), ...(model ? ["--model", model] : [])];
+      const crewArgs = [crewBin, "chat", message, "--apply", ...(projectDir ? ["--project", projectDir] : []), ...(model ? ["--model", model] : [])];
       // Resume: crew-cli supports --session for conversation continuity
       if (resumeSession?.sessionId) crewArgs.push("--session", resumeSession.sessionId);
       return {
