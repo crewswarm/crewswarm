@@ -829,6 +829,9 @@ export function initChatActions(deps) {
         // SSE chat_message is the canonical display path — it removes
         // the streaming bubble and creates the final one.  Only use
         // the HTTP reply when SSE was completely silent (connection drop).
+        // Wait a tick so the SSE chat_message event (which fires ~simultaneously)
+        // has time to promote the streaming bubble and set lastAppendedAssistantContent.
+        await new Promise((r) => setTimeout(r, 250));
         if (!getLastAppendedAssistantContent()) {
           appendChatBubble("assistant", d.reply);
           setLastAppendedAssistantContent(d.reply);
