@@ -2086,7 +2086,7 @@ function updateStreamingChatBubble(view, rawTranscript, options = {}) {
     (options.pending
       ? `${view.label} is working...`
       : exitCode !== 0
-        ? "No assistant output — see stderr in the trace or fix Cursor CLI (e.g. agent login / model id)."
+        ? "No assistant output — check the trace for errors (engine may need login, model access, or config)."
         : "No response returned.");
 
   view.header.textContent = options.pending
