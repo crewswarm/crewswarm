@@ -4224,20 +4224,7 @@ const server = http.createServer(async (req, res) => {
               return b;
             })()
             : null;
-        const token = (() => {
-          try {
-            return (
-              JSON.parse(
-                fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-                  "utf8",
-                ),
-              )?.rt?.authToken || ""
-            );
-          } catch {
-            return "";
-          }
-        })();
+        const token = resolveCrewLeadAuthToken();
         const r = await fetch(
           "http://127.0.0.1:5010/api/settings/bg-consciousness",
           {
@@ -4274,20 +4261,7 @@ const server = http.createServer(async (req, res) => {
               return b;
             })()
             : null;
-        const token = (() => {
-          try {
-            return (
-              JSON.parse(
-                fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-                  "utf8",
-                ),
-              )?.rt?.authToken || ""
-            );
-          } catch {
-            return "";
-          }
-        })();
+        const token = resolveCrewLeadAuthToken();
         const r = await fetch(
           "http://127.0.0.1:5010/api/settings/cursor-waves",
           {
@@ -4324,20 +4298,7 @@ const server = http.createServer(async (req, res) => {
               return b;
             })()
             : null;
-        const token = (() => {
-          try {
-            return (
-              JSON.parse(
-                fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-                  "utf8",
-                ),
-              )?.rt?.authToken || ""
-            );
-          } catch {
-            return "";
-          }
-        })();
+        const token = resolveCrewLeadAuthToken();
         const r = await fetch(
           "http://127.0.0.1:5010/api/settings/claude-code",
           {
@@ -4877,20 +4838,7 @@ const server = http.createServer(async (req, res) => {
           for await (const c of req) b += c;
           return b;
         })();
-        const token = (() => {
-          try {
-            return (
-              JSON.parse(
-                fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-                  "utf8",
-                ),
-              )?.rt?.authToken || ""
-            );
-          } catch {
-            return "";
-          }
-        })();
+        const token = resolveCrewLeadAuthToken();
         const upstream = await fetch(
           "http://127.0.0.1:5010/api/engine-passthrough",
           {
@@ -4955,20 +4903,7 @@ const server = http.createServer(async (req, res) => {
               return b;
             })()
             : null;
-        const token = (() => {
-          try {
-            return (
-              JSON.parse(
-                fs.readFileSync(
-                  path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-                  "utf8",
-                ),
-              )?.rt?.authToken || ""
-            );
-          } catch {
-            return "";
-          }
-        })();
+        const token = resolveCrewLeadAuthToken();
         const r = await fetch(
           "http://127.0.0.1:5010/api/settings/global-fallback",
           {
@@ -9625,20 +9560,7 @@ ORDER BY day DESC, cost DESC;`;
         .filter(Boolean)
         .join("\n");
 
-      const token = (() => {
-        try {
-          return (
-            JSON.parse(
-              fs.readFileSync(
-                path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-                "utf8",
-              ),
-            )?.rt?.authToken || ""
-          );
-        } catch {
-          return "";
-        }
-      })();
+      const token = resolveCrewLeadAuthToken();
       try {
         const upstream = await fetch(
           "http://127.0.0.1:5010/api/engine-passthrough",
