@@ -4324,6 +4324,31 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    // ── Proxy /api/settings/tmux-bridge → crew-lead:5010 ─────────────────────
+    if (url.pathname === "/api/settings/tmux-bridge") {
+      try {
+        const rawBody =
+          req.method === "POST"
+            ? await (async () => { let b = ""; for await (const c of req) b += c; return b; })()
+            : null;
+        const token = resolveCrewLeadAuthToken();
+        const r = await fetch("http://127.0.0.1:5010/api/settings/tmux-bridge", {
+          method: req.method,
+          headers: {
+            "content-type": "application/json",
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+          },
+          ...(rawBody ? { body: rawBody } : {}),
+          signal: AbortSignal.timeout(8000),
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(await r.text());
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "crew-lead unreachable: " + e.message }));
+      }
+      return;
+    }
     // ── Codex CLI executor toggle ──────────────────────────────────────────────
     if (url.pathname === "/api/settings/codex") {
       const { readFile, writeFile } = await import("node:fs/promises");
