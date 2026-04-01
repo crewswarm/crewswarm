@@ -5618,7 +5618,10 @@ const server = http.createServer(async (req, res) => {
             `http://127.0.0.1:${listenPort}/api/engine-passthrough`,
             {
               method: "POST",
-              headers: { "content-type": "application/json" },
+              headers: {
+                "content-type": "application/json",
+                ...(clAuthToken ? { authorization: `Bearer ${clAuthToken}` } : {}),
+              },
               body: JSON.stringify(payload),
               signal: AbortSignal.timeout(240000),
             },
