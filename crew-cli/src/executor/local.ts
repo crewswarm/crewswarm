@@ -141,6 +141,7 @@ export class LocalExecutor {
         if (apiKey) {
           return { token: apiKey, isOAuth: false };
         }
+        if (process.env.CREW_NO_OAUTH === 'true') return null;
         const oauth = await getGeminiOAuthToken();
         if (oauth?.accessToken) {
           return {

@@ -24,7 +24,7 @@ const envKeys = [
   'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'XAI_API_KEY',
   'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'DEEPSEEK_API_KEY', 'GROQ_API_KEY',
   'CREW_EXECUTION_MODEL', 'CREW_CHAT_MODEL', 'CREW_REASONING_MODEL',
-  'CREW_EXECUTOR_TIMEOUT_MS', 'CREW_EXECUTION_PROVIDER_ORDER'
+  'CREW_EXECUTOR_TIMEOUT_MS', 'CREW_EXECUTION_PROVIDER_ORDER', 'CREW_NO_OAUTH'
 ];
 
 let savedEnv = {};
@@ -66,80 +66,87 @@ describe('LocalExecutor — getDefaultModel', () => {
   beforeEach(() => saveEnv());
   afterEach(() => restoreEnv());
 
-  it('returns CREW_EXECUTION_MODEL when set', () => {
+  it('returns CREW_EXECUTION_MODEL when set', async () => {
     process.env.CREW_EXECUTION_MODEL = 'custom-model-v1';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'custom-model-v1');
   });
 
-  it('returns CREW_CHAT_MODEL when CREW_EXECUTION_MODEL is not set', () => {
+  it('returns CREW_CHAT_MODEL when CREW_EXECUTION_MODEL is not set', async () => {
     process.env.CREW_CHAT_MODEL = 'chat-model-v2';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'chat-model-v2');
   });
 
-  it('returns CREW_REASONING_MODEL as third priority', () => {
+  it('returns CREW_REASONING_MODEL as third priority', async () => {
     process.env.CREW_REASONING_MODEL = 'reason-model-v3';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'reason-model-v3');
   });
 
-  it('returns gpt-4o when only OPENAI_API_KEY is set', () => {
+  it('returns gpt-5.4 when only OPENAI_API_KEY is set (no OAuth)', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     process.env.OPENAI_API_KEY = 'test-key';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
-    assert.equal(model, 'gpt-4o');
+    const model = await callPrivate(executor, 'getDefaultModel');
+    assert.equal(model, 'gpt-5.4');
   });
 
-  it('returns claude model when only ANTHROPIC_API_KEY is set', () => {
+  it('returns claude model when only ANTHROPIC_API_KEY is set (no OAuth)', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     process.env.ANTHROPIC_API_KEY = 'test-key';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
-    assert.equal(model, 'claude-3-5-sonnet-20241022');
+    const model = await callPrivate(executor, 'getDefaultModel');
+    assert.equal(model, 'claude-sonnet-4-20250514');
   });
 
-  it('returns grok-beta when only XAI_API_KEY is set', () => {
+  it('returns grok-beta when only XAI_API_KEY is set', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     process.env.XAI_API_KEY = 'test-key';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'grok-beta');
   });
 
-  it('returns gemini model when GEMINI_API_KEY is set', () => {
+  it('returns gemini model when GEMINI_API_KEY is set', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     process.env.GEMINI_API_KEY = 'test-key';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'gemini-2.5-flash');
   });
 
-  it('returns gemini model when GOOGLE_API_KEY is set', () => {
+  it('returns gemini model when GOOGLE_API_KEY is set', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     process.env.GOOGLE_API_KEY = 'test-key';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'gemini-2.5-flash');
   });
 
-  it('returns deepseek-chat when only DEEPSEEK_API_KEY is set', () => {
+  it('returns deepseek-chat when only DEEPSEEK_API_KEY is set', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     process.env.DEEPSEEK_API_KEY = 'test-key';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'deepseek-chat');
   });
 
-  it('falls back to grok-beta when no keys are set', () => {
+  it('falls back to grok-beta when no keys and no OAuth', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'grok-beta');
   });
 
-  it('prefers env model over API key detection', () => {
+  it('prefers env model over API key detection', async () => {
     process.env.CREW_EXECUTION_MODEL = 'my-custom-model';
     process.env.OPENAI_API_KEY = 'test-key';
     const executor = new LocalExecutor();
-    const model = callPrivate(executor, 'getDefaultModel');
+    const model = await callPrivate(executor, 'getDefaultModel');
     assert.equal(model, 'my-custom-model');
   });
 });
@@ -226,29 +233,32 @@ describe('LocalExecutor — getConfiguredProviderOrder', () => {
   beforeEach(() => saveEnv());
   afterEach(() => restoreEnv());
 
-  it('returns only providers with API keys set', () => {
+  it('returns only providers with API keys set (no OAuth)', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     process.env.OPENAI_API_KEY = 'test';
     process.env.GROQ_API_KEY = 'test';
     const executor = new LocalExecutor();
-    const order = callPrivate(executor, 'getConfiguredProviderOrder');
+    const order = await callPrivate(executor, 'getConfiguredProviderOrder');
     assert.ok(order.includes('openai'));
     assert.ok(order.includes('groq'));
     assert.ok(!order.includes('anthropic'));
   });
 
-  it('respects CREW_EXECUTION_PROVIDER_ORDER env var', () => {
+  it('respects CREW_EXECUTION_PROVIDER_ORDER env var', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     process.env.CREW_EXECUTION_PROVIDER_ORDER = 'groq,openai';
     process.env.GROQ_API_KEY = 'test';
     process.env.OPENAI_API_KEY = 'test';
     const executor = new LocalExecutor();
-    const order = callPrivate(executor, 'getConfiguredProviderOrder');
+    const order = await callPrivate(executor, 'getConfiguredProviderOrder');
     assert.equal(order[0], 'groq');
     assert.equal(order[1], 'openai');
   });
 
-  it('returns empty array when no API keys are set', () => {
+  it('returns empty array when no API keys and no OAuth', async () => {
+    process.env.CREW_NO_OAUTH = 'true';
     const executor = new LocalExecutor();
-    const order = callPrivate(executor, 'getConfiguredProviderOrder');
+    const order = await callPrivate(executor, 'getConfiguredProviderOrder');
     assert.equal(order.length, 0);
   });
 });
