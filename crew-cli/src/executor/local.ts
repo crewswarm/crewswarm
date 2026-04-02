@@ -10,6 +10,7 @@ import { streamOpenAIResponse, streamAnthropicResponse, streamGeminiResponse, wr
 import { getOAuthToken, forceRefreshOAuthToken } from '../auth/oauth-keychain.js';
 import { getOpenAIOAuthToken, forceRefreshOpenAIOAuth, OPENAI_CODEX_API_URL } from '../auth/openai-oauth.js';
 import { getGeminiOAuthToken, forceRefreshGeminiOAuth } from '../auth/gemini-oauth.js';
+import { computeCch, buildBillingHeader } from '../auth/cch.js';
 
 export interface ExecutorOptions {
   model?: string;
@@ -884,6 +885,17 @@ export class LocalExecutor {
     try {
       if (auth.isOAuth) {
         const oauthModel = options.model || String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-haiku-4-5-20251001');
+        const bodyObj = {
+          model: oauthModel,
+          messages: [{ role: 'user', content: task }],
+          system: systemPrompt,
+          max_tokens: options.maxTokens || 4000,
+          metadata: {
+            user_id: JSON.stringify({ device_id: randomUUID(), session_id: sessionId || randomUUID() })
+          }
+        };
+        const bodyStr = JSON.stringify(bodyObj);
+        const cch = await computeCch(bodyStr).catch(() => '00000');
         const response = await fetch('https://api.anthropic.com/v1/messages?beta=true', {
           method: 'POST',
           headers: {
@@ -894,18 +906,11 @@ export class LocalExecutor {
             'anthropic-dangerous-direct-browser-access': 'true',
             'x-app': 'cli',
             'user-agent': 'claude-cli/2.1.87 (external, cli)',
-            'x-claude-code-session-id': sessionId || randomUUID()
+            'x-claude-code-session-id': sessionId || randomUUID(),
+            'x-anthropic-billing-header': buildBillingHeader(cch)
           },
           signal: AbortSignal.timeout(this.timeoutMs),
-          body: JSON.stringify({
-            model: oauthModel,
-            messages: [{ role: 'user', content: task }],
-            system: systemPrompt,
-            max_tokens: options.maxTokens || 4000,
-            metadata: {
-              user_id: 'crew-cli'
-            }
-          })
+          body: bodyStr
         });
 
         if (!response.ok) {
