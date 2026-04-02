@@ -156,6 +156,8 @@ export const ServiceActionSchema = z.object({
     'mcp',
     'openclaw-gateway',
     'dashboard',
+    'studio',
+    'studio-watch',
   ]),
 });
 

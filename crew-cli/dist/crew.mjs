@@ -6731,13 +6731,14 @@ ${summary}`;
     }
   );
   transcript.freeze();
+  const rawOutput = result2.finalResponse ?? result2.history?.map((h) => {
+    if (!h.result) return "";
+    if (typeof h.result === "string") return h.result;
+    return h.result.output || h.result.error || JSON.stringify(h.result);
+  }).filter(Boolean).join("\n") ?? "";
   return {
     success: result2.success ?? false,
-    output: result2.finalResponse ?? result2.history?.map((h) => {
-      if (!h.result) return "";
-      if (typeof h.result === "string") return h.result;
-      return h.result.output || h.result.error || JSON.stringify(h.result);
-    }).filter(Boolean).join("\n") ?? "",
+    output: stripThinkActObserve(rawOutput),
     cost: totalCost,
     turns: result2.turns,
     toolsUsed: Array.from(toolsUsed),
@@ -6750,6 +6751,13 @@ ${summary}`;
     transcript,
     constraintLevel
   };
+}
+function stripThinkActObserve(text) {
+  if (!text) return text;
+  let out = text.replace(/\*\*THINK\*\*[^]*?(?=\*\*ACT\*\*|\*\*OBSERVE\*\*|^---$)/gim, "").replace(/\*\*ACT\*\*[^]*?(?=\*\*OBSERVE\*\*|\*\*THINK\*\*|^---$)/gim, "").replace(/\*\*OBSERVE\*\*[^]*?(?=\*\*THINK\*\*|\*\*ACT\*\*|^---$)/gim, "");
+  out = out.replace(/^THINK:.*$/gim, "").replace(/^ACT:.*$/gim, "").replace(/^OBSERVE:.*$/gim, "");
+  out = out.replace(/^---\s*$/gm, "");
+  return out.trim();
 }
 var L3_SYSTEM_PROMPT, PROVIDER_ORDER, JITContextTracker, MAX_RETRIES;
 var init_agentic_executor = __esm({

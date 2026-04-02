@@ -2024,13 +2024,15 @@ export async function runAgenticWorker(
   // Freeze transcript — immutable after execution completes
   transcript.freeze();
 
+  const rawOutput = result.finalResponse ?? result.history?.map(h => {
+    if (!h.result) return '';
+    if (typeof h.result === 'string') return h.result;
+    return h.result.output || h.result.error || JSON.stringify(h.result);
+  }).filter(Boolean).join('\n') ?? '';
+
   return {
     success: result.success ?? false,
-    output: result.finalResponse ?? result.history?.map(h => {
-      if (!h.result) return '';
-      if (typeof h.result === 'string') return h.result;
-      return h.result.output || h.result.error || JSON.stringify(h.result);
-    }).filter(Boolean).join('\n') ?? '',
+    output: stripThinkActObserve(rawOutput),
     cost: totalCost,
     turns: result.turns,
     toolsUsed: Array.from(toolsUsed),
@@ -2043,4 +2045,24 @@ export async function runAgenticWorker(
     transcript,
     constraintLevel
   };
+}
+
+/**
+ * Strip THINK/ACT/OBSERVE reasoning scaffold from LLM output.
+ * Handles both **THINK** (bold) and THINK: (plain) formats.
+ */
+function stripThinkActObserve(text: string): string {
+  if (!text) return text;
+  // Bold format: **THINK** ... **ACT** ... **OBSERVE** ...
+  let out = text
+    .replace(/\*\*THINK\*\*[^]*?(?=\*\*ACT\*\*|\*\*OBSERVE\*\*|^---$)/gim, '')
+    .replace(/\*\*ACT\*\*[^]*?(?=\*\*OBSERVE\*\*|\*\*THINK\*\*|^---$)/gim, '')
+    .replace(/\*\*OBSERVE\*\*[^]*?(?=\*\*THINK\*\*|\*\*ACT\*\*|^---$)/gim, '');
+  // Plain format: THINK: ... ACT: ... OBSERVE: ... followed by ---
+  out = out.replace(/^THINK:.*$/gim, '')
+    .replace(/^ACT:.*$/gim, '')
+    .replace(/^OBSERVE:.*$/gim, '');
+  // Remove --- separator line
+  out = out.replace(/^---\s*$/gm, '');
+  return out.trim();
 }
