@@ -4063,6 +4063,53 @@ const server = http.createServer(async (req, res) => {
       );
     }
 
+    // ── OAuth / subscription provider status + model config ──────────────────
+    if (url.pathname === "/api/oauth/status" && req.method === "GET") {
+      const { execSync } = await import("node:child_process");
+      const providers = {};
+      try {
+        const raw = execSync(
+          'security find-generic-password -s "Claude Code-credentials" -a "jeffhobbs" -w 2>/dev/null || security find-generic-password -s "Claude Code-credentials" -a "unknown" -w 2>/dev/null',
+          { encoding: "utf8", timeout: 3000 }
+        ).trim();
+        const parsed = JSON.parse(raw);
+        providers["anthropic-oauth"] = !!(parsed?.claudeAiOauth?.accessToken);
+      } catch { providers["anthropic-oauth"] = false; }
+      try {
+        const raw = execSync(
+          'security find-generic-password -s "OpenAI Codex-credentials" -w 2>/dev/null',
+          { encoding: "utf8", timeout: 3000 }
+        ).trim();
+        const parsed = JSON.parse(raw);
+        providers["openai-oauth"] = !!(parsed?.accessToken);
+      } catch { providers["openai-oauth"] = false; }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, providers }));
+      return;
+    }
+    if (url.pathname === "/api/oauth/model" && req.method === "GET") {
+      const cfg = readSwarmConfigSafe() || {};
+      const models = {
+        claudeOauthModel: cfg.claudeOauthModel || "claude-sonnet-4-6",
+        openaiOauthModel: cfg.openaiOauthModel || "gpt-5.4",
+      };
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, models }));
+      return;
+    }
+    if (url.pathname === "/api/oauth/model" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const data = JSON.parse(body);
+      const cfg = readSwarmConfigSafe() || {};
+      if (data.claudeOauthModel) cfg.claudeOauthModel = data.claudeOauthModel;
+      if (data.openaiOauthModel) cfg.openaiOauthModel = data.openaiOauthModel;
+      await safeWriteConfig(cfg);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
     if (url.pathname === "/api/providers/builtin" && req.method === "GET") {
       const keys = {};
       for (const id of Object.keys(BUILTIN_URLS)) {

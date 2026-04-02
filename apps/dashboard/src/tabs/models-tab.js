@@ -56,6 +56,93 @@ const PROVIDER_ICONS = {
   venice:'🏖️', moonshot:'🌙', minimax:'✨', volcengine:'🌋', qianfan:'🔵', vllm:'⚡', sglang:'⚡',
 };
 
+// ── OAuth providers (subscription-based, no API key) ──────────────────────────
+
+const OAUTH_PROVIDERS = [
+  {
+    id: 'anthropic-oauth',
+    label: 'Anthropic (Claude Max/Pro)',
+    icon: '🟣',
+    hint: 'Use Claude via your Claude.ai subscription — no API key needed. Run <code>claude login</code> to authenticate.',
+    models: [
+      { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 · Fastest · Lowest cost' },
+      { value: 'claude-sonnet-4-6',         label: 'Sonnet 4.6 · Recommended · Best balance' },
+      { value: 'claude-opus-4-6',           label: 'Opus 4.6 · Most capable · Heaviest' },
+    ],
+    configKey: 'claudeOauthModel',
+    loginCmd: 'claude login',
+  },
+  {
+    id: 'openai-oauth',
+    label: 'OpenAI (ChatGPT Plus/Pro)',
+    icon: '🟢',
+    hint: 'Use GPT models via your ChatGPT subscription — no API key needed. Run <code>codex login</code> to authenticate.',
+    models: [
+      { value: 'gpt-4o',    label: 'GPT-4o · Fast & capable' },
+      { value: 'gpt-5.4',   label: 'GPT-5.4 · Latest · Recommended' },
+      { value: 'o3',        label: 'o3 · Deep reasoning' },
+      { value: 'o4-mini',   label: 'o4-mini · Fast reasoning' },
+    ],
+    configKey: 'openaiOauthModel',
+    loginCmd: 'codex login',
+  },
+];
+
+export async function loadOAuthProviders() {
+  const list = document.getElementById('oauthProvidersList');
+  if (!list) return;
+  let status = {};
+  try { status = (await getJSON('/api/oauth/status')).providers || {}; } catch {}
+  let cfg = {};
+  try { cfg = (await getJSON('/api/oauth/model')).models || {}; } catch {}
+
+  list.innerHTML = OAUTH_PROVIDERS.map(p => {
+    const connected = !!status[p.id];
+    const badge = connected
+      ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);">connected ✓</span>`
+      : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(107,114,128,0.12);color:var(--text-2);border:1px solid var(--border);">not logged in</span>`;
+    const currentModel = cfg[p.configKey] || p.models[1]?.value || p.models[0].value;
+    const modelOptions = p.models.map(m =>
+      `<option value="${m.value}" ${m.value === currentModel ? 'selected' : ''}>${m.label}</option>`
+    ).join('');
+    return `<div class="card" style="margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;" data-toggle-child=".oa-body-${p.id}">
+        <span style="font-size:18px;width:24px;text-align:center;">${p.icon}</span>
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:13px;">${p.label}</div>
+          <div style="font-size:11px;color:var(--text-2);">${p.hint}</div>
+        </div>
+        ${badge}
+        <span style="color:var(--text-2);font-size:12px;">▾</span>
+      </div>
+      <div class="oa-body-${p.id}" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        ${!connected ? `<div style="font-size:12px;color:var(--yellow);margin-bottom:10px;">Run <code style="background:rgba(255,255,255,0.06);padding:1px 6px;border-radius:4px;">${p.loginCmd}</code> in terminal, then refresh this page.</div>` : ''}
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <label style="font-size:12px;color:var(--text-2);white-space:nowrap;">Active model:</label>
+          <select id="oa_model_${p.id}" style="flex:1;min-width:200px;">${modelOptions}</select>
+          <button data-action="saveOauthModel" data-arg="${p.id}" class="btn-purple">Save</button>
+        </div>
+        <div id="oa_status_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+export async function saveOauthModel(providerId) {
+  const p = OAUTH_PROVIDERS.find(x => x.id === providerId);
+  if (!p) return;
+  const sel = document.getElementById(`oa_model_${providerId}`);
+  const model = sel?.value;
+  if (!model) return;
+  const statusEl = document.getElementById(`oa_status_${providerId}`);
+  try {
+    await postJSON('/api/oauth/model', { [p.configKey]: model });
+    if (statusEl) { statusEl.style.color = 'var(--green)'; statusEl.textContent = `✓ Saved — agents will use ${model}`; }
+  } catch(e) {
+    if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = '✗ ' + e.message; }
+  }
+}
+
 // ── Tab entry point ────────────────────────────────────────────────────────────
 
 export function showModels() {
@@ -64,6 +151,7 @@ export function showModels() {
   _setNavActive('navModels');
   loadRTToken_local();
   loadBuiltinProviders();
+  loadOAuthProviders();
   loadSearchTools();
 }
 

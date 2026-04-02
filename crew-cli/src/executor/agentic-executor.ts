@@ -535,14 +535,14 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     // what model was requested — the model name just came from a default config.
 
     // 1. Claude OAuth (macOS Keychain — Claude Max/Pro subscription)
-    // Uses Haiku via OAuth (free). Opus/Sonnet are server-side restricted to Claude Code app.
-    // Set CREW_OAUTH_CLAUDE_MODEL to override (e.g. claude-opus-4-6 if Anthropic opens it).
+    // All 3 tiers work: Haiku, Sonnet, Opus. Default is Sonnet 4.6.
+    // Override via CREW_OAUTH_CLAUDE_MODEL env var or dashboard Models tab.
     try {
       const oauth = await getOAuthToken();
       if (oauth?.accessToken) {
         return {
           key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-haiku-4-5-20251001'),
+          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || (() => { try { const c = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), '.crewswarm', 'crewswarm.json'), 'utf8')); return c.claudeOauthModel || 'claude-sonnet-4-6'; } catch { return 'claude-sonnet-4-6'; } })()),
           driver: 'anthropic',
           id: `anthropic-oauth-${oauth.subscriptionType || 'unknown'}`,
           isOAuth: true

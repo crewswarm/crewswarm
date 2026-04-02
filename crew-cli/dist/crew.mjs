@@ -1570,6 +1570,50 @@ var init_gemini_oauth = __esm({
   }
 });
 
+// src/auth/cch.ts
+import { createHash } from "node:crypto";
+import xxhash from "xxhash-wasm";
+async function getHasher() {
+  if (!_h64) {
+    const wasm = await xxhash();
+    _h64 = wasm.h64;
+  }
+  return _h64;
+}
+function computeVersionSuffix(firstUserMessage) {
+  const msg = firstUserMessage || "";
+  const chars = [4, 7, 20].map((i) => i < msg.length ? msg[i] : "0").join("");
+  return createHash("sha256").update(`${SALT}${chars}${VERSION}`).digest("hex").slice(0, 3);
+}
+async function computeCch(bodyWithPlaceholder) {
+  const h64 = await getHasher();
+  const hash = h64(bodyWithPlaceholder, CCH_SEED);
+  return Number(hash & BigInt(1048575)).toString(16).padStart(5, "0");
+}
+function buildBillingBlock(suffix) {
+  return {
+    type: "text",
+    text: `x-anthropic-billing-header: cc_version=${VERSION}.${suffix}; cc_entrypoint=cli; cch=00000;`
+  };
+}
+async function signBody(bodyObj) {
+  const { system, messages, ...rest } = bodyObj;
+  const ordered = { ...rest, ...system !== void 0 ? { system } : {}, ...messages !== void 0 ? { messages } : {} };
+  const bodyStr = JSON.stringify(ordered, null, 0);
+  const cch = await computeCch(bodyStr);
+  return bodyStr.replace("cch=00000", `cch=${cch}`);
+}
+var CCH_SEED, VERSION, SALT, _h64;
+var init_cch = __esm({
+  "src/auth/cch.ts"() {
+    "use strict";
+    CCH_SEED = BigInt("0x6E52736AC806831E");
+    VERSION = "2.1.87";
+    SALT = "59cf53e54c78";
+    _h64 = null;
+  }
+});
+
 // src/executor/local.ts
 import { randomUUID as randomUUID2 } from "node:crypto";
 var CLAUDE_OAUTH_BETA_HEADER, EXECUTOR_SYSTEM_PROMPT, LocalExecutor;
@@ -1581,15 +1625,15 @@ var init_local = __esm({
     init_oauth_keychain();
     init_openai_oauth();
     init_gemini_oauth();
+    init_cch();
     CLAUDE_OAUTH_BETA_HEADER = [
       "claude-code-20250219",
       "oauth-2025-04-20",
-      "context-1m-2025-08-07",
+      "adaptive-thinking-2026-01-28",
+      "research-preview-2026-02-01",
       "interleaved-thinking-2025-05-14",
       "redact-thinking-2026-02-12",
-      "context-management-2025-06-27",
-      "prompt-caching-scope-2026-01-05",
-      "effort-2025-11-24"
+      "context-management-2025-06-27"
     ].join(",");
     EXECUTOR_SYSTEM_PROMPT = `You are the conversational interface for CrewSwarm CLI.
 
@@ -2284,7 +2328,24 @@ User task: ${task}` }]
         const model = options.model || "claude-3-5-sonnet-20241022";
         try {
           if (auth.isOAuth) {
-            const oauthModel = options.model || String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-haiku-4-5-20251001");
+            const oauthModel = options.model || String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-sonnet-4-6");
+            const firstMsg = typeof task === "string" ? task : "";
+            const suffix = computeVersionSuffix(firstMsg);
+            const billingBlock = buildBillingBlock(suffix);
+            const systemBlocks = [
+              billingBlock,
+              ...systemPrompt ? [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }] : []
+            ];
+            const supportsThinking = !oauthModel.includes("haiku");
+            const bodyObj = {
+              model: oauthModel,
+              max_tokens: options.maxTokens || 4e3,
+              ...supportsThinking ? { thinking: { type: "adaptive" } } : {},
+              metadata: { user_id: `user_crewswarm_session_${sessionId || randomUUID2()}` },
+              system: systemBlocks,
+              messages: [{ role: "user", content: task }]
+            };
+            const signedBody = await signBody(bodyObj);
             const response2 = await fetch("https://api.anthropic.com/v1/messages?beta=true", {
               method: "POST",
               headers: {
@@ -2298,15 +2359,7 @@ User task: ${task}` }]
                 "x-claude-code-session-id": sessionId || randomUUID2()
               },
               signal: AbortSignal.timeout(this.timeoutMs),
-              body: JSON.stringify({
-                model: oauthModel,
-                messages: [{ role: "user", content: task }],
-                system: systemPrompt,
-                max_tokens: options.maxTokens || 4e3,
-                metadata: {
-                  user_id: "crew-cli"
-                }
-              })
+              body: signedBody
             });
             if (!response2.ok) {
               if (response2.status === 401) {
@@ -5773,7 +5826,14 @@ async function resolveProvider(modelOverride, preferTier) {
       if (oauth?.accessToken) {
         return {
           key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || "claude-haiku-4-5-20251001"),
+          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || (() => {
+            try {
+              const c = JSON.parse(__require("fs").readFileSync(__require("path").join(__require("os").homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+              return c.claudeOauthModel || "claude-sonnet-4-6";
+            } catch {
+              return "claude-sonnet-4-6";
+            }
+          })()),
           driver: "anthropic",
           id: `anthropic-oauth-${oauth.subscriptionType || "unknown"}`,
           isOAuth: true
@@ -9033,7 +9093,7 @@ REJECT: Remote agent personas (crew-coder, crew-qa, etc.) - not available in sta
 });
 
 // src/pipeline/context-pack.ts
-import { createHash } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 import { existsSync as existsSync7, mkdirSync, readFileSync as readFileSync3, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join as join13, resolve as resolve7 } from "node:path";
 var ContextPackManager;
@@ -9153,7 +9213,7 @@ ${c.text}`).join("\n\n");
           artifacts.definitionOfDone,
           artifacts.goldenBenchmarks
         ].join("\n---\n");
-        return createHash("sha256").update(body).digest("hex");
+        return createHash2("sha256").update(body).digest("hex");
       }
       compactCache() {
         if (!existsSync7(this.cacheDir)) return;
@@ -10241,13 +10301,13 @@ __export(codebase_rag_exports, {
 import { execSync as execSync5 } from "node:child_process";
 import { readFile as readFile13, writeFile as writeFile6, mkdir as mkdir7 } from "node:fs/promises";
 import { existsSync as existsSync9 } from "node:fs";
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 import { relative as relative5, join as join17 } from "node:path";
 function extractKeywords(query) {
   return (query.toLowerCase().match(/\b[a-z]{3,}\b/g) || []).filter((kw) => !STOP_WORDS.has(kw));
 }
 function contentHash(content) {
-  return createHash2("sha256").update(content).digest("hex").slice(0, 16);
+  return createHash3("sha256").update(content).digest("hex").slice(0, 16);
 }
 function toHashedVector2(text, dim = 256) {
   const vec = new Float64Array(dim);
@@ -15524,7 +15584,7 @@ var TokenFinder = class {
 init_logger();
 
 // src/cache/token-cache.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 import { mkdir as mkdir9, readFile as readFile17, writeFile as writeFile7 } from "node:fs/promises";
 import { existsSync as existsSync10 } from "node:fs";
 import { join as join20 } from "node:path";
@@ -15541,7 +15601,7 @@ var TokenCache = class {
     this.cachePath = join20(baseDir, ".crew", "token-cache.json");
   }
   static hashKey(input) {
-    return createHash3("sha256").update(String(input || "")).digest("hex");
+    return createHash4("sha256").update(String(input || "")).digest("hex");
   }
   async ensureStore() {
     const dir = join20(this.baseDir, ".crew");

@@ -883,7 +883,7 @@ export class LocalExecutor {
     
     try {
       if (auth.isOAuth) {
-        const oauthModel = options.model || String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-haiku-4-5-20251001');
+        const oauthModel = options.model || String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-sonnet-4-6');
         const firstMsg = typeof task === 'string' ? task : '';
         const suffix = computeVersionSuffix(firstMsg);
         const billingBlock = buildBillingBlock(suffix);
