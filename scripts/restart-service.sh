@@ -135,15 +135,18 @@ case "$SERVICE_ID" in
     exec bash "$CREWSWARM_DIR/scripts/restart-crew-lead.sh"
     ;;
   rt-bus)
-    pkill -f "opencrew-rt-daemon" 2>/dev/null || true
-    _wait_for_port_free 18889 12 || true
-    _start_detached /tmp/opencrew-rt-daemon.log \
-      env \
-      NODE_DISABLE_COMPILE_CACHE=1 \
-      CREWSWARM_RT_AUTH_TOKEN="$(_rt_token)" \
-      OPENCLAW_ALLOWED_AGENTS="$(_allowed_agents)" \
-      "$NODE_BIN" "$CREWSWARM_DIR/scripts/opencrew-rt-daemon.mjs"
-    echo "✅ rt-bus restart requested"
+    (
+      flock -n 9 || { echo "⚠️ rt-bus restart already in progress — skipping duplicate"; exit 0; }
+      pkill -f "opencrew-rt-daemon" 2>/dev/null || true
+      _wait_for_port_free 18889 12 || true
+      _start_detached /tmp/opencrew-rt-daemon.log \
+        env \
+        NODE_DISABLE_COMPILE_CACHE=1 \
+        CREWSWARM_RT_AUTH_TOKEN="$(_rt_token)" \
+        OPENCLAW_ALLOWED_AGENTS="$(_allowed_agents)" \
+        "$NODE_BIN" "$CREWSWARM_DIR/scripts/opencrew-rt-daemon.mjs"
+      echo "✅ rt-bus restart requested"
+    ) 9>/tmp/crewswarm-rt-bus-restart.lock
     ;;
   agents)
     pkill -f "gateway-bridge.mjs --rt-daemon" 2>/dev/null || true
