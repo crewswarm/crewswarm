@@ -19,6 +19,11 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - run: npm install --ignore-scripts
+      - name: Build dashboard
+        working-directory: apps/dashboard
+        run: |
+          npm install --ignore-scripts
+          npm run build
       - name: Determine npm tag
         id: tag
         run: |
