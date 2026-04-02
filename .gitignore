@@ -28,8 +28,9 @@ test-results/
 test-scratch/
 *.cpuprofile
 
-# Private roadmap (internal only)
+# Private roadmap and internal docs (internal only)
 docs/ROADMAP-PRIVATE.md
+docs/internal/
 
 # OpenClaw legacy files (old brand name) — keep OPENCLAW-PLUGIN.md
 docs/OPENCLAW-AGENTS-SETUP.md
