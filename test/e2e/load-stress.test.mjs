@@ -20,8 +20,8 @@ let crewLeadUp = false;
 let dashboardUp = false;
 
 function getAuthToken() {
-  // Check crewswarm.json first, then config.json (crew-lead reads from both)
-  for (const file of ["crewswarm.json", "config.json"]) {
+  // Check config.json first (crew-lead system config), fallback to crewswarm.json
+  for (const file of ["config.json", "crewswarm.json"]) {
     try {
       const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", file), "utf8"));
       const token = cfg?.rt?.authToken || cfg?.env?.CREWSWARM_RT_AUTH_TOKEN || "";

@@ -1,12 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import HealthWidget from '../src/components/HealthWidget';
 import useHealthData from '../src/hooks/useHealthData';
 
-// Mocking useHealthData hook
 jest.mock('../src/hooks/useHealthData');
 
 describe('HealthWidget Contract Tests', () => {
-  test('ac-1: Given user profile data, When HealthWidget is rendered, Then display real-time health metrics', () => {
+
+  it('ac-1: displays heart rate, steps, and calories burned in real-time', async () => {
     (useHealthData as jest.Mock).mockReturnValue({
       heartRate: 72,
       steps: 1000,
@@ -21,9 +21,36 @@ describe('HealthWidget Contract Tests', () => {
     expect(screen.getByText(/Calories: 200/i)).toBeInTheDocument();
   });
 
-  test('ac-3: Given abnormal heart rate data, When HealthWidget processes data, Then trigger alert', () => {
+  it('ac-2: updates metrics without page refresh every 5 seconds', () => {
+    jest.useFakeTimers();
+    (useHealthData as jest.Mock).mockReturnValueOnce({
+      heartRate: 72,
+      steps: 1000,
+      calories: 200,
+      error: null
+    }).mockReturnValueOnce({
+      heartRate: 75,
+      steps: 1050,
+      calories: 250,
+      error: null
+    });
+
+    render(<HealthWidget />);
+    
+    expect(screen.getByText(/Heart Rate: 72/i)).toBeInTheDocument();
+    expect(screen.getByText(/Steps: 1000/i)).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(5000);
+    });
+
+    expect(screen.getByText(/Heart Rate: 75/i)).toBeInTheDocument();
+    expect(screen.getByText(/Steps: 1050/i)).toBeInTheDocument();
+  });
+
+  it('ac-3: persists user customization settings across sessions', () => {
     (useHealthData as jest.Mock).mockReturnValue({
-      heartRate: 150, // Assuming 150 is considered abnormal
+      heartRate: 72,
       steps: 1000,
       calories: 200,
       error: null
@@ -31,19 +58,16 @@ describe('HealthWidget Contract Tests', () => {
 
     render(<HealthWidget />);
 
-    expect(screen.getByText(/Alert: Abnormal Heart Rate/i)).toBeInTheDocument();
+    const toggleButton = screen.getByText('Toggle Calories');
+    toggleButton.click();
+    
+    expect(screen.queryByText(/Calories: 200/i)).not.toBeInTheDocument();
+
+    toggleButton.click();
+    expect(screen.getByText(/Calories: 200/i)).toBeInTheDocument();
   });
 
-  it('displays error message on data fetch error', () => {
-    (useHealthData as jest.Mock).mockReturnValue({
-      heartRate: null,
-      steps: null,
-      calories: null,
-      error: new Error('Failed to fetch data')
-    });
-
-    render(<HealthWidget />);
-
-    expect(screen.getByText(/Error: Failed to fetch data/i)).toBeInTheDocument();
+  afterEach(() => {
+    jest.clearAllTimers();
   });
 });

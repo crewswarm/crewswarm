@@ -18,7 +18,7 @@ import { logEngineTestContext } from "../helpers/test-context.mjs";
 import { logFileVerification, logTestEvidence } from "../helpers/test-log.mjs";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
-const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
+const CONFIG_PATH = join(homedir(), ".crewswarm", "config.json");
 const TEST_DIR = join(tmpdir(), `crewswarm-pm-multi-engine-${Date.now()}`);
 
 let authToken;

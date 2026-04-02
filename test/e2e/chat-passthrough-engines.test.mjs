@@ -40,7 +40,7 @@ import { getCliEngineMetadata, logTestEvidence } from "../helpers/test-log.mjs";
 import { logEngineTestContext } from "../helpers/test-context.mjs";
 
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
-const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
+const CONFIG_PATH = join(homedir(), ".crewswarm", "config.json");
 
 // Per-engine timeouts based on observed timing (see header).
 // These are HTTP request timeouts — the describe timeout must be >= these.

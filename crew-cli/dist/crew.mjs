@@ -1668,6 +1668,7 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
             if (apiKey) {
               return { token: apiKey, isOAuth: false };
             }
+            if (process.env.CREW_NO_OAUTH === "true") return null;
             const oauth = await getGeminiOAuthToken();
             if (oauth?.accessToken) {
               return {
@@ -9642,7 +9643,13 @@ function validateWorkerTaskEnvelope(task) {
     errors.push("task.estimatedComplexity invalid");
   }
   const goal = String(task.goal || "").trim();
-  if (goal.length < 20) errors.push("task.goal too short");
+  if (goal.length < 20) {
+    if (task.sourceRefs?.includes("adhoc#request") || task.sourceRefs?.includes("request#user-input")) {
+      warnings.push("task.goal is short; consider a more descriptive goal for pipeline tasks");
+    } else {
+      errors.push("task.goal too short");
+    }
+  }
   if (!ACTION_VERB_RE.test(goal)) warnings.push("task.goal may be too vague; no concrete action verb found");
   if (BROAD_SCOPE_RE.test(goal)) {
     if (task.sourceRefs?.includes("adhoc#request") || task.sourceRefs?.includes("request#user-input")) {

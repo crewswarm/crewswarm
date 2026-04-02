@@ -21,7 +21,7 @@
  * REQUIRES:
  *   - Dashboard on http://127.0.0.1:4319
  *   - crew-lead on http://127.0.0.1:5010
- *   - Auth token in ~/.crewswarm/crewswarm.json -> rt.authToken
+ *   - Auth token in ~/.crewswarm/config.json -> rt.authToken
  *
  * Run: node --test test/e2e/dashboard-lifecycle.test.mjs
  */
@@ -36,7 +36,7 @@ import { logTestEvidence } from "../helpers/test-log.mjs";
 
 const DASHBOARD_URL = "http://127.0.0.1:4319";
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
-const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
+const CONFIG_PATH = join(homedir(), ".crewswarm", "config.json");
 
 let authToken;
 

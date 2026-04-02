@@ -20,7 +20,7 @@ import { logTestEvidence } from "../helpers/test-log.mjs";
 
 const DASHBOARD_URL = "http://127.0.0.1:4319";
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
-const CONFIG_PATH = join(homedir(), ".crewswarm", "crewswarm.json");
+const CONFIG_PATH = join(homedir(), ".crewswarm", "config.json");
 
 const WF_NAME = `e2e-cron-test-${Date.now()}`;
 

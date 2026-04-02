@@ -36,7 +36,7 @@ const LOGS_DIR = path.join(PROJECT_ROOT, "orchestrator-logs");
 const CFG_DIR = path.join(os.homedir(), ".crewswarm");
 function loadAuthToken() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(CFG_DIR, "crewswarm.json"), "utf8"));
+    const cfg = JSON.parse(fs.readFileSync(path.join(CFG_DIR, "config.json"), "utf8"));
     return cfg?.rt?.authToken || "";
   } catch { return ""; }
 }
