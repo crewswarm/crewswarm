@@ -10,7 +10,7 @@ import { streamOpenAIResponse, streamAnthropicResponse, streamGeminiResponse, wr
 import { getOAuthToken, forceRefreshOAuthToken } from '../auth/oauth-keychain.js';
 import { getOpenAIOAuthToken, forceRefreshOpenAIOAuth, OPENAI_CODEX_API_URL } from '../auth/openai-oauth.js';
 import { getGeminiOAuthToken, forceRefreshGeminiOAuth } from '../auth/gemini-oauth.js';
-import { computeCch, buildBillingHeader } from '../auth/cch.js';
+import { computeVersionSuffix, buildBillingBlock, signBody } from '../auth/cch.js';
 
 export interface ExecutorOptions {
   model?: string;
@@ -46,12 +46,11 @@ interface ProviderAuth {
 const CLAUDE_OAUTH_BETA_HEADER = [
   'claude-code-20250219',
   'oauth-2025-04-20',
-  'context-1m-2025-08-07',
+  'adaptive-thinking-2026-01-28',
+  'research-preview-2026-02-01',
   'interleaved-thinking-2025-05-14',
   'redact-thinking-2026-02-12',
   'context-management-2025-06-27',
-  'prompt-caching-scope-2026-01-05',
-  'effort-2025-11-24'
 ].join(',');
 
 const EXECUTOR_SYSTEM_PROMPT = `You are the conversational interface for CrewSwarm CLI.
@@ -885,17 +884,23 @@ export class LocalExecutor {
     try {
       if (auth.isOAuth) {
         const oauthModel = options.model || String(process.env.CREW_OAUTH_CLAUDE_MODEL || 'claude-haiku-4-5-20251001');
+        const firstMsg = typeof task === 'string' ? task : '';
+        const suffix = computeVersionSuffix(firstMsg);
+        const billingBlock = buildBillingBlock(suffix);
+        const systemBlocks = [
+          billingBlock,
+          ...(systemPrompt ? [{ type: 'text' as const, text: systemPrompt, cache_control: { type: 'ephemeral' as const } }] : []),
+        ];
+        const supportsThinking = !oauthModel.includes('haiku');
         const bodyObj = {
           model: oauthModel,
-          messages: [{ role: 'user', content: task }],
-          system: systemPrompt,
           max_tokens: options.maxTokens || 4000,
-          metadata: {
-            user_id: JSON.stringify({ device_id: randomUUID(), session_id: sessionId || randomUUID() })
-          }
+          ...(supportsThinking ? { thinking: { type: 'adaptive' } } : {}),
+          metadata: { user_id: `user_crewswarm_session_${sessionId || randomUUID()}` },
+          system: systemBlocks,
+          messages: [{ role: 'user', content: task }],
         };
-        const bodyStr = JSON.stringify(bodyObj);
-        const cch = await computeCch(bodyStr).catch(() => '00000');
+        const signedBody = await signBody(bodyObj);
         const response = await fetch('https://api.anthropic.com/v1/messages?beta=true', {
           method: 'POST',
           headers: {
@@ -907,10 +912,9 @@ export class LocalExecutor {
             'x-app': 'cli',
             'user-agent': 'claude-cli/2.1.87 (external, cli)',
             'x-claude-code-session-id': sessionId || randomUUID(),
-            'x-anthropic-billing-header': buildBillingHeader(cch)
           },
           signal: AbortSignal.timeout(this.timeoutMs),
-          body: bodyStr
+          body: signedBody
         });
 
         if (!response.ok) {
