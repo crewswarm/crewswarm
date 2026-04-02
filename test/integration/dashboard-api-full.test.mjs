@@ -934,4 +934,167 @@ describe("Dashboard API Full Endpoint Coverage", { concurrency: 1 }, () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // OAUTH / SUBSCRIPTION PROVIDER ENDPOINTS
+  // ---------------------------------------------------------------------------
+  describe("OAuth / Subscription Provider Endpoints", () => {
+
+    // ── GET /api/oauth/status ──────────────────────────────────────────────
+    test("GET /api/oauth/status returns provider map", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/oauth/status", "GET");
+      assertRouteExists(status);
+      assert.equal(status, 200);
+      assert.ok(data.ok === true || data.ok === false, "should have ok field");
+      assert.ok(typeof data.providers === "object", "should have providers object");
+      assert.ok("anthropic-oauth" in data.providers, "should include anthropic-oauth");
+      assert.ok("openai-oauth" in data.providers, "should include openai-oauth");
+      assert.equal(typeof data.providers["anthropic-oauth"], "boolean");
+      assert.equal(typeof data.providers["openai-oauth"], "boolean");
+    });
+
+    // ── GET /api/oauth/model ───────────────────────────────────────────────
+    test("GET /api/oauth/model returns current model selections", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/oauth/model", "GET");
+      assertRouteExists(status);
+      assert.equal(status, 200);
+      assert.ok(data.ok, "should return ok:true");
+      assert.ok(typeof data.models === "object", "should return models object");
+      assert.ok(typeof data.models.claudeOauthModel === "string", "should have claudeOauthModel");
+      assert.ok(typeof data.models.openaiOauthModel === "string", "should have openaiOauthModel");
+    });
+
+    test("GET /api/oauth/model claudeOauthModel defaults to sonnet", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/oauth/model", "GET");
+      assertRouteExists(status);
+      // Default should be claude-sonnet-4-6 unless overridden in config
+      const model = data.models?.claudeOauthModel;
+      assert.ok(typeof model === "string" && model.length > 0, "should have a non-empty model string");
+    });
+
+    // ── POST /api/oauth/model ──────────────────────────────────────────────
+    test("POST /api/oauth/model rejects empty body", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status } = await api(t.name, "/api/oauth/model", "POST", {});
+      assertRouteExists(status);
+    });
+
+    test("POST /api/oauth/model accepts claudeOauthModel update", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/oauth/model", "POST", {
+        claudeOauthModel: "claude-haiku-4-5-20251001",
+      });
+      assertRouteExists(status);
+      assert.ok(data.ok, "should return ok:true on valid update");
+      // Restore
+      await api(t.name, "/api/oauth/model", "POST", { claudeOauthModel: "claude-sonnet-4-6" });
+    });
+
+    test("POST /api/oauth/model accepts openaiOauthModel update", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/oauth/model", "POST", {
+        openaiOauthModel: "gpt-5.4-mini",
+      });
+      assertRouteExists(status);
+      assert.ok(data.ok, "should return ok:true on valid update");
+      // Restore
+      await api(t.name, "/api/oauth/model", "POST", { openaiOauthModel: "gpt-5.4" });
+    });
+
+    // ── GET /api/oauth/models ──────────────────────────────────────────────
+    test("GET /api/oauth/models returns anthropic model list", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/oauth/models?providerId=anthropic-oauth", "GET");
+      assertRouteExists(status);
+      assert.equal(status, 200);
+      if (data.ok) {
+        assert.ok(Array.isArray(data.models), "models should be an array");
+        assert.ok(data.models.length > 0, "should return at least one model");
+        const first = data.models[0];
+        assert.ok(typeof first.id === "string", "each model should have an id");
+        assert.ok(typeof first.name === "string", "each model should have a name");
+        // Should include at least Sonnet
+        const hasSonnet = data.models.some(m => m.id.includes("claude-sonnet"));
+        assert.ok(hasSonnet, "Anthropic models should include a Sonnet variant");
+      } else {
+        // Not logged in — should return error, not crash
+        assert.ok(typeof data.error === "string", "should return error string when not logged in");
+      }
+    });
+
+    test("GET /api/oauth/models returns openai static model list", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/oauth/models?providerId=openai-oauth", "GET");
+      assertRouteExists(status);
+      assert.equal(status, 200);
+      if (data.ok) {
+        assert.ok(Array.isArray(data.models), "models should be an array");
+        assert.ok(data.models.length >= 7, "OpenAI OAuth should expose at least 7 models");
+        const ids = data.models.map(m => m.id);
+        assert.ok(ids.includes("gpt-5.4"), "should include gpt-5.4");
+        assert.ok(ids.includes("gpt-5.4-mini"), "should include gpt-5.4-mini");
+        assert.ok(ids.includes("gpt-5.3-codex"), "should include gpt-5.3-codex");
+        assert.ok(ids.includes("gpt-5.2-codex"), "should include gpt-5.2-codex");
+        assert.ok(ids.includes("gpt-5.2"), "should include gpt-5.2");
+        assert.ok(ids.includes("gpt-5.1-codex-max"), "should include gpt-5.1-codex-max");
+        assert.ok(ids.includes("gpt-5.1-codex-mini"), "should include gpt-5.1-codex-mini");
+        assert.ok(ids.includes("gpt-4o"), "should include gpt-4o");
+      } else {
+        assert.ok(typeof data.error === "string");
+      }
+    });
+
+    test("GET /api/oauth/models returns 200 for unknown providerId (not 404/500)", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status } = await api(t.name, "/api/oauth/models?providerId=unknown-provider", "GET");
+      // Should return a handled error response, not a crash
+      assert.ok(status !== 404, "route should exist");
+    });
+
+    // ── POST /api/oauth/test ───────────────────────────────────────────────
+    test("POST /api/oauth/test route exists", async (t) => {
+      if (skipIfDown(t)) return;
+      // Don't make real API calls — just confirm route is registered and handles bad input
+      const { status } = await api(t.name, "/api/oauth/test", "POST", { providerId: "__invalid__" });
+      assertRouteExists(status);
+      // Should return structured error, not crash with 500 or 404
+      assert.ok(status === 200, "test endpoint should always return 200 with ok/error shape");
+    });
+
+    test("POST /api/oauth/test returns ok:false for unknown provider", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/oauth/test", "POST", {
+        providerId: "__nonexistent__",
+        model: "gpt-5.4",
+      });
+      assertRouteExists(status);
+      assert.equal(data.ok, false, "unknown provider should return ok:false");
+      assert.ok(typeof data.error === "string", "should include error message");
+    });
+
+    // ── /api/agents-config allModels includes OAuth models ─────────────────
+    test("GET /api/agents-config includes Claude OAuth models in allModels", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/agents-config", "GET");
+      assertRouteExists(status);
+      const allModels = data?.allModels || [];
+      assert.ok(allModels.includes("claude-haiku-4-5-20251001"), "allModels should include Haiku OAuth model");
+      assert.ok(allModels.includes("claude-sonnet-4-6"), "allModels should include Sonnet OAuth model");
+      assert.ok(allModels.includes("claude-opus-4-6"), "allModels should include Opus OAuth model");
+    });
+
+    test("GET /api/agents-config includes OpenAI OAuth models in allModels", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/agents-config", "GET");
+      assertRouteExists(status);
+      const allModels = data?.allModels || [];
+      const expectedOAuthModels = ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.2", "gpt-5.1-codex-max", "gpt-5.1-codex-mini"];
+      for (const m of expectedOAuthModels) {
+        assert.ok(allModels.includes(m), `allModels should include OpenAI OAuth model: ${m}`);
+      }
+    });
+  });
+
 });

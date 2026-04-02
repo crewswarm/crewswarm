@@ -1,7 +1,7 @@
 {
   "name": "crewswarm",
   "version": "0.9.3",
-  "description": "Local-first multi-agent orchestration platform \u2014 coordinate AI coding agents, LLMs, and tools from a single dashboard",
+  "description": "Local-first multi-agent orchestration platform — coordinate AI coding agents, LLMs, and tools from a single dashboard",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -56,20 +56,28 @@
     "playwright": "^1.58.2",
     "qrcode-terminal": "^0.12.0",
     "ws": "^8.16.0",
+    "xxhash-wasm": "^1.1.0",
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9"
   },
   "scripts": {
-    "postinstall": "node -e \"try{require('child_process').execSync('git --version',{stdio:'pipe'})}catch{console.log('\\n\u26a0\ufe0f  git not found. Install git for full functionality (WhatsApp bridge, crew-cli git tools).\\n   macOS: xcode-select --install\\n   Ubuntu: sudo apt install git\\n   Alpine: apk add git\\n')}\"",
+    "postinstall": "node -e \"try{require('child_process').execSync('git --version',{stdio:'pipe'})}catch{console.log('\\n⚠️  git not found. Install git for full functionality (WhatsApp bridge, crew-cli git tools).\\n   macOS: xcode-select --install\\n   Ubuntu: sudo apt install git\\n   Alpine: apk add git\\n')}\"",
     "start": "node scripts/start.mjs",
     "test": "node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs test/mention-participants.test.mjs test/project-messages-chat-protocol.test.mjs && npm --prefix crew-cli test",
     "test:unit": "node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs",
     "test:integration": "PM_LOOP_TEST_MODE=1 node --test --test-reporter=./scripts/test-reporter.mjs test/integration/*.test.mjs",
     "test:integration:bounded": "node scripts/run-integration-bounded.mjs",
-    "test:e2e": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/*.test.mjs",
-    "test:all": "PM_LOOP_TEST_MODE=1 node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs test/integration/*.test.mjs test/e2e/*.test.mjs",
+    "test:e2e": "npm run test:e2e:passthrough; npm run test:e2e:dashboard; npm run test:e2e:dispatch; npm run test:e2e:pipeline; npm run test:e2e:build; npm run test:e2e:bridge",
+    "test:e2e:passthrough": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/chat-passthrough-engines.test.mjs",
+    "test:e2e:dashboard": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/dashboard-lifecycle.test.mjs; node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/dashboard-tabs.test.mjs; node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/dashboard-chat-tabs.test.mjs",
+    "test:e2e:dispatch": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/live-dispatch.test.mjs; node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/surfaces-dispatch-live.test.mjs; node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/multi-engine-dispatch.test.mjs",
+    "test:e2e:pipeline": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/pipeline-waves-live.test.mjs; node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/pm-loop-live.test.mjs; node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/pm-loop-multi-engine.test.mjs",
+    "test:e2e:build": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/dashboard-build-planner-live.test.mjs",
+    "test:e2e:bridge": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/telegram-roundtrip.test.mjs test/e2e/whatsapp-roundtrip.test.mjs",
+    "test:e2e:stress": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/load-stress.test.mjs test/e2e/cron-workflow-live.test.mjs",
+    "test:all": "npm run test:unit; npm run test:integration; npm run test:e2e; npm --prefix crew-cli test",
     "test:coverage:root": "node --test --experimental-test-coverage test/unit/*.test.mjs",
     "test:coverage": "node scripts/coverage-report.mjs",
     "test:coverage:summary": "node scripts/coverage-summary.mjs",

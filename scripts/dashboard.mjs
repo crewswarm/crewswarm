@@ -124,6 +124,58 @@ if (!lockResult.ok) {
   process.exit(1);
 }
 
+// ── OAuth token cache (read once at startup while keychain is accessible) ──────
+const _oauthTokenCache = {};
+try {
+  const { execFileSync } = await import("node:child_process");
+  const { userInfo } = await import("node:os");
+  for (const acct of [userInfo().username, "jeffhobbs", "unknown"]) {
+    try {
+      const raw = execFileSync("security", [
+        "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
+      ], { encoding: "utf8", timeout: 5000 }).trim();
+      const parsed = JSON.parse(raw);
+      if (parsed?.claudeAiOauth?.accessToken) {
+        _oauthTokenCache["anthropic-oauth"] = parsed.claudeAiOauth.accessToken;
+        break;
+      }
+    } catch { /* try next account */ }
+  }
+} catch { /* keychain not accessible at startup (launchd) */ }
+
+// OpenAI/Codex OAuth — read from disk (no keychain needed)
+async function readOpenAIOAuthToken() {
+  const tokenPaths = [
+    path.join(os.homedir(), ".codex", "auth.json"),
+    path.join(os.homedir(), ".local", "share", "opencode", "auth.json"),
+    path.join(os.homedir(), ".codex-auth", "auth.json"),
+  ];
+  for (const p of tokenPaths) {
+    try {
+      const raw = await fs.promises.readFile(p, "utf8");
+      const data = JSON.parse(raw);
+      // Codex CLI chatgpt mode: { tokens: { access_token, refresh_token } }
+      if (data.tokens?.access_token) return data.tokens.access_token;
+      // openai-codex nested entry
+      const entry = data["openai-codex"] || data["codex"] || data["openai"];
+      if (entry?.access) return entry.access;
+      // flat
+      if (data.access_token) return data.access_token;
+      if (data.token) return data.token;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+// Pre-load OpenAI token at startup
+try {
+  const t = await readOpenAIOAuthToken();
+  if (t) _oauthTokenCache["openai-oauth"] = t;
+} catch { /* ignore */ }
+
+function getOAuthTokenCached(providerId) {
+  return _oauthTokenCache[providerId] || null;
+}
+
 const opencodeBase = process.env.OPENCODE_URL || "http://127.0.0.1:4096";
 
 function resolveCommandPath(bin, extraPaths = []) {
@@ -150,6 +202,7 @@ function resolveCommandPath(bin, extraPaths = []) {
     const out = execSync(`command -v "${candidate.replace(/"/g, '\\"')}"`, {
       stdio: ["ignore", "pipe", "ignore"],
       shell: "/bin/zsh",
+      timeout: 1500,
       env: {
         ...process.env,
         PATH: [
@@ -4065,26 +4118,226 @@ const server = http.createServer(async (req, res) => {
 
     // ── OAuth / subscription provider status + model config ──────────────────
     if (url.pathname === "/api/oauth/status" && req.method === "GET") {
-      const { execSync } = await import("node:child_process");
       const providers = {};
-      try {
-        const raw = execSync(
-          'security find-generic-password -s "Claude Code-credentials" -a "jeffhobbs" -w 2>/dev/null || security find-generic-password -s "Claude Code-credentials" -a "unknown" -w 2>/dev/null',
-          { encoding: "utf8", timeout: 3000 }
-        ).trim();
-        const parsed = JSON.parse(raw);
-        providers["anthropic-oauth"] = !!(parsed?.claudeAiOauth?.accessToken);
-      } catch { providers["anthropic-oauth"] = false; }
-      try {
-        const raw = execSync(
-          'security find-generic-password -s "OpenAI Codex-credentials" -w 2>/dev/null',
-          { encoding: "utf8", timeout: 3000 }
-        ).trim();
-        const parsed = JSON.parse(raw);
-        providers["openai-oauth"] = !!(parsed?.accessToken);
-      } catch { providers["openai-oauth"] = false; }
+      // Use startup cache first; fall back to live keychain only if cache missed
+      providers["anthropic-oauth"] = !!getOAuthTokenCached("anthropic-oauth");
+      if (!providers["anthropic-oauth"]) {
+        try {
+          const { execFileSync } = await import("node:child_process");
+          const { userInfo } = await import("node:os");
+          for (const acct of [userInfo().username, "jeffhobbs", "unknown"]) {
+            try {
+              const raw = execFileSync("security", [
+                "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
+              ], { encoding: "utf8", timeout: 5000 }).trim();
+              const parsed = JSON.parse(raw);
+              if (parsed?.claudeAiOauth?.accessToken) {
+                _oauthTokenCache["anthropic-oauth"] = parsed.claudeAiOauth.accessToken;
+                providers["anthropic-oauth"] = true;
+                break;
+              }
+            } catch { /* try next */ }
+          }
+        } catch { providers["anthropic-oauth"] = false; }
+      }
+      providers["openai-oauth"] = !!getOAuthTokenCached("openai-oauth");
+      if (!providers["openai-oauth"]) {
+        try {
+          const t = await readOpenAIOAuthToken();
+          if (t) { _oauthTokenCache["openai-oauth"] = t; providers["openai-oauth"] = true; }
+        } catch { providers["openai-oauth"] = false; }
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, providers }));
+      return;
+    }
+    if (url.pathname === "/api/oauth/test" && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const { providerId, model } = JSON.parse(body);
+      try {
+        let token = getOAuthTokenCached(providerId);
+        if (!token) {
+          if (providerId === "anthropic-oauth") {
+            const { execFileSync } = await import("node:child_process");
+            const { userInfo } = await import("node:os");
+            for (const acct of [userInfo().username, "jeffhobbs", "unknown"]) {
+              try {
+                const raw = execFileSync("security", [
+                  "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
+                ], { encoding: "utf8", timeout: 5000 }).trim();
+                const t = JSON.parse(raw)?.claudeAiOauth?.accessToken;
+                if (t) { token = t; _oauthTokenCache[providerId] = t; break; }
+              } catch { /* try next */ }
+            }
+          } else if (providerId === "openai-oauth") {
+            token = await readOpenAIOAuthToken();
+            if (token) _oauthTokenCache[providerId] = token;
+          }
+        }
+        if (!token) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "No OAuth token found — run login command first" }));
+          return;
+        }
+        // Quick test call
+        if (providerId === "anthropic-oauth") {
+          const { computeVersionSuffix, buildBillingBlock, signBody } = await import("../crew-cli/dist/engine.mjs").catch(() => ({}));
+          let responseText, testModel = model || "claude-sonnet-4-6";
+          {
+            const xxhash = (await import("xxhash-wasm")).default;
+            const wasm = await xxhash();
+            const CCH_SEED = BigInt("0x6E52736AC806831E");
+            const VERSION = "2.1.87", SALT = "59cf53e54c78";
+            const msg = "reply with exactly: OK";
+            const chars = [4,7,20].map(i => i < msg.length ? msg[i] : "0").join("");
+            const suffix = crypto.subtle
+              ? await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${SALT}${chars}${VERSION}`))
+                  .then(b => Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("").slice(0,3))
+              : createHash("sha256").update(`${SALT}${chars}${VERSION}`).digest("hex").slice(0,3);
+            const billingText = `x-anthropic-billing-header: cc_version=${VERSION}.${suffix}; cc_entrypoint=cli; cch=00000;`;
+            const supportsThinking = !testModel.includes("haiku");
+            const bodyObj = {
+              model: testModel, max_tokens: 50,
+              ...(supportsThinking ? { thinking: { type: "adaptive" } } : {}),
+              metadata: { user_id: "user_crewswarm_test" },
+              system: [{ type: "text", text: billingText }],
+              messages: [{ role: "user", content: msg }],
+            };
+            const { system, messages, ...rest } = bodyObj;
+            const bodyStr = JSON.stringify({ ...rest, system, messages });
+            const cch = Number(wasm.h64(bodyStr, CCH_SEED) & BigInt(0xfffff)).toString(16).padStart(5,"0");
+            const signed = bodyStr.replace("cch=00000", `cch=${cch}`);
+            const BETAS = "claude-code-20250219,oauth-2025-04-20,adaptive-thinking-2026-01-28,research-preview-2026-02-01,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27";
+            const r = await fetch("https://api.anthropic.com/v1/messages?beta=true", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`, "content-type": "application/json",
+                "anthropic-version": "2023-06-01", "anthropic-beta": BETAS,
+                "anthropic-dangerous-direct-browser-access": "true",
+                "x-app": "cli", "user-agent": "claude-cli/2.1.87 (external, cli)",
+                "x-claude-code-session-id": crypto.randomUUID(),
+              },
+              body: signed,
+              signal: AbortSignal.timeout(15000),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data?.error?.message || r.statusText);
+            responseText = data?.content?.find(b => b.type === "text")?.text?.trim() || "OK";
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, response: responseText, model: testModel }));
+        } else if (providerId === "openai-oauth") {
+          const testModel = model || "gpt-5.4";
+          // Codex CLI backend requires streaming (SSE)
+          const r = await fetch("https://chatgpt.com/backend-api/codex/responses", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+              "User-Agent": "openai-codex-cli/0.1.0",
+            },
+            body: JSON.stringify({
+              model: testModel,
+              instructions: "Reply with exactly: OK",
+              input: [{ role: "user", content: "ping" }],
+              stream: true,
+              store: false,
+            }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (!r.ok) {
+            const errData = await r.json().catch(() => ({}));
+            throw new Error(errData?.detail || errData?.error?.message || r.statusText);
+          }
+          // Consume SSE stream and collect output_text delta chunks
+          let responseText = "";
+          const decoder = new TextDecoder();
+          for await (const chunk of r.body) {
+            const text = decoder.decode(chunk, { stream: true });
+            for (const line of text.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              const raw = line.slice(6).trim();
+              if (raw === "[DONE]") break;
+              try {
+                const evt = JSON.parse(raw);
+                // response.output_text.delta event
+                if (evt.type === "response.output_text.delta") responseText += evt.delta || "";
+                // completed event with full output
+                if (evt.type === "response.completed") {
+                  const items = evt.response?.output?.flatMap(o => o.content || []) || [];
+                  const full = items.find(c => c.type === "output_text")?.text;
+                  if (full) responseText = full;
+                }
+              } catch { /* skip malformed */ }
+            }
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, response: responseText.trim() || "OK", model: testModel }));
+        } else {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Unknown provider" }));
+        }
+      } catch(e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+      return;
+    }
+    if (url.pathname === "/api/oauth/models" && req.method === "GET") {
+      const { providerId } = Object.fromEntries(url.searchParams);
+      try {
+        let token = getOAuthTokenCached(providerId);
+        if (!token && providerId === "anthropic-oauth") {
+          const { execFileSync } = await import("node:child_process");
+          const { userInfo } = await import("node:os");
+          for (const acct of [userInfo().username, "jeffhobbs", "unknown"]) {
+            try {
+              const raw = execFileSync("security", [
+                "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
+              ], { encoding: "utf8", timeout: 5000 }).trim();
+              const t = JSON.parse(raw)?.claudeAiOauth?.accessToken;
+              if (t) { token = t; _oauthTokenCache[providerId] = t; break; }
+            } catch { /* try next */ }
+          }
+        }
+        if (providerId === "anthropic-oauth") {
+          if (!token) throw new Error("No Anthropic OAuth token");
+          const r = await fetch("https://api.anthropic.com/v1/models", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
+              "x-app": "cli",
+            },
+            signal: AbortSignal.timeout(10000),
+          });
+          const data = await r.json();
+          const models = (data?.data || []).map(m => ({ id: m.id, name: m.display_name || m.id }));
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, models }));
+        } else if (providerId === "openai-oauth") {
+          // Codex subscription doesn't expose a /models list endpoint —
+          // return the known codex-accessible models directly
+          const models = [
+            { id: "gpt-5.4",          name: "GPT-5.4 · Latest · Recommended" },
+            { id: "gpt-5.4-mini",     name: "GPT-5.4 Mini · Smaller frontier" },
+            { id: "gpt-5.3-codex",    name: "GPT-5.3 Codex · Codex-optimized" },
+            { id: "gpt-5.2-codex",    name: "GPT-5.2 Codex · Frontier agentic" },
+            { id: "gpt-5.2",          name: "GPT-5.2 · Professional / long-running agents" },
+            { id: "gpt-5.1-codex-max",  name: "GPT-5.1 Codex Max · Deep & fast reasoning" },
+            { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini · Fast & cheap" },
+            { id: "gpt-4o",           name: "GPT-4o · Fast & capable" },
+          ];
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, models }));
+        } else {
+          throw new Error("Unknown providerId");
+        }
+      } catch(e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
       return;
     }
     if (url.pathname === "/api/oauth/model" && req.method === "GET") {
@@ -7300,6 +7553,16 @@ ORDER BY day DESC, cost DESC;`;
       for (const m of defaultModels) {
         if (!allModels.includes(m)) allModels.push(m);
       }
+      // Inject OAuth subscription models so they appear in agent primary/fallback dropdowns
+      const CLAUDE_OAUTH_MODELS = [
+        'claude-haiku-4-5-20251001',
+        'claude-sonnet-4-6',
+        'claude-opus-4-6',
+      ];
+      const OPENAI_OAUTH_MODELS = ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.2', 'gpt-5.1-codex-max', 'gpt-5.1-codex-mini', 'gpt-4o'];
+      for (const m of [...CLAUDE_OAUTH_MODELS, ...OPENAI_OAUTH_MODELS]) {
+        if (!allModels.includes(m)) allModels.push(m);
+      }
       const roleToolDefaults = cfg.roleToolDefaults || {};
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
@@ -8798,7 +9061,7 @@ ORDER BY day DESC, cost DESC;`;
             path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"),
           ) || getPid("whatsapp-bridge.mjs");
         const rtStatusPromise = fetch("http://127.0.0.1:18889/status", {
-          signal: AbortSignal.timeout(2000),
+          signal: AbortSignal.timeout(5000),
         });
         const mcpHealthPromise = httpOk("http://127.0.0.1:5020/health", 3000);
         const [

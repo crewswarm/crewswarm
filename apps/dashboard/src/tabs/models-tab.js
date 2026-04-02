@@ -78,10 +78,14 @@ const OAUTH_PROVIDERS = [
     icon: '🟢',
     hint: 'Use GPT models via your ChatGPT subscription — no API key needed. Run <code>codex login</code> to authenticate.',
     models: [
-      { value: 'gpt-4o',    label: 'GPT-4o · Fast & capable' },
-      { value: 'gpt-5.4',   label: 'GPT-5.4 · Latest · Recommended' },
-      { value: 'o3',        label: 'o3 · Deep reasoning' },
-      { value: 'o4-mini',   label: 'o4-mini · Fast reasoning' },
+      { value: 'gpt-5.4',         label: 'GPT-5.4 · Latest · Recommended' },
+      { value: 'gpt-5.4-mini',    label: 'GPT-5.4 Mini · Smaller frontier' },
+      { value: 'gpt-5.3-codex',   label: 'GPT-5.3 Codex · Codex-optimized' },
+      { value: 'gpt-5.2-codex',   label: 'GPT-5.2 Codex · Frontier agentic' },
+      { value: 'gpt-5.2',         label: 'GPT-5.2 · Professional / long-running agents' },
+      { value: 'gpt-5.1-codex-max',  label: 'GPT-5.1 Codex Max · Deep & fast reasoning' },
+      { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini · Fast & cheap' },
+      { value: 'gpt-4o',          label: 'GPT-4o · Fast & capable' },
     ],
     configKey: 'openaiOauthModel',
     loginCmd: 'codex login',
@@ -121,8 +125,14 @@ export async function loadOAuthProviders() {
           <label style="font-size:12px;color:var(--text-2);white-space:nowrap;">Active model:</label>
           <select id="oa_model_${p.id}" style="flex:1;min-width:200px;">${modelOptions}</select>
           <button data-action="saveOauthModel" data-arg="${p.id}" class="btn-purple">Save</button>
+          <button data-action="testOauthProvider" data-arg="${p.id}" class="btn-ghost">Test</button>
+          <button data-action="showOauthModels" data-arg="${p.id}" class="btn-ghost" style="background:#0f766e20;color:var(--green);border-color:#0f766e40;">↻ Models</button>
         </div>
         <div id="oa_status_${p.id}" style="font-size:12px;margin-top:8px;color:var(--text-2);"></div>
+        <div id="oa_models_${p.id}" style="margin-top:8px;display:none;">
+          <span style="font-size:11px;color:var(--text-2);display:block;margin-bottom:6px;">Available models (auto-added to agent dropdowns):</span>
+          <span id="oa_mtags_${p.id}"></span>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -140,6 +150,64 @@ export async function saveOauthModel(providerId) {
     if (statusEl) { statusEl.style.color = 'var(--green)'; statusEl.textContent = `✓ Saved — agents will use ${model}`; }
   } catch(e) {
     if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = '✗ ' + e.message; }
+  }
+}
+
+export async function testOauthProvider(providerId) {
+  const p = OAUTH_PROVIDERS.find(x => x.id === providerId);
+  if (!p) return;
+  const sel = document.getElementById(`oa_model_${providerId}`);
+  const model = sel?.value || p.models[1]?.value || p.models[0].value;
+  const statusEl = document.getElementById(`oa_status_${providerId}`);
+  if (statusEl) { statusEl.style.color = 'var(--text-2)'; statusEl.textContent = `Testing ${model}…`; }
+  const t0 = Date.now();
+  try {
+    const r = await postJSON('/api/oauth/test', { providerId, model });
+    const ms = Date.now() - t0;
+    if (statusEl) {
+      statusEl.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+      statusEl.textContent = r.ok
+        ? `✓ ${model} · "${r.response}" · ${ms}ms`
+        : `✗ ${r.error || 'Failed'}`;
+    }
+  } catch(e) {
+    if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = '✗ ' + e.message; }
+  }
+}
+
+export async function showOauthModels(providerId) {
+  const p = OAUTH_PROVIDERS.find(x => x.id === providerId);
+  if (!p) return;
+  const container = document.getElementById(`oa_models_${providerId}`);
+  const tagsEl = document.getElementById(`oa_mtags_${providerId}`);
+  if (!container || !tagsEl) return;
+  const visible = container.style.display !== 'none';
+  if (visible) { container.style.display = 'none'; return; }
+  container.style.display = 'block';
+  tagsEl.innerHTML = '<span style="font-size:11px;color:var(--text-3);">Loading…</span>';
+  try {
+    const r = await getJSON(`/api/oauth/models?providerId=${encodeURIComponent(providerId)}`);
+    if (r.ok && r.models?.length) {
+      // Also populate the model dropdown with live models
+      const sel = document.getElementById(`oa_model_${providerId}`);
+      const current = sel?.value;
+      if (sel) {
+        sel.innerHTML = r.models.map(m =>
+          `<option value="${m.id}" ${m.id === current ? 'selected' : ''}>${m.name}</option>`
+        ).join('');
+      }
+      tagsEl.innerHTML = r.models.map(m =>
+        `<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:4px;font-size:11px;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text-1);">${m.id}</span>`
+      ).join('');
+    } else {
+      // Fall back to static list
+      tagsEl.innerHTML = p.models.map(m =>
+        `<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:4px;font-size:11px;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text-1);">${m.value}<span style="color:var(--text-3);margin-left:4px;">· ${m.label.split(' · ').slice(1).join(' · ')}</span></span>`
+      ).join('');
+      if (r.error) tagsEl.innerHTML += `<span style="font-size:11px;color:var(--red);margin-left:8px;">${r.error}</span>`;
+    }
+  } catch(e) {
+    tagsEl.innerHTML = `<span style="font-size:11px;color:var(--red);">${e.message}</span>`;
   }
 }
 

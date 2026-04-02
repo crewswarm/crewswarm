@@ -111,6 +111,15 @@ async function readTokenFile(): Promise<OpenAIOAuthTokens | null> {
           expiresAt: data.expires_at || null,
         };
       }
+
+      // Format 4: Codex CLI chatgpt mode — { auth_mode: "chatgpt", tokens: { access_token, refresh_token, ... } }
+      if (data.tokens?.access_token) {
+        return {
+          accessToken: data.tokens.access_token,
+          refreshToken: data.tokens.refresh_token || null,
+          expiresAt: data.tokens.expires_at || data.last_refresh ? (data.last_refresh + 3600 * 1000) : null,
+        };
+      }
     } catch {
       // Parse error — try next path
       continue;
