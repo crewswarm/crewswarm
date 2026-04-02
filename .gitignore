@@ -111,8 +111,11 @@ desktop/
 homepage/
 
 # Dashboard build artifacts
-/apps/dashboard/dist/*.br
-/apps/dashboard/dist/**/*.br
+/apps/dashboard/dist/
+/apps/vibe/dist/
+
+# BFG repo-cleaner reports
+.bfg-report/
 
 # Secrets
 .env
