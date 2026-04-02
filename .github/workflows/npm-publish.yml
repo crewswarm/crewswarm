@@ -24,6 +24,11 @@ jobs:
         run: |
           npm install --ignore-scripts
           npm run build
+      - name: Build vibe
+        working-directory: apps/vibe
+        run: |
+          npm install --ignore-scripts
+          npm run build
       - name: Determine npm tag
         id: tag
         run: |
