@@ -21,7 +21,7 @@ const TEST_DIR = join(tmpdir(), `crewswarm-planner-test-${Date.now()}`);
 mkdirSync(TEST_DIR, { recursive: true });
 
 const DASHBOARD_BASE = process.env.DASHBOARD_BASE || "http://127.0.0.1:4319";
-const dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/health`);
+const dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/api/health`);
 const SKIP = dashboardUp ? false : "dashboard not running on :4319";
 
 function isInstalled(bin) {
@@ -85,7 +85,7 @@ describe("dashboard build planner", { skip: SKIP, concurrency: 1, timeout: 90000
   for (const { name, engine, bin } of engines) {
     it(`${name}: returns a structured build brief`, { skip: !isInstalled(bin) ? `${name} not available` : false, timeout: 300000 }, async () => {
       // Verify dashboard is still alive before each engine test
-      const up = await checkServiceUp(`${DASHBOARD_BASE}/health`);
+      const up = await checkServiceUp(`${DASHBOARD_BASE}/api/health`);
       assert.ok(up, `Dashboard down before ${name} test — previous engine may have crashed it`);
       logEngineTestContext({
         test: `${name}: returns a structured build brief`,

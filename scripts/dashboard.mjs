@@ -1303,8 +1303,7 @@ async function collectPassthroughText({
 
 async function getPhasedProgress(limit = 80) {
   const { readFile } = await import("node:fs/promises");
-  const { existsSync } = await import("node:fs");
-  if (!existsSync(phasedDispatchLog)) return [];
+  if (!(await fs.promises.access(phasedDispatchLog).then(() => true, () => false))) return [];
   try {
     const content = await readFile(phasedDispatchLog, "utf8");
     const lines = content.trim().split("\n").filter(Boolean).slice(-limit);
@@ -1491,6 +1490,7 @@ function crewLeadRequest(path, { method = "GET", body = null, timeout = 10000, p
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://localhost:${listenPort}`);
+  const exists = (p) => fs.promises.access(p).then(() => true, () => false);
 
   // CORS: echo local dev Origins so http://localhost:3333 (Vibe) works with http://127.0.0.1:4319
   // (browsers treat hostnames as distinct origins). Non-local callers still get *.
@@ -1546,7 +1546,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/crew-chat.html") {
       const chatFile = path.join(CREWSWARM_DIR, "crew-chat.html");
       try {
-        const chatHtml = fs.readFileSync(chatFile, "utf8");
+        const chatHtml = await fs.promises.readFile(chatFile, "utf8");
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(chatHtml);
       } catch {
@@ -1558,7 +1558,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/signup" || url.pathname === "/signup.html") {
       const signupFile = path.join(FRONTEND_SRC, "public", "signup.html");
       try {
-        const signupHtml = fs.readFileSync(signupFile, "utf8");
+        const signupHtml = await fs.promises.readFile(signupFile, "utf8");
         res.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "cache-control": "no-store, no-cache, must-revalidate",
@@ -1576,12 +1576,12 @@ const server = http.createServer(async (req, res) => {
       const resultsDir = path.join(CREWSWARM_DIR, "test-results");
       const runsDir = path.join(resultsDir, "runs");
       try {
-        const allRuns = fs.readdirSync(runsDir).filter(d => /^\d{4}-/.test(d)).sort().reverse();
+        const allRuns = (await fs.promises.readdir(runsDir)).filter(d => /^\d{4}-/.test(d)).sort().reverse();
         // Collect the last run per suite type (unit, integration, e2e, all)
         // by inspecting run.json test_command
-        function detectSuite(runDir) {
+        async function detectSuite(runDir) {
           try {
-            const r = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8"));
+            const r = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8"));
             const cmd = r.test_command || "";
             if (cmd.includes("test/e2e/") || cmd.includes("test:e2e")) return "e2e";
             if (cmd.includes("test/integration/")) return "integration";
@@ -1597,39 +1597,39 @@ const server = http.createServer(async (req, res) => {
             return "unknown";
           } catch { return "unknown"; }
         }
-        function readRunData(runId) {
+        async function readRunData(runId) {
           const runDir = path.join(runsDir, runId);
           const summaryFile = path.join(runDir, "summary.json");
           let data;
-          if (fs.existsSync(summaryFile)) {
-            data = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+          if (await exists(summaryFile)) {
+            data = JSON.parse(await fs.promises.readFile(summaryFile, "utf8"));
           } else {
             // Fall back to .last-run.json if this is the matching run
             const lastRunFile = path.join(resultsDir, ".last-run.json");
             try {
-              const lr = JSON.parse(fs.readFileSync(lastRunFile, "utf8"));
+              const lr = JSON.parse(await fs.promises.readFile(lastRunFile, "utf8"));
               if (lr.runId === runId) { data = lr; }
             } catch {}
           }
           if (!data) {
             // Fall back to counting test artifact dirs + failure.json presence
             let timestamp = null;
-            try { const r = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8")); timestamp = r.timestamp; } catch {}
-            const ents = fs.readdirSync(runDir);
+            try { const r = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8")); timestamp = r.timestamp; } catch {}
+            const ents = await fs.promises.readdir(runDir);
             const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
             let failed = 0;
-            for (const td of testDirs) { if (fs.existsSync(path.join(runDir, td, "failure.json"))) failed++; }
+            for (const td of testDirs) { if (await exists(path.join(runDir, td, "failure.json"))) failed++; }
             data = { runId, timestamp, passed: testDirs.length - failed, failed, skipped: 0, total: testDirs.length, duration_ms: 0 };
           }
           data.runId = runId;
-          data.suite = detectSuite(runDir);
+          data.suite = await detectSuite(runDir);
           // Read failures and skips if available
           const failFile = path.join(runDir, "failures.json");
           const skipFile = path.join(runDir, "skips.json");
           let failures = [];
           let skips = [];
-          try { failures = JSON.parse(fs.readFileSync(failFile, "utf8")); } catch {}
-          try { skips = JSON.parse(fs.readFileSync(skipFile, "utf8")); } catch {}
+          try { failures = JSON.parse(await fs.promises.readFile(failFile, "utf8")); } catch {}
+          try { skips = JSON.parse(await fs.promises.readFile(skipFile, "utf8")); } catch {}
           data.failures = failures.map(f => ({
             name: f.name || f.testId || "",
             file: (f.file_fingerprint?.relative_file || f.file || "").replace(CREWSWARM_DIR + "/", ""),
@@ -1650,7 +1650,7 @@ const server = http.createServer(async (req, res) => {
           if (Object.keys(suiteRuns).length >= 4 && latestOverall) break;
           try {
             const runDir = path.join(runsDir, runId);
-            const suite = detectSuite(runDir);
+            const suite = await detectSuite(runDir);
             if (!latestOverall) latestOverall = runId;
             if (!suiteRuns[suite]) suiteRuns[suite] = runId;
           } catch {}
@@ -1658,7 +1658,7 @@ const server = http.createServer(async (req, res) => {
         // Build per-suite summaries
         const suites = {};
         for (const [suite, runId] of Object.entries(suiteRuns)) {
-          try { suites[suite] = readRunData(runId); } catch { /* skip broken runs */ }
+          try { suites[suite] = await readRunData(runId); } catch { /* skip broken runs */ }
         }
         // Count test files on disk for reference
         const testFileDir = path.join(CREWSWARM_DIR, "test");
@@ -1666,42 +1666,42 @@ const server = http.createServer(async (req, res) => {
         const crewCliTestDir = path.join(CREWSWARM_DIR, "crew-cli", "tests");
         const crewCliTestDir2 = path.join(CREWSWARM_DIR, "crew-cli", "test");
         let unitFiles = 0, intFiles = 0, e2eFiles = 0, playwrightFiles = 0, crewCliFiles = 0, rootFiles = 0;
-        try { unitFiles = fs.readdirSync(path.join(testFileDir, "unit")).filter(f => f.endsWith(".test.mjs")).length; } catch {}
-        try { intFiles = fs.readdirSync(path.join(testFileDir, "integration")).filter(f => f.endsWith(".test.mjs")).length; } catch {}
-        try { e2eFiles = fs.readdirSync(path.join(testFileDir, "e2e")).filter(f => f.endsWith(".test.mjs")).length; } catch {}
-        try { playwrightFiles = fs.readdirSync(testsE2eDir).filter(f => f.endsWith(".spec.js")).length; } catch {}
-        try { rootFiles = fs.readdirSync(testFileDir).filter(f => f.match(/\.test\./)).length; } catch {}
+        try { unitFiles = (await fs.promises.readdir(path.join(testFileDir, "unit"))).filter(f => f.endsWith(".test.mjs")).length; } catch {}
+        try { intFiles = (await fs.promises.readdir(path.join(testFileDir, "integration"))).filter(f => f.endsWith(".test.mjs")).length; } catch {}
+        try { e2eFiles = (await fs.promises.readdir(path.join(testFileDir, "e2e"))).filter(f => f.endsWith(".test.mjs")).length; } catch {}
+        try { playwrightFiles = (await fs.promises.readdir(testsE2eDir)).filter(f => f.endsWith(".spec.js")).length; } catch {}
+        try { rootFiles = (await fs.promises.readdir(testFileDir)).filter(f => f.match(/\.test\./)).length; } catch {}
         // crew-cli: tests/unit/*.test.js + tests/*.test.js + test/*.test.ts
         try {
           const unitDir = path.join(crewCliTestDir, "unit");
-          crewCliFiles += fs.readdirSync(unitDir).filter(f => f.match(/\.test\./)).length;
+          crewCliFiles += (await fs.promises.readdir(unitDir)).filter(f => f.match(/\.test\./)).length;
         } catch {}
-        try { crewCliFiles += fs.readdirSync(crewCliTestDir).filter(f => f.match(/\.test\./)).length; } catch {}
-        try { crewCliFiles += fs.readdirSync(crewCliTestDir2).filter(f => f.match(/\.test\./)).length; } catch {}
+        try { crewCliFiles += (await fs.promises.readdir(crewCliTestDir)).filter(f => f.match(/\.test\./)).length; } catch {}
+        try { crewCliFiles += (await fs.promises.readdir(crewCliTestDir2)).filter(f => f.match(/\.test\./)).length; } catch {}
         // Remove "unknown" suite if it has no data
         if (suites.unknown && (!suites.unknown.total || suites.unknown.total === 0)) delete suites.unknown;
         let latest = null;
-        try { if (latestOverall) latest = readRunData(latestOverall); } catch {}
+        try { if (latestOverall) latest = await readRunData(latestOverall); } catch {}
         // Count actual test()/it() calls in source files (ground truth)
-        function countTestCalls(dir, pattern) {
+        async function countTestCalls(dir, pattern) {
           let count = 0;
           try {
-            const files = fs.readdirSync(dir).filter(f => f.match(pattern));
+            const files = (await fs.promises.readdir(dir)).filter(f => f.match(pattern));
             for (const f of files) {
-              const src = fs.readFileSync(path.join(dir, f), "utf8");
+              const src = await fs.promises.readFile(path.join(dir, f), "utf8");
               const matches = src.match(/^\s*(test|it)\s*\(/gm);
               if (matches) count += matches.length;
             }
           } catch {}
           return count;
         }
-        function countTestCallsRecursive(dir) {
+        async function countTestCallsRecursive(dir) {
           let count = 0;
           try {
-            for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+            for (const ent of await fs.promises.readdir(dir, { withFileTypes: true })) {
               if (ent.isDirectory()) { count += countTestCallsRecursive(path.join(dir, ent.name)); continue; }
               if (!ent.name.match(/\.test\./)) continue;
-              const src = fs.readFileSync(path.join(dir, ent.name), "utf8");
+              const src = await fs.promises.readFile(path.join(dir, ent.name), "utf8");
               const matches = src.match(/^\s*(test|it)\s*\(/gm);
               if (matches) count += matches.length;
             }
@@ -1733,7 +1733,7 @@ const server = http.createServer(async (req, res) => {
       const resultsDir = path.join(CREWSWARM_DIR, "test-results");
       const runsDir = path.join(resultsDir, "runs");
       try {
-        const dirs = fs.readdirSync(runsDir).filter(d => /^\d{4}-/.test(d)).sort().reverse().slice(0, 40);
+        const dirs = (await fs.promises.readdir(runsDir)).filter(d => /^\d{4}-/.test(d)).sort().reverse().slice(0, 40);
         const history = [];
         for (const d of dirs) {
           const runDir = path.join(runsDir, d);
@@ -1741,20 +1741,20 @@ const server = http.createServer(async (req, res) => {
             let entry = null;
             // Prefer summary.json (has all data)
             const summaryFile = path.join(runDir, "summary.json");
-            if (fs.existsSync(summaryFile)) {
-              const s = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+            if (await exists(summaryFile)) {
+              const s = JSON.parse(await fs.promises.readFile(summaryFile, "utf8"));
               entry = { runId: d, timestamp: s.timestamp, status: s.status || (s.failed > 0 ? "failed" : "passed"), passed: s.passed || 0, failed: s.failed || 0, skipped: s.skipped || 0, total: s.total || 0, duration_ms: s.duration_ms || 0 };
             } else {
-              const runMeta = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8"));
-              const ents = fs.readdirSync(runDir);
+              const runMeta = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8"));
+              const ents = await fs.promises.readdir(runDir);
               const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
               let failed = 0;
-              for (const td of testDirs) { if (fs.existsSync(path.join(runDir, td, "failure.json"))) failed++; }
+              for (const td of testDirs) { if (await exists(path.join(runDir, td, "failure.json"))) failed++; }
               entry = { runId: d, timestamp: runMeta.timestamp, status: failed > 0 ? "failed" : "passed", passed: testDirs.length - failed, failed, skipped: 0, total: testDirs.length, duration_ms: 0 };
             }
             // Detect suite from test_command
             try {
-              const r = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8"));
+              const r = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8"));
               const cmd = r.test_command || "";
               if (cmd.includes("test/e2e/")) entry.suite = "e2e";
               else if (cmd.includes("test/integration/")) entry.suite = "integration";
@@ -1781,29 +1781,29 @@ const server = http.createServer(async (req, res) => {
         const runDir = path.join(runsDir, runId);
         // Get timestamp from run.json
         let timestamp = null;
-        try { const r = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8")); timestamp = r.timestamp; } catch {}
+        try { const r = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8")); timestamp = r.timestamp; } catch {}
         // Try summary.json for totals
         let passed = 0, failed = 0, skipped = 0, total = 0, duration_ms = 0;
         const summaryFile = path.join(runDir, "summary.json");
-        if (fs.existsSync(summaryFile)) {
-          const s = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+        if (await exists(summaryFile)) {
+          const s = JSON.parse(await fs.promises.readFile(summaryFile, "utf8"));
           passed = s.passed || 0; failed = s.failed || 0; skipped = s.skipped || 0; total = s.total || 0; duration_ms = s.duration_ms || 0;
           if (!timestamp) timestamp = s.timestamp;
         }
         // If no summary, count from test artifact dirs
         if (total === 0) {
-          const ents = fs.readdirSync(runDir);
+          const ents = await fs.promises.readdir(runDir);
           const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
           for (const td of testDirs) {
             total++;
-            if (fs.existsSync(path.join(runDir, td, "failure.json"))) failed++;
+            if (await exists(path.join(runDir, td, "failure.json"))) failed++;
             else passed++;
           }
         }
         // Read failures.json and skips.json
         let failures = [], skips = [];
-        try { failures = JSON.parse(fs.readFileSync(path.join(runDir, "failures.json"), "utf8")); } catch {}
-        try { skips = JSON.parse(fs.readFileSync(path.join(runDir, "skips.json"), "utf8")); } catch {}
+        try { failures = JSON.parse(await fs.promises.readFile(path.join(runDir, "failures.json"), "utf8")); } catch {}
+        try { skips = JSON.parse(await fs.promises.readFile(path.join(runDir, "skips.json"), "utf8")); } catch {}
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({
           runId, timestamp, passed, failed, skipped, total, duration_ms,
@@ -1842,7 +1842,7 @@ const server = http.createServer(async (req, res) => {
         const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
         const outputFile = path.join(CREWSWARM_DIR, "test-results", ".test-output.log");
         // Write initial progress
-        fs.writeFileSync(progressFile, JSON.stringify({ suite, running: true, pid: 0, started: Date.now(), passed: 0, failed: 0, skipped: 0, files_done: 0, current_file: "" }));
+        await fs.promises.writeFile(progressFile, JSON.stringify({ suite, running: true, pid: 0, started: Date.now(), passed: 0, failed: 0, skipped: 0, files_done: 0, current_file: "" }));
         const outFd = fs.openSync(outputFile, "w");
         const child = spawn("npm", ["run", suite], { cwd: CREWSWARM_DIR, stdio: ["ignore", outFd, outFd], detached: true });
         child.unref();
@@ -1888,7 +1888,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/tests/progress" && req.method === "GET") {
       const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
       try {
-        const data = JSON.parse(fs.readFileSync(progressFile, "utf8"));
+        const data = JSON.parse(await fs.promises.readFile(progressFile, "utf8"));
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(data));
       } catch {
@@ -1975,11 +1975,11 @@ const server = http.createServer(async (req, res) => {
       const engine = String(url.searchParams.get("engine") || "opencode").trim();
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
       const projectId = String(url.searchParams.get("projectId") || "").trim();
-      const projectDir = (() => {
+      const projectDir = await (async () => {
         if (!projectId || projectId === "general") return "";
         try {
           const registryFile = path.join(CFG_DIR, "projects.json");
-          const projects = JSON.parse(fs.readFileSync(registryFile, "utf8"));
+          const projects = JSON.parse(await fs.promises.readFile(registryFile, "utf8"));
           return String(projects?.[projectId]?.outputDir || "").trim();
         } catch {
           return "";
@@ -2028,19 +2028,18 @@ const server = http.createServer(async (req, res) => {
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
       const sessionsBase = path.join(os.homedir(), ".codex", "sessions");
       const sessions = [];
-      if (fs.existsSync(sessionsBase)) {
-        const years = fs.readdirSync(sessionsBase).filter(d => /^\d{4}$/.test(d));
+      if (await exists(sessionsBase)) {
+        const years = (await fs.promises.readdir(sessionsBase)).filter(d => /^\d{4}$/.test(d));
         for (const year of years.sort().reverse()) {
           const yearDir = path.join(sessionsBase, year);
-          const months = fs.readdirSync(yearDir).filter(d => /^\d{2}$/.test(d));
+          const months = (await fs.promises.readdir(yearDir)).filter(d => /^\d{2}$/.test(d));
           for (const month of months.sort().reverse()) {
             const monthDir = path.join(yearDir, month);
-            const days = fs.readdirSync(monthDir).filter(d => /^\d{2}$/.test(d));
+            const days = (await fs.promises.readdir(monthDir)).filter(d => /^\d{2}$/.test(d));
             for (const day of days.sort().reverse()) {
               const dayDir = path.join(yearDir, month, day);
-              const files = fs.readdirSync(dayDir)
-                .filter(f => f.endsWith(".jsonl"))
-                .map(f => ({ f, mt: fs.statSync(path.join(dayDir, f)).mtimeMs }))
+              const rawFiles = (await fs.promises.readdir(dayDir)).filter(f => f.endsWith(".jsonl"));
+              const files = (await Promise.all(rawFiles.map(async f => ({ f, mt: (await fs.promises.stat(path.join(dayDir, f))).mtimeMs }))))
                 .sort((a, b) => b.mt - a.mt);
               for (const { f } of files) {
                 if (sessions.length >= limit) break;
@@ -2048,7 +2047,7 @@ const server = http.createServer(async (req, res) => {
                 const filePath = path.join(dayDir, f);
 
                 // Skip files larger than 10MB to avoid memory issues
-                const stats = fs.statSync(filePath);
+                const stats = await fs.promises.stat(filePath);
                 if (stats.size > 10 * 1024 * 1024) {
                   sessions.push({
                     id: sessionId,
@@ -2060,7 +2059,7 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 const messages = [];
-                const allLines = fs.readFileSync(filePath, "utf8").trim().split("\n");
+                const allLines = (await fs.promises.readFile(filePath, "utf8")).trim().split("\n");
                 const lines = allLines.slice(-100); // Last 100 lines only
                 let firstUserMsg = "";
                 for (const line of lines) {
@@ -2100,22 +2099,21 @@ const server = http.createServer(async (req, res) => {
       const qDir = url.searchParams.get("dir") || process.cwd();
       const dirKey = qDir.replace(/\//g, "-");
       const projectsBase = path.join(os.homedir(), ".claude", "projects");
-      const candidates = fs.existsSync(projectsBase)
-        ? fs.readdirSync(projectsBase).filter(d => d === dirKey || d.endsWith(dirKey.split("-").slice(-2).join("-")))
+      const candidates = await exists(projectsBase)
+        ? (await fs.promises.readdir(projectsBase)).filter(d => d === dirKey || d.endsWith(dirKey.split("-").slice(-2).join("-")))
         : [];
       const sessions = [];
       for (const cand of candidates) {
         const sessDir = path.join(projectsBase, cand);
-        const files = fs.readdirSync(sessDir)
-          .filter(f => f.endsWith(".jsonl"))
-          .map(f => ({ f, mt: fs.statSync(path.join(sessDir, f)).mtimeMs }))
+        const rawSessFiles = (await fs.promises.readdir(sessDir)).filter(f => f.endsWith(".jsonl"));
+        const files = (await Promise.all(rawSessFiles.map(async f => ({ f, mt: (await fs.promises.stat(path.join(sessDir, f))).mtimeMs }))))
           .sort((a, b) => b.mt - a.mt)
           .slice(0, limit)
           .map(x => x.f);
         for (const file of files) {
           const sessionId = file.replace(".jsonl", "");
           const messages = [];
-          const lines = fs.readFileSync(path.join(sessDir, file), "utf8").trim().split("\n");
+          const lines = (await fs.promises.readFile(path.join(sessDir, file), "utf8")).trim().split("\n");
           for (const line of lines) {
             try {
               const d = JSON.parse(line);
@@ -2139,13 +2137,13 @@ const server = http.createServer(async (req, res) => {
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
       const historyBase = path.join(os.homedir(), ".gemini", "history");
       const sessions = [];
-      if (fs.existsSync(historyBase)) {
-        const projects = fs.readdirSync(historyBase);
+      if (await exists(historyBase)) {
+        const projects = await fs.promises.readdir(historyBase);
         for (const proj of projects) {
           const sessionFile = path.join(historyBase, proj, "session.jsonl");
-          if (fs.existsSync(sessionFile)) {
+          if (await exists(sessionFile)) {
             const messages = [];
-            const lines = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
+            const lines = (await fs.promises.readFile(sessionFile, "utf8")).trim().split("\n");
             let firstUserMsg = "";
             for (const line of lines) {
               try {
@@ -2159,7 +2157,7 @@ const server = http.createServer(async (req, res) => {
               } catch { }
             }
             if (messages.length) {
-              const stat = fs.statSync(sessionFile);
+              const stat = await fs.promises.stat(sessionFile);
               sessions.push({
                 id: proj,
                 title: firstUserMsg || proj,
@@ -2181,33 +2179,32 @@ const server = http.createServer(async (req, res) => {
       const limit = Math.min(Number(url.searchParams.get("limit") || "20"), 50);
       const sessionsBase = path.join(process.cwd(), ".crew", "sessions");
       const sessions = [];
-      if (fs.existsSync(sessionsBase)) {
-        const engines = fs.readdirSync(sessionsBase);
+      if (await exists(sessionsBase)) {
+        const engines = await fs.promises.readdir(sessionsBase);
         for (const engine of engines) {
           const engineDir = path.join(sessionsBase, engine);
-          const projects = fs.readdirSync(engineDir);
+          const projects = await fs.promises.readdir(engineDir);
           for (const project of projects) {
             const projectSessionsDir = path.join(engineDir, project, "sessions");
-            if (!fs.existsSync(projectSessionsDir)) continue;
-            const years = fs.readdirSync(projectSessionsDir).filter(d => /^\d{4}$/.test(d));
+            if (!await exists(projectSessionsDir)) continue;
+            const years = (await fs.promises.readdir(projectSessionsDir)).filter(d => /^\d{4}$/.test(d));
             for (const year of years.sort().reverse()) {
               const yearDir = path.join(projectSessionsDir, year);
-              const months = fs.readdirSync(yearDir).filter(d => /^\d{2}$/.test(d));
+              const months = (await fs.promises.readdir(yearDir)).filter(d => /^\d{2}$/.test(d));
               for (const month of months.sort().reverse()) {
                 const monthDir = path.join(yearDir, month);
-                const days = fs.readdirSync(monthDir).filter(d => /^\d{2}$/.test(d));
+                const days = (await fs.promises.readdir(monthDir)).filter(d => /^\d{2}$/.test(d));
                 for (const day of days.sort().reverse()) {
                   const dayDir = path.join(yearDir, month, day);
-                  const files = fs.readdirSync(dayDir)
-                    .filter(f => f.endsWith(".jsonl"))
-                    .map(f => ({ f, mt: fs.statSync(path.join(dayDir, f)).mtimeMs }))
+                  const rawDayFiles = (await fs.promises.readdir(dayDir)).filter(f => f.endsWith(".jsonl"));
+                  const files = (await Promise.all(rawDayFiles.map(async f => ({ f, mt: (await fs.promises.stat(path.join(dayDir, f))).mtimeMs }))))
                     .sort((a, b) => b.mt - a.mt);
                   for (const { f } of files) {
                     if (sessions.length >= limit) break;
                     const sessionId = f.replace(".jsonl", "");
                     const messages = [];
                     // Limit to last 100 lines to avoid huge session files
-                    const allLines = fs.readFileSync(path.join(dayDir, f), "utf8").trim().split("\n");
+                    const allLines = (await fs.promises.readFile(path.join(dayDir, f), "utf8")).trim().split("\n");
                     const lines = allLines.slice(-100);
                     let firstUserMsg = "";
                     for (const line of lines) {
@@ -2283,8 +2280,8 @@ const server = http.createServer(async (req, res) => {
             "passthrough-sessions.json",
           );
           let sessions = {};
-          if (fs.existsSync(sessionFile)) {
-            sessions = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+          if (await exists(sessionFile)) {
+            sessions = JSON.parse(await fs.promises.readFile(sessionFile, "utf8"));
           }
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ sessions }));
@@ -2308,11 +2305,11 @@ const server = http.createServer(async (req, res) => {
             "passthrough-sessions.json",
           );
           let sessions = {};
-          if (fs.existsSync(sessionFile)) {
-            sessions = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+          if (await exists(sessionFile)) {
+            sessions = JSON.parse(await fs.promises.readFile(sessionFile, "utf8"));
           }
           delete sessions[key];
-          fs.writeFileSync(
+          await fs.promises.writeFile(
             sessionFile,
             JSON.stringify(sessions, null, 2),
             "utf8",
@@ -2336,7 +2333,7 @@ const server = http.createServer(async (req, res) => {
       );
       let usage = { calls: 0, prompt: 0, completion: 0, byModel: {} };
       try {
-        usage = JSON.parse(fs.readFileSync(usageFile, "utf8"));
+        usage = JSON.parse(await fs.promises.readFile(usageFile, "utf8"));
       } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(usage));
@@ -2433,13 +2430,12 @@ const server = http.createServer(async (req, res) => {
       const histDir = path.join(os.homedir(), ".crewswarm", "chat-history");
       const sessions = [];
       try {
-        const files = fs
-          .readdirSync(histDir)
+        const files = (await fs.promises.readdir(histDir))
           .filter((f) => f.startsWith("telegram-") && f.endsWith(".jsonl"));
         for (const file of files) {
           const chatId = file.replace(/^telegram-/, "").replace(/\.jsonl$/, "");
-          const lines = fs
-            .readFileSync(path.join(histDir, file), "utf8")
+          const lines = (await fs.promises
+            .readFile(path.join(histDir, file), "utf8"))
             .split("\n")
             .filter(Boolean);
           const msgs = lines
@@ -2544,7 +2540,7 @@ const server = http.createServer(async (req, res) => {
       // Credential keys are never exposed here
       let cfgEnv = {};
       try {
-        cfgEnv = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")).env || {};
+        cfgEnv = JSON.parse(await fs.promises.readFile(CFG_FILE, "utf8")).env || {};
       } catch { }
       const result = {};
       for (const v of vars) {
@@ -2570,9 +2566,9 @@ const server = http.createServer(async (req, res) => {
       }
       const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
       try {
-        const raw = (() => {
+        const raw = await (async () => {
           try {
-            return fs.readFileSync(cfgPath, "utf8");
+            return await fs.promises.readFile(cfgPath, "utf8");
           } catch {
             return "{}";
           }
@@ -2765,7 +2761,7 @@ const server = http.createServer(async (req, res) => {
 
       try {
         // Load agent config
-        const csSwarm = JSON.parse(fs.readFileSync(CFG_FILE, "utf8"));
+        const csSwarm = JSON.parse(await fs.promises.readFile(CFG_FILE, "utf8"));
         const agentCfg = csSwarm.agents?.find((a) => a.id === agentId);
         if (!agentCfg?.model) {
           res.writeHead(404, { "content-type": "application/json" });
@@ -2798,7 +2794,7 @@ const server = http.createServer(async (req, res) => {
         let systemPrompt = `You are ${agentId}.`;
         try {
           const agentPrompts = JSON.parse(
-            fs.readFileSync(agentPromptsPath, "utf8"),
+            await fs.promises.readFile(agentPromptsPath, "utf8"),
           );
           const bareId = agentId.replace(/^crew-/, "");
           systemPrompt =
@@ -2990,14 +2986,14 @@ const server = http.createServer(async (req, res) => {
       );
 
       try {
-        if (!fs.existsSync(historyPath)) {
+        if (!await exists(historyPath)) {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ history: [] }));
           return;
         }
 
-        const lines = fs
-          .readFileSync(historyPath, "utf8")
+        const lines = (await fs.promises
+          .readFile(historyPath, "utf8"))
           .split("\n")
           .filter(Boolean);
         const history = lines.map((line) => JSON.parse(line));
@@ -3050,13 +3046,13 @@ const server = http.createServer(async (req, res) => {
         let projectDir = process.cwd();
         if (projectId) {
           const regPath = path.join(CFG_DIR, "projects.json");
-          if (fs.existsSync(regPath)) {
-            const reg = JSON.parse(fs.readFileSync(regPath, "utf8") || "{}");
+          if (await exists(regPath)) {
+            const reg = JSON.parse(await fs.promises.readFile(regPath, "utf8") || "{}");
             const proj = reg[projectId];
             if (proj?.outputDir) projectDir = proj.outputDir;
           }
         }
-        fs.mkdirSync(projectDir, { recursive: true });
+        await fs.promises.mkdir(projectDir, { recursive: true });
 
         const planner = resolvePlannerEngine(requestedEngine, requestedModel);
         if (!planner) throw new Error("No planning engine is configured or installed");
@@ -3122,13 +3118,12 @@ const server = http.createServer(async (req, res) => {
       // Resolve project output dir if projectId provided
       let projectEnv = {};
       if (projectId) {
-        const { existsSync: ex } = await import("node:fs");
         const { readFile: rf } = await import("node:fs/promises");
         const regPath = path.join(
           CFG_DIR,
           "projects.json",
         );
-        if (ex(regPath)) {
+        if (await exists(regPath)) {
           const reg = JSON.parse(await rf(regPath, "utf8").catch(() => "{}"));
           const proj = reg[projectId];
           if (proj) {
@@ -3144,8 +3139,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
       const { spawn } = await import("node:child_process");
-      const { existsSync } = await import("node:fs");
-      if (!existsSync(phasedOrchestrator))
+      if (!(await exists(phasedOrchestrator)))
         throw new Error(
           "phased-orchestrator.mjs not found at " + phasedOrchestrator,
         );
@@ -3189,10 +3183,10 @@ const server = http.createServer(async (req, res) => {
         projectId ? "phased-" + projectId + ".pid" : "phased-orchestrator.pid",
       );
       try {
-        const pidStr = fs.readFileSync(pidFile, "utf8").trim();
+        const pidStr = (await fs.promises.readFile(pidFile, "utf8")).trim();
         const pid = parseInt(pidStr, 10);
         if (pid) process.kill(pid, "SIGTERM");
-        fs.unlinkSync(pidFile);
+        await fs.promises.unlink(pidFile);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, pid }));
       } catch (e) {
@@ -3219,13 +3213,12 @@ const server = http.createServer(async (req, res) => {
       const { requirement, projectId } = vr.data;
       let projectEnv = {};
       if (projectId) {
-        const { existsSync: ex } = await import("node:fs");
         const { readFile: rf } = await import("node:fs/promises");
         const regPath = path.join(
           CFG_DIR,
           "projects.json",
         );
-        if (ex(regPath)) {
+        if (await exists(regPath)) {
           const reg = JSON.parse(await rf(regPath, "utf8").catch(() => "{}"));
           const proj = reg[projectId];
           if (proj) {
@@ -3241,8 +3234,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
       const { spawn } = await import("node:child_process");
-      const { existsSync } = await import("node:fs");
-      if (!existsSync(continuousBuild))
+      if (!(await exists(continuousBuild)))
         throw new Error("continuous-build.mjs not found at " + continuousBuild);
       const proc = spawn(PREFERRED_NODE_BIN, [continuousBuild, requirement], {
         cwd: CREWSWARM_DIR,
@@ -3290,10 +3282,10 @@ const server = http.createServer(async (req, res) => {
         projectId ? "continuous-" + projectId + ".pid" : "continuous-build.pid",
       );
       try {
-        const pidStr = fs.readFileSync(pidFile, "utf8").trim();
+        const pidStr = (await fs.promises.readFile(pidFile, "utf8")).trim();
         const pid = parseInt(pidStr, 10);
         if (pid) process.kill(pid, "SIGTERM");
-        fs.unlinkSync(pidFile);
+        await fs.promises.unlink(pidFile);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, pid }));
       } catch (e) {
@@ -3303,7 +3295,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/api/continuous-build/log" && req.method === "GET") {
-      const { existsSync } = await import("node:fs");
       const { readFile } = await import("node:fs/promises");
       const logPath = path.join(
         CREWSWARM_DIR,
@@ -3311,7 +3302,7 @@ const server = http.createServer(async (req, res) => {
         "continuous-build.jsonl",
       );
       let lines = [];
-      if (existsSync(logPath)) {
+      if (await exists(logPath)) {
         const raw = await readFile(logPath, "utf8").catch(() => "");
         lines = raw
           .trim()
@@ -3408,7 +3399,6 @@ const server = http.createServer(async (req, res) => {
 
     // ── Waves Configuration APIs ──────────────────────────────────────────
     if (url.pathname === "/api/waves/config" && req.method === "GET") {
-      const { existsSync, readFileSync } = await import("node:fs");
       const { readFile: rf } = await import("node:fs/promises");
       const wavesConfigPath = path.join(
         CREWSWARM_DIR,
@@ -3417,7 +3407,7 @@ const server = http.createServer(async (req, res) => {
         "waves-config.json",
       );
 
-      if (!existsSync(wavesConfigPath)) {
+      if (!(await exists(wavesConfigPath))) {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "Waves config not found" }));
         return;
@@ -3432,7 +3422,7 @@ const server = http.createServer(async (req, res) => {
             raw = await rf(wavesConfigPath, "utf8");
           } catch {
             try {
-              raw = readFileSync(wavesConfigPath, "utf8");
+              raw = await fs.promises.readFile(wavesConfigPath, "utf8");
             } catch {
               raw = JSON.stringify(getEmbeddedWavesConfig());
             }
@@ -3486,8 +3476,7 @@ const server = http.createServer(async (req, res) => {
 
       try {
         // Check if we have a backup
-        const { existsSync } = await import("node:fs");
-        if (existsSync(wavesConfigBackup)) {
+        if (await exists(wavesConfigBackup)) {
           const defaultConfig = await rf(wavesConfigBackup, "utf8");
           await wf(wavesConfigPath, defaultConfig, "utf8");
         } else {
@@ -3638,7 +3627,7 @@ const server = http.createServer(async (req, res) => {
         if (!isValidWorkflowName(name))
           throw new Error("Invalid workflow name");
         const fp = getWorkflowFile(name);
-        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+        if (await exists(fp)) await fs.promises.unlink(fp);
         workflowRuntime.runs.delete(name);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -3718,11 +3707,10 @@ const server = http.createServer(async (req, res) => {
 
     // ── Project management APIs ───────────────────────────────────────────
     if (url.pathname === "/api/projects" && req.method === "GET") {
-      const { existsSync } = await import("node:fs");
       const { readFile: rf } = await import("node:fs/promises");
       const registryFile = path.join(CFG_DIR, "projects.json");
       let projects = {};
-      if (existsSync(registryFile)) {
+      if (await exists(registryFile)) {
         projects = JSON.parse(await rf(registryFile, "utf8").catch(() => "{}"));
       }
       // Enrich each project with live roadmap stats and running status.
@@ -3736,7 +3724,7 @@ const server = http.createServer(async (req, res) => {
             failed = 0,
             pending = 0,
             total = 0;
-          if (existsSync(project.roadmapFile)) {
+          if (await exists(project.roadmapFile)) {
             const rm = await rf(project.roadmapFile, "utf8").catch(() => "");
             const lines = rm.split("\n").filter((l) => /^- \[/.test(l));
             total = lines.length;
@@ -3746,7 +3734,7 @@ const server = http.createServer(async (req, res) => {
           }
           let running = false;
           const pidPath = path.join(logsDir2, `pm-loop-${id}.pid`);
-          if (existsSync(pidPath)) {
+          if (await exists(pidPath)) {
             try {
               const pidStr = await rf(pidPath, "utf8").catch(() => "");
               const pid = parseInt(pidStr.trim(), 10);
@@ -3813,12 +3801,11 @@ const server = http.createServer(async (req, res) => {
         body || "{}",
       );
       if (!name || !outputDir) throw new Error("name and outputDir required");
-      const { existsSync, mkdirSync } = await import("node:fs");
       const { readFile: rf, writeFile: wf } = await import("node:fs/promises");
       // Create output dir and ROADMAP.md if they don't exist
-      if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+      if (!(await exists(outputDir))) await fs.promises.mkdir(outputDir, { recursive: true });
       const roadmapFile = path.join(outputDir, "ROADMAP.md");
-      if (!existsSync(roadmapFile)) {
+      if (!(await exists(roadmapFile))) {
         await wf(
           roadmapFile,
           `# ${name} — Living Roadmap\n\n> Managed by pm-loop.mjs. Add \`- [ ] items\` here at any time.\n\n---\n\n## Phase 0 — Getting Started\n\n- [ ] Create the initial project structure and entry point\n`,
@@ -3830,7 +3817,7 @@ const server = http.createServer(async (req, res) => {
         .replace(/^-|-$/g, "");
       const registryFile = path.join(CFG_DIR, "projects.json");
       let projects = {};
-      if (existsSync(registryFile))
+      if (await exists(registryFile))
         projects = JSON.parse(await rf(registryFile, "utf8").catch(() => "{}"));
       projects[id] = {
         id,
@@ -3868,10 +3855,9 @@ const server = http.createServer(async (req, res) => {
       }
       const { projectId } = vr.data;
       const registryFile = path.join(CFG_DIR, "projects.json");
-      const { existsSync, rmSync, writeFileSync, unlinkSync } = await import("node:fs");
       const { readFile: rf, writeFile: wf } = await import("node:fs/promises");
       let projects = {};
-      if (existsSync(registryFile))
+      if (await exists(registryFile))
         projects = JSON.parse(await rf(registryFile, "utf8").catch(() => "{}"));
       if (!projects[projectId])
         throw new Error("Project not found: " + projectId);
@@ -3880,7 +3866,7 @@ const server = http.createServer(async (req, res) => {
       const stopPath = path.join(logsDir, `pm-loop-${projectId}.stop`);
       const logPath = path.join(logsDir, `pm-loop-${projectId}.jsonl`);
       let stoppedPmLoop = false;
-      if (existsSync(pidPath)) {
+      if (await exists(pidPath)) {
         const pidStr = await rf(pidPath, "utf8").catch(() => "");
         const pid = parseInt(pidStr.trim(), 10);
         if (pid) {
@@ -3891,18 +3877,18 @@ const server = http.createServer(async (req, res) => {
         }
       }
       try {
-        writeFileSync(stopPath, new Date().toISOString());
+        await fs.promises.writeFile(stopPath, new Date().toISOString());
       } catch { }
       for (const cleanupPath of [pidPath, stopPath, logPath]) {
-        if (!existsSync(cleanupPath)) continue;
+        if (!(await exists(cleanupPath))) continue;
         try {
-          unlinkSync(cleanupPath);
+          await fs.promises.unlink(cleanupPath);
         } catch { }
       }
       const projectMessageDir = path.join(CFG_DIR, "project-messages", projectId);
-      if (existsSync(projectMessageDir)) {
+      if (await exists(projectMessageDir)) {
         try {
-          rmSync(projectMessageDir, { recursive: true, force: true });
+          await fs.promises.rm(projectMessageDir, { recursive: true, force: true });
         } catch { }
       }
       delete projects[projectId];
@@ -3928,10 +3914,9 @@ const server = http.createServer(async (req, res) => {
       }
       const { projectId, autoAdvance, name, description, outputDir } = vr.data;
       const registryFile = path.join(CFG_DIR, "projects.json");
-      const { existsSync } = await import("node:fs");
       const { readFile: rf, writeFile: wf } = await import("node:fs/promises");
       let projects = {};
-      if (existsSync(registryFile))
+      if (await exists(registryFile))
         projects = JSON.parse(await rf(registryFile, "utf8").catch(() => "{}"));
       if (!projects[projectId])
         throw new Error("Project not found: " + projectId);
@@ -3946,7 +3931,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/api/pm-loop/status" && req.method === "GET") {
-      const { existsSync } = await import("node:fs");
       const { readFile: rf } = await import("node:fs/promises");
       const statusProjectId = url.searchParams.get("projectId") || "";
       const suffix = statusProjectId ? `-${statusProjectId}` : "";
@@ -3957,7 +3941,7 @@ const server = http.createServer(async (req, res) => {
       );
       let running = false,
         pid = null;
-      if (existsSync(pidPath)) {
+      if (await exists(pidPath)) {
         const pidStr = await rf(pidPath, "utf8").catch(() => "");
         pid = parseInt(pidStr.trim(), 10);
         if (pid) {
@@ -3991,9 +3975,8 @@ const server = http.createServer(async (req, res) => {
       }
       const { dryRun, projectId, pmOptions = {} } = vr.data;
       const { spawn } = await import("node:child_process");
-      const { existsSync, mkdirSync, unlinkSync } = await import("node:fs");
       const { readFile: rf } = await import("node:fs/promises");
-      if (!existsSync(pmLoop))
+      if (!(await exists(pmLoop)))
         throw new Error("pm-loop.mjs not found at " + pmLoop);
       // Resolve project config if projectId provided
       let projectDir = null,
@@ -4001,7 +3984,7 @@ const server = http.createServer(async (req, res) => {
         projectFeaturesDoc = null;
       if (projectId) {
         const registryFile = path.join(CFG_DIR, "projects.json");
-        if (existsSync(registryFile)) {
+        if (await exists(registryFile)) {
           const reg = JSON.parse(
             await rf(registryFile, "utf8").catch(() => "{}"),
           );
@@ -4025,7 +4008,7 @@ const server = http.createServer(async (req, res) => {
         "orchestrator-logs",
         `pm-loop${pidSuffix}.stop`,
       );
-      if (existsSync(pidFile)) {
+      if (await exists(pidFile)) {
         const pidStr = await rf(pidFile, "utf8").catch(() => "");
         const existingPid = parseInt(pidStr.trim(), 10);
         if (existingPid) {
@@ -4047,13 +4030,13 @@ const server = http.createServer(async (req, res) => {
         }
       }
       // Clear any stale stop file
-      if (existsSync(stopFilePath)) {
+      if (await exists(stopFilePath)) {
         try {
-          unlinkSync(stopFilePath);
+          await fs.promises.unlink(stopFilePath);
         } catch { }
       }
       const logsDir = path.join(CREWSWARM_DIR, "orchestrator-logs");
-      if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
+      if (!(await exists(logsDir))) await fs.promises.mkdir(logsDir, { recursive: true });
       // Load RT token so pm-loop and its child gateway-bridge --send can authenticate with the RT daemon
       let rtToken = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
       if (!rtToken) {
@@ -4145,13 +4128,12 @@ const server = http.createServer(async (req, res) => {
       let body = "";
       for await (const chunk of req) body += chunk;
       const { projectId } = JSON.parse(body || "{}");
-      const { writeFileSync, mkdirSync, existsSync } = await import("node:fs");
       const logsDir = path.join(CREWSWARM_DIR, "orchestrator-logs");
-      if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
+      if (!(await exists(logsDir))) await fs.promises.mkdir(logsDir, { recursive: true });
       // Write project-specific stop file if projectId provided
       const suffix = projectId ? `-${projectId}` : "";
       const stopFilePath = path.join(logsDir, `pm-loop${suffix}.stop`);
-      writeFileSync(stopFilePath, new Date().toISOString());
+      await fs.promises.writeFile(stopFilePath, new Date().toISOString());
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
@@ -4162,10 +4144,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/api/pm-loop/log" && req.method === "GET") {
-      const { existsSync } = await import("node:fs");
       const { readFile } = await import("node:fs/promises");
       let lines = [];
-      if (existsSync(pmLogFile)) {
+      if (await exists(pmLogFile)) {
         const raw = await readFile(pmLogFile, "utf8").catch(() => "");
         lines = raw
           .trim()
@@ -4186,10 +4167,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/api/pm-loop/roadmap" && req.method === "GET") {
-      const { existsSync } = await import("node:fs");
       const { readFile } = await import("node:fs/promises");
       let content = "(ROADMAP.md not found — create website/ROADMAP.md)";
-      if (existsSync(roadmapFile)) {
+      if (await exists(roadmapFile)) {
         content = await readFile(roadmapFile, "utf8").catch(
           () => "(unreadable)",
         );
@@ -4214,8 +4194,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const { key } = vr.data;
-      const { execSync } = await import("node:child_process");
-      execSync(`"${ctlPath}" dlq-replay "${key}"`, {
+      const { execSync: _execSync } = await import("node:child_process");
+      const { promisify: _promisify } = await import("node:util");
+      const execAsync = _promisify(_execSync);
+      await execAsync(`"${ctlPath}" dlq-replay "${key}"`, {
         encoding: "utf8",
         timeout: 10000,
       });
@@ -4240,7 +4222,9 @@ const server = http.createServer(async (req, res) => {
     // ── Settings: Preset (from setup wizard) ────────────────────────────────
     // ── Engine detection for first-run wizard ─────────────────────────────
     if (url.pathname === "/api/first-run-engines" && req.method === "GET") {
-      const { execSync } = await import("node:child_process");
+      const { exec: _execFRE } = await import("node:child_process");
+      const { promisify: _promisifyFRE } = await import("node:util");
+      const _execAsyncFRE = _promisifyFRE(_execFRE);
       // Expand PATH to include common install locations (launchd has restricted PATH)
       const extraPaths = [
         `${os.homedir()}/.local/bin`,
@@ -4266,13 +4250,14 @@ const server = http.createServer(async (req, res) => {
       ];
       for (const { id, bin } of checks) {
         // Check common paths directly (launchd PATH is restricted)
-        if (searchDirs.some(d => fs.existsSync(path.join(d, bin)))) {
+        const foundInSearchDirs = await Promise.any(searchDirs.map(d => fs.promises.access(path.join(d, bin)).then(() => true))).catch(() => false);
+        if (foundInSearchDirs) {
           engines[id] = true;
           continue;
         }
         // Fallback: try login shell
         try {
-          execSync(`/bin/zsh -lc 'command -v ${bin}'`, { stdio: "pipe", timeout: 5000 });
+          await _execAsyncFRE(`/bin/zsh -lc 'command -v ${bin}'`, { timeout: 5000 });
           engines[id] = true;
         } catch {
           engines[id] = false;
@@ -4288,7 +4273,7 @@ const server = http.createServer(async (req, res) => {
       let token = "";
       try {
         token =
-          JSON.parse(fs.readFileSync(csConfigPath, "utf8"))?.rt?.authToken ||
+          JSON.parse(await fs.promises.readFile(csConfigPath, "utf8"))?.rt?.authToken ||
           "";
       } catch { }
       if (!token) token = process.env.CREWSWARM_RT_AUTH_TOKEN || "";
@@ -4302,13 +4287,13 @@ const server = http.createServer(async (req, res) => {
       const { token } = JSON.parse(body);
       const csDir = path.join(os.homedir(), ".crewswarm");
       const csConfigPath = path.join(csDir, "crewswarm.json");
-      fs.mkdirSync(csDir, { recursive: true });
+      await fs.promises.mkdir(csDir, { recursive: true });
       let cfg = {};
       try {
-        cfg = JSON.parse(fs.readFileSync(csConfigPath, "utf8"));
+        cfg = JSON.parse(await fs.promises.readFile(csConfigPath, "utf8"));
       } catch { }
       cfg.rt = { ...(cfg.rt || {}), authToken: token };
-      fs.writeFileSync(csConfigPath, JSON.stringify(cfg, null, 2));
+      await fs.promises.writeFile(csConfigPath, JSON.stringify(cfg, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -4318,15 +4303,20 @@ const server = http.createServer(async (req, res) => {
       const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
       let locked = false;
       try {
-        const { execSync } = require("child_process");
+        const { exec: _lockExec } = await import("node:child_process");
+        const { promisify: _lockPromisify } = await import("node:util");
+        const _lockExecAsync = _lockPromisify(_lockExec);
         // Use stat command which is more reliable than ls
-        const output = execSync(`stat -f "%Sf" "${cfgPath}"`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-        locked = output.trim().includes('uchg');
+        const { stdout: lockOut } = await _lockExecAsync(`stat -f "%Sf" "${cfgPath}"`, { encoding: 'utf8' });
+        locked = lockOut.trim().includes('uchg');
       } catch (e) {
         // If stat fails, try ls as fallback
         try {
-          const output2 = execSync(`ls -lO "${cfgPath}"`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-          locked = output2.includes('uchg');
+          const { exec: _lockExec2 } = await import("node:child_process");
+          const { promisify: _lockPromisify2 } = await import("node:util");
+          const _lockExecAsync2 = _lockPromisify2(_lockExec2);
+          const { stdout: lockOut2 } = await _lockExecAsync2(`ls -lO "${cfgPath}"`, { encoding: 'utf8' });
+          locked = lockOut2.includes('uchg');
         } catch { }
       }
       res.writeHead(200, { "content-type": "application/json" });
@@ -4336,7 +4326,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/config/lock" && req.method === "POST") {
       const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
       try {
-        execSync(`chflags uchg "${cfgPath}"`);
+        const { exec: _chflagsExec } = await import("node:child_process");
+        const { promisify: _chflagsPromisify } = await import("node:util");
+        await _chflagsPromisify(_chflagsExec)(`chflags uchg "${cfgPath}"`);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, locked: true }));
       } catch (e) {
@@ -4348,7 +4340,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/config/unlock" && req.method === "POST") {
       const cfgPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
       try {
-        execSync(`chflags nouchg "${cfgPath}"`);
+        const { exec: _chflagsExec2 } = await import("node:child_process");
+        const { promisify: _chflagsPromisify2 } = await import("node:util");
+        await _chflagsPromisify2(_chflagsExec2)(`chflags nouchg "${cfgPath}"`);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, locked: false }));
       } catch (e) {
@@ -4372,7 +4366,7 @@ const server = http.createServer(async (req, res) => {
         "groq/moonshotai/kimi-k2-instruct-0905";
       let crewLeadModel = process.env.CREWSWARM_CREW_LEAD_MODEL || "";
       try {
-        const c = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+        const c = JSON.parse(await fs.promises.readFile(cfgPath, "utf8"));
         if (c.opencodeProject) dir = c.opencodeProject;
         if (c.opencodeFallbackModel) fallbackModel = c.opencodeFallbackModel;
         if (c.opencodeModel) opencodeModel = c.opencodeModel;
@@ -4403,10 +4397,10 @@ const server = http.createServer(async (req, res) => {
       }
       const cfgDir = path.join(os.homedir(), ".crewswarm");
       const cfgPath = path.join(cfgDir, "crewswarm.json");
-      fs.mkdirSync(cfgDir, { recursive: true });
+      await fs.promises.mkdir(cfgDir, { recursive: true });
       let cfg = {};
       try {
-        cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+        cfg = JSON.parse(await fs.promises.readFile(cfgPath, "utf8"));
       } catch { }
       if (dir !== undefined) {
         if (dir) cfg.opencodeProject = dir;
@@ -4473,38 +4467,38 @@ const server = http.createServer(async (req, res) => {
     const csConfig = path.join(csDir, "crewswarm.json");
     const csSwarmConfig = path.join(csDir, "crewswarm.json");
     const ocConfig = path.join(os.homedir(), ".openclaw", "openclaw.json");
-    function readCSConfig() {
+    async function readCSConfig() {
       try {
-        return JSON.parse(fs.readFileSync(csConfig, "utf8"));
+        return JSON.parse(await fs.promises.readFile(csConfig, "utf8"));
       } catch {
         return {};
       }
     }
-    function readCSSwarmConfig() {
+    async function readCSSwarmConfig() {
       try {
-        return JSON.parse(fs.readFileSync(csSwarmConfig, "utf8"));
+        return JSON.parse(await fs.promises.readFile(csSwarmConfig, "utf8"));
       } catch {
         return {};
       }
     }
-    function writeCSSwarmConfig(c) {
-      fs.mkdirSync(csDir, { recursive: true });
-      fs.writeFileSync(csSwarmConfig, JSON.stringify(c, null, 2));
+    async function writeCSSwarmConfig(c) {
+      await fs.promises.mkdir(csDir, { recursive: true });
+      await fs.promises.writeFile(csSwarmConfig, JSON.stringify(c, null, 2));
     }
-    function readOCConfig() {
+    async function readOCConfig() {
       try {
-        return JSON.parse(fs.readFileSync(ocConfig, "utf8"));
+        return JSON.parse(await fs.promises.readFile(ocConfig, "utf8"));
       } catch {
         return null;
       }
     }
-    function writeOCConfig(c) {
-      fs.writeFileSync(ocConfig, JSON.stringify(c, null, 4));
+    async function writeOCConfig(c) {
+      await fs.promises.writeFile(ocConfig, JSON.stringify(c, null, 4));
     }
-    function getBuiltinKey(id) {
-      const sw = readCSSwarmConfig();
-      const cs = readCSConfig();
-      const oc = readOCConfig();
+    async function getBuiltinKey(id) {
+      const sw = await readCSSwarmConfig();
+      const cs = await readCSConfig();
+      const oc = await readOCConfig();
       return (
         sw?.providers?.[id]?.apiKey ||
         sw?.env?.[id.toUpperCase() + "_API_KEY"] ||
@@ -4765,7 +4759,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/providers/builtin" && req.method === "GET") {
       const keys = {};
       for (const id of Object.keys(BUILTIN_URLS)) {
-        keys[id] = getBuiltinKey(id) ? "SET" : "";
+        keys[id] = await getBuiltinKey(id) ? "SET" : "";
       }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, keys }));
@@ -4782,16 +4776,16 @@ const server = http.createServer(async (req, res) => {
       if (providerId === "openai-local" && !(apiKey && apiKey.trim()))
         apiKey = "key";
       // Write to ~/.crewswarm/crewswarm.json
-      const cfg = readCSSwarmConfig();
+      const cfg = await readCSSwarmConfig();
       if (!cfg.providers) cfg.providers = {};
       cfg.providers[providerId] = {
         ...(cfg.providers[providerId] || {}),
         apiKey,
         baseUrl: BUILTIN_URLS[providerId],
       };
-      writeCSSwarmConfig(cfg);
+      await writeCSSwarmConfig(cfg);
       // Sync to ~/.openclaw/openclaw.json if it exists (legacy compat)
-      const oc = readOCConfig();
+      const oc = await readOCConfig();
       if (oc) {
         if (!oc.models) oc.models = {};
         if (!oc.models.providers) oc.models.providers = {};
@@ -4803,7 +4797,7 @@ const server = http.createServer(async (req, res) => {
           };
         }
         oc.models.providers[providerId].apiKey = apiKey;
-        writeOCConfig(oc);
+        await writeOCConfig(oc);
       }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -4828,7 +4822,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const { providerId } = vr.data;
-      const apiKey = getBuiltinKey(providerId);
+      const apiKey = await getBuiltinKey(providerId);
       const baseUrl = BUILTIN_URLS[providerId] || "";
       if (providerId === "ollama") {
         try {
@@ -5129,7 +5123,7 @@ const server = http.createServer(async (req, res) => {
             process.env.CREWSWARM_CREW_CLI_ENABLED === "1";
           const installed =
             commandExists("crew") ||
-            fs.existsSync(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"));
+            await exists(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"));
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ enabled, installed }));
         } catch {
@@ -5199,9 +5193,9 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         try {
-          const raw = (() => {
+          const raw = await (async () => {
             try {
-              return fs.readFileSync(CFG_FILE, "utf8");
+              return await fs.promises.readFile(CFG_FILE, "utf8");
             } catch {
               return "{}";
             }
@@ -5253,7 +5247,7 @@ const server = http.createServer(async (req, res) => {
             process.env.CREWSWARM_OPENCODE_ENABLED === "1";
           const installed =
             commandExists(process.env.CREWSWARM_OPENCODE_BIN || "opencode") ||
-            fs.existsSync(path.join(os.homedir(), ".opencode", "bin", "opencode"));
+            await exists(path.join(os.homedir(), ".opencode", "bin", "opencode"));
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ enabled, installed }));
         } catch {
@@ -5403,7 +5397,7 @@ const server = http.createServer(async (req, res) => {
       const cfgPath = CFG_FILE;
       if (req.method === "GET") {
         try {
-          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          const cfg = JSON.parse(await fs.promises.readFile(cfgPath, "utf8"));
           const roles = cfg.roleToolDefaults || {};
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ roles }));
@@ -5418,7 +5412,7 @@ const server = http.createServer(async (req, res) => {
           let body = "";
           for await (const chunk of req) body += chunk;
           const { roles } = JSON.parse(body || "{}");
-          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          const cfg = JSON.parse(await fs.promises.readFile(cfgPath, "utf8"));
           cfg.roleToolDefaults = roles || {};
           const writeErr = await safeWriteConfig(cfg);
           if (writeErr) {
@@ -5440,7 +5434,7 @@ const server = http.createServer(async (req, res) => {
       const cfgPath = CFG_FILE;
       if (req.method === "GET") {
         try {
-          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          const cfg = JSON.parse(await fs.promises.readFile(cfgPath, "utf8"));
           const caps = cfg.globalSpendingCaps || {};
           res.writeHead(200, { "content-type": "application/json" });
           res.end(
@@ -5462,7 +5456,7 @@ const server = http.createServer(async (req, res) => {
           const { dailyTokenLimit, dailyCostLimitUSD } = JSON.parse(
             body || "{}",
           );
-          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+          const cfg = JSON.parse(await fs.promises.readFile(cfgPath, "utf8"));
           cfg.globalSpendingCaps = {
             dailyTokenLimit: dailyTokenLimit ?? undefined,
             dailyCostLimitUSD: dailyCostLimitUSD ?? undefined,
@@ -5492,8 +5486,8 @@ const server = http.createServer(async (req, res) => {
       const rulesPath = path.join(CFG_DIR, "global-rules.md");
       if (req.method === "GET") {
         try {
-          const content = fs.existsSync(rulesPath)
-            ? fs.readFileSync(rulesPath, "utf8")
+          const content = await exists(rulesPath)
+            ? await fs.promises.readFile(rulesPath, "utf8")
             : "";
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ content }));
@@ -5508,7 +5502,7 @@ const server = http.createServer(async (req, res) => {
           let body = "";
           for await (const chunk of req) body += chunk;
           const { content } = JSON.parse(body || "{}");
-          fs.writeFileSync(rulesPath, content || "", "utf8");
+          await fs.promises.writeFile(rulesPath, content || "", "utf8");
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
         } catch (e) {
@@ -5661,7 +5655,7 @@ const server = http.createServer(async (req, res) => {
       );
       const deviceJsonAlt = path.join(os.homedir(), ".openclaw", "device.json");
       const installed =
-        fs.existsSync(deviceJson) || fs.existsSync(deviceJsonAlt);
+        await exists(deviceJson) || await exists(deviceJsonAlt);
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, installed }));
       return;
@@ -5696,7 +5690,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/models" && req.method === "GET") {
       try {
         const csSwarm = JSON.parse(
-          fs.readFileSync(
+          await fs.promises.readFile(
             path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
             "utf8",
           ),
@@ -5804,8 +5798,8 @@ const server = http.createServer(async (req, res) => {
         if (projectId) {
           try {
             const registryFile = path.join(CFG_DIR, "projects.json");
-            const projects = fs.existsSync(registryFile)
-              ? JSON.parse(fs.readFileSync(registryFile, "utf8"))
+            const projects = await exists(registryFile)
+              ? JSON.parse(await fs.promises.readFile(registryFile, "utf8"))
               : {};
             projectDir = projects?.[projectId]?.outputDir || null;
           } catch { }
@@ -5906,7 +5900,7 @@ const server = http.createServer(async (req, res) => {
 
         // Load agent config
         const csSwarm = JSON.parse(
-          fs.readFileSync(
+          await fs.promises.readFile(
             path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
             "utf8",
           ),
@@ -5946,7 +5940,7 @@ const server = http.createServer(async (req, res) => {
         );
         let systemPrompt = `You are ${agentId}.`;
         try {
-          const prompts = JSON.parse(fs.readFileSync(promptPath, "utf8"));
+          const prompts = JSON.parse(await fs.promises.readFile(promptPath, "utf8"));
           const bareId = agentId.replace(/^crew-/, "");
           systemPrompt = prompts[agentId] || prompts[bareId] || systemPrompt;
         } catch { }
@@ -6237,8 +6231,8 @@ const server = http.createServer(async (req, res) => {
       if (!resolvedProjectDir && projectId) {
         try {
           const registryFile = path.join(CFG_DIR, "projects.json");
-          const projects = fs.existsSync(registryFile)
-            ? JSON.parse(fs.readFileSync(registryFile, "utf8"))
+          const projects = await exists(registryFile)
+            ? JSON.parse(await fs.promises.readFile(registryFile, "utf8"))
             : {};
           resolvedProjectDir = projects?.[projectId]?.outputDir || null;
         } catch { }
@@ -7656,7 +7650,7 @@ ORDER BY day DESC, cost DESC;`;
       try {
         const { execFile } = await import("node:child_process");
         const ocBin = path.join(os.homedir(), ".opencode", "bin", "opencode");
-        const bin = fs.existsSync(ocBin) ? ocBin : "opencode";
+        const bin = await exists(ocBin) ? ocBin : "opencode";
         models = await new Promise((resolve, reject) => {
           const child = execFile(
             bin,
@@ -7682,7 +7676,7 @@ ORDER BY day DESC, cost DESC;`;
             "opencode",
             "auth.json",
           );
-          const auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
+          const auth = JSON.parse(await fs.promises.readFile(authPath, "utf8"));
           const providers = Object.keys(auth || {}).map((k) => k.toLowerCase());
           const knownModels = {
             openai: [
@@ -8033,7 +8027,7 @@ ORDER BY day DESC, cost DESC;`;
         await import("../lib/memory/shared-adapter.mjs");
       const brainPath = path.join(CREWSWARM_DIR, "memory", "brain.md");
 
-      if (!fs.existsSync(brainPath)) {
+      if (!await exists(brainPath)) {
         res.statusCode = 404;
         res.end(JSON.stringify({ ok: false, error: "brain.md not found" }));
         return;
@@ -8467,9 +8461,8 @@ ORDER BY day DESC, cost DESC;`;
 
     if (url.pathname === "/api/crew/start" && req.method === "POST") {
       const { spawn: spawnProc } = await import("node:child_process");
-      const { existsSync: eS } = await import("node:fs");
       const crewScript = path.join(CREWSWARM_DIR, "scripts", "start-crew.mjs");
-      if (!eS(crewScript))
+      if (!(await exists(crewScript)))
         throw new Error(
           "start-crew.mjs not found — is the dashboard running from the crewswarm repo?",
         );
@@ -8591,13 +8584,13 @@ ORDER BY day DESC, cost DESC;`;
         "agent-prompts.json",
       );
       try {
-        const promptsRaw = JSON.parse(fs.readFileSync(promptsFile, "utf8"));
+        const promptsRaw = JSON.parse(await fs.promises.readFile(promptsFile, "utf8"));
         const { applySharedChatPromptOverlay } = await import(
           "../lib/chat/shared-chat-prompt-overlay.mjs"
         );
         let agents = [];
         try {
-          const cfg = JSON.parse(fs.readFileSync(CFG_FILE, "utf8"));
+          const cfg = JSON.parse(await fs.promises.readFile(CFG_FILE, "utf8"));
           const list = Array.isArray(cfg.agents)
             ? cfg.agents
             : Array.isArray(cfg.agents?.list)
@@ -8660,13 +8653,13 @@ ORDER BY day DESC, cost DESC;`;
       try {
         let prompts = {};
         try {
-          prompts = JSON.parse(fs.readFileSync(promptsFile, "utf8"));
+          prompts = JSON.parse(await fs.promises.readFile(promptsFile, "utf8"));
         } catch { }
 
         const keySet = new Set(Object.keys(prompts));
         let agentIds = [];
         try {
-          const cfg = JSON.parse(fs.readFileSync(CFG_FILE, "utf8"));
+          const cfg = JSON.parse(await fs.promises.readFile(CFG_FILE, "utf8"));
           const list = Array.isArray(cfg.agents)
             ? cfg.agents
             : Array.isArray(cfg.agents?.list)
@@ -8685,7 +8678,7 @@ ORDER BY day DESC, cost DESC;`;
           delete prompts[canonicalAgent.slice(5)];
         }
 
-        fs.writeFileSync(promptsFile, JSON.stringify(prompts, null, 2), "utf8");
+        await fs.promises.writeFile(promptsFile, JSON.stringify(prompts, null, 2), "utf8");
         console.log(
           `[dashboard] Prompt updated for ${canonicalAgent} (${prompt.length} chars)`,
         );
@@ -8723,11 +8716,11 @@ ORDER BY day DESC, cost DESC;`;
       ]);
       const MAX_FILES = 500;
       const results = [];
-      function walk(dir, depth) {
+      async function walk(dir, depth) {
         if (depth > 5) return;
         let entries;
         try {
-          entries = fs.readdirSync(dir, { withFileTypes: true });
+          entries = await fs.promises.readdir(dir, { withFileTypes: true });
         } catch {
           return;
         }
@@ -8735,12 +8728,12 @@ ORDER BY day DESC, cost DESC;`;
           if (e.name.startsWith(".") || e.name === "node_modules") continue;
           const full = path.join(dir, e.name);
           if (e.isDirectory()) {
-            walk(full, depth + 1);
+            await walk(full, depth + 1);
           } else if (e.isFile()) {
             const ext = path.extname(e.name).toLowerCase();
             if (!ALLOWED_EXT.has(ext)) continue;
             try {
-              const st = fs.statSync(full);
+              const st = await fs.promises.stat(full);
               results.push({ path: full, size: st.size, mtime: st.mtimeMs });
             } catch {
               /* skip */
@@ -8749,7 +8742,7 @@ ORDER BY day DESC, cost DESC;`;
           }
         }
       }
-      walk(scanDir, 0);
+      await walk(scanDir, 0);
       results.sort((a, b) => b.mtime - a.mtime);
       res.writeHead(200, {
         "content-type": "application/json",
@@ -8768,7 +8761,7 @@ ORDER BY day DESC, cost DESC;`;
         return;
       }
       try {
-        const raw = fs.readFileSync(filePath, "utf8");
+        const raw = await fs.promises.readFile(filePath, "utf8");
         const lines = raw.split("\n");
         const content =
           lines.length > 300
@@ -8809,17 +8802,17 @@ ORDER BY day DESC, cost DESC;`;
       "telegram-messages.jsonl",
     );
 
-    function loadTgConfig() {
+    async function loadTgConfig() {
       try {
-        return JSON.parse(fs.readFileSync(TG_CONFIG_PATH, "utf8"));
+        return JSON.parse(await fs.promises.readFile(TG_CONFIG_PATH, "utf8"));
       } catch {
         return {};
       }
     }
 
-    function isTgRunning() {
+    async function isTgRunning() {
       try {
-        const pid = parseInt(fs.readFileSync(TG_PID_PATH, "utf8").trim(), 10);
+        const pid = parseInt((await fs.promises.readFile(TG_PID_PATH, "utf8")).trim(), 10);
         if (!pid) return false;
         process.kill(pid, 0);
         return true;
@@ -8829,15 +8822,15 @@ ORDER BY day DESC, cost DESC;`;
     }
 
     if (url.pathname === "/api/telegram/status") {
-      const running = isTgRunning();
-      const cfg = loadTgConfig();
+      const running = await isTgRunning();
+      const cfg = await loadTgConfig();
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ running, botName: cfg.botName || "" }));
       return;
     }
 
     if (url.pathname === "/api/telegram/config" && req.method === "GET") {
-      const cfg = loadTgConfig();
+      const cfg = await loadTgConfig();
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
@@ -8856,9 +8849,9 @@ ORDER BY day DESC, cost DESC;`;
       let raw = "";
       for await (const chunk of req) raw += chunk;
       const body = JSON.parse(raw || "{}");
-      const existing = loadTgConfig();
+      const existing = await loadTgConfig();
       const updated = { ...existing, ...body };
-      fs.writeFileSync(TG_CONFIG_PATH, JSON.stringify(updated, null, 2));
+      await fs.promises.writeFile(TG_CONFIG_PATH, JSON.stringify(updated, null, 2));
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -8869,19 +8862,19 @@ ORDER BY day DESC, cost DESC;`;
       for await (const chunk of req) raw += chunk;
       const body = JSON.parse(raw || "{}");
       if (body.token) {
-        const existing = loadTgConfig();
-        fs.writeFileSync(
+        const existing = await loadTgConfig();
+        await fs.promises.writeFile(
           TG_CONFIG_PATH,
           JSON.stringify({ ...existing, ...body }, null, 2),
         );
       }
-      const cfg = loadTgConfig();
+      const cfg = await loadTgConfig();
       if (!cfg.token) {
         res.writeHead(400, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: "No token configured" }));
         return;
       }
-      if (isTgRunning()) {
+      if (await isTgRunning()) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, message: "Already running" }));
         return;
@@ -8906,7 +8899,7 @@ ORDER BY day DESC, cost DESC;`;
 
     if (url.pathname === "/api/telegram/stop" && req.method === "POST") {
       try {
-        const pid = parseInt(fs.readFileSync(TG_PID_PATH, "utf8").trim(), 10);
+        const pid = parseInt((await fs.promises.readFile(TG_PID_PATH, "utf8")).trim(), 10);
         if (pid) process.kill(pid, "SIGTERM");
       } catch { }
       res.writeHead(200, { "content-type": "application/json" });
@@ -8916,7 +8909,7 @@ ORDER BY day DESC, cost DESC;`;
 
     if (url.pathname === "/api/telegram/messages") {
       try {
-        const raw = fs.readFileSync(TG_MSG_PATH, "utf8");
+        const raw = await fs.promises.readFile(TG_MSG_PATH, "utf8");
         const msgs = raw
           .trim()
           .split("\n")
@@ -8946,7 +8939,7 @@ ORDER BY day DESC, cost DESC;`;
           "logs",
           "telegram-bridge.jsonl",
         );
-        const raw = fs.readFileSync(TG_LOG_PATH, "utf8");
+        const raw = await fs.promises.readFile(TG_LOG_PATH, "utf8");
         const lines = raw.trim().split("\n").filter(Boolean);
         const topics = new Map(); // chatId:threadId -> {chatId, threadId, lastSeen, text}
 
@@ -8998,16 +8991,16 @@ ORDER BY day DESC, cost DESC;`;
     );
     const WA_AUTH_DIR = path.join(os.homedir(), ".crewswarm", "whatsapp-auth");
 
-    function loadWaCfg() {
+    async function loadWaCfg() {
       try {
-        return JSON.parse(fs.readFileSync(WA_CONFIG_PATH, "utf8"));
+        return JSON.parse(await fs.promises.readFile(WA_CONFIG_PATH, "utf8"));
       } catch {
         return {};
       }
     }
-    function isWaRunning() {
+    async function isWaRunning() {
       try {
-        const pid = parseInt(fs.readFileSync(WA_PID_PATH, "utf8").trim(), 10);
+        const pid = parseInt((await fs.promises.readFile(WA_PID_PATH, "utf8")).trim(), 10);
         if (!pid) return false;
         process.kill(pid, 0);
         return true;
@@ -9026,16 +9019,16 @@ ORDER BY day DESC, cost DESC;`;
     }
 
     if (url.pathname === "/api/whatsapp/status") {
-      const running = isWaRunning();
-      const authSaved = fs.existsSync(path.join(WA_AUTH_DIR, "creds.json"));
-      const cfg = loadWaCfg();
+      const running = await isWaRunning();
+      const authSaved = await exists(path.join(WA_AUTH_DIR, "creds.json"));
+      const cfg = await loadWaCfg();
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ running, authSaved, number: cfg.number || "" }));
       return;
     }
 
     if (url.pathname === "/api/whatsapp/config" && req.method === "GET") {
-      const cfg = loadWaCfg();
+      const cfg = await loadWaCfg();
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
@@ -9052,8 +9045,8 @@ ORDER BY day DESC, cost DESC;`;
       let raw = "";
       for await (const chunk of req) raw += chunk;
       const body = JSON.parse(raw || "{}");
-      const existing = loadWaCfg();
-      fs.writeFileSync(
+      const existing = await loadWaCfg();
+      await fs.promises.writeFile(
         WA_CONFIG_PATH,
         JSON.stringify({ ...existing, ...body }, null, 2),
       );
@@ -9064,13 +9057,13 @@ ORDER BY day DESC, cost DESC;`;
           ".crewswarm",
           "crewswarm.json",
         );
-        const swarm = JSON.parse(fs.readFileSync(swarmPath, "utf8"));
+        const swarm = JSON.parse(await fs.promises.readFile(swarmPath, "utf8"));
         swarm.env = swarm.env || {};
         if (body.allowedNumbers !== undefined) {
           swarm.env.WA_ALLOWED_NUMBERS = (body.allowedNumbers || []).join(",");
         }
         if (body.targetAgent) swarm.env.WA_TARGET_AGENT = body.targetAgent;
-        fs.writeFileSync(swarmPath, JSON.stringify(swarm, null, 2));
+        await fs.promises.writeFile(swarmPath, JSON.stringify(swarm, null, 2));
       } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -9078,24 +9071,21 @@ ORDER BY day DESC, cost DESC;`;
     }
 
     if (url.pathname === "/api/whatsapp/start" && req.method === "POST") {
-      if (isWaRunning()) {
+      if (await isWaRunning()) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, message: "Already running" }));
         return;
       }
-      const cfg = loadWaCfg();
-      const swarm = (() => {
-        try {
-          return JSON.parse(
-            fs.readFileSync(
-              path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
-              "utf8",
-            ),
-          );
-        } catch {
-          return {};
-        }
-      })();
+      const cfg = await loadWaCfg();
+      let swarm = {};
+      try {
+        swarm = JSON.parse(
+          await fs.promises.readFile(
+            path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
+            "utf8",
+          ),
+        );
+      } catch { }
       const waEnv = swarm.env || {};
       const { spawn: spawnBridge } = await import("node:child_process");
       const bridgePath = path.join(CREWSWARM_DIR, "whatsapp-bridge.mjs");
@@ -9117,7 +9107,7 @@ ORDER BY day DESC, cost DESC;`;
       });
       proc.unref();
       await new Promise((r) => setTimeout(r, 1500));
-      const running = isWaRunning();
+      const running = await isWaRunning();
       res.writeHead(running ? 200 : 500, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
@@ -9133,7 +9123,7 @@ ORDER BY day DESC, cost DESC;`;
 
     if (url.pathname === "/api/whatsapp/stop" && req.method === "POST") {
       try {
-        const pid = parseInt(fs.readFileSync(WA_PID_PATH, "utf8").trim(), 10);
+        const pid = parseInt((await fs.promises.readFile(WA_PID_PATH, "utf8")).trim(), 10);
         if (pid) process.kill(pid, "SIGTERM");
       } catch { }
       res.writeHead(200, { "content-type": "application/json" });
@@ -9143,7 +9133,7 @@ ORDER BY day DESC, cost DESC;`;
 
     if (url.pathname === "/api/whatsapp/messages") {
       try {
-        const raw = fs.readFileSync(WA_MSG_PATH, "utf8");
+        const raw = await fs.promises.readFile(WA_MSG_PATH, "utf8");
         const msgs = raw
           .trim()
           .split("\n")
@@ -9303,7 +9293,7 @@ ORDER BY day DESC, cost DESC;`;
               ".crewswarm",
               "telegram-bridge.json",
             );
-            const tgCfg = JSON.parse(fs.readFileSync(TG_CONFIG_PATH, "utf8"));
+            const tgCfg = JSON.parse(await fs.promises.readFile(TG_CONFIG_PATH, "utf8"));
             const botToken = tgCfg.token;
             if (botToken) {
               const tgRes = await fetch(
@@ -9415,9 +9405,9 @@ ORDER BY day DESC, cost DESC;`;
           }
         }
 
-        function pidRunning(pidFile) {
+        async function pidRunning(pidFile) {
           try {
-            const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+            const pid = parseInt((await fs.promises.readFile(pidFile, "utf8")).trim(), 10);
             if (!pid) return null;
             process.kill(pid, 0);
             return pid;
@@ -9426,11 +9416,11 @@ ORDER BY day DESC, cost DESC;`;
           }
         }
 
-        function commandExistsFast(bin, extraPaths = []) {
+        async function commandExistsFast(bin, extraPaths = []) {
           const candidate = String(bin || "").trim();
           if (!candidate) return false;
           if (candidate.includes("/")) {
-            try { return fs.existsSync(candidate); } catch { return false; }
+            return await exists(candidate);
           }
           const checks = [
             ...extraPaths,
@@ -9440,19 +9430,19 @@ ORDER BY day DESC, cost DESC;`;
             path.join(os.homedir(), "bin", candidate),
           ];
           for (const item of checks) {
-            try { if (item && fs.existsSync(item)) return true; } catch {}
+            if (item && await exists(item)) return true;
           }
           return false;
         }
 
         const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
-        const tgPid = pidRunning(
+        const tgPid = await pidRunning(
           path.join(os.homedir(), ".crewswarm", "logs", "telegram-bridge.pid"),
         );
         const waPid =
-          pidRunning(
+          (await pidRunning(
             path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"),
-          ) || findPid("whatsapp-bridge\\.mjs");
+          )) || findPid("whatsapp-bridge\\.mjs");
 
         // Fire network checks in parallel — all process lookups are instant (ps snapshot)
         const rtStatusPromise = fetch("http://127.0.0.1:18889/status", {
@@ -9481,27 +9471,27 @@ ORDER BY day DESC, cost DESC;`;
         const watchPid = findPid("watch-server\\.mjs");
 
         // commandExists — fs.existsSync only, no shell spawn
-        const codexInstalled = commandExistsFast(process.env.CODEX_CLI_BIN || "codex");
-        const claudeInstalled = commandExistsFast(process.env.CLAUDE_CODE_BIN || "claude");
-        const cursorInstalled = commandExistsFast(
+        const codexInstalled = await commandExistsFast(process.env.CODEX_CLI_BIN || "codex");
+        const claudeInstalled = await commandExistsFast(process.env.CLAUDE_CODE_BIN || "claude");
+        const cursorInstalled = (await commandExistsFast(
           process.env.CURSOR_CLI_BIN || path.join(os.homedir(), ".local", "bin", "agent"),
           [path.join(os.homedir(), ".local", "bin", "agent")],
-        ) || commandExistsFast("agent", [path.join(os.homedir(), ".local", "bin", "agent")]);
-        const geminiInstalled = commandExistsFast(process.env.GEMINI_CLI_BIN || "gemini");
-        const crewCliInstalled = commandExistsFast("crew", [
+        )) || (await commandExistsFast("agent", [path.join(os.homedir(), ".local", "bin", "agent")]));
+        const geminiInstalled = await commandExistsFast(process.env.GEMINI_CLI_BIN || "gemini");
+        const crewCliInstalled = (await commandExistsFast("crew", [
           path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"),
-        ]) || fs.existsSync(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"));
+        ])) || (await exists(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js")));
         const oclawPaired =
-          fs.existsSync(
+          (await exists(
             path.join(os.homedir(), ".openclaw", "devices", "paired.json"),
-          ) ||
-          fs.existsSync(path.join(os.homedir(), ".openclaw", "device.json"));
+          )) ||
+          (await exists(path.join(os.homedir(), ".openclaw", "device.json")));
         const ocUp = ocPortUp || ocPid !== null;
 
         let swarmCfg = {};
         try {
           swarmCfg = JSON.parse(
-            fs.readFileSync(
+            await fs.promises.readFile(
               path.join(os.homedir(), ".crewswarm", "crewswarm.json"),
               "utf8",
             ),
@@ -9978,17 +9968,15 @@ ORDER BY day DESC, cost DESC;`;
       } else if (id === "telegram") {
         try {
           const pid = parseInt(
-            fs
-              .readFileSync(
-                path.join(
-                  os.homedir(),
-                  ".crewswarm",
-                  "logs",
-                  "telegram-bridge.pid",
-                ),
-                "utf8",
-              )
-              .trim(),
+            (await fs.promises.readFile(
+              path.join(
+                os.homedir(),
+                ".crewswarm",
+                "logs",
+                "telegram-bridge.pid",
+              ),
+              "utf8",
+            )).trim(),
             10,
           );
           if (pid) process.kill(pid, "SIGTERM");
@@ -9996,17 +9984,15 @@ ORDER BY day DESC, cost DESC;`;
       } else if (id === "whatsapp") {
         try {
           const pid = parseInt(
-            fs
-              .readFileSync(
-                path.join(
-                  os.homedir(),
-                  ".crewswarm",
-                  "logs",
-                  "whatsapp-bridge.pid",
-                ),
-                "utf8",
-              )
-              .trim(),
+            (await fs.promises.readFile(
+              path.join(
+                os.homedir(),
+                ".crewswarm",
+                "logs",
+                "whatsapp-bridge.pid",
+              ),
+              "utf8",
+            )).trim(),
             10,
           );
           if (pid) process.kill(pid, "SIGTERM");
@@ -10022,8 +10008,8 @@ ORDER BY day DESC, cost DESC;`;
         let killed = false;
 
         try {
-          if (fs.existsSync(pidFile)) {
-            const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+          if (await exists(pidFile)) {
+            const pid = parseInt((await fs.promises.readFile(pidFile, "utf8")).trim(), 10);
             if (pid && !isNaN(pid)) {
               try {
                 process.kill(pid, 0); // Check if process exists
@@ -10035,7 +10021,7 @@ ORDER BY day DESC, cost DESC;`;
                 );
               } catch (e) {
                 // Process doesn't exist, clean up stale PID file
-                fs.writeFileSync(pidFile, "");
+                await fs.promises.writeFile(pidFile, "");
               }
             }
           }
@@ -10393,13 +10379,11 @@ ORDER BY day DESC, cost DESC;`;
         const userDir = path.join(os.homedir(), ".crewswarm", "engines");
         const enginesMap = {};
         for (const dir of [bundledDir, userDir]) {
-          if (!fs.existsSync(dir)) continue;
-          for (const f of fs
-            .readdirSync(dir)
-            .filter((f) => f.endsWith(".json"))) {
+          if (!await exists(dir)) continue;
+          for (const f of (await fs.promises.readdir(dir)).filter((f) => f.endsWith(".json"))) {
             try {
               const eng = JSON.parse(
-                fs.readFileSync(path.join(dir, f), "utf8"),
+                await fs.promises.readFile(path.join(dir, f), "utf8"),
               );
               if (eng.id)
                 enginesMap[eng.id] = {
@@ -10413,11 +10397,11 @@ ORDER BY day DESC, cost DESC;`;
         const configPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
         let envVars = {};
         try {
-          const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+          const cfg = JSON.parse(await fs.promises.readFile(configPath, "utf8"));
           envVars = cfg.env || {};
         } catch { }
 
-        const engines = Object.values(enginesMap).map((eng) => {
+        const engines = await Promise.all(Object.values(enginesMap).map(async (eng) => {
           let installed = false;
           try {
             const bin = eng.bin || eng.id;
@@ -10426,7 +10410,7 @@ ORDER BY day DESC, cost DESC;`;
           } catch {
             if (eng.binAlternate) {
               const alt = eng.binAlternate.replace(/^~/, os.homedir());
-              installed = fs.existsSync(alt);
+              installed = await exists(alt);
             }
           }
           const missingEnv = eng.requiresAuth
@@ -10447,7 +10431,7 @@ ORDER BY day DESC, cost DESC;`;
             ready: installed && missingEnv.length === 0,
             enabled,
           };
-        });
+        }));
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ engines }));
       } catch (err) {
@@ -10474,10 +10458,10 @@ ORDER BY day DESC, cost DESC;`;
         if (!eng.id || !eng.label)
           throw new Error("Engine descriptor must have id and label");
         const engDir = path.join(os.homedir(), ".crewswarm", "engines");
-        if (!fs.existsSync(engDir)) fs.mkdirSync(engDir, { recursive: true });
+        if (!await exists(engDir)) await fs.promises.mkdir(engDir, { recursive: true });
         const outPath = path.join(engDir, `${eng.id}.json`);
         if (!outPath.startsWith(engDir)) throw new Error("Invalid engine id");
-        fs.writeFileSync(outPath, JSON.stringify(eng, null, 2), "utf8");
+        await fs.promises.writeFile(outPath, JSON.stringify(eng, null, 2), "utf8");
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, id: eng.id, label: eng.label }));
       } catch (err) {
@@ -10500,8 +10484,8 @@ ORDER BY day DESC, cost DESC;`;
         let engineDef = null;
         for (const dir of [bundledDir, userDir]) {
           const p = path.join(dir, `${engineId}.json`);
-          if (fs.existsSync(p)) {
-            engineDef = JSON.parse(fs.readFileSync(p, "utf8"));
+          if (await exists(p)) {
+            engineDef = JSON.parse(await fs.promises.readFile(p, "utf8"));
             break;
           }
         }
@@ -10512,12 +10496,12 @@ ORDER BY day DESC, cost DESC;`;
 
         const envVarName = engineDef.envToggle;
         const configPath = path.join(os.homedir(), ".crewswarm", "crewswarm.json");
-        const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+        const cfg = JSON.parse(await fs.promises.readFile(configPath, "utf8"));
 
         if (!cfg.env) cfg.env = {};
         cfg.env[envVarName] = enabled ? "1" : "off";
 
-        fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), "utf8");
+        await fs.promises.writeFile(configPath, JSON.stringify(cfg, null, 2), "utf8");
 
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, engineId, enabled, envVar: envVarName }));
@@ -10538,7 +10522,7 @@ ORDER BY day DESC, cost DESC;`;
         return;
       }
       try {
-        fs.unlinkSync(target);
+        await fs.promises.unlink(target);
       } catch { }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -10694,13 +10678,13 @@ ORDER BY day DESC, cost DESC;`;
           ".crewswarm",
           "skills",
         );
-        if (!fs.existsSync(skillsDir))
-          fs.mkdirSync(skillsDir, { recursive: true });
+        if (!await exists(skillsDir))
+          await fs.promises.mkdir(skillsDir, { recursive: true });
         const outPath = path.join(skillsDir, `${skillName}.json`);
         // Final path traversal guard
         if (!outPath.startsWith(skillsDir))
           throw new Error("Invalid skill name");
-        fs.writeFileSync(outPath, JSON.stringify(skill, null, 2), "utf8");
+        await fs.promises.writeFile(outPath, JSON.stringify(skill, null, 2), "utf8");
 
         res.writeHead(200, { "content-type": "application/json" });
         res.end(

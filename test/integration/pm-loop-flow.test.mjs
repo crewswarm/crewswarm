@@ -27,6 +27,16 @@ import { tmpdir } from "node:os";
 const CREWSWARM_DIR = path.resolve(".");
 const PM_LOOP_SCRIPT = path.join(CREWSWARM_DIR, "pm-loop.mjs");
 const LOGS_DIR = path.join(CREWSWARM_DIR, "orchestrator-logs"); // Use repo-local logs, matching pm-loop.mjs
+const PM_PID_FILE = path.join(os.homedir(), ".crewswarm", "logs", "pm-loop.pid");
+
+// Global cleanup: kill any pm-loop processes spawned by tests and remove stale PID files
+after(async () => {
+  try {
+    const { execSync } = await import("node:child_process");
+    execSync("pkill -f 'pm-loop.mjs' 2>/dev/null || true", { stdio: "ignore", timeout: 3000 });
+  } catch {}
+  try { fs.unlinkSync(PM_PID_FILE); } catch {}
+});
 
 // Check if services are running (with a 5s timeout so we never hang here)
 let rtBusReachable = false;

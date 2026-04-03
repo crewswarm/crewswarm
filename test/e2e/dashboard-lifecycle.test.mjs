@@ -157,7 +157,7 @@ function openSSE(path, timeoutMs = 10000) {
 
 // ── Pre-flight checks ───────────────────────────────────────────────────────
 
-const dashboardUp = await checkServiceUp(`${DASHBOARD_URL}/health`);
+const dashboardUp = await checkServiceUp(`${DASHBOARD_URL}/api/health`);
 const crewLeadUp = await checkServiceUp(`${CREW_LEAD_URL}/health`);
 const SKIP = !dashboardUp
   ? "Dashboard not running on :4319"

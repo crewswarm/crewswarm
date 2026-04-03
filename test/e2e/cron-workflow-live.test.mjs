@@ -46,7 +46,7 @@ async function api(endpoint, method = "GET", body = null, trace = null) {
 }
 
 // Pre-flight
-const dashboardUp = await checkServiceUp(`${DASHBOARD_URL}/health`);
+const dashboardUp = await checkServiceUp(`${DASHBOARD_URL}/api/health`);
 const crewLeadUp = await checkServiceUp(`${CREW_LEAD_URL}/health`);
 const SKIP = !dashboardUp
   ? "Dashboard not running on :4319"

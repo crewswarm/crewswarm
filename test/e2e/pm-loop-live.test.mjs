@@ -56,7 +56,7 @@ async function apiPost(base, path_, body, token, trace = null) {
 }
 
 // Check services are up
-const dashReachable = await checkServiceUp(`${DASH_BASE}/health`);
+const dashReachable = await checkServiceUp(`${DASH_BASE}/api/health`);
 const crewLeadReachable = await checkServiceUp(`${CL_BASE}/health`);
 
 const SKIP_FULL = (!dashReachable || !crewLeadReachable)
