@@ -19,6 +19,10 @@ logs/
 memory/
 reports/
 
+# Brotli/gzip compressed build artifacts
+*.br
+*.gz
+
 # Local backups & temp build output
 backups/
 website-backup-*/
