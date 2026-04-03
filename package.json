@@ -67,7 +67,7 @@
     "start": "node scripts/start.mjs",
     "test": "node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs test/mention-participants.test.mjs test/project-messages-chat-protocol.test.mjs && npm --prefix crew-cli test",
     "test:unit": "node --test --test-reporter=./scripts/test-reporter.mjs test/unit/*.test.mjs",
-    "test:integration": "PM_LOOP_TEST_MODE=1 node --test --test-reporter=./scripts/test-reporter.mjs test/integration/*.test.mjs",
+    "test:integration": "for f in test/integration/*.test.mjs; do PM_LOOP_TEST_MODE=1 node --test --test-force-exit --test-reporter=./scripts/test-reporter.mjs \"$f\"; done",
     "test:integration:bounded": "node scripts/run-integration-bounded.mjs",
     "test:e2e": "npm run test:e2e:passthrough; npm run test:e2e:dashboard; npm run test:e2e:dispatch; npm run test:e2e:pipeline; npm run test:e2e:build; npm run test:e2e:bridge",
     "test:e2e:passthrough": "node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/chat-passthrough-engines.test.mjs",

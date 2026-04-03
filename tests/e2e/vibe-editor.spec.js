@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setupConsoleErrorCapture, expectNoConsoleErrors } from "./helpers.mjs";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -138,7 +139,12 @@ async function waitForMonaco(page) {
 
 test.describe("Vibe editor", () => {
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await waitForHealthy(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   // ── 1. File tree loads ────────────────────────────────────────────────────

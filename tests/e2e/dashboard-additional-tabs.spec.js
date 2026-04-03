@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setupConsoleErrorCapture, expectNoConsoleErrors } from "./helpers.mjs";
 
 const BASE_URL = "http://127.0.0.1:4319";
 
@@ -66,6 +67,7 @@ async function disableDashboardSSE(page) {
 
 test.describe("PM Loop tab", () => {
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
 
@@ -121,6 +123,10 @@ test.describe("PM Loop tab", () => {
     });
 
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("navigates to Build tab and PM Loop section is visible", async ({
@@ -189,6 +195,7 @@ test.describe("Memory tab", () => {
   };
 
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
 
@@ -201,6 +208,10 @@ test.describe("Memory tab", () => {
     });
 
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("navigates to Memory tab and view becomes active", async ({ page }) => {
@@ -294,6 +305,7 @@ test.describe("Engines tab (additional)", () => {
   };
 
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
     await page.route("**/api/engines", async (route) => {
@@ -304,6 +316,10 @@ test.describe("Engines tab (additional)", () => {
       });
     });
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("navigates to Engines tab and engine cards render", async ({
@@ -359,6 +375,7 @@ test.describe("Spending tab", () => {
   test.setTimeout(90_000);
 
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
 
@@ -403,6 +420,10 @@ test.describe("Spending tab", () => {
     });
 
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("navigates to Settings tab and usage panel is visible", async ({
@@ -482,6 +503,7 @@ test.describe("Prompts tab", () => {
   };
 
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
 
@@ -494,6 +516,10 @@ test.describe("Prompts tab", () => {
     });
 
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("navigates to Prompts tab and view becomes active", async ({

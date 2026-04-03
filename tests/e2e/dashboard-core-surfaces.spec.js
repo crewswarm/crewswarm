@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setupConsoleErrorCapture, expectNoConsoleErrors } from "./helpers.mjs";
 
 const BASE_URL = "http://127.0.0.1:4319";
 
@@ -52,6 +53,7 @@ async function disableDashboardSSE(page) {
 
 test.describe("Dashboard core surfaces", () => {
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
 
     await page.route("**/api/projects", async (route) => {
@@ -96,6 +98,10 @@ test.describe("Dashboard core surfaces", () => {
 
     await waitForDashboardHealth(page);
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("Chat tab loads unified history and send posts to unified endpoint", async ({ page }) => {

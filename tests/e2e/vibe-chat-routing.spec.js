@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setupConsoleErrorCapture, expectNoConsoleErrors } from "./helpers.mjs";
 
 const VIBE_URL = "http://127.0.0.1:3333";
 
@@ -27,6 +28,7 @@ async function openVibe(page) {
 
 test.describe("Vibe routing and chat surfaces", () => {
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await waitForVibe(page);
 
     await page.route("**/api/studio/projects", async (route) => {
@@ -132,6 +134,10 @@ test.describe("Vibe routing and chat surfaces", () => {
         body: `data: ${JSON.stringify({ type: "chunk", text: reply })}\n\ndata: ${JSON.stringify({ type: "done", exitCode: 0, transcript: reply })}\n\n`,
       });
     });
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("project selector loads workspace files and swaps chat history", async ({ page }) => {

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setupConsoleErrorCapture, expectNoConsoleErrors } from "./helpers.mjs";
 
 const BASE_URL = "http://127.0.0.1:4319";
 
@@ -58,6 +59,7 @@ async function disableDashboardSSE(page) {
 
 test.describe("Providers and Settings wiring", () => {
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await page.route("**/api/providers/builtin", async (route) => {
       await route.fulfill({
@@ -121,6 +123,10 @@ test.describe("Providers and Settings wiring", () => {
     });
     await waitForDashboardHealth(page);
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("saving a built-in provider key posts the correct payload", async ({ page }) => {

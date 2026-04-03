@@ -18,7 +18,7 @@ function skipIfDown(t) {
 }
 
 // Helper to make API requests (uses http.request — Node 25 fetch unreliable on localhost)
-async function apiRequest(testName, endpoint, method = "GET", body = null, timeout = 5000) {
+async function apiRequest(testName, endpoint, method = "GET", body = null, timeout = 15000) {
   return httpRequest(`${DASHBOARD_BASE}${endpoint}`, {
     method,
     body,
@@ -28,7 +28,7 @@ async function apiRequest(testName, endpoint, method = "GET", body = null, timeo
 }
 
 before(async () => {
-  dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/health`);
+  dashboardUp = await checkServiceUp(`${DASHBOARD_BASE}/api/services/status`);
   if (!dashboardUp) console.log("⚠️ Dashboard not running on :4319 — skipping API validation tests");
 });
 

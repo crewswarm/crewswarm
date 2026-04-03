@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setupConsoleErrorCapture, expectNoConsoleErrors } from "./helpers.mjs";
 
 const BASE_URL = "http://127.0.0.1:4319";
 
@@ -79,9 +80,14 @@ async function disableDashboardSSE(page) {
 
 test.describe("Services tab", () => {
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("navigates to Services tab and view becomes active", async ({
@@ -255,6 +261,7 @@ test.describe("Engines tab", () => {
   };
 
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
     await page.route("**/api/engines", async (route) => {
@@ -265,6 +272,10 @@ test.describe("Engines tab", () => {
       });
     });
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("navigates to Engines tab and view becomes active", async ({ page }) => {
@@ -414,6 +425,7 @@ test.describe("Workflows tab", () => {
   };
 
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
 
@@ -441,6 +453,10 @@ test.describe("Workflows tab", () => {
     });
 
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("navigates to Workflows tab and view becomes active", async ({
@@ -576,6 +592,7 @@ test.describe("Workflows tab", () => {
 
 test.describe("Workflow run wiring", () => {
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await waitForDashboardHealth(page);
 
@@ -614,6 +631,10 @@ test.describe("Workflow run wiring", () => {
     });
 
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("Run Now button exists in workflow editor", async ({ page }) => {

@@ -70,7 +70,7 @@ function assertArrayOrWrapped(data) {
 }
 
 before(async () => {
-  dashboardUp = await checkServiceUp(`${BASE}/health`);
+  dashboardUp = await checkServiceUp(`${BASE}/api/services/status`);
   if (!dashboardUp) console.log("Dashboard not running on :4319 -- skipping all endpoint tests");
 });
 

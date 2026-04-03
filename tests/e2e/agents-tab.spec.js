@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { setupConsoleErrorCapture, expectNoConsoleErrors } from "./helpers.mjs";
 
 const BASE_URL = "http://127.0.0.1:4319";
 
@@ -84,6 +85,7 @@ const fixtureEngines = {
 
 test.describe("Agents tab engine settings", () => {
   test.beforeEach(async ({ page }) => {
+    setupConsoleErrorCapture(page);
     await disableDashboardSSE(page);
     await page.route("**/api/agents-config", async (route) => {
       await route.fulfill({
@@ -108,6 +110,10 @@ test.describe("Agents tab engine settings", () => {
     });
     await waitForDashboardHealth(page);
     await openDashboard(page);
+  });
+
+  test.afterEach(async () => {
+    expectNoConsoleErrors();
   });
 
   test("route button posts mutually-exclusive engine flags", async ({ page }) => {
