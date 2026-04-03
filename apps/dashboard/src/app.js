@@ -82,6 +82,12 @@ import {
 } from "./tabs/agents-tab.js";
 import { initPromptsTab, initPromptsTabDeps } from "./tabs/prompts-tab.js";
 import {
+  initTestingTab,
+  showTesting,
+  runTests,
+  loadRunDetail,
+} from "./tabs/testing-tab.js";
+import {
   showSkills,
   showRunSkills,
   loadRunSkills,
@@ -314,6 +320,7 @@ initSwarmTab({ hideAllViews, setNavActive });
 initMemoryTab(state);
 initWavesTab();
 initWorkflowsTab({ hideAllViews, setNavActive });
+initTestingTab({ hideAllViews, setNavActive });
 
 async function pickFolder(inputId) {
   const input = document.getElementById(inputId);
@@ -1996,6 +2003,7 @@ const VIEW_MAP = {
   workflows: showWorkflows,
   "cli-process": showCLIProcess,
   prompts: initPromptsTab,
+  testing: showTesting,
 };
 
 // Wrap each show* so it updates the hash when called from anywhere
@@ -2142,6 +2150,10 @@ const ACTION_REGISTRY = {
   showBenchmarks,
   showToolMatrix,
   showServices,
+  showTesting,
+  refreshTesting: () => showTesting(),
+  runTests: (suite) => runTests(suite),
+  loadRunDetail: (runId) => loadRunDetail(runId),
   showSettings,
   // Static HTML actions (previously onclick="window.fn()")
   pickFolder: (id) => pickFolder(id),
@@ -2661,6 +2673,7 @@ const NAV_VIEW_MAP = {
   "cli-process": showCLIProcess,
   services: showServices,
   prompts: initPromptsTab,
+  testing: showTesting,
   settings: showSettings,
 };
 document.addEventListener("click", (e) => {

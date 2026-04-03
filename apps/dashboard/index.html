@@ -87,6 +87,10 @@
         <button class="nav-item" id="navRunSkills" data-view="run-skills">
           <span class="nav-icon">⚡</span> Run skills
         </button>
+        <button class="nav-item" id="navTesting" data-view="testing">
+          <span class="nav-icon">🧪</span> Testing
+          <span class="nav-badge hidden" id="testingBadge">0</span>
+        </button>
         <button class="nav-item" id="navBenchmarks" data-view="benchmarks">
           <span class="nav-icon">📊</span> Benchmarks
         </button>
@@ -5527,6 +5531,32 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Testing -->
+      <div class="view" id="testingView">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Testing</div>
+            <div class="page-sub">
+              Test suite results, group breakdown, and run history
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <button
+              data-action="refreshTesting"
+              class="btn-ghost"
+              style="font-size: 12px"
+            >
+              ↻ Refresh
+            </button>
+          </div>
+        </div>
+        <div id="testProgressBar"></div>
+        <div id="testingContent">
+          <div class="meta" style="padding: 20px">Loading test results...</div>
+        </div>
+        <div id="testingHistory"></div>
       </div>
 
       <!-- Benchmarks — ZeroEval / llm-stats leaderboards -->

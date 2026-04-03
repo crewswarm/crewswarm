@@ -222,6 +222,11 @@ export async function loadBgConsciousness() {
   const modelInput = document.getElementById('bgConsciousnessModel');
   try {
     const d = await getJSON('/api/settings/bg-consciousness');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) { status.textContent = '⚠️ Could not reach crew-lead — restart services.'; status.style.color = 'var(--amber)'; }
+      return;
+    }
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '🟢 ON' : '⚫ OFF';
@@ -242,6 +247,7 @@ export async function loadBgConsciousness() {
 export async function toggleBgConsciousness() {
   try {
     const current = await getJSON('/api/settings/bg-consciousness');
+    if (current.ok === false) { showNotification('Cannot reach crew-lead — restart services first', 'error'); return; }
     const d = await postJSON('/api/settings/bg-consciousness', { enabled: !current.enabled });
     showNotification('Background consciousness ' + (d.enabled ? 'ENABLED' : 'DISABLED'));
     loadBgConsciousness();
@@ -265,6 +271,11 @@ export async function loadCursorWaves() {
   const status = document.getElementById('cursorWavesStatus');
   try {
     const d = await getJSON('/api/settings/cursor-waves');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) { status.textContent = '⚠️ Could not reach crew-lead — restart services.'; status.style.color = 'var(--amber)'; }
+      return;
+    }
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '⚡ ON' : '⚫ OFF';
@@ -284,6 +295,7 @@ export async function loadCursorWaves() {
 export async function toggleCursorWaves() {
   try {
     const current = await getJSON('/api/settings/cursor-waves');
+    if (current.ok === false) { showNotification('Cannot reach crew-lead — restart services first', 'error'); return; }
     const d = await postJSON('/api/settings/cursor-waves', { enabled: !current.enabled });
     showNotification('Cursor Parallel Waves ' + (d.enabled ? 'ENABLED ⚡' : 'DISABLED'));
     loadCursorWaves();
@@ -295,6 +307,11 @@ export async function loadTmuxBridge() {
   const status = document.getElementById('tmuxBridgeStatus');
   try {
     const d = await getJSON('/api/settings/tmux-bridge');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) { status.textContent = '⚠️ Could not reach crew-lead — restart services.'; status.style.color = 'var(--amber)'; }
+      return;
+    }
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '🔌 ON' : '⚫ OFF';
@@ -314,6 +331,7 @@ export async function loadTmuxBridge() {
 export async function toggleTmuxBridge() {
   try {
     const current = await getJSON('/api/settings/tmux-bridge');
+    if (current.ok === false) { showNotification('Cannot reach crew-lead — restart services first', 'error'); return; }
     const d = await postJSON('/api/settings/tmux-bridge', { enabled: !current.enabled });
     showNotification('tmux-bridge ' + (d.enabled ? 'ENABLED 🔌' : 'DISABLED'));
     loadTmuxBridge();
@@ -325,6 +343,11 @@ export async function loadAutonomousMentions() {
   const status = document.getElementById('autonomousMentionsStatus');
   try {
     const d = await getJSON('/api/settings/autonomous-mentions');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) { status.textContent = '⚠️ Could not reach crew-lead — restart services.'; status.style.color = 'var(--amber)'; }
+      return;
+    }
     const on = d.enabled !== false;
     if (btn) {
       btn.textContent = on ? '🕸 ON' : '⚫ OFF';
@@ -347,6 +370,7 @@ export async function loadAutonomousMentions() {
 export async function toggleAutonomousMentions() {
   try {
     const current = await getJSON('/api/settings/autonomous-mentions');
+    if (current.ok === false) { showNotification('Cannot reach crew-lead — restart services first', 'error'); return; }
     const d = await postJSON('/api/settings/autonomous-mentions', {
       enabled: !current.enabled,
     });
@@ -364,6 +388,14 @@ export async function loadClaudeCode() {
   const status = document.getElementById('claudeCodeStatus');
   try {
     const d = await getJSON('/api/settings/claude-code');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) {
+        status.textContent = '⚠️ Could not reach crew-lead — restart services or check that crew-lead is running.';
+        status.style.color = 'var(--amber)';
+      }
+      return;
+    }
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '🤖 ON' : '⚫ OFF';
@@ -373,7 +405,7 @@ export async function loadClaudeCode() {
     }
     if (status) {
       if (!d.hasKey) {
-        status.textContent = '⚠️ ANTHROPIC_API_KEY not set — add it to ~/.crewswarm/crewswarm.json under providers.anthropic.apiKey or set the env var.';
+        status.textContent = '⚠️ No Claude auth found — run "claude" in terminal to authenticate via OAuth, or set ANTHROPIC_API_KEY.';
         status.style.color = 'var(--amber)';
       } else {
         status.textContent = on
@@ -391,8 +423,12 @@ export async function loadClaudeCode() {
 export async function toggleClaudeCode() {
   try {
     const current = await getJSON('/api/settings/claude-code');
+    if (current.ok === false) {
+      showNotification('Cannot reach crew-lead — restart services first', 'error');
+      return;
+    }
     if (!current.hasKey) {
-      showNotification('Set ANTHROPIC_API_KEY first — add it in ~/.crewswarm/crewswarm.json under providers.anthropic.apiKey', 'error');
+      showNotification('No Claude auth found — run "claude" in terminal to authenticate via OAuth, or set ANTHROPIC_API_KEY', 'error');
       return;
     }
     const d = await postJSON('/api/settings/claude-code', { enabled: !current.enabled });
@@ -406,6 +442,11 @@ export async function loadCodexExecutor() {
   const status = document.getElementById('codexStatus');
   try {
     const d = await getJSON('/api/settings/codex');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) { status.textContent = '⚠️ Could not reach crew-lead — restart services.'; status.style.color = 'var(--amber)'; }
+      return;
+    }
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '🟣 ON' : '⚫ OFF';
@@ -428,6 +469,7 @@ export async function loadCodexExecutor() {
 export async function toggleCodexExecutor() {
   try {
     const current = await getJSON('/api/settings/codex');
+    if (current.ok === false) { showNotification('Cannot reach crew-lead — restart services first', 'error'); return; }
     const d = await postJSON('/api/settings/codex', { enabled: !current.enabled });
     showNotification('Codex CLI executor ' + (d.enabled ? 'ENABLED 🟣' : 'DISABLED'));
     loadCodexExecutor();
@@ -439,6 +481,11 @@ export async function loadGeminiCliExecutor() {
   const status = document.getElementById('geminiCliStatus');
   try {
     const d = await getJSON('/api/settings/gemini-cli');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) { status.textContent = '⚠️ Could not reach crew-lead — restart services.'; status.style.color = 'var(--amber)'; }
+      return;
+    }
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '🔵 ON' : '⚫ OFF';
@@ -466,6 +513,7 @@ export async function loadGeminiCliExecutor() {
 export async function toggleGeminiCliExecutor() {
   try {
     const current = await getJSON('/api/settings/gemini-cli');
+    if (current.ok === false) { showNotification('Cannot reach crew-lead — restart services first', 'error'); return; }
     if (!current.installed) {
       showNotification('Install Gemini CLI first: npm install -g @google/gemini-cli', 'error');
       return;
@@ -481,6 +529,11 @@ export async function loadCrewCliExecutor() {
   const status = document.getElementById('crewCliStatus');
   try {
     const d = await getJSON('/api/settings/crew-cli');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) { status.textContent = '⚠️ Could not reach crew-lead — restart services.'; status.style.color = 'var(--amber)'; }
+      return;
+    }
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '🔧 ON' : '⚫ OFF';
@@ -489,8 +542,8 @@ export async function loadCrewCliExecutor() {
       btn.style.color = on ? '#10b981' : 'var(--text-2)';
     }
     if (status) {
-      status.textContent = on 
-        ? 'Active — multi-agent swarm tasks route through crew-cli with intelligent dispatch to specialists.' 
+      status.textContent = on
+        ? 'Active — multi-agent swarm tasks route through crew-cli with intelligent dispatch to specialists.'
         : 'Off — tasks use direct LLM or other engine. Enable to route all coding agents through crew-cli natively.';
     }
   } catch(e) {
@@ -502,6 +555,7 @@ export async function loadCrewCliExecutor() {
 export async function toggleCrewCliExecutor() {
   try {
     const current = await getJSON('/api/settings/crew-cli');
+    if (current.ok === false) { showNotification('Cannot reach crew-lead — restart services first', 'error'); return; }
     const d = await postJSON('/api/settings/crew-cli', { enabled: !current.enabled });
     showNotification('Crew CLI executor ' + (d.enabled ? 'ENABLED 🔧' : 'DISABLED'));
     loadCrewCliExecutor();
@@ -513,6 +567,11 @@ export async function loadOpencodeExecutor() {
   const status = document.getElementById('opencodeStatus');
   try {
     const d = await getJSON('/api/settings/opencode');
+    if (d.ok === false) {
+      if (btn) btn.textContent = '⚫ OFF';
+      if (status) { status.textContent = '⚠️ Could not reach crew-lead — restart services.'; status.style.color = 'var(--amber)'; }
+      return;
+    }
     const on = d.enabled;
     if (btn) {
       btn.textContent = on ? '⚡ ON' : '⚫ OFF';
@@ -525,8 +584,8 @@ export async function loadOpencodeExecutor() {
         status.textContent = '⚠️ opencode binary not found — install: npm install -g opencode';
         status.style.color = 'var(--amber)';
       } else {
-        status.textContent = on 
-          ? '⚡ Active — coding agents route through OpenCode for full IDE context and session persistence.' 
+        status.textContent = on
+          ? '⚡ Active — coding agents route through OpenCode for full IDE context and session persistence.'
           : '⚫ Off — tasks use direct LLM or other configured engine. Enable to run agents through OpenCode CLI.';
         status.style.color = 'var(--text-3)';
       }
@@ -540,6 +599,7 @@ export async function loadOpencodeExecutor() {
 export async function toggleOpencodeExecutor() {
   try {
     const current = await getJSON('/api/settings/opencode');
+    if (current.ok === false) { showNotification('Cannot reach crew-lead — restart services first', 'error'); return; }
     if (!current.installed) {
       showNotification('Install OpenCode CLI first: npm install -g opencode', 'error');
       return;

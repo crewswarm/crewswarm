@@ -1457,6 +1457,38 @@ function serveStatic(req, res, filePath) {
   }
 }
 
+/**
+ * Make an HTTP request to crew-lead using http.request with agent:false.
+ * This bypasses Node 25's undici connection pool used by fetch(), which gets
+ * blocked when Chrome SSE EventSource connections saturate the pool.
+ */
+function crewLeadRequest(path, { method = "GET", body = null, timeout = 10000, port } = {}) {
+  const crewPort = port || process.env.CREW_LEAD_PORT || "5010";
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: "127.0.0.1",
+      port: parseInt(crewPort, 10),
+      path,
+      method,
+      timeout,
+      agent: false,
+      headers: { "content-type": "application/json", connection: "close" },
+    };
+    const req = http.request(options, (res) => {
+      let d = "";
+      res.on("data", (chunk) => (d += chunk));
+      res.on("end", () => {
+        try { resolve({ ok: res.statusCode < 400, status: res.statusCode, data: JSON.parse(d) }); }
+        catch { resolve({ ok: res.statusCode < 400, status: res.statusCode, data: d }); }
+      });
+    });
+    req.on("error", (err) => reject(err));
+    req.on("timeout", () => { req.destroy(); reject(new Error("crew-lead request timeout")); });
+    if (body) req.write(typeof body === "string" ? body : JSON.stringify(body));
+    req.end();
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://localhost:${listenPort}`);
 
@@ -1544,80 +1576,156 @@ const server = http.createServer(async (req, res) => {
       const resultsDir = path.join(CREWSWARM_DIR, "test-results");
       const runsDir = path.join(resultsDir, "runs");
       try {
-        // Use most recent run directory (sorted by timestamp name)
-        const allRuns = fs.readdirSync(runsDir).sort();
-        const latestRunId = allRuns[allRuns.length - 1];
-        if (!latestRunId) throw new Error("No test runs found");
-        // Build lastRun summary from summary.json or .last-run.json
-        let lastRun;
-        const summaryFile = path.join(runsDir, latestRunId, "summary.json");
-        if (fs.existsSync(summaryFile)) {
-          lastRun = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
-        } else {
-          const lastRunFile = path.join(resultsDir, ".last-run.json");
-          lastRun = JSON.parse(fs.readFileSync(lastRunFile, "utf8"));
+        const allRuns = fs.readdirSync(runsDir).filter(d => /^\d{4}-/.test(d)).sort().reverse();
+        // Collect the last run per suite type (unit, integration, e2e, all)
+        // by inspecting run.json test_command
+        function detectSuite(runDir) {
+          try {
+            const r = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8"));
+            const cmd = r.test_command || "";
+            if (cmd.includes("test/e2e/") || cmd.includes("test:e2e")) return "e2e";
+            if (cmd.includes("test/integration/")) return "integration";
+            if (cmd.includes("test/unit/")) {
+              // If it has ONLY unit tests, it's a unit run; if mixed, it's "all"
+              if (cmd.includes("test/integration/") || cmd.includes("test/e2e/")) return "all";
+              return "unit";
+            }
+            // Check file count heuristic: >100 files = probably "all"
+            const fileCount = (cmd.match(/\.test\.mjs/g) || []).length;
+            if (fileCount > 100) return "all";
+            if (fileCount > 15) return "unit";
+            return "unknown";
+          } catch { return "unknown"; }
         }
-        lastRun.runId = latestRunId;
-        const runDir = path.join(runsDir, latestRunId);
-        // Scan per-test artifact dirs to build group breakdown.
-        // manifest.json has start-phase data (file path, name); failure.json presence = fail.
-        const groups = {};
-        const failures = [];
-        let entries;
-        try { entries = fs.readdirSync(runDir); } catch { entries = []; }
-        for (const ent of entries) {
-          if (ent === "run.json" || ent.startsWith(".")) continue;
-          const testDir = path.join(runDir, ent);
-          let stat; try { stat = fs.statSync(testDir); } catch { continue; }
-          if (!stat.isDirectory()) continue;
-          const manifestFile = path.join(testDir, "manifest.json");
-          let manifest;
-          try { manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")); } catch { continue; }
-          const hasFail = fs.existsSync(path.join(testDir, "failure.json"));
-          let relFile = manifest.file_fingerprint?.relative_file || "";
-          if (!relFile && manifest.file) {
-            // Convert absolute path to relative
-            relFile = manifest.file.replace(CREWSWARM_DIR + "/", "");
-          }
-          const parts = relFile.replace(/\.test\.mjs$/, "").split("/");
-          const category = parts[1] || "other";
-          let groupName = "other";
-          if (parts[2]) {
-            const base = parts[2];
-            const dashIdx = base.indexOf("-");
-            groupName = dashIdx > 0 ? base.slice(0, dashIdx) : base;
-          }
-          const key = `${category}/${groupName}`;
-          if (!groups[key]) groups[key] = { category, group: groupName, files: new Set(), tests: 0, pass: 0, fail: 0, skip: 0, duration_ms: 0 };
-          const g = groups[key];
-          g.files.add(relFile);
-          g.tests++;
-          if (hasFail) g.fail++;
-          else g.pass++;
-          g.duration_ms += manifest.duration_ms || 0;
-          // Collect failure details
-          if (hasFail) {
+        function readRunData(runId) {
+          const runDir = path.join(runsDir, runId);
+          const summaryFile = path.join(runDir, "summary.json");
+          let data;
+          if (fs.existsSync(summaryFile)) {
+            data = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+          } else {
+            // Fall back to .last-run.json if this is the matching run
+            const lastRunFile = path.join(resultsDir, ".last-run.json");
             try {
-              const f = JSON.parse(fs.readFileSync(path.join(testDir, "failure.json"), "utf8"));
-              failures.push({ testId: ent, name: f.name || manifest.name || ent, file: relFile, error: f.error || f.message || "", classification: f.classification || "unknown", rerun_command: f.rerun_command || manifest.rerun_command || "" });
-            } catch { failures.push({ testId: ent, name: manifest.name || ent, file: relFile, error: "", classification: "unknown", rerun_command: manifest.rerun_command || "" }); }
+              const lr = JSON.parse(fs.readFileSync(lastRunFile, "utf8"));
+              if (lr.runId === runId) { data = lr; }
+            } catch {}
           }
+          if (!data) {
+            // Fall back to counting test artifact dirs + failure.json presence
+            let timestamp = null;
+            try { const r = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8")); timestamp = r.timestamp; } catch {}
+            const ents = fs.readdirSync(runDir);
+            const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
+            let failed = 0;
+            for (const td of testDirs) { if (fs.existsSync(path.join(runDir, td, "failure.json"))) failed++; }
+            data = { runId, timestamp, passed: testDirs.length - failed, failed, skipped: 0, total: testDirs.length, duration_ms: 0 };
+          }
+          data.runId = runId;
+          data.suite = detectSuite(runDir);
+          // Read failures and skips if available
+          const failFile = path.join(runDir, "failures.json");
+          const skipFile = path.join(runDir, "skips.json");
+          let failures = [];
+          let skips = [];
+          try { failures = JSON.parse(fs.readFileSync(failFile, "utf8")); } catch {}
+          try { skips = JSON.parse(fs.readFileSync(skipFile, "utf8")); } catch {}
+          data.failures = failures.map(f => ({
+            name: f.name || f.testId || "",
+            file: (f.file_fingerprint?.relative_file || f.file || "").replace(CREWSWARM_DIR + "/", ""),
+            error: typeof f.error === "string" ? f.error : (f.error?.message || f.error?.failureType || JSON.stringify(f.error || "").slice(0, 300)),
+            classification: f.classification || "unknown",
+            rerun_command: f.rerun_command || f.selector?.command || "",
+          }));
+          data.skips = skips.map(s => ({
+            name: s.name || s.testId || "",
+            file: (s.file_fingerprint?.relative_file || s.file || "").replace(CREWSWARM_DIR + "/", ""),
+          }));
+          return data;
         }
-        const groupsArr = Object.values(groups).map(g => ({ ...g, files: g.files.size }))
-          .sort((a, b) => (a.category + a.group).localeCompare(b.category + b.group));
-        // Recalculate totals from scanned data (more accurate than possibly-stale lastRun)
-        const scannedTotal = groupsArr.reduce((s, g) => s + g.tests, 0);
-        if (scannedTotal > 0) {
-          lastRun.total = scannedTotal;
-          lastRun.passed = groupsArr.reduce((s, g) => s + g.pass, 0);
-          lastRun.failed = groupsArr.reduce((s, g) => s + g.fail, 0);
-          lastRun.skipped = groupsArr.reduce((s, g) => s + g.skip, 0);
+        // Find latest run for each suite type
+        const suiteRuns = {};
+        let latestOverall = null;
+        for (const runId of allRuns) {
+          if (Object.keys(suiteRuns).length >= 4 && latestOverall) break;
+          try {
+            const runDir = path.join(runsDir, runId);
+            const suite = detectSuite(runDir);
+            if (!latestOverall) latestOverall = runId;
+            if (!suiteRuns[suite]) suiteRuns[suite] = runId;
+          } catch {}
         }
+        // Build per-suite summaries
+        const suites = {};
+        for (const [suite, runId] of Object.entries(suiteRuns)) {
+          try { suites[suite] = readRunData(runId); } catch { /* skip broken runs */ }
+        }
+        // Count test files on disk for reference
+        const testFileDir = path.join(CREWSWARM_DIR, "test");
+        const testsE2eDir = path.join(CREWSWARM_DIR, "tests", "e2e");
+        const crewCliTestDir = path.join(CREWSWARM_DIR, "crew-cli", "tests");
+        const crewCliTestDir2 = path.join(CREWSWARM_DIR, "crew-cli", "test");
+        let unitFiles = 0, intFiles = 0, e2eFiles = 0, playwrightFiles = 0, crewCliFiles = 0, rootFiles = 0;
+        try { unitFiles = fs.readdirSync(path.join(testFileDir, "unit")).filter(f => f.endsWith(".test.mjs")).length; } catch {}
+        try { intFiles = fs.readdirSync(path.join(testFileDir, "integration")).filter(f => f.endsWith(".test.mjs")).length; } catch {}
+        try { e2eFiles = fs.readdirSync(path.join(testFileDir, "e2e")).filter(f => f.endsWith(".test.mjs")).length; } catch {}
+        try { playwrightFiles = fs.readdirSync(testsE2eDir).filter(f => f.endsWith(".spec.js")).length; } catch {}
+        try { rootFiles = fs.readdirSync(testFileDir).filter(f => f.match(/\.test\./)).length; } catch {}
+        // crew-cli: tests/unit/*.test.js + tests/*.test.js + test/*.test.ts
+        try {
+          const unitDir = path.join(crewCliTestDir, "unit");
+          crewCliFiles += fs.readdirSync(unitDir).filter(f => f.match(/\.test\./)).length;
+        } catch {}
+        try { crewCliFiles += fs.readdirSync(crewCliTestDir).filter(f => f.match(/\.test\./)).length; } catch {}
+        try { crewCliFiles += fs.readdirSync(crewCliTestDir2).filter(f => f.match(/\.test\./)).length; } catch {}
+        // Remove "unknown" suite if it has no data
+        if (suites.unknown && (!suites.unknown.total || suites.unknown.total === 0)) delete suites.unknown;
+        let latest = null;
+        try { if (latestOverall) latest = readRunData(latestOverall); } catch {}
+        // Count actual test()/it() calls in source files (ground truth)
+        function countTestCalls(dir, pattern) {
+          let count = 0;
+          try {
+            const files = fs.readdirSync(dir).filter(f => f.match(pattern));
+            for (const f of files) {
+              const src = fs.readFileSync(path.join(dir, f), "utf8");
+              const matches = src.match(/^\s*(test|it)\s*\(/gm);
+              if (matches) count += matches.length;
+            }
+          } catch {}
+          return count;
+        }
+        function countTestCallsRecursive(dir) {
+          let count = 0;
+          try {
+            for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (ent.isDirectory()) { count += countTestCallsRecursive(path.join(dir, ent.name)); continue; }
+              if (!ent.name.match(/\.test\./)) continue;
+              const src = fs.readFileSync(path.join(dir, ent.name), "utf8");
+              const matches = src.match(/^\s*(test|it)\s*\(/gm);
+              if (matches) count += matches.length;
+            }
+          } catch {}
+          return count;
+        }
+        const testCounts = {
+          unit: countTestCalls(path.join(testFileDir, "unit"), /\.test\.mjs$/),
+          integration: countTestCalls(path.join(testFileDir, "integration"), /\.test\.mjs$/),
+          e2e: countTestCalls(path.join(testFileDir, "e2e"), /\.test\.mjs$/),
+          playwright: countTestCalls(testsE2eDir, /\.spec\.js$/),
+          "crew-cli": countTestCallsRecursive(crewCliTestDir) + countTestCallsRecursive(crewCliTestDir2),
+          root: countTestCalls(testFileDir, /\.test\./),
+        };
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ lastRun, groups: groupsArr, failures }));
+        res.end(JSON.stringify({
+          latest,
+          suites,
+          fileCounts: { unit: unitFiles, integration: intFiles, e2e: e2eFiles, playwright: playwrightFiles, "crew-cli": crewCliFiles, root: rootFiles, total: unitFiles + intFiles + e2eFiles + playwrightFiles + crewCliFiles + rootFiles },
+          testCounts,
+        }));
       } catch (e) {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ lastRun: null, groups: [], failures: [], error: e.message }));
+        res.end(JSON.stringify({ latest: null, suites: {}, fileCounts: {}, error: e.message }));
       }
       return;
     }
@@ -1625,32 +1733,36 @@ const server = http.createServer(async (req, res) => {
       const resultsDir = path.join(CREWSWARM_DIR, "test-results");
       const runsDir = path.join(resultsDir, "runs");
       try {
-        // Scan run directories. Prefer summary.json (has pass/fail/total/duration).
-        // Fall back to counting per-test dirs + checking failure.json presence.
-        const dirs = fs.readdirSync(runsDir).sort().reverse().slice(0, 30);
+        const dirs = fs.readdirSync(runsDir).filter(d => /^\d{4}-/.test(d)).sort().reverse().slice(0, 40);
         const history = [];
         for (const d of dirs) {
           const runDir = path.join(runsDir, d);
           try {
-            // Try summary.json first (fast path)
+            let entry = null;
+            // Prefer summary.json (has all data)
             const summaryFile = path.join(runDir, "summary.json");
             if (fs.existsSync(summaryFile)) {
               const s = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
-              history.push({ runId: d, timestamp: s.timestamp, status: s.status || (s.failed > 0 ? "failed" : "passed"), passed: s.passed || 0, failed: s.failed || 0, skipped: s.skipped || 0, total: s.total || 0, duration_ms: s.duration_ms || 0 });
-              continue;
+              entry = { runId: d, timestamp: s.timestamp, status: s.status || (s.failed > 0 ? "failed" : "passed"), passed: s.passed || 0, failed: s.failed || 0, skipped: s.skipped || 0, total: s.total || 0, duration_ms: s.duration_ms || 0 };
+            } else {
+              const runMeta = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8"));
+              const ents = fs.readdirSync(runDir);
+              const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
+              let failed = 0;
+              for (const td of testDirs) { if (fs.existsSync(path.join(runDir, td, "failure.json"))) failed++; }
+              entry = { runId: d, timestamp: runMeta.timestamp, status: failed > 0 ? "failed" : "passed", passed: testDirs.length - failed, failed, skipped: 0, total: testDirs.length, duration_ms: 0 };
             }
-            // Fall back to directory scanning
-            const runMeta = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8"));
-            const ents = fs.readdirSync(runDir);
-            const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
-            let failed = 0;
-            for (const td of testDirs) {
-              if (fs.existsSync(path.join(runDir, td, "failure.json"))) failed++;
-            }
-            const total = testDirs.length;
-            const passed = total - failed;
-            history.push({ runId: d, timestamp: runMeta.timestamp, status: failed > 0 ? "failed" : "passed", passed, failed, skipped: 0, total, duration_ms: 0 });
-          } catch { /* skip unreadable */ }
+            // Detect suite from test_command
+            try {
+              const r = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8"));
+              const cmd = r.test_command || "";
+              if (cmd.includes("test/e2e/")) entry.suite = "e2e";
+              else if (cmd.includes("test/integration/")) entry.suite = "integration";
+              else if (cmd.includes("test/unit/") && !cmd.includes("test/integration/")) entry.suite = "unit";
+              else { const fc = (cmd.match(/\.test\.mjs/g) || []).length; entry.suite = fc > 100 ? "all" : fc > 15 ? "unit" : "unknown"; }
+            } catch { entry.suite = "unknown"; }
+            history.push(entry);
+          } catch { /* skip */ }
         }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ history }));
@@ -1660,24 +1772,129 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    if (url.pathname === "/api/tests/run-detail" && req.method === "GET") {
+      const resultsDir = path.join(CREWSWARM_DIR, "test-results");
+      const runsDir = path.join(resultsDir, "runs");
+      const runId = url.searchParams.get("runId");
+      if (!runId) { res.writeHead(400, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "Missing runId" })); return; }
+      try {
+        const runDir = path.join(runsDir, runId);
+        // Get timestamp from run.json
+        let timestamp = null;
+        try { const r = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8")); timestamp = r.timestamp; } catch {}
+        // Try summary.json for totals
+        let passed = 0, failed = 0, skipped = 0, total = 0, duration_ms = 0;
+        const summaryFile = path.join(runDir, "summary.json");
+        if (fs.existsSync(summaryFile)) {
+          const s = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+          passed = s.passed || 0; failed = s.failed || 0; skipped = s.skipped || 0; total = s.total || 0; duration_ms = s.duration_ms || 0;
+          if (!timestamp) timestamp = s.timestamp;
+        }
+        // If no summary, count from test artifact dirs
+        if (total === 0) {
+          const ents = fs.readdirSync(runDir);
+          const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
+          for (const td of testDirs) {
+            total++;
+            if (fs.existsSync(path.join(runDir, td, "failure.json"))) failed++;
+            else passed++;
+          }
+        }
+        // Read failures.json and skips.json
+        let failures = [], skips = [];
+        try { failures = JSON.parse(fs.readFileSync(path.join(runDir, "failures.json"), "utf8")); } catch {}
+        try { skips = JSON.parse(fs.readFileSync(path.join(runDir, "skips.json"), "utf8")); } catch {}
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          runId, timestamp, passed, failed, skipped, total, duration_ms,
+          failures: failures.map(f => {
+            let err = f.error;
+            if (typeof err === "object" && err !== null) err = err.message || err.failureType || JSON.stringify(err).slice(0, 300);
+            return {
+              name: f.name || f.testId || "", file: (f.file_fingerprint?.relative_file || f.file || "").replace(CREWSWARM_DIR + "/", ""),
+              error: String(err || ""),
+              rerun_command: f.rerun_command || f.selector?.command || "",
+            };
+          }),
+          skips: skips.map(s => ({
+            name: s.name || s.testId || "", file: (s.file_fingerprint?.relative_file || s.file || "").replace(CREWSWARM_DIR + "/", ""),
+          })),
+        }));
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
     if (url.pathname === "/api/tests/run" && req.method === "POST") {
       let body = "";
       req.on("data", (c) => (body += c));
       req.on("end", async () => {
         let suite = "test:unit";
         try { const parsed = JSON.parse(body); suite = parsed.suite || suite; } catch { /* default */ }
-        const allowed = ["test:unit", "test:integration", "test:e2e", "test:all", "test"];
+        const allowed = ["test:unit", "test:integration", "test:e2e", "test:all", "test", "test:e2e:vibe"];
         if (!allowed.includes(suite)) {
           res.writeHead(400, { "content-type": "application/json" });
           res.end(JSON.stringify({ error: "Invalid suite: " + suite }));
           return;
         }
         const { spawn } = await import("node:child_process");
-        const child = spawn("npm", ["run", suite], { cwd: CREWSWARM_DIR, stdio: "ignore", detached: true });
+        const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
+        const outputFile = path.join(CREWSWARM_DIR, "test-results", ".test-output.log");
+        // Write initial progress
+        fs.writeFileSync(progressFile, JSON.stringify({ suite, running: true, pid: 0, started: Date.now(), passed: 0, failed: 0, skipped: 0, files_done: 0, current_file: "" }));
+        const outFd = fs.openSync(outputFile, "w");
+        const child = spawn("npm", ["run", suite], { cwd: CREWSWARM_DIR, stdio: ["ignore", outFd, outFd], detached: true });
         child.unref();
+        fs.closeSync(outFd);
+        // Update progress by tailing the output file
+        const progressInterval = setInterval(() => {
+          try {
+            const out = fs.readFileSync(outputFile, "utf8");
+            const lines = out.split("\n");
+            let passed = 0, failed = 0, skipped = 0, files_done = 0, current_file = "";
+            for (const line of lines) {
+              if (line.startsWith("  ✓ ")) passed++;
+              else if (line.startsWith("  ✗ ")) failed++;
+              else if (line.includes("(skipped)")) skipped++;
+              else if (line.endsWith(".test.mjs") || line.endsWith(".test.ts") || line.endsWith(".test.js")) {
+                files_done++;
+                current_file = line.trim();
+              }
+            }
+            fs.writeFileSync(progressFile, JSON.stringify({ suite, running: true, pid: child.pid, started: JSON.parse(fs.readFileSync(progressFile, "utf8")).started, passed, failed, skipped, files_done, current_file }));
+          } catch { /* file may not exist yet */ }
+        }, 2000);
+        child.on("exit", (code) => {
+          clearInterval(progressInterval);
+          try {
+            const out = fs.readFileSync(outputFile, "utf8");
+            const lines = out.split("\n");
+            let passed = 0, failed = 0, skipped = 0, files_done = 0;
+            for (const line of lines) {
+              if (line.startsWith("  ✓ ")) passed++;
+              else if (line.startsWith("  ✗ ")) failed++;
+              else if (line.includes("(skipped)")) skipped++;
+              else if (line.endsWith(".test.mjs") || line.endsWith(".test.ts") || line.endsWith(".test.js")) files_done++;
+            }
+            fs.writeFileSync(progressFile, JSON.stringify({ suite, running: false, pid: child.pid, started: JSON.parse(fs.readFileSync(progressFile, "utf8")).started, finished: Date.now(), exitCode: code, passed, failed, skipped, files_done, current_file: "" }));
+          } catch {}
+        });
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ started: true, suite, pid: child.pid }));
       });
+      return;
+    }
+    if (url.pathname === "/api/tests/progress" && req.method === "GET") {
+      const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
+      try {
+        const data = JSON.parse(fs.readFileSync(progressFile, "utf8"));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(data));
+      } catch {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ running: false }));
+      }
       return;
     }
 
@@ -1704,16 +1921,11 @@ const server = http.createServer(async (req, res) => {
 
       const hasApiKeys = configuredProviders.length > 0;
 
-      // Check crew-lead health
+      // Check crew-lead health (uses http.request, not fetch — avoids undici pool saturation from SSE)
       let crewLeadUp = false;
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2000);
-        const resp = await fetch("http://127.0.0.1:5010/health", {
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-        crewLeadUp = resp.ok;
+        const { ok } = await crewLeadRequest("/health", { timeout: 2000 });
+        crewLeadUp = ok;
       } catch {
         crewLeadUp = false;
       }
@@ -4819,17 +5031,13 @@ const server = http.createServer(async (req, res) => {
             ? await (async () => { let b = ""; for await (const c of req) b += c; return b; })()
             : null;
         const token = resolveCrewLeadAuthToken();
-        const r = await fetch("http://127.0.0.1:5010/api/settings/tmux-bridge", {
+        const { data } = await crewLeadRequest("/api/settings/tmux-bridge", {
           method: req.method,
-          headers: {
-            "content-type": "application/json",
-            ...(token ? { authorization: `Bearer ${token}` } : {}),
-          },
-          ...(rawBody ? { body: rawBody } : {}),
-          signal: AbortSignal.timeout(8000),
+          body: rawBody || null,
+          timeout: 8000,
         });
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(await r.text());
+        res.end(typeof data === "string" ? data : JSON.stringify(data));
       } catch (e) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "crew-lead unreachable: " + e.message }));
@@ -5463,10 +5671,8 @@ const server = http.createServer(async (req, res) => {
       try {
         let online = false;
         try {
-          const health = await fetch("http://127.0.0.1:5010/health", {
-            signal: AbortSignal.timeout(1500),
-          });
-          online = health.ok;
+          const { ok } = await crewLeadRequest("/health", { timeout: 1500 });
+          online = ok;
         } catch { }
         if (!online) {
           const { execSync: es } = await import("node:child_process");
