@@ -1257,6 +1257,13 @@ async function readTokenFile() {
           expiresAt: data.expires_at || null
         };
       }
+      if (data.tokens?.access_token) {
+        return {
+          accessToken: data.tokens.access_token,
+          refreshToken: data.tokens.refresh_token || null,
+          expiresAt: data.tokens.expires_at || data.last_refresh ? data.last_refresh + 3600 * 1e3 : null
+        };
+      }
     } catch {
       continue;
     }

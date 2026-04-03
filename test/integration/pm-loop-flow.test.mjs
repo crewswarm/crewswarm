@@ -29,14 +29,19 @@ const PM_LOOP_SCRIPT = path.join(CREWSWARM_DIR, "pm-loop.mjs");
 const LOGS_DIR = path.join(CREWSWARM_DIR, "orchestrator-logs"); // Use repo-local logs, matching pm-loop.mjs
 const PM_PID_FILE = path.join(os.homedir(), ".crewswarm", "logs", "pm-loop.pid");
 
-// Global cleanup: kill any pm-loop processes spawned by tests and remove stale PID files
-after(async () => {
+/** Kill any pm-loop processes and remove PID file — call before/after each test block */
+async function killPmLoop() {
   try {
     const { execSync } = await import("node:child_process");
     execSync("pkill -f 'pm-loop.mjs' 2>/dev/null || true", { stdio: "ignore", timeout: 3000 });
   } catch {}
   try { fs.unlinkSync(PM_PID_FILE); } catch {}
-});
+  // Wait for process to actually die
+  await new Promise(r => setTimeout(r, 500));
+}
+
+// Global cleanup
+after(killPmLoop);
 
 // Check if services are running (with a 5s timeout so we never hang here)
 let rtBusReachable = false;
@@ -243,8 +248,9 @@ describe("PM loop — markItem function behavior", () => {
 
 describe("PM loop — dry-run mode (no actual dispatch)", { skip: SKIP_LIVE, timeout: 60000 }, () => {
   let testDir;
-  
+
   before(async () => {
+    await killPmLoop();
     testDir = await mkdtemp(path.join(tmpdir(), "pm-dryrun-"));
     await writeFile(path.join(testDir, "ROADMAP.md"), `# Test Project
 
@@ -289,8 +295,9 @@ describe("PM loop — dry-run mode (no actual dispatch)", { skip: SKIP_LIVE, tim
 
 describe("PM loop — next item selection CRITICAL FLOW", { skip: SKIP_LIVE, timeout: 90000 }, () => {
   let testDir;
-  
+
   before(async () => {
+    await killPmLoop();
     testDir = await mkdtemp(path.join(tmpdir(), "pm-next-"));
     await writeFile(path.join(testDir, "ROADMAP.md"), `# Test
 
@@ -367,8 +374,9 @@ describe("PM loop — next item selection CRITICAL FLOW", { skip: SKIP_LIVE, tim
 
 describe("PM loop — self-extend when roadmap is empty", { skip: SKIP_LIVE, timeout: 90000 }, () => {
   let testDir;
-  
+
   before(async () => {
+    await killPmLoop();
     testDir = await mkdtemp(path.join(tmpdir(), "pm-extend-"));
   });
   
@@ -410,8 +418,9 @@ describe("PM loop — self-extend when roadmap is empty", { skip: SKIP_LIVE, tim
 
 describe("PM loop — stop file halts execution gracefully", { skip: SKIP_LIVE, timeout: 60000 }, () => {
   let testDir;
-  
+
   before(async () => {
+    await killPmLoop();
     testDir = await mkdtemp(path.join(tmpdir(), "pm-stop-"));
     // Generate many tasks so the loop doesn't finish before the stop file is created
     const tasks = Array.from({ length: 50 }, (_, i) => `- [ ] Task ${i + 1}`).join("\n");
@@ -493,6 +502,7 @@ describe("PM loop — agent routing logic", () => {
 });
 
 describe("PM loop — log file tracking", { skip: SKIP_LIVE, timeout: 60000 }, () => {
+  before(killPmLoop);
   it("writes pm-loop.jsonl log entries", async () => {
     const testDir = await mkdtemp(path.join(tmpdir(), "pm-log-"));
     await writeFile(path.join(testDir, "ROADMAP.md"), `# Test
