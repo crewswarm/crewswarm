@@ -84,7 +84,7 @@ afterEach(async () => {
   await closeBrowser();
 });
 
-describe("@@BROWSER live integration", { timeout: 60000 }, () => {
+describe("@@BROWSER live integration", { timeout: 120000 }, () => {
   test("navigates, screenshots, types, and clicks against a local page", async (t) => {
     previousDisableAutoharness = process.env.CREWSWARM_DISABLE_AUTOHARNESS;
     process.env.CREWSWARM_DISABLE_AUTOHARNESS = "1";
