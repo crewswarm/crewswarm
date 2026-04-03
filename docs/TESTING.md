@@ -1,16 +1,16 @@
 # Testing Guide
 
-CrewSwarm has **~2,500 test cases** across unit, integration, and e2e suites — all passing at 100%.
+CrewSwarm has **~5,000+ test cases** across unit, integration, e2e, and Playwright suites — all passing at 100%.
 
 ## Quick Reference
 
 ```bash
 npm test                     # Unit + standalone + crew-cli (offline, ~2min)
-npm run test:unit            # Root unit tests only (~98 files, 1,350 tests)
+npm run test:unit            # Root unit tests only (~133 files, 3,591 tests)
 npm run test:integration     # Integration tests (needs :4319 + :5010)
 npm run test:e2e             # E2E live tests (needs server + engines)
-npm run test:all             # All root suites combined
-npm --prefix crew-cli test   # Crew-CLI unit tests only (~73 files, 695 tests)
+npm run test:all             # All root suites combined (sequential: unit → integration → e2e → crew-cli)
+npm --prefix crew-cli test   # Crew-CLI unit tests only (~82 files, 765 tests)
 npm run test:report          # Generate summary from last run
 npm run test:stale           # Show tests affected by recent file changes
 ```
@@ -38,24 +38,32 @@ npm run test:stale    # Which tests need re-running after code changes
 
 | Runner | Files | Cases | Requires server |
 |--------|-------|-------|-----------------|
-| node:test | 98 | ~1,350 | No |
+| node:test | 133 | ~3,591 | No |
 
 The main test suite. Runs offline — no server, no network. Covers:
-- Agent registry, dispatch parsing, classifiers
-- Wave dispatcher, pipeline logic, quality gates
-- Engine routing, selection, fallback
-- PM loop logic, synthesis, judge decisions
+- Agent registry, dispatch parsing, classifiers, daemon, permissions, validation, tool instructions
+- Wave dispatcher, pipeline logic, pipeline manager
+- **Quality gates:** question detection, planning/build agent output validation, QA FAIL auto-fix with crew-fixer wave insertion, retry with feedback, halt/advance-on-fail, cursor-wave combined output parsing
+- Engine routing, selection, fallback, OpenCode engine, LLM-direct engine
+- PM loop logic, synthesis, judge decisions, crew-judge with LLM integration
 - RT envelope, DLQ, retry management
-- Session management, shared memory
+- Session management, shared memory, memory shared-adapter
 - Dashboard validation schemas
 - Background consciousness, autonomous mentions
 - Policy manager, spending caps
+- Chat history, participants, project messages, RAG, unified wrapper
+- Crew-lead prompts, tools, background loop, interval managers
+- Contacts identity linker, bridges integration
+- CLI process tracker, domain planning, preferences extractor
+- Integrations code search, Gemini CLI passthrough noise filtering
+- Root orchestrators (gateway-bridge, telegram/whatsapp bridges, unified/phased/natural-PM orchestrators, continuous-build)
+- Tools executor (file I/O, command execution, permission gates)
 
 ### Crew-CLI Unit Tests (`crew-cli/tests/`)
 
 | Runner | Files | Cases | Requires server |
 |--------|-------|-------|-----------------|
-| node:test + tsx | 82 | ~695 | No |
+| node:test + tsx | 82 | ~765 | No |
 
 - `crew-cli/tests/unit/*.test.js` — sandbox, orchestrator, worker pool, context augmentation, strategies, risk scoring, prompt registry, model policies, etc.
 - `crew-cli/tests/*.test.js` — pipeline, router, REPL, LSP, planner, interface server
@@ -64,7 +72,7 @@ The main test suite. Runs offline — no server, no network. Covers:
 
 | Runner | Files | Cases | Requires server |
 |--------|-------|-------|-----------------|
-| node:test | 14 | ~327 | Yes (:4319 + :5010) |
+| node:test | 17 | ~352 | Yes (:4319 + :5010) |
 
 Tests that hit the live dashboard and crew-lead APIs:
 - **dashboard-api.test.mjs** — Zod schema validation for core endpoints (build, enhance-prompt, pm-loop, services, skills)
@@ -74,13 +82,16 @@ Tests that hit the live dashboard and crew-lead APIs:
 - **pipeline-manager.test.mjs** — Pipeline dispatch and state management
 - **chat-history.test.mjs** — Chat history persistence
 - **spending.test.mjs** — Spending tracking
+- **rt-bus-integration.test.mjs** — Real WebSocket RT bus: handshake, broadcast/targeted routing, ACK round-trip, multi-agent connect/disconnect, full dispatch→result flow
+- **crash-recovery.test.mjs** — Pipeline crash recovery: save/resume at correct wave, retry counter preservation, stale cleanup (>2hr), corrupted JSON handling, multi-pipeline resume
+- **spending-cap-enforcement.test.mjs** — Full spending cap flow: global token/cost limits, per-agent caps (stop/pause/notify), recordTokenUsage→checkSpendingCap integration, daily reset
 - And more
 
 ### E2E Tests (`test/e2e/`)
 
 | Runner | Files | Cases | Requires server |
 |--------|-------|-------|-----------------|
-| node:test + Puppeteer | 14 | ~132 | Yes (:4319 + :5010 + engines) |
+| node:test + Puppeteer | 15 | ~132 | Yes (:4319 + :5010 + engines) |
 
 Live end-to-end tests with real engines and browser automation:
 
@@ -142,20 +153,73 @@ Live end-to-end tests with real engines and browser automation:
 
 ## Running E2E Tests
 
-E2E tests should be run **one file at a time** to avoid resource contention:
+E2E tests run **one file at a time** via targeted npm scripts to avoid resource contention:
 
 ```bash
-# Run one file
-node --test --test-reporter=./scripts/test-reporter.mjs test/e2e/chat-passthrough-engines.test.mjs
+# Run all e2e sequentially via grouped scripts (recommended)
+npm run test:e2e
 
-# Run all e2e sequentially (recommended)
-for f in test/e2e/*.test.mjs; do
-  echo "=== $(basename $f) ==="
-  node --test --test-reporter=./scripts/test-reporter.mjs "$f"
-done
+# Individual groups:
+npm run test:e2e:passthrough   # Engine passthrough tests
+npm run test:e2e:dashboard     # Dashboard lifecycle, tabs, chat
+npm run test:e2e:dispatch      # Live dispatch, surfaces, multi-engine
+npm run test:e2e:pipeline      # Pipeline waves, PM loop
+npm run test:e2e:build         # Build planner
+npm run test:e2e:bridge        # Telegram + WhatsApp roundtrips
+
+# Stress tests (excluded from default test:e2e):
+npm run test:e2e:stress        # Load stress + cron workflow
 ```
 
 Running all e2e files simultaneously will cause timeouts due to shared service resources.
+
+### Playwright Browser Tests (`tests/e2e/`)
+
+| Runner | Files | Cases | Requires server |
+|--------|-------|-------|-----------------|
+| Playwright | 17 | ~222 | Yes (:4319 + Chrome) |
+
+Real browser interaction tests — clicks buttons, fills inputs, verifies API payloads and DOM state changes. Every spec captures `console.error` and `pageerror` events via shared `helpers.mjs` and fails if unexpected errors occur.
+
+**All 19 dashboard tabs covered:**
+
+| Spec | Tab(s) | Key interactions tested |
+|------|--------|----------------------|
+| `agents-tab.spec.js` | Agents | Engine route buttons, model save |
+| `contacts-tab.spec.js` | Contacts | Add/edit/delete contacts, search, platform badges |
+| `models-tab.spec.js` | Models | OAuth status, model dropdowns, test connection, provider keys |
+| `skills-tab.spec.js` | Skills | Install/edit/delete skills, import URL |
+| `swarm-tab.spec.js` | Swarm, RT Messages, DLQ | Session list, engine selector, phase badges, DLQ replay |
+| `swarm-chat-tab.spec.js` | Swarm Chat | Send message, @mention autocomplete, autonomy toggle, project switch |
+| `waves-tab.spec.js` | Waves | Wave cards, agent assignment, add/remove agents, save/reset config |
+| `projects-tab.spec.js` | Projects | Create/edit/delete, PM loop start/stop, roadmap progress |
+| `spending-tab.spec.js` | Spending | Cost breakdown, days selector, token cap, reset |
+| `usage-tab.spec.js` | Usage | Token stats, by-model breakdown, tool matrix, agent restart |
+| `comms-tab.spec.js` | Comms | Telegram/WhatsApp config, bridge start/stop, message feeds |
+| `dashboard-tabs.spec.js` | Services, Engines, Workflows | Service cards, engine toggles, workflow CRUD |
+| `dashboard-additional-tabs.spec.js` | Build, Memory, Engines, Settings, Prompts | PM Loop buttons, memory search, spending widget, prompt edit |
+| `dashboard-core-surfaces.spec.js` | Chat, Memory, Benchmarks | Chat send, memory search results, leaderboard |
+| `providers-settings.spec.js` | Settings | Provider key save, RT token, OpenCode settings |
+
+**Vibe editor/chat covered:**
+
+| Spec | Key interactions tested |
+|------|----------------------|
+| `vibe-editor.spec.js` | File tree click, Monaco editor load, autosave, chat send, project switch, mode selector |
+| `vibe-chat-routing.spec.js` | Project selector, agent/CLI chat modes |
+
+**Console error capture:** Every spec imports `setupConsoleErrorCapture(page)` in `beforeEach` and `expectNoConsoleErrors()` in `afterEach`. Ignored patterns: favicon 404s, EventSource reconnects, ResizeObserver.
+
+```bash
+# Run all Playwright tests
+npx playwright test
+
+# Run a specific spec
+npx playwright test tests/e2e/contacts-tab.spec.js
+
+# Run with headed browser (debugging)
+npx playwright test --headed
+```
 
 ## Dashboard API Coverage
 
@@ -175,12 +239,13 @@ Tests verify the engine selection logic documented in `docs/ORCHESTRATION-PROTOC
 
 | Suite | Files | Cases | Offline |
 |-------|-------|-------|---------|
-| Root unit | 98 | ~1,350 | Yes |
+| Root unit | 133 | ~3,591 | Yes |
 | Root standalone | 3 | 6 | Yes |
-| Crew-CLI unit | 82 | ~695 | Yes |
-| Integration | 14 | ~327 | No |
-| E2E | 14 | ~132 | No |
-| **Total** | **~211** | **~2,510** | |
+| Crew-CLI unit | 82 | ~765 | Yes |
+| Integration | 17 | ~352 | No |
+| E2E (node:test) | 15 | ~132 | No |
+| Playwright | 17 | ~222 | No |
+| **Total** | **~267** | **~5,068** | |
 
 ## Where to Find Results
 

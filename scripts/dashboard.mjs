@@ -124,19 +124,43 @@ if (!lockResult.ok) {
   process.exit(1);
 }
 
-// ── OAuth token cache (read once at startup while keychain is accessible) ──────
+// ── OAuth token cache with TTL refresh ──────────────────────────────────────
 const _oauthTokenCache = {};
+const _oauthTokenTimestamp = {};  // providerId → Date.now() when cached
+const OAUTH_TOKEN_TTL_MS = 25 * 60 * 1000; // 25 minutes (tokens typically expire in 30-60 min)
+
+// Capture execFileSync at module load for sync token refresh
+const { execFileSync: _oauthExecFileSync } = await import("node:child_process");
+
+function refreshAnthropicOAuthToken() {
+  try {
+    for (const acct of [os.userInfo().username, "jeffhobbs", "unknown"]) {
+      try {
+        const raw = _oauthExecFileSync("security", [
+          "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
+        ], { encoding: "utf8", timeout: 5000 }).trim();
+        const parsed = JSON.parse(raw);
+        if (parsed?.claudeAiOauth?.accessToken) {
+          _oauthTokenCache["anthropic-oauth"] = parsed.claudeAiOauth.accessToken;
+          _oauthTokenTimestamp["anthropic-oauth"] = Date.now();
+          return;
+        }
+      } catch { /* try next account */ }
+    }
+  } catch { /* keychain not accessible */ }
+}
+
+// Initial load at startup
 try {
-  const { execFileSync } = await import("node:child_process");
-  const { userInfo } = await import("node:os");
-  for (const acct of [userInfo().username, "jeffhobbs", "unknown"]) {
+  for (const acct of [os.userInfo().username, "jeffhobbs", "unknown"]) {
     try {
-      const raw = execFileSync("security", [
+      const raw = _oauthExecFileSync("security", [
         "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
       ], { encoding: "utf8", timeout: 5000 }).trim();
       const parsed = JSON.parse(raw);
       if (parsed?.claudeAiOauth?.accessToken) {
         _oauthTokenCache["anthropic-oauth"] = parsed.claudeAiOauth.accessToken;
+        _oauthTokenTimestamp["anthropic-oauth"] = Date.now();
         break;
       }
     } catch { /* try next account */ }
@@ -166,13 +190,34 @@ async function readOpenAIOAuthToken() {
   }
   return null;
 }
+
+async function refreshOpenAIOAuthToken() {
+  try {
+    const t = await readOpenAIOAuthToken();
+    if (t) {
+      _oauthTokenCache["openai-oauth"] = t;
+      _oauthTokenTimestamp["openai-oauth"] = Date.now();
+    }
+  } catch { /* ignore */ }
+}
+
 // Pre-load OpenAI token at startup
 try {
   const t = await readOpenAIOAuthToken();
-  if (t) _oauthTokenCache["openai-oauth"] = t;
+  if (t) {
+    _oauthTokenCache["openai-oauth"] = t;
+    _oauthTokenTimestamp["openai-oauth"] = Date.now();
+  }
 } catch { /* ignore */ }
 
 function getOAuthTokenCached(providerId) {
+  const cachedAt = _oauthTokenTimestamp[providerId] || 0;
+  const age = Date.now() - cachedAt;
+  // Refresh if token is stale (older than TTL)
+  if (age > OAUTH_TOKEN_TTL_MS) {
+    if (providerId === "anthropic-oauth") refreshAnthropicOAuthToken();
+    else if (providerId === "openai-oauth") refreshOpenAIOAuthToken(); // async, best-effort
+  }
   return _oauthTokenCache[providerId] || null;
 }
 
@@ -1494,6 +1539,148 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    // ── Test results API ─────────────────────────────────────────────────────
+    if (url.pathname === "/api/tests/summary" && req.method === "GET") {
+      const resultsDir = path.join(CREWSWARM_DIR, "test-results");
+      const runsDir = path.join(resultsDir, "runs");
+      try {
+        // Use most recent run directory (sorted by timestamp name)
+        const allRuns = fs.readdirSync(runsDir).sort();
+        const latestRunId = allRuns[allRuns.length - 1];
+        if (!latestRunId) throw new Error("No test runs found");
+        // Build lastRun summary from summary.json or .last-run.json
+        let lastRun;
+        const summaryFile = path.join(runsDir, latestRunId, "summary.json");
+        if (fs.existsSync(summaryFile)) {
+          lastRun = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+        } else {
+          const lastRunFile = path.join(resultsDir, ".last-run.json");
+          lastRun = JSON.parse(fs.readFileSync(lastRunFile, "utf8"));
+        }
+        lastRun.runId = latestRunId;
+        const runDir = path.join(runsDir, latestRunId);
+        // Scan per-test artifact dirs to build group breakdown.
+        // manifest.json has start-phase data (file path, name); failure.json presence = fail.
+        const groups = {};
+        const failures = [];
+        let entries;
+        try { entries = fs.readdirSync(runDir); } catch { entries = []; }
+        for (const ent of entries) {
+          if (ent === "run.json" || ent.startsWith(".")) continue;
+          const testDir = path.join(runDir, ent);
+          let stat; try { stat = fs.statSync(testDir); } catch { continue; }
+          if (!stat.isDirectory()) continue;
+          const manifestFile = path.join(testDir, "manifest.json");
+          let manifest;
+          try { manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")); } catch { continue; }
+          const hasFail = fs.existsSync(path.join(testDir, "failure.json"));
+          let relFile = manifest.file_fingerprint?.relative_file || "";
+          if (!relFile && manifest.file) {
+            // Convert absolute path to relative
+            relFile = manifest.file.replace(CREWSWARM_DIR + "/", "");
+          }
+          const parts = relFile.replace(/\.test\.mjs$/, "").split("/");
+          const category = parts[1] || "other";
+          let groupName = "other";
+          if (parts[2]) {
+            const base = parts[2];
+            const dashIdx = base.indexOf("-");
+            groupName = dashIdx > 0 ? base.slice(0, dashIdx) : base;
+          }
+          const key = `${category}/${groupName}`;
+          if (!groups[key]) groups[key] = { category, group: groupName, files: new Set(), tests: 0, pass: 0, fail: 0, skip: 0, duration_ms: 0 };
+          const g = groups[key];
+          g.files.add(relFile);
+          g.tests++;
+          if (hasFail) g.fail++;
+          else g.pass++;
+          g.duration_ms += manifest.duration_ms || 0;
+          // Collect failure details
+          if (hasFail) {
+            try {
+              const f = JSON.parse(fs.readFileSync(path.join(testDir, "failure.json"), "utf8"));
+              failures.push({ testId: ent, name: f.name || manifest.name || ent, file: relFile, error: f.error || f.message || "", classification: f.classification || "unknown", rerun_command: f.rerun_command || manifest.rerun_command || "" });
+            } catch { failures.push({ testId: ent, name: manifest.name || ent, file: relFile, error: "", classification: "unknown", rerun_command: manifest.rerun_command || "" }); }
+          }
+        }
+        const groupsArr = Object.values(groups).map(g => ({ ...g, files: g.files.size }))
+          .sort((a, b) => (a.category + a.group).localeCompare(b.category + b.group));
+        // Recalculate totals from scanned data (more accurate than possibly-stale lastRun)
+        const scannedTotal = groupsArr.reduce((s, g) => s + g.tests, 0);
+        if (scannedTotal > 0) {
+          lastRun.total = scannedTotal;
+          lastRun.passed = groupsArr.reduce((s, g) => s + g.pass, 0);
+          lastRun.failed = groupsArr.reduce((s, g) => s + g.fail, 0);
+          lastRun.skipped = groupsArr.reduce((s, g) => s + g.skip, 0);
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ lastRun, groups: groupsArr, failures }));
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ lastRun: null, groups: [], failures: [], error: e.message }));
+      }
+      return;
+    }
+    if (url.pathname === "/api/tests/history" && req.method === "GET") {
+      const resultsDir = path.join(CREWSWARM_DIR, "test-results");
+      const runsDir = path.join(resultsDir, "runs");
+      try {
+        // Scan run directories. Prefer summary.json (has pass/fail/total/duration).
+        // Fall back to counting per-test dirs + checking failure.json presence.
+        const dirs = fs.readdirSync(runsDir).sort().reverse().slice(0, 30);
+        const history = [];
+        for (const d of dirs) {
+          const runDir = path.join(runsDir, d);
+          try {
+            // Try summary.json first (fast path)
+            const summaryFile = path.join(runDir, "summary.json");
+            if (fs.existsSync(summaryFile)) {
+              const s = JSON.parse(fs.readFileSync(summaryFile, "utf8"));
+              history.push({ runId: d, timestamp: s.timestamp, status: s.status || (s.failed > 0 ? "failed" : "passed"), passed: s.passed || 0, failed: s.failed || 0, skipped: s.skipped || 0, total: s.total || 0, duration_ms: s.duration_ms || 0 });
+              continue;
+            }
+            // Fall back to directory scanning
+            const runMeta = JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8"));
+            const ents = fs.readdirSync(runDir);
+            const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
+            let failed = 0;
+            for (const td of testDirs) {
+              if (fs.existsSync(path.join(runDir, td, "failure.json"))) failed++;
+            }
+            const total = testDirs.length;
+            const passed = total - failed;
+            history.push({ runId: d, timestamp: runMeta.timestamp, status: failed > 0 ? "failed" : "passed", passed, failed, skipped: 0, total, duration_ms: 0 });
+          } catch { /* skip unreadable */ }
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ history }));
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ history: [], error: e.message }));
+      }
+      return;
+    }
+    if (url.pathname === "/api/tests/run" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", async () => {
+        let suite = "test:unit";
+        try { const parsed = JSON.parse(body); suite = parsed.suite || suite; } catch { /* default */ }
+        const allowed = ["test:unit", "test:integration", "test:e2e", "test:all", "test"];
+        if (!allowed.includes(suite)) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid suite: " + suite }));
+          return;
+        }
+        const { spawn } = await import("node:child_process");
+        const child = spawn("npm", ["run", suite], { cwd: CREWSWARM_DIR, stdio: "ignore", detached: true });
+        child.unref();
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ started: true, suite, pid: child.pid }));
+      });
+      return;
+    }
+
     // ── First-run detection ──────────────────────────────────────────────────
     if (url.pathname === "/api/first-run-status" && req.method === "GET") {
       const cfg = readSwarmConfigSafe();
@@ -8946,8 +9133,48 @@ ORDER BY day DESC, cost DESC;`;
     if (url.pathname === "/api/services/status") {
       let services;
       try {
-        const { execSync } = await import("node:child_process");
+        const { exec: execCb } = await import("node:child_process");
         const net = await import("node:net");
+
+        // Single ps snapshot — avoids spawning dozens of pgrep child processes
+        const psSnapshot = await new Promise((resolve) => {
+          execCb("ps ax -o pid=,command=", { encoding: "utf8", timeout: 2000 }, (err, stdout) => {
+            resolve(err ? "" : stdout || "");
+          });
+        });
+
+        function findPid(pattern) {
+          const re = new RegExp(pattern);
+          for (const line of psSnapshot.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const spaceIdx = trimmed.indexOf(" ");
+            if (spaceIdx < 0) continue;
+            const pid = parseInt(trimmed.slice(0, spaceIdx), 10);
+            const cmd = trimmed.slice(spaceIdx + 1);
+            if (re.test(cmd)) return pid;
+          }
+          return null;
+        }
+
+        function findAllPids(pattern) {
+          const re = new RegExp(pattern);
+          const pids = [];
+          for (const line of psSnapshot.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const spaceIdx = trimmed.indexOf(" ");
+            if (spaceIdx < 0) continue;
+            const pid = parseInt(trimmed.slice(0, spaceIdx), 10);
+            const cmd = trimmed.slice(spaceIdx + 1);
+            if (re.test(cmd)) pids.push(pid);
+          }
+          return pids;
+        }
+
+        function countProcs(pattern) {
+          return findAllPids(pattern).length;
+        }
 
         function portListening(port, timeoutMs = 2000) {
           return new Promise((resolve) => {
@@ -8993,63 +9220,23 @@ ORDER BY day DESC, cost DESC;`;
           }
         }
 
-        function countProcs(pattern) {
-          try {
-            const out = execSync(`pgrep -f "${pattern}" | wc -l`, {
-              encoding: "utf8",
-              timeout: 300,
-              stdio: ["pipe", "pipe", "pipe"],
-            }).trim();
-            return parseInt(out, 10) || 0;
-          } catch {
-            return 0;
+        function commandExistsFast(bin, extraPaths = []) {
+          const candidate = String(bin || "").trim();
+          if (!candidate) return false;
+          if (candidate.includes("/")) {
+            try { return fs.existsSync(candidate); } catch { return false; }
           }
-        }
-
-        function getPid(pattern) {
-          try {
-            const out = execSync(`pgrep -f "${pattern}"`, {
-              encoding: "utf8",
-              timeout: 300,
-              stdio: ["pipe", "pipe", "pipe"],
-            }).trim();
-            const pids = out
-              .split("\n")
-              .filter(Boolean)
-              .map((p) => parseInt(p, 10));
-            return pids.length > 0 ? pids[0] : null;
-          } catch {
-            return null;
+          const checks = [
+            ...extraPaths,
+            path.join("/usr/local/bin", candidate),
+            path.join("/opt/homebrew/bin", candidate),
+            path.join(os.homedir(), ".local", "bin", candidate),
+            path.join(os.homedir(), "bin", candidate),
+          ];
+          for (const item of checks) {
+            try { if (item && fs.existsSync(item)) return true; } catch {}
           }
-        }
-
-        function getAllPids(pattern) {
-          try {
-            const out = execSync(`pgrep -f "${pattern}"`, {
-              encoding: "utf8",
-              timeout: 300,
-              stdio: ["pipe", "pipe", "pipe"],
-            }).trim();
-            return out
-              .split("\n")
-              .filter(Boolean)
-              .map((p) => parseInt(p, 10));
-          } catch {
-            return [];
-          }
-        }
-
-        function procStartTime(pid) {
-          try {
-            const out = execSync(`ps -p ${pid} -o lstart=`, {
-              encoding: "utf8",
-              timeout: 300,
-              stdio: ["pipe", "pipe", "pipe"],
-            }).trim();
-            return out ? new Date(out).getTime() : null;
-          } catch {
-            return null;
-          }
+          return false;
         }
 
         const crewLeadPort = Number(process.env.CREW_LEAD_PORT || 5010);
@@ -9059,19 +9246,15 @@ ORDER BY day DESC, cost DESC;`;
         const waPid =
           pidRunning(
             path.join(os.homedir(), ".crewswarm", "logs", "whatsapp-bridge.pid"),
-          ) || getPid("whatsapp-bridge.mjs");
+          ) || findPid("whatsapp-bridge\\.mjs");
+
+        // Fire network checks in parallel — all process lookups are instant (ps snapshot)
         const rtStatusPromise = fetch("http://127.0.0.1:18889/status", {
           signal: AbortSignal.timeout(5000),
         });
         const mcpHealthPromise = httpOk("http://127.0.0.1:5020/health", 3000);
         const [
-          rtUp,
-          crewLeadUp,
-          gwUp,
-          ocPortUp,
-          dashUp,
-          studioUp,
-          watchUp,
+          rtUp, crewLeadUp, gwUp, ocPortUp, dashUp, studioUp, watchUp,
         ] = await Promise.all([
           portListening(18889),
           portListening(crewLeadPort),
@@ -9081,33 +9264,34 @@ ORDER BY day DESC, cost DESC;`;
           portListening(3333),
           portListening(3334),
         ]);
-        const rtPid = getPid("opencrew-rt-daemon");
-        const crewLeadPid = getPid("crew-lead.mjs");
-        const gwPid = getPid("openclaw-gateway");
+
+        // All PID lookups are instant — pure JS regex against ps snapshot
+        const rtPid = findPid("opencrew-rt-daemon");
+        const crewLeadPid = findPid("crew-lead\\.mjs");
+        const gwPid = findPid("openclaw-gateway");
+        const ocPid = findPid("\\.opencode serve") || findPid("opencode serve") || findPid("bin/\\.opencode");
+        const mcpPid = findPid("mcp-server\\.mjs");
+        const studioPid = findPid("apps/vibe/server\\.mjs") || findPid("npm.*studio:start");
+        const watchPid = findPid("watch-server\\.mjs");
+
+        // commandExists — fs.existsSync only, no shell spawn
+        const codexInstalled = commandExistsFast(process.env.CODEX_CLI_BIN || "codex");
+        const claudeInstalled = commandExistsFast(process.env.CLAUDE_CODE_BIN || "claude");
+        const cursorInstalled = commandExistsFast(
+          process.env.CURSOR_CLI_BIN || path.join(os.homedir(), ".local", "bin", "agent"),
+          [path.join(os.homedir(), ".local", "bin", "agent")],
+        ) || commandExistsFast("agent", [path.join(os.homedir(), ".local", "bin", "agent")]);
+        const geminiInstalled = commandExistsFast(process.env.GEMINI_CLI_BIN || "gemini");
+        const crewCliInstalled = commandExistsFast("crew", [
+          path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"),
+        ]) || fs.existsSync(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"));
         const oclawPaired =
           fs.existsSync(
             path.join(os.homedir(), ".openclaw", "devices", "paired.json"),
           ) ||
           fs.existsSync(path.join(os.homedir(), ".openclaw", "device.json"));
-        const ocPid =
-          getPid("\\.opencode serve") ||
-          getPid("opencode serve") ||
-          getPid("bin/.opencode") ||
-          getPid("/.opencode");
         const ocUp = ocPortUp || ocPid !== null;
-        const codexInstalled = commandExists(process.env.CODEX_CLI_BIN || "codex");
-        const claudeInstalled = commandExists(process.env.CLAUDE_CODE_BIN || "claude");
-        const cursorInstalled = commandExists(
-          process.env.CURSOR_CLI_BIN ||
-            path.join(os.homedir(), ".local", "bin", "agent"),
-          [path.join(os.homedir(), ".local", "bin", "agent")],
-        ) || commandExists("agent", [path.join(os.homedir(), ".local", "bin", "agent")]);
-        const geminiInstalled = commandExists(process.env.GEMINI_CLI_BIN || "gemini");
-        const crewCliInstalled =
-          commandExists("crew", [
-            path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"),
-          ]) ||
-          fs.existsSync(path.join(CREWSWARM_DIR, "crew-cli", "dist", "index.js"));
+
         let swarmCfg = {};
         try {
           swarmCfg = JSON.parse(
@@ -9133,10 +9317,6 @@ ORDER BY day DESC, cost DESC;`;
           cfgEnv.CREWSWARM_OPENCODE_ENABLED === "1" ||
           process.env.CREWSWARM_OPENCODE_ENABLED === "on" ||
           process.env.CREWSWARM_OPENCODE_ENABLED === "1";
-        const mcpPid = getPid("mcp-server.mjs");
-        const studioPid =
-          getPid("apps/vibe/server.mjs") || getPid("npm.*studio:start");
-        const watchPid = getPid("watch-server.mjs");
 
         // Agent count: ask RT bus which agents are actually connected (most reliable source)
         let agentsOnline = 0;
@@ -9150,11 +9330,11 @@ ORDER BY day DESC, cost DESC;`;
             (a) => String(a).toLowerCase() !== "crew-lead",
           );
           agentsOnline = rtAgentList.length;
-          agentPids = getAllPids("gateway-bridge.mjs --rt-daemon");
+          agentPids = findAllPids("gateway-bridge\\.mjs --rt-daemon");
         } catch {
-          // RT not reachable — fall back to pgrep for count, config for names
-          agentsOnline = countProcs("gateway-bridge.mjs --rt-daemon");
-          agentPids = getAllPids("gateway-bridge.mjs --rt-daemon");
+          // RT not reachable — fall back to ps snapshot for count, config for names
+          agentsOnline = countProcs("gateway-bridge\\.mjs --rt-daemon");
+          agentPids = findAllPids("gateway-bridge\\.mjs --rt-daemon");
           try {
             rtAgentList = (swarmCfg.agents || [])
               .map((a) => a.id)
@@ -9170,7 +9350,7 @@ ORDER BY day DESC, cost DESC;`;
         } catch { }
         if (agentsTotal === 0) agentsTotal = 14;
         agentsTotal = Math.max(agentsTotal, agentsOnline);
-        const pmCount = countProcs("pm-loop.mjs");
+        const pmCount = countProcs("pm-loop\\.mjs");
 
         services = [
           {
@@ -9379,12 +9559,8 @@ ORDER BY day DESC, cost DESC;`;
             canRestart: false,
             pid: (() => {
               try {
-                const pids = execSync("pgrep -f 'pm-loop.mjs'", {
-                  encoding: "utf8",
-                  timeout: 300,
-                  stdio: ["pipe", "pipe", "pipe"],
-                }).trim().split("\n").filter(Boolean).map(p => parseInt(p, 10));
-                return pids.length === 1 ? pids[0] : pids;
+                const pids = findAllPids("pm-loop\\.mjs");
+                return pids.length === 1 ? pids[0] : (pids.length > 0 ? pids : null);
               } catch {
                 return null;
               }
