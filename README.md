@@ -1,6 +1,6 @@
 # crewswarm
 
-**The only multi-engine AI coding platform.** Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. Parallel agents. Persistent sessions. No vendor lock-in.
+**A multi-engine AI coding platform.** Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. Parallel agents. Persistent sessions. No vendor lock-in.
 
 [![npm version](https://img.shields.io/npm/v/crewswarm)](https://www.npmjs.com/package/crewswarm)
 [![Release Check](https://img.shields.io/badge/release_check-required-blue)](https://github.com/crewswarm/crewswarm)
@@ -17,7 +17,7 @@
 
 **Rate limits are real.** Every $20/month AI coding plan has them. Claude, Cursor, Codex — you'll hit the wall mid-feature.
 
-crewswarm is the only tool where you seamlessly switch to another engine and keep your session context. Or pick the best CLI for each job:
+crewswarm lets you switch engines without throwing away your working context. Or pick the best CLI for each job:
 
 | Engine | Best for | Key strength |
 |---|---|---|
@@ -85,7 +85,7 @@ Use Docker when you want stronger isolation, easier restarts, or a shared server
 
 1. **You write a requirement** — one sentence, one paragraph, or a full spec
 2. **crew-pm plans it** — breaks work into phases, assigns specialists
-3. **Agents execute in parallel** — backend, frontend, tests built simultaneously (3x faster)
+3. **Agents execute in parallel** — backend, frontend, and tests can run simultaneously
 4. **Done. Files on disk.** — real files, real tests, real output
 
 ```
@@ -172,7 +172,7 @@ crewswarm                    # Start full stack: RT bus, crew-lead, bridges, the
 crewswarm pm-loop            # Run autonomous PM loop
 npm run doctor               # Preflight check
 npm run restart-all          # Restart the stack
-npm test                     # 4,530 tests, 100% passing
+npm test                     # Run the core test suites
 npm run test:report          # View test results summary
 crew exec "Build X"          # Send task via CLI
 ```

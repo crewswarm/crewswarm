@@ -79,6 +79,7 @@ describe('WorktreeTool — unit', () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
     const fakeSandbox = {
       baseDir: tmpdir(),
+      getBaseDir() { return this.baseDir; },
       addChange: async () => {},
       getStagedContent: () => undefined,
       getActiveBranch: () => 'main',
@@ -98,7 +99,8 @@ describe('WorktreeTool — unit', () => {
 
   it('worktree action "enter" without branch should fail', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     const result = await adapter.executeTool('worktree', { action: 'enter' });
     // Should fail because branch is required
@@ -107,7 +109,8 @@ describe('WorktreeTool — unit', () => {
 
   it('worktree action "exit" without branch should fail', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     const result = await adapter.executeTool('worktree', { action: 'exit' });
     assert.ok(result.success === false || result.error, 'Should fail without branch for exit');
@@ -115,7 +118,8 @@ describe('WorktreeTool — unit', () => {
 
   it('worktree action "merge" without branch should fail', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     const result = await adapter.executeTool('worktree', { action: 'merge' });
     assert.ok(result.success === false || result.error, 'Should fail without branch for merge');

@@ -2257,8 +2257,8 @@ Return ONLY valid JSON:
             if (verbose) {
               console.log(`  [${unit.id}] worktree → ${wt.worktreePath}`);
             }
-          } catch (err: any) {
-            if (verbose) console.warn(`  [${unit.id}] worktree failed, sharing filesystem: ${err.message}`);
+          } catch (err: unknown) {
+            if (verbose) console.warn(`  [${unit.id}] worktree failed, sharing filesystem: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
       }

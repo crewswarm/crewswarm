@@ -43,7 +43,8 @@ describe('ToolSearchTool — unit', () => {
 
   it('tool_search via adapter should find "shell" tool by name', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
 
     const result = await adapter.executeTool('tool_search', { query: 'shell' });
@@ -57,7 +58,8 @@ describe('ToolSearchTool — unit', () => {
 
   it('tool_search should be allowed at read-only constraint level', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'read-only');
 
     const result = await adapter.executeTool('tool_search', { query: 'read' });
@@ -69,7 +71,8 @@ describe('ToolSearchTool — unit', () => {
 
   it('tool_search should return no results for nonsense query', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
 
     const result = await adapter.executeTool('tool_search', { query: 'zzzznonexistenttoolxxx' });
@@ -83,7 +86,8 @@ describe('ToolSearchTool — unit', () => {
 
   it('tool_search should respect max_results limit', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
 
     const result = await adapter.executeTool('tool_search', { query: 'file', max_results: 2 });
@@ -99,7 +103,8 @@ describe('ToolSearchTool — unit', () => {
 
   it('tool_search should include tool name and description in results', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
 
     const result = await adapter.executeTool('tool_search', { query: 'glob' });

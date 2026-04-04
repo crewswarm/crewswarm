@@ -6,6 +6,8 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
 
 // ─── Phase 1a: Read-before-edit guard ───────────────────────────────────────
 
@@ -26,7 +28,7 @@ describe('Phase 1a: Read-before-edit guard', () => {
 
   test('_filesRead set exists on adapter', async () => {
     if (!importOk) return;
-    const adapter = new GeminiToolAdapter({ baseDir: '/tmp', getStagedContent: () => null, addChange: async () => {}, load: async () => {}, apply: async () => {}, getPendingFiles: () => [] });
+    const adapter = new GeminiToolAdapter({ baseDir: '/tmp', getBaseDir: () => '/tmp', getStagedContent: () => null, addChange: async () => {}, load: async () => {}, apply: async () => {}, getPendingFiles: () => [] });
     assert.ok(adapter._filesRead instanceof Set || true, '_filesRead should exist');
   });
 });
@@ -213,6 +215,7 @@ describe('Phase 3a: Structured failure returns', () => {
 
     const adapter = new GeminiToolAdapter({
       baseDir: '/tmp',
+      getBaseDir: () => '/tmp',
       getStagedContent: () => null,
       addChange: async () => {},
       load: async () => {},
@@ -395,13 +398,12 @@ describe('Phase 5a: Bootstrap graph pipeline', () => {
     } else {
       // At minimum verify the pipeline log file has ordered phases
       const fs = await import('node:fs');
-      const glob = await import('node:path');
       // Check any pipeline run log
       try {
-        const runsDir = '/Users/jeffhobbs/Chuck/.crew/pipeline-runs';
+        const runsDir = process.env.CREW_PIPELINE_RUNS_DIR || path.join(os.homedir(), '.crew', 'pipeline-runs');
         const files = fs.readdirSync(runsDir).sort().reverse();
         if (files[0]) {
-          const log = fs.readFileSync(glob.join(runsDir, files[0]), 'utf8');
+          const log = fs.readFileSync(path.join(runsDir, files[0]), 'utf8');
           const logPhases = log.split('\n').filter(Boolean).map(l => {
             try { return JSON.parse(l).phase; } catch { return null; }
           }).filter(Boolean);

@@ -8,6 +8,7 @@ import { GeminiToolAdapter } from '../../src/tools/gemini/crew-adapter.ts';
 function createAdapter(baseDir) {
   return new GeminiToolAdapter({
     baseDir,
+    getBaseDir: () => baseDir,
     addChange: async () => {},
     getStagedContent: () => null
   });

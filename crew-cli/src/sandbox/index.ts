@@ -187,6 +187,10 @@ export class Sandbox {
     return this.state;
   }
 
+  getBaseDir(): string {
+    return this.baseDir;
+  }
+
   getActiveBranch(): string {
     return this.state.activeBranch;
   }

@@ -55,6 +55,8 @@ export interface WorkGraph {
   totalComplexity: number;
   requiredPersonas: string[];
   estimatedCost: number;
+  summary?: string;
+  acceptanceCriteria?: string[];
   planningArtifacts?: PlanningArtifacts;
   planMode?: 'lightweight' | 'full';
 }

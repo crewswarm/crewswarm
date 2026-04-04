@@ -37,6 +37,8 @@ import { logTestEvidence } from "../helpers/test-log.mjs";
 const DASHBOARD_URL = "http://127.0.0.1:4319";
 const CREW_LEAD_URL = "http://127.0.0.1:5010";
 const CONFIG_PATH = join(homedir(), ".crewswarm", "config.json");
+const PROJECT_ROOT = process.cwd();
+const PACKAGE_JSON_PATH = join(PROJECT_ROOT, "package.json");
 
 let authToken;
 
@@ -412,7 +414,7 @@ describe("File browser lifecycle", { skip: SKIP, concurrency: 1, timeout: 60000 
   it("GET /api/files returns file listing", async () => {
     const testName = "GET /api/files returns file listing";
     const { status, data } = await api(
-      "/api/files?path=/Users/jeffhobbs/CrewSwarm",
+      `/api/files?path=${encodeURIComponent(PROJECT_ROOT)}`,
       "GET", null, { testName, timeout: 30000 }
     );
     if (status === 500) {
@@ -428,7 +430,7 @@ describe("File browser lifecycle", { skip: SKIP, concurrency: 1, timeout: 60000 
   it("GET /api/file-content returns file content", async () => {
     const testName = "GET /api/file-content returns file content";
     const { status, data } = await api(
-      "/api/file-content?path=/Users/jeffhobbs/CrewSwarm/package.json",
+      `/api/file-content?path=${encodeURIComponent(PACKAGE_JSON_PATH)}`,
       "GET", null, { testName }
     );
     if (status === 500) {

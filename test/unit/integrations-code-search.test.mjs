@@ -28,7 +28,7 @@ const {
   findClasses,
 } = await import("../../lib/integrations/code-search.mjs");
 
-const PROJECT_DIR = path.resolve("/Users/jeffhobbs/CrewSwarm");
+const PROJECT_DIR = process.cwd();
 
 // ── searchCode ──────────────────────────────────────────────────────────────
 

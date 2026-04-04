@@ -32,7 +32,7 @@ test-results/
 test-scratch/
 *.cpuprofile
 
-# Roadmaps and internal planning (keep out of public repo)
+# Internal planning docs and local operating notes
 ROADMAP.md
 crew-cli/ROADMAP.md
 crew-cli/docs/ROADMAP.md
@@ -47,7 +47,7 @@ docs/CANONICAL/PUBLIC-REPO-READINESS.md
 docs/internal/
 reports/
 
-# OpenClaw legacy files (old brand name) — keep OPENCLAW-PLUGIN.md
+# Legacy OpenClaw docs kept out of the main repo surface
 docs/OPENCLAW-AGENTS-SETUP.md
 docs/OPENCLAW-REFERENCES-AUDIT.md
 docs/OPENCLAW-REFS-ONE-BY-ONE.md
@@ -75,13 +75,13 @@ openai-oauth-vs-api.json
 # External CLI repos (cloned locally, not shipped)
 crew-cli/external/
 
-# Agent-written junk (dev notes that should not be committed)
+# Generated agent notes and temporary proof files
 crew-cli/_crew-*
 crew-cli/*-COMPLETE.md
 crew-cli/*-VERIFIED.md
 crew-cli/*-PROOF.md
 
-# Agent-written garbage (project files that don't belong)
+# Common stray files from local experiments
 *.pyc
 *.bak
 *.tgz
@@ -121,7 +121,7 @@ scripts/qa-*.mjs
 scripts/quick-screenshot.mjs
 scripts/capture-nav-screenshots.mjs
 
-# Leaked paths / junk dirs agents create
+# Common stray directories from local experiments
 desktop/
 /src/
 homepage/
@@ -196,7 +196,7 @@ tmp/
 # Demo recording scratch project
 demo-project/
 
-# Local scratch / one-off experiments
+# Local scratch files and one-off experiments
 /cli
 /test-repl-imports.mjs
 /chuck-security-audit.md

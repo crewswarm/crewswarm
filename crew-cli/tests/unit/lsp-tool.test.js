@@ -41,7 +41,7 @@ describe('LspTool', () => {
 
   it('lsp tool is allowed at read-only constraint level', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
+    const fakeSandbox = { baseDir: tmpDir, getBaseDir: () => tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'read-only');
     const result = await adapter.executeTool('lsp', { action: 'diagnostics', file: tsFile });
     // Should NOT be blocked by constraint level
@@ -53,7 +53,7 @@ describe('LspTool', () => {
 
   it('lsp diagnostics returns a result for .ts file', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
+    const fakeSandbox = { baseDir: tmpDir, getBaseDir: () => tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     const result = await adapter.executeTool('lsp', { action: 'diagnostics', file: tsFile });
     // Result must exist and have output or success flag
@@ -67,7 +67,7 @@ describe('LspTool', () => {
 
   it('lsp references with symbol performs grep-based lookup', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
+    const fakeSandbox = { baseDir: tmpDir, getBaseDir: () => tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     const result = await adapter.executeTool('lsp', { action: 'references', file: tsFile, symbol: 'greet' });
     assert.ok(result, 'result must be defined');
@@ -81,7 +81,7 @@ describe('LspTool', () => {
 
   it('lsp hover requires line and column', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
+    const fakeSandbox = { baseDir: tmpDir, getBaseDir: () => tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     // Without line — should return an error or handle gracefully
     const result = await adapter.executeTool('lsp', { action: 'hover', file: tsFile });
@@ -93,7 +93,7 @@ describe('LspTool', () => {
 
   it('lsp hover with valid line returns content', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
+    const fakeSandbox = { baseDir: tmpDir, getBaseDir: () => tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     const result = await adapter.executeTool('lsp', { action: 'hover', file: tsFile, line: 1, column: 20 });
     assert.ok(result, 'result must be defined');
@@ -101,7 +101,7 @@ describe('LspTool', () => {
 
   it('lsp legacy query "diagnostics" still works', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
+    const fakeSandbox = { baseDir: tmpDir, getBaseDir: () => tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     // Legacy query interface (backward compat)
     const result = await adapter.executeTool('lsp', { query: 'diagnostics' });
@@ -111,7 +111,7 @@ describe('LspTool', () => {
 
   it('lsp completions returns result for .ts file at valid position', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
+    const fakeSandbox = { baseDir: tmpDir, getBaseDir: () => tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     const result = await adapter.executeTool('lsp', {
       action: 'completions', file: tsFile, line: 1, column: 10,
@@ -121,7 +121,7 @@ describe('LspTool', () => {
 
   it('lsp definition falls back to grep when tsserver unavailable', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
+    const fakeSandbox = { baseDir: tmpDir, getBaseDir: () => tmpDir, addChange: async () => {}, getPendingPaths: () => [] };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
     const result = await adapter.executeTool('lsp', {
       action: 'definition', file: tsFile, symbol: 'greet',

@@ -531,7 +531,7 @@ function compactToolDeclarations(tools: ToolDeclaration[], turn: number): ToolDe
   return tools.map((tool) => ({
     name: tool.name,
     description: '',
-    parameters: stripSchemaMetadata(tool.parameters)
+    parameters: stripSchemaMetadata(tool.parameters) as ToolDeclaration['parameters']
   }));
 }
 
@@ -796,20 +796,21 @@ async function executeStreamingGeminiTurn(
   // Non-streaming fallback
   const data = await res.json() as LLMResponseData;
   const parts = data?.candidates?.[0]?.content?.parts ?? [];
-  const usage = data?.usageMetadata ?? {};
+  const usage = (data?.usageMetadata ?? {}) as Record<string, number>;
   const cost = (usage.promptTokenCount || 0) * 0.075 / 1_000_000 + (usage.candidatesTokenCount || 0) * 0.30 / 1_000_000;
 
   const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
   for (const part of parts) {
-    if (part.functionCall) {
-      toolCalls.push({ tool: part.functionCall.name || '', params: part.functionCall.args || {} });
+    const functionCall = part.functionCall as { name?: string; args?: Record<string, unknown> } | undefined;
+    if (functionCall) {
+      toolCalls.push({ tool: functionCall.name || '', params: functionCall.args || {} });
     }
   }
 
   if (toolCalls.length > 0) return { toolCalls, response: '', cost };
 
-  const textPart = parts.find((p: Record<string, unknown>) => p.text);
-  return { response: textPart?.text ?? '', status: 'COMPLETE', cost };
+  const textPart = parts.find((p: Record<string, unknown>) => p.text) as { text?: string } | undefined;
+  return { response: textPart?.text || '', status: 'COMPLETE', cost };
 }
 
 async function executeGeminiCodeAssistTurn(
@@ -916,7 +917,7 @@ async function executeGeminiCodeAssistTurn(
     throw new Error(`Gemini Code Assist generateContent ${response.status}: ${err.slice(0, 300)}`);
   }
 
-  type CodeAssistData = { response?: { candidates?: Array<{ content?: { parts?: unknown[] } }>; usageMetadata?: Record<string, number> } };
+  type CodeAssistData = { response?: { candidates?: Array<{ content?: { parts?: Array<Record<string, unknown>> } }>; usageMetadata?: Record<string, number> } };
   const data = await response.json() as CodeAssistData;
   const parts = data?.response?.candidates?.[0]?.content?.parts ?? [];
   const usage = data?.response?.usageMetadata ?? {};
@@ -925,11 +926,13 @@ async function executeGeminiCodeAssistTurn(
   const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
   let fullText = '';
   for (const part of parts) {
-    if (part.text) {
-      fullText += part.text;
+    const text = typeof part.text === 'string' ? part.text : '';
+    const functionCall = part.functionCall as { name?: string; args?: Record<string, unknown> } | undefined;
+    if (text) {
+      fullText += text;
     }
-    if (part.functionCall) {
-      toolCalls.push({ tool: part.functionCall.name || '', params: part.functionCall.args || {} });
+    if (functionCall) {
+      toolCalls.push({ tool: functionCall.name || '', params: functionCall.args || {} });
     }
   }
 
@@ -1123,8 +1126,9 @@ async function executeStreamingOpenAITurn(
   const choice = data?.choices?.[0];
   const msg = choice?.message;
 
-  if (msg?.tool_calls?.length > 0) {
-    const toolCalls = (msg.tool_calls as OpenAIToolCall[]).map((tc) => {
+  const toolCallsRaw = msg?.tool_calls;
+  if (toolCallsRaw && toolCallsRaw.length > 0) {
+    const toolCalls = (toolCallsRaw as OpenAIToolCall[]).map((tc) => {
       let params: Record<string, unknown> = {};
       try { params = JSON.parse(repairJson(tc.function?.arguments || '{}')); } catch {}
       return { tool: tc.function?.name || '', params };
@@ -1170,7 +1174,7 @@ async function streamOpenAIResponsesOAuthTurn(res: Response): Promise<LLMTurnRes
         toolCallsById.set(itemId, { name: '', args: '' });
       }
       const acc = toolCallsById.get(itemId)!;
-      if (item?.name) acc.name = item.name;
+      if (item?.name) acc.name = String(item.name);
       if (typeof item?.arguments === 'string') acc.args = item.arguments;
       return;
     }
@@ -1232,8 +1236,9 @@ async function streamOpenAIResponsesOAuthTurn(res: Response): Promise<LLMTurnRes
     toolCalls.push({ tool: tc.name, params });
   }
 
-  const cost = usage
-    ? ((usage.input_tokens || 0) * 5 + (usage.output_tokens || 0) * 20) / 1_000_000
+  const openAiUsage = usage as { input_tokens?: number; output_tokens?: number } | null;
+  const cost = openAiUsage
+    ? ((openAiUsage.input_tokens || 0) * 5 + (openAiUsage.output_tokens || 0) * 20) / 1_000_000
     : 0;
 
   if (toolCalls.length > 0) {
@@ -1315,7 +1320,7 @@ async function executeAnthropicSDKTurn(
   try {
     // Use beta.messages.create with OAuth + thinking (proven working with Haiku)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await (client.beta.messages.create as (opts: Record<string, unknown>) => Promise<{ usage?: { input_tokens?: number; output_tokens?: number }; content?: AnthropicContentBlock[] }>)({
+    const response = await (client.beta.messages.create as unknown as (opts: Record<string, unknown>) => Promise<{ usage?: { input_tokens?: number; output_tokens?: number }; content?: AnthropicContentBlock[] }>)({
       model,
       max_tokens: 16000,
       system: systemPrompt,
@@ -1814,10 +1819,10 @@ async function executeToolWithRetry(
           } catch { /* fall through to trim retry */ }
         }
         // Fallback: try trimming whitespace
-        params.old_string = params.old_string.trim();
+        params.old_string = String(params.old_string || '').trim();
       } else if (result.error?.includes('No such file') && params.file_path) {
         // For file ops: try without leading ./
-        params.file_path = params.file_path.replace(/^\.\//, '');
+        params.file_path = String(params.file_path || '').replace(/^\.\//, '');
       } else {
         // No auto-correction available, don't retry — propagate handled/recovery
         return { output: result.output ?? '', success: false, error: result.error, handled: result.handled, recovery: result.recovery };

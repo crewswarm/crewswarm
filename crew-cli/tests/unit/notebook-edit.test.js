@@ -60,6 +60,7 @@ after(() => {
 function makeSandbox(dir) {
   return {
     baseDir: dir,
+    getBaseDir: () => dir,
     addChange: async () => {},
     getPendingPaths: () => [],
     getStagedContent: () => null,

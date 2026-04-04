@@ -45,7 +45,8 @@ describe('SleepTool — unit', () => {
 
   it('sleep tool via adapter should sleep requested duration (short)', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
 
     const start = Date.now();
@@ -59,7 +60,8 @@ describe('SleepTool — unit', () => {
 
   it('sleep tool should cap at 60000ms', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
 
     // Request more than max — check output notes the cap
@@ -77,7 +79,8 @@ describe('SleepTool — unit', () => {
 
   it('sleep tool should return sleptMs and reason in output', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'full');
 
     const result = await adapter.executeTool('sleep', { duration_ms: 10, reason: 'waiting for process' });
@@ -92,7 +95,8 @@ describe('SleepTool — unit', () => {
 
   it('sleep tool should be allowed at read-only constraint level', async () => {
     const { GeminiToolAdapter } = await import('../../src/tools/gemini/crew-adapter.ts');
-    const fakeSandbox = { baseDir: tmpdir(), addChange: async () => {} };
+    const dir = tmpdir();
+    const fakeSandbox = { baseDir: dir, getBaseDir: () => dir, addChange: async () => {} };
     const adapter = new GeminiToolAdapter(fakeSandbox, 'read-only');
 
     const result = await adapter.executeTool('sleep', { duration_ms: 5 });

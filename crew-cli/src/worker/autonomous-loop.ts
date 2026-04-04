@@ -176,7 +176,7 @@ export async function executeAutonomous(
       if (isContextLengthError(err) && !reactiveCompacted) {
         reactiveCompacted = true;
         console.error('[crew-cli] Context exceeded — compacted history and retrying');
-        clearedHistory = compactMessages(clearedHistory, model);
+        clearedHistory = compactMessages(clearedHistory);
         response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
       } else {
         throw err;
@@ -192,14 +192,14 @@ export async function executeAutonomous(
     ) {
       recoveryAttempts++;
       console.error(`[crew-cli] Output truncated (finish_reason=${response.finishReason}) — compacting and retrying (attempt ${recoveryAttempts}/2)`);
-      clearedHistory = compactMessages(clearedHistory, model);
+      clearedHistory = compactMessages(clearedHistory);
       try {
         response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
       } catch (err) {
         if (isContextLengthError(err) && !reactiveCompacted) {
           reactiveCompacted = true;
           console.error('[crew-cli] Context exceeded during recovery — compacting again');
-          clearedHistory = compactMessages(clearedHistory, model);
+          clearedHistory = compactMessages(clearedHistory);
           response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
         } else {
           throw err;

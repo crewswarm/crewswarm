@@ -253,7 +253,7 @@ export class GeminiToolAdapter {
   private buildDynamicDeclarations(): ToolDeclarationSchema[] {
     // Pull canonical names from Gemini base declarations and hydrate schemas from static declarations.
     const staticDecls = this.getStaticToolDeclarations();
-    const staticByName = new Map<string, ToolDeclarationSchema>(staticDecls.map((d) => [d.name, d]));
+    const staticByName = new Map<string, ToolDeclarationSchema>(staticDecls.map((d) => [d.name, d as ToolDeclarationSchema]));
     const canonicalNames = [
       READ_FILE_TOOL_NAME,
       WRITE_FILE_TOOL_NAME,
@@ -335,7 +335,7 @@ export class GeminiToolAdapter {
     ];
 
     const byName = new Map<string, ToolDeclarationSchema>();
-    for (const decl of canonical) byName.set(decl.name, decl);
+    for (const decl of canonical) byName.set(decl.name, decl as ToolDeclarationSchema);
     for (const a of aliases) {
       const target = byName.get(a.target);
       if (!target) continue;
@@ -461,7 +461,7 @@ export class GeminiToolAdapter {
       return { success: false, error: `Blocked by hook: ${preResult.reason || 'denied'}` };
     }
     // Allow hooks to modify input
-    const effectiveParams = preResult.updatedInput || params;
+    const effectiveParams = (preResult.updatedInput || params) as Record<string, unknown>;
 
     const result = await this._executeTool(toolName, effectiveParams);
 
@@ -471,7 +471,7 @@ export class GeminiToolAdapter {
     return result;
   }
 
-  private async _executeTool(toolName: string, params: Record<string, unknown>): Promise<ToolResult> {
+  private async _executeTool(toolName: string, params: any): Promise<ToolResult> {
     try {
       switch (toolName) {
         // Canonical Gemini names + local aliases

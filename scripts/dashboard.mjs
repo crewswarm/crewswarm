@@ -132,9 +132,21 @@ const OAUTH_TOKEN_TTL_MS = 25 * 60 * 1000; // 25 minutes (tokens typically expir
 // Capture execFileSync at module load for sync token refresh
 const { execFileSync: _oauthExecFileSync } = await import("node:child_process");
 
+function getKeychainAccountCandidates() {
+  const candidates = [
+    process.env.CLAUDE_CODE_ACCOUNT,
+    process.env.USER,
+    process.env.LOGNAME,
+  ];
+  try {
+    candidates.unshift(os.userInfo().username);
+  } catch { /* os user lookup can fail in restricted environments */ }
+  return [...new Set(candidates.filter(Boolean))];
+}
+
 function refreshAnthropicOAuthToken() {
   try {
-    for (const acct of [os.userInfo().username, "jeffhobbs", "unknown"]) {
+    for (const acct of getKeychainAccountCandidates()) {
       try {
         const raw = _oauthExecFileSync("security", [
           "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
@@ -152,7 +164,7 @@ function refreshAnthropicOAuthToken() {
 
 // Initial load at startup
 try {
-  for (const acct of [os.userInfo().username, "jeffhobbs", "unknown"]) {
+  for (const acct of getKeychainAccountCandidates()) {
     try {
       const raw = _oauthExecFileSync("security", [
         "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
@@ -4696,8 +4708,7 @@ const server = http.createServer(async (req, res) => {
       if (!providers["anthropic-oauth"]) {
         try {
           const { execFileSync } = await import("node:child_process");
-          const { userInfo } = await import("node:os");
-          for (const acct of [userInfo().username, "jeffhobbs", "unknown"]) {
+          for (const acct of getKeychainAccountCandidates()) {
             try {
               const raw = execFileSync("security", [
                 "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
@@ -4732,8 +4743,7 @@ const server = http.createServer(async (req, res) => {
         if (!token) {
           if (providerId === "anthropic-oauth") {
             const { execFileSync } = await import("node:child_process");
-            const { userInfo } = await import("node:os");
-            for (const acct of [userInfo().username, "jeffhobbs", "unknown"]) {
+            for (const acct of getKeychainAccountCandidates()) {
               try {
                 const raw = execFileSync("security", [
                   "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"
@@ -4862,8 +4872,7 @@ const server = http.createServer(async (req, res) => {
         let token = getOAuthTokenCached(providerId);
         if (!token && providerId === "anthropic-oauth") {
           const { execFileSync } = await import("node:child_process");
-          const { userInfo } = await import("node:os");
-          for (const acct of [userInfo().username, "jeffhobbs", "unknown"]) {
+          for (const acct of getKeychainAccountCandidates()) {
             try {
               const raw = execFileSync("security", [
                 "find-generic-password", "-s", "Claude Code-credentials", "-a", acct, "-w"

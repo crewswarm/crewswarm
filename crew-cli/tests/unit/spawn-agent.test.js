@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 function makeSandbox(dir = tmpdir()) {
   return {
     baseDir: dir,
+    getBaseDir: () => dir,
     addChange: async () => {},
     getPendingPaths: () => [],
     getStagedContent: () => null,
