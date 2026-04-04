@@ -1,23 +1,49 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
-  ci:
-    name: PR checks
+  unit-tests:
+    name: Unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 25
-      - run: npm install
+          node-version: '22'
+      - run: npm ci
       - run: npm install --prefix apps/dashboard
-      - run: npm install --prefix crew-cli
       - run: npm run doctor
-      - run: npm run test:coverage
-      - run: cd crew-cli && npm test
+      - run: npm run test:unit
       - run: npm run smoke:static
       - run: npm run release:check
+
+  crew-cli-tests:
+    name: Crew-CLI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: cd crew-cli && npm ci
+      - run: cd crew-cli && npm test
+
+  playwright:
+    name: Playwright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: cd apps/dashboard && npm ci && npm run build
+      - run: node scripts/dashboard.mjs &
+      - run: sleep 5
+      - run: npx playwright test --reporter=github
