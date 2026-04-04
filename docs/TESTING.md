@@ -1,6 +1,6 @@
 # Testing Guide
 
-CrewSwarm has **~4,370 test cases** across unit, integration, e2e, and Playwright suites — all passing at 100%.
+CrewSwarm has **4,355 test cases** across unit, integration, e2e, and Playwright suites — all passing (1 intentional skip: native macOS folder picker).
 
 ## Quick Reference
 
@@ -239,13 +239,12 @@ Tests verify the engine selection logic documented in `docs/ORCHESTRATION-PROTOC
 
 | Suite | Files | Cases | Offline |
 |-------|-------|-------|---------|
-| Root unit | 133 | ~3,591 | Yes |
-| Root standalone | 3 | 6 | Yes |
-| Crew-CLI unit | 82 | ~765 | Yes |
-| Integration | 17 | ~352 | No |
-| E2E (node:test) | 15 | ~132 | No |
-| Playwright | 17 | ~222 | No |
-| **Total** | **~267** | **~5,068** | |
+| Root unit | 133 | 2,886 | Yes |
+| Crew-CLI unit | 85 | 765 | Yes |
+| Integration | 17 | 355 | No |
+| E2E (node:test) | 12 | 120 | No |
+| Playwright | 18 | 229 | No |
+| **Total** | **265** | **4,355** | |
 
 ## Where to Find Results
 

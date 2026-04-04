@@ -1,6 +1,6 @@
 # Coverage Matrix
 
-**~4,966 tests | 263 files | 100% passing**
+**4,355 tests | 265 files | 100% passing (1 intentional skip)**
 
 This document tracks what is genuinely covered by automated tests.
 
