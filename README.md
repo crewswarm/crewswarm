@@ -172,7 +172,7 @@ crewswarm                    # Start all services
 crewswarm pm-loop            # Run autonomous PM loop
 npm run doctor               # Preflight check
 npm run restart-all          # Restart the stack
-npm test                     # 4,355 tests, 100% passing
+npm test                     # 4,513 tests, 100% passing
 npm run test:report          # View test results summary
 crew exec "Build X"          # Send task via CLI
 ```

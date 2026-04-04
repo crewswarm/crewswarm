@@ -1,6 +1,6 @@
 # Coverage Matrix
 
-**4,355 tests | 265 files | 100% passing (1 intentional skip)**
+**4,513 tests | 268 files | 100% passing (1 intentional skip)**
 
 This document tracks what is genuinely covered by automated tests.
 
@@ -76,7 +76,7 @@ This document tracks what is genuinely covered by automated tests.
   - `test/unit/deprecated-orchestrators.test.mjs` — exit code 1, deprecation message verification
 - Startup guard and health contracts
   - `test/unit/startup-guard.test.mjs`, `test/unit/restart-health-contract.test.mjs`
-- `crew-cli` runtime (82 files, 765 tests)
+- `crew-cli` runtime (88 files, 906 tests)
   - Sandbox, orchestrator, worker pool, context augmentation, strategies, risk scoring, prompt registry, model policies
 
 ## Integration / Bounded Verification (needs :4319 + :5010)

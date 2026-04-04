@@ -1,6 +1,6 @@
 # Testing Guide
 
-CrewSwarm has **4,355 test cases** across unit, integration, e2e, and Playwright suites — all passing (1 intentional skip: native macOS folder picker).
+CrewSwarm has **4,513 test cases** across unit, integration, e2e, and Playwright suites — all passing (1 intentional skip: native macOS folder picker).
 
 ## Quick Reference
 
@@ -10,7 +10,7 @@ npm run test:unit            # Root unit tests only (~133 files, 3,591 tests)
 npm run test:integration     # Integration tests (needs :4319 + :5010)
 npm run test:e2e             # E2E live tests (needs server + engines)
 npm run test:all             # All root suites combined (sequential: unit → integration → e2e → crew-cli)
-npm --prefix crew-cli test   # Crew-CLI unit tests only (~82 files, 765 tests)
+npm --prefix crew-cli test   # Crew-CLI unit tests only (~88 files, 906 tests)
 npm run test:report          # Generate summary from last run
 npm run test:stale           # Show tests affected by recent file changes
 ```
@@ -240,11 +240,11 @@ Tests verify the engine selection logic documented in `docs/ORCHESTRATION-PROTOC
 | Suite | Files | Cases | Offline |
 |-------|-------|-------|---------|
 | Root unit | 133 | 2,886 | Yes |
-| Crew-CLI unit | 85 | 765 | Yes |
+| Crew-CLI unit | 88 | 906 | Yes |
 | Integration | 17 | 355 | No |
 | E2E (node:test) | 12 | 120 | No |
 | Playwright | 18 | 229 | No |
-| **Total** | **265** | **4,355** | |
+| **Total** | **268** | **4,513** | |
 
 ## Where to Find Results
 
