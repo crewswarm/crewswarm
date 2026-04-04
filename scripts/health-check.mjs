@@ -16,6 +16,8 @@ import fs   from "node:fs";
 import path from "node:path";
 import os   from "node:os";
 import { execSync } from "node:child_process";
+import http from "node:http";
+import https from "node:https";
 
 const JSON_MODE    = process.argv.includes("--json");
 const QUIET_MODE   = process.argv.includes("--quiet");
@@ -51,9 +53,31 @@ function authHeaders() {
   return { "content-type": "application/json", ...(t ? { authorization: `Bearer ${t}` } : {}) };
 }
 
+function request(url, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const transport = parsed.protocol === "https:" ? https : http;
+    const req = transport.request(parsed, {
+      method: opts.method || "GET",
+      headers: opts.headers || {},
+    }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", chunk => { body += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode || 0, body, headers: res.headers }));
+    });
+
+    req.on("error", reject);
+    req.setTimeout(opts.timeout || 10000, () => req.destroy(new Error("timeout")));
+
+    if (opts.body) req.write(opts.body);
+    req.end();
+  });
+}
+
 async function ping(url, label, opts = {}) {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(opts.timeout || 10000), headers: authHeaders() });
+    const res = await request(url, { timeout: opts.timeout || 10000, headers: authHeaders() });
     return { ok: res.ok || res.status < 500, status: res.status };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -127,8 +151,8 @@ async function run() {
   if (!NO_SERVICES) {
     section("Agents");
     try {
-      const res = await fetch(`${CREW_LEAD}/api/agents`, { headers: authHeaders(), signal: AbortSignal.timeout(5000) });
-      const d = await res.json();
+      const res = await request(`${CREW_LEAD}/api/agents`, { headers: authHeaders(), timeout: 5000 });
+      const d = JSON.parse(res.body || "{}");
       const agents = d.agents || [];
       // crew-lead /api/agents uses liveness field; dashboard /api/agents uses online/alive/liveness
       const online = agents.filter(a => a.online || a.alive || a.liveness === "alive");
@@ -168,23 +192,23 @@ async function run() {
   if (!NO_SERVICES && mcpServer.ok) {
     section("MCP Protocol");
     try {
-      const initRes = await fetch(`${MCP_URL}/mcp`, {
+      const initRes = await request(`${MCP_URL}/mcp`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", clientInfo: { name: "health-check", version: "1.0" } } }),
-        signal: AbortSignal.timeout(4000),
+        timeout: 4000,
       });
-      const initData = await initRes.json();
+      const initData = JSON.parse(initRes.body || "{}");
       check("MCP initialize", initData?.result?.serverInfo ? "pass" : "fail",
         initData?.result?.serverInfo?.name || JSON.stringify(initData).slice(0,60));
 
-      const toolsRes = await fetch(`${MCP_URL}/mcp`, {
+      const toolsRes = await request(`${MCP_URL}/mcp`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
-        signal: AbortSignal.timeout(4000),
+        timeout: 4000,
       });
-      const toolsData = await toolsRes.json();
+      const toolsData = JSON.parse(toolsRes.body || "{}");
       const toolCount = toolsData?.result?.tools?.length || 0;
       check(`MCP tools/list (${toolCount} tools)`, toolCount >= 5 ? "pass" : "warn",
         toolsData?.result?.tools?.map(t => t.name).join(", ").slice(0, 80));
@@ -200,13 +224,13 @@ async function run() {
   } else {
     try {
       const start = Date.now();
-      const res = await fetch(`${CREW_LEAD}/chat`, {
+      const res = await request(`${CREW_LEAD}/chat`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({ message: "say: HEALTH_OK", sessionId: "health-check" }),
-        signal: AbortSignal.timeout(15000),
+        timeout: 15000,
       });
-      const d = await res.json();
+      const d = JSON.parse(res.body || "{}");
       const elapsed = Date.now() - start;
       const reply = d.reply || d.message || "";
       check("crew-lead responds", reply.length > 0 ? "pass" : "fail",
