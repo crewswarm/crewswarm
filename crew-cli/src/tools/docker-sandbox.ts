@@ -140,13 +140,14 @@ export class DockerSandbox {
       };
 
     } catch (err) {
+      const error = err as { stdout?: string; stderr?: string; message?: string; status?: number };
       const duration = Date.now() - startTime;
       console.log(`[Docker] ✗ Command failed after ${duration}ms`);
       
       return {
         success: false,
-        output: err.stdout || err.stderr || err.message,
-        exitCode: err.status || 1,
+        output: error.stdout || error.stderr || error.message || 'Docker command failed',
+        exitCode: error.status || 1,
         duration
       };
 

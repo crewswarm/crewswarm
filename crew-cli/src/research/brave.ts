@@ -37,9 +37,10 @@ export async function braveWebSearch(query: string, count = 5): Promise<BraveSea
   );
   if (!res.ok) return [];
 
-  const data = await res.json() as any;
-  const results = Array.isArray(data?.web?.results) ? data.web.results : [];
-  return results.slice(0, count).map((item: any) => ({
+  const data = await res.json() as Record<string, unknown>;
+  const web = data?.web as Record<string, unknown> | undefined;
+  const results = Array.isArray(web?.results) ? web.results : [];
+  return results.slice(0, count).map((item: Record<string, unknown>) => ({
     title: String(item?.title || '').trim(),
     url: String(item?.url || '').trim(),
     description: String(item?.description || '').trim()

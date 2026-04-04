@@ -159,7 +159,7 @@ export async function setRepoConfigValue(
 
 export function getNestedValue(source: Record<string, unknown>, keyPath: string): unknown {
   const parts = keyPath.split('.').filter(Boolean);
-  let cursor: any = source;
+  let cursor: unknown = source;
   for (const p of parts) {
     if (!isObject(cursor) && !Array.isArray(cursor)) return undefined;
     cursor = cursor[p];

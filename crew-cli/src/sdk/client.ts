@@ -73,7 +73,7 @@ export interface RunState {
   filePaths?: string[];
   
   /** Output result */
-  output?: any;
+  output?: unknown;
 }
 
 export type ProgressEvent =
@@ -84,7 +84,7 @@ export type ProgressEvent =
   | { type: 'file_paths_complete'; filePaths: string[] }
   | { type: 'file_generation_start'; filePath: string }
   | { type: 'file_generation_complete'; filePath: string; content: string }
-  | { type: 'complete'; output: any }
+  | { type: 'complete'; output: unknown }
   | { type: 'error'; message: string; error?: Error };
 
 export class CrewClient {

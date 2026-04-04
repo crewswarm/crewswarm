@@ -43,7 +43,7 @@ export class StudioBroadcaster {
           this.scheduleReconnect();
         });
 
-        this.ws.on('error', (err: any) => {
+        this.ws.on('error', (err: Error) => {
           this.logger.error('Studio WebSocket error:', err.message);
           if (!this.connected) {
             reject(err);

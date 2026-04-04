@@ -18,7 +18,7 @@ import { join } from 'path';
  * @param {string} route - Routing info (e.g., 'opencode', 'cursor', 'direct')
  * @param {string} agent - Agent used (if any)
  */
-export function saveCliToProjectMessages(projectDir: any, { input, output, route, agent }: { input: any; output: any; route: any; agent: any }) {
+export function saveCliToProjectMessages(projectDir: string, { input, output, route, agent }: { input: string; output?: string; route?: string; agent?: string }) {
   if (!projectDir || !input) return;
   
   // Try to determine project ID from projectDir
@@ -49,7 +49,7 @@ export function saveCliToProjectMessages(projectDir: any, { input, output, route
  * Extract project ID from directory path.
  * Checks the dashboard projects registry first, falls back to directory name.
  */
-function extractProjectIdFromDir(projectDir: any) {
+function extractProjectIdFromDir(projectDir: string) {
   // Try to look up project ID from dashboard projects registry
   try {
     const registryPath = join(
@@ -60,7 +60,7 @@ function extractProjectIdFromDir(projectDir: any) {
     if (existsSync(registryPath)) {
       const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
       const projects = Array.isArray(registry) ? registry : (registry.projects || []);
-      const match = projects.find((p: any) =>
+      const match = projects.find((p: Record<string, unknown>) =>
         p.path === projectDir ||
         p.directory === projectDir ||
         p.dir === projectDir
@@ -85,7 +85,7 @@ function extractProjectIdFromDir(projectDir: any) {
  * @param {object} options - Filter options
  * @returns {Array} CLI messages for this project
  */
-export function loadCliProjectHistory(projectDir: any, options: any = {}) {
+export function loadCliProjectHistory(projectDir: string, options: Record<string, unknown> = {}) {
   const projectId = extractProjectIdFromDir(projectDir);
   if (!projectId) return [];
   

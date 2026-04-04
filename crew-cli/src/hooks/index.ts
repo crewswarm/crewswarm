@@ -191,8 +191,8 @@ export async function runPreToolUseHooks(
  */
 export async function runPostToolUseHooks(
   toolName: string,
-  toolInput: Record<string, any>,
-  toolOutput: any,
+  toolInput: Record<string, unknown>,
+  toolOutput: unknown,
   baseDir?: string
 ): Promise<PostToolUseResult> {
   const config = await loadHookConfig(baseDir);

@@ -15,7 +15,7 @@ export interface XSearchOptions {
 export interface XSearchResult {
   text: string;
   citations: string[];
-  raw: any;
+  raw: Record<string, unknown>;
 }
 
 function getXaiApiKey(): string | null {
@@ -73,7 +73,7 @@ export async function runXSearch(query: string, options: XSearchOptions = {}): P
     throw new Error(`xAI request failed (${response.status}): ${text.slice(0, 300)}`);
   }
 
-  const raw = await response.json() as any;
+  const raw = await response.json() as Record<string, unknown>;
   const outputs = Array.isArray(raw?.output) ? raw.output : [];
   let text = '';
   for (const o of outputs) {
@@ -85,7 +85,7 @@ export async function runXSearch(query: string, options: XSearchOptions = {}): P
     }
   }
   const citations = Array.isArray(raw?.citations)
-    ? raw.citations.map((c: any) => String(c?.url || c || '')).filter(Boolean)
+    ? (raw.citations as Array<Record<string, unknown>>).map((c) => String(c?.url || c || '')).filter(Boolean)
     : [];
   return {
     text: text || 'No textual response.',

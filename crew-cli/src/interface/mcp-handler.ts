@@ -285,7 +285,7 @@ async function handleToolCall(
           const hits = searchCollection(idx, query, limit);
           result = {
             query,
-            results: hits.hits.map((r: any) => ({
+            results: hits.hits.map((r: Record<string, unknown>) => ({
               file: r.source,
               line: r.startLine,
               text: r.text.slice(0, 500),

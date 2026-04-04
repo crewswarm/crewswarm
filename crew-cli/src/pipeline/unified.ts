@@ -75,6 +75,8 @@ export interface L3Result {
     turns?: number;
     stopReason?: string;
     shellResults?: Array<{ command: string; exitCode: number; output: string }>;
+    transcript?: ExecutionTranscript;
+    reviewer?: ReviewResult;
   }>;
   totalCost: number;
   executionTimeMs: number;
@@ -110,6 +112,11 @@ export class UnifiedPipeline {
   constructor(sandbox?: Sandbox, session?: SessionManager) {
     this.sandbox = sandbox;
     this.session = session;
+  }
+
+  private requireSandbox(): Sandbox {
+    if (!this.sandbox) throw new Error('Sandbox is required for pipeline execution');
+    return this.sandbox;
   }
 
   private async trackCacheHit(cachedTokens: number, totalTokens: number, model: string) {
@@ -376,8 +383,9 @@ export class UnifiedPipeline {
       const tool = String(turn?.tool || '');
       if (tool !== 'run_shell_command' && tool !== 'check_background_task') continue;
       const command = String(turn.params?.command || turn.params?.task_id || '').trim();
-      const rawOutput = String(turn.result?.output || turn.result || '').trim();
-      const exitCode = turn?.error ? 1 : (typeof turn.result?.exitCode === 'number' ? turn.result.exitCode : 0);
+      const result = turn.result as { output?: unknown; exitCode?: unknown } | undefined;
+      const rawOutput = String(result?.output || turn.result || '').trim();
+      const exitCode = turn?.error ? 1 : (typeof result?.exitCode === 'number' ? result.exitCode : 0);
       results.push({
         command,
         exitCode,
@@ -402,7 +410,8 @@ export class UnifiedPipeline {
       if (turn?.error) continue;
       if (tool === 'run_shell_command' || tool === 'check_background_task') {
         const command = String(turn.params?.command || turn.params?.task_id || '').trim();
-        const output = String(turn.result?.output || turn.result || '').trim();
+        const result = turn.result as { output?: unknown } | undefined;
+        const output = String(result?.output || turn.result || '').trim();
         verification.add(command ? `Command succeeded: ${command}` : 'Verification command succeeded.');
         if (output) {
           verification.add(`Verification output: ${output.slice(0, 200)}`);
@@ -592,7 +601,7 @@ export class UnifiedPipeline {
 
     const contents = new Map();
     for (const relPath of paths) {
-      const staged = this.sandbox.getStagedContent(relPath);
+      const staged = this.requireSandbox().getStagedContent(relPath);
       if (typeof staged === 'string') {
         contents.set(relPath, staged);
         continue;
@@ -638,7 +647,7 @@ export class UnifiedPipeline {
       turns?: number;
       transcript?: ExecutionTranscript;
     }
-  ) {
+  ): L3Result['results'][number] {
     const history = Array.isArray(workerResult.history) ? workerResult.history : [];
     const filesChanged = this.extractFilesChanged(history);
     const shellResults = this.extractShellResults(history);
@@ -774,7 +783,7 @@ export class UnifiedPipeline {
         constraintLevel: undefined
       });
       const parsed = this.parseWorkerOutput(String(fixResult.output || ''));
-      current = this.buildWorkerExecutionResult(task, parsed, fixResult as any);
+      current = this.buildWorkerExecutionResult(task, parsed, fixResult);
     }
 
     current.escalationNeeded = true;
@@ -819,8 +828,13 @@ export class UnifiedPipeline {
     return parseJsonObject(raw);
   }
 
-  private async parseRouterDecision(raw: string, traceId: string, sessionId?: string): Promise<unknown> {
-    return parseJsonObjectWithRepair(raw, {
+  private async parseRouterDecision(raw: string, traceId: string, sessionId?: string): Promise<{
+    decision: string;
+    reasoning: string;
+    directResponse?: string;
+    complexity?: string;
+  }> {
+    const parsed = await parseJsonObjectWithRepair(raw, {
       label: `L2 router (${traceId})`,
       schemaHint: '{"decision":"direct-answer|execute-direct|execute-local|execute-parallel","reasoning":"...","directResponse":"...","complexity":"low|medium|high","estimatedCost":0.001}',
       maxAttempts: this.getJsonParseAttempts(),
@@ -838,6 +852,12 @@ export class UnifiedPipeline {
         return String(repaired.result || '');
       }
     });
+    return parsed as {
+      decision: string;
+      reasoning: string;
+      directResponse?: string;
+      complexity?: string;
+    };
   }
 
   private async qaAuditResponse(response: string, traceId: string, round: number, sessionId?: string, executionResults?: L3Result): Promise<{
@@ -1436,7 +1456,7 @@ If output has blockers, set approved=false.`,
           plan.workGraph.summary || plan.reasoning || request.userInput,
           '',
           '## Work Units',
-          ...units.map((u: Record<string, unknown>, i: number) => `${i + 1}. **${u.id}** (${u.requiredPersona}): ${u.goal || u.description}`),
+          ...units.map((u, i) => `${i + 1}. **${u.id}** (${u.requiredPersona}): ${u.description}`),
           '',
           '## Acceptance Criteria',
           ...(plan.workGraph.acceptanceCriteria || plan.workGraph.planningArtifacts?.acceptanceCriteria || []).map((c: string) => `- ${c}`),
@@ -2000,7 +2020,7 @@ Return ONLY valid JSON:
       throw new Error(`L2 orchestration failed: ${result.result}`);
     }
 
-      const decision = await this.parseRouterDecision(String(result.result || ''), traceId, sessionId);
+    const decision = await this.parseRouterDecision(String(result.result || ''), traceId, sessionId);
     const normalizedDecision = this.normalizeDecision(decision.decision);
     const estimatedEffort = this.getRequestedEffortOverride()
       || this.normalizeEffort(decision.complexity, this.inferEffortFromInput(request.userInput));
@@ -2161,7 +2181,7 @@ Return ONLY valid JSON:
     const composedPrompt = this.composer.compose('executor-code-v1', overlays, traceId);
 
     const effort = this.getExecutionEffort(task);
-    const result = await runAgenticWorker(composedPrompt.finalPrompt, this.sandbox, {
+    const result = await runAgenticWorker(composedPrompt.finalPrompt, this.requireSandbox(), {
       model: this.getModelForLayer('l3', effort) || '',
       maxTurns: this.getMaxTurnsForEffort(effort),
       tier: this.getTierForEffort(effort),
@@ -2410,7 +2430,7 @@ Return ONLY valid JSON:
         // If this unit has a worktree, run in isolated sandbox + projectDir.
         // Otherwise fall back to the shared sandbox (sequential or non-git).
         const unitWt = unitWorktrees.get(unit.id);
-        const workerSandbox = unitWt ? new Sandbox(unitWt.worktreePath) : this.sandbox;
+        const workerSandbox = unitWt ? new Sandbox(unitWt.worktreePath) : this.requireSandbox();
         const workerProjectDir = unitWt ? unitWt.worktreePath : projectDir;
 
         const result = await runAgenticWorker(composedPrompt.finalPrompt, workerSandbox, {
@@ -2490,8 +2510,9 @@ Return ONLY valid JSON:
               mergeResults.push({ unitId, success: true, message: 'No changes to merge' });
             }
           } catch (err: unknown) {
-            mergeResults.push({ unitId, success: false, message: err.message });
-            if (verbose) console.warn(`  [${unitId}] ⚠️ worktree cleanup failed: ${err.message}`);
+            const error = err as Error;
+            mergeResults.push({ unitId, success: false, message: error.message });
+            if (verbose) console.warn(`  [${unitId}] ⚠️ worktree cleanup failed: ${error.message}`);
           }
         }
         unitWorktrees.clear();
@@ -2622,7 +2643,7 @@ Return ONLY valid JSON:
   async runWorker(prompt: string, options: { model?: string; maxTurns?: number; verbose?: boolean; priorDiscoveredFiles?: string[]; persona?: string; constraintLevel?: import('../tools/gemini/crew-adapter.js').ConstraintLevel }): Promise<{ output: string; cost?: number; turns?: number; discoveredFiles?: string[] }> {
     // Always use the agentic executor with full tool suite (write_file, replace, etc.)
     // The LocalExecutor is a single-turn LLM call with no tools — workers need tools to write files.
-    return runAgenticWorker(prompt, this.sandbox, options);
+    return runAgenticWorker(prompt, this.requireSandbox(), options);
   }
 
   /**

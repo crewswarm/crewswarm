@@ -83,7 +83,7 @@ export function enterWorktree(
     execSync(`mkdir -p "${worktreeBase}"`, { cwd });
     git(`worktree add -b "${branchName}" "${worktreePath}" HEAD`, cwd);
   } catch (err) {
-    throw new Error(`Failed to create worktree: ${err.message}`);
+    throw new Error(`Failed to create worktree: ${(err as Error).message}`);
   }
 
   const info: WorktreeInfo = {
@@ -201,6 +201,6 @@ export function mergeWorktree(
 
     return { success: true, message: `Merged ${branchName} into current branch` };
   } catch (err) {
-    return { success: false, message: `Merge failed: ${err.message}` };
+    return { success: false, message: `Merge failed: ${(err as Error).message}` };
   }
 }

@@ -31,8 +31,8 @@ export function createMonitorCommand(): Command {
           } else {
             const { agents, services } = status;
             const agentCount = Object.keys(agents).length;
-            const healthyAgents = Object.values(agents).filter((a: any) => a.status === 'online').length;
-            const healthyServices = Object.values(services).filter((s: any) => s.status === 'healthy').length;
+            const healthyAgents = Object.values(agents).filter((a: unknown) => (a as Record<string, unknown>).status === 'online').length;
+            const healthyServices = Object.values(services).filter((s: unknown) => (s as Record<string, unknown>).status === 'healthy').length;
             
             logger.info(`Agents: ${healthyAgents}/${agentCount} online | Services: ${healthyServices}/${Object.keys(services).length} healthy`);
           }

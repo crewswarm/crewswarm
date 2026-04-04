@@ -18,7 +18,7 @@ interface ProjectStructure {
   packageName?: string;
   hasTsConfig?: boolean;
   testFramework?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface TemplateOptions {
@@ -26,7 +26,7 @@ export interface TemplateOptions {
   author?: string;
   description?: string;
   license?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export type TemplateGenerator = (
@@ -203,7 +203,7 @@ function generateGitignore(structure: ProjectStructure, options?: TemplateOption
 
 function generatePackageJson(structure: ProjectStructure, options?: TemplateOptions): string {
   if (!options) options = {};
-  const pkg: any = {
+  const pkg: Record<string, unknown> = {
     name: options.projectName || structure.packageName || 'my-project',
     version: '1.0.0',
     description: options.description || '',
@@ -258,7 +258,7 @@ function generatePackageJson(structure: ProjectStructure, options?: TemplateOpti
 }
 
 function generateTsConfig(structure: ProjectStructure, options?: TemplateOptions): string {
-  const config: any = {
+  const config: Record<string, unknown> = {
     compilerOptions: {
       target: 'ES2020',
       module: 'commonjs',
@@ -366,7 +366,7 @@ function generatePrettierConfig(structure: ProjectStructure, options?: TemplateO
 }
 
 function generateEslintConfig(structure: ProjectStructure, options?: TemplateOptions): string {
-  const config: any = {
+  const config: Record<string, unknown> = {
     env: {
       browser: structure.framework === 'react' || structure.framework === 'vue',
       es2021: true,

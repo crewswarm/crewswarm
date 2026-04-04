@@ -66,12 +66,12 @@ export async function launchChromeDebug(url: string, port = 9222): Promise<Child
   return proc;
 }
 
-export type CdpEventHandler = (params: any) => void;
+export type CdpEventHandler = (params: Record<string, unknown>) => void;
 
 export class CdpClient {
   ws: WebSocket;
   id = 0;
-  pending = new Map<number, (value: any) => void>();
+  pending = new Map<number, (value: Record<string, unknown>) => void>();
   handlers = new Map<string, CdpEventHandler[]>();
 
   constructor(ws: WebSocket) {
@@ -89,9 +89,9 @@ export class CdpClient {
     });
   }
 
-  send(method: string, params: any = {}) {
+  send(method: string, params: Record<string, unknown> = {}) {
     const id = ++this.id;
-    return new Promise<any>((resolve, reject) => {
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
       this.pending.set(id, resolve);
       this.ws.send(JSON.stringify({ id, method, params }), err => {
         if (err) reject(err);
@@ -117,7 +117,7 @@ export async function getPageWsUrl(port: number, timeoutMs = 10000): Promise<str
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json`);
       if (res.ok) {
-        const targets = await res.json() as any[];
+        const targets = await res.json() as Array<Record<string, unknown>>;
         const page = targets.find(t => t.type === 'page');
         if (page && page.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
       }
@@ -135,7 +135,7 @@ export async function waitForWsDebuggerUrl(port: number, timeoutMs = 10000): Pro
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json/version`);
       if (res.ok) {
-        const data = await res.json() as any;
+        const data = await res.json() as Record<string, unknown>;
         if (data.webSocketDebuggerUrl) return data.webSocketDebuggerUrl;
       }
     } catch {
@@ -167,7 +167,7 @@ export async function runBrowserDebug(url: string, options: { port?: number; dur
     client.on('Runtime.consoleAPICalled', params => {
       const level = params.type || 'log';
       if (level === 'error' || level === 'warning') {
-        const text = (params.args || []).map((a: any) => a.value || a.description || '').join(' ');
+        const text = ((params.args || []) as Array<Record<string, unknown>>).map((a) => a.value || a.description || '').join(' ');
         errors.push(`[console:${level}] ${text}`.trim());
       }
     });
