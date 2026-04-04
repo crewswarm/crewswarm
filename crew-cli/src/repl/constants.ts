@@ -241,7 +241,7 @@ export function printSystemSummary(summary: ModelSummary, bootstrap: RepoBootstr
   console.log(`  Providers: ${summary.providerKeys.length ? summary.providerKeys.join(', ') : '(none found)'}`);
   console.log(`  Project: ${bootstrap.projectDir}`);
   console.log(`  Key files: ${bootstrap.keyFiles.length ? bootstrap.keyFiles.join(', ') : '(none detected)'}`);
-  console.log(chalk.gray('\n  Commands: /models-config, /stack, /status, /preview, /apply, /trace <id>\n'));
+  console.log(chalk.gray('\n  Commands: /stack, /stack, /status, /preview, /apply, /trace <id>\n'));
 }
 
 export function answerLocalMetaQuestion(input: string, summary: ModelSummary): string | null {
@@ -271,28 +271,28 @@ export function answerLocalMetaQuestion(input: string, summary: ModelSummary): s
       `L2 providers: router=${summary.routerProvider}, executor=${summary.executorProvider}.`,
       `Policy-tier models: ${policy}.`,
       `Agent models: ${agents}.`,
-      'Use /models-config for full details, then change via /model, /stack, .crew/model-policy.json, or ~/.crewswarm/crewswarm.json.'
+      'Use /stack for full details, then change via /model, /stack, .crew/model-policy.json, or ~/.crewswarm/crewswarm.json.'
     ].join(' ');
   }
 
   if (/\b(change|modify|set|update).*(models?|model)\b/.test(lower)) {
-    return 'Yes. Use /model (session), /stack (tier providers), or edit .crew/model-policy.json and ~/.crewswarm/crewswarm.json for persistent model changes.';
+    return 'Yes. Use /stack (models and providers per tier), or edit .crew/model-policy.json and ~/.crewswarm/crewswarm.json for persistent model changes.';
   }
 
   if (/\b(what can you do|help me|onboard|getting started|how do i use)\b/.test(lower)) {
     return [
       'Here is the fast path.',
-      '1) /models-config to inspect real model/provider config.',
+      '1) /stack to inspect real model/provider config.',
       '2) /stack to set Tier-1 router + Tier-2 executor + gateway toggle.',
       '3) Ask build/fix tasks directly; I route and stage edits in sandbox.',
       '4) /preview then /apply (or /rollback).',
       '5) /trace <id> for prompt/planner trace.',
-      'If you want me to run an exact command, say it explicitly: e.g. "run /models-config".'
+      'If you want me to run an exact command, say it explicitly: e.g. "run /stack".'
     ].join(' ');
   }
 
   if (/\b(run|execute)\s+\/[a-z-]+/.test(lower)) {
-    return 'Use slash commands directly in REPL. Example: /models-config, /stack, /status, /preview, /apply, /trace <traceId>.';
+    return 'Use slash commands directly in REPL. Example: /stack, /stack, /status, /preview, /apply, /trace <traceId>.';
   }
 
   return null;
@@ -312,7 +312,7 @@ export function answerFromBootstrap(input: string, summary: ModelSummary, bootst
       `L1 chat runs on ${summary.replModel}/${summary.replEngine}; L2 uses router=${summary.routerProvider} and executor=${summary.executorProvider}; L3 uses configured worker/agent models.`,
       `Key repo files: ${keys}.`,
       `Docs index snapshot: ${docs}.`,
-      `Use /system for full stack summary and /models-config for exact model/provider config.`
+      `Use /system for full stack summary and /stack for exact model/provider config.`
     ].join(' ');
   }
 
@@ -351,14 +351,13 @@ export function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
   console.log('    /undo              Undo last change\n');
 
   console.log(chalk.magenta.bold('  🎛️  Model & Engine:'));
-  console.log('    /model [name]      Benchmark table or set L1 chat model');
   console.log('    /stack             Show full L1/L2/L3 model stack');
+  console.log('    /stack <model>     Quick-set L1 chat model');
   console.log('    /stack l1|l2|l3 <name>  Set model per tier');
+  console.log('    /stack bench       Benchmark & pricing table');
   console.log('    /engine <name>     Switch engine (auto|cursor|claude|gemini|codex|crew-cli)');
   console.log('    /mode [name]       Cycle mode (manual/assist/autopilot)');
-  console.log('    Shift+Tab          Cycle REPL mode');
-  console.log('    /auto-apply        Toggle auto-apply sandbox changes');
-  console.log('    /verbose           Toggle verbose routing output\n');
+  console.log('    Shift+Tab          Cycle REPL mode\n');
 
   console.log(chalk.green.bold('  🧠 Memory & LSP:'));
   console.log('    /memory [query]    Show memory stats or recall');

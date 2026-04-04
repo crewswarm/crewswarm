@@ -89,7 +89,7 @@ const REPL_MODE_ORDER: ReplMode[] = ['manual', 'assist', 'autopilot'];
 
 const SLASH_COMMAND_GROUPS: Array<{ title: string; commands: string[] }> = [
   { title: 'Session', commands: ['/help', '/info', '/status', '/history', '/clear', '/exit'] },
-  { title: 'Model & Engine', commands: ['/model', '/stack', '/engine', '/engines', '/mode'] },
+  { title: 'Model & Engine', commands: ['/stack', '/engine', '/engines', '/mode'] },
   { title: 'Sandbox', commands: ['/preview', '/apply', '/rollback', '/branch', '/branches'] },
   { title: 'Runtime', commands: ['/tools', '/trace', '/timeline', '/cost', '/system', '/permissions'] },
   { title: 'Context', commands: ['/image', '/search', '/recall', '/sessions', '/resume', '/skills'] }
@@ -312,7 +312,7 @@ function printSystemSummary(summary: ModelSummary, bootstrap: RepoBootstrap) {
   console.log(`  Providers: ${summary.providerKeys.length ? summary.providerKeys.join(', ') : '(none found)'}`);
   console.log(`  Project: ${bootstrap.projectDir}`);
   console.log(`  Key files: ${bootstrap.keyFiles.length ? bootstrap.keyFiles.join(', ') : '(none detected)'}`);
-  console.log(chalk.gray('\n  Commands: /models-config, /stack, /status, /preview, /apply, /trace <id>\n'));
+  console.log(chalk.gray('\n  Commands: /stack, /stack, /status, /preview, /apply, /trace <id>\n'));
 }
 
 function answerLocalMetaQuestion(input: string, summary: ModelSummary): string | null {
@@ -342,28 +342,28 @@ function answerLocalMetaQuestion(input: string, summary: ModelSummary): string |
       `L2 providers: router=${summary.routerProvider}, executor=${summary.executorProvider}.`,
       `Policy-tier models: ${policy}.`,
       `Agent models: ${agents}.`,
-      'Use /models-config for full details, then change via /model, /stack, .crew/model-policy.json, or ~/.crewswarm/crewswarm.json.'
+      'Use /stack for full details, then change via /model, /stack, .crew/model-policy.json, or ~/.crewswarm/crewswarm.json.'
     ].join(' ');
   }
 
   if (/\b(change|modify|set|update).*(models?|model)\b/.test(lower)) {
-    return 'Yes. Use /model (session), /stack (tier providers), or edit .crew/model-policy.json and ~/.crewswarm/crewswarm.json for persistent model changes.';
+    return 'Yes. Use /stack (models and providers per tier), or edit .crew/model-policy.json and ~/.crewswarm/crewswarm.json for persistent model changes.';
   }
 
   if (/\b(what can you do|help me|onboard|getting started|how do i use)\b/.test(lower)) {
     return [
       'Here is the fast path.',
-      '1) /models-config to inspect real model/provider config.',
+      '1) /stack to inspect real model/provider config.',
       '2) /stack to set Tier-1 router + Tier-2 executor + gateway toggle.',
       '3) Ask build/fix tasks directly; I route and stage edits in sandbox.',
       '4) /preview then /apply (or /rollback).',
       '5) /trace <id> for prompt/planner trace.',
-      'If you want me to run an exact command, say it explicitly: e.g. "run /models-config".'
+      'If you want me to run an exact command, say it explicitly: e.g. "run /stack".'
     ].join(' ');
   }
 
   if (/\b(run|execute)\s+\/[a-z-]+/.test(lower)) {
-    return 'Use slash commands directly in REPL. Example: /models-config, /stack, /status, /preview, /apply, /trace <traceId>.';
+    return 'Use slash commands directly in REPL. Example: /stack, /stack, /status, /preview, /apply, /trace <traceId>.';
   }
 
   return null;
@@ -401,7 +401,7 @@ function answerFromBootstrap(input: string, summary: ModelSummary, bootstrap: Re
       `L1 chat runs on ${summary.replModel}/${summary.replEngine}; L2 uses router=${summary.routerProvider} and executor=${summary.executorProvider}; L3 uses configured worker/agent models.`,
       `Key repo files: ${keys}.`,
       `Docs index snapshot: ${docs}.`,
-      `Use /system for full stack summary and /models-config for exact model/provider config.`
+      `Use /system for full stack summary and /stack for exact model/provider config.`
     ].join(' ');
   }
 
@@ -442,14 +442,13 @@ function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
     console.log('    /image <path>      Attach image for next task (multimodal)\n');
 
   console.log(chalk.magenta.bold('  🎛️  Model & Engine:'));
-  console.log('    /model [name]      Benchmark table or set L1 chat model');
   console.log('    /stack             Show full L1/L2/L3 model stack');
+  console.log('    /stack <model>     Quick-set L1 chat model');
   console.log('    /stack l1|l2|l3 <name>  Set model per tier');
+  console.log('    /stack bench       Benchmark & pricing table');
   console.log('    /engine <name>     Switch engine (auto|cursor|claude|gemini|codex|crew-cli)');
   console.log('    /mode [name]       Cycle mode (manual/assist/autopilot)');
-  console.log('    Shift+Tab          Cycle REPL mode');
-  console.log('    /auto-apply        Toggle auto-apply sandbox changes');
-  console.log('    /verbose           Toggle verbose routing output\n');
+  console.log('    Shift+Tab          Cycle REPL mode\n');
 
   console.log(chalk.green.bold('  🧠 Memory & LSP:'));
   console.log('    /memory [query]    Show memory stats or recall');
@@ -1034,7 +1033,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       return true;
     }
 
-    if (command === '/models-config') {
+    if (command === '/stack') {
       const summary = buildModelSummary(projectDir, replState);
       printModelSummary(summary);
       return true;
@@ -1047,48 +1046,13 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       // fall through to /stack handler below
     }
 
+    // /model is an alias for /stack (backwards compatible)
     if (command === '/model') {
-      const modelName = args.join(' ').trim();
-      if (!modelName) {
-        // Show benchmark table (novel feature — no competitor has this)
-        try {
-          const { MODEL_CATALOG, formatModelTable, findModelInfo } = await import('./model-info.js');
-          const current = findModelInfo(replState.model);
-          console.log(chalk.blue('\n  ╔══════════════════════════════════════════════════════════════════════════════╗'));
-          console.log(chalk.blue('  ║                        MODEL BENCHMARK & PRICING                            ║'));
-          console.log(chalk.blue('  ╚══════════════════════════════════════════════════════════════════════════════╝\n'));
-          console.log(chalk.gray('  Scores from OpenRouter coding benchmark (March 2026)\n'));
-          console.log(chalk.cyan('  Heavy Tier (L2 Brain):'));
-          console.log(formatModelTable(MODEL_CATALOG.filter(m => m.tier === 'heavy')));
-          console.log(chalk.cyan('\n  Standard Tier (L3 Workers):'));
-          console.log(formatModelTable(MODEL_CATALOG.filter(m => m.tier === 'standard')));
-          console.log(chalk.cyan('\n  Fast Tier (L1 Routing):'));
-          console.log(formatModelTable(MODEL_CATALOG.filter(m => m.tier === 'fast')));
-          if (current) {
-            console.log(chalk.green(`\n  Current: ${current.name} (${current.provider}) — score ${current.codingScore}, $${current.inputCost}/$${current.outputCost}/M`));
-          } else {
-            console.log(chalk.yellow(`\n  Current: ${replState.model} (not in catalog)`));
-          }
-          console.log(chalk.gray(`\n  Usage: /model <name>  — e.g. /model gpt-5.4\n`));
-        } catch {
-          console.log(chalk.red('\n  ✗ Could not load model catalog. Type /model <name> to set directly.\n'));
-        }
-      } else {
-        replState.model = modelName;
-        try {
-          const { findModelInfo } = await import('./model-info.js');
-          const info = findModelInfo(modelName);
-          if (info) {
-            console.log(chalk.green(`\n  ✓ Model: ${info.name} (${info.provider})`));
-            console.log(chalk.gray(`    Score: ${info.codingScore} | Cost: $${info.inputCost}/$${info.outputCost}/M | Context: ${info.contextWindow}${info.note ? ` | ${info.note}` : ''}\n`));
-          } else {
-            console.log(chalk.green(`\n  ✓ Model set to: ${modelName}\n`));
-          }
-        } catch {
-          console.log(chalk.green(`\n  ✓ Model set to: ${modelName}\n`));
-        }
+      if (args.length === 0) {
+        args = ['show'];
       }
-      return true;
+      command = '/stack';
+      // fall through to /stack handler below
     }
 
     if (command === '/engines') {
@@ -1179,6 +1143,54 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         'max-parallel-workers': 'CREW_MAX_PARALLEL_WORKERS'
       };
 
+      // /stack <modelname> — quick L1 setter (if not a known subcommand)
+      if (subcommand !== 'show' && !tierShortcuts[subcommand] && !stackFieldMap[subcommand]
+          && subcommand !== 'router' && subcommand !== 'executor' && subcommand !== 'gateway'
+          && subcommand !== 'bench') {
+        replState.model = subcommand;
+        process.env.CREW_L1_MODEL = subcommand;
+        try {
+          const { findModelInfo } = await import('./model-info.js');
+          const info = findModelInfo(subcommand);
+          if (info) {
+            console.log(chalk.green(`\n  ✓ L1 model: ${info.name} (${info.provider})`));
+            console.log(chalk.gray(`    Score: ${info.codingScore} | Cost: $${info.inputCost}/$${info.outputCost}/M | Context: ${info.contextWindow}${info.note ? ` | ${info.note}` : ''}\n`));
+          } else {
+            console.log(chalk.green(`\n  ✓ L1 model set to: ${subcommand}\n`));
+          }
+        } catch {
+          console.log(chalk.green(`\n  ✓ L1 model set to: ${subcommand}\n`));
+        }
+        return true;
+      }
+
+      // /stack bench — benchmark table
+      if (subcommand === 'bench') {
+        try {
+          const { MODEL_CATALOG, formatModelTable, findModelInfo } = await import('./model-info.js');
+          const current = findModelInfo(replState.model);
+          console.log(chalk.blue('\n  ╔══════════════════════════════════════════════════════════════════════════════╗'));
+          console.log(chalk.blue('  ║                        MODEL BENCHMARK & PRICING                            ║'));
+          console.log(chalk.blue('  ╚══════════════════════════════════════════════════════════════════════════════╝\n'));
+          console.log(chalk.gray('  Scores from OpenRouter coding benchmark (March 2026)\n'));
+          console.log(chalk.cyan('  Heavy Tier (L2 Brain):'));
+          console.log(formatModelTable(MODEL_CATALOG.filter((m: any) => m.tier === 'heavy')));
+          console.log(chalk.cyan('\n  Standard Tier (L3 Workers):'));
+          console.log(formatModelTable(MODEL_CATALOG.filter((m: any) => m.tier === 'standard')));
+          console.log(chalk.cyan('\n  Fast Tier (L1 Routing):'));
+          console.log(formatModelTable(MODEL_CATALOG.filter((m: any) => m.tier === 'fast')));
+          if (current) {
+            console.log(chalk.green(`\n  Current: ${current.name} (${current.provider}) — score ${current.codingScore}, $${current.inputCost}/$${current.outputCost}/M`));
+          } else {
+            console.log(chalk.yellow(`\n  Current: ${replState.model} (not in catalog)`));
+          }
+          console.log(chalk.gray(`\n  Usage: /stack <model>  — e.g. /stack gpt-5.4\n`));
+        } catch {
+          console.log(chalk.red('\n  ✗ Could not load model catalog.\n'));
+        }
+        return true;
+      }
+
       if (subcommand === 'show') {
         console.log(chalk.blue('\n--- Stack ---\n'));
 
@@ -1205,6 +1217,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         console.log(chalk.gray('\n  Set models:'));
         console.log(chalk.gray('    /stack l1 <model>       /stack l2 <model>       /stack l3 <model>'));
         console.log(chalk.gray('    /stack qa <model>       /stack fixer <model>    /stack review <model>'));
+        console.log(chalk.gray('    /stack <model>          — quick L1 set'));
+        console.log(chalk.gray('    /stack bench            — benchmark & pricing table'));
         console.log(chalk.gray('  Set providers:'));
         console.log(chalk.gray('    /stack router <grok|gemini|deepseek>'));
         console.log(chalk.gray('    /stack executor <grok|gemini|deepseek>'));
