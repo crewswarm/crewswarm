@@ -1,4 +1,4 @@
-// @ts-nocheck
+import type { Interface as ReadlineInterface } from 'node:readline';
 import { createInterface, emitKeypressEvents } from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -115,10 +115,42 @@ interface RepoBootstrap {
   readmeSummary: string;
 }
 
-function readJsonFile(filePath: string): any | null {
+interface SessionHistoryEntry {
+  timestamp?: string;
+  type?: string;
+  agent?: string;
+  task?: string;
+  input?: string;
+  output?: string;
+  response?: string;
+  result?: string;
+}
+
+interface ReplExecutionResult {
+  success?: boolean;
+  stdout?: string;
+  stderr?: string;
+  response?: string;
+  result?: unknown;
+  model?: string;
+  modelUsed?: string;
+  provider?: string;
+  providerId?: string;
+  engine?: string;
+  costUsd?: number;
+  cost?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  turns?: number;
+  toolsUsed?: unknown[];
+  timeline?: Array<{ phase: string; ts: string }>;
+}
+
+function readJsonFile(filePath: string): Record<string, unknown> | null {
   try {
     if (!existsSync(filePath)) return null;
-    return JSON.parse(readFileSync(filePath, 'utf8'));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -174,7 +206,7 @@ function resolveConfiguredReplModel(repoConfig?: Required<RepoConfig>): string {
   if (envCandidates.length > 0) return envCandidates[0];
 
   const swarmCfg = readJsonFile(join(homedir(), '.crewswarm', 'crewswarm.json')) || {};
-  const sharedEnv = swarmCfg?.env && typeof swarmCfg.env === 'object' ? swarmCfg.env : {};
+  const sharedEnv = swarmCfg?.env && typeof swarmCfg.env === 'object' ? swarmCfg.env as Record<string, unknown> : {} as Record<string, unknown>;
   const sharedCandidates = [
     sharedEnv.CREW_CHAT_MODEL,
     sharedEnv.CREW_ROUTER_MODEL,
@@ -192,7 +224,7 @@ function buildModelSummary(projectDir: string, state: ReplState): ModelSummary {
 
   const policyPath = join(projectDir, '.crew', 'model-policy.json');
   const policy = readJsonFile(policyPath) || {};
-  const tiers = policy?.tiers || {};
+  const tiers = (policy?.tiers && typeof policy.tiers === 'object' ? policy.tiers : {}) as Record<string, Record<string, unknown>>;
   const policyTierModels = Array.from(
     new Set(
       ['planner', 'executor', 'worker'].flatMap((tier: string) => {
@@ -205,18 +237,18 @@ function buildModelSummary(projectDir: string, state: ReplState): ModelSummary {
   );
 
   const swarmCfg = readJsonFile(join(homedir(), '.crewswarm', 'crewswarm.json')) || {};
-  const agents = Array.isArray(swarmCfg?.agents) ? swarmCfg.agents : [];
+  const agents = Array.isArray(swarmCfg?.agents) ? swarmCfg.agents as Array<Record<string, unknown>> : [];
   const agentModels = Array.from(
     new Set(
       agents
-        .map((a: any) => String(a?.model || '').trim())
+        .map((a) => String(a?.model || '').trim())
         .filter(Boolean)
     )
   );
 
-  const providers = swarmCfg?.providers && typeof swarmCfg.providers === 'object' ? swarmCfg.providers : {};
+  const providers = swarmCfg?.providers && typeof swarmCfg.providers === 'object' ? swarmCfg.providers as Record<string, Record<string, unknown>> : {};
   const providerKeys = Object.entries(providers)
-    .filter(([, v]: any) => Boolean(v && (v.apiKey || v.baseUrl)))
+    .filter(([, v]) => Boolean(v && (v.apiKey || v.baseUrl)))
     .map(([k]) => String(k));
 
   return {
@@ -602,7 +634,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
   const envInterfaceMode = String(process.env.CREW_INTERFACE_MODE || '').toLowerCase();
   const repoDefaultInterface: 'connected' | 'standalone' =
-    Boolean(repoConfig?.repl?.useGateway) ? 'connected' : 'standalone';
+    Boolean((repoConfig?.repl as Record<string, unknown> | undefined)?.useGateway) ? 'connected' : 'standalone';
   let selectedInterfaceMode: 'connected' | 'standalone' =
     options.initialInterfaceMode
     || (envInterfaceMode === 'connected' ? 'connected' : envInterfaceMode === 'standalone' ? 'standalone' : repoDefaultInterface);
@@ -732,6 +764,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       ...payload
     };
     try {
+      // session.appendHistory requires { input: string }, but audit events have a different shape
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await session.appendHistory({
         type: `repl_${type}`,
         runId: replRunId,
@@ -802,10 +836,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         const partial = trimmed.split(/\s+/).pop() || '';
         const dir = partial.includes('/') ? join(projectDir, dirname(partial)) : projectDir;
         const prefix = partial.includes('/') ? basename(partial) : partial;
-        const entries = readdirSync(dir, { withFileTypes: true })
-          .filter((e: any) => e.name.startsWith(prefix) && !e.name.startsWith('.'))
+        const entries = (readdirSync(dir, { withFileTypes: true }) as import('fs').Dirent[])
+          .filter((e) => e.name.startsWith(prefix) && !e.name.startsWith('.'))
           .slice(0, 20)
-          .map((e: any) => {
+          .map((e) => {
             const full = partial.includes('/') ? dirname(partial) + '/' + e.name : e.name;
             return e.isDirectory() ? full + '/' : full;
           });
@@ -839,8 +873,12 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     ghostText = '';
   };
 
+  // readline.Interface exposes `.line` and `.cursor` as internal properties
+  // not in the public type — cast once via an interface extension
+  const rlInternal = rl as ReadlineInterface & { line: string; cursor: number };
+
   const renderGhost = () => {
-    const line = (rl as any).line as string;
+    const line = rlInternal.line;
     if (!line || !line.startsWith('/') || line.includes(' ')) {
       if (ghostText) clearGhost();
       return;
@@ -875,10 +913,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
     // Right arrow: accept ghost suggestion
     if (key.name === 'right' && ghostText) {
-      const line = (rl as any).line as string;
+      const line = rlInternal.line;
       const accepted = line + ghostText;
-      (rl as any).line = accepted;
-      (rl as any).cursor = accepted.length;
+      rlInternal.line = accepted;
+      rlInternal.cursor = accepted.length;
       process.stdout.write(`\x1b[0K`); // clear ghost
       process.stdout.write(ghostText);  // write as real text
       ghostText = '';
@@ -891,7 +929,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   };
   if (process.stdin.isTTY) {
     emitKeypressEvents(process.stdin, rl);
-    process.stdin.on('keypress', keypressListener as any);
+    process.stdin.on('keypress', keypressListener as (...args: unknown[]) => void);
   }
   const refreshPrompt = () => rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
   const confirmInline = async (message: string, defaultYes = true): Promise<boolean> => {
@@ -949,10 +987,10 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
     if (command === '/info') {
       const summary = buildModelSummary(projectDir, replState);
-      const configuredCliEngine = String((repoConfig as any)?.cli?.engine || '(not set)');
-      const configuredReplEngine = String((repoConfig as any)?.repl?.engine || '(not set)');
-      const preferredEngines = Array.isArray((repoConfig as any)?.cli?.preferredEngines)
-        ? (repoConfig as any).cli.preferredEngines.map((x: unknown) => String(x)).filter(Boolean)
+      const configuredCliEngine = String(repoConfig?.cli?.engine || '(not set)');
+      const configuredReplEngine = String(repoConfig?.repl?.engine || '(not set)');
+      const preferredEngines = Array.isArray(repoConfig?.cli?.preferredEngines)
+        ? repoConfig.cli.preferredEngines.map((x: unknown) => String(x)).filter(Boolean)
         : [];
       const chatModel = String(process.env.CREW_CHAT_MODEL || '(env not set)');
       const routerModel = String(process.env.CREW_ROUTER_MODEL || '(env not set)');
@@ -1123,7 +1161,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       if (tierShortcuts[subcommand] && stackValue) {
         const tier = tierShortcuts[subcommand];
         process.env[tier.env] = stackValue;
-        if (tier.replKey) (replState as any)[tier.replKey] = stackValue;
+        if (tier.replKey) (replState[tier.replKey] as string) = stackValue;
         console.log(chalk.green(`\n  ✓ ${tier.label} model set to: ${stackValue}\n`));
         return true;
       }
@@ -1174,11 +1212,11 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           console.log(chalk.blue('  ╚══════════════════════════════════════════════════════════════════════════════╝\n'));
           console.log(chalk.gray('  Scores from OpenRouter coding benchmark (March 2026)\n'));
           console.log(chalk.cyan('  Heavy Tier (L2 Brain):'));
-          console.log(formatModelTable(MODEL_CATALOG.filter((m: any) => m.tier === 'heavy')));
+          console.log(formatModelTable(MODEL_CATALOG.filter((m) => m.tier === 'heavy')));
           console.log(chalk.cyan('\n  Standard Tier (L3 Workers):'));
-          console.log(formatModelTable(MODEL_CATALOG.filter((m: any) => m.tier === 'standard')));
+          console.log(formatModelTable(MODEL_CATALOG.filter((m) => m.tier === 'standard')));
           console.log(chalk.cyan('\n  Fast Tier (L1 Routing):'));
-          console.log(formatModelTable(MODEL_CATALOG.filter((m: any) => m.tier === 'fast')));
+          console.log(formatModelTable(MODEL_CATALOG.filter((m) => m.tier === 'fast')));
           if (current) {
             console.log(chalk.green(`\n  Current: ${current.name} (${current.provider}) — score ${current.codingScore}, $${current.inputCost}/$${current.outputCost}/M`));
           } else {
@@ -1398,11 +1436,13 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       const entries = sess.history.slice(-n);
 
       console.log(chalk.blue(`\n--- Last ${entries.length} Messages ---`));
-      entries.forEach((e: any) => {
-        const time = e.timestamp?.split('T')[1]?.split('.')[0] || '';
-        const type = e.type || 'unknown';
-        console.log(`${chalk.gray(`[${time}]`)} ${chalk.bold(type)}${e.agent ? chalk.gray(` (${e.agent})`) : ''}`);
-        if (e.task) console.log(chalk.gray(`  ${e.task.slice(0, 80)}${e.task.length > 80 ? '...' : ''}`));
+      entries.forEach((e) => {
+        const entry = e as { timestamp?: string; type?: string; agent?: string; task?: string; input?: string };
+        const time = entry.timestamp?.split('T')[1]?.split('.')[0] || '';
+        const type = entry.type || 'unknown';
+        console.log(`${chalk.gray(`[${time}]`)} ${chalk.bold(type)}${entry.agent ? chalk.gray(` (${entry.agent})`) : ''}`);
+        const taskStr = entry.task || entry.input || '';
+        if (taskStr) console.log(chalk.gray(`  ${taskStr.slice(0, 80)}${taskStr.length > 80 ? '...' : ''}`));
       });
       console.log();
       return true;
@@ -1656,7 +1696,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       console.log(`│  Total: ${chalk.green(`$${cost.totalUsd.toFixed(4)}`)}`);
       if (Object.keys(cost.byModel).length > 0) {
         console.log('│  By model:');
-        Object.entries(cost.byModel).forEach(([model, usd]: [string, any]) => {
+        Object.entries(cost.byModel as Record<string, number>).forEach(([model, usd]) => {
           console.log(`│    ${model}: $${usd.toFixed(4)}`);
         });
       }
@@ -2166,7 +2206,14 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
         }
       }
 
-      const dispatchOpts: any = {
+      interface DispatchOpts {
+        project: string;
+        sessionId: string;
+        model?: string;
+        engine?: string;
+        onToolCall?: (name: string, params: Record<string, unknown>) => void;
+      }
+      const dispatchOpts: DispatchOpts = {
         project: projectDir,
         sessionId: await session.getSessionId()
       };
@@ -2181,9 +2228,10 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
         const recentHistory = sess.history.slice(-10); // Last 10 exchanges
         if (recentHistory.length > 0) {
           conversationContext = recentHistory
-            .map((entry: any) => {
-              const input = entry.input || entry.task || '';
-              const output = entry.output || entry.response || entry.result || '';
+            .map((entry) => {
+              const histEntry = entry as { input?: string; task?: string; output?: string; response?: string; result?: string };
+              const input = histEntry.input || histEntry.task || '';
+              const output = histEntry.output || histEntry.response || histEntry.result || '';
               if (!input && !output) return '';
               const parts = [];
               if (input) parts.push(`User: ${input}`);
@@ -2202,7 +2250,7 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
 
       // Tool progress display (visible without verbose mode)
       const toolProgressLog: string[] = [];
-      const onToolCall = (name: string, params: Record<string, any>) => {
+      const onToolCall = (name: string, params: Record<string, unknown>) => {
         const paramHint = params.file_path || params.path || params.command || params.query || '';
         const display = paramHint ? `${name}(${String(paramHint).slice(0, 60)})` : name;
         if (!replState.verbose) {
@@ -2212,7 +2260,7 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
       };
 
       // Inject onToolCall into orchestrator/executor options if available
-      if (dispatchOpts) (dispatchOpts as any).onToolCall = onToolCall;
+      if (dispatchOpts) dispatchOpts.onToolCall = onToolCall;
 
       const selectedStandaloneEngine = normalizeStandaloneEngine(replState.engine);
       const useDirectCliEngine = standaloneMode && selectedStandaloneEngine !== 'auto' && selectedStandaloneEngine !== 'crew-cli';
@@ -2250,57 +2298,72 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
             policy
           );
 
-      await session.appendHistory({
-        type: 'repl_request',
-        agent,
-        task: taskInput,
-        projectDir
-      });
+      // Result may come from runEngine, executeLocally, executeAgentic, or router.dispatch
+      // All return compatible shapes with varying optional fields — cast to a known union
+      interface ExecutionResult {
+        success?: boolean;
+        result?: string;
+        response?: string;
+        stdout?: string;
+        stderr?: string;
+        model?: string;
+        costUsd?: number;
+        cost?: number;
+        promptTokens?: number;
+        completionTokens?: number;
+        turns?: number;
+        toolsUsed?: string[];
+        providerId?: string;
+        provider?: string;
+        modelUsed?: string;
+        engine?: string;
+        timeline?: Array<{ phase: string; ts: string }>;
+      }
+      const typedResult = result as ExecutionResult;
 
-      await session.appendHistory({
-        type: 'repl_result',
-        agent,
-        success: Boolean(result.success),
-        result: result.result
-      });
+      // session.appendHistory requires { input: string }, audit events have a different shape
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await session.appendHistory({ type: 'repl_request', agent, task: taskInput, projectDir } as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await session.appendHistory({ type: 'repl_result', agent, success: Boolean(typedResult.success), result: typedResult.result } as any);
 
       await session.appendRouting({
         route: route.decision,
-        model: result.model || replState.model || 'unknown',
+        model: typedResult.model || replState.model || 'unknown',
         agent: standaloneMode ? 'local-executor' : agent,
         mode: standaloneMode ? 'standalone' : 'connected'
       });
 
-      if (result.costUsd && result.model) {
+      if (typedResult.costUsd && typedResult.model) {
         await session.trackCost({
-          model: result.model,
-          usd: result.costUsd,
-          promptTokens: result.promptTokens || 0,
-          completionTokens: result.completionTokens || 0
+          model: typedResult.model,
+          usd: typedResult.costUsd,
+          promptTokens: typedResult.promptTokens || 0,
+          completionTokens: typedResult.completionTokens || 0
         });
       }
 
-      const responseText = String(result.stdout || result.response || result.result || result.stderr || '');
+      const responseText = String(typedResult.stdout || typedResult.response || typedResult.result || typedResult.stderr || '');
       console.log(chalk.cyan('\n  ┌─ Response'));
       logger.printWithHighlight(responseText);
       console.log('  └─');
 
       // Provider + cost footer (novel feature)
-      const providerInfo = (result as any).providerId || (result as any).provider || (result as any).model || replState.model;
-      const modelUsed = (result as any).modelUsed || (result as any).model || providerInfo;
-      const engineUsed = (result as any).engine || (useDirectCliEngine ? selectedStandaloneEngine : (standaloneMode ? 'crew-cli' : (dispatchOpts.engine || replState.engine || 'gateway')));
+      const providerInfo = typedResult.providerId || typedResult.provider || typedResult.model || replState.model;
+      const modelUsed = typedResult.modelUsed || typedResult.model || providerInfo;
+      const engineUsed = typedResult.engine || (useDirectCliEngine ? selectedStandaloneEngine : (standaloneMode ? 'crew-cli' : (dispatchOpts.engine || replState.engine || 'gateway')));
       const routeUsed = route.decision || (standaloneMode ? 'EXECUTE' : 'DISPATCH');
-      const responseCost = (result as any).costUsd || (result as any).cost || 0;
-      const turnsUsed = (result as any).turns || 1;
-      const toolCount = (result as any).toolsUsed?.length || toolProgressLog.length || 0;
+      const responseCost = typedResult.costUsd || typedResult.cost || 0;
+      const turnsUsed = typedResult.turns || 1;
+      const toolCount = typedResult.toolsUsed?.length || toolProgressLog.length || 0;
       if (modelUsed || responseCost) {
         const costStr = responseCost > 0 ? `$${Number(responseCost).toFixed(4)}` : 'free';
         console.log(chalk.gray(`  ⚡ route=${routeUsed} · engine=${engineUsed} · provider=${providerInfo}`));
         console.log(chalk.gray(`  ⚡ model=${modelUsed} · ${turnsUsed} turn${turnsUsed > 1 ? 's' : ''} · ${toolCount} tool${toolCount !== 1 ? 's' : ''} · ${costStr}`));
       }
-      if (Array.isArray((result as any).timeline) && (result as any).timeline.length > 0) {
+      if (Array.isArray(typedResult.timeline) && typedResult.timeline.length > 0) {
         console.log(chalk.gray('\n  Timeline'));
-        for (const step of (result as any).timeline) {
+        for (const step of typedResult.timeline) {
           console.log(chalk.gray(`  - ${step.phase} @ ${step.ts}`));
         }
       }
@@ -2422,7 +2485,7 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
       }
     }
     if (process.stdin.isTTY) {
-      process.stdin.off('keypress', keypressListener as any);
+      process.stdin.off('keypress', keypressListener as (...args: unknown[]) => void);
     }
     console.log(chalk.cyan('\n  Session saved to .crew/ — run "crew repl" to continue.\n'));
     // Allow readline/inquirer handles to close naturally; avoid forced exit races.
