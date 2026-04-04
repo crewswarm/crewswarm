@@ -255,8 +255,8 @@ describe("install.sh — structural completeness", () => {
       "Expected crew-cli alias to be written"
     );
     assert.ok(
-      SCRIPT_SRC.includes("crew-cli.mjs"),
-      "Expected crew-cli alias to point at crew-cli.mjs"
+      SCRIPT_SRC.includes("crew-cli/dist/crew.mjs"),
+      "Expected crew-cli alias to point at crew-cli/dist/crew.mjs"
     );
   });
 
@@ -573,8 +573,8 @@ describe("install.sh — live dry-run (isolated temp HOME)", () => {
       "Expected crew-cli alias in .bash_profile"
     );
     assert.ok(
-      content.includes("crew-cli.mjs"),
-      "Expected crew-cli alias to reference crew-cli.mjs"
+      content.includes("crew-cli/dist/crew.mjs"),
+      "Expected crew-cli alias to reference crew-cli/dist/crew.mjs"
     );
   });
 });
