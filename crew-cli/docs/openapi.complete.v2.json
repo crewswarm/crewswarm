@@ -4752,6 +4752,90 @@
         }
       }
     },
+    "/api/tests/stale": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/stale",
+        "description": "Auto-discovered endpoint. Method: GET.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/stream": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/stream",
+        "description": "Auto-discovered endpoint. Method: GET.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/screenshot": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/screenshot",
+        "description": "Auto-discovered endpoint. Method: GET.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/coverage-map": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/coverage-map",
+        "description": "Auto-discovered endpoint. Method: GET.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/status": {
       "get": {
         "tags": [
