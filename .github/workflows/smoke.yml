@@ -171,5 +171,17 @@ jobs:
             exit 1
           }
 
+      - name: Run e2e dispatch tests
+        env:
+          CREW_LEAD_URL: "http://127.0.0.1:5010"
+          CREWSWARM_SMOKE_TIMEOUT_MS: "180000"
+        run: npm run test:e2e:dispatch || true
+
+      - name: Run e2e pipeline tests
+        env:
+          CREW_LEAD_URL: "http://127.0.0.1:5010"
+          CREWSWARM_SMOKE_TIMEOUT_MS: "180000"
+        run: npm run test:e2e:pipeline || true
+
       - name: Run health check full
         run: node scripts/health-check.mjs --quiet

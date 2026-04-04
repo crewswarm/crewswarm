@@ -22,6 +22,24 @@ jobs:
       - run: npm run smoke:static
       - run: npm run release:check
 
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm install --prefix apps/dashboard
+      - name: Bootstrap minimal config
+        run: |
+          mkdir -p ~/.crewswarm
+          echo '{"agents":[],"providers":{}}' > ~/.crewswarm/crewswarm.json
+          echo '[]' > ~/.crewswarm/cmd-allowlist.json
+          echo '{}' > ~/.crewswarm/agent-prompts.json
+      - run: npm run test:integration
+
   crew-cli-tests:
     name: Crew-CLI tests
     runs-on: ubuntu-latest
@@ -31,6 +49,7 @@ jobs:
         with:
           node-version: '22'
       - run: cd crew-cli && npm ci
+      - run: cd crew-cli && npm run build
       - run: cd crew-cli && npm test
 
   playwright:
