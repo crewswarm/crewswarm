@@ -39,14 +39,40 @@ async function waPost(endpoint, body) {
   return data;
 }
 
-// Check bridge is reachable before running any tests
+// Check bridge is reachable — auto-start if auth exists but bridge is down
 let bridgeReachable = false;
 let bridgeNumber = null;
+let bridgeStartedByTest = false;
 try {
   const h = await waGet("/health");
   bridgeReachable = h.ok === true;
   bridgeNumber = h.number;
 } catch { /* not running */ }
+
+if (!bridgeReachable) {
+  // Check if WhatsApp auth exists — if so, start the bridge
+  const authCreds = path.join(os.homedir(), ".crewswarm", "whatsapp-auth", "creds.json");
+  if (fs.existsSync(authCreds)) {
+    try {
+      const { spawn } = await import("node:child_process");
+      const bridgePath = path.resolve("whatsapp-bridge.mjs");
+      const child = spawn("node", [bridgePath], {
+        stdio: "ignore",
+        detached: true,
+      });
+      child.unref();
+      bridgeStartedByTest = true;
+      // Wait for bridge to come up
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+          const h = await waGet("/health");
+          if (h.ok) { bridgeReachable = true; bridgeNumber = h.number; break; }
+        } catch {}
+      }
+    } catch {}
+  }
+}
 
 const SKIP = bridgeReachable ? false : "WhatsApp bridge not running on :" + WA_HTTP_PORT;
 

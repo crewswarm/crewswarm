@@ -190,6 +190,20 @@ test.describe("Usage tab", () => {
         body: JSON.stringify({ online: true }),
       });
     });
+    await page.route("**/api/dlq", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+    await page.route("**/api/spending", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ spending: { global: {}, agents: {} }, caps: { global: {}, agents: {} } }),
+      });
+    });
 
     await openDashboard(page);
   });
@@ -199,14 +213,18 @@ test.describe("Usage tab", () => {
   });
 
   test("navigates to Usage tab and view becomes active", async ({ page }) => {
-    await openTab(page, "navUsage", "usageView");
-    await expect(page.locator("#usageView")).toBeVisible();
+    await openTab(page, "navSettings", "settingsView");
+    await page.locator("#stab-usage").click();
+    await expect(page.locator("#stab-panel-usage")).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("#stab-panel-usage")).toBeVisible();
   });
 
   test("token usage widget renders LLM call count and total tokens", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navSettings", "settingsView");
+    await page.locator("#stab-usage").click();
+    await expect(page.locator("#stab-panel-usage")).toBeVisible({ timeout: 5_000 });
 
     const widget = page.locator("#tokenUsageWidget");
     await expect(widget).toBeVisible({ timeout: 8_000 });
@@ -217,7 +235,9 @@ test.describe("Usage tab", () => {
   });
 
   test("token usage widget renders estimated cost", async ({ page }) => {
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navSettings", "settingsView");
+    await page.locator("#stab-usage").click();
+    await expect(page.locator("#stab-panel-usage")).toBeVisible({ timeout: 5_000 });
 
     const widget = page.locator("#tokenUsageWidget");
     await expect(widget).toBeVisible({ timeout: 8_000 });
@@ -227,7 +247,9 @@ test.describe("Usage tab", () => {
   });
 
   test("token usage widget renders by-model breakdown", async ({ page }) => {
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navSettings", "settingsView");
+    await page.locator("#stab-usage").click();
+    await expect(page.locator("#stab-panel-usage")).toBeVisible({ timeout: 5_000 });
 
     const widget = page.locator("#tokenUsageWidget");
     await expect(widget).toBeVisible({ timeout: 8_000 });
@@ -239,7 +261,9 @@ test.describe("Usage tab", () => {
   });
 
   test("token usage widget shows daily history section", async ({ page }) => {
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navSettings", "settingsView");
+    await page.locator("#stab-usage").click();
+    await expect(page.locator("#stab-panel-usage")).toBeVisible({ timeout: 5_000 });
 
     const widget = page.locator("#tokenUsageWidget");
     await expect(widget).toBeVisible({ timeout: 8_000 });
@@ -249,7 +273,9 @@ test.describe("Usage tab", () => {
   test("opencode stats widget renders total cost and call count", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navSettings", "settingsView");
+    await page.locator("#stab-usage").click();
+    await expect(page.locator("#stab-panel-usage")).toBeVisible({ timeout: 5_000 });
 
     const ocWidget = page.locator("#ocStatsWidget");
     await expect(ocWidget).toBeVisible({ timeout: 8_000 });
@@ -262,7 +288,9 @@ test.describe("Usage tab", () => {
   test("opencode stats days selector exists and accepts numeric option", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navSettings", "settingsView");
+    await page.locator("#stab-usage").click();
+    await expect(page.locator("#stab-panel-usage")).toBeVisible({ timeout: 5_000 });
 
     const sel = page.locator("#ocStatsDays");
     await expect(sel).toBeVisible({ timeout: 8_000 });
@@ -271,7 +299,8 @@ test.describe("Usage tab", () => {
   });
 
   test("crew-lead status badge reflects online state", async ({ page }) => {
-    await openTab(page, "navUsage", "usageView");
+    // crewLeadBadge lives in chatView (the main header), not in settingsView
+    await openTab(page, "navChat", "chatView");
 
     const badge = page.locator("#crewLeadBadge");
     await expect(badge).toBeVisible({ timeout: 8_000 });
@@ -281,18 +310,20 @@ test.describe("Usage tab", () => {
   test("tool matrix table renders agents from health endpoint", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    // toolMatrixContainer lives in toolMatrixView — navigate via navToolMatrix
+    await openTab(page, "navToolMatrix", "toolMatrixView");
 
     const matrix = page.locator("#toolMatrixContainer");
     await expect(matrix).toBeVisible({ timeout: 8_000 });
-    await expect(matrix).toContainText("crew-main", { timeout: 8_000 });
-    await expect(matrix).toContainText("crew-pm", { timeout: 8_000 });
+    // The matrix renders agent display names (e.g. "Crew Main") not raw IDs
+    await expect(matrix).toContainText("Crew Main", { timeout: 8_000 });
+    await expect(matrix).toContainText("Crew PM", { timeout: 8_000 });
   });
 
   test("tool matrix shows checkmarks for tools each agent has", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navToolMatrix", "toolMatrixView");
 
     const matrix = page.locator("#toolMatrixContainer");
     await expect(matrix).toBeVisible({ timeout: 8_000 });
@@ -303,7 +334,7 @@ test.describe("Usage tab", () => {
   test("tool matrix Restart button exists for each agent row", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navToolMatrix", "toolMatrixView");
 
     const matrix = page.locator("#toolMatrixContainer");
     await expect(matrix).toBeVisible({ timeout: 8_000 });
@@ -326,7 +357,7 @@ test.describe("Usage tab", () => {
       });
     });
 
-    await openTab(page, "navUsage", "usageView");
+    await openTab(page, "navToolMatrix", "toolMatrixView");
 
     const matrix = page.locator("#toolMatrixContainer");
     await expect(matrix).toBeVisible({ timeout: 8_000 });
@@ -346,7 +377,8 @@ test.describe("Usage tab", () => {
   test("task lifecycle table renders completed and failed events", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    // taskLifecycleContainer lives in toolMatrixView — navigate via navToolMatrix
+    await openTab(page, "navToolMatrix", "toolMatrixView");
 
     const lifecycle = page.locator("#taskLifecycleContainer");
     await expect(lifecycle).toBeVisible({ timeout: 8_000 });
@@ -394,6 +426,20 @@ test.describe("Usage tab — offline crew-lead", () => {
         body: JSON.stringify({ online: false }),
       });
     });
+    await page.route("**/api/dlq", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+    await page.route("**/api/spending", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ spending: { global: {}, agents: {} }, caps: { global: {}, agents: {} } }),
+      });
+    });
 
     await openDashboard(page);
   });
@@ -405,7 +451,8 @@ test.describe("Usage tab — offline crew-lead", () => {
   test("crew-lead badge shows offline when status reports offline", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    // crewLeadBadge lives in chatView — navigate there to see it
+    await openTab(page, "navChat", "chatView");
 
     const badge = page.locator("#crewLeadBadge");
     await expect(badge).toBeVisible({ timeout: 8_000 });
@@ -415,7 +462,8 @@ test.describe("Usage tab — offline crew-lead", () => {
   test("tool matrix shows health check failed message when health returns error", async ({
     page,
   }) => {
-    await openTab(page, "navUsage", "usageView");
+    // toolMatrixContainer lives in toolMatrixView — navigate via navToolMatrix
+    await openTab(page, "navToolMatrix", "toolMatrixView");
 
     const matrix = page.locator("#toolMatrixContainer");
     await expect(matrix).toBeVisible({ timeout: 8_000 });

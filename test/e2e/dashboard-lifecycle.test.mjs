@@ -554,7 +554,7 @@ describe("Project lifecycle", { skip: SKIP, concurrency: 1, timeout: 30000 }, ()
       return;
     }
     const { status } = await api("/api/projects/update", "POST", {
-      id: projectId,
+      projectId: projectId,
       description: "updated desc for e2e lifecycle",
     }, { testName });
     if (status === 500) {
