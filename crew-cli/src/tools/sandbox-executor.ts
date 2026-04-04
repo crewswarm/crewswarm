@@ -313,7 +313,7 @@ export async function executeToolsWithSandbox(
       const url = m[1].trim();
       try {
         const res = await fetch(url, {
-          headers: { 'User-Agent': 'CrewSwarm-CLI/1.0' },
+          headers: { 'User-Agent': 'crewswarm-CLI/1.0' },
           signal: AbortSignal.timeout(12000)
         });
         

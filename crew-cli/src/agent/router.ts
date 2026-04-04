@@ -56,7 +56,7 @@ export class AgentRouter extends EventEmitter {
         }
       }
 
-      // Dispatch to CrewSwarm gateway
+      // Dispatch to crewswarm gateway
       const runtime = this.mapEngineToRuntime(options.engine);
       const dispatchPayload = {
         agent: agentName,

@@ -13,7 +13,7 @@ import { parseJsonObjectWithRepair } from '../utils/structured-json.js';
 export { WorkerPool } from './worker-pool.js';
 export type { WorkerTask, TaskResult, WorkerPoolOptions } from './worker-pool.js';
 
-const ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crew-cli, a standalone agentic coding engine.
+const ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crewswarm CLI (always lowercase "crewswarm"), a standalone agentic coding engine.
 
 Route this request to one of: direct-answer, execute-direct, execute-parallel.
 
@@ -697,7 +697,7 @@ export class Orchestrator {
     while (i < lines.length) {
       const line = lines[i].trim();
       
-      // Support @@WRITE_FILE format (CrewSwarm tool syntax)
+      // Support @@WRITE_FILE format (crewswarm tool syntax)
       if (line.startsWith('@@WRITE_FILE')) {
         const filePath = line.replace('@@WRITE_FILE', '').trim();
         let blockContent = '';

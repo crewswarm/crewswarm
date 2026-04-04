@@ -977,7 +977,7 @@ export const CAPABILITY_MATRIX: Record<string, string[]> = {
   'specialist-docs': ['documentation', 'technical-writing', 'onboarding']
 };
 
-// Standalone persona coverage aligned with CrewSwarm's broader 20-role roster.
+// Standalone persona coverage aligned with crewswarm's broader 20-role roster.
 export const PERSONA_PROFILES: Record<string, PersonaProfile> = {
   'crew-coder': {
     id: 'crew-coder',

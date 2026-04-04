@@ -37,7 +37,7 @@ var init_logger = __esm({
     Logger = class {
       constructor(options = {}) {
         this.level = options.level || "info";
-        this.prefix = options.prefix || "[CrewSwarm]";
+        this.prefix = options.prefix || "[crewswarm]";
       }
       formatMessage(level, message, ...args) {
         const timestamp = (/* @__PURE__ */ new Date()).toISOString();
@@ -1647,7 +1647,7 @@ var init_local = __esm({
       "redact-thinking-2026-02-12",
       "context-management-2025-06-27"
     ].join(",");
-    EXECUTOR_SYSTEM_PROMPT = `You are the conversational interface for CrewSwarm CLI.
+    EXECUTOR_SYSTEM_PROMPT = `You are the conversational interface for crewswarm CLI.
 
 ## Your Role
 - Handle user interaction, clarifications, and responses
@@ -4697,7 +4697,7 @@ ${r.description || ""}`
         }
         try {
           const res = await fetch(url, {
-            headers: { "User-Agent": "CrewSwarm-CLI/1.0" },
+            headers: { "User-Agent": "crewswarm-CLI/1.0" },
             signal: AbortSignal.timeout(12e3)
           });
           if (!res.ok) return { success: false, error: `web_fetch failed: HTTP ${res.status}` };
@@ -12964,12 +12964,12 @@ ${request.context}`,
         overlays.push(
           {
             type: "constraints",
-            content: `You are CrewSwarm's CLI assistant, running model "${currentModel}" in ${interfaceMode} mode.
+            content: `You are crewswarm's CLI assistant, running model "${currentModel}" in ${interfaceMode} mode.
 You are operating in project directory: ${projectDir}
 You have full file system access with tools: list_directory, read_file, write_file, grep_search, glob, run_shell_command, git, and more.
 You do NOT dispatch to external agents or a swarm. All execution is local.
 
-When asked about your identity or what model you are, answer: "I'm CrewSwarm CLI running ${currentModel}."
+When asked about your identity or what model you are, answer: "I'm crewswarm CLI running ${currentModel}." The brand is always lowercase "crewswarm" \u2014 never "crewswarm" or "crewswarm".
 
 Analyze this request and decide:
 
@@ -13699,7 +13699,7 @@ var init_orchestrator = __esm({
     init_unified();
     init_structured_json();
     init_worker_pool();
-    ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crew-cli, a standalone agentic coding engine.
+    ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crewswarm CLI (always lowercase "crewswarm"), a standalone agentic coding engine.
 
 Route this request to one of: direct-answer, execute-direct, execute-parallel.
 
@@ -15221,7 +15221,7 @@ No git repository detected.
 }
 
 // src/agent/prompt.ts
-var CLI_SYSTEM_PROMPT = `You are Gunns, the gunner and lethal weapon of CrewSwarm.
+var CLI_SYSTEM_PROMPT = `You are Gunns, the gunner and lethal weapon of crewswarm.
 Stinki is the Crew-Lead (localhost:5010).
 You are the foul-mouthed artillery expert.
 The user is the Captain.
@@ -16900,12 +16900,12 @@ async function runDoctorChecks(options = {}) {
       hint: apiKeys.hint
     },
     {
-      name: "CrewSwarm config present",
+      name: "crewswarm config present",
       ok: config.ok,
       details: config.path
     },
     {
-      name: "CrewSwarm gateway reachable",
+      name: "crewswarm gateway reachable",
       ok: gatewayOk,
       details: `${gateway}/status`
     },
@@ -21332,7 +21332,7 @@ function answerFromBootstrap(input, summary, bootstrap) {
     const docs = bootstrap.docs.slice(0, 5).join(", ") || "(no docs indexed)";
     const keys = bootstrap.keyFiles.slice(0, 6).join(", ") || "(no key files found)";
     return [
-      `Crew CLI is a multi-layer orchestrator in ${summary.mode} mode.`,
+      `crewswarm CLI is a multi-layer orchestrator in ${summary.mode} mode.`,
       `L1 chat runs on ${summary.replModel}/${summary.replEngine}; L2 uses router=${summary.routerProvider} and executor=${summary.executorProvider}; L3 uses configured worker/agent models.`,
       `Key repo files: ${keys}.`,
       `Docs index snapshot: ${docs}.`,
@@ -24800,9 +24800,9 @@ async function main(args = []) {
     return;
   }
   const cliVersion = await getInstalledCliVersion() || "0.1.0-alpha";
-  program.name("crew").description("CrewSwarm CLI - Agent orchestration made simple").version(cliVersion);
+  program.name("crew").description("crewswarm CLI - Agent orchestration made simple").version(cliVersion);
   program.option("--legacy-router", "Use legacy routing path (disables UnifiedPipeline default)", false);
-  program.command("chat").description("Chat with CrewSwarm (automatically routed to best agent)").argument("<input...>", "Message or question").option("-p, --project <path>", "Project directory").option("-g, --gateway <url>", "Override gateway URL").option("-m, --model <id>", "Model override for direct/bypass gateway paths", executorPrimary || void 0).option("--engine <id>", "Engine override for direct/bypass gateway paths (e.g. cursor)", cliDefaults.engine || void 0).option("--direct", "Request direct execution path on gateway", false).option("--bypass", "Request bypass/orchestrator-skip path on gateway", false).option("--crew", "Use full multi-agent crew via gateway (like OpenCode PM loop)", false).option("--apply", "Auto-apply sandbox changes to disk after completion", false).option("--image <path>", "Attach an image file to the prompt (repeatable)", collectOption, []).option("--context-image <path>", "Attach an image file as context (repeatable)", collectOption, []).option("--image-max-bytes <n>", "Max bytes per image context payload", "250000").option("--cross-repo", "Inject sibling repository context", false).option("--context-file <path>", "Attach a file as additional context (repeatable)", collectOption, []).option("--context-repo <path>", "Attach git context from another repo (repeatable)", collectOption, []).option("--stdin", "Read additional context from stdin", false).option("--max-context-tokens <n>", "Max context token budget (approx, chars/4)").option("--context-budget-mode <mode>", "trim | stop when budget exceeded", "trim").option("--docs", "Inject matching docs context via collections search", false).option("--docs-path <paths...>", "Custom paths for docs search (default: docs/ + project root)").option("--docs-code", "Include source code files in docs retrieval index", Boolean(cliDefaults.docsCode)).option("--fallback-model <id>", "Fallback model chain entry (repeatable)", collectOption, []).option("--retry-attempts <n>", "Retry attempts for transient failures", "2").option("--strict-preflight", "Block execution if doctor checks fail", false).option("--json", "Output machine-readable JSON envelope", false).action(async (inputArray, options) => {
+  program.command("chat").description("Chat with crewswarm (automatically routed to best agent)").argument("<input...>", "Message or question").option("-p, --project <path>", "Project directory").option("-g, --gateway <url>", "Override gateway URL").option("-m, --model <id>", "Model override for direct/bypass gateway paths", executorPrimary || void 0).option("--engine <id>", "Engine override for direct/bypass gateway paths (e.g. cursor)", cliDefaults.engine || void 0).option("--direct", "Request direct execution path on gateway", false).option("--bypass", "Request bypass/orchestrator-skip path on gateway", false).option("--crew", "Use full multi-agent crew via gateway (like OpenCode PM loop)", false).option("--apply", "Auto-apply sandbox changes to disk after completion", false).option("--image <path>", "Attach an image file to the prompt (repeatable)", collectOption, []).option("--context-image <path>", "Attach an image file as context (repeatable)", collectOption, []).option("--image-max-bytes <n>", "Max bytes per image context payload", "250000").option("--cross-repo", "Inject sibling repository context", false).option("--context-file <path>", "Attach a file as additional context (repeatable)", collectOption, []).option("--context-repo <path>", "Attach git context from another repo (repeatable)", collectOption, []).option("--stdin", "Read additional context from stdin", false).option("--max-context-tokens <n>", "Max context token budget (approx, chars/4)").option("--context-budget-mode <mode>", "trim | stop when budget exceeded", "trim").option("--docs", "Inject matching docs context via collections search", false).option("--docs-path <paths...>", "Custom paths for docs search (default: docs/ + project root)").option("--docs-code", "Include source code files in docs retrieval index", Boolean(cliDefaults.docsCode)).option("--fallback-model <id>", "Fallback model chain entry (repeatable)", collectOption, []).option("--retry-attempts <n>", "Retry attempts for transient failures", "2").option("--strict-preflight", "Block execution if doctor checks fail", false).option("--json", "Output machine-readable JSON envelope", false).action(async (inputArray, options) => {
     let input = inputArray.join(" ");
     try {
       const policy = getExecutionPolicy({
@@ -25805,7 +25805,7 @@ Please review for correctness, regressions, and security concerns.`;
       process.exit(1);
     }
   });
-  program.command("status").description("Show CrewSwarm orchestration status dashboard").action(async () => {
+  program.command("status").description("Show crewswarm orchestration status dashboard").action(async () => {
     const { displayStatus: displayStatus2 } = await Promise.resolve().then(() => (init_dashboard(), dashboard_exports));
     await displayStatus2();
   });
@@ -26397,7 +26397,7 @@ Please review for correctness, regressions, and security concerns.`;
     await savePrivacyControls(next, process.cwd());
     logger3.success(`Saved privacy controls: ${JSON.stringify(next)}`);
   });
-  program.command("listen").description("Voice mode: record speech, transcribe via Whisper, run command, and optionally speak response").option("--duration-sec <n>", "Recording duration in seconds", "6").option("--provider <id>", "STT provider: auto | groq | openai | whisper-cli", "auto").option("--text <value>", "Skip recording and use raw text directly").option("--continuous", "Keep listening in a loop", false).option("--max-rounds <n>", "Maximum rounds in continuous mode", "5").option("--no-tts", "Disable TTS response playback").option("--tts-skill <id>", "CrewSwarm skill for TTS", "elevenlabs.tts").action(async (options) => {
+  program.command("listen").description("Voice mode: record speech, transcribe via Whisper, run command, and optionally speak response").option("--duration-sec <n>", "Recording duration in seconds", "6").option("--provider <id>", "STT provider: auto | groq | openai | whisper-cli", "auto").option("--text <value>", "Skip recording and use raw text directly").option("--continuous", "Keep listening in a loop", false).option("--max-rounds <n>", "Maximum rounds in continuous mode", "5").option("--no-tts", "Disable TTS response playback").option("--tts-skill <id>", "crewswarm skill for TTS", "elevenlabs.tts").action(async (options) => {
     const durationSec = Number.parseInt(options.durationSec || "6", 10);
     const maxRounds = Math.max(1, Number.parseInt(options.maxRounds || "5", 10));
     let round = 0;
@@ -26704,7 +26704,7 @@ Please review for correctness, regressions, and security concerns.`;
       process.exit(1);
     }
   });
-  program.command("skill").description("Call a CrewSwarm skill by name").argument("<name>", "Skill name, e.g. zeroeval.benchmark").option("--params <json>", "JSON params payload", "{}").option("-g, --gateway <url>", "Override gateway URL").action(async (name, options) => {
+  program.command("skill").description("Call a crewswarm skill by name").argument("<name>", "Skill name, e.g. zeroeval.benchmark").option("--params <json>", "JSON params payload", "{}").option("-g, --gateway <url>", "Override gateway URL").action(async (name, options) => {
     try {
       let params = {};
       try {
@@ -27891,7 +27891,7 @@ export {
  * Implements OpenOrca-style THINK → ACT → OBSERVE pattern
  *
  * @license
- * Copyright 2026 CrewSwarm
+ * Copyright 2026 crewswarm
  */
 /**
  * @license

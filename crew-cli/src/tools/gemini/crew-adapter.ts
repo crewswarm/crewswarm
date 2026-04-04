@@ -1056,7 +1056,7 @@ export class GeminiToolAdapter {
     }
     try {
       const res = await fetch(url, {
-        headers: { 'User-Agent': 'CrewSwarm-CLI/1.0' },
+        headers: { 'User-Agent': 'crewswarm-CLI/1.0' },
         signal: AbortSignal.timeout(12000)
       });
       if (!res.ok) return { success: false, error: `web_fetch failed: HTTP ${res.status}` };

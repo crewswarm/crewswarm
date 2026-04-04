@@ -4,7 +4,7 @@
  * 
  * @license
  * Concept inspired by Aider (https://github.com/paul-gauthier/aider)
- * Copyright 2026 CrewSwarm
+ * Copyright 2026 crewswarm
  */
 
 import type { AutonomousResult } from '../worker/autonomous-loop.js';

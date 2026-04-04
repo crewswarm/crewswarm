@@ -3,7 +3,7 @@
  * Uses Gemini CLI tools directly with VirtualFS injection
  * 
  * @license
- * Copyright 2026 CrewSwarm
+ * Copyright 2026 crewswarm
  */
 
 import { Sandbox } from '../sandbox/index.js';

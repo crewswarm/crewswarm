@@ -53,7 +53,7 @@ const CLAUDE_OAUTH_BETA_HEADER = [
   'context-management-2025-06-27',
 ].join(',');
 
-const EXECUTOR_SYSTEM_PROMPT = `You are the conversational interface for CrewSwarm CLI.
+const EXECUTOR_SYSTEM_PROMPT = `You are the conversational interface for crewswarm CLI.
 
 ## Your Role
 - Handle user interaction, clarifications, and responses

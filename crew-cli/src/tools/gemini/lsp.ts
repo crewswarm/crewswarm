@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright 2026 CrewSwarm
+ * Copyright 2026 crewswarm
  * SPDX-License-Identifier: Apache-2.0
  */
 

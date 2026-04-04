@@ -5,7 +5,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 /**
- * Dynamic CrewSwarm status dashboard
+ * Dynamic crewswarm status dashboard
  * Shows REAL system information, not hardcoded values
  */
 

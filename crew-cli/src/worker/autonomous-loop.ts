@@ -3,7 +3,7 @@
  * Implements OpenOrca-style THINK → ACT → OBSERVE pattern
  *
  * @license
- * Copyright 2026 CrewSwarm
+ * Copyright 2026 crewswarm
  */
 
 import { partitionToolCalls } from '../executor/tool-batching.js';

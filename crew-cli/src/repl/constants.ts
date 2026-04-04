@@ -308,7 +308,7 @@ export function answerFromBootstrap(input: string, summary: ModelSummary, bootst
     const docs = bootstrap.docs.slice(0, 5).join(', ') || '(no docs indexed)';
     const keys = bootstrap.keyFiles.slice(0, 6).join(', ') || '(no key files found)';
     return [
-      `Crew CLI is a multi-layer orchestrator in ${summary.mode} mode.`,
+      `crewswarm CLI is a multi-layer orchestrator in ${summary.mode} mode.`,
       `L1 chat runs on ${summary.replModel}/${summary.replEngine}; L2 uses router=${summary.routerProvider} and executor=${summary.executorProvider}; L3 uses configured worker/agent models.`,
       `Key repo files: ${keys}.`,
       `Docs index snapshot: ${docs}.`,

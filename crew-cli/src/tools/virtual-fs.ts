@@ -4,7 +4,7 @@
  * 
  * @license
  * Portions inspired by Gemini CLI architecture
- * Copyright 2026 CrewSwarm
+ * Copyright 2026 crewswarm
  */
 
 import fs from 'node:fs/promises';

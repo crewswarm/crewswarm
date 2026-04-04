@@ -397,7 +397,7 @@ function answerFromBootstrap(input: string, summary: ModelSummary, bootstrap: Re
     const docs = bootstrap.docs.slice(0, 5).join(', ') || '(no docs indexed)';
     const keys = bootstrap.keyFiles.slice(0, 6).join(', ') || '(no key files found)';
     return [
-      `Crew CLI is a multi-layer orchestrator in ${summary.mode} mode.`,
+      `crewswarm CLI is a multi-layer orchestrator in ${summary.mode} mode.`,
       `L1 chat runs on ${summary.replModel}/${summary.replEngine}; L2 uses router=${summary.routerProvider} and executor=${summary.executorProvider}; L3 uses configured worker/agent models.`,
       `Key repo files: ${keys}.`,
       `Docs index snapshot: ${docs}.`,
@@ -830,15 +830,68 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     completer: tabCompleter
   });
 
-  const keypressListener = (_str: string, key: { name?: string; shift?: boolean; sequence?: string }) => {
+  // ─── Inline ghost-text suggestions (Fish/zsh-style) ──────────────────────
+  let ghostText = '';
+
+  const clearGhost = () => {
+    if (!ghostText) return;
+    // Erase the ghost characters, then move cursor back
+    process.stdout.write('\x1b[0m');  // reset color
+    process.stdout.write(`\x1b[${ghostText.length}D`); // move left to cursor pos
+    process.stdout.write(`\x1b[0K`); // clear from cursor to end of line
+    // Actually: the ghost is AFTER cursor, so just clear to EOL from current pos
+    ghostText = '';
+  };
+
+  const renderGhost = () => {
+    const line = (rl as any).line as string;
+    if (!line || !line.startsWith('/') || line.includes(' ')) {
+      if (ghostText) clearGhost();
+      return;
+    }
+    const match = SLASH_COMMANDS.find(c => c.startsWith(line) && c !== line);
+    const suffix = match ? match.slice(line.length) : '';
+    if (suffix === ghostText) return; // no change
+    // Clear old ghost, write new one
+    if (ghostText) {
+      process.stdout.write(`\x1b[0K`); // clear to end of line
+    }
+    if (suffix) {
+      process.stdout.write(`\x1b[90m${suffix}\x1b[0m`); // gray text
+      process.stdout.write(`\x1b[${suffix.length}D`);    // move cursor back
+    }
+    ghostText = suffix;
+  };
+
+  const keypressListener = (_str: string, key: { name?: string; shift?: boolean; sequence?: string; ctrl?: boolean }) => {
+    // Shift+Tab: cycle modes
     const isShiftTab = (key.name === 'tab' && key.shift) || key.sequence === '\u001b[Z';
-    if (!isShiftTab) return;
-    const from = replState.mode;
-    replState.mode = nextMode(replState.mode);
-    rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
-    void recordReplEvent('mode_change', { from, to: replState.mode, source: 'keybinding' });
-    console.log(chalk.magenta(`\n  ↻ Mode: ${replState.mode}`));
-    rl.prompt();
+    if (isShiftTab) {
+      clearGhost();
+      const from = replState.mode;
+      replState.mode = nextMode(replState.mode);
+      rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
+      void recordReplEvent('mode_change', { from, to: replState.mode, source: 'keybinding' });
+      console.log(chalk.magenta(`\n  ↻ Mode: ${replState.mode}`));
+      rl.prompt();
+      return;
+    }
+
+    // Right arrow: accept ghost suggestion
+    if (key.name === 'right' && ghostText) {
+      const line = (rl as any).line as string;
+      const accepted = line + ghostText;
+      (rl as any).line = accepted;
+      (rl as any).cursor = accepted.length;
+      process.stdout.write(`\x1b[0K`); // clear ghost
+      process.stdout.write(ghostText);  // write as real text
+      ghostText = '';
+      return;
+    }
+
+    // After any other keypress, schedule ghost render on next tick
+    // (readline updates .line after keypress fires)
+    setImmediate(renderGhost);
   };
   if (process.stdin.isTTY) {
     emitKeypressEvents(process.stdin, rl);
@@ -991,18 +1044,66 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     }
 
     if (command === '/models') {
-      const requestedModel = args.join(' ').trim();
-      if (requestedModel) {
-        replState.model = requestedModel;
-        console.log(chalk.green(`\n  ✓ Model set to: ${requestedModel}\n`));
+      const subArg = (args[0] || '').trim().toLowerCase();
+      const modelValue = args.slice(1).join(' ').trim();
+
+      // /models l1|l2|l3|l2a|l2b|qa|fixer|review <model> — set a tier model
+      const tierMap: Record<string, { env: string; label: string; replKey?: keyof ReplState }> = {
+        'l1':      { env: 'CREW_L1_MODEL', label: 'L1 (chat)', replKey: 'model' },
+        'l2':      { env: 'CREW_REASONING_MODEL', label: 'L2 (reasoning)' },
+        'l2a':     { env: 'CREW_L2A_MODEL', label: 'L2A (decomposer)' },
+        'l2b':     { env: 'CREW_L2B_MODEL', label: 'L2B (validator)' },
+        'router':  { env: 'CREW_ROUTER_MODEL', label: 'Router' },
+        'l3':      { env: 'CREW_L3_MODEL', label: 'L3 (worker)' },
+        'qa':      { env: 'CREW_QA_MODEL', label: 'L3 QA' },
+        'fixer':   { env: 'CREW_L3_FIXER_MODEL', label: 'L3 Fixer' },
+        'review':  { env: 'CREW_L3_REVIEW_MODEL', label: 'L3 Review' },
+      };
+
+      if (subArg && tierMap[subArg] && modelValue) {
+        const tier = tierMap[subArg];
+        process.env[tier.env] = modelValue;
+        if (tier.replKey) (replState as any)[tier.replKey] = modelValue;
+        console.log(chalk.green(`\n  ✓ ${tier.label} model set to: ${modelValue}\n`));
         return true;
       }
-      console.log(chalk.blue('\n--- Available Models ---\n'));
-      for (const model of AVAILABLE_MODELS) {
-        const current = model === replState.model ? chalk.green(' (current)') : '';
-        console.log(`  ${model}${current}`);
+
+      // /models <name> — set L1 model (backwards compatible)
+      const requestedModel = args.join(' ').trim();
+      if (requestedModel && !tierMap[subArg]) {
+        replState.model = requestedModel;
+        console.log(chalk.green(`\n  ✓ L1 model set to: ${requestedModel}\n`));
+        return true;
       }
-      console.log(chalk.gray('\n  Use /model <name> or /models <name> to switch.\n'));
+
+      // /models — show all tiers
+      console.log(chalk.blue('\n--- Models by Tier ---\n'));
+
+      console.log(chalk.cyan('  L1 (chat):'));
+      for (const model of AVAILABLE_MODELS) {
+        const current = model === replState.model ? chalk.green(' ← current') : '';
+        console.log(`    ${model}${current}`);
+      }
+
+      console.log(chalk.cyan('\n  L2 (reasoning/planning):'));
+      console.log(`    CREW_REASONING_MODEL : ${process.env.CREW_REASONING_MODEL || chalk.gray('(unset — uses L1)')}`);
+      console.log(`    CREW_L2A_MODEL       : ${process.env.CREW_L2A_MODEL || chalk.gray('(unset)')}`);
+      console.log(`    CREW_L2B_MODEL       : ${process.env.CREW_L2B_MODEL || chalk.gray('(unset)')}`);
+      console.log(`    CREW_ROUTER_MODEL    : ${process.env.CREW_ROUTER_MODEL || chalk.gray('(unset)')}`);
+
+      console.log(chalk.cyan('\n  L3 (workers):'));
+      console.log(`    CREW_L3_MODEL        : ${process.env.CREW_L3_MODEL || chalk.gray('(unset — uses L1)')}`);
+      console.log(`    CREW_QA_MODEL        : ${process.env.CREW_QA_MODEL || chalk.gray('(unset)')}`);
+      console.log(`    CREW_L3_FIXER_MODEL  : ${process.env.CREW_L3_FIXER_MODEL || chalk.gray('(unset)')}`);
+      console.log(`    CREW_L3_REVIEW_MODEL : ${process.env.CREW_L3_REVIEW_MODEL || chalk.gray('(unset)')}`);
+
+      console.log(chalk.gray('\n  Set per tier:'));
+      console.log(chalk.gray('    /models l1 <name>      — L1 chat model'));
+      console.log(chalk.gray('    /models l2 <name>      — L2 reasoning model'));
+      console.log(chalk.gray('    /models l3 <name>      — L3 worker model'));
+      console.log(chalk.gray('    /models qa <name>      — L3 QA model'));
+      console.log(chalk.gray('    /models fixer <name>   — L3 fixer model'));
+      console.log(chalk.gray('    /models <name>         — shorthand for L1\n'));
       return true;
     }
 

@@ -15,7 +15,7 @@ let saveProjectMessage, loadProjectMessages;
 async function ensureImports() {
   if (saveProjectMessage) return;
   
-  // Find CrewSwarm root by looking for package.json with "name": "crewswarm"
+  // Find crewswarm root by looking for package.json with "name": "crewswarm"
   let currentDir = process.cwd();
   let crewswarmRoot = null;
   
@@ -38,7 +38,7 @@ async function ensureImports() {
   }
   
   if (!crewswarmRoot) {
-    throw new Error('[CLI Bridge] Cannot find CrewSwarm root from: ' + process.cwd());
+    throw new Error('[CLI Bridge] Cannot find crewswarm root from: ' + process.cwd());
   }
   
   const modulePath = join(crewswarmRoot, 'lib/chat/project-messages.mjs');

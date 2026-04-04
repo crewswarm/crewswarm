@@ -8,7 +8,7 @@ const program = new Command();
 
 program
   .name('crew-cli')
-  .description('CrewSwarm command-line interface')
+  .description('crewswarm command-line interface')
   .version('1.0.0');
 
 // Add monitor command

@@ -792,14 +792,14 @@ export async function main(args = []) {
 
   program
     .name('crew')
-    .description('CrewSwarm CLI - Agent orchestration made simple')
+    .description('crewswarm CLI - Agent orchestration made simple')
     .version(cliVersion);
 
   program.option('--legacy-router', 'Use legacy routing path (disables UnifiedPipeline default)', false);
 
   program
     .command('chat')
-    .description('Chat with CrewSwarm (automatically routed to best agent)')
+    .description('Chat with crewswarm (automatically routed to best agent)')
     .argument('<input...>', 'Message or question')
     .option('-p, --project <path>', 'Project directory')
     .option('-g, --gateway <url>', 'Override gateway URL')
@@ -2018,7 +2018,7 @@ export async function main(args = []) {
 
   program
     .command('status')
-    .description('Show CrewSwarm orchestration status dashboard')
+    .description('Show crewswarm orchestration status dashboard')
     .action(async () => {
       const { displayStatus } = await import('../status/dashboard.ts');
       await displayStatus();
@@ -2815,7 +2815,7 @@ export async function main(args = []) {
     .option('--continuous', 'Keep listening in a loop', false)
     .option('--max-rounds <n>', 'Maximum rounds in continuous mode', '5')
     .option('--no-tts', 'Disable TTS response playback')
-    .option('--tts-skill <id>', 'CrewSwarm skill for TTS', 'elevenlabs.tts')
+    .option('--tts-skill <id>', 'crewswarm skill for TTS', 'elevenlabs.tts')
     .action(async options => {
       const durationSec = Number.parseInt(options.durationSec || '6', 10);
       const maxRounds = Math.max(1, Number.parseInt(options.maxRounds || '5', 10));
@@ -3252,7 +3252,7 @@ export async function main(args = []) {
 
   program
     .command('skill')
-    .description('Call a CrewSwarm skill by name')
+    .description('Call a crewswarm skill by name')
     .argument('<name>', 'Skill name, e.g. zeroeval.benchmark')
     .option('--params <json>', 'JSON params payload', '{}')
     .option('-g, --gateway <url>', 'Override gateway URL')

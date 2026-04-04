@@ -21,7 +21,7 @@ export class Logger {
 
   constructor(options: { level?: string; prefix?: string } = {}) {
     this.level = options.level || 'info';
-    this.prefix = options.prefix || '[CrewSwarm]';
+    this.prefix = options.prefix || '[crewswarm]';
   }
 
   formatMessage(level: string, message: string, ...args: any[]) {

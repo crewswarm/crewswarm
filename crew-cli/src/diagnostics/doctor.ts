@@ -212,12 +212,12 @@ export async function runDoctorChecks(options: { gateway?: string; updateTag?: s
       hint: apiKeys.hint
     },
     {
-      name: 'CrewSwarm config present',
+      name: 'crewswarm config present',
       ok: config.ok,
       details: config.path
     },
     {
-      name: 'CrewSwarm gateway reachable',
+      name: 'crewswarm gateway reachable',
       ok: gatewayOk,
       details: `${gateway}/status`
     },

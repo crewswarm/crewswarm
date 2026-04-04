@@ -17,7 +17,7 @@ export async function main(args = []) {
 
   program
     .name('crew')
-    .description('CrewSwarm CLI - Agent orchestration made simple')
+    .description('crewswarm CLI - Agent orchestration made simple')
     .version('0.1.0');
 
   program

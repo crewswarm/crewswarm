@@ -1,5 +1,5 @@
 /**
- * CrewSwarm Hook System
+ * crewswarm Hook System
  *
  * Hooks allow users to run shell commands before/after tool execution.
  * Configuration lives in .crew/hooks.json or CREW_HOOKS_FILE env var.
