@@ -27,6 +27,68 @@ import {
   EXIT_PLAN_MODE_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME
 } from './definitions/base-declarations.js';
+import type {
+  ToolDeclarationSchema,
+  TrackerTask,
+  LspDiagnostic,
+  LspSymbol,
+  LspLocation,
+  LspCompletionItem,
+  NotebookCell,
+  Notebook,
+  SearchResponse,
+  SearchHit,
+} from '../../types/common.js';
+
+// ---------------------------------------------------------------------------
+// Human-readable activity descriptions for tool calls
+// ---------------------------------------------------------------------------
+function getActivityDescription(tool: string, p: Record<string, unknown>): string | null {
+  const s = (k: string) => String(p[k] || '').replace(/^.*\//, ''); // basename
+  const f = (k: string) => String(p[k] || '');
+  switch (tool) {
+    case 'read_file':         return `Reading ${f('file_path')}`;
+    case 'read_many_files':   return `Reading ${Array.isArray(p.paths) ? p.paths.length : '?'} files`;
+    case 'write_file':        return `Writing ${f('file_path')}`;
+    case 'append_file':       return `Appending to ${f('file_path')}`;
+    case 'replace': case 'edit': return `Editing ${f('file_path')}`;
+    case 'glob':              return `Globbing ${f('pattern')}`;
+    case 'grep': case 'grep_search': case 'grep_search_ripgrep':
+                              return `Searching for "${f('pattern')}"${p.path ? ` in ${f('path')}` : ''}`;
+    case 'list': case 'list_directory': return `Listing ${f('dir_path') || f('path') || '.'}`;
+    case 'mkdir':             return `Creating directory ${f('path')}`;
+    case 'shell': case 'run_cmd': case 'run_shell_command':
+                              return `Running: ${f('command').slice(0, 80)}${f('command').length > 80 ? '…' : ''}`;
+    case 'git':               return `git ${f('command').slice(0, 60)}`;
+    case 'google_web_search': case 'web_search':
+                              return `Searching web: "${f('query')}"`;
+    case 'web_fetch':         return `Fetching ${f('url').slice(0, 60)}`;
+    case 'lsp':               return `LSP ${f('action')}${p.file ? ` on ${s('file')}` : ''}`;
+    case 'notebook_edit':     return `Notebook ${f('action')} on ${s('path')}`;
+    case 'save_memory':       return `Saving memory`;
+    case 'write_todos':       return `Writing todos`;
+    case 'get_internal_docs': return `Reading internal docs`;
+    case 'spawn_agent':       return `Spawning sub-agent: ${f('task').slice(0, 60)}`;
+    case 'enter_worktree': case 'worktree': return `Worktree ${f('action') || 'enter'}`;
+    case 'exit_worktree':     return `Exiting worktree`;
+    case 'merge_worktree':    return `Merging worktree ${f('branch_name')}`;
+    case 'list_worktrees':    return `Listing worktrees`;
+    case 'sleep':             return `Sleeping ${p.duration_ms}ms${p.reason ? ` — ${f('reason')}` : ''}`;
+    case 'tool_search':       return `Searching tools: "${f('query')}"`;
+    case 'check_background_task': return `Checking background task ${f('task_id')}`;
+    case 'activate_skill':    return `Activating skill ${f('name') || f('skill')}`;
+    case 'enter_plan_mode':   return `Entering plan mode`;
+    case 'exit_plan_mode':    return `Exiting plan mode`;
+    case 'ask_user':          return null; // don't announce — the question itself is the activity
+    case 'tracker_create_task': return `Creating task: ${f('title').slice(0, 40)}`;
+    case 'tracker_update_task': return `Updating task ${f('id')}`;
+    case 'tracker_get_task':  return `Getting task ${f('id')}`;
+    case 'tracker_list_tasks': return `Listing tasks`;
+    case 'tracker_add_dependency': return `Adding dependency`;
+    case 'tracker_visualize': return `Visualizing task graph`;
+    default:                  return `${tool}`;
+  }
+}
 
 // Minimal adapter types
 export interface ToolResult {
@@ -128,6 +190,24 @@ export class CrewMessageBus {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Error helpers
+// ---------------------------------------------------------------------------
+
+/** Extract a message string from an unknown caught error */
+function errMsg(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+/** Extract shell command stderr/stdout from Node child_process errors */
+function errShell(err: unknown): string {
+  const e = err as Record<string, unknown>;
+  const stdout = typeof e?.stdout === 'string' ? e.stdout : (e?.stdout as Buffer | undefined)?.toString?.() ?? '';
+  const stderr = typeof e?.stderr === 'string' ? e.stderr : (e?.stderr as Buffer | undefined)?.toString?.() ?? '';
+  return `${stdout}\n${stderr}`.trim();
+}
+
 // Shell timeout: configurable via CREW_SHELL_TIMEOUT env (seconds), default 120s, max 600s
 function getShellTimeout(): number {
   const envVal = parseInt(process.env.CREW_SHELL_TIMEOUT || '', 10);
@@ -159,7 +239,7 @@ export class GeminiToolAdapter {
   private _constraintLevel: ConstraintLevel;
 
   constructor(private sandbox: Sandbox, constraintLevel: ConstraintLevel = 'full') {
-    const workspaceRoot = (sandbox as any).baseDir || process.cwd();
+    const workspaceRoot = sandbox.getBaseDir() || process.cwd();
     this.config = new CrewConfig(workspaceRoot);
     this.messageBus = new CrewMessageBus();
     this._constraintLevel = constraintLevel;
@@ -169,10 +249,10 @@ export class GeminiToolAdapter {
     return this._constraintLevel;
   }
 
-  private buildDynamicDeclarations(): any[] {
+  private buildDynamicDeclarations(): ToolDeclarationSchema[] {
     // Pull canonical names from Gemini base declarations and hydrate schemas from static declarations.
     const staticDecls = this.getStaticToolDeclarations();
-    const staticByName = new Map<string, any>(staticDecls.map((d: any) => [d.name, d]));
+    const staticByName = new Map<string, ToolDeclarationSchema>(staticDecls.map((d) => [d.name, d]));
     const canonicalNames = [
       READ_FILE_TOOL_NAME,
       WRITE_FILE_TOOL_NAME,
@@ -252,7 +332,7 @@ export class GeminiToolAdapter {
       // { alias: 'lsp', target: 'read_file' }
     ];
 
-    const byName = new Map<string, any>();
+    const byName = new Map<string, ToolDeclarationSchema>();
     for (const decl of canonical) byName.set(decl.name, decl);
     for (const a of aliases) {
       const target = byName.get(a.target);
@@ -355,7 +435,7 @@ export class GeminiToolAdapter {
   /**
    * Execute a tool call from LLM (with PreToolUse/PostToolUse hooks)
    */
-  async executeTool(toolName: string, params: any): Promise<ToolResult> {
+  async executeTool(toolName: string, params: Record<string, unknown>): Promise<ToolResult> {
     // Constraint level enforcement — hard block even if LLM hallucinates a removed tool
     if (!toolAllowedAtLevel(toolName, this._constraintLevel)) {
       return {
@@ -367,6 +447,10 @@ export class GeminiToolAdapter {
           : 'This is an edit worker. Use replace/edit for changes, not write_file.'
       };
     }
+
+    // Print human-readable activity description
+    const activity = getActivityDescription(toolName, params);
+    if (activity) process.stdout.write(`\x1b[90m  ⚙ ${activity}\x1b[0m\n`);
 
     // Run PreToolUse hooks
     const preResult = await runPreToolUseHooks(toolName, params);
@@ -384,7 +468,7 @@ export class GeminiToolAdapter {
     return result;
   }
 
-  private async _executeTool(toolName: string, params: any): Promise<ToolResult> {
+  private async _executeTool(toolName: string, params: Record<string, unknown>): Promise<ToolResult> {
     try {
       switch (toolName) {
         // Canonical Gemini names + local aliases
@@ -493,14 +577,14 @@ export class GeminiToolAdapter {
             error: `Unknown tool: ${toolName}`
           };
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       return {
         success: false,
-        error: err.message
+        error: errMsg(err)
       };
     }
   }
-  
+
   private async writeFile(params: { file_path: string; content: string }): Promise<ToolResult> {
     const isAbsolute = params.file_path.startsWith('/');
     const { existsSync } = await import('node:fs');
@@ -531,8 +615,8 @@ export class GeminiToolAdapter {
           success: true,
           output: `Wrote ${params.file_path} (${params.content.length} bytes)`
         };
-      } catch (err: any) {
-        return { success: false, error: `Write failed: ${err.message}` };
+      } catch (err: unknown) {
+        return { success: false, error: `Write failed: ${errMsg(err)}` };
       }
     }
 
@@ -794,13 +878,13 @@ export class GeminiToolAdapter {
       const diags = await lsp.typeCheckProject(this.config.getWorkspaceRoot(), [filePath]);
 
       // Filter to only errors in the edited file
-      const fileErrors = diags.filter((d: any) =>
+      const fileErrors = diags.filter((d: LspDiagnostic) =>
         d.category === 'error' && d.file?.endsWith(filePath)
       );
 
       if (fileErrors.length === 0) return '';
 
-      const errorLines = fileErrors.slice(0, 5).map((d: any) =>
+      const errorLines = fileErrors.slice(0, 5).map((d: LspDiagnostic) =>
         `  ${d.file}:${d.line} — ${d.message}`
       );
 
@@ -833,8 +917,8 @@ export class GeminiToolAdapter {
     try {
       const out = execSync(`rg --files -g ${JSON.stringify(pattern)}`, { cwd: process.cwd(), stdio: 'pipe', encoding: 'utf8' });
       return { success: true, output: out.trim() };
-    } catch (err: any) {
-      return { success: false, error: err?.stderr?.toString?.() || err?.message || 'glob failed' };
+    } catch (err: unknown) {
+      return { success: false, error: errShell(err) || errMsg(err) || 'glob failed' };
     }
   }
 
@@ -890,11 +974,12 @@ export class GeminiToolAdapter {
         encoding: 'utf8'
       });
       return { success: true, output: out.trim() };
-    } catch (err: any) {
-      const text = `${err?.stdout?.toString?.() || ''}\n${err?.stderr?.toString?.() || ''}`.trim();
+    } catch (err: unknown) {
+      const text = errShell(err);
       // rg returns exit code 1 for no matches — that's not an error
-      if (err?.status === 1 && !text) return { success: true, output: '(no matches)' };
-      return { success: false, error: text || err?.message || 'grep failed' };
+      const errStatus = (err as Record<string, unknown>)?.status;
+      if (errStatus === 1 && !text) return { success: true, output: '(no matches)' };
+      return { success: false, error: text || errMsg(err) || 'grep failed' };
     }
   }
 
@@ -935,9 +1020,9 @@ export class GeminiToolAdapter {
         timeout: 30000
       });
       return { success: true, output: out.trim() };
-    } catch (err: any) {
-      const text = `${err?.stdout?.toString?.() || ''}\n${err?.stderr?.toString?.() || ''}`.trim();
-      return { success: false, error: text || err?.message || 'git failed' };
+    } catch (err: unknown) {
+      const text = errShell(err);
+      return { success: false, error: text || errMsg(err) || 'git failed' };
     }
   }
 
@@ -974,8 +1059,8 @@ export class GeminiToolAdapter {
                 : { success: false, error: (stderr || stdout).trim() || `exit code ${code}` });
             });
           });
-        } catch (err: any) {
-          return { success: false, error: err.message };
+        } catch (err: unknown) {
+          return { success: false, error: errMsg(err) };
         }
       })();
       _backgroundProcesses.set(taskId, { promise: bgPromise, startedAt: Date.now() });
@@ -1015,9 +1100,9 @@ export class GeminiToolAdapter {
         timeout: getShellTimeout()
       });
       return { success: true, output: out.trim() };
-    } catch (err: any) {
-      const text = `${err?.stdout?.toString?.() || ''}\n${err?.stderr?.toString?.() || ''}`.trim();
-      return { success: false, error: text || err?.message || 'shell failed' };
+    } catch (err: unknown) {
+      const text = errShell(err);
+      return { success: false, error: text || errMsg(err) || 'shell failed' };
     }
   }
 
@@ -1038,14 +1123,14 @@ export class GeminiToolAdapter {
         }
       );
       if (!res.ok) return { success: false, error: `web_search failed: HTTP ${res.status}` };
-      const data: any = await res.json();
-      const hits = (data?.web?.results || []).slice(0, 5);
-      const formatted = hits.map((r: any, i: number) =>
+      const data = await res.json() as SearchResponse;
+      const hits = ((data?.web as { results?: SearchHit[] })?.results || []).slice(0, 5) as SearchHit[];
+      const formatted = hits.map((r: SearchHit, i: number) =>
         `${i + 1}. ${r.title || '(untitled)'}\n${r.url || ''}\n${r.description || ''}`
       ).join('\n\n');
       return { success: true, output: formatted || 'No results' };
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'web_search failed' };
+    } catch (err: unknown) {
+      return { success: false, error: errMsg(err) || 'web_search failed' };
     }
   }
 
@@ -1071,8 +1156,8 @@ export class GeminiToolAdapter {
           .trim();
       }
       return { success: true, output: text.slice(0, 12000) };
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'web_fetch failed' };
+    } catch (err: unknown) {
+      return { success: false, error: errMsg(err) || 'web_fetch failed' };
     }
   }
 
@@ -1100,8 +1185,8 @@ export class GeminiToolAdapter {
         }
       }
       return { success: true, output: chunks.join('\n\n') || 'No readable files matched' };
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'read_many_files failed' };
+    } catch (err: unknown) {
+      return { success: false, error: errMsg(err) || 'read_many_files failed' };
     }
   }
 
@@ -1117,7 +1202,7 @@ export class GeminiToolAdapter {
     return { success: true, output: 'Memory saved' };
   }
 
-  private async writeTodosTool(params: { todos: any[] }): Promise<ToolResult> {
+  private async writeTodosTool(params: { todos: unknown[] }): Promise<ToolResult> {
     const todos = Array.isArray(params.todos) ? params.todos : [];
     const memDir = resolve(this.config.getWorkspaceRoot(), '.crew');
     await mkdir(memDir, { recursive: true });
@@ -1132,12 +1217,12 @@ export class GeminiToolAdapter {
     try {
       const content = await readFile(abs, 'utf8');
       return { success: true, output: content.slice(0, 12000) };
-    } catch (err: any) {
-      return { success: false, error: `get_internal_docs failed: ${err?.message || target}` };
+    } catch (err: unknown) {
+      return { success: false, error: `get_internal_docs failed: ${errMsg(err) || target}` };
     }
   }
 
-  private async askUserTool(params: { questions?: any[] }): Promise<ToolResult> {
+  private async askUserTool(params: { questions?: unknown[] }): Promise<ToolResult> {
     const qs = Array.isArray(params.questions) ? params.questions : [];
     if (qs.length === 0) {
       return { success: false, error: 'ask_user requires at least one question' };
@@ -1153,7 +1238,7 @@ export class GeminiToolAdapter {
     await mkdir(crewDir, { recursive: true });
     await this.appendJsonLine(this.askUserRequestsPath(), request);
     await writeFile(this.askUserLatestPath(), JSON.stringify(request, null, 2), 'utf8');
-    const summary = qs.map((q: any, i: number) => `${i + 1}. ${q?.question || 'question'}`).join('\n');
+    const summary = qs.map((q: unknown, i: number) => `${i + 1}. ${(q as Record<string, unknown>)?.question || 'question'}`).join('\n');
     return {
       success: true,
       output: `User input required (non-interactive runtime).\nSaved request: ${this.relativeCrewPath(this.askUserLatestPath())}\nQuestions:\n${summary}`
@@ -1180,9 +1265,9 @@ export class GeminiToolAdapter {
   private async exitPlanModeTool(params: { plan_path?: string }): Promise<ToolResult> {
     const crewDir = this.crewDirPath();
     await mkdir(crewDir, { recursive: true });
-    let prior: any = {};
+    let prior: Record<string, unknown> = {};
     try {
-      prior = JSON.parse(await readFile(this.planModeStatePath(), 'utf8'));
+      prior = JSON.parse(await readFile(this.planModeStatePath(), 'utf8')) as Record<string, unknown>;
     } catch {
       prior = {};
     }
@@ -1204,9 +1289,9 @@ export class GeminiToolAdapter {
     if (!name) return { success: false, error: 'activate_skill requires name' };
     const crewDir = this.crewDirPath();
     await mkdir(crewDir, { recursive: true });
-    let state: any = { active: [] };
+    let state: { active?: unknown[] } = { active: [] };
     try {
-      state = JSON.parse(await readFile(this.activeSkillsPath(), 'utf8'));
+      state = JSON.parse(await readFile(this.activeSkillsPath(), 'utf8')) as { active?: unknown[] };
     } catch {
       state = { active: [] };
     }
@@ -1244,7 +1329,7 @@ export class GeminiToolAdapter {
     return absPath.replace(this.config.getWorkspaceRoot(), '.');
   }
 
-  private async appendJsonLine(filePath: string, data: any): Promise<void> {
+  private async appendJsonLine(filePath: string, data: unknown): Promise<void> {
     let prior = '';
     try {
       prior = await readFile(filePath, 'utf8');
@@ -1259,7 +1344,7 @@ export class GeminiToolAdapter {
     return resolve(this.config.getWorkspaceRoot(), '.crew', 'tracker.json');
   }
 
-  private async readTracker(): Promise<any[]> {
+  private async readTracker(): Promise<TrackerTask[]> {
     try {
       const raw = await readFile(this.trackerFilePath(), 'utf8');
       const parsed = JSON.parse(raw);
@@ -1269,7 +1354,7 @@ export class GeminiToolAdapter {
     }
   }
 
-  private async writeTracker(tasks: any[]): Promise<void> {
+  private async writeTracker(tasks: TrackerTask[]): Promise<void> {
     const dir = resolve(this.config.getWorkspaceRoot(), '.crew');
     await mkdir(dir, { recursive: true });
     await writeFile(this.trackerFilePath(), JSON.stringify(tasks, null, 2), 'utf8');
@@ -1279,43 +1364,43 @@ export class GeminiToolAdapter {
     return Math.random().toString(16).slice(2, 8);
   }
 
-  private async trackerCreateTaskTool(params: any): Promise<ToolResult> {
+  private async trackerCreateTaskTool(params: Record<string, unknown>): Promise<ToolResult> {
     const tasks = await this.readTracker();
-    const task = {
+    const task: TrackerTask = {
       id: this.mkTrackerId(),
       title: String(params?.title || 'Untitled'),
       description: String(params?.description || ''),
       type: String(params?.type || 'task'),
-      status: 'open',
-      parentId: params?.parentId || null,
-      dependencies: Array.isArray(params?.dependencies) ? params.dependencies : []
+      status: 'pending',
+      parentId: typeof params?.parentId === 'string' ? params.parentId : undefined,
+      dependencies: Array.isArray(params?.dependencies) ? (params.dependencies as string[]) : []
     };
     tasks.push(task);
     await this.writeTracker(tasks);
     return { success: true, output: JSON.stringify(task, null, 2) };
   }
 
-  private async trackerUpdateTaskTool(params: any): Promise<ToolResult> {
+  private async trackerUpdateTaskTool(params: Record<string, unknown>): Promise<ToolResult> {
     const tasks = await this.readTracker();
     const id = String(params?.id || '');
-    const idx = tasks.findIndex((t: any) => t.id === id);
+    const idx = tasks.findIndex((t) => t.id === id);
     if (idx < 0) return { success: false, error: `Task not found: ${id}` };
     tasks[idx] = { ...tasks[idx], ...params };
     await this.writeTracker(tasks);
     return { success: true, output: JSON.stringify(tasks[idx], null, 2) };
   }
 
-  private async trackerGetTaskTool(params: any): Promise<ToolResult> {
+  private async trackerGetTaskTool(params: Record<string, unknown>): Promise<ToolResult> {
     const tasks = await this.readTracker();
     const id = String(params?.id || '');
-    const task = tasks.find((t: any) => t.id === id);
+    const task = tasks.find((t) => t.id === id);
     if (!task) return { success: false, error: `Task not found: ${id}` };
     return { success: true, output: JSON.stringify(task, null, 2) };
   }
 
-  private async trackerListTasksTool(params: any): Promise<ToolResult> {
+  private async trackerListTasksTool(params: Record<string, unknown>): Promise<ToolResult> {
     const tasks = await this.readTracker();
-    const filtered = tasks.filter((t: any) => {
+    const filtered = tasks.filter((t) => {
       if (params?.status && t.status !== params.status) return false;
       if (params?.type && t.type !== params.type) return false;
       if (params?.parentId && t.parentId !== params.parentId) return false;
@@ -1324,11 +1409,11 @@ export class GeminiToolAdapter {
     return { success: true, output: JSON.stringify(filtered, null, 2) };
   }
 
-  private async trackerAddDependencyTool(params: any): Promise<ToolResult> {
+  private async trackerAddDependencyTool(params: Record<string, unknown>): Promise<ToolResult> {
     const tasks = await this.readTracker();
     const taskId = String(params?.taskId || '');
     const depId = String(params?.dependencyId || '');
-    const idx = tasks.findIndex((t: any) => t.id === taskId);
+    const idx = tasks.findIndex((t) => t.id === taskId);
     if (idx < 0) return { success: false, error: `Task not found: ${taskId}` };
     const deps = new Set(Array.isArray(tasks[idx].dependencies) ? tasks[idx].dependencies : []);
     deps.add(depId);
@@ -1339,7 +1424,7 @@ export class GeminiToolAdapter {
 
   private async trackerVisualizeTool(): Promise<ToolResult> {
     const tasks = await this.readTracker();
-    const lines = tasks.map((t: any) => {
+    const lines = tasks.map((t) => {
       const deps = Array.isArray(t.dependencies) && t.dependencies.length
         ? ` -> [${t.dependencies.join(', ')}]`
         : '';
@@ -1363,14 +1448,14 @@ export class GeminiToolAdapter {
       const file = query.slice('symbols'.length).trim();
       if (!file) return { success: false, error: 'lsp symbols requires file path' };
       const symbols = await lsp.getDocumentSymbols(process.cwd(), file);
-      return { success: true, output: symbols.map((s: any) => `${file}:${s.line}:${s.column} ${s.kind} ${s.name}`).join('\n') };
+      return { success: true, output: symbols.map((s: LspSymbol) => `${file}:${s.line}:${s.column} ${s.kind} ${s.name}`).join('\n') };
     }
     if (lower.startsWith('refs')) {
       const target = query.slice('refs'.length).trim();
       const match = target.match(/^(.+):(\d+)(?::(\d+))?$/);
       if (match) {
         const refs = await lsp.getReferences(process.cwd(), match[1], Number(match[2]), Number(match[3] || '1'));
-        return { success: true, output: refs.map((r: any) => `${r.file}:${r.line}:${r.column}`).join('\n') };
+        return { success: true, output: refs.map((r: LspLocation) => `${r.file}:${r.line}:${r.column}`).join('\n') };
       }
       if (target) return this.grepTool({ pattern: `\\b${target}\\b`, path: '.' });
       return { success: false, error: 'lsp refs requires symbol or file:line[:col]' };
@@ -1380,18 +1465,18 @@ export class GeminiToolAdapter {
       const match = target.match(/^(.+):(\d+)(?::(\d+))?$/);
       if (!match) return { success: false, error: 'lsp goto format: file:line[:col]' };
       const defs = await lsp.getDefinitions(process.cwd(), match[1], Number(match[2]), Number(match[3] || '1'));
-      return { success: true, output: defs.map((d: any) => `${d.file}:${d.line}:${d.column}`).join('\n') };
+      return { success: true, output: defs.map((d: LspLocation) => `${d.file}:${d.line}:${d.column}`).join('\n') };
     }
     if (lower.startsWith('diagnostics') || lower === 'check') {
       const diags = await lsp.typeCheckProject(process.cwd(), []);
-      return { success: true, output: diags.map((d: any) => `${d.file}:${d.line}:${d.column} [${d.category}] ${d.message}`).join('\n') };
+      return { success: true, output: diags.map((d: LspDiagnostic) => `${d.file}:${d.line}:${d.column} [${d.category}] ${d.message}`).join('\n') };
     }
     if (lower.startsWith('complete')) {
       const target = query.slice('complete'.length).trim();
       const match = target.match(/^(.+):(\d+):(\d+)(?:\s+(.+))?$/);
       if (!match) return { success: false, error: 'lsp complete format: file:line:col [prefix]' };
       const items = await lsp.getCompletions(process.cwd(), match[1], Number(match[2]), Number(match[3]), 50, match[4] || '');
-      return { success: true, output: items.map((i: any) => `${i.name} (${i.kind})`).join('\n') };
+      return { success: true, output: items.map((i: LspCompletionItem) => `${i.name} (${i.kind})`).join('\n') };
     }
     return { success: false, error: `Unsupported lsp query: ${query}` };
   }
@@ -1412,7 +1497,7 @@ export class GeminiToolAdapter {
           try {
             const diags = await lsp.typeCheckProject(workspaceRoot, [absFile]);
             if (diags.length === 0) return { success: true, output: 'No diagnostics found.' };
-            return { success: true, output: diags.map((d: any) => `${d.file}:${d.line}:${d.column} [${d.category}] TS${d.code}: ${d.message}`).join('\n') };
+            return { success: true, output: diags.map((d: LspDiagnostic) => `${d.file}:${d.line}:${d.column} [${d.category}] TS${d.code}: ${d.message}`).join('\n') };
           } catch {
             const out = execSync(`npx tsc --noEmit 2>&1 || true`, { cwd: workspaceRoot, encoding: 'utf8', timeout: 30000 });
             return { success: true, output: out.trim() || 'No diagnostics found.' };
@@ -1430,15 +1515,16 @@ export class GeminiToolAdapter {
           try {
             const defs = await lsp.getDefinitions(workspaceRoot, absFile, line, column ?? 1);
             if (defs.length === 0) return { success: true, output: 'No definition found.' };
-            return { success: true, output: defs.map((d: any) => `${d.file}:${d.line}:${d.column}`).join('\n') };
+            return { success: true, output: defs.map((d: LspLocation) => `${d.file}:${d.line}:${d.column}`).join('\n') };
           } catch { /* fall through to grep */ }
         }
         const sym = symbol || 'unknown';
         try {
           const out = execSync(`grep -rn -E "export (function|class|const|let|var|interface|type|enum) ${sym}|def ${sym}|func ${sym}|function ${sym}" .`, { cwd: workspaceRoot, encoding: 'utf8', timeout: 15000 });
           return { success: true, output: out.trim() || 'No definition found.' };
-        } catch (e: any) {
-          return { success: true, output: e?.status === 1 ? 'No definition found.' : `grep failed: ${e?.message}` };
+        } catch (e: unknown) {
+          const es = e as Record<string, unknown>;
+          return { success: true, output: es?.status === 1 ? 'No definition found.' : `grep failed: ${errMsg(e)}` };
         }
       }
 
@@ -1447,15 +1533,16 @@ export class GeminiToolAdapter {
           try {
             const refs = await lsp.getReferences(workspaceRoot, absFile, line, column ?? 1);
             if (refs.length === 0) return { success: true, output: 'No references found.' };
-            return { success: true, output: refs.map((r: any) => `${r.file}:${r.line}:${r.column}`).join('\n') };
+            return { success: true, output: refs.map((r: LspLocation) => `${r.file}:${r.line}:${r.column}`).join('\n') };
           } catch { /* fall through to grep */ }
         }
         const sym = symbol || 'unknown';
         try {
           const out = execSync(`grep -rn "\\b${sym}\\b" --include="*.ts" --include="*.js" --include="*.py" --include="*.go" .`, { cwd: workspaceRoot, encoding: 'utf8', timeout: 15000 });
           return { success: true, output: out.trim() || 'No references found.' };
-        } catch (e: any) {
-          return { success: true, output: e?.status === 1 ? 'No references found.' : `grep failed: ${e?.message}` };
+        } catch (e: unknown) {
+          const es = e as Record<string, unknown>;
+          return { success: true, output: es?.status === 1 ? 'No references found.' : `grep failed: ${errMsg(e)}` };
         }
       }
 
@@ -1464,16 +1551,16 @@ export class GeminiToolAdapter {
         if (isTs || isJs) {
           try {
             const symbols = await lsp.getDocumentSymbols(workspaceRoot, absFile);
-            const near = symbols.filter((s: any) => Math.abs(s.line - line) <= 1);
-            if (near.length > 0) return { success: true, output: near.map((s: any) => `${s.kind} ${s.name} (line ${s.line}:${s.column})`).join('\n') };
+            const near = symbols.filter((s: LspSymbol) => Math.abs(s.line - line) <= 1);
+            if (near.length > 0) return { success: true, output: near.map((s: LspSymbol) => `${s.kind} ${s.name} (line ${s.line}:${s.column})`).join('\n') };
           } catch { /* fall through */ }
         }
         try {
           const content = await readFile(absFile, 'utf8');
           const lines = content.split('\n');
           return { success: true, output: lines[(line - 1)] || '' };
-        } catch (e: any) {
-          return { success: false, error: `Could not read file: ${e?.message}` };
+        } catch (e: unknown) {
+          return { success: false, error: `Could not read file: ${errMsg(e)}` };
         }
       }
 
@@ -1483,17 +1570,17 @@ export class GeminiToolAdapter {
           try {
             const items = await lsp.getCompletions(workspaceRoot, absFile, line, column, 30, '');
             if (items.length === 0) return { success: true, output: 'No completions found.' };
-            return { success: true, output: items.map((i: any) => `${i.name} (${i.kind})`).join('\n') };
-          } catch (e: any) {
-            return { success: false, error: `completions failed: ${e?.message}` };
+            return { success: true, output: items.map((i: LspCompletionItem) => `${i.name} (${i.kind})`).join('\n') };
+          } catch (e: unknown) {
+            return { success: false, error: `completions failed: ${errMsg(e)}` };
           }
         }
         return { success: false, error: `Completions not supported for .${ext} files` };
       }
 
       return { success: false, error: `Unknown lsp action: ${action}` };
-    } catch (err: any) {
-      return { success: false, error: `LSP error: ${err?.message || String(err)}` };
+    } catch (err: unknown) {
+      return { success: false, error: `LSP error: ${errMsg(err)}` };
     }
   }
 
@@ -1507,12 +1594,12 @@ export class GeminiToolAdapter {
       try {
         const raw = await readFile(nbPath, 'utf8');
         return JSON.parse(raw);
-      } catch (e: any) {
-        throw new Error(`Cannot read notebook ${params.path}: ${e.message}`);
+      } catch (e: unknown) {
+        throw new Error(`Cannot read notebook ${params.path}: ${errMsg(e)}`);
       }
     }
 
-    async function saveNb(nb: any) {
+    async function saveNb(nb: Notebook) {
       await mkdir(dirname(nbPath), { recursive: true });
       await writeFile(nbPath, JSON.stringify(nb, null, 1), 'utf8');
     }
@@ -1526,7 +1613,7 @@ export class GeminiToolAdapter {
     try {
       if (action === 'read') {
         const nb = await loadNb();
-        const cells = (nb.cells || []).map((c: any, i: number) => {
+        const cells = (nb.cells || []).map((c: NotebookCell, i: number) => {
           const src = (Array.isArray(c.source) ? c.source.join('') : c.source || '').slice(0, 200);
           const outs = Array.isArray(c.outputs) && c.outputs.length ? ` [${c.outputs.length} output(s)]` : '';
           return `[${i}] ${c.cell_type}${outs}:\n${src}`;
@@ -1538,7 +1625,7 @@ export class GeminiToolAdapter {
       if (action === 'add_cell') {
         if (content == null) return { success: false, error: "add_cell requires 'content'" };
         const nb = await loadNb();
-        const newCell: any = { cell_type: cell_type ?? 'code', source: toLines(content), metadata: {}, outputs: [], execution_count: null };
+        const newCell: NotebookCell = { cell_type: cell_type ?? 'code', source: toLines(content), metadata: {}, outputs: [], execution_count: null };
         if (index != null && index >= 0 && index <= nb.cells.length) nb.cells.splice(index, 0, newCell);
         else nb.cells.push(newCell);
         await saveNb(nb);
@@ -1575,15 +1662,15 @@ export class GeminiToolAdapter {
         try {
           const out = execSync(`python3 -c ${JSON.stringify(src)}`, { cwd: this.config.getWorkspaceRoot(), encoding: 'utf8', timeout: 30000 });
           return { success: true, output: `Cell ${index} executed:\n${out.trim() || '(no output)'}` };
-        } catch (pyErr: any) {
-          const stderr = pyErr?.stderr?.toString?.()?.trim() || pyErr?.message || 'execution failed';
+        } catch (pyErr: unknown) {
+          const stderr = errShell(pyErr).trim() || errMsg(pyErr) || 'execution failed';
           return { success: false, error: `Cell ${index} execution failed:\n${stderr}` };
         }
       }
 
       return { success: false, error: `Unknown notebook_edit action: ${action}` };
-    } catch (err: any) {
-      return { success: false, error: `NotebookEdit error: ${err?.message || String(err)}` };
+    } catch (err: unknown) {
+      return { success: false, error: `NotebookEdit error: ${errMsg(err)}` };
     }
   }
 
@@ -1666,12 +1753,12 @@ export class GeminiToolAdapter {
       ].filter(Boolean).join('\n');
 
       return { success: result.success, output };
-    } catch (err: any) {
+    } catch (err: unknown) {
       GeminiToolAdapter._spawnDepth = Math.max(0, GeminiToolAdapter._spawnDepth - 1);
       // Try to clean up branch
       try { await this.sandbox.switchBranch('main'); } catch { /* ignore */ }
       try { await this.sandbox.deleteBranch(branchName); } catch { /* ignore */ }
-      return { success: false, error: `Sub-agent failed: ${err.message}` };
+      return { success: false, error: `Sub-agent failed: ${errMsg(err)}` };
     }
   }
 
@@ -1680,16 +1767,16 @@ export class GeminiToolAdapter {
    */
   getToolDeclarations() {
     const dynamicEnabled = process.env.CREW_GEMINI_DYNAMIC_DECLARATIONS !== 'false';
-    let allDecls: any[];
+    let allDecls: ToolDeclarationSchema[] | undefined;
     if (dynamicEnabled) {
       try {
         const decls = this.buildDynamicDeclarations();
-        allDecls = decls.length > 0 ? decls : undefined as any;
+        allDecls = decls.length > 0 ? decls : undefined;
       } catch {
         // Fallback to static declarations below.
       }
     }
-    if (!allDecls!) {
+    if (!allDecls) {
       allDecls = [
       {
         name: 'read_file',
@@ -2095,7 +2182,7 @@ export class GeminiToolAdapter {
 
     // Filter by constraint level — removes tools the worker shouldn't see
     if (this._constraintLevel !== 'full') {
-      allDecls = allDecls.filter((d: any) => toolAllowedAtLevel(d.name, this._constraintLevel));
+      allDecls = allDecls.filter((d) => toolAllowedAtLevel(d.name, this._constraintLevel));
     }
     return allDecls;
   }
@@ -2104,7 +2191,7 @@ export class GeminiToolAdapter {
 
   private enterWorktreeTool(params: { branch_prefix?: string; agent_id?: string }): ToolResult {
     try {
-      const info = enterWorktree((this.sandbox as any).baseDir || process.cwd(), {
+      const info = enterWorktree(this.sandbox.getBaseDir() || process.cwd(), {
         branchPrefix: params.branch_prefix,
         agentId: params.agent_id
       });
@@ -2117,15 +2204,15 @@ export class GeminiToolAdapter {
           message: `Created worktree at ${info.worktreePath} on branch ${info.branchName}`
         })
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: errMsg(err) };
     }
   }
 
   private async exitWorktreeTool(params: { branch_name: string }): Promise<ToolResult> {
     if (!params.branch_name) return { success: false, error: 'exit_worktree requires branch_name' };
     try {
-      const result = await exitWorktree((this.sandbox as any).baseDir || process.cwd(), params.branch_name);
+      const result = await exitWorktree(this.sandbox.getBaseDir() || process.cwd(), params.branch_name);
       return {
         success: true,
         output: JSON.stringify({
@@ -2137,8 +2224,8 @@ export class GeminiToolAdapter {
             : `Worktree cleaned up — no changes were made.`
         })
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: errMsg(err) };
     }
   }
 
@@ -2146,13 +2233,13 @@ export class GeminiToolAdapter {
     if (!params.branch_name) return { success: false, error: 'merge_worktree requires branch_name' };
     try {
       const result = mergeWorktree(
-        (this.sandbox as any).baseDir || process.cwd(),
+        this.sandbox.getBaseDir() || process.cwd(),
         params.branch_name,
         params.strategy || 'squash'
       );
       return { success: result.success, output: result.message, error: result.success ? undefined : result.message };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: errMsg(err) };
     }
   }
 
@@ -2181,7 +2268,7 @@ export class GeminiToolAdapter {
     projectDir?: string;
   }): Promise<ToolResult> {
     const { action, branch, projectDir } = params;
-    const cwd = projectDir || (this.sandbox as any).baseDir || process.cwd();
+    const cwd = projectDir || this.sandbox.getBaseDir() || process.cwd();
 
     switch (action) {
       case 'enter':
@@ -2227,7 +2314,7 @@ export class GeminiToolAdapter {
     const allDecls = this.buildDynamicDeclarations();
 
     const scored = allDecls
-      .map((decl: any) => {
+      .map((decl) => {
         const name = (decl.name || '').toLowerCase();
         const desc = (decl.description || '').toLowerCase();
         let score = 0;
@@ -2237,15 +2324,15 @@ export class GeminiToolAdapter {
         if (desc.includes(query)) score += 20;
         return { decl, score };
       })
-      .filter(({ score }: any) => score > 0)
-      .sort((a: any, b: any) => b.score - a.score)
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)
       .slice(0, maxResults);
 
     if (scored.length === 0) {
       return { success: true, output: `No tools found matching "${params.query}".` };
     }
 
-    const results = scored.map(({ decl }: any) => ({
+    const results = scored.map(({ decl }) => ({
       name: decl.name,
       description: decl.description,
       parameterSchema: decl.parameters || {}
