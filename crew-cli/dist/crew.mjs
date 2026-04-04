@@ -11841,7 +11841,6 @@ var init_unified = __esm({
     init_worktree();
     init_sandbox();
     UnifiedPipeline = class {
-      // Optional SessionManager for cache tracking
       constructor(sandbox, session) {
         this.logger = new Logger();
         this.composer = new PromptComposer();
@@ -21438,7 +21437,7 @@ function buildModelSummary(projectDir, state) {
   const mode = envMode === "connected" ? "connected" : state.useGateway ? "connected" : "standalone";
   const policyPath = join40(projectDir, ".crew", "model-policy.json");
   const policy = readJsonFile(policyPath) || {};
-  const tiers = policy?.tiers || {};
+  const tiers = policy?.tiers && typeof policy.tiers === "object" ? policy.tiers : {};
   const policyTierModels = Array.from(
     new Set(
       ["planner", "executor", "worker"].flatMap((tier) => {
@@ -21984,8 +21983,9 @@ async function startRepl(options) {
     process.stdout.write(`\x1B[0K`);
     ghostText = "";
   };
+  const rlInternal = rl;
   const renderGhost = () => {
-    const line = rl.line;
+    const line = rlInternal.line;
     if (!line || !line.startsWith("/") || line.includes(" ")) {
       if (ghostText) clearGhost();
       return;
@@ -22016,10 +22016,10 @@ async function startRepl(options) {
       return;
     }
     if (key.name === "right" && ghostText) {
-      const line = rl.line;
+      const line = rlInternal.line;
       const accepted = line + ghostText;
-      rl.line = accepted;
-      rl.cursor = accepted.length;
+      rlInternal.line = accepted;
+      rlInternal.cursor = accepted.length;
       process.stdout.write(`\x1B[0K`);
       process.stdout.write(ghostText);
       ghostText = "";
@@ -22522,10 +22522,12 @@ async function startRepl(options) {
       console.log(chalk3.blue(`
 --- Last ${entries.length} Messages ---`));
       entries.forEach((e) => {
-        const time = e.timestamp?.split("T")[1]?.split(".")[0] || "";
-        const type = e.type || "unknown";
-        console.log(`${chalk3.gray(`[${time}]`)} ${chalk3.bold(type)}${e.agent ? chalk3.gray(` (${e.agent})`) : ""}`);
-        if (e.task) console.log(chalk3.gray(`  ${e.task.slice(0, 80)}${e.task.length > 80 ? "..." : ""}`));
+        const entry = e;
+        const time = entry.timestamp?.split("T")[1]?.split(".")[0] || "";
+        const type = entry.type || "unknown";
+        console.log(`${chalk3.gray(`[${time}]`)} ${chalk3.bold(type)}${entry.agent ? chalk3.gray(` (${entry.agent})`) : ""}`);
+        const taskStr = entry.task || entry.input || "";
+        if (taskStr) console.log(chalk3.gray(`  ${taskStr.slice(0, 80)}${taskStr.length > 80 ? "..." : ""}`));
       });
       console.log();
       return true;
@@ -22881,7 +22883,7 @@ ${diff.slice(0, 2e3)}`,
       if (sub === "check") {
         const files = args.slice(1);
         const { typeCheckProject: typeCheckProject2 } = await Promise.resolve().then(() => (init_lsp(), lsp_exports));
-        const diagnostics = typeCheckProject2(projectDir, files);
+        const diagnostics = await typeCheckProject2(projectDir, files);
         if (diagnostics.length === 0) {
           console.log(chalk3.green("\n  \u2713 No LSP diagnostics found.\n"));
           return true;
@@ -22905,7 +22907,7 @@ Found ${diagnostics.length} diagnostic(s):`));
           return true;
         }
         const { getCompletions: getCompletions2 } = await Promise.resolve().then(() => (init_lsp(), lsp_exports));
-        const completions = getCompletions2(projectDir, file, line, column, 20, prefix);
+        const completions = await getCompletions2(projectDir, file, line, column, 20, prefix);
         if (completions.length === 0) {
           console.log(chalk3.yellow("\n  No completions found.\n"));
           return true;
@@ -23283,10 +23285,10 @@ ${memoryContext}`;
             response: responseText2
           });
           await session.trackCost({
-            inputTokens: trimmed.length / 4,
-            outputTokens: responseText2.length / 4,
+            promptTokens: trimmed.length / 4,
+            completionTokens: responseText2.length / 4,
             model: "groq-router",
-            costUsd: 1e-4
+            usd: 1e-4
           });
         } catch {
         }
@@ -23321,8 +23323,9 @@ ${memoryContext}`;
         const recentHistory = sess.history.slice(-10);
         if (recentHistory.length > 0) {
           conversationContext = recentHistory.map((entry) => {
-            const input2 = entry.input || entry.task || "";
-            const output = entry.output || entry.response || entry.result || "";
+            const histEntry = entry;
+            const input2 = histEntry.input || histEntry.task || "";
+            const output = histEntry.output || histEntry.response || histEntry.result || "";
             if (!input2 && !output) return "";
             const parts = [];
             if (input2) parts.push(`User: ${input2}`);
@@ -23373,51 +23376,42 @@ ${memoryContext}`;
         async () => router.dispatch(agent, taskInput, dispatchOpts),
         policy
       );
-      await session.appendHistory({
-        type: "repl_request",
-        agent,
-        task: taskInput,
-        projectDir
-      });
-      await session.appendHistory({
-        type: "repl_result",
-        agent,
-        success: Boolean(result2.success),
-        result: result2.result
-      });
+      const typedResult = result2;
+      await session.appendHistory({ type: "repl_request", agent, task: taskInput, projectDir });
+      await session.appendHistory({ type: "repl_result", agent, success: Boolean(typedResult.success), result: typedResult.result });
       await session.appendRouting({
         route: route.decision,
-        model: result2.model || replState.model || "unknown",
+        model: typedResult.model || replState.model || "unknown",
         agent: standaloneMode ? "local-executor" : agent,
         mode: standaloneMode ? "standalone" : "connected"
       });
-      if (result2.costUsd && result2.model) {
+      if (typedResult.costUsd && typedResult.model) {
         await session.trackCost({
-          model: result2.model,
-          usd: result2.costUsd,
-          promptTokens: result2.promptTokens || 0,
-          completionTokens: result2.completionTokens || 0
+          model: typedResult.model,
+          usd: typedResult.costUsd,
+          promptTokens: typedResult.promptTokens || 0,
+          completionTokens: typedResult.completionTokens || 0
         });
       }
-      const responseText = String(result2.stdout || result2.response || result2.result || result2.stderr || "");
+      const responseText = String(typedResult.stdout || typedResult.response || typedResult.result || typedResult.stderr || "");
       console.log(chalk3.cyan("\n  \u250C\u2500 Response"));
       logger3.printWithHighlight(responseText);
       console.log("  \u2514\u2500");
-      const providerInfo = result2.providerId || result2.provider || result2.model || replState.model;
-      const modelUsed = result2.modelUsed || result2.model || providerInfo;
-      const engineUsed = result2.engine || (useDirectCliEngine ? selectedStandaloneEngine : standaloneMode ? "crew-cli" : dispatchOpts.engine || replState.engine || "gateway");
+      const providerInfo = typedResult.providerId || typedResult.provider || typedResult.model || replState.model;
+      const modelUsed = typedResult.modelUsed || typedResult.model || providerInfo;
+      const engineUsed = typedResult.engine || (useDirectCliEngine ? selectedStandaloneEngine : standaloneMode ? "crew-cli" : dispatchOpts.engine || replState.engine || "gateway");
       const routeUsed = route.decision || (standaloneMode ? "EXECUTE" : "DISPATCH");
-      const responseCost = result2.costUsd || result2.cost || 0;
-      const turnsUsed = result2.turns || 1;
-      const toolCount = result2.toolsUsed?.length || toolProgressLog.length || 0;
+      const responseCost = typedResult.costUsd || typedResult.cost || 0;
+      const turnsUsed = typedResult.turns || 1;
+      const toolCount = typedResult.toolsUsed?.length || toolProgressLog.length || 0;
       if (modelUsed || responseCost) {
         const costStr = responseCost > 0 ? `$${Number(responseCost).toFixed(4)}` : "free";
         console.log(chalk3.gray(`  \u26A1 route=${routeUsed} \xB7 engine=${engineUsed} \xB7 provider=${providerInfo}`));
         console.log(chalk3.gray(`  \u26A1 model=${modelUsed} \xB7 ${turnsUsed} turn${turnsUsed > 1 ? "s" : ""} \xB7 ${toolCount} tool${toolCount !== 1 ? "s" : ""} \xB7 ${costStr}`));
       }
-      if (Array.isArray(result2.timeline) && result2.timeline.length > 0) {
+      if (Array.isArray(typedResult.timeline) && typedResult.timeline.length > 0) {
         console.log(chalk3.gray("\n  Timeline"));
-        for (const step of result2.timeline) {
+        for (const step of typedResult.timeline) {
           console.log(chalk3.gray(`  - ${step.phase} @ ${step.ts}`));
         }
       }
@@ -24584,7 +24578,8 @@ function commandOutput(command) {
     const output = String(execSync7(`${command} 2>&1`, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })).trim();
     return { ok: true, output };
   } catch (error) {
-    const output = String(error?.stdout || error?.stderr || "").trim();
+    const execError = error;
+    const output = String(execError.stdout || execError.stderr || "").trim();
     return { ok: false, output };
   }
 }
@@ -24718,10 +24713,11 @@ async function runValidationCommands2(commands = [], cwd = process.cwd()) {
       if (String(out || "").trim().length > 0) {
       }
     } catch (error) {
+      const execError = error;
       return {
         passed: false,
         failedCommand: cmd,
-        output: String(error?.stderr || error?.message || "")
+        output: String(execError.stderr || error?.message || "")
       };
     }
   }
@@ -27599,7 +27595,8 @@ ${check.stderr.slice(0, 4e3)}
             logger3.success("Check passed!");
             passed = true;
           } catch (err) {
-            const output = String(err.stderr || err.stdout || err.message || "");
+            const execError = err;
+            const output = String(execError.stderr || execError.stdout || execError.message || "");
             const diagnostics = parseDiagnosticOutput(output, options.check);
             if (diagnostics.length > 0) {
               logger3.error(`Check failed with ${diagnostics.length} diagnostic(s):`);
