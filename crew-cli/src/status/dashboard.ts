@@ -43,7 +43,7 @@ export async function getSystemStatus(): Promise<StatusInfo> {
     const cfgPath = `${homedir()}/.crewswarm/crewswarm.json`;
     const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
     const providerEntries = cfg.providers || {};
-    for (const [id, p] of Object.entries(providerEntries) as [string, any][]) {
+    for (const [id, p] of Object.entries(providerEntries) as [string, Record<string, unknown>][]) {
       if (p.apiKey && String(p.apiKey).trim()) {
         providers.push(id);
       }
