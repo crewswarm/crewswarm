@@ -69,6 +69,7 @@ function getActivityDescription(tool: string, p: Record<string, unknown>): strin
     case 'write_todos':       return `Writing todos`;
     case 'get_internal_docs': return `Reading internal docs`;
     case 'spawn_agent':       return `Spawning sub-agent: ${f('task').slice(0, 60)}`;
+    case 'agent_message':     return `Messaging sub-agent ${s('session_id')}: ${f('message').slice(0, 50)}`;
     case 'enter_worktree': case 'worktree': return `Worktree ${f('action') || 'enter'}`;
     case 'exit_worktree':     return `Exiting worktree`;
     case 'merge_worktree':    return `Merging worktree ${f('branch_name')}`;
@@ -126,7 +127,7 @@ const EDIT_TOOLS = new Set([
 
 const FULL_TOOLS = new Set([
   ...EDIT_TOOLS,
-  'write_file', 'spawn_agent'
+  'write_file', 'spawn_agent', 'agent_message'
 ]);
 
 function toolAllowedAtLevel(toolName: string, level: ConstraintLevel): boolean {
@@ -279,6 +280,7 @@ export class GeminiToolAdapter {
       'tracker_add_dependency',
       'tracker_visualize',
       'spawn_agent',
+      'agent_message',
       'notebook_edit',
       'check_background_task',
       'worktree',
@@ -423,7 +425,8 @@ export class GeminiToolAdapter {
       { name: 'tracker_list_tasks', description: 'List tracker tasks', parameters: { type: 'object', properties: { status: { type: 'string' }, type: { type: 'string' }, parentId: { type: 'string' } } } },
       { name: 'tracker_add_dependency', description: 'Add tracker dependency', parameters: { type: 'object', properties: { taskId: { type: 'string' }, dependencyId: { type: 'string' } }, required: ['taskId', 'dependencyId'] } },
       { name: 'tracker_visualize', description: 'Visualize tracker graph', parameters: { type: 'object', properties: {} } },
-      { name: 'spawn_agent', description: 'Spawn a sub-agent to handle a task autonomously. The sub-agent runs in an isolated sandbox branch with a limited tool set and cheaper model. Use for independent research, file analysis, or coding subtasks. Returns the sub-agent result when complete.', parameters: { type: 'object', properties: { task: { type: 'string', description: 'Clear task description for the sub-agent' }, tools: { type: 'array', items: { type: 'string' }, description: 'Optional subset of tool names the sub-agent may use' }, maxTurns: { type: 'number', description: 'Max turns for sub-agent (default: 10, max: 25)' }, model: { type: 'string', description: 'Optional model override (default: cheapest configured model)' } }, required: ['task'] } },
+      { name: 'spawn_agent', description: 'Spawn a sub-agent to handle a task autonomously. Returns a session_id you can use with agent_message for follow-up conversations. The sub-agent runs in an isolated sandbox branch with a cheaper model.', parameters: { type: 'object', properties: { task: { type: 'string', description: 'Clear task description for the sub-agent' }, tools: { type: 'array', items: { type: 'string' }, description: 'Optional subset of tool names the sub-agent may use' }, maxTurns: { type: 'number', description: 'Max turns for sub-agent (default: 15, max: 25)' }, model: { type: 'string', description: 'Optional model override (default: cheapest configured model)' } }, required: ['task'] } },
+      { name: 'agent_message', description: 'Send a follow-up message to an existing sub-agent session. The sub-agent resumes with its full prior conversation context and file access. Use this for multi-turn collaboration: spawn an agent, review its work, then send corrections or next steps.', parameters: { type: 'object', properties: { session_id: { type: 'string', description: 'Session ID returned by spawn_agent' }, message: { type: 'string', description: 'Follow-up message or instruction for the sub-agent' }, max_turns: { type: 'number', description: 'Max turns for this follow-up (default: 10, max: 25)' } }, required: ['session_id', 'message'] } },
       { name: 'notebook_edit', description: 'Edit Jupyter notebooks (.ipynb files). Actions: read (view structure), add_cell, edit_cell, delete_cell, run_cell.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['add_cell', 'edit_cell', 'delete_cell', 'run_cell', 'read'], description: 'Notebook action' }, path: { type: 'string', description: 'Path to .ipynb file' }, index: { type: 'number', description: '0-based cell index' }, cell_type: { type: 'string', enum: ['code', 'markdown'], description: 'Cell type for add_cell' }, content: { type: 'string', description: 'Cell source content for add_cell/edit_cell' } }, required: ['action', 'path'] } },
       { name: 'check_background_task', description: 'Check the status/result of a background shell command. Returns result if done, or elapsed time if still running.', parameters: { type: 'object', properties: { task_id: { type: 'string', description: 'Task ID returned by run_shell_command with run_in_background:true' } }, required: ['task_id'] } },
       { name: 'worktree', description: 'Manage git worktrees to isolate agent work on separate branches. Actions: enter (create), exit (remove), merge (merge branch), list (list active).', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['enter', 'exit', 'merge', 'list'], description: 'Worktree action' }, branch: { type: 'string', description: 'Branch name for enter/exit/merge' }, merge: { type: 'boolean', description: 'Merge on exit (default: true)' }, projectDir: { type: 'string', description: 'Override project directory' } }, required: ['action'] } },
@@ -555,6 +558,8 @@ export class GeminiToolAdapter {
           return await this.trackerVisualizeTool();
         case 'spawn_agent':
           return await this.spawnAgentTool(params);
+        case 'agent_message':
+          return await this.agentMessageTool(params as any);
         case 'check_background_task':
           return await this.checkBackgroundTask(params);
         case 'enter_worktree':
@@ -1699,6 +1704,17 @@ export class GeminiToolAdapter {
   private static _spawnDepth = 0;
   private static readonly MAX_SPAWN_DEPTH = 3;
 
+  // ─── Multi-turn sub-agent sessions ──────────────────────────────────────
+  // Each session tracks its conversation history, branch, and model so the
+  // parent agent can send follow-up messages to an existing sub-agent.
+  private static _agentSessions = new Map<string, {
+    history: Array<{ role: string; content: string }>;
+    branch: string;
+    model: string;
+    totalCost: number;
+    totalTurns: number;
+  }>();
+
   private async spawnAgentTool(params: { task: string; model?: string; max_turns?: number }): Promise<ToolResult> {
     const task = String(params.task || '').trim();
     if (!task) return { success: false, error: 'spawn_agent requires task' };
@@ -1709,7 +1725,8 @@ export class GeminiToolAdapter {
 
     const maxTurns = Math.min(params.max_turns || 15, 25);
     const model = params.model || process.env.CREW_WORKER_MODEL || process.env.CREW_EXECUTION_MODEL || '';
-    const branchName = `sub-agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const sessionId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const branchName = `sub-agent-${sessionId}`;
 
     try {
       // Create isolated sandbox branch for sub-agent
@@ -1721,31 +1738,39 @@ export class GeminiToolAdapter {
       const result = await runAgenticWorker(task, this.sandbox, {
         model,
         maxTurns,
-        stream: false,     // Sub-agents don't stream to stdout
+        stream: false,
         verbose: Boolean(process.env.CREW_DEBUG),
-        tier: 'fast'        // Default to cheap model for sub-agents
+        tier: 'fast'
       });
 
       GeminiToolAdapter._spawnDepth--;
 
+      // Store session for multi-turn follow-ups (don't merge yet)
+      GeminiToolAdapter._agentSessions.set(sessionId, {
+        history: [
+          { role: 'user', content: task },
+          { role: 'assistant', content: result.output || '' }
+        ],
+        branch: branchName,
+        model,
+        totalCost: result.cost || 0,
+        totalTurns: result.turns || 0,
+      });
+
       // Merge sub-agent changes back to parent branch
       const parentBranch = this.sandbox.getActiveBranch();
       if (parentBranch !== branchName) {
-        // Already switched back by the sub-agent's sandbox ops — merge explicitly
         await this.sandbox.mergeBranch(branchName, parentBranch);
       } else {
-        // Switch back to parent and merge
         const branches = this.sandbox.getBranches();
         const parent = branches.find(b => b !== branchName) || 'main';
         await this.sandbox.switchBranch(parent);
         await this.sandbox.mergeBranch(branchName, parent);
       }
 
-      // Clean up the branch
-      try { await this.sandbox.deleteBranch(branchName); } catch { /* ignore */ }
-
       const output = [
         `Sub-agent completed in ${result.turns || 0} turns (${result.modelUsed || 'unknown'})`,
+        `Session: ${sessionId} (use agent_message to send follow-ups)`,
         result.cost ? `Cost: $${result.cost.toFixed(4)}` : '',
         `Status: ${result.success ? 'SUCCESS' : 'FAILED'}`,
         '',
@@ -1755,10 +1780,103 @@ export class GeminiToolAdapter {
       return { success: result.success, output };
     } catch (err: unknown) {
       GeminiToolAdapter._spawnDepth = Math.max(0, GeminiToolAdapter._spawnDepth - 1);
-      // Try to clean up branch
       try { await this.sandbox.switchBranch('main'); } catch { /* ignore */ }
       try { await this.sandbox.deleteBranch(branchName); } catch { /* ignore */ }
       return { success: false, error: `Sub-agent failed: ${errMsg(err)}` };
+    }
+  }
+
+  // ─── agent_message: send follow-up to an existing sub-agent session ─────
+  private async agentMessageTool(params: { session_id: string; message: string; max_turns?: number }): Promise<ToolResult> {
+    const sessionId = String(params.session_id || '').trim();
+    const message = String(params.message || '').trim();
+    if (!sessionId) return { success: false, error: 'agent_message requires session_id' };
+    if (!message) return { success: false, error: 'agent_message requires message' };
+
+    const session = GeminiToolAdapter._agentSessions.get(sessionId);
+    if (!session) {
+      const available = [...GeminiToolAdapter._agentSessions.keys()];
+      return {
+        success: false,
+        error: `No active session "${sessionId}". Active sessions: ${available.length ? available.join(', ') : '(none)'}`
+      };
+    }
+
+    if (GeminiToolAdapter._spawnDepth >= GeminiToolAdapter.MAX_SPAWN_DEPTH) {
+      return { success: false, error: `Sub-agent depth limit reached (max ${GeminiToolAdapter.MAX_SPAWN_DEPTH}).` };
+    }
+
+    const maxTurns = Math.min(params.max_turns || 10, 25);
+
+    // Build a combined task with conversation history as context
+    const historyContext = session.history
+      .map(h => `[${h.role}]: ${h.content.slice(0, 1500)}`)
+      .join('\n\n');
+    const continuationTask = [
+      '## Prior conversation with this sub-agent:',
+      historyContext,
+      '',
+      '## New follow-up message:',
+      message,
+      '',
+      'Continue the work from where you left off. You have the same file access and tools.',
+    ].join('\n');
+
+    // Switch to the sub-agent's branch
+    try {
+      await this.sandbox.switchBranch(session.branch);
+    } catch {
+      // Branch may have been cleaned up — work on current branch
+    }
+
+    GeminiToolAdapter._spawnDepth++;
+
+    try {
+      const { runAgenticWorker } = await import('../../executor/agentic-executor.js');
+      const result = await runAgenticWorker(continuationTask, this.sandbox, {
+        model: session.model,
+        maxTurns,
+        stream: false,
+        verbose: Boolean(process.env.CREW_DEBUG),
+        tier: 'fast'
+      });
+
+      GeminiToolAdapter._spawnDepth--;
+
+      // Update session history
+      session.history.push(
+        { role: 'user', content: message },
+        { role: 'assistant', content: result.output || '' }
+      );
+      session.totalCost += result.cost || 0;
+      session.totalTurns += result.turns || 0;
+
+      // Merge changes back
+      try {
+        const parentBranch = this.sandbox.getActiveBranch();
+        if (parentBranch === session.branch) {
+          const branches = this.sandbox.getBranches();
+          const parent = branches.find(b => b !== session.branch) || 'main';
+          await this.sandbox.switchBranch(parent);
+          await this.sandbox.mergeBranch(session.branch, parent);
+        } else {
+          await this.sandbox.mergeBranch(session.branch, parentBranch);
+        }
+      } catch { /* merge may not be needed */ }
+
+      const output = [
+        `Sub-agent follow-up completed in ${result.turns || 0} turns`,
+        `Session: ${sessionId} (${session.history.length / 2} exchanges, $${session.totalCost.toFixed(4)} total)`,
+        `Status: ${result.success ? 'SUCCESS' : 'FAILED'}`,
+        '',
+        result.output?.slice(0, 3000) || '(no output)'
+      ].filter(Boolean).join('\n');
+
+      return { success: result.success, output };
+    } catch (err: unknown) {
+      GeminiToolAdapter._spawnDepth = Math.max(0, GeminiToolAdapter._spawnDepth - 1);
+      try { await this.sandbox.switchBranch('main'); } catch { /* ignore */ }
+      return { success: false, error: `Sub-agent follow-up failed: ${errMsg(err)}` };
     }
   }
 
