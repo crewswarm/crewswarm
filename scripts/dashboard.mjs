@@ -1831,8 +1831,13 @@ const server = http.createServer(async (req, res) => {
       req.on("data", (c) => (body += c));
       req.on("end", async () => {
         let suite = "test:unit";
-        try { const parsed = JSON.parse(body); suite = parsed.suite || suite; } catch { /* default */ }
-        const allowed = ["test:unit", "test:integration", "test:e2e", "test:all", "test", "test:e2e:vibe"];
+        let singleFile = null;
+        try {
+          const parsed = JSON.parse(body);
+          suite = parsed.suite || suite;
+          singleFile = parsed.file || null;
+        } catch { /* default */ }
+        const allowed = ["test:unit", "test:integration", "test:e2e", "test:all", "test", "test:e2e:vibe", "test:playwright"];
         if (!allowed.includes(suite)) {
           res.writeHead(400, { "content-type": "application/json" });
           res.end(JSON.stringify({ error: "Invalid suite: " + suite }));
@@ -1842,9 +1847,16 @@ const server = http.createServer(async (req, res) => {
         const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
         const outputFile = path.join(CREWSWARM_DIR, "test-results", ".test-output.log");
         // Write initial progress
-        await fs.promises.writeFile(progressFile, JSON.stringify({ suite, running: true, pid: 0, started: Date.now(), passed: 0, failed: 0, skipped: 0, files_done: 0, current_file: "" }));
+        await fs.promises.writeFile(progressFile, JSON.stringify({ suite, running: true, pid: 0, started: Date.now(), passed: 0, failed: 0, skipped: 0, files_done: 0, current_file: singleFile || "" }));
+        let child;
         const outFd = fs.openSync(outputFile, "w");
-        const child = spawn("npm", ["run", suite], { cwd: CREWSWARM_DIR, stdio: ["ignore", outFd, outFd], detached: true });
+        if (singleFile) {
+          // Single-file run: use node --test directly on the file
+          const absFile = path.isAbsolute(singleFile) ? singleFile : path.join(CREWSWARM_DIR, singleFile);
+          child = spawn("node", ["--test", "--test-reporter=./scripts/test-reporter.mjs", absFile], { cwd: CREWSWARM_DIR, stdio: ["ignore", outFd, outFd], detached: true });
+        } else {
+          child = spawn("npm", ["run", suite], { cwd: CREWSWARM_DIR, stdio: ["ignore", outFd, outFd], detached: true });
+        }
         child.unref();
         fs.closeSync(outFd);
         // Update progress by tailing the output file
@@ -1894,6 +1906,173 @@ const server = http.createServer(async (req, res) => {
       } catch {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ running: false }));
+      }
+      return;
+    }
+
+    // ── GET /api/tests/stale — files changed since last test run ────────────
+    if (url.pathname === "/api/tests/stale" && req.method === "GET") {
+      const resultsDir = path.join(CREWSWARM_DIR, "test-results");
+      const logPath = path.join(resultsDir, "test-log.jsonl");
+      try {
+        // Read last-run fingerprints from test-log.jsonl
+        const fingerprintByFile = new Map();
+        try {
+          const lines = (await fs.promises.readFile(logPath, "utf8")).split("\n").filter(Boolean);
+          for (const line of lines) {
+            try {
+              const entry = JSON.parse(line);
+              if (entry.file && entry.file_fingerprint?.mtime) {
+                // Keep the most recent entry per file
+                fingerprintByFile.set(entry.file, entry.file_fingerprint);
+              }
+            } catch {}
+          }
+        } catch {}
+        const stale = [];
+        for (const [filePath, fp] of fingerprintByFile) {
+          try {
+            const stat = await fs.promises.stat(filePath);
+            const currentMtime = stat.mtime.toISOString();
+            if (currentMtime > fp.mtime) {
+              stale.push({
+                file: filePath.replace(CREWSWARM_DIR + "/", ""),
+                lastRun: fp.mtime,
+                lastModified: currentMtime,
+              });
+            }
+          } catch {}
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ stale }));
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ stale: [], error: e.message }));
+      }
+      return;
+    }
+
+    // ── GET /api/tests/stream — SSE stream of running test output ───────────
+    if (url.pathname === "/api/tests/stream" && req.method === "GET") {
+      const outputFile = path.join(CREWSWARM_DIR, "test-results", ".test-output.log");
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        "connection": "keep-alive",
+        "access-control-allow-origin": "*",
+      });
+      let lastSize = 0;
+      // Send existing content first
+      try {
+        const content = await fs.promises.readFile(outputFile, "utf8");
+        if (content) {
+          res.write("data: " + JSON.stringify({ text: content, reset: true }) + "\n\n");
+          lastSize = Buffer.byteLength(content, "utf8");
+        }
+      } catch {}
+      const streamInterval = setInterval(async () => {
+        try {
+          const stat = await fs.promises.stat(outputFile);
+          if (stat.size > lastSize) {
+            const fd = await fs.promises.open(outputFile, "r");
+            const newBytes = stat.size - lastSize;
+            const buf = Buffer.alloc(newBytes);
+            await fd.read(buf, 0, newBytes, lastSize);
+            await fd.close();
+            const text = buf.toString("utf8");
+            lastSize = stat.size;
+            res.write("data: " + JSON.stringify({ text }) + "\n\n");
+          }
+          // Check if done
+          const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
+          try {
+            const prog = JSON.parse(await fs.promises.readFile(progressFile, "utf8"));
+            if (!prog.running && prog.finished) {
+              res.write("data: " + JSON.stringify({ done: true }) + "\n\n");
+              clearInterval(streamInterval);
+              res.end();
+            }
+          } catch {}
+        } catch {}
+      }, 500);
+      req.on("close", () => { clearInterval(streamInterval); });
+      return;
+    }
+
+    // ── GET /api/tests/screenshot — serve a Playwright failure screenshot ────
+    if (url.pathname === "/api/tests/screenshot" && req.method === "GET") {
+      const relPath = url.searchParams.get("path");
+      if (!relPath) { res.writeHead(400); res.end("Missing path"); return; }
+      // Security: only allow paths within test-results/
+      const safePath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, "");
+      const absPath = path.join(CREWSWARM_DIR, "test-results", safePath);
+      if (!absPath.startsWith(path.join(CREWSWARM_DIR, "test-results"))) {
+        res.writeHead(403); res.end("Forbidden"); return;
+      }
+      try {
+        const stat = await fs.promises.stat(absPath);
+        const ext = path.extname(absPath).toLowerCase();
+        const mimeMap = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+        const mime = mimeMap[ext] || "application/octet-stream";
+        res.writeHead(200, { "content-type": mime, "content-length": stat.size, "cache-control": "max-age=300" });
+        fs.createReadStream(absPath).pipe(res);
+      } catch {
+        res.writeHead(404); res.end("Screenshot not found");
+      }
+      return;
+    }
+
+    // ── GET /api/tests/coverage-map — source files vs test coverage ──────────
+    if (url.pathname === "/api/tests/coverage-map" && req.method === "GET") {
+      try {
+        const libDir = path.join(CREWSWARM_DIR, "lib");
+        const crewCliSrcDir = path.join(CREWSWARM_DIR, "crew-cli", "src");
+        const unitTestDir = path.join(CREWSWARM_DIR, "test", "unit");
+        const crewCliTestDir = path.join(CREWSWARM_DIR, "crew-cli", "tests", "unit");
+
+        // Collect test file basenames (strip extension)
+        const testBases = new Set();
+        async function collectTestBases(dir) {
+          try {
+            for (const ent of await fs.promises.readdir(dir, { withFileTypes: true })) {
+              if (ent.isDirectory()) { await collectTestBases(path.join(dir, ent.name)); continue; }
+              if (ent.name.match(/\.test\.(mjs|js|ts)$/)) {
+                // e.g. crew-judge.test.mjs -> crew-judge
+                testBases.add(ent.name.replace(/\.test\.(mjs|js|ts)$/, ""));
+              }
+            }
+          } catch {}
+        }
+        await collectTestBases(unitTestDir);
+        await collectTestBases(crewCliTestDir);
+
+        // Collect source files and check coverage
+        const covered = [];
+        const uncovered = [];
+        async function scanSourceDir(dir, prefix) {
+          try {
+            for (const ent of await fs.promises.readdir(dir, { withFileTypes: true })) {
+              const fullPath = path.join(dir, ent.name);
+              const relPath = prefix + "/" + ent.name;
+              if (ent.isDirectory()) { await scanSourceDir(fullPath, relPath); continue; }
+              if (!ent.name.match(/\.(mjs|js|ts)$/) || ent.name.includes(".d.ts") || ent.name.includes(".test.")) continue;
+              const base = ent.name.replace(/\.(mjs|js|ts)$/, "");
+              // Check if any test file matches by base name (fuzzy: contains or equals)
+              const hasCoverage = [...testBases].some(tb => tb === base || tb.includes(base) || base.includes(tb));
+              const entry = { file: relPath, base };
+              if (hasCoverage) covered.push(entry);
+              else uncovered.push(entry);
+            }
+          } catch {}
+        }
+        await scanSourceDir(libDir, "lib");
+        await scanSourceDir(crewCliSrcDir, "crew-cli/src");
+
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ covered, uncovered, totalCovered: covered.length, totalUncovered: uncovered.length }));
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ covered: [], uncovered: [], error: e.message }));
       }
       return;
     }

@@ -110,6 +110,7 @@
     "vibe:start": "cd apps/vibe && NODE_DISABLE_COMPILE_CACHE=1 npm start",
     "vibe:watch": "NODE_DISABLE_COMPILE_CACHE=1 node apps/vibe/watch-server.mjs",
     "vibe:full": "bash scripts/start-studio-full.sh",
+    "test:playwright": "npx playwright test --reporter=line",
     "test:e2e:vibe": "node node_modules/playwright/cli.js test --config=playwright.config.js",
     "test:e2e:vibe:headed": "node node_modules/playwright/cli.js test --config=playwright.config.js --headed",
     "crew-lead": "node crew-lead.mjs",
