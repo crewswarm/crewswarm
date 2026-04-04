@@ -102,7 +102,7 @@ async function runGh(args: string[], cwd = process.cwd()): Promise<string> {
     const err = String(stderr || '').trim();
     return out || err;
   } catch (error) {
-    const message = String((error as any)?.stderr || (error as Error).message || error);
+    const message = String((error as { stderr?: string })?.stderr || (error as Error).message || error);
     if (/enoent|not found/i.test(message)) {
       throw new Error('GitHub CLI (gh) not found. Install gh and run `gh auth login`.');
     }
@@ -189,7 +189,7 @@ export async function runGitHubDoctor(cwd = process.cwd(), repo?: string): Promi
     checks.push({
       name: 'gh installed',
       ok: false,
-      details: /enoent|not found/i.test(String((error as any)?.message || ''))
+      details: /enoent|not found/i.test(String((error as Error)?.message || ''))
         ? 'gh not found in PATH'
         : String((error as Error).message || error)
     });
@@ -221,7 +221,7 @@ export async function runGitHubDoctor(cwd = process.cwd(), repo?: string): Promi
     checks.push({
       name: 'gh auth status',
       ok: false,
-      details: String((error as any)?.stderr || (error as Error).message || error).trim()
+      details: String((error as { stderr?: string })?.stderr || (error as Error).message || error).trim()
     });
   }
 
@@ -244,7 +244,7 @@ export async function runGitHubDoctor(cwd = process.cwd(), repo?: string): Promi
     checks.push({
       name: 'repo access baseline',
       ok: false,
-      details: String((error as any)?.stderr || (error as Error).message || error).trim()
+      details: String((error as { stderr?: string })?.stderr || (error as Error).message || error).trim()
     });
   }
 

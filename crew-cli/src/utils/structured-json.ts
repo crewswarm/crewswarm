@@ -91,7 +91,7 @@ function buildRepairPrompt(raw: string, schemaHint?: string): string {
   ].join('\n');
 }
 
-export async function parseJsonObjectWithRepair(raw: string, options: JsonParseOptions = {}): Promise<any> {
+export async function parseJsonObjectWithRepair(raw: string, options: JsonParseOptions = {}): Promise<Record<string, unknown>> {
   const label = options.label || 'JSON';
   const maxAttempts = Math.max(1, Number(options.maxAttempts || 2));
   let lastError = '';

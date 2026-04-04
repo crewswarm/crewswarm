@@ -113,7 +113,7 @@ ${task.context}` : task.prompt;
           timeout: this.timeoutMs.toString()
         });
 
-        const result = await Promise.race([dispatchPromise, timeoutPromise]) as any;
+        const result = await Promise.race([dispatchPromise, timeoutPromise]) as Record<string, unknown>;
 
         const responseText = String(result.result || '');
         const edits = await this.options.orchestrator.parseAndApplyToSandbox(responseText);

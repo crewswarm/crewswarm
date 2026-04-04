@@ -59,7 +59,7 @@ export function startWatchMode(
 
   // Prefer chokidar if available for robust cross-platform watching.
   try {
-    const chokidarMod = (globalThis as any).__crewChokidarCache
+    const chokidarMod = (globalThis as { __crewChokidarCache?: { watch: (...args: unknown[]) => unknown } }).__crewChokidarCache
       || null;
     if (chokidarMod?.watch) {
       const watcher = chokidarMod.watch(rootDir, { ignored, ignoreInitial: true });
@@ -118,7 +118,7 @@ export function startWatchMode(
 // Lazy-load chokidar once if installed.
 void import('chokidar')
   .then(mod => {
-    (globalThis as any).__crewChokidarCache = mod.default || mod;
+    (globalThis as unknown as Record<string, unknown>).__crewChokidarCache = mod.default || mod;
   })
   .catch(() => {
     // optional dependency

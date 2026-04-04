@@ -32,7 +32,7 @@ export function scorePatchRisk(input: {
   }
 
   const blast = input.blastRadius || input;
-  const blastRisk = String((blast as any)?.risk || '').toLowerCase();
+  const blastRisk = String((blast as { risk?: string })?.risk || '').toLowerCase();
   if (blastRisk === 'high') {
     risk += 0.35;
     reasons.push('high-blast-radius');

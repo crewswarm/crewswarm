@@ -111,7 +111,7 @@ async function generateEmbedding(text: string, provider?: EmbeddingProvider): Pr
     });
     if (!response.ok) throw new Error(`OpenAI embedding failed: ${response.statusText}`);
     const data = await response.json();
-    return (data as any).data[0].embedding;
+    return (data as { data: Array<{ embedding: number[] }> }).data[0].embedding;
   }
 
   if (p === 'gemini') {
@@ -130,7 +130,7 @@ async function generateEmbedding(text: string, provider?: EmbeddingProvider): Pr
     );
     if (!response.ok) throw new Error(`Gemini embedding failed: ${response.statusText}`);
     const data = await response.json();
-    return (data as any).embedding?.values || [];
+    return (data as { embedding?: { values?: number[] } }).embedding?.values || [];
   }
 
   // Local: hashed vector (zero-cost, ~80% as good for code search)

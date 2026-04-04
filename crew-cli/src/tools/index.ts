@@ -182,7 +182,7 @@ export class CrewToolExecutor {
     // Check if we have staged files → use Docker
     if (this.sandbox.hasChanges()) {
       const dockerModule = await import('./docker-sandbox.js');
-      const docker = await (dockerModule as any).getDockerSandbox?.() ?? null;
+      const docker = await (dockerModule as { getDockerSandbox?: () => Promise<unknown> | unknown }).getDockerSandbox?.() ?? null;
       
       if (docker) {
         console.log(`[Crew] Running in Docker (${this.sandbox.getPendingPaths().length} files staged)`);

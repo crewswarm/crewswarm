@@ -141,7 +141,7 @@ export async function transcribeWithOpenAi(audioPath: string): Promise<string> {
     const body = await response.text();
     throw new Error(`Whisper API failed (${response.status}): ${body.slice(0, 400)}`);
   }
-  const data = await response.json() as any;
+  const data = await response.json() as { text?: string };
   return String(data.text || '').trim();
 }
 
@@ -167,7 +167,7 @@ export async function transcribeWithGroq(audioPath: string): Promise<string> {
     const body = await response.text();
     throw new Error(`Groq Whisper API failed (${response.status}): ${body.slice(0, 400)}`);
   }
-  const data = await response.json() as any;
+  const data = await response.json() as { text?: string };
   return String(data.text || '').trim();
 }
 
@@ -227,11 +227,11 @@ export async function transcribeAudio(audioPath: string, options: TranscribeOpti
   return transcribeWithWhisperCli(audioPath);
 }
 
-export async function speakWithSkill(router: AgentRouter, text: string, skill = 'elevenlabs.tts'): Promise<any> {
+export async function speakWithSkill(router: AgentRouter, text: string, skill = 'elevenlabs.tts'): Promise<unknown> {
   return router.callSkill(skill, { text });
 }
 
-export async function speakText(router: AgentRouter, text: string, skill = 'elevenlabs.tts'): Promise<any> {
+export async function speakText(router: AgentRouter, text: string, skill = 'elevenlabs.tts'): Promise<unknown> {
   return speakWithSkill(router, text, skill);
 }
 

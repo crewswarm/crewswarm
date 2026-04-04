@@ -204,7 +204,7 @@ async function exchangeRefreshToken(
       return null;
     }
 
-    const data = await response.json() as any;
+    const data = await response.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
     if (!data.access_token) return null;
 
     return {

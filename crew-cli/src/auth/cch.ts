@@ -50,7 +50,7 @@ export function buildBillingBlock(suffix: string): { type: 'text'; text: string 
  */
 export async function signBody(bodyObj: Record<string, unknown>): Promise<string> {
   // Ensure system is serialized before messages (key order matters for hash)
-  const { system, messages, ...rest } = bodyObj as any;
+  const { system, messages, ...rest } = bodyObj as { system?: unknown; messages?: unknown; [key: string]: unknown };
   const ordered = { ...rest, ...(system !== undefined ? { system } : {}), ...(messages !== undefined ? { messages } : {}) };
   const bodyStr = JSON.stringify(ordered, null, 0);
   const cch = await computeCch(bodyStr);

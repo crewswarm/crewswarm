@@ -379,10 +379,12 @@ async function callJsonApi(url: string, apiKey: string | null, body: unknown): P
     throw new Error(`API error ${response.status}: ${text.slice(0, 500)}`);
   }
 
-  const data = await response.json() as any;
-  return data?.content?.[0]?.text
-    || data?.candidates?.[0]?.content?.parts?.[0]?.text
-    || data?.output_text
+  const data = await response.json() as Record<string, unknown>;
+  const content = data?.content as Array<{ text?: string }> | undefined;
+  const candidates = data?.candidates as Array<{ content?: { parts?: Array<{ text?: string }> } }> | undefined;
+  return content?.[0]?.text
+    || candidates?.[0]?.content?.parts?.[0]?.text
+    || (data?.output_text as string)
     || JSON.stringify(data);
 }
 
@@ -442,7 +444,7 @@ export async function runClaudeApi(prompt: string, options: EngineRunOptions = {
       const text = await response.text();
       throw new Error(`API error ${response.status}: ${text.slice(0, 500)}`);
     }
-    const data = await response.json() as any;
+    const data = await response.json() as { content?: Array<{ text?: string }> };
     const text = data?.content?.[0]?.text || JSON.stringify(data);
     return { success: true, engine: 'claude-api', stdout: text, stderr: '', exitCode: 0 };
   } catch (error) {

@@ -316,7 +316,7 @@ export class AgentKeeper {
       }
 
       let successBoost = 0;
-      const success = Boolean((entry.metadata as any)?.success)
+      const success = Boolean(entry.metadata?.success)
         || Boolean(entry.structured?.outcome?.toLowerCase().includes('success'));
       if (options.preferSuccessful !== false && success) {
         successBoost = 0.1;
@@ -328,7 +328,7 @@ export class AgentKeeper {
         for (const edit of entry.structured?.edits || []) {
           if (edit.path) entryPaths.add(edit.path);
         }
-        const metadataPaths = (entry.metadata as any)?.paths;
+        const metadataPaths = entry.metadata?.paths;
         if (Array.isArray(metadataPaths)) {
           for (const p of metadataPaths) {
             entryPaths.add(String(p || ''));

@@ -136,7 +136,7 @@ async function refreshToken(currentTokens: OAuthTokens): Promise<OAuthTokens | n
       return null;
     }
 
-    const data = await response.json() as any;
+    const data = await response.json() as { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string };
     if (!data.access_token) return null;
 
     const refreshed: OAuthTokens = {

@@ -77,6 +77,7 @@ export interface L3Result {
     shellResults?: Array<{ command: string; exitCode: number; output: string }>;
     transcript?: ExecutionTranscript;
     reviewer?: ReviewResult;
+    qaGateResult?: import('../execution/qa-gate.js').QAGateResult;
   }>;
   totalCost: number;
   executionTimeMs: number;
@@ -1070,7 +1071,7 @@ If output has blockers, set approved=false.`,
     this._intervalTimer = setInterval(async () => {
       try {
         const { execSync } = await import('node:child_process');
-        const cwd = (this.sandbox as any)?.baseDir || process.cwd();
+        const cwd = (this.sandbox as unknown as { baseDir?: string })?.baseDir || process.cwd();
         const status = execSync('git status --porcelain', { encoding: 'utf8', cwd }).trim();
         if (!status) return; // nothing to snapshot
 
@@ -1107,7 +1108,7 @@ If output has blockers, set approved=false.`,
   private async gitCheckpoint(traceId: string, executionResults?: L3Result): Promise<void> {
     try {
       const { execSync } = await import('node:child_process');
-      const cwd = (this.sandbox as any)?.baseDir || process.cwd();
+      const cwd = (this.sandbox as unknown as { baseDir?: string })?.baseDir || process.cwd();
 
       // Check if we're in a git repo with changes
       const status = execSync('git status --porcelain', { encoding: 'utf8', cwd }).trim();
@@ -1688,7 +1689,7 @@ If output has blockers, set approved=false.`,
         // Transcript-based deterministic QA (runs on ALL executions, not just small tasks)
         if (executionResults?.results?.length) {
           for (const r of executionResults.results) {
-            const transcript = (r as any).transcript as ExecutionTranscript | undefined;
+            const transcript = r.transcript;
             if (transcript) {
               const qaResult = runDeterministicQA(transcript, {
                 requireFileChanges: plan.decision !== 'execute-direct'
@@ -1705,7 +1706,7 @@ If output has blockers, set approved=false.`,
                 r.escalationReason = `Deterministic QA failed: ${qaResult.summary}`;
               }
               // Store QA results in execution metadata
-              (r as any).qaGateResult = qaResult;
+              r.qaGateResult = qaResult;
             }
           }
           executionPath.push('l3-transcript-qa');
@@ -1865,7 +1866,7 @@ If output has blockers, set approved=false.`,
     sessionId?: string
   ): Promise<L2Plan> {
     // Step 0: Quick project scan so router + workers understand what we're working with
-    const projectDir = (this.sandbox as any)?.baseDir || process.cwd();
+    const projectDir = (this.sandbox as unknown as { baseDir?: string })?.baseDir || process.cwd();
     let projectContext = '';
     try {
       const { readdirSync, statSync, readFileSync, existsSync } = await import('node:fs');
@@ -2150,7 +2151,7 @@ Return ONLY valid JSON:
       const { autoLoadRelevantFiles, shouldUseRag } = await import('../context/codebase-rag.js');
       if (shouldUseRag(enhancedTask)) {
         const ragContext = await autoLoadRelevantFiles(enhancedTask, process.cwd(), {
-          mode: (process.env.CREW_RAG_MODE as any) || 'auto',
+          mode: (process.env.CREW_RAG_MODE || 'auto') as import('../context/codebase-rag.js').RagMode,
           tokenBudget: Number(process.env.CREW_RAG_WORKER_BUDGET || 4000),
           maxFiles: Number(process.env.CREW_RAG_MAX_FILES_LOAD || 6)
         });
@@ -2245,7 +2246,7 @@ Return ONLY valid JSON:
     const sorted = this.topologicalSort(workerTasks);
 
     // Detect if git worktree isolation is available for parallel batches
-    const projectDir = (this.sandbox as any)?.baseDir || process.cwd();
+    const projectDir = (this.sandbox as unknown as { baseDir?: string })?.baseDir || process.cwd();
     const worktreeIsolation = (() => {
       if (process.env.CREW_WORKTREE_ISOLATION === 'false') return false;
       try {
@@ -2334,7 +2335,7 @@ Return ONLY valid JSON:
           ].filter(Boolean).join('\n');
           if (shouldUseRag(ragQuery)) {
             const ragContext = await autoLoadRelevantFiles(ragQuery, process.cwd(), {
-              mode: (process.env.CREW_RAG_MODE as any) || 'auto',
+              mode: (process.env.CREW_RAG_MODE || 'auto') as import('../context/codebase-rag.js').RagMode,
               tokenBudget: Number(process.env.CREW_RAG_WORKER_BUDGET || 4000),
               maxFiles: Number(process.env.CREW_RAG_MAX_FILES_LOAD || 6),
               sessionHistory: accumulatedDiscoveredFiles.map(file => ({ output: file }))
@@ -2464,7 +2465,7 @@ Return ONLY valid JSON:
           { critical: false, tags: ['l3-output', traceId, unit.id], provider: 'pipeline' }
         );
 
-        const built = this.buildWorkerExecutionResult(unit, parsed, result as any);
+        const built = this.buildWorkerExecutionResult(unit, parsed, result);
         return this.reviewAndFixWorkerResult(unit, built, `${traceId}-${unit.id}`, context, sessionId);
       };
 

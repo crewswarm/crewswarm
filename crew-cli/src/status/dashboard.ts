@@ -84,7 +84,7 @@ export async function getSystemStatus(): Promise<StatusInfo> {
     clearTimeout(timeoutId);
     if (statusCheck.ok) {
       status.gatewayReachable = true;
-      const data = await statusCheck.json() as any;
+      const data = await statusCheck.json() as { agents?: unknown[] };
       status.activeAgents = Array.isArray(data.agents) ? data.agents.length : 1;
     }
   } catch {

@@ -104,7 +104,7 @@ function runValidationCommands(commands: string[] = [], cwd = process.cwd()) {
       return {
         passed: false,
         failedCommand: cmd,
-        output: String((error as any)?.stderr || (error as Error).message || '')
+        output: String((error as { stderr?: string })?.stderr || (error as Error).message || '')
       };
     }
   }

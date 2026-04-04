@@ -2242,8 +2242,7 @@ export async function createTransport(
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const underlyingTransport =
         transport instanceof XcodeMcpBridgeFixTransport
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-type-assertion
-            (transport as any).transport
+          ? (transport as unknown as { transport: import('@modelcontextprotocol/sdk/shared/transport.js').Transport }).transport
           : transport;
 
       if (
