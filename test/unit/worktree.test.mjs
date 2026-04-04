@@ -79,10 +79,14 @@ describe("worktree helpers", () => {
   });
 
   afterEach(() => {
-    // Ensure worktree paths created during individual tests are removed.
-    cleanupWt(pipelineId, agentId);
-    cleanupWt(pipelineId, "crew-frontend");
-    cleanupWt(pipelineId, "crew-pm");
+    // Ensure worktree paths and branches created during individual tests are removed.
+    for (const a of [agentId, "crew-frontend", "crew-pm"]) {
+      cleanupWt(pipelineId, a);
+      // Also remove branches and worktree refs from the test repo
+      const branch = worktreeBranch(pipelineId, a);
+      try { execSync(`git worktree remove --force "${worktreePath(pipelineId, a)}"`, { cwd: repoDir, stdio: "ignore", timeout: 3000 }); } catch {}
+      try { execSync(`git branch -D "${branch}"`, { cwd: repoDir, stdio: "ignore", timeout: 3000 }); } catch {}
+    }
   });
 
   // ── isGitRepo ─────────────────────────────────────────────────────────────

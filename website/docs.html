@@ -278,6 +278,33 @@ bash install.sh</code></pre>
         <p style="margin-top:1.5rem;opacity:.7">Engine selection: <code>crew config set engine &lt;name&gt;</code> or pass <code>--engine</code> per task. Set to <code>auto</code> to let the runtime pick based on role and model.</p>
       </section>
 
+      <!-- WORKTREE ISOLATION -->
+      <section class="docs-section">
+        <h2>Git Worktree Isolation</h2>
+        <p>When a PM loop dispatches multiple agents in the same wave, each agent automatically gets its own <strong>git worktree</strong> &mdash; an isolated copy of the repo on its own branch. Parallel agents can't conflict with each other on the filesystem.</p>
+
+        <div style="margin-top: 2rem;">
+          <p><strong>How it works</strong></p>
+          <ol style="margin-top: 0.5rem; padding-left: 1.5rem;">
+            <li>Wave dispatcher creates a worktree per agent at <code>/tmp/crewswarm-wt-{pipelineId}-{agentId}</code></li>
+            <li>Each agent receives its isolated directory as <code>projectDir</code> &mdash; works with any engine (Claude Code, Codex, Gemini, Cursor, OpenCode, crew-cli)</li>
+            <li>After the wave completes, all branches merge back automatically and conflicts are reported via SSE</li>
+            <li>Worktrees are cleaned up on completion or cancellation</li>
+          </ol>
+        </div>
+
+        <div style="margin-top: 1.5rem;">
+          <p><strong>Configuration</strong></p>
+          <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+            <li>Enabled by default for multi-agent waves (2+ agents)</li>
+            <li>Single-agent waves skip worktree overhead automatically</li>
+            <li>Disable globally: <code>CREWSWARM_WORKTREE_ISOLATION=false</code></li>
+            <li>Disable per-pipeline: set <code>worktreeIsolation: false</code> in the pipeline spec</li>
+            <li>Falls back to shared directory if git is unavailable or the project isn't a repo</li>
+          </ul>
+        </div>
+      </section>
+
       <!-- SESSION MANAGEMENT -->
       <section class="docs-section">
         <h2>Session Management</h2>
