@@ -26,6 +26,8 @@ import { runDeterministicQA } from '../execution/qa-gate.js';
 import type { ExecutionTranscript } from '../execution/transcript.js';
 import { getProjectContext } from '../context/project-context.js';
 import { reviewWorkerExecution, type ReviewResult } from '../executor/reviewer.js';
+import { enterWorktree, exitWorktree, mergeWorktree } from '../tools/worktree.js';
+import { Sandbox } from '../sandbox/index.js';
 // Structure analyzer temporarily disabled - file missing
 // import { analyzeProjectStructure, formatStructureContext } from '../utils/structure-analyzer.js';
 
@@ -2221,15 +2223,46 @@ Return ONLY valid JSON:
     // Sort work units by dependency order
     const sorted = this.topologicalSort(workerTasks);
 
+    // Detect if git worktree isolation is available for parallel batches
+    const projectDir = (this.sandbox as any)?.baseDir || process.cwd();
+    const worktreeIsolation = (() => {
+      if (process.env.CREW_WORKTREE_ISOLATION === 'false') return false;
+      try {
+        const { execSync } = require('node:child_process');
+        execSync('git rev-parse --is-inside-work-tree', { cwd: projectDir, encoding: 'utf8', timeout: 5000 });
+        return true;
+      } catch { return false; }
+    })();
+
     // Execute in batches (units with no pending dependencies)
     const maxWorkers = this.getMaxParallelWorkers();
     for (const batch of this.getBatches(sorted)) {
+      const useWorktrees = worktreeIsolation && batch.length > 1;
       if (verbose) {
         console.log(`[L3 Batch] Executing ${batch.length} units in parallel...`);
         console.log(`[L3 Batch] Units: ${batch.map(u => u.id).join(', ')}`);
-        console.log(`[L3 Batch] Concurrency cap: ${maxWorkers}`);
+        console.log(`[L3 Batch] Concurrency cap: ${maxWorkers}${useWorktrees ? ' (worktree isolation)' : ''}`);
       }
-      
+
+      // Create per-unit worktrees for parallel isolation
+      const unitWorktrees = new Map<string, { worktreePath: string; branchName: string }>();
+      if (useWorktrees) {
+        for (const unit of batch) {
+          try {
+            const wt = enterWorktree(projectDir, {
+              branchPrefix: 'crew-l3',
+              agentId: unit.id.slice(0, 8)
+            });
+            unitWorktrees.set(unit.id, { worktreePath: wt.worktreePath, branchName: wt.branchName });
+            if (verbose) {
+              console.log(`  [${unit.id}] worktree → ${wt.worktreePath}`);
+            }
+          } catch (err: any) {
+            if (verbose) console.warn(`  [${unit.id}] worktree failed, sharing filesystem: ${err.message}`);
+          }
+        }
+      }
+
       const batchStart = Date.now();
       const runUnit = async (unit: typeof batch[number]) => {
         // Check dependencies
@@ -2372,10 +2405,18 @@ Return ONLY valid JSON:
         
         // Use built-in L3_SYSTEM_PROMPT (has THINK→ACT→OBSERVE + tool list)
         // Do NOT override with template basePrompt — those are generic and don't mention tools
-        const result = await this.runWorker(composedPrompt.finalPrompt, {
+        //
+        // If this unit has a worktree, run in isolated sandbox + projectDir.
+        // Otherwise fall back to the shared sandbox (sequential or non-git).
+        const unitWt = unitWorktrees.get(unit.id);
+        const workerSandbox = unitWt ? new Sandbox(unitWt.worktreePath) : this.sandbox;
+        const workerProjectDir = unitWt ? unitWt.worktreePath : projectDir;
+
+        const result = await runAgenticWorker(composedPrompt.finalPrompt, workerSandbox, {
           model: this.getModelForLayer('l3', effort) || '',
           maxTurns: this.getMaxTurnsForEffort(effort),
           verbose,
+          projectDir: workerProjectDir,
           priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : undefined,
           persona: unit.persona,
           constraintLevel: undefined
@@ -2429,10 +2470,41 @@ Return ONLY valid JSON:
         }
       });
       await Promise.all(workers);
+
+      // Merge worktrees back to main branch sequentially
+      if (unitWorktrees.size > 0) {
+        const mergeResults: Array<{ unitId: string; success: boolean; message: string }> = [];
+        for (const [unitId, wt] of unitWorktrees) {
+          try {
+            // Exit worktree (auto-commits uncommitted changes)
+            const exitResult = await exitWorktree(projectDir, wt.branchName);
+            if (exitResult.hasChanges) {
+              // Merge the branch back into main
+              const merge = mergeWorktree(projectDir, wt.branchName, 'squash');
+              mergeResults.push({ unitId, ...merge });
+              if (verbose) {
+                console.log(`  [${unitId}] ${merge.success ? '✅' : '⚠️'} merge: ${merge.message}`);
+              }
+            } else {
+              mergeResults.push({ unitId, success: true, message: 'No changes to merge' });
+            }
+          } catch (err: any) {
+            mergeResults.push({ unitId, success: false, message: err.message });
+            if (verbose) console.warn(`  [${unitId}] ⚠️ worktree cleanup failed: ${err.message}`);
+          }
+        }
+        unitWorktrees.clear();
+
+        const conflicts = mergeResults.filter(r => !r.success);
+        if (conflicts.length > 0 && verbose) {
+          console.warn(`[L3 Batch] ⚠️ ${conflicts.length} merge conflict(s): ${conflicts.map(c => `${c.unitId}: ${c.message}`).join('; ')}`);
+        }
+      }
+
       if (verbose) {
         console.log(`[L3 Batch] ✅ Batch complete in ${Date.now() - batchStart}ms`);
       }
-      
+
       results.push(...batchResults);
       totalCost += batchResults.reduce((sum, r) => sum + r.cost, 0);
 
