@@ -34,8 +34,8 @@
   <meta name="author" content="crewswarm" />
   <link rel="canonical" href="https://crewswarm.ai/docs.html" />
   <link rel="alternate" hreflang="en" href="https://crewswarm.ai/docs.html" />
-  <link rel="icon" type="image/png" href="favicon.png?v=3" />
-  <link rel="apple-touch-icon" href="favicon.png?v=3" />
+  <link rel="icon" type="image/webp" href="favicon.webp?v=4" />
+  <link rel="apple-touch-icon" href="favicon.webp?v=4" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -83,7 +83,7 @@
   <nav role="navigation" aria-label="Main navigation">
     <div class="nav-container">
       <a class="nav-logo" href="index.html" aria-label="crewswarm home">
-        <img class="nav-logo-icon" src="favicon.png?v=3" alt="" aria-hidden="true" />
+        <img class="nav-logo-icon" src="favicon.webp?v=4" alt="" aria-hidden="true" />
         <span class="nav-logo-wordmark">Crew<span class="nav-logo-hq">Swarm</span></span>
       </a>
       <ul class="nav-links" id="navLinks" role="menubar">
@@ -105,6 +105,7 @@
             <li role="none"><a href="pm-loop.html" role="menuitem">PM Loop</a></li>
             <li role="none"><a href="atat.html" role="menuitem">@@Protocol</a></li>
             <li role="none"><a href="openclaw-comparison.html" role="menuitem">Compare</a></li>
+            <li role="none"><a href="pm-loop-walkthrough.html" role="menuitem">Walkthrough</a></li>
             <li role="none"><a href="changelog.html" role="menuitem">Changelog</a></li>
             <li role="none"><a href="blog/" role="menuitem">Blog</a></li>
             <li role="none"><a href="about.html" role="menuitem">About</a></li>
@@ -242,7 +243,7 @@ bash install.sh</code></pre>
       <!-- EXECUTION MODES -->
       <section class="docs-section">
         <h2>Execution Modes</h2>
-        <p>CrewSwarm supports seven execution engines plus a direct API mode. Coding roles (crew-coder, crew-fixer, crew-coder-front/back) should always run through a CLI engine so they get tool access, file edits, and terminal capabilities. Analysis and planning roles can use Direct API.</p>
+        <p>CrewSwarm supports six CLI execution engines, a native executor, and a direct API mode. Coding roles (crew-coder, crew-fixer, crew-coder-front/back) should always run through a CLI engine so they get tool access, file edits, and terminal capabilities. Analysis and planning roles can use Direct API.</p>
         <div class="grid-2">
           <div class="page-card">
             <h3>Direct API</h3>
@@ -271,7 +272,7 @@ bash install.sh</code></pre>
           </div>
           <div class="page-card">
             <h3>crew-cli <span style="opacity:.5">(Native)</span></h3>
-            <p>CrewSwarm's built-in L3 executor with 34+ tools (LSP, git, web, memory, tracker). Multi-model routing, JIT context discovery, and streaming output without an external CLI dependency.</p>
+            <p>CrewSwarm's built-in L3 executor with 40+ built-in tools (LSP, git, web, memory, tracker). Multi-model routing, JIT context discovery, and streaming output without an external CLI dependency.</p>
           </div>
         </div>
         <p style="margin-top:1.5rem;opacity:.7">Engine selection: <code>crew config set engine &lt;name&gt;</code> or pass <code>--engine</code> per task. Set to <code>auto</code> to let the runtime pick based on role and model.</p>

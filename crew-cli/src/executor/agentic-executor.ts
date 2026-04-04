@@ -2,7 +2,7 @@
  * Agentic L3 Executor v2 — 10/10 competitive CLI engine
  *
  * Features:
- * - 34+ tools via GeminiToolAdapter (LSP, git, web, memory, tracker, etc.)
+ * - 40+ tools via GeminiToolAdapter (LSP, git, web, memory, tracker, etc.)
  * - Streaming output — real-time token display as LLM generates
  * - JIT context discovery — files discovered by tools are indexed for next turn
  * - Turn compression — Topic-Action-Summary keeps prompts lean on long sessions

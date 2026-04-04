@@ -598,7 +598,7 @@ export class Orchestrator {
   /**
    * Execute a task using the agentic executor with full file tools.
    * This is the primary execution path — single worker with THINK→ACT→OBSERVE loop
-   * and 34+ tools (read_file, write_file, replace, bash, grep, etc.).
+   * and 40+ tools (read_file, write_file, replace, bash, grep, etc.).
    * Equivalent to how Claude Code, Codex CLI, and Gemini CLI execute tasks.
    */
   async executeAgentic(
