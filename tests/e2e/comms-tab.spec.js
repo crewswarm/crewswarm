@@ -149,11 +149,19 @@ async function stubCommsEndpoints(page, opts = {}) {
     });
   });
   await page.route("**/api/telegram/config", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(TG_CONFIG_FIXTURE),
-    });
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(TG_CONFIG_FIXTURE),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      });
+    }
   });
   await page.route("**/api/telegram/messages", async (route) => {
     await route.fulfill({
@@ -199,6 +207,49 @@ async function stubCommsEndpoints(page, opts = {}) {
       body: JSON.stringify(opts.waMessages || WA_MESSAGES_FIXTURE),
     });
   });
+  // Stub background endpoints to prevent 500 console errors
+  await page.route("**/api/dlq", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
+  await page.route("**/api/crew-lead/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ online: true }),
+    });
+  });
+  await page.route("**/api/health", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, agents: [], telemetry: [] }),
+    });
+  });
+  await page.route("**/api/spending", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ spending: { global: {}, agents: {} }, caps: { global: {}, agents: {} } }),
+    });
+  });
+  await page.route("**/api/token-usage", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ prompt: 0, completion: 0, calls: 0, byModel: {}, byDay: {} }),
+    });
+  });
+  await page.route("**/api/opencode-stats**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, byDay: {} }),
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -232,11 +283,9 @@ test.describe("Comms tab — navigation and status indicators", () => {
     await openTab(page, "navSettings", "settingsView");
 
     // Navigate to comms sub-tab if present
-    const commsTab = page.locator('[data-settings-tab="comms"], [data-tab="comms"]').first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const badge = page.locator("#tgStatusBadge");
     await expect(badge).toBeVisible({ timeout: 8_000 });
@@ -249,11 +298,9 @@ test.describe("Comms tab — navigation and status indicators", () => {
   }) => {
     await openTab(page, "navSettings", "settingsView");
 
-    const commsTab = page.locator('[data-settings-tab="comms"], [data-tab="comms"]').first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const badge = page.locator("#waStatusBadge");
     await expect(badge).toBeVisible({ timeout: 8_000 });
@@ -266,11 +313,9 @@ test.describe("Comms tab — navigation and status indicators", () => {
   }) => {
     await openTab(page, "navSettings", "settingsView");
 
-    const commsTab = page.locator('[data-settings-tab="comms"], [data-tab="comms"]').first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const authEl = page.locator("#waAuthStatus");
     await expect(authEl).toBeVisible({ timeout: 8_000 });
@@ -303,11 +348,9 @@ test.describe("Comms tab — stopped bridges", () => {
   }) => {
     await openTab(page, "navSettings", "settingsView");
 
-    const commsTab = page.locator('[data-settings-tab="comms"], [data-tab="comms"]').first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const badge = page.locator("#tgStatusBadge");
     await expect(badge).toBeVisible({ timeout: 8_000 });
@@ -320,11 +363,9 @@ test.describe("Comms tab — stopped bridges", () => {
   }) => {
     await openTab(page, "navSettings", "settingsView");
 
-    const commsTab = page.locator('[data-settings-tab="comms"], [data-tab="comms"]').first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const badge = page.locator("#waStatusBadge");
     await expect(badge).toBeVisible({ timeout: 8_000 });
@@ -336,11 +377,9 @@ test.describe("Comms tab — stopped bridges", () => {
   }) => {
     await openTab(page, "navSettings", "settingsView");
 
-    const commsTab = page.locator('[data-settings-tab="comms"], [data-tab="comms"]').first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const authEl = page.locator("#waAuthStatus");
     await expect(authEl).toBeVisible({ timeout: 8_000 });
@@ -367,13 +406,9 @@ test.describe("Comms tab — Telegram config and controls", () => {
 
   async function navigateToComms(page) {
     await openTab(page, "navSettings", "settingsView");
-    const commsTab = page
-      .locator('[data-settings-tab="comms"], [data-tab="comms"]')
-      .first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
   }
 
   test("Telegram token input is populated from config", async ({ page }) => {
@@ -436,7 +471,8 @@ test.describe("Comms tab — Telegram config and controls", () => {
 
     await navigateToComms(page);
 
-    const startBtn = page.locator("button", { hasText: /start.*telegram/i }).first();
+    // Use #tgStartBtn — button text is "▶ Start", not "Start Telegram"
+    const startBtn = page.locator("#tgStartBtn");
     await expect(startBtn).toBeVisible({ timeout: 8_000 });
     await startBtn.click();
 
@@ -459,7 +495,8 @@ test.describe("Comms tab — Telegram config and controls", () => {
 
     await navigateToComms(page);
 
-    const stopBtn = page.locator("button", { hasText: /stop.*telegram/i }).first();
+    // Use #tgStopBtn — button text is "⏹ Stop", not "Stop Telegram"
+    const stopBtn = page.locator("#tgStopBtn");
     await expect(stopBtn).toBeVisible({ timeout: 8_000 });
     await stopBtn.click();
 
@@ -491,7 +528,8 @@ test.describe("Comms tab — Telegram config and controls", () => {
 
     await navigateToComms(page);
 
-    const saveBtn = page.locator("button", { hasText: /save.*telegram/i }).first();
+    // Use data-action selector — button text is "Save config", not "Save Telegram config"
+    const saveBtn = page.locator("button[data-action='saveTgConfig']").first();
     await expect(saveBtn).toBeVisible({ timeout: 8_000 });
     await saveBtn.click();
 
@@ -521,13 +559,9 @@ test.describe("Comms tab — message history", () => {
 
   async function navigateToComms(page) {
     await openTab(page, "navSettings", "settingsView");
-    const commsTab = page
-      .locator('[data-settings-tab="comms"], [data-tab="comms"]')
-      .first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
   }
 
   test("Telegram message feed renders inbound and outbound messages", async ({
@@ -542,7 +576,7 @@ test.describe("Comms tab — message history", () => {
       { timeout: 8_000 }
     );
     await expect(feed).toContainText(
-      "Starting deployment pipeline now",
+      "starting deployment pipeline now",
       { timeout: 8_000 }
     );
   });
@@ -613,13 +647,9 @@ test.describe("Comms tab — WhatsApp config", () => {
 
   async function navigateToComms(page) {
     await openTab(page, "navSettings", "settingsView");
-    const commsTab = page
-      .locator('[data-settings-tab="comms"], [data-tab="comms"]')
-      .first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
   }
 
   test("WhatsApp allowed numbers field is populated from config", async ({
@@ -664,9 +694,8 @@ test.describe("Comms tab — WhatsApp config", () => {
 
     await navigateToComms(page);
 
-    const saveBtn = page
-      .locator("button", { hasText: /save.*whatsapp/i })
-      .first();
+    // Use data-action selector — button text is "Save config", not "Save WhatsApp config"
+    const saveBtn = page.locator("button[data-action='saveWaConfig']").first();
     await expect(saveBtn).toBeVisible({ timeout: 8_000 });
     await saveBtn.click();
 
@@ -691,9 +720,8 @@ test.describe("Comms tab — WhatsApp config", () => {
 
     await navigateToComms(page);
 
-    const startBtn = page
-      .locator("button", { hasText: /start.*whatsapp/i })
-      .first();
+    // Use #waStartBtn — button text is "▶ Start", not "Start WhatsApp"
+    const startBtn = page.locator("#waStartBtn");
     await expect(startBtn).toBeVisible({ timeout: 8_000 });
     await startBtn.click();
 
@@ -716,9 +744,8 @@ test.describe("Comms tab — WhatsApp config", () => {
 
     await navigateToComms(page);
 
-    const stopBtn = page
-      .locator("button", { hasText: /stop.*whatsapp/i })
-      .first();
+    // Use #waStopBtn — button text is "⏹ Stop", not "Stop WhatsApp"
+    const stopBtn = page.locator("#waStopBtn");
     await expect(stopBtn).toBeVisible({ timeout: 8_000 });
     await stopBtn.click();
 
@@ -753,13 +780,9 @@ test.describe("Comms tab — empty message feeds", () => {
   }) => {
     await openTab(page, "navSettings", "settingsView");
 
-    const commsTab = page
-      .locator('[data-settings-tab="comms"], [data-tab="comms"]')
-      .first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const feed = page.locator("#tgMessageFeed");
     await expect(feed).toBeVisible({ timeout: 8_000 });
@@ -771,13 +794,9 @@ test.describe("Comms tab — empty message feeds", () => {
   }) => {
     await openTab(page, "navSettings", "settingsView");
 
-    const commsTab = page
-      .locator('[data-settings-tab="comms"], [data-tab="comms"]')
-      .first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const feed = page.locator("#waMessageFeed");
     await expect(feed).toBeVisible({ timeout: 8_000 });
@@ -789,13 +808,9 @@ test.describe("Comms tab — empty message feeds", () => {
   }) => {
     await openTab(page, "navSettings", "settingsView");
 
-    const commsTab = page
-      .locator('[data-settings-tab="comms"], [data-tab="comms"]')
-      .first();
-    if (await commsTab.isVisible().catch(() => false)) {
-      await commsTab.click();
-      await page.waitForTimeout(400);
-    }
+    // Navigate to comms sub-tab via #stab-comms (data-stab="comms")
+    await page.locator("#stab-comms").click();
+    await expect(page.locator("#stab-panel-comms")).toBeVisible({ timeout: 5_000 });
 
     const sessions = page.locator("#tgSessionsList");
     await expect(sessions).toBeVisible({ timeout: 8_000 });
