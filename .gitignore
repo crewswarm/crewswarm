@@ -32,9 +32,20 @@ test-results/
 test-scratch/
 *.cpuprofile
 
-# Private roadmap and internal docs (internal only)
+# Roadmaps and internal planning (keep out of public repo)
+ROADMAP.md
+crew-cli/ROADMAP.md
+crew-cli/docs/ROADMAP.md
+apps/vibe/ROADMAP.md
 docs/ROADMAP-PRIVATE.md
+docs/LAUNCH-PLAN.md
+docs/LESSONS.md
+docs/DASHBOARD-QA-PLAN.md
+docs/DASHBOARD-TAB-QA-PLAN.md
+docs/CANONICAL/DEMO-SCRIPT.md
+docs/CANONICAL/PUBLIC-REPO-READINESS.md
 docs/internal/
+reports/
 
 # OpenClaw legacy files (old brand name) — keep OPENCLAW-PLUGIN.md
 docs/OPENCLAW-AGENTS-SETUP.md
@@ -121,6 +132,7 @@ homepage/
 
 # BFG repo-cleaner reports
 .bfg-report/
+..bfg-report/
 
 # Secrets
 .env
