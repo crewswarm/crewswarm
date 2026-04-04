@@ -501,7 +501,8 @@ async function runPtyCommand(command, options = {}) {
   }
   let ptyPackage = null;
   try {
-    ptyPackage = await import("node-pty");
+    const mod = await import("node-pty");
+    ptyPackage = mod.default || (mod.spawn ? { spawn: mod.spawn } : null);
   } catch {
     ptyPackage = null;
   }
@@ -723,10 +724,10 @@ async function getCompletions(projectDir, filePath, line, column, limit = 50, pr
     });
     const items = (completions?.entries || []).filter((entry) => {
       if (!prefix) return true;
-      return entry.name.toLowerCase().startsWith(prefix.toLowerCase());
+      return String(entry.name || "").toLowerCase().startsWith(prefix.toLowerCase());
     });
     return items.slice(0, Math.max(1, limit)).map((entry) => ({
-      name: entry.name,
+      name: String(entry.name || ""),
       kind: kindToText(entry.kind),
       sortText: entry.sortText
     }));
@@ -17718,7 +17719,7 @@ var NativeEngineSessionManager = class {
   async closeAll() {
     for (const [key, session] of this.runtime.entries()) {
       try {
-        session.pty?.kill?.();
+        session.pty.kill();
       } catch {
       }
       this.runtime.delete(key);
@@ -18941,20 +18942,23 @@ async function runBrowserDebug(url, options = {}) {
     const client = new CdpClient(ws);
     const errors = [];
     client.on("Runtime.consoleAPICalled", (params) => {
-      const level = params.type || "log";
+      const consoleParams = params;
+      const level = consoleParams.type || "log";
       if (level === "error" || level === "warning") {
-        const text = (params.args || []).map((a) => a.value || a.description || "").join(" ");
+        const text = (consoleParams.args || []).map((a) => a.value || a.description || "").join(" ");
         errors.push(`[console:${level}] ${text}`.trim());
       }
     });
     client.on("Runtime.exceptionThrown", (params) => {
-      const desc = params.exceptionDetails?.text || "Exception thrown";
+      const exceptionParams = params;
+      const desc = exceptionParams.exceptionDetails?.text || "Exception thrown";
       errors.push(`[exception] ${desc}`);
     });
     client.on("Log.entryAdded", (params) => {
-      const level = params.entry?.level || "info";
+      const logParams = params;
+      const level = logParams.entry?.level || "info";
       if (level === "error" || level === "warning") {
-        errors.push(`[log:${level}] ${params.entry?.text || ""}`.trim());
+        errors.push(`[log:${level}] ${logParams.entry?.text || ""}`.trim());
       }
     });
     await client.send("Runtime.enable");
@@ -18967,7 +18971,7 @@ async function runBrowserDebug(url, options = {}) {
     if (!screenshotPath) {
       screenshotPath = join31(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
     }
-    await writeFile14(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data, "base64"));
+    await writeFile14(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data || "", "base64"));
     return { consoleErrors: errors, screenshotPath };
   } finally {
     try {
@@ -20075,6 +20079,12 @@ setInterval(evictStaleTasks, 6e5).unref();
 var latestIndex = null;
 var latestIndexStats = { files: 0, chunks: 0 };
 var latestIndexId = "";
+function asRecord(value) {
+  return value && typeof value === "object" ? value : {};
+}
+function asChatOptions(value) {
+  return value && typeof value === "object" ? value : {};
+}
 function readRtToken() {
   try {
     const p = join36(homedir9(), ".crewswarm", "crewswarm.json");
@@ -20296,6 +20306,7 @@ async function handleStandaloneChat(options, body) {
 
 ${context}` : message;
   const control = getChatControl(body);
+  const requestOptions = asChatOptions(body?.options);
   if (control.passthroughRequested || control.engine) {
     const engine = normalizeStandaloneEngine(control.engine || "");
     if (!engine) {
@@ -20306,7 +20317,7 @@ ${context}` : message;
       cwd: String(body?.projectDir || options.projectDir || process.cwd()),
       projectDir: String(body?.projectDir || options.projectDir || process.cwd()),
       sessionId: String(body?.sessionId || ""),
-      timeoutMs: Number(body?.options?.timeoutMs || body?.timeoutMs || 6e5)
+      timeoutMs: Number(requestOptions.timeoutMs || body?.timeoutMs || 6e5)
     });
     if (!run.success) {
       return {
@@ -20434,7 +20445,7 @@ async function handleOpenAIChatCompletions(options, body) {
 PREFERRED_AGENT: ${model}`,
     context: composed.context,
     options: {
-      model: typeof body?.metadata?.modelOverride === "string" ? body.metadata.modelOverride : void 0
+      model: typeof asRecord(body?.metadata).modelOverride === "string" ? asRecord(body?.metadata).modelOverride : void 0
     }
   };
   const out = options.mode === "connected" ? await handleConnectedChat(options, chatBody) : await handleStandaloneChat(options, chatBody);
@@ -20495,7 +20506,7 @@ async function enqueueStandaloneTask(options, body) {
     rec.status = "running";
     try {
       const result2 = await options.orchestrator.executeLocally(taskText, {
-        model: body?.options?.model
+        model: asChatOptions(body?.options).model
       });
       rec.status = "done";
       rec.result = result2?.result || "";
@@ -20963,7 +20974,7 @@ async function startUnifiedServer(options) {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const mcpResponse = await handleMcpRequest(options, body);
-        if (mcpResponse && !mcpResponse._skip) {
+        if (mcpResponse && !("_skip" in mcpResponse && mcpResponse._skip)) {
           return json(res, 200, mcpResponse);
         } else {
           res.writeHead(204);

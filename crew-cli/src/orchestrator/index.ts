@@ -41,6 +41,47 @@ export interface RouteResult {
   response?: string; // For CHAT decisions, the LLM's conversational response
 }
 
+interface AuthorizedUserCredentials {
+  type?: string;
+  refresh_token?: string;
+  client_id?: string;
+  client_secret?: string;
+}
+
+interface ChatCompletionLikeResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+}
+
+interface GeminiRouteResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
+}
+
+interface LocalExecutionResult {
+  success: boolean;
+  result: string;
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  costUsd?: number;
+}
+
+interface AgenticExecutionOptions {
+  model?: string;
+  onToolCall?: (name: string, params: Record<string, unknown>) => void;
+  conversationContext?: string;
+  sessionId?: string;
+  verbose?: boolean;
+  deferApply?: boolean;
+}
+
 export class Orchestrator {
   private logger = new Logger();
   private localExecutor = new LocalExecutor();
@@ -204,7 +245,7 @@ export class Orchestrator {
       
       const { readFile } = await import('node:fs/promises');
       const credentialsJson = await readFile(adcPath, 'utf8');
-      const credentials = JSON.parse(credentialsJson);
+      const credentials = JSON.parse(credentialsJson) as AuthorizedUserCredentials;
       
       if (credentials.type !== 'authorized_user' || !credentials.refresh_token) {
         return null;
@@ -224,7 +265,7 @@ export class Orchestrator {
       
       if (!tokenResponse.ok) return null;
       
-      const tokenData = await tokenResponse.json() as any;
+      const tokenData = await tokenResponse.json() as { access_token?: string };
       return tokenData.access_token || null;
     } catch {
       return null;
@@ -379,7 +420,7 @@ export class Orchestrator {
 
       if (!response.ok) return null;
 
-      const data = await response.json() as any;
+      const data = await response.json() as ChatCompletionLikeResponse;
       const content = data?.choices?.[0]?.message?.content;
       if (!content) return null;
 
@@ -421,7 +462,7 @@ export class Orchestrator {
 
       if (!response.ok) return null;
 
-      const data = await response.json() as any;
+      const data = await response.json() as ChatCompletionLikeResponse;
       const content = data?.choices?.[0]?.message?.content;
       if (!content) return null;
 
@@ -463,7 +504,7 @@ export class Orchestrator {
 
       if (!response.ok) return null;
 
-      const data = await response.json() as any;
+      const data = await response.json() as ChatCompletionLikeResponse;
       const content = data?.choices?.[0]?.message?.content;
       if (!content) return null;
 
@@ -495,7 +536,7 @@ export class Orchestrator {
       });
 
       if (!response.ok) return null;
-      const data = await response.json() as any;
+      const data = await response.json() as GeminiRouteResponse;
       const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!content) return null;
 
@@ -539,7 +580,7 @@ export class Orchestrator {
   /**
    * Execute a task locally without gateway (Tier 2 direct execution)
    */
-  async executeLocally(task: string, options: { model?: string; explicitModel?: boolean } = {}): Promise<any> {
+  async executeLocally(task: string, options: { model?: string; explicitModel?: boolean } = {}): Promise<LocalExecutionResult> {
     try {
       const result = await this.localExecutor.execute(task, {
         model: options.model,
@@ -581,7 +622,7 @@ export class Orchestrator {
     },
     preClassifiedDecision?: 'direct-answer' | 'execute-parallel',
     directResponse?: string
-  ): Promise<any> {
+  ): Promise<LocalExecutionResult & Record<string, unknown>> {
     const out = await this.pipeline.execute({
       userInput: task,
       context,
@@ -628,15 +669,8 @@ export class Orchestrator {
    */
   async executeAgentic(
     task: string,
-    options: {
-      model?: string;
-      onToolCall?: (name: string, params: Record<string, any>) => void;
-      conversationContext?: string;
-      sessionId?: string;
-      verbose?: boolean;
-      deferApply?: boolean;
-    } = {}
-  ): Promise<any> {
+    options: AgenticExecutionOptions = {}
+  ): Promise<Record<string, unknown>> {
     try {
       const fullTask = options.conversationContext
         ? `## Recent conversation context\n${options.conversationContext}\n\n## Current task\n${task}`

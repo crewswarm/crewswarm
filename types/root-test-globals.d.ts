@@ -1,21 +1,21 @@
 declare module '*.css';
 
 declare module '@testing-library/react' {
-  export const render: (...args: any[]) => any;
+  export const render: (...args: unknown[]) => unknown;
   export const screen: any;
   export const act: (callback: () => void | Promise<void>) => Promise<void> | void;
 }
 
 declare namespace jest {
-  interface Mock<T = any> {
-    (...args: any[]): T;
+  interface Mock<T = unknown> {
+    (...args: unknown[]): T;
     mockReturnValue(value: T): this;
     mockReturnValueOnce(value: T): this;
   }
 }
 
 declare const jest: {
-  mock: (...args: any[]) => void;
+  mock: (...args: unknown[]) => void;
   useFakeTimers: () => void;
   advanceTimersByTime: (ms: number) => void;
   clearAllTimers: () => void;

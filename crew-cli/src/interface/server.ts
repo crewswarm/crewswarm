@@ -7,6 +7,7 @@ import type { AgentRouter } from '../agent/router.js';
 import type { Orchestrator } from '../orchestrator/index.js';
 import type { Sandbox } from '../sandbox/index.js';
 import type { SessionManager } from '../session/manager.js';
+import type { RagMode } from '../context/codebase-rag.js';
 import { buildCollectionIndex, searchCollection, type CollectionIndex, type CollectionChunk } from '../collections/index.js';
 import { handleMcpRequest } from './mcp-handler.js';
 import { loadPipelineMetricsSummary } from '../metrics/pipeline.js';
@@ -68,6 +69,65 @@ interface OpenAIMessage {
     type?: string;
     function?: { name?: string; arguments?: string };
   }>;
+}
+
+interface ToolChoiceObject {
+  function?: { name?: string };
+}
+
+interface ChatOptionsPayload {
+  mode?: string;
+  model?: string;
+  engine?: string;
+  direct?: boolean;
+  bypass?: boolean;
+  timeoutMs?: number;
+}
+
+interface StreamChatPayload {
+  _sse?: boolean;
+  chunks?: unknown[];
+}
+
+interface StatusPayload {
+  gateway?: string;
+  queueDepth?: number;
+}
+
+interface ReplayableMutationCall {
+  name?: string;
+  args?: Record<string, unknown>;
+}
+
+interface ReplayPlan {
+  supportedMutations?: ReplayableMutationCall[];
+}
+
+interface McpRequestPayload {
+  jsonrpc: string;
+  id: string | number;
+  method: string;
+  params?: Record<string, unknown>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+}
+
+function asChatOptions(value: unknown): ChatOptionsPayload {
+  return value && typeof value === 'object' ? value as ChatOptionsPayload : {};
+}
+
+function asMcpRequest(value: Record<string, unknown>): McpRequestPayload | null {
+  if (typeof value.jsonrpc !== 'string' || typeof value.method !== 'string') return null;
+  const id = value.id;
+  if (typeof id !== 'string' && typeof id !== 'number') return null;
+  return {
+    jsonrpc: value.jsonrpc,
+    id,
+    method: value.method,
+    params: value.params && typeof value.params === 'object' ? value.params as Record<string, unknown> : undefined
+  };
 }
 
 function readRtToken(): string {
@@ -256,7 +316,7 @@ function selectToolCallName(body: Record<string, unknown>, userMessage: string):
   const choice = body?.tool_choice;
   if (choice === 'none') return null;
   if (choice && typeof choice === 'object') {
-    const forced = String((choice as any)?.function?.name || '').trim();
+    const forced = String((choice as ToolChoiceObject)?.function?.name || '').trim();
     if (forced && names.includes(forced)) return forced;
   }
   if (choice === 'required') return names[0];
@@ -351,6 +411,7 @@ async function handleStandaloneChat(options: UnifiedServerOptions, body: Record<
   const context = String(body?.context || '').trim();
   const mergedInput = context ? `${message}\n\n${context}` : message;
   const control = getChatControl(body);
+  const requestOptions = asChatOptions(body?.options);
 
   if (control.passthroughRequested || control.engine) {
     const engine = normalizeStandaloneEngine(control.engine || '');
@@ -362,7 +423,7 @@ async function handleStandaloneChat(options: UnifiedServerOptions, body: Record<
       cwd: String(body?.projectDir || options.projectDir || process.cwd()),
       projectDir: String(body?.projectDir || options.projectDir || process.cwd()),
       sessionId: String(body?.sessionId || ''),
-      timeoutMs: Number((body?.options as any)?.timeoutMs || body?.timeoutMs || 600000)
+      timeoutMs: Number(requestOptions.timeoutMs || body?.timeoutMs || 600000)
     });
     if (!run.success) {
       return {
@@ -500,7 +561,9 @@ async function handleOpenAIChatCompletions(options: UnifiedServerOptions, body: 
       : `${composed.message}\n\nPREFERRED_AGENT: ${model}`,
     context: composed.context,
     options: {
-      model: typeof (body?.metadata as any)?.modelOverride === 'string' ? (body!.metadata as any).modelOverride : undefined
+      model: typeof asRecord(body?.metadata).modelOverride === 'string'
+        ? asRecord(body?.metadata).modelOverride as string
+        : undefined
     }
   };
 
@@ -568,7 +631,7 @@ async function enqueueStandaloneTask(options: UnifiedServerOptions, body: Record
     rec.status = 'running';
     try {
       const result = await options.orchestrator.executeLocally(taskText, {
-        model: (body?.options as any)?.model
+        model: asChatOptions(body?.options).model
       });
       rec.status = 'done';
       rec.result = result?.result || '';
@@ -737,10 +800,10 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
           return json(res, 200, { ok: true, dryRun: true, plan });
         }
 
-        const adapter = new GeminiToolAdapter(options.sandbox as any);
+        const adapter = new GeminiToolAdapter(options.sandbox);
         const applied: Array<{ name: string; success: boolean; error?: string }> = [];
         await options.sandbox.load();
-        for (const call of plan.supportedMutations || []) {
+        for (const call of (plan as ReplayPlan).supportedMutations || []) {
           const toolName = String(call?.name || '').toLowerCase();
           const args = (call?.args && typeof call.args === 'object') ? call.args : {};
           const result = await adapter.executeTool(toolName, args);
@@ -770,7 +833,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
           const query = getQuery(req);
           const q = query.get('q') || '';
           const projectDir = query.get('projectDir') || options.projectDir;
-          const mode = (query.get('mode') as any) || 'import-graph';
+          const mode = (query.get('mode') || 'import-graph') as RagMode;
           const tokenBudget = Number(query.get('tokenBudget') || 8000);
           const maxFiles = Number(query.get('maxFiles') || 10);
           
@@ -885,8 +948,8 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
         const out = await handleOpenAIChatCompletions(options, body);
-        if ((out.data as any)?._sse) {
-          const streamPayload = out.data as any;
+        if ((out.data as StreamChatPayload)?._sse) {
+          const streamPayload = out.data as StreamChatPayload;
           res.writeHead(200, {
             'content-type': 'text/event-stream',
             'cache-control': 'no-cache',
@@ -966,8 +1029,8 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
         if (options.mode === 'connected') {
           try {
             const status = await options.router.getStatus();
-            gatewayStatus = (status as any)?.gateway || 'unknown';
-            queueDepth = Number((status as any)?.queueDepth || 0);
+            gatewayStatus = (status as StatusPayload)?.gateway || 'unknown';
+            queueDepth = Number((status as StatusPayload)?.queueDepth || 0);
           } catch {
             gatewayStatus = 'error';
           }
@@ -1083,8 +1146,10 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
       if (req.method === 'POST' && path === '/mcp') {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const mcpResponse = await handleMcpRequest(options, body as any);
-        if (mcpResponse && !(mcpResponse as any)._skip) {
+        const mcpRequest = asMcpRequest(body);
+        if (!mcpRequest) return json(res, 400, { error: 'invalid MCP request payload' });
+        const mcpResponse = await handleMcpRequest(options, mcpRequest);
+        if (mcpResponse && !('_skip' in mcpResponse && mcpResponse._skip)) {
           return json(res, 200, mcpResponse);
         } else {
           // Notifications should not advertise a JSON body. Some MCP clients

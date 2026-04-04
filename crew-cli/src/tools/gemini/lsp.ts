@@ -120,7 +120,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
       return {
         llmContent: `LSP error: ${err?.message || String(err)}`,
         returnDisplay: `LSP error: ${err?.message || String(err)}`,
-        error: { message: err?.message || String(err), type: undefined as any },
+        error: { message: err?.message || String(err) },
       };
     }
   }

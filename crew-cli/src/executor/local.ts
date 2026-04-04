@@ -43,6 +43,62 @@ interface ProviderAuth {
   oauthSource?: string;
 }
 
+interface OpenAIChatResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+      reasoning_content?: string;
+    };
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: {
+      cached_tokens?: number;
+    };
+  };
+}
+
+interface GeminiContentResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+  };
+}
+
+interface GeminiCodeAssistLoadResponse {
+  cloudaicompanionProject?: string;
+}
+
+interface GeminiCodeAssistGenerateResponse {
+  response?: {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<Record<string, unknown>>;
+      };
+    }>;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+    };
+  };
+}
+
+interface AnthropicMessageResponse {
+  content?: Array<{ type?: string; text?: string }>;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
+}
+
 const CLAUDE_OAUTH_BETA_HEADER = [
   'claude-code-20250219',
   'oauth-2025-04-20',
@@ -457,7 +513,7 @@ export class LocalExecutor {
             console.log(`[Grok] Retry API error: ${retryResponse.status} - ${retryText}`);
             return null;
           }
-          const retryData = await retryResponse.json() as any;
+          const retryData = await retryResponse.json() as OpenAIChatResponse;
           const retryContent = retryData?.choices?.[0]?.message?.content;
           if (!retryContent) return null;
           const cachedTokens = retryData?.usage?.prompt_tokens_details?.cached_tokens || 0;
@@ -474,7 +530,7 @@ export class LocalExecutor {
         }
       }
 
-      const data = await response.json() as any;
+      const data = await response.json() as OpenAIChatResponse;
       const content = data?.choices?.[0]?.message?.content;
       if (!content) return null;
 
@@ -622,7 +678,7 @@ export class LocalExecutor {
         };
       }
 
-      const data = await response.json() as any;
+      const data = await response.json() as GeminiContentResponse;
       const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!content) return null;
 
@@ -682,7 +738,7 @@ export class LocalExecutor {
       throw new Error(`Gemini Code Assist loadCodeAssist ${loadResponse.status}: ${errorText.slice(0, 300)}`);
     }
 
-    const loadData = await loadResponse.json() as any;
+    const loadData = await loadResponse.json() as GeminiCodeAssistLoadResponse;
     const resolvedProjectId = loadData?.cloudaicompanionProject || projectId;
     const requestBody = {
       model,
@@ -723,7 +779,7 @@ export class LocalExecutor {
       throw new Error(`Gemini Code Assist generateContent ${response.status}: ${errorText.slice(0, 300)}`);
     }
 
-    const data = await response.json() as any;
+    const data = await response.json() as GeminiCodeAssistGenerateResponse;
     const parts = data?.response?.candidates?.[0]?.content?.parts || [];
     const content = parts.filter((part: Record<string, unknown>) => typeof part?.text === 'string').map((part: Record<string, unknown>) => part.text).join('\n').trim();
     if (!content) return null;
@@ -800,7 +856,7 @@ export class LocalExecutor {
         };
       }
 
-      const data = await response.json() as any;
+      const data = await response.json() as OpenAIChatResponse;
 
       // deepseek-reasoner returns reasoning_content + content
       // deepseek-chat returns only content
@@ -933,7 +989,7 @@ export class LocalExecutor {
           return null;
         }
 
-        const data = await response.json() as any;
+        const data = await response.json() as AnthropicMessageResponse;
         const content = (data?.content || []).filter((b: Record<string, unknown>) => b.type === 'text').map((b: Record<string, unknown>) => b.text).join('\n');
         const usage = data?.usage || {};
         if (!content) return null;
@@ -1009,7 +1065,7 @@ export class LocalExecutor {
         };
       }
 
-      const data = await response.json() as any;
+      const data = await response.json() as AnthropicMessageResponse;
       const content = data?.content?.[0]?.text;
       if (!content) return null;
 
@@ -1167,7 +1223,7 @@ export class LocalExecutor {
         };
       }
 
-      const data = await response.json() as any;
+      const data = await response.json() as OpenAIChatResponse;
       const content = isCodexOAuth
         ? this.extractOpenAIResponsesText(data)
         : data?.choices?.[0]?.message?.content;

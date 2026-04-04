@@ -104,7 +104,7 @@ class SpawnAgentToolInvocation extends BaseToolInvocation<SpawnAgentToolParams, 
       return {
         llmContent: `Sub-agent depth limit reached (max ${MAX_SPAWN_DEPTH}). Complete this task directly instead of spawning another agent.`,
         returnDisplay: `Depth limit reached (${MAX_SPAWN_DEPTH})`,
-        error: { message: `Sub-agent depth limit reached`, type: undefined as any },
+        error: { message: `Sub-agent depth limit reached` },
       };
     }
 
@@ -120,8 +120,15 @@ class SpawnAgentToolInvocation extends BaseToolInvocation<SpawnAgentToolParams, 
 
     try {
       // Create an isolated sandbox branch for the sub-agent
+      type SandboxWithBranching = {
+        createBranch?(name: string): Promise<void>;
+        mergeBranch?(src: string, dst: string): Promise<void>;
+        deleteBranch?(name: string): Promise<void>;
+        switchBranch?(name: string): Promise<void>;
+      };
+      const sandboxBranching = this.sandbox as SandboxWithBranching;
       try {
-        await (this.sandbox as any).createBranch?.(branchName);
+        await sandboxBranching.createBranch?.(branchName);
       } catch {
         // If branching is unsupported, continue on the parent branch
       }
@@ -138,9 +145,9 @@ class SpawnAgentToolInvocation extends BaseToolInvocation<SpawnAgentToolParams, 
 
       // Merge sub-agent branch back to parent if branching is supported
       try {
-        const parentBranch = (this.sandbox as any).getActiveBranch?.();
+        const parentBranch = this.sandbox.getActiveBranch?.();
         if (parentBranch && parentBranch !== branchName) {
-          await (this.sandbox as any).mergeBranch?.(branchName, parentBranch);
+          await sandboxBranching.mergeBranch?.(branchName, parentBranch);
         }
       } catch {
         // Merge unsupported — sub-agent changes already applied in-place
@@ -148,7 +155,7 @@ class SpawnAgentToolInvocation extends BaseToolInvocation<SpawnAgentToolParams, 
 
       // Clean up temporary branch
       try {
-        await (this.sandbox as any).deleteBranch?.(branchName);
+        await sandboxBranching.deleteBranch?.(branchName);
       } catch {
         // Ignore cleanup errors
       }
@@ -169,17 +176,17 @@ class SpawnAgentToolInvocation extends BaseToolInvocation<SpawnAgentToolParams, 
     } catch (err) {
       // Attempt cleanup on error
       try {
-        await (this.sandbox as any).switchBranch?.('main');
+        await sandboxBranching.switchBranch?.('main');
       } catch { /* ignore */ }
       try {
-        await (this.sandbox as any).deleteBranch?.(branchName);
+        await sandboxBranching.deleteBranch?.(branchName);
       } catch { /* ignore */ }
 
       const msg = `Sub-agent failed: ${err?.message || String(err)}`;
       return {
         llmContent: msg,
         returnDisplay: msg,
-        error: { message: msg, type: undefined as any },
+        error: { message: msg },
       };
     } finally {
       _globalSpawnDepth = Math.max(0, _globalSpawnDepth - 1);

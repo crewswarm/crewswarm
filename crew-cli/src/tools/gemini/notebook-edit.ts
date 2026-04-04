@@ -158,7 +158,7 @@ class NotebookEditToolInvocation extends BaseToolInvocation<NotebookEditToolPara
       return {
         llmContent: `NotebookEdit error: ${err?.message || String(err)}`,
         returnDisplay: `NotebookEdit error: ${err?.message || String(err)}`,
-        error: { message: err?.message || String(err), type: undefined as any },
+        error: { message: err?.message || String(err) },
       };
     }
   }

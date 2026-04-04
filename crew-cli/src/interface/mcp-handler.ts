@@ -10,13 +10,15 @@ interface McpRequest {
 }
 
 interface McpResponse {
-  jsonrpc: string;
-  id: string | number;
+  jsonrpc?: string;
+  id?: string | number;
   result?: Record<string, unknown>;
   error?: {
     code: number;
     message: string;
   };
+  /** Internal sentinel: notifications don't need a JSON response body */
+  _skip?: boolean;
 }
 
 export async function handleMcpRequest(
@@ -45,7 +47,7 @@ export async function handleMcpRequest(
       case 'notifications/initialized':
       case 'initialized':
         // Notification - no response needed
-        return { _skip: true } as any;
+        return { _skip: true };
 
       case 'tools/list':
         return {
@@ -237,7 +239,8 @@ async function handleToolCall(
         const branch = options.sandbox.getActiveBranch();
         const pending = options.sandbox.getPendingPaths(branch);
         const diffs = pending.map(p => {
-          const content = (options.sandbox as any).readPendingFile?.(branch, p) || options.sandbox.getStagedContent(p, branch);
+          const sandboxExt = options.sandbox as { readPendingFile?: (branch: string, path: string) => string };
+          const content = sandboxExt.readPendingFile?.(branch, p) || options.sandbox.getStagedContent(p, branch);
           return { path: p, content };
         });
         
