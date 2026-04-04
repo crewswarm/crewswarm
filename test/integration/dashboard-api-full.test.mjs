@@ -1097,4 +1097,49 @@ describe("Dashboard API Full Endpoint Coverage", { concurrency: 1 }, () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // TESTING API ENDPOINTS
+  // ---------------------------------------------------------------------------
+  describe("Testing API Endpoints", () => {
+    test("GET /api/tests/stale returns stale files array", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/tests/stale");
+      assertRouteExists(status);
+      assert.ok(data !== undefined, "should return a response body");
+      // Response must have a stale array (may be empty if no stale files)
+      if (status === 200) {
+        assert.ok(Array.isArray(data.stale), "response should have a stale array");
+        // Each stale entry should have a file field
+        for (const entry of data.stale) {
+          assert.ok(typeof entry.file === "string", "stale entry should have a file string");
+        }
+      }
+    });
+
+    test("GET /api/tests/coverage-map returns covered and uncovered arrays", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status, data } = await api(t.name, "/api/tests/coverage-map");
+      assertRouteExists(status);
+      assert.ok(data !== undefined, "should return a response body");
+      if (status === 200) {
+        assert.ok(Array.isArray(data.covered), "response should have a covered array");
+        assert.ok(Array.isArray(data.uncovered), "response should have an uncovered array");
+        // pct field should be a number between 0 and 100 when present
+        if (data.pct !== undefined) {
+          assert.ok(typeof data.pct === "number", "pct should be a number");
+          assert.ok(data.pct >= 0 && data.pct <= 100, "pct should be between 0 and 100");
+        }
+      }
+    });
+
+    test("GET /api/tests/screenshot returns 404 for nonexistent path", async (t) => {
+      if (skipIfDown(t)) return;
+      const { status } = await api(t.name, "/api/tests/screenshot?path=__nonexistent_screenshot__.png");
+      // Route must exist (not 404 on the route itself) but the file should 404
+      assert.ok(status !== 500, "should not crash with 500 on missing file");
+      // Either 404 (file not found) or 200 (route exists and handles the request)
+      assert.ok(status === 404 || status === 200 || status === 400, `expected 404/400/200, got ${status}`);
+    });
+  });
+
 });

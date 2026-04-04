@@ -313,10 +313,29 @@ Run the full test suite from the dashboard without touching the terminal.
 - Inspect the per-suite breakdown (unit, integration, E2E, browser)
 - Browse run history to compare results across sessions
 
+**New features:**
+
+1. **Suite cards** — each suite (unit, integration, e2e, playwright, crew-cli) renders as a card showing file count, test count, pass/fail breakdown, and duration.
+
+2. **Per-file run button** — each file row in the suite breakdown has a run button that triggers `POST /api/tests/run` for that specific file, so you can re-run a single file without executing the full suite.
+
+3. **Stale file badges** — files whose source has changed since the last run are flagged with a "stale" badge, powered by `GET /api/tests/stale`. Click the badge to re-run just the stale files.
+
+4. **Coverage heatmap** — a color-coded grid of source files from `GET /api/tests/coverage-map` shows which files are covered (green) and which are not (grey/red), with a coverage percentage.
+
+5. **Run history chart** — an SVG bar chart above the history table visualises pass/fail ratios across the last N runs at a glance. Bars are colour-coded: green for all-passing, red for any failures.
+
+6. **Live output panel** — clicking any run button opens an inline streaming panel powered by the `/api/tests/stream` SSE endpoint. Output lines appear in real time; the panel closes automatically when the run finishes.
+
+7. **Failure drill-down** — each failure card is expandable. Clicking the failure name reveals the full stack trace, error classification (assertion, timeout, crash), and the exact `node --test` rerun command you can copy.
+
+8. **Screenshot viewer** — test snapshots captured during E2E runs are viewable inline via `GET /api/tests/screenshot?path=<relative>`. A broken or missing path returns 404 gracefully.
+
 **Tips:**
-- The Testing tab uses the `/api/test-run` SSE endpoint to stream output in real time.
+- The Testing tab uses the `/api/tests/stream` SSE endpoint to stream output in real time.
 - You can filter by suite name to focus on a specific area.
 - Failed suites are highlighted in red with expandable error detail.
+- Stale badges appear automatically after source files are saved — no manual refresh needed.
 
 ---
 
