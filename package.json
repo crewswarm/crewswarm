@@ -8,6 +8,10 @@
     "type": "git",
     "url": "https://github.com/crewswarm/crewswarm.git"
   },
+  "homepage": "https://crewswarm.ai",
+  "bugs": {
+    "url": "https://github.com/crewswarm/crewswarm/issues"
+  },
   "keywords": [
     "ai",
     "agents",
