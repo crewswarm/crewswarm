@@ -27,6 +27,8 @@ import { ExecutionTranscript } from '../execution/transcript.js';
 import { getOAuthToken, forceRefreshOAuthToken } from '../auth/oauth-keychain.js';
 import { getOpenAIOAuthToken, forceRefreshOpenAIOAuth, OPENAI_CODEX_API_URL } from '../auth/openai-oauth.js';
 import { getGeminiOAuthToken, forceRefreshGeminiOAuth } from '../auth/gemini-oauth.js';
+import { createScratchpad, cleanupScratchpad, getScratchpadInstructions } from './scratchpad.js';
+import { TOOL_RESULT_CLEARING_PROMPT } from './tool-result-clearing.js';
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -635,7 +637,8 @@ async function executeStreamingGeminiTurn(
   historyMessages?: any[],
   isOAuth?: boolean,
   projectId?: string,
-  oauthSource?: string
+  oauthSource?: string,
+  abortSignal?: AbortSignal
 ): Promise<LLMTurnResult> {
   if (isOAuth) {
     return executeGeminiCodeAssistTurn(
@@ -684,10 +687,16 @@ async function executeStreamingGeminiTurn(
     headers['Authorization'] = `Bearer ${key}`;
   }
 
+  // Combine caller's abort signal with a timeout signal
+  const timeoutSignal = AbortSignal.timeout(120000);
+  const fetchSignal = abortSignal
+    ? AbortSignal.any([abortSignal, timeoutSignal])
+    : timeoutSignal;
+
   const res = await fetch(url, {
     method: 'POST',
     headers,
-    signal: AbortSignal.timeout(120000),
+    signal: fetchSignal,
     body: JSON.stringify({
       contents,
       tools: [{ functionDeclarations }],
@@ -702,7 +711,7 @@ async function executeStreamingGeminiTurn(
       if (refreshed?.accessToken && refreshed.accessToken !== key) {
         return executeStreamingGeminiTurn(
           fullTask, tools, refreshed.accessToken, model,
-          systemPrompt, stream, images, historyMessages, true
+          systemPrompt, stream, images, historyMessages, true, projectId, oauthSource, abortSignal
         );
       }
     }
@@ -929,7 +938,8 @@ async function executeStreamingOpenAITurn(
   images?: ImageAttachment[],
   historyMessages?: any[],
   isOAuth?: boolean,
-  historyContext?: string
+  historyContext?: string,
+  abortSignal?: AbortSignal
 ): Promise<LLMTurnResult> {
   const openaiTools = tools.map(t => ({
     type: 'function' as const,
@@ -991,13 +1001,19 @@ async function executeStreamingOpenAITurn(
         };
       })();
 
+  // Combine caller's abort signal with a timeout signal
+  const openAITimeoutSignal = AbortSignal.timeout(120000);
+  const openAIFetchSignal = abortSignal
+    ? AbortSignal.any([abortSignal, openAITimeoutSignal])
+    : openAITimeoutSignal;
+
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
-    signal: AbortSignal.timeout(120000),
+    signal: openAIFetchSignal,
     body: JSON.stringify(body)
   });
 
@@ -1008,7 +1024,7 @@ async function executeStreamingOpenAITurn(
       if (refreshed?.accessToken && refreshed.accessToken !== apiKey) {
         return executeStreamingOpenAITurn(
           fullTask, tools, apiUrl, refreshed.accessToken, model,
-          systemPrompt, stream, images, historyMessages, true
+          systemPrompt, stream, images, historyMessages, true, historyContext, abortSignal
         );
       }
     }
@@ -1354,7 +1370,8 @@ async function executeStreamingAnthropicTurn(
   stream: boolean,
   images?: ImageAttachment[],
   historyMessages?: any[],
-  isOAuth?: boolean
+  isOAuth?: boolean,
+  abortSignal?: AbortSignal
 ): Promise<LLMTurnResult> {
   // Build user content: text + optional images
   let userContent: any = fullTask;
@@ -1401,10 +1418,16 @@ async function executeStreamingAnthropicTurn(
     headers['x-api-key'] = apiKey;
   }
 
+  // Combine caller's abort signal with a timeout signal
+  const anthropicTimeoutSignal = AbortSignal.timeout(120000);
+  const anthropicFetchSignal = abortSignal
+    ? AbortSignal.any([abortSignal, anthropicTimeoutSignal])
+    : anthropicTimeoutSignal;
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers,
-    signal: AbortSignal.timeout(120000),
+    signal: anthropicFetchSignal,
     body: JSON.stringify(body)
   });
 
@@ -1415,7 +1438,7 @@ async function executeStreamingAnthropicTurn(
       if (refreshed?.accessToken && refreshed.accessToken !== apiKey) {
         return executeStreamingAnthropicTurn(
           fullTask, tools, refreshed.accessToken, model,
-          systemPrompt, stream, images, historyMessages, true
+          systemPrompt, stream, images, historyMessages, true, abortSignal
         );
       }
     }
@@ -1521,7 +1544,8 @@ async function executeLLMTurn(
   model: string,
   systemPrompt: string,
   stream: boolean,
-  images?: ImageAttachment[]
+  images?: ImageAttachment[],
+  abortSignal?: AbortSignal
 ): Promise<LLMTurnResult> {
   const resolved = await resolveProvider(model);
   if (!resolved) {
@@ -1560,14 +1584,15 @@ async function executeLLMTurn(
       historyMsgs,
       isOAuth,
       resolved.projectId,
-      resolved.oauthSource
+      resolved.oauthSource,
+      abortSignal
     );
   }
 
   // Anthropic: structured multi-turn with tool_use/tool_result
   if (driver === 'anthropic') {
     const historyMsgs = historyToAnthropicMessages(history);
-    return executeStreamingAnthropicTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth);
+    return executeStreamingAnthropicTurn(task, tools, key, effectiveModel, systemPrompt, stream, images, historyMsgs, isOAuth, abortSignal);
   }
 
   // OpenAI-compatible: structured multi-turn with tool_calls/tool messages
@@ -1584,7 +1609,8 @@ async function executeLLMTurn(
       images,
       historyMsgs,
       isOAuth,
-      historyToContext(history)
+      historyToContext(history),
+      abortSignal
     );
   }
 
@@ -1827,6 +1853,10 @@ export async function runAgenticWorker(
     priorDiscoveredFiles?: string[];
     constraintLevel?: ConstraintLevel;
     persona?: string;
+    /** Feature 3: AbortController — pass a signal to cancel the agent mid-run */
+    abortSignal?: AbortSignal;
+    /** Feature 4: Budget limit in USD — stop execution when cost exceeds this */
+    maxBudgetUsd?: number;
   } = {}
 ): Promise<AgenticExecutorResult> {
   // Resolve constraint level: explicit > persona-derived > full (default)
@@ -1834,11 +1864,20 @@ export async function runAgenticWorker(
     || (options.persona ? constraintLevelForPersona(options.persona) : 'full');
   const adapter = new GeminiToolAdapter(sandbox, constraintLevel);
   const allTools = adapter.getToolDeclarations() as ToolDeclaration[];
-  const systemPrompt = options.systemPrompt || L3_SYSTEM_PROMPT;
   const model = options.model || process.env.CREW_EXECUTION_MODEL || '';
   const maxTurns = options.maxTurns ?? 25;
   const projectDir = options.projectDir || (sandbox as any).baseDir || process.cwd();
   const verbose = options.verbose ?? Boolean(process.env.CREW_DEBUG);
+
+  // Feature: Per-session scratchpad — give each run an isolated temp directory
+  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const scratchDir = createScratchpad(sessionId);
+  const baseSystemPrompt = options.systemPrompt || L3_SYSTEM_PROMPT;
+  // Append scratchpad instructions + tool-result clearing notice to system prompt
+  const systemPrompt =
+    baseSystemPrompt +
+    getScratchpadInstructions(scratchDir) +
+    TOOL_RESULT_CLEARING_PROMPT;
   const stream = options.stream ?? !process.env.CREW_NO_STREAM; // Stream by default
   const jit = options.priorDiscoveredFiles?.length
     ? JITContextTracker.fromPrior(options.priorDiscoveredFiles)
@@ -1944,7 +1983,7 @@ export async function runAgenticWorker(
 
   const result: AutonomousResult = await executeAutonomous(
     enrichedTask,
-    async (prompt, tools, history) => {
+    async (prompt, tools, history, abortSignal) => {
       turnCount++;
 
       // JIT: inject discovered context every 3 turns
@@ -1999,12 +2038,13 @@ export async function runAgenticWorker(
       // Only inject images on the first turn to avoid context bloat
       const turnImages = turnCount === 1 ? options.images : undefined;
       const turnTools = compactToolDeclarations(allTools, turnCount);
-      const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages);
+      const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages, abortSignal);
       totalCost += turnResult.cost || 0;
       return {
         toolCalls: turnResult.toolCalls,
         response: turnResult.response,
-        status: turnResult.status
+        status: turnResult.status,
+        costUsd: turnResult.cost  // Feature 4: surface cost per turn to autonomous loop
       };
     },
     async (name, params) => {
@@ -2017,9 +2057,14 @@ export async function runAgenticWorker(
         ? (turn, action) => {
             console.log(`  [Turn ${turn}] ${action}`);
           }
-        : undefined
+        : undefined,
+      abortSignal: options.abortSignal,    // Feature 3
+      maxBudgetUsd: options.maxBudgetUsd   // Feature 4
     }
   );
+
+  // Feature: Clean up the per-session scratchpad directory
+  cleanupScratchpad(sessionId);
 
   // Freeze transcript — immutable after execution completes
   transcript.freeze();
