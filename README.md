@@ -168,7 +168,7 @@ Or skip API keys entirely — use Claude Code, Cursor, or Gemini CLI with OAuth 
 ## Commands
 
 ```bash
-crewswarm                    # Start all services
+crewswarm                    # Start full stack: RT bus, crew-lead, bridges, then dashboard
 crewswarm pm-loop            # Run autonomous PM loop
 npm run doctor               # Preflight check
 npm run restart-all          # Restart the stack

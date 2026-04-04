@@ -2,10 +2,10 @@
 /**
  * scripts/start.mjs — CrewSwarm first-run entry point
  *
- * This is the script behind `npm start`.  It validates the environment before
- * handing off to the real stack so that a brand-new user who clones the repo
- * and types `npm start` gets clear, actionable guidance rather than a stack
- * trace.
+ * This is the script behind `npm start` / `npx crewswarm`.  It validates the
+ * environment before handing off to the real stack so that a brand-new user
+ * who clones the repo and types `npm start` gets clear, actionable guidance
+ * rather than a stack trace.
  *
  * Checks performed (in order):
  *   1. Node.js version >= 20
@@ -13,13 +13,18 @@
  *   3. ~/.crewswarm/config.json exists (created by install.sh)
  *   4. At least one provider with an apiKey is configured
  *
- * On success, delegates to `npm run dashboard` (the standard start target).
+ * On success:
+ *   1. Spawns start-crew.mjs in the background (RT bus + crew-lead + bridges)
+ *   2. Waits 3 seconds for services to come up
+ *   3. Starts dashboard in the foreground (the process the user sees)
+ *
+ * NOTE: `npm run dashboard` still starts only the dashboard (unchanged).
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -130,14 +135,44 @@ if (agents.length === 0) {
 }
 info(`${agents.length} agent(s) defined`);
 
-// ── 7. Hand off to dashboard ──────────────────────────────────────────────────
+// ── 7. Start full stack ───────────────────────────────────────────────────────
 console.log("");
 divider();
-info("All checks passed — launching dashboard on http://127.0.0.1:4319");
+info("All checks passed — starting full CrewSwarm stack");
 divider();
 console.log("");
 
-const result = spawnSync("node", [path.join(ROOT, "scripts", "dashboard.mjs")], {
+// Step 1: Spawn start-crew.mjs in the background (RT bus + crew-lead + bridges)
+info("Launching RT bus, crew-lead, and gateway bridges…");
+const crewScript = path.join(ROOT, "scripts", "start-crew.mjs");
+const crewProc = spawn(process.execPath, [crewScript], {
+  cwd: ROOT,
+  stdio: "inherit",
+  detached: false,
+  env: process.env,
+});
+
+// Wait for start-crew.mjs to finish its synchronous setup (it exits after spawning daemons)
+await new Promise((resolve) => {
+  crewProc.on("exit", resolve);
+  crewProc.on("error", (err) => {
+    warn(`start-crew.mjs exited with error: ${err.message}`);
+    resolve();
+  });
+});
+
+// Step 2: Give the background daemons a moment to bind their ports
+info("Waiting 3 s for services to come up…");
+await new Promise((resolve) => setTimeout(resolve, 3000));
+
+// Step 3: Start dashboard in the foreground (what the user sees)
+console.log("");
+divider();
+console.log(bold("  All services started.  Dashboard → http://127.0.0.1:4319"));
+divider();
+console.log("");
+
+const result = spawnSync(process.execPath, [path.join(ROOT, "scripts", "dashboard.mjs")], {
   cwd: ROOT,
   stdio: "inherit",
   env: process.env,
