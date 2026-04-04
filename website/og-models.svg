@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#060a10"/>
+  <rect x="0" y="0" width="1200" height="3" fill="#00e5a0" opacity="0.6"/>
+  <text x="60" y="60" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="500" fill="#00e5a0" letter-spacing="3">crewswarm</text>
+  <text x="60" y="160" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#ffffff">AI Models 2026</text>
+  <text x="60" y="210" font-family="system-ui, -apple-system, sans-serif" font-size="22" fill="#8a94a6">Best coding, value, speed, and open models — ranked for agent workflows</text>
+  <circle cx="80" cy="300" r="6" fill="#00e5a0"/>
+  <text x="100" y="306" font-family="ui-monospace, 'SF Mono', monospace" font-size="24" font-weight="600" fill="#e0e4ea">Claude Sonnet 4.6</text>
+  <circle cx="80" cy="350" r="6" fill="#7c6bff"/>
+  <text x="100" y="356" font-family="ui-monospace, 'SF Mono', monospace" font-size="24" font-weight="600" fill="#e0e4ea">GPT-5.4</text>
+  <circle cx="80" cy="400" r="6" fill="#4a90d9"/>
+  <text x="100" y="406" font-family="ui-monospace, 'SF Mono', monospace" font-size="24" font-weight="600" fill="#e0e4ea">Gemini 3.1 Pro</text>
+  <circle cx="80" cy="450" r="6" fill="#ff6b4a"/>
+  <text x="100" y="456" font-family="ui-monospace, 'SF Mono', monospace" font-size="24" font-weight="600" fill="#e0e4ea">Grok 4.20</text>
+  <circle cx="80" cy="500" r="6" fill="#f5a623"/>
+  <text x="100" y="506" font-family="ui-monospace, 'SF Mono', monospace" font-size="24" font-weight="600" fill="#e0e4ea">Kimi K2.5</text>
+  <line x1="600" y1="280" x2="600" y2="520" stroke="#1a2030" stroke-width="1"/>
+  <text x="640" y="306" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#5a6478">Coding lead  ·  1M context</text>
+  <text x="640" y="356" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#5a6478">Planning  ·  agent orchestration</text>
+  <text x="640" y="406" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#5a6478">Multimodal  ·  2M context</text>
+  <text x="640" y="456" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#5a6478">Reasoning  ·  fast inference</text>
+  <text x="640" y="506" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#5a6478">Open-weight  ·  deep research</text>
+  <rect x="0" y="580" width="1200" height="50" fill="#0a0f18"/>
+  <text x="60" y="610" font-family="system-ui, -apple-system, sans-serif" font-size="15" fill="#3a4458">crewswarm.ai/models</text>
+  <text x="1140" y="610" font-family="system-ui, -apple-system, sans-serif" font-size="15" fill="#3a4458" text-anchor="end">April 2026</text>
+</svg>
