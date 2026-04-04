@@ -2,7 +2,7 @@
  * Agentic L3 Executor v2 — 10/10 competitive CLI engine
  *
  * Features:
- * - 40+ tools via GeminiToolAdapter (LSP, git, web, memory, tracker, etc.)
+ * - 44+ tools via GeminiToolAdapter (LSP, git, web, memory, tracker, etc.)
  * - Streaming output — real-time token display as LLM generates
  * - JIT context discovery — files discovered by tools are indexed for next turn
  * - Turn compression — Topic-Action-Summary keeps prompts lean on long sessions
@@ -85,13 +85,16 @@ Every turn, follow this exact pattern:
 
 ## Available Tools
 
-**Files**: read_file, write_file, replace (edit with replace_all flag), read_many_files, glob, grep_search (output_mode: content/files/count, context, type filter), list_directory, mkdir
-**Shell**: run_shell_command (Docker isolation when staged files exist; run_in_background for long commands; configurable timeout via CREW_SHELL_TIMEOUT, default 120s, max 600s), check_background_task
+**Files**: read_file, write_file, replace (edit with replace_all flag), read_many_files, glob, grep_search (output_mode: content/files/count, context, type filter), list_directory, mkdir, append_file
+**Shell**: run_shell_command (Docker isolation when staged files exist; run_in_background for long commands; configurable timeout via CREW_SHELL_TIMEOUT, default 120s, max 600s), check_background_task, sleep (wait between actions, max 60s)
 **Git**: git (status, diff, log, add, commit, show, branch, stash, tag, blame, checkout, fetch, pull, merge, rebase, cherry-pick, worktree — force-push and --no-verify blocked)
+**Worktrees**: worktree, enter_worktree, exit_worktree, merge_worktree, list_worktrees (isolated git worktrees for parallel work)
+**Code Intel**: lsp (diagnostics, go-to-definition, find-references, hover, completions), notebook_edit (Jupyter .ipynb — add/edit/delete/run cells)
 **Web**: google_web_search, web_fetch
 **Memory**: save_memory (persist facts across sessions), write_todos
 **Docs**: get_internal_docs (read project documentation)
 **Agents**: spawn_agent (spawn autonomous sub-agent for independent subtasks — isolated sandbox branch, cheap model by default, merges changes on completion)
+**Discovery**: tool_search (find available tools by name or description query), activate_skill
 
 ## File Reading Strategy
 

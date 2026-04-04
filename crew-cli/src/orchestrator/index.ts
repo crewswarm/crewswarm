@@ -13,19 +13,18 @@ import { parseJsonObjectWithRepair } from '../utils/structured-json.js';
 export { WorkerPool } from './worker-pool.js';
 export type { WorkerTask, TaskResult, WorkerPoolOptions } from './worker-pool.js';
 
-const ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crew-cli, a multi-agent orchestration platform.
+const ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crew-cli, a standalone agentic coding engine.
 
-Route this request to one of: CHAT, CODE, DISPATCH, SKILL.
+Route this request to one of: direct-answer, execute-direct, execute-parallel.
 
-- CHAT: Simple conversation, greetings, status checks, or informational questions about the system
-- CODE: Code editing, building, implementing, creating, refactoring, or any development task
-- DISPATCH: Specific agent request (QA, PM, security, fixer, etc) or complex multi-step tasks
-- SKILL: Explicit skill invocation
+- direct-answer: Simple conversation, greetings, status checks, or questions about YOUR identity/capabilities. Provide response in "directResponse".
+- execute-direct: Code editing, building, implementing, single-file tasks, questions about files/project state, or any development task.
+- execute-parallel: Complex multi-file features, large refactors, or multi-step implementation tasks.
 
-For CHAT decisions, provide a helpful conversational response in the "response" field.
+You are running as a standalone CLI assistant. You do NOT dispatch to external agents or a swarm.
 
 Return ONLY a JSON object in this exact format:
-{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-xxx if needed","task":"reformulated task","response":"your chat response if CHAT"}`;
+{"decision":"direct-answer|execute-direct|execute-parallel","reasoning":"why this path","directResponse":"if direct-answer, your response here","complexity":"low|medium|high","estimatedCost":0.001}`;
 
 export enum RouteDecision {
   CHAT = 'CHAT',
@@ -100,6 +99,7 @@ export class Orchestrator {
     }
 
     const lower = input.toLowerCase();
+    const isStandalone = String(process.env.CREW_INTERFACE_MODE || 'standalone').toLowerCase() !== 'connected';
     let result: RouteResult;
 
     // Skill calling detection
@@ -116,11 +116,13 @@ export class Orchestrator {
       (lower.includes('build') && (lower.includes('website') || lower.includes('app') || lower.includes('system'))) ||
       (lower.includes('research') && (lower.includes('indepth') || lower.includes('in-depth')))
     ) {
-      result = { decision: RouteDecision.DISPATCH, agent: 'crew-pm', task: input };
+      result = { decision: isStandalone ? RouteDecision.CODE : RouteDecision.DISPATCH, agent: isStandalone ? 'crew-coder' : 'crew-pm', task: input };
     }
     // Specialist dispatch detection
     else if (lower.includes('ask') || lower.includes('tell')) {
-      if (lower.includes('fixer') || lower.includes('fix')) {
+      if (isStandalone) {
+        result = { decision: RouteDecision.CODE, agent: 'crew-coder', task: input };
+      } else if (lower.includes('fixer') || lower.includes('fix')) {
         result = { decision: RouteDecision.DISPATCH, agent: 'crew-fixer', task: input };
       } else if (lower.includes('qa') || lower.includes('test')) {
         result = { decision: RouteDecision.DISPATCH, agent: 'crew-qa', task: input };
@@ -172,7 +174,7 @@ export class Orchestrator {
       };
     }
     else {
-      result = { decision: RouteDecision.DISPATCH, agent: 'crew-main', task: input };
+      result = { decision: isStandalone ? RouteDecision.CODE : RouteDecision.DISPATCH, agent: isStandalone ? 'crew-coder' : 'crew-main', task: input };
     }
 
     await this.logRoutingDecision(input, result);
@@ -259,7 +261,7 @@ export class Orchestrator {
     try {
       const parsed = await parseJsonObjectWithRepair(raw, {
         label: 'Route decision',
-        schemaHint: '{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-coder","task":"...","response":"..."}',
+        schemaHint: '{"decision":"direct-answer|execute-direct|execute-parallel","reasoning":"...","directResponse":"...","complexity":"low|medium|high","estimatedCost":0.001}',
         repair: async (repairPrompt: string) => {
           const res = await this.localExecutor.execute(repairPrompt, {
             model: this.getJsonRepairModel(),
@@ -269,14 +271,37 @@ export class Orchestrator {
           return String(res.result || '');
         }
       });
-      const decision = String(parsed.decision || '').toUpperCase();
-      if (!Object.values(RouteDecision).includes(decision as RouteDecision)) return null;
+      // Map L2-style decisions to RouteDecision enum
+      const rawDecision = String(parsed.decision || '').trim().toLowerCase().replace(/_/g, '-');
+      let decision: RouteDecision;
+      if (rawDecision === 'direct-answer' || rawDecision === 'chat' || rawDecision === 'answer') {
+        decision = RouteDecision.CHAT;
+      } else if (rawDecision === 'execute-direct' || rawDecision === 'code' || rawDecision === 'simple' || rawDecision === 'execute') {
+        decision = RouteDecision.CODE;
+      } else if (rawDecision === 'execute-parallel' || rawDecision === 'dispatch' || rawDecision === 'plan' || rawDecision === 'build') {
+        // In standalone mode, parallel execution is handled locally — map to CODE
+        decision = RouteDecision.CODE;
+      } else if (rawDecision === 'skill') {
+        decision = RouteDecision.SKILL;
+      } else {
+        // Try uppercase match for backward compat
+        const upper = rawDecision.toUpperCase();
+        if (Object.values(RouteDecision).includes(upper as RouteDecision)) {
+          decision = upper as RouteDecision;
+        } else {
+          return null;
+        }
+      }
+      // Never produce DISPATCH in standalone — remap to CODE
+      if (decision === RouteDecision.DISPATCH) {
+        decision = RouteDecision.CODE;
+      }
       return {
-        decision: decision as RouteDecision,
-        agent: parsed.agent || undefined,
+        decision,
+        agent: parsed.agent || (decision === RouteDecision.CODE ? 'crew-coder' : undefined),
         task: parsed.task || fallbackTask,
-        response: parsed.response || undefined,
-        explanation: parsed.explanation || 'LLM-based routing'
+        response: parsed.directResponse || parsed.response || undefined,
+        explanation: parsed.reasoning || parsed.explanation || 'LLM-based routing'
       };
     } catch {
       return null;
@@ -598,7 +623,7 @@ export class Orchestrator {
   /**
    * Execute a task using the agentic executor with full file tools.
    * This is the primary execution path — single worker with THINK→ACT→OBSERVE loop
-   * and 40+ tools (read_file, write_file, replace, bash, grep, etc.).
+   * and 44+ tools (read_file, write_file, replace, bash, grep, etc.).
    * Equivalent to how Claude Code, Codex CLI, and Gemini CLI execute tasks.
    */
   async executeAgentic(
