@@ -39,8 +39,8 @@ function getPrivacyPath(baseDir = process.cwd()) {
   return join(getStateDir(baseDir), 'privacy.json');
 }
 
-function applyPrivacyToCorrection(entry: any, privacy: PrivacyControls) {
-  const output: any = {
+function applyPrivacyToCorrection(entry: Record<string, unknown>, privacy: PrivacyControls) {
+  const output: Record<string, unknown> = {
     timestamp: entry.timestamp,
     agent: entry.agent || null
   };

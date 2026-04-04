@@ -36,7 +36,7 @@ export async function startRagServer(options: RagServerOptions = {}) {
   });
 
   // GET /api/rag/search?q=auth+endpoint&projectDir=/path&mode=import-graph&tokenBudget=8000&maxFiles=10
-  app.get('/api/rag/search', async (req: any, res: any) => {
+  app.get('/api/rag/search', async (req: { query: Record<string, string> }, res: { json(data: unknown): void; status(code: number): { json(data: unknown): void } }) => {
     try {
       const query = String(req.query.q || '');
       const projectDir = resolve(String(req.query.projectDir || process.cwd()));
@@ -94,7 +94,7 @@ export async function startRagServer(options: RagServerOptions = {}) {
   });
 
   // POST /api/rag/index - Force re-index (for semantic mode)
-  app.post('/api/rag/index', async (req: any, res: any) => {
+  app.post('/api/rag/index', async (req: { body: Record<string, string> }, res: { json(data: unknown): void; status(code: number): { json(data: unknown): void } }) => {
     try {
       const projectDir = resolve(req.body.projectDir || process.cwd());
 

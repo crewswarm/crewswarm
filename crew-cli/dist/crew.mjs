@@ -3038,196 +3038,6 @@ var init_tool_result_clearing = __esm({
   }
 });
 
-// src/context/token-compaction.ts
-function estimateTokens(text) {
-  if (!text) return 0;
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
-}
-function getContextWindow(model) {
-  const m = String(model || "").toLowerCase();
-  for (const [prefix, size] of Object.entries(CONTEXT_WINDOWS)) {
-    if (m.startsWith(prefix)) return size;
-  }
-  return 128e3;
-}
-function calculateTokenBudget(messages, model, systemPromptTokens = 0, compactThreshold = 0.75) {
-  const contextWindow = getContextWindow(model);
-  let estimatedUsed = systemPromptTokens;
-  for (const msg of messages) {
-    estimatedUsed += estimateTokens(msg.content) + 4;
-  }
-  const remainingTokens = contextWindow - estimatedUsed;
-  const remainingPct = remainingTokens / contextWindow;
-  return {
-    contextWindow,
-    estimatedUsed,
-    remainingTokens,
-    remainingPct,
-    shouldCompact: estimatedUsed / contextWindow >= compactThreshold
-  };
-}
-async function compactConversation(messages, opts = {}) {
-  const keepFirst = opts.keepFirst ?? 2;
-  const keepLast = opts.keepLast ?? 6;
-  const targetTokens = opts.targetTokens ?? 2e3;
-  if (messages.length <= keepFirst + keepLast) {
-    return messages;
-  }
-  const head = messages.slice(0, keepFirst);
-  const middle = messages.slice(keepFirst, messages.length - keepLast);
-  const tail = messages.slice(-keepLast);
-  if (middle.length === 0) return messages;
-  const middleText = middle.map((m) => {
-    const role = m.role.toUpperCase();
-    const text = m.content.slice(0, 2e3);
-    return `[${role}] ${text}`;
-  }).join("\n\n");
-  let summary;
-  if (opts.summarizer) {
-    const prompt = `Summarize this conversation segment concisely, preserving key decisions, file changes, errors, and outcomes. Focus on what was done and what state things are in now:
-
-${middleText}`;
-    summary = await opts.summarizer(prompt, targetTokens);
-  } else {
-    summary = extractiveCompress(middle, targetTokens);
-  }
-  const summaryMessage = {
-    role: "assistant",
-    content: `[Context Summary \u2014 ${middle.length} earlier messages compressed]
-${summary}`,
-    isCompacted: true
-  };
-  return [...head, summaryMessage, ...tail];
-}
-function extractiveCompress(messages, targetTokens) {
-  const maxChars = targetTokens * CHARS_PER_TOKEN;
-  const lines = [];
-  for (const msg of messages) {
-    const role = msg.role === "assistant" ? "A" : "U";
-    const content = msg.content || "";
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.length < 5) continue;
-      let priority = 1;
-      if (/error|fail|exception/i.test(trimmed)) priority = 5;
-      if (/\.(ts|js|py|go|rs|tsx|jsx|json)/.test(trimmed)) priority = 3;
-      if (/wrote|created|edited|deleted|fixed/i.test(trimmed)) priority = 4;
-      if (/→|✓|✗|COMPLETE|OK:|FAIL:/i.test(trimmed)) priority = 3;
-      if (/decision|chose|decided|because/i.test(trimmed)) priority = 4;
-      lines.push({ text: `[${role}] ${trimmed}`, priority });
-    }
-  }
-  lines.sort((a, b) => b.priority - a.priority);
-  let result2 = "";
-  for (const line of lines) {
-    if (result2.length + line.text.length > maxChars) break;
-    result2 += line.text + "\n";
-  }
-  return result2 || "[No significant content to summarize]";
-}
-function adaptiveCompressionRatio(totalTurns, contextUsagePct) {
-  if (contextUsagePct < 0.5) {
-    return { firstN: 5, lastN: 8 };
-  }
-  if (contextUsagePct < 0.75) {
-    return { firstN: 3, lastN: 5 };
-  }
-  return { firstN: 1, lastN: 3 };
-}
-var CHARS_PER_TOKEN, CONTEXT_WINDOWS;
-var init_token_compaction = __esm({
-  "src/context/token-compaction.ts"() {
-    "use strict";
-    CHARS_PER_TOKEN = 3.7;
-    CONTEXT_WINDOWS = {
-      "gemini-2.5-flash": 1048576,
-      "gemini-2.5-pro": 1048576,
-      "gemini-2.0-flash": 1048576,
-      "gpt-4o": 128e3,
-      "gpt-4o-mini": 128e3,
-      "gpt-5": 256e3,
-      "gpt-5.4": 256e3,
-      "gpt-5.3": 256e3,
-      "gpt-5.1": 256e3,
-      "gpt-5.2": 256e3,
-      "claude-3-5-sonnet": 2e5,
-      "claude-opus-4.6": 2e5,
-      "claude-opus-4": 2e5,
-      "claude-sonnet-4": 2e5,
-      "claude-haiku-4": 2e5,
-      "grok-4": 131072,
-      "grok-beta": 131072,
-      "deepseek-chat": 128e3,
-      "deepseek-reasoner": 128e3,
-      "llama-3.3": 128e3
-    };
-  }
-});
-
-// src/executor/context-compaction.ts
-function compactMessages(messages) {
-  if (messages.length <= 7) return messages;
-  const first = messages.slice(0, 1);
-  const tail = messages.slice(-10);
-  const middle = messages.slice(1, messages.length - 10);
-  if (middle.length === 0) return messages;
-  const summaryLines = middle.map((msg, i) => {
-    const role = msg.role || "unknown";
-    let preview = "";
-    if (typeof msg.content === "string") {
-      preview = msg.content.slice(0, 120).replace(/\n/g, " ");
-    } else if (Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if (block.text) {
-          preview = block.text.slice(0, 120).replace(/\n/g, " ");
-          break;
-        }
-        if (block.type === "tool_use") {
-          preview = `[tool_use: ${block.name}]`;
-          break;
-        }
-        if (block.type === "tool_result") {
-          preview = `[tool_result: ${String(block.content || "").slice(0, 80)}]`;
-          break;
-        }
-        if (block.function) {
-          preview = `[fn: ${block.function.name}]`;
-          break;
-        }
-      }
-    } else if (msg.parts) {
-      for (const part of msg.parts || []) {
-        if (part.text) {
-          preview = part.text.slice(0, 120).replace(/\n/g, " ");
-          break;
-        }
-        if (part.functionCall) {
-          preview = `[functionCall: ${part.functionCall.name}]`;
-          break;
-        }
-        if (part.functionResponse) {
-          preview = `[functionResponse: ${part.functionResponse.name}]`;
-          break;
-        }
-      }
-    }
-    return `Turn ${i + 1} (${role}): ${preview || "(no preview)"}`;
-  });
-  const summaryText = `[Context compacted \u2014 ${middle.length} earlier messages summarised]
-${summaryLines.join("\n")}`;
-  const summaryMsg = {
-    role: "user",
-    content: summaryText
-  };
-  return [...first, summaryMsg, ...tail];
-}
-var init_context_compaction = __esm({
-  "src/executor/context-compaction.ts"() {
-    "use strict";
-    init_token_compaction();
-  }
-});
-
 // src/executor/post-sampling-hooks.ts
 import { exec } from "node:child_process";
 import { promisify as promisify3 } from "node:util";
@@ -3262,6 +3072,20 @@ var init_post_sampling_hooks = __esm({
 });
 
 // src/worker/autonomous-loop.ts
+function compactTurnHistory(history) {
+  if (history.length <= 7) return history;
+  const first = history.slice(0, 1);
+  const tail = history.slice(-5);
+  const middle = history.slice(1, history.length - 5);
+  if (middle.length === 0) return history;
+  const summary = {
+    turn: first[0]?.turn ?? 0,
+    tool: "context_compaction",
+    params: { compactedTurns: middle.length },
+    result: `[Context compacted: ${middle.length} earlier tool results summarized]`
+  };
+  return [...first, summary, ...tail];
+}
 function isContextLengthError(err) {
   const msg = String(err?.message || "").toLowerCase();
   return msg.includes("context length") || msg.includes("too long") || msg.includes("payload size") || msg.includes("context_length_exceeded") || msg.includes("max_tokens") || msg.includes("token limit") || msg.includes("prompt is too long") || msg.includes("maximum context") || msg.includes("request payload size exceeds");
@@ -3311,7 +3135,7 @@ ${pendingContext}` : task;
       if (isContextLengthError(err) && !reactiveCompacted) {
         reactiveCompacted = true;
         console.error("[crew-cli] Context exceeded \u2014 compacted history and retrying");
-        clearedHistory = compactMessages(clearedHistory);
+        clearedHistory = compactTurnHistory(clearedHistory);
         response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
       } else {
         throw err;
@@ -3321,14 +3145,14 @@ ${pendingContext}` : task;
     while (isTruncated(response.finishReason) && hasIncompleteToolCalls(response.toolCalls, response.response) && recoveryAttempts < 2) {
       recoveryAttempts++;
       console.error(`[crew-cli] Output truncated (finish_reason=${response.finishReason}) \u2014 compacting and retrying (attempt ${recoveryAttempts}/2)`);
-      clearedHistory = compactMessages(clearedHistory);
+      clearedHistory = compactTurnHistory(clearedHistory);
       try {
         response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
       } catch (err) {
         if (isContextLengthError(err) && !reactiveCompacted) {
           reactiveCompacted = true;
           console.error("[crew-cli] Context exceeded during recovery \u2014 compacting again");
-          clearedHistory = compactMessages(clearedHistory);
+          clearedHistory = compactTurnHistory(clearedHistory);
           response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
         } else {
           throw err;
@@ -3439,7 +3263,8 @@ ${pendingContext}` : task;
             history.push(tr);
             turnResults.push(tr);
           } catch (error) {
-            if (abortSignal?.aborted || error?.name === "AbortError") {
+            const caughtError = error;
+            if (abortSignal?.aborted || caughtError.name === "AbortError") {
               return {
                 success: false,
                 turns: turn + 1,
@@ -3448,7 +3273,7 @@ ${pendingContext}` : task;
                 totalCostUsd
               };
             }
-            const tr = { turn: turn + 1, tool: call.tool, params: call.params, result: null, error: error.message };
+            const tr = { turn: turn + 1, tool: call.tool, params: call.params, result: null, error: caughtError.message || "tool execution failed" };
             history.push(tr);
             turnResults.push(tr);
           }
@@ -3522,7 +3347,6 @@ var init_autonomous_loop = __esm({
     "use strict";
     init_tool_batching();
     init_tool_result_clearing();
-    init_context_compaction();
     init_post_sampling_hooks();
     DEFAULT_MAX_TURNS = 25;
     DEFAULT_REPEAT_THRESHOLD = 10;
@@ -3906,12 +3730,13 @@ var init_docker_sandbox = __esm({
             duration
           };
         } catch (err) {
+          const error = err;
           const duration = Date.now() - startTime;
           console.log(`[Docker] \u2717 Command failed after ${duration}ms`);
           return {
             success: false,
-            output: err.stdout || err.stderr || err.message,
-            exitCode: err.status || 1,
+            output: error.stdout || error.stderr || error.message || "Docker command failed",
+            exitCode: error.status || 1,
             duration
           };
         } finally {
@@ -4421,30 +4246,50 @@ var init_crew_adapter = __esm({
         return result2;
       }
       async _executeTool(toolName, params) {
+        const asString = (value) => typeof value === "string" ? value : "";
+        const asOptionalString = (value) => typeof value === "string" ? value : void 0;
+        const asNumber = (value) => typeof value === "number" ? value : void 0;
+        const asBoolean = (value) => typeof value === "boolean" ? value : void 0;
+        const asUnknownArray = (value) => Array.isArray(value) ? value : [];
         try {
           switch (toolName) {
             // Canonical Gemini names + local aliases
             case "write_file":
-              return await this.writeFile(params);
+              return await this.writeFile({
+                file_path: asString(params.file_path),
+                content: asString(params.content)
+              });
             case "replace":
               return await this.editFile({
-                file_path: params.file_path,
-                old_string: params.old_string,
-                new_string: params.new_string,
-                replace_all: params.replace_all
+                file_path: asString(params.file_path),
+                old_string: asString(params.old_string),
+                new_string: asString(params.new_string),
+                replace_all: asBoolean(params.replace_all)
               });
             case "append_file":
-              return await this.appendFile(params);
+              return await this.appendFile({
+                file_path: asString(params.file_path),
+                content: asString(params.content)
+              });
             case "read_file":
-              return await this.readFile(params);
+              return await this.readFile({
+                file_path: asString(params.file_path),
+                start_line: asNumber(params.start_line),
+                end_line: asNumber(params.end_line)
+              });
             case "edit":
-              return await this.editFile(params);
+              return await this.editFile({
+                file_path: asString(params.file_path),
+                old_string: asString(params.old_string),
+                new_string: asString(params.new_string),
+                replace_all: asBoolean(params.replace_all)
+              });
             case "read_many_files":
               return await this.readManyFilesTool(params);
             case "save_memory":
-              return await this.saveMemoryTool(params);
+              return await this.saveMemoryTool({ fact: asString(params.fact) });
             case "write_todos":
-              return await this.writeTodosTool(params);
+              return await this.writeTodosTool({ todos: asUnknownArray(params.todos) });
             case "get_internal_docs":
               return await this.getInternalDocsTool(params);
             case "ask_user":
@@ -4460,39 +4305,59 @@ var init_crew_adapter = __esm({
             case "list":
               return await this.listTool(params);
             case "list_directory":
-              return await this.listTool({ dir_path: params.dir_path || params.path });
+              return await this.listTool({ dir_path: asString(params.dir_path) || asString(params.path) });
             case "glob":
-              return await this.globTool(params);
+              return await this.globTool({ pattern: asString(params.pattern) });
             case "grep":
-              return await this.grepTool(params);
+              return await this.grepTool({
+                pattern: asString(params.pattern),
+                path: asOptionalString(params.path),
+                output_mode: params.output_mode,
+                context: asNumber(params.context),
+                before: asNumber(params.before),
+                after: asNumber(params.after),
+                case_insensitive: asBoolean(params.case_insensitive),
+                type: asOptionalString(params.type),
+                max_results: asNumber(params.max_results)
+              });
             case "grep_search":
             case "grep_search_ripgrep":
               return await this.grepTool({
-                pattern: params.pattern,
-                path: params.dir_path || params.path,
+                pattern: asString(params.pattern),
+                path: asOptionalString(params.dir_path) || asOptionalString(params.path),
                 output_mode: params.output_mode,
-                context: params.context,
-                before: params.before,
-                after: params.after,
-                case_insensitive: params.case_insensitive,
-                type: params.type,
-                max_results: params.max_results
+                context: asNumber(params.context),
+                before: asNumber(params.before),
+                after: asNumber(params.after),
+                case_insensitive: asBoolean(params.case_insensitive),
+                type: asOptionalString(params.type),
+                max_results: asNumber(params.max_results)
               });
             case "git":
-              return await this.gitTool(params);
+              return await this.gitTool({ command: asString(params.command) });
             case "shell":
             case "run_cmd":
             case "run_shell_command":
-              return await this.shellTool(params);
+              return await this.shellTool({
+                command: asString(params.command),
+                run_in_background: asBoolean(params.run_in_background),
+                description: asOptionalString(params.description)
+              });
             case "lsp":
               return await this.lspTool(params);
             case "notebook_edit":
-              return await this.notebookEditTool(params);
+              return await this.notebookEditTool({
+                action: asString(params.action),
+                path: asString(params.path),
+                index: asNumber(params.index),
+                cell_type: params.cell_type,
+                content: asOptionalString(params.content)
+              });
             case "web_search":
             case "google_web_search":
-              return await this.webSearchTool(params);
+              return await this.webSearchTool({ query: asString(params.query) });
             case "web_fetch":
-              return await this.webFetchTool(params);
+              return await this.webFetchTool({ url: asString(params.url) });
             case "tracker_create_task":
               return await this.trackerCreateTaskTool(params);
             case "tracker_update_task":
@@ -4506,25 +4371,50 @@ var init_crew_adapter = __esm({
             case "tracker_visualize":
               return await this.trackerVisualizeTool();
             case "spawn_agent":
-              return await this.spawnAgentTool(params);
+              return await this.spawnAgentTool({
+                task: asString(params.task),
+                model: asOptionalString(params.model),
+                max_turns: asNumber(params.max_turns)
+              });
             case "agent_message":
-              return await this.agentMessageTool(params);
+              return await this.agentMessageTool({
+                session_id: asString(params.session_id),
+                message: asString(params.message),
+                max_turns: asNumber(params.max_turns)
+              });
             case "check_background_task":
-              return await this.checkBackgroundTask(params);
+              return await this.checkBackgroundTask({ task_id: asString(params.task_id) });
             case "enter_worktree":
-              return this.enterWorktreeTool(params);
+              return this.enterWorktreeTool({
+                branch_prefix: asOptionalString(params.branch_prefix),
+                agent_id: asOptionalString(params.agent_id)
+              });
             case "exit_worktree":
-              return await this.exitWorktreeTool(params);
+              return await this.exitWorktreeTool({ branch_name: asString(params.branch_name) });
             case "merge_worktree":
-              return this.mergeWorktreeTool(params);
+              return this.mergeWorktreeTool({
+                branch_name: asString(params.branch_name),
+                strategy: params.strategy
+              });
             case "list_worktrees":
               return this.listWorktreesTool();
             case "worktree":
-              return await this.worktreeUnifiedTool(params);
+              return await this.worktreeUnifiedTool({
+                action: params.action || "list",
+                branch: asOptionalString(params.branch),
+                merge: asBoolean(params.merge),
+                projectDir: asOptionalString(params.projectDir)
+              });
             case "sleep":
-              return await this.sleepTool(params);
+              return await this.sleepTool({
+                duration_ms: asNumber(params.duration_ms) || 0,
+                reason: asOptionalString(params.reason)
+              });
             case "tool_search":
-              return this.toolSearchTool(params);
+              return this.toolSearchTool({
+                query: asString(params.query),
+                max_results: asNumber(params.max_results)
+              });
             default:
               return {
                 success: false,
@@ -6268,6 +6158,132 @@ var init_corrections = __esm({
   }
 });
 
+// src/context/token-compaction.ts
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
+}
+function getContextWindow(model) {
+  const m = String(model || "").toLowerCase();
+  for (const [prefix, size] of Object.entries(CONTEXT_WINDOWS)) {
+    if (m.startsWith(prefix)) return size;
+  }
+  return 128e3;
+}
+function calculateTokenBudget(messages, model, systemPromptTokens = 0, compactThreshold = 0.75) {
+  const contextWindow = getContextWindow(model);
+  let estimatedUsed = systemPromptTokens;
+  for (const msg of messages) {
+    estimatedUsed += estimateTokens(msg.content) + 4;
+  }
+  const remainingTokens = contextWindow - estimatedUsed;
+  const remainingPct = remainingTokens / contextWindow;
+  return {
+    contextWindow,
+    estimatedUsed,
+    remainingTokens,
+    remainingPct,
+    shouldCompact: estimatedUsed / contextWindow >= compactThreshold
+  };
+}
+async function compactConversation(messages, opts = {}) {
+  const keepFirst = opts.keepFirst ?? 2;
+  const keepLast = opts.keepLast ?? 6;
+  const targetTokens = opts.targetTokens ?? 2e3;
+  if (messages.length <= keepFirst + keepLast) {
+    return messages;
+  }
+  const head = messages.slice(0, keepFirst);
+  const middle = messages.slice(keepFirst, messages.length - keepLast);
+  const tail = messages.slice(-keepLast);
+  if (middle.length === 0) return messages;
+  const middleText = middle.map((m) => {
+    const role = m.role.toUpperCase();
+    const text = m.content.slice(0, 2e3);
+    return `[${role}] ${text}`;
+  }).join("\n\n");
+  let summary;
+  if (opts.summarizer) {
+    const prompt = `Summarize this conversation segment concisely, preserving key decisions, file changes, errors, and outcomes. Focus on what was done and what state things are in now:
+
+${middleText}`;
+    summary = await opts.summarizer(prompt, targetTokens);
+  } else {
+    summary = extractiveCompress(middle, targetTokens);
+  }
+  const summaryMessage = {
+    role: "assistant",
+    content: `[Context Summary \u2014 ${middle.length} earlier messages compressed]
+${summary}`,
+    isCompacted: true
+  };
+  return [...head, summaryMessage, ...tail];
+}
+function extractiveCompress(messages, targetTokens) {
+  const maxChars = targetTokens * CHARS_PER_TOKEN;
+  const lines = [];
+  for (const msg of messages) {
+    const role = msg.role === "assistant" ? "A" : "U";
+    const content = msg.content || "";
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.length < 5) continue;
+      let priority = 1;
+      if (/error|fail|exception/i.test(trimmed)) priority = 5;
+      if (/\.(ts|js|py|go|rs|tsx|jsx|json)/.test(trimmed)) priority = 3;
+      if (/wrote|created|edited|deleted|fixed/i.test(trimmed)) priority = 4;
+      if (/→|✓|✗|COMPLETE|OK:|FAIL:/i.test(trimmed)) priority = 3;
+      if (/decision|chose|decided|because/i.test(trimmed)) priority = 4;
+      lines.push({ text: `[${role}] ${trimmed}`, priority });
+    }
+  }
+  lines.sort((a, b) => b.priority - a.priority);
+  let result2 = "";
+  for (const line of lines) {
+    if (result2.length + line.text.length > maxChars) break;
+    result2 += line.text + "\n";
+  }
+  return result2 || "[No significant content to summarize]";
+}
+function adaptiveCompressionRatio(totalTurns, contextUsagePct) {
+  if (contextUsagePct < 0.5) {
+    return { firstN: 5, lastN: 8 };
+  }
+  if (contextUsagePct < 0.75) {
+    return { firstN: 3, lastN: 5 };
+  }
+  return { firstN: 1, lastN: 3 };
+}
+var CHARS_PER_TOKEN, CONTEXT_WINDOWS;
+var init_token_compaction = __esm({
+  "src/context/token-compaction.ts"() {
+    "use strict";
+    CHARS_PER_TOKEN = 3.7;
+    CONTEXT_WINDOWS = {
+      "gemini-2.5-flash": 1048576,
+      "gemini-2.5-pro": 1048576,
+      "gemini-2.0-flash": 1048576,
+      "gpt-4o": 128e3,
+      "gpt-4o-mini": 128e3,
+      "gpt-5": 256e3,
+      "gpt-5.4": 256e3,
+      "gpt-5.3": 256e3,
+      "gpt-5.1": 256e3,
+      "gpt-5.2": 256e3,
+      "claude-3-5-sonnet": 2e5,
+      "claude-opus-4.6": 2e5,
+      "claude-opus-4": 2e5,
+      "claude-sonnet-4": 2e5,
+      "claude-haiku-4": 2e5,
+      "grok-4": 131072,
+      "grok-beta": 131072,
+      "deepseek-chat": 128e3,
+      "deepseek-reasoner": 128e3,
+      "llama-3.3": 128e3
+    };
+  }
+});
+
 // src/execution/transcript.ts
 var ExecutionTranscript;
 var init_transcript = __esm({
@@ -7902,7 +7918,8 @@ ${summary}`;
   const rawOutput = result2.finalResponse ?? result2.history?.map((h) => {
     if (!h.result) return "";
     if (typeof h.result === "string") return h.result;
-    return h.result.output || h.result.error || JSON.stringify(h.result);
+    const toolResult = h.result;
+    return toolResult.output || toolResult.error || JSON.stringify(h.result);
   }).filter(Boolean).join("\n") ?? "";
   return {
     success: result2.success ?? false,
@@ -11393,7 +11410,7 @@ async function executeDirectCommands(commands, sandbox, logger3) {
         logger3?.info(`Created directory: ${cmd.path}`);
       }
     } catch (err) {
-      logger3?.error(`Failed to stage ${cmd.path}: ${err.message}`);
+      logger3?.error?.(`Failed to stage ${cmd.path}: ${err.message}`);
     }
   }
   return appliedFiles;
@@ -11852,6 +11869,10 @@ var init_unified = __esm({
         this.sandbox = sandbox;
         this.session = session;
       }
+      requireSandbox() {
+        if (!this.sandbox) throw new Error("Sandbox is required for pipeline execution");
+        return this.sandbox;
+      }
       async trackCacheHit(cachedTokens, totalTokens, model) {
         if (!this.session || !cachedTokens || cachedTokens === 0) return;
         let savingsRate = 0;
@@ -12063,8 +12084,9 @@ var init_unified = __esm({
           const tool = String(turn?.tool || "");
           if (tool !== "run_shell_command" && tool !== "check_background_task") continue;
           const command = String(turn.params?.command || turn.params?.task_id || "").trim();
-          const rawOutput = String(turn.result?.output || turn.result || "").trim();
-          const exitCode = turn?.error ? 1 : typeof turn.result?.exitCode === "number" ? turn.result.exitCode : 0;
+          const result2 = turn.result;
+          const rawOutput = String(result2?.output || turn.result || "").trim();
+          const exitCode = turn?.error ? 1 : typeof result2?.exitCode === "number" ? result2.exitCode : 0;
           results.push({
             command,
             exitCode,
@@ -12083,7 +12105,8 @@ var init_unified = __esm({
           if (turn?.error) continue;
           if (tool === "run_shell_command" || tool === "check_background_task") {
             const command = String(turn.params?.command || turn.params?.task_id || "").trim();
-            const output = String(turn.result?.output || turn.result || "").trim();
+            const result2 = turn.result;
+            const output = String(result2?.output || turn.result || "").trim();
             verification.add(command ? `Command succeeded: ${command}` : "Verification command succeeded.");
             if (output) {
               verification.add(`Verification output: ${output.slice(0, 200)}`);
@@ -12228,7 +12251,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
         }
         const contents = /* @__PURE__ */ new Map();
         for (const relPath of paths) {
-          const staged = this.sandbox.getStagedContent(relPath);
+          const staged = this.requireSandbox().getStagedContent(relPath);
           if (typeof staged === "string") {
             contents.set(relPath, staged);
             continue;
@@ -12402,7 +12425,7 @@ ${fixTask.goal}` : fixTask.goal, {
         return parseJsonObject(raw);
       }
       async parseRouterDecision(raw, traceId, sessionId) {
-        return parseJsonObjectWithRepair(raw, {
+        const parsed = await parseJsonObjectWithRepair(raw, {
           label: `L2 router (${traceId})`,
           schemaHint: '{"decision":"direct-answer|execute-direct|execute-local|execute-parallel","reasoning":"...","directResponse":"...","complexity":"low|medium|high","estimatedCost":0.001}',
           maxAttempts: this.getJsonParseAttempts(),
@@ -12420,6 +12443,7 @@ ${fixTask.goal}` : fixTask.goal, {
             return String(repaired.result || "");
           }
         });
+        return parsed;
       }
       async qaAuditResponse(response, traceId, round, sessionId, executionResults) {
         const evidence = this.buildStructuredEvidence(executionResults);
@@ -12944,7 +12968,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               plan.workGraph.summary || plan.reasoning || request.userInput,
               "",
               "## Work Units",
-              ...units.map((u, i) => `${i + 1}. **${u.id}** (${u.requiredPersona}): ${u.goal || u.description}`),
+              ...units.map((u, i) => `${i + 1}. **${u.id}** (${u.requiredPersona}): ${u.description}`),
               "",
               "## Acceptance Criteria",
               ...(plan.workGraph.acceptanceCriteria || plan.workGraph.planningArtifacts?.acceptanceCriteria || []).map((c) => `- ${c}`),
@@ -13561,7 +13585,7 @@ ${task.goal}` : task.goal;
         const sessionId = this.session ? await this.session.getSessionId() : void 0;
         const composedPrompt = this.composer.compose("executor-code-v1", overlays, traceId);
         const effort = this.getExecutionEffort(task);
-        const result2 = await runAgenticWorker(composedPrompt.finalPrompt, this.sandbox, {
+        const result2 = await runAgenticWorker(composedPrompt.finalPrompt, this.requireSandbox(), {
           model: this.getModelForLayer("l3", effort) || "",
           maxTurns: this.getMaxTurnsForEffort(effort),
           tier: this.getTierForEffort(effort),
@@ -13764,7 +13788,7 @@ ${dependencyOutputs.join("\n\n")}`,
             }
             const unitStart = Date.now();
             const unitWt = unitWorktrees.get(unit.id);
-            const workerSandbox = unitWt ? new Sandbox(unitWt.worktreePath) : this.sandbox;
+            const workerSandbox = unitWt ? new Sandbox(unitWt.worktreePath) : this.requireSandbox();
             const workerProjectDir = unitWt ? unitWt.worktreePath : projectDir;
             const result2 = await runAgenticWorker(composedPrompt.finalPrompt, workerSandbox, {
               model: this.getModelForLayer("l3", effort) || "",
@@ -13819,8 +13843,9 @@ ${dependencyOutputs.join("\n\n")}`,
                   mergeResults.push({ unitId, success: true, message: "No changes to merge" });
                 }
               } catch (err) {
-                mergeResults.push({ unitId, success: false, message: err.message });
-                if (verbose) console.warn(`  [${unitId}] \u26A0\uFE0F worktree cleanup failed: ${err.message}`);
+                const error = err;
+                mergeResults.push({ unitId, success: false, message: error.message });
+                if (verbose) console.warn(`  [${unitId}] \u26A0\uFE0F worktree cleanup failed: ${error.message}`);
               }
             }
             unitWorktrees.clear();
@@ -13930,7 +13955,7 @@ ${r.output}`;
        * Can be overridden in tests to use a mock executor.
        */
       async runWorker(prompt, options) {
-        return runAgenticWorker(prompt, this.sandbox, options);
+        return runAgenticWorker(prompt, this.requireSandbox(), options);
       }
       /**
        * Check if native Gemini tool loop can be used for a given model
