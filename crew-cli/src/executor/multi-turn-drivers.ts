@@ -22,6 +22,8 @@ export interface LLMTurnResult {
   response: string;
   status?: string;
   cost: number;
+  /** Finish reason from the provider: 'stop', 'length', 'max_tokens', 'tool_calls', etc. */
+  finishReason?: string;
 }
 
 // ─── Provider detection ───────────────────────────────────────────────
@@ -135,6 +137,7 @@ export async function openAICompatibleTurn(
     if (result.text) process.stdout.write('\n');
     const usage = result.usage || {};
     const cost = (usage.prompt_tokens || 0) * 3 / 1_000_000 + (usage.completion_tokens || 0) * 10 / 1_000_000;
+    const finishReason = result.finishReason;
 
     if (result.toolCalls.length > 0) {
       const toolCalls: ToolCall[] = result.toolCalls.map(tc => {
@@ -142,9 +145,9 @@ export async function openAICompatibleTurn(
         try { params = JSON.parse(tc.arguments || '{}'); } catch { /* ignore */ }
         return { tool: tc.name, params };
       });
-      return { toolCalls, response: result.text, cost };
+      return { toolCalls, response: result.text, cost, finishReason };
     }
-    return { response: result.text, status: 'COMPLETE', cost };
+    return { response: result.text, status: 'COMPLETE', cost, finishReason };
   }
 
   const data = await response.json() as any;
@@ -154,6 +157,7 @@ export async function openAICompatibleTurn(
 
   // Calculate cost (rough)
   const cost = (usage.prompt_tokens || 0) * 3 / 1_000_000 + (usage.completion_tokens || 0) * 10 / 1_000_000;
+  const finishReason: string | undefined = choice?.finish_reason;
 
   // Check for tool calls
   if (message?.tool_calls && message.tool_calls.length > 0) {
@@ -165,7 +169,8 @@ export async function openAICompatibleTurn(
     return {
       toolCalls,
       response: message.content || '',
-      cost
+      cost,
+      finishReason
     };
   }
 
@@ -173,7 +178,8 @@ export async function openAICompatibleTurn(
   return {
     response: message?.content || '',
     status: 'COMPLETE',
-    cost
+    cost,
+    finishReason
   };
 }
 
@@ -250,20 +256,22 @@ export async function anthropicTurn(
     if (result.text) process.stdout.write('\n');
     const usage = result.usage || {};
     const cost = (usage.input_tokens || 0) * 3 / 1_000_000 + (usage.output_tokens || 0) * 15 / 1_000_000;
+    const finishReason = result.stopReason;
 
     if (result.toolCalls.length > 0) {
       const toolCalls: ToolCall[] = result.toolCalls.map(tc => ({
         tool: tc.name,
         params: tc.input || {}
       }));
-      return { toolCalls, response: result.text, cost };
+      return { toolCalls, response: result.text, cost, finishReason };
     }
-    return { response: result.text, status: 'COMPLETE', cost };
+    return { response: result.text, status: 'COMPLETE', cost, finishReason };
   }
 
   const data = await response.json() as any;
   const usage = data?.usage || {};
   const cost = (usage.input_tokens || 0) * 3 / 1_000_000 + (usage.output_tokens || 0) * 15 / 1_000_000;
+  const finishReason: string | undefined = data?.stop_reason;
 
   const content = data?.content || [];
   const toolUseBlocks = content.filter((b: any) => b.type === 'tool_use');
@@ -275,10 +283,10 @@ export async function anthropicTurn(
       tool: b.name,
       params: b.input || {}
     }));
-    return { toolCalls, response: textResponse, cost };
+    return { toolCalls, response: textResponse, cost, finishReason };
   }
 
-  return { response: textResponse, status: 'COMPLETE', cost };
+  return { response: textResponse, status: 'COMPLETE', cost, finishReason };
 }
 
 // ─── Provider URL + key resolution ────────────────────────────────────

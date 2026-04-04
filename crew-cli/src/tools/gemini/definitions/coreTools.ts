@@ -38,6 +38,9 @@ export {
   ASK_USER_TOOL_NAME,
   EXIT_PLAN_MODE_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME,
+  LSP_TOOL_NAME,
+  NOTEBOOK_EDIT_TOOL_NAME,
+  SPAWN_AGENT_TOOL_NAME,
   // Shared parameter names
   PARAM_FILE_PATH,
   PARAM_DIR_PATH,
@@ -259,3 +262,86 @@ export function getActivateSkillDefinition(
     overrides: (modelId) => getToolSet(modelId).activate_skill(skillNames),
   };
 }
+
+// ============================================================================
+// NEW TOOL DEFINITIONS: WORKTREE, SLEEP, TOOL_SEARCH
+// ============================================================================
+
+export const WORKTREE_DEFINITION: ToolDefinition = {
+  base: {
+    name: 'worktree',
+    description:
+      'Manage git worktrees to isolate agent work on separate branches. ' +
+      'Use "enter" to create a new worktree, "exit" to leave (optionally merging), ' +
+      '"merge" to merge a branch, or "list" to see active worktrees.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['enter', 'exit', 'merge', 'list'],
+          description: 'Worktree action: enter (create), exit (remove), merge (merge branch), list (list active)',
+        },
+        branch: {
+          type: 'string',
+          description: 'Branch name for enter/exit/merge actions',
+        },
+        merge: {
+          type: 'boolean',
+          description: 'Whether to merge changes back on exit (default: true)',
+        },
+        projectDir: {
+          type: 'string',
+          description: 'Override project directory (defaults to current workspace)',
+        },
+      },
+      required: ['action'],
+    },
+  },
+};
+
+export const SLEEP_DEFINITION: ToolDefinition = {
+  base: {
+    name: 'sleep',
+    description:
+      'Pause execution for a specified duration. Useful for polling, rate limiting, ' +
+      'or waiting for external processes. Maximum sleep is 60 seconds.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        duration_ms: {
+          type: 'number',
+          description: 'How long to sleep in milliseconds (max 60000)',
+        },
+        reason: {
+          type: 'string',
+          description: 'Why the agent is sleeping (for logging and transparency)',
+        },
+      },
+      required: ['duration_ms'],
+    },
+  },
+};
+
+export const TOOL_SEARCH_DEFINITION: ToolDefinition = {
+  base: {
+    name: 'tool_search',
+    description:
+      'Search the tool registry to discover available tools by name or capability. ' +
+      'Returns tool names, descriptions, and parameter schemas matching the query.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search term — matched against tool name and description',
+        },
+        max_results: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 10)',
+        },
+      },
+      required: ['query'],
+    },
+  },
+};

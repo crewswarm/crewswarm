@@ -122,3 +122,12 @@ export const EXIT_PLAN_PARAM_PLAN_PATH = 'plan_path';
 // -- enter_plan_mode --
 export const ENTER_PLAN_MODE_TOOL_NAME = 'enter_plan_mode';
 export const PLAN_MODE_PARAM_REASON = 'reason';
+
+// -- lsp --
+export const LSP_TOOL_NAME = 'lsp';
+
+// -- notebook_edit --
+export const NOTEBOOK_EDIT_TOOL_NAME = 'notebook_edit';
+
+// -- spawn_agent --
+export const SPAWN_AGENT_TOOL_NAME = 'spawn_agent';

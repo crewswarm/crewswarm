@@ -48,7 +48,8 @@ const READ_ONLY_TOOLS = new Set([
   'web_search', 'grep', 'save_memory', 'write_todos',
   'tracker_get_task', 'tracker_list_tasks', 'tracker_visualize',
   'check_background_task', 'ask_user', 'enter_plan_mode', 'exit_plan_mode',
-  'lsp', 'git'  // git is read-safe (force-push/--no-verify already blocked)
+  'lsp', 'git',  // git is read-safe (force-push/--no-verify already blocked)
+  'sleep', 'tool_search'  // sleep and tool_search are safe at any constraint level
 ]);
 
 const EDIT_TOOLS = new Set([
@@ -56,7 +57,9 @@ const EDIT_TOOLS = new Set([
   'replace', 'edit', 'append_file',
   'run_shell_command', 'shell', 'run_cmd',
   'tracker_create_task', 'tracker_update_task', 'tracker_add_dependency',
-  'mkdir', 'activate_skill'
+  'mkdir', 'activate_skill',
+  'worktree', 'enter_worktree', 'exit_worktree', 'merge_worktree', 'list_worktrees',
+  'notebook_edit'
 ]);
 
 const FULL_TOOLS = new Set([
@@ -196,7 +199,11 @@ export class GeminiToolAdapter {
       'tracker_add_dependency',
       'tracker_visualize',
       'spawn_agent',
-      'check_background_task'
+      'notebook_edit',
+      'check_background_task',
+      'worktree',
+      'sleep',
+      'tool_search'
     ];
     const canonical = canonicalNames.map((name) => {
       const found = staticByName.get(name);
@@ -279,13 +286,32 @@ export class GeminiToolAdapter {
     });
     byName.set('lsp', {
       name: 'lsp',
-      description: 'Run code-intel queries (symbols/refs/goto/diagnostics/complete).',
+      description: 'Language Server Protocol code intelligence: diagnostics, go-to-definition, find references, hover type info, completions. Uses TypeScript language service or grep-based fallback.',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'LSP query string' }
+          action: { type: 'string', enum: ['diagnostics', 'definition', 'references', 'hover', 'completions'], description: 'LSP action' },
+          file: { type: 'string', description: 'Source file path' },
+          line: { type: 'number', description: '1-based line number' },
+          column: { type: 'number', description: '1-based column number' },
+          symbol: { type: 'string', description: 'Symbol name for grep-based lookups' }
         },
-        required: ['query']
+        required: ['action', 'file']
+      }
+    });
+    byName.set('notebook_edit', {
+      name: 'notebook_edit',
+      description: 'Edit Jupyter notebooks (.ipynb files). Actions: read, add_cell, edit_cell, delete_cell, run_cell.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add_cell', 'edit_cell', 'delete_cell', 'run_cell', 'read'], description: 'Notebook action' },
+          path: { type: 'string', description: 'Path to .ipynb file' },
+          index: { type: 'number', description: '0-based cell index' },
+          cell_type: { type: 'string', enum: ['code', 'markdown'], description: 'Cell type for add_cell' },
+          content: { type: 'string', description: 'Cell source content for add_cell/edit_cell' }
+        },
+        required: ['action', 'path']
       }
     });
     return Array.from(byName.values());
@@ -317,8 +343,12 @@ export class GeminiToolAdapter {
       { name: 'tracker_list_tasks', description: 'List tracker tasks', parameters: { type: 'object', properties: { status: { type: 'string' }, type: { type: 'string' }, parentId: { type: 'string' } } } },
       { name: 'tracker_add_dependency', description: 'Add tracker dependency', parameters: { type: 'object', properties: { taskId: { type: 'string' }, dependencyId: { type: 'string' } }, required: ['taskId', 'dependencyId'] } },
       { name: 'tracker_visualize', description: 'Visualize tracker graph', parameters: { type: 'object', properties: {} } },
-      { name: 'spawn_agent', description: 'Spawn a sub-agent to handle a task autonomously in parallel. Use for independent research, file analysis, or coding subtasks. Returns the sub-agent result when complete.', parameters: { type: 'object', properties: { task: { type: 'string', description: 'Clear task description for the sub-agent' }, model: { type: 'string', description: 'Optional model override (default: use cheap model for workers)' }, max_turns: { type: 'number', description: 'Max turns for sub-agent (default: 15)' } }, required: ['task'] } },
-      { name: 'check_background_task', description: 'Check the status/result of a background shell command. Returns result if done, or elapsed time if still running.', parameters: { type: 'object', properties: { task_id: { type: 'string', description: 'Task ID returned by run_shell_command with run_in_background:true' } }, required: ['task_id'] } }
+      { name: 'spawn_agent', description: 'Spawn a sub-agent to handle a task autonomously. The sub-agent runs in an isolated sandbox branch with a limited tool set and cheaper model. Use for independent research, file analysis, or coding subtasks. Returns the sub-agent result when complete.', parameters: { type: 'object', properties: { task: { type: 'string', description: 'Clear task description for the sub-agent' }, tools: { type: 'array', items: { type: 'string' }, description: 'Optional subset of tool names the sub-agent may use' }, maxTurns: { type: 'number', description: 'Max turns for sub-agent (default: 10, max: 25)' }, model: { type: 'string', description: 'Optional model override (default: cheapest configured model)' } }, required: ['task'] } },
+      { name: 'notebook_edit', description: 'Edit Jupyter notebooks (.ipynb files). Actions: read (view structure), add_cell, edit_cell, delete_cell, run_cell.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['add_cell', 'edit_cell', 'delete_cell', 'run_cell', 'read'], description: 'Notebook action' }, path: { type: 'string', description: 'Path to .ipynb file' }, index: { type: 'number', description: '0-based cell index' }, cell_type: { type: 'string', enum: ['code', 'markdown'], description: 'Cell type for add_cell' }, content: { type: 'string', description: 'Cell source content for add_cell/edit_cell' } }, required: ['action', 'path'] } },
+      { name: 'check_background_task', description: 'Check the status/result of a background shell command. Returns result if done, or elapsed time if still running.', parameters: { type: 'object', properties: { task_id: { type: 'string', description: 'Task ID returned by run_shell_command with run_in_background:true' } }, required: ['task_id'] } },
+      { name: 'worktree', description: 'Manage git worktrees to isolate agent work on separate branches. Actions: enter (create), exit (remove), merge (merge branch), list (list active).', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['enter', 'exit', 'merge', 'list'], description: 'Worktree action' }, branch: { type: 'string', description: 'Branch name for enter/exit/merge' }, merge: { type: 'boolean', description: 'Merge on exit (default: true)' }, projectDir: { type: 'string', description: 'Override project directory' } }, required: ['action'] } },
+      { name: 'sleep', description: 'Pause execution for a specified duration (max 60s). Useful for polling, rate limiting, or waiting for external processes.', parameters: { type: 'object', properties: { duration_ms: { type: 'number', description: 'Sleep duration in milliseconds (max 60000)' }, reason: { type: 'string', description: 'Why the agent is sleeping' } }, required: ['duration_ms'] } },
+      { name: 'tool_search', description: 'Search the tool registry to discover available tools by name or capability. Returns tool names, descriptions, and parameter schemas.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Search term matched against tool name and description' }, max_results: { type: 'number', description: 'Max results to return (default: 10)' } }, required: ['query'] } }
     ];
   }
 
@@ -420,6 +450,8 @@ export class GeminiToolAdapter {
           return await this.shellTool(params);
         case 'lsp':
           return await this.lspTool(params);
+        case 'notebook_edit':
+          return await this.notebookEditTool(params);
         case 'web_search':
         case 'google_web_search':
           return await this.webSearchTool(params);
@@ -449,6 +481,12 @@ export class GeminiToolAdapter {
           return this.mergeWorktreeTool(params);
         case 'list_worktrees':
           return this.listWorktreesTool();
+        case 'worktree':
+          return await this.worktreeUnifiedTool(params);
+        case 'sleep':
+          return await this.sleepTool(params);
+        case 'tool_search':
+          return this.toolSearchTool(params);
         default:
           return {
             success: false,
@@ -1310,23 +1348,29 @@ export class GeminiToolAdapter {
     return { success: true, output: lines.join('\n') || '(no tasks)' };
   }
 
-  private async lspTool(params: { query: string }): Promise<ToolResult> {
+  private async lspTool(params: { query?: string; action?: string; file?: string; line?: number; column?: number; symbol?: string }): Promise<ToolResult> {
+    // New action-based interface — inlined to avoid importing tools.ts (which has upstream missing deps)
+    if (params.action && params.file) {
+      return this.lspActionTool(params as { action: string; file: string; line?: number; column?: number; symbol?: string });
+    }
+
+    // Legacy query-based interface for backward compatibility
     const query = String(params.query || '').trim();
-    if (!query) return { success: false, error: 'lsp requires query' };
+    if (!query) return { success: false, error: 'lsp requires action+file or legacy query string' };
     const lower = query.toLowerCase();
     const lsp = await import('../../lsp/index.js');
     if (lower.startsWith('symbols')) {
       const file = query.slice('symbols'.length).trim();
       if (!file) return { success: false, error: 'lsp symbols requires file path' };
       const symbols = await lsp.getDocumentSymbols(process.cwd(), file);
-      return { success: true, output: symbols.map(s => `${file}:${s.line}:${s.column} ${s.kind} ${s.name}`).join('\n') };
+      return { success: true, output: symbols.map((s: any) => `${file}:${s.line}:${s.column} ${s.kind} ${s.name}`).join('\n') };
     }
     if (lower.startsWith('refs')) {
       const target = query.slice('refs'.length).trim();
       const match = target.match(/^(.+):(\d+)(?::(\d+))?$/);
       if (match) {
         const refs = await lsp.getReferences(process.cwd(), match[1], Number(match[2]), Number(match[3] || '1'));
-        return { success: true, output: refs.map(r => `${r.file}:${r.line}:${r.column}`).join('\n') };
+        return { success: true, output: refs.map((r: any) => `${r.file}:${r.line}:${r.column}`).join('\n') };
       }
       if (target) return this.grepTool({ pattern: `\\b${target}\\b`, path: '.' });
       return { success: false, error: 'lsp refs requires symbol or file:line[:col]' };
@@ -1336,20 +1380,211 @@ export class GeminiToolAdapter {
       const match = target.match(/^(.+):(\d+)(?::(\d+))?$/);
       if (!match) return { success: false, error: 'lsp goto format: file:line[:col]' };
       const defs = await lsp.getDefinitions(process.cwd(), match[1], Number(match[2]), Number(match[3] || '1'));
-      return { success: true, output: defs.map(d => `${d.file}:${d.line}:${d.column}`).join('\n') };
+      return { success: true, output: defs.map((d: any) => `${d.file}:${d.line}:${d.column}`).join('\n') };
     }
     if (lower.startsWith('diagnostics') || lower === 'check') {
       const diags = await lsp.typeCheckProject(process.cwd(), []);
-      return { success: true, output: diags.map(d => `${d.file}:${d.line}:${d.column} [${d.category}] ${d.message}`).join('\n') };
+      return { success: true, output: diags.map((d: any) => `${d.file}:${d.line}:${d.column} [${d.category}] ${d.message}`).join('\n') };
     }
     if (lower.startsWith('complete')) {
       const target = query.slice('complete'.length).trim();
       const match = target.match(/^(.+):(\d+):(\d+)(?:\s+(.+))?$/);
       if (!match) return { success: false, error: 'lsp complete format: file:line:col [prefix]' };
       const items = await lsp.getCompletions(process.cwd(), match[1], Number(match[2]), Number(match[3]), 50, match[4] || '');
-      return { success: true, output: items.map(i => `${i.name} (${i.kind})`).join('\n') };
+      return { success: true, output: items.map((i: any) => `${i.name} (${i.kind})`).join('\n') };
     }
     return { success: false, error: `Unsupported lsp query: ${query}` };
+  }
+
+  /** Inline implementation of LSP action-based interface (avoids importing tools.ts) */
+  private async lspActionTool(params: { action: string; file: string; line?: number; column?: number; symbol?: string }): Promise<ToolResult> {
+    const { action, file, line, column, symbol } = params;
+    const workspaceRoot = this.config.getWorkspaceRoot();
+    const absFile = file.startsWith('/') ? file : resolve(workspaceRoot, file);
+    const lsp = await import('../../lsp/index.js');
+    const ext = absFile.slice(absFile.lastIndexOf('.') + 1).toLowerCase();
+    const isTs = ext === 'ts' || ext === 'tsx';
+    const isJs = ext === 'js' || ext === 'jsx' || ext === 'mjs' || ext === 'cjs';
+
+    try {
+      if (action === 'diagnostics') {
+        if (isTs || isJs) {
+          try {
+            const diags = await lsp.typeCheckProject(workspaceRoot, [absFile]);
+            if (diags.length === 0) return { success: true, output: 'No diagnostics found.' };
+            return { success: true, output: diags.map((d: any) => `${d.file}:${d.line}:${d.column} [${d.category}] TS${d.code}: ${d.message}`).join('\n') };
+          } catch {
+            const out = execSync(`npx tsc --noEmit 2>&1 || true`, { cwd: workspaceRoot, encoding: 'utf8', timeout: 30000 });
+            return { success: true, output: out.trim() || 'No diagnostics found.' };
+          }
+        }
+        if (ext === 'py') {
+          const out = execSync(`python -m py_compile ${JSON.stringify(absFile)} 2>&1 || true`, { cwd: workspaceRoot, encoding: 'utf8', timeout: 10000 });
+          return { success: true, output: out.trim() || 'No syntax errors found.' };
+        }
+        return { success: false, error: `Diagnostics not supported for .${ext} files` };
+      }
+
+      if (action === 'definition') {
+        if ((isTs || isJs) && line != null) {
+          try {
+            const defs = await lsp.getDefinitions(workspaceRoot, absFile, line, column ?? 1);
+            if (defs.length === 0) return { success: true, output: 'No definition found.' };
+            return { success: true, output: defs.map((d: any) => `${d.file}:${d.line}:${d.column}`).join('\n') };
+          } catch { /* fall through to grep */ }
+        }
+        const sym = symbol || 'unknown';
+        try {
+          const out = execSync(`grep -rn -E "export (function|class|const|let|var|interface|type|enum) ${sym}|def ${sym}|func ${sym}|function ${sym}" .`, { cwd: workspaceRoot, encoding: 'utf8', timeout: 15000 });
+          return { success: true, output: out.trim() || 'No definition found.' };
+        } catch (e: any) {
+          return { success: true, output: e?.status === 1 ? 'No definition found.' : `grep failed: ${e?.message}` };
+        }
+      }
+
+      if (action === 'references') {
+        if ((isTs || isJs) && line != null) {
+          try {
+            const refs = await lsp.getReferences(workspaceRoot, absFile, line, column ?? 1);
+            if (refs.length === 0) return { success: true, output: 'No references found.' };
+            return { success: true, output: refs.map((r: any) => `${r.file}:${r.line}:${r.column}`).join('\n') };
+          } catch { /* fall through to grep */ }
+        }
+        const sym = symbol || 'unknown';
+        try {
+          const out = execSync(`grep -rn "\\b${sym}\\b" --include="*.ts" --include="*.js" --include="*.py" --include="*.go" .`, { cwd: workspaceRoot, encoding: 'utf8', timeout: 15000 });
+          return { success: true, output: out.trim() || 'No references found.' };
+        } catch (e: any) {
+          return { success: true, output: e?.status === 1 ? 'No references found.' : `grep failed: ${e?.message}` };
+        }
+      }
+
+      if (action === 'hover') {
+        if (line == null) return { success: false, error: 'hover requires line' };
+        if (isTs || isJs) {
+          try {
+            const symbols = await lsp.getDocumentSymbols(workspaceRoot, absFile);
+            const near = symbols.filter((s: any) => Math.abs(s.line - line) <= 1);
+            if (near.length > 0) return { success: true, output: near.map((s: any) => `${s.kind} ${s.name} (line ${s.line}:${s.column})`).join('\n') };
+          } catch { /* fall through */ }
+        }
+        try {
+          const content = await readFile(absFile, 'utf8');
+          const lines = content.split('\n');
+          return { success: true, output: lines[(line - 1)] || '' };
+        } catch (e: any) {
+          return { success: false, error: `Could not read file: ${e?.message}` };
+        }
+      }
+
+      if (action === 'completions') {
+        if (line == null || column == null) return { success: false, error: 'completions requires line and column' };
+        if (isTs || isJs) {
+          try {
+            const items = await lsp.getCompletions(workspaceRoot, absFile, line, column, 30, '');
+            if (items.length === 0) return { success: true, output: 'No completions found.' };
+            return { success: true, output: items.map((i: any) => `${i.name} (${i.kind})`).join('\n') };
+          } catch (e: any) {
+            return { success: false, error: `completions failed: ${e?.message}` };
+          }
+        }
+        return { success: false, error: `Completions not supported for .${ext} files` };
+      }
+
+      return { success: false, error: `Unknown lsp action: ${action}` };
+    } catch (err: any) {
+      return { success: false, error: `LSP error: ${err?.message || String(err)}` };
+    }
+  }
+
+  /** Inline implementation of notebook-edit actions (avoids importing tools.ts) */
+  private async notebookEditTool(params: { action: string; path: string; index?: number; cell_type?: 'code' | 'markdown'; content?: string }): Promise<ToolResult> {
+    const { action, index, content, cell_type } = params;
+    const nbPath = params.path.startsWith('/') ? params.path : resolve(this.config.getWorkspaceRoot(), params.path);
+
+    // Load notebook
+    async function loadNb() {
+      try {
+        const raw = await readFile(nbPath, 'utf8');
+        return JSON.parse(raw);
+      } catch (e: any) {
+        throw new Error(`Cannot read notebook ${params.path}: ${e.message}`);
+      }
+    }
+
+    async function saveNb(nb: any) {
+      await mkdir(dirname(nbPath), { recursive: true });
+      await writeFile(nbPath, JSON.stringify(nb, null, 1), 'utf8');
+    }
+
+    function toLines(src: string): string[] {
+      if (!src) return [];
+      const parts = src.split('\n');
+      return parts.map((l, i) => i < parts.length - 1 ? `${l}\n` : l);
+    }
+
+    try {
+      if (action === 'read') {
+        const nb = await loadNb();
+        const cells = (nb.cells || []).map((c: any, i: number) => {
+          const src = (Array.isArray(c.source) ? c.source.join('') : c.source || '').slice(0, 200);
+          const outs = Array.isArray(c.outputs) && c.outputs.length ? ` [${c.outputs.length} output(s)]` : '';
+          return `[${i}] ${c.cell_type}${outs}:\n${src}`;
+        });
+        const summary = `Notebook: ${params.path}\nFormat: ${nb.nbformat}.${nb.nbformat_minor}\nCells: ${nb.cells.length}\n\n${cells.join('\n\n')}`;
+        return { success: true, output: summary };
+      }
+
+      if (action === 'add_cell') {
+        if (content == null) return { success: false, error: "add_cell requires 'content'" };
+        const nb = await loadNb();
+        const newCell: any = { cell_type: cell_type ?? 'code', source: toLines(content), metadata: {}, outputs: [], execution_count: null };
+        if (index != null && index >= 0 && index <= nb.cells.length) nb.cells.splice(index, 0, newCell);
+        else nb.cells.push(newCell);
+        await saveNb(nb);
+        return { success: true, output: `Added ${newCell.cell_type} cell at index ${index ?? nb.cells.length - 1}` };
+      }
+
+      if (action === 'edit_cell') {
+        if (index == null) return { success: false, error: "edit_cell requires 'index'" };
+        if (content == null) return { success: false, error: "edit_cell requires 'content'" };
+        const nb = await loadNb();
+        if (index < 0 || index >= nb.cells.length) return { success: false, output: `Cell index ${index} out of range (notebook has ${nb.cells.length} cells)` };
+        nb.cells[index].source = toLines(content);
+        if (nb.cells[index].cell_type === 'code') { nb.cells[index].outputs = []; nb.cells[index].execution_count = null; }
+        await saveNb(nb);
+        return { success: true, output: `Edited cell ${index}` };
+      }
+
+      if (action === 'delete_cell') {
+        if (index == null) return { success: false, error: "delete_cell requires 'index'" };
+        const nb = await loadNb();
+        if (index < 0 || index >= nb.cells.length) return { success: false, output: `Cell index ${index} out of range (notebook has ${nb.cells.length} cells)` };
+        nb.cells.splice(index, 1);
+        await saveNb(nb);
+        return { success: true, output: `Deleted cell ${index} (${nb.cells.length} cells remaining)` };
+      }
+
+      if (action === 'run_cell') {
+        if (index == null) return { success: false, error: "run_cell requires 'index'" };
+        const nb = await loadNb();
+        if (index < 0 || index >= nb.cells.length) return { success: false, error: `Cell index ${index} out of range` };
+        const cell = nb.cells[index];
+        if (cell.cell_type !== 'code') return { success: false, error: `Cell ${index} is ${cell.cell_type}, only code cells can be run` };
+        const src = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+        try {
+          const out = execSync(`python3 -c ${JSON.stringify(src)}`, { cwd: this.config.getWorkspaceRoot(), encoding: 'utf8', timeout: 30000 });
+          return { success: true, output: `Cell ${index} executed:\n${out.trim() || '(no output)'}` };
+        } catch (pyErr: any) {
+          const stderr = pyErr?.stderr?.toString?.()?.trim() || pyErr?.message || 'execution failed';
+          return { success: false, error: `Cell ${index} execution failed:\n${stderr}` };
+        }
+      }
+
+      return { success: false, error: `Unknown notebook_edit action: ${action}` };
+    } catch (err: any) {
+      return { success: false, error: `NotebookEdit error: ${err?.message || String(err)}` };
+    }
   }
 
   private async checkBackgroundTask(params: { task_id: string }): Promise<ToolResult> {
@@ -1934,6 +2169,91 @@ export class GeminiToolAdapter {
         baseBranch: t.baseBranch,
         createdAt: t.createdAt
       })), null, 2)
+    };
+  }
+
+  // ─── Unified Worktree Tool (dispatches to sub-actions) ───────────────────
+
+  private async worktreeUnifiedTool(params: {
+    action: 'enter' | 'exit' | 'merge' | 'list';
+    branch?: string;
+    merge?: boolean;
+    projectDir?: string;
+  }): Promise<ToolResult> {
+    const { action, branch, projectDir } = params;
+    const cwd = projectDir || (this.sandbox as any).baseDir || process.cwd();
+
+    switch (action) {
+      case 'enter':
+        return this.enterWorktreeTool({ branch_prefix: branch, agent_id: undefined });
+      case 'exit':
+        if (!branch) return { success: false, error: 'branch is required for exit action' };
+        return await this.exitWorktreeTool({ branch_name: branch });
+      case 'merge':
+        if (!branch) return { success: false, error: 'branch is required for merge action' };
+        return this.mergeWorktreeTool({ branch_name: branch, strategy: 'merge' });
+      case 'list':
+        return this.listWorktreesTool();
+      default:
+        return { success: false, error: `Unknown worktree action: ${action}` };
+    }
+  }
+
+  // ─── Sleep Tool ──────────────────────────────────────────────────────────
+
+  private async sleepTool(params: { duration_ms: number; reason?: string }): Promise<ToolResult> {
+    const MAX_SLEEP_MS = 60_000;
+    const requested = typeof params.duration_ms === 'number' ? params.duration_ms : 0;
+    const actual = Math.min(Math.max(0, requested), MAX_SLEEP_MS);
+    const reason = params.reason || 'no reason given';
+
+    await new Promise<void>(resolve => setTimeout(resolve, actual));
+
+    const cappedNote = requested > MAX_SLEEP_MS ? ` (requested ${requested}ms, capped at ${MAX_SLEEP_MS}ms)` : '';
+    return {
+      success: true,
+      output: JSON.stringify({ sleptMs: actual, reason, cappedNote: cappedNote || undefined }, null, 2)
+    };
+  }
+
+  // ─── Tool Search Tool ────────────────────────────────────────────────────
+
+  private toolSearchTool(params: { query: string; max_results?: number }): ToolResult {
+    const query = (params.query || '').trim().toLowerCase();
+    if (!query) return { success: false, error: 'query is required' };
+    const maxResults = Math.max(1, params.max_results ?? 10);
+
+    // Use static declarations as the source of truth in adapter context
+    const allDecls = this.buildDynamicDeclarations();
+
+    const scored = allDecls
+      .map((decl: any) => {
+        const name = (decl.name || '').toLowerCase();
+        const desc = (decl.description || '').toLowerCase();
+        let score = 0;
+        if (name === query) score += 100;
+        else if (name.startsWith(query)) score += 60;
+        else if (name.includes(query)) score += 40;
+        if (desc.includes(query)) score += 20;
+        return { decl, score };
+      })
+      .filter(({ score }: any) => score > 0)
+      .sort((a: any, b: any) => b.score - a.score)
+      .slice(0, maxResults);
+
+    if (scored.length === 0) {
+      return { success: true, output: `No tools found matching "${params.query}".` };
+    }
+
+    const results = scored.map(({ decl }: any) => ({
+      name: decl.name,
+      description: decl.description,
+      parameterSchema: decl.parameters || {}
+    }));
+
+    return {
+      success: true,
+      output: JSON.stringify({ query: params.query, count: results.length, results }, null, 2)
     };
   }
 }

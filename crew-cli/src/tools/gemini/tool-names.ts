@@ -75,6 +75,9 @@ import {
   PLAN_MODE_PARAM_REASON,
   EXIT_PLAN_PARAM_PLAN_PATH,
   SKILL_PARAM_NAME,
+  LSP_TOOL_NAME,
+  NOTEBOOK_EDIT_TOOL_NAME,
+  SPAWN_AGENT_TOOL_NAME,
 } from './definitions/coreTools.js';
 
 export {
@@ -149,6 +152,12 @@ export {
   EXIT_PLAN_PARAM_PLAN_PATH,
   SKILL_PARAM_NAME,
 };
+
+export { LSP_TOOL_NAME, NOTEBOOK_EDIT_TOOL_NAME, SPAWN_AGENT_TOOL_NAME };
+
+export const WORKTREE_TOOL_NAME = 'worktree';
+export const SLEEP_TOOL_NAME = 'sleep';
+export const TOOL_SEARCH_TOOL_NAME = 'tool_search';
 
 export const LS_TOOL_NAME_LEGACY = 'list_directory'; // Just to be safe if anything used the old exported name directly
 
@@ -229,6 +238,12 @@ export const ALL_BUILTIN_TOOL_NAMES = [
   GET_INTERNAL_DOCS_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME,
   EXIT_PLAN_MODE_TOOL_NAME,
+  WORKTREE_TOOL_NAME,
+  SLEEP_TOOL_NAME,
+  TOOL_SEARCH_TOOL_NAME,
+  LSP_TOOL_NAME,
+  NOTEBOOK_EDIT_TOOL_NAME,
+  SPAWN_AGENT_TOOL_NAME,
 ] as const;
 
 /**

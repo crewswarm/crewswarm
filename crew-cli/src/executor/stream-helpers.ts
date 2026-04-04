@@ -8,7 +8,7 @@
 export async function streamOpenAIResponse(
   response: Response,
   onText?: (chunk: string) => void
-): Promise<{ text: string; toolCalls: Array<{ name: string; arguments: string }>; usage?: any }> {
+): Promise<{ text: string; toolCalls: Array<{ name: string; arguments: string }>; usage?: any; finishReason?: string }> {
   if (!response.body) throw new Error('No response body for streaming');
 
   const reader = response.body.getReader();
@@ -17,6 +17,7 @@ export async function streamOpenAIResponse(
   let fullText = '';
   const toolCallAccumulator = new Map<number, { name: string; args: string }>();
   let usage: any = null;
+  let finishReason: string | undefined;
 
   try {
     while (true) {
@@ -34,7 +35,12 @@ export async function streamOpenAIResponse(
 
         try {
           const chunk = JSON.parse(jsonStr);
-          const delta = chunk?.choices?.[0]?.delta;
+          const choice = chunk?.choices?.[0];
+          const delta = choice?.delta;
+
+          // Capture finish_reason when present
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
+
           if (!delta) {
             // Capture usage from final chunk
             if (chunk?.usage) usage = chunk.usage;
@@ -68,14 +74,14 @@ export async function streamOpenAIResponse(
     .filter(tc => tc.name)
     .map(tc => ({ name: tc.name, arguments: tc.args }));
 
-  return { text: fullText, toolCalls, usage };
+  return { text: fullText, toolCalls, usage, finishReason };
 }
 
 /** Parse an SSE stream from Anthropic's Messages API */
 export async function streamAnthropicResponse(
   response: Response,
   onText?: (chunk: string) => void
-): Promise<{ text: string; toolCalls: Array<{ name: string; input: any }>; usage?: any }> {
+): Promise<{ text: string; toolCalls: Array<{ name: string; input: any }>; usage?: any; stopReason?: string }> {
   if (!response.body) throw new Error('No response body for streaming');
 
   const reader = response.body.getReader();
@@ -84,6 +90,7 @@ export async function streamAnthropicResponse(
   let fullText = '';
   const toolBlocks = new Map<number, { name: string; inputJson: string }>();
   let usage: any = null;
+  let stopReason: string | undefined;
 
   try {
     while (true) {
@@ -117,8 +124,10 @@ export async function streamAnthropicResponse(
             }
           }
 
-          if (event.type === 'message_delta' && event.usage) {
-            usage = event.usage;
+          if (event.type === 'message_delta') {
+            if (event.usage) usage = event.usage;
+            // Capture stop_reason from message_delta (Anthropic streaming)
+            if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
           }
           if (event.type === 'message_start' && event.message?.usage) {
             usage = { ...event.message.usage, ...(usage || {}) };
@@ -138,7 +147,7 @@ export async function streamAnthropicResponse(
       return { name: b.name, input };
     });
 
-  return { text: fullText, toolCalls, usage };
+  return { text: fullText, toolCalls, usage, stopReason };
 }
 
 /** Parse an SSE stream from Gemini's streamGenerateContent endpoint */
