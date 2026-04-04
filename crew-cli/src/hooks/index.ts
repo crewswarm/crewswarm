@@ -41,7 +41,7 @@ export interface HookConfig {
 export interface PreToolUseResult {
   decision: 'allow' | 'deny' | 'ask';
   reason?: string;
-  updatedInput?: Record<string, any>;
+  updatedInput?: Record<string, unknown>;
 }
 
 export interface PostToolUseResult {
@@ -51,7 +51,7 @@ export interface PostToolUseResult {
 interface HookOutput {
   permissionDecision?: 'allow' | 'deny' | 'ask';
   permissionDecisionReason?: string;
-  updatedInput?: Record<string, any>;
+  updatedInput?: Record<string, unknown>;
   message?: string;
 }
 
@@ -151,7 +151,7 @@ async function executeHookCommand(
  */
 export async function runPreToolUseHooks(
   toolName: string,
-  toolInput: Record<string, any>,
+  toolInput: Record<string, unknown>,
   baseDir?: string
 ): Promise<PreToolUseResult> {
   const config = await loadHookConfig(baseDir);

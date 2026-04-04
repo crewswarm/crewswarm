@@ -24,7 +24,7 @@ export class Logger {
     this.prefix = options.prefix || '[crewswarm]';
   }
 
-  formatMessage(level: string, message: string, ...args: any[]) {
+  formatMessage(level: string, message: string, ...args: unknown[]) {
     const timestamp = new Date().toISOString();
     const prefix = `${color.gray(timestamp)} ${this.prefix}`;
     
@@ -40,23 +40,23 @@ export class Logger {
     return `${prefix} ${colorFn(`[${level.toUpperCase()}]`)} ${message}`;
   }
 
-  info(message: string, ...args: any[]) {
+  info(message: string, ...args: unknown[]) {
     console.log(this.formatMessage('info', message), ...args);
   }
 
-  error(message: string, ...args: any[]) {
+  error(message: string, ...args: unknown[]) {
     console.error(this.formatMessage('error', message), ...args);
   }
 
-  warn(message: string, ...args: any[]) {
+  warn(message: string, ...args: unknown[]) {
     console.warn(this.formatMessage('warn', message), ...args);
   }
 
-  success(message: string, ...args: any[]) {
+  success(message: string, ...args: unknown[]) {
     console.log(this.formatMessage('success', message), ...args);
   }
 
-  debug(message: string, ...args: any[]) {
+  debug(message: string, ...args: unknown[]) {
     if (this.level === 'debug') {
       console.log(this.formatMessage('debug', message), ...args);
     }

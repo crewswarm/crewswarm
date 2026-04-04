@@ -2,10 +2,10 @@ import { Command } from 'commander';
 
 // Inline stubs for missing lib modules
 const logger = {
-  info: (...args: any[]) => console.log('[monitor]', ...args),
-  error: (...args: any[]) => console.error('[monitor]', ...args),
+  info: (...args: unknown[]) => console.log('[monitor]', ...args),
+  error: (...args: unknown[]) => console.error('[monitor]', ...args),
 };
-async function healthCheck(): Promise<{ agents: Record<string, any>; services: Record<string, any> }> {
+async function healthCheck(): Promise<{ agents: Record<string, unknown>; services: Record<string, unknown> }> {
   return { agents: {}, services: {} };
 }
 

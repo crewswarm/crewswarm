@@ -18,6 +18,9 @@ import { join } from 'node:path';
 
 export class CumulativeDiffSandbox extends Sandbox {
   private originalFiles = new Map<string, string>();
+  private getBranchChanges(branchName: string): Record<string, { original?: string; modified?: string }> {
+    return this.state.branches[branchName] as Record<string, { original?: string; modified?: string }>;
+  }
 
   /**
    * Override addChange to track original file contents
@@ -54,7 +57,7 @@ export class CumulativeDiffSandbox extends Sandbox {
     let output = '';
 
     for (const path of paths) {
-      const change = (this.state.branches[targetBranch] as Record<string, any>)[path];
+      const change = this.getBranchChanges(targetBranch)[path];
       if (!change) continue;
 
       const original = change.original || '';
@@ -100,7 +103,7 @@ export class CumulativeDiffSandbox extends Sandbox {
       throw new Error(`No staged changes for ${filePath}`);
     }
 
-    const change = (branch as Record<string, any>)[filePath];
+    const change = this.getBranchChanges(targetBranch)[filePath];
     const fullPath = join(this.baseDir, filePath);
 
     // Ensure directory exists
@@ -113,7 +116,7 @@ export class CumulativeDiffSandbox extends Sandbox {
     await writeFile(fullPath, change.modified, 'utf-8');
 
     // Remove from staged changes
-    delete (branch as Record<string, any>)[filePath];
+    delete this.getBranchChanges(targetBranch)[filePath];
     this.originalFiles.delete(filePath);
 
     await this.persist();
@@ -142,7 +145,7 @@ export class CumulativeDiffSandbox extends Sandbox {
       throw new Error(`No staged changes for ${filePath}`);
     }
 
-    delete (branch as Record<string, any>)[filePath];
+    delete this.getBranchChanges(targetBranch)[filePath];
     this.originalFiles.delete(filePath);
 
     await this.persist();
@@ -179,7 +182,7 @@ export class CumulativeDiffSandbox extends Sandbox {
     const branch = this.state.branches[targetBranch];
     if (!branch) return undefined;
     
-    const change = (branch as Record<string, any>)[filePath];
+    const change = this.getBranchChanges(targetBranch)[filePath];
     return change?.modified;
   }
 }
