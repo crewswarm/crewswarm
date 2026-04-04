@@ -59,7 +59,7 @@ Configured via API key profile. Currently set as fallback for all agents.
 |---|---|---|---|---|
 | `anthropic/claude-sonnet-4-20250514` | `claude` | 200K | ~$3 / $15 | Best overall quality; top pick for coder + fixer |
 | `anthropic/claude-haiku-4-5` | `haiku` | 200K | ~$0.25 / $1.25 | Fast, cheap; great for PM and QA |
-| `anthropic/claude-sonnet-3-5` | — | 200K | ~$3 / $15 | Previous generation; still excellent |
+| `anthropic/claude-sonnet-3-5` | — | 200K | ~$3 / $15 | **Deprecated** — use `claude-sonnet-4` instead |
 
 **No free tier.** New accounts get $5 credit. Best quality-per-dollar for complex tasks.
 
@@ -219,7 +219,7 @@ CREWSWARM_OPENCODE_MODEL=ollama/qwen2.5-coder:7b node pm-loop.mjs
 | OpenCode | `gpt-5.2-codex` | ⭐⭐⭐⭐⭐ | Fast | Zen sub | No | No | ✅ Wired |
 | Anthropic | `claude-sonnet-4` | ⭐⭐⭐⭐⭐ | Fast | $3 / $15 | No | No | ✅ Wired |
 | xAI | `grok-3` | ⭐⭐⭐⭐⭐ | Fast | ~$3 / $15 | No | No | ✅ Wired |
-| Anthropic | `claude-sonnet-3-5` | ⭐⭐⭐⭐⭐ | Fast | $3 / $15 | No | No | ✅ Wired |
+| Anthropic | `claude-sonnet-3-5` | ⭐⭐⭐⭐ | Fast | $3 / $15 | No | No | ⚠️ Deprecated |
 | Google | `gemini-2.5-pro` | ⭐⭐⭐⭐⭐ | Fast | $1.25 / $10 | No | No | ✅ Just added |
 | Google | `gemini-2.0-flash` | ⭐⭐⭐⭐ | Very fast | $0.075 / $0.30 | No | **Yes** | ✅ Just added |
 | NVIDIA | `kimi-k2.5` | ⭐⭐⭐⭐ | Medium | Free tier | No | **Yes** | ✅ Wired |

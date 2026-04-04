@@ -57,6 +57,35 @@ For stricter gating, use env:
 - `CREW_DUAL_L2_ENABLED=true`
 - `CREW_MAX_PARALLEL_WORKERS=<n>`
 
+## Mode Cycling
+
+`/mode` cycles through `manual` -> `assist` -> `autopilot` deterministically. `Shift+Tab` does the same from the prompt. The active mode is shown in the REPL prompt prefix.
+
+## Model Stack (`/stack`)
+
+The `/stack` command manages which model is assigned to each tier of the pipeline.
+
+- `/stack` with no arguments shows the current L1/L2/L3 models plus QA, fixer, and review assignments.
+- `/stack l1|l2|l3|qa|fixer|review <model>` sets the model for a specific tier.
+- `/stack <model>` is a shortcut that sets L1 (the most common change).
+- `/stack bench` prints a benchmark table comparing latency and cost across configured models.
+- `/model` and `/models` are backwards-compatible aliases for `/stack`.
+
+## Ghost-Text Autocomplete
+
+When you type `/` in the REPL, inline gray suggestion text appears for known slash commands. Press the Right arrow key to accept the suggestion. Tab triggers standard readline completion for partial matches.
+
+## Tool Activity Lines
+
+Every tool call executed by the agent prints a gray activity line in the REPL output, for example:
+
+```
+⚙ Reading src/index.ts
+⚙ Writing src/middleware/auth.ts
+```
+
+This covers all 45 built-in tools. The `ask_user` tool is suppressed (the REPL handles user interaction directly).
+
 ## Known Limits
 
 1. Piped REPL automation is now more stable, but fully interactive commands like `/stack` still require a real TTY.

@@ -75,36 +75,46 @@ function tryReadJSON(p) {
   try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; }
 }
 
+// Bootstrap config directory + minimal config if missing — the dashboard's
+// setup wizard will guide the user through API key entry on first visit.
+let firstRun = false;
 if (!fs.existsSync(CREWSWARM_DIR)) {
-  fatal(
-    `Config directory not found: ${CREWSWARM_DIR}`,
-    `Run the installer first:\n\n  bash ${INSTALL_SH}\n\n` +
-    `Or, for a one-liner from the web:\n\n` +
-    `  bash <(curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/install.sh)`
-  );
+  fs.mkdirSync(CREWSWARM_DIR, { recursive: true });
+  info(`Created config directory: ${CREWSWARM_DIR}`);
+  firstRun = true;
 }
 
 // ── 3. crewswarm.json ─────────────────────────────────────────────────────────
 if (!fs.existsSync(SWARM_CFG)) {
-  fatal(
-    `Agent config not found: ${SWARM_CFG}`,
-    `Run the installer to create it:\n\n  bash ${INSTALL_SH}`
-  );
+  const defaultConfig = {
+    agents: [
+      { id: "crew-lead",   model: "groq/llama-3.3-70b-versatile" },
+      { id: "crew-main",   model: "groq/llama-3.3-70b-versatile" },
+      { id: "crew-coder",  model: "groq/llama-3.3-70b-versatile" },
+      { id: "crew-qa",     model: "groq/llama-3.3-70b-versatile" },
+      { id: "crew-fixer",  model: "groq/llama-3.3-70b-versatile" },
+      { id: "crew-pm",     model: "groq/llama-3.3-70b-versatile" }
+    ],
+    providers: {}
+  };
+  fs.writeFileSync(SWARM_CFG, JSON.stringify(defaultConfig, null, 2));
+  info(`Created default ${SWARM_CFG} — add API keys in the dashboard setup wizard`);
+  firstRun = true;
 }
-const swarm = tryReadJSON(SWARM_CFG);
+let swarm = tryReadJSON(SWARM_CFG);
 if (!swarm) {
   fatal(
     `Cannot parse ${SWARM_CFG} — file may be corrupt.`,
     `Check it is valid JSON, or re-run:\n\n  bash ${INSTALL_SH}`
   );
 }
-success(`crewswarm.json found`);
+success(`crewswarm.json found${firstRun ? " (first run — setup wizard will launch)" : ""}`);
 
 // ── 4. config.json ───────────────────────────────────────────────────────────
 if (!fs.existsSync(SYS_CFG)) {
-  warn(`System config not found: ${SYS_CFG}`);
-  warn(`Some features (RT bus auth, background consciousness) will be disabled.`);
-  warn(`To configure them, run:  bash ${INSTALL_SH}`);
+  const defaultSysCfg = { rt: { authToken: `local-${Date.now().toString(36)}` } };
+  fs.writeFileSync(SYS_CFG, JSON.stringify(defaultSysCfg, null, 2));
+  info(`Created default ${SYS_CFG}`);
 } else {
   const sys = tryReadJSON(SYS_CFG);
   if (!sys) {
@@ -112,6 +122,16 @@ if (!fs.existsSync(SYS_CFG)) {
   } else {
     success(`config.json found`);
   }
+}
+
+// ── Bootstrap supporting files if missing ────────────────────────────────────
+const CMD_ALLOWLIST = path.join(CREWSWARM_DIR, "cmd-allowlist.json");
+const AGENT_PROMPTS = path.join(CREWSWARM_DIR, "agent-prompts.json");
+if (!fs.existsSync(CMD_ALLOWLIST)) {
+  fs.writeFileSync(CMD_ALLOWLIST, '["npm *","node *","npx *","git *"]');
+}
+if (!fs.existsSync(AGENT_PROMPTS)) {
+  fs.writeFileSync(AGENT_PROMPTS, "{}");
 }
 
 // ── 5. Provider check ────────────────────────────────────────────────────────

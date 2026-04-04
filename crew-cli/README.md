@@ -1,6 +1,6 @@
 # crew-cli
 
-Command-line interface for CrewSwarm agent orchestration with local safety rails (sandbox diffs, session state, routing/cost logs), team sync, CI/browser helpers, and voice mode.
+Command-line interface for crewswarm agent orchestration with local safety rails (sandbox diffs, session state, routing/cost logs), team sync, CI/browser helpers, and voice mode.
 
 ---
 **[OVERVIEW.md](docs/OVERVIEW.md)** - 🚀 1-minute summary of what this is and how it works.
@@ -13,7 +13,7 @@ Command-line interface for CrewSwarm agent orchestration with local safety rails
 
 - Node.js 20+
 - Git
-- Optional for full integration: running CrewSwarm gateway (`http://127.0.0.1:5010`)
+- Optional for full integration: running crewswarm gateway (`http://127.0.0.1:5010`)
 
 ## Install
 

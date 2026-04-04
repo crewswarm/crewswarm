@@ -2,6 +2,17 @@
 
 All notable changes to the crew-cli project.
 
+## [0.3.10] - 2026-04-04
+
+- feat: multi-turn sub-agent dialogue via agent_message tool
+- feat: tool activity descriptions (human-readable progress for every tool call)
+- feat: ghost-text autocomplete in REPL (Fish/zsh-style, Right arrow accepts)
+- refactor: consolidated /model and /models into /stack command
+- fix: brand lowercase "crewswarm" everywhere (23 source files)
+- fix: tool count updated to 45+
+
+---
+
 ## [0.3.5] - 2026-04-03
 
 ### Added

@@ -37,6 +37,40 @@
 ---
 **crew-cli** is not just an assistant; it's a team of senior engineers in your terminal. 🦾
 
+## Multi-Turn Sub-Agents
+
+Sub-agents support multi-turn conversations, not just fire-and-forget dispatch.
+
+- `spawn_agent` returns a `session_id` that identifies the running sub-agent.
+- `agent_message` sends follow-up messages to that session, carrying full conversation context forward.
+- The sub-agent keeps its sandbox branch and message history across messages, so you can spawn an agent to write code, review its output, send corrections, and continue iterating without losing state.
+- Sub-agents can spawn their own sub-agents up to a maximum depth of 3 levels.
+
+Typical flow:
+
+```
+spawn_agent("crew-coder", "implement auth middleware")  -> session_id
+agent_message(session_id, "add rate limiting too")      -> continues in same context
+agent_message(session_id, "write tests for both")       -> still has full history
+```
+
+## Git Worktree Isolation
+
+crewswarm uses git worktrees to prevent agents from stepping on each other's file changes.
+
+**System-level (automatic):** When the wave dispatcher launches a multi-agent wave, it creates a separate git worktree per agent. Each agent works on an isolated copy of the repo and merges back when complete.
+
+**CLI-level (manual):** The `worktree` tool provides direct control:
+
+- `worktree enter <name>` -- create and switch to a new worktree.
+- `worktree exit` -- return to the main tree.
+- `worktree merge` -- merge the worktree branch back.
+- `worktree list` -- show active worktrees.
+
+**Sub-agent isolation:** `spawn_agent` automatically creates an isolated sandbox branch for the sub-agent's work.
+
+**Disabling:** Set `CREWSWARM_WORKTREE_ISOLATION=false` to skip worktree creation (useful for single-agent workflows or repos that don't support worktrees).
+
 ## Canonical runtime docs
 
 - [INSTRUCTION-STACK.md](./INSTRUCTION-STACK.md)

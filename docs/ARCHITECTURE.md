@@ -43,7 +43,7 @@ System diagram, port map, and request flow.
 
   MCP + OpenAI API (5020)  ← mcp-server.mjs (optional)
      ├── Cursor MCP · Claude Code MCP · OpenCode MCP · Codex MCP
-     └── Open WebUI · LM Studio · Aider (/v1/chat/completions)
+     └── Open WebUI · LM Studio (/v1/chat/completions)
 
   memory/           ← shared agent context (markdown)
   crew-scribe.mjs   ← polls done.jsonl, writes brain.md + session-log.md
