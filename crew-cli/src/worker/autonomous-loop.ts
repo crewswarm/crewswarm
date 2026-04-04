@@ -17,14 +17,14 @@ import {
 
 export interface ToolCall {
   tool: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
 }
 
 export interface TurnResult {
   turn: number;
   tool: string;
-  params: Record<string, any>;
-  result: any;
+  params: Record<string, unknown>;
+  result: unknown;
   error?: string;
 }
 
@@ -41,7 +41,7 @@ export interface AutonomousResult {
 export interface AutonomousConfig {
   maxTurns?: number;
   repeatThreshold?: number;
-  tools: any[];
+  tools: unknown[];
   onProgress?: (turn: number, action: string) => void;
   /** Feature 3: AbortController signal — cancel execution cleanly mid-turn */
   abortSignal?: AbortSignal;
@@ -64,7 +64,7 @@ const DEFAULT_REPEAT_THRESHOLD = 10;
  * Returns true if `err` looks like a context-too-long rejection from any
  * supported provider (OpenAI, Anthropic, Gemini, Groq, etc.).
  */
-function isContextLengthError(err: any): boolean {
+function isContextLengthError(err: unknown): boolean {
   const msg = String(err?.message || '').toLowerCase();
   return (
     msg.includes('context length') ||

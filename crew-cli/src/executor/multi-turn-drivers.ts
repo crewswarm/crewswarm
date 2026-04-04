@@ -108,7 +108,7 @@ export async function openAICompatibleTurn(
     ? 1
     : (config.temperature ?? 0.3);
   const stream = !isStreamingDisabled();
-  const requestBody: any = {
+  const requestBody: Record<string, unknown> = {
     model: config.model,
     messages,
     temperature: temp,
@@ -150,7 +150,7 @@ export async function openAICompatibleTurn(
     return { response: result.text, status: 'COMPLETE', cost, finishReason };
   }
 
-  const data = await response.json() as any;
+  const data = await response.json() as Record<string, unknown>;
   const choice = data?.choices?.[0];
   const message = choice?.message;
   const usage = data?.usage || {};
@@ -161,7 +161,7 @@ export async function openAICompatibleTurn(
 
   // Check for tool calls
   if (message?.tool_calls && message.tool_calls.length > 0) {
-    const toolCalls: ToolCall[] = message.tool_calls.map((tc: any) => {
+    const toolCalls: ToolCall[] = message.tool_calls.map((tc: { function?: { arguments?: string; name?: string } }) => {
       let params = {};
       try { params = JSON.parse(tc.function?.arguments || '{}'); } catch { /* ignore */ }
       return { tool: tc.function?.name || '', params };
@@ -207,7 +207,7 @@ export async function anthropicTurn(
   const fullTask = historyContext ? `${task}${historyContext}` : task;
 
   // Build user content: text + optional images using Anthropic's native format
-  let userContent: any = fullTask;
+  let userContent: string | unknown[] = fullTask;
   if (images?.length) {
     const parts: unknown[] = [{ type: 'text', text: fullTask }];
     for (const img of images) {
@@ -220,7 +220,7 @@ export async function anthropicTurn(
   }
 
   const stream = !isStreamingDisabled();
-  const requestBody: any = {
+  const requestBody: Record<string, unknown> = {
     model: config.model,
     max_tokens: config.maxTokens ?? 16000,
     system: config.systemPrompt,
@@ -268,18 +268,18 @@ export async function anthropicTurn(
     return { response: result.text, status: 'COMPLETE', cost, finishReason };
   }
 
-  const data = await response.json() as any;
+  const data = await response.json() as Record<string, unknown>;
   const usage = data?.usage || {};
   const cost = (usage.input_tokens || 0) * 3 / 1_000_000 + (usage.output_tokens || 0) * 15 / 1_000_000;
   const finishReason: string | undefined = data?.stop_reason;
 
   const content = data?.content || [];
-  const toolUseBlocks = content.filter((b: any) => b.type === 'tool_use');
-  const textBlocks = content.filter((b: any) => b.type === 'text');
-  const textResponse = textBlocks.map((b: any) => b.text).join('\n');
+  const toolUseBlocks = content.filter((b: Record<string, unknown>) => b.type === 'tool_use');
+  const textBlocks = content.filter((b: Record<string, unknown>) => b.type === 'text');
+  const textResponse = textBlocks.map((b: Record<string, unknown>) => b.text).join('\n');
 
   if (toolUseBlocks.length > 0) {
-    const toolCalls: ToolCall[] = toolUseBlocks.map((b: any) => ({
+    const toolCalls: ToolCall[] = toolUseBlocks.map((b: Record<string, unknown>) => ({
       tool: b.name,
       params: b.input || {}
     }));

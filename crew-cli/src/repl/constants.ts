@@ -105,7 +105,7 @@ export interface RepoBootstrap {
 // Pure helper functions
 // ---------------------------------------------------------------------------
 
-export function readJsonFile(filePath: string): any | null {
+export function readJsonFile(filePath: string): Record<string, unknown> | null {
   try {
     if (!existsSync(filePath)) return null;
     return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -138,14 +138,14 @@ export function buildModelSummary(projectDir: string, state: ReplState): ModelSu
   const agentModels: string[] = Array.from(
     new Set(
       agents
-        .map((a: any) => String(a?.model || '').trim())
+        .map((a: Record<string, unknown>) => String(a?.model || '').trim())
         .filter(Boolean)
     )
   );
 
   const providers = swarmCfg?.providers && typeof swarmCfg.providers === 'object' ? swarmCfg.providers : {};
   const providerKeys = Object.entries(providers)
-    .filter(([, v]: any) => Boolean(v && (v.apiKey || v.baseUrl)))
+    .filter(([, v]: [string, unknown]) => Boolean(v && ((v as Record<string, unknown>).apiKey || (v as Record<string, unknown>).baseUrl)))
     .map(([k]) => String(k));
 
   return {

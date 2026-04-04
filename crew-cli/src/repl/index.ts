@@ -149,7 +149,6 @@ interface ReplExecutionResult {
 function readJsonFile(filePath: string): Record<string, unknown> | null {
   try {
     if (!existsSync(filePath)) return null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
   } catch {
     return null;
@@ -678,9 +677,9 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     autoApply: Boolean(repoConfig?.repl?.autoApply),
     memoryMax: Number(repoConfig?.repl?.memoryMax ?? 5),
     mode: selectedMode,
-    verbose: Boolean(repoConfig?.repl?.verbose || false),
-    routerProvider: String(repoConfig?.repl?.routerProvider || 'grok'),
-    executorProvider: String(repoConfig?.repl?.executorProvider || 'grok'),
+    verbose: Boolean((repoConfig?.repl as Record<string, unknown> | undefined)?.verbose || false),
+    routerProvider: String((repoConfig?.repl as Record<string, unknown> | undefined)?.routerProvider || 'grok'),
+    executorProvider: String((repoConfig?.repl as Record<string, unknown> | undefined)?.executorProvider || 'grok'),
     useGateway: selectedInterfaceMode === 'connected'
   };
   // Enforce deterministic mode defaults on startup.
@@ -764,14 +763,12 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       ...payload
     };
     try {
-      // session.appendHistory requires { input: string }, but audit events have a different shape
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await session.appendHistory({
         type: `repl_${type}`,
         runId: replRunId,
         seq: auditSeq,
         ...payload
-      } as any);
+      });
       if (checkpointEnabled) {
         await checkpoints.append(replRunId, `repl.${type}`, {
           sessionId,
@@ -836,7 +833,8 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         const partial = trimmed.split(/\s+/).pop() || '';
         const dir = partial.includes('/') ? join(projectDir, dirname(partial)) : projectDir;
         const prefix = partial.includes('/') ? basename(partial) : partial;
-        const entries = (readdirSync(dir, { withFileTypes: true }) as import('fs').Dirent[])
+        interface DirEnt { name: string; isDirectory(): boolean }
+        const entries = (readdirSync(dir, { withFileTypes: true }) as DirEnt[])
           .filter((e) => e.name.startsWith(prefix) && !e.name.startsWith('.'))
           .slice(0, 20)
           .map((e) => {
@@ -2321,11 +2319,8 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
       }
       const typedResult = result as ExecutionResult;
 
-      // session.appendHistory requires { input: string }, audit events have a different shape
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await session.appendHistory({ type: 'repl_request', agent, task: taskInput, projectDir } as any);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await session.appendHistory({ type: 'repl_result', agent, success: Boolean(typedResult.success), result: typedResult.result } as any);
+      await session.appendHistory({ type: 'repl_request', agent, task: taskInput, projectDir });
+      await session.appendHistory({ type: 'repl_result', agent, success: Boolean(typedResult.success), result: typedResult.result });
 
       await session.appendRouting({
         route: route.decision,

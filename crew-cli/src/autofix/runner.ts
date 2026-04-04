@@ -44,7 +44,7 @@ async function dispatchWithFallback(
   router: AgentRouter,
   agent: string,
   task: string,
-  options: any,
+  options: Record<string, unknown>,
   fallbackModels: string[] = [],
   checkpoints?: CheckpointStore,
   runId?: string

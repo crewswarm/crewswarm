@@ -10,6 +10,7 @@
  */
 
 import { estimateTokens, getContextWindow } from '../context/token-compaction.js';
+import type { ChatMessage } from '../types/common.js';
 
 /** Approximate tokens used by system prompt + current task */
 const SYSTEM_OVERHEAD_TOKENS = 2000;
@@ -18,7 +19,7 @@ const SYSTEM_OVERHEAD_TOKENS = 2000;
  * Check whether the current message history is approaching the
  * model's context limit (threshold: 80%).
  */
-export function shouldCompact(messages: any[], model: string): boolean {
+export function shouldCompact(messages: ChatMessage[], model: string): boolean {
   if (messages.length === 0) return false;
 
   const contextWindow = getContextWindow(model);
@@ -46,7 +47,7 @@ export function shouldCompact(messages: any[], model: string): boolean {
  * @param messages  Flat array of messages (any provider format)
  * @returns         Compacted array with fewer tokens
  */
-export function compactMessages(messages: any[]): any[] {
+export function compactMessages(messages: ChatMessage[]): ChatMessage[] {
   if (messages.length <= 7) return messages; // Nothing meaningful to compact
 
   const first = messages.slice(0, 1);         // System message

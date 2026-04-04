@@ -143,8 +143,8 @@ export async function executeWithFallback(
   task: string,
   tools: ToolDeclaration[],
   sandbox: Sandbox,
-  executeLLM: (config: ModelConfig, prompt: string, tools: ToolDeclaration[], history: any[]) => Promise<any>,
-  executeTool: (tool: string, params: any) => Promise<any>,
+  executeLLM: (config: ModelConfig, prompt: string, tools: ToolDeclaration[], history: unknown[]) => Promise<unknown>,
+  executeTool: (tool: string, params: Record<string, unknown>) => Promise<unknown>,
   onProgress?: (model: string, status: string) => void
 ): Promise<AutonomousResult> {
   const models = getConfiguredModels();

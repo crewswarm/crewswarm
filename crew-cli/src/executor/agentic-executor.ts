@@ -1319,7 +1319,6 @@ async function executeAnthropicSDKTurn(
 
   try {
     // Use beta.messages.create with OAuth + thinking (proven working with Haiku)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await (client.beta.messages.create as unknown as (opts: Record<string, unknown>) => Promise<{ usage?: { input_tokens?: number; output_tokens?: number }; content?: AnthropicContentBlock[] }>)({
       model,
       max_tokens: 16000,

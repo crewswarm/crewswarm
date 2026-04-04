@@ -11,7 +11,7 @@ function result(errors: string[]): ValidationResult {
   return { ok: errors.length === 0, errors };
 }
 
-export function validateRouterDecision(v: any): ValidationResult {
+export function validateRouterDecision(v: unknown): ValidationResult {
   const errors: string[] = [];
   if (!isObject(v)) return result(['must be object']);
   const decision = String(v.decision || '').trim();
@@ -44,7 +44,7 @@ export function validateRouterDecision(v: any): ValidationResult {
   return result(errors);
 }
 
-export function validateWorkGraph(v: any): ValidationResult {
+export function validateWorkGraph(v: unknown): ValidationResult {
   const errors: string[] = [];
   if (!isObject(v)) return result(['must be object']);
   if (!Array.isArray(v.units)) errors.push('units must be array');
@@ -69,7 +69,7 @@ export function validateWorkGraph(v: any): ValidationResult {
   return result(errors);
 }
 
-export function validatePolicyValidation(v: any): ValidationResult {
+export function validatePolicyValidation(v: unknown): ValidationResult {
   const errors: string[] = [];
   if (!isObject(v)) return result(['must be object']);
   if (typeof v.approved !== 'boolean') errors.push('approved must be boolean');

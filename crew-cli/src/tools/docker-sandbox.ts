@@ -44,7 +44,7 @@ export class DockerSandbox {
   /**
    * Copy staged files from sandbox to temp directory
    */
-  private async prepareTempDir(sandbox: any, tempDir: string): Promise<number> {
+  private async prepareTempDir(sandbox: { getPendingPaths(): string[]; state?: { branches?: Record<string, Record<string, { modified?: string }>> }; getActiveBranch(): string }, tempDir: string): Promise<number> {
     const pendingPaths = sandbox.getPendingPaths();
     const branch = sandbox.state?.branches?.[sandbox.getActiveBranch()];
     
@@ -76,7 +76,7 @@ export class DockerSandbox {
    */
   async runCommand(
     command: string,
-    sandbox: any,
+    sandbox: { getPendingPaths(): string[]; state?: { branches?: Record<string, Record<string, { modified?: string }>> }; getActiveBranch(): string },
     options: Partial<DockerSandboxOptions> = {}
   ): Promise<DockerSandboxResult> {
     const startTime = Date.now();

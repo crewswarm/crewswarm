@@ -28,6 +28,7 @@ import { getProjectContext } from '../context/project-context.js';
 import { reviewWorkerExecution, type ReviewResult } from '../executor/reviewer.js';
 import { enterWorktree, exitWorktree, mergeWorktree } from '../tools/worktree.js';
 import { Sandbox } from '../sandbox/index.js';
+import type { SessionManager } from '../session/manager.js';
 // Structure analyzer temporarily disabled - file missing
 // import { analyzeProjectStructure, formatStructureContext } from '../utils/structure-analyzer.js';
 
@@ -103,10 +104,10 @@ export class UnifiedPipeline {
   private executor = new LocalExecutor();
   private planner = new DualL2Planner();
   private contextPacks = new ContextPackManager();
-  private sandbox: any;  // Injected Sandbox instance
-  private session?: any;  // Optional SessionManager for cache tracking
+  private sandbox: Sandbox | undefined;
+  private session?: SessionManager;
 
-  constructor(sandbox?: any, session?: any) {
+  constructor(sandbox?: Sandbox, session?: SessionManager) {
     this.sandbox = sandbox;
     this.session = session;
   }
@@ -368,7 +369,7 @@ export class UnifiedPipeline {
   }
 
   private extractShellResults(
-    history: Array<{ tool: string; params: Record<string, unknown>; result?: any; error?: string }> = []
+    history: Array<{ tool: string; params: Record<string, unknown>; result?: unknown; error?: string }> = []
   ): Array<{ command: string; exitCode: number; output: string }> {
     const results: Array<{ command: string; exitCode: number; output: string }> = [];
     for (const turn of history) {
@@ -387,7 +388,7 @@ export class UnifiedPipeline {
   }
 
   private collectVerificationSignals(
-    history: Array<{ tool: string; params: Record<string, unknown>; result?: any; error?: string }> = [],
+    history: Array<{ tool: string; params: Record<string, unknown>; result?: unknown; error?: string }> = [],
     parsed: { output: string; validation?: string[] },
     task: WorkerTaskEnvelope
   ): { verification: string[]; verificationPassed: boolean; escalationNeeded: boolean; escalationReason?: string } {
@@ -632,7 +633,7 @@ export class UnifiedPipeline {
       cost?: number;
       success?: boolean;
       toolsUsed?: string[];
-      history?: Array<{ tool: string; params: Record<string, unknown>; result?: any; error?: string }>;
+      history?: Array<{ tool: string; params: Record<string, unknown>; result?: unknown; error?: string }>;
       stopReason?: string;
       turns?: number;
       transcript?: ExecutionTranscript;
@@ -698,16 +699,16 @@ export class UnifiedPipeline {
       stopReason: workerResult.stopReason,
       shellResults,
       transcript: workerResult.transcript
-    } as any;
+    };
   }
 
   private async reviewAndFixWorkerResult(
     task: WorkerTaskEnvelope,
-    result: any,
+    result: L3Result['results'][number],
     traceId: string,
     context: string,
     sessionId?: string
-  ): Promise<unknown> {
+  ): Promise<L3Result['results'][number]> {
     if (!this.reviewerEnabled()) return result;
 
     let current = result;
@@ -814,7 +815,7 @@ export class UnifiedPipeline {
     }
   }
 
-  private parseJsonObject(raw: string): unknown {
+  private parseJsonObject(raw: string): Record<string, unknown> {
     return parseJsonObject(raw);
   }
 
@@ -1435,7 +1436,7 @@ If output has blockers, set approved=false.`,
           plan.workGraph.summary || plan.reasoning || request.userInput,
           '',
           '## Work Units',
-          ...units.map((u: any, i: number) => `${i + 1}. **${u.id}** (${u.requiredPersona}): ${u.goal || u.description}`),
+          ...units.map((u: Record<string, unknown>, i: number) => `${i + 1}. **${u.id}** (${u.requiredPersona}): ${u.goal || u.description}`),
           '',
           '## Acceptance Criteria',
           ...(plan.workGraph.acceptanceCriteria || plan.workGraph.planningArtifacts?.acceptanceCriteria || []).map((c: string) => `- ${c}`),
@@ -1618,7 +1619,7 @@ If output has blockers, set approved=false.`,
           parallelExecuted = true;
           response = this.synthesizeResults(executionResults);
           totalCost = executionResults.totalCost;
-          const metrics = (executionResults as any)?.metrics;
+          const metrics = (executionResults as L3Result)?.metrics;
           contextChunksUsed = Number(metrics?.contextChunksUsed || 0);
           contextCharsSaved = Number(metrics?.contextCharsSaved || 0);
 
@@ -1627,7 +1628,7 @@ If output has blockers, set approved=false.`,
 
           // Parse and apply file commands from parallel worker outputs
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
-          const allFileCommands: unknown[] = [];
+          const allFileCommands: Array<{ type: string; path: string; content?: string }> = [];
           for (const result of executionResults.results) {
             if (!this.shouldParseLegacyCommands(result)) continue;
             const commands = parseDirectFileCommands(result.output);

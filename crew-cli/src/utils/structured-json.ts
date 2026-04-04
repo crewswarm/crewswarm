@@ -2,7 +2,7 @@ export interface JsonParseOptions {
   label?: string;
   schemaHint?: string;
   maxAttempts?: number;
-  validate?: (parsed: any) => { ok: boolean; errors?: string[] };
+  validate?: (parsed: unknown) => { ok: boolean; errors?: string[] };
   onAttempt?: (meta: {
     label: string;
     attempt: number;
@@ -71,7 +71,7 @@ export function sanitizeBrokenJson(jsonText: string): string {
   return fixed;
 }
 
-export function parseJsonObject(raw: string): any {
+export function parseJsonObject(raw: string): Record<string, unknown> {
   const candidate = extractJsonCandidate(raw);
   try {
     return JSON.parse(candidate);

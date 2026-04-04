@@ -126,8 +126,8 @@ export function hasDirectCommands(input: string): boolean {
  */
 export async function executeDirectCommands(
   commands: FileCommand[],
-  sandbox: any, // Sandbox instance
-  logger?: any
+  sandbox: { addChange(path: string, content: string): Promise<void> },
+  logger?: { info(msg: string): void }
 ): Promise<string[]> {
   const appliedFiles: string[] = [];
   

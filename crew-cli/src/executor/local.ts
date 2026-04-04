@@ -503,7 +503,7 @@ export class LocalExecutor {
     }
   }
 
-  private calculateGrokCostWithCache(usage: any): number {
+  private calculateGrokCostWithCache(usage: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }): number {
     if (!usage) return 0;
     
     const totalPrompt = usage.prompt_tokens || 0;
@@ -548,7 +548,7 @@ export class LocalExecutor {
         return this.executeWithGeminiCodeAssist(task, options, systemPrompt, auth);
       }
 
-      const requestBody: any = {
+      const requestBody: Record<string, unknown> = {
         contents: [{
           parts: [{
             text: `${systemPrompt}\n\nUser task: ${task}`
@@ -725,7 +725,7 @@ export class LocalExecutor {
 
     const data = await response.json() as any;
     const parts = data?.response?.candidates?.[0]?.content?.parts || [];
-    const content = parts.filter((part: any) => typeof part?.text === 'string').map((part: any) => part.text).join('\n').trim();
+    const content = parts.filter((part: Record<string, unknown>) => typeof part?.text === 'string').map((part: Record<string, unknown>) => part.text).join('\n').trim();
     if (!content) return null;
 
     return {
@@ -934,7 +934,7 @@ export class LocalExecutor {
         }
 
         const data = await response.json() as any;
-        const content = (data?.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n');
+        const content = (data?.content || []).filter((b: Record<string, unknown>) => b.type === 'text').map((b: Record<string, unknown>) => b.text).join('\n');
         const usage = data?.usage || {};
         if (!content) return null;
         return {
@@ -1042,7 +1042,7 @@ export class LocalExecutor {
     }
   }
 
-  private calculateAnthropicCostWithCache(usage: any): number {
+  private calculateAnthropicCostWithCache(usage: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number }): number {
     if (!usage) return 0;
     
     const inputBase = (usage.input_tokens || 0) * 3.00 / 1_000_000;
@@ -1085,7 +1085,7 @@ export class LocalExecutor {
       const isCodexOAuth = auth.isOAuth && apiUrl === OPENAI_CODEX_API_URL;
       const stream = !isStreamingDisabled() && !options.jsonMode && !isCodexOAuth;
 
-      const requestBody: any = isCodexOAuth
+      const requestBody: Record<string, unknown> = isCodexOAuth
         ? {
             model,
             instructions: systemPrompt,
@@ -1235,7 +1235,7 @@ export class LocalExecutor {
 
     const flushEvent = (rawData: string) => {
       if (!rawData.trim()) return;
-      let payload: any;
+      let payload: Record<string, unknown> | undefined;
       try {
         payload = JSON.parse(rawData);
       } catch {

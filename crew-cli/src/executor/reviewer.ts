@@ -110,7 +110,7 @@ export async function reviewWorkerExecution(input: ReviewInput): Promise<ReviewR
   try {
     const parsed = JSON.parse(raw);
     const issues = Array.isArray(parsed.issues)
-      ? parsed.issues.map((issue: any) => ({
+      ? parsed.issues.map((issue: Record<string, unknown>) => ({
           severity: normalizeSeverity(issue?.severity),
           problem: String(issue?.problem || '').trim(),
           requiredFix: String(issue?.requiredFix || '').trim()

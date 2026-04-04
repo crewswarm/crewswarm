@@ -350,7 +350,7 @@ class NotebookEditToolInvocation extends BaseToolInvocation<NotebookEditToolPara
 
   private formatOutputs(outputs: unknown[]): string {
     if (!Array.isArray(outputs) || outputs.length === 0) return '(no outputs)';
-    return outputs.map((o: any) => {
+    return outputs.map((o: Record<string, unknown>) => {
       if (o.output_type === 'stream') {
         return `[${o.name}] ${Array.isArray(o.text) ? o.text.join('') : o.text}`;
       }

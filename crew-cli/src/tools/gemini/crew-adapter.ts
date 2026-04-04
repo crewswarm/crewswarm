@@ -471,7 +471,7 @@ export class GeminiToolAdapter {
     return result;
   }
 
-  private async _executeTool(toolName: string, params: any): Promise<ToolResult> {
+  private async _executeTool(toolName: string, params: Record<string, unknown>): Promise<ToolResult> {
     try {
       switch (toolName) {
         // Canonical Gemini names + local aliases

@@ -45,7 +45,7 @@ export class Planner {
   private dualL2: DualL2Planner;
 
   constructor(
-    _unusedRouter: any, // Keep signature for compatibility
+    _unusedRouter: unknown, // Keep signature for compatibility
     private session?: SessionManager,
     baseDir = process.cwd()
   ) {

@@ -575,9 +575,9 @@ export class Orchestrator {
     sessionId = 'crew-cli',
     resume?: {
       fromPhase?: 'plan' | 'execute' | 'validate';
-      priorPlan?: any;
+      priorPlan?: unknown;
       priorResponse?: string;
-      priorExecutionResults?: any;
+      priorExecutionResults?: unknown;
     },
     preClassifiedDecision?: 'direct-answer' | 'execute-parallel',
     directResponse?: string

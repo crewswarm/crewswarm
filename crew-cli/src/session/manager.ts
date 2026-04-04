@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import type { CostData, CostEntry } from '../types/common.js';
 // Lazy load project messages bridge only when needed (not in standalone mode)
 // import { saveCliToProjectMessages } from './project-messages-bridge.mjs';
 
@@ -13,13 +14,16 @@ interface Session {
   sessionId: string;
   createdAt: string;
   updatedAt: string;
-  history: Array<{
-    timestamp: string;
-    input: string;
-    output?: string;
-    route?: string;
-    agent?: string;
-  }>;
+  history: SessionHistoryEntry[];
+}
+
+export interface SessionHistoryEntry {
+  timestamp?: string;
+  input?: string;
+  output?: string;
+  route?: string;
+  agent?: string;
+  [key: string]: unknown;
 }
 
 export class SessionManager {
@@ -124,7 +128,7 @@ export class SessionManager {
     return parsed;
   }
 
-  async saveCost(cost: any) {
+  async saveCost(cost: CostData) {
     await this.ensureInitialized();
     await writeFile(this.paths.cost, JSON.stringify(cost, null, 2), 'utf8');
   }
@@ -164,7 +168,7 @@ export class SessionManager {
     }
   }
 
-  async appendHistory(entry: { input: string; output?: string; route?: string; agent?: string }) {
+  async appendHistory(entry: SessionHistoryEntry) {
     const session = await this.loadSession();
     session.history.push({
       ...entry,
@@ -181,7 +185,7 @@ export class SessionManager {
     // }
   }
 
-  async appendRouting(entry: { timestamp?: string; [key: string]: any }) {
+  async appendRouting(entry: { timestamp?: string; [key: string]: unknown }) {
     const payload = {
       ...entry,
       timestamp: entry.timestamp || nowIso()
@@ -265,7 +269,7 @@ export class SessionManager {
 
     session.history = session.history.slice(-keepHistory);
     cost.entries = (cost.entries || []).slice(-keepCostEntries);
-    cost.totalUsd = Number((cost.entries || []).reduce((sum: number, entry: any) => sum + Number(entry.usd || 0), 0));
+    cost.totalUsd = Number((cost.entries || []).reduce((sum: number, entry: CostEntry) => sum + Number(entry.usd || 0), 0));
     cost.byModel = {};
     for (const entry of cost.entries) {
       const model = entry.model || 'unknown';

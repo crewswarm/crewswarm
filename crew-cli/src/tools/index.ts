@@ -79,7 +79,7 @@ export class CrewToolExecutor {
     this.vfs = createVirtualFS(sandbox);
   }
 
-  async execute(toolName: string, params: any): Promise<any> {
+  async execute(toolName: string, params: Record<string, unknown>): Promise<{ success: boolean; message: string }> {
     switch (toolName) {
       case 'write_file':
         return this.writeFile(params);

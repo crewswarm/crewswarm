@@ -26,7 +26,7 @@ export interface WorkerPoolOptions {
 export interface TaskResult {
   taskId: string;
   success: boolean;
-  result?: any;
+  result?: unknown;
   error?: string;
   edits?: string[];
 }

@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { DockerSandbox } from './docker-sandbox.js';
+import type { Sandbox } from '../sandbox/index.js';
 
 export interface ToolResult {
   message: string;
@@ -45,7 +46,7 @@ export interface ToolResult {
  */
 export async function executeToolsWithSandbox(
   reply: string,
-  sandbox: any,
+  sandbox: Sandbox,
   options: { allowRun?: boolean; allowWeb?: boolean } = {}
 ): Promise<ToolResult[]> {
   const results: ToolResult[] = [];

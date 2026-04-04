@@ -9,12 +9,12 @@
 export interface ToolResult {
   toolId: string;
   toolName: string;
-  result: any;
+  result: unknown;
   error?: string;
   durationMs: number;
 }
 
-export type ToolExecutorFn = (name: string, args: Record<string, any>) => Promise<any>;
+export type ToolExecutorFn = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 
 export class StreamingToolExecutor {
   private runningTools: Map<string, Promise<ToolResult>> = new Map();
@@ -47,12 +47,12 @@ export class StreamingToolExecutor {
     try {
       const result = await this.executeFn(toolName, args);
       return { toolId, toolName, result, durationMs: Date.now() - start };
-    } catch (err: any) {
+    } catch (err: unknown) {
       return {
         toolId,
         toolName,
         result: null,
-        error: err?.message || String(err),
+        error: (err as Error)?.message || String(err),
         durationMs: Date.now() - start
       };
     }

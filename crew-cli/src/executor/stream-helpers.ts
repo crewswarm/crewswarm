@@ -4,11 +4,13 @@
  * and multi-turn-drivers.ts can stream without duplicating logic.
  */
 
+import type { OpenAIUsage, AnthropicUsage, GeminiUsage } from '../types/common.js';
+
 /** Parse an SSE stream from an OpenAI-compatible API (OpenAI, Grok, DeepSeek, Groq, Mistral, Cerebras) */
 export async function streamOpenAIResponse(
   response: Response,
   onText?: (chunk: string) => void
-): Promise<{ text: string; toolCalls: Array<{ name: string; arguments: string }>; usage?: any; finishReason?: string }> {
+): Promise<{ text: string; toolCalls: Array<{ name: string; arguments: string }>; usage?: OpenAIUsage | null; finishReason?: string }> {
   if (!response.body) throw new Error('No response body for streaming');
 
   const reader = response.body.getReader();
@@ -16,7 +18,7 @@ export async function streamOpenAIResponse(
   let buffer = '';
   let fullText = '';
   const toolCallAccumulator = new Map<number, { name: string; args: string }>();
-  let usage: any = null;
+  let usage: OpenAIUsage | null = null;
   let finishReason: string | undefined;
 
   try {
@@ -81,7 +83,7 @@ export async function streamOpenAIResponse(
 export async function streamAnthropicResponse(
   response: Response,
   onText?: (chunk: string) => void
-): Promise<{ text: string; toolCalls: Array<{ name: string; input: any }>; usage?: any; stopReason?: string }> {
+): Promise<{ text: string; toolCalls: Array<{ name: string; input: Record<string, unknown> }>; usage?: AnthropicUsage | null; stopReason?: string }> {
   if (!response.body) throw new Error('No response body for streaming');
 
   const reader = response.body.getReader();
@@ -89,7 +91,7 @@ export async function streamAnthropicResponse(
   let buffer = '';
   let fullText = '';
   const toolBlocks = new Map<number, { name: string; inputJson: string }>();
-  let usage: any = null;
+  let usage: AnthropicUsage | null = null;
   let stopReason: string | undefined;
 
   try {
@@ -154,15 +156,15 @@ export async function streamAnthropicResponse(
 export async function streamGeminiResponse(
   response: Response,
   onText?: (chunk: string) => void
-): Promise<{ text: string; toolCalls: Array<{ name: string; args: any }>; usage?: any }> {
+): Promise<{ text: string; toolCalls: Array<{ name: string; args: Record<string, unknown> }>; usage?: GeminiUsage | null }> {
   if (!response.body) throw new Error('No response body for streaming');
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let fullText = '';
-  const toolCalls: Array<{ name: string; args: any }> = [];
-  let usage: any = null;
+  const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  let usage: GeminiUsage | null = null;
 
   try {
     while (true) {

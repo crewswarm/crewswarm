@@ -5,10 +5,10 @@ import { getExecutionPolicy, isRetryableError, isRiskBlocked, withRetries } from
 import { analyzeBlastRadius } from '../blast-radius/index.js';
 
 interface HeadlessDeps {
-  router: any;
-  orchestrator: any;
-  sandbox: any;
-  session: any;
+  router: unknown;
+  orchestrator: unknown;
+  sandbox: unknown;
+  session: unknown;
 }
 
 interface HeadlessRunOptions extends HeadlessDeps {
@@ -57,7 +57,7 @@ export async function setHeadlessPaused(paused: boolean, baseDir = process.cwd()
   );
 }
 
-async function appendOutLine(baseDir: string, outPath: string | undefined, payload: any): Promise<void> {
+async function appendOutLine(baseDir: string, outPath: string | undefined, payload: Record<string, unknown>): Promise<void> {
   if (!outPath) return;
   const fullPath = join(baseDir, outPath);
   await mkdir(join(fullPath, '..'), { recursive: true });
@@ -65,7 +65,7 @@ async function appendOutLine(baseDir: string, outPath: string | undefined, paylo
   await writeFile(fullPath, `${prev}${JSON.stringify(payload)}\n`, 'utf8');
 }
 
-async function emit(baseDir: string, jsonMode: boolean, outPath: string | undefined, event: string, data: any = {}): Promise<void> {
+async function emit(baseDir: string, jsonMode: boolean, outPath: string | undefined, event: string, data: Record<string, unknown> = {}): Promise<void> {
   const payload = { ts: new Date().toISOString(), event, ...data };
   await appendOutLine(baseDir, outPath, payload);
   if (jsonMode) {
@@ -103,7 +103,7 @@ export async function runHeadlessTask(options: HeadlessRunOptions): Promise<{ su
 
   const fallbackChain = (options.fallbackModels || []).map(v => String(v || '').trim()).filter(Boolean);
   const chain = fallbackChain.length > 0 ? fallbackChain : [''];
-  let dispatch: any = null;
+  let dispatch: Record<string, unknown> | null = null;
   let lastError: unknown = null;
   for (const model of chain) {
     try {

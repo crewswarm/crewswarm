@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-nocheck
+// @ts-nocheck — systemic type issues pre-date this PR; individual `any` annotations fixed below
 
 import { Command } from 'commander';
 import chalk from 'chalk';
@@ -42,7 +42,7 @@ import { getProjectContext } from '../context/git.js';
 import { startRepl } from '../repl/index.js';
 import { startTui } from '../tui/index.js';
 import { TokenCache } from '../cache/token-cache.js';
-import { analyzeBlastRadius, isSeverityAtLeast } from '../blast-radius/index.js';
+import { analyzeBlastRadius, isSeverityAtLeast, type RiskLevel } from '../blast-radius/index.js';
 import { AgentKeeper } from '../memory/agentkeeper.js';
 import { CheckpointStore } from '../checkpoint/store.js';
 import { scorePatchRisk } from '../risk/score.js';
@@ -58,7 +58,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { enforceStrictPreflight, getCapabilityHandshake, getExecutionPolicy, isRetryableError, isRiskBlocked, withRetries } from '../runtime/execution-policy.js';
+import { enforceStrictPreflight, getCapabilityHandshake, getExecutionPolicy, isRetryableError, isRiskBlocked, withRetries, type RiskThreshold } from '../runtime/execution-policy.js';
+import type { PipelineRunEvent } from '../types/common.js';
 
 
 const program = new Command();
@@ -85,7 +86,7 @@ export function parseHeadlessShortcutArgs(args: string[]) {
   };
 }
 
-function extractValidationSignals(result: any, requireValidation: boolean) {
+function extractValidationSignals(result: Record<string, unknown>, requireValidation: boolean) {
   if (!requireValidation) {
     return {
       required: false,
@@ -238,8 +239,9 @@ function commandOutput(command: string): { ok: boolean; output: string } {
   try {
     const output = String(execSync(`${command} 2>&1`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).trim();
     return { ok: true, output };
-  } catch (error: any) {
-    const output = String(error?.stdout || error?.stderr || '').trim();
+  } catch (error) {
+    const execError = error as { stdout?: string; stderr?: string };
+    const output = String(execError.stdout || execError.stderr || '').trim();
     return { ok: false, output };
   }
 }
@@ -343,7 +345,7 @@ function printJsonEnvelope(kind: string, payload: Record<string, unknown>) {
   }, null, 2));
 }
 
-async function loadPipelineRunEvents(traceId: string, baseDir = process.cwd()): Promise<any[]> {
+async function loadPipelineRunEvents(traceId: string, baseDir = process.cwd()): Promise<PipelineRunEvent[]> {
   const path = join(baseDir, '.crew', 'pipeline-runs', `${traceId}.jsonl`);
   const raw = await readFile(path, 'utf8');
   return raw
@@ -360,7 +362,7 @@ async function loadPipelineRunEvents(traceId: string, baseDir = process.cwd()): 
     .filter(Boolean);
 }
 
-function inferResumeTask(events: any[]): { task: string; phase: string } | null {
+function inferResumeTask(events: Record<string, unknown>[]): { task: string; phase: string } | null {
   if (!Array.isArray(events) || events.length === 0) return null;
   const firstPlan = events.find(e => String(e?.phase || '') === 'plan' && typeof e?.userInput === 'string');
   const last = events[events.length - 1];
@@ -371,10 +373,10 @@ function inferResumeTask(events: any[]): { task: string; phase: string } | null 
   };
 }
 
-function extractResumeArtifacts(events: any[]): {
-  priorPlan?: any;
+function extractResumeArtifacts(events: Record<string, unknown>[]): {
+  priorPlan?: unknown;
   priorResponse?: string;
-  priorExecutionResults?: any;
+  priorExecutionResults?: unknown;
 } {
   const planEvent = [...events].reverse().find(e => String(e?.phase || '') === 'plan.completed' && e?.plan);
   const validateInput = [...events].reverse().find(e => String(e?.phase || '') === 'validate.input');
@@ -401,10 +403,11 @@ async function runValidationCommands(commands: string[] = [], cwd = process.cwd(
         // keep deterministic side-effect free behavior, no streaming here.
       }
     } catch (error) {
+      const execError = error as { stderr?: string };
       return {
         passed: false,
         failedCommand: cmd,
-        output: String((error as any)?.stderr || (error as Error)?.message || '')
+        output: String(execError.stderr || (error as Error)?.message || '')
       };
     }
   }
@@ -481,7 +484,7 @@ async function dispatchWithFallback(
   router: AgentRouter,
   agent: string,
   task: string,
-  options: any,
+  options: Record<string, unknown>,
   fallbackModels: string[] = [],
   checkpoint?: CheckpointStore,
   runId?: string
@@ -1144,9 +1147,9 @@ export async function main(args = []) {
             model: options.model || ''
           }));
 
-          let result: any;
+          let result: Record<string, unknown> | undefined;
           if (useCache) {
-            const cached = await tokenCache.get<any>('output', cacheKey);
+            const cached = await tokenCache.get<Record<string, unknown>>('output', cacheKey);
             if (cached.hit && cached.value) {
               logger.info(chalk.gray('  Using cached output.'));
               result = cached.value;
@@ -1356,7 +1359,7 @@ export async function main(args = []) {
               riskScore: patchRisk.riskScore,
               confidence: patchRisk.confidence
             });
-            if (options.escalateRisk && isSeverityAtLeast(patchRisk.riskLevel, String(options.riskThreshold || 'high').toLowerCase() as any)) {
+            if (options.escalateRisk && isSeverityAtLeast(patchRisk.riskLevel, String(options.riskThreshold || 'high').toLowerCase() as RiskLevel)) {
               const escalationTask = `High-risk patch review requested.\nRisk score: ${patchRisk.riskScore}/100 (${patchRisk.riskLevel}).\nFiles: ${paths.join(', ')}.\nPlease review for correctness, regressions, and security concerns.`;
               const qa = await dispatchWithFallback(agentRouter, 'crew-qa', escalationTask, {
                 project: projectDir,
@@ -1713,7 +1716,7 @@ export async function main(args = []) {
         const policy = getExecutionPolicy({
           strictPreflight: Boolean(options.strictPreflight),
           retryAttempts: Number.parseInt(options.retryAttempts || '2', 10),
-          riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as any
+          riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as RiskLevel
         });
         await enforceStrictPreflight(policy, options.gateway);
         await checkpoints.beginRun({ runId, mode: 'dispatch', task });
@@ -1833,7 +1836,7 @@ export async function main(args = []) {
         });
 
         logger.info(`Dispatching task to ${agent}: ${finalTask}`);
-        let result: any;
+        let result: Record<string, unknown> | undefined;
         if (options.cache) {
           const cacheKey = TokenCache.hashKey(JSON.stringify({
             kind: 'dispatch-output',
@@ -1846,7 +1849,7 @@ export async function main(args = []) {
             direct: Boolean(options.direct),
             bypass: Boolean(options.bypass)
           }));
-          const cached = await tokenCache.get<any>('output', cacheKey);
+          const cached = await tokenCache.get<Record<string, unknown>>('output', cacheKey);
           if (cached.hit && cached.value) {
             logger.info('Using cached dispatch output.');
             result = cached.value;
@@ -1955,8 +1958,8 @@ export async function main(args = []) {
           success: Boolean(result.success),
           edits: edits.length
         });
-        let riskReport: any = null;
-        let patchRisk: any = null;
+        let riskReport: Record<string, unknown> | null = null;
+        let patchRisk: Record<string, unknown> | null = null;
         if (edits.length > 0) {
           riskReport = await analyzeBlastRadius(process.cwd(), { changedFiles: edits });
           patchRisk = scorePatchRisk({
@@ -1964,7 +1967,7 @@ export async function main(args = []) {
             changedFiles: edits.length
           });
           logger.info(`Patch confidence: ${(patchRisk.confidence * 100).toFixed(0)}% (risk score ${patchRisk.riskScore}/100, ${patchRisk.riskLevel})`);
-          if (options.escalateRisk && isSeverityAtLeast(patchRisk.riskLevel, String(options.riskThreshold || 'high').toLowerCase() as any)) {
+          if (options.escalateRisk && isSeverityAtLeast(patchRisk.riskLevel, String(options.riskThreshold || 'high').toLowerCase() as RiskLevel)) {
             const escalationTask = `High-risk patch review requested.\nRisk score: ${patchRisk.riskScore}/100 (${patchRisk.riskLevel}).\nFiles: ${edits.join(', ')}.\nPlease review for correctness, regressions, and security concerns.`;
             const qa = await dispatchWithFallback(agentRouter, 'crew-qa', escalationTask, {
               project: projectDir,
@@ -2067,7 +2070,7 @@ export async function main(args = []) {
         let task = String(options.task || '').trim();
         let resumedFrom: string | null = null;
         let previousPhase: string | null = null;
-        let resumeContext: any = undefined;
+        let resumeContext: { priorPlan?: unknown; priorResponse?: string; priorExecutionResults?: unknown } | undefined = undefined;
 
         if (options.resume) {
           const traceId = String(options.resume).trim();
@@ -2464,7 +2467,7 @@ export async function main(args = []) {
       ];
 
       const originalBranch = sandbox.getActiveBranch();
-      const results: any[] = [];
+      const results: Array<{ branch: string; result: unknown }> = [];
 
       // Run in parallel
       await Promise.all(branches.map(async (b) => {
@@ -2941,7 +2944,7 @@ export async function main(args = []) {
           `History entries kept: ${session.history.length}`,
           '',
           '## Recent activity',
-          ...last.map((entry: any) => `- ${entry.timestamp} ${entry.type}${entry.agent ? ` (${entry.agent})` : ''}`)
+          ...last.map((entry: Record<string, unknown>) => `- ${entry.timestamp} ${entry.type}${entry.agent ? ` (${entry.agent})` : ''}`)
         ].join('\n');
         await writeFile(join(process.cwd(), '.crew', 'context-summary.md'), `${summary}\n`, 'utf8');
       }
@@ -3037,7 +3040,7 @@ export async function main(args = []) {
       const policy = getExecutionPolicy({
         strictPreflight: Boolean(options.strictPreflight),
         retryAttempts: Number.parseInt(options.retryAttempts || '2', 10),
-        riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as any,
+        riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as RiskLevel,
         forceAutoApply: Boolean(options.forceAutoApply)
       });
       await enforceStrictPreflight(policy, options.gateway);
@@ -3185,7 +3188,7 @@ export async function main(args = []) {
       const entries = session.history.slice(-limit);
 
       console.log(chalk.blue(`--- Recent History (${entries.length} entries) ---`));
-      entries.forEach((e: any, i: number) => {
+      entries.forEach((e: Record<string, unknown>, i: number) => {
         const time = e.timestamp.split('T')[1].split('.')[0];
         console.log(`${chalk.gray(`[${time}]`)} ${chalk.bold(e.type)}: ${e.agent || e.skill || ''}`);
         if (e.task) console.log(chalk.gray(`  Task: ${e.task.slice(0, 60)}...`));
@@ -3204,7 +3207,7 @@ export async function main(args = []) {
       
       if (Object.keys(cost.byModel).length > 0) {
         console.log(chalk.gray('\nBreakdown by model:'));
-        Object.entries(cost.byModel).forEach(([model, usd]: [string, any]) => {
+        Object.entries(cost.byModel as Record<string, number>).forEach(([model, usd]) => {
           console.log(`- ${model}: $${usd.toFixed(4)}`);
         });
       }
@@ -4096,7 +4099,7 @@ export async function main(args = []) {
       try {
         const paths = sandbox.getPendingPaths(active);
         const policy = getExecutionPolicy({
-          riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as any,
+          riskThreshold: String(options.riskThreshold || 'high').toLowerCase() as RiskLevel,
           forceAutoApply: Boolean(options.force)
         });
         const report = await analyzeBlastRadius(process.cwd(), { changedFiles: paths });
@@ -4122,9 +4125,10 @@ export async function main(args = []) {
               execSync(options.check, { stdio: 'inherit', cwd: process.cwd() });
               logger.success('Check passed!');
               passed = true;
-            } catch (err: any) {
+            } catch (err) {
+              const execError = err as { stderr?: string; stdout?: string; message?: string };
               // Capture stderr/stdout for diagnostic parsing
-              const output = String(err.stderr || err.stdout || err.message || '');
+              const output = String(execError.stderr || execError.stdout || execError.message || '');
               const diagnostics = parseDiagnosticOutput(output, options.check);
 
               if (diagnostics.length > 0) {

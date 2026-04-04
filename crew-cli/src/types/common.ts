@@ -232,6 +232,89 @@ export interface Notebook {
 }
 
 // ---------------------------------------------------------------------------
+// Provider usage types (streaming / cost helpers)
+// ---------------------------------------------------------------------------
+
+/** Usage data from OpenAI-compatible providers (Grok, DeepSeek, Groq, etc.) */
+export interface OpenAIUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+}
+
+/** Usage data from Anthropic Messages API */
+export interface AnthropicUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+/** Usage data from Gemini API */
+export interface GeminiUsage {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Cost tracking types (SessionManager)
+// ---------------------------------------------------------------------------
+
+export interface CostEntry {
+  model: string;
+  usd: number;
+  promptTokens: number;
+  completionTokens: number;
+  timestamp: string;
+}
+
+export interface CostData {
+  totalUsd: number;
+  byModel: Record<string, number>;
+  entries: CostEntry[];
+  cacheSavings: {
+    hits: number;
+    misses: number;
+    tokensSaved: number;
+    usdSaved: number;
+  };
+  memoryMetrics: {
+    recallUsed: number;
+    recallMisses: number;
+    totalMatches: number;
+    averageQualityScore: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline event types (resume / checkpoint)
+// ---------------------------------------------------------------------------
+
+export interface PipelineRunEvent {
+  ts?: string;
+  phase?: string;
+  userInput?: string;
+  plan?: unknown;
+  response?: string;
+  executionResults?: unknown;
+  [key: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch options (CLI helpers)
+// ---------------------------------------------------------------------------
+
+export interface DispatchOptions {
+  project?: string;
+  sessionId?: string;
+  gateway?: string;
+  model?: string;
+  [key: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
 // Web search / fetch types
 // ---------------------------------------------------------------------------
 

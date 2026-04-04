@@ -15,6 +15,7 @@ import type { AgentRouter } from '../agent/router.js';
 import type { Orchestrator } from '../orchestrator/index.js';
 import type { Logger } from '../utils/logger.js';
 import type { CheckpointStore } from '../checkpoint/store.js';
+import type { PipelineRunEvent, DispatchOptions } from '../types/common.js';
 import { isRetryableError } from '../runtime/execution-policy.js';
 
 // ── Exported types ──────────────────────────────────────────────────────
@@ -57,7 +58,7 @@ export function parseHeadlessShortcutArgs(args: string[]) {
 
 // ── Validation signal extraction ────────────────────────────────────────
 
-export function extractValidationSignals(result: any, requireValidation: boolean) {
+export function extractValidationSignals(result: Record<string, unknown>, requireValidation: boolean) {
   if (!requireValidation) {
     return {
       required: false,
@@ -139,8 +140,9 @@ export function commandOutput(command: string): { ok: boolean; output: string } 
   try {
     const output = String(execSync(`${command} 2>&1`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).trim();
     return { ok: true, output };
-  } catch (error: any) {
-    const output = String(error?.stdout || error?.stderr || '').trim();
+  } catch (error) {
+    const execError = error as { stdout?: string; stderr?: string };
+    const output = String(execError.stdout || execError.stderr || '').trim();
     return { ok: false, output };
   }
 }
@@ -238,7 +240,7 @@ export function printJsonEnvelope(kind: string, payload: Record<string, unknown>
 
 // ── Pipeline / resume helpers ───────────────────────────────────────────
 
-export async function loadPipelineRunEvents(traceId: string, baseDir = process.cwd()): Promise<any[]> {
+export async function loadPipelineRunEvents(traceId: string, baseDir = process.cwd()): Promise<PipelineRunEvent[]> {
   const path = join(baseDir, '.crew', 'pipeline-runs', `${traceId}.jsonl`);
   const raw = await readFile(path, 'utf8');
   return raw
@@ -255,7 +257,7 @@ export async function loadPipelineRunEvents(traceId: string, baseDir = process.c
     .filter(Boolean);
 }
 
-export function inferResumeTask(events: any[]): { task: string; phase: string } | null {
+export function inferResumeTask(events: PipelineRunEvent[]): { task: string; phase: string } | null {
   if (!Array.isArray(events) || events.length === 0) return null;
   const firstPlan = events.find(e => String(e?.phase || '') === 'plan' && typeof e?.userInput === 'string');
   const last = events[events.length - 1];
@@ -266,10 +268,10 @@ export function inferResumeTask(events: any[]): { task: string; phase: string } 
   };
 }
 
-export function extractResumeArtifacts(events: any[]): {
-  priorPlan?: any;
+export function extractResumeArtifacts(events: PipelineRunEvent[]): {
+  priorPlan?: unknown;
   priorResponse?: string;
-  priorExecutionResults?: any;
+  priorExecutionResults?: unknown;
 } {
   const planEvent = [...events].reverse().find(e => String(e?.phase || '') === 'plan.completed' && e?.plan);
   const validateInput = [...events].reverse().find(e => String(e?.phase || '') === 'validate.input');
@@ -298,10 +300,11 @@ export async function runValidationCommands(commands: string[] = [], cwd = proce
         // keep deterministic side-effect free behavior, no streaming here.
       }
     } catch (error) {
+      const execError = error as { stderr?: string };
       return {
         passed: false,
         failedCommand: cmd,
-        output: String((error as any)?.stderr || (error as Error)?.message || '')
+        output: String(execError.stderr || (error as Error)?.message || '')
       };
     }
   }
@@ -382,7 +385,7 @@ export async function dispatchWithFallback(
   router: AgentRouter,
   agent: string,
   task: string,
-  options: any,
+  options: DispatchOptions,
   fallbackModels: string[] = [],
   checkpoint?: CheckpointStore,
   runId?: string
