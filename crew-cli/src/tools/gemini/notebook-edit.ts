@@ -154,7 +154,7 @@ class NotebookEditToolInvocation extends BaseToolInvocation<NotebookEditToolPara
         default:
           return { llmContent: `Unknown action: ${action}`, returnDisplay: `Unknown action: ${action}` };
       }
-    } catch (err: any) {
+    } catch (err) {
       return {
         llmContent: `NotebookEdit error: ${err?.message || String(err)}`,
         returnDisplay: `NotebookEdit error: ${err?.message || String(err)}`,
@@ -333,7 +333,7 @@ class NotebookEditToolInvocation extends BaseToolInvocation<NotebookEditToolPara
     let raw: string;
     try {
       raw = await fsPromises.readFile(this.resolvedPath, 'utf8');
-    } catch (err: any) {
+    } catch (err) {
       throw new Error(`Cannot read notebook ${this.params.path}: ${err.message}`);
     }
     try {

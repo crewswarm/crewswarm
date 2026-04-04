@@ -166,7 +166,7 @@ class SpawnAgentToolInvocation extends BaseToolInvocation<SpawnAgentToolParams, 
         llmContent: output,
         returnDisplay: output,
       };
-    } catch (err: any) {
+    } catch (err) {
       // Attempt cleanup on error
       try {
         await (this.sandbox as any).switchBranch?.('main');

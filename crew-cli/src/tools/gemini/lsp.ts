@@ -116,7 +116,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
         default:
           return { llmContent: `Unknown action: ${action}`, returnDisplay: `Unknown action: ${action}` };
       }
-    } catch (err: any) {
+    } catch (err) {
       return {
         llmContent: `LSP error: ${err?.message || String(err)}`,
         returnDisplay: `LSP error: ${err?.message || String(err)}`,
@@ -162,7 +162,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
           .trim();
         const result = filtered || 'No diagnostics found.';
         return { llmContent: result, returnDisplay: result };
-      } catch (err: any) {
+      } catch (err) {
         return { llmContent: `tsc failed: ${err.message}`, returnDisplay: `tsc failed: ${err.message}` };
       }
     }
@@ -177,7 +177,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
         });
         const result = out.trim() || 'No syntax errors found.';
         return { llmContent: result, returnDisplay: result };
-      } catch (err: any) {
+      } catch (err) {
         return { llmContent: `py_compile failed: ${err.message}`, returnDisplay: `py_compile error` };
       }
     }
@@ -269,7 +269,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
       );
       const result = out.trim() || 'No references found.';
       return { llmContent: result, returnDisplay: result };
-    } catch (err: any) {
+    } catch (err) {
       // grep exit code 1 means no matches (not an error)
       if (err?.status === 1) {
         return { llmContent: 'No references found.', returnDisplay: 'No references found.' };
@@ -304,7 +304,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
           return { llmContent: output, returnDisplay: output };
         }
         return { llmContent: 'No type information found at this position.', returnDisplay: 'No type info.' };
-      } catch (err: any) {
+      } catch (err) {
         return { llmContent: `hover failed: ${err.message}`, returnDisplay: `hover failed` };
       }
     }
@@ -316,7 +316,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
       const lines = content.split('\n');
       const targetLine = lines[(line - 1)] || '';
       return { llmContent: targetLine, returnDisplay: targetLine };
-    } catch (err: any) {
+    } catch (err) {
       return { llmContent: `Could not read file: ${err.message}`, returnDisplay: `Read error` };
     }
   }
@@ -345,7 +345,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
         }
         const output = items.map(i => `${i.name} (${i.kind})`).join('\n');
         return { llmContent: output, returnDisplay: output };
-      } catch (err: any) {
+      } catch (err) {
         return { llmContent: `completions failed: ${err.message}`, returnDisplay: `completions failed` };
       }
     }
@@ -401,7 +401,7 @@ class LspToolInvocation extends BaseToolInvocation<LspToolParams, ToolResult> {
       });
       const result = out.trim() || 'No definition found.';
       return { llmContent: result, returnDisplay: result };
-    } catch (err: any) {
+    } catch (err) {
       if (err?.status === 1) {
         return { llmContent: 'No definition found.', returnDisplay: 'No definition found.' };
       }

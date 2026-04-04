@@ -204,7 +204,7 @@ export class CrewToolExecutor {
         stdout: output,
         exitCode: 0
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
         stdout: error.stdout || '',

@@ -139,7 +139,7 @@ export class DockerSandbox {
         duration
       };
 
-    } catch (err: any) {
+    } catch (err) {
       const duration = Date.now() - startTime;
       console.log(`[Docker] ✗ Command failed after ${duration}ms`);
       

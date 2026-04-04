@@ -472,30 +472,50 @@ export class GeminiToolAdapter {
   }
 
   private async _executeTool(toolName: string, params: Record<string, unknown>): Promise<ToolResult> {
+    const asString = (value: unknown): string => typeof value === 'string' ? value : '';
+    const asOptionalString = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
+    const asNumber = (value: unknown): number | undefined => typeof value === 'number' ? value : undefined;
+    const asBoolean = (value: unknown): boolean | undefined => typeof value === 'boolean' ? value : undefined;
+    const asUnknownArray = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
     try {
       switch (toolName) {
         // Canonical Gemini names + local aliases
         case 'write_file':
-          return await this.writeFile(params);
+          return await this.writeFile({
+            file_path: asString(params.file_path),
+            content: asString(params.content)
+          });
         case 'replace':
           return await this.editFile({
-            file_path: params.file_path,
-            old_string: params.old_string,
-            new_string: params.new_string,
-            replace_all: params.replace_all
+            file_path: asString(params.file_path),
+            old_string: asString(params.old_string),
+            new_string: asString(params.new_string),
+            replace_all: asBoolean(params.replace_all)
           });
         case 'append_file':
-          return await this.appendFile(params);
+          return await this.appendFile({
+            file_path: asString(params.file_path),
+            content: asString(params.content)
+          });
         case 'read_file':
-          return await this.readFile(params);
+          return await this.readFile({
+            file_path: asString(params.file_path),
+            start_line: asNumber(params.start_line),
+            end_line: asNumber(params.end_line)
+          });
         case 'edit':
-          return await this.editFile(params);
+          return await this.editFile({
+            file_path: asString(params.file_path),
+            old_string: asString(params.old_string),
+            new_string: asString(params.new_string),
+            replace_all: asBoolean(params.replace_all)
+          });
         case 'read_many_files':
           return await this.readManyFilesTool(params);
         case 'save_memory':
-          return await this.saveMemoryTool(params);
+          return await this.saveMemoryTool({ fact: asString(params.fact) });
         case 'write_todos':
-          return await this.writeTodosTool(params);
+          return await this.writeTodosTool({ todos: asUnknownArray(params.todos) });
         case 'get_internal_docs':
           return await this.getInternalDocsTool(params);
         case 'ask_user':
@@ -511,39 +531,59 @@ export class GeminiToolAdapter {
         case 'list':
           return await this.listTool(params);
         case 'list_directory':
-          return await this.listTool({ dir_path: params.dir_path || params.path });
+          return await this.listTool({ dir_path: asString(params.dir_path) || asString(params.path) });
         case 'glob':
-          return await this.globTool(params);
+          return await this.globTool({ pattern: asString(params.pattern) });
         case 'grep':
-          return await this.grepTool(params);
+          return await this.grepTool({
+            pattern: asString(params.pattern),
+            path: asOptionalString(params.path),
+            output_mode: params.output_mode as 'content' | 'files' | 'count' | undefined,
+            context: asNumber(params.context),
+            before: asNumber(params.before),
+            after: asNumber(params.after),
+            case_insensitive: asBoolean(params.case_insensitive),
+            type: asOptionalString(params.type),
+            max_results: asNumber(params.max_results)
+          });
         case 'grep_search':
         case 'grep_search_ripgrep':
           return await this.grepTool({
-            pattern: params.pattern,
-            path: params.dir_path || params.path,
-            output_mode: params.output_mode,
-            context: params.context,
-            before: params.before,
-            after: params.after,
-            case_insensitive: params.case_insensitive,
-            type: params.type,
-            max_results: params.max_results
+            pattern: asString(params.pattern),
+            path: asOptionalString(params.dir_path) || asOptionalString(params.path),
+            output_mode: params.output_mode as 'content' | 'files' | 'count' | undefined,
+            context: asNumber(params.context),
+            before: asNumber(params.before),
+            after: asNumber(params.after),
+            case_insensitive: asBoolean(params.case_insensitive),
+            type: asOptionalString(params.type),
+            max_results: asNumber(params.max_results)
           });
         case 'git':
-          return await this.gitTool(params);
+          return await this.gitTool({ command: asString(params.command) });
         case 'shell':
         case 'run_cmd':
         case 'run_shell_command':
-          return await this.shellTool(params);
+          return await this.shellTool({
+            command: asString(params.command),
+            run_in_background: asBoolean(params.run_in_background),
+            description: asOptionalString(params.description)
+          });
         case 'lsp':
           return await this.lspTool(params);
         case 'notebook_edit':
-          return await this.notebookEditTool(params);
+          return await this.notebookEditTool({
+            action: asString(params.action),
+            path: asString(params.path),
+            index: asNumber(params.index),
+            cell_type: params.cell_type as 'code' | 'markdown' | undefined,
+            content: asOptionalString(params.content)
+          });
         case 'web_search':
         case 'google_web_search':
-          return await this.webSearchTool(params);
+          return await this.webSearchTool({ query: asString(params.query) });
         case 'web_fetch':
-          return await this.webFetchTool(params);
+          return await this.webFetchTool({ url: asString(params.url) });
         case 'tracker_create_task':
           return await this.trackerCreateTaskTool(params);
         case 'tracker_update_task':
@@ -557,25 +597,50 @@ export class GeminiToolAdapter {
         case 'tracker_visualize':
           return await this.trackerVisualizeTool();
         case 'spawn_agent':
-          return await this.spawnAgentTool(params);
+          return await this.spawnAgentTool({
+            task: asString(params.task),
+            model: asOptionalString(params.model),
+            max_turns: asNumber(params.max_turns)
+          });
         case 'agent_message':
-          return await this.agentMessageTool(params as any);
+          return await this.agentMessageTool({
+            session_id: asString(params.session_id),
+            message: asString(params.message),
+            max_turns: asNumber(params.max_turns)
+          });
         case 'check_background_task':
-          return await this.checkBackgroundTask(params);
+          return await this.checkBackgroundTask({ task_id: asString(params.task_id) });
         case 'enter_worktree':
-          return this.enterWorktreeTool(params);
+          return this.enterWorktreeTool({
+            branch_prefix: asOptionalString(params.branch_prefix),
+            agent_id: asOptionalString(params.agent_id)
+          });
         case 'exit_worktree':
-          return await this.exitWorktreeTool(params);
+          return await this.exitWorktreeTool({ branch_name: asString(params.branch_name) });
         case 'merge_worktree':
-          return this.mergeWorktreeTool(params);
+          return this.mergeWorktreeTool({
+            branch_name: asString(params.branch_name),
+            strategy: params.strategy as 'merge' | 'squash' | undefined
+          });
         case 'list_worktrees':
           return this.listWorktreesTool();
         case 'worktree':
-          return await this.worktreeUnifiedTool(params);
+          return await this.worktreeUnifiedTool({
+            action: (params.action as 'enter' | 'exit' | 'merge' | 'list') || 'list',
+            branch: asOptionalString(params.branch),
+            merge: asBoolean(params.merge),
+            projectDir: asOptionalString(params.projectDir)
+          });
         case 'sleep':
-          return await this.sleepTool(params);
+          return await this.sleepTool({
+            duration_ms: asNumber(params.duration_ms) || 0,
+            reason: asOptionalString(params.reason)
+          });
         case 'tool_search':
-          return this.toolSearchTool(params);
+          return this.toolSearchTool({
+            query: asString(params.query),
+            max_results: asNumber(params.max_results)
+          });
         default:
           return {
             success: false,
@@ -1083,7 +1148,11 @@ export class GeminiToolAdapter {
         
         if (dockerAvailable) {
           console.log(`[GeminiAdapter] Running command in Docker with ${this.sandbox.getPendingPaths().length} staged file(s)`);
-          const result = await docker.runCommand(command, this.sandbox, {
+          const result = await docker.runCommand(command, this.sandbox as unknown as {
+            getPendingPaths(): string[];
+            state?: { branches?: Record<string, Record<string, { modified?: string }>> };
+            getActiveBranch(): string;
+          }, {
             workDir: this.config.getWorkspaceRoot(),
             timeout: getShellTimeout()
           });

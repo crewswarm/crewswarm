@@ -198,7 +198,7 @@ export async function executeWithFallback(
       console.log(`[Fallback] ✗ ${modelName} failed plausibility checks`);
       onProgress?.(modelName, 'failed plausibility');
       
-    } catch (error: any) {
+    } catch (error) {
       console.log(`[Fallback] ✗ ${modelName} error: ${error.message}`);
       
       attempts.push({

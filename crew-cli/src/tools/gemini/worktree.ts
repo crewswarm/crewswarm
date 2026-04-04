@@ -166,7 +166,7 @@ class WorktreeToolInvocation extends BaseToolInvocation<WorktreeToolParams, Tool
             returnDisplay: `Unknown action: ${action}`,
           };
       }
-    } catch (err: any) {
+    } catch (err) {
       const msg = `WorktreeTool error (${action}): ${err.message}`;
       return { llmContent: msg, returnDisplay: msg };
     }

@@ -87,7 +87,7 @@ export async function startRagServer(options: RagServerOptions = {}) {
         elapsedMs: elapsed,
         shouldUseRag: shouldRun
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('[rag-server] Search error:', error);
       res.status(500).json({ error: error.message });
     }
@@ -115,7 +115,7 @@ export async function startRagServer(options: RagServerOptions = {}) {
         message: 'Index built (semantic embeddings)',
         filesIndexed: result.filesLoaded.length
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('[rag-server] Index error:', error);
       res.status(500).json({ error: error.message });
     }
@@ -139,7 +139,7 @@ export async function startRagServer(options: RagServerOptions = {}) {
       };
 
       res.json(stats);
-    } catch (error: any) {
+    } catch (error) {
       console.error('[rag-server] Stats error:', error);
       res.status(500).json({ error: error.message });
     }

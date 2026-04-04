@@ -82,7 +82,7 @@ export function enterWorktree(
   try {
     execSync(`mkdir -p "${worktreeBase}"`, { cwd });
     git(`worktree add -b "${branchName}" "${worktreePath}" HEAD`, cwd);
-  } catch (err: any) {
+  } catch (err) {
     throw new Error(`Failed to create worktree: ${err.message}`);
   }
 
@@ -200,7 +200,7 @@ export function mergeWorktree(
     } catch { /* already deleted */ }
 
     return { success: true, message: `Merged ${branchName} into current branch` };
-  } catch (err: any) {
+  } catch (err) {
     return { success: false, message: `Merge failed: ${err.message}` };
   }
 }

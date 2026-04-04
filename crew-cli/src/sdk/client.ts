@@ -170,7 +170,7 @@ export class CrewClient {
         }
       };
 
-    } catch (err: any) {
+    } catch (err) {
       await this.emit({
         type: 'error',
         message: err.message,

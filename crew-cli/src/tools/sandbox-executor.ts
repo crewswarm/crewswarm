@@ -239,7 +239,7 @@ export async function executeToolsWithSandbox(
             toolType: 'run_cmd'
           });
         }
-      } catch (err: any) {
+      } catch (err) {
         results.push({
           message: `$ ${cmd}\n${err.message || err.stdout || err.stderr}`,
           success: false,
@@ -537,7 +537,7 @@ export async function executeToolsWithSandbox(
         success: true,
         toolType: 'git'
       });
-    } catch (err: any) {
+    } catch (err) {
       results.push({
         message: `$ git ${gitCmd}\n${err.message}`,
         success: false,
