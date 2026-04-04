@@ -17,6 +17,8 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
+process.env.CREWSWARM_TEST_MODE = "true";
+
 let mod;
 let dbAvailable = false;
 

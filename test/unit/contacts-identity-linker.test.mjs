@@ -26,6 +26,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+process.env.CREWSWARM_TEST_MODE = "true";
+
 const {
   linkIdentities,
   getMasterIdentity,
