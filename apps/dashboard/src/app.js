@@ -85,7 +85,10 @@ import {
   initTestingTab,
   showTesting,
   runTests,
+  runSingleFile,
   loadRunDetail,
+  toggleFailure,
+  copyText as copyTestText,
 } from "./tabs/testing-tab.js";
 import {
   showSkills,
@@ -2154,6 +2157,9 @@ const ACTION_REGISTRY = {
   refreshTesting: () => showTesting(),
   runTests: (suite) => runTests(suite),
   loadRunDetail: (runId) => loadRunDetail(runId),
+  runSingleFile: (suite, file) => runSingleFile(suite, file),
+  toggleFailure: (targetId) => toggleFailure(targetId),
+  copyText: (text) => copyTestText(text),
   showSettings,
   // Static HTML actions (previously onclick="window.fn()")
   pickFolder: (id) => pickFolder(id),

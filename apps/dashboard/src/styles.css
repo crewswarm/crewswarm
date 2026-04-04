@@ -2528,3 +2528,265 @@ select {
 .test-history-table tbody tr:hover {
   background: rgba(255, 255, 255, 0.02);
 }
+
+/* ── Feature 1: Per-File Run Buttons ──────────────────────────────────────── */
+.test-file-list {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.test-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+.test-file-dot { font-size: 8px; flex-shrink: 0; }
+
+.test-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.test-file-counts { color: var(--text-3); font-size: 10px; white-space: nowrap; }
+
+.test-file-run-btn {
+  background: rgba(99,102,241,0.15);
+  color: #818cf8;
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 9px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.test-file-run-btn:hover { background: rgba(99,102,241,0.3); }
+
+/* ── Feature 2: Stale badge ───────────────────────────────────────────────── */
+.test-stale-badge {
+  background: rgba(251,191,36,0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251,191,36,0.3);
+  border-radius: 3px;
+  font-size: 9px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Feature 3: Live Streaming Terminal ───────────────────────────────────── */
+.test-stream-panel {
+  margin: 12px 0;
+  background: #0a0f1a;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.test-stream-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #0d1420;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.test-stream-close {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 4px;
+}
+.test-stream-close:hover { color: var(--text-1); }
+
+.test-stream-pre {
+  margin: 0;
+  padding: 12px;
+  font-size: 11px;
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+  color: #a8d8a8;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+/* ── Feature 4: Failure Drill-Down ───────────────────────────────────────── */
+.test-failure-expandable {
+  cursor: default;
+}
+
+.test-failure-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 12px;
+  margin: -8px -12px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.test-failure-header:hover { background: rgba(255,255,255,0.04); }
+
+.test-failure-toggle {
+  color: var(--text-3);
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.test-failure-file-inline {
+  color: var(--text-3);
+  font-size: 10px;
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.test-failure-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.test-failure-stack {
+  background: #0a0f1a;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 10px;
+  color: #fca5a5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+
+.test-failure-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.test-failure-link {
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: none;
+}
+.test-failure-link:hover { text-decoration: underline; }
+
+.test-copy-btn {
+  background: rgba(99,102,241,0.15);
+  color: #818cf8;
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: background 0.15s;
+}
+.test-copy-btn:hover { background: rgba(99,102,241,0.3); }
+
+/* ── Feature 5: Playwright Screenshots ───────────────────────────────────── */
+.test-failure-screenshot {
+  margin-top: 8px;
+}
+
+.test-screenshot-thumb {
+  max-width: 200px;
+  max-height: 140px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: zoom-in;
+  display: block;
+  transition: max-width 0.2s, max-height 0.2s;
+  object-fit: contain;
+}
+
+.test-screenshot-thumb.test-screenshot-expanded {
+  max-width: 100%;
+  max-height: 600px;
+  cursor: zoom-out;
+}
+
+/* ── Feature 6: Coverage Heatmap ─────────────────────────────────────────── */
+.test-coverage-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 10px 0;
+}
+
+.test-coverage-block {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.1s;
+}
+.test-coverage-block:hover { transform: scale(1.3); opacity: 0.9; }
+
+.test-coverage-covered { background: #22c55e; }
+.test-coverage-uncovered { background: #ef4444; opacity: 0.7; }
+
+.test-coverage-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+.test-coverage-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.test-coverage-dot-green { background: #22c55e; }
+.test-coverage-dot-red { background: #ef4444; }
+
+/* ── Feature 7: Run History Chart ────────────────────────────────────────── */
+.test-chart-wrap {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.test-chart-legend {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-2);
+  margin-left: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.test-chart-legend span { margin-right: 10px; }
