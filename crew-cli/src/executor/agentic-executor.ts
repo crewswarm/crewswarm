@@ -2,7 +2,7 @@
  * Agentic L3 Executor v2 — 10/10 competitive CLI engine
  *
  * Features:
- * - 44+ tools via GeminiToolAdapter (LSP, git, web, memory, tracker, etc.)
+ * - 45+ tools via GeminiToolAdapter (LSP, git, web, memory, tracker, etc.)
  * - Streaming output — real-time token display as LLM generates
  * - JIT context discovery — files discovered by tools are indexed for next turn
  * - Turn compression — Topic-Action-Summary keeps prompts lean on long sessions
@@ -13,6 +13,13 @@
 
 import type { AutonomousResult, TurnResult } from '../worker/autonomous-loop.js';
 import type { ToolDeclaration } from '../tools/base.js';
+import type {
+  AnthropicContentBlock,
+  OpenAIToolCall,
+  LLMResponseData,
+  GeminiContent,
+  ChatMessage,
+} from '../types/common.js';
 import type { Sandbox } from '../sandbox/index.js';
 import { executeAutonomous } from '../worker/autonomous-loop.js';
 import { GeminiToolAdapter, type ConstraintLevel, constraintLevelForPersona } from '../tools/gemini/crew-adapter.js';
@@ -93,7 +100,7 @@ Every turn, follow this exact pattern:
 **Web**: google_web_search, web_fetch
 **Memory**: save_memory (persist facts across sessions), write_todos
 **Docs**: get_internal_docs (read project documentation)
-**Agents**: spawn_agent (spawn autonomous sub-agent for independent subtasks — isolated sandbox branch, cheap model by default, merges changes on completion)
+**Agents**: spawn_agent (spawn autonomous sub-agent — returns session_id for follow-ups), agent_message (send follow-up to existing sub-agent session — multi-turn dialogue with full context)
 **Discovery**: tool_search (find available tools by name or description query), activate_skill
 
 ## File Reading Strategy
@@ -195,7 +202,7 @@ export function compressTurnHistory(history: TurnResult[]): CompressedTurn[] {
     const resultText = isError
       ? h.error!
       : (typeof h.result === 'object' && h.result && 'output' in h.result)
-        ? String((h.result as any).output ?? '')
+        ? String((h.result as { output?: string }).output ?? '')
         : String(h.result ?? '');
 
     // Compress outcome to most useful info
@@ -228,9 +235,9 @@ export function formatToolResult(h: TurnResult, maxLen = 1500): string {
  * For long histories, middle turns are compressed to text summary while
  * the first 3 (initial context) and last 5 (recent work) use full structured format.
  */
-export function historyToGeminiContents(history: TurnResult[], model?: string): any[] {
+export function historyToGeminiContents(history: TurnResult[], model?: string): GeminiContent[] {
   if (history.length === 0) return [];
-  const contents: any[] = [];
+  const contents: GeminiContent[] = [];
 
   // Estimate current token usage to pick adaptive compression ratio
   const totalChars = history.reduce((sum, h) => {
@@ -292,9 +299,9 @@ export function historyToGeminiContents(history: TurnResult[], model?: string): 
   return contents;
 }
 
-export function historyToOpenAIMessages(history: TurnResult[], model?: string): any[] {
+export function historyToOpenAIMessages(history: TurnResult[], model?: string): ChatMessage[] {
   if (history.length === 0) return [];
-  const messages: any[] = [];
+  const messages: ChatMessage[] = [];
 
   // Estimate token usage for adaptive compression
   const totalChars = history.reduce((sum, h) => {
@@ -359,9 +366,9 @@ export function historyToOpenAIMessages(history: TurnResult[], model?: string): 
   return messages;
 }
 
-function historyToAnthropicMessages(history: TurnResult[]): any[] {
+function historyToAnthropicMessages(history: TurnResult[]): ChatMessage[] {
   if (history.length === 0) return [];
-  const messages: any[] = [];
+  const messages: ChatMessage[] = [];
 
   // Selective compression: keep first 3 + last 5 detailed, compress only middle
   const firstN = 3;
@@ -500,11 +507,11 @@ export type ResolvedProvider = {
   oauthSource?: string;
 };
 
-function stripSchemaMetadata(value: any): any {
+function stripSchemaMetadata(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripSchemaMetadata);
   if (!value || typeof value !== 'object') return value;
 
-  const out: Record<string, any> = {};
+  const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
     if (['description', 'title', 'examples', 'default', '$comment'].includes(key)) continue;
     if (key === 'properties' && child && typeof child === 'object') {
@@ -637,7 +644,7 @@ async function executeStreamingGeminiTurn(
   systemPrompt: string,
   stream: boolean,
   images?: ImageAttachment[],
-  historyMessages?: any[],
+  historyMessages?: GeminiContent[] | ChatMessage[],
   isOAuth?: boolean,
   projectId?: string,
   oauthSource?: string,
@@ -664,13 +671,13 @@ async function executeStreamingGeminiTurn(
   }));
 
   // Build user parts: text + optional images
-  const userParts: any[] = [{ text: `${systemPrompt}\n\nTask:\n${fullTask}` }];
+  const userParts: Array<Record<string, unknown>> = [{ text: `${systemPrompt}\n\nTask:\n${fullTask}` }];
   if (images?.length) {
     for (const img of images) {
       userParts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
     }
   }
-  const contents: any[] = [
+  const contents: Array<Record<string, unknown>> = [
     { role: 'user', parts: userParts },
     // Insert structured history (tool call/result pairs)
     ...(historyMessages || []),
@@ -725,7 +732,7 @@ async function executeStreamingGeminiTurn(
   if (stream && res.body) {
     // Parse SSE stream
     let fullText = '';
-    const toolCalls: Array<{ tool: string; params: Record<string, any> }> = [];
+    const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
     let totalCost = 0;
 
     const reader = res.body.getReader();
@@ -787,12 +794,12 @@ async function executeStreamingGeminiTurn(
   }
 
   // Non-streaming fallback
-  const data = await res.json() as any;
+  const data = await res.json() as LLMResponseData;
   const parts = data?.candidates?.[0]?.content?.parts ?? [];
   const usage = data?.usageMetadata ?? {};
   const cost = (usage.promptTokenCount || 0) * 0.075 / 1_000_000 + (usage.candidatesTokenCount || 0) * 0.30 / 1_000_000;
 
-  const toolCalls: Array<{ tool: string; params: Record<string, any> }> = [];
+  const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
   for (const part of parts) {
     if (part.functionCall) {
       toolCalls.push({ tool: part.functionCall.name || '', params: part.functionCall.args || {} });
@@ -801,7 +808,7 @@ async function executeStreamingGeminiTurn(
 
   if (toolCalls.length > 0) return { toolCalls, response: '', cost };
 
-  const textPart = parts.find((p: any) => p.text);
+  const textPart = parts.find((p: Record<string, unknown>) => p.text);
   return { response: textPart?.text ?? '', status: 'COMPLETE', cost };
 }
 
@@ -812,7 +819,7 @@ async function executeGeminiCodeAssistTurn(
   model: string,
   systemPrompt: string,
   images?: ImageAttachment[],
-  historyMessages?: any[],
+  historyMessages?: GeminiContent[] | ChatMessage[],
   projectId?: string,
   oauthSource?: string
 ): Promise<LLMTurnResult> {
@@ -864,7 +871,7 @@ async function executeGeminiCodeAssistTurn(
     throw new Error(`Gemini Code Assist loadCodeAssist ${loadResponse.status}: ${err.slice(0, 300)}`);
   }
 
-  const loadData = await loadResponse.json() as any;
+  const loadData = await loadResponse.json() as LLMResponseData;
   const activeProjectId = loadData?.cloudaicompanionProject || resolvedProjectId;
   const functionDeclarations = tools.map(t => ({
     name: t.name,
@@ -872,7 +879,7 @@ async function executeGeminiCodeAssistTurn(
     parameters: t.parameters
   }));
 
-  const userParts: any[] = [{ text: `${systemPrompt}\n\nTask:\n${fullTask}` }];
+  const userParts: Array<Record<string, unknown>> = [{ text: `${systemPrompt}\n\nTask:\n${fullTask}` }];
   if (images?.length) {
     for (const img of images) {
       userParts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
@@ -909,12 +916,13 @@ async function executeGeminiCodeAssistTurn(
     throw new Error(`Gemini Code Assist generateContent ${response.status}: ${err.slice(0, 300)}`);
   }
 
-  const data = await response.json() as any;
+  type CodeAssistData = { response?: { candidates?: Array<{ content?: { parts?: unknown[] } }>; usageMetadata?: Record<string, number> } };
+  const data = await response.json() as CodeAssistData;
   const parts = data?.response?.candidates?.[0]?.content?.parts ?? [];
   const usage = data?.response?.usageMetadata ?? {};
   const cost = (usage.promptTokenCount || 0) * 0.075 / 1_000_000 + (usage.candidatesTokenCount || 0) * 0.30 / 1_000_000;
 
-  const toolCalls: Array<{ tool: string; params: Record<string, any> }> = [];
+  const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
   let fullText = '';
   for (const part of parts) {
     if (part.text) {
@@ -939,7 +947,7 @@ async function executeStreamingOpenAITurn(
   systemPrompt: string,
   stream: boolean,
   images?: ImageAttachment[],
-  historyMessages?: any[],
+  historyMessages?: GeminiContent[] | ChatMessage[],
   isOAuth?: boolean,
   historyContext?: string,
   abortSignal?: AbortSignal
@@ -954,7 +962,7 @@ async function executeStreamingOpenAITurn(
   // GPT-5/6 only support temperature=1; other values cause 400
   const temp = (model?.startsWith?.('gpt-5') || model?.startsWith?.('gpt-6')) ? 1 : 0.3;
   const isCodexOAuth = isOAuth && apiUrl === OPENAI_CODEX_API_URL;
-  const body: any = isCodexOAuth
+  const body: Record<string, unknown> = isCodexOAuth
     ? {
         model,
         instructions: systemPrompt,
@@ -978,9 +986,9 @@ async function executeStreamingOpenAITurn(
         stream: true
       }
     : (() => {
-        let userContent: any = fullTask;
+        let userContent: string | Array<Record<string, unknown>> = fullTask;
         if (images?.length) {
-          const parts: any[] = [{ type: 'text', text: fullTask }];
+          const parts: Array<Record<string, unknown>> = [{ type: 'text', text: fullTask }];
           for (const img of images) {
             parts.push({
               type: 'image_url',
@@ -1096,7 +1104,7 @@ async function executeStreamingOpenAITurn(
     if (fullText) process.stdout.write('\n');
 
     // Parse accumulated tool calls
-    const toolCalls: Array<{ tool: string; params: Record<string, any> }> = [];
+    const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
     for (const [, tc] of toolCallAccumulator) {
       if (tc.name) {
         let params = {};
@@ -1111,13 +1119,13 @@ async function executeStreamingOpenAITurn(
 
   // Non-streaming fallback to multi-turn-drivers
   // (this path shouldn't be hit normally since we always stream)
-  const data = await res.json() as any;
+  const data = await res.json() as LLMResponseData;
   const choice = data?.choices?.[0];
   const msg = choice?.message;
 
   if (msg?.tool_calls?.length > 0) {
-    const toolCalls = msg.tool_calls.map((tc: any) => {
-      let params = {};
+    const toolCalls = (msg.tool_calls as OpenAIToolCall[]).map((tc) => {
+      let params: Record<string, unknown> = {};
       try { params = JSON.parse(repairJson(tc.function?.arguments || '{}')); } catch {}
       return { tool: tc.function?.name || '', params };
     });
@@ -1137,11 +1145,11 @@ async function streamOpenAIResponsesOAuthTurn(res: Response): Promise<LLMTurnRes
   const toolCallsById = new Map<string, { name: string; args: string }>();
   let buffer = '';
   let fullText = '';
-  let usage: any = null;
+  let usage: Record<string, number> | null = null;
 
-  const applyEvent = (eventType: string, payload: any) => {
-    const item = payload?.item || payload?.output_item;
-    const itemId = item?.id || payload?.item_id || payload?.call_id || '';
+  const applyEvent = (eventType: string, payload: Record<string, unknown>) => {
+    const item = (payload?.item || payload?.output_item) as Record<string, unknown> | undefined;
+    const itemId = String(item?.id || payload?.item_id || payload?.call_id || '');
 
     if (eventType === 'response.output_text.delta' && typeof payload?.delta === 'string') {
       process.stdout.write(payload.delta);
@@ -1168,9 +1176,10 @@ async function streamOpenAIResponsesOAuthTurn(res: Response): Promise<LLMTurnRes
     }
 
     if (eventType === 'response.completed') {
-      usage = payload?.response?.usage || null;
-      if (!fullText && typeof payload?.response?.output_text === 'string') {
-        fullText = payload.response.output_text;
+      const res = payload?.response as Record<string, unknown> | undefined;
+      usage = (res?.usage as Record<string, number>) || null;
+      if (!fullText && typeof res?.output_text === 'string') {
+        fullText = res.output_text;
       }
     }
   };
@@ -1197,7 +1206,7 @@ async function streamOpenAIResponsesOAuthTurn(res: Response): Promise<LLMTurnRes
         if (raw) {
           try {
             const payload = JSON.parse(raw);
-            applyEvent(eventType || payload?.type || '', payload);
+            applyEvent(eventType || String(payload?.type || ''), payload);
           } catch {
             // Ignore malformed SSE fragments.
           }
@@ -1211,10 +1220,10 @@ async function streamOpenAIResponsesOAuthTurn(res: Response): Promise<LLMTurnRes
 
   if (fullText) process.stdout.write('\n');
 
-  const toolCalls: Array<{ tool: string; params: Record<string, any> }> = [];
+  const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
   for (const [, tc] of toolCallsById) {
     if (!tc.name) continue;
-    let params: Record<string, any> = {};
+    let params: Record<string, unknown> = {};
     try {
       params = JSON.parse(repairJson(tc.args));
     } catch {
@@ -1244,14 +1253,14 @@ async function executeAnthropicSDKTurn(
   model: string,
   systemPrompt: string,
   images?: ImageAttachment[],
-  historyMessages?: any[]
+  historyMessages?: GeminiContent[] | ChatMessage[]
 ): Promise<LLMTurnResult> {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
   const { randomUUID } = await import('node:crypto');
   const sessionHeader = randomUUID();
   const client = new Anthropic({
     authToken,
-    apiKey: null as any,
+    apiKey: null as unknown as string,
     timeout: 120000,
     defaultHeaders: {
       'x-app': 'cli',
@@ -1261,9 +1270,9 @@ async function executeAnthropicSDKTurn(
   });
 
   // Build user content
-  let userContent: any = fullTask;
+  let userContent: string | Array<Record<string, unknown>> = fullTask;
   if (images?.length) {
-    const parts: any[] = [{ type: 'text', text: fullTask }];
+    const parts: Array<Record<string, unknown>> = [{ type: 'text', text: fullTask }];
     for (const img of images) {
       parts.push({
         type: 'image',
@@ -1276,7 +1285,7 @@ async function executeAnthropicSDKTurn(
   const anthropicTools = tools.map(t => ({
     name: t.name,
     description: t.description || '',
-    input_schema: t.parameters as any
+    input_schema: t.parameters as Record<string, unknown>
   }));
 
   // Read device_id from Claude Code's session data for metadata
@@ -1305,7 +1314,8 @@ async function executeAnthropicSDKTurn(
 
   try {
     // Use beta.messages.create with OAuth + thinking (proven working with Haiku)
-    const response = await (client.beta.messages.create as any)({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const response = await (client.beta.messages.create as (opts: Record<string, unknown>) => Promise<{ usage?: { input_tokens?: number; output_tokens?: number }; content?: AnthropicContentBlock[] }>)({
       model,
       max_tokens: 16000,
       system: systemPrompt,
@@ -1333,28 +1343,28 @@ async function executeAnthropicSDKTurn(
       } : {}),
     });
 
-    const usage = (response as any).usage || {} as any;
+    const usage = response.usage || {};
     const cost = ((usage.input_tokens || 0) * 3 + (usage.output_tokens || 0) * 15) / 1_000_000;
 
-    const content = response.content || [];
-    const toolUseBlocks = content.filter((b: any) => b.type === 'tool_use');
-    const textBlocks = content.filter((b: any) => b.type === 'text');
-    const textResponse = textBlocks.map((b: any) => b.text).join('\n');
+    const content: AnthropicContentBlock[] = response.content || [];
+    const toolUseBlocks = content.filter((b) => b.type === 'tool_use');
+    const textBlocks = content.filter((b) => b.type === 'text');
+    const textResponse = textBlocks.map((b) => b.text).join('\n');
 
     if (textResponse) process.stdout.write(textResponse);
 
     if (toolUseBlocks.length > 0) {
-      const toolCalls = toolUseBlocks.map((b: any) => ({
-        tool: b.name,
+      const toolCalls = toolUseBlocks.map((b) => ({
+        tool: b.name || '',
         params: b.input || {}
       }));
       return { toolCalls, response: textResponse, cost };
     }
 
     return { response: textResponse, status: 'COMPLETE', cost };
-  } catch (err: any) {
+  } catch (err: unknown) {
     // On auth error, try refreshing token
-    if (err?.status === 401) {
+    if ((err as Record<string, unknown>)?.status === 401) {
       const refreshed = await forceRefreshOAuthToken();
       if (refreshed?.accessToken && refreshed.accessToken !== authToken) {
         return executeAnthropicSDKTurn(fullTask, tools, refreshed.accessToken, model, systemPrompt, images, historyMessages);
@@ -1372,14 +1382,14 @@ async function executeStreamingAnthropicTurn(
   systemPrompt: string,
   stream: boolean,
   images?: ImageAttachment[],
-  historyMessages?: any[],
+  historyMessages?: GeminiContent[] | ChatMessage[],
   isOAuth?: boolean,
   abortSignal?: AbortSignal
 ): Promise<LLMTurnResult> {
   // Build user content: text + optional images
-  let userContent: any = fullTask;
+  let userContent: string | Array<Record<string, unknown>> = fullTask;
   if (images?.length) {
-    const parts: any[] = [{ type: 'text', text: fullTask }];
+    const parts: Array<Record<string, unknown>> = [{ type: 'text', text: fullTask }];
     for (const img of images) {
       parts.push({
         type: 'image',
@@ -1395,7 +1405,7 @@ async function executeStreamingAnthropicTurn(
     input_schema: t.parameters
   }));
 
-  const body: any = {
+  const body: Record<string, unknown> = {
     model,
     max_tokens: 8192,
     system: systemPrompt,
@@ -1511,7 +1521,7 @@ async function executeStreamingAnthropicTurn(
     if (fullText) process.stdout.write('\n');
 
     // Parse accumulated tool calls
-    const toolCalls: Array<{ tool: string; params: Record<string, any> }> = [];
+    const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
     for (const [, block] of toolBlocks) {
       if (block.name) {
         let params = {};
@@ -1525,16 +1535,16 @@ async function executeStreamingAnthropicTurn(
   }
 
   // Non-streaming fallback
-  const data = await res.json() as any;
+  const data = await res.json() as LLMResponseData;
   const usage = data?.usage || {};
   const cost = (usage.input_tokens || 0) * 3 / 1_000_000 + (usage.output_tokens || 0) * 15 / 1_000_000;
   const content = data?.content || [];
-  const toolUseBlocks = content.filter((b: any) => b.type === 'tool_use');
-  const textBlocks = content.filter((b: any) => b.type === 'text');
-  const textResponse = textBlocks.map((b: any) => b.text).join('\n');
+  const toolUseBlocks = (content as AnthropicContentBlock[]).filter((b) => b.type === 'tool_use');
+  const textBlocks = (content as AnthropicContentBlock[]).filter((b) => b.type === 'text');
+  const textResponse = textBlocks.map((b) => b.text).join('\n');
 
   if (toolUseBlocks.length > 0) {
-    const toolCalls = toolUseBlocks.map((b: any) => ({ tool: b.name, params: b.input || {} }));
+    const toolCalls = toolUseBlocks.map((b) => ({ tool: b.name || '', params: b.input || {} }));
     return { toolCalls, response: textResponse, cost };
   }
   return { response: textResponse, status: 'COMPLETE', cost };
@@ -1648,7 +1658,7 @@ class JITContextTracker {
   }
 
   /** Extract file paths from tool calls and results */
-  trackFromToolResult(toolName: string, params: Record<string, any>, result: any) {
+  trackFromToolResult(toolName: string, params: Record<string, unknown>, result: { output?: string } | null) {
     // Track files referenced in tool params
     for (const key of ['file_path', 'path', 'dir_path']) {
       if (params[key]) this.trackFile(String(params[key]));
@@ -1764,7 +1774,7 @@ interface ToolExecResult {
 async function executeToolWithRetry(
   adapter: GeminiToolAdapter,
   name: string,
-  params: Record<string, any>,
+  params: Record<string, unknown>,
   verbose: boolean
 ): Promise<ToolExecResult> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -1852,7 +1862,7 @@ export async function runAgenticWorker(
     stream?: boolean;
     tier?: 'fast' | 'standard' | 'heavy';
     images?: ImageAttachment[];
-    onToolCall?: (name: string, params: Record<string, any>) => void;
+    onToolCall?: (name: string, params: Record<string, unknown>) => void;
     priorDiscoveredFiles?: string[];
     constraintLevel?: ConstraintLevel;
     persona?: string;
@@ -1869,7 +1879,7 @@ export async function runAgenticWorker(
   const allTools = adapter.getToolDeclarations() as ToolDeclaration[];
   const model = options.model || process.env.CREW_EXECUTION_MODEL || '';
   const maxTurns = options.maxTurns ?? 25;
-  const projectDir = options.projectDir || (sandbox as any).baseDir || process.cwd();
+  const projectDir = options.projectDir || sandbox.getBaseDir() || process.cwd();
   const verbose = options.verbose ?? Boolean(process.env.CREW_DEBUG);
 
   // Feature: Per-session scratchpad — give each run an isolated temp directory
@@ -1935,7 +1945,7 @@ export async function runAgenticWorker(
   const toolsUsed = new Set<string>();
   const transcript = new ExecutionTranscript();
 
-  const executeTool = async (name: string, params: Record<string, any>) => {
+  const executeTool = async (name: string, params: Record<string, unknown>) => {
     toolsUsed.add(name);
 
     // Always fire onToolCall callback (for REPL tool progress display)

@@ -605,7 +605,7 @@ All platforms now support image recognition and voice transcription:
 
 **`crew-cli/`** is a full-featured TypeScript agentic CLI comparable to Claude Code, Codex CLI, or Gemini CLI:
 
-- **44+ built-in tools**: File I/O, bash, glob/grep, LSP diagnostics (go-to-definition, references, hover), Jupyter notebook editing, git operations, git worktree isolation, web search, sub-agent spawning, Docker sandbox, semantic code search (RAG), sleep, tool discovery, post-sampling hooks (lint, auto-commit, file-size guard)
+- **45+ built-in tools**: File I/O, bash, glob/grep, LSP diagnostics (go-to-definition, references, hover), Jupyter notebook editing, git operations, git worktree isolation, web search, sub-agent spawning with multi-turn dialogue (agent_message), Docker sandbox, semantic code search (RAG), sleep, tool discovery, post-sampling hooks (lint, auto-commit, file-size guard)
 - **Multi-provider**: Gemini, OpenAI, Anthropic, xAI, DeepSeek — auto-detects available API keys
 - **Multimodal vision**: `--image` flag or `/image` REPL command — images sent as proper content parts
 - **Agent memory**: MemoryBroker integration for persistent context across sessions
