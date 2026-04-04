@@ -8,7 +8,6 @@
 
 import { partitionToolCalls } from '../executor/tool-batching.js';
 import { clearOldToolResults } from '../executor/tool-result-clearing.js';
-import { compactMessages } from '../executor/context-compaction.js';
 import {
   runPostSamplingHooks,
   type PostSamplingHook,
@@ -58,6 +57,21 @@ export interface AutonomousConfig {
 const DEFAULT_MAX_TURNS = 25;
 const DEFAULT_REPEAT_THRESHOLD = 10;
 
+function compactTurnHistory(history: TurnResult[]): TurnResult[] {
+  if (history.length <= 7) return history;
+  const first = history.slice(0, 1);
+  const tail = history.slice(-5);
+  const middle = history.slice(1, history.length - 5);
+  if (middle.length === 0) return history;
+  const summary: TurnResult = {
+    turn: first[0]?.turn ?? 0,
+    tool: 'context_compaction',
+    params: { compactedTurns: middle.length },
+    result: `[Context compacted: ${middle.length} earlier tool results summarized]`
+  };
+  return [...first, summary, ...tail];
+}
+
 // ─── Feature 7 (Reactive Compaction): context-length error detection ──
 
 /**
@@ -65,7 +79,7 @@ const DEFAULT_REPEAT_THRESHOLD = 10;
  * supported provider (OpenAI, Anthropic, Gemini, Groq, etc.).
  */
 function isContextLengthError(err: unknown): boolean {
-  const msg = String(err?.message || '').toLowerCase();
+  const msg = String((err as { message?: string })?.message || '').toLowerCase();
   return (
     msg.includes('context length') ||
     msg.includes('too long') ||
@@ -176,7 +190,7 @@ export async function executeAutonomous(
       if (isContextLengthError(err) && !reactiveCompacted) {
         reactiveCompacted = true;
         console.error('[crew-cli] Context exceeded — compacted history and retrying');
-        clearedHistory = compactMessages(clearedHistory);
+        clearedHistory = compactTurnHistory(clearedHistory);
         response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
       } else {
         throw err;
@@ -192,14 +206,14 @@ export async function executeAutonomous(
     ) {
       recoveryAttempts++;
       console.error(`[crew-cli] Output truncated (finish_reason=${response.finishReason}) — compacting and retrying (attempt ${recoveryAttempts}/2)`);
-      clearedHistory = compactMessages(clearedHistory);
+      clearedHistory = compactTurnHistory(clearedHistory);
       try {
         response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
       } catch (err) {
         if (isContextLengthError(err) && !reactiveCompacted) {
           reactiveCompacted = true;
           console.error('[crew-cli] Context exceeded during recovery — compacting again');
-          clearedHistory = compactMessages(clearedHistory);
+          clearedHistory = compactTurnHistory(clearedHistory);
           response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
         } else {
           throw err;
@@ -329,8 +343,9 @@ export async function executeAutonomous(
             const tr: TurnResult = { turn: turn + 1, tool: call.tool, params: call.params, result };
             history.push(tr);
             turnResults.push(tr);
-          } catch (error: any) {
-            if (abortSignal?.aborted || error?.name === 'AbortError') {
+          } catch (error) {
+            const caughtError = error as { name?: string; message?: string };
+            if (abortSignal?.aborted || caughtError.name === 'AbortError') {
               return {
                 success: false,
                 turns: turn + 1,
@@ -339,7 +354,7 @@ export async function executeAutonomous(
                 totalCostUsd
               };
             }
-            const tr: TurnResult = { turn: turn + 1, tool: call.tool, params: call.params, result: null, error: error.message };
+            const tr: TurnResult = { turn: turn + 1, tool: call.tool, params: call.params, result: null, error: caughtError.message || 'tool execution failed' };
             history.push(tr);
             turnResults.push(tr);
           }

@@ -145,7 +145,7 @@ export async function executeDirectCommands(
         logger?.info(`Created directory: ${cmd.path}`);
       }
     } catch (err) {
-      logger?.error(`Failed to stage ${cmd.path}: ${(err as Error).message}`);
+      logger?.error?.(`Failed to stage ${cmd.path}: ${(err as Error).message}`);
     }
   }
   

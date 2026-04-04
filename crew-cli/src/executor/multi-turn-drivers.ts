@@ -8,6 +8,7 @@
 
 import type { ToolCall, TurnResult } from '../worker/autonomous-loop.js';
 import { streamOpenAIResponse, streamAnthropicResponse, writeToStdout, isStreamingDisabled } from './stream-helpers.js';
+import type { OpenAIChoice, OpenAIUsage, AnthropicUsage, AnthropicContentBlock } from '../types/common.js';
 
 /** Tool declaration in a provider-agnostic format */
 export interface ToolDeclaration {
@@ -89,6 +90,11 @@ interface OpenAIDriverConfig {
   timeoutMs?: number;
 }
 
+interface OpenAIChatResponse {
+  choices?: OpenAIChoice[];
+  usage?: OpenAIUsage;
+}
+
 export async function openAICompatibleTurn(
   task: string,
   tools: ToolDeclaration[],
@@ -150,7 +156,7 @@ export async function openAICompatibleTurn(
     return { response: result.text, status: 'COMPLETE', cost, finishReason };
   }
 
-  const data = await response.json() as Record<string, unknown>;
+  const data = await response.json() as OpenAIChatResponse;
   const choice = data?.choices?.[0];
   const message = choice?.message;
   const usage = data?.usage || {};
@@ -268,19 +274,23 @@ export async function anthropicTurn(
     return { response: result.text, status: 'COMPLETE', cost, finishReason };
   }
 
-  const data = await response.json() as Record<string, unknown>;
+  const data = await response.json() as {
+    usage?: AnthropicUsage;
+    stop_reason?: string;
+    content?: AnthropicContentBlock[];
+  };
   const usage = data?.usage || {};
   const cost = (usage.input_tokens || 0) * 3 / 1_000_000 + (usage.output_tokens || 0) * 15 / 1_000_000;
   const finishReason: string | undefined = data?.stop_reason;
 
   const content = data?.content || [];
-  const toolUseBlocks = content.filter((b: Record<string, unknown>) => b.type === 'tool_use');
-  const textBlocks = content.filter((b: Record<string, unknown>) => b.type === 'text');
-  const textResponse = textBlocks.map((b: Record<string, unknown>) => b.text).join('\n');
+  const toolUseBlocks = content.filter((b) => b.type === 'tool_use');
+  const textBlocks = content.filter((b) => b.type === 'text');
+  const textResponse = textBlocks.map((b) => b.text || '').join('\n');
 
   if (toolUseBlocks.length > 0) {
-    const toolCalls: ToolCall[] = toolUseBlocks.map((b: Record<string, unknown>) => ({
-      tool: b.name,
+    const toolCalls: ToolCall[] = toolUseBlocks.map((b) => ({
+      tool: b.name || '',
       params: b.input || {}
     }));
     return { toolCalls, response: textResponse, cost, finishReason };
