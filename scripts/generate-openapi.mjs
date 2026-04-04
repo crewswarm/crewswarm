@@ -48,7 +48,10 @@ const spec = {
     { name: "Services", description: "Service lifecycle management" },
     { name: "Engines", description: "Engine passthrough and configuration" },
     { name: "Multimodal", description: "Image and audio processing" },
-    { name: "Telemetry", description: "Usage tracking and spending" }
+    { name: "Telemetry", description: "Usage tracking and spending" },
+    { name: "OAuth", description: "OAuth and subscription provider authentication" },
+    { name: "Testing", description: "Test suite execution and results" },
+    { name: "Workflows", description: "Scheduled pipeline workflow management" }
   ],
   paths: {},
   components: oldSpec.components // Preserve existing schemas
@@ -171,7 +174,75 @@ const dashboardEndpoints = {
   "/api/sessions": { get: "Core" },
   "/api/messages": { get: "Core" },
   "/api/send": { post: "Core" },
-  "/api/rt-messages": { get: "Core" }
+  "/api/rt-messages": { get: "Core" },
+
+  // ── OAuth / subscription provider endpoints ────────────────────────────
+  "/api/oauth/status": { get: "OAuth" },
+  "/api/oauth/test": { post: "OAuth" },
+  "/api/oauth/models": { get: "OAuth" },
+  "/api/oauth/model": { get: "OAuth", post: "OAuth" },
+
+  // ── Auth token ─────────────────────────────────────────────────────────
+  "/api/auth/token": { get: "Core" },
+
+  // ── Signup ─────────────────────────────────────────────────────────────
+  "/api/signup": { post: "Core" },
+
+  // ── Models (aggregated from all providers) ─────────────────────────────
+  "/api/models": { get: "Providers" },
+
+  // ── Testing tab ────────────────────────────────────────────────────────
+  "/api/tests/summary": { get: "Testing" },
+  "/api/tests/history": { get: "Testing" },
+  "/api/tests/run-detail": { get: "Testing" },
+  "/api/tests/run": { post: "Testing" },
+  "/api/tests/progress": { get: "Testing" },
+
+  // ── First-run wizard ───────────────────────────────────────────────────
+  "/api/first-run-status": { get: "Core" },
+  "/api/first-run-engines": { get: "Engines" },
+
+  // ── Engine session browsers ────────────────────────────────────────────
+  "/api/engine-runtimes": { get: "Engines" },
+  "/api/engine-sessions": { get: "Engines" },
+  "/api/codex-sessions": { get: "Engines" },
+  "/api/gemini-sessions": { get: "Engines" },
+  "/api/crew-cli-sessions": { get: "Engines" },
+  "/api/engines/toggle": { post: "Engines" },
+
+  // ── Config lock/unlock ─────────────────────────────────────────────────
+  "/api/config/lock-status": { get: "Settings" },
+  "/api/config/lock": { post: "Settings" },
+  "/api/config/unlock": { post: "Settings" },
+
+  // ── Settings extensions ────────────────────────────────────────────────
+  "/api/settings/autonomous-mentions": { get: "Settings", post: "Settings" },
+  "/api/settings/cli-models": { get: "Settings", post: "Settings" },
+  "/api/settings/opencode": { get: "Settings", post: "Settings" },
+  "/api/settings/tmux-bridge": { get: "Settings", post: "Settings" },
+
+  // ── Chat extensions ────────────────────────────────────────────────────
+  "/api/agent-chat": { post: "Chat" },
+  "/api/chat/unified": { post: "Chat" },
+  "/api/cli/chat": { post: "Chat" },
+  "/api/chat-participants": { get: "Chat" },
+
+  // ── CLI processes ──────────────────────────────────────────────────────
+  "/api/cli-processes": { get: "Core" },
+
+  // ── Crew-lead proxy endpoints ──────────────────────────────────────────
+  "/api/crew-lead/project-messages": { get: "Projects" },
+
+  // ── UI state ───────────────────────────────────────────────────────────
+  "/api/ui/active-project": { get: "Core", post: "Core" },
+
+  // ── Workflows ──────────────────────────────────────────────────────────
+  "/api/workflows/list": { get: "Workflows" },
+  "/api/workflows/item": { get: "Workflows" },
+  "/api/workflows/save": { post: "Workflows" },
+  "/api/workflows/delete": { post: "Workflows" },
+  "/api/workflows/run": { post: "Workflows" },
+  "/api/workflows/log": { get: "Workflows" }
 };
 
 // crew-lead endpoints

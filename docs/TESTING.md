@@ -1,6 +1,6 @@
 # Testing Guide
 
-CrewSwarm has **~5,000+ test cases** across unit, integration, e2e, and Playwright suites — all passing at 100%.
+CrewSwarm has **~4,370 test cases** across unit, integration, e2e, and Playwright suites — all passing at 100%.
 
 ## Quick Reference
 
