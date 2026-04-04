@@ -351,17 +351,14 @@ export function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
   console.log('    /undo              Undo last change\n');
 
   console.log(chalk.magenta.bold('  🎛️  Model & Engine:'));
-  console.log('    /models            Interactive model selector (use arrow keys)');
-  console.log('    /models-config     Show configured models/providers from local config');
-  console.log('    /model <name>      Switch execution model directly');
-  console.log('    /engines           Interactive engine selector (use arrow keys)');
-  console.log('    /engine <name>     Switch engine directly (cursor|claude|gemini|auto)');
-  console.log('    /mode [name]       Interactive mode selector or set directly');
-  console.log('    /mode-info         Explain manual/assist/autopilot execution semantics');
+  console.log('    /model [name]      Benchmark table or set L1 chat model');
+  console.log('    /stack             Show full L1/L2/L3 model stack');
+  console.log('    /stack l1|l2|l3 <name>  Set model per tier');
+  console.log('    /engine <name>     Switch engine (auto|cursor|claude|gemini|codex|crew-cli)');
+  console.log('    /mode [name]       Cycle mode (manual/assist/autopilot)');
   console.log('    Shift+Tab          Cycle REPL mode');
   console.log('    /auto-apply        Toggle auto-apply sandbox changes');
-  console.log('    /verbose           Toggle verbose routing output');
-  console.log('    /stack             Configure 3-tier LLM stack (router, executor, gateway)\n');
+  console.log('    /verbose           Toggle verbose routing output\n');
 
   console.log(chalk.green.bold('  🧠 Memory & LSP:'));
   console.log('    /memory [query]    Show memory stats or recall');

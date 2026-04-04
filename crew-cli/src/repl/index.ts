@@ -89,7 +89,7 @@ const REPL_MODE_ORDER: ReplMode[] = ['manual', 'assist', 'autopilot'];
 
 const SLASH_COMMAND_GROUPS: Array<{ title: string; commands: string[] }> = [
   { title: 'Session', commands: ['/help', '/info', '/status', '/history', '/clear', '/exit'] },
-  { title: 'Model & Engine', commands: ['/models', '/model', '/engines', '/engine', '/mode', '/stack'] },
+  { title: 'Model & Engine', commands: ['/model', '/stack', '/engine', '/engines', '/mode'] },
   { title: 'Sandbox', commands: ['/preview', '/apply', '/rollback', '/branch', '/branches'] },
   { title: 'Runtime', commands: ['/tools', '/trace', '/timeline', '/cost', '/system', '/permissions'] },
   { title: 'Context', commands: ['/image', '/search', '/recall', '/sessions', '/resume', '/skills'] }
@@ -442,17 +442,14 @@ function printHelp(uiMode: 'repl' | 'tui' = 'repl') {
     console.log('    /image <path>      Attach image for next task (multimodal)\n');
 
   console.log(chalk.magenta.bold('  🎛️  Model & Engine:'));
-  console.log('    /models [name]     List available models or switch directly');
-  console.log('    /models-config     Show configured models/providers from local config');
-  console.log('    /model <name>      Switch execution model directly');
-  console.log('    /engines [name]    List engines or switch directly');
-  console.log('    /engine <name>     Switch engine directly (auto|cursor|claude|gemini|codex|crew-cli)');
-  console.log('    /mode [name]       Cycle mode or set directly');
-  console.log('    /mode-info         Explain manual/assist/autopilot execution semantics');
+  console.log('    /model [name]      Benchmark table or set L1 chat model');
+  console.log('    /stack             Show full L1/L2/L3 model stack');
+  console.log('    /stack l1|l2|l3 <name>  Set model per tier');
+  console.log('    /engine <name>     Switch engine (auto|cursor|claude|gemini|codex|crew-cli)');
+  console.log('    /mode [name]       Cycle mode (manual/assist/autopilot)');
   console.log('    Shift+Tab          Cycle REPL mode');
   console.log('    /auto-apply        Toggle auto-apply sandbox changes');
-  console.log('    /verbose           Toggle verbose routing output');
-  console.log('    /stack ...         Show or set 3-tier stack values without a picker\n');
+  console.log('    /verbose           Toggle verbose routing output\n');
 
   console.log(chalk.green.bold('  🧠 Memory & LSP:'));
   console.log('    /memory [query]    Show memory stats or recall');
@@ -921,7 +918,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   const handleSlashCommand = async (rawInput: string): Promise<boolean> => {
     const trimmed = applySlashAlias(rawInput.trim(), slashAliases);
     if (!trimmed.startsWith('/')) return false;
-    const [command, ...args] = trimmed.split(/\s+/);
+    let [command, ...args] = trimmed.split(/\s+/);
 
     if (trimmed === '/') {
       printSlashCommandMenu();
@@ -1043,68 +1040,11 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       return true;
     }
 
+    // /models is an alias for /stack
     if (command === '/models') {
-      const subArg = (args[0] || '').trim().toLowerCase();
-      const modelValue = args.slice(1).join(' ').trim();
-
-      // /models l1|l2|l3|l2a|l2b|qa|fixer|review <model> — set a tier model
-      const tierMap: Record<string, { env: string; label: string; replKey?: keyof ReplState }> = {
-        'l1':      { env: 'CREW_L1_MODEL', label: 'L1 (chat)', replKey: 'model' },
-        'l2':      { env: 'CREW_REASONING_MODEL', label: 'L2 (reasoning)' },
-        'l2a':     { env: 'CREW_L2A_MODEL', label: 'L2A (decomposer)' },
-        'l2b':     { env: 'CREW_L2B_MODEL', label: 'L2B (validator)' },
-        'router':  { env: 'CREW_ROUTER_MODEL', label: 'Router' },
-        'l3':      { env: 'CREW_L3_MODEL', label: 'L3 (worker)' },
-        'qa':      { env: 'CREW_QA_MODEL', label: 'L3 QA' },
-        'fixer':   { env: 'CREW_L3_FIXER_MODEL', label: 'L3 Fixer' },
-        'review':  { env: 'CREW_L3_REVIEW_MODEL', label: 'L3 Review' },
-      };
-
-      if (subArg && tierMap[subArg] && modelValue) {
-        const tier = tierMap[subArg];
-        process.env[tier.env] = modelValue;
-        if (tier.replKey) (replState as any)[tier.replKey] = modelValue;
-        console.log(chalk.green(`\n  ✓ ${tier.label} model set to: ${modelValue}\n`));
-        return true;
-      }
-
-      // /models <name> — set L1 model (backwards compatible)
-      const requestedModel = args.join(' ').trim();
-      if (requestedModel && !tierMap[subArg]) {
-        replState.model = requestedModel;
-        console.log(chalk.green(`\n  ✓ L1 model set to: ${requestedModel}\n`));
-        return true;
-      }
-
-      // /models — show all tiers
-      console.log(chalk.blue('\n--- Models by Tier ---\n'));
-
-      console.log(chalk.cyan('  L1 (chat):'));
-      for (const model of AVAILABLE_MODELS) {
-        const current = model === replState.model ? chalk.green(' ← current') : '';
-        console.log(`    ${model}${current}`);
-      }
-
-      console.log(chalk.cyan('\n  L2 (reasoning/planning):'));
-      console.log(`    CREW_REASONING_MODEL : ${process.env.CREW_REASONING_MODEL || chalk.gray('(unset — uses L1)')}`);
-      console.log(`    CREW_L2A_MODEL       : ${process.env.CREW_L2A_MODEL || chalk.gray('(unset)')}`);
-      console.log(`    CREW_L2B_MODEL       : ${process.env.CREW_L2B_MODEL || chalk.gray('(unset)')}`);
-      console.log(`    CREW_ROUTER_MODEL    : ${process.env.CREW_ROUTER_MODEL || chalk.gray('(unset)')}`);
-
-      console.log(chalk.cyan('\n  L3 (workers):'));
-      console.log(`    CREW_L3_MODEL        : ${process.env.CREW_L3_MODEL || chalk.gray('(unset — uses L1)')}`);
-      console.log(`    CREW_QA_MODEL        : ${process.env.CREW_QA_MODEL || chalk.gray('(unset)')}`);
-      console.log(`    CREW_L3_FIXER_MODEL  : ${process.env.CREW_L3_FIXER_MODEL || chalk.gray('(unset)')}`);
-      console.log(`    CREW_L3_REVIEW_MODEL : ${process.env.CREW_L3_REVIEW_MODEL || chalk.gray('(unset)')}`);
-
-      console.log(chalk.gray('\n  Set per tier:'));
-      console.log(chalk.gray('    /models l1 <name>      — L1 chat model'));
-      console.log(chalk.gray('    /models l2 <name>      — L2 reasoning model'));
-      console.log(chalk.gray('    /models l3 <name>      — L3 worker model'));
-      console.log(chalk.gray('    /models qa <name>      — L3 QA model'));
-      console.log(chalk.gray('    /models fixer <name>   — L3 fixer model'));
-      console.log(chalk.gray('    /models <name>         — shorthand for L1\n'));
-      return true;
+      args.unshift(...(args.length === 0 ? ['show'] : []));
+      command = '/stack';
+      // fall through to /stack handler below
     }
 
     if (command === '/model') {
@@ -1203,6 +1143,28 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     if (command === '/stack') {
       const subcommand = (args[0] || 'show').trim().toLowerCase();
       const stackValue = args.slice(1).join(' ').trim();
+
+      // Short tier setters: /stack l1|l2|l3|qa|fixer|review <model>
+      const tierShortcuts: Record<string, { env: string; label: string; replKey?: keyof ReplState }> = {
+        'l1':      { env: 'CREW_L1_MODEL', label: 'L1 (chat)', replKey: 'model' },
+        'l2':      { env: 'CREW_REASONING_MODEL', label: 'L2 (reasoning)' },
+        'l2a':     { env: 'CREW_L2A_MODEL', label: 'L2A (decomposer)' },
+        'l2b':     { env: 'CREW_L2B_MODEL', label: 'L2B (validator)' },
+        'l3':      { env: 'CREW_L3_MODEL', label: 'L3 (worker)' },
+        'qa':      { env: 'CREW_QA_MODEL', label: 'L3 QA' },
+        'fixer':   { env: 'CREW_L3_FIXER_MODEL', label: 'L3 Fixer' },
+        'review':  { env: 'CREW_L3_REVIEW_MODEL', label: 'L3 Review' },
+      };
+
+      if (tierShortcuts[subcommand] && stackValue) {
+        const tier = tierShortcuts[subcommand];
+        process.env[tier.env] = stackValue;
+        if (tier.replKey) (replState as any)[tier.replKey] = stackValue;
+        console.log(chalk.green(`\n  ✓ ${tier.label} model set to: ${stackValue}\n`));
+        return true;
+      }
+
+      // Long env-style setters: /stack l1-model|router-model|... <value>
       const stackFieldMap: Record<string, string> = {
         'l1-model': 'CREW_L1_MODEL',
         'router-model': 'CREW_ROUTER_MODEL',
@@ -1218,35 +1180,35 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       };
 
       if (subcommand === 'show') {
-        console.log(chalk.blue('\n--- Stack (session) ---\n'));
-        console.log(`  Tier 1 router provider : ${replState.routerProvider}`);
-        console.log(`  Tier 2 executor provider: ${replState.executorProvider}`);
-        console.log(`  Tier 3 gateway         : ${replState.useGateway ? 'enabled' : 'disabled'}`);
-        console.log(`  CREW_L1_MODEL          : ${process.env.CREW_L1_MODEL || '(unset)'}`);
-        console.log(`  CREW_ROUTER_MODEL      : ${process.env.CREW_ROUTER_MODEL || '(unset)'}`);
-        console.log(`  CREW_REASONING_MODEL   : ${process.env.CREW_REASONING_MODEL || '(unset)'}`);
-        console.log(`  CREW_L2A_MODEL         : ${process.env.CREW_L2A_MODEL || '(unset)'}`);
-        console.log(`  CREW_L2B_MODEL         : ${process.env.CREW_L2B_MODEL || '(unset)'}`);
-        console.log(`  CREW_QA_MODEL          : ${process.env.CREW_QA_MODEL || '(unset)'}`);
-        console.log(`  CREW_L3_MODEL          : ${process.env.CREW_L3_MODEL || '(unset)'}`);
-        console.log(`  CREW_L3_REVIEW_MODEL   : ${process.env.CREW_L3_REVIEW_MODEL || '(unset)'}`);
-        console.log(`  CREW_L3_FIXER_MODEL    : ${process.env.CREW_L3_FIXER_MODEL || '(unset)'}`);
-        console.log(`  CREW_MAX_PARALLEL_WORKERS: ${process.env.CREW_MAX_PARALLEL_WORKERS || '(unset)'}\n`);
-        console.log(chalk.gray('  Set values with:'));
+        console.log(chalk.blue('\n--- Stack ---\n'));
+
+        console.log(chalk.cyan('  L1 (chat):'));
+        console.log(`    Model  : ${replState.model}${process.env.CREW_L1_MODEL ? ` (env: ${process.env.CREW_L1_MODEL})` : ''}`);
+        console.log(`    Engine : ${replState.engine}`);
+
+        console.log(chalk.cyan('\n  L2 (reasoning/planning):'));
+        console.log(`    Router provider  : ${replState.routerProvider}`);
+        console.log(`    Executor provider: ${replState.executorProvider}`);
+        console.log(`    Reasoning model  : ${process.env.CREW_REASONING_MODEL || chalk.gray('(unset — uses L1)')}`);
+        console.log(`    L2A (decomposer) : ${process.env.CREW_L2A_MODEL || chalk.gray('(unset)')}`);
+        console.log(`    L2B (validator)  : ${process.env.CREW_L2B_MODEL || chalk.gray('(unset)')}`);
+        console.log(`    Router model     : ${process.env.CREW_ROUTER_MODEL || chalk.gray('(unset)')}`);
+
+        console.log(chalk.cyan('\n  L3 (workers):'));
+        console.log(`    Gateway          : ${replState.useGateway ? 'enabled' : 'disabled'}`);
+        console.log(`    Worker model     : ${process.env.CREW_L3_MODEL || chalk.gray('(unset — uses L1)')}`);
+        console.log(`    QA model         : ${process.env.CREW_QA_MODEL || chalk.gray('(unset)')}`);
+        console.log(`    Fixer model      : ${process.env.CREW_L3_FIXER_MODEL || chalk.gray('(unset)')}`);
+        console.log(`    Review model     : ${process.env.CREW_L3_REVIEW_MODEL || chalk.gray('(unset)')}`);
+        console.log(`    Max parallel     : ${process.env.CREW_MAX_PARALLEL_WORKERS || chalk.gray('(unset)')}`);
+
+        console.log(chalk.gray('\n  Set models:'));
+        console.log(chalk.gray('    /stack l1 <model>       /stack l2 <model>       /stack l3 <model>'));
+        console.log(chalk.gray('    /stack qa <model>       /stack fixer <model>    /stack review <model>'));
+        console.log(chalk.gray('  Set providers:'));
         console.log(chalk.gray('    /stack router <grok|gemini|deepseek>'));
         console.log(chalk.gray('    /stack executor <grok|gemini|deepseek>'));
-        console.log(chalk.gray('    /stack gateway <on|off>'));
-        console.log(chalk.gray('    /stack l1-model <value>'));
-        console.log(chalk.gray('    /stack router-model <value>'));
-        console.log(chalk.gray('    /stack reasoning-model <value>'));
-        console.log(chalk.gray('    /stack l2a-model <value>'));
-        console.log(chalk.gray('    /stack l2b-model <value>'));
-        console.log(chalk.gray('    /stack qa-model <value>'));
-        console.log(chalk.gray('    /stack l3-model <value>'));
-        console.log(chalk.gray('    /stack l3-review-model <value>'));
-        console.log(chalk.gray('    /stack l3-fixer-model <value>'));
-        console.log(chalk.gray('    /stack extra-validators <csv>'));
-        console.log(chalk.gray('    /stack max-parallel-workers <1-32>\n'));
+        console.log(chalk.gray('    /stack gateway <on|off>\n'));
         return true;
       }
 
