@@ -796,7 +796,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
             elapsedMs: Date.now() - startTime,
             shouldUseRag: shouldUseRag(q)
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           options.logger?.error?.('[rag] search error:', error);
           return json(res, 500, { error: error.message });
         }
@@ -823,7 +823,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
             message: 'Index built (semantic embeddings)',
             filesIndexed: result.filesLoaded.length
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           options.logger?.error?.('[rag] index error:', error);
           return json(res, 500, { error: error.message });
         }
@@ -849,7 +849,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
               semantic: existsSync(`${cacheDir}/embeddings.json`) ? 'cached' : 'not cached'
             }
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           options.logger?.error?.('[rag] stats error:', error);
           return json(res, 500, { error: error.message });
         }

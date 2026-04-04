@@ -356,7 +356,7 @@ export class UnifiedPipeline {
   // call that the sandbox rejected, or the file could have been
   // overwritten by a later worker. Filesystem verification is not yet
   // implemented.
-  private extractFilesChanged(history: Array<{ tool: string; params: Record<string, any>; error?: string }> = []): string[] {
+  private extractFilesChanged(history: Array<{ tool: string; params: Record<string, unknown>; error?: string }> = []): string[] {
     const changed = new Set<string>();
     for (const turn of history) {
       if (turn?.error) continue;
@@ -368,7 +368,7 @@ export class UnifiedPipeline {
   }
 
   private extractShellResults(
-    history: Array<{ tool: string; params: Record<string, any>; result?: any; error?: string }> = []
+    history: Array<{ tool: string; params: Record<string, unknown>; result?: any; error?: string }> = []
   ): Array<{ command: string; exitCode: number; output: string }> {
     const results: Array<{ command: string; exitCode: number; output: string }> = [];
     for (const turn of history) {
@@ -387,7 +387,7 @@ export class UnifiedPipeline {
   }
 
   private collectVerificationSignals(
-    history: Array<{ tool: string; params: Record<string, any>; result?: any; error?: string }> = [],
+    history: Array<{ tool: string; params: Record<string, unknown>; result?: any; error?: string }> = [],
     parsed: { output: string; validation?: string[] },
     task: WorkerTaskEnvelope
   ): { verification: string[]; verificationPassed: boolean; escalationNeeded: boolean; escalationReason?: string } {
@@ -426,11 +426,11 @@ export class UnifiedPipeline {
     };
   }
 
-  private countFailedToolCalls(history: Array<{ tool: string; params: Record<string, any>; error?: string }> = []): number {
+  private countFailedToolCalls(history: Array<{ tool: string; params: Record<string, unknown>; error?: string }> = []): number {
     return history.filter(turn => Boolean(turn?.error)).length;
   }
 
-  private hasRepeatedFailedAction(history: Array<{ tool: string; params: Record<string, any>; error?: string }> = []): boolean {
+  private hasRepeatedFailedAction(history: Array<{ tool: string; params: Record<string, unknown>; error?: string }> = []): boolean {
     const failures = history
       .filter(turn => Boolean(turn?.error))
       .map(turn => `${String(turn.tool || '')}:${JSON.stringify(turn.params || {})}`);
@@ -632,7 +632,7 @@ export class UnifiedPipeline {
       cost?: number;
       success?: boolean;
       toolsUsed?: string[];
-      history?: Array<{ tool: string; params: Record<string, any>; result?: any; error?: string }>;
+      history?: Array<{ tool: string; params: Record<string, unknown>; result?: any; error?: string }>;
       stopReason?: string;
       turns?: number;
       transcript?: ExecutionTranscript;
@@ -707,7 +707,7 @@ export class UnifiedPipeline {
     traceId: string,
     context: string,
     sessionId?: string
-  ): Promise<any> {
+  ): Promise<unknown> {
     if (!this.reviewerEnabled()) return result;
 
     let current = result;
@@ -814,11 +814,11 @@ export class UnifiedPipeline {
     }
   }
 
-  private parseJsonObject(raw: string): any {
+  private parseJsonObject(raw: string): unknown {
     return parseJsonObject(raw);
   }
 
-  private async parseRouterDecision(raw: string, traceId: string, sessionId?: string): Promise<any> {
+  private async parseRouterDecision(raw: string, traceId: string, sessionId?: string): Promise<unknown> {
     return parseJsonObjectWithRepair(raw, {
       label: `L2 router (${traceId})`,
       schemaHint: '{"decision":"direct-answer|execute-direct|execute-local|execute-parallel","reasoning":"...","directResponse":"...","complexity":"low|medium|high","estimatedCost":0.001}',
@@ -1627,7 +1627,7 @@ If output has blockers, set approved=false.`,
 
           // Parse and apply file commands from parallel worker outputs
           const { parseDirectFileCommands } = await import('../cli/file-commands.js');
-          const allFileCommands: any[] = [];
+          const allFileCommands: unknown[] = [];
           for (const result of executionResults.results) {
             if (!this.shouldParseLegacyCommands(result)) continue;
             const commands = parseDirectFileCommands(result.output);
@@ -2488,7 +2488,7 @@ Return ONLY valid JSON:
             } else {
               mergeResults.push({ unitId, success: true, message: 'No changes to merge' });
             }
-          } catch (err: any) {
+          } catch (err: unknown) {
             mergeResults.push({ unitId, success: false, message: err.message });
             if (verbose) console.warn(`  [${unitId}] ⚠️ worktree cleanup failed: ${err.message}`);
           }

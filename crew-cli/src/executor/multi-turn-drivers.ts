@@ -13,7 +13,7 @@ import { streamOpenAIResponse, streamAnthropicResponse, writeToStdout, isStreami
 export interface ToolDeclaration {
   name: string;
   description: string;
-  parameters: Record<string, any>;
+  parameters: Record<string, unknown>;
 }
 
 /** Result from a single LLM turn */
@@ -50,14 +50,14 @@ export function providerSupportsToolCalling(provider: ProviderType): boolean {
 
 // ─── Tool declaration formatters ──────────────────────────────────────
 
-function toOpenAITools(tools: ToolDeclaration[]): any[] {
+function toOpenAITools(tools: ToolDeclaration[]): unknown[] {
   return tools.map(t => ({
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.parameters }
   }));
 }
 
-function toAnthropicTools(tools: ToolDeclaration[]): any[] {
+function toAnthropicTools(tools: ToolDeclaration[]): unknown[] {
   return tools.map(t => ({
     name: t.name,
     description: t.description,
@@ -98,7 +98,7 @@ export async function openAICompatibleTurn(
   const historyContext = historyToOpenAIContext(history);
   const fullTask = historyContext ? `${task}${historyContext}` : task;
 
-  const messages: any[] = [
+  const messages: unknown[] = [
     { role: 'system', content: config.systemPrompt },
     { role: 'user', content: fullTask }
   ];
@@ -209,7 +209,7 @@ export async function anthropicTurn(
   // Build user content: text + optional images using Anthropic's native format
   let userContent: any = fullTask;
   if (images?.length) {
-    const parts: any[] = [{ type: 'text', text: fullTask }];
+    const parts: unknown[] = [{ type: 'text', text: fullTask }];
     for (const img of images) {
       parts.push({
         type: 'image',

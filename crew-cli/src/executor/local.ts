@@ -1202,7 +1202,7 @@ export class LocalExecutor {
     }
   }
 
-  private extractOpenAIResponsesText(data: any): string {
+  private extractOpenAIResponsesText(data: unknown): string {
     if (typeof data?.output_text === 'string' && data.output_text.trim()) {
       return data.output_text;
     }
