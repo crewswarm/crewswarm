@@ -9,7 +9,7 @@
 [![Website](https://img.shields.io/badge/website-crewswarm.ai-blue)](https://crewswarm.ai)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/crewswarm?label=Sponsor)](https://github.com/sponsors/crewswarm)
 
-![crewswarm Dashboard](website/dashboard-agents.webp)
+![crewswarm Demo](website/crewswarm-demo.gif)
 
 ---
 
