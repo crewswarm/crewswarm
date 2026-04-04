@@ -797,7 +797,9 @@ async function getDocumentSymbols(projectDir, filePath) {
           });
         }
       }
-      for (const child of node.childItems || []) walk(child);
+      for (const child of node.childItems || []) {
+        walk(child);
+      }
     };
     walk(nav);
     return out;
@@ -18281,7 +18283,9 @@ async function callJsonApi(url, apiKey, body) {
     throw new Error(`API error ${response.status}: ${text.slice(0, 500)}`);
   }
   const data = await response.json();
-  return data?.content?.[0]?.text || data?.candidates?.[0]?.content?.parts?.[0]?.text || data?.output_text || JSON.stringify(data);
+  const content = data?.content;
+  const candidates = data?.candidates;
+  return content?.[0]?.text || candidates?.[0]?.content?.parts?.[0]?.text || data?.output_text || JSON.stringify(data);
 }
 async function runGeminiApi(prompt, options = {}) {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -19931,7 +19935,8 @@ ${context}` : message;
         const branch = options.sandbox.getActiveBranch();
         const pending = options.sandbox.getPendingPaths(branch);
         const diffs = pending.map((p) => {
-          const content = options.sandbox.readPendingFile?.(branch, p) || options.sandbox.getStagedContent(p, branch);
+          const sandboxExt = options.sandbox;
+          const content = sandboxExt.readPendingFile?.(branch, p) || options.sandbox.getStagedContent(p, branch);
           return { path: p, content };
         });
         result2 = {
@@ -20084,6 +20089,17 @@ function asRecord(value) {
 }
 function asChatOptions(value) {
   return value && typeof value === "object" ? value : {};
+}
+function asMcpRequest(value) {
+  if (typeof value.jsonrpc !== "string" || typeof value.method !== "string") return null;
+  const id = value.id;
+  if (typeof id !== "string" && typeof id !== "number") return null;
+  return {
+    jsonrpc: value.jsonrpc,
+    id,
+    method: value.method,
+    params: value.params && typeof value.params === "object" ? value.params : void 0
+  };
 }
 function readRtToken() {
   try {
@@ -20973,7 +20989,9 @@ async function startUnifiedServer(options) {
       if (req.method === "POST" && path3 === "/mcp") {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const mcpResponse = await handleMcpRequest(options, body);
+        const mcpRequest = asMcpRequest(body);
+        if (!mcpRequest) return json(res, 400, { error: "invalid MCP request payload" });
+        const mcpResponse = await handleMcpRequest(options, mcpRequest);
         if (mcpResponse && !("_skip" in mcpResponse && mcpResponse._skip)) {
           return json(res, 200, mcpResponse);
         } else {
