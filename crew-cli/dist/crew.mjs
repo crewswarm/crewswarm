@@ -811,6 +811,185 @@ var init_lsp = __esm({
   }
 });
 
+// src/sandbox/index.ts
+import { createTwoFilesPatch } from "diff";
+import { readFile as readFile3, writeFile as writeFile2, mkdir as mkdir2, access } from "node:fs/promises";
+import { constants } from "node:fs";
+import { join as join4, dirname as dirname3 } from "node:path";
+var Sandbox;
+var init_sandbox = __esm({
+  "src/sandbox/index.ts"() {
+    "use strict";
+    Sandbox = class {
+      constructor(baseDir = process.cwd()) {
+        this.state = {
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          activeBranch: "main",
+          branches: { main: {} }
+        };
+        this.baseDir = baseDir;
+        this.stateFilePath = join4(baseDir, ".crew", "sandbox.json");
+      }
+      async exists(path3) {
+        try {
+          await access(path3, constants.F_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      async load() {
+        if (await this.exists(this.stateFilePath)) {
+          try {
+            const data = await readFile3(this.stateFilePath, "utf8");
+            const parsed = JSON.parse(data);
+            this.state = {
+              ...this.state,
+              ...parsed,
+              branches: parsed.branches || { main: {} },
+              activeBranch: parsed.activeBranch || "main"
+            };
+          } catch (err) {
+            console.error(`Failed to load sandbox state: ${err.message}`);
+          }
+        }
+      }
+      async persist() {
+        this.state.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        const dir = dirname3(this.stateFilePath);
+        if (!await this.exists(dir)) {
+          await mkdir2(dir, { recursive: true });
+        }
+        await writeFile2(this.stateFilePath, JSON.stringify(this.state, null, 2), "utf8");
+      }
+      /** Alias for persist() to match external API expectations */
+      async save() {
+        await this.persist();
+      }
+      async addChange(filePath, modifiedContent) {
+        const fullPath = join4(this.baseDir, filePath);
+        let original = "";
+        if (!this.state.branches[this.state.activeBranch] || Array.isArray(this.state.branches[this.state.activeBranch])) {
+          this.state.branches[this.state.activeBranch] = {};
+        }
+        const activeChanges = this.state.branches[this.state.activeBranch];
+        if (activeChanges[filePath]) {
+          original = activeChanges[filePath].original;
+        } else if (await this.exists(fullPath)) {
+          original = await readFile3(fullPath, "utf8");
+        }
+        activeChanges[filePath] = {
+          path: filePath,
+          original,
+          modified: modifiedContent,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        await this.persist();
+      }
+      preview(branchName = this.state.activeBranch) {
+        const branch = this.state.branches[branchName];
+        if (!branch) return `Branch "${branchName}" not found.`;
+        let diff = "";
+        for (const [path3, change] of Object.entries(branch)) {
+          diff += createTwoFilesPatch(
+            `a/${path3}`,
+            `b/${path3}`,
+            change.original,
+            change.modified,
+            void 0,
+            void 0,
+            { context: 3 }
+          );
+        }
+        return diff || "No pending changes.";
+      }
+      async apply(branchName = this.state.activeBranch) {
+        const branch = this.state.branches[branchName];
+        if (!branch) throw new Error(`Branch "${branchName}" not found.`);
+        for (const [path3, change] of Object.entries(branch)) {
+          const fullPath = join4(this.baseDir, path3);
+          const dir = dirname3(fullPath);
+          if (!await this.exists(dir)) {
+            await mkdir2(dir, { recursive: true });
+          }
+          await writeFile2(fullPath, change.modified, "utf8");
+        }
+        await this.rollback(branchName);
+      }
+      async rollback(branchName = this.state.activeBranch) {
+        if (this.state.branches[branchName]) {
+          this.state.branches[branchName] = {};
+          await this.persist();
+        }
+      }
+      async createBranch(name, fromBranch = this.state.activeBranch) {
+        if (this.state.branches[name]) {
+          throw new Error(`Branch "${name}" already exists.`);
+        }
+        const sourceBranch = this.state.branches[fromBranch] || {};
+        this.state.branches[name] = JSON.parse(JSON.stringify(sourceBranch));
+        this.state.activeBranch = name;
+        await this.persist();
+      }
+      async switchBranch(name) {
+        if (!this.state.branches[name]) {
+          throw new Error(`Branch "${name}" does not exist.`);
+        }
+        this.state.activeBranch = name;
+        await this.persist();
+      }
+      async deleteBranch(name) {
+        if (name === "main") throw new Error("Cannot delete main branch.");
+        if (this.state.activeBranch === name) {
+          this.state.activeBranch = "main";
+        }
+        delete this.state.branches[name];
+        await this.persist();
+      }
+      async mergeBranch(source, target = this.state.activeBranch) {
+        if (!this.state.branches[source]) throw new Error(`Source branch "${source}" not found.`);
+        if (!this.state.branches[target]) throw new Error(`Target branch "${target}" not found.`);
+        const sourceChanges = this.state.branches[source];
+        const targetChanges = this.state.branches[target];
+        for (const [path3, change] of Object.entries(sourceChanges)) {
+          targetChanges[path3] = JSON.parse(JSON.stringify(change));
+        }
+        await this.persist();
+      }
+      /** Expose state for read-only access by VirtualFS and similar utilities. */
+      getState() {
+        return this.state;
+      }
+      getBaseDir() {
+        return this.baseDir;
+      }
+      getActiveBranch() {
+        return this.state.activeBranch;
+      }
+      getBranches() {
+        return Object.keys(this.state.branches);
+      }
+      getPendingPaths(branchName = this.state.activeBranch) {
+        return Object.keys(this.state.branches[branchName] || {});
+      }
+      hasChanges(branchName = this.state.activeBranch) {
+        return Object.keys(this.state.branches[branchName] || {}).length > 0;
+      }
+      /**
+       * Get staged content for a file path (returns undefined if not staged).
+       * Used by tool adapter so agentic workers can read their own staged files.
+       */
+      getStagedContent(filePath, branchName = this.state.activeBranch) {
+        const branch = this.state.branches[branchName];
+        if (!branch) return void 0;
+        const change = branch[filePath];
+        if (change) return change.modified;
+        return void 0;
+      }
+    };
+  }
+});
+
 // src/strategies/index.ts
 import { applyPatch } from "diff";
 function getStrategy(name) {
@@ -1800,9 +1979,9 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
             }
             failures.push(`${provider}: no usable response (missing key, timeout, or empty body)`);
           } catch (err) {
-            const errMsg = err.message;
-            failures.push(`${provider}: ${errMsg}`);
-            this.logger.warn(`Provider ${provider} failed: ${errMsg}`);
+            const errMsg2 = err.message;
+            failures.push(`${provider}: ${errMsg2}`);
+            this.logger.warn(`Provider ${provider} failed: ${errMsg2}`);
           }
         }
         this.logger.error("All providers failed:", failures.join("; "));
@@ -3132,7 +3311,7 @@ ${pendingContext}` : task;
       if (isContextLengthError(err) && !reactiveCompacted) {
         reactiveCompacted = true;
         console.error("[crew-cli] Context exceeded \u2014 compacted history and retrying");
-        clearedHistory = compactMessages(clearedHistory, model);
+        clearedHistory = compactMessages(clearedHistory);
         response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
       } else {
         throw err;
@@ -3142,14 +3321,14 @@ ${pendingContext}` : task;
     while (isTruncated(response.finishReason) && hasIncompleteToolCalls(response.toolCalls, response.response) && recoveryAttempts < 2) {
       recoveryAttempts++;
       console.error(`[crew-cli] Output truncated (finish_reason=${response.finishReason}) \u2014 compacting and retrying (attempt ${recoveryAttempts}/2)`);
-      clearedHistory = compactMessages(clearedHistory, model);
+      clearedHistory = compactMessages(clearedHistory);
       try {
         response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
       } catch (err) {
         if (isContextLengthError(err) && !reactiveCompacted) {
           reactiveCompacted = true;
           console.error("[crew-cli] Context exceeded during recovery \u2014 compacting again");
-          clearedHistory = compactMessages(clearedHistory, model);
+          clearedHistory = compactMessages(clearedHistory);
           response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
         } else {
           throw err;
@@ -3781,6 +3960,97 @@ var init_docker_sandbox = __esm({
 import { execSync as execSync3 } from "node:child_process";
 import { mkdir as mkdir3, readFile as readFile7, readdir as readdir2, writeFile as writeFile3 } from "node:fs/promises";
 import { dirname as dirname4, join as join9, resolve as resolve4 } from "node:path";
+function getActivityDescription(tool, p) {
+  const s = (k) => String(p[k] || "").replace(/^.*\//, "");
+  const f = (k) => String(p[k] || "");
+  switch (tool) {
+    case "read_file":
+      return `Reading ${f("file_path")}`;
+    case "read_many_files":
+      return `Reading ${Array.isArray(p.paths) ? p.paths.length : "?"} files`;
+    case "write_file":
+      return `Writing ${f("file_path")}`;
+    case "append_file":
+      return `Appending to ${f("file_path")}`;
+    case "replace":
+    case "edit":
+      return `Editing ${f("file_path")}`;
+    case "glob":
+      return `Globbing ${f("pattern")}`;
+    case "grep":
+    case "grep_search":
+    case "grep_search_ripgrep":
+      return `Searching for "${f("pattern")}"${p.path ? ` in ${f("path")}` : ""}`;
+    case "list":
+    case "list_directory":
+      return `Listing ${f("dir_path") || f("path") || "."}`;
+    case "mkdir":
+      return `Creating directory ${f("path")}`;
+    case "shell":
+    case "run_cmd":
+    case "run_shell_command":
+      return `Running: ${f("command").slice(0, 80)}${f("command").length > 80 ? "\u2026" : ""}`;
+    case "git":
+      return `git ${f("command").slice(0, 60)}`;
+    case "google_web_search":
+    case "web_search":
+      return `Searching web: "${f("query")}"`;
+    case "web_fetch":
+      return `Fetching ${f("url").slice(0, 60)}`;
+    case "lsp":
+      return `LSP ${f("action")}${p.file ? ` on ${s("file")}` : ""}`;
+    case "notebook_edit":
+      return `Notebook ${f("action")} on ${s("path")}`;
+    case "save_memory":
+      return `Saving memory`;
+    case "write_todos":
+      return `Writing todos`;
+    case "get_internal_docs":
+      return `Reading internal docs`;
+    case "spawn_agent":
+      return `Spawning sub-agent: ${f("task").slice(0, 60)}`;
+    case "agent_message":
+      return `Messaging sub-agent ${s("session_id")}: ${f("message").slice(0, 50)}`;
+    case "enter_worktree":
+    case "worktree":
+      return `Worktree ${f("action") || "enter"}`;
+    case "exit_worktree":
+      return `Exiting worktree`;
+    case "merge_worktree":
+      return `Merging worktree ${f("branch_name")}`;
+    case "list_worktrees":
+      return `Listing worktrees`;
+    case "sleep":
+      return `Sleeping ${p.duration_ms}ms${p.reason ? ` \u2014 ${f("reason")}` : ""}`;
+    case "tool_search":
+      return `Searching tools: "${f("query")}"`;
+    case "check_background_task":
+      return `Checking background task ${f("task_id")}`;
+    case "activate_skill":
+      return `Activating skill ${f("name") || f("skill")}`;
+    case "enter_plan_mode":
+      return `Entering plan mode`;
+    case "exit_plan_mode":
+      return `Exiting plan mode`;
+    case "ask_user":
+      return null;
+    // don't announce — the question itself is the activity
+    case "tracker_create_task":
+      return `Creating task: ${f("title").slice(0, 40)}`;
+    case "tracker_update_task":
+      return `Updating task ${f("id")}`;
+    case "tracker_get_task":
+      return `Getting task ${f("id")}`;
+    case "tracker_list_tasks":
+      return `Listing tasks`;
+    case "tracker_add_dependency":
+      return `Adding dependency`;
+    case "tracker_visualize":
+      return `Visualizing task graph`;
+    default:
+      return `${tool}`;
+  }
+}
 function toolAllowedAtLevel(toolName, level) {
   switch (level) {
     case "read-only":
@@ -3818,6 +4088,17 @@ function constraintLevelForPersona(persona) {
     return "full";
   }
   return "edit";
+}
+function errMsg(err) {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+function errShell(err) {
+  const e = err;
+  const stdout = typeof e?.stdout === "string" ? e.stdout : e?.stdout?.toString?.() ?? "";
+  const stderr = typeof e?.stderr === "string" ? e.stderr : e?.stderr?.toString?.() ?? "";
+  return `${stdout}
+${stderr}`.trim();
 }
 function getShellTimeout() {
   const envVal = parseInt(process.env.CREW_SHELL_TIMEOUT || "", 10);
@@ -3883,7 +4164,8 @@ var init_crew_adapter = __esm({
     FULL_TOOLS = /* @__PURE__ */ new Set([
       ...EDIT_TOOLS,
       "write_file",
-      "spawn_agent"
+      "spawn_agent",
+      "agent_message"
     ]);
     CrewConfig = class {
       constructor(workspaceRoot) {
@@ -3926,7 +4208,7 @@ var init_crew_adapter = __esm({
       constructor(sandbox, constraintLevel = "full") {
         this.sandbox = sandbox;
         this._filesRead = /* @__PURE__ */ new Set();
-        const workspaceRoot = sandbox.baseDir || process.cwd();
+        const workspaceRoot = sandbox.getBaseDir() || process.cwd();
         this.config = new CrewConfig(workspaceRoot);
         this.messageBus = new CrewMessageBus();
         this._constraintLevel = constraintLevel;
@@ -3963,6 +4245,7 @@ var init_crew_adapter = __esm({
           "tracker_add_dependency",
           "tracker_visualize",
           "spawn_agent",
+          "agent_message",
           "notebook_edit",
           "check_background_task",
           "worktree",
@@ -4103,7 +4386,8 @@ var init_crew_adapter = __esm({
           { name: "tracker_list_tasks", description: "List tracker tasks", parameters: { type: "object", properties: { status: { type: "string" }, type: { type: "string" }, parentId: { type: "string" } } } },
           { name: "tracker_add_dependency", description: "Add tracker dependency", parameters: { type: "object", properties: { taskId: { type: "string" }, dependencyId: { type: "string" } }, required: ["taskId", "dependencyId"] } },
           { name: "tracker_visualize", description: "Visualize tracker graph", parameters: { type: "object", properties: {} } },
-          { name: "spawn_agent", description: "Spawn a sub-agent to handle a task autonomously. The sub-agent runs in an isolated sandbox branch with a limited tool set and cheaper model. Use for independent research, file analysis, or coding subtasks. Returns the sub-agent result when complete.", parameters: { type: "object", properties: { task: { type: "string", description: "Clear task description for the sub-agent" }, tools: { type: "array", items: { type: "string" }, description: "Optional subset of tool names the sub-agent may use" }, maxTurns: { type: "number", description: "Max turns for sub-agent (default: 10, max: 25)" }, model: { type: "string", description: "Optional model override (default: cheapest configured model)" } }, required: ["task"] } },
+          { name: "spawn_agent", description: "Spawn a sub-agent to handle a task autonomously. Returns a session_id you can use with agent_message for follow-up conversations. The sub-agent runs in an isolated sandbox branch with a cheaper model.", parameters: { type: "object", properties: { task: { type: "string", description: "Clear task description for the sub-agent" }, tools: { type: "array", items: { type: "string" }, description: "Optional subset of tool names the sub-agent may use" }, maxTurns: { type: "number", description: "Max turns for sub-agent (default: 15, max: 25)" }, model: { type: "string", description: "Optional model override (default: cheapest configured model)" } }, required: ["task"] } },
+          { name: "agent_message", description: "Send a follow-up message to an existing sub-agent session. The sub-agent resumes with its full prior conversation context and file access. Use this for multi-turn collaboration: spawn an agent, review its work, then send corrections or next steps.", parameters: { type: "object", properties: { session_id: { type: "string", description: "Session ID returned by spawn_agent" }, message: { type: "string", description: "Follow-up message or instruction for the sub-agent" }, max_turns: { type: "number", description: "Max turns for this follow-up (default: 10, max: 25)" } }, required: ["session_id", "message"] } },
           { name: "notebook_edit", description: "Edit Jupyter notebooks (.ipynb files). Actions: read (view structure), add_cell, edit_cell, delete_cell, run_cell.", parameters: { type: "object", properties: { action: { type: "string", enum: ["add_cell", "edit_cell", "delete_cell", "run_cell", "read"], description: "Notebook action" }, path: { type: "string", description: "Path to .ipynb file" }, index: { type: "number", description: "0-based cell index" }, cell_type: { type: "string", enum: ["code", "markdown"], description: "Cell type for add_cell" }, content: { type: "string", description: "Cell source content for add_cell/edit_cell" } }, required: ["action", "path"] } },
           { name: "check_background_task", description: "Check the status/result of a background shell command. Returns result if done, or elapsed time if still running.", parameters: { type: "object", properties: { task_id: { type: "string", description: "Task ID returned by run_shell_command with run_in_background:true" } }, required: ["task_id"] } },
           { name: "worktree", description: "Manage git worktrees to isolate agent work on separate branches. Actions: enter (create), exit (remove), merge (merge branch), list (list active).", parameters: { type: "object", properties: { action: { type: "string", enum: ["enter", "exit", "merge", "list"], description: "Worktree action" }, branch: { type: "string", description: "Branch name for enter/exit/merge" }, merge: { type: "boolean", description: "Merge on exit (default: true)" }, projectDir: { type: "string", description: "Override project directory" } }, required: ["action"] } },
@@ -4123,6 +4407,9 @@ var init_crew_adapter = __esm({
             recovery: this._constraintLevel === "read-only" ? "This is a read-only worker. Use read_file, grep_search, glob, or list_directory." : "This is an edit worker. Use replace/edit for changes, not write_file."
           };
         }
+        const activity = getActivityDescription(toolName, params);
+        if (activity) process.stdout.write(`\x1B[90m  \u2699 ${activity}\x1B[0m
+`);
         const preResult = await runPreToolUseHooks(toolName, params);
         if (preResult.decision === "deny") {
           return { success: false, error: `Blocked by hook: ${preResult.reason || "denied"}` };
@@ -4220,6 +4507,8 @@ var init_crew_adapter = __esm({
               return await this.trackerVisualizeTool();
             case "spawn_agent":
               return await this.spawnAgentTool(params);
+            case "agent_message":
+              return await this.agentMessageTool(params);
             case "check_background_task":
               return await this.checkBackgroundTask(params);
             case "enter_worktree":
@@ -4245,7 +4534,7 @@ var init_crew_adapter = __esm({
         } catch (err) {
           return {
             success: false,
-            error: err.message
+            error: errMsg(err)
           };
         }
       }
@@ -4277,7 +4566,7 @@ var init_crew_adapter = __esm({
               output: `Wrote ${params.file_path} (${params.content.length} bytes)`
             };
           } catch (err) {
-            return { success: false, error: `Write failed: ${err.message}` };
+            return { success: false, error: `Write failed: ${errMsg(err)}` };
           }
         }
         const fullPath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
@@ -4510,7 +4799,7 @@ Fix these before moving on.`;
           const out = execSync3(`rg --files -g ${JSON.stringify(pattern)}`, { cwd: process.cwd(), stdio: "pipe", encoding: "utf8" });
           return { success: true, output: out.trim() };
         } catch (err) {
-          return { success: false, error: err?.stderr?.toString?.() || err?.message || "glob failed" };
+          return { success: false, error: errShell(err) || errMsg(err) || "glob failed" };
         }
       }
       async grepTool(params) {
@@ -4543,10 +4832,10 @@ Fix these before moving on.`;
           });
           return { success: true, output: out.trim() };
         } catch (err) {
-          const text = `${err?.stdout?.toString?.() || ""}
-${err?.stderr?.toString?.() || ""}`.trim();
-          if (err?.status === 1 && !text) return { success: true, output: "(no matches)" };
-          return { success: false, error: text || err?.message || "grep failed" };
+          const text = errShell(err);
+          const errStatus = err?.status;
+          if (errStatus === 1 && !text) return { success: true, output: "(no matches)" };
+          return { success: false, error: text || errMsg(err) || "grep failed" };
         }
       }
       async gitTool(params) {
@@ -4580,9 +4869,8 @@ ${err?.stderr?.toString?.() || ""}`.trim();
           });
           return { success: true, output: out.trim() };
         } catch (err) {
-          const text = `${err?.stdout?.toString?.() || ""}
-${err?.stderr?.toString?.() || ""}`.trim();
-          return { success: false, error: text || err?.message || "git failed" };
+          const text = errShell(err);
+          return { success: false, error: text || errMsg(err) || "git failed" };
         }
       }
       async shellTool(params) {
@@ -4620,7 +4908,7 @@ ${err?.stderr?.toString?.() || ""}`.trim();
                 });
               });
             } catch (err) {
-              return { success: false, error: err.message };
+              return { success: false, error: errMsg(err) };
             }
           })();
           _backgroundProcesses.set(taskId, { promise: bgPromise, startedAt: Date.now() });
@@ -4656,9 +4944,8 @@ Use check_background_task with this ID to get the result.` };
           });
           return { success: true, output: out.trim() };
         } catch (err) {
-          const text = `${err?.stdout?.toString?.() || ""}
-${err?.stderr?.toString?.() || ""}`.trim();
-          return { success: false, error: text || err?.message || "shell failed" };
+          const text = errShell(err);
+          return { success: false, error: text || errMsg(err) || "shell failed" };
         }
       }
       async webSearchTool(params) {
@@ -4687,7 +4974,7 @@ ${r.description || ""}`
           ).join("\n\n");
           return { success: true, output: formatted || "No results" };
         } catch (err) {
-          return { success: false, error: err?.message || "web_search failed" };
+          return { success: false, error: errMsg(err) || "web_search failed" };
         }
       }
       async webFetchTool(params) {
@@ -4708,7 +4995,7 @@ ${r.description || ""}`
           }
           return { success: true, output: text.slice(0, 12e3) };
         } catch (err) {
-          return { success: false, error: err?.message || "web_fetch failed" };
+          return { success: false, error: errMsg(err) || "web_fetch failed" };
         }
       }
       async readManyFilesTool(params) {
@@ -4732,7 +5019,7 @@ ${content.slice(0, 2e3)}`);
           }
           return { success: true, output: chunks.join("\n\n") || "No readable files matched" };
         } catch (err) {
-          return { success: false, error: err?.message || "read_many_files failed" };
+          return { success: false, error: errMsg(err) || "read_many_files failed" };
         }
       }
       async saveMemoryTool(params) {
@@ -4765,7 +5052,7 @@ ${content.slice(0, 2e3)}`);
           const content = await readFile7(abs, "utf8");
           return { success: true, output: content.slice(0, 12e3) };
         } catch (err) {
-          return { success: false, error: `get_internal_docs failed: ${err?.message || target}` };
+          return { success: false, error: `get_internal_docs failed: ${errMsg(err) || target}` };
         }
       }
       async askUserTool(params) {
@@ -4906,8 +5193,8 @@ ${summary}`
           title: String(params?.title || "Untitled"),
           description: String(params?.description || ""),
           type: String(params?.type || "task"),
-          status: "open",
-          parentId: params?.parentId || null,
+          status: "pending",
+          parentId: typeof params?.parentId === "string" ? params.parentId : void 0,
           dependencies: Array.isArray(params?.dependencies) ? params.dependencies : []
         };
         tasks.push(task);
@@ -5045,7 +5332,8 @@ ${summary}`
               const out = execSync3(`grep -rn -E "export (function|class|const|let|var|interface|type|enum) ${sym}|def ${sym}|func ${sym}|function ${sym}" .`, { cwd: workspaceRoot, encoding: "utf8", timeout: 15e3 });
               return { success: true, output: out.trim() || "No definition found." };
             } catch (e) {
-              return { success: true, output: e?.status === 1 ? "No definition found." : `grep failed: ${e?.message}` };
+              const es = e;
+              return { success: true, output: es?.status === 1 ? "No definition found." : `grep failed: ${errMsg(e)}` };
             }
           }
           if (action === "references") {
@@ -5062,7 +5350,8 @@ ${summary}`
               const out = execSync3(`grep -rn "\\b${sym}\\b" --include="*.ts" --include="*.js" --include="*.py" --include="*.go" .`, { cwd: workspaceRoot, encoding: "utf8", timeout: 15e3 });
               return { success: true, output: out.trim() || "No references found." };
             } catch (e) {
-              return { success: true, output: e?.status === 1 ? "No references found." : `grep failed: ${e?.message}` };
+              const es = e;
+              return { success: true, output: es?.status === 1 ? "No references found." : `grep failed: ${errMsg(e)}` };
             }
           }
           if (action === "hover") {
@@ -5080,7 +5369,7 @@ ${summary}`
               const lines = content.split("\n");
               return { success: true, output: lines[line - 1] || "" };
             } catch (e) {
-              return { success: false, error: `Could not read file: ${e?.message}` };
+              return { success: false, error: `Could not read file: ${errMsg(e)}` };
             }
           }
           if (action === "completions") {
@@ -5091,14 +5380,14 @@ ${summary}`
                 if (items.length === 0) return { success: true, output: "No completions found." };
                 return { success: true, output: items.map((i) => `${i.name} (${i.kind})`).join("\n") };
               } catch (e) {
-                return { success: false, error: `completions failed: ${e?.message}` };
+                return { success: false, error: `completions failed: ${errMsg(e)}` };
               }
             }
             return { success: false, error: `Completions not supported for .${ext} files` };
           }
           return { success: false, error: `Unknown lsp action: ${action}` };
         } catch (err) {
-          return { success: false, error: `LSP error: ${err?.message || String(err)}` };
+          return { success: false, error: `LSP error: ${errMsg(err)}` };
         }
       }
       /** Inline implementation of notebook-edit actions (avoids importing tools.ts) */
@@ -5110,7 +5399,7 @@ ${summary}`
             const raw = await readFile7(nbPath, "utf8");
             return JSON.parse(raw);
           } catch (e) {
-            throw new Error(`Cannot read notebook ${params.path}: ${e.message}`);
+            throw new Error(`Cannot read notebook ${params.path}: ${errMsg(e)}`);
           }
         }
         async function saveNb(nb) {
@@ -5181,14 +5470,14 @@ ${cells.join("\n\n")}`;
               return { success: true, output: `Cell ${index} executed:
 ${out.trim() || "(no output)"}` };
             } catch (pyErr) {
-              const stderr = pyErr?.stderr?.toString?.()?.trim() || pyErr?.message || "execution failed";
+              const stderr = errShell(pyErr).trim() || errMsg(pyErr) || "execution failed";
               return { success: false, error: `Cell ${index} execution failed:
 ${stderr}` };
             }
           }
           return { success: false, error: `Unknown notebook_edit action: ${action}` };
         } catch (err) {
-          return { success: false, error: `NotebookEdit error: ${err?.message || String(err)}` };
+          return { success: false, error: `NotebookEdit error: ${errMsg(err)}` };
         }
       }
       async checkBackgroundTask(params) {
@@ -5214,6 +5503,12 @@ ${stderr}` };
       static {
         this.MAX_SPAWN_DEPTH = 3;
       }
+      static {
+        // ─── Multi-turn sub-agent sessions ──────────────────────────────────────
+        // Each session tracks its conversation history, branch, and model so the
+        // parent agent can send follow-up messages to an existing sub-agent.
+        this._agentSessions = /* @__PURE__ */ new Map();
+      }
       async spawnAgentTool(params) {
         const task = String(params.task || "").trim();
         if (!task) return { success: false, error: "spawn_agent requires task" };
@@ -5222,7 +5517,8 @@ ${stderr}` };
         }
         const maxTurns = Math.min(params.max_turns || 15, 25);
         const model = params.model || process.env.CREW_WORKER_MODEL || process.env.CREW_EXECUTION_MODEL || "";
-        const branchName = `sub-agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const sessionId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const branchName = `sub-agent-${sessionId}`;
         try {
           await this.sandbox.createBranch(branchName);
           _GeminiToolAdapter._spawnDepth++;
@@ -5231,12 +5527,20 @@ ${stderr}` };
             model,
             maxTurns,
             stream: false,
-            // Sub-agents don't stream to stdout
             verbose: Boolean(process.env.CREW_DEBUG),
             tier: "fast"
-            // Default to cheap model for sub-agents
           });
           _GeminiToolAdapter._spawnDepth--;
+          _GeminiToolAdapter._agentSessions.set(sessionId, {
+            history: [
+              { role: "user", content: task },
+              { role: "assistant", content: result2.output || "" }
+            ],
+            branch: branchName,
+            model,
+            totalCost: result2.cost || 0,
+            totalTurns: result2.turns || 0
+          });
           const parentBranch = this.sandbox.getActiveBranch();
           if (parentBranch !== branchName) {
             await this.sandbox.mergeBranch(branchName, parentBranch);
@@ -5246,12 +5550,9 @@ ${stderr}` };
             await this.sandbox.switchBranch(parent);
             await this.sandbox.mergeBranch(branchName, parent);
           }
-          try {
-            await this.sandbox.deleteBranch(branchName);
-          } catch {
-          }
           const output = [
             `Sub-agent completed in ${result2.turns || 0} turns (${result2.modelUsed || "unknown"})`,
+            `Session: ${sessionId} (use agent_message to send follow-ups)`,
             result2.cost ? `Cost: $${result2.cost.toFixed(4)}` : "",
             `Status: ${result2.success ? "SUCCESS" : "FAILED"}`,
             "",
@@ -5268,7 +5569,85 @@ ${stderr}` };
             await this.sandbox.deleteBranch(branchName);
           } catch {
           }
-          return { success: false, error: `Sub-agent failed: ${err.message}` };
+          return { success: false, error: `Sub-agent failed: ${errMsg(err)}` };
+        }
+      }
+      // ─── agent_message: send follow-up to an existing sub-agent session ─────
+      async agentMessageTool(params) {
+        const sessionId = String(params.session_id || "").trim();
+        const message = String(params.message || "").trim();
+        if (!sessionId) return { success: false, error: "agent_message requires session_id" };
+        if (!message) return { success: false, error: "agent_message requires message" };
+        const session = _GeminiToolAdapter._agentSessions.get(sessionId);
+        if (!session) {
+          const available = [..._GeminiToolAdapter._agentSessions.keys()];
+          return {
+            success: false,
+            error: `No active session "${sessionId}". Active sessions: ${available.length ? available.join(", ") : "(none)"}`
+          };
+        }
+        if (_GeminiToolAdapter._spawnDepth >= _GeminiToolAdapter.MAX_SPAWN_DEPTH) {
+          return { success: false, error: `Sub-agent depth limit reached (max ${_GeminiToolAdapter.MAX_SPAWN_DEPTH}).` };
+        }
+        const maxTurns = Math.min(params.max_turns || 10, 25);
+        const historyContext = session.history.map((h) => `[${h.role}]: ${h.content.slice(0, 1500)}`).join("\n\n");
+        const continuationTask = [
+          "## Prior conversation with this sub-agent:",
+          historyContext,
+          "",
+          "## New follow-up message:",
+          message,
+          "",
+          "Continue the work from where you left off. You have the same file access and tools."
+        ].join("\n");
+        try {
+          await this.sandbox.switchBranch(session.branch);
+        } catch {
+        }
+        _GeminiToolAdapter._spawnDepth++;
+        try {
+          const { runAgenticWorker: runAgenticWorker2 } = await Promise.resolve().then(() => (init_agentic_executor(), agentic_executor_exports));
+          const result2 = await runAgenticWorker2(continuationTask, this.sandbox, {
+            model: session.model,
+            maxTurns,
+            stream: false,
+            verbose: Boolean(process.env.CREW_DEBUG),
+            tier: "fast"
+          });
+          _GeminiToolAdapter._spawnDepth--;
+          session.history.push(
+            { role: "user", content: message },
+            { role: "assistant", content: result2.output || "" }
+          );
+          session.totalCost += result2.cost || 0;
+          session.totalTurns += result2.turns || 0;
+          try {
+            const parentBranch = this.sandbox.getActiveBranch();
+            if (parentBranch === session.branch) {
+              const branches = this.sandbox.getBranches();
+              const parent = branches.find((b) => b !== session.branch) || "main";
+              await this.sandbox.switchBranch(parent);
+              await this.sandbox.mergeBranch(session.branch, parent);
+            } else {
+              await this.sandbox.mergeBranch(session.branch, parentBranch);
+            }
+          } catch {
+          }
+          const output = [
+            `Sub-agent follow-up completed in ${result2.turns || 0} turns`,
+            `Session: ${sessionId} (${session.history.length / 2} exchanges, $${session.totalCost.toFixed(4)} total)`,
+            `Status: ${result2.success ? "SUCCESS" : "FAILED"}`,
+            "",
+            result2.output?.slice(0, 3e3) || "(no output)"
+          ].filter(Boolean).join("\n");
+          return { success: result2.success, output };
+        } catch (err) {
+          _GeminiToolAdapter._spawnDepth = Math.max(0, _GeminiToolAdapter._spawnDepth - 1);
+          try {
+            await this.sandbox.switchBranch("main");
+          } catch {
+          }
+          return { success: false, error: `Sub-agent follow-up failed: ${errMsg(err)}` };
         }
       }
       /**
@@ -5695,7 +6074,7 @@ ${stderr}` };
       // ─── Worktree Isolation Tools ────────────────────────────────────
       enterWorktreeTool(params) {
         try {
-          const info = enterWorktree(this.sandbox.baseDir || process.cwd(), {
+          const info = enterWorktree(this.sandbox.getBaseDir() || process.cwd(), {
             branchPrefix: params.branch_prefix,
             agentId: params.agent_id
           });
@@ -5709,13 +6088,13 @@ ${stderr}` };
             })
           };
         } catch (err) {
-          return { success: false, error: err.message };
+          return { success: false, error: errMsg(err) };
         }
       }
       async exitWorktreeTool(params) {
         if (!params.branch_name) return { success: false, error: "exit_worktree requires branch_name" };
         try {
-          const result2 = await exitWorktree(this.sandbox.baseDir || process.cwd(), params.branch_name);
+          const result2 = await exitWorktree(this.sandbox.getBaseDir() || process.cwd(), params.branch_name);
           return {
             success: true,
             output: JSON.stringify({
@@ -5726,20 +6105,20 @@ ${stderr}` };
             })
           };
         } catch (err) {
-          return { success: false, error: err.message };
+          return { success: false, error: errMsg(err) };
         }
       }
       mergeWorktreeTool(params) {
         if (!params.branch_name) return { success: false, error: "merge_worktree requires branch_name" };
         try {
           const result2 = mergeWorktree(
-            this.sandbox.baseDir || process.cwd(),
+            this.sandbox.getBaseDir() || process.cwd(),
             params.branch_name,
             params.strategy || "squash"
           );
           return { success: result2.success, output: result2.message, error: result2.success ? void 0 : result2.message };
         } catch (err) {
-          return { success: false, error: err.message };
+          return { success: false, error: errMsg(err) };
         }
       }
       listWorktreesTool() {
@@ -5760,7 +6139,7 @@ ${stderr}` };
       // ─── Unified Worktree Tool (dispatches to sub-actions) ───────────────────
       async worktreeUnifiedTool(params) {
         const { action, branch, projectDir } = params;
-        const cwd = projectDir || this.sandbox.baseDir || process.cwd();
+        const cwd = projectDir || this.sandbox.getBaseDir() || process.cwd();
         switch (action) {
           case "enter":
             return this.enterWorktreeTool({ branch_prefix: branch, agent_id: void 0 });
@@ -6723,13 +7102,14 @@ ${fullTask}` }];
   const cost = (usage.promptTokenCount || 0) * 0.075 / 1e6 + (usage.candidatesTokenCount || 0) * 0.3 / 1e6;
   const toolCalls = [];
   for (const part of parts) {
-    if (part.functionCall) {
-      toolCalls.push({ tool: part.functionCall.name || "", params: part.functionCall.args || {} });
+    const functionCall = part.functionCall;
+    if (functionCall) {
+      toolCalls.push({ tool: functionCall.name || "", params: functionCall.args || {} });
     }
   }
   if (toolCalls.length > 0) return { toolCalls, response: "", cost };
   const textPart = parts.find((p) => p.text);
-  return { response: textPart?.text ?? "", status: "COMPLETE", cost };
+  return { response: textPart?.text || "", status: "COMPLETE", cost };
 }
 async function executeGeminiCodeAssistTurn(fullTask, tools, key, model, systemPrompt, images, historyMessages, projectId, oauthSource) {
   const resolvedProjectId = projectId || process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || "";
@@ -6827,11 +7207,13 @@ ${fullTask}` }];
   const toolCalls = [];
   let fullText = "";
   for (const part of parts) {
-    if (part.text) {
-      fullText += part.text;
+    const text = typeof part.text === "string" ? part.text : "";
+    const functionCall = part.functionCall;
+    if (text) {
+      fullText += text;
     }
-    if (part.functionCall) {
-      toolCalls.push({ tool: part.functionCall.name || "", params: part.functionCall.args || {} });
+    if (functionCall) {
+      toolCalls.push({ tool: functionCall.name || "", params: functionCall.args || {} });
     }
   }
   if (fullText) process.stdout.write(`${fullText}
@@ -6991,8 +7373,9 @@ ${historyContext}` : fullTask
   const data = await res.json();
   const choice = data?.choices?.[0];
   const msg = choice?.message;
-  if (msg?.tool_calls?.length > 0) {
-    const toolCalls = msg.tool_calls.map((tc) => {
+  const toolCallsRaw = msg?.tool_calls;
+  if (toolCallsRaw && toolCallsRaw.length > 0) {
+    const toolCalls = toolCallsRaw.map((tc) => {
       let params = {};
       try {
         params = JSON.parse(repairJson(tc.function?.arguments || "{}"));
@@ -7016,7 +7399,7 @@ async function streamOpenAIResponsesOAuthTurn(res) {
   let usage = null;
   const applyEvent = (eventType, payload) => {
     const item = payload?.item || payload?.output_item;
-    const itemId = item?.id || payload?.item_id || payload?.call_id || "";
+    const itemId = String(item?.id || payload?.item_id || payload?.call_id || "");
     if (eventType === "response.output_text.delta" && typeof payload?.delta === "string") {
       process.stdout.write(payload.delta);
       fullText += payload.delta;
@@ -7034,14 +7417,15 @@ async function streamOpenAIResponsesOAuthTurn(res) {
         toolCallsById.set(itemId, { name: "", args: "" });
       }
       const acc = toolCallsById.get(itemId);
-      if (item?.name) acc.name = item.name;
+      if (item?.name) acc.name = String(item.name);
       if (typeof item?.arguments === "string") acc.args = item.arguments;
       return;
     }
     if (eventType === "response.completed") {
-      usage = payload?.response?.usage || null;
-      if (!fullText && typeof payload?.response?.output_text === "string") {
-        fullText = payload.response.output_text;
+      const res2 = payload?.response;
+      usage = res2?.usage || null;
+      if (!fullText && typeof res2?.output_text === "string") {
+        fullText = res2.output_text;
       }
     }
   };
@@ -7064,7 +7448,7 @@ async function streamOpenAIResponsesOAuthTurn(res) {
         if (raw) {
           try {
             const payload = JSON.parse(raw);
-            applyEvent(eventType || payload?.type || "", payload);
+            applyEvent(eventType || String(payload?.type || ""), payload);
           } catch {
           }
         }
@@ -7085,7 +7469,8 @@ async function streamOpenAIResponsesOAuthTurn(res) {
     }
     toolCalls.push({ tool: tc.name, params });
   }
-  const cost = usage ? ((usage.input_tokens || 0) * 5 + (usage.output_tokens || 0) * 20) / 1e6 : 0;
+  const openAiUsage = usage;
+  const cost = openAiUsage ? ((openAiUsage.input_tokens || 0) * 5 + (openAiUsage.output_tokens || 0) * 20) / 1e6 : 0;
   if (toolCalls.length > 0) {
     return { toolCalls, response: fullText.trim(), cost };
   }
@@ -7231,7 +7616,7 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
   const textBlocks = content.filter((b) => b.type === "text");
   const textResponse = textBlocks.map((b) => b.text).join("\n");
   if (toolUseBlocks.length > 0) {
-    const toolCalls = toolUseBlocks.map((b) => ({ tool: b.name, params: b.input || {} }));
+    const toolCalls = toolUseBlocks.map((b) => ({ tool: b.name || "", params: b.input || {} }));
     return { toolCalls, response: textResponse, cost };
   }
   return { response: textResponse, status: "COMPLETE", cost };
@@ -7338,9 +7723,9 @@ ${freshRead.output.slice(0, 3e3)}`,
           } catch {
           }
         }
-        params.old_string = params.old_string.trim();
+        params.old_string = String(params.old_string || "").trim();
       } else if (result2.error?.includes("No such file") && params.file_path) {
-        params.file_path = params.file_path.replace(/^\.\//, "");
+        params.file_path = String(params.file_path || "").replace(/^\.\//, "");
       } else {
         return { output: result2.output ?? "", success: false, error: result2.error, handled: result2.handled, recovery: result2.recovery };
       }
@@ -7356,7 +7741,7 @@ async function runAgenticWorker(task, sandbox, options = {}) {
   const allTools = adapter.getToolDeclarations();
   const model = options.model || process.env.CREW_EXECUTION_MODEL || "";
   const maxTurns = options.maxTurns ?? 25;
-  const projectDir = options.projectDir || sandbox.baseDir || process.cwd();
+  const projectDir = options.projectDir || sandbox.getBaseDir() || process.cwd();
   const verbose = options.verbose ?? Boolean(process.env.CREW_DEBUG);
   const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const scratchDir = createScratchpad(sessionId);
@@ -7593,7 +7978,7 @@ Every turn, follow this exact pattern:
 **Web**: google_web_search, web_fetch
 **Memory**: save_memory (persist facts across sessions), write_todos
 **Docs**: get_internal_docs (read project documentation)
-**Agents**: spawn_agent (spawn autonomous sub-agent for independent subtasks \u2014 isolated sandbox branch, cheap model by default, merges changes on completion)
+**Agents**: spawn_agent (spawn autonomous sub-agent \u2014 returns session_id for follow-ups), agent_message (send follow-up to existing sub-agent session \u2014 multi-turn dialogue with full context)
 **Discovery**: tool_search (find available tools by name or description query), activate_skill
 
 ## File Reading Strategy
@@ -11453,6 +11838,8 @@ var init_unified = __esm({
     init_qa_gate();
     init_project_context();
     init_reviewer();
+    init_worktree();
+    init_sandbox();
     UnifiedPipeline = class {
       // Optional SessionManager for cache tracking
       constructor(sandbox, session) {
@@ -13219,12 +13606,41 @@ ${task.goal}` : task.goal;
         let contextCharsSaved = 0;
         const artifactPackId = workGraph.planningArtifacts ? this.contextPacks.createPack(traceId, workGraph.planningArtifacts) : "";
         const sorted = this.topologicalSort(workerTasks);
+        const projectDir = this.sandbox?.baseDir || process.cwd();
+        const worktreeIsolation = (() => {
+          if (process.env.CREW_WORKTREE_ISOLATION === "false") return false;
+          try {
+            const { execSync: execSync8 } = __require("node:child_process");
+            execSync8("git rev-parse --is-inside-work-tree", { cwd: projectDir, encoding: "utf8", timeout: 5e3 });
+            return true;
+          } catch {
+            return false;
+          }
+        })();
         const maxWorkers = this.getMaxParallelWorkers();
         for (const batch of this.getBatches(sorted)) {
+          const useWorktrees = worktreeIsolation && batch.length > 1;
           if (verbose) {
             console.log(`[L3 Batch] Executing ${batch.length} units in parallel...`);
             console.log(`[L3 Batch] Units: ${batch.map((u) => u.id).join(", ")}`);
-            console.log(`[L3 Batch] Concurrency cap: ${maxWorkers}`);
+            console.log(`[L3 Batch] Concurrency cap: ${maxWorkers}${useWorktrees ? " (worktree isolation)" : ""}`);
+          }
+          const unitWorktrees = /* @__PURE__ */ new Map();
+          if (useWorktrees) {
+            for (const unit of batch) {
+              try {
+                const wt = enterWorktree(projectDir, {
+                  branchPrefix: "crew-l3",
+                  agentId: unit.id.slice(0, 8)
+                });
+                unitWorktrees.set(unit.id, { worktreePath: wt.worktreePath, branchName: wt.branchName });
+                if (verbose) {
+                  console.log(`  [${unit.id}] worktree \u2192 ${wt.worktreePath}`);
+                }
+              } catch (err) {
+                if (verbose) console.warn(`  [${unit.id}] worktree failed, sharing filesystem: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }
           }
           const batchStart = Date.now();
           const runUnit = async (unit) => {
@@ -13348,10 +13764,14 @@ ${dependencyOutputs.join("\n\n")}`,
               console.log(`  [${unit.id}] ${unit.persona} executing (agentic)...`);
             }
             const unitStart = Date.now();
-            const result2 = await this.runWorker(composedPrompt.finalPrompt, {
+            const unitWt = unitWorktrees.get(unit.id);
+            const workerSandbox = unitWt ? new Sandbox(unitWt.worktreePath) : this.sandbox;
+            const workerProjectDir = unitWt ? unitWt.worktreePath : projectDir;
+            const result2 = await runAgenticWorker(composedPrompt.finalPrompt, workerSandbox, {
               model: this.getModelForLayer("l3", effort) || "",
               maxTurns: this.getMaxTurnsForEffort(effort),
               verbose,
+              projectDir: workerProjectDir,
               priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : void 0,
               persona: unit.persona,
               constraintLevel: void 0
@@ -13385,6 +13805,31 @@ ${dependencyOutputs.join("\n\n")}`,
             }
           });
           await Promise.all(workers);
+          if (unitWorktrees.size > 0) {
+            const mergeResults = [];
+            for (const [unitId, wt] of unitWorktrees) {
+              try {
+                const exitResult = await exitWorktree(projectDir, wt.branchName);
+                if (exitResult.hasChanges) {
+                  const merge = mergeWorktree(projectDir, wt.branchName, "squash");
+                  mergeResults.push({ unitId, ...merge });
+                  if (verbose) {
+                    console.log(`  [${unitId}] ${merge.success ? "\u2705" : "\u26A0\uFE0F"} merge: ${merge.message}`);
+                  }
+                } else {
+                  mergeResults.push({ unitId, success: true, message: "No changes to merge" });
+                }
+              } catch (err) {
+                mergeResults.push({ unitId, success: false, message: err.message });
+                if (verbose) console.warn(`  [${unitId}] \u26A0\uFE0F worktree cleanup failed: ${err.message}`);
+              }
+            }
+            unitWorktrees.clear();
+            const conflicts = mergeResults.filter((r) => !r.success);
+            if (conflicts.length > 0 && verbose) {
+              console.warn(`[L3 Batch] \u26A0\uFE0F ${conflicts.length} merge conflict(s): ${conflicts.map((c) => `${c.unitId}: ${c.message}`).join("; ")}`);
+            }
+          }
           if (verbose) {
             console.log(`[L3 Batch] \u2705 Batch complete in ${Date.now() - batchStart}ms`);
           }
@@ -14197,7 +14642,7 @@ User request: ${input}`
       /**
        * Execute a task using the agentic executor with full file tools.
        * This is the primary execution path — single worker with THINK→ACT→OBSERVE loop
-       * and 44+ tools (read_file, write_file, replace, bash, grep, etc.).
+       * and 45+ tools (read_file, write_file, replace, bash, grep, etc.).
        * Equivalent to how Claude Code, Codex CLI, and Gemini CLI execute tasks.
        */
       async executeAgentic(task, options = {}) {
@@ -16068,177 +16513,8 @@ var SessionManager = class {
   }
 };
 
-// src/sandbox/index.ts
-import { createTwoFilesPatch } from "diff";
-import { readFile as readFile3, writeFile as writeFile2, mkdir as mkdir2, access } from "node:fs/promises";
-import { constants } from "node:fs";
-import { join as join4, dirname as dirname3 } from "node:path";
-var Sandbox = class {
-  constructor(baseDir = process.cwd()) {
-    this.state = {
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      activeBranch: "main",
-      branches: { main: {} }
-    };
-    this.baseDir = baseDir;
-    this.stateFilePath = join4(baseDir, ".crew", "sandbox.json");
-  }
-  async exists(path3) {
-    try {
-      await access(path3, constants.F_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async load() {
-    if (await this.exists(this.stateFilePath)) {
-      try {
-        const data = await readFile3(this.stateFilePath, "utf8");
-        const parsed = JSON.parse(data);
-        this.state = {
-          ...this.state,
-          ...parsed,
-          branches: parsed.branches || { main: {} },
-          activeBranch: parsed.activeBranch || "main"
-        };
-      } catch (err) {
-        console.error(`Failed to load sandbox state: ${err.message}`);
-      }
-    }
-  }
-  async persist() {
-    this.state.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    const dir = dirname3(this.stateFilePath);
-    if (!await this.exists(dir)) {
-      await mkdir2(dir, { recursive: true });
-    }
-    await writeFile2(this.stateFilePath, JSON.stringify(this.state, null, 2), "utf8");
-  }
-  /** Alias for persist() to match external API expectations */
-  async save() {
-    await this.persist();
-  }
-  async addChange(filePath, modifiedContent) {
-    const fullPath = join4(this.baseDir, filePath);
-    let original = "";
-    if (!this.state.branches[this.state.activeBranch] || Array.isArray(this.state.branches[this.state.activeBranch])) {
-      this.state.branches[this.state.activeBranch] = {};
-    }
-    const activeChanges = this.state.branches[this.state.activeBranch];
-    if (activeChanges[filePath]) {
-      original = activeChanges[filePath].original;
-    } else if (await this.exists(fullPath)) {
-      original = await readFile3(fullPath, "utf8");
-    }
-    activeChanges[filePath] = {
-      path: filePath,
-      original,
-      modified: modifiedContent,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    await this.persist();
-  }
-  preview(branchName = this.state.activeBranch) {
-    const branch = this.state.branches[branchName];
-    if (!branch) return `Branch "${branchName}" not found.`;
-    let diff = "";
-    for (const [path3, change] of Object.entries(branch)) {
-      diff += createTwoFilesPatch(
-        `a/${path3}`,
-        `b/${path3}`,
-        change.original,
-        change.modified,
-        void 0,
-        void 0,
-        { context: 3 }
-      );
-    }
-    return diff || "No pending changes.";
-  }
-  async apply(branchName = this.state.activeBranch) {
-    const branch = this.state.branches[branchName];
-    if (!branch) throw new Error(`Branch "${branchName}" not found.`);
-    for (const [path3, change] of Object.entries(branch)) {
-      const fullPath = join4(this.baseDir, path3);
-      const dir = dirname3(fullPath);
-      if (!await this.exists(dir)) {
-        await mkdir2(dir, { recursive: true });
-      }
-      await writeFile2(fullPath, change.modified, "utf8");
-    }
-    await this.rollback(branchName);
-  }
-  async rollback(branchName = this.state.activeBranch) {
-    if (this.state.branches[branchName]) {
-      this.state.branches[branchName] = {};
-      await this.persist();
-    }
-  }
-  async createBranch(name, fromBranch = this.state.activeBranch) {
-    if (this.state.branches[name]) {
-      throw new Error(`Branch "${name}" already exists.`);
-    }
-    const sourceBranch = this.state.branches[fromBranch] || {};
-    this.state.branches[name] = JSON.parse(JSON.stringify(sourceBranch));
-    this.state.activeBranch = name;
-    await this.persist();
-  }
-  async switchBranch(name) {
-    if (!this.state.branches[name]) {
-      throw new Error(`Branch "${name}" does not exist.`);
-    }
-    this.state.activeBranch = name;
-    await this.persist();
-  }
-  async deleteBranch(name) {
-    if (name === "main") throw new Error("Cannot delete main branch.");
-    if (this.state.activeBranch === name) {
-      this.state.activeBranch = "main";
-    }
-    delete this.state.branches[name];
-    await this.persist();
-  }
-  async mergeBranch(source, target = this.state.activeBranch) {
-    if (!this.state.branches[source]) throw new Error(`Source branch "${source}" not found.`);
-    if (!this.state.branches[target]) throw new Error(`Target branch "${target}" not found.`);
-    const sourceChanges = this.state.branches[source];
-    const targetChanges = this.state.branches[target];
-    for (const [path3, change] of Object.entries(sourceChanges)) {
-      targetChanges[path3] = JSON.parse(JSON.stringify(change));
-    }
-    await this.persist();
-  }
-  /** Expose state for read-only access by VirtualFS and similar utilities. */
-  getState() {
-    return this.state;
-  }
-  getActiveBranch() {
-    return this.state.activeBranch;
-  }
-  getBranches() {
-    return Object.keys(this.state.branches);
-  }
-  getPendingPaths(branchName = this.state.activeBranch) {
-    return Object.keys(this.state.branches[branchName] || {});
-  }
-  hasChanges(branchName = this.state.activeBranch) {
-    return Object.keys(this.state.branches[branchName] || {}).length > 0;
-  }
-  /**
-   * Get staged content for a file path (returns undefined if not staged).
-   * Used by tool adapter so agentic workers can read their own staged files.
-   */
-  getStagedContent(filePath, branchName = this.state.activeBranch) {
-    const branch = this.state.branches[branchName];
-    if (!branch) return void 0;
-    const change = branch[filePath];
-    if (change) return change.modified;
-    return void 0;
-  }
-};
-
 // src/cli/index.ts
+init_sandbox();
 init_orchestrator();
 
 // src/auth/token-finder.ts
@@ -21086,24 +21362,11 @@ var BANNER2 = `
  \u2551                                                                           \u2551
  \u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D
 `;
-var AVAILABLE_MODELS = [
-  "gpt-5.4",
-  "gpt-5.3-codex",
-  "gemini-3.1-pro",
-  "gemini-2.5-flash",
-  "claude-sonnet-4.6",
-  "grok-4.20-beta",
-  "grok-4.1-fast",
-  "deepseek-v3.2",
-  "qwen3.5-397b",
-  "kimi-k2.5",
-  "llama-3.3-70b"
-];
 var AVAILABLE_ENGINES = ["auto", "cursor", "cursor-cli", "claude", "claude-cli", "gemini", "gemini-cli", "codex", "codex-cli", "crew-cli"];
 var REPL_MODE_ORDER = ["manual", "assist", "autopilot"];
 var SLASH_COMMAND_GROUPS = [
   { title: "Session", commands: ["/help", "/info", "/status", "/history", "/clear", "/exit"] },
-  { title: "Model & Engine", commands: ["/models", "/model", "/engines", "/engine", "/mode", "/stack"] },
+  { title: "Model & Engine", commands: ["/stack", "/engine", "/engines", "/mode"] },
   { title: "Sandbox", commands: ["/preview", "/apply", "/rollback", "/branch", "/branches"] },
   { title: "Runtime", commands: ["/tools", "/trace", "/timeline", "/cost", "/system", "/permissions"] },
   { title: "Context", commands: ["/image", "/search", "/recall", "/sessions", "/resume", "/skills"] }
@@ -21268,7 +21531,7 @@ function printSystemSummary(summary, bootstrap) {
   console.log(`  Providers: ${summary.providerKeys.length ? summary.providerKeys.join(", ") : "(none found)"}`);
   console.log(`  Project: ${bootstrap.projectDir}`);
   console.log(`  Key files: ${bootstrap.keyFiles.length ? bootstrap.keyFiles.join(", ") : "(none detected)"}`);
-  console.log(chalk3.gray("\n  Commands: /models-config, /stack, /status, /preview, /apply, /trace <id>\n"));
+  console.log(chalk3.gray("\n  Commands: /stack, /stack, /status, /preview, /apply, /trace <id>\n"));
 }
 function answerLocalMetaQuestion(input, summary) {
   const lower = input.trim().toLowerCase();
@@ -21291,25 +21554,25 @@ function answerLocalMetaQuestion(input, summary) {
       `L2 providers: router=${summary.routerProvider}, executor=${summary.executorProvider}.`,
       `Policy-tier models: ${policy}.`,
       `Agent models: ${agents}.`,
-      "Use /models-config for full details, then change via /model, /stack, .crew/model-policy.json, or ~/.crewswarm/crewswarm.json."
+      "Use /stack for full details, then change via /model, /stack, .crew/model-policy.json, or ~/.crewswarm/crewswarm.json."
     ].join(" ");
   }
   if (/\b(change|modify|set|update).*(models?|model)\b/.test(lower)) {
-    return "Yes. Use /model (session), /stack (tier providers), or edit .crew/model-policy.json and ~/.crewswarm/crewswarm.json for persistent model changes.";
+    return "Yes. Use /stack (models and providers per tier), or edit .crew/model-policy.json and ~/.crewswarm/crewswarm.json for persistent model changes.";
   }
   if (/\b(what can you do|help me|onboard|getting started|how do i use)\b/.test(lower)) {
     return [
       "Here is the fast path.",
-      "1) /models-config to inspect real model/provider config.",
+      "1) /stack to inspect real model/provider config.",
       "2) /stack to set Tier-1 router + Tier-2 executor + gateway toggle.",
       "3) Ask build/fix tasks directly; I route and stage edits in sandbox.",
       "4) /preview then /apply (or /rollback).",
       "5) /trace <id> for prompt/planner trace.",
-      'If you want me to run an exact command, say it explicitly: e.g. "run /models-config".'
+      'If you want me to run an exact command, say it explicitly: e.g. "run /stack".'
     ].join(" ");
   }
   if (/\b(run|execute)\s+\/[a-z-]+/.test(lower)) {
-    return "Use slash commands directly in REPL. Example: /models-config, /stack, /status, /preview, /apply, /trace <traceId>.";
+    return "Use slash commands directly in REPL. Example: /stack, /stack, /status, /preview, /apply, /trace <traceId>.";
   }
   return null;
 }
@@ -21336,7 +21599,7 @@ function answerFromBootstrap(input, summary, bootstrap) {
       `L1 chat runs on ${summary.replModel}/${summary.replEngine}; L2 uses router=${summary.routerProvider} and executor=${summary.executorProvider}; L3 uses configured worker/agent models.`,
       `Key repo files: ${keys}.`,
       `Docs index snapshot: ${docs}.`,
-      `Use /system for full stack summary and /models-config for exact model/provider config.`
+      `Use /system for full stack summary and /stack for exact model/provider config.`
     ].join(" ");
   }
   if (/\b(read|write|file access|filesystem|permissions)\b/.test(lower)) {
@@ -21371,17 +21634,13 @@ function printHelp(uiMode = "repl") {
   console.log("    /test-first <task> TDD: tests -> implement -> validate");
   console.log("    /image <path>      Attach image for next task (multimodal)\n");
   console.log(chalk3.magenta.bold("  \u{1F39B}\uFE0F  Model & Engine:"));
-  console.log("    /models [name]     List available models or switch directly");
-  console.log("    /models-config     Show configured models/providers from local config");
-  console.log("    /model <name>      Switch execution model directly");
-  console.log("    /engines [name]    List engines or switch directly");
-  console.log("    /engine <name>     Switch engine directly (auto|cursor|claude|gemini|codex|crew-cli)");
-  console.log("    /mode [name]       Cycle mode or set directly");
-  console.log("    /mode-info         Explain manual/assist/autopilot execution semantics");
-  console.log("    Shift+Tab          Cycle REPL mode");
-  console.log("    /auto-apply        Toggle auto-apply sandbox changes");
-  console.log("    /verbose           Toggle verbose routing output");
-  console.log("    /stack ...         Show or set 3-tier stack values without a picker\n");
+  console.log("    /stack             Show full L1/L2/L3 model stack");
+  console.log("    /stack <model>     Quick-set L1 chat model");
+  console.log("    /stack l1|l2|l3 <name>  Set model per tier");
+  console.log("    /stack bench       Benchmark & pricing table");
+  console.log("    /engine <name>     Switch engine (auto|cursor|claude|gemini|codex|crew-cli)");
+  console.log("    /mode [name]       Cycle mode (manual/assist/autopilot)");
+  console.log("    Shift+Tab          Cycle REPL mode\n");
   console.log(chalk3.green.bold("  \u{1F9E0} Memory & LSP:"));
   console.log("    /memory [query]    Show memory stats or recall");
   console.log("    /tools             Show tool capability matrix by mode/path");
@@ -21791,7 +22050,7 @@ async function startRepl(options) {
   const handleSlashCommand = async (rawInput) => {
     const trimmed = applySlashAlias(rawInput.trim(), slashAliases);
     if (!trimmed.startsWith("/")) return false;
-    const [command, ...args] = trimmed.split(/\s+/);
+    let [command, ...args] = trimmed.split(/\s+/);
     if (trimmed === "/") {
       printSlashCommandMenu();
       return true;
@@ -21898,118 +22157,20 @@ async function startRepl(options) {
       console.log("    - Auto-apply sandbox changes by default\n");
       return true;
     }
-    if (command === "/models-config") {
+    if (command === "/stack") {
       const summary = buildModelSummary(projectDir, replState);
       printModelSummary(summary);
       return true;
     }
     if (command === "/models") {
-      const subArg = (args[0] || "").trim().toLowerCase();
-      const modelValue = args.slice(1).join(" ").trim();
-      const tierMap = {
-        "l1": { env: "CREW_L1_MODEL", label: "L1 (chat)", replKey: "model" },
-        "l2": { env: "CREW_REASONING_MODEL", label: "L2 (reasoning)" },
-        "l2a": { env: "CREW_L2A_MODEL", label: "L2A (decomposer)" },
-        "l2b": { env: "CREW_L2B_MODEL", label: "L2B (validator)" },
-        "router": { env: "CREW_ROUTER_MODEL", label: "Router" },
-        "l3": { env: "CREW_L3_MODEL", label: "L3 (worker)" },
-        "qa": { env: "CREW_QA_MODEL", label: "L3 QA" },
-        "fixer": { env: "CREW_L3_FIXER_MODEL", label: "L3 Fixer" },
-        "review": { env: "CREW_L3_REVIEW_MODEL", label: "L3 Review" }
-      };
-      if (subArg && tierMap[subArg] && modelValue) {
-        const tier = tierMap[subArg];
-        process.env[tier.env] = modelValue;
-        if (tier.replKey) replState[tier.replKey] = modelValue;
-        console.log(chalk3.green(`
-  \u2713 ${tier.label} model set to: ${modelValue}
-`));
-        return true;
-      }
-      const requestedModel = args.join(" ").trim();
-      if (requestedModel && !tierMap[subArg]) {
-        replState.model = requestedModel;
-        console.log(chalk3.green(`
-  \u2713 L1 model set to: ${requestedModel}
-`));
-        return true;
-      }
-      console.log(chalk3.blue("\n--- Models by Tier ---\n"));
-      console.log(chalk3.cyan("  L1 (chat):"));
-      for (const model of AVAILABLE_MODELS) {
-        const current = model === replState.model ? chalk3.green(" \u2190 current") : "";
-        console.log(`    ${model}${current}`);
-      }
-      console.log(chalk3.cyan("\n  L2 (reasoning/planning):"));
-      console.log(`    CREW_REASONING_MODEL : ${process.env.CREW_REASONING_MODEL || chalk3.gray("(unset \u2014 uses L1)")}`);
-      console.log(`    CREW_L2A_MODEL       : ${process.env.CREW_L2A_MODEL || chalk3.gray("(unset)")}`);
-      console.log(`    CREW_L2B_MODEL       : ${process.env.CREW_L2B_MODEL || chalk3.gray("(unset)")}`);
-      console.log(`    CREW_ROUTER_MODEL    : ${process.env.CREW_ROUTER_MODEL || chalk3.gray("(unset)")}`);
-      console.log(chalk3.cyan("\n  L3 (workers):"));
-      console.log(`    CREW_L3_MODEL        : ${process.env.CREW_L3_MODEL || chalk3.gray("(unset \u2014 uses L1)")}`);
-      console.log(`    CREW_QA_MODEL        : ${process.env.CREW_QA_MODEL || chalk3.gray("(unset)")}`);
-      console.log(`    CREW_L3_FIXER_MODEL  : ${process.env.CREW_L3_FIXER_MODEL || chalk3.gray("(unset)")}`);
-      console.log(`    CREW_L3_REVIEW_MODEL : ${process.env.CREW_L3_REVIEW_MODEL || chalk3.gray("(unset)")}`);
-      console.log(chalk3.gray("\n  Set per tier:"));
-      console.log(chalk3.gray("    /models l1 <name>      \u2014 L1 chat model"));
-      console.log(chalk3.gray("    /models l2 <name>      \u2014 L2 reasoning model"));
-      console.log(chalk3.gray("    /models l3 <name>      \u2014 L3 worker model"));
-      console.log(chalk3.gray("    /models qa <name>      \u2014 L3 QA model"));
-      console.log(chalk3.gray("    /models fixer <name>   \u2014 L3 fixer model"));
-      console.log(chalk3.gray("    /models <name>         \u2014 shorthand for L1\n"));
-      return true;
+      args.unshift(...args.length === 0 ? ["show"] : []);
+      command = "/stack";
     }
     if (command === "/model") {
-      const modelName = args.join(" ").trim();
-      if (!modelName) {
-        try {
-          const { MODEL_CATALOG: MODEL_CATALOG2, formatModelTable: formatModelTable2, findModelInfo: findModelInfo2 } = await Promise.resolve().then(() => (init_model_info(), model_info_exports));
-          const current = findModelInfo2(replState.model);
-          console.log(chalk3.blue("\n  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557"));
-          console.log(chalk3.blue("  \u2551                        MODEL BENCHMARK & PRICING                            \u2551"));
-          console.log(chalk3.blue("  \u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n"));
-          console.log(chalk3.gray("  Scores from OpenRouter coding benchmark (March 2026)\n"));
-          console.log(chalk3.cyan("  Heavy Tier (L2 Brain):"));
-          console.log(formatModelTable2(MODEL_CATALOG2.filter((m) => m.tier === "heavy")));
-          console.log(chalk3.cyan("\n  Standard Tier (L3 Workers):"));
-          console.log(formatModelTable2(MODEL_CATALOG2.filter((m) => m.tier === "standard")));
-          console.log(chalk3.cyan("\n  Fast Tier (L1 Routing):"));
-          console.log(formatModelTable2(MODEL_CATALOG2.filter((m) => m.tier === "fast")));
-          if (current) {
-            console.log(chalk3.green(`
-  Current: ${current.name} (${current.provider}) \u2014 score ${current.codingScore}, $${current.inputCost}/$${current.outputCost}/M`));
-          } else {
-            console.log(chalk3.yellow(`
-  Current: ${replState.model} (not in catalog)`));
-          }
-          console.log(chalk3.gray(`
-  Usage: /model <name>  \u2014 e.g. /model gpt-5.4
-`));
-        } catch {
-          console.log(chalk3.red("\n  \u2717 Could not load model catalog. Type /model <name> to set directly.\n"));
-        }
-      } else {
-        replState.model = modelName;
-        try {
-          const { findModelInfo: findModelInfo2 } = await Promise.resolve().then(() => (init_model_info(), model_info_exports));
-          const info = findModelInfo2(modelName);
-          if (info) {
-            console.log(chalk3.green(`
-  \u2713 Model: ${info.name} (${info.provider})`));
-            console.log(chalk3.gray(`    Score: ${info.codingScore} | Cost: $${info.inputCost}/$${info.outputCost}/M | Context: ${info.contextWindow}${info.note ? ` | ${info.note}` : ""}
-`));
-          } else {
-            console.log(chalk3.green(`
-  \u2713 Model set to: ${modelName}
-`));
-          }
-        } catch {
-          console.log(chalk3.green(`
-  \u2713 Model set to: ${modelName}
-`));
-        }
+      if (args.length === 0) {
+        args = ["show"];
       }
-      return true;
+      command = "/stack";
     }
     if (command === "/engines") {
       const requestedEngine = (args[0] || "").trim();
@@ -22071,6 +22232,25 @@ async function startRepl(options) {
     if (command === "/stack") {
       const subcommand = (args[0] || "show").trim().toLowerCase();
       const stackValue = args.slice(1).join(" ").trim();
+      const tierShortcuts = {
+        "l1": { env: "CREW_L1_MODEL", label: "L1 (chat)", replKey: "model" },
+        "l2": { env: "CREW_REASONING_MODEL", label: "L2 (reasoning)" },
+        "l2a": { env: "CREW_L2A_MODEL", label: "L2A (decomposer)" },
+        "l2b": { env: "CREW_L2B_MODEL", label: "L2B (validator)" },
+        "l3": { env: "CREW_L3_MODEL", label: "L3 (worker)" },
+        "qa": { env: "CREW_QA_MODEL", label: "L3 QA" },
+        "fixer": { env: "CREW_L3_FIXER_MODEL", label: "L3 Fixer" },
+        "review": { env: "CREW_L3_REVIEW_MODEL", label: "L3 Review" }
+      };
+      if (tierShortcuts[subcommand] && stackValue) {
+        const tier = tierShortcuts[subcommand];
+        process.env[tier.env] = stackValue;
+        if (tier.replKey) replState[tier.replKey] = stackValue;
+        console.log(chalk3.green(`
+  \u2713 ${tier.label} model set to: ${stackValue}
+`));
+        return true;
+      }
       const stackFieldMap = {
         "l1-model": "CREW_L1_MODEL",
         "router-model": "CREW_ROUTER_MODEL",
@@ -22084,37 +22264,86 @@ async function startRepl(options) {
         "extra-validators": "CREW_L2_EXTRA_VALIDATORS",
         "max-parallel-workers": "CREW_MAX_PARALLEL_WORKERS"
       };
+      if (subcommand !== "show" && !tierShortcuts[subcommand] && !stackFieldMap[subcommand] && subcommand !== "router" && subcommand !== "executor" && subcommand !== "gateway" && subcommand !== "bench") {
+        replState.model = subcommand;
+        process.env.CREW_L1_MODEL = subcommand;
+        try {
+          const { findModelInfo: findModelInfo2 } = await Promise.resolve().then(() => (init_model_info(), model_info_exports));
+          const info = findModelInfo2(subcommand);
+          if (info) {
+            console.log(chalk3.green(`
+  \u2713 L1 model: ${info.name} (${info.provider})`));
+            console.log(chalk3.gray(`    Score: ${info.codingScore} | Cost: $${info.inputCost}/$${info.outputCost}/M | Context: ${info.contextWindow}${info.note ? ` | ${info.note}` : ""}
+`));
+          } else {
+            console.log(chalk3.green(`
+  \u2713 L1 model set to: ${subcommand}
+`));
+          }
+        } catch {
+          console.log(chalk3.green(`
+  \u2713 L1 model set to: ${subcommand}
+`));
+        }
+        return true;
+      }
+      if (subcommand === "bench") {
+        try {
+          const { MODEL_CATALOG: MODEL_CATALOG2, formatModelTable: formatModelTable2, findModelInfo: findModelInfo2 } = await Promise.resolve().then(() => (init_model_info(), model_info_exports));
+          const current = findModelInfo2(replState.model);
+          console.log(chalk3.blue("\n  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557"));
+          console.log(chalk3.blue("  \u2551                        MODEL BENCHMARK & PRICING                            \u2551"));
+          console.log(chalk3.blue("  \u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n"));
+          console.log(chalk3.gray("  Scores from OpenRouter coding benchmark (March 2026)\n"));
+          console.log(chalk3.cyan("  Heavy Tier (L2 Brain):"));
+          console.log(formatModelTable2(MODEL_CATALOG2.filter((m) => m.tier === "heavy")));
+          console.log(chalk3.cyan("\n  Standard Tier (L3 Workers):"));
+          console.log(formatModelTable2(MODEL_CATALOG2.filter((m) => m.tier === "standard")));
+          console.log(chalk3.cyan("\n  Fast Tier (L1 Routing):"));
+          console.log(formatModelTable2(MODEL_CATALOG2.filter((m) => m.tier === "fast")));
+          if (current) {
+            console.log(chalk3.green(`
+  Current: ${current.name} (${current.provider}) \u2014 score ${current.codingScore}, $${current.inputCost}/$${current.outputCost}/M`));
+          } else {
+            console.log(chalk3.yellow(`
+  Current: ${replState.model} (not in catalog)`));
+          }
+          console.log(chalk3.gray(`
+  Usage: /stack <model>  \u2014 e.g. /stack gpt-5.4
+`));
+        } catch {
+          console.log(chalk3.red("\n  \u2717 Could not load model catalog.\n"));
+        }
+        return true;
+      }
       if (subcommand === "show") {
-        console.log(chalk3.blue("\n--- Stack (session) ---\n"));
-        console.log(`  Tier 1 router provider : ${replState.routerProvider}`);
-        console.log(`  Tier 2 executor provider: ${replState.executorProvider}`);
-        console.log(`  Tier 3 gateway         : ${replState.useGateway ? "enabled" : "disabled"}`);
-        console.log(`  CREW_L1_MODEL          : ${process.env.CREW_L1_MODEL || "(unset)"}`);
-        console.log(`  CREW_ROUTER_MODEL      : ${process.env.CREW_ROUTER_MODEL || "(unset)"}`);
-        console.log(`  CREW_REASONING_MODEL   : ${process.env.CREW_REASONING_MODEL || "(unset)"}`);
-        console.log(`  CREW_L2A_MODEL         : ${process.env.CREW_L2A_MODEL || "(unset)"}`);
-        console.log(`  CREW_L2B_MODEL         : ${process.env.CREW_L2B_MODEL || "(unset)"}`);
-        console.log(`  CREW_QA_MODEL          : ${process.env.CREW_QA_MODEL || "(unset)"}`);
-        console.log(`  CREW_L3_MODEL          : ${process.env.CREW_L3_MODEL || "(unset)"}`);
-        console.log(`  CREW_L3_REVIEW_MODEL   : ${process.env.CREW_L3_REVIEW_MODEL || "(unset)"}`);
-        console.log(`  CREW_L3_FIXER_MODEL    : ${process.env.CREW_L3_FIXER_MODEL || "(unset)"}`);
-        console.log(`  CREW_MAX_PARALLEL_WORKERS: ${process.env.CREW_MAX_PARALLEL_WORKERS || "(unset)"}
-`);
-        console.log(chalk3.gray("  Set values with:"));
+        console.log(chalk3.blue("\n--- Stack ---\n"));
+        console.log(chalk3.cyan("  L1 (chat):"));
+        console.log(`    Model  : ${replState.model}${process.env.CREW_L1_MODEL ? ` (env: ${process.env.CREW_L1_MODEL})` : ""}`);
+        console.log(`    Engine : ${replState.engine}`);
+        console.log(chalk3.cyan("\n  L2 (reasoning/planning):"));
+        console.log(`    Router provider  : ${replState.routerProvider}`);
+        console.log(`    Executor provider: ${replState.executorProvider}`);
+        console.log(`    Reasoning model  : ${process.env.CREW_REASONING_MODEL || chalk3.gray("(unset \u2014 uses L1)")}`);
+        console.log(`    L2A (decomposer) : ${process.env.CREW_L2A_MODEL || chalk3.gray("(unset)")}`);
+        console.log(`    L2B (validator)  : ${process.env.CREW_L2B_MODEL || chalk3.gray("(unset)")}`);
+        console.log(`    Router model     : ${process.env.CREW_ROUTER_MODEL || chalk3.gray("(unset)")}`);
+        console.log(chalk3.cyan("\n  L3 (workers):"));
+        console.log(`    Gateway          : ${replState.useGateway ? "enabled" : "disabled"}`);
+        console.log(`    Worker model     : ${process.env.CREW_L3_MODEL || chalk3.gray("(unset \u2014 uses L1)")}`);
+        console.log(`    QA model         : ${process.env.CREW_QA_MODEL || chalk3.gray("(unset)")}`);
+        console.log(`    Fixer model      : ${process.env.CREW_L3_FIXER_MODEL || chalk3.gray("(unset)")}`);
+        console.log(`    Review model     : ${process.env.CREW_L3_REVIEW_MODEL || chalk3.gray("(unset)")}`);
+        console.log(`    Max parallel     : ${process.env.CREW_MAX_PARALLEL_WORKERS || chalk3.gray("(unset)")}`);
+        console.log(chalk3.gray("\n  Set models:"));
+        console.log(chalk3.gray("    /stack l1 <model>       /stack l2 <model>       /stack l3 <model>"));
+        console.log(chalk3.gray("    /stack qa <model>       /stack fixer <model>    /stack review <model>"));
+        console.log(chalk3.gray("    /stack <model>          \u2014 quick L1 set"));
+        console.log(chalk3.gray("    /stack bench            \u2014 benchmark & pricing table"));
+        console.log(chalk3.gray("  Set providers:"));
         console.log(chalk3.gray("    /stack router <grok|gemini|deepseek>"));
         console.log(chalk3.gray("    /stack executor <grok|gemini|deepseek>"));
-        console.log(chalk3.gray("    /stack gateway <on|off>"));
-        console.log(chalk3.gray("    /stack l1-model <value>"));
-        console.log(chalk3.gray("    /stack router-model <value>"));
-        console.log(chalk3.gray("    /stack reasoning-model <value>"));
-        console.log(chalk3.gray("    /stack l2a-model <value>"));
-        console.log(chalk3.gray("    /stack l2b-model <value>"));
-        console.log(chalk3.gray("    /stack qa-model <value>"));
-        console.log(chalk3.gray("    /stack l3-model <value>"));
-        console.log(chalk3.gray("    /stack l3-review-model <value>"));
-        console.log(chalk3.gray("    /stack l3-fixer-model <value>"));
-        console.log(chalk3.gray("    /stack extra-validators <csv>"));
-        console.log(chalk3.gray("    /stack max-parallel-workers <1-32>\n"));
+        console.log(chalk3.gray("    /stack gateway <on|off>\n"));
         return true;
       }
       if (subcommand === "router" || subcommand === "executor") {
