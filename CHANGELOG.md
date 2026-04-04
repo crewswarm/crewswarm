@@ -8,30 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.4] - 2026-04-03
 
 ### Added
-- **Dashboard Testing tab**: live test progress with suite breakdown, pass/fail counts, and run history. Runs all 4,355 tests and streams results in real time.
-- **Dynamic OpenAPI spec**: `openapi.complete.v2.json` now covers 262 operations across 223 paths (was 142 endpoints in v1).
+- **Dashboard Testing tab**: live test progress with 8 distinct features — per-file run, stale-file indicators, live SSE stream, failure drill-down, screenshot capture, coverage heatmap, run history chart, and suite breakdown. Runs all 4,530 tests and streams results in real time.
+- **Dynamic OpenAPI spec**: `openapi.complete.v2.json` now auto-discovers 264 operations across 223+ paths (was 142 endpoints in v1). Generator runs at startup and picks up new endpoints automatically.
+- **Git worktree isolation for parallel wave agents**: L3 parallel executor now places each agent in its own `git worktree` on a separate branch, preventing file-write conflicts during concurrent wave execution.
+- **crew-cli agentic features** (via `crew-cli@0.3.5`): streaming tool execution, smart request batching, context compaction, abort support, budget enforcement, history clearing, and scratchpad memory.
+- **crew-cli long-run stability** (via `crew-cli@0.3.5`): max-output recovery for truncated tool results, post-sampling hooks for custom processing, and reactive context compaction triggered by token threshold.
+- **6 new crew-cli tools** (via `crew-cli@0.3.5`): LSP (type-check + autocomplete), NotebookEdit (Jupyter cell editing), SpawnAgent (sub-agent dispatch), Worktree (isolated branch execution), Sleep (timed waits), ToolSearch (dynamic tool discovery).
+- 4 new test API endpoints: stale-check, live stream, screenshot capture, coverage-map — all auto-discovered by the OpenAPI generator.
 - Published `crewswarm@0.9.4` and `crew-cli@0.3.5` to npm.
 
 ### Changed
-- Dashboard async I/O: converted 249 sync `fs` calls to async to eliminate Node 25 blocking on SSE.
-- Test count: 4,355 passing across 273 files (up from 2,500+).
+- Dashboard async I/O: converted 249 sync `fs` calls to async to eliminate Node 25 blocking on SSE connections.
+- Test count: 4,530 passing across 273 files (up from ~2,500 before the testing overhaul). crew-cli accounts for 906 of those tests.
+- Removed internal planning docs, roadmaps, and stale files from the public repo.
+- `crew doctor` reports test suite health alongside API key and gateway checks.
 
 ### Fixed
-- 12 source bugs found and fixed during testing overhaul (spending tracker, OAuth TTL, proxy routing, and more).
+- 12 source bugs found and fixed during testing overhaul — spending double-count on multi-turn tasks, OAuth TTL pre-expiry refresh, DLQ replay race condition, async I/O blocking on Node 25, proxy routing, and more.
+- Install script bugs: corrected alias paths, package names, and post-install checks.
+- Dynamic Gemini declaration builder: `CREW_GEMINI_DYNAMIC_DECLARATIONS` default now correctly `true`.
+- `/model` and `/models` command collision in crew-cli REPL — consolidated into `/stack` with `--legacy-router` fallback.
 
 ---
 
 ## [0.9.3] - 2026-04-02
 
 ### Added
-- **Testing overhaul**: 5,000+ test targets with 100% pass rate. Added 33 new unit tests, 10 new Playwright browser specs, 50 new integration tests (OAuth TTL, spending bug, async I/O).
-- **crew-cli OAuth models**: all three Claude models (Haiku/Sonnet/Opus) plus OpenAI GPT-5.x confirmed working via CCH signing.
-- **Dashboard Models page**: OAuth section with token cache, 5 endpoints, `allModels` injection, 56 new tests.
+- **Testing overhaul**: 5,000+ test targets with 100% pass rate across 273 files. Added 33 new unit tests, 10 new Playwright browser specs, and 50 new integration tests covering OAuth TTL, spending bug, async I/O on Node 25, and proxy routing.
+- **crew-cli OAuth models**: all three Claude models (Haiku / Sonnet / Opus) plus OpenAI GPT-5.x confirmed working via CCH signing. Tokens sourced from existing CLI session — no extra API cost.
+- **Dashboard Models page OAuth section**: token cache display, 5 new endpoints (`/oauth/token`, `/oauth/refresh`, `/oauth/status`, `/oauth/models`, `/oauth/revoke`), and `allModels` injection into the model picker. 56 new tests cover OAuth TTL, token refresh, and model enumeration.
+- **`CREWSWARM_TEST_MODE` guard**: strict `"true"` equality check (not `"1"`) prevents test runs from writing to real config paths.
 
 ### Fixed
-- OAuth TTL handling: tokens now refresh before expiry instead of on 401.
-- Spending tracker: fixed double-counting on multi-turn tasks.
-- Dashboard proxy: `crewLeadRequest` now handles SSE correctly on Node 25.
+- OAuth TTL handling: tokens now refresh proactively before expiry rather than waiting for a 401 response.
+- Spending tracker: fixed double-counting on multi-turn tasks where tool-result turns were billed twice.
+- Dashboard proxy: `crewLeadRequest` now handles SSE streams correctly on Node 25 (was blocking on sync I/O inside an async handler).
 
 ---
 
