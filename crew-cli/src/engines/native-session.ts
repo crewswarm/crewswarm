@@ -26,8 +26,31 @@ type RuntimeSession = {
   updatedAt: string;
   turns: number;
   busy: boolean;
-  pty: any;
+  pty: PtyProcessLike;
 };
+
+interface PtyProcessLike {
+  onData(cb: (data: string) => void): void;
+  onExit(cb: (info: { exitCode: number; signal: number }) => void): void;
+  off(event: 'data', listener: (data: string) => void): void;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+}
+
+interface PtySpawnLike {
+  (
+    file: string,
+    args: string | string[],
+    options: {
+      name: string;
+      cwd: string;
+      cols: number;
+      rows: number;
+      env: NodeJS.ProcessEnv;
+    }
+  ): PtyProcessLike;
+}
 
 type SessionStore = Record<string, Omit<NativeSessionSummary, 'alive'>>;
 
@@ -46,7 +69,7 @@ export class NativeEngineSessionManager {
   private readonly stateDir: string;
   private readonly statePath: string;
   private readonly runtime = new Map<string, RuntimeSession>();
-  private ptySpawn: any | null = null;
+  private ptySpawn: PtySpawnLike | null = null;
   private ptyLoadFailed = false;
 
   constructor(baseDir: string = process.cwd()) {
@@ -83,11 +106,11 @@ export class NativeEngineSessionManager {
     await writeFile(this.statePath, JSON.stringify(store, null, 2), 'utf8');
   }
 
-  private async getPtySpawn(): Promise<any | null> {
+  private async getPtySpawn(): Promise<PtySpawnLike | null> {
     if (this.ptySpawn) return this.ptySpawn;
     if (this.ptyLoadFailed) return null;
     try {
-      const mod = await import('node-pty');
+      const mod = await import('node-pty') as unknown as { spawn?: PtySpawnLike; default?: { spawn?: PtySpawnLike } };
       this.ptySpawn = mod?.spawn || mod?.default?.spawn || null;
       return this.ptySpawn;
     } catch {
@@ -175,7 +198,7 @@ export class NativeEngineSessionManager {
   async closeAll(): Promise<void> {
     for (const [key, session] of this.runtime.entries()) {
       try {
-        session.pty?.kill?.();
+        session.pty.kill();
       } catch {
         // ignore
       }

@@ -1,5 +1,6 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { UnifiedServerOptions } from './server.js';
+import type { CollectionChunk } from '../collections/index.js';
 
 interface McpRequest {
   jsonrpc: string;
@@ -285,7 +286,7 @@ async function handleToolCall(
           const hits = searchCollection(idx, query, limit);
           result = {
             query,
-            results: hits.hits.map((r: Record<string, unknown>) => ({
+            results: hits.hits.map((r: CollectionChunk) => ({
               file: r.source,
               line: r.startLine,
               text: r.text.slice(0, 500),

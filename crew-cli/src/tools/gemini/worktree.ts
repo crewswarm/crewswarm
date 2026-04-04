@@ -103,10 +103,11 @@ class WorktreeToolInvocation extends BaseToolInvocation<WorktreeToolParams, Tool
           if (shouldMerge && info) {
             try {
               git(`merge --no-ff ${branch}`, projectDir);
-            } catch (mergeErr: any) {
+            } catch (mergeErr: unknown) {
+              const msg = (mergeErr as Error).message;
               return {
-                llmContent: `Merge failed before exit: ${mergeErr.message}. Worktree NOT removed.`,
-                returnDisplay: `Merge failed: ${mergeErr.message}`,
+                llmContent: `Merge failed before exit: ${msg}. Worktree NOT removed.`,
+                returnDisplay: `Merge failed: ${msg}`,
               };
             }
           }
@@ -132,8 +133,8 @@ class WorktreeToolInvocation extends BaseToolInvocation<WorktreeToolParams, Tool
           let mergeOutput = '';
           try {
             mergeOutput = git(`merge --no-ff ${branch}`, projectDir);
-          } catch (mergeErr: any) {
-            const conflictMsg = `Merge conflict: ${mergeErr.message}`;
+          } catch (mergeErr: unknown) {
+            const conflictMsg = `Merge conflict: ${(mergeErr as Error).message}`;
             return { llmContent: conflictMsg, returnDisplay: conflictMsg };
           }
 

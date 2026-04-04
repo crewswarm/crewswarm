@@ -111,15 +111,54 @@ export interface BrowserDebugResult {
   screenshotPath?: string;
 }
 
+interface DevToolsTarget {
+  type?: string;
+  webSocketDebuggerUrl?: string;
+}
+
+interface DevToolsVersionResponse {
+  webSocketDebuggerUrl?: string;
+}
+
+interface ConsoleArg {
+  value?: string | number | boolean | null;
+  description?: string;
+}
+
+interface ConsoleApiParams {
+  type?: string;
+  args?: ConsoleArg[];
+}
+
+interface ExceptionParams {
+  exceptionDetails?: {
+    text?: string;
+  };
+}
+
+interface LogEntryParams {
+  entry?: {
+    level?: string;
+    text?: string;
+  };
+}
+
+interface CaptureScreenshotResponse {
+  result?: {
+    data?: string;
+  };
+  data?: string;
+}
+
 export async function getPageWsUrl(port: number, timeoutMs = 10000): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json`);
       if (res.ok) {
-        const targets = await res.json() as Array<Record<string, unknown>>;
+        const targets = await res.json() as DevToolsTarget[];
         const page = targets.find(t => t.type === 'page');
-        if (page && page.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
+        if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
       }
     } catch {
       // retry
@@ -135,7 +174,7 @@ export async function waitForWsDebuggerUrl(port: number, timeoutMs = 10000): Pro
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json/version`);
       if (res.ok) {
-        const data = await res.json() as Record<string, unknown>;
+        const data = await res.json() as DevToolsVersionResponse;
         if (data.webSocketDebuggerUrl) return data.webSocketDebuggerUrl;
       }
     } catch {
@@ -165,22 +204,25 @@ export async function runBrowserDebug(url: string, options: { port?: number; dur
     const errors: string[] = [];
 
     client.on('Runtime.consoleAPICalled', params => {
-      const level = params.type || 'log';
+      const consoleParams = params as ConsoleApiParams;
+      const level = consoleParams.type || 'log';
       if (level === 'error' || level === 'warning') {
-        const text = ((params.args || []) as Array<Record<string, unknown>>).map((a) => a.value || a.description || '').join(' ');
+        const text = (consoleParams.args || []).map((a) => a.value || a.description || '').join(' ');
         errors.push(`[console:${level}] ${text}`.trim());
       }
     });
 
     client.on('Runtime.exceptionThrown', params => {
-      const desc = params.exceptionDetails?.text || 'Exception thrown';
+      const exceptionParams = params as ExceptionParams;
+      const desc = exceptionParams.exceptionDetails?.text || 'Exception thrown';
       errors.push(`[exception] ${desc}`);
     });
 
     client.on('Log.entryAdded', params => {
-      const level = params.entry?.level || 'info';
+      const logParams = params as LogEntryParams;
+      const level = logParams.entry?.level || 'info';
       if (level === 'error' || level === 'warning') {
-        errors.push(`[log:${level}] ${params.entry?.text || ''}`.trim());
+        errors.push(`[log:${level}] ${logParams.entry?.text || ''}`.trim());
       }
     });
 
@@ -191,11 +233,11 @@ export async function runBrowserDebug(url: string, options: { port?: number; dur
     await new Promise(resolve => setTimeout(resolve, durationMs));
 
     let screenshotPath = options.screenshotPath;
-    const screenshotRes = await client.send('Page.captureScreenshot', { format: 'png', fromSurface: true });
+    const screenshotRes = await client.send('Page.captureScreenshot', { format: 'png', fromSurface: true }) as CaptureScreenshotResponse;
     if (!screenshotPath) {
       screenshotPath = join(process.cwd(), '.crew', `browser-shot-${Date.now()}.png`);
     }
-    await writeFile(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data, 'base64'));
+    await writeFile(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data || '', 'base64'));
 
     return { consoleErrors: errors, screenshotPath };
   } finally {

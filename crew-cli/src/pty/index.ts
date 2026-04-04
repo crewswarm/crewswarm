@@ -15,14 +15,36 @@ export interface PtyRunResult {
   output: string;
 }
 
+interface PtyProcessLike {
+  onData(cb: (data: string) => void): void;
+  onExit(cb: (info: { exitCode: number; signal: number }) => void): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+}
+
+interface PtyPackageLike {
+  spawn(
+    file: string,
+    args: string | string[],
+    options: {
+      name: string;
+      cwd: string;
+      cols: number;
+      rows: number;
+      env: NodeJS.ProcessEnv;
+    }
+  ): PtyProcessLike;
+}
+
 export async function runPtyCommand(command: string, options: PtyRunOptions = {}): Promise<PtyRunResult> {
   if (!command || !String(command).trim()) {
     throw new Error('PTY command is required');
   }
 
-  let ptyPackage: any = null;
+  let ptyPackage: PtyPackageLike | null = null;
   try {
-    ptyPackage = await import('node-pty');
+    const mod = await import('node-pty') as { spawn?: PtyPackageLike['spawn']; default?: PtyPackageLike };
+    ptyPackage = mod.default || (mod.spawn ? { spawn: mod.spawn } : null);
   } catch {
     ptyPackage = null;
   }
@@ -37,7 +59,7 @@ export async function runPtyCommand(command: string, options: PtyRunOptions = {}
   return runWithInherit(command, options);
 }
 
-async function runWithNodePty(command: string, options: PtyRunOptions, ptyPackage: any): Promise<PtyRunResult> {
+async function runWithNodePty(command: string, options: PtyRunOptions, ptyPackage: PtyPackageLike): Promise<PtyRunResult> {
   return new Promise(resolve => {
     const shell = options.shell || process.env.SHELL || '/bin/bash';
     const pty = ptyPackage.spawn(shell, ['-lc', command], {

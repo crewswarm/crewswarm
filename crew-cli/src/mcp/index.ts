@@ -130,7 +130,7 @@ export async function syncServerToClient(name: string, config: McpServerConfig, 
   }
   const path = clientPath(client);
   const store = await loadStore(path);
-  const payload: Record<string, unknown> = { url: config.url };
+  const payload: McpServerConfig = { url: config.url };
 
   if (config.headers && Object.keys(config.headers).length) {
     payload.headers = config.headers;

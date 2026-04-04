@@ -304,7 +304,7 @@ class NotebookEditToolInvocation extends BaseToolInvocation<NotebookEditToolPara
         const outputText = this.formatOutputs(outputs);
         const result = `Cell ${index} executed.\n${outputText}`;
         return { llmContent: result, returnDisplay: result };
-      } catch (jupyterErr: any) {
+      } catch (jupyterErr: unknown) {
         await fsPromises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
         // Fall through to python -c fallback
       }
@@ -321,8 +321,9 @@ class NotebookEditToolInvocation extends BaseToolInvocation<NotebookEditToolPara
       });
       const result = `Cell ${index} executed (via python3):\n${out.trim() || '(no output)'}`;
       return { llmContent: result, returnDisplay: result };
-    } catch (pyErr: any) {
-      const stderr = pyErr?.stderr?.toString?.()?.trim() || pyErr?.message || 'execution failed';
+    } catch (pyErr: unknown) {
+      const e = pyErr as { stderr?: { toString(): string }; message?: string };
+      const stderr = e?.stderr?.toString?.()?.trim() || e?.message || 'execution failed';
       return { llmContent: `Cell ${index} execution failed:\n${stderr}`, returnDisplay: `Execution failed` };
     }
   }
