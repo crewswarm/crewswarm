@@ -1369,8 +1369,10 @@
           <h2>Chat brain vs execution</h2>
           <p>
             This is the distinction most model pages miss. Some crewswarm roles are mostly direct LLMs. Coding roles
-            usually need a real execution engine. The chat model you talk to and the model that actually executes work
-            do not always need to be the same.
+            usually need a real execution engine &mdash; Claude Code CLI, Codex CLI, Gemini CLI, Cursor CLI, OpenCode, or the native crew-cli executor &mdash;
+            so the model gets tool access, file edits, and terminal capabilities. Assigning a powerful model like Claude Opus 4.6
+            or GPT-5.4 to a coding role via Direct API wastes its potential; route it through a CLI engine instead.
+            The chat model you talk to and the model that actually executes work do not always need to be the same.
           </p>
         </div>
         <div class="models-rank-card">
@@ -1441,20 +1443,20 @@
         </div>
         <div class="models-mini-grid">
           <article class="models-mini-card">
-            <h4>Direct LLM roles</h4>
-            <p>`crew-pm`, `crew-qa`, `crew-seo`, `crew-copywriter`, `crew-telegram`, and many coordinator roles can often run as direct LLM lanes without a heavy CLI execution surface.</p>
+            <h4>Chat &amp; research &rarr; Direct API</h4>
+            <p><code>crew-pm</code>, <code>crew-qa</code>, <code>crew-seo</code>, <code>crew-copywriter</code>, <code>crew-telegram</code>, and coordinator roles run fine as cheap, fast Direct API lanes. Use Gemini 2.5 Flash, Grok 4.1 Fast, or Perplexity Sonar &mdash; no CLI overhead needed.</p>
           </article>
           <article class="models-mini-card">
-            <h4>CLI execution roles</h4>
-            <p>`crew-coder`, `crew-fixer`, `crew-coder-front`, and `crew-coder-back` usually want Codex CLI, Claude Code, or OpenCode because real coding work needs tools, terminals, and file edits.</p>
+            <h4>Coding &amp; fixing &rarr; CLI engine</h4>
+            <p><code>crew-coder</code>, <code>crew-fixer</code>, <code>crew-coder-front</code>, and <code>crew-coder-back</code> should always run through a CLI engine (Claude Code, Codex CLI, Gemini CLI, Cursor CLI, OpenCode, or crew-cli). Assign strong models here &mdash; Claude Sonnet 4.6, GPT-5.4, Kimi K2.5 &mdash; so they get tool access, file edits, and terminals.</p>
           </article>
           <article class="models-mini-card">
-            <h4>Chat vs worker model</h4>
-            <p>You can chat with an agent using one strong brain model and still execute the task on a different cheaper or more specialized worker model underneath.</p>
+            <h4>Don't waste big models on Direct API</h4>
+            <p>A model like Claude Opus 4.6 or GPT-5.4 behind a Direct API call can only generate text. Route it through a CLI engine and it can read files, run tests, edit code, and use 34+ tools. Execution mode matters as much as model choice.</p>
           </article>
           <article class="models-mini-card">
             <h4>Where Cursor fits</h4>
-            <p>Cursor CLI is a good reasoning/chat surface, especially with `composer-2-fast`, but it should not be treated as the universal answer for every hard execution lane.</p>
+            <p>Cursor CLI is a good reasoning/chat surface, especially with <code>composer-2-fast</code>, but it should not be treated as the universal answer for every hard execution lane.</p>
           </article>
         </div>
       </div>

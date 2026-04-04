@@ -242,25 +242,39 @@ bash install.sh</code></pre>
       <!-- EXECUTION MODES -->
       <section class="docs-section">
         <h2>Execution Modes</h2>
+        <p>CrewSwarm supports seven execution engines plus a direct API mode. Coding roles (crew-coder, crew-fixer, crew-coder-front/back) should always run through a CLI engine so they get tool access, file edits, and terminal capabilities. Analysis and planning roles can use Direct API.</p>
         <div class="grid-2">
           <div class="page-card">
             <h3>Direct API</h3>
-            <p>Agents call LLMs (Groq, Anthropic, OpenAI) directly. Best for analysis and planning tasks that don't
+            <p>Agents call LLMs (Groq, Anthropic, OpenAI, Google, xAI) directly. Best for analysis, planning, and chat-only roles that don't
               require file system access.</p>
           </div>
           <div class="page-card">
-            <h3>OpenCode (Default)</h3>
+            <h3>OpenCode <span style="opacity:.5">(Default)</span></h3>
             <p>Recommended coding runtime for many agent tasks. Good fit when you want tool access, file edits, and sandboxed execution in one lane.</p>
           </div>
           <div class="page-card">
             <h3>Claude Code CLI</h3>
-            <p>Uses Anthropic's native <code>claude -p</code> CLI for tasks that benefit from its codebase reasoning and workflow style.</p>
+            <p>Uses Anthropic's native <code>claude -p</code> CLI for tasks that benefit from its codebase reasoning and workflow style. Runs Claude Sonnet 4.6 or Opus 4.6.</p>
           </div>
           <div class="page-card">
             <h3>Cursor CLI</h3>
-            <p>Uses Cursor's CLI when you want its composer workflow, model access, and editor-style coding lane inside the swarm.</p>
+            <p>Uses Cursor's CLI when you want its composer workflow, model access, and editor-style coding lane inside the swarm. Default model: <code>composer-2-fast</code>.</p>
+          </div>
+          <div class="page-card">
+            <h3>Gemini CLI</h3>
+            <p>Uses Google's <code>gemini</code> CLI for tasks that benefit from Gemini's large context window and multimodal capabilities. Runs Gemini 2.5 Flash or 3.1 Pro.</p>
+          </div>
+          <div class="page-card">
+            <h3>Codex CLI</h3>
+            <p>Uses OpenAI's <code>codex</code> CLI for coding tasks routed through GPT-5.x models. Good fit for code generation, edits, and tool-use workflows via OpenAI's stack.</p>
+          </div>
+          <div class="page-card">
+            <h3>crew-cli <span style="opacity:.5">(Native)</span></h3>
+            <p>CrewSwarm's built-in L3 executor with 34+ tools (LSP, git, web, memory, tracker). Multi-model routing, JIT context discovery, and streaming output without an external CLI dependency.</p>
           </div>
         </div>
+        <p style="margin-top:1.5rem;opacity:.7">Engine selection: <code>crew config set engine &lt;name&gt;</code> or pass <code>--engine</code> per task. Set to <code>auto</code> to let the runtime pick based on role and model.</p>
       </section>
 
       <!-- SESSION MANAGEMENT -->
