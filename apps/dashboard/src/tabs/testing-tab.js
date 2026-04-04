@@ -12,6 +12,10 @@ export function initTestingTab(deps = {}) {
 
 let pollTimer = null;
 
+// ── SSE stream state ──────────────────────────────────────────────────────────
+let streamEventSource = null;
+let streamOutput = "";
+
 export function showTesting() {
   hideAllViews();
   document.getElementById("testingView").classList.add("active");
@@ -20,11 +24,15 @@ export function showTesting() {
   persistState();
   loadTestingSummary();
   loadTestingHistory();
+  loadRunHistoryChart();
+  loadCoverageHeatmap();
+  loadStaleFiles();
   // Check if tests are already running
   getJSON("/api/tests/progress").then(p => {
     if (p.running && !progressPollId) {
       renderProgressBar();
       progressPollId = setInterval(renderProgressBar, 2000);
+      startStreamingOutput();
     }
   }).catch(() => {});
   if (pollTimer) clearInterval(pollTimer);
@@ -67,6 +75,17 @@ function passRate(passed, failed) {
 const SUITE_LABELS = { unit: "Unit", integration: "Integration", e2e: "E2E", all: "All", unknown: "Other" };
 const SUITE_COLORS = { unit: "#818cf8", integration: "#34d399", e2e: "#fbbf24", all: "#60a5fa", unknown: "#94a3b8" };
 
+// ── Stale files ───────────────────────────────────────────────────────────────
+
+let staleFiles = new Set();
+
+async function loadStaleFiles() {
+  try {
+    const data = await getJSON("/api/tests/stale");
+    staleFiles = new Set((data.stale || []).map(s => s.file));
+  } catch {}
+}
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 
 async function loadTestingSummary() {
@@ -89,7 +108,7 @@ async function loadTestingSummary() {
       { key: "unit", label: "Unit", files: fc.unit, tests: tc.unit, cmd: "test:unit", color: SUITE_COLORS.unit },
       { key: "integration", label: "Integration", files: fc.integration, tests: tc.integration, cmd: "test:integration", color: SUITE_COLORS.integration },
       { key: "e2e", label: "E2E", files: fc.e2e, tests: tc.e2e, cmd: "test:e2e", color: SUITE_COLORS.e2e },
-      { key: "playwright", label: "Playwright", files: fc.playwright, tests: tc.playwright, cmd: "test:e2e:vibe", color: "#f472b6" },
+      { key: "playwright", label: "Playwright", files: fc.playwright, tests: tc.playwright, cmd: "test:playwright", color: "#f472b6" },
       { key: "crew-cli", label: "crew-cli", files: fc["crew-cli"], tests: tc["crew-cli"], cmd: "test", color: "#10b981" },
     ];
     for (const item of launchItems) {
@@ -122,7 +141,7 @@ async function loadTestingSummary() {
       </div>`;
     html += '</div>';
 
-    // ── Per-suite cards ──
+    // ── Per-suite cards with file-level breakdown and per-file run buttons ──
     html += '<div class="test-section-title">Latest Results by Suite</div>';
     html += '<div class="test-suite-grid">';
     for (const suiteKey of ["unit", "integration", "e2e", "all"]) {
@@ -132,6 +151,36 @@ async function loadTestingSummary() {
       const statusClass = s.failed > 0 ? "test-status-fail" : "test-status-pass";
       const statusLabel = s.failed > 0 ? "FAIL" : "PASS";
       const color = SUITE_COLORS[suiteKey];
+      // Build per-file rows from tests array
+      let fileRows = "";
+      if (s.tests && s.tests.length > 0) {
+        const byFile = new Map();
+        for (const t of s.tests) {
+          const f = t.file || "unknown";
+          if (!byFile.has(f)) byFile.set(f, { pass: 0, fail: 0, skip: 0 });
+          const fb = byFile.get(f);
+          if (t.status === "pass") fb.pass++;
+          else if (t.status === "fail") fb.fail++;
+          else if (t.status === "skip") fb.skip++;
+        }
+        fileRows = '<div class="test-file-list">';
+        for (const [filePath, counts] of byFile) {
+          const shortFile = filePath.split("/").pop();
+          const relFile = filePath.replace(/^\/.*?CrewSwarm\//, "");
+          const isStale = staleFiles.has(relFile) || staleFiles.has(filePath);
+          const staleBadge = isStale ? '<span class="test-stale-badge" title="Source changed since last run">⚠️ stale</span>' : "";
+          const fileStatusDot = counts.fail > 0 ? "🔴" : "🟢";
+          fileRows += `
+            <div class="test-file-row">
+              <span class="test-file-dot">${fileStatusDot}</span>
+              <span class="test-file-name" title="${escHtml(filePath)}">${escHtml(shortFile)}</span>
+              ${staleBadge}
+              <span class="test-file-counts"><span class="test-color-pass">${counts.pass}p</span> <span class="${counts.fail > 0 ? 'test-color-fail' : ''}">${counts.fail}f</span></span>
+              <button class="test-file-run-btn" data-action="runSingleFile" data-arg="${escHtml(suiteKey)}" data-arg2="${escHtml(relFile)}" title="Run this file only">▶</button>
+            </div>`;
+        }
+        fileRows += '</div>';
+      }
       html += `
         <div class="test-suite-card">
           <div class="test-suite-header">
@@ -151,11 +200,12 @@ async function loadTestingSummary() {
             <div class="test-progress-pass" style="width:${ran > 0 ? ((s.passed || 0) / ran * 100) : 0}%"></div>
             <div class="test-progress-fail" style="width:${ran > 0 ? ((s.failed || 0) / ran * 100) : 0}%"></div>
           </div>
+          ${fileRows}
         </div>`;
     }
     html += '</div>';
 
-    // ── Failures ──
+    // ── Failures with drill-down ──────────────────────────────────────────────
     const allFailures = [];
     for (const s of Object.values(data.suites || {})) {
       if (s.failures) allFailures.push(...s.failures);
@@ -163,13 +213,43 @@ async function loadTestingSummary() {
     if (allFailures.length > 0) {
       html += `<div class="test-section-title">Failures (${allFailures.length})</div>`;
       for (const f of allFailures) {
+        const failureId = "fail-" + Math.random().toString(36).slice(2);
+        const relFile = (f.file || "").replace(/^\/.*?CrewSwarm\//, "");
+        const rerunCmd = f.rerun_command || "";
+        const errorLines = (f.error || "").split("\n").slice(0, 10).join("\n");
+        // Playwright screenshot path check
+        const testSlug = (f.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 80);
+        const screenshotPath = `${testSlug}/test-failed-1.png`;
+        const isPlaywright = (f.file || "").includes(".spec.") || (f.file || "").includes("playwright");
+        const screenshotHtml = isPlaywright ? `
+          <div class="test-failure-screenshot" id="ss-${escHtml(failureId)}">
+            <img src="/api/tests/screenshot?path=${encodeURIComponent(screenshotPath)}"
+              class="test-screenshot-thumb"
+              alt="Failure screenshot"
+              onerror="this.parentElement.style.display='none'"
+              onclick="this.classList.toggle('test-screenshot-expanded')"
+              title="Click to expand" />
+          </div>` : "";
         html += `
-          <div class="test-failure-card">
-            <div class="test-failure-name">${escHtml(f.name)}</div>
-            <div class="test-failure-file">${escHtml(f.file)}</div>
-            ${f.classification && f.classification !== "unknown" ? `<span class="test-failure-class">${escHtml(f.classification)}</span>` : ""}
-            ${f.error ? `<pre class="test-failure-error">${escHtml(String(f.error).slice(0, 500))}</pre>` : ""}
-            ${f.rerun_command ? `<div class="test-failure-rerun"><code>${escHtml(f.rerun_command)}</code></div>` : ""}
+          <div class="test-failure-card test-failure-expandable" id="${escHtml(failureId)}">
+            <div class="test-failure-header" data-action="toggleFailure" data-arg="${escHtml(failureId)}">
+              <span class="test-failure-toggle">▶</span>
+              <span class="test-failure-name">${escHtml(f.name)}</span>
+              <span class="test-failure-file-inline">${escHtml(f.file || "")}</span>
+              ${f.classification && f.classification !== "unknown" ? `<span class="test-failure-class">${escHtml(f.classification)}</span>` : ""}
+            </div>
+            <div class="test-failure-detail" style="display:none">
+              ${f.error ? `<pre class="test-failure-error">${escHtml(String(f.error).slice(0, 500))}</pre>` : ""}
+              ${errorLines ? `<pre class="test-failure-stack">${escHtml(errorLines)}</pre>` : ""}
+              ${screenshotHtml}
+              <div class="test-failure-actions">
+                ${relFile ? `<a class="test-failure-link" href="#" onclick="return false" title="${escHtml(relFile)}">${escHtml(relFile.split("/").pop())}</a>` : ""}
+                ${rerunCmd ? `<div class="test-failure-rerun">
+                  <code>${escHtml(rerunCmd)}</code>
+                  <button class="test-copy-btn" data-action="copyText" data-arg="${escHtml(rerunCmd)}" title="Copy rerun command">Copy</button>
+                </div>` : ""}
+              </div>
+            </div>
           </div>`;
       }
     }
@@ -268,12 +348,25 @@ export async function loadRunDetail(runId) {
     if (data.failures && data.failures.length > 0) {
       html += `<div class="test-section-title">Failures (${data.failures.length})</div>`;
       for (const f of data.failures) {
+        const failureId = "rd-fail-" + Math.random().toString(36).slice(2);
+        const rerunCmd = f.rerun_command || f.selector?.command || "";
         html += `
-          <div class="test-failure-card">
-            <div class="test-failure-name">${escHtml(f.name)}</div>
-            <div class="test-failure-file">${escHtml(f.file)}</div>
-            ${f.error ? `<pre class="test-failure-error">${escHtml(String(f.error).slice(0, 500))}</pre>` : ""}
-            ${f.rerun_command ? `<div class="test-failure-rerun"><code>${escHtml(f.rerun_command)}</code></div>` : ""}
+          <div class="test-failure-card test-failure-expandable" id="${escHtml(failureId)}">
+            <div class="test-failure-header" data-action="toggleFailure" data-arg="${escHtml(failureId)}">
+              <span class="test-failure-toggle">▶</span>
+              <span class="test-failure-name">${escHtml(f.name)}</span>
+            </div>
+            <div class="test-failure-detail" style="display:none">
+              <div class="test-failure-file">${escHtml(f.file)}</div>
+              ${f.error ? `<pre class="test-failure-error">${escHtml(String(f.error).slice(0, 500))}</pre>` : ""}
+              ${f.error_stack ? `<pre class="test-failure-stack">${escHtml(String(f.error_stack).split("\n").slice(0, 10).join("\n"))}</pre>` : ""}
+              <div class="test-failure-actions">
+                ${rerunCmd ? `<div class="test-failure-rerun">
+                  <code>${escHtml(rerunCmd)}</code>
+                  <button class="test-copy-btn" data-action="copyText" data-arg="${escHtml(rerunCmd)}" title="Copy rerun command">Copy</button>
+                </div>` : ""}
+              </div>
+            </div>
           </div>`;
       }
     }
@@ -346,8 +439,10 @@ function renderProgressBar() {
         </div>`;
       // Stop polling, refresh data
       if (progressPollId) { clearInterval(progressPollId); progressPollId = null; }
+      stopStreamingOutput();
       loadTestingSummary();
       loadTestingHistory();
+      loadRunHistoryChart();
       // Clear done state after 10s
       setTimeout(() => { if (el) el.innerHTML = ""; }, 10000);
     }
@@ -362,7 +457,190 @@ export async function runTests(suite) {
     if (progressPollId) clearInterval(progressPollId);
     renderProgressBar();
     progressPollId = setInterval(renderProgressBar, 2000);
+    startStreamingOutput();
   } catch (e) {
     showNotification("Failed to start tests: " + e.message, true);
   }
+}
+
+// ── Feature 1: Per-File Run Buttons ──────────────────────────────────────────
+
+export async function runSingleFile(suiteKey, filePath) {
+  // Map suite key to npm script
+  const suiteCmd = {
+    unit: "test:unit", integration: "test:integration", e2e: "test:e2e",
+    all: "test:all", unknown: "test:unit",
+  }[suiteKey] || "test:unit";
+  try {
+    showNotification(`Running ${filePath.split("/").pop()}...`);
+    await postJSON("/api/tests/run", { suite: suiteCmd, file: filePath });
+    if (progressPollId) clearInterval(progressPollId);
+    renderProgressBar();
+    progressPollId = setInterval(renderProgressBar, 2000);
+    startStreamingOutput();
+  } catch (e) {
+    showNotification("Failed to start test: " + e.message, true);
+  }
+}
+
+// ── Feature 3: Live Streaming Output ─────────────────────────────────────────
+
+function startStreamingOutput() {
+  stopStreamingOutput();
+  streamOutput = "";
+  const termEl = ensureTerminalPanel();
+  if (termEl) { termEl.style.display = "block"; termEl.querySelector("pre").textContent = ""; }
+
+  streamEventSource = new EventSource("/api/tests/stream");
+  streamEventSource.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.reset) {
+        streamOutput = msg.text || "";
+      } else if (msg.text) {
+        streamOutput += msg.text;
+      }
+      if (msg.done) {
+        stopStreamingOutput();
+      }
+      const el = document.getElementById("testStreamPre");
+      if (el) {
+        el.textContent = streamOutput;
+        el.scrollTop = el.scrollHeight;
+      }
+    } catch {}
+  };
+  streamEventSource.onerror = () => { stopStreamingOutput(); };
+}
+
+function stopStreamingOutput() {
+  if (streamEventSource) {
+    streamEventSource.close();
+    streamEventSource = null;
+  }
+}
+
+function ensureTerminalPanel() {
+  let panel = document.getElementById("testStreamPanel");
+  if (!panel) {
+    const bar = document.getElementById("testProgressBar");
+    if (!bar) return null;
+    panel = document.createElement("div");
+    panel.id = "testStreamPanel";
+    panel.className = "test-stream-panel";
+    panel.style.display = "none";
+    panel.innerHTML = `
+      <div class="test-stream-header">
+        <span>Live Output</span>
+        <button class="test-stream-close" onclick="document.getElementById('testStreamPanel').style.display='none'">✕</button>
+      </div>
+      <pre id="testStreamPre" class="test-stream-pre"></pre>`;
+    bar.parentNode?.insertBefore(panel, bar.nextSibling);
+  }
+  return panel;
+}
+
+// ── Feature 4: Failure Drill-Down toggle ─────────────────────────────────────
+
+export function toggleFailure(targetId) {
+  const card = document.getElementById(targetId);
+  if (!card) return;
+  const detail = card.querySelector(".test-failure-detail");
+  const toggle = card.querySelector(".test-failure-toggle");
+  if (!detail) return;
+  const isOpen = detail.style.display !== "none";
+  detail.style.display = isOpen ? "none" : "block";
+  if (toggle) toggle.textContent = isOpen ? "▶" : "▼";
+}
+
+// ── Feature 6: Coverage Heatmap ──────────────────────────────────────────────
+
+async function loadCoverageHeatmap() {
+  const container = document.getElementById("testingCoverage");
+  if (!container) return;
+  try {
+    const data = await getJSON("/api/tests/coverage-map");
+    const total = (data.covered?.length || 0) + (data.uncovered?.length || 0);
+    if (total === 0) { container.innerHTML = ""; return; }
+    const pct = total > 0 ? Math.round((data.covered.length / total) * 100) : 0;
+    let html = `<div class="test-section-title">Coverage Heatmap <span class="meta" style="font-weight:400;font-size:12px">${data.covered.length}/${total} files (${pct}%)</span></div>`;
+    html += '<div class="test-coverage-grid">';
+    for (const f of (data.covered || [])) {
+      html += `<div class="test-coverage-block test-coverage-covered" title="${escHtml(f.file)}"></div>`;
+    }
+    for (const f of (data.uncovered || [])) {
+      html += `<div class="test-coverage-block test-coverage-uncovered" title="${escHtml(f.file)}"></div>`;
+    }
+    html += '</div>';
+    html += `<div class="test-coverage-legend">
+      <span><span class="test-coverage-dot test-coverage-dot-green"></span> Covered (${data.covered.length})</span>
+      <span><span class="test-coverage-dot test-coverage-dot-red"></span> Uncovered (${data.uncovered.length})</span>
+    </div>`;
+    container.innerHTML = html;
+    // Tooltip on hover
+    container.querySelectorAll(".test-coverage-block").forEach(el => {
+      el.addEventListener("click", () => {
+        showNotification(el.title, false);
+      });
+    });
+  } catch {}
+}
+
+// ── Feature 7: Run History Chart ─────────────────────────────────────────────
+
+async function loadRunHistoryChart() {
+  const container = document.getElementById("testingChart");
+  if (!container) return;
+  try {
+    const data = await getJSON("/api/tests/history");
+    const runs = (data.history || []).slice(0, 20).reverse();
+    if (runs.length === 0) { container.innerHTML = ""; return; }
+
+    const W = 600, H = 120, PAD = 30, BAR_GAP = 2;
+    const maxTotal = Math.max(...runs.map(r => (r.passed || 0) + (r.failed || 0)), 1);
+    const barW = Math.floor((W - PAD * 2 - BAR_GAP * (runs.length - 1)) / runs.length);
+
+    let bars = "";
+    let labels = "";
+    runs.forEach((r, i) => {
+      const x = PAD + i * (barW + BAR_GAP);
+      const total = (r.passed || 0) + (r.failed || 0);
+      const passH = total > 0 ? Math.round(((r.passed || 0) / maxTotal) * (H - PAD)) : 0;
+      const failH = total > 0 ? Math.round(((r.failed || 0) / maxTotal) * (H - PAD)) : 0;
+      const passY = H - PAD - passH - failH;
+      const failY = H - PAD - failH;
+      if (failH > 0) bars += `<rect x="${x}" y="${failY}" width="${barW}" height="${failH}" fill="#ef4444" rx="1" opacity="0.85"><title>${fmtDate(r.timestamp)} — ${r.failed} fail</title></rect>`;
+      if (passH > 0) bars += `<rect x="${x}" y="${passY}" width="${barW}" height="${passH}" fill="#22c55e" rx="1" opacity="0.85"><title>${fmtDate(r.timestamp)} — ${r.passed} pass</title></rect>`;
+      // Label every 5th
+      if (i % 5 === 0 || i === runs.length - 1) {
+        const ts = r.timestamp ? new Date(r.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+        labels += `<text x="${x + barW / 2}" y="${H - 2}" text-anchor="middle" font-size="9" fill="var(--text-3, #888)">${ts}</text>`;
+      }
+    });
+
+    const svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;height:${H}px;display:block">
+      <line x1="${PAD}" y1="${H - PAD}" x2="${W - PAD}" y2="${H - PAD}" stroke="var(--border,#333)" stroke-width="1"/>
+      ${bars}
+      ${labels}
+    </svg>`;
+
+    container.innerHTML = `
+      <div class="test-section-title">Run History (last ${runs.length})
+        <span class="test-chart-legend">
+          <span style="color:#22c55e">■</span> Pass
+          <span style="color:#ef4444">■</span> Fail
+        </span>
+      </div>
+      <div class="test-chart-wrap">${svg}</div>`;
+  } catch {}
+}
+
+// ── copyText action ───────────────────────────────────────────────────────────
+
+export function copyText(text) {
+  navigator.clipboard?.writeText(text).then(() => {
+    showNotification("Copied to clipboard");
+  }).catch(() => {
+    showNotification("Copy failed", true);
+  });
 }
