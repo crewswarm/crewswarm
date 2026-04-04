@@ -264,7 +264,7 @@ export function historyToGeminiContents(history: TurnResult[], model?: string): 
     });
     const resultObj = h.error
       ? { error: h.error }
-      : (typeof h.result === 'object' && h.result) ? h.result : { output: formatToolResult(h) };
+      : (typeof h.result === 'object' && h.result) ? (h.result as Record<string, unknown>) : { output: formatToolResult(h) };
     contents.push({
       role: 'user',
       parts: [{ functionResponse: { name: h.tool, response: resultObj } }]
@@ -290,7 +290,7 @@ export function historyToGeminiContents(history: TurnResult[], model?: string): 
     // User provided tool result
     const resultObj = h.error
       ? { error: h.error }
-      : (typeof h.result === 'object' && h.result) ? h.result : { output: formatToolResult(h) };
+      : (typeof h.result === 'object' && h.result) ? (h.result as Record<string, unknown>) : { output: formatToolResult(h) };
     contents.push({
       role: 'user',
       parts: [{ functionResponse: { name: h.tool, response: resultObj } }]
@@ -2089,7 +2089,8 @@ export async function runAgenticWorker(
   const rawOutput = result.finalResponse ?? result.history?.map(h => {
     if (!h.result) return '';
     if (typeof h.result === 'string') return h.result;
-    return h.result.output || h.result.error || JSON.stringify(h.result);
+    const toolResult = h.result as { output?: string; error?: string };
+    return toolResult.output || toolResult.error || JSON.stringify(h.result);
   }).filter(Boolean).join('\n') ?? '';
 
   return {

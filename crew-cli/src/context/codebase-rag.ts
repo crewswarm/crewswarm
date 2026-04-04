@@ -24,7 +24,7 @@ export interface RagOptions {
   mode?: RagMode;
   tokenBudget?: number;
   maxFiles?: number;
-  sessionHistory?: unknown[];
+  sessionHistory?: Array<{ output?: string }>;
   cacheDir?: string;
 }
 

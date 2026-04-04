@@ -71,9 +71,10 @@ export function compactMessages(messages: ChatMessage[]): ChatMessage[] {
         if (block.type === 'tool_result') { preview = `[tool_result: ${String(block.content || '').slice(0, 80)}]`; break; }
         if (block.function) { preview = `[fn: ${block.function.name}]`; break; }
       }
-    } else if (msg.parts) {
+    } else if ((msg as { parts?: Array<{ text?: string; functionCall?: { name?: string }; functionResponse?: { name?: string } }> }).parts) {
       // Gemini format
-      for (const part of (msg.parts || [])) {
+      const parts = (msg as { parts?: Array<{ text?: string; functionCall?: { name?: string }; functionResponse?: { name?: string } }> }).parts || [];
+      for (const part of parts) {
         if (part.text) { preview = part.text.slice(0, 120).replace(/\n/g, ' '); break; }
         if (part.functionCall) { preview = `[functionCall: ${part.functionCall.name}]`; break; }
         if (part.functionResponse) { preview = `[functionResponse: ${part.functionResponse.name}]`; break; }
@@ -87,7 +88,7 @@ export function compactMessages(messages: ChatMessage[]): ChatMessage[] {
 
   // Insert a synthetic summary message in the position of the middle messages.
   // Use a user-role message so all providers accept it.
-  const summaryMsg = {
+  const summaryMsg: ChatMessage = {
     role: 'user',
     content: summaryText
   };

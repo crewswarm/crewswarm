@@ -741,7 +741,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
   // Show dynamic status dashboard on REPL startup
   try {
-    const { displayStatus } = await import('../status/dashboard.ts');
+    const { displayStatus } = await import('../status/dashboard.js');
     await displayStatus({ interfaceMode: selectedInterfaceMode });
   } catch (err) {
     // Silently fail if status dashboard can't be shown
@@ -1784,7 +1784,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
       if (sub === 'check') {
         const files = args.slice(1);
         const { typeCheckProject } = await import('../lsp/index.js');
-        const diagnostics = typeCheckProject(projectDir, files);
+        const diagnostics = await typeCheckProject(projectDir, files);
         if (diagnostics.length === 0) {
           console.log(chalk.green('\n  ✓ No LSP diagnostics found.\n'));
           return true;
@@ -1807,7 +1807,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           return true;
         }
         const { getCompletions } = await import('../lsp/index.js');
-        const completions = getCompletions(projectDir, file, line, column, 20, prefix);
+        const completions = await getCompletions(projectDir, file, line, column, 20, prefix);
         if (completions.length === 0) {
           console.log(chalk.yellow('\n  No completions found.\n'));
           return true;
@@ -2175,10 +2175,10 @@ End with VERDICT: SHIP ✅, FIX 🔧, or REJECT ❌ with actionable items.
           });
 
           await session.trackCost({
-            inputTokens: trimmed.length / 4,
-            outputTokens: responseText.length / 4,
+            promptTokens: trimmed.length / 4,
+            completionTokens: responseText.length / 4,
             model: 'groq-router',
-            costUsd: 0.0001
+            usd: 0.0001
           });
         } catch {
           // Session tracking is best-effort

@@ -5,10 +5,26 @@ import { getExecutionPolicy, isRetryableError, isRiskBlocked, withRetries } from
 import { analyzeBlastRadius } from '../blast-radius/index.js';
 
 interface HeadlessDeps {
-  router: unknown;
-  orchestrator: unknown;
-  sandbox: unknown;
-  session: unknown;
+  router: {
+    dispatch(
+      agent: string,
+      task: string,
+      opts: { sessionId: string; project: string; gateway?: string; model?: string }
+    ): Promise<Record<string, unknown>>;
+  };
+  orchestrator: {
+    route(task: string): Promise<{ agent?: string; decision?: string }>;
+    parseAndApplyToSandbox(responseText: string): Promise<string[]>;
+  };
+  sandbox: {
+    hasChanges(branch: string): boolean;
+    getActiveBranch(): string;
+    getPendingPaths?(branch: string): string[];
+    apply(branch: string): Promise<void>;
+  };
+  session: {
+    getSessionId(): Promise<string>;
+  };
 }
 
 interface HeadlessRunOptions extends HeadlessDeps {

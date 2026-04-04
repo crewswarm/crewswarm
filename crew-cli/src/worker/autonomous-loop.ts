@@ -127,8 +127,8 @@ function hasIncompleteToolCalls(toolCalls: ToolCall[] | undefined, response: str
  */
 export async function executeAutonomous(
   task: string,
-  executeLLM: (prompt: string, tools: any[], history: TurnResult[], abortSignal?: AbortSignal) => Promise<{ toolCalls?: ToolCall[]; response: string; status?: string; costUsd?: number; finishReason?: string }>,
-  executeTool: (tool: string, params: Record<string, any>, abortSignal?: AbortSignal) => Promise<any>,
+  executeLLM: (prompt: string, tools: unknown[], history: TurnResult[], abortSignal?: AbortSignal) => Promise<{ toolCalls?: ToolCall[]; response: string; status?: string; costUsd?: number; finishReason?: string }>,
+  executeTool: (tool: string, params: Record<string, unknown>, abortSignal?: AbortSignal) => Promise<unknown>,
   config: AutonomousConfig
 ): Promise<AutonomousResult> {
   const maxTurns = config.maxTurns || DEFAULT_MAX_TURNS;

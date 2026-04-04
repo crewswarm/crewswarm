@@ -798,7 +798,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
           });
         } catch (error: unknown) {
           options.logger?.error?.('[rag] search error:', error);
-          return json(res, 500, { error: error.message });
+          return json(res, 500, { error: (error as Error).message });
         }
       }
       
@@ -825,7 +825,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
           });
         } catch (error: unknown) {
           options.logger?.error?.('[rag] index error:', error);
-          return json(res, 500, { error: error.message });
+          return json(res, 500, { error: (error as Error).message });
         }
       }
       
@@ -851,7 +851,7 @@ export async function startUnifiedServer(options: UnifiedServerOptions): Promise
           });
         } catch (error: unknown) {
           options.logger?.error?.('[rag] stats error:', error);
-          return json(res, 500, { error: error.message });
+          return json(res, 500, { error: (error as Error).message });
         }
       }
 
