@@ -12,7 +12,7 @@ export interface ToolDeclaration {
   description: string;
   parameters: {
     type: 'object';
-    properties: Record<string, any>;
+    properties: Record<string, unknown>;
     required?: string[];
   };
 }
@@ -21,7 +21,7 @@ export interface ToolResult {
   text: string;
   error?: string;
   diff?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ToolLocation {

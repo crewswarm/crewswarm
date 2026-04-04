@@ -7,7 +7,7 @@ export class TelemetryManager implements vscode.Disposable {
         this.isEnabled = vscode.workspace.getConfiguration('crewswarm').get('enableTelemetry', true);
     }
 
-    track(event: string, properties?: Record<string, any>): void {
+    track(event: string, properties?: Record<string, unknown>): void {
         if (!this.isEnabled) return;
 
         // Simple console-based telemetry for now

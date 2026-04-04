@@ -8,7 +8,7 @@
 export interface TranscriptEntry {
   ts: number;              // Date.now()
   toolName: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
   success: boolean;
   outputPreview: string;   // first 200 chars of output/error
   durationMs: number;

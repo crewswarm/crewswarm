@@ -53,7 +53,7 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 }
 
-function deepMerge<T extends Record<string, any>>(base: T, overlay: Record<string, any>): T {
+function deepMerge<T extends Record<string, unknown>>(base: T, overlay: Record<string, unknown>): T {
   const out: Record<string, unknown> = { ...base };
   for (const [k, v] of Object.entries(overlay || {})) {
     const existing = out[k];

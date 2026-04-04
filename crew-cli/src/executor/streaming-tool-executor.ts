@@ -26,7 +26,7 @@ export class StreamingToolExecutor {
    * Called as soon as a complete tool_use block is detected mid-stream.
    * Starts executing the tool immediately without waiting for the stream to end.
    */
-  onToolUseComplete(toolId: string, toolName: string, args: Record<string, any>): void {
+  onToolUseComplete(toolId: string, toolName: string, args: Record<string, unknown>): void {
     if (this.runningTools.has(toolId) || this.completedTools.has(toolId)) return;
 
     const promise = this._runTool(toolId, toolName, args);
@@ -42,7 +42,7 @@ export class StreamingToolExecutor {
     });
   }
 
-  private async _runTool(toolId: string, toolName: string, args: Record<string, any>): Promise<ToolResult> {
+  private async _runTool(toolId: string, toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
     const start = Date.now();
     try {
       const result = await this.executeFn(toolName, args);
@@ -197,7 +197,7 @@ export async function streamOpenAIWithEarlyExecution(
   // but we still want to attempt execution with repaired args)
   for (const [, entry] of accumulator) {
     if (!entry.fired && entry.name) {
-      let args: Record<string, any> = {};
+      let args: Record<string, unknown> = {};
       try { args = JSON.parse(entry.args || '{}'); } catch { /* use empty args */ }
       entry.fired = true;
       firedIds.push(entry.id);
@@ -268,7 +268,7 @@ export async function streamAnthropicWithEarlyExecution(
           if (event.type === 'content_block_stop') {
             const block = toolBlocks.get(event.index);
             if (block && block.name) {
-              let args: Record<string, any> = {};
+              let args: Record<string, unknown> = {};
               try { args = JSON.parse(block.inputJson || '{}'); } catch { /* use empty */ }
               firedIds.push(block.id);
               executor.onToolUseComplete(block.id, block.name, args);

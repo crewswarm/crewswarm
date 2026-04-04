@@ -30,7 +30,7 @@ export interface AutoFixJob {
   workerId?: string;
   error?: string;
   config: AutoFixJobConfig;
-  result?: Record<string, any>;
+  result?: Record<string, unknown>;
 }
 
 interface AutoFixState {
@@ -205,18 +205,18 @@ export class AutoFixStore {
     return claimed;
   }
 
-  async markCompleted(id: string, result: Record<string, any>) {
+  async markCompleted(id: string, result: Record<string, unknown>) {
     return this.updateFinal(id, 'completed', result);
   }
 
-  async markFailed(id: string, error: string, result: Record<string, any> = {}) {
+  async markFailed(id: string, error: string, result: Record<string, unknown> = {}) {
     return this.updateFinal(id, 'failed', {
       ...result,
       error
     });
   }
 
-  private async updateFinal(id: string, status: Extract<AutoFixJobStatus, 'completed' | 'failed'>, result: Record<string, any>) {
+  private async updateFinal(id: string, status: Extract<AutoFixJobStatus, 'completed' | 'failed'>, result: Record<string, unknown>) {
     const state = await this.readState();
     const index = state.jobs.findIndex(job => job.id === id);
     if (index < 0) return false;
