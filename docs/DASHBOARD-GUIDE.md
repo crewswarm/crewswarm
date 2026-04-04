@@ -303,6 +303,23 @@ Scheduled workflows and cron jobs.
 - Enable/disable workflows
 - View execution history
 
+### Testing (`#testing`)
+
+Run the full test suite from the dashboard without touching the terminal.
+
+**What you can do:**
+- Click **Run Tests** to execute all 4,355 tests across 273 files
+- Watch live streaming output with pass/fail counts per suite
+- Inspect the per-suite breakdown (unit, integration, E2E, browser)
+- Browse run history to compare results across sessions
+
+**Tips:**
+- The Testing tab uses the `/api/test-run` SSE endpoint to stream output in real time.
+- You can filter by suite name to focus on a specific area.
+- Failed suites are highlighted in red with expandable error detail.
+
+---
+
 ### CLI Process (`#cli-process`)
 
 Running CLI engine processes.

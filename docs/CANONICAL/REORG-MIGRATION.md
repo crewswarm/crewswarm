@@ -205,9 +205,9 @@ Files likely to break:
 - `contrib/swiftbar/openswitch.10s.sh`
 - canonical docs and AGENTS docs
 
-## Lowest-risk phase 1
+## Lowest-risk phase 1 — COMPLETE (2026-04-03)
 
-Phase 1 should avoid changing any runtime directory used by production services.
+Phase 1 is complete. Root clutter reduced, tests reorganized, backup files archived, canonical docs updated.
 
 ### Phase 1 goals
 
@@ -241,15 +241,15 @@ Phase 1 should avoid changing any runtime directory used by production services.
 - `docs/CANONICAL/README.md`
 - any smoke or CI scripts that reference moved test files
 
-## Phase 2
+## Phase 2 — COMPLETE (2026-04-03)
 
-Move app directories without changing core runtime layout yet.
+Phase 2 is complete. `studio/` → `apps/vibe/`, `frontend/` → `apps/dashboard/`, `apps/crewchat/` created. All service paths stable and runtime verified.
 
-Recommended order:
+Recommended order (completed):
 
-1. `studio/` -> `apps/vibe/`
-2. `frontend/` -> `apps/dashboard/`
-3. create `apps/crewchat/`
+1. `studio/` -> `apps/vibe/` ✓
+2. `frontend/` -> `apps/dashboard/` ✓
+3. create `apps/crewchat/` ✓
 
 This is enough to make the repo look far more conventional without immediately triggering a full core import migration.
 

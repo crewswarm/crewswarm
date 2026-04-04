@@ -49,7 +49,9 @@ VOLUME ["/root/.crewswarm"]
 # 18889 — RT message bus
 # 4096 — code engine
 # 5020 — MCP server (optional)
-EXPOSE 4319 5010 18889 4096 5020
+# 3333 — Vibe IDE
+# 3334 — Vibe watch server
+EXPOSE 4319 5010 18889 4096 5020 3333 3334
 
 # Start all core services via the existing restart script
 CMD ["bash", "scripts/restart-all-from-repo.sh"]

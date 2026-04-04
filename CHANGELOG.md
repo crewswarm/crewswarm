@@ -5,6 +5,36 @@ All notable changes to crewswarm will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-04-03
+
+### Added
+- **Dashboard Testing tab**: live test progress with suite breakdown, pass/fail counts, and run history. Runs all 4,355 tests and streams results in real time.
+- **Dynamic OpenAPI spec**: `openapi.complete.v2.json` now covers 262 operations across 223 paths (was 142 endpoints in v1).
+- Published `crewswarm@0.9.4` and `crew-cli@0.3.5` to npm.
+
+### Changed
+- Dashboard async I/O: converted 249 sync `fs` calls to async to eliminate Node 25 blocking on SSE.
+- Test count: 4,355 passing across 273 files (up from 2,500+).
+
+### Fixed
+- 12 source bugs found and fixed during testing overhaul (spending tracker, OAuth TTL, proxy routing, and more).
+
+---
+
+## [0.9.3] - 2026-04-02
+
+### Added
+- **Testing overhaul**: 5,000+ test targets with 100% pass rate. Added 33 new unit tests, 10 new Playwright browser specs, 50 new integration tests (OAuth TTL, spending bug, async I/O).
+- **crew-cli OAuth models**: all three Claude models (Haiku/Sonnet/Opus) plus OpenAI GPT-5.x confirmed working via CCH signing.
+- **Dashboard Models page**: OAuth section with token cache, 5 endpoints, `allModels` injection, 56 new tests.
+
+### Fixed
+- OAuth TTL handling: tokens now refresh before expiry instead of on 401.
+- Spending tracker: fixed double-counting on multi-turn tasks.
+- Dashboard proxy: `crewLeadRequest` now handles SSE correctly on Node 25.
+
+---
+
 ## [0.9.2] - 2026-03-29
 
 ### Added

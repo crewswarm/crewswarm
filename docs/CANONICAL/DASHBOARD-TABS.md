@@ -1,6 +1,6 @@
 # Dashboard Tabs
 
-The crewswarm dashboard at `http://127.0.0.1:4319` is the primary control plane for service management, system configuration, and swarm observation. It currently exposes 23 top-level views in the sidebar.
+The crewswarm dashboard at `http://127.0.0.1:4319` is the primary control plane for service management, system configuration, and swarm observation. It currently exposes 24 top-level views in the sidebar.
 
 ## Core Chat & Observation
 - **Chat** (`chat`): Direct conversation with `crew-lead`.
@@ -27,6 +27,9 @@ The crewswarm dashboard at `http://127.0.0.1:4319` is the primary control plane 
 - **Skills** (`skills-tab.js`): View injected framework instructions (Markdown knowledge skills) and available external API targets (JSON endpoints).
 - **Run Skills** (`run-skills`): Invoke installed skills directly from the dashboard.
 - **Workflows** (`workflows-tab.js`): Saved multi-agent macros mapped to trigger instructions.
+
+## Development & QA
+- **Testing** (`testing-tab.js`): Run the full test suite (4,355 tests across 273 files) and watch live progress. Shows per-suite pass/fail breakdown, streaming log output, and run history. Powered by the `/api/test-run` SSE endpoint.
 
 ## Integrations & Telemetry
 - **Comms** (`comms-tab.js`): Setup for WhatsApp (Baileys) and Telegram bridge QR codes and bot tokens.

@@ -1,7 +1,7 @@
 # crew-cli Development Roadmap
 
-> Multi-agent coding CLI that orchestrates Aider, Gemini, Codex, Claude Code, and Cursor CLIs  
-> **Status**: 🟢 Complete → Ready for Launch  
+> Multi-agent coding CLI that orchestrates Gemini, Codex, Claude Code, OpenCode, and Cursor CLIs  
+> **Status**: 🟢 v0.3.5 — Published to npm, 765 tests passing  
 > **Timeline**: 7 days MVP, 21 days to public v0.1.0-alpha  
 
 ---
@@ -36,12 +36,12 @@
 - [x] Log routing decisions to `.crew/routing.log` ✓
 - [x] Cost tracking per model (prompt + completion tokens) ✓
 
-### [x] 4. Vendored Edit Strategies from Aider ✓ 2026-02-28
+### [x] 4. Edit Strategies ✓ 2026-02-28
 - [x] Create `src/strategies/` folder ✓ 2026-02-28
-- [x] Port **editblock** strategy to TypeScript ✓
-- [x] Port **unified-diff** strategy ✓
-- [x] Port **whole-file** strategy ✓ 2026-02-28
-- [x] Port **search-replace** strategy ✓ 2026-02-28
+- [x] Implement **editblock** strategy in TypeScript ✓
+- [x] Implement **unified-diff** strategy ✓
+- [x] Implement **whole-file** strategy ✓ 2026-02-28
+- [x] Implement **search-replace** strategy ✓ 2026-02-28
 - [x] Create strategy selector (auto-pick based on task type) ✓
 
 ### [x] 5. Cumulative Diff Sandbox (from Plandex) ✓ 2026-02-28
@@ -113,7 +113,7 @@
 - [x] Create `installer/install.sh` ✓
 - [x] Check for Node.js >= 20 ✓
 - [x] Check for Git ✓
-- [x] Check for optional CLIs (Aider, Gemini, Codex, Claude) ✓
+- [x] Check for optional CLIs (Gemini, Codex, Claude, OpenCode) ✓
 - [x] Offer to install missing CLIs (npm global, pip, etc.) ✓
 - [x] Find OAuth tokens automatically (partial)
 - [x] Link to crewswarm config (`~/.crewswarm/crewswarm.json`) ✓
@@ -312,12 +312,11 @@
 
 **Related:**
 - crewswarm core (provides gateway + agents)
-- Aider (provides edit strategy concepts)
 - Plandex (provides sandbox concept)
 
 ---
 
-**Roadmap version:** 1.0  
-**Last updated:** 2026-02-27  
+**Roadmap version:** 1.1  
+**Last updated:** 2026-04-03  
 **Owner:** crewswarm team  
 **Output directory:** `crew-cli`

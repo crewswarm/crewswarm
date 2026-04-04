@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # crewswarm Docker Installer — one-line setup for cloud VMs and dedicated servers
-# Usage: curl -fsSL https://raw.githubusercontent.com/your-org/crewswarm/main/scripts/install-docker.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/crewswarm/crewswarm/main/scripts/install-docker.sh | bash
 
 set -e
 

@@ -43,7 +43,7 @@ It's a full local dev platform, not just a CLI:
 
 22 specialist agents run in parallel waves (PM plans → coder + QA + security execute simultaneously → fixer patches). Each agent gets its own model — cheap or local for routing and worker glue, premium for planning and hard reasoning. Shared memory means no agent works blind.
 
-2k+ tests. Docker install for teams. MIT licensed. Everything local.
+4,355 tests. Docker install for teams. MIT licensed. Everything local.
 
 npm install -g crewswarm
 
@@ -105,7 +105,7 @@ Pay for the brain, not the glue.
 
 **Tweet 5 (trust — proof):**
 ```
-2k+ tests.
+4,355 tests.
 24 providers configured.
 Docker install for teams.
 MIT licensed.
@@ -137,7 +137,7 @@ Body: [shorter version, focus on the architecture]
 ```
 Title: Built a tool that lets you switch between Claude Code, Cursor, Gemini, and Codex mid-conversation — sessions persist across engines
 
-Body: Every $20/month plan has rate limits. I kept hitting the wall mid-feature. So I built CrewSwarm — it runs all 6 coding CLIs and lets you switch seamlessly. Your session context follows you. 2k+ tests, fully local, MIT licensed. crewswarm.ai
+Body: Every $20/month plan has rate limits. I kept hitting the wall mid-feature. So I built CrewSwarm — it runs all 6 coding CLIs and lets you switch seamlessly. Your session context follows you. 4,355 tests, fully local, MIT licensed. crewswarm.ai
 ```
 
 **r/SideProject:**
@@ -165,7 +165,7 @@ Save for Week 2 — don't split attention on launch day. PH needs a dedicated ta
 **"How does this compare to Devin?"**
 > Devin is cloud-hosted, closed-source, and expensive. CrewSwarm runs on your machine. Your code never leaves your disk. MIT licensed. Bring your own API keys — no middleman markup.
 
-**"2k+ tests — are they real?"**
+**"4,355 tests — are they real?"**
 > Yes. The repo has thousands of automated checks across unit, integration, E2E, Playwright, smoke, and live verification tiers. Exact totals move as the suite grows, so point people to `docs/CANONICAL/TESTING.md` for the current breakdown and commands.
 
 ## After launch

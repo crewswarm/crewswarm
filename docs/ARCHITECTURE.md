@@ -68,15 +68,15 @@ See [ORCHESTRATOR-GUIDE.md](ORCHESTRATOR-GUIDE.md) for pipeline DSL and wave exe
 
 ## API Reference
 
-The full OpenAPI 3.1 specification is at [`crew-cli/docs/openapi.unified.v1.json`](../crew-cli/docs/openapi.unified.v1.json) — 142 endpoints across Dashboard (`:4319`), crew-lead (`:5010`), and Vibe (`:3333`).
+The full OpenAPI 3.1 specification is at [`crew-cli/docs/openapi.complete.v2.json`](../crew-cli/docs/openapi.complete.v2.json) — 262 operations across 223 paths covering Dashboard (`:4319`), crew-lead (`:5010`), and Vibe (`:3333`). The original v1 spec (`openapi.unified.v1.json`) is retained for backwards compatibility.
 
 Import into Postman, Insomnia, or any OpenAPI-compatible tool:
 ```bash
 # View in browser
-open crew-cli/docs/openapi.unified.v1.json
+open crew-cli/docs/openapi.complete.v2.json
 
 # Generate a client
-npx openapi-generator-cli generate -i crew-cli/docs/openapi.unified.v1.json -g typescript-fetch -o sdk/
+npx openapi-generator-cli generate -i crew-cli/docs/openapi.complete.v2.json -g typescript-fetch -o sdk/
 ```
 
 Key endpoint groups:

@@ -2,6 +2,54 @@
 
 All notable changes to the crew-cli project.
 
+## [0.3.5] - 2026-04-03
+
+### Added
+- Dashboard Testing tab integration: crew-cli test results stream to the Testing tab in real time.
+- `crew doctor` now reports test suite health alongside API key and gateway checks.
+- Published to npm as `crewswarm-cli@0.3.5`.
+
+### Fixed
+- Dynamic Gemini declaration builder: `CREW_GEMINI_DYNAMIC_DECLARATIONS` default now correctly `true`.
+- OAuth signing: all three Claude models (Haiku/Sonnet/Opus) and OpenAI GPT-5.x confirmed working via CCH.
+
+---
+
+## [0.3.4] - 2026-04-02
+
+### Added
+- Dashboard Models page OAuth section: token cache, 5 new endpoints, `allModels` injection.
+- 56 new tests covering OAuth TTL, token refresh, and model enumeration.
+
+### Fixed
+- OAuth TTL: tokens now refresh proactively before expiry rather than waiting for 401.
+
+---
+
+## [0.3.3] - 2026-04-01
+
+### Added
+- 33 new unit tests and 10 new Playwright browser specs covering engine passthrough, session resume, and CLI dispatch.
+- `CREWSWARM_TEST_MODE` guard: strict `"true"` equality check prevents test runs from writing to real config.
+
+### Fixed
+- 12 source bugs identified during testing overhaul (spending double-count, DLQ replay race, async I/O blocking on Node 25).
+
+---
+
+## [0.3.2] - 2026-03-31
+
+### Added
+- Unified pipeline now default for standalone mode; `--legacy-router` flag for fallback.
+- Self-consistency gate (`CREW_SELF_CONSISTENCY_GATE_ENABLED`) validates synthesized output against worker evidence.
+- Adaptive QA rounds: small edits skip full QA cycle (`CREW_QA_SMALL_EDIT_THRESHOLD`).
+
+### Changed
+- crew-cli version bumped 0.3.1 → 0.3.2.
+- All 6 CLI engine session-resume paths verified end-to-end.
+
+---
+
 ## [0.1.0-alpha] - 2026-03-01
 
 ### 🎉 Phase 5 Complete - Advanced Multi-Agent Orchestration

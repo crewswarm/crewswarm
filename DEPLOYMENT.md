@@ -35,11 +35,11 @@ OPENAI_API_KEY=sk-your_openai_key_here
 ANTHROPIC_API_KEY=sk-ant-your_anthropic_key_here
 
 # RT Bus Configuration
-RT_PORT=4319
+RT_PORT=18889
 RT_AUTH_TOKEN=your_secure_random_token_here
 
 # Dashboard Configuration
-VITE_RT_URL=http://localhost:4319
+VITE_RT_URL=http://localhost:18889
 VITE_RT_AUTH_TOKEN=your_secure_random_token_here
 
 # Optional: Output and workspace paths
@@ -83,7 +83,7 @@ crewswarm stores additional configuration in `~/.crewswarm/config.json`. Review 
     { "id": "crew-qa", "model": "groq/llama-3.3-70b-versatile" }
   ],
   "rtBus": {
-    "port": 4319,
+    "port": 18889,
     "authToken": "your_secure_token"
   },
   "commandApproval": {
@@ -226,14 +226,14 @@ COPY --from=builder /app/memory ./memory
 
 # Environment variables
 ENV NODE_ENV=production
-ENV RT_PORT=4319
+ENV RT_PORT=18889
 
 # Expose RT bus port
-EXPOSE 4319
+EXPOSE 18889
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s \
-  CMD node -e "require('http').get('http://localhost:4319/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+  CMD node -e "require('http').get('http://localhost:18889/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
 # Start RT bus and services
 CMD ["node", "gateway-bridge.mjs"]
@@ -307,13 +307,13 @@ services:
     container_name: crewswarm-rt-bus
     environment:
       - NODE_ENV=production
-      - RT_PORT=4319
+      - RT_PORT=18889
       - RT_AUTH_TOKEN=${RT_AUTH_TOKEN}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     ports:
-      - "4319:4319"
+      - "18889:18889"
     volumes:
       - ./memory:/app/memory
       - ./output:/app/output
@@ -321,7 +321,7 @@ services:
     networks:
       - crewswarm-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4319/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:18889/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -332,7 +332,7 @@ services:
       dockerfile: apps/dashboard/Dockerfile
     container_name: crewswarm-dashboard
     environment:
-      - VITE_RT_URL=http://rt-bus:4319
+      - VITE_RT_URL=http://rt-bus:18889
       - VITE_RT_AUTH_TOKEN=${RT_AUTH_TOKEN}
     ports:
       - "8080:80"
@@ -401,7 +401,7 @@ module.exports = {
       exec_mode: 'cluster',
       env: {
         NODE_ENV: 'production',
-        RT_PORT: 4319
+        RT_PORT: 18889
       }
     },
     {
@@ -429,7 +429,7 @@ Configure nginx to proxy requests to the RT bus and dashboard:
 ```nginx
 # /etc/nginx/sites-available/crewswarm
 upstream rt_bus {
-    server 127.0.0.1:4319;
+    server 127.0.0.1:18889;
 }
 
 server {
@@ -515,7 +515,7 @@ spec:
       - name: rt-bus
         image: crewswarm/rt-bus:latest
         ports:
-        - containerPort: 4319
+        - containerPort: 18889
         env:
         - name: RT_AUTH_TOKEN
           valueFrom:
@@ -530,7 +530,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 4319
+            port: 18889
           initialDelaySeconds: 30
           periodSeconds: 10
         resources:
@@ -554,8 +554,8 @@ spec:
     app: crewswarm-rt-bus
   ports:
   - protocol: TCP
-    port: 4319
-    targetPort: 4319
+    port: 18889
+    targetPort: 18889
   type: LoadBalancer
 ```
 
@@ -603,7 +603,7 @@ Configure Prometheus to scrape metrics:
 scrape_configs:
   - job_name: 'crewswarm'
     static_configs:
-      - targets: ['localhost:4319']
+      - targets: ['localhost:18889']
     scrape_interval: 15s
 ```
 
@@ -630,7 +630,7 @@ if (process.env.NODE_ENV !== 'production') {
   }));
 }
 
-logger.info('RT bus started', { port: 4319 });
+logger.info('RT bus started', { port: 18889 });
 ```
 
 ### 5.3 ELK Stack Integration
@@ -734,7 +734,7 @@ groups:
 
 ```bash
 # Check port availability
-lsof -i :4319
+lsof -i :18889
 
 # Check logs
 pm2 logs crewswarm-rt

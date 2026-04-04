@@ -205,10 +205,10 @@ npm run check
 npm test
 ```
 
-Latest local QA pass (2026-03-01):
+Latest local QA pass (2026-04-03):
 - Build: passing
 - Check: passing
-- Tests: 178 passing, 0 failing
+- Tests: 765 passing, 0 failing
 
 ## Community
 

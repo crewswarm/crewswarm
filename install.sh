@@ -121,7 +121,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
   }
 }
 EOF
-  success "Created ~/.crewswarm/crewswarm.json  (RT token: $RT_TOKEN)"
+  success "Created ~/.crewswarm/config.json  (RT token: $RT_TOKEN)"
 else
   success "~/.crewswarm/crewswarm.json already exists — keeping it"
 fi
@@ -307,7 +307,7 @@ elif [[ "$SHELL" == *"bash"* ]]; then
   SHELL_RC="$HOME/.bash_profile"
 fi
 
-BIN_ALIAS="alias crew-cli='node $REPO_DIR/crew-cli.mjs'"
+BIN_ALIAS="alias crew-cli='node $REPO_DIR/crew-cli/dist/crew.mjs'"
 if [[ -n "$SHELL_RC" ]] && ! grep -q "crew-cli" "$SHELL_RC" 2>/dev/null; then
   echo "" >> "$SHELL_RC"
   echo "# CrewSwarm" >> "$SHELL_RC"
