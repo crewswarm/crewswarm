@@ -906,6 +906,7 @@ async function streamOpenAIResponse(response, onText) {
   let fullText = "";
   const toolCallAccumulator = /* @__PURE__ */ new Map();
   let usage = null;
+  let finishReason;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -919,7 +920,9 @@ async function streamOpenAIResponse(response, onText) {
         if (!jsonStr || jsonStr === "[DONE]") continue;
         try {
           const chunk = JSON.parse(jsonStr);
-          const delta = chunk?.choices?.[0]?.delta;
+          const choice = chunk?.choices?.[0];
+          const delta = choice?.delta;
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
           if (!delta) {
             if (chunk?.usage) usage = chunk.usage;
             continue;
@@ -947,7 +950,7 @@ async function streamOpenAIResponse(response, onText) {
     reader.releaseLock();
   }
   const toolCalls = [...toolCallAccumulator.values()].filter((tc) => tc.name).map((tc) => ({ name: tc.name, arguments: tc.args }));
-  return { text: fullText, toolCalls, usage };
+  return { text: fullText, toolCalls, usage, finishReason };
 }
 async function streamAnthropicResponse(response, onText) {
   if (!response.body) throw new Error("No response body for streaming");
@@ -957,6 +960,7 @@ async function streamAnthropicResponse(response, onText) {
   let fullText = "";
   const toolBlocks = /* @__PURE__ */ new Map();
   let usage = null;
+  let stopReason;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -983,8 +987,9 @@ async function streamAnthropicResponse(response, onText) {
               if (block) block.inputJson += event.delta.partial_json;
             }
           }
-          if (event.type === "message_delta" && event.usage) {
-            usage = event.usage;
+          if (event.type === "message_delta") {
+            if (event.usage) usage = event.usage;
+            if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
           }
           if (event.type === "message_start" && event.message?.usage) {
             usage = { ...event.message.usage, ...usage || {} };
@@ -1004,7 +1009,7 @@ async function streamAnthropicResponse(response, onText) {
     }
     return { name: b.name, input };
   });
-  return { text: fullText, toolCalls, usage };
+  return { text: fullText, toolCalls, usage, stopReason };
 }
 async function streamGeminiResponse(response, onText) {
   if (!response.body) throw new Error("No response body for streaming");
@@ -1781,7 +1786,9 @@ Be concise, accurate, and helpful. Format code in markdown blocks.`;
           try {
             const auth = await this.resolveProviderAuth(provider);
             const authBadge = auth?.isOAuth ? "OAuth" : "API";
-            console.error(`\x1B[2m[Executor] ${provider} (${authBadge})\x1B[0m`);
+            if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") {
+              console.error(`\x1B[2m[Executor] ${provider} (${authBadge})\x1B[0m`);
+            }
             const result2 = await this.executeWithProvider(provider, task, model, options, systemPrompt);
             if (result2) {
               return {
@@ -2852,15 +2859,255 @@ var init_tool_result_clearing = __esm({
   }
 });
 
+// src/context/token-compaction.ts
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
+}
+function getContextWindow(model) {
+  const m = String(model || "").toLowerCase();
+  for (const [prefix, size] of Object.entries(CONTEXT_WINDOWS)) {
+    if (m.startsWith(prefix)) return size;
+  }
+  return 128e3;
+}
+function calculateTokenBudget(messages, model, systemPromptTokens = 0, compactThreshold = 0.75) {
+  const contextWindow = getContextWindow(model);
+  let estimatedUsed = systemPromptTokens;
+  for (const msg of messages) {
+    estimatedUsed += estimateTokens(msg.content) + 4;
+  }
+  const remainingTokens = contextWindow - estimatedUsed;
+  const remainingPct = remainingTokens / contextWindow;
+  return {
+    contextWindow,
+    estimatedUsed,
+    remainingTokens,
+    remainingPct,
+    shouldCompact: estimatedUsed / contextWindow >= compactThreshold
+  };
+}
+async function compactConversation(messages, opts = {}) {
+  const keepFirst = opts.keepFirst ?? 2;
+  const keepLast = opts.keepLast ?? 6;
+  const targetTokens = opts.targetTokens ?? 2e3;
+  if (messages.length <= keepFirst + keepLast) {
+    return messages;
+  }
+  const head = messages.slice(0, keepFirst);
+  const middle = messages.slice(keepFirst, messages.length - keepLast);
+  const tail = messages.slice(-keepLast);
+  if (middle.length === 0) return messages;
+  const middleText = middle.map((m) => {
+    const role = m.role.toUpperCase();
+    const text = m.content.slice(0, 2e3);
+    return `[${role}] ${text}`;
+  }).join("\n\n");
+  let summary;
+  if (opts.summarizer) {
+    const prompt = `Summarize this conversation segment concisely, preserving key decisions, file changes, errors, and outcomes. Focus on what was done and what state things are in now:
+
+${middleText}`;
+    summary = await opts.summarizer(prompt, targetTokens);
+  } else {
+    summary = extractiveCompress(middle, targetTokens);
+  }
+  const summaryMessage = {
+    role: "assistant",
+    content: `[Context Summary \u2014 ${middle.length} earlier messages compressed]
+${summary}`,
+    isCompacted: true
+  };
+  return [...head, summaryMessage, ...tail];
+}
+function extractiveCompress(messages, targetTokens) {
+  const maxChars = targetTokens * CHARS_PER_TOKEN;
+  const lines = [];
+  for (const msg of messages) {
+    const role = msg.role === "assistant" ? "A" : "U";
+    const content = msg.content || "";
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.length < 5) continue;
+      let priority = 1;
+      if (/error|fail|exception/i.test(trimmed)) priority = 5;
+      if (/\.(ts|js|py|go|rs|tsx|jsx|json)/.test(trimmed)) priority = 3;
+      if (/wrote|created|edited|deleted|fixed/i.test(trimmed)) priority = 4;
+      if (/→|✓|✗|COMPLETE|OK:|FAIL:/i.test(trimmed)) priority = 3;
+      if (/decision|chose|decided|because/i.test(trimmed)) priority = 4;
+      lines.push({ text: `[${role}] ${trimmed}`, priority });
+    }
+  }
+  lines.sort((a, b) => b.priority - a.priority);
+  let result2 = "";
+  for (const line of lines) {
+    if (result2.length + line.text.length > maxChars) break;
+    result2 += line.text + "\n";
+  }
+  return result2 || "[No significant content to summarize]";
+}
+function adaptiveCompressionRatio(totalTurns, contextUsagePct) {
+  if (contextUsagePct < 0.5) {
+    return { firstN: 5, lastN: 8 };
+  }
+  if (contextUsagePct < 0.75) {
+    return { firstN: 3, lastN: 5 };
+  }
+  return { firstN: 1, lastN: 3 };
+}
+var CHARS_PER_TOKEN, CONTEXT_WINDOWS;
+var init_token_compaction = __esm({
+  "src/context/token-compaction.ts"() {
+    "use strict";
+    CHARS_PER_TOKEN = 3.7;
+    CONTEXT_WINDOWS = {
+      "gemini-2.5-flash": 1048576,
+      "gemini-2.5-pro": 1048576,
+      "gemini-2.0-flash": 1048576,
+      "gpt-4o": 128e3,
+      "gpt-4o-mini": 128e3,
+      "gpt-5": 256e3,
+      "gpt-5.4": 256e3,
+      "gpt-5.3": 256e3,
+      "gpt-5.1": 256e3,
+      "gpt-5.2": 256e3,
+      "claude-3-5-sonnet": 2e5,
+      "claude-opus-4.6": 2e5,
+      "claude-opus-4": 2e5,
+      "claude-sonnet-4": 2e5,
+      "claude-haiku-4": 2e5,
+      "grok-4": 131072,
+      "grok-beta": 131072,
+      "deepseek-chat": 128e3,
+      "deepseek-reasoner": 128e3,
+      "llama-3.3": 128e3
+    };
+  }
+});
+
+// src/executor/context-compaction.ts
+function compactMessages(messages) {
+  if (messages.length <= 7) return messages;
+  const first = messages.slice(0, 1);
+  const tail = messages.slice(-10);
+  const middle = messages.slice(1, messages.length - 10);
+  if (middle.length === 0) return messages;
+  const summaryLines = middle.map((msg, i) => {
+    const role = msg.role || "unknown";
+    let preview = "";
+    if (typeof msg.content === "string") {
+      preview = msg.content.slice(0, 120).replace(/\n/g, " ");
+    } else if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block.text) {
+          preview = block.text.slice(0, 120).replace(/\n/g, " ");
+          break;
+        }
+        if (block.type === "tool_use") {
+          preview = `[tool_use: ${block.name}]`;
+          break;
+        }
+        if (block.type === "tool_result") {
+          preview = `[tool_result: ${String(block.content || "").slice(0, 80)}]`;
+          break;
+        }
+        if (block.function) {
+          preview = `[fn: ${block.function.name}]`;
+          break;
+        }
+      }
+    } else if (msg.parts) {
+      for (const part of msg.parts || []) {
+        if (part.text) {
+          preview = part.text.slice(0, 120).replace(/\n/g, " ");
+          break;
+        }
+        if (part.functionCall) {
+          preview = `[functionCall: ${part.functionCall.name}]`;
+          break;
+        }
+        if (part.functionResponse) {
+          preview = `[functionResponse: ${part.functionResponse.name}]`;
+          break;
+        }
+      }
+    }
+    return `Turn ${i + 1} (${role}): ${preview || "(no preview)"}`;
+  });
+  const summaryText = `[Context compacted \u2014 ${middle.length} earlier messages summarised]
+${summaryLines.join("\n")}`;
+  const summaryMsg = {
+    role: "user",
+    content: summaryText
+  };
+  return [...first, summaryMsg, ...tail];
+}
+var init_context_compaction = __esm({
+  "src/executor/context-compaction.ts"() {
+    "use strict";
+    init_token_compaction();
+  }
+});
+
+// src/executor/post-sampling-hooks.ts
+import { exec } from "node:child_process";
+import { promisify as promisify3 } from "node:util";
+async function runPostSamplingHooks(hooks, ctx) {
+  const continueMessages = [];
+  for (const hook of hooks) {
+    let result2;
+    try {
+      result2 = await hook(ctx);
+    } catch {
+      continue;
+    }
+    if (!result2) continue;
+    if (result2.action === "stop" || result2.action === "retry") {
+      return result2;
+    }
+    if (result2.action === "continue" && result2.message) {
+      continueMessages.push(result2.message);
+    }
+  }
+  return {
+    action: "continue",
+    message: continueMessages.length > 0 ? continueMessages.join("\n\n") : void 0
+  };
+}
+var execAsync;
+var init_post_sampling_hooks = __esm({
+  "src/executor/post-sampling-hooks.ts"() {
+    "use strict";
+    execAsync = promisify3(exec);
+  }
+});
+
 // src/worker/autonomous-loop.ts
+function isContextLengthError(err) {
+  const msg = String(err?.message || "").toLowerCase();
+  return msg.includes("context length") || msg.includes("too long") || msg.includes("payload size") || msg.includes("context_length_exceeded") || msg.includes("max_tokens") || msg.includes("token limit") || msg.includes("prompt is too long") || msg.includes("maximum context") || msg.includes("request payload size exceeds");
+}
+function isTruncated(finishReason) {
+  if (!finishReason) return false;
+  return finishReason === "length" || finishReason === "max_tokens";
+}
+function hasIncompleteToolCalls(toolCalls, response) {
+  if (!toolCalls || toolCalls.length === 0) return false;
+  const last = toolCalls[toolCalls.length - 1];
+  if (!last.params || Object.keys(last.params).length === 0) return true;
+  const trimmed = response.trimEnd();
+  if (trimmed.endsWith(",") || trimmed.endsWith("{") || trimmed.endsWith("[")) return true;
+  return false;
+}
 async function executeAutonomous(task, executeLLM, executeTool, config) {
   const maxTurns = config.maxTurns || DEFAULT_MAX_TURNS;
   const repeatThreshold = config.repeatThreshold || DEFAULT_REPEAT_THRESHOLD;
   const history = [];
-  const { abortSignal, maxBudgetUsd } = config;
+  const { abortSignal, maxBudgetUsd, hooks = [], projectDir = process.cwd(), model = "" } = config;
   let lastResponseText = "";
   let staleCount = 0;
   let totalCostUsd = 0;
+  let pendingContext = "";
   for (let turn = 0; turn < maxTurns; turn++) {
     if (abortSignal?.aborted) {
       return {
@@ -2872,8 +3119,46 @@ async function executeAutonomous(task, executeLLM, executeTool, config) {
       };
     }
     config.onProgress?.(turn + 1, "THINKING");
-    const clearedHistory = clearOldToolResults(history);
-    const response = await executeLLM(task, config.tools, clearedHistory, abortSignal);
+    let clearedHistory = clearOldToolResults(history);
+    const effectiveTask = pendingContext ? `${task}
+
+${pendingContext}` : task;
+    pendingContext = "";
+    let reactiveCompacted = false;
+    let response;
+    try {
+      response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
+    } catch (err) {
+      if (isContextLengthError(err) && !reactiveCompacted) {
+        reactiveCompacted = true;
+        console.error("[crew-cli] Context exceeded \u2014 compacted history and retrying");
+        clearedHistory = compactMessages(clearedHistory, model);
+        response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
+      } else {
+        throw err;
+      }
+    }
+    let recoveryAttempts = 0;
+    while (isTruncated(response.finishReason) && hasIncompleteToolCalls(response.toolCalls, response.response) && recoveryAttempts < 2) {
+      recoveryAttempts++;
+      console.error(`[crew-cli] Output truncated (finish_reason=${response.finishReason}) \u2014 compacting and retrying (attempt ${recoveryAttempts}/2)`);
+      clearedHistory = compactMessages(clearedHistory, model);
+      try {
+        response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
+      } catch (err) {
+        if (isContextLengthError(err) && !reactiveCompacted) {
+          reactiveCompacted = true;
+          console.error("[crew-cli] Context exceeded during recovery \u2014 compacting again");
+          clearedHistory = compactMessages(clearedHistory, model);
+          response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
+        } else {
+          throw err;
+        }
+      }
+    }
+    if (isTruncated(response.finishReason) && (!response.toolCalls || response.toolCalls.length === 0)) {
+      pendingContext = "[Response was truncated. Continue from where you left off.]";
+    }
     if (response.costUsd) {
       totalCostUsd += response.costUsd;
       if (maxBudgetUsd !== void 0 && totalCostUsd > maxBudgetUsd) {
@@ -2924,6 +3209,7 @@ async function executeAutonomous(task, executeLLM, executeTool, config) {
       };
     }
     const batches = partitionToolCalls(response.toolCalls);
+    const turnResults = [];
     for (const batch of batches) {
       if (abortSignal?.aborted) {
         return {
@@ -2947,9 +3233,13 @@ async function executeAutonomous(task, executeLLM, executeTool, config) {
           const r = results[i];
           const call = batch.calls[i];
           if (r.status === "fulfilled") {
-            history.push({ turn: turn + 1, tool: r.value.call.tool, params: r.value.call.params, result: r.value.result });
+            const tr = { turn: turn + 1, tool: r.value.call.tool, params: r.value.call.params, result: r.value.result };
+            history.push(tr);
+            turnResults.push(tr);
           } else {
-            history.push({ turn: turn + 1, tool: call.tool, params: call.params, result: null, error: r.reason?.message || "concurrent execution failed" });
+            const tr = { turn: turn + 1, tool: call.tool, params: call.params, result: null, error: r.reason?.message || "concurrent execution failed" };
+            history.push(tr);
+            turnResults.push(tr);
           }
         }
       } else {
@@ -2966,7 +3256,9 @@ async function executeAutonomous(task, executeLLM, executeTool, config) {
           config.onProgress?.(turn + 1, `EXECUTING: ${call.tool}`);
           try {
             const result2 = await executeTool(call.tool, call.params, abortSignal);
-            history.push({ turn: turn + 1, tool: call.tool, params: call.params, result: result2 });
+            const tr = { turn: turn + 1, tool: call.tool, params: call.params, result: result2 };
+            history.push(tr);
+            turnResults.push(tr);
           } catch (error) {
             if (abortSignal?.aborted || error?.name === "AbortError") {
               return {
@@ -2977,9 +3269,48 @@ async function executeAutonomous(task, executeLLM, executeTool, config) {
                 totalCostUsd
               };
             }
-            history.push({ turn: turn + 1, tool: call.tool, params: call.params, result: null, error: error.message });
+            const tr = { turn: turn + 1, tool: call.tool, params: call.params, result: null, error: error.message };
+            history.push(tr);
+            turnResults.push(tr);
           }
         }
+      }
+    }
+    if (hooks.length > 0) {
+      const hookCtx = {
+        turn: turn + 1,
+        response: response.response,
+        toolCalls: response.toolCalls,
+        toolResults: turnResults,
+        history,
+        projectDir
+      };
+      const hookResult = await runPostSamplingHooks(hooks, hookCtx);
+      if (hookResult.action === "stop") {
+        return {
+          success: false,
+          turns: turn + 1,
+          history,
+          finalResponse: response.response,
+          reason: hookResult.message || "Stopped by post-sampling hook",
+          totalCostUsd
+        };
+      }
+      if (hookResult.action === "retry") {
+        for (const tr of turnResults) {
+          const idx = history.lastIndexOf(tr);
+          if (idx !== -1) history.splice(idx, 1);
+        }
+        if (hookResult.message) {
+          pendingContext = hookResult.message;
+        }
+        turn--;
+        continue;
+      }
+      if (hookResult.message) {
+        pendingContext = pendingContext ? `${pendingContext}
+
+${hookResult.message}` : hookResult.message;
       }
     }
     if (turn > repeatThreshold && isRepeating(history, 3)) {
@@ -3012,6 +3343,8 @@ var init_autonomous_loop = __esm({
     "use strict";
     init_tool_batching();
     init_tool_result_clearing();
+    init_context_compaction();
+    init_post_sampling_hooks();
     DEFAULT_MAX_TURNS = 25;
     DEFAULT_REPEAT_THRESHOLD = 10;
   }
@@ -3447,7 +3780,7 @@ var init_docker_sandbox = __esm({
 // src/tools/gemini/crew-adapter.ts
 import { execSync as execSync3 } from "node:child_process";
 import { mkdir as mkdir3, readFile as readFile7, readdir as readdir2, writeFile as writeFile3 } from "node:fs/promises";
-import { join as join9, resolve as resolve4 } from "node:path";
+import { dirname as dirname4, join as join9, resolve as resolve4 } from "node:path";
 function toolAllowedAtLevel(toolName, level) {
   switch (level) {
     case "read-only":
@@ -3521,8 +3854,11 @@ var init_crew_adapter = __esm({
       "enter_plan_mode",
       "exit_plan_mode",
       "lsp",
-      "git"
+      "git",
       // git is read-safe (force-push/--no-verify already blocked)
+      "sleep",
+      "tool_search"
+      // sleep and tool_search are safe at any constraint level
     ]);
     EDIT_TOOLS = /* @__PURE__ */ new Set([
       ...READ_ONLY_TOOLS2,
@@ -3536,7 +3872,13 @@ var init_crew_adapter = __esm({
       "tracker_update_task",
       "tracker_add_dependency",
       "mkdir",
-      "activate_skill"
+      "activate_skill",
+      "worktree",
+      "enter_worktree",
+      "exit_worktree",
+      "merge_worktree",
+      "list_worktrees",
+      "notebook_edit"
     ]);
     FULL_TOOLS = /* @__PURE__ */ new Set([
       ...EDIT_TOOLS,
@@ -3621,7 +3963,11 @@ var init_crew_adapter = __esm({
           "tracker_add_dependency",
           "tracker_visualize",
           "spawn_agent",
-          "check_background_task"
+          "notebook_edit",
+          "check_background_task",
+          "worktree",
+          "sleep",
+          "tool_search"
         ];
         const canonical = canonicalNames.map((name) => {
           const found = staticByName.get(name);
@@ -3701,13 +4047,32 @@ var init_crew_adapter = __esm({
         });
         byName.set("lsp", {
           name: "lsp",
-          description: "Run code-intel queries (symbols/refs/goto/diagnostics/complete).",
+          description: "Language Server Protocol code intelligence: diagnostics, go-to-definition, find references, hover type info, completions. Uses TypeScript language service or grep-based fallback.",
           parameters: {
             type: "object",
             properties: {
-              query: { type: "string", description: "LSP query string" }
+              action: { type: "string", enum: ["diagnostics", "definition", "references", "hover", "completions"], description: "LSP action" },
+              file: { type: "string", description: "Source file path" },
+              line: { type: "number", description: "1-based line number" },
+              column: { type: "number", description: "1-based column number" },
+              symbol: { type: "string", description: "Symbol name for grep-based lookups" }
             },
-            required: ["query"]
+            required: ["action", "file"]
+          }
+        });
+        byName.set("notebook_edit", {
+          name: "notebook_edit",
+          description: "Edit Jupyter notebooks (.ipynb files). Actions: read, add_cell, edit_cell, delete_cell, run_cell.",
+          parameters: {
+            type: "object",
+            properties: {
+              action: { type: "string", enum: ["add_cell", "edit_cell", "delete_cell", "run_cell", "read"], description: "Notebook action" },
+              path: { type: "string", description: "Path to .ipynb file" },
+              index: { type: "number", description: "0-based cell index" },
+              cell_type: { type: "string", enum: ["code", "markdown"], description: "Cell type for add_cell" },
+              content: { type: "string", description: "Cell source content for add_cell/edit_cell" }
+            },
+            required: ["action", "path"]
           }
         });
         return Array.from(byName.values());
@@ -3738,8 +4103,12 @@ var init_crew_adapter = __esm({
           { name: "tracker_list_tasks", description: "List tracker tasks", parameters: { type: "object", properties: { status: { type: "string" }, type: { type: "string" }, parentId: { type: "string" } } } },
           { name: "tracker_add_dependency", description: "Add tracker dependency", parameters: { type: "object", properties: { taskId: { type: "string" }, dependencyId: { type: "string" } }, required: ["taskId", "dependencyId"] } },
           { name: "tracker_visualize", description: "Visualize tracker graph", parameters: { type: "object", properties: {} } },
-          { name: "spawn_agent", description: "Spawn a sub-agent to handle a task autonomously in parallel. Use for independent research, file analysis, or coding subtasks. Returns the sub-agent result when complete.", parameters: { type: "object", properties: { task: { type: "string", description: "Clear task description for the sub-agent" }, model: { type: "string", description: "Optional model override (default: use cheap model for workers)" }, max_turns: { type: "number", description: "Max turns for sub-agent (default: 15)" } }, required: ["task"] } },
-          { name: "check_background_task", description: "Check the status/result of a background shell command. Returns result if done, or elapsed time if still running.", parameters: { type: "object", properties: { task_id: { type: "string", description: "Task ID returned by run_shell_command with run_in_background:true" } }, required: ["task_id"] } }
+          { name: "spawn_agent", description: "Spawn a sub-agent to handle a task autonomously. The sub-agent runs in an isolated sandbox branch with a limited tool set and cheaper model. Use for independent research, file analysis, or coding subtasks. Returns the sub-agent result when complete.", parameters: { type: "object", properties: { task: { type: "string", description: "Clear task description for the sub-agent" }, tools: { type: "array", items: { type: "string" }, description: "Optional subset of tool names the sub-agent may use" }, maxTurns: { type: "number", description: "Max turns for sub-agent (default: 10, max: 25)" }, model: { type: "string", description: "Optional model override (default: cheapest configured model)" } }, required: ["task"] } },
+          { name: "notebook_edit", description: "Edit Jupyter notebooks (.ipynb files). Actions: read (view structure), add_cell, edit_cell, delete_cell, run_cell.", parameters: { type: "object", properties: { action: { type: "string", enum: ["add_cell", "edit_cell", "delete_cell", "run_cell", "read"], description: "Notebook action" }, path: { type: "string", description: "Path to .ipynb file" }, index: { type: "number", description: "0-based cell index" }, cell_type: { type: "string", enum: ["code", "markdown"], description: "Cell type for add_cell" }, content: { type: "string", description: "Cell source content for add_cell/edit_cell" } }, required: ["action", "path"] } },
+          { name: "check_background_task", description: "Check the status/result of a background shell command. Returns result if done, or elapsed time if still running.", parameters: { type: "object", properties: { task_id: { type: "string", description: "Task ID returned by run_shell_command with run_in_background:true" } }, required: ["task_id"] } },
+          { name: "worktree", description: "Manage git worktrees to isolate agent work on separate branches. Actions: enter (create), exit (remove), merge (merge branch), list (list active).", parameters: { type: "object", properties: { action: { type: "string", enum: ["enter", "exit", "merge", "list"], description: "Worktree action" }, branch: { type: "string", description: "Branch name for enter/exit/merge" }, merge: { type: "boolean", description: "Merge on exit (default: true)" }, projectDir: { type: "string", description: "Override project directory" } }, required: ["action"] } },
+          { name: "sleep", description: "Pause execution for a specified duration (max 60s). Useful for polling, rate limiting, or waiting for external processes.", parameters: { type: "object", properties: { duration_ms: { type: "number", description: "Sleep duration in milliseconds (max 60000)" }, reason: { type: "string", description: "Why the agent is sleeping" } }, required: ["duration_ms"] } },
+          { name: "tool_search", description: "Search the tool registry to discover available tools by name or capability. Returns tool names, descriptions, and parameter schemas.", parameters: { type: "object", properties: { query: { type: "string", description: "Search term matched against tool name and description" }, max_results: { type: "number", description: "Max results to return (default: 10)" } }, required: ["query"] } }
         ];
       }
       /**
@@ -3830,6 +4199,8 @@ var init_crew_adapter = __esm({
               return await this.shellTool(params);
             case "lsp":
               return await this.lspTool(params);
+            case "notebook_edit":
+              return await this.notebookEditTool(params);
             case "web_search":
             case "google_web_search":
               return await this.webSearchTool(params);
@@ -3859,6 +4230,12 @@ var init_crew_adapter = __esm({
               return this.mergeWorktreeTool(params);
             case "list_worktrees":
               return this.listWorktreesTool();
+            case "worktree":
+              return await this.worktreeUnifiedTool(params);
+            case "sleep":
+              return await this.sleepTool(params);
+            case "tool_search":
+              return this.toolSearchTool(params);
             default:
               return {
                 success: false,
@@ -4584,8 +4961,11 @@ ${summary}`
         return { success: true, output: lines.join("\n") || "(no tasks)" };
       }
       async lspTool(params) {
+        if (params.action && params.file) {
+          return this.lspActionTool(params);
+        }
         const query = String(params.query || "").trim();
-        if (!query) return { success: false, error: "lsp requires query" };
+        if (!query) return { success: false, error: "lsp requires action+file or legacy query string" };
         const lower = query.toLowerCase();
         const lsp = await Promise.resolve().then(() => (init_lsp(), lsp_exports));
         if (lower.startsWith("symbols")) {
@@ -4623,6 +5003,193 @@ ${summary}`
           return { success: true, output: items.map((i) => `${i.name} (${i.kind})`).join("\n") };
         }
         return { success: false, error: `Unsupported lsp query: ${query}` };
+      }
+      /** Inline implementation of LSP action-based interface (avoids importing tools.ts) */
+      async lspActionTool(params) {
+        const { action, file, line, column, symbol } = params;
+        const workspaceRoot = this.config.getWorkspaceRoot();
+        const absFile = file.startsWith("/") ? file : resolve4(workspaceRoot, file);
+        const lsp = await Promise.resolve().then(() => (init_lsp(), lsp_exports));
+        const ext = absFile.slice(absFile.lastIndexOf(".") + 1).toLowerCase();
+        const isTs = ext === "ts" || ext === "tsx";
+        const isJs = ext === "js" || ext === "jsx" || ext === "mjs" || ext === "cjs";
+        try {
+          if (action === "diagnostics") {
+            if (isTs || isJs) {
+              try {
+                const diags = await lsp.typeCheckProject(workspaceRoot, [absFile]);
+                if (diags.length === 0) return { success: true, output: "No diagnostics found." };
+                return { success: true, output: diags.map((d) => `${d.file}:${d.line}:${d.column} [${d.category}] TS${d.code}: ${d.message}`).join("\n") };
+              } catch {
+                const out = execSync3(`npx tsc --noEmit 2>&1 || true`, { cwd: workspaceRoot, encoding: "utf8", timeout: 3e4 });
+                return { success: true, output: out.trim() || "No diagnostics found." };
+              }
+            }
+            if (ext === "py") {
+              const out = execSync3(`python -m py_compile ${JSON.stringify(absFile)} 2>&1 || true`, { cwd: workspaceRoot, encoding: "utf8", timeout: 1e4 });
+              return { success: true, output: out.trim() || "No syntax errors found." };
+            }
+            return { success: false, error: `Diagnostics not supported for .${ext} files` };
+          }
+          if (action === "definition") {
+            if ((isTs || isJs) && line != null) {
+              try {
+                const defs = await lsp.getDefinitions(workspaceRoot, absFile, line, column ?? 1);
+                if (defs.length === 0) return { success: true, output: "No definition found." };
+                return { success: true, output: defs.map((d) => `${d.file}:${d.line}:${d.column}`).join("\n") };
+              } catch {
+              }
+            }
+            const sym = symbol || "unknown";
+            try {
+              const out = execSync3(`grep -rn -E "export (function|class|const|let|var|interface|type|enum) ${sym}|def ${sym}|func ${sym}|function ${sym}" .`, { cwd: workspaceRoot, encoding: "utf8", timeout: 15e3 });
+              return { success: true, output: out.trim() || "No definition found." };
+            } catch (e) {
+              return { success: true, output: e?.status === 1 ? "No definition found." : `grep failed: ${e?.message}` };
+            }
+          }
+          if (action === "references") {
+            if ((isTs || isJs) && line != null) {
+              try {
+                const refs = await lsp.getReferences(workspaceRoot, absFile, line, column ?? 1);
+                if (refs.length === 0) return { success: true, output: "No references found." };
+                return { success: true, output: refs.map((r) => `${r.file}:${r.line}:${r.column}`).join("\n") };
+              } catch {
+              }
+            }
+            const sym = symbol || "unknown";
+            try {
+              const out = execSync3(`grep -rn "\\b${sym}\\b" --include="*.ts" --include="*.js" --include="*.py" --include="*.go" .`, { cwd: workspaceRoot, encoding: "utf8", timeout: 15e3 });
+              return { success: true, output: out.trim() || "No references found." };
+            } catch (e) {
+              return { success: true, output: e?.status === 1 ? "No references found." : `grep failed: ${e?.message}` };
+            }
+          }
+          if (action === "hover") {
+            if (line == null) return { success: false, error: "hover requires line" };
+            if (isTs || isJs) {
+              try {
+                const symbols = await lsp.getDocumentSymbols(workspaceRoot, absFile);
+                const near = symbols.filter((s) => Math.abs(s.line - line) <= 1);
+                if (near.length > 0) return { success: true, output: near.map((s) => `${s.kind} ${s.name} (line ${s.line}:${s.column})`).join("\n") };
+              } catch {
+              }
+            }
+            try {
+              const content = await readFile7(absFile, "utf8");
+              const lines = content.split("\n");
+              return { success: true, output: lines[line - 1] || "" };
+            } catch (e) {
+              return { success: false, error: `Could not read file: ${e?.message}` };
+            }
+          }
+          if (action === "completions") {
+            if (line == null || column == null) return { success: false, error: "completions requires line and column" };
+            if (isTs || isJs) {
+              try {
+                const items = await lsp.getCompletions(workspaceRoot, absFile, line, column, 30, "");
+                if (items.length === 0) return { success: true, output: "No completions found." };
+                return { success: true, output: items.map((i) => `${i.name} (${i.kind})`).join("\n") };
+              } catch (e) {
+                return { success: false, error: `completions failed: ${e?.message}` };
+              }
+            }
+            return { success: false, error: `Completions not supported for .${ext} files` };
+          }
+          return { success: false, error: `Unknown lsp action: ${action}` };
+        } catch (err) {
+          return { success: false, error: `LSP error: ${err?.message || String(err)}` };
+        }
+      }
+      /** Inline implementation of notebook-edit actions (avoids importing tools.ts) */
+      async notebookEditTool(params) {
+        const { action, index, content, cell_type } = params;
+        const nbPath = params.path.startsWith("/") ? params.path : resolve4(this.config.getWorkspaceRoot(), params.path);
+        async function loadNb() {
+          try {
+            const raw = await readFile7(nbPath, "utf8");
+            return JSON.parse(raw);
+          } catch (e) {
+            throw new Error(`Cannot read notebook ${params.path}: ${e.message}`);
+          }
+        }
+        async function saveNb(nb) {
+          await mkdir3(dirname4(nbPath), { recursive: true });
+          await writeFile3(nbPath, JSON.stringify(nb, null, 1), "utf8");
+        }
+        function toLines(src) {
+          if (!src) return [];
+          const parts = src.split("\n");
+          return parts.map((l, i) => i < parts.length - 1 ? `${l}
+` : l);
+        }
+        try {
+          if (action === "read") {
+            const nb = await loadNb();
+            const cells = (nb.cells || []).map((c, i) => {
+              const src = (Array.isArray(c.source) ? c.source.join("") : c.source || "").slice(0, 200);
+              const outs = Array.isArray(c.outputs) && c.outputs.length ? ` [${c.outputs.length} output(s)]` : "";
+              return `[${i}] ${c.cell_type}${outs}:
+${src}`;
+            });
+            const summary = `Notebook: ${params.path}
+Format: ${nb.nbformat}.${nb.nbformat_minor}
+Cells: ${nb.cells.length}
+
+${cells.join("\n\n")}`;
+            return { success: true, output: summary };
+          }
+          if (action === "add_cell") {
+            if (content == null) return { success: false, error: "add_cell requires 'content'" };
+            const nb = await loadNb();
+            const newCell = { cell_type: cell_type ?? "code", source: toLines(content), metadata: {}, outputs: [], execution_count: null };
+            if (index != null && index >= 0 && index <= nb.cells.length) nb.cells.splice(index, 0, newCell);
+            else nb.cells.push(newCell);
+            await saveNb(nb);
+            return { success: true, output: `Added ${newCell.cell_type} cell at index ${index ?? nb.cells.length - 1}` };
+          }
+          if (action === "edit_cell") {
+            if (index == null) return { success: false, error: "edit_cell requires 'index'" };
+            if (content == null) return { success: false, error: "edit_cell requires 'content'" };
+            const nb = await loadNb();
+            if (index < 0 || index >= nb.cells.length) return { success: false, output: `Cell index ${index} out of range (notebook has ${nb.cells.length} cells)` };
+            nb.cells[index].source = toLines(content);
+            if (nb.cells[index].cell_type === "code") {
+              nb.cells[index].outputs = [];
+              nb.cells[index].execution_count = null;
+            }
+            await saveNb(nb);
+            return { success: true, output: `Edited cell ${index}` };
+          }
+          if (action === "delete_cell") {
+            if (index == null) return { success: false, error: "delete_cell requires 'index'" };
+            const nb = await loadNb();
+            if (index < 0 || index >= nb.cells.length) return { success: false, output: `Cell index ${index} out of range (notebook has ${nb.cells.length} cells)` };
+            nb.cells.splice(index, 1);
+            await saveNb(nb);
+            return { success: true, output: `Deleted cell ${index} (${nb.cells.length} cells remaining)` };
+          }
+          if (action === "run_cell") {
+            if (index == null) return { success: false, error: "run_cell requires 'index'" };
+            const nb = await loadNb();
+            if (index < 0 || index >= nb.cells.length) return { success: false, error: `Cell index ${index} out of range` };
+            const cell = nb.cells[index];
+            if (cell.cell_type !== "code") return { success: false, error: `Cell ${index} is ${cell.cell_type}, only code cells can be run` };
+            const src = Array.isArray(cell.source) ? cell.source.join("") : cell.source;
+            try {
+              const out = execSync3(`python3 -c ${JSON.stringify(src)}`, { cwd: this.config.getWorkspaceRoot(), encoding: "utf8", timeout: 3e4 });
+              return { success: true, output: `Cell ${index} executed:
+${out.trim() || "(no output)"}` };
+            } catch (pyErr) {
+              const stderr = pyErr?.stderr?.toString?.()?.trim() || pyErr?.message || "execution failed";
+              return { success: false, error: `Cell ${index} execution failed:
+${stderr}` };
+            }
+          }
+          return { success: false, error: `Unknown notebook_edit action: ${action}` };
+        } catch (err) {
+          return { success: false, error: `NotebookEdit error: ${err?.message || String(err)}` };
+        }
       }
       async checkBackgroundTask(params) {
         const taskId = String(params.task_id || "").trim();
@@ -5190,6 +5757,67 @@ ${summary}`
           })), null, 2)
         };
       }
+      // ─── Unified Worktree Tool (dispatches to sub-actions) ───────────────────
+      async worktreeUnifiedTool(params) {
+        const { action, branch, projectDir } = params;
+        const cwd = projectDir || this.sandbox.baseDir || process.cwd();
+        switch (action) {
+          case "enter":
+            return this.enterWorktreeTool({ branch_prefix: branch, agent_id: void 0 });
+          case "exit":
+            if (!branch) return { success: false, error: "branch is required for exit action" };
+            return await this.exitWorktreeTool({ branch_name: branch });
+          case "merge":
+            if (!branch) return { success: false, error: "branch is required for merge action" };
+            return this.mergeWorktreeTool({ branch_name: branch, strategy: "merge" });
+          case "list":
+            return this.listWorktreesTool();
+          default:
+            return { success: false, error: `Unknown worktree action: ${action}` };
+        }
+      }
+      // ─── Sleep Tool ──────────────────────────────────────────────────────────
+      async sleepTool(params) {
+        const MAX_SLEEP_MS = 6e4;
+        const requested = typeof params.duration_ms === "number" ? params.duration_ms : 0;
+        const actual = Math.min(Math.max(0, requested), MAX_SLEEP_MS);
+        const reason = params.reason || "no reason given";
+        await new Promise((resolve20) => setTimeout(resolve20, actual));
+        const cappedNote = requested > MAX_SLEEP_MS ? ` (requested ${requested}ms, capped at ${MAX_SLEEP_MS}ms)` : "";
+        return {
+          success: true,
+          output: JSON.stringify({ sleptMs: actual, reason, cappedNote: cappedNote || void 0 }, null, 2)
+        };
+      }
+      // ─── Tool Search Tool ────────────────────────────────────────────────────
+      toolSearchTool(params) {
+        const query = (params.query || "").trim().toLowerCase();
+        if (!query) return { success: false, error: "query is required" };
+        const maxResults = Math.max(1, params.max_results ?? 10);
+        const allDecls = this.buildDynamicDeclarations();
+        const scored = allDecls.map((decl) => {
+          const name = (decl.name || "").toLowerCase();
+          const desc = (decl.description || "").toLowerCase();
+          let score = 0;
+          if (name === query) score += 100;
+          else if (name.startsWith(query)) score += 60;
+          else if (name.includes(query)) score += 40;
+          if (desc.includes(query)) score += 20;
+          return { decl, score };
+        }).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score).slice(0, maxResults);
+        if (scored.length === 0) {
+          return { success: true, output: `No tools found matching "${params.query}".` };
+        }
+        const results = scored.map(({ decl }) => ({
+          name: decl.name,
+          description: decl.description,
+          parameterSchema: decl.parameters || {}
+        }));
+        return {
+          success: true,
+          output: JSON.stringify({ query: params.query, count: results.length, results }, null, 2)
+        };
+      }
     };
   }
 });
@@ -5257,132 +5885,6 @@ var init_corrections = __esm({
         await this.ensureReady();
         await copyFile(this.dataPath, path3);
       }
-    };
-  }
-});
-
-// src/context/token-compaction.ts
-function estimateTokens(text) {
-  if (!text) return 0;
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
-}
-function getContextWindow(model) {
-  const m = String(model || "").toLowerCase();
-  for (const [prefix, size] of Object.entries(CONTEXT_WINDOWS)) {
-    if (m.startsWith(prefix)) return size;
-  }
-  return 128e3;
-}
-function calculateTokenBudget(messages, model, systemPromptTokens = 0, compactThreshold = 0.75) {
-  const contextWindow = getContextWindow(model);
-  let estimatedUsed = systemPromptTokens;
-  for (const msg of messages) {
-    estimatedUsed += estimateTokens(msg.content) + 4;
-  }
-  const remainingTokens = contextWindow - estimatedUsed;
-  const remainingPct = remainingTokens / contextWindow;
-  return {
-    contextWindow,
-    estimatedUsed,
-    remainingTokens,
-    remainingPct,
-    shouldCompact: estimatedUsed / contextWindow >= compactThreshold
-  };
-}
-async function compactConversation(messages, opts = {}) {
-  const keepFirst = opts.keepFirst ?? 2;
-  const keepLast = opts.keepLast ?? 6;
-  const targetTokens = opts.targetTokens ?? 2e3;
-  if (messages.length <= keepFirst + keepLast) {
-    return messages;
-  }
-  const head = messages.slice(0, keepFirst);
-  const middle = messages.slice(keepFirst, messages.length - keepLast);
-  const tail = messages.slice(-keepLast);
-  if (middle.length === 0) return messages;
-  const middleText = middle.map((m) => {
-    const role = m.role.toUpperCase();
-    const text = m.content.slice(0, 2e3);
-    return `[${role}] ${text}`;
-  }).join("\n\n");
-  let summary;
-  if (opts.summarizer) {
-    const prompt = `Summarize this conversation segment concisely, preserving key decisions, file changes, errors, and outcomes. Focus on what was done and what state things are in now:
-
-${middleText}`;
-    summary = await opts.summarizer(prompt, targetTokens);
-  } else {
-    summary = extractiveCompress(middle, targetTokens);
-  }
-  const summaryMessage = {
-    role: "assistant",
-    content: `[Context Summary \u2014 ${middle.length} earlier messages compressed]
-${summary}`,
-    isCompacted: true
-  };
-  return [...head, summaryMessage, ...tail];
-}
-function extractiveCompress(messages, targetTokens) {
-  const maxChars = targetTokens * CHARS_PER_TOKEN;
-  const lines = [];
-  for (const msg of messages) {
-    const role = msg.role === "assistant" ? "A" : "U";
-    const content = msg.content || "";
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.length < 5) continue;
-      let priority = 1;
-      if (/error|fail|exception/i.test(trimmed)) priority = 5;
-      if (/\.(ts|js|py|go|rs|tsx|jsx|json)/.test(trimmed)) priority = 3;
-      if (/wrote|created|edited|deleted|fixed/i.test(trimmed)) priority = 4;
-      if (/→|✓|✗|COMPLETE|OK:|FAIL:/i.test(trimmed)) priority = 3;
-      if (/decision|chose|decided|because/i.test(trimmed)) priority = 4;
-      lines.push({ text: `[${role}] ${trimmed}`, priority });
-    }
-  }
-  lines.sort((a, b) => b.priority - a.priority);
-  let result2 = "";
-  for (const line of lines) {
-    if (result2.length + line.text.length > maxChars) break;
-    result2 += line.text + "\n";
-  }
-  return result2 || "[No significant content to summarize]";
-}
-function adaptiveCompressionRatio(totalTurns, contextUsagePct) {
-  if (contextUsagePct < 0.5) {
-    return { firstN: 5, lastN: 8 };
-  }
-  if (contextUsagePct < 0.75) {
-    return { firstN: 3, lastN: 5 };
-  }
-  return { firstN: 1, lastN: 3 };
-}
-var CHARS_PER_TOKEN, CONTEXT_WINDOWS;
-var init_token_compaction = __esm({
-  "src/context/token-compaction.ts"() {
-    "use strict";
-    CHARS_PER_TOKEN = 3.7;
-    CONTEXT_WINDOWS = {
-      "gemini-2.5-flash": 1048576,
-      "gemini-2.5-pro": 1048576,
-      "gemini-2.0-flash": 1048576,
-      "gpt-4o": 128e3,
-      "gpt-4o-mini": 128e3,
-      "gpt-5": 256e3,
-      "gpt-5.4": 256e3,
-      "gpt-5.3": 256e3,
-      "gpt-5.1": 256e3,
-      "gpt-5.2": 256e3,
-      "claude-3-5-sonnet": 2e5,
-      "claude-opus-4.6": 2e5,
-      "claude-opus-4": 2e5,
-      "claude-sonnet-4": 2e5,
-      "claude-haiku-4": 2e5,
-      "grok-4": 131072,
-      "grok-beta": 131072,
-      "deepseek-chat": 128e3,
-      "deepseek-reasoner": 128e3,
-      "llama-3.3": 128e3
     };
   }
 });
@@ -7083,13 +7585,16 @@ Every turn, follow this exact pattern:
 
 ## Available Tools
 
-**Files**: read_file, write_file, replace (edit with replace_all flag), read_many_files, glob, grep_search (output_mode: content/files/count, context, type filter), list_directory, mkdir
-**Shell**: run_shell_command (Docker isolation when staged files exist; run_in_background for long commands; configurable timeout via CREW_SHELL_TIMEOUT, default 120s, max 600s), check_background_task
+**Files**: read_file, write_file, replace (edit with replace_all flag), read_many_files, glob, grep_search (output_mode: content/files/count, context, type filter), list_directory, mkdir, append_file
+**Shell**: run_shell_command (Docker isolation when staged files exist; run_in_background for long commands; configurable timeout via CREW_SHELL_TIMEOUT, default 120s, max 600s), check_background_task, sleep (wait between actions, max 60s)
 **Git**: git (status, diff, log, add, commit, show, branch, stash, tag, blame, checkout, fetch, pull, merge, rebase, cherry-pick, worktree \u2014 force-push and --no-verify blocked)
+**Worktrees**: worktree, enter_worktree, exit_worktree, merge_worktree, list_worktrees (isolated git worktrees for parallel work)
+**Code Intel**: lsp (diagnostics, go-to-definition, find-references, hover, completions), notebook_edit (Jupyter .ipynb \u2014 add/edit/delete/run cells)
 **Web**: google_web_search, web_fetch
 **Memory**: save_memory (persist facts across sessions), write_todos
 **Docs**: get_internal_docs (read project documentation)
 **Agents**: spawn_agent (spawn autonomous sub-agent for independent subtasks \u2014 isolated sandbox branch, cheap model by default, merges changes on completion)
+**Discovery**: tool_search (find available tools by name or description query), activate_skill
 
 ## File Reading Strategy
 
@@ -8399,8 +8904,10 @@ async function parseJsonObjectWithRepair(raw, options = {}) {
       return parsed;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
-      console.log(`[JSON Parse Error] ${label} attempt ${attempt}: ${lastError}`);
-      console.log(`[JSON Parse Error] Raw response (first 500 chars): ${candidateRaw.substring(0, 500)}`);
+      if (process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true") {
+        console.log(`[JSON Parse Error] ${label} attempt ${attempt}: ${lastError}`);
+        console.log(`[JSON Parse Error] Raw response (first 500 chars): ${candidateRaw.substring(0, 500)}`);
+      }
       await options.onAttempt?.({ label, attempt, success: false, repaired, error: lastError });
       if (attempt >= maxAttempts || !options.repair) break;
       const repairPrompt = buildRepairPrompt(candidateRaw, options.schemaHint);
@@ -9685,7 +10192,6 @@ function validateRouterDecision(v) {
   if (!looksLikeDecision) {
     errors.push("invalid decision");
   }
-  if (!String(v.reasoning || "").trim()) errors.push("missing reasoning");
   return result(errors);
 }
 function validateWorkGraph(v) {
@@ -12383,18 +12889,9 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
             traceId
           };
         }
-        if (plan.decision === "execute-local" || plan.decision === "execute-direct") {
-          return {
-            decision: "CODE",
-            agent: "crew-coder",
-            task: request.userInput,
-            explanation: plan.reasoning,
-            traceId
-          };
-        }
         return {
-          decision: "DISPATCH",
-          agent: "crew-main",
+          decision: "CODE",
+          agent: "crew-coder",
           task: request.userInput,
           explanation: plan.reasoning,
           traceId
@@ -12462,11 +12959,17 @@ ${request.context}`,
             priority: 2
           });
         }
+        const currentModel = this.getRouterModel() || process.env.CREW_CHAT_MODEL || process.env.CREW_EXECUTION_MODEL || "unknown";
+        const interfaceMode = String(process.env.CREW_INTERFACE_MODE || "standalone").toLowerCase();
         overlays.push(
           {
             type: "constraints",
-            content: `You are operating in project directory: ${projectDir}
+            content: `You are CrewSwarm's CLI assistant, running model "${currentModel}" in ${interfaceMode} mode.
+You are operating in project directory: ${projectDir}
 You have full file system access with tools: list_directory, read_file, write_file, grep_search, glob, run_shell_command, git, and more.
+You do NOT dispatch to external agents or a swarm. All execution is local.
+
+When asked about your identity or what model you are, answer: "I'm CrewSwarm CLI running ${currentModel}."
 
 Analyze this request and decide:
 
@@ -13196,19 +13699,18 @@ var init_orchestrator = __esm({
     init_unified();
     init_structured_json();
     init_worker_pool();
-    ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crew-cli, a multi-agent orchestration platform.
+    ROUTING_SYSTEM_PROMPT = `You are the intelligent routing system for crew-cli, a standalone agentic coding engine.
 
-Route this request to one of: CHAT, CODE, DISPATCH, SKILL.
+Route this request to one of: direct-answer, execute-direct, execute-parallel.
 
-- CHAT: Simple conversation, greetings, status checks, or informational questions about the system
-- CODE: Code editing, building, implementing, creating, refactoring, or any development task
-- DISPATCH: Specific agent request (QA, PM, security, fixer, etc) or complex multi-step tasks
-- SKILL: Explicit skill invocation
+- direct-answer: Simple conversation, greetings, status checks, or questions about YOUR identity/capabilities. Provide response in "directResponse".
+- execute-direct: Code editing, building, implementing, single-file tasks, questions about files/project state, or any development task.
+- execute-parallel: Complex multi-file features, large refactors, or multi-step implementation tasks.
 
-For CHAT decisions, provide a helpful conversational response in the "response" field.
+You are running as a standalone CLI assistant. You do NOT dispatch to external agents or a swarm.
 
 Return ONLY a JSON object in this exact format:
-{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-xxx if needed","task":"reformulated task","response":"your chat response if CHAT"}`;
+{"decision":"direct-answer|execute-direct|execute-parallel","reasoning":"why this path","directResponse":"if direct-answer, your response here","complexity":"low|medium|high","estimatedCost":0.001}`;
     RouteDecision = /* @__PURE__ */ ((RouteDecision2) => {
       RouteDecision2["CHAT"] = "CHAT";
       RouteDecision2["CODE"] = "CODE";
@@ -13266,13 +13768,16 @@ Return ONLY a JSON object in this exact format:
           return llmDecision;
         }
         const lower = input.toLowerCase();
+        const isStandalone = String(process.env.CREW_INTERFACE_MODE || "standalone").toLowerCase() !== "connected";
         let result2;
         if (lower.startsWith("skill:") || lower.includes("run skill")) {
           result2 = { decision: "SKILL" /* SKILL */, explanation: "Detected skill request" };
         } else if (lower.includes("roadmap") || lower.includes("plan for") || lower.includes("planning") || lower.includes("architecture") || lower.includes("design doc") || lower.includes("build") && (lower.includes("website") || lower.includes("app") || lower.includes("system")) || lower.includes("research") && (lower.includes("indepth") || lower.includes("in-depth"))) {
-          result2 = { decision: "DISPATCH" /* DISPATCH */, agent: "crew-pm", task: input };
+          result2 = { decision: isStandalone ? "CODE" /* CODE */ : "DISPATCH" /* DISPATCH */, agent: isStandalone ? "crew-coder" : "crew-pm", task: input };
         } else if (lower.includes("ask") || lower.includes("tell")) {
-          if (lower.includes("fixer") || lower.includes("fix")) {
+          if (isStandalone) {
+            result2 = { decision: "CODE" /* CODE */, agent: "crew-coder", task: input };
+          } else if (lower.includes("fixer") || lower.includes("fix")) {
             result2 = { decision: "DISPATCH" /* DISPATCH */, agent: "crew-fixer", task: input };
           } else if (lower.includes("qa") || lower.includes("test")) {
             result2 = { decision: "DISPATCH" /* DISPATCH */, agent: "crew-qa", task: input };
@@ -13298,7 +13803,7 @@ Return ONLY a JSON object in this exact format:
             explanation: "Greeting"
           };
         } else {
-          result2 = { decision: "DISPATCH" /* DISPATCH */, agent: "crew-main", task: input };
+          result2 = { decision: isStandalone ? "CODE" /* CODE */ : "DISPATCH" /* DISPATCH */, agent: isStandalone ? "crew-coder" : "crew-main", task: input };
         }
         await this.logRoutingDecision(input, result2);
         return result2;
@@ -13382,7 +13887,7 @@ Return ONLY a JSON object in this exact format:
         try {
           const parsed = await parseJsonObjectWithRepair(raw, {
             label: "Route decision",
-            schemaHint: '{"decision":"CHAT|CODE|DISPATCH|SKILL","agent":"crew-coder","task":"...","response":"..."}',
+            schemaHint: '{"decision":"direct-answer|execute-direct|execute-parallel","reasoning":"...","directResponse":"...","complexity":"low|medium|high","estimatedCost":0.001}',
             repair: async (repairPrompt) => {
               const res = await this.localExecutor.execute(repairPrompt, {
                 model: this.getJsonRepairModel(),
@@ -13392,14 +13897,33 @@ Return ONLY a JSON object in this exact format:
               return String(res.result || "");
             }
           });
-          const decision = String(parsed.decision || "").toUpperCase();
-          if (!Object.values(RouteDecision).includes(decision)) return null;
+          const rawDecision = String(parsed.decision || "").trim().toLowerCase().replace(/_/g, "-");
+          let decision;
+          if (rawDecision === "direct-answer" || rawDecision === "chat" || rawDecision === "answer") {
+            decision = "CHAT" /* CHAT */;
+          } else if (rawDecision === "execute-direct" || rawDecision === "code" || rawDecision === "simple" || rawDecision === "execute") {
+            decision = "CODE" /* CODE */;
+          } else if (rawDecision === "execute-parallel" || rawDecision === "dispatch" || rawDecision === "plan" || rawDecision === "build") {
+            decision = "CODE" /* CODE */;
+          } else if (rawDecision === "skill") {
+            decision = "SKILL" /* SKILL */;
+          } else {
+            const upper = rawDecision.toUpperCase();
+            if (Object.values(RouteDecision).includes(upper)) {
+              decision = upper;
+            } else {
+              return null;
+            }
+          }
+          if (decision === "DISPATCH" /* DISPATCH */) {
+            decision = "CODE" /* CODE */;
+          }
           return {
             decision,
-            agent: parsed.agent || void 0,
+            agent: parsed.agent || (decision === "CODE" /* CODE */ ? "crew-coder" : void 0),
             task: parsed.task || fallbackTask,
-            response: parsed.response || void 0,
-            explanation: parsed.explanation || "LLM-based routing"
+            response: parsed.directResponse || parsed.response || void 0,
+            explanation: parsed.reasoning || parsed.explanation || "LLM-based routing"
           };
         } catch {
           return null;
@@ -13673,7 +14197,7 @@ User request: ${input}`
       /**
        * Execute a task using the agentic executor with full file tools.
        * This is the primary execution path — single worker with THINK→ACT→OBSERVE loop
-       * and 40+ tools (read_file, write_file, replace, bash, grep, etc.).
+       * and 44+ tools (read_file, write_file, replace, bash, grep, etc.).
        * Equivalent to how Claude Code, Codex CLI, and Gemini CLI execute tasks.
        */
       async executeAgentic(task, options = {}) {
@@ -14123,11 +14647,11 @@ __export(ci_exports, {
   runCheckCommand: () => runCheckCommand,
   runCiFixLoop: () => runCiFixLoop
 });
-import { exec } from "node:child_process";
-import { promisify as promisify6 } from "node:util";
+import { exec as exec2 } from "node:child_process";
+import { promisify as promisify7 } from "node:util";
 async function runCheckCommand(command, cwd = process.cwd()) {
   try {
-    const { stdout, stderr } = await execAsync(command, {
+    const { stdout, stderr } = await execAsync2(command, {
       cwd,
       maxBuffer: 1024 * 1024 * 4
     });
@@ -14190,11 +14714,11 @@ async function runCiFixLoop(options) {
     history: runHistory
   };
 }
-var execAsync;
+var execAsync2;
 var init_ci = __esm({
   "src/ci/index.ts"() {
     "use strict";
-    execAsync = promisify6(exec);
+    execAsync2 = promisify7(exec2);
   }
 });
 
@@ -14205,7 +14729,7 @@ __export(blast_radius_exports, {
   isSeverityAtLeast: () => isSeverityAtLeast
 });
 import { execFile as execFile9 } from "node:child_process";
-import { promisify as promisify10 } from "node:util";
+import { promisify as promisify11 } from "node:util";
 import { relative as relative6, resolve as resolve18 } from "node:path";
 function severityRank(level) {
   if (level === "high") return 3;
@@ -14307,7 +14831,7 @@ var init_blast_radius = __esm({
   "src/blast-radius/index.ts"() {
     "use strict";
     init_mapping();
-    execFileAsync9 = promisify10(execFile9);
+    execFileAsync9 = promisify11(execFile9);
   }
 });
 
@@ -15186,12 +15710,12 @@ var ToolManager = class {
     if (!command) {
       throw new Error("Shell tool requires command parameter");
     }
-    const { exec: exec2 } = await import("node:child_process");
-    const { promisify: promisify12 } = await import("node:util");
-    const execAsync2 = promisify12(exec2);
+    const { exec: exec3 } = await import("node:child_process");
+    const { promisify: promisify13 } = await import("node:util");
+    const execAsync3 = promisify13(exec3);
     try {
       const options = cwd ? { cwd } : {};
-      const { stdout, stderr } = await execAsync2(command, options);
+      const { stdout, stderr } = await execAsync3(command, options);
       return {
         success: true,
         operation: "shell",
@@ -15723,8 +16247,8 @@ import { constants as constants5 } from "node:fs";
 import { join as join20 } from "node:path";
 import { homedir as homedir4, userInfo as userInfo2 } from "node:os";
 import { execFile as execFile3 } from "node:child_process";
-import { promisify as promisify3 } from "node:util";
-var execFileAsync3 = promisify3(execFile3);
+import { promisify as promisify4 } from "node:util";
+var execFileAsync3 = promisify4(execFile3);
 var TokenFinder = class {
   async findTokens() {
     const tokens = {};
@@ -16038,7 +16562,7 @@ import { join as join24 } from "node:path";
 import { dirname as dirname6 } from "node:path";
 import { homedir as homedir6 } from "node:os";
 import { execFile as execFile4 } from "node:child_process";
-import { promisify as promisify4 } from "node:util";
+import { promisify as promisify5 } from "node:util";
 import { fileURLToPath } from "node:url";
 
 // src/mcp/index.ts
@@ -16202,7 +16726,7 @@ async function doctorMcpServers(baseDir = process.cwd()) {
 }
 
 // src/diagnostics/doctor.ts
-var execFileAsync4 = promisify4(execFile4);
+var execFileAsync4 = promisify5(execFile4);
 function parseMajorNodeVersion(version) {
   const cleaned = String(version || "").replace(/^v/, "");
   const major = Number.parseInt(cleaned.split(".")[0] || "0", 10);
@@ -17895,8 +18419,8 @@ import { readdir as readdir7, access as access7, mkdir as mkdir16, writeFile as 
 import { constants as constants7 } from "node:fs";
 import { dirname as dirname7, join as join30, resolve as resolve16 } from "node:path";
 import { execFile as execFile5 } from "node:child_process";
-import { promisify as promisify5 } from "node:util";
-var execFileAsync5 = promisify5(execFile5);
+import { promisify as promisify6 } from "node:util";
+var execFileAsync5 = promisify6(execFile5);
 async function exists(path3) {
   try {
     await access7(path3, constants7.F_OK);
@@ -18001,9 +18525,9 @@ import { constants as constants8 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
 import { join as join31 } from "node:path";
 import { execFile as execFile6 } from "node:child_process";
-import { promisify as promisify7 } from "node:util";
+import { promisify as promisify8 } from "node:util";
 import WebSocket2 from "ws";
-var execFileAsync6 = promisify7(execFile6);
+var execFileAsync6 = promisify8(execFile6);
 async function exists2(path3) {
   try {
     await access8(path3, constants8.F_OK);
@@ -18343,11 +18867,11 @@ async function getTeamSyncStatus(baseDir = process.cwd()) {
 
 // src/voice/listener.ts
 import { execFile as execFile7 } from "node:child_process";
-import { promisify as promisify8 } from "node:util";
+import { promisify as promisify9 } from "node:util";
 import { readFile as readFile28, writeFile as writeFile16 } from "node:fs/promises";
 import { join as join33 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
-var execFileAsync7 = promisify8(execFile7);
+var execFileAsync7 = promisify9(execFile7);
 async function commandExists2(command) {
   try {
     await execFileAsync7("which", [command]);
@@ -18635,8 +19159,8 @@ ${clippedContext}` : baseTask.slice(0, maxChars);
 
 // src/review/index.ts
 import { execFile as execFile8 } from "node:child_process";
-import { promisify as promisify9 } from "node:util";
-var execFileAsync8 = promisify9(execFile8);
+import { promisify as promisify10 } from "node:util";
+var execFileAsync8 = promisify10(execFile8);
 function clip6(text, maxChars = 2e4) {
   if (!text) return "(none)";
   if (text.length <= maxChars) return text;
@@ -21193,16 +21717,56 @@ async function startRepl(options) {
     terminal: true,
     completer: tabCompleter
   });
+  let ghostText = "";
+  const clearGhost = () => {
+    if (!ghostText) return;
+    process.stdout.write("\x1B[0m");
+    process.stdout.write(`\x1B[${ghostText.length}D`);
+    process.stdout.write(`\x1B[0K`);
+    ghostText = "";
+  };
+  const renderGhost = () => {
+    const line = rl.line;
+    if (!line || !line.startsWith("/") || line.includes(" ")) {
+      if (ghostText) clearGhost();
+      return;
+    }
+    const match = SLASH_COMMANDS.find((c) => c.startsWith(line) && c !== line);
+    const suffix = match ? match.slice(line.length) : "";
+    if (suffix === ghostText) return;
+    if (ghostText) {
+      process.stdout.write(`\x1B[0K`);
+    }
+    if (suffix) {
+      process.stdout.write(`\x1B[90m${suffix}\x1B[0m`);
+      process.stdout.write(`\x1B[${suffix.length}D`);
+    }
+    ghostText = suffix;
+  };
   const keypressListener = (_str, key) => {
     const isShiftTab = key.name === "tab" && key.shift || key.sequence === "\x1B[Z";
-    if (!isShiftTab) return;
-    const from = replState.mode;
-    replState.mode = nextMode(replState.mode);
-    rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
-    void recordReplEvent("mode_change", { from, to: replState.mode, source: "keybinding" });
-    console.log(chalk3.magenta(`
+    if (isShiftTab) {
+      clearGhost();
+      const from = replState.mode;
+      replState.mode = nextMode(replState.mode);
+      rl.setPrompt(buildPrompt(replState, isProcessing, uiMode));
+      void recordReplEvent("mode_change", { from, to: replState.mode, source: "keybinding" });
+      console.log(chalk3.magenta(`
   \u21BB Mode: ${replState.mode}`));
-    rl.prompt();
+      rl.prompt();
+      return;
+    }
+    if (key.name === "right" && ghostText) {
+      const line = rl.line;
+      const accepted = line + ghostText;
+      rl.line = accepted;
+      rl.cursor = accepted.length;
+      process.stdout.write(`\x1B[0K`);
+      process.stdout.write(ghostText);
+      ghostText = "";
+      return;
+    }
+    setImmediate(renderGhost);
   };
   if (process.stdin.isTTY) {
     emitKeypressEvents(process.stdin, rl);
@@ -21340,20 +21904,59 @@ async function startRepl(options) {
       return true;
     }
     if (command === "/models") {
-      const requestedModel = args.join(" ").trim();
-      if (requestedModel) {
-        replState.model = requestedModel;
+      const subArg = (args[0] || "").trim().toLowerCase();
+      const modelValue = args.slice(1).join(" ").trim();
+      const tierMap = {
+        "l1": { env: "CREW_L1_MODEL", label: "L1 (chat)", replKey: "model" },
+        "l2": { env: "CREW_REASONING_MODEL", label: "L2 (reasoning)" },
+        "l2a": { env: "CREW_L2A_MODEL", label: "L2A (decomposer)" },
+        "l2b": { env: "CREW_L2B_MODEL", label: "L2B (validator)" },
+        "router": { env: "CREW_ROUTER_MODEL", label: "Router" },
+        "l3": { env: "CREW_L3_MODEL", label: "L3 (worker)" },
+        "qa": { env: "CREW_QA_MODEL", label: "L3 QA" },
+        "fixer": { env: "CREW_L3_FIXER_MODEL", label: "L3 Fixer" },
+        "review": { env: "CREW_L3_REVIEW_MODEL", label: "L3 Review" }
+      };
+      if (subArg && tierMap[subArg] && modelValue) {
+        const tier = tierMap[subArg];
+        process.env[tier.env] = modelValue;
+        if (tier.replKey) replState[tier.replKey] = modelValue;
         console.log(chalk3.green(`
-  \u2713 Model set to: ${requestedModel}
+  \u2713 ${tier.label} model set to: ${modelValue}
 `));
         return true;
       }
-      console.log(chalk3.blue("\n--- Available Models ---\n"));
-      for (const model of AVAILABLE_MODELS) {
-        const current = model === replState.model ? chalk3.green(" (current)") : "";
-        console.log(`  ${model}${current}`);
+      const requestedModel = args.join(" ").trim();
+      if (requestedModel && !tierMap[subArg]) {
+        replState.model = requestedModel;
+        console.log(chalk3.green(`
+  \u2713 L1 model set to: ${requestedModel}
+`));
+        return true;
       }
-      console.log(chalk3.gray("\n  Use /model <name> or /models <name> to switch.\n"));
+      console.log(chalk3.blue("\n--- Models by Tier ---\n"));
+      console.log(chalk3.cyan("  L1 (chat):"));
+      for (const model of AVAILABLE_MODELS) {
+        const current = model === replState.model ? chalk3.green(" \u2190 current") : "";
+        console.log(`    ${model}${current}`);
+      }
+      console.log(chalk3.cyan("\n  L2 (reasoning/planning):"));
+      console.log(`    CREW_REASONING_MODEL : ${process.env.CREW_REASONING_MODEL || chalk3.gray("(unset \u2014 uses L1)")}`);
+      console.log(`    CREW_L2A_MODEL       : ${process.env.CREW_L2A_MODEL || chalk3.gray("(unset)")}`);
+      console.log(`    CREW_L2B_MODEL       : ${process.env.CREW_L2B_MODEL || chalk3.gray("(unset)")}`);
+      console.log(`    CREW_ROUTER_MODEL    : ${process.env.CREW_ROUTER_MODEL || chalk3.gray("(unset)")}`);
+      console.log(chalk3.cyan("\n  L3 (workers):"));
+      console.log(`    CREW_L3_MODEL        : ${process.env.CREW_L3_MODEL || chalk3.gray("(unset \u2014 uses L1)")}`);
+      console.log(`    CREW_QA_MODEL        : ${process.env.CREW_QA_MODEL || chalk3.gray("(unset)")}`);
+      console.log(`    CREW_L3_FIXER_MODEL  : ${process.env.CREW_L3_FIXER_MODEL || chalk3.gray("(unset)")}`);
+      console.log(`    CREW_L3_REVIEW_MODEL : ${process.env.CREW_L3_REVIEW_MODEL || chalk3.gray("(unset)")}`);
+      console.log(chalk3.gray("\n  Set per tier:"));
+      console.log(chalk3.gray("    /models l1 <name>      \u2014 L1 chat model"));
+      console.log(chalk3.gray("    /models l2 <name>      \u2014 L2 reasoning model"));
+      console.log(chalk3.gray("    /models l3 <name>      \u2014 L3 worker model"));
+      console.log(chalk3.gray("    /models qa <name>      \u2014 L3 QA model"));
+      console.log(chalk3.gray("    /models fixer <name>   \u2014 L3 fixer model"));
+      console.log(chalk3.gray("    /models <name>         \u2014 shorthand for L1\n"));
       return true;
     }
     if (command === "/model") {
@@ -22929,8 +23532,8 @@ function redactRepoConfigForDisplay(value) {
 
 // src/github/nl.ts
 import { execFile as execFile10 } from "node:child_process";
-import { promisify as promisify11 } from "node:util";
-var execFileAsync10 = promisify11(execFile10);
+import { promisify as promisify12 } from "node:util";
+var execFileAsync10 = promisify12(execFile10);
 function readQuoted(text) {
   const m = text.match(/"([^"]+)"/);
   return (m?.[1] || "").trim();

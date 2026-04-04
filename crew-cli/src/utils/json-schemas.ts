@@ -39,7 +39,8 @@ export function validateRouterDecision(v: any): ValidationResult {
   if (!looksLikeDecision) {
     errors.push('invalid decision');
   }
-  if (!String(v.reasoning || '').trim()) errors.push('missing reasoning');
+  // reasoning is preferred but not required — old-schema or terse LLM responses may omit it.
+  // normalizeDecision() in unified.ts handles the decision mapping regardless.
   return result(errors);
 }
 

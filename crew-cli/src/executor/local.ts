@@ -215,7 +215,9 @@ export class LocalExecutor {
       try {
         const auth = await this.resolveProviderAuth(provider);
         const authBadge = auth?.isOAuth ? 'OAuth' : 'API';
-        console.error(`\x1b[2m[Executor] ${provider} (${authBadge})\x1b[0m`);
+        if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') {
+          console.error(`\x1b[2m[Executor] ${provider} (${authBadge})\x1b[0m`);
+        }
         const result = await this.executeWithProvider(provider, task, model, options, systemPrompt);
         if (result) {
           return {

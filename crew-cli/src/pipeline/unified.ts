@@ -1821,19 +1821,11 @@ If output has blockers, set approved=false.`,
       };
     }
 
-    if (plan.decision === 'execute-local' || plan.decision === 'execute-direct') {
-      return {
-        decision: 'CODE',
-        agent: 'crew-coder',
-        task: request.userInput,
-        explanation: plan.reasoning,
-        traceId
-      };
-    }
-
+    // All execution paths map to CODE in standalone mode.
+    // execute-direct, execute-local, and execute-parallel are all handled locally.
     return {
-      decision: 'DISPATCH',
-      agent: 'crew-main',
+      decision: 'CODE',
+      agent: 'crew-coder',
       task: request.userInput,
       explanation: plan.reasoning,
       traceId
@@ -1910,10 +1902,16 @@ If output has blockers, set approved=false.`,
         priority: 2
       });
     }
+    const currentModel = this.getRouterModel() || process.env.CREW_CHAT_MODEL || process.env.CREW_EXECUTION_MODEL || 'unknown';
+    const interfaceMode = String(process.env.CREW_INTERFACE_MODE || 'standalone').toLowerCase();
     overlays.push({
       type: 'constraints',
-      content: `You are operating in project directory: ${projectDir}
+      content: `You are CrewSwarm's CLI assistant, running model "${currentModel}" in ${interfaceMode} mode.
+You are operating in project directory: ${projectDir}
 You have full file system access with tools: list_directory, read_file, write_file, grep_search, glob, run_shell_command, git, and more.
+You do NOT dispatch to external agents or a swarm. All execution is local.
+
+When asked about your identity or what model you are, answer: "I'm CrewSwarm CLI running ${currentModel}."
 
 Analyze this request and decide:
 

@@ -111,8 +111,10 @@ export async function parseJsonObjectWithRepair(raw: string, options: JsonParseO
       return parsed;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
-      console.log(`[JSON Parse Error] ${label} attempt ${attempt}: ${lastError}`);
-      console.log(`[JSON Parse Error] Raw response (first 500 chars): ${candidateRaw.substring(0, 500)}`);
+      if (process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true') {
+        console.log(`[JSON Parse Error] ${label} attempt ${attempt}: ${lastError}`);
+        console.log(`[JSON Parse Error] Raw response (first 500 chars): ${candidateRaw.substring(0, 500)}`);
+      }
       await options.onAttempt?.({ label, attempt, success: false, repaired, error: lastError });
       if (attempt >= maxAttempts || !options.repair) break;
       const repairPrompt = buildRepairPrompt(candidateRaw, options.schemaHint);

@@ -10,19 +10,22 @@ test('validateRouterDecision accepts all supported decision values', () => {
   const decisions = ['direct-answer', 'execute-local', 'execute-parallel', 'CHAT', 'CODE', 'DISPATCH'];
 
   for (const decision of decisions) {
+    // reasoning is optional — validator should accept with or without it
     const result = validateRouterDecision({ decision, reasoning: 'clear rationale' });
     assert.equal(result.ok, true);
     assert.deepEqual(result.errors, []);
+
+    const noReasoning = validateRouterDecision({ decision });
+    assert.equal(noReasoning.ok, true, `decision "${decision}" should pass without reasoning`);
   }
 });
 
 test('validateRouterDecision rejects invalid payloads', () => {
   assert.deepEqual(validateRouterDecision(null), { ok: false, errors: ['must be object'] });
 
-  const invalid = validateRouterDecision({ decision: 'UNKNOWN', reasoning: ' ' });
+  const invalid = validateRouterDecision({ decision: 'UNKNOWN' });
   assert.equal(invalid.ok, false);
   assert.match(invalid.errors.join(' | '), /invalid decision/);
-  assert.match(invalid.errors.join(' | '), /missing reasoning/);
 });
 
 test('validateWorkGraph accepts well-formed graph', () => {

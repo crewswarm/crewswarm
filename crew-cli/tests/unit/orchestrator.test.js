@@ -131,21 +131,21 @@ describe('Orchestrator.route — heuristic routing', () => {
     }
   });
 
-  it('routes "build a website" to DISPATCH with crew-pm', async () => {
+  it('routes "build a website" to CODE in standalone mode', async () => {
     try {
       const result = await orch.route('build a website');
-      assert.equal(result.decision, RouteDecision.DISPATCH);
-      assert.equal(result.agent, 'crew-pm');
+      assert.equal(result.decision, RouteDecision.CODE);
+      assert.equal(result.agent, 'crew-coder');
     } finally {
       restore();
     }
   });
 
-  it('routes "roadmap for Q3" to DISPATCH with crew-pm', async () => {
+  it('routes "roadmap for Q3" to CODE in standalone mode', async () => {
     try {
       const result = await orch.route('roadmap for Q3');
-      assert.equal(result.decision, RouteDecision.DISPATCH);
-      assert.equal(result.agent, 'crew-pm');
+      assert.equal(result.decision, RouteDecision.CODE);
+      assert.equal(result.agent, 'crew-coder');
     } finally {
       restore();
     }
@@ -169,41 +169,41 @@ describe('Orchestrator.route — heuristic routing', () => {
     }
   });
 
-  it('routes "ask the fixer to debug this" to DISPATCH with crew-fixer', async () => {
+  it('routes "ask the fixer to debug this" to CODE in standalone mode', async () => {
     try {
       const result = await orch.route('ask the fixer to debug this');
-      assert.equal(result.decision, RouteDecision.DISPATCH);
-      assert.equal(result.agent, 'crew-fixer');
+      assert.equal(result.decision, RouteDecision.CODE);
+      assert.equal(result.agent, 'crew-coder');
     } finally {
       restore();
     }
   });
 
-  it('routes "tell qa to run tests" to DISPATCH with crew-qa', async () => {
+  it('routes "tell qa to run tests" to CODE in standalone mode', async () => {
     try {
       const result = await orch.route('tell qa to run tests');
-      assert.equal(result.decision, RouteDecision.DISPATCH);
-      assert.equal(result.agent, 'crew-qa');
+      assert.equal(result.decision, RouteDecision.CODE);
+      assert.equal(result.agent, 'crew-coder');
     } finally {
       restore();
     }
   });
 
-  it('routes "ask frontend to style the nav" to DISPATCH with crew-frontend', async () => {
+  it('routes "ask frontend to style the nav" to CODE in standalone mode', async () => {
     try {
       const result = await orch.route('ask frontend to style the nav');
-      assert.equal(result.decision, RouteDecision.DISPATCH);
-      assert.equal(result.agent, 'crew-frontend');
+      assert.equal(result.decision, RouteDecision.CODE);
+      assert.equal(result.agent, 'crew-coder');
     } finally {
       restore();
     }
   });
 
-  it('routes "ask security to audit" to DISPATCH with crew-security', async () => {
+  it('routes "ask security to audit" to CODE in standalone mode', async () => {
     try {
       const result = await orch.route('ask security to audit');
-      assert.equal(result.decision, RouteDecision.DISPATCH);
-      assert.equal(result.agent, 'crew-security');
+      assert.equal(result.decision, RouteDecision.CODE);
+      assert.equal(result.agent, 'crew-coder');
     } finally {
       restore();
     }
@@ -218,11 +218,11 @@ describe('Orchestrator.route — heuristic routing', () => {
     }
   });
 
-  it('routes unrecognized input to DISPATCH with crew-main', async () => {
+  it('routes unrecognized input to CODE in standalone mode', async () => {
     try {
       const result = await orch.route('explain quantum computing');
-      assert.equal(result.decision, RouteDecision.DISPATCH);
-      assert.equal(result.agent, 'crew-main');
+      assert.equal(result.decision, RouteDecision.CODE);
+      assert.equal(result.agent, 'crew-coder');
     } finally {
       restore();
     }
