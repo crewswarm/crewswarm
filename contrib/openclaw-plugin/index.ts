@@ -41,7 +41,16 @@ interface StatusResult {
   error?: string;
 }
 
-function getConfig(api: any): CrewSwarmConfig {
+interface OpenClawApi {
+  config?: { plugins?: { entries?: { crewswarm?: { config?: CrewSwarmConfig } } } };
+  registerTool(def: Record<string, unknown>): void;
+  registerCommand(def: Record<string, unknown>): void;
+  registerGatewayMethod(name: string, handler: (ctx: Record<string, unknown>) => Promise<void>): void;
+  registerService(def: { id: string; start(): Promise<void>; stop(): void }): void;
+  logger?: { info(msg: string): void; warn(msg: string): void };
+}
+
+function getConfig(api: OpenClawApi): CrewSwarmConfig {
   return api.config?.plugins?.entries?.crewswarm?.config ?? {};
 }
 
@@ -74,8 +83,8 @@ async function apiDispatch(
       body: JSON.stringify(body),
     });
     return res.json() as Promise<DispatchResult>;
-  } catch (e: any) {
-    return { ok: false, error: `Network error: ${e.message}` };
+  } catch (e: unknown) {
+    return { ok: false, error: `Network error: ${(e as Error).message}` };
   }
 }
 
@@ -87,8 +96,8 @@ async function apiStatus(
   try {
     const res = await fetch(`${base}/api/status/${taskId}`, { headers });
     return res.json() as Promise<StatusResult>;
-  } catch (e: any) {
-    return { ok: false, taskId, status: "unknown", error: `Network error: ${e.message}` };
+  } catch (e: unknown) {
+    return { ok: false, taskId, status: "unknown", error: `Network error: ${(e as Error).message}` };
   }
 }
 
@@ -107,7 +116,7 @@ async function apiAgents(
 
 /** Dispatch and wait for result, polling until done or timeout */
 async function dispatchAndWait(
-  api: any,
+  api: OpenClawApi,
   agent: string,
   task: string,
   verify?: string,
@@ -139,7 +148,7 @@ async function dispatchAndWait(
   return `Timeout: ${agent} did not complete within ${timeoutMs / 1000}s (taskId: ${taskId})`;
 }
 
-export default function register(api: any) {
+export default function register(api: OpenClawApi) {
   // ── Agent tools ───────────────────────────────────────────────────────────
 
   api.registerTool({
@@ -231,7 +240,7 @@ export default function register(api: any) {
     description: "Dispatch a task to CrewSwarm. Usage: /crewswarm <agent> <task>",
     acceptsArgs: true,
     requireAuth: true,
-    handler: async (ctx: any) => {
+    handler: async (ctx: { args?: string }) => {
       const args = (ctx.args ?? "").trim();
       if (!args) {
         const cfg = getConfig(api);
@@ -254,7 +263,7 @@ export default function register(api: any) {
 
   // ── Gateway RPC ───────────────────────────────────────────────────────────
 
-  api.registerGatewayMethod("crewswarm.dispatch", async ({ params, respond }: any) => {
+  api.registerGatewayMethod("crewswarm.dispatch", async ({ params, respond }: { params?: Record<string, string>; respond(ok: boolean, data: Record<string, unknown>): void }) => {
     const { agent, task, verify, done } = params ?? {};
     if (!agent || !task) {
       respond(false, { error: "agent and task are required" });
@@ -265,7 +274,7 @@ export default function register(api: any) {
     respond(dispatch.ok, dispatch);
   });
 
-  api.registerGatewayMethod("crewswarm.status", async ({ params, respond }: any) => {
+  api.registerGatewayMethod("crewswarm.status", async ({ params, respond }: { params?: Record<string, string>; respond(ok: boolean, data: Record<string, unknown>): void }) => {
     const { taskId } = params ?? {};
     if (!taskId) { respond(false, { error: "taskId required" }); return; }
     const cfg = getConfig(api);
@@ -273,7 +282,7 @@ export default function register(api: any) {
     respond(s.ok, s);
   });
 
-  api.registerGatewayMethod("crewswarm.agents", async ({ respond }: any) => {
+  api.registerGatewayMethod("crewswarm.agents", async ({ respond }: { respond(ok: boolean, data: Record<string, unknown>): void }) => {
     const cfg = getConfig(api);
     const agents = await apiAgents(baseUrl(cfg), authHeaders(cfg));
     respond(true, { agents });

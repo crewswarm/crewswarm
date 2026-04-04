@@ -63,12 +63,12 @@ export class ApiClient {
 
       const payload = await response.json() as ChatResponse;
       return payload || { reply: '' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       clearTimeout(timeout);
-      if (error.name === 'AbortError') {
+      if ((error as Error).name === 'AbortError') {
         throw new Error(`API request timed out after ${this.timeout / 1000} seconds`);
       }
-      throw new Error(`Failed to connect to crewswarm: ${error.message}`);
+      throw new Error(`Failed to connect to crewswarm: ${(error as Error).message}`);
     }
   }
 
@@ -91,9 +91,9 @@ export class ApiClient {
       }
 
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       clearTimeout(timeout);
-      throw new Error(`Connection test failed: ${error.message}`);
+      throw new Error(`Connection test failed: ${(error as Error).message}`);
     }
   }
 

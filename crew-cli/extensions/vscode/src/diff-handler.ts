@@ -39,8 +39,8 @@ export class DiffHandler {
 
       await this.applyEdits(editor, edits);
       vscode.window.showInformationMessage(`${edits.length} hunk(s) applied successfully.`);
-    } catch (error: any) {
-      vscode.window.showErrorMessage(`Failed to apply diff: ${error.message}`);
+    } catch (error: unknown) {
+      vscode.window.showErrorMessage(`Failed to apply diff: ${(error as Error).message}`);
     }
   }
 
@@ -81,8 +81,8 @@ export class DiffHandler {
       // Open the file in editor
       const document = await vscode.workspace.openTextDocument(fullPath);
       await vscode.window.showTextDocument(document);
-    } catch (error: any) {
-      vscode.window.showErrorMessage(`Failed to ${exists ? 'update' : 'create'} file: ${error.message}`);
+    } catch (error: unknown) {
+      vscode.window.showErrorMessage(`Failed to ${exists ? 'update' : 'create'} file: ${(error as Error).message}`);
     }
   }
 

@@ -70,8 +70,8 @@ async function main() {
     await runState1.sandbox.applyAll();
     console.log(chalk.green('✓ All files written to disk'));
 
-  } catch (err: any) {
-    console.error(chalk.red(`\n❌ Failed: ${err.message}`));
+  } catch (err: unknown) {
+    console.error(chalk.red(`\n❌ Failed: ${(err as Error).message}`));
     process.exit(1);
   }
 }
