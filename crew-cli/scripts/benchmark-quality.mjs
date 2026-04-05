@@ -258,7 +258,7 @@ async function runTask(task, model, envOverrides = {}) {
   try {
     const crewCli = resolve(process.cwd(), 'dist', 'crew.mjs');
     const result = runCommand(
-      `node ${crewCli} run -t ${JSON.stringify(task.description)} --json`,
+      `node ${crewCli} run -t ${JSON.stringify(task.description)} --json --always-approve`,
       dir
     );
     const elapsed = Date.now() - start;
