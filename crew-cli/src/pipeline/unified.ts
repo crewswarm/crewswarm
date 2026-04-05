@@ -333,7 +333,7 @@ export class UnifiedPipeline {
     const staged = this.sandbox?.getStagedContent?.(filePath);
     if (typeof staged === 'string') return staged;
     try {
-      return await readFile(resolve(process.cwd(), filePath), 'utf8');
+      return await readFile(resolve(this.sandbox?.getBaseDir() || process.cwd(), filePath), 'utf8');
     } catch {
       return undefined;
     }
@@ -649,6 +649,7 @@ export class UnifiedPipeline {
       if (executionResults.results.some(result => result.verificationPassed)) return true;
     }
 
+    const baseDir = this.sandbox?.getBaseDir() || process.cwd();
     const contents = new Map();
     for (const relPath of paths) {
       const staged = this.requireSandbox().getStagedContent(relPath);
@@ -657,7 +658,7 @@ export class UnifiedPipeline {
         continue;
       }
       try {
-        const content = await readFile(resolve(process.cwd(), relPath), 'utf8');
+        const content = await readFile(resolve(baseDir, relPath), 'utf8');
         contents.set(relPath, content);
       } catch {
         return false;
