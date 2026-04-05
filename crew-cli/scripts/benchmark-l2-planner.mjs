@@ -264,6 +264,20 @@ async function runTask(task) {
       return { taskId: task.id, error: 'No plan found in output', elapsed, total: 0, maxTotal: 100 };
     }
 
+    // Debug: show what we found
+    if (process.env.CREW_BENCH_VERBOSE) {
+      console.log(`  [debug] Plan found: decision=${plan.decision} workGraph=${!!plan.workGraph} units=${plan.workGraph?.units?.length || 0}`);
+      if (!plan.workGraph && plan.units) {
+        console.log(`  [debug] Plan has units at top level, wrapping...`);
+        plan = { workGraph: plan, decision: plan.decision || 'execute-parallel' };
+      }
+    }
+
+    // Handle case where plan IS the work graph (units at top level, not nested under workGraph)
+    if (!plan.workGraph && plan.units) {
+      plan = { workGraph: plan, decision: plan.decision || 'execute-parallel' };
+    }
+
     const score = scorePlan(task, plan);
     return { taskId: task.id, elapsed, ...score, plan: { decision: plan.decision, unitCount: score.unitCount, personas: score.personas } };
   } catch (err) {
