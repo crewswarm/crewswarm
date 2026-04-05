@@ -250,7 +250,7 @@ export async function anthropicTurn(
         { type: 'text', text: config.systemPrompt, cache_control: { type: 'ephemeral' } }
       ],
       messages: [{ role: 'user', content: userContent }],
-      temperature: config.temperature ?? 0.3,
+      ...(supportsThinking ? {} : { temperature: config.temperature ?? 0.3 }),
       tools: toAnthropicTools(tools),
       ...(stream ? { stream: true } : {})
     };
