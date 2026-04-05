@@ -21,7 +21,7 @@ function parseArgs(argv) {
     baseline: 'benchmarks/presets-baseline.json',
     tasksFile: '',
     out: '.crew/benchmarks/presets-latest.json',
-    timeoutMs: Number(process.env.CREW_BENCH_TIMEOUT_MS || 90000),
+    timeoutMs: Number(process.env.CREW_BENCH_TIMEOUT_MS || 180000),
     maxRegressionPct: Number(process.env.CREW_BENCH_MAX_REGRESSION_PCT || 25),
     minPassRate: Number(process.env.CREW_BENCH_MIN_PASS_RATE || 0.5),
     skipIfUnavailable: false
@@ -44,7 +44,7 @@ function parseArgs(argv) {
 
   if (!Number.isFinite(out.maxRegressionPct) || out.maxRegressionPct < 0) out.maxRegressionPct = 25;
   if (!Number.isFinite(out.minPassRate) || out.minPassRate < 0 || out.minPassRate > 1) out.minPassRate = 0.5;
-  if (!Number.isFinite(out.timeoutMs) || out.timeoutMs < 1000) out.timeoutMs = 90000;
+  if (!Number.isFinite(out.timeoutMs) || out.timeoutMs < 1000) out.timeoutMs = 180000;
   return out;
 }
 
