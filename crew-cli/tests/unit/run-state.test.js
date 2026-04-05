@@ -58,11 +58,19 @@ describe('RunState', async () => {
       assert.equal(repeat.count, 2);
     });
 
-    it('does not block first attempt', () => {
+    it('blocks shell commands after 1 failure', () => {
       const state = new RunState({ task: 'test' });
       state.recordFailure({ turn: 1, tool: 'shell', params: { command: 'npm test' }, error: 'exit 1' });
       const repeat = state.wouldRepeatFailure('shell', { command: 'npm test' });
-      assert.equal(repeat, null); // only 1 failure, threshold is 2
+      assert.ok(repeat); // shell commands blocked after 1 failure
+      assert.equal(repeat.count, 1);
+    });
+
+    it('does not block non-shell tools after first attempt', () => {
+      const state = new RunState({ task: 'test' });
+      state.recordFailure({ turn: 1, tool: 'read_file', params: { file_path: 'x.ts' }, error: 'ENOENT' });
+      const repeat = state.wouldRepeatFailure('read_file', { file_path: 'x.ts' });
+      assert.equal(repeat, null); // non-shell threshold is 2
     });
 
     it('classifies failure categories', () => {

@@ -71,7 +71,7 @@ function repeatedFailure(history: TurnResult[]): string | undefined {
 
 export function detectTaskMode(task: string): TaskMode {
   const normalized = normalizeText(task);
-  if (/(failing tests?|test failure|fix tests?|make tests? pass|regression test|unit test)/.test(normalized)) {
+  if (/(failing tests?|test failure|fix tests?|fix the test|make tests? pass|regression test|unit test|test.*(fail|broken|error))/.test(normalized)) {
     return 'test_repair';
   }
   if (/(fix|bug|broken|error|regression|crash|issue|failure)/.test(normalized)) {

@@ -232,9 +232,11 @@ async function main() {
 
   const results = [];
   const crewCliEntry = resolve(cwd, 'dist', 'crew.mjs');
+  const scratchRoot = join(cwd, 'test-scratch');
+  await mkdir(scratchRoot, { recursive: true });
   for (const preset of PRESETS) {
     for (const task of runTasks) {
-      const runDir = await mkdtemp(join(cwd, 'test-scratch', `bench-${preset}-`));
+      const runDir = await mkdtemp(join(scratchRoot, `bench-${preset}-`));
       const args = [crewCliEntry, 'run', '-t', task, '--json'];
       const env = resolvePresetEnv(preflight.provider, preset);
       const res = await runCommand('node', args, runDir, { env, timeoutMs: parsed.timeoutMs });

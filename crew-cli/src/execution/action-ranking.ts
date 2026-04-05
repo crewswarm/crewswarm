@@ -263,12 +263,13 @@ export function rankActions(
     }
 
     // Penalize consecutive same action (diminishing returns)
-    if (action === snap.lastActionType && snap.consecutiveSameAction >= 3) {
-      score -= 0.15;
-      reason = reason || `${snap.consecutiveSameAction} consecutive ${action} actions — consider switching`;
+    if (action === snap.lastActionType && snap.consecutiveSameAction >= 2) {
+      const penalty = Math.min(0.4, snap.consecutiveSameAction * 0.1);
+      score -= penalty;
+      reason = reason || `${snap.consecutiveSameAction} consecutive ${action} actions — switch tactics`;
     }
 
-    // Penalize recently-failed tool types
+    // Penalize recently-failed tool types (strong penalty — don't retry what just broke)
     if (snap.recentFailureTools.size > 0) {
       const failedActionTypes = new Set<ActionType>();
       for (const tool of snap.recentFailureTools) {
@@ -276,8 +277,8 @@ export function rankActions(
         if (at) failedActionTypes.add(at);
       }
       if (failedActionTypes.has(action)) {
-        score -= 0.15;
-        reason = reason || `Recent ${action} failures — try a different approach`;
+        score -= 0.35;
+        reason = `DO NOT retry ${action} — recent failures. Try a completely different approach`;
       }
     }
 
@@ -307,14 +308,20 @@ export function buildActionRankingPrompt(
 
   if (top.length === 0) return '';
 
+  // Also surface any strong warnings (score near 0)
+  const warnings = ranked.filter(r => r.score < 0.15 && r.reason?.startsWith('DO NOT'));
+
   const lines = top.map((r, i) => {
     const label = i === 0 ? 'RECOMMENDED' : 'also good';
     const reasonSuffix = r.reason ? ` — ${r.reason}` : '';
     return `- [${label}] ${r.action}${reasonSuffix}`;
   });
 
+  const warningLines = warnings.map(r => `- [AVOID] ${r.action} — ${r.reason}`);
+
   return [
-    '## Next action priority:',
-    ...lines
+    '## Next action priority (follow this guidance):',
+    ...lines,
+    ...(warningLines.length > 0 ? ['', '## Actions to AVOID:',  ...warningLines] : [])
   ].join('\n');
 }

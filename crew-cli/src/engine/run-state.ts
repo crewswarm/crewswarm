@@ -270,7 +270,10 @@ export class RunState {
   wouldRepeatFailure(tool: string, params: Record<string, unknown>): FailureRecord | null {
     const signature = `${tool}:${stableHash(params)}`;
     const record = this._failureSignatures.get(signature);
-    if (record && record.count >= 2) return record;
+    // Block after 1 failure for shell commands (retrying the same failing command is wasteful),
+    // after 2 failures for other tools (might succeed with different context)
+    const threshold = (tool === 'run_shell_command' || tool === 'shell' || tool === 'run_cmd') ? 1 : 2;
+    if (record && record.count >= threshold) return record;
     return null;
   }
 
