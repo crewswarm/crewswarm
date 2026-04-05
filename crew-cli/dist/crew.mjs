@@ -13447,7 +13447,7 @@ var init_unified = __esm({
         const staged = this.sandbox?.getStagedContent?.(filePath);
         if (typeof staged === "string") return staged;
         try {
-          return await readFile14(resolve11(process.cwd(), filePath), "utf8");
+          return await readFile14(resolve11(this.sandbox?.getBaseDir() || process.cwd(), filePath), "utf8");
         } catch {
           return void 0;
         }
@@ -13691,6 +13691,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
           if (hasBlockingEscalation) return false;
           if (executionResults.results.some((result2) => result2.verificationPassed)) return true;
         }
+        const baseDir = this.sandbox?.getBaseDir() || process.cwd();
         const contents = /* @__PURE__ */ new Map();
         for (const relPath of paths) {
           const staged = this.requireSandbox().getStagedContent(relPath);
@@ -13699,7 +13700,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
             continue;
           }
           try {
-            const content = await readFile14(resolve11(process.cwd(), relPath), "utf8");
+            const content = await readFile14(resolve11(baseDir, relPath), "utf8");
             contents.set(relPath, content);
           } catch {
             return false;
