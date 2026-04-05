@@ -2199,9 +2199,6 @@ export async function runAgenticWorker(
       };
     },
     async (name, params) => {
-      if (process.env.CREW_DEBUG_SSE) {
-        console.log(`[Callback] executeTool name=${name} paramsKeys=${Object.keys(params || {}).join(',')} paramStr=${JSON.stringify(params).slice(0, 100)}`);
-      }
       const result = await executeTool(name, params);
       // RunEngine expects executeTool to throw on failure so it can
       // record failures and block repeated bad moves

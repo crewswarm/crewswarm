@@ -221,11 +221,6 @@ export class RunEngine {
 
       // Execute tool calls with failure tracking
       if (response!.toolCalls && response!.toolCalls.length > 0) {
-        if (process.env.CREW_DEBUG_SSE) {
-          for (const tc of response!.toolCalls) {
-            console.log(`[RunEngine] toolCall received: ${tc.tool} paramsKeys=${Object.keys(tc.params || {}).join(',')} paramsLen=${JSON.stringify(tc.params).length}`);
-          }
-        }
         const batches = partitionToolCalls(response!.toolCalls);
 
         for (const batch of batches) {
@@ -248,9 +243,6 @@ export class RunEngine {
             }
 
             onProgress?.(turn + 1, `EXECUTING: ${call.tool}`);
-            if (process.env.CREW_DEBUG_SSE) {
-              console.log(`[RunEngine] Calling executeTool: ${call.tool} paramsKeys=${Object.keys(call.params || {}).join(',')} paramsLen=${JSON.stringify(call.params).length}`);
-            }
 
             try {
               const result = await executeTool(call.tool, call.params, abortSignal);
