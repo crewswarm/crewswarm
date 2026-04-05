@@ -51,7 +51,7 @@ const DEFAULT_CANDIDATES = [
 function parseArgs(argv) {
   const out = {
     tasksFile: 'benchmarks/presets-corpus.json',
-    timeoutMs: 120000,
+    timeoutMs: 600000,
     limit: 0,
     dryRun: false,
     keepWorktree: false,
@@ -240,6 +240,20 @@ function average(values) {
   return values.length ? values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length : 0;
 }
 
+function buildFallbackTaskStats(report) {
+  const results = Array.isArray(report?.results) ? report.results : [];
+  const totalTasks = results.length;
+  const successfulTasks = results.filter((item) => item?.ok).length;
+  return {
+    tasks: totalTasks,
+    avgTrajectoryScore: 0,
+    verificationRate: 0,
+    avgReadBeforeWriteRatio: 0,
+    successRate: totalTasks > 0 ? Number((successfulTasks / totalTasks).toFixed(3)) : 0,
+    source: 'benchmark-report',
+  };
+}
+
 function computeComposite(candidateResult, bestLatency) {
   const passRate = average(Object.values(candidateResult.summary || {}).map((item) => item.passRate || 0));
   const avgLatency = average(Object.values(candidateResult.summary || {}).map((item) => item.avgMs || 0));
@@ -292,12 +306,15 @@ async function runCandidate(tempRoot, repoRoot, candidate, args) {
 
   const report = await loadJson(reportFile);
   const taskMetrics = await loadTaskMetrics(path.join(stateDir, 'autoharness', 'traces'));
-  const taskStats = {
-    tasks: taskMetrics.length,
-    avgTrajectoryScore: Number(average(taskMetrics.map((item) => item.trajectoryScore || 0)).toFixed(3)),
-    verificationRate: taskMetrics.length ? Number((taskMetrics.filter((item) => item.hasVerification).length / taskMetrics.length).toFixed(3)) : 0,
-    avgReadBeforeWriteRatio: Number(average(taskMetrics.map((item) => item.readBeforeWriteRatio || 0)).toFixed(3)),
-  };
+  const taskStats = taskMetrics.length > 0
+    ? {
+        tasks: taskMetrics.length,
+        avgTrajectoryScore: Number(average(taskMetrics.map((item) => item.trajectoryScore || 0)).toFixed(3)),
+        verificationRate: Number((taskMetrics.filter((item) => item.hasVerification).length / taskMetrics.length).toFixed(3)),
+        avgReadBeforeWriteRatio: Number(average(taskMetrics.map((item) => item.readBeforeWriteRatio || 0)).toFixed(3)),
+        source: 'autoharness',
+      }
+    : buildFallbackTaskStats(report);
 
   return {
     candidate,
