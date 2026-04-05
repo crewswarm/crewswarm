@@ -814,15 +814,20 @@ export class GeminiToolAdapter {
   }
   
   private async editFile(params: { file_path: string; old_string: string; new_string: string; replace_all?: boolean }): Promise<ToolResult> {
-    const filePath = resolve(this.getRealWorkspaceRoot(), params.file_path);
+    const realRoot = this.getRealWorkspaceRoot();
+    const filePath = resolve(realRoot, params.file_path);
 
     // Path traversal guard (handles symlinks)
     if (!this.isInsideWorkspace(filePath)) {
       return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
     }
 
+    // Normalize to relative path for sandbox operations
+    const { relative } = await import('node:path');
+    const relPath = filePath.startsWith(realRoot) ? relative(realRoot, filePath) : params.file_path;
+
     // Read-before-edit guard: require the file to have been read first (matches Claude Code)
-    if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
+    if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath) && !this._filesRead.has(relPath)) {
       return {
         success: false,
         error: `You must read_file "${params.file_path}" before editing it. Never guess at file contents.`,
@@ -831,8 +836,9 @@ export class GeminiToolAdapter {
       };
     }
 
-    // Read current content (could be staged)
-    const stagedContent = this.sandbox.getStagedContent?.(params.file_path)
+    // Read current content (could be staged) — use relPath for sandbox lookups
+    const stagedContent = this.sandbox.getStagedContent?.(relPath)
+      || this.sandbox.getStagedContent?.(params.file_path)
       || this.sandbox.getStagedContent?.(filePath);
     const content = stagedContent ?? await readFile(filePath, 'utf8');
 
@@ -842,7 +848,7 @@ export class GeminiToolAdapter {
     if (!match) {
       return {
         success: false,
-        error: `String not found in ${params.file_path}. Tried: exact match, flexible whitespace, fuzzy (Levenshtein).`,
+        error: `String not found in ${relPath}. Tried: exact match, flexible whitespace, fuzzy (Levenshtein).`,
         handled: false,
         recovery: `Re-read the file with read_file and use the exact text from the file as old_string.`
       };
@@ -851,7 +857,7 @@ export class GeminiToolAdapter {
     // replace_all mode: replace every occurrence (useful for renames)
     if (params.replace_all) {
       const updated = content.split(match).join(params.new_string);
-      await this.sandbox.addChange(params.file_path, updated);
+      await this.sandbox.addChange(relPath, updated);
       const diagnostics = await this.shadowValidate(params.file_path);
       return {
         success: true,
@@ -868,14 +874,14 @@ export class GeminiToolAdapter {
     }
 
     const updated = content.replace(match, params.new_string);
-    await this.sandbox.addChange(params.file_path, updated);
+    await this.sandbox.addChange(relPath, updated);
 
     // Shadow validation: run diagnostics on the edited file (Cursor-style)
-    const diagnostics = await this.shadowValidate(params.file_path);
+    const diagnostics = await this.shadowValidate(relPath);
 
     return {
       success: true,
-      output: `Edited ${params.file_path}${strategy !== 'exact' ? ` (matched via ${strategy})` : ''}${diagnostics}`
+      output: `Edited ${relPath}${strategy !== 'exact' ? ` (matched via ${strategy})` : ''}${diagnostics}`
     };
   }
 
