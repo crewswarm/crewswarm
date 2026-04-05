@@ -37,6 +37,7 @@ const {
   synthesizeHarness,
   scoreHarness,
   loadHarness,
+  scoreTaskTrajectory,
 } = await import("../../lib/autoharness/index.mjs");
 
 after(() => {
@@ -210,5 +211,43 @@ describe("autoharness — recordTaskTrace", () => {
     const entry = JSON.parse(lines[0]);
     assert.equal(entry.taskId, "t1");
     assert.equal(entry.success, true);
+    assert.ok(entry.metrics);
+    assert.equal(typeof entry.metrics.trajectoryScore, "number");
+  });
+});
+
+describe("autoharness — trajectory scoring", () => {
+  it("scores verification and read-before-write positively", () => {
+    const metrics = scoreTaskTrajectory({
+      success: true,
+      actions: [
+        { tool: "read_file", target: "src/retry.js" },
+        { tool: "write_file", target: "src/retry.js" },
+        { tool: "run_cmd", command: "node --test tests/retry.test.js", commandPrefix: "node --test" },
+      ],
+    });
+
+    assert.equal(metrics.hasVerification, true);
+    assert.equal(metrics.readBeforeWriteRatio, 1);
+    assert.ok(metrics.trajectoryScore > 0.7);
+  });
+
+  it("scoreHarness includes aggregate taskStats", () => {
+    const agentId = `test-task-stats-${Date.now()}`;
+    recordTaskTrace({
+      agentId,
+      projectId: "global",
+      taskId: "t-verify",
+      incomingType: "test",
+      prompt: "fix retry controller",
+      reply: "@@READ_FILE src/retry.js\n@@WRITE_FILE src/retry.js\nok\n@@END_FILE\n@@RUN_CMD node --test tests/retry.test.js",
+      success: true,
+    });
+
+    const score = scoreHarness(agentId, "global");
+    assert.ok(score.stats.taskStats);
+    assert.equal(score.stats.taskStats.tasks, 1);
+    assert.ok(score.stats.taskStats.avgTrajectoryScore > 0);
+    assert.equal(typeof score.stats.taskStats.verificationRate, "number");
   });
 });

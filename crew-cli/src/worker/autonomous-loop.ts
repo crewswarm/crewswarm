@@ -8,6 +8,7 @@
 
 import { partitionToolCalls } from '../executor/tool-batching.js';
 import { clearOldToolResults } from '../executor/tool-result-clearing.js';
+import { buildTurnGuidance, type TaskMode } from '../execution/agentic-guidance.js';
 import {
   runPostSamplingHooks,
   type PostSamplingHook,
@@ -40,6 +41,7 @@ export interface AutonomousResult {
 export interface AutonomousConfig {
   maxTurns?: number;
   repeatThreshold?: number;
+  taskMode?: TaskMode;
   tools: unknown[];
   onProgress?: (turn: number, action: string) => void;
   /** Feature 3: AbortController signal — cancel execution cleanly mid-turn */
@@ -406,6 +408,13 @@ export async function executeAutonomous(
           ? `${pendingContext}\n\n${hookResult.message}`
           : hookResult.message;
       }
+    }
+
+    const turnGuidance = buildTurnGuidance(config.taskMode ?? 'analysis', history, turnResults);
+    if (turnGuidance) {
+      pendingContext = pendingContext
+        ? `${pendingContext}\n\n${turnGuidance}`
+        : turnGuidance;
     }
 
     // Safety check: Detect if stuck in a loop

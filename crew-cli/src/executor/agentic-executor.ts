@@ -11,7 +11,7 @@
  * - Repo-map context — TF-IDF semantic search injected before execution
  */
 
-import type { AutonomousResult, TurnResult } from '../worker/autonomous-loop.js';
+import type { TurnResult } from '../worker/autonomous-loop.js';
 import type { ToolDeclaration } from '../tools/base.js';
 import type {
   AnthropicContentBlock,
@@ -21,8 +21,8 @@ import type {
   ChatMessage,
 } from '../types/common.js';
 import type { Sandbox } from '../sandbox/index.js';
-import { executeAutonomous } from '../worker/autonomous-loop.js';
 import { GeminiToolAdapter, type ConstraintLevel, constraintLevelForPersona } from '../tools/gemini/crew-adapter.js';
+import { RunEngine } from '../engine/run-engine.js';
 import {
   openAICompatibleTurn,
   anthropicTurn,
@@ -31,6 +31,7 @@ import {
 import { CorrectionStore } from '../learning/corrections.js';
 import { estimateTokens, getContextWindow, adaptiveCompressionRatio, calculateTokenBudget, compactConversation, type CompactedMessage } from '../context/token-compaction.js';
 import { ExecutionTranscript } from '../execution/transcript.js';
+import { buildTaskModeGuidance, detectTaskMode } from '../execution/agentic-guidance.js';
 import { getOAuthToken, forceRefreshOAuthToken } from '../auth/oauth-keychain.js';
 import { getOpenAIOAuthToken, forceRefreshOpenAIOAuth, OPENAI_CODEX_API_URL } from '../auth/openai-oauth.js';
 import { getGeminiOAuthToken, forceRefreshGeminiOAuth } from '../auth/gemini-oauth.js';
@@ -1874,6 +1875,8 @@ export async function runAgenticWorker(
     abortSignal?: AbortSignal;
     /** Feature 4: Budget limit in USD — stop execution when cost exceeds this */
     maxBudgetUsd?: number;
+    /** Explicit verification commands to run after edits */
+    verificationCommands?: string[];
   } = {}
 ): Promise<AgenticExecutorResult> {
   // Resolve constraint level: explicit > persona-derived > full (default)
@@ -1941,13 +1944,18 @@ export async function runAgenticWorker(
     // Non-fatal
   }
 
+  const taskMode = detectTaskMode(task);
+  enrichedTask = `${enrichedTask}\n\n## Execution Strategy\n${buildTaskModeGuidance(taskMode)}`;
+
   if (verbose) {
     console.log(`[AgenticExecutor] ${allTools.length} tools: ${allTools.map(t => t.name).join(', ')}`);
+    console.log(`[AgenticExecutor] task mode: ${taskMode}`);
   }
 
   let totalCost = 0;
   const toolsUsed = new Set<string>();
   const transcript = new ExecutionTranscript();
+  const verificationCommands = normalizeVerificationCommands(options.verificationCommands ?? extractVerificationCommands(task));
 
   const executeTool = async (name: string, params: Record<string, unknown>) => {
     toolsUsed.add(name);
@@ -1998,8 +2006,23 @@ export async function runAgenticWorker(
 
   let turnCount = 0;
 
-  const result: AutonomousResult = await executeAutonomous(
-    enrichedTask,
+  const engine = new RunEngine({
+    task,
+    sessionId,
+    maxTurns,
+    maxBudgetUsd: options.maxBudgetUsd,
+    abortSignal: options.abortSignal,
+    tools: allTools,
+    model,
+    verificationCommands,
+    onProgress: verbose
+      ? (turn, action) => {
+          console.log(`  [Turn ${turn}] ${action}`);
+        }
+      : undefined
+  });
+
+  const result = await engine.execute(
     async (prompt, tools, history, abortSignal) => {
       turnCount++;
 
@@ -2066,17 +2089,6 @@ export async function runAgenticWorker(
     },
     async (name, params) => {
       return await executeTool(name, params);
-    },
-    {
-      maxTurns,
-      tools: allTools,
-      onProgress: verbose
-        ? (turn, action) => {
-            console.log(`  [Turn ${turn}] ${action}`);
-          }
-        : undefined,
-      abortSignal: options.abortSignal,    // Feature 3
-      maxBudgetUsd: options.maxBudgetUsd   // Feature 4
     }
   );
 
@@ -2086,17 +2098,23 @@ export async function runAgenticWorker(
   // Freeze transcript — immutable after execution completes
   transcript.freeze();
 
-  const rawOutput = result.finalResponse ?? result.history?.map(h => {
+  const rawOutput = result.output ?? result.history?.map(h => {
     if (!h.result) return '';
     if (typeof h.result === 'string') return h.result;
     const toolResult = h.result as { output?: string; error?: string };
     return toolResult.output || toolResult.error || JSON.stringify(h.result);
   }).filter(Boolean).join('\n') ?? '';
 
+  const runSnapshot = result.runState.snapshot();
+
+  const lastPhase = runSnapshot.phases.length > 0
+    ? runSnapshot.phases[runSnapshot.phases.length - 1]
+    : undefined;
+
   return {
     success: result.success ?? false,
     output: stripThinkActObserve(rawOutput),
-    cost: totalCost,
+    cost: result.costUsd || totalCost,
     turns: result.turns,
     toolsUsed: Array.from(toolsUsed),
     providerId: resolvedProvider?.id,
@@ -2104,10 +2122,42 @@ export async function runAgenticWorker(
     filesDiscovered: jit.fileCount,
     discoveredFiles: jit.toFileList(),
     history: result.history,
-    stopReason: result.reason,
+    stopReason: result.success
+      ? undefined
+      : runSnapshot.abortReason || (lastPhase?.notes.length ? lastPhase.notes[lastPhase.notes.length - 1] : undefined) || runSnapshot.phase,
     transcript,
     constraintLevel
   };
+}
+
+function normalizeVerificationCommands(commands: string[]): string[] {
+  return [...new Set(commands.map(cmd => cmd.trim()).filter(Boolean))];
+}
+
+function extractVerificationCommands(task: string): string[] {
+  const commands = new Set<string>();
+  const lines = task.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const runMatch = trimmed.match(/^(?:[-*]\s*)?(?:run|execute)\s+(.+)$/i);
+    if (runMatch?.[1]) {
+      commands.add(runMatch[1].trim());
+      continue;
+    }
+    const commandMatch = trimmed.match(/`([^`]+)`/g);
+    if (commandMatch) {
+      for (const token of commandMatch) {
+        const command = token.slice(1, -1).trim();
+        if (looksLikeCommand(command)) commands.add(command);
+      }
+    }
+  }
+  return [...commands];
+}
+
+function looksLikeCommand(value: string): boolean {
+  if (!value) return false;
+  return /^(npm|pnpm|yarn|bun|node|pytest|jest|vitest|cargo|go|make|\.\/|bash|sh)\b/.test(value);
 }
 
 /**

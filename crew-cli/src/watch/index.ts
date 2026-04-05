@@ -3,6 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StudioBroadcaster } from '../studio/broadcaster.js';
 
+interface ChokidarWatcher {
+  on(event: 'change' | 'add' | 'unlink', listener: (file: string) => Promise<void> | void): ChokidarWatcher;
+}
+
+interface ChokidarModule {
+  watch(rootDir: string, options: { ignored: string[]; ignoreInitial: boolean }): ChokidarWatcher;
+}
+
 export interface WatchEvent {
   type: 'todo_detected' | 'file_changed';
   file: string;
@@ -59,7 +67,7 @@ export function startWatchMode(
 
   // Prefer chokidar if available for robust cross-platform watching.
   try {
-    const chokidarMod = (globalThis as { __crewChokidarCache?: { watch: (...args: unknown[]) => unknown } }).__crewChokidarCache
+    const chokidarMod = (globalThis as { __crewChokidarCache?: ChokidarModule }).__crewChokidarCache
       || null;
     if (chokidarMod?.watch) {
       const watcher = chokidarMod.watch(rootDir, { ignored, ignoreInitial: true });

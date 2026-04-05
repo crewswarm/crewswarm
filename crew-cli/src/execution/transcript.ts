@@ -61,10 +61,10 @@ export class ExecutionTranscript {
     const files = new Set<string>();
     for (const e of this._entries) {
       if (!e.success) continue;
-      if (e.toolName === 'read_file' && e.params.file_path) {
+      if (e.toolName === 'read_file' && typeof e.params.file_path === 'string') {
         files.add(e.params.file_path);
       }
-      if (e.toolName === 'read_many_files' && e.params.include) {
+      if (e.toolName === 'read_many_files' && typeof e.params.include === 'string') {
         files.add(e.params.include);
       }
     }
@@ -77,7 +77,7 @@ export class ExecutionTranscript {
     const editTools = new Set(['replace', 'edit', 'append_file']);
     for (const e of this._entries) {
       if (!e.success) continue;
-      if (editTools.has(e.toolName) && e.params.file_path) {
+      if (editTools.has(e.toolName) && typeof e.params.file_path === 'string') {
         files.add(e.params.file_path);
       }
     }
@@ -89,7 +89,7 @@ export class ExecutionTranscript {
     const files = new Set<string>();
     for (const e of this._entries) {
       if (!e.success) continue;
-      if (e.toolName === 'write_file' && e.params.file_path) {
+      if (e.toolName === 'write_file' && typeof e.params.file_path === 'string') {
         files.add(e.params.file_path);
       }
     }

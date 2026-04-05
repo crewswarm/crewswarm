@@ -2949,413 +2949,6 @@ var init_profiles = __esm({
   }
 });
 
-// src/executor/tool-batching.ts
-function isConcurrencySafe(toolName) {
-  return READ_ONLY_TOOLS.has(toolName);
-}
-function partitionToolCalls(calls) {
-  if (calls.length === 0) return [];
-  const batches = [];
-  let current = null;
-  for (const call of calls) {
-    const safe = isConcurrencySafe(call.tool);
-    if (safe) {
-      if (current && current.concurrent) {
-        current.calls.push(call);
-      } else {
-        current = { concurrent: true, calls: [call] };
-        batches.push(current);
-      }
-    } else {
-      current = { concurrent: false, calls: [call] };
-      batches.push(current);
-      current = null;
-    }
-  }
-  return batches;
-}
-var READ_ONLY_TOOLS;
-var init_tool_batching = __esm({
-  "src/executor/tool-batching.ts"() {
-    "use strict";
-    READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
-      "file_read",
-      "read_file",
-      "read_many_files",
-      "grep",
-      "grep_search",
-      "glob",
-      "find_files",
-      "search_code",
-      "web_search",
-      "google_web_search",
-      "web_fetch",
-      "find_functions",
-      "find_classes",
-      "list_directory",
-      "ls",
-      "git_log",
-      "git_diff",
-      "git_status",
-      "git_show",
-      "git_blame",
-      "get_internal_docs"
-    ]);
-  }
-});
-
-// src/executor/tool-result-clearing.ts
-function clearOldToolResults(history, config) {
-  const keepRecent = config?.keepRecent ?? DEFAULT_KEEP_RECENT;
-  const maxResultLength = config?.maxResultLength ?? DEFAULT_MAX_RESULT_LENGTH;
-  if (history.length === 0) return [];
-  const cutoff = Math.max(0, history.length - keepRecent);
-  return history.map((entry, idx) => {
-    if (idx < cutoff) {
-      const resultStr = typeof entry.result === "string" ? entry.result : JSON.stringify(entry.result ?? "");
-      const bytes = Buffer.byteLength(resultStr, "utf8");
-      return {
-        ...entry,
-        result: `[Result cleared \u2014 ${entry.tool} returned ${bytes} bytes]`
-      };
-    }
-    if (maxResultLength > 0) {
-      const resultStr = typeof entry.result === "string" ? entry.result : JSON.stringify(entry.result ?? "");
-      if (resultStr.length > maxResultLength) {
-        const truncated = typeof entry.result === "string" ? entry.result.slice(0, maxResultLength) + `
-[...truncated ${resultStr.length - maxResultLength} chars]` : resultStr.slice(0, maxResultLength) + `
-[...truncated ${resultStr.length - maxResultLength} chars]`;
-        return { ...entry, result: truncated };
-      }
-    }
-    return entry;
-  });
-}
-var DEFAULT_KEEP_RECENT, DEFAULT_MAX_RESULT_LENGTH, TOOL_RESULT_CLEARING_PROMPT;
-var init_tool_result_clearing = __esm({
-  "src/executor/tool-result-clearing.ts"() {
-    "use strict";
-    DEFAULT_KEEP_RECENT = 5;
-    DEFAULT_MAX_RESULT_LENGTH = 2e3;
-    TOOL_RESULT_CLEARING_PROMPT = "\n\nWhen working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later to free up context space.";
-  }
-});
-
-// src/executor/post-sampling-hooks.ts
-import { exec } from "node:child_process";
-import { promisify as promisify3 } from "node:util";
-async function runPostSamplingHooks(hooks, ctx) {
-  const continueMessages = [];
-  for (const hook of hooks) {
-    let result2;
-    try {
-      result2 = await hook(ctx);
-    } catch {
-      continue;
-    }
-    if (!result2) continue;
-    if (result2.action === "stop" || result2.action === "retry") {
-      return result2;
-    }
-    if (result2.action === "continue" && result2.message) {
-      continueMessages.push(result2.message);
-    }
-  }
-  return {
-    action: "continue",
-    message: continueMessages.length > 0 ? continueMessages.join("\n\n") : void 0
-  };
-}
-var execAsync;
-var init_post_sampling_hooks = __esm({
-  "src/executor/post-sampling-hooks.ts"() {
-    "use strict";
-    execAsync = promisify3(exec);
-  }
-});
-
-// src/worker/autonomous-loop.ts
-function compactTurnHistory(history) {
-  if (history.length <= 7) return history;
-  const first = history.slice(0, 1);
-  const tail = history.slice(-5);
-  const middle = history.slice(1, history.length - 5);
-  if (middle.length === 0) return history;
-  const summary = {
-    turn: first[0]?.turn ?? 0,
-    tool: "context_compaction",
-    params: { compactedTurns: middle.length },
-    result: `[Context compacted: ${middle.length} earlier tool results summarized]`
-  };
-  return [...first, summary, ...tail];
-}
-function isContextLengthError(err) {
-  const msg = String(err?.message || "").toLowerCase();
-  return msg.includes("context length") || msg.includes("too long") || msg.includes("payload size") || msg.includes("context_length_exceeded") || msg.includes("max_tokens") || msg.includes("token limit") || msg.includes("prompt is too long") || msg.includes("maximum context") || msg.includes("request payload size exceeds");
-}
-function isTruncated(finishReason) {
-  if (!finishReason) return false;
-  return finishReason === "length" || finishReason === "max_tokens";
-}
-function hasIncompleteToolCalls(toolCalls, response) {
-  if (!toolCalls || toolCalls.length === 0) return false;
-  const last = toolCalls[toolCalls.length - 1];
-  if (!last.params || Object.keys(last.params).length === 0) return true;
-  const trimmed = response.trimEnd();
-  if (trimmed.endsWith(",") || trimmed.endsWith("{") || trimmed.endsWith("[")) return true;
-  return false;
-}
-async function executeAutonomous(task, executeLLM, executeTool, config) {
-  const maxTurns = config.maxTurns || DEFAULT_MAX_TURNS;
-  const repeatThreshold = config.repeatThreshold || DEFAULT_REPEAT_THRESHOLD;
-  const history = [];
-  const { abortSignal, maxBudgetUsd, hooks = [], projectDir = process.cwd(), model = "" } = config;
-  let lastResponseText = "";
-  let staleCount = 0;
-  let totalCostUsd = 0;
-  let pendingContext = "";
-  for (let turn = 0; turn < maxTurns; turn++) {
-    if (abortSignal?.aborted) {
-      return {
-        success: false,
-        turns: turn,
-        history,
-        reason: "Aborted by caller",
-        totalCostUsd
-      };
-    }
-    config.onProgress?.(turn + 1, "THINKING");
-    let clearedHistory = clearOldToolResults(history);
-    const effectiveTask = pendingContext ? `${task}
-
-${pendingContext}` : task;
-    pendingContext = "";
-    let reactiveCompacted = false;
-    let response;
-    try {
-      response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
-    } catch (err) {
-      if (isContextLengthError(err) && !reactiveCompacted) {
-        reactiveCompacted = true;
-        console.error("[crew-cli] Context exceeded \u2014 compacted history and retrying");
-        clearedHistory = compactTurnHistory(clearedHistory);
-        response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
-      } else {
-        throw err;
-      }
-    }
-    let recoveryAttempts = 0;
-    while (isTruncated(response.finishReason) && hasIncompleteToolCalls(response.toolCalls, response.response) && recoveryAttempts < 2) {
-      recoveryAttempts++;
-      console.error(`[crew-cli] Output truncated (finish_reason=${response.finishReason}) \u2014 compacting and retrying (attempt ${recoveryAttempts}/2)`);
-      clearedHistory = compactTurnHistory(clearedHistory);
-      try {
-        response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
-      } catch (err) {
-        if (isContextLengthError(err) && !reactiveCompacted) {
-          reactiveCompacted = true;
-          console.error("[crew-cli] Context exceeded during recovery \u2014 compacting again");
-          clearedHistory = compactTurnHistory(clearedHistory);
-          response = await executeLLM(effectiveTask, config.tools, clearedHistory, abortSignal);
-        } else {
-          throw err;
-        }
-      }
-    }
-    if (isTruncated(response.finishReason) && (!response.toolCalls || response.toolCalls.length === 0)) {
-      pendingContext = "[Response was truncated. Continue from where you left off.]";
-    }
-    if (response.costUsd) {
-      totalCostUsd += response.costUsd;
-      if (maxBudgetUsd !== void 0 && totalCostUsd > maxBudgetUsd) {
-        return {
-          success: false,
-          turns: turn + 1,
-          history,
-          finalResponse: response.response,
-          reason: `Budget limit exceeded: $${totalCostUsd.toFixed(4)} > $${maxBudgetUsd.toFixed(4)}`,
-          totalCostUsd
-        };
-      }
-    }
-    if (response.status === "COMPLETE" || !response.toolCalls || response.toolCalls.length === 0) {
-      return {
-        success: true,
-        turns: turn + 1,
-        history,
-        finalResponse: response.response,
-        totalCostUsd
-      };
-    }
-    if (response.response && response.response.length > 20) {
-      if (response.response === lastResponseText) {
-        staleCount++;
-        if (staleCount >= 2) {
-          return {
-            success: true,
-            turns: turn + 1,
-            history,
-            finalResponse: response.response,
-            reason: "Detected stale response (same output repeated), treating as complete",
-            totalCostUsd
-          };
-        }
-      } else {
-        staleCount = 0;
-      }
-      lastResponseText = response.response;
-    }
-    if (abortSignal?.aborted) {
-      return {
-        success: false,
-        turns: turn + 1,
-        history,
-        reason: "Aborted before tool execution",
-        totalCostUsd
-      };
-    }
-    const batches = partitionToolCalls(response.toolCalls);
-    const turnResults = [];
-    for (const batch of batches) {
-      if (abortSignal?.aborted) {
-        return {
-          success: false,
-          turns: turn + 1,
-          history,
-          reason: "Aborted between tool batches",
-          totalCostUsd
-        };
-      }
-      if (batch.concurrent && batch.calls.length > 1) {
-        config.onProgress?.(turn + 1, `EXECUTING ${batch.calls.length} tools concurrently`);
-        const results = await Promise.allSettled(
-          batch.calls.map(async (call) => {
-            if (abortSignal?.aborted) throw new Error("AbortError");
-            config.onProgress?.(turn + 1, `EXECUTING: ${call.tool}`);
-            return { call, result: await executeTool(call.tool, call.params, abortSignal) };
-          })
-        );
-        for (let i = 0; i < results.length; i++) {
-          const r = results[i];
-          const call = batch.calls[i];
-          if (r.status === "fulfilled") {
-            const tr = { turn: turn + 1, tool: r.value.call.tool, params: r.value.call.params, result: r.value.result };
-            history.push(tr);
-            turnResults.push(tr);
-          } else {
-            const tr = { turn: turn + 1, tool: call.tool, params: call.params, result: null, error: r.reason?.message || "concurrent execution failed" };
-            history.push(tr);
-            turnResults.push(tr);
-          }
-        }
-      } else {
-        for (const call of batch.calls) {
-          if (abortSignal?.aborted) {
-            return {
-              success: false,
-              turns: turn + 1,
-              history,
-              reason: "Aborted during tool execution",
-              totalCostUsd
-            };
-          }
-          config.onProgress?.(turn + 1, `EXECUTING: ${call.tool}`);
-          try {
-            const result2 = await executeTool(call.tool, call.params, abortSignal);
-            const tr = { turn: turn + 1, tool: call.tool, params: call.params, result: result2 };
-            history.push(tr);
-            turnResults.push(tr);
-          } catch (error) {
-            const caughtError = error;
-            if (abortSignal?.aborted || caughtError.name === "AbortError") {
-              return {
-                success: false,
-                turns: turn + 1,
-                history,
-                reason: "Aborted during tool execution",
-                totalCostUsd
-              };
-            }
-            const tr = { turn: turn + 1, tool: call.tool, params: call.params, result: null, error: caughtError.message || "tool execution failed" };
-            history.push(tr);
-            turnResults.push(tr);
-          }
-        }
-      }
-    }
-    if (hooks.length > 0) {
-      const hookCtx = {
-        turn: turn + 1,
-        response: response.response,
-        toolCalls: response.toolCalls,
-        toolResults: turnResults,
-        history,
-        projectDir
-      };
-      const hookResult = await runPostSamplingHooks(hooks, hookCtx);
-      if (hookResult.action === "stop") {
-        return {
-          success: false,
-          turns: turn + 1,
-          history,
-          finalResponse: response.response,
-          reason: hookResult.message || "Stopped by post-sampling hook",
-          totalCostUsd
-        };
-      }
-      if (hookResult.action === "retry") {
-        for (const tr of turnResults) {
-          const idx = history.lastIndexOf(tr);
-          if (idx !== -1) history.splice(idx, 1);
-        }
-        if (hookResult.message) {
-          pendingContext = hookResult.message;
-        }
-        turn--;
-        continue;
-      }
-      if (hookResult.message) {
-        pendingContext = pendingContext ? `${pendingContext}
-
-${hookResult.message}` : hookResult.message;
-      }
-    }
-    if (turn > repeatThreshold && isRepeating(history, 3)) {
-      return {
-        success: false,
-        turns: turn + 1,
-        history,
-        reason: "Detected repeated actions, stopping to prevent infinite loop",
-        totalCostUsd
-      };
-    }
-  }
-  return {
-    success: false,
-    turns: maxTurns,
-    history,
-    reason: "Maximum turns exceeded without completing task",
-    totalCostUsd
-  };
-}
-function isRepeating(history, windowSize = 3) {
-  if (history.length < windowSize * 2) return false;
-  const recentActions = history.slice(-windowSize).map((h) => `${h.tool}:${JSON.stringify(h.params)}`);
-  const previousActions = history.slice(-windowSize * 2, -windowSize).map((h) => `${h.tool}:${JSON.stringify(h.params)}`);
-  return JSON.stringify(recentActions) === JSON.stringify(previousActions);
-}
-var DEFAULT_MAX_TURNS, DEFAULT_REPEAT_THRESHOLD;
-var init_autonomous_loop = __esm({
-  "src/worker/autonomous-loop.ts"() {
-    "use strict";
-    init_tool_batching();
-    init_tool_result_clearing();
-    init_post_sampling_hooks();
-    DEFAULT_MAX_TURNS = 25;
-    DEFAULT_REPEAT_THRESHOLD = 10;
-  }
-});
-
 // src/hooks/index.ts
 import { spawn } from "node:child_process";
 import { readFile as readFile6 } from "node:fs/promises";
@@ -3882,7 +3475,7 @@ function getActivityDescription(tool, p) {
 function toolAllowedAtLevel(toolName, level) {
   switch (level) {
     case "read-only":
-      return READ_ONLY_TOOLS2.has(toolName);
+      return READ_ONLY_TOOLS.has(toolName);
     case "edit":
       return EDIT_TOOLS.has(toolName);
     case "full":
@@ -3933,14 +3526,14 @@ function getShellTimeout() {
   if (envVal > 0) return Math.min(envVal * 1e3, 6e5);
   return 12e4;
 }
-var READ_ONLY_TOOLS2, EDIT_TOOLS, FULL_TOOLS, CrewConfig, CrewMessageBus, DANGEROUS_SHELL_PATTERNS, _backgroundProcesses, GeminiToolAdapter;
+var READ_ONLY_TOOLS, EDIT_TOOLS, FULL_TOOLS, CrewConfig, CrewMessageBus, DANGEROUS_SHELL_PATTERNS, _backgroundProcesses, GeminiToolAdapter;
 var init_crew_adapter = __esm({
   "src/tools/gemini/crew-adapter.ts"() {
     "use strict";
     init_hooks();
     init_worktree();
     init_base_declarations();
-    READ_ONLY_TOOLS2 = /* @__PURE__ */ new Set([
+    READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
       "read_file",
       "read_many_files",
       "glob",
@@ -3970,7 +3563,7 @@ var init_crew_adapter = __esm({
       // sleep and tool_search are safe at any constraint level
     ]);
     EDIT_TOOLS = /* @__PURE__ */ new Set([
-      ...READ_ONLY_TOOLS2,
+      ...READ_ONLY_TOOLS,
       "replace",
       "edit",
       "append_file",
@@ -6094,6 +5687,657 @@ ${stderr}` };
   }
 });
 
+// src/engine/run-state.ts
+import { randomUUID as randomUUID5 } from "node:crypto";
+function stableHash(obj) {
+  const keys = Object.keys(obj).sort();
+  const parts = keys.map((k) => `${k}:${JSON.stringify(obj[k]) || ""}`);
+  return parts.join("|").slice(0, 200);
+}
+function classifyFailure(tool, error) {
+  const e = error.toLowerCase();
+  if (e.includes("no such file") || e.includes("enoent") || e.includes("not found")) {
+    return "bad-file-selection";
+  }
+  if (e.includes("syntax") || e.includes("parse error") || e.includes("unexpected token")) {
+    return "syntax-error";
+  }
+  if (e.includes("test") && (e.includes("fail") || e.includes("assert"))) {
+    return "test-failure";
+  }
+  if (e.includes("context") && (e.includes("length") || e.includes("too long"))) {
+    return "context-overflow";
+  }
+  if (e.includes("timeout") || e.includes("timed out")) {
+    return "timeout";
+  }
+  if (e.includes("scope") || e.includes("outside allowed") || e.includes("permission")) {
+    return "scope-violation";
+  }
+  return "unknown";
+}
+var RunState;
+var init_run_state = __esm({
+  "src/engine/run-state.ts"() {
+    "use strict";
+    RunState = class {
+      constructor(options) {
+        this._phase = "init";
+        this._phases = [];
+        this._currentPhase = null;
+        this._failures = [];
+        this._failureSignatures = /* @__PURE__ */ new Map();
+        this._verificationGoals = [];
+        this._cost = {
+          totalUsd: 0,
+          byPhase: {},
+          byTool: {},
+          byModel: {},
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedTokens: 0
+        };
+        this._turns = 0;
+        this.id = randomUUID5();
+        this.sessionId = options.sessionId || randomUUID5();
+        this.traceId = options.traceId || randomUUID5();
+        this.task = options.task;
+        this.startedAt = Date.now();
+      }
+      // ── Phase lifecycle ─────────────────────────────────────────────────────
+      get phase() {
+        return this._phase;
+      }
+      enterPhase(phase) {
+        if (this._currentPhase) {
+          this._currentPhase.endedAt = Date.now();
+          this._phases.push(this._currentPhase);
+        }
+        this._phase = phase;
+        this._currentPhase = {
+          phase,
+          startedAt: Date.now(),
+          costUsd: 0,
+          turns: 0,
+          notes: []
+        };
+        if (phase === "complete" || phase === "failed" || phase === "aborted") {
+          this._currentPhase.endedAt = Date.now();
+          this._phases.push(this._currentPhase);
+          this._currentPhase = null;
+          this._endedAt = Date.now();
+        }
+      }
+      addPhaseNote(note) {
+        this._currentPhase?.notes.push(note);
+      }
+      // ── Turn tracking ───────────────────────────────────────────────────────
+      get turns() {
+        return this._turns;
+      }
+      recordTurn() {
+        this._turns += 1;
+        if (this._currentPhase) {
+          this._currentPhase.turns += 1;
+        }
+      }
+      // ── Cost tracking ───────────────────────────────────────────────────────
+      get cost() {
+        return this._cost;
+      }
+      recordCost(entry) {
+        this._cost.totalUsd += entry.usd;
+        if (this._currentPhase) {
+          this._currentPhase.costUsd += entry.usd;
+          this._cost.byPhase[this._currentPhase.phase] = (this._cost.byPhase[this._currentPhase.phase] || 0) + entry.usd;
+        }
+        if (entry.tool) {
+          this._cost.byTool[entry.tool] = (this._cost.byTool[entry.tool] || 0) + entry.usd;
+        }
+        if (entry.model) {
+          this._cost.byModel[entry.model] = (this._cost.byModel[entry.model] || 0) + entry.usd;
+        }
+        this._cost.inputTokens += entry.inputTokens || 0;
+        this._cost.outputTokens += entry.outputTokens || 0;
+        this._cost.cachedTokens += entry.cachedTokens || 0;
+      }
+      // ── Failure memory ──────────────────────────────────────────────────────
+      get failures() {
+        return this._failures;
+      }
+      recordFailure(entry) {
+        const signature = `${entry.tool}:${stableHash(entry.params)}`;
+        const existing = this._failureSignatures.get(signature);
+        if (existing) {
+          existing.count += 1;
+          existing.error = entry.error;
+          return existing;
+        }
+        const record = {
+          turn: entry.turn,
+          tool: entry.tool,
+          params: entry.params,
+          error: entry.error,
+          signature,
+          count: 1,
+          category: entry.category || classifyFailure(entry.tool, entry.error)
+        };
+        this._failures.push(record);
+        this._failureSignatures.set(signature, record);
+        return record;
+      }
+      /**
+       * Check if a proposed tool call has already failed.
+       * Returns the failure record if it's a known bad move, null otherwise.
+       */
+      wouldRepeatFailure(tool, params) {
+        const signature = `${tool}:${stableHash(params)}`;
+        const record = this._failureSignatures.get(signature);
+        if (record && record.count >= 2) return record;
+        return null;
+      }
+      /**
+       * Build a failure-avoidance prompt for the LLM.
+       * Tells the model what NOT to do based on observed failures.
+       */
+      buildFailureContext() {
+        if (this._failures.length === 0) return "";
+        const repeated = this._failures.filter((f) => f.count >= 2);
+        const recent = this._failures.slice(-5);
+        const relevant = [.../* @__PURE__ */ new Set([...repeated, ...recent])];
+        if (relevant.length === 0) return "";
+        const lines = relevant.map((f) => {
+          const paramPreview = JSON.stringify(f.params).slice(0, 100);
+          return `- ${f.tool}(${paramPreview}) failed ${f.count}x: ${f.error.slice(0, 120)}`;
+        });
+        return [
+          "## Known failures in this run \u2014 do NOT repeat these:",
+          ...lines,
+          "",
+          "Choose a different approach or different parameters."
+        ].join("\n");
+      }
+      // ── Verification goals ──────────────────────────────────────────────────
+      get verificationGoals() {
+        return this._verificationGoals;
+      }
+      addVerificationGoal(description) {
+        const goal = {
+          id: randomUUID5(),
+          description,
+          status: "pending",
+          attempts: 0
+        };
+        this._verificationGoals.push(goal);
+        return goal;
+      }
+      proveGoal(id, provenBy) {
+        const goal = this._verificationGoals.find((g) => g.id === id);
+        if (goal) {
+          goal.status = "proven";
+          goal.provenAt = Date.now();
+          goal.provenBy = provenBy;
+        }
+      }
+      failGoal(id) {
+        const goal = this._verificationGoals.find((g) => g.id === id);
+        if (goal) {
+          goal.status = "failed";
+          goal.attempts += 1;
+        }
+      }
+      /**
+       * Check if all verification goals are satisfied.
+       */
+      allGoalsProven() {
+        return this._verificationGoals.length > 0 && this._verificationGoals.every((g) => g.status === "proven" || g.status === "skipped");
+      }
+      /**
+       * Get the next unproven goal (for verification-first loop).
+       */
+      nextUnprovenGoal() {
+        return this._verificationGoals.find((g) => g.status === "pending") || null;
+      }
+      /**
+       * Build a verification prompt for the LLM.
+       */
+      buildVerificationContext() {
+        if (this._verificationGoals.length === 0) return "";
+        const lines = this._verificationGoals.map((g) => {
+          const status = g.status === "proven" ? "[PROVEN]" : g.status === "failed" ? `[FAILED x${g.attempts}]` : "[PENDING]";
+          return `${status} ${g.description}`;
+        });
+        return [
+          "## Verification goals \u2014 prove each one before declaring done:",
+          ...lines
+        ].join("\n");
+      }
+      // ── Abort ───────────────────────────────────────────────────────────────
+      abort(reason) {
+        this._abortReason = reason;
+        this.enterPhase("aborted");
+      }
+      get isAborted() {
+        return this._phase === "aborted";
+      }
+      // ── Budget checks ───────────────────────────────────────────────────────
+      isOverBudget(maxUsd) {
+        return this._cost.totalUsd >= maxUsd;
+      }
+      isOverTurns(maxTurns) {
+        return this._turns >= maxTurns;
+      }
+      // ── Snapshot for persistence/logging ────────────────────────────────────
+      snapshot() {
+        return {
+          id: this.id,
+          sessionId: this.sessionId,
+          traceId: this.traceId,
+          task: this.task,
+          phase: this._phase,
+          phases: [...this._phases],
+          failures: [...this._failures],
+          verificationGoals: [...this._verificationGoals],
+          cost: { ...this._cost },
+          turns: this._turns,
+          startedAt: this.startedAt,
+          endedAt: this._endedAt,
+          abortReason: this._abortReason
+        };
+      }
+    };
+  }
+});
+
+// src/executor/tool-result-clearing.ts
+function clearOldToolResults(history, config) {
+  const keepRecent = config?.keepRecent ?? DEFAULT_KEEP_RECENT;
+  const maxResultLength = config?.maxResultLength ?? DEFAULT_MAX_RESULT_LENGTH;
+  if (history.length === 0) return [];
+  const cutoff = Math.max(0, history.length - keepRecent);
+  return history.map((entry, idx) => {
+    if (idx < cutoff) {
+      const resultStr = typeof entry.result === "string" ? entry.result : JSON.stringify(entry.result ?? "");
+      const bytes = Buffer.byteLength(resultStr, "utf8");
+      return {
+        ...entry,
+        result: `[Result cleared \u2014 ${entry.tool} returned ${bytes} bytes]`
+      };
+    }
+    if (maxResultLength > 0) {
+      const resultStr = typeof entry.result === "string" ? entry.result : JSON.stringify(entry.result ?? "");
+      if (resultStr.length > maxResultLength) {
+        const truncated = typeof entry.result === "string" ? entry.result.slice(0, maxResultLength) + `
+[...truncated ${resultStr.length - maxResultLength} chars]` : resultStr.slice(0, maxResultLength) + `
+[...truncated ${resultStr.length - maxResultLength} chars]`;
+        return { ...entry, result: truncated };
+      }
+    }
+    return entry;
+  });
+}
+var DEFAULT_KEEP_RECENT, DEFAULT_MAX_RESULT_LENGTH, TOOL_RESULT_CLEARING_PROMPT;
+var init_tool_result_clearing = __esm({
+  "src/executor/tool-result-clearing.ts"() {
+    "use strict";
+    DEFAULT_KEEP_RECENT = 5;
+    DEFAULT_MAX_RESULT_LENGTH = 2e3;
+    TOOL_RESULT_CLEARING_PROMPT = "\n\nWhen working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later to free up context space.";
+  }
+});
+
+// src/executor/tool-batching.ts
+function isConcurrencySafe(toolName) {
+  return READ_ONLY_TOOLS2.has(toolName);
+}
+function partitionToolCalls(calls) {
+  if (calls.length === 0) return [];
+  const batches = [];
+  let current = null;
+  for (const call of calls) {
+    const safe = isConcurrencySafe(call.tool);
+    if (safe) {
+      if (current && current.concurrent) {
+        current.calls.push(call);
+      } else {
+        current = { concurrent: true, calls: [call] };
+        batches.push(current);
+      }
+    } else {
+      current = { concurrent: false, calls: [call] };
+      batches.push(current);
+      current = null;
+    }
+  }
+  return batches;
+}
+var READ_ONLY_TOOLS2;
+var init_tool_batching = __esm({
+  "src/executor/tool-batching.ts"() {
+    "use strict";
+    READ_ONLY_TOOLS2 = /* @__PURE__ */ new Set([
+      "file_read",
+      "read_file",
+      "read_many_files",
+      "grep",
+      "grep_search",
+      "glob",
+      "find_files",
+      "search_code",
+      "web_search",
+      "google_web_search",
+      "web_fetch",
+      "find_functions",
+      "find_classes",
+      "list_directory",
+      "ls",
+      "git_log",
+      "git_diff",
+      "git_status",
+      "git_show",
+      "git_blame",
+      "get_internal_docs"
+    ]);
+  }
+});
+
+// src/engine/run-engine.ts
+function isContextLengthError(msg) {
+  const lower = msg.toLowerCase();
+  return lower.includes("context length") || lower.includes("too long") || lower.includes("payload size") || lower.includes("context_length_exceeded") || lower.includes("max_tokens") || lower.includes("token limit") || lower.includes("prompt is too long");
+}
+function compactTurnHistory(history) {
+  if (history.length <= 7) return history;
+  const first = history.slice(0, 1);
+  const tail = history.slice(-5);
+  const middle = history.slice(1, history.length - 5);
+  if (middle.length === 0) return history;
+  const summary = {
+    turn: first[0]?.turn ?? 0,
+    tool: "context_compaction",
+    params: { compactedTurns: middle.length },
+    result: `[Context compacted: ${middle.length} earlier tool results summarized]`
+  };
+  return [...first, summary, ...tail];
+}
+var DEFAULT_MAX_TURNS, DEFAULT_REPEAT_THRESHOLD, DEFAULT_MAX_VERIFICATION_CYCLES, RunEngine;
+var init_run_engine = __esm({
+  "src/engine/run-engine.ts"() {
+    "use strict";
+    init_run_state();
+    init_tool_result_clearing();
+    init_tool_batching();
+    DEFAULT_MAX_TURNS = 25;
+    DEFAULT_REPEAT_THRESHOLD = 10;
+    DEFAULT_MAX_VERIFICATION_CYCLES = 2;
+    RunEngine = class {
+      constructor(config) {
+        this.config = config;
+        this.state = new RunState({
+          task: config.task,
+          sessionId: config.sessionId,
+          traceId: config.traceId
+        });
+        this.extractVerificationGoals(config);
+      }
+      /**
+       * Execute the task end-to-end: plan → execute → verify.
+       */
+      async execute(executeLLM, executeTool) {
+        const {
+          maxTurns = DEFAULT_MAX_TURNS,
+          maxBudgetUsd,
+          abortSignal,
+          tools = [],
+          onProgress,
+          maxVerificationCycles = DEFAULT_MAX_VERIFICATION_CYCLES
+        } = this.config;
+        const history = [];
+        let lastResponseText = "";
+        let staleCount = 0;
+        let pendingContext = "";
+        let finalResponse = "";
+        this.state.enterPhase("executing");
+        for (let turn = 0; turn < maxTurns; turn++) {
+          if (abortSignal?.aborted) {
+            this.state.abort("Aborted by caller");
+            break;
+          }
+          if (maxBudgetUsd && this.state.isOverBudget(maxBudgetUsd)) {
+            this.state.addPhaseNote(`Budget exceeded: $${this.state.cost.totalUsd.toFixed(4)} >= $${maxBudgetUsd}`);
+            break;
+          }
+          this.state.recordTurn();
+          onProgress?.(turn + 1, "THINKING");
+          const failureCtx = this.state.buildFailureContext();
+          const verifyCtx = this.state.buildVerificationContext();
+          const extraContext = [failureCtx, verifyCtx].filter(Boolean).join("\n\n");
+          const effectiveTask = [this.config.task, extraContext, pendingContext].filter(Boolean).join("\n\n");
+          pendingContext = "";
+          const clearedHistory = clearOldToolResults(history);
+          let response;
+          try {
+            response = await executeLLM(effectiveTask, tools, clearedHistory, abortSignal);
+          } catch (err) {
+            const msg = err.message || String(err);
+            if (isContextLengthError(msg)) {
+              this.state.addPhaseNote("Context exceeded \u2014 compacting history");
+              const compacted = compactTurnHistory(clearedHistory);
+              try {
+                response = await executeLLM(effectiveTask, tools, compacted, abortSignal);
+              } catch {
+                this.state.enterPhase("failed");
+                break;
+              }
+            } else {
+              this.state.enterPhase("failed");
+              break;
+            }
+          }
+          if (response.costUsd) {
+            this.state.recordCost({
+              usd: response.costUsd,
+              model: this.config.model
+            });
+          }
+          if (response.response === lastResponseText) {
+            staleCount++;
+            if (staleCount >= DEFAULT_REPEAT_THRESHOLD) {
+              this.state.addPhaseNote("Stale response detected \u2014 stopping");
+              break;
+            }
+          } else {
+            staleCount = 0;
+          }
+          lastResponseText = response.response;
+          finalResponse = response.response;
+          if (!response.toolCalls || response.toolCalls.length === 0) {
+            if (response.status === "COMPLETE" || !response.toolCalls) {
+              break;
+            }
+          }
+          if (response.toolCalls && response.toolCalls.length > 0) {
+            const batches = partitionToolCalls(response.toolCalls);
+            for (const batch of batches) {
+              if (abortSignal?.aborted) break;
+              for (const call of batch.calls) {
+                const wouldRepeat = this.state.wouldRepeatFailure(call.tool, call.params);
+                if (wouldRepeat) {
+                  const skipMsg = `Skipped: already failed ${wouldRepeat.count}x with same params`;
+                  history.push({
+                    turn: turn + 1,
+                    tool: call.tool,
+                    params: call.params,
+                    result: null,
+                    error: skipMsg
+                  });
+                  this.state.addPhaseNote(`Blocked repeated failure: ${call.tool}`);
+                  continue;
+                }
+                onProgress?.(turn + 1, `EXECUTING: ${call.tool}`);
+                try {
+                  const result2 = await executeTool(call.tool, call.params, abortSignal);
+                  history.push({ turn: turn + 1, tool: call.tool, params: call.params, result: result2 });
+                  this.checkVerificationProof(call, result2);
+                } catch (error) {
+                  const errMsg2 = error.message || "tool execution failed";
+                  history.push({ turn: turn + 1, tool: call.tool, params: call.params, result: null, error: errMsg2 });
+                  this.state.recordFailure({
+                    turn: turn + 1,
+                    tool: call.tool,
+                    params: call.params,
+                    error: errMsg2
+                  });
+                }
+              }
+            }
+          }
+        }
+        let verificationPassed = false;
+        if (this.state.phase !== "failed" && this.state.phase !== "aborted") {
+          this.state.enterPhase("qa");
+          if (this.config.verificationCommands && this.config.verificationCommands.length > 0) {
+            for (let cycle = 0; cycle < maxVerificationCycles; cycle++) {
+              const allPassed = await this.runVerificationCycle(
+                executeTool,
+                history,
+                abortSignal
+              );
+              if (allPassed) {
+                verificationPassed = true;
+                break;
+              }
+              if (cycle < maxVerificationCycles - 1) {
+                this.state.addPhaseNote(`Verification cycle ${cycle + 1} failed \u2014 retrying`);
+                const fixPrompt = this.buildVerificationFixPrompt();
+                pendingContext = fixPrompt;
+                const clearedHistory = clearOldToolResults(history);
+                const fixContext = [this.config.task, fixPrompt, this.state.buildFailureContext()].filter(Boolean).join("\n\n");
+                try {
+                  const fixResponse = await executeLLM(fixContext, tools, clearedHistory, abortSignal);
+                  if (fixResponse.toolCalls) {
+                    for (const call of fixResponse.toolCalls) {
+                      try {
+                        const result2 = await executeTool(call.tool, call.params, abortSignal);
+                        history.push({ turn: this.state.turns + 1, tool: call.tool, params: call.params, result: result2 });
+                        this.state.recordTurn();
+                      } catch (error) {
+                        const errMsg2 = error.message || "fix failed";
+                        history.push({ turn: this.state.turns + 1, tool: call.tool, params: call.params, result: null, error: errMsg2 });
+                        this.state.recordFailure({ turn: this.state.turns + 1, tool: call.tool, params: call.params, error: errMsg2 });
+                      }
+                    }
+                  }
+                } catch {
+                }
+              }
+            }
+          } else {
+            verificationPassed = this.state.allGoalsProven() || this.state.verificationGoals.length === 0;
+          }
+          this.state.enterPhase(verificationPassed ? "complete" : "failed");
+        }
+        return {
+          success: this.state.phase === "complete",
+          output: finalResponse,
+          history,
+          runState: this.state,
+          verificationPassed,
+          failureCount: this.state.failures.length,
+          turns: this.state.turns,
+          costUsd: this.state.cost.totalUsd
+        };
+      }
+      // ── Verification helpers ────────────────────────────────────────────
+      extractVerificationGoals(config) {
+        if (config.verificationCommands) {
+          for (const cmd of config.verificationCommands) {
+            this.state.addVerificationGoal(`Command passes: ${cmd}`);
+          }
+        }
+        const task = config.task.toLowerCase();
+        if (task.includes("test") && !task.includes("don't test")) {
+          this.state.addVerificationGoal("Tests pass after changes");
+        }
+        if (task.includes("lint") || task.includes("typecheck") || task.includes("type-check")) {
+          this.state.addVerificationGoal("Lint/typecheck passes");
+        }
+        if (task.includes("build")) {
+          this.state.addVerificationGoal("Build succeeds");
+        }
+      }
+      checkVerificationProof(call, result2) {
+        const output = String(result2 || "");
+        if (call.tool === "run_shell_command" || call.tool === "shell") {
+          const command = String(call.params.command || "");
+          for (const goal of this.state.verificationGoals) {
+            if (goal.status !== "pending") continue;
+            if (goal.description.includes(command) || command.includes("test") && goal.description.includes("test") || command.includes("lint") && goal.description.includes("lint") || command.includes("build") && goal.description.includes("build")) {
+              if (!output.includes("FAIL") && !output.includes("error") && !output.includes("Error")) {
+                this.state.proveGoal(goal.id, `${call.tool}: ${command}`);
+              } else {
+                this.state.failGoal(goal.id);
+              }
+            }
+          }
+        }
+      }
+      async runVerificationCycle(executeTool, history, abortSignal) {
+        if (!this.config.verificationCommands) return true;
+        let allPassed = true;
+        for (const cmd of this.config.verificationCommands) {
+          try {
+            const result2 = await executeTool("run_shell_command", { command: cmd }, abortSignal);
+            const output = String(result2 || "");
+            history.push({
+              turn: this.state.turns + 1,
+              tool: "run_shell_command",
+              params: { command: cmd },
+              result: result2
+            });
+            const goal = this.state.verificationGoals.find(
+              (g) => g.status === "pending" && g.description.includes(cmd)
+            );
+            if (output.includes("FAIL") || output.includes("error")) {
+              allPassed = false;
+              if (goal) this.state.failGoal(goal.id);
+              this.state.recordFailure({
+                turn: this.state.turns,
+                tool: "run_shell_command",
+                params: { command: cmd },
+                error: `Verification failed: ${output.slice(0, 200)}`
+              });
+            } else {
+              if (goal) this.state.proveGoal(goal.id, `verification: ${cmd}`);
+            }
+          } catch (error) {
+            allPassed = false;
+            const errMsg2 = error.message || "verification command failed";
+            history.push({
+              turn: this.state.turns + 1,
+              tool: "run_shell_command",
+              params: { command: cmd },
+              result: null,
+              error: errMsg2
+            });
+          }
+        }
+        return allPassed;
+      }
+      buildVerificationFixPrompt() {
+        const failed = this.state.verificationGoals.filter((g) => g.status === "failed");
+        if (failed.length === 0) return "";
+        return [
+          "## Verification failed \u2014 fix these issues:",
+          ...failed.map((g) => `- ${g.description} (failed ${g.attempts}x)`),
+          "",
+          "Fix the code so these checks pass, then I will re-verify."
+        ].join("\n");
+      }
+    };
+  }
+});
+
 // src/learning/corrections.ts
 import { access as access4, copyFile, mkdir as mkdir4, readFile as readFile8, writeFile as writeFile4 } from "node:fs/promises";
 import { constants as constants4 } from "node:fs";
@@ -6330,10 +6574,10 @@ var init_transcript = __esm({
         const files = /* @__PURE__ */ new Set();
         for (const e of this._entries) {
           if (!e.success) continue;
-          if (e.toolName === "read_file" && e.params.file_path) {
+          if (e.toolName === "read_file" && typeof e.params.file_path === "string") {
             files.add(e.params.file_path);
           }
-          if (e.toolName === "read_many_files" && e.params.include) {
+          if (e.toolName === "read_many_files" && typeof e.params.include === "string") {
             files.add(e.params.include);
           }
         }
@@ -6345,7 +6589,7 @@ var init_transcript = __esm({
         const editTools = /* @__PURE__ */ new Set(["replace", "edit", "append_file"]);
         for (const e of this._entries) {
           if (!e.success) continue;
-          if (editTools.has(e.toolName) && e.params.file_path) {
+          if (editTools.has(e.toolName) && typeof e.params.file_path === "string") {
             files.add(e.params.file_path);
           }
         }
@@ -6356,7 +6600,7 @@ var init_transcript = __esm({
         const files = /* @__PURE__ */ new Set();
         for (const e of this._entries) {
           if (!e.success) continue;
-          if (e.toolName === "write_file" && e.params.file_path) {
+          if (e.toolName === "write_file" && typeof e.params.file_path === "string") {
             files.add(e.params.file_path);
           }
         }
@@ -6392,6 +6636,42 @@ var init_transcript = __esm({
         };
       }
     };
+  }
+});
+
+// src/execution/agentic-guidance.ts
+function normalizeText(value) {
+  return value.trim().toLowerCase();
+}
+function detectTaskMode(task) {
+  const normalized = normalizeText(task);
+  if (/(failing tests?|test failure|fix tests?|make tests? pass|regression test|unit test)/.test(normalized)) {
+    return "test_repair";
+  }
+  if (/(fix|bug|broken|error|regression|crash|issue|failure)/.test(normalized)) {
+    return "bugfix";
+  }
+  if (/(refactor|cleanup|restructure|rename|simplify|extract)/.test(normalized)) {
+    return "refactor";
+  }
+  if (/(add|implement|create|build|support|introduce)/.test(normalized)) {
+    return "feature";
+  }
+  return "analysis";
+}
+function buildTaskModeGuidance(mode) {
+  const strategyByMode = {
+    bugfix: "Task mode: bugfix. Reproduce the failure with the smallest useful signal, make the narrowest fix, then run the most targeted verification command before stopping.",
+    feature: "Task mode: feature. Read the affected files first, implement the smallest complete change that satisfies the request, then verify the touched path with focused checks.",
+    refactor: "Task mode: refactor. Preserve behavior, prefer small surgical edits, and run typecheck or the narrowest affected tests before finishing.",
+    test_repair: "Task mode: test repair. Start from the failing test signal, change only what explains the failure, and rerun the targeted test before broader verification.",
+    analysis: "Task mode: analysis. Gather only the context needed for the task, avoid speculative edits, and verify any code changes with the smallest useful command."
+  };
+  return strategyByMode[mode];
+}
+var init_agentic_guidance = __esm({
+  "src/execution/agentic-guidance.ts"() {
+    "use strict";
   }
 });
 
@@ -7798,12 +8078,19 @@ async function runAgenticWorker(task, sandbox, options = {}) {
     }
   } catch {
   }
+  const taskMode = detectTaskMode(task);
+  enrichedTask = `${enrichedTask}
+
+## Execution Strategy
+${buildTaskModeGuidance(taskMode)}`;
   if (verbose) {
     console.log(`[AgenticExecutor] ${allTools.length} tools: ${allTools.map((t) => t.name).join(", ")}`);
+    console.log(`[AgenticExecutor] task mode: ${taskMode}`);
   }
   let totalCost = 0;
   const toolsUsed = /* @__PURE__ */ new Set();
   const transcript = new ExecutionTranscript();
+  const verificationCommands = normalizeVerificationCommands(options.verificationCommands ?? extractVerificationCommands(task));
   const executeTool = async (name, params) => {
     toolsUsed.add(name);
     options.onToolCall?.(name, params);
@@ -7840,8 +8127,20 @@ async function runAgenticWorker(task, sandbox, options = {}) {
     return result3;
   };
   let turnCount = 0;
-  const result2 = await executeAutonomous(
-    enrichedTask,
+  const engine = new RunEngine({
+    task,
+    sessionId,
+    maxTurns,
+    maxBudgetUsd: options.maxBudgetUsd,
+    abortSignal: options.abortSignal,
+    tools: allTools,
+    model,
+    verificationCommands,
+    onProgress: verbose ? (turn, action) => {
+      console.log(`  [Turn ${turn}] ${action}`);
+    } : void 0
+  });
+  const result2 = await engine.execute(
     async (prompt, tools, history, abortSignal) => {
       turnCount++;
       let taskWithJIT = enrichedTask;
@@ -7903,31 +8202,22 @@ ${summary}`;
     },
     async (name, params) => {
       return await executeTool(name, params);
-    },
-    {
-      maxTurns,
-      tools: allTools,
-      onProgress: verbose ? (turn, action) => {
-        console.log(`  [Turn ${turn}] ${action}`);
-      } : void 0,
-      abortSignal: options.abortSignal,
-      // Feature 3
-      maxBudgetUsd: options.maxBudgetUsd
-      // Feature 4
     }
   );
   cleanupScratchpad(sessionId);
   transcript.freeze();
-  const rawOutput = result2.finalResponse ?? result2.history?.map((h) => {
+  const rawOutput = result2.output ?? result2.history?.map((h) => {
     if (!h.result) return "";
     if (typeof h.result === "string") return h.result;
     const toolResult = h.result;
     return toolResult.output || toolResult.error || JSON.stringify(h.result);
   }).filter(Boolean).join("\n") ?? "";
+  const runSnapshot = result2.runState.snapshot();
+  const lastPhase = runSnapshot.phases.length > 0 ? runSnapshot.phases[runSnapshot.phases.length - 1] : void 0;
   return {
     success: result2.success ?? false,
     output: stripThinkActObserve(rawOutput),
-    cost: totalCost,
+    cost: result2.costUsd || totalCost,
     turns: result2.turns,
     toolsUsed: Array.from(toolsUsed),
     providerId: resolvedProvider?.id,
@@ -7935,10 +8225,37 @@ ${summary}`;
     filesDiscovered: jit.fileCount,
     discoveredFiles: jit.toFileList(),
     history: result2.history,
-    stopReason: result2.reason,
+    stopReason: result2.success ? void 0 : runSnapshot.abortReason || (lastPhase?.notes.length ? lastPhase.notes[lastPhase.notes.length - 1] : void 0) || runSnapshot.phase,
     transcript,
     constraintLevel
   };
+}
+function normalizeVerificationCommands(commands) {
+  return [...new Set(commands.map((cmd) => cmd.trim()).filter(Boolean))];
+}
+function extractVerificationCommands(task) {
+  const commands = /* @__PURE__ */ new Set();
+  const lines = task.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const runMatch = trimmed.match(/^(?:[-*]\s*)?(?:run|execute)\s+(.+)$/i);
+    if (runMatch?.[1]) {
+      commands.add(runMatch[1].trim());
+      continue;
+    }
+    const commandMatch = trimmed.match(/`([^`]+)`/g);
+    if (commandMatch) {
+      for (const token of commandMatch) {
+        const command = token.slice(1, -1).trim();
+        if (looksLikeCommand(command)) commands.add(command);
+      }
+    }
+  }
+  return [...commands];
+}
+function looksLikeCommand(value) {
+  if (!value) return false;
+  return /^(npm|pnpm|yarn|bun|node|pytest|jest|vitest|cargo|go|make|\.\/|bash|sh)\b/.test(value);
 }
 function stripThinkActObserve(text) {
   if (!text) return text;
@@ -7951,11 +8268,12 @@ var L3_SYSTEM_PROMPT, PROVIDER_ORDER, JITContextTracker, MAX_RETRIES;
 var init_agentic_executor = __esm({
   "src/executor/agentic-executor.ts"() {
     "use strict";
-    init_autonomous_loop();
     init_crew_adapter();
+    init_run_engine();
     init_corrections();
     init_token_compaction();
     init_transcript();
+    init_agentic_guidance();
     init_oauth_keychain();
     init_openai_oauth();
     init_gemini_oauth();
@@ -10399,7 +10717,7 @@ ${c.text}`).join("\n\n");
 });
 
 // src/pipeline/agent-memory.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 import { existsSync as existsSync8, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join15, resolve as resolve8 } from "node:path";
 function getPipelineMemory(agentId = "pipeline") {
@@ -10424,7 +10742,7 @@ var init_agent_memory = __esm({
        */
       remember(content, options = {}) {
         const fact = {
-          id: randomUUID5(),
+          id: randomUUID6(),
           content,
           critical: options.critical || false,
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -10663,7 +10981,7 @@ var init_json_parse = __esm({
 
 // src/pipeline/run-state.ts
 var ORDER, PipelineRunState;
-var init_run_state = __esm({
+var init_run_state2 = __esm({
   "src/pipeline/run-state.ts"() {
     "use strict";
     ORDER = [
@@ -11835,7 +12153,7 @@ var init_codebase_rag = __esm({
 });
 
 // src/pipeline/unified.ts
-import { randomUUID as randomUUID6 } from "crypto";
+import { randomUUID as randomUUID7 } from "crypto";
 import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile14 } from "node:fs/promises";
 import { resolve as resolve11, join as join19, normalize } from "node:path";
 var UnifiedPipeline;
@@ -11852,7 +12170,7 @@ var init_unified = __esm({
     init_structured_json();
     init_json_schemas();
     init_json_parse();
-    init_run_state();
+    init_run_state2();
     init_capabilities();
     init_task_envelope();
     init_qa_gate();
@@ -12913,7 +13231,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
        * Execute request through unified pipeline
        */
       async execute(request) {
-        const traceId = `pipeline-${randomUUID6()}`;
+        const traceId = `pipeline-${randomUUID7()}`;
         const executionPath = ["l1-interface"];
         const startTime = Date.now();
         const runState = new PipelineRunState();
@@ -13292,7 +13610,7 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
        * This runs L2 reasoning (and optional dual-L2 planning) without executing L3 workers.
        */
       async routeOnly(request) {
-        const traceId = `pipeline-${randomUUID6()}`;
+        const traceId = `pipeline-${randomUUID7()}`;
         const plan = await this.l2Orchestrate(request, traceId, request.sessionId);
         if (plan.decision === "direct-answer") {
           return {
@@ -14790,7 +15108,7 @@ __export(agentkeeper_exports, {
 });
 import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile18, stat as stat6, writeFile as writeFile8 } from "node:fs/promises";
 import { dirname as dirname5, join as join22 } from "node:path";
-import { randomUUID as randomUUID7 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 function tokenize2(text) {
   return new Set(
     text.toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 2)
@@ -14944,7 +15262,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
         await mkdir10(dirname5(this.storePath), { recursive: true });
         const full = {
           ...entry,
-          id: randomUUID7(),
+          id: randomUUID8(),
           task: this.sanitizeText(entry.task, 1200),
           result: this.sanitizeText(entry.result, 6e3),
           structured: this.normalizeStructured(entry.structured),
@@ -15119,11 +15437,11 @@ __export(ci_exports, {
   runCheckCommand: () => runCheckCommand,
   runCiFixLoop: () => runCiFixLoop
 });
-import { exec as exec2 } from "node:child_process";
-import { promisify as promisify7 } from "node:util";
+import { exec } from "node:child_process";
+import { promisify as promisify6 } from "node:util";
 async function runCheckCommand(command, cwd = process.cwd()) {
   try {
-    const { stdout, stderr } = await execAsync2(command, {
+    const { stdout, stderr } = await execAsync(command, {
       cwd,
       maxBuffer: 1024 * 1024 * 4
     });
@@ -15186,11 +15504,11 @@ async function runCiFixLoop(options) {
     history: runHistory
   };
 }
-var execAsync2;
+var execAsync;
 var init_ci = __esm({
   "src/ci/index.ts"() {
     "use strict";
-    execAsync2 = promisify7(exec2);
+    execAsync = promisify6(exec);
   }
 });
 
@@ -15201,7 +15519,7 @@ __export(blast_radius_exports, {
   isSeverityAtLeast: () => isSeverityAtLeast
 });
 import { execFile as execFile9 } from "node:child_process";
-import { promisify as promisify11 } from "node:util";
+import { promisify as promisify10 } from "node:util";
 import { relative as relative6, resolve as resolve18 } from "node:path";
 function severityRank(level) {
   if (level === "high") return 3;
@@ -15303,7 +15621,7 @@ var init_blast_radius = __esm({
   "src/blast-radius/index.ts"() {
     "use strict";
     init_mapping();
-    execFileAsync9 = promisify11(execFile9);
+    execFileAsync9 = promisify10(execFile9);
   }
 });
 
@@ -16182,12 +16500,12 @@ var ToolManager = class {
     if (!command) {
       throw new Error("Shell tool requires command parameter");
     }
-    const { exec: exec3 } = await import("node:child_process");
-    const { promisify: promisify13 } = await import("node:util");
-    const execAsync3 = promisify13(exec3);
+    const { exec: exec2 } = await import("node:child_process");
+    const { promisify: promisify12 } = await import("node:util");
+    const execAsync2 = promisify12(exec2);
     try {
       const options = cwd ? { cwd } : {};
-      const { stdout, stderr } = await execAsync3(command, options);
+      const { stdout, stderr } = await execAsync2(command, options);
       return {
         success: true,
         operation: "shell",
@@ -16550,8 +16868,8 @@ import { constants as constants5 } from "node:fs";
 import { join as join20 } from "node:path";
 import { homedir as homedir4, userInfo as userInfo2 } from "node:os";
 import { execFile as execFile3 } from "node:child_process";
-import { promisify as promisify4 } from "node:util";
-var execFileAsync3 = promisify4(execFile3);
+import { promisify as promisify3 } from "node:util";
+var execFileAsync3 = promisify3(execFile3);
 var TokenFinder = class {
   async findTokens() {
     const tokens = {};
@@ -16865,7 +17183,7 @@ import { join as join24 } from "node:path";
 import { dirname as dirname6 } from "node:path";
 import { homedir as homedir6 } from "node:os";
 import { execFile as execFile4 } from "node:child_process";
-import { promisify as promisify5 } from "node:util";
+import { promisify as promisify4 } from "node:util";
 import { fileURLToPath } from "node:url";
 
 // src/mcp/index.ts
@@ -17029,7 +17347,7 @@ async function doctorMcpServers(baseDir = process.cwd()) {
 }
 
 // src/diagnostics/doctor.ts
-var execFileAsync4 = promisify5(execFile4);
+var execFileAsync4 = promisify4(execFile4);
 function parseMajorNodeVersion(version) {
   const cleaned = String(version || "").replace(/^v/, "");
   const major = Number.parseInt(cleaned.split(".")[0] || "0", 10);
@@ -17294,7 +17612,7 @@ init_corrections();
 // src/engines/index.ts
 init_logger();
 import { spawn as spawn2 } from "node:child_process";
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { randomUUID as randomUUID10 } from "node:crypto";
 import fs2 from "node:fs";
 import os from "node:os";
 import path2 from "node:path";
@@ -17594,7 +17912,7 @@ import { mkdir as mkdir14, readFile as readFile22, writeFile as writeFile11 } fr
 import { existsSync as existsSync14 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
 import { join as join27, resolve as resolve14 } from "node:path";
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 function nowIso6() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -17751,7 +18069,7 @@ var NativeEngineSessionManager = class {
     session.updatedAt = nowIso6();
     session.turns += 1;
     await this.persistSessionMeta(session);
-    const sentinel = `__CREW_DONE_${randomUUID8().replace(/-/g, "")}__`;
+    const sentinel = `__CREW_DONE_${randomUUID9().replace(/-/g, "")}__`;
     const markerCmd = `${params.command}
 echo ${shellQuote(`${sentinel}$?`)}
 `;
@@ -18410,7 +18728,7 @@ async function runOpenCodeCli(prompt, options = {}) {
 async function runEngine(engine, prompt, options = {}) {
   const normalizedEngine = String(engine || "").trim().toLowerCase();
   const start = Date.now();
-  const runId = String(options.runId || `eng-${randomUUID9()}`);
+  const runId = String(options.runId || `eng-${randomUUID10()}`);
   const optionsWithRunId = { ...options, runId };
   const { effectivePrompt, engineStore, transcriptStore } = await preparePromptWithSession(normalizedEngine, prompt, options);
   let result2;
@@ -18724,8 +19042,8 @@ import { readdir as readdir7, access as access7, mkdir as mkdir16, writeFile as 
 import { constants as constants7 } from "node:fs";
 import { dirname as dirname7, join as join30, resolve as resolve16 } from "node:path";
 import { execFile as execFile5 } from "node:child_process";
-import { promisify as promisify6 } from "node:util";
-var execFileAsync5 = promisify6(execFile5);
+import { promisify as promisify5 } from "node:util";
+var execFileAsync5 = promisify5(execFile5);
 async function exists(path3) {
   try {
     await access7(path3, constants7.F_OK);
@@ -18830,9 +19148,9 @@ import { constants as constants8 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
 import { join as join31 } from "node:path";
 import { execFile as execFile6 } from "node:child_process";
-import { promisify as promisify8 } from "node:util";
+import { promisify as promisify7 } from "node:util";
 import WebSocket2 from "ws";
-var execFileAsync6 = promisify8(execFile6);
+var execFileAsync6 = promisify7(execFile6);
 async function exists2(path3) {
   try {
     await access8(path3, constants8.F_OK);
@@ -19175,11 +19493,11 @@ async function getTeamSyncStatus(baseDir = process.cwd()) {
 
 // src/voice/listener.ts
 import { execFile as execFile7 } from "node:child_process";
-import { promisify as promisify9 } from "node:util";
+import { promisify as promisify8 } from "node:util";
 import { readFile as readFile28, writeFile as writeFile16 } from "node:fs/promises";
 import { join as join33 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
-var execFileAsync7 = promisify9(execFile7);
+var execFileAsync7 = promisify8(execFile7);
 async function commandExists2(command) {
   try {
     await execFileAsync7("which", [command]);
@@ -19467,8 +19785,8 @@ ${clippedContext}` : baseTask.slice(0, maxChars);
 
 // src/review/index.ts
 import { execFile as execFile8 } from "node:child_process";
-import { promisify as promisify10 } from "node:util";
-var execFileAsync8 = promisify10(execFile8);
+import { promisify as promisify9 } from "node:util";
+var execFileAsync8 = promisify9(execFile8);
 function clip6(text, maxChars = 2e4) {
   if (!text) return "(none)";
   if (text.length <= maxChars) return text;
@@ -19736,7 +20054,7 @@ import { createServer } from "node:http";
 import { homedir as homedir9 } from "node:os";
 import { join as join36 } from "node:path";
 import { readFileSync as readFileSync5 } from "node:fs";
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 
 // src/interface/mcp-handler.ts
 async function handleMcpRequest(options, body) {
@@ -20185,9 +20503,9 @@ ${toolResults.join("\n\n")}`);
   };
 }
 function buildToolCallResponse(params) {
-  const completionId = `chatcmpl-${randomUUID10()}`;
+  const completionId = `chatcmpl-${randomUUID11()}`;
   const created = Math.floor(Date.now() / 1e3);
-  const toolCallId = `call_${randomUUID10().replace(/-/g, "").slice(0, 20)}`;
+  const toolCallId = `call_${randomUUID11().replace(/-/g, "").slice(0, 20)}`;
   const toolCall = {
     id: toolCallId,
     type: "function",
@@ -20466,7 +20784,7 @@ PREFERRED_AGENT: ${model}`,
   };
   const out = options.mode === "connected" ? await handleConnectedChat(options, chatBody) : await handleStandaloneChat(options, chatBody);
   const reply = String(out?.data?.reply || "");
-  const completionId = `chatcmpl-${randomUUID10()}`;
+  const completionId = `chatcmpl-${randomUUID11()}`;
   const created = Math.floor(Date.now() / 1e3);
   const promptTokens = Math.ceil(composed.inputChars / 4);
   const completionTokens = Math.ceil(reply.length / 4);
@@ -20514,7 +20832,7 @@ PREFERRED_AGENT: ${model}`,
 async function enqueueStandaloneTask(options, body) {
   const taskText = String(body?.task || "").trim();
   if (!taskText) return { status: 400, data: { error: "task is required" } };
-  const taskId = randomUUID10();
+  const taskId = randomUUID11();
   taskStore.set(taskId, { id: taskId, status: "queued", createdAt: Date.now() });
   queueMicrotask(async () => {
     const rec = taskStore.get(taskId);
@@ -20954,7 +21272,7 @@ async function startUnifiedServer(options) {
         latestIndex = await buildCollectionIndex(paths, {
           includeCode: Boolean(body?.includeCode)
         });
-        latestIndexId = `idx-${randomUUID10()}`;
+        latestIndexId = `idx-${randomUUID11()}`;
         latestIndexStats = {
           files: Number(latestIndex?.fileCount || 0),
           chunks: Number(latestIndex?.chunks?.length || 0)
@@ -20972,7 +21290,7 @@ async function startUnifiedServer(options) {
             includeCode: false
           });
           latestIndex = fallback;
-          latestIndexId = `idx-${randomUUID10()}`;
+          latestIndexId = `idx-${randomUUID11()}`;
           latestIndexStats = {
             files: Number(latestIndex?.fileCount || 0),
             chunks: Number(latestIndex?.chunks?.length || 0)
@@ -21108,7 +21426,7 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
 
 // src/repl/index.ts
 import { createInterface, emitKeypressEvents } from "node:readline";
-import { randomUUID as randomUUID11 } from "node:crypto";
+import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync18, readFileSync as readFileSync6 } from "node:fs";
 import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile33, readdir as readdir10, writeFile as writeFile20 } from "node:fs/promises";
 import { join as join40 } from "node:path";
@@ -21791,7 +22109,7 @@ async function startRepl(options) {
   const memoryBroker = new MemoryBroker(projectDir);
   const checkpoints = new CheckpointStore(projectDir);
   const sessionId = await session.getSessionId();
-  const replRunId = `repl-${randomUUID11()}`;
+  const replRunId = `repl-${randomUUID12()}`;
   let selectedMode = options.initialMode || repoConfig?.repl?.mode || "manual";
   if (!options.initialMode && !repoConfig?.repl?.mode && process.stdin.isTTY) {
     try {
@@ -23809,8 +24127,8 @@ function redactRepoConfigForDisplay(value) {
 
 // src/github/nl.ts
 import { execFile as execFile10 } from "node:child_process";
-import { promisify as promisify12 } from "node:util";
-var execFileAsync10 = promisify12(execFile10);
+import { promisify as promisify11 } from "node:util";
+var execFileAsync10 = promisify11(execFile10);
 function readQuoted(text) {
   const m = text.match(/"([^"]+)"/);
   return (m?.[1] || "").trim();
@@ -24051,7 +24369,7 @@ async function loadModelPolicy(baseDir = process.cwd()) {
 import { mkdir as mkdir23, readFile as readFile36, writeFile as writeFile22 } from "node:fs/promises";
 import { existsSync as existsSync22 } from "node:fs";
 import { join as join44 } from "node:path";
-import { randomUUID as randomUUID12 } from "node:crypto";
+import { randomUUID as randomUUID13 } from "node:crypto";
 function createDefaultState() {
   return {
     version: 1,
@@ -24128,7 +24446,7 @@ var AutoFixStore = class {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const state = await this.readState();
     const job = this.sanitizeJob({
-      id: `af-${randomUUID12()}`,
+      id: `af-${randomUUID13()}`,
       task: String(input.task || "").trim(),
       projectDir: input.projectDir || process.cwd(),
       status: "queued",
@@ -24502,7 +24820,7 @@ async function runAutoFixJob(job, deps) {
 }
 
 // src/cli/index.ts
-import { randomUUID as randomUUID13 } from "node:crypto";
+import { randomUUID as randomUUID14 } from "node:crypto";
 import { mkdir as mkdir25, readFile as readFile37, writeFile as writeFile24 } from "node:fs/promises";
 import { dirname as dirname8, join as join46 } from "node:path";
 import { execSync as execSync7 } from "node:child_process";
@@ -25244,7 +25562,7 @@ ${multiContext}`;
           },
           fallbackModels,
           checkpoints,
-          `chat-${randomUUID13()}`
+          `chat-${randomUUID14()}`
         );
         const rawResponse = result2.response || result2.result || "";
         const responseText = typeof rawResponse === "object" ? rawResponse.result || rawResponse.output || rawResponse.message || JSON.stringify(rawResponse, null, 2) : String(rawResponse);
@@ -25304,7 +25622,7 @@ ${multiContext}`;
     let currentTask = task;
     let iteration = 0;
     let failedRun = false;
-    const runId = `auto-${randomUUID13()}`;
+    const runId = `auto-${randomUUID14()}`;
     const useMemory = options.memory !== false;
     await checkpoints.beginRun({ runId, mode: "auto", task });
     if (useMemory) {
@@ -25784,7 +26102,7 @@ Total session cost: $${cost.totalUsd.toFixed(4)}`));
   });
   program.command("dispatch").description("Dispatch a task to an agent").argument("<agent>", "Agent name").argument("<task>", "Task description").option("-p, --project <path>", "Project directory").option("-g, --gateway <url>", "Override gateway URL").option("-t, --timeout <ms>", "Timeout in milliseconds", "30000").option("-m, --model <id>", "Model ID for cost estimate", executorPrimary || "openai/gpt-4o-mini").option("--fallback-model <id>", "Fallback model chain entry (repeatable)", collectOption, []).option("--engine <id>", "Engine override for direct/bypass gateway paths (e.g. cursor)").option("--direct", "Request direct execution path on gateway", false).option("--bypass", "Request bypass/orchestrator-skip path on gateway", false).option("--output-tokens <count>", "Expected completion tokens for estimate", "1200").option("--max-cost <usd>", "Require confirmation if estimate exceeds this USD amount", String(executorPolicy.maxCostUsd ?? 1)).option("--skip-cost-check", "Skip cost estimate confirmation gate", false).option("--cross-repo", "Inject sibling repository context", false).option("--cache", "Enable output cache for dispatch result", false).option("--cache-ttl <sec>", "Output cache TTL in seconds", "1800").option("--no-memory", "Disable shared AgentKeeper memory").option("--memory-max <n>", "Max recalled memory entries", String(cliDefaults.memoryMax ?? 3)).option("--memory-require-validation", "Store memory only when validation is marked passed", false).option("--image <path>", "Attach an image file to the task (repeatable)", collectOption, []).option("--context-image <path>", "Attach an image file as context (repeatable)", collectOption, []).option("--image-max-bytes <n>", "Max bytes per image context payload", "250000").option("--context-file <path>", "Attach a file as additional context (repeatable)", collectOption, []).option("--context-repo <path>", "Attach git context from another repo (repeatable)", collectOption, []).option("--stdin", "Read additional context from stdin", false).option("--max-context-tokens <n>", "Max context token budget (approx, chars/4)").option("--context-budget-mode <mode>", "trim | stop when budget exceeded", "trim").option("--docs", "Inject matching docs context via collections search", false).option("--docs-path <paths...>", "Custom paths for docs search (default: docs/ + project root)").option("--docs-code", "Include source code files in docs retrieval index", Boolean(cliDefaults.docsCode)).option("--escalate-risk", "Escalate high-risk patches to QA and Security", false).option("--risk-threshold <level>", "Escalation threshold: low|medium|high", "high").option("--retry-attempts <n>", "Retry attempts for transient failures", "2").option("--strict-preflight", "Block execution if doctor checks fail", false).option("--json", "Output machine-readable JSON envelope", false).action(async (agent, task, options) => {
     let finalTask = task;
-    const runId = `dispatch-${randomUUID13()}`;
+    const runId = `dispatch-${randomUUID14()}`;
     const fallbackModels = options.fallbackModel && options.fallbackModel.length > 0 ? options.fallbackModel : executorPolicy.fallback || [];
     try {
       const policy = getExecutionPolicy({
@@ -27050,7 +27368,7 @@ Please review for correctness, regressions, and security concerns.`;
   program.command("plan").description("Generate a detailed plan for a task and execute it step-by-step or in parallel").argument("<task...>", "Task to plan and execute").option("--parallel", "Execute plan steps in parallel using worker pool", false).option("--concurrency <n>", "Maximum parallel workers", "3").option("-m, --model <id>", "Model override for plan execution", plannerPrimary || void 0).option("--fallback-model <id>", "Fallback model chain entry (repeatable)", collectOption, []).option("--resume <runId>", "Resume a prior plan run from checkpoint").option("--validate-cmd <cmd>", "Validation command (repeatable, hard gate)", collectOption, []).option("--reflect-agent <id>", "Agent used for reflect step", "crew-main").option("--no-cache", "Disable planner cache").option("--cache-ttl <sec>", "Planner cache TTL in seconds", "3600").option("--no-memory", "Disable shared AgentKeeper memory").option("--memory-max <n>", "Max recalled memory entries", "3").option("--memory-require-validation", "Store memory only when validation is marked passed", false).option("--json", "Output machine-readable JSON envelope and skip interactive prompts", false).option("--yes", "Auto-approve plan execution without confirmation", false).action(async (taskArray, options) => {
     const task = taskArray.join(" ");
     const planner = new Planner(agentRouter, sessionManager, process.cwd());
-    const runId = options.resume ? String(options.resume) : `plan-${randomUUID13()}`;
+    const runId = options.resume ? String(options.resume) : `plan-${randomUUID14()}`;
     const validationCommands = options.validateCmd || [];
     const fallbackModels = options.fallbackModel && options.fallbackModel.length > 0 ? options.fallbackModel : plannerPolicy.fallback || [];
     const existingRun = options.resume ? await checkpoints.load(runId) : null;
@@ -28166,13 +28484,6 @@ export {
   parseConfigValue,
   parseHeadlessShortcutArgs
 };
-/**
- * Autonomous Worker Loop
- * Implements OpenOrca-style THINK → ACT → OBSERVE pattern
- *
- * @license
- * Copyright 2026 crewswarm
- */
 /**
  * @license
  * Copyright 2025 Google LLC

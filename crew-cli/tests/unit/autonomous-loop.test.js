@@ -29,6 +29,32 @@ describe('autonomous-loop', () => {
     assert.ok(result.reason.includes('Maximum turns'));
   });
 
+  it('injects follow-up guidance after unverified edits', async () => {
+    const prompts = [];
+    let turn = 0;
+    const llm = async (prompt) => {
+      prompts.push(prompt);
+      turn++;
+      if (turn === 1) {
+        return {
+          response: 'editing config',
+          toolCalls: [{ tool: 'replace', params: { file_path: 'src/app.ts' } }]
+        };
+      }
+      return { response: 'Done!', toolCalls: [] };
+    };
+    const tool = async () => ({ ok: true });
+    const result = await executeAutonomous('fix the bug', llm, tool, {
+      tools: [],
+      taskMode: 'bugfix',
+      maxTurns: 3
+    });
+    assert.equal(result.success, true);
+    assert.equal(prompts.length, 2);
+    assert.match(prompts[1], /Execution guidance:/);
+    assert.match(prompts[1], /Run the smallest useful verification command/);
+  });
+
   it('formatAutonomousResult returns a string', () => {
     const result = { success: true, turns: 1, history: [], finalResponse: 'done' };
     const formatted = formatAutonomousResult(result);
