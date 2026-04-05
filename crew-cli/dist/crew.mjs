@@ -6041,6 +6041,354 @@ var init_tool_batching = __esm({
   }
 });
 
+// src/execution/agentic-guidance.ts
+function normalizeText(value) {
+  return value.trim().toLowerCase();
+}
+function extractTarget(params) {
+  const candidate = params.file_path ?? params.path ?? params.include ?? params.pattern ?? params.command;
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : void 0;
+}
+function isReadTool(result2) {
+  return READ_TOOLS.has(result2.tool);
+}
+function isEditTool(result2) {
+  return EDIT_TOOLS2.has(result2.tool);
+}
+function isVerificationTool(result2) {
+  return VERIFY_TOOLS.has(result2.tool);
+}
+function isSuccessfulVerification(result2) {
+  if (!isVerificationTool(result2) || result2.error) return false;
+  const output = typeof result2.result === "string" ? result2.result : JSON.stringify(result2.result ?? "");
+  const normalized = normalizeText(output);
+  return !normalized.includes("error") && !normalized.includes("failed");
+}
+function unreadEditTargets(history) {
+  const reads = new Set(
+    history.filter((r) => !r.error && isReadTool(r)).map((r) => extractTarget(r.params)).filter((value) => Boolean(value))
+  );
+  return history.filter((r) => !r.error && isEditTool(r)).map((r) => extractTarget(r.params)).filter((value) => Boolean(value)).filter((target) => !reads.has(target));
+}
+function repeatedFailure(history) {
+  const recentFailures = history.slice(-6).filter((r) => Boolean(r.error)).map((r) => `${r.tool}:${JSON.stringify(r.params)}`);
+  if (recentFailures.length < 2) return void 0;
+  const counts = /* @__PURE__ */ new Map();
+  for (const signature of recentFailures) {
+    counts.set(signature, (counts.get(signature) || 0) + 1);
+  }
+  const repeated = [...counts.entries()].find(([, count]) => count >= 2);
+  return repeated?.[0];
+}
+function detectTaskMode(task) {
+  const normalized = normalizeText(task);
+  if (/(failing tests?|test failure|fix tests?|make tests? pass|regression test|unit test)/.test(normalized)) {
+    return "test_repair";
+  }
+  if (/(fix|bug|broken|error|regression|crash|issue|failure)/.test(normalized)) {
+    return "bugfix";
+  }
+  if (/(refactor|cleanup|restructure|rename|simplify|extract)/.test(normalized)) {
+    return "refactor";
+  }
+  if (/(add|implement|create|build|support|introduce)/.test(normalized)) {
+    return "feature";
+  }
+  return "analysis";
+}
+function buildTaskModeGuidance(mode) {
+  const strategyByMode = {
+    bugfix: "Task mode: bugfix. Reproduce the failure with the smallest useful signal, make the narrowest fix, then run the most targeted verification command before stopping.",
+    feature: "Task mode: feature. Read the affected files first, implement the smallest complete change that satisfies the request, then verify the touched path with focused checks.",
+    refactor: "Task mode: refactor. Preserve behavior, prefer small surgical edits, and run typecheck or the narrowest affected tests before finishing.",
+    test_repair: "Task mode: test repair. Start from the failing test signal, change only what explains the failure, and rerun the targeted test before broader verification.",
+    analysis: "Task mode: analysis. Gather only the context needed for the task, avoid speculative edits, and verify any code changes with the smallest useful command."
+  };
+  return strategyByMode[mode];
+}
+function buildTurnGuidance(mode, history, turnResults) {
+  const messages = [];
+  const editedThisTurn = turnResults.some((r) => !r.error && isEditTool(r));
+  const verifiedAtLeastOnce = history.some(isSuccessfulVerification);
+  const unreadTargets = unreadEditTargets(history);
+  if (unreadTargets.length > 0) {
+    messages.push(`Read before editing on the next step. Re-open the exact file section for: ${[...new Set(unreadTargets)].slice(0, 3).join(", ")}.`);
+  }
+  if (editedThisTurn && !verifiedAtLeastOnce) {
+    const verificationHint = mode === "test_repair" ? "Run the failing test or the narrowest related test command before more edits." : mode === "refactor" ? "Run typecheck or the narrowest affected test before declaring the refactor done." : "Run the smallest useful verification command before finishing.";
+    messages.push(verificationHint);
+  }
+  const repeated = repeatedFailure(history);
+  if (repeated) {
+    messages.push(`Do not repeat the same failing action again: ${repeated.slice(0, 120)}. Switch tactics or inspect a narrower target.`);
+  }
+  return messages.length > 0 ? `Execution guidance:
+- ${messages.join("\n- ")}` : void 0;
+}
+var READ_TOOLS, EDIT_TOOLS2, VERIFY_TOOLS;
+var init_agentic_guidance = __esm({
+  "src/execution/agentic-guidance.ts"() {
+    "use strict";
+    READ_TOOLS = /* @__PURE__ */ new Set(["read_file", "read_many_files", "glob", "grep_search", "list_directory", "lsp"]);
+    EDIT_TOOLS2 = /* @__PURE__ */ new Set(["replace", "edit", "append_file", "write_file", "notebook_edit"]);
+    VERIFY_TOOLS = /* @__PURE__ */ new Set(["run_shell_command", "shell", "run_cmd", "check_background_task"]);
+  }
+});
+
+// src/execution/action-ranking.ts
+function classifyTool(tool) {
+  if (READ_TOOLS2.has(tool)) return "read";
+  if (SEARCH_TOOLS.has(tool)) return "search";
+  if (EDIT_TOOLS3.has(tool)) return "edit";
+  if (SHELL_TOOLS.has(tool)) return isTestCommand(tool) ? "test" : "verify";
+  return null;
+}
+function isTestCommand(command) {
+  const lower = command.toLowerCase();
+  return /\b(test|spec|jest|vitest|pytest|mocha)\b/.test(lower);
+}
+function isBuildCommand(command) {
+  const lower = command.toLowerCase();
+  return /\b(build|tsc|typecheck|lint|eslint)\b/.test(lower);
+}
+function extractTarget2(params) {
+  const candidate = params.file_path ?? params.path ?? params.include ?? params.pattern ?? params.command;
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : void 0;
+}
+function analyzeHistory(history) {
+  const filesRead = /* @__PURE__ */ new Set();
+  const filesEdited = /* @__PURE__ */ new Set();
+  const unverifiedEdits = /* @__PURE__ */ new Set();
+  let hasRunTests = false;
+  let hasRunBuild = false;
+  const recentFailureTools = /* @__PURE__ */ new Set();
+  let editTurns = 0;
+  let lastActionType = null;
+  let consecutiveSameAction = 0;
+  let lastTurnHadEdit = false;
+  for (const turn of history) {
+    const actionType = classifyTool(turn.tool);
+    if (actionType === lastActionType) {
+      consecutiveSameAction++;
+    } else {
+      consecutiveSameAction = 1;
+      lastActionType = actionType;
+    }
+    if (READ_TOOLS2.has(turn.tool) && !turn.error) {
+      const target = extractTarget2(turn.params);
+      if (target) filesRead.add(target);
+    }
+    if (EDIT_TOOLS3.has(turn.tool) && !turn.error) {
+      const target = extractTarget2(turn.params);
+      if (target) {
+        filesEdited.add(target);
+        unverifiedEdits.add(target);
+      }
+      if (!lastTurnHadEdit) {
+        editTurns++;
+        lastTurnHadEdit = true;
+      }
+    } else {
+      lastTurnHadEdit = false;
+    }
+    if (SHELL_TOOLS.has(turn.tool)) {
+      const cmd = String(turn.params.command || "");
+      if (isTestCommand(cmd) && !turn.error) {
+        hasRunTests = true;
+        unverifiedEdits.clear();
+      }
+      if (isBuildCommand(cmd) && !turn.error) {
+        hasRunBuild = true;
+      }
+    }
+    if (turn.error) {
+      recentFailureTools.add(turn.tool);
+    }
+  }
+  const recentHistory = history.slice(-5);
+  recentFailureTools.clear();
+  for (const turn of recentHistory) {
+    if (turn.error) recentFailureTools.add(turn.tool);
+  }
+  return {
+    filesRead,
+    filesEdited,
+    unverifiedEdits,
+    hasRunTests,
+    hasRunBuild,
+    recentFailureTools,
+    totalTurns: history.length,
+    editTurns,
+    lastActionType,
+    consecutiveSameAction
+  };
+}
+function rankActions(history, taskMode) {
+  const snap = analyzeHistory(history);
+  const baseWeights = MODE_WEIGHTS[taskMode];
+  const scores = [];
+  for (const action of Object.keys(baseWeights)) {
+    let score = baseWeights[action];
+    let reason = "";
+    if (action === "read") {
+      const unreadEdits = [...snap.filesEdited].filter((f) => !snap.filesRead.has(f));
+      if (unreadEdits.length > 0) {
+        score += 0.3;
+        reason = `${unreadEdits.length} edited file(s) not yet read \u2014 read before more edits`;
+      } else if (snap.filesRead.size === 0 && snap.totalTurns < 3) {
+        score += 0.2;
+        reason = "No files read yet \u2014 understand context first";
+      }
+    }
+    if (action === "search") {
+      if (snap.totalTurns < 4 && snap.filesRead.size < 2) {
+        score += 0.15;
+        reason = "Early in task \u2014 search to locate relevant code";
+      }
+    }
+    if (action === "edit") {
+      if (snap.filesRead.size === 0) {
+        score -= 0.3;
+        reason = "Nothing read yet \u2014 read first before editing";
+      } else if (snap.unverifiedEdits.size > 2) {
+        score -= 0.2;
+        reason = "Multiple unverified edits \u2014 verify before more changes";
+      }
+    }
+    if (action === "test" || action === "verify") {
+      if (snap.unverifiedEdits.size > 0) {
+        score += 0.35;
+        reason = reason || `${snap.unverifiedEdits.size} unverified edit(s) \u2014 run verification`;
+      }
+      if (snap.editTurns > 0 && !snap.hasRunTests && action === "test") {
+        score += 0.25;
+        reason = reason || "Edits made but no tests run yet";
+      }
+    }
+    if (action === "build" && taskMode === "refactor") {
+      if (snap.filesEdited.size > 0 && !snap.hasRunBuild) {
+        score += 0.3;
+        reason = "Refactor edits need typecheck/build verification";
+      }
+    }
+    if (action === snap.lastActionType && snap.consecutiveSameAction >= 3) {
+      score -= 0.15;
+      reason = reason || `${snap.consecutiveSameAction} consecutive ${action} actions \u2014 consider switching`;
+    }
+    if (snap.recentFailureTools.size > 0) {
+      const failedActionTypes = /* @__PURE__ */ new Set();
+      for (const tool of snap.recentFailureTools) {
+        const at = classifyTool(tool);
+        if (at) failedActionTypes.add(at);
+      }
+      if (failedActionTypes.has(action)) {
+        score -= 0.15;
+        reason = reason || `Recent ${action} failures \u2014 try a different approach`;
+      }
+    }
+    scores.push({
+      action,
+      score: Math.max(0, Math.min(1, score)),
+      reason
+    });
+  }
+  scores.sort((a, b) => b.score - a.score);
+  return scores;
+}
+function buildActionRankingPrompt(history, taskMode, threshold = 0.4) {
+  const ranked = rankActions(history, taskMode);
+  const top = ranked.filter((r) => r.score >= threshold).slice(0, 3);
+  if (top.length === 0) return "";
+  const lines = top.map((r, i) => {
+    const label = i === 0 ? "RECOMMENDED" : "also good";
+    const reasonSuffix = r.reason ? ` \u2014 ${r.reason}` : "";
+    return `- [${label}] ${r.action}${reasonSuffix}`;
+  });
+  return [
+    "## Next action priority:",
+    ...lines
+  ].join("\n");
+}
+var READ_TOOLS2, SEARCH_TOOLS, EDIT_TOOLS3, SHELL_TOOLS, MODE_WEIGHTS;
+var init_action_ranking = __esm({
+  "src/execution/action-ranking.ts"() {
+    "use strict";
+    READ_TOOLS2 = /* @__PURE__ */ new Set([
+      "read_file",
+      "read_many_files",
+      "glob",
+      "list_directory",
+      "lsp"
+    ]);
+    SEARCH_TOOLS = /* @__PURE__ */ new Set([
+      "grep_search",
+      "glob",
+      "search_files",
+      "find_definition"
+    ]);
+    EDIT_TOOLS3 = /* @__PURE__ */ new Set([
+      "replace",
+      "edit",
+      "append_file",
+      "write_file",
+      "notebook_edit"
+    ]);
+    SHELL_TOOLS = /* @__PURE__ */ new Set([
+      "run_shell_command",
+      "shell",
+      "run_cmd",
+      "check_background_task"
+    ]);
+    MODE_WEIGHTS = {
+      bugfix: {
+        read: 0.3,
+        search: 0.3,
+        edit: 0.2,
+        test: 0.8,
+        build: 0.3,
+        verify: 0.7,
+        delegate: 0.1
+      },
+      feature: {
+        read: 0.5,
+        search: 0.3,
+        edit: 0.4,
+        test: 0.6,
+        build: 0.4,
+        verify: 0.5,
+        delegate: 0.2
+      },
+      refactor: {
+        read: 0.4,
+        search: 0.2,
+        edit: 0.3,
+        test: 0.5,
+        build: 0.7,
+        verify: 0.6,
+        delegate: 0.1
+      },
+      test_repair: {
+        read: 0.4,
+        search: 0.2,
+        edit: 0.3,
+        test: 0.9,
+        build: 0.2,
+        verify: 0.4,
+        delegate: 0.1
+      },
+      analysis: {
+        read: 0.7,
+        search: 0.6,
+        edit: 0.1,
+        test: 0.2,
+        build: 0.1,
+        verify: 0.2,
+        delegate: 0.3
+      }
+    };
+  }
+});
+
 // src/engine/run-engine.ts
 function isContextLengthError(msg) {
   const lower = msg.toLowerCase();
@@ -6060,16 +6408,19 @@ function compactTurnHistory(history) {
   };
   return [...first, summary, ...tail];
 }
-var DEFAULT_MAX_TURNS, DEFAULT_REPEAT_THRESHOLD, DEFAULT_MAX_VERIFICATION_CYCLES, RunEngine;
+var DEFAULT_MAX_TURNS, DEFAULT_REPEAT_THRESHOLD, DEFAULT_MAX_VERIFICATION_CYCLES, DEFAULT_MAX_VERIFICATION_GATE_TURNS, RunEngine;
 var init_run_engine = __esm({
   "src/engine/run-engine.ts"() {
     "use strict";
     init_run_state();
     init_tool_result_clearing();
     init_tool_batching();
+    init_agentic_guidance();
+    init_action_ranking();
     DEFAULT_MAX_TURNS = 25;
     DEFAULT_REPEAT_THRESHOLD = 10;
     DEFAULT_MAX_VERIFICATION_CYCLES = 2;
+    DEFAULT_MAX_VERIFICATION_GATE_TURNS = 3;
     RunEngine = class {
       constructor(config) {
         this.config = config;
@@ -6090,13 +6441,16 @@ var init_run_engine = __esm({
           abortSignal,
           tools = [],
           onProgress,
-          maxVerificationCycles = DEFAULT_MAX_VERIFICATION_CYCLES
+          taskMode = "analysis",
+          maxVerificationCycles = DEFAULT_MAX_VERIFICATION_CYCLES,
+          maxVerificationGateTurns = DEFAULT_MAX_VERIFICATION_GATE_TURNS
         } = this.config;
         const history = [];
         let lastResponseText = "";
         let staleCount = 0;
         let pendingContext = "";
         let finalResponse = "";
+        let verificationGateTurnsUsed = 0;
         this.state.enterPhase("executing");
         for (let turn = 0; turn < maxTurns; turn++) {
           if (abortSignal?.aborted) {
@@ -6111,7 +6465,8 @@ var init_run_engine = __esm({
           onProgress?.(turn + 1, "THINKING");
           const failureCtx = this.state.buildFailureContext();
           const verifyCtx = this.state.buildVerificationContext();
-          const extraContext = [failureCtx, verifyCtx].filter(Boolean).join("\n\n");
+          const actionCtx = buildActionRankingPrompt(history, taskMode);
+          const extraContext = [failureCtx, verifyCtx, actionCtx].filter(Boolean).join("\n\n");
           const effectiveTask = [this.config.task, extraContext, pendingContext].filter(Boolean).join("\n\n");
           pendingContext = "";
           const clearedHistory = clearOldToolResults(history);
@@ -6152,9 +6507,19 @@ var init_run_engine = __esm({
           lastResponseText = response.response;
           finalResponse = response.response;
           if (!response.toolCalls || response.toolCalls.length === 0) {
-            if (response.status === "COMPLETE" || !response.toolCalls) {
-              break;
+            const unprovenGoal = this.state.nextUnprovenGoal();
+            if (unprovenGoal && verificationGateTurnsUsed < maxVerificationGateTurns) {
+              verificationGateTurnsUsed++;
+              this.state.addPhaseNote(`Verification gate: forcing verification for "${unprovenGoal.description}"`);
+              pendingContext = [
+                "## STOP \u2014 verification required before completing",
+                `You indicated completion, but this goal is unproven: "${unprovenGoal.description}"`,
+                "Run the verification command or test that proves this goal before finishing.",
+                this.config.verificationCommands?.length ? `Available verification commands: ${this.config.verificationCommands.join(", ")}` : "Run the most targeted test or check command for the changes you made."
+              ].join("\n");
+              continue;
             }
+            break;
           }
           if (response.toolCalls && response.toolCalls.length > 0) {
             const batches = partitionToolCalls(response.toolCalls);
@@ -6191,6 +6556,13 @@ var init_run_engine = __esm({
                 }
               }
             }
+          }
+          const turnResults = history.filter((h) => h.turn === turn + 1);
+          const turnGuidance = buildTurnGuidance(taskMode, history, turnResults);
+          if (turnGuidance) {
+            pendingContext = pendingContext ? `${pendingContext}
+
+${turnGuidance}` : turnGuidance;
           }
         }
         let verificationPassed = false;
@@ -6639,39 +7011,350 @@ var init_transcript = __esm({
   }
 });
 
-// src/execution/agentic-guidance.ts
-function normalizeText(value) {
-  return value.trim().toLowerCase();
+// src/engine/patch-critic.ts
+function isWriteTool(tool) {
+  return ["write_file", "edit_file", "replace", "append_file"].includes(tool);
 }
-function detectTaskMode(task) {
-  const normalized = normalizeText(task);
-  if (/(failing tests?|test failure|fix tests?|make tests? pass|regression test|unit test)/.test(normalized)) {
-    return "test_repair";
-  }
-  if (/(fix|bug|broken|error|regression|crash|issue|failure)/.test(normalized)) {
-    return "bugfix";
-  }
-  if (/(refactor|cleanup|restructure|rename|simplify|extract)/.test(normalized)) {
-    return "refactor";
-  }
-  if (/(add|implement|create|build|support|introduce)/.test(normalized)) {
-    return "feature";
-  }
-  return "analysis";
+function isReadTool2(tool) {
+  return ["read_file", "read_many_files", "grep_search", "glob", "list_directory"].includes(tool);
 }
-function buildTaskModeGuidance(mode) {
-  const strategyByMode = {
-    bugfix: "Task mode: bugfix. Reproduce the failure with the smallest useful signal, make the narrowest fix, then run the most targeted verification command before stopping.",
-    feature: "Task mode: feature. Read the affected files first, implement the smallest complete change that satisfies the request, then verify the touched path with focused checks.",
-    refactor: "Task mode: refactor. Preserve behavior, prefer small surgical edits, and run typecheck or the narrowest affected tests before finishing.",
-    test_repair: "Task mode: test repair. Start from the failing test signal, change only what explains the failure, and rerun the targeted test before broader verification.",
-    analysis: "Task mode: analysis. Gather only the context needed for the task, avoid speculative edits, and verify any code changes with the smallest useful command."
-  };
-  return strategyByMode[mode];
+function isVerificationTool2(tool) {
+  return ["run_shell_command", "shell", "check_background_task"].includes(tool);
 }
-var init_agentic_guidance = __esm({
-  "src/execution/agentic-guidance.ts"() {
+function computeScore(findings) {
+  let score = 100;
+  for (const f of findings) {
+    if (f.severity === "error") score -= 25;
+    else if (f.severity === "warning") score -= 10;
+    else if (f.category === "good-practice") score += 5;
+  }
+  return Math.max(0, Math.min(100, score));
+}
+function buildGuidance(findings) {
+  const actionable = findings.filter((f) => f.severity !== "info" && f.suggestion);
+  if (actionable.length === 0) return "";
+  const lines = actionable.map(
+    (f) => `- [${f.severity.toUpperCase()}] ${f.message}${f.suggestion ? `
+  \u2192 ${f.suggestion}` : ""}`
+  );
+  return `## Patch quality feedback:
+${lines.join("\n")}`;
+}
+var PatchCritic;
+var init_patch_critic = __esm({
+  "src/engine/patch-critic.ts"() {
     "use strict";
+    PatchCritic = class {
+      constructor(config = {}) {
+        this.lastEditTurn = 0;
+        this.turnsWithoutEdits = 0;
+        this.editCountByFile = /* @__PURE__ */ new Map();
+        this.verificationSeen = false;
+        this.config = {
+          churnThreshold: config.churnThreshold ?? 3,
+          largeWriteThreshold: config.largeWriteThreshold ?? 500,
+          allowedPaths: config.allowedPaths ?? [],
+          noProgressThreshold: config.noProgressThreshold ?? 3
+        };
+      }
+      /**
+       * Evaluate a tool execution and produce findings.
+       * Call this after each tool call completes.
+       */
+      evaluate(turn, tool, params, result2, error, history) {
+        const findings = [];
+        const filePath = String(params.file_path || params.path || "");
+        if (isWriteTool(tool) && filePath) {
+          const fileState = history.getFileState(filePath);
+          if (!fileState || !fileState.readBeforeWrite) {
+            findings.push({
+              severity: "warning",
+              category: "unread-edit",
+              message: `Edited ${filePath} without reading it first`,
+              file: filePath,
+              suggestion: `Read ${filePath} before editing to understand existing content`
+            });
+          } else {
+            findings.push({
+              severity: "info",
+              category: "good-practice",
+              message: `Good: read ${filePath} before editing`
+            });
+          }
+        }
+        if (isWriteTool(tool) && filePath) {
+          const count = (this.editCountByFile.get(filePath) || 0) + 1;
+          this.editCountByFile.set(filePath, count);
+          this.lastEditTurn = turn;
+          this.turnsWithoutEdits = 0;
+          if (count >= this.config.churnThreshold) {
+            findings.push({
+              severity: "warning",
+              category: "excessive-churn",
+              message: `${filePath} has been edited ${count} times \u2014 consider a single comprehensive edit`,
+              file: filePath,
+              suggestion: "Read the full file, plan all changes, then apply once"
+            });
+          }
+        }
+        if (tool === "write_file" && filePath) {
+          const fileState = history.getFileState(filePath);
+          if (fileState && fileState.editCount > 0) {
+            findings.push({
+              severity: "warning",
+              category: "overwrite-risk",
+              message: `write_file on ${filePath} which was previously edited \u2014 may overwrite partial changes`,
+              file: filePath,
+              suggestion: "Use edit_file for incremental changes to existing files"
+            });
+          }
+        }
+        if (tool === "write_file" && params.content) {
+          const lines = String(params.content).split("\n").length;
+          if (lines > this.config.largeWriteThreshold) {
+            findings.push({
+              severity: "info",
+              category: "large-write",
+              message: `Large file write: ${filePath} (${lines} lines)`,
+              file: filePath
+            });
+          }
+        }
+        if (isWriteTool(tool) && filePath && this.config.allowedPaths.length > 0) {
+          const inScope = this.config.allowedPaths.some(
+            (allowed) => filePath === allowed || filePath.startsWith(allowed) || filePath.startsWith(`${allowed}/`)
+          );
+          if (!inScope) {
+            findings.push({
+              severity: "error",
+              category: "scope-creep",
+              message: `${filePath} is outside the allowed scope`,
+              file: filePath,
+              suggestion: `Stay within: ${this.config.allowedPaths.join(", ")}`
+            });
+          }
+        }
+        if (isVerificationTool2(tool)) {
+          this.verificationSeen = true;
+          if (!error) {
+            findings.push({
+              severity: "info",
+              category: "good-practice",
+              message: "Good: ran verification after changes"
+            });
+          }
+        }
+        if (!isWriteTool(tool) && !isVerificationTool2(tool) && !isReadTool2(tool)) {
+        }
+        const totalEdits = [...this.editCountByFile.values()].reduce((a, b) => a + b, 0);
+        if (totalEdits >= 3 && !this.verificationSeen) {
+          findings.push({
+            severity: "warning",
+            category: "missing-verification",
+            message: `${totalEdits} edits made with no verification \u2014 run tests or checks`,
+            suggestion: "Run tests, lint, or build to verify your changes are correct"
+          });
+        }
+        if (!isWriteTool(tool) && !isReadTool2(tool)) {
+          this.turnsWithoutEdits++;
+        }
+        if (this.turnsWithoutEdits >= this.config.noProgressThreshold && totalEdits === 0) {
+          findings.push({
+            severity: "warning",
+            category: "no-progress",
+            message: `${this.turnsWithoutEdits} turns without any file changes`,
+            suggestion: "Make concrete progress: read a file, plan an edit, execute it"
+          });
+        }
+        const score = computeScore(findings);
+        const guidance = buildGuidance(findings);
+        return { turn, findings, score, guidance };
+      }
+      /**
+       * Reset state (for new task or after review cycle).
+       */
+      reset() {
+        this.editCountByFile.clear();
+        this.verificationSeen = false;
+        this.turnsWithoutEdits = 0;
+        this.lastEditTurn = 0;
+      }
+    };
+  }
+});
+
+// src/engine/structured-history.ts
+var StructuredHistory;
+var init_structured_history = __esm({
+  "src/engine/structured-history.ts"() {
+    "use strict";
+    StructuredHistory = class {
+      constructor() {
+        this._records = [];
+        this._fileStates = /* @__PURE__ */ new Map();
+        this._activeGoals = [];
+        this._resolvedGoals = [];
+      }
+      // ── Recording ─────────────────────────────────────────────────────────
+      recordLLMTurn(entry) {
+        this._records.push({ ...entry, type: "llm", ts: Date.now() });
+      }
+      recordToolExecution(entry) {
+        const record = { ...entry, type: "tool", ts: Date.now() };
+        this._records.push(record);
+        for (const file of entry.filesAffected) {
+          this.trackFileAccess(file, entry.tool, entry.readOnly);
+        }
+      }
+      recordCompaction(entry) {
+        this._records.push({ ...entry, type: "compaction", ts: Date.now() });
+      }
+      recordReview(entry) {
+        this._records.push({ ...entry, type: "review", ts: Date.now() });
+      }
+      // ── File state ────────────────────────────────────────────────────────
+      trackFileAccess(path3, tool, readOnly) {
+        let state = this._fileStates.get(path3);
+        if (!state) {
+          state = {
+            path: path3,
+            readCount: 0,
+            writeCount: 0,
+            editCount: 0,
+            readBeforeWrite: false
+          };
+          this._fileStates.set(path3, state);
+        }
+        const isRead = readOnly || tool === "read_file" || tool === "read_many_files" || tool === "grep_search" || tool === "glob";
+        const isWrite = tool === "write_file";
+        const isEdit = tool === "edit_file" || tool === "replace" || tool === "append_file";
+        if (isRead) {
+          state.readCount += 1;
+          state.lastReadAt = Date.now();
+          if (state.writeCount === 0 && state.editCount === 0) {
+            state.readBeforeWrite = true;
+          }
+        }
+        if (isWrite) {
+          state.writeCount += 1;
+          state.lastWrittenAt = Date.now();
+        }
+        if (isEdit) {
+          state.editCount += 1;
+          state.lastEditedAt = Date.now();
+        }
+      }
+      getFileState(path3) {
+        return this._fileStates.get(path3);
+      }
+      get fileStates() {
+        return this._fileStates;
+      }
+      /** Files that were written/edited without being read first */
+      get unreadWrites() {
+        return [...this._fileStates.values()].filter((s) => (s.writeCount > 0 || s.editCount > 0) && !s.readBeforeWrite).map((s) => s.path);
+      }
+      // ── Goal tracking ─────────────────────────────────────────────────────
+      addGoal(goal) {
+        this._activeGoals.push(goal);
+      }
+      resolveGoal(goal) {
+        const idx = this._activeGoals.indexOf(goal);
+        if (idx >= 0) {
+          this._activeGoals.splice(idx, 1);
+          this._resolvedGoals.push(goal);
+        }
+      }
+      get activeGoals() {
+        return this._activeGoals;
+      }
+      get resolvedGoals() {
+        return this._resolvedGoals;
+      }
+      // ── Queries ───────────────────────────────────────────────────────────
+      get records() {
+        return this._records;
+      }
+      get length() {
+        return this._records.length;
+      }
+      get llmTurns() {
+        return this._records.filter((r) => r.type === "llm");
+      }
+      get toolExecutions() {
+        return this._records.filter((r) => r.type === "tool");
+      }
+      get failedTools() {
+        return this.toolExecutions.filter((t) => t.error);
+      }
+      get compactions() {
+        return this._records.filter((r) => r.type === "compaction");
+      }
+      /** Total cost across all LLM turns */
+      get totalCostUsd() {
+        return this.llmTurns.reduce((sum, t) => sum + t.costUsd, 0);
+      }
+      /** Total tokens used */
+      get totalTokens() {
+        return this.llmTurns.reduce(
+          (acc, t) => ({
+            input: acc.input + t.inputTokens,
+            output: acc.output + t.outputTokens,
+            cached: acc.cached + t.cachedTokens
+          }),
+          { input: 0, output: 0, cached: 0 }
+        );
+      }
+      // ── Context building ──────────────────────────────────────────────────
+      /**
+       * Build a summary of execution state for injection into LLM context.
+       * Preserves critical state that naive compaction would lose:
+       *   - Active/unresolved goals
+       *   - Files currently being worked on
+       *   - Recent failures and what was learned
+       *   - Verification status
+       */
+      buildExecutionSummary() {
+        const sections = [];
+        if (this._activeGoals.length > 0) {
+          sections.push(`Active goals: ${this._activeGoals.join("; ")}`);
+        }
+        if (this._resolvedGoals.length > 0) {
+          sections.push(`Completed: ${this._resolvedGoals.join("; ")}`);
+        }
+        const activeFiles = [...this._fileStates.values()].filter((s) => s.editCount > 0 || s.writeCount > 0).map((s) => s.path);
+        if (activeFiles.length > 0) {
+          sections.push(`Files modified: ${activeFiles.join(", ")}`);
+        }
+        const unread = this.unreadWrites;
+        if (unread.length > 0) {
+          sections.push(`WARNING \u2014 edited without reading first: ${unread.join(", ")}`);
+        }
+        const recentFails = this.failedTools.slice(-3);
+        if (recentFails.length > 0) {
+          const lines = recentFails.map((f) => `  ${f.tool}: ${(f.error || "").slice(0, 80)}`);
+          sections.push(`Recent failures:
+${lines.join("\n")}`);
+        }
+        if (this.compactions.length > 0) {
+          const last = this.compactions[this.compactions.length - 1];
+          sections.push(`Context was compacted (${last.reason}): ${last.turnsBefore}\u2192${last.turnsAfter} turns`);
+        }
+        return sections.length > 0 ? `## Execution state
+${sections.join("\n")}` : "";
+      }
+      /**
+       * Export a JSON-serializable snapshot for persistence.
+       */
+      toJSON() {
+        return {
+          records: [...this._records],
+          fileStates: [...this._fileStates.entries()],
+          activeGoals: [...this._activeGoals],
+          resolvedGoals: [...this._resolvedGoals]
+        };
+      }
+    };
   }
 });
 
@@ -8091,6 +8774,8 @@ ${buildTaskModeGuidance(taskMode)}`;
   const toolsUsed = /* @__PURE__ */ new Set();
   const transcript = new ExecutionTranscript();
   const verificationCommands = normalizeVerificationCommands(options.verificationCommands ?? extractVerificationCommands(task));
+  const patchCritic = new PatchCritic({ allowedPaths: [] });
+  const structuredHistory = new StructuredHistory();
   const executeTool = async (name, params) => {
     toolsUsed.add(name);
     options.onToolCall?.(name, params);
@@ -8112,6 +8797,22 @@ ${buildTaskModeGuidance(taskMode)}`;
       handled: result3.handled,
       recovery: result3.recovery
     });
+    const filePath = String(params.file_path || params.path || "");
+    const isReadOnly = ["read_file", "read_many_files", "grep_search", "glob", "list_directory", "get_internal_docs"].includes(name);
+    structuredHistory.recordToolExecution({
+      turn: turnCount,
+      tool: name,
+      params,
+      result: result3.success ? result3.output || "" : null,
+      error: result3.error,
+      durationMs,
+      filesAffected: filePath ? [filePath] : [],
+      readOnly: isReadOnly
+    });
+    const criticReport = patchCritic.evaluate(turnCount, name, params, result3, result3.error, structuredHistory);
+    if (criticReport.guidance && verbose) {
+      console.log(`  [Critic] Score: ${criticReport.score}/100 \u2014 ${criticReport.findings.filter((f) => f.severity !== "info").length} issues`);
+    }
     if (name === "read_file" && result3.success && result3.output) {
       const outputLen = result3.output.length;
       if (outputLen > 8e3 && (result3.output.includes("... (truncated)") || result3.output.includes("content truncated"))) {
@@ -8135,6 +8836,7 @@ ${buildTaskModeGuidance(taskMode)}`;
     abortSignal: options.abortSignal,
     tools: allTools,
     model,
+    taskMode,
     verificationCommands,
     onProgress: verbose ? (turn, action) => {
       console.log(`  [Turn ${turn}] ${action}`);
@@ -8144,6 +8846,12 @@ ${buildTaskModeGuidance(taskMode)}`;
     async (prompt, tools, history, abortSignal) => {
       turnCount++;
       let taskWithJIT = enrichedTask;
+      const historySummary = structuredHistory.buildExecutionSummary();
+      if (historySummary && turnCount > 1) {
+        taskWithJIT = `${taskWithJIT}
+
+${historySummary}`;
+      }
       let historyForTurn = history;
       if (turnCount > 1 && turnCount % 3 === 0 && jit.fileCount > 0) {
         try {
@@ -8274,6 +8982,8 @@ var init_agentic_executor = __esm({
     init_token_compaction();
     init_transcript();
     init_agentic_guidance();
+    init_patch_critic();
+    init_structured_history();
     init_oauth_keychain();
     init_openai_oauth();
     init_gemini_oauth();
@@ -11640,6 +12350,250 @@ var init_reviewer = __esm({
   }
 });
 
+// src/engine/delegation.ts
+function analyzeTask(description, files, capabilities = []) {
+  const lower = description.toLowerCase();
+  const taskType = detectTaskType(lower);
+  const language = detectLanguage(files);
+  const complexity = estimateComplexity(lower, files);
+  return {
+    language,
+    files,
+    description,
+    complexity,
+    capabilities,
+    taskType
+  };
+}
+function detectTaskType(desc) {
+  if (/\btest|spec|assert|coverage|jest|mocha|vitest\b/.test(desc)) return "add-test";
+  if (/\b(fix|bug|broken|crash|error|fail|debug)\b/.test(desc)) return "fix-bug";
+  if (/\b(refactor|restructure|reorganize|clean.?up|simplif)\b/.test(desc)) return "refactor";
+  if (/\b(review|audit|check|inspect|securit)\b/.test(desc)) return "review";
+  if (/\b(docs?|document(ation)?|readme|guide|tutorial)\b/.test(desc)) return "docs";
+  if (/\b(config|setup|install|deploy|docker|ci|cd)\b/.test(desc)) return "config";
+  if (/\b(read|understand|explore|investigate|research|analyz)\b/.test(desc)) return "research";
+  if (/\b(create|add|new|implement|build|write)\b/.test(desc)) {
+    if (/\b(new file|new component|from scratch|create)\b/.test(desc)) return "create-file";
+    return "edit-existing";
+  }
+  return "mixed";
+}
+function detectLanguage(files) {
+  const extensions = files.map((f) => f.split(".").pop()?.toLowerCase()).filter(Boolean);
+  const extMap = {
+    ts: "typescript",
+    tsx: "typescript",
+    js: "javascript",
+    jsx: "javascript",
+    mjs: "javascript",
+    py: "python",
+    go: "go",
+    rs: "rust",
+    java: "java",
+    css: "css",
+    html: "html",
+    md: "markdown",
+    sql: "sql"
+  };
+  const counts = /* @__PURE__ */ new Map();
+  for (const ext of extensions) {
+    const lang = extMap[ext] || ext;
+    counts.set(lang, (counts.get(lang) || 0) + 1);
+  }
+  if (counts.size === 0) return void 0;
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+function estimateComplexity(desc, files) {
+  let score = 0;
+  if (files.length > 5) score += 2;
+  else if (files.length > 2) score += 1;
+  if (desc.length > 500) score += 1;
+  if (/\b(architect|system|migration|overhaul|redesign)\b/.test(desc)) score += 2;
+  if (/\b(simple|small|minor|quick|trivial)\b/.test(desc)) score -= 1;
+  if (/\b(complex|large|major|significant)\b/.test(desc)) score += 1;
+  if (score >= 3) return "high";
+  if (score >= 1) return "medium";
+  return "low";
+}
+var PERSONA_PROFILES2, DelegationTuner;
+var init_delegation = __esm({
+  "src/engine/delegation.ts"() {
+    "use strict";
+    PERSONA_PROFILES2 = [
+      {
+        id: "executor-code",
+        strengths: ["create-file", "edit-existing", "fix-bug", "refactor", "mixed"],
+        languages: ["typescript", "javascript", "python", "go", "rust"],
+        costTier: "standard",
+        maxComplexity: "high"
+      },
+      {
+        id: "crew-coder",
+        strengths: ["create-file", "edit-existing", "mixed"],
+        languages: ["typescript", "javascript", "python", "go", "rust", "java"],
+        costTier: "standard",
+        maxComplexity: "high"
+      },
+      {
+        id: "crew-coder-back",
+        strengths: ["create-file", "edit-existing", "fix-bug", "config"],
+        languages: ["typescript", "javascript", "python", "go", "rust", "sql"],
+        costTier: "standard",
+        maxComplexity: "high"
+      },
+      {
+        id: "crew-coder-front",
+        strengths: ["create-file", "edit-existing", "refactor"],
+        languages: ["typescript", "javascript", "css", "html", "react", "vue"],
+        costTier: "standard",
+        maxComplexity: "medium"
+      },
+      {
+        id: "crew-qa",
+        strengths: ["add-test", "review"],
+        languages: ["typescript", "javascript", "python"],
+        costTier: "fast",
+        maxComplexity: "medium"
+      },
+      {
+        id: "crew-fixer",
+        strengths: ["fix-bug", "edit-existing"],
+        languages: ["typescript", "javascript", "python", "go"],
+        costTier: "standard",
+        maxComplexity: "high"
+      },
+      {
+        id: "crew-copywriter",
+        strengths: ["docs"],
+        languages: ["markdown"],
+        costTier: "fast",
+        maxComplexity: "low"
+      },
+      {
+        id: "crew-security",
+        strengths: ["review", "fix-bug"],
+        languages: ["typescript", "javascript", "python", "go"],
+        costTier: "standard",
+        maxComplexity: "high"
+      }
+    ];
+    DelegationTuner = class {
+      constructor() {
+        this.performanceHistory = [];
+      }
+      /**
+       * Record a completed task's performance for future delegation decisions.
+       */
+      recordPerformance(record) {
+        this.performanceHistory.push(record);
+        if (this.performanceHistory.length > 200) {
+          this.performanceHistory = this.performanceHistory.slice(-200);
+        }
+      }
+      /**
+       * Rank personas for a given task, returning scored candidates.
+       */
+      rankCandidates(task) {
+        const candidates = [];
+        for (const profile of PERSONA_PROFILES2) {
+          const { score, reasons } = this.scorePersona(profile, task);
+          if (score > 0) {
+            candidates.push({
+              persona: profile.id,
+              model: this.recommendModel(profile, task),
+              score,
+              reasons
+            });
+          }
+        }
+        return candidates.sort((a, b) => b.score - a.score);
+      }
+      /**
+       * Get the best persona for a task.
+       */
+      bestCandidate(task) {
+        const ranked = this.rankCandidates(task);
+        return ranked[0] || null;
+      }
+      scorePersona(profile, task) {
+        let score = 50;
+        const reasons = [];
+        if (profile.strengths.includes(task.taskType)) {
+          score += 30;
+          reasons.push(`strong at ${task.taskType}`);
+        } else {
+          score -= 10;
+        }
+        if (task.language && profile.languages.includes(task.language)) {
+          score += 15;
+          reasons.push(`knows ${task.language}`);
+        } else if (task.language) {
+          score -= 5;
+        }
+        const complexityOrder = { low: 0, medium: 1, high: 2 };
+        if (complexityOrder[task.complexity] > complexityOrder[profile.maxComplexity]) {
+          score -= 20;
+          reasons.push("task may be too complex for this persona");
+        }
+        if (task.complexity === "low" && profile.costTier === "fast") {
+          score += 10;
+          reasons.push("cost-efficient for simple task");
+        }
+        if (task.complexity === "high" && profile.costTier === "heavy") {
+          score += 5;
+          reasons.push("heavy-tier appropriate for complex task");
+        }
+        const history = this.performanceHistory.filter(
+          (r) => r.persona === profile.id && r.taskType === task.taskType
+        );
+        if (history.length >= 3) {
+          const successRate = history.filter((r) => r.success).length / history.length;
+          if (successRate >= 0.8) {
+            score += 15;
+            reasons.push(`${Math.round(successRate * 100)}% success rate on similar tasks`);
+          } else if (successRate < 0.5) {
+            score -= 15;
+            reasons.push(`low success rate (${Math.round(successRate * 100)}%) on similar tasks`);
+          }
+          const avgTurns = history.reduce((s, r) => s + r.turns, 0) / history.length;
+          if (avgTurns < 10) {
+            score += 5;
+            reasons.push("historically efficient (few turns)");
+          }
+        }
+        const recentFailures = history.filter((r) => !r.success && Date.now() - r.timestamp < 36e5).length;
+        if (recentFailures >= 2) {
+          score -= 20;
+          reasons.push("recent repeated failures \u2014 try different persona");
+        }
+        return { score: Math.max(0, score), reasons };
+      }
+      recommendModel(profile, task) {
+        if (task.complexity === "high" || profile.costTier === "heavy") {
+          return "heavy";
+        }
+        if (task.complexity === "low" && profile.costTier === "fast") {
+          return "fast";
+        }
+        return "standard";
+      }
+      /**
+       * Export performance data for persistence.
+       */
+      exportHistory() {
+        return [...this.performanceHistory];
+      }
+      /**
+       * Import performance data from persistence.
+       */
+      importHistory(records) {
+        this.performanceHistory = [...records];
+      }
+    };
+  }
+});
+
 // src/cli/file-commands.ts
 var file_commands_exports = {};
 __export(file_commands_exports, {
@@ -12178,6 +13132,7 @@ var init_unified = __esm({
     init_reviewer();
     init_worktree();
     init_sandbox();
+    init_delegation();
     UnifiedPipeline = class {
       constructor(sandbox, session) {
         this.logger = new Logger();
@@ -12185,6 +13140,7 @@ var init_unified = __esm({
         this.executor = new LocalExecutor();
         this.planner = new DualL2Planner();
         this.contextPacks = new ContextPackManager();
+        this.delegationTuner = new DelegationTuner();
         this._intervalTimer = null;
         this._intervalSnapshotCount = 0;
         this.sandbox = sandbox;
@@ -12656,6 +13612,25 @@ ${this.buildExecutionAuditContext(executionResults)}`;
           transcript: workerResult.transcript
         };
       }
+      extractVerificationCommands(task) {
+        return Array.from(new Set(
+          (task.verification || []).map((item) => this.extractVerificationCommand(item)).filter((value) => Boolean(value))
+        ));
+      }
+      extractVerificationCommand(value) {
+        const trimmed = String(value || "").trim();
+        if (!trimmed) return null;
+        const explicit = trimmed.match(/^(?:run|execute)\s+(.+)$/i);
+        if (explicit?.[1] && this.looksLikeVerificationCommand(explicit[1].trim())) {
+          return explicit[1].trim();
+        }
+        const backticked = [...trimmed.matchAll(/`([^`]+)`/g)].map((match) => match[1]?.trim()).filter((command) => Boolean(command) && this.looksLikeVerificationCommand(command));
+        if (backticked.length > 0) return backticked[0];
+        return this.looksLikeVerificationCommand(trimmed) ? trimmed : null;
+      }
+      looksLikeVerificationCommand(value) {
+        return /^(npm|pnpm|yarn|bun|node|pytest|jest|vitest|cargo|go|make|\.\/|bash|sh)\b/.test(value);
+      }
       async reviewAndFixWorkerResult(task, result2, traceId, context, sessionId) {
         if (!this.reviewerEnabled()) return result2;
         let current = result2;
@@ -12712,7 +13687,8 @@ ${fixTask.goal}` : fixTask.goal, {
             maxTurns: this.getMaxTurnsForEffort(this.getExecutionEffort(task)),
             verbose: process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true",
             persona: task.persona,
-            constraintLevel: void 0
+            constraintLevel: void 0,
+            verificationCommands: this.extractVerificationCommands(task)
           });
           const parsed = this.parseWorkerOutput(String(fixResult.output || ""));
           current = this.buildWorkerExecutionResult(task, parsed, fixResult);
@@ -13906,11 +14882,13 @@ ${task.goal}` : task.goal;
         const sessionId = this.session ? await this.session.getSessionId() : void 0;
         const composedPrompt = this.composer.compose("executor-code-v1", overlays, traceId);
         const effort = this.getExecutionEffort(task);
+        const verificationCommands = this.extractVerificationCommands(task);
         const result2 = await runAgenticWorker(composedPrompt.finalPrompt, this.requireSandbox(), {
           model: this.getModelForLayer("l3", effort) || "",
           maxTurns: this.getMaxTurnsForEffort(effort),
           tier: this.getTierForEffort(effort),
-          persona: task.persona
+          persona: task.persona,
+          verificationCommands
         });
         const parsed = this.parseWorkerOutput(String(result2.output || ""));
         const built = this.buildWorkerExecutionResult(task, parsed, result2);
@@ -14118,7 +15096,8 @@ ${dependencyOutputs.join("\n\n")}`,
               projectDir: workerProjectDir,
               priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : void 0,
               persona: unit.persona,
-              constraintLevel: void 0
+              constraintLevel: void 0,
+              verificationCommands: this.extractVerificationCommands(unit)
             });
             const parsed = this.parseWorkerOutput(String(result2.output || ""));
             if (result2.discoveredFiles?.length) {
@@ -14180,6 +15159,22 @@ ${dependencyOutputs.join("\n\n")}`,
           }
           results.push(...batchResults);
           totalCost += batchResults.reduce((sum, r) => sum + r.cost, 0);
+          for (const r of batchResults) {
+            const unitDef = batch.find((u) => u.id === r.workUnitId);
+            if (unitDef) {
+              const taskChars = analyzeTask(unitDef.goal, unitDef.allowedPaths, unitDef.requiredCapabilities);
+              this.delegationTuner.recordPerformance({
+                persona: r.persona,
+                model: String(process.env.CREW_EXECUTION_MODEL || "default"),
+                taskType: taskChars.taskType,
+                success: !r.escalationNeeded,
+                turns: r.turns || 0,
+                costUsd: r.cost,
+                verificationPassed: r.verificationPassed,
+                timestamp: Date.now()
+              });
+            }
+          }
           if (totalCost > 0.5) {
             throw new Error(
               `Execution cost $${totalCost.toFixed(3)} exceeded limit ($0.50) during execution. Partial results saved but task aborted.`

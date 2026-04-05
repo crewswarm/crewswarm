@@ -21,6 +21,8 @@ import { RunState, type RunPhase, type FailureRecord } from './run-state.js';
 import type { ToolCall, TurnResult, AutonomousConfig, AutonomousResult } from '../worker/autonomous-loop.js';
 import { clearOldToolResults } from '../executor/tool-result-clearing.js';
 import { partitionToolCalls } from '../executor/tool-batching.js';
+import { buildTurnGuidance, type TaskMode } from '../execution/agentic-guidance.js';
+import { buildActionRankingPrompt } from '../execution/action-ranking.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,10 +37,14 @@ export interface RunEngineConfig {
   abortSignal?: AbortSignal;
   tools?: unknown[];
   model?: string;
+  /** Task mode for strategy selection and action ranking */
+  taskMode?: TaskMode;
   /** Verification commands to run after execution (e.g., ['npm test', 'npm run lint']) */
   verificationCommands?: string[];
   /** Max verification retry cycles */
   maxVerificationCycles?: number;
+  /** Max extra turns allowed for verification-first gate (default: 3) */
+  maxVerificationGateTurns?: number;
   onProgress?: (turn: number, action: string) => void;
 }
 
@@ -79,6 +85,7 @@ type ExecuteToolFn = (
 const DEFAULT_MAX_TURNS = 25;
 const DEFAULT_REPEAT_THRESHOLD = 10;
 const DEFAULT_MAX_VERIFICATION_CYCLES = 2;
+const DEFAULT_MAX_VERIFICATION_GATE_TURNS = 3;
 
 export class RunEngine {
   readonly state: RunState;
@@ -109,7 +116,9 @@ export class RunEngine {
       abortSignal,
       tools = [],
       onProgress,
-      maxVerificationCycles = DEFAULT_MAX_VERIFICATION_CYCLES
+      taskMode = 'analysis' as TaskMode,
+      maxVerificationCycles = DEFAULT_MAX_VERIFICATION_CYCLES,
+      maxVerificationGateTurns = DEFAULT_MAX_VERIFICATION_GATE_TURNS
     } = this.config;
 
     const history: TurnResult[] = [];
@@ -117,6 +126,7 @@ export class RunEngine {
     let staleCount = 0;
     let pendingContext = '';
     let finalResponse = '';
+    let verificationGateTurnsUsed = 0;
 
     // ── Execute phase ─────────────────────────────────────────────────
     this.state.enterPhase('executing');
@@ -135,10 +145,11 @@ export class RunEngine {
       this.state.recordTurn();
       onProgress?.(turn + 1, 'THINKING');
 
-      // Build context with failure avoidance + verification goals
+      // Build context with failure avoidance + verification goals + action ranking
       const failureCtx = this.state.buildFailureContext();
       const verifyCtx = this.state.buildVerificationContext();
-      const extraContext = [failureCtx, verifyCtx].filter(Boolean).join('\n\n');
+      const actionCtx = buildActionRankingPrompt(history, taskMode);
+      const extraContext = [failureCtx, verifyCtx, actionCtx].filter(Boolean).join('\n\n');
       const effectiveTask = [this.config.task, extraContext, pendingContext].filter(Boolean).join('\n\n');
       pendingContext = '';
 
@@ -188,11 +199,24 @@ export class RunEngine {
       lastResponseText = response!.response;
       finalResponse = response!.response;
 
-      // No tool calls = done
+      // ── Completion check with verification gate ─────────────────
       if (!response!.toolCalls || response!.toolCalls.length === 0) {
-        if (response!.status === 'COMPLETE' || !response!.toolCalls) {
-          break;
+        const unprovenGoal = this.state.nextUnprovenGoal();
+        if (unprovenGoal && verificationGateTurnsUsed < maxVerificationGateTurns) {
+          // Hard gate: don't stop — force verification
+          verificationGateTurnsUsed++;
+          this.state.addPhaseNote(`Verification gate: forcing verification for "${unprovenGoal.description}"`);
+          pendingContext = [
+            '## STOP — verification required before completing',
+            `You indicated completion, but this goal is unproven: "${unprovenGoal.description}"`,
+            'Run the verification command or test that proves this goal before finishing.',
+            this.config.verificationCommands?.length
+              ? `Available verification commands: ${this.config.verificationCommands.join(', ')}`
+              : 'Run the most targeted test or check command for the changes you made.'
+          ].join('\n');
+          continue; // force another turn
         }
+        break;
       }
 
       // Execute tool calls with failure tracking
@@ -240,6 +264,15 @@ export class RunEngine {
             }
           }
         }
+      }
+
+      // ── Per-turn guidance: task-mode coaching + action ranking ────
+      const turnResults = history.filter(h => h.turn === turn + 1);
+      const turnGuidance = buildTurnGuidance(taskMode, history, turnResults);
+      if (turnGuidance) {
+        pendingContext = pendingContext
+          ? `${pendingContext}\n\n${turnGuidance}`
+          : turnGuidance;
       }
     }
 
