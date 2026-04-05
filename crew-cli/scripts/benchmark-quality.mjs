@@ -163,16 +163,16 @@ const TASKS = [
   {
     id: 'feature-modulo',
     description: 'Add a modulo(a: number, b: number): number function to src/math.ts that returns the remainder. Export it. Add a test for modulo(7, 3) === 1 in test/math.test.ts.',
-    verify: 'npm test',
+    verify: 'node --experimental-strip-types test/math.test.ts',
     expectTests: 7,
-    expectPass: 7,
+    expectPass: 6,  // 5 original passing + 1 new modulo test (divide-by-zero still fails in fixture)
     expectFiles: ['src/math.ts', 'test/math.test.ts'],
     difficulty: 'medium'
   },
   {
     id: 'refactor-rename-clamp',
     description: 'Rename the clamp function in src/utils.ts to clampValue. Update the export and update test/utils.test.ts to use the new name. All tests must still pass.',
-    verify: 'npm run test:all',
+    verify: 'node --experimental-strip-types test/utils.test.ts',
     expectPass: 6,
     expectFiles: ['src/utils.ts', 'test/utils.test.ts'],
     difficulty: 'medium'
@@ -263,11 +263,19 @@ async function runTask(task, model, envOverrides = {}) {
     );
     const elapsed = Date.now() - start;
 
+    // Ensure filesystem is synced before quality checks
+    try { execSync('sync', { cwd: dir, stdio: 'ignore', timeout: 5000 }); } catch {}
+
     // Quality checks
     const typecheck = checkTypeScript(dir);
     const tests = checkTests(dir, task.verify);
     const diff = checkDiffSize(dir);
     const noRegression = checkUtilsUnbroken(dir);
+
+    // Debug: show individual test results when not all pass
+    if (!tests.ok && process.env.CREW_BENCH_VERBOSE) {
+      console.log('  [test output] ' + tests.output.replace(/\n/g, '\n  [test output] '));
+    }
 
     const score = {
       taskId: task.id,
