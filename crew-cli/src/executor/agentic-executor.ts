@@ -2040,6 +2040,18 @@ export async function runAgenticWorker(
       readOnly: isReadOnly
     });
 
+    // Surface failures to RunEngine's failure memory so it can block repeated bad moves.
+    // executeToolWithRetry swallows retries internally — this ensures the final failure
+    // (after retries exhausted) reaches RunEngine.state.recordFailure().
+    if (!result.success && result.error) {
+      engine.state.recordFailure({
+        turn: turnCount,
+        tool: name,
+        params,
+        error: result.error
+      });
+    }
+
     // Patch critic: evaluate change quality and inject guidance
     const criticReport = patchCritic.evaluate(turnCount, name, params, result, result.error, structuredHistory);
     if (criticReport.guidance && verbose) {
