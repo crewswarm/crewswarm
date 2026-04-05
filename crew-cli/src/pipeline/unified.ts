@@ -2102,7 +2102,19 @@ Return ONLY valid JSON:
     }
 
     const decision = await this.parseRouterDecision(String(result.result || ''), traceId, sessionId);
-    const normalizedDecision = this.normalizeDecision(decision.decision);
+    let normalizedDecision = this.normalizeDecision(decision.decision);
+
+    // Deterministic override: tasks with file-creation verbs must never be direct-answer.
+    // Some models (GPT-5.x) classify simple tasks as direct-answer even when tools are needed.
+    if (normalizedDecision === 'direct-answer') {
+      const lower = String(request.userInput || '').toLowerCase();
+      const requiresExecution = /\b(create|write|add|edit|update|modify|fix|build|implement|refactor|delete|remove|rename|generate|scaffold)\b/.test(lower)
+        && /\b(file|directory|folder|function|class|module|component|test|spec)\b/.test(lower);
+      if (requiresExecution) {
+        normalizedDecision = 'execute-direct';
+      }
+    }
+
     const estimatedEffort = this.getRequestedEffortOverride()
       || this.normalizeEffort(decision.complexity, this.inferEffortFromInput(request.userInput));
 

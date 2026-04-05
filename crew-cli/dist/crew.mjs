@@ -14963,7 +14963,14 @@ Return ONLY valid JSON:
           throw new Error(`L2 orchestration failed: ${result2.result}`);
         }
         const decision = await this.parseRouterDecision(String(result2.result || ""), traceId, sessionId);
-        const normalizedDecision = this.normalizeDecision(decision.decision);
+        let normalizedDecision = this.normalizeDecision(decision.decision);
+        if (normalizedDecision === "direct-answer") {
+          const lower = String(request.userInput || "").toLowerCase();
+          const requiresExecution = /\b(create|write|add|edit|update|modify|fix|build|implement|refactor|delete|remove|rename|generate|scaffold)\b/.test(lower) && /\b(file|directory|folder|function|class|module|component|test|spec)\b/.test(lower);
+          if (requiresExecution) {
+            normalizedDecision = "execute-direct";
+          }
+        }
         const estimatedEffort = this.getRequestedEffortOverride() || this.normalizeEffort(decision.complexity, this.inferEffortFromInput(request.userInput));
         let workGraph;
         let validation;
