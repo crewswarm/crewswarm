@@ -1593,25 +1593,18 @@ async function executeStreamingAnthropicTurn(
           params = JSON.parse(block.inputJson);
 
         } catch (e1) {
-          if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Raw parse FAILED: ${(e1 as Error).message}`);
+
           try {
             params = JSON.parse(repairJson(block.inputJson));
-            if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Repair parse OK: keys=${Object.keys(params).join(',')}`);
+
           } catch (e2) {
-            if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Repair parse FAILED: ${(e2 as Error).message}`);
+
           }
         }
         toolCalls.push({ tool: block.name, params });
-        if (process.env.CREW_DEBUG_SSE) {
-          const last = toolCalls[toolCalls.length - 1];
-          console.log(`[SSE] Pushed toolCall: tool=${last.tool} keys=${Object.keys(last.params).join(',')} same=${last.params === params}`);
-        }
       }
     }
 
-    if (process.env.CREW_DEBUG_SSE && toolCalls.length > 0) {
-      console.log(`[SSE] Returning ${toolCalls.length} toolCalls, first keys=${Object.keys(toolCalls[0].params).join(',')}`);
-    }
     if (toolCalls.length > 0) return { toolCalls, response: fullText, cost: totalCost };
     return { response: fullText, status: 'COMPLETE', cost: totalCost };
   }
@@ -2198,11 +2191,6 @@ export async function runAgenticWorker(
       const turnTools = compactToolDeclarations(allTools, turnCount);
       const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages, abortSignal);
       totalCost += turnResult.cost || 0;
-      if (process.env.CREW_DEBUG_SSE && turnResult.toolCalls) {
-        for (const tc of turnResult.toolCalls) {
-          console.log(`[LLM Return] tool=${tc.tool} paramsKeys=${Object.keys(tc.params || {}).join(',')} paramsLen=${JSON.stringify(tc.params).length}`);
-        }
-      }
       return {
         toolCalls: turnResult.toolCalls,
         response: turnResult.response,
