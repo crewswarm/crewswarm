@@ -546,57 +546,67 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
   // Try all OAuth providers before API keys. OAuth uses existing subscriptions (free).
 
   if (process.env.CREW_NO_OAUTH !== 'true') {
-    // Always try all OAuth providers in priority order: Claude > OpenAI > Gemini.
-    // OAuth is free (uses subscriptions), so prefer it over API keys regardless of
-    // what model was requested — the model name just came from a default config.
+    // OAuth providers are free (use subscriptions), so prefer over API keys.
+    // When a specific model is requested, route to the matching provider first.
+    // When no model is specified, try all in priority order: Claude > OpenAI > Gemini.
+
+    const wantsOpenAI = effectiveModel.includes('gpt') || effectiveModel.includes('openai') || effectiveModel.includes('o3') || effectiveModel.includes('o4');
+    const wantsGemini = effectiveModel.includes('gemini');
+    const wantsClaude = effectiveModel.includes('claude') || effectiveModel.includes('sonnet') || effectiveModel.includes('opus') || effectiveModel.includes('haiku');
 
     // 1. Claude OAuth (macOS Keychain — Claude Max/Pro subscription)
     // All 3 tiers work: Haiku, Sonnet, Opus. Default is Sonnet 4.6.
     // Override via CREW_OAUTH_CLAUDE_MODEL env var or dashboard Models tab.
-    try {
-      const oauth = await getOAuthToken();
-      if (oauth?.accessToken) {
-        return {
-          key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || (() => { try { const c = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), '.crewswarm', 'crewswarm.json'), 'utf8')); return c.claudeOauthModel || 'claude-sonnet-4-6'; } catch { return 'claude-sonnet-4-6'; } })()),
-          driver: 'anthropic',
-          id: `anthropic-oauth-${oauth.subscriptionType || 'unknown'}`,
-          isOAuth: true
-        };
-      }
-    } catch {}
+    if (!wantsOpenAI && !wantsGemini || wantsClaude || !effectiveModel) {
+      try {
+        const oauth = await getOAuthToken();
+        if (oauth?.accessToken) {
+          return {
+            key: oauth.accessToken,
+            model: effectiveModel && wantsClaude ? effectiveModel : String(process.env.CREW_OAUTH_CLAUDE_MODEL || (() => { try { const c = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), '.crewswarm', 'crewswarm.json'), 'utf8')); return c.claudeOauthModel || 'claude-sonnet-4-6'; } catch { return 'claude-sonnet-4-6'; } })()),
+            driver: 'anthropic',
+            id: `anthropic-oauth-${oauth.subscriptionType || 'unknown'}`,
+            isOAuth: true
+          };
+        }
+      } catch {}
+    }
 
     // 2. OpenAI OAuth (Codex CLI auth — ChatGPT Plus/Pro subscription)
-    try {
-      const oauth = await getOpenAIOAuthToken();
-      if (oauth?.accessToken) {
-        return {
-          key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_OPENAI_MODEL || 'gpt-5.4'),
-          driver: 'openai',
-          apiUrl: OPENAI_CODEX_API_URL,
-          id: 'openai-oauth-codex',
-          isOAuth: true
-        };
+    if (wantsOpenAI || (!wantsClaude && !wantsGemini) || !effectiveModel) {
+      try {
+        const oauth = await getOpenAIOAuthToken();
+        if (oauth?.accessToken) {
+          return {
+            key: oauth.accessToken,
+            model: effectiveModel && wantsOpenAI ? effectiveModel : String(process.env.CREW_OAUTH_OPENAI_MODEL || 'gpt-5.4'),
+            driver: 'openai',
+            apiUrl: OPENAI_CODEX_API_URL,
+            id: 'openai-oauth-codex',
+            isOAuth: true
+          };
+        }
+      } catch {
+        // OpenAI OAuth unavailable — try next
       }
-    } catch {
-      // OpenAI OAuth unavailable — try next
     }
 
     // 3. Gemini OAuth (Google ADC or Gemini CLI — Google account)
-    try {
-      const oauth = await getGeminiOAuthToken();
-      if (oauth?.accessToken) {
-        return {
-          key: oauth.accessToken,
-          model: effectiveModel.includes('gemini') ? effectiveModel : 'gemini-2.5-flash',
-          driver: 'gemini',
-          id: 'gemini-oauth-adc',
-          isOAuth: true
-        };
+    if (wantsGemini || (!wantsClaude && !wantsOpenAI) || !effectiveModel) {
+      try {
+        const oauth = await getGeminiOAuthToken();
+        if (oauth?.accessToken) {
+          return {
+            key: oauth.accessToken,
+            model: effectiveModel.includes('gemini') ? effectiveModel : 'gemini-2.5-flash',
+            driver: 'gemini',
+            id: 'gemini-oauth-adc',
+            isOAuth: true
+          };
+        }
+      } catch {
+        // Gemini OAuth unavailable — try next
       }
-    } catch {
-      // Gemini OAuth unavailable — try next
     }
   }
 
@@ -1447,7 +1457,8 @@ async function executeStreamingAnthropicTurn(
         { role: 'user', content: userContent },
         ...(historyMessages || [])
       ],
-      temperature: 0.3,
+      // temperature must be 1 (or omitted) when adaptive thinking is enabled
+      ...(supportsThinking ? {} : { temperature: 0.3 }),
       tools: anthropicTools,
       stream
     };
@@ -1481,6 +1492,7 @@ async function executeStreamingAnthropicTurn(
     : anthropicTimeoutSignal;
 
   const apiUrl = isOAuth ? 'https://api.anthropic.com/v1/messages?beta=true' : 'https://api.anthropic.com/v1/messages';
+
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers,

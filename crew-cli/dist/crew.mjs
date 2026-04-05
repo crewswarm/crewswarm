@@ -3526,6 +3526,24 @@ function getShellTimeout() {
   if (envVal > 0) return Math.min(envVal * 1e3, 6e5);
   return 12e4;
 }
+function extractVerificationCommands(task) {
+  const commands = /* @__PURE__ */ new Set();
+  for (const line of String(task || "").split("\n")) {
+    const trimmed = line.trim();
+    const explicit = trimmed.match(/^(?:[-*]\s*)?(?:run|execute)\s+(.+)$/i);
+    if (explicit?.[1] && looksLikeVerificationCommand(explicit[1].trim())) {
+      commands.add(explicit[1].trim());
+    }
+    for (const match of trimmed.matchAll(/`([^`]+)`/g)) {
+      const command = match[1]?.trim();
+      if (command && looksLikeVerificationCommand(command)) commands.add(command);
+    }
+  }
+  return [...commands];
+}
+function looksLikeVerificationCommand(value) {
+  return /^(npm|pnpm|yarn|bun|node|pytest|jest|vitest|cargo|go|make|\.\/|bash|sh)\b/.test(value);
+}
 var READ_ONLY_TOOLS, EDIT_TOOLS, FULL_TOOLS, CrewConfig, CrewMessageBus, DANGEROUS_SHELL_PATTERNS, _backgroundProcesses, GeminiToolAdapter;
 var init_crew_adapter = __esm({
   "src/tools/gemini/crew-adapter.ts"() {
@@ -5014,7 +5032,10 @@ ${stderr}` };
             maxTurns,
             stream: false,
             verbose: Boolean(process.env.CREW_DEBUG),
-            tier: "fast"
+            tier: "fast",
+            constraintLevel: "edit",
+            projectDir: this.sandbox.getBaseDir?.() || process.cwd(),
+            verificationCommands: extractVerificationCommands(task)
           });
           _GeminiToolAdapter._spawnDepth--;
           _GeminiToolAdapter._agentSessions.set(sessionId, {
@@ -5098,7 +5119,10 @@ ${stderr}` };
             maxTurns,
             stream: false,
             verbose: Boolean(process.env.CREW_DEBUG),
-            tier: "fast"
+            tier: "fast",
+            constraintLevel: "edit",
+            projectDir: this.sandbox.getBaseDir?.() || process.cwd(),
+            verificationCommands: extractVerificationCommands(continuationTask)
           });
           _GeminiToolAdapter._spawnDepth--;
           session.history.push(
@@ -5833,7 +5857,8 @@ var init_run_state = __esm({
       wouldRepeatFailure(tool, params) {
         const signature = `${tool}:${stableHash(params)}`;
         const record = this._failureSignatures.get(signature);
-        if (record && record.count >= 2) return record;
+        const threshold = tool === "run_shell_command" || tool === "shell" || tool === "run_cmd" ? 1 : 2;
+        if (record && record.count >= threshold) return record;
         return null;
       }
       /**
@@ -6082,7 +6107,7 @@ function repeatedFailure(history) {
 }
 function detectTaskMode(task) {
   const normalized = normalizeText(task);
-  if (/(failing tests?|test failure|fix tests?|make tests? pass|regression test|unit test)/.test(normalized)) {
+  if (/(failing tests?|test failure|fix tests?|fix the test|make tests? pass|regression test|unit test|test.*(fail|broken|error))/.test(normalized)) {
     return "test_repair";
   }
   if (/(fix|bug|broken|error|regression|crash|issue|failure)/.test(normalized)) {
@@ -6271,9 +6296,10 @@ function rankActions(history, taskMode) {
         reason = "Refactor edits need typecheck/build verification";
       }
     }
-    if (action === snap.lastActionType && snap.consecutiveSameAction >= 3) {
-      score -= 0.15;
-      reason = reason || `${snap.consecutiveSameAction} consecutive ${action} actions \u2014 consider switching`;
+    if (action === snap.lastActionType && snap.consecutiveSameAction >= 2) {
+      const penalty = Math.min(0.4, snap.consecutiveSameAction * 0.1);
+      score -= penalty;
+      reason = reason || `${snap.consecutiveSameAction} consecutive ${action} actions \u2014 switch tactics`;
     }
     if (snap.recentFailureTools.size > 0) {
       const failedActionTypes = /* @__PURE__ */ new Set();
@@ -6282,8 +6308,8 @@ function rankActions(history, taskMode) {
         if (at) failedActionTypes.add(at);
       }
       if (failedActionTypes.has(action)) {
-        score -= 0.15;
-        reason = reason || `Recent ${action} failures \u2014 try a different approach`;
+        score -= 0.35;
+        reason = `DO NOT retry ${action} \u2014 recent failures. Try a completely different approach`;
       }
     }
     scores.push({
@@ -6299,14 +6325,17 @@ function buildActionRankingPrompt(history, taskMode, threshold = 0.4) {
   const ranked = rankActions(history, taskMode);
   const top = ranked.filter((r) => r.score >= threshold).slice(0, 3);
   if (top.length === 0) return "";
+  const warnings = ranked.filter((r) => r.score < 0.15 && r.reason?.startsWith("DO NOT"));
   const lines = top.map((r, i) => {
     const label = i === 0 ? "RECOMMENDED" : "also good";
     const reasonSuffix = r.reason ? ` \u2014 ${r.reason}` : "";
     return `- [${label}] ${r.action}${reasonSuffix}`;
   });
+  const warningLines = warnings.map((r) => `- [AVOID] ${r.action} \u2014 ${r.reason}`);
   return [
-    "## Next action priority:",
-    ...lines
+    "## Next action priority (follow this guidance):",
+    ...lines,
+    ...warningLines.length > 0 ? ["", "## Actions to AVOID:", ...warningLines] : []
   ].join("\n");
 }
 var READ_TOOLS2, SEARCH_TOOLS, EDIT_TOOLS3, SHELL_TOOLS, MODE_WEIGHTS;
@@ -7881,52 +7910,61 @@ function compactToolDeclarations(tools, turn) {
 async function resolveProvider(modelOverride, preferTier) {
   const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || "").trim().toLowerCase();
   if (process.env.CREW_NO_OAUTH !== "true") {
-    try {
-      const oauth = await getOAuthToken();
-      if (oauth?.accessToken) {
-        return {
-          key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_CLAUDE_MODEL || (() => {
-            try {
-              const c = JSON.parse(__require("fs").readFileSync(__require("path").join(__require("os").homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
-              return c.claudeOauthModel || "claude-sonnet-4-6";
-            } catch {
-              return "claude-sonnet-4-6";
-            }
-          })()),
-          driver: "anthropic",
-          id: `anthropic-oauth-${oauth.subscriptionType || "unknown"}`,
-          isOAuth: true
-        };
+    const wantsOpenAI = effectiveModel.includes("gpt") || effectiveModel.includes("openai") || effectiveModel.includes("o3") || effectiveModel.includes("o4");
+    const wantsGemini = effectiveModel.includes("gemini");
+    const wantsClaude = effectiveModel.includes("claude") || effectiveModel.includes("sonnet") || effectiveModel.includes("opus") || effectiveModel.includes("haiku");
+    if (!wantsOpenAI && !wantsGemini || wantsClaude || !effectiveModel) {
+      try {
+        const oauth = await getOAuthToken();
+        if (oauth?.accessToken) {
+          return {
+            key: oauth.accessToken,
+            model: effectiveModel && wantsClaude ? effectiveModel : String(process.env.CREW_OAUTH_CLAUDE_MODEL || (() => {
+              try {
+                const c = JSON.parse(__require("fs").readFileSync(__require("path").join(__require("os").homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+                return c.claudeOauthModel || "claude-sonnet-4-6";
+              } catch {
+                return "claude-sonnet-4-6";
+              }
+            })()),
+            driver: "anthropic",
+            id: `anthropic-oauth-${oauth.subscriptionType || "unknown"}`,
+            isOAuth: true
+          };
+        }
+      } catch {
       }
-    } catch {
     }
-    try {
-      const oauth = await getOpenAIOAuthToken();
-      if (oauth?.accessToken) {
-        return {
-          key: oauth.accessToken,
-          model: String(process.env.CREW_OAUTH_OPENAI_MODEL || "gpt-5.4"),
-          driver: "openai",
-          apiUrl: OPENAI_CODEX_API_URL,
-          id: "openai-oauth-codex",
-          isOAuth: true
-        };
+    if (wantsOpenAI || !wantsClaude && !wantsGemini || !effectiveModel) {
+      try {
+        const oauth = await getOpenAIOAuthToken();
+        if (oauth?.accessToken) {
+          return {
+            key: oauth.accessToken,
+            model: effectiveModel && wantsOpenAI ? effectiveModel : String(process.env.CREW_OAUTH_OPENAI_MODEL || "gpt-5.4"),
+            driver: "openai",
+            apiUrl: OPENAI_CODEX_API_URL,
+            id: "openai-oauth-codex",
+            isOAuth: true
+          };
+        }
+      } catch {
       }
-    } catch {
     }
-    try {
-      const oauth = await getGeminiOAuthToken();
-      if (oauth?.accessToken) {
-        return {
-          key: oauth.accessToken,
-          model: effectiveModel.includes("gemini") ? effectiveModel : "gemini-2.5-flash",
-          driver: "gemini",
-          id: "gemini-oauth-adc",
-          isOAuth: true
-        };
+    if (wantsGemini || !wantsClaude && !wantsOpenAI || !effectiveModel) {
+      try {
+        const oauth = await getGeminiOAuthToken();
+        if (oauth?.accessToken) {
+          return {
+            key: oauth.accessToken,
+            model: effectiveModel.includes("gemini") ? effectiveModel : "gemini-2.5-flash",
+            driver: "gemini",
+            id: "gemini-oauth-adc",
+            isOAuth: true
+          };
+        }
+      } catch {
       }
-    } catch {
     }
   }
   if (effectiveModel) {
@@ -8475,36 +8513,72 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
     description: t.description,
     input_schema: t.parameters
   }));
-  const body = {
-    model,
-    max_tokens: 8192,
-    system: systemPrompt,
-    messages: [
-      { role: "user", content: userContent },
-      // Insert structured history (assistant tool_use + user tool_result)
-      ...historyMessages || []
-    ],
-    temperature: 0.3,
-    tools: anthropicTools,
-    stream
-  };
+  const CLAUDE_OAUTH_BETA_HEADER2 = [
+    "claude-code-20250219",
+    "oauth-2025-04-20",
+    "adaptive-thinking-2026-01-28",
+    "research-preview-2026-02-01",
+    "interleaved-thinking-2025-05-14",
+    "redact-thinking-2026-02-12",
+    "context-management-2025-06-27"
+  ].join(",");
+  let bodyStr;
   const headers = {
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01"
   };
   if (isOAuth) {
+    const suffix = computeVersionSuffix(typeof fullTask === "string" ? fullTask : "");
+    const billingBlock = buildBillingBlock(suffix);
+    const supportsThinking = !model.includes("haiku");
+    const bodyObj = {
+      model,
+      max_tokens: 8192,
+      ...supportsThinking ? { thinking: { type: "adaptive" } } : {},
+      metadata: { user_id: `user_crewswarm_l3_${Date.now()}` },
+      system: [
+        billingBlock,
+        { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }
+      ],
+      messages: [
+        { role: "user", content: userContent },
+        ...historyMessages || []
+      ],
+      // temperature must be 1 (or omitted) when adaptive thinking is enabled
+      ...supportsThinking ? {} : { temperature: 0.3 },
+      tools: anthropicTools,
+      stream
+    };
+    bodyStr = await signBody(bodyObj);
     headers["Authorization"] = `Bearer ${apiKey}`;
-    headers["anthropic-beta"] = "oauth-2025-04-20";
+    headers["anthropic-beta"] = CLAUDE_OAUTH_BETA_HEADER2;
+    headers["anthropic-dangerous-direct-browser-access"] = "true";
+    headers["x-app"] = "cli";
+    headers["user-agent"] = "claude-cli/2.1.87 (external, cli)";
   } else {
+    const bodyObj = {
+      model,
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [
+        { role: "user", content: userContent },
+        ...historyMessages || []
+      ],
+      temperature: 0.3,
+      tools: anthropicTools,
+      stream
+    };
+    bodyStr = JSON.stringify(bodyObj);
     headers["x-api-key"] = apiKey;
   }
   const anthropicTimeoutSignal = AbortSignal.timeout(12e4);
   const anthropicFetchSignal = abortSignal ? AbortSignal.any([abortSignal, anthropicTimeoutSignal]) : anthropicTimeoutSignal;
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const apiUrl = isOAuth ? "https://api.anthropic.com/v1/messages?beta=true" : "https://api.anthropic.com/v1/messages";
+  const res = await fetch(apiUrl, {
     method: "POST",
     headers,
     signal: anthropicFetchSignal,
-    body: JSON.stringify(body)
+    body: bodyStr
   });
   if (!res.ok) {
     if (res.status === 401 && isOAuth) {
@@ -8773,7 +8847,7 @@ ${buildTaskModeGuidance(taskMode)}`;
   let totalCost = 0;
   const toolsUsed = /* @__PURE__ */ new Set();
   const transcript = new ExecutionTranscript();
-  const verificationCommands = normalizeVerificationCommands(options.verificationCommands ?? extractVerificationCommands(task));
+  const verificationCommands = normalizeVerificationCommands(options.verificationCommands ?? extractVerificationCommands2(task));
   const patchCritic = new PatchCritic({ allowedPaths: [] });
   const structuredHistory = new StructuredHistory();
   const executeTool = async (name, params) => {
@@ -8809,6 +8883,14 @@ ${buildTaskModeGuidance(taskMode)}`;
       filesAffected: filePath ? [filePath] : [],
       readOnly: isReadOnly
     });
+    if (!result3.success && result3.error) {
+      engine.state.recordFailure({
+        turn: turnCount,
+        tool: name,
+        params,
+        error: result3.error
+      });
+    }
     const criticReport = patchCritic.evaluate(turnCount, name, params, result3, result3.error, structuredHistory);
     if (criticReport.guidance && verbose) {
       console.log(`  [Critic] Score: ${criticReport.score}/100 \u2014 ${criticReport.findings.filter((f) => f.severity !== "info").length} issues`);
@@ -8909,7 +8991,13 @@ ${summary}`;
       };
     },
     async (name, params) => {
-      return await executeTool(name, params);
+      const result3 = await executeTool(name, params);
+      if (!result3.success && result3.error) {
+        const err = new Error(result3.error);
+        err.toolResult = result3;
+        throw err;
+      }
+      return result3;
     }
   );
   cleanupScratchpad(sessionId);
@@ -8941,7 +9029,7 @@ ${summary}`;
 function normalizeVerificationCommands(commands) {
   return [...new Set(commands.map((cmd) => cmd.trim()).filter(Boolean))];
 }
-function extractVerificationCommands(task) {
+function extractVerificationCommands2(task) {
   const commands = /* @__PURE__ */ new Set();
   const lines = task.split("\n");
   for (const line of lines) {
@@ -8987,6 +9075,7 @@ var init_agentic_executor = __esm({
     init_oauth_keychain();
     init_openai_oauth();
     init_gemini_oauth();
+    init_cch();
     init_scratchpad();
     init_tool_result_clearing();
     L3_SYSTEM_PROMPT = `You are a senior AI engineer executing coding tasks autonomously.
