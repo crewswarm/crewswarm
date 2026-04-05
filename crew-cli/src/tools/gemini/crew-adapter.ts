@@ -995,7 +995,7 @@ export class GeminiToolAdapter {
 
   private async listTool(params: { path?: string; dir_path?: string }): Promise<ToolResult> {
     const target = (params.path || params.dir_path || '.').trim();
-    const abs = resolve(process.cwd(), target);
+    const abs = resolve(this.sandbox.getBaseDir() || process.cwd(), target);
     const items = await readdir(abs, { withFileTypes: true });
     const lines = items.map(i => `${i.isDirectory() ? 'd' : 'f'} ${i.name}`);
     return { success: true, output: lines.join('\n') };
@@ -1005,7 +1005,7 @@ export class GeminiToolAdapter {
     const pattern = String(params.pattern || '').trim();
     if (!pattern) return { success: false, error: 'glob requires pattern' };
     try {
-      const out = execSync(`rg --files -g ${JSON.stringify(pattern)}`, { cwd: process.cwd(), stdio: 'pipe', encoding: 'utf8' });
+      const out = execSync(`rg --files -g ${JSON.stringify(pattern)}`, { cwd: this.sandbox.getBaseDir() || process.cwd(), stdio: 'pipe', encoding: 'utf8' });
       return { success: true, output: out.trim() };
     } catch (err: unknown) {
       return { success: false, error: errShell(err) || errMsg(err) || 'glob failed' };
@@ -1059,7 +1059,7 @@ export class GeminiToolAdapter {
 
     try {
       const out = execSync(args.join(' '), {
-        cwd: process.cwd(),
+        cwd: this.sandbox.getBaseDir() || process.cwd(),
         stdio: 'pipe',
         encoding: 'utf8'
       });
