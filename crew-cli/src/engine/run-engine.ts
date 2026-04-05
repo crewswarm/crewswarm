@@ -255,8 +255,11 @@ export class RunEngine {
 
           for (const call of batch.calls) {
             // ── Failure memory: check if this would repeat a known failure
+            // Skip blocking for edit tools — read-before-edit rejections are
+            // recoverable (model reads file then retries with same params).
+            const isEditTool = ['edit', 'replace', 'edit_file', 'write_file', 'append_file'].includes(call.tool);
             const wouldRepeat = this.state.wouldRepeatFailure(call.tool, call.params);
-            if (wouldRepeat) {
+            if (wouldRepeat && !isEditTool) {
               const skipMsg = `Skipped: already failed ${wouldRepeat.count}x with same params`;
               history.push({
                 turn: turn + 1,
