@@ -237,7 +237,7 @@ export class UnifiedPipeline {
   private getMaxTurnsForEffort(effort: EffortLevel): number {
     const explicit = Number(process.env.CREW_MAX_TURNS || 0);
     if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.floor(explicit));
-    if (effort === 'low') return 3;
+    if (effort === 'low') return 6;
     if (effort === 'high') return 25;
     return 10;
   }

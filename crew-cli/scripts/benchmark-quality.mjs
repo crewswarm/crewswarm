@@ -211,13 +211,14 @@ function checkTests(dir, verifyCmd) {
 }
 
 function checkDiffSize(dir) {
-  const diff = runCommand('git diff --stat HEAD', dir);
+  // Exclude .crew/ metadata from diff — only count real source changes
+  const diff = runCommand('git diff --stat HEAD -- . ":(exclude).crew"', dir);
   const lines = diff.output.split('\n').filter(l => l.trim());
   const insertions = (diff.output.match(/(\d+) insertion/)?.[1] || '0');
   const deletions = (diff.output.match(/(\d+) deletion/)?.[1] || '0');
   return {
     name: 'diff',
-    filesChanged: lines.length - 1, // last line is summary
+    filesChanged: lines.length > 1 ? lines.length - 1 : 0, // last line is summary
     insertions: Number(insertions),
     deletions: Number(deletions),
     ok: true
