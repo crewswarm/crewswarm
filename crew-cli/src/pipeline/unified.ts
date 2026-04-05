@@ -716,14 +716,23 @@ export class UnifiedPipeline {
       escalationReason = workerResult.stopReason;
     }
 
-    const normalizedAllowedPaths = task.allowedPaths.map(path => normalize(String(path)).replace(/\\/g, '/'));
+    const baseDir = this.sandbox?.getBaseDir() || process.cwd();
+    const normalizedAllowedPaths = task.allowedPaths.map(path => {
+      const p = normalize(String(path)).replace(/\\/g, '/');
+      // Resolve relative allowed paths against baseDir
+      return p.startsWith('/') ? p : normalize(resolve(baseDir, p)).replace(/\\/g, '/');
+    });
     const outOfScopeFiles = filesChanged.filter(file => {
-      const normalizedFile = normalize(String(file)).replace(/\\/g, '/');
-      if (normalizedAllowedPaths.length === 0 || normalizedAllowedPaths.includes('.')) return false;
+      // Resolve relative file paths against baseDir for comparison
+      const absFile = file.startsWith('/') ? file : resolve(baseDir, file);
+      const normalizedFile = normalize(absFile).replace(/\\/g, '/');
+      if (normalizedAllowedPaths.length === 0 || normalizedAllowedPaths.includes('.') || normalizedAllowedPaths.includes(normalize(baseDir).replace(/\\/g, '/'))) return false;
       return !normalizedAllowedPaths.some(allowed => (
         normalizedFile === allowed ||
         normalizedFile.startsWith(`${allowed}/`) ||
-        (allowed.endsWith('/') && normalizedFile.startsWith(allowed))
+        (allowed.endsWith('/') && normalizedFile.startsWith(allowed)) ||
+        // Also check if allowed is a glob pattern covering the file
+        (allowed.endsWith('/**') && normalizedFile.startsWith(allowed.slice(0, -3)))
       ));
     });
     if (outOfScopeFiles.length > 0) {
