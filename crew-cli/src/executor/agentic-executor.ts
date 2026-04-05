@@ -619,6 +619,15 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
   // ── API key providers (fallback when OAuth unavailable) ──
   // If a specific model is requested, find the matching provider
   if (effectiveModel) {
+    // Models with provider/ prefix (e.g. anthropic/claude-sonnet-4.6, qwen/qwen3-coder)
+    // are OpenRouter model slugs — route to OpenRouter directly
+    if (effectiveModel.includes('/') && !effectiveModel.startsWith('accounts/') && !effectiveModel.startsWith('meta/') && !effectiveModel.startsWith('models/')) {
+      const orKey = process.env.OPENROUTER_API_KEY;
+      if (orKey && orKey.length >= 5) {
+        return { key: orKey, model: modelOverride || effectiveModel, driver: 'openrouter', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', id: 'openrouter' };
+      }
+    }
+
     for (const p of PROVIDER_ORDER) {
       const key = process.env[p.envKey];
       if (!key || key.length < 5) continue;
