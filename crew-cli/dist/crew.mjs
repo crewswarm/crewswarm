@@ -8645,10 +8645,14 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
           try {
             const event = JSON.parse(jsonStr);
             if (event.type === "content_block_start") {
+              if (process.env.CREW_DEBUG_SSE) {
+                console.log(`[SSE] block_start idx=${event.index} type=${event.content_block?.type} name=${event.content_block?.name || ""} hasInput=${!!event.content_block?.input}`);
+              }
               if (event.content_block?.type === "tool_use") {
                 toolBlocks.set(event.index, {
                   name: event.content_block.name || "",
-                  inputJson: ""
+                  // Some responses include full input in content_block_start
+                  inputJson: event.content_block.input && typeof event.content_block.input === "object" && Object.keys(event.content_block.input).length > 0 ? JSON.stringify(event.content_block.input) : ""
                 });
               }
             }
@@ -8657,9 +8661,16 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
                 process.stdout.write(event.delta.text);
                 fullText += event.delta.text;
               }
-              if (event.delta?.type === "input_json_delta" && event.delta.partial_json) {
-                const block = toolBlocks.get(event.index);
-                if (block) block.inputJson += event.delta.partial_json;
+              if (event.delta?.type === "input_json_delta") {
+                if (process.env.CREW_DEBUG_SSE) {
+                  console.log(`[SSE] json_delta idx=${event.index} len=${(event.delta.partial_json || "").length} preview=${(event.delta.partial_json || "").slice(0, 60)}`);
+                }
+                if (event.delta.partial_json) {
+                  const block = toolBlocks.get(event.index);
+                  if (block) {
+                    block.inputJson += event.delta.partial_json;
+                  }
+                }
               }
             }
             if (event.type === "message_delta" && event.usage) {
@@ -8674,9 +8685,12 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
     }
     if (fullText) process.stdout.write("\n");
     const toolCalls = [];
-    for (const [, block] of toolBlocks) {
+    for (const [idx, block] of toolBlocks) {
       if (block.name) {
         let params = {};
+        if (process.env.CREW_DEBUG_SSE) {
+          console.log(`[SSE] Parsing tool idx=${idx} name=${block.name} inputJsonLen=${block.inputJson.length} preview=${block.inputJson.slice(0, 100)}`);
+        }
         try {
           params = JSON.parse(repairJson(block.inputJson));
         } catch {
