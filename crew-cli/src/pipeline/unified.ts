@@ -663,17 +663,22 @@ export class UnifiedPipeline {
     }
 
     const baseDir = this.sandbox?.getBaseDir() || process.cwd();
+    const verbose = process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true';
     const contents = new Map();
     for (const relPath of paths) {
       const staged = this.requireSandbox().getStagedContent(relPath);
       if (typeof staged === 'string') {
+        if (verbose) console.log(`[QA-det] ${relPath}: found in sandbox (${staged.length} bytes)`);
         contents.set(relPath, staged);
         continue;
       }
       try {
-        const content = await readFile(resolve(baseDir, relPath), 'utf8');
+        const fullPath = resolve(baseDir, relPath);
+        const content = await readFile(fullPath, 'utf8');
+        if (verbose) console.log(`[QA-det] ${relPath}: found on disk at ${fullPath} (${content.length} bytes)`);
         contents.set(relPath, content);
-      } catch {
+      } catch (err) {
+        if (verbose) console.log(`[QA-det] ${relPath}: NOT FOUND at ${resolve(baseDir, relPath)} — ${(err as Error).message?.slice(0, 80)}`);
         return false;
       }
     }

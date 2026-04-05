@@ -13742,17 +13742,22 @@ ${this.buildExecutionAuditContext(executionResults)}`;
           }
         }
         const baseDir = this.sandbox?.getBaseDir() || process.cwd();
+        const verbose = process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true";
         const contents = /* @__PURE__ */ new Map();
         for (const relPath of paths) {
           const staged = this.requireSandbox().getStagedContent(relPath);
           if (typeof staged === "string") {
+            if (verbose) console.log(`[QA-det] ${relPath}: found in sandbox (${staged.length} bytes)`);
             contents.set(relPath, staged);
             continue;
           }
           try {
-            const content = await readFile14(resolve11(baseDir, relPath), "utf8");
+            const fullPath = resolve11(baseDir, relPath);
+            const content = await readFile14(fullPath, "utf8");
+            if (verbose) console.log(`[QA-det] ${relPath}: found on disk at ${fullPath} (${content.length} bytes)`);
             contents.set(relPath, content);
-          } catch {
+          } catch (err) {
+            if (verbose) console.log(`[QA-det] ${relPath}: NOT FOUND at ${resolve11(baseDir, relPath)} \u2014 ${err.message?.slice(0, 80)}`);
             return false;
           }
         }
