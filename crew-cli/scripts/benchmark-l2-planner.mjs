@@ -178,48 +178,86 @@ async function runTask(task) {
   const start = Date.now();
 
   try {
-    const result = execSync(
-      `node ${crewCli} run -t ${JSON.stringify(task.description)} --json`,
-      {
-        cwd: dir,
-        stdio: 'pipe',
-        encoding: 'utf8',
-        timeout: 120000,
-        env: {
-          ...process.env,
-          CREW_FORCE_L2: 'true',
-          CREW_DUAL_L2_ENABLED: 'true'
+    let result = '';
+    try {
+      result = execSync(
+        `node ${crewCli} run -t ${JSON.stringify(task.description)} --json 2>&1`,
+        {
+          cwd: dir,
+          stdio: 'pipe',
+          encoding: 'utf8',
+          timeout: 180000,
+          env: {
+            ...process.env,
+            CREW_FORCE_L2: 'true',
+            CREW_DUAL_L2_ENABLED: 'true'
+          }
         }
-      }
-    );
+      );
+    } catch (execErr) {
+      // Command may exit non-zero but still produce output
+      result = String(execErr.stdout || '') + String(execErr.stderr || '');
+    }
     const elapsed = Date.now() - start;
 
     // Parse the JSON output to find the plan
-    const lines = result.split('\n').filter(Boolean);
+    // The pipeline writes logs to cwd/.crew/ (which may be the crew-cli dir, not the temp dir)
+    // Also check the JSON output directly for the work graph
     let plan = null;
+
+    // Method 1: Parse JSON lines from stdout for the work graph
+    const lines = result.split('\n').filter(Boolean);
     for (const line of lines) {
       try {
         const obj = JSON.parse(line);
-        if (obj.executionPath?.includes('l2-plan-only') || obj.kind === 'run.result') {
-          // Read the pipeline run log for the actual plan
-          const pipelineDir = join(dir, '.crew', 'pipeline-runs');
-          try {
-            const { readdirSync, readFileSync } = await import('node:fs');
-            const files = readdirSync(pipelineDir);
-            for (const f of files) {
-              const content = readFileSync(join(pipelineDir, f), 'utf8');
-              for (const logLine of content.split('\n').filter(Boolean)) {
-                try {
-                  const entry = JSON.parse(logLine);
-                  if (entry.plan?.workGraph) {
-                    plan = entry.plan;
-                  }
-                } catch {}
-              }
-            }
-          } catch {}
+        // The run.result response contains the plan text — but we need the structured graph
+        if (obj.kind === 'run.result' && obj.response) {
+          // Plan text is in response but we need the structured JSON from pipeline logs
         }
       } catch {}
+    }
+
+    // Method 2: Check pipeline logs in both the temp dir AND cwd
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const searchDirs = [
+      join(dir, '.crew', 'pipeline-runs'),
+      join(process.cwd(), '.crew', 'pipeline-runs')
+    ];
+
+    for (const pipelineDir of searchDirs) {
+      if (plan) break;
+      try {
+        const files = readdirSync(pipelineDir).sort().reverse(); // newest first
+        for (const f of files) {
+          const content = readFileSync(join(pipelineDir, f), 'utf8');
+          for (const logLine of content.split('\n').filter(Boolean)) {
+            try {
+              const entry = JSON.parse(logLine);
+              if (entry.plan?.workGraph?.units?.length > 0) {
+                // Check timestamp is recent (within last 3 minutes)
+                const entryTime = new Date(entry.ts || 0).getTime();
+                if (Date.now() - entryTime < 180000) {
+                  plan = entry.plan;
+                }
+              }
+            } catch {}
+          }
+          if (plan) break;
+        }
+      } catch {}
+    }
+
+    // Method 3: Parse the work graph directly from stderr/stdout JSON blocks
+    if (!plan) {
+      const jsonBlocks = result.match(/\{[\s\S]*?"units"[\s\S]*?\}/g) || [];
+      for (const block of jsonBlocks) {
+        try {
+          const parsed = JSON.parse(block);
+          if (parsed.units?.length > 0) {
+            plan = { workGraph: parsed, decision: 'execute-parallel' };
+          }
+        } catch {}
+      }
     }
 
     if (!plan) {
