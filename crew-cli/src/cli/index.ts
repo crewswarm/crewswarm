@@ -657,7 +657,7 @@ export async function main(args = []) {
     const swarmCfgPath = join(homedir(), '.crewswarm', 'crewswarm.json');
     if (existsSync(swarmCfgPath)) {
       const swarmCfg = JSON.parse(await readFile(swarmCfgPath, 'utf8'));
-      const providerEnvMap = {
+      const providerEnvMap: Record<string, string> = {
         openai: "OPENAI_API_KEY",
         anthropic: "ANTHROPIC_API_KEY",
         xai: "XAI_API_KEY",
@@ -670,6 +670,11 @@ export async function main(args = []) {
         perplexity: "PERPLEXITY_API_KEY",
         cerebras: "CEREBRAS_API_KEY",
         openrouter: "OPENROUTER_API_KEY",
+        nvidia: "NVIDIA_API_KEY",
+        fireworks: "FIREWORKS_API_KEY",
+        together: "TOGETHER_API_KEY",
+        huggingface: "HF_API_KEY",
+        greptile: "GREPTILE_API_KEY",
       };
       if (swarmCfg.env && typeof swarmCfg.env === 'object') {
         for (const [k, v] of Object.entries(swarmCfg.env)) {
