@@ -76,6 +76,26 @@ const SPAWN_AGENT_PARAMS_SCHEMA = {
 let _globalSpawnDepth = 0;
 const MAX_SPAWN_DEPTH = 3;
 
+function extractVerificationCommands(task: string): string[] {
+  const commands = new Set<string>();
+  for (const line of String(task || '').split('\n')) {
+    const trimmed = line.trim();
+    const explicit = trimmed.match(/^(?:[-*]\s*)?(?:run|execute)\s+(.+)$/i);
+    if (explicit?.[1] && looksLikeCommand(explicit[1].trim())) {
+      commands.add(explicit[1].trim());
+    }
+    for (const match of trimmed.matchAll(/`([^`]+)`/g)) {
+      const command = match[1]?.trim();
+      if (command && looksLikeCommand(command)) commands.add(command);
+    }
+  }
+  return [...commands];
+}
+
+function looksLikeCommand(value: string): boolean {
+  return /^(npm|pnpm|yarn|bun|node|pytest|jest|vitest|cargo|go|make|\.\/|bash|sh)\b/.test(value);
+}
+
 // ---------------------------------------------------------------------------
 // Invocation
 // ---------------------------------------------------------------------------
@@ -141,6 +161,8 @@ class SpawnAgentToolInvocation extends BaseToolInvocation<SpawnAgentToolParams, 
         verbose: Boolean(process.env.CREW_DEBUG),
         tier: 'fast',           // Use cheap model tier for sub-agents
         constraintLevel: 'edit', // Sub-agents are edit-level by default
+        projectDir: this.sandbox.getBaseDir?.() || process.cwd(),
+        verificationCommands: extractVerificationCommands(task),
       });
 
       // Merge sub-agent branch back to parent if branching is supported
