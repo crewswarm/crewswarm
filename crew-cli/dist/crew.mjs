@@ -15056,8 +15056,19 @@ ${task.goal}` : task.goal;
           persona: task.persona,
           verificationCommands
         });
+        if (process.env.CREW_DEBUG_PIPELINE) {
+          console.log(`[Pipeline] L3 result: success=${result2.success} turns=${result2.turns} historyLen=${result2.history?.length ?? 0} tools=${result2.toolsUsed?.join(",")}`);
+          if (result2.history) {
+            for (const h of result2.history.slice(0, 5)) {
+              console.log(`[Pipeline]   [T${h.turn}] ${h.tool}(${(h.params?.file_path || h.params?.command || "").toString().slice(0, 40)}) ${h.error ? "ERR" : "ok"}`);
+            }
+          }
+        }
         const parsed = this.parseWorkerOutput(String(result2.output || ""));
         const built = this.buildWorkerExecutionResult(task, parsed, result2);
+        if (process.env.CREW_DEBUG_PIPELINE) {
+          console.log(`[Pipeline] Built: filesChanged=${built.filesChanged.join(",")} shellResults=${built.shellResults.length} verificationPassed=${built.verificationPassed} escalation=${built.escalationNeeded} reason=${built.escalationReason || "none"}`);
+        }
         return this.reviewAndFixWorkerResult(task, built, traceId, context, sessionId);
       }
       /**

@@ -2271,8 +2271,19 @@ Return ONLY valid JSON:
       verificationCommands
     });
 
+    if (process.env.CREW_DEBUG_PIPELINE) {
+      console.log(`[Pipeline] L3 result: success=${result.success} turns=${result.turns} historyLen=${result.history?.length ?? 0} tools=${result.toolsUsed?.join(',')}`);
+      if (result.history) {
+        for (const h of result.history.slice(0, 5)) {
+          console.log(`[Pipeline]   [T${h.turn}] ${h.tool}(${(h.params?.file_path || h.params?.command || '').toString().slice(0, 40)}) ${h.error ? 'ERR' : 'ok'}`);
+        }
+      }
+    }
     const parsed = this.parseWorkerOutput(String(result.output || ''));
     const built = this.buildWorkerExecutionResult(task, parsed, result);
+    if (process.env.CREW_DEBUG_PIPELINE) {
+      console.log(`[Pipeline] Built: filesChanged=${built.filesChanged.join(',')} shellResults=${built.shellResults.length} verificationPassed=${built.verificationPassed} escalation=${built.escalationNeeded} reason=${built.escalationReason || 'none'}`);
+    }
     return this.reviewAndFixWorkerResult(task, built, traceId, context, sessionId);
   }
 
