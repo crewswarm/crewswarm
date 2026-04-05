@@ -173,6 +173,13 @@ export class DualL2Planner {
 
     const paths = this.extractAllowedPaths(task);
     const narrowIntent = /(create|write|update|modify|edit|add|fix|rename)\b/.test(text);
+
+    // Multi-step creation tasks need decomposition even if few paths
+    // "create X ... also create Y" or "create X ... add tests" = 2+ deliverables
+    const multiDeliverable = /(also create|also add|and create|and add|then create|then add)/i.test(text);
+    const multiBug = /(two bugs|both bugs|multiple bugs|bug.*and.*bug|\(1\).*\(2\))/i.test(text);
+    if (multiDeliverable || multiBug) return false;
+
     return narrowIntent && paths.length > 0 && paths.length <= 3;
   }
 
