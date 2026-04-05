@@ -2168,7 +2168,15 @@ export async function runAgenticWorker(
       };
     },
     async (name, params) => {
-      return await executeTool(name, params);
+      const result = await executeTool(name, params);
+      // RunEngine expects executeTool to throw on failure so it can
+      // record failures and block repeated bad moves
+      if (!result.success && result.error) {
+        const err = new Error(result.error);
+        (err as Error & { toolResult: unknown }).toolResult = result;
+        throw err;
+      }
+      return result;
     }
   );
 
