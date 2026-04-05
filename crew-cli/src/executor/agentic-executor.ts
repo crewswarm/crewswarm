@@ -646,6 +646,18 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
         return { key, model: modelOverride || process.env.CREW_EXECUTION_MODEL || p.model, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
       }
     }
+
+    // No prefix match — try any OpenAI-compatible provider with the requested model name.
+    // This handles cases like kimi-k2-instruct on Groq where the model exists on the
+    // provider but our modelPrefix doesn't match. Send the model name as-is and let
+    // the provider reject if it doesn't support it.
+    for (const p of PROVIDER_ORDER) {
+      const key = process.env[p.envKey];
+      if (!key || key.length < 5) continue;
+      if (p.driver === 'openai' || p.driver === 'openrouter') {
+        return { key, model: modelOverride || effectiveModel, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
+      }
+    }
   }
 
   // Tier-based routing
