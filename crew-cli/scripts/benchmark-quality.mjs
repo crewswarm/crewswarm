@@ -82,8 +82,9 @@ export function clamp(value: number, min: number, max: number): number {
   return value;
 }
 
+// BUG: does not collapse consecutive hyphens — slugify("hello---world") returns "hello---world"
 export function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return text.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/^-|-$/g, '');
 }
 
 export function truncate(str: string, length: number): string {
@@ -133,6 +134,7 @@ assert('clamp(-5,0,10)=0', clamp(-5, 0, 10) === 0);
 assert('clamp(15,0,10)=10', clamp(15, 0, 10) === 10);
 assert('clamp(5,0,10)=5', clamp(5, 0, 10) === 5);
 assert('slugify(Hello World!)=hello-world', slugify('Hello World!') === 'hello-world');
+assert('slugify(hello---world)=hello-world', slugify('hello---world') === 'hello-world');
 assert('truncate(hello,3)=hel...', truncate('hello', 3) === 'hel...');
 assert('truncate(hi,5)=hi', truncate('hi', 5) === 'hi');
 
@@ -173,9 +175,34 @@ const TASKS = [
     id: 'refactor-rename-clamp',
     description: 'Rename the clamp function in src/utils.ts to clampValue. Update the export and update test/utils.test.ts to use the new name. All tests must still pass.',
     verify: 'node --experimental-strip-types test/utils.test.ts',
-    expectPass: 6,
+    expectPass: 7,
     expectFiles: ['src/utils.ts', 'test/utils.test.ts'],
     difficulty: 'medium'
+  },
+  // ── Hard tier: multi-file, requires planning ──
+  {
+    id: 'multi-file-calculator',
+    description: 'Create a new file src/calculator.ts that imports add, subtract, multiply, divide from src/math.ts and exports an evaluate(expr: string) function that parses simple expressions like "2 + 3" or "10 / 5" (operands separated by spaces) and returns the numeric result. It should throw an Error for unknown operators. Also create test/calculator.test.ts with tests for +, -, *, /, unknown operator error, and division by zero error. Fix the divide-by-zero bug in src/math.ts first so the test passes. Run all tests.',
+    verify: 'node --experimental-strip-types test/calculator.test.ts',
+    expectPass: 6,
+    expectFiles: ['src/calculator.ts', 'test/calculator.test.ts', 'src/math.ts'],
+    difficulty: 'hard'
+  },
+  {
+    id: 'multi-file-extract-module',
+    description: 'Extract the slugify function from src/utils.ts into a new file src/slugify.ts. The new file should export slugify. Remove slugify from src/utils.ts and add a re-export: export { slugify } from "./slugify.ts". Update test/utils.test.ts to also import from src/slugify.ts directly and add a test that slugify("  Lots   of   Spaces  ") === "lots-of-spaces". All existing tests must still pass. Run the tests.',
+    verify: 'node --experimental-strip-types test/utils.test.ts',
+    expectPass: 7,
+    expectFiles: ['src/slugify.ts', 'src/utils.ts', 'test/utils.test.ts'],
+    difficulty: 'hard'
+  },
+  {
+    id: 'bugfix-chain',
+    description: 'There are two bugs to fix across two files: (1) divide in src/math.ts returns Infinity on division by zero — it should throw an Error, and (2) slugify in src/utils.ts does not collapse consecutive hyphens — slugify("hello---world") returns "hello---world" instead of "hello-world" (the regex replace needs a + quantifier on the character class). Fix both bugs, then run npm run test:all to verify both test suites pass.',
+    verify: 'npm run test:all',
+    expectPass: 13,
+    expectFiles: ['src/math.ts', 'src/utils.ts'],
+    difficulty: 'hard'
   }
 ];
 
