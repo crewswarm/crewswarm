@@ -92,7 +92,8 @@ const SLASH_COMMAND_GROUPS: Array<{ title: string; commands: string[] }> = [
   { title: 'Model & Engine', commands: ['/stack', '/engine', '/engines', '/mode'] },
   { title: 'Sandbox', commands: ['/preview', '/apply', '/rollback', '/branch', '/branches'] },
   { title: 'Runtime', commands: ['/tools', '/trace', '/timeline', '/cost', '/system', '/permissions'] },
-  { title: 'Context', commands: ['/image', '/search', '/recall', '/sessions', '/resume', '/skills'] }
+  { title: 'Context', commands: ['/image', '/search', '/recall', '/sessions', '/resume', '/skills'] },
+  { title: 'Agents', commands: ['/summon'] }
 ];
 
 interface ModelSummary {
@@ -1443,6 +1444,78 @@ export async function startRepl(options: ReplOptions): Promise<void> {
         if (taskStr) console.log(chalk.gray(`  ${taskStr.slice(0, 80)}${taskStr.length > 80 ? '...' : ''}`));
       });
       console.log();
+      return true;
+    }
+
+    if (command === '/recall') {
+      const query = args.join(' ').trim();
+      if (!query) {
+        console.log(chalk.yellow('\n  Usage: /recall <search query>\n  Search across past conversations and routing history.\n'));
+        return true;
+      }
+      try {
+        const { recallSearch, buildRecallContext } = await import('../engine/chat-recall.js');
+        const result = await recallSearch(query, projectDir);
+        if (result.entries.length === 0) {
+          console.log(chalk.yellow(`\n  No matches for "${query}" (searched ${result.totalSearched} entries)\n`));
+        } else {
+          console.log(chalk.blue(`\n--- Recall: "${query}" (${result.entries.length}/${result.totalSearched} matches) ---\n`));
+          for (const entry of result.entries.slice(0, 10)) {
+            const date = entry.timestamp?.split('T')[0] || '?';
+            const score = (entry.score * 100).toFixed(0);
+            console.log(`  ${chalk.gray(`[${date}]`)} ${chalk.cyan(`${score}%`)} ${entry.input?.slice(0, 80) || '(no input)'}`);
+            if (entry.output) console.log(chalk.gray(`    → ${entry.output.slice(0, 60)}`));
+          }
+          console.log();
+        }
+      } catch (err) {
+        console.log(chalk.red(`\n  Recall error: ${(err as Error).message}\n`));
+      }
+      return true;
+    }
+
+    if (command === '/summon') {
+      const persona = args[0];
+      const task = args.slice(1).join(' ').trim();
+      if (!persona || !task) {
+        try {
+          const { listPersonas } = await import('../engine/summon.js');
+          const personas = listPersonas();
+          console.log(chalk.blue('\n--- Available Personas ---\n'));
+          for (const p of personas) {
+            console.log(`  ${chalk.cyan(p.id.padEnd(20))} ${p.name} (max ${p.defaultMaxTurns} turns)`);
+          }
+          console.log(chalk.gray('\n  Usage: /summon <persona> <task>\n  Example: /summon crew-qa write tests for src/auth.ts\n'));
+        } catch {}
+        return true;
+      }
+      try {
+        const { getPersona, buildSummonPrompt, filterToolsForPersona } = await import('../engine/summon.js');
+        const personaConfig = getPersona(persona);
+        if (!personaConfig) {
+          console.log(chalk.red(`\n  Unknown persona: ${persona}\n`));
+          return true;
+        }
+        console.log(chalk.blue(`\n  Summoning ${chalk.cyan(personaConfig.name)} for: ${task.slice(0, 60)}...\n`));
+        const { runAgenticWorker } = await import('../executor/agentic-executor.js');
+        const personaPrompt = buildSummonPrompt('', personaConfig);
+        const result = await runAgenticWorker(task, sandbox, {
+          systemPrompt: personaPrompt,
+          maxTurns: personaConfig.defaultMaxTurns,
+          projectDir,
+          stream: true,
+          persona: personaConfig.id
+        });
+        if (sandbox.hasChanges()) {
+          console.log(chalk.yellow('\n  Changes staged. Use /preview to review, /apply to write to disk.\n'));
+        }
+        if (result.output) {
+          logger.printWithHighlight(result.output);
+        }
+        console.log(chalk.gray(`\n  ${personaConfig.name}: ${result.success ? 'done' : 'failed'} in ${result.turns} turns\n`));
+      } catch (err) {
+        console.log(chalk.red(`\n  Summon error: ${(err as Error).message}\n`));
+      }
       return true;
     }
 
