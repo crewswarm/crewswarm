@@ -34,6 +34,8 @@ import { ExecutionTranscript } from '../execution/transcript.js';
 import { buildTaskModeGuidance, detectTaskMode } from '../execution/agentic-guidance.js';
 import { PatchCritic } from '../engine/patch-critic.js';
 import { StructuredHistory } from '../engine/structured-history.js';
+import { filterToolsForTask, describeFiltering } from '../engine/tool-filter.js';
+import { loadTopOfMind } from '../engine/top-of-mind.js';
 import { getOAuthToken, forceRefreshOAuthToken } from '../auth/oauth-keychain.js';
 import { getOpenAIOAuthToken, forceRefreshOpenAIOAuth, OPENAI_CODEX_API_URL } from '../auth/openai-oauth.js';
 import { getGeminiOAuthToken, forceRefreshGeminiOAuth } from '../auth/gemini-oauth.js';
@@ -2088,11 +2090,17 @@ export async function runAgenticWorker(
   const constraintLevel = options.constraintLevel
     || (options.persona ? constraintLevelForPersona(options.persona) : 'full');
   const adapter = new GeminiToolAdapter(sandbox, constraintLevel);
-  const allTools = adapter.getToolDeclarations() as ToolDeclaration[];
+  const rawTools = adapter.getToolDeclarations() as ToolDeclaration[];
+  // Auto-filter tools based on task domains (reduces context, improves accuracy)
+  const toolFilterEnabled = process.env.CREW_TOOL_FILTER !== 'false';
+  const allTools = toolFilterEnabled ? filterToolsForTask(rawTools, task) : rawTools;
   const model = options.model || process.env.CREW_EXECUTION_MODEL || '';
   const maxTurns = options.maxTurns ?? 25;
   const projectDir = options.projectDir || sandbox.getBaseDir() || process.cwd();
   const verbose = options.verbose ?? Boolean(process.env.CREW_DEBUG);
+  if (verbose && toolFilterEnabled && allTools.length < rawTools.length) {
+    console.log(describeFiltering(task, rawTools.length, allTools.length));
+  }
 
   // Adaptive weights: load trajectory feedback from autoharness (once per process)
   if (!(globalThis as Record<string, unknown>).__crewAdaptiveWeightsLoaded) {
@@ -2113,11 +2121,13 @@ export async function runAgenticWorker(
   const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const scratchDir = createScratchpad(sessionId);
   const baseSystemPrompt = options.systemPrompt || L3_SYSTEM_PROMPT;
-  // Append scratchpad instructions + tool-result clearing notice to system prompt
+  // Append scratchpad instructions + tool-result clearing notice + top-of-mind
+  const topOfMind = await loadTopOfMind(projectDir);
   const systemPrompt =
     baseSystemPrompt +
     getScratchpadInstructions(scratchDir) +
-    TOOL_RESULT_CLEARING_PROMPT;
+    TOOL_RESULT_CLEARING_PROMPT +
+    topOfMind;
   const stream = options.stream ?? !process.env.CREW_NO_STREAM; // Stream by default
   const jit = options.priorDiscoveredFiles?.length
     ? JITContextTracker.fromPrior(options.priorDiscoveredFiles)

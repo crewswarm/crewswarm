@@ -6,6 +6,10 @@
  * StructuredHistory: rich turn-by-turn state preservation across layers
  * PatchCritic: per-turn code change quality evaluation
  * DelegationTuner: persona/model selection based on task + history
+ * ToolFilter: auto-filter tools based on task domains
+ * TopOfMind: persistent instructions injected into every turn
+ * ChatRecall: semantic search across conversation history
+ * Summon: runtime sub-agent delegation with persona switching
  */
 
 export { RunState } from './run-state.js';
@@ -51,3 +55,14 @@ export type {
   TaskType,
   PerformanceRecord
 } from './delegation.js';
+
+export { filterToolsForTask, detectTaskDomains, describeFiltering } from './tool-filter.js';
+export type { TaskDomain } from './tool-filter.js';
+
+export { loadTopOfMind, clearTopOfMindCache } from './top-of-mind.js';
+
+export { recallSearch, buildRecallContext } from './chat-recall.js';
+export type { RecallEntry, RecallResult } from './chat-recall.js';
+
+export { getPersona, listPersonas, buildSummonPrompt, filterToolsForPersona } from './summon.js';
+export type { PersonaConfig, SummonOptions, SummonResult } from './summon.js';
