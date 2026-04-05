@@ -980,7 +980,10 @@ async function executeStreamingOpenAITurn(
     'run_shell_command', 'grep_search', 'list_directory',
     'append_file', 'mkdir'
   ]);
-  const effectiveTools = isCodexResponses
+  // Apply tool filtering for Codex Responses API and any GPT-5+ model via OpenRouter/Chat Completions
+  const isGPT5Plus = model && (/gpt-5|gpt-6/i.test(model) || /o3|o4/i.test(model));
+  const shouldFilterTools = isCodexResponses || (isGPT5Plus && tools.length > 10);
+  const effectiveTools = shouldFilterTools
     ? tools.filter(t => CODEX_CORE_TOOLS.has(t.name))
     : tools;
   const openaiTools = effectiveTools.map(t => ({

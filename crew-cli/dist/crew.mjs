@@ -8277,7 +8277,9 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
     "append_file",
     "mkdir"
   ]);
-  const effectiveTools = isCodexResponses ? tools.filter((t) => CODEX_CORE_TOOLS.has(t.name)) : tools;
+  const isGPT5Plus = model && (/gpt-5|gpt-6/i.test(model) || /o3|o4/i.test(model));
+  const shouldFilterTools = isCodexResponses || isGPT5Plus && tools.length > 10;
+  const effectiveTools = shouldFilterTools ? tools.filter((t) => CODEX_CORE_TOOLS.has(t.name)) : tools;
   const openaiTools = effectiveTools.map((t) => ({
     type: "function",
     ...isCodexResponses ? { name: t.name, description: t.description, parameters: t.parameters } : { function: { name: t.name, description: t.description, parameters: t.parameters } }
