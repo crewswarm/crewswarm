@@ -8425,8 +8425,12 @@ ${historyContext}` : fullTask
     const toolCalls = toolCallsRaw.map((tc) => {
       let params = {};
       try {
-        params = JSON.parse(repairJson(tc.function?.arguments || "{}"));
+        params = JSON.parse(tc.function?.arguments || "{}");
       } catch {
+        try {
+          params = JSON.parse(repairJson(tc.function?.arguments || "{}"));
+        } catch {
+        }
       }
       return { tool: tc.function?.name || "", params };
     });
@@ -8511,8 +8515,12 @@ async function streamOpenAIResponsesOAuthTurn(res) {
     if (!tc.name) continue;
     let params = {};
     try {
-      params = JSON.parse(repairJson(tc.args));
+      params = JSON.parse(tc.args);
     } catch {
+      try {
+        params = JSON.parse(repairJson(tc.args));
+      } catch {
+      }
     }
     toolCalls.push({ tool: tc.name, params });
   }

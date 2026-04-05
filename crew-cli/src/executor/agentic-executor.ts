@@ -1145,7 +1145,8 @@ async function executeStreamingOpenAITurn(
   if (toolCallsRaw && toolCallsRaw.length > 0) {
     const toolCalls = (toolCallsRaw as OpenAIToolCall[]).map((tc) => {
       let params: Record<string, unknown> = {};
-      try { params = JSON.parse(repairJson(tc.function?.arguments || '{}')); } catch {}
+      // Parse raw first — repairJson corrupts code strings containing `: type`
+      try { params = JSON.parse(tc.function?.arguments || '{}'); } catch { try { params = JSON.parse(repairJson(tc.function?.arguments || '{}')); } catch {} }
       return { tool: tc.function?.name || '', params };
     });
     return { toolCalls, response: msg?.content || '', cost: 0 };
@@ -1243,11 +1244,8 @@ async function streamOpenAIResponsesOAuthTurn(res: Response): Promise<LLMTurnRes
   for (const [, tc] of toolCallsById) {
     if (!tc.name) continue;
     let params: Record<string, unknown> = {};
-    try {
-      params = JSON.parse(repairJson(tc.args));
-    } catch {
-      // Keep empty params if the provider returned malformed JSON.
-    }
+    // Parse raw first — repairJson corrupts code strings containing `: type`
+    try { params = JSON.parse(tc.args); } catch { try { params = JSON.parse(repairJson(tc.args)); } catch {} }
     toolCalls.push({ tool: tc.name, params });
   }
 
