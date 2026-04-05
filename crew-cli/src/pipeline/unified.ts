@@ -1857,16 +1857,20 @@ If output has blockers, set approved=false.`,
           qaApproved = true;
           qaRounds = 0;
           executionPath.push('l3-qa-approved-deterministic');
-        } else if (this.qaLoopEnabled()) {
-          executionPath.push('l3-qa-gate');
-          const qaLoop = await this.runQaFixerLoop(response, traceId, executionResults, sessionId);
-          response = qaLoop.response;
-          totalCost += qaLoop.addedCost;
-          qaRounds = qaLoop.rounds;
-          qaApproved = qaLoop.approved;
-          executionPath.push(qaLoop.approved ? 'l3-qa-approved' : 'l3-qa-rejected');
-          if (!qaLoop.approved) {
-            throw new Error(`QA gate failed after ${qaLoop.rounds} rounds. ${qaLoop.lastSummary || ''}`.trim());
+        } else {
+          // Deterministic gate rejected — mark as not approved
+          qaApproved = false;
+          if (this.qaLoopEnabled()) {
+            executionPath.push('l3-qa-gate');
+            const qaLoop = await this.runQaFixerLoop(response, traceId, executionResults, sessionId);
+            response = qaLoop.response;
+            totalCost += qaLoop.addedCost;
+            qaRounds = qaLoop.rounds;
+            qaApproved = qaLoop.approved;
+            executionPath.push(qaLoop.approved ? 'l3-qa-approved' : 'l3-qa-rejected');
+            if (!qaLoop.approved) {
+              throw new Error(`QA gate failed after ${qaLoop.rounds} rounds. ${qaLoop.lastSummary || ''}`.trim());
+            }
           }
         }
       }
