@@ -267,6 +267,9 @@ async function runTask(task, model, envOverrides = {}) {
   const dir = await mkdtemp(join(tmpdir(), `crew-quality-${task.id}-`));
   await seedFixture(dir);
 
+  // Capture baseline regression state BEFORE agent runs
+  const baselineRegression = checkUtilsUnbroken(dir);
+
   // Verify fixture: tests should fail before fix (for bugfix tasks)
   if (task.id.startsWith('bugfix')) {
     const before = checkTests(dir, task.verify);
@@ -298,7 +301,12 @@ async function runTask(task, model, envOverrides = {}) {
     const typecheck = checkTypeScript(dir);
     const tests = checkTests(dir, task.verify);
     const diff = checkDiffSize(dir);
-    const noRegression = checkUtilsUnbroken(dir);
+    const afterRegression = checkUtilsUnbroken(dir);
+    // Only count as regression if the model made things WORSE than baseline
+    const noRegression = {
+      ...afterRegression,
+      ok: afterRegression.passes >= baselineRegression.passes
+    };
 
     // Debug: show individual test results when not all pass
     if (!tests.ok && process.env.CREW_BENCH_VERBOSE) {
