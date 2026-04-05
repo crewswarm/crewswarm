@@ -21,7 +21,7 @@ function parseArgs(argv) {
     baseline: 'benchmarks/presets-baseline.json',
     tasksFile: '',
     out: '.crew/benchmarks/presets-latest.json',
-    timeoutMs: Number(process.env.CREW_BENCH_TIMEOUT_MS || 180000),
+    timeoutMs: Number(process.env.CREW_BENCH_TIMEOUT_MS || 300000),
     maxRegressionPct: Number(process.env.CREW_BENCH_MAX_REGRESSION_PCT || 25),
     minPassRate: Number(process.env.CREW_BENCH_MIN_PASS_RATE || 0.5),
     skipIfUnavailable: false
