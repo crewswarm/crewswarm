@@ -9075,7 +9075,8 @@ ${summary}`;
     },
     async (name, params) => {
       const result3 = await executeTool(name, params);
-      if (!result3.success && result3.error) {
+      const READ_ONLY = /* @__PURE__ */ new Set(["read_file", "read_many_files", "list_directory", "glob", "grep_search", "grep", "list", "lsp", "get_internal_docs", "tool_search"]);
+      if (!result3.success && result3.error && !READ_ONLY.has(name)) {
         const err = new Error(result3.error);
         err.toolResult = result3;
         throw err;

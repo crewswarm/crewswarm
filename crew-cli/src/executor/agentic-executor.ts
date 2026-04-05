@@ -2244,8 +2244,11 @@ export async function runAgenticWorker(
     async (name, params) => {
       const result = await executeTool(name, params);
       // RunEngine expects executeTool to throw on failure so it can
-      // record failures and block repeated bad moves
-      if (!result.success && result.error) {
+      // record failures and block repeated bad moves.
+      // Only throw for write/shell failures — read-only failures (ENOENT etc.)
+      // are normal exploration and shouldn't count as real failures.
+      const READ_ONLY = new Set(['read_file', 'read_many_files', 'list_directory', 'glob', 'grep_search', 'grep', 'list', 'lsp', 'get_internal_docs', 'tool_search']);
+      if (!result.success && result.error && !READ_ONLY.has(name)) {
         const err = new Error(result.error);
         (err as Error & { toolResult: unknown }).toolResult = result;
         throw err;
