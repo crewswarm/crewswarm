@@ -9028,6 +9028,9 @@ ${summary}`;
       };
     },
     async (name, params) => {
+      if (process.env.CREW_DEBUG_SSE) {
+        console.log(`[Callback] executeTool name=${name} paramsKeys=${Object.keys(params || {}).join(",")} paramStr=${JSON.stringify(params).slice(0, 100)}`);
+      }
       const result3 = await executeTool(name, params);
       if (!result3.success && result3.error) {
         const err = new Error(result3.error);
