@@ -207,8 +207,27 @@ export class RunEngine {
       lastResponseText = response!.response;
       finalResponse = response!.response;
 
-      // ── Completion check with verification gate ─────────────────
+      // ── Completion check with verification gate + edit gate ─────
       if (!response!.toolCalls || response!.toolCalls.length === 0) {
+        // Edit gate: for mutation tasks, force the model to actually write files
+        const isMutationMode = taskMode === 'bugfix' || taskMode === 'feature' || taskMode === 'refactor' || taskMode === 'test_repair';
+        const hasEdited = history.some(h => !h.error && (
+          h.tool === 'write_file' || h.tool === 'replace' || h.tool === 'edit' ||
+          h.tool === 'append_file' || h.tool === 'notebook_edit'
+        ));
+        if (isMutationMode && !hasEdited && verificationGateTurnsUsed < maxVerificationGateTurns) {
+          verificationGateTurnsUsed++;
+          this.state.addPhaseNote('Edit gate: model attempted completion without editing any files');
+          pendingContext = [
+            '## STOP — you have not made any changes yet',
+            'You indicated completion but did not use write_file, replace, or edit to modify any files.',
+            'You MUST use a file-editing tool to make the required changes. Do not just describe the fix — apply it.',
+            'Use replace or write_file to modify the file, then verify with a test or build command.'
+          ].join('\n');
+          continue; // force another turn
+        }
+
+        // Verification gate: force proof of work
         const unprovenGoal = this.state.nextUnprovenGoal();
         if (unprovenGoal && verificationGateTurnsUsed < maxVerificationGateTurns) {
           // Hard gate: don't stop — force verification

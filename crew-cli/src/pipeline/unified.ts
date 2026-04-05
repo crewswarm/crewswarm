@@ -662,12 +662,25 @@ export class UnifiedPipeline {
     if (paths.length === 0) return false;
 
     const baseDir = this.sandbox?.getBaseDir() || process.cwd();
-
-    // FILESYSTEM FIRST: check if the expected files exist with correct content.
-    // This is the ground truth — regardless of what tool history says, if the
-    // files are on disk and correct, the task succeeded. This handles models
-    // that write via shell commands (run_cmd) which don't appear in filesChanged.
     const verbose = process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true';
+    const taskText = String(request.userInput || '');
+    const isMutationTask = /(fix|bug|update|modify|edit|refactor|rename|change|replace|repair)/i.test(taskText);
+
+    // For mutation tasks (bugfix, refactor, etc.), the model MUST have actually changed files.
+    // Don't let a model pass by just reading the pre-existing fixture.
+    if (isMutationTask && executionResults?.results?.length) {
+      const anyFilesChanged = executionResults.results.some(result =>
+        Array.isArray(result.filesChanged) && result.filesChanged.length > 0
+      );
+      const anyVerificationPassed = executionResults.results.some(result => result.verificationPassed);
+      if (!anyFilesChanged && !anyVerificationPassed) {
+        if (verbose) console.log(`[QA-det] Mutation task but no files changed and no verification — rejecting`);
+        return false;
+      }
+    }
+
+    // FILESYSTEM CHECK: verify expected files exist with correct content.
+    // This is ground truth for file-creation tasks and confirms mutations landed.
     const contents = new Map();
     for (const relPath of paths) {
       const staged = this.requireSandbox().getStagedContent(relPath);
@@ -687,7 +700,20 @@ export class UnifiedPipeline {
       }
     }
 
-    const taskText = String(request.userInput || '');
+    // For bugfix tasks targeting specific files, verify the bug is actually fixed
+    if (isMutationTask) {
+      for (const relPath of paths) {
+        const content = String(contents.get(relPath) || '');
+        // Bugfix: divide-by-zero — must have a throw/error guard
+        if (relPath.endsWith('math.ts') && /divid/i.test(taskText) && /zero/i.test(taskText)) {
+          if (!/throw\s+new\s+Error/i.test(content) && !/if\s*\(\s*b\s*===?\s*0\s*\)/.test(content)) {
+            if (verbose) console.log(`[QA-det] ${relPath}: bugfix not applied — no division-by-zero guard found`);
+            return false;
+          }
+        }
+      }
+    }
+
     const exactLines = [...taskText.matchAll(/"([^"]+)"/g)].map(match => String(match[1] || ''));
     if (/containing exactly/i.test(taskText) && paths.length === 1 && exactLines.length > 0) {
       const actual = String(contents.get(paths[0]) || '').trim();
