@@ -35,6 +35,7 @@ export interface PlanningArtifacts {
   architecture: string;
   scaffold: string;
   contractTests: string;
+  design: string;
   definitionOfDone: string;
   goldenBenchmarks: string;
   acceptanceCriteria: string[];
@@ -45,6 +46,7 @@ export interface PlanningArtifacts {
     architecture: string;
     scaffold: string;
     contractTests: string;
+    design: string;
     definitionOfDone: string;
     goldenBenchmarks: string;
   };
@@ -182,6 +184,7 @@ export class DualL2Planner {
       architecture: `# ARCH\n\n## Scope\n- Lightweight single-step implementation.\n- Limit edits to explicit task paths.`,
       scaffold: '',
       contractTests: '',
+      design: '',
       definitionOfDone: '',
       goldenBenchmarks: '',
       acceptanceCriteria: [
@@ -194,6 +197,7 @@ export class DualL2Planner {
         architecture: '',
         scaffold: '',
         contractTests: '',
+        design: '',
         definitionOfDone: '',
         goldenBenchmarks: ''
       }
@@ -513,11 +517,12 @@ export class DualL2Planner {
       architecture: join(baseDir, 'ARCH.md'),
       scaffold: join(baseDir, 'SCAFFOLD.md'),
       contractTests: join(baseDir, 'CONTRACT-TESTS.md'),
+      design: join(baseDir, 'DESIGN.md'),
       definitionOfDone: join(baseDir, 'DOD.md'),
       goldenBenchmarks: join(baseDir, 'GOLDEN-BENCHMARKS.md')
     };
-    
-    await Promise.all([
+
+    const writeOps = [
       writeFile(files.pdd, coreResult.pdd, 'utf8'),
       writeFile(files.roadmap, coreResult.roadmap, 'utf8'),
       writeFile(files.architecture, coreResult.architecture, 'utf8'),
@@ -525,24 +530,30 @@ export class DualL2Planner {
       writeFile(files.contractTests, implResult.contractTests, 'utf8'),
       writeFile(files.definitionOfDone, gateResult.definitionOfDone, 'utf8'),
       writeFile(files.goldenBenchmarks, gateResult.goldenBenchmarks, 'utf8')
-    ]);
-    
+    ];
+    if (implResult.design) {
+      writeOps.push(writeFile(files.design, implResult.design, 'utf8'));
+    }
+    await Promise.all(writeOps);
+
     console.log('[L2A Planning] ✅ All artifacts generated:');
     console.log(`  PDD.md: ${coreResult.pdd.length} chars`);
     console.log(`  ROADMAP.md: ${coreResult.roadmap.length} chars`);
     console.log(`  ARCH.md: ${coreResult.architecture.length} chars`);
     console.log(`  SCAFFOLD.md: ${implResult.scaffold.length} chars`);
     console.log(`  CONTRACT-TESTS.md: ${implResult.contractTests.length} chars`);
+    if (implResult.design) console.log(`  DESIGN.md: ${implResult.design.length} chars`);
     console.log(`  DOD.md: ${gateResult.definitionOfDone.length} chars`);
     console.log(`  GOLDEN-BENCHMARKS.md: ${gateResult.goldenBenchmarks.length} chars`);
     console.log(`  Dir: ${baseDir}`);
-    
+
     return {
       pdd: coreResult.pdd,
       roadmap: coreResult.roadmap,
       architecture: coreResult.architecture,
       scaffold: implResult.scaffold,
       contractTests: implResult.contractTests,
+      design: implResult.design || '',
       definitionOfDone: gateResult.definitionOfDone,
       goldenBenchmarks: gateResult.goldenBenchmarks,
       acceptanceCriteria: coreResult.acceptanceCriteria,
@@ -645,7 +656,7 @@ CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
     task: string,
     coreContext: { pdd: string; roadmap: string; architecture: string; acceptanceCriteria: string[] },
     traceId: string
-  ): Promise<{ scaffold: string; contractTests: string }> {
+  ): Promise<{ scaffold: string; contractTests: string; design: string }> {
     const overlays: PromptOverlay[] = [
       { type: 'task', content: `Task: ${task}`, priority: 1 },
       {
@@ -659,7 +670,7 @@ Acceptance Criteria: ${coreContext.acceptanceCriteria.slice(0, 3).join('; ')}`,
       },
       {
         type: 'constraints',
-        content: `Generate TWO implementation artifacts as compact bullet lists:
+        content: `Generate THREE implementation artifacts as compact bullet lists:
 
 **1. SCAFFOLD.md** (Bootstrap checklist):
 - File tree (bullet list: path + 1-line purpose)
@@ -672,12 +683,24 @@ Acceptance Criteria: ${coreContext.acceptanceCriteria.slice(0, 3).join('; ')}`,
 - Format: "Test ac-1: Given X, When Y, Then Z"
 - Include file path where test should live
 
+**3. DESIGN.md** (UI/UX design system — generate ONLY if the task involves frontend, UI, components, pages, or user-facing features. If the task is purely backend/API/CLI, set design to empty string ""):
+- Color tokens (primary, secondary, accent, background, surface, text, error, success — as CSS custom properties)
+- Typography scale (font families, sizes for h1-h4, body, small, mono — with line heights)
+- Spacing system (4px base unit, named sizes: xs=4, sm=8, md=16, lg=24, xl=32, xxl=48)
+- Component patterns (card, button, input, badge, modal, nav — with states: default, hover, active, disabled, focus)
+- Layout rules (max-width, grid columns, breakpoints for mobile/tablet/desktop)
+- Accessibility requirements (WCAG AA contrast ratios, focus indicators, reduced motion, aria patterns)
+- Dark/light theme token mappings
+- Animation guidelines (duration: fast=100ms, normal=200ms, slow=300ms; easing: ease-out for entrances, ease-in for exits)
+
 Return ONLY valid JSON (no markdown, no code fences):
 {
   "scaffold": "# SCAFFOLD\\n\\n## Files\\n- src/index.ts: entry point\\n\\n## Build\\n- npm run build",
-  "contractTests": "# CONTRACT TESTS\\n\\n- Test ac-1: Given ..., When ..., Then ...\\n  File: tests/ac1.test.ts"
+  "contractTests": "# CONTRACT TESTS\\n\\n- Test ac-1: Given ..., When ..., Then ...\\n  File: tests/ac1.test.ts",
+  "design": "# DESIGN SYSTEM\\n\\n## Colors\\n- --color-primary: #818cf8\\n..."
 }
 
+If the task has NO frontend/UI component, set "design": "".
 CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
         priority: 3
       }
@@ -687,7 +710,7 @@ CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
     const result = await this.executor.execute(composedPrompt.finalPrompt, {
       model: this.getL2AModel(),
       temperature: 0,  // Deterministic for JSON
-      maxTokens: 3000,
+      maxTokens: 4000,
       jsonMode: true
     });
 
@@ -698,15 +721,17 @@ CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
     const parsed = await this.parseStructuredJson<{
       scaffold: string;
       contractTests: string;
+      design: string;
     }>(
       result.result,
       'Implementation artifacts (Pass 2)',
-      '{"scaffold":"...","contractTests":"..."}'
+      '{"scaffold":"...","contractTests":"...","design":"..."}'
     );
 
     return {
       scaffold: String(parsed.scaffold || `# SCAFFOLD\\n\\n- Initialize project\\n- Add scripts\\n`).trim(),
-      contractTests: String(parsed.contractTests || `# CONTRACT TESTS\\n\\n- Map acceptance criteria to tests\\n`).trim()
+      contractTests: String(parsed.contractTests || `# CONTRACT TESTS\\n\\n- Map acceptance criteria to tests\\n`).trim(),
+      design: String(parsed.design || '').trim()
     };
   }
 
@@ -825,6 +850,9 @@ ${planningArtifacts.scaffold}
 
 [CONTRACT-TESTS.md]
 ${planningArtifacts.contractTests}
+${planningArtifacts.design ? `
+[DESIGN.md]
+${planningArtifacts.design}` : ''}
 
 [DOD.md]
 ${planningArtifacts.definitionOfDone}
