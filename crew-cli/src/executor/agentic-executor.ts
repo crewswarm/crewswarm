@@ -493,6 +493,10 @@ const PROVIDER_ORDER: ProviderEntry[] = [
   { id: 'kimi', envKey: 'MOONSHOT_API_KEY', model: 'moonshot-v1-128k', driver: 'openai', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', modelPrefix: 'kimi', tier: 'standard' },
   // Fast tier — L1 routing (classification, cheap)
   { id: 'groq', envKey: 'GROQ_API_KEY', model: 'llama-3.3-70b-versatile', driver: 'openai', apiUrl: 'https://api.groq.com/openai/v1/chat/completions', modelPrefix: 'llama', tier: 'fast' },
+  // Mid-tier — additional providers
+  { id: 'mistral', envKey: 'MISTRAL_API_KEY', model: 'mistral-large-latest', driver: 'openai', apiUrl: 'https://api.mistral.ai/v1/chat/completions', modelPrefix: 'mistral', tier: 'standard' },
+  { id: 'cerebras', envKey: 'CEREBRAS_API_KEY', model: 'qwen-3-235b-a22b-instruct-2507', driver: 'openai', apiUrl: 'https://api.cerebras.ai/v1/chat/completions', modelPrefix: 'qwen', tier: 'fast' },
+  { id: 'nvidia', envKey: 'NVIDIA_API_KEY', model: 'meta/llama-3.3-70b-instruct', driver: 'openai', apiUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', modelPrefix: 'nvidia', tier: 'standard' },
   // Fallback — free tier
   { id: 'openrouter', envKey: 'OPENROUTER_API_KEY', model: 'google/gemini-2.0-flash-exp:free', driver: 'openrouter', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', modelPrefix: 'openrouter', tier: 'standard' },
   // Additional providers (OpenAI-compatible, cheap workers)
