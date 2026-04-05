@@ -2188,6 +2188,11 @@ export async function runAgenticWorker(
       const turnTools = compactToolDeclarations(allTools, turnCount);
       const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages, abortSignal);
       totalCost += turnResult.cost || 0;
+      if (process.env.CREW_DEBUG_SSE && turnResult.toolCalls) {
+        for (const tc of turnResult.toolCalls) {
+          console.log(`[LLM Return] tool=${tc.tool} paramsKeys=${Object.keys(tc.params || {}).join(',')} paramsLen=${JSON.stringify(tc.params).length}`);
+        }
+      }
       return {
         toolCalls: turnResult.toolCalls,
         response: turnResult.response,
