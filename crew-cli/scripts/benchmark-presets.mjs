@@ -106,11 +106,11 @@ function resolvePresetEnv(provider, preset) {
   const base = {
     CREW_USE_UNIFIED_ROUTER: 'true',
     CREW_ALLOW_EXECUTE_LOCAL: 'true',
-    CREW_L2A_MODEL: plannerModel,
-    CREW_L2B_MODEL: plannerModel,
-    CREW_REASONING_MODEL: plannerModel,
-    CREW_JSON_REPAIR_MODEL: plannerModel,
-    CREW_EXECUTION_MODEL: workerModel
+    CREW_L2A_MODEL: process.env.CREW_L2A_MODEL || plannerModel,
+    CREW_L2B_MODEL: process.env.CREW_L2B_MODEL || plannerModel,
+    CREW_REASONING_MODEL: process.env.CREW_REASONING_MODEL || plannerModel,
+    CREW_JSON_REPAIR_MODEL: process.env.CREW_JSON_REPAIR_MODEL || plannerModel,
+    CREW_EXECUTION_MODEL: process.env.CREW_EXECUTION_MODEL || workerModel
   };
 
   switch (preset) {
@@ -125,7 +125,7 @@ function resolvePresetEnv(provider, preset) {
         ...base,
         CREW_DUAL_L2_ENABLED: 'true',
         CREW_QA_LOOP_ENABLED: 'true',
-        CREW_L2_EXTRA_VALIDATORS: plannerModel ? plannerModel : ''
+        CREW_L2_EXTRA_VALIDATORS: process.env.CREW_L2_EXTRA_VALIDATORS || (plannerModel ? plannerModel : '')
       };
     default:
       return base;

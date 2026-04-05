@@ -1611,9 +1611,16 @@ async function executeStreamingAnthropicTurn(
           }
         }
         toolCalls.push({ tool: block.name, params });
+        if (process.env.CREW_DEBUG_SSE) {
+          const last = toolCalls[toolCalls.length - 1];
+          console.log(`[SSE] Pushed toolCall: tool=${last.tool} keys=${Object.keys(last.params).join(',')} same=${last.params === params}`);
+        }
       }
     }
 
+    if (process.env.CREW_DEBUG_SSE && toolCalls.length > 0) {
+      console.log(`[SSE] Returning ${toolCalls.length} toolCalls, first keys=${Object.keys(toolCalls[0].params).join(',')}`);
+    }
     if (toolCalls.length > 0) return { toolCalls, response: fullText, cost: totalCost };
     return { response: fullText, status: 'COMPLETE', cost: totalCost };
   }
