@@ -185,7 +185,7 @@ const TASKS = [
 
 function runCommand(cmd, cwd) {
   try {
-    const output = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8', timeout: 30000 });
+    const output = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8', timeout: 180000 });
     return { ok: true, output: output.trim(), exitCode: 0 };
   } catch (err) {
     return {
@@ -258,7 +258,7 @@ async function runTask(task, model, envOverrides = {}) {
   try {
     const crewCli = resolve(process.cwd(), 'dist', 'crew.mjs');
     const result = runCommand(
-      `node ${crewCli} run -t ${JSON.stringify(task.description)} --json --always-approve`,
+      `node ${crewCli} run -t ${JSON.stringify(task.description)} --json`,
       dir
     );
     const elapsed = Date.now() - start;
