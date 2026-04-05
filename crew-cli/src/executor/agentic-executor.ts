@@ -631,7 +631,18 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
   if (effectiveModel) {
     // Models with provider/ prefix (e.g. anthropic/claude-sonnet-4.6, qwen/qwen3-coder)
     // are OpenRouter model slugs — route to OpenRouter directly
-    if (effectiveModel.includes('/') && !effectiveModel.startsWith('accounts/') && !effectiveModel.startsWith('meta/') && !effectiveModel.startsWith('models/')) {
+    // Slash-prefixed models (moonshotai/kimi-k2, openai/gpt-oss-120b, qwen/qwen3-32b)
+    // These are hosted on multiple providers (Groq, Fireworks, NVIDIA, OpenRouter).
+    // Use CREW_PROVIDER env var to force a specific provider, otherwise try OpenRouter.
+    if (effectiveModel.includes('/') && !effectiveModel.startsWith('accounts/') && !effectiveModel.startsWith('models/')) {
+      const forcedProvider = process.env.CREW_PROVIDER?.toLowerCase();
+      if (forcedProvider) {
+        const p = PROVIDER_ORDER.find(p => p.id === forcedProvider);
+        const key = p ? process.env[p.envKey] : undefined;
+        if (p && key && key.length >= 5) {
+          return { key, model: modelOverride || effectiveModel, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
+        }
+      }
       const orKey = process.env.OPENROUTER_API_KEY;
       if (orKey && orKey.length >= 5) {
         return { key: orKey, model: modelOverride || effectiveModel, driver: 'openrouter', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', id: 'openrouter' };

@@ -3647,10 +3647,35 @@ var init_crew_adapter = __esm({
       constructor(sandbox, constraintLevel = "full") {
         this.sandbox = sandbox;
         this._filesRead = /* @__PURE__ */ new Set();
+        this._realWorkspaceRoot = null;
         const workspaceRoot = sandbox.getBaseDir() || process.cwd();
         this.config = new CrewConfig(workspaceRoot);
         this.messageBus = new CrewMessageBus();
         this._constraintLevel = constraintLevel;
+      }
+      /** Resolve workspace root through symlinks (macOS /tmp → /private/tmp) */
+      getRealWorkspaceRoot() {
+        if (this._realWorkspaceRoot) return this._realWorkspaceRoot;
+        const raw = this.config.getWorkspaceRoot();
+        try {
+          const { realpathSync } = __require("node:fs");
+          this._realWorkspaceRoot = realpathSync(raw);
+        } catch {
+          this._realWorkspaceRoot = resolve4(raw);
+        }
+        return this._realWorkspaceRoot;
+      }
+      /** Check if a resolved path is within workspace. Handles symlinks. */
+      isInsideWorkspace(resolvedPath) {
+        const root = this.getRealWorkspaceRoot();
+        let realPath;
+        try {
+          const { realpathSync } = __require("node:fs");
+          realPath = realpathSync(resolvedPath);
+        } catch {
+          realPath = resolvedPath;
+        }
+        return realPath.startsWith(root + "/") || realPath === root;
       }
       get constraintLevel() {
         return this._constraintLevel;
@@ -3952,6 +3977,9 @@ var init_crew_adapter = __esm({
             case "shell":
             case "run_cmd":
             case "run_shell_command":
+              if (this.sandbox.getPendingPaths().length > 0) {
+                await this.sandbox.apply();
+              }
               return await this.shellTool({
                 command: asString(params.command),
                 run_in_background: asBoolean(params.run_in_background),
@@ -4073,9 +4101,8 @@ var init_crew_adapter = __esm({
             return { success: false, error: `Write failed: ${errMsg(err)}` };
           }
         }
-        const fullPath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
-        const wsRoot = resolve4(this.config.getWorkspaceRoot());
-        if (!fullPath.startsWith(wsRoot + "/") && fullPath !== wsRoot) {
+        const fullPath = resolve4(this.getRealWorkspaceRoot(), params.file_path);
+        if (!this.isInsideWorkspace(fullPath)) {
           return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
         }
         await this.sandbox.addChange(params.file_path, params.content);
@@ -4111,8 +4138,7 @@ var init_crew_adapter = __esm({
       }
       async readFile(params) {
         const filePath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
-        const wsRoot = resolve4(this.config.getWorkspaceRoot());
-        if (!filePath.startsWith(wsRoot + "/") && filePath !== wsRoot) {
+        if (!this.isInsideWorkspace(filePath)) {
           return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
         }
         this._filesRead.add(params.file_path);
@@ -4129,12 +4155,14 @@ var init_crew_adapter = __esm({
         return { success: true, output: content };
       }
       async editFile(params) {
-        const filePath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
-        const wsRoot = resolve4(this.config.getWorkspaceRoot());
-        if (!filePath.startsWith(wsRoot + "/") && filePath !== wsRoot) {
+        const realRoot = this.getRealWorkspaceRoot();
+        const filePath = resolve4(realRoot, params.file_path);
+        if (!this.isInsideWorkspace(filePath)) {
           return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
         }
-        if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
+        const { relative: relative7 } = await import("node:path");
+        const relPath = filePath.startsWith(realRoot) ? relative7(realRoot, filePath) : params.file_path;
+        if (!this._filesRead.has(params.file_path) && !this._filesRead.has(filePath) && !this._filesRead.has(relPath)) {
           return {
             success: false,
             error: `You must read_file "${params.file_path}" before editing it. Never guess at file contents.`,
@@ -4142,20 +4170,20 @@ var init_crew_adapter = __esm({
             recovery: `Call read_file with file_path="${params.file_path}" first, then retry this edit.`
           };
         }
-        const stagedContent = this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
+        const stagedContent = this.sandbox.getStagedContent?.(relPath) || this.sandbox.getStagedContent?.(params.file_path) || this.sandbox.getStagedContent?.(filePath);
         const content = stagedContent ?? await readFile7(filePath, "utf8");
         const { match, strategy, occurrences } = this.findEditMatch(content, params.old_string);
         if (!match) {
           return {
             success: false,
-            error: `String not found in ${params.file_path}. Tried: exact match, flexible whitespace, fuzzy (Levenshtein).`,
+            error: `String not found in ${relPath}. Tried: exact match, flexible whitespace, fuzzy (Levenshtein).`,
             handled: false,
             recovery: `Re-read the file with read_file and use the exact text from the file as old_string.`
           };
         }
         if (params.replace_all) {
           const updated2 = content.split(match).join(params.new_string);
-          await this.sandbox.addChange(params.file_path, updated2);
+          await this.sandbox.addChange(relPath, updated2);
           const diagnostics2 = await this.shadowValidate(params.file_path);
           return {
             success: true,
@@ -4169,11 +4197,11 @@ var init_crew_adapter = __esm({
           };
         }
         const updated = content.replace(match, params.new_string);
-        await this.sandbox.addChange(params.file_path, updated);
-        const diagnostics = await this.shadowValidate(params.file_path);
+        await this.sandbox.addChange(relPath, updated);
+        const diagnostics = await this.shadowValidate(relPath);
         return {
           success: true,
-          output: `Edited ${params.file_path}${strategy !== "exact" ? ` (matched via ${strategy})` : ""}${diagnostics}`
+          output: `Edited ${relPath}${strategy !== "exact" ? ` (matched via ${strategy})` : ""}${diagnostics}`
         };
       }
       /**
@@ -6609,8 +6637,9 @@ var init_run_engine = __esm({
             for (const batch of batches) {
               if (abortSignal?.aborted) break;
               for (const call of batch.calls) {
+                const isEditTool2 = ["edit", "replace", "edit_file", "write_file", "append_file"].includes(call.tool);
                 const wouldRepeat = this.state.wouldRepeatFailure(call.tool, call.params);
-                if (wouldRepeat) {
+                if (wouldRepeat && !isEditTool2) {
                   const skipMsg = `Skipped: already failed ${wouldRepeat.count}x with same params`;
                   history.push({
                     turn: turn + 1,
@@ -7903,7 +7932,8 @@ function historyToAnthropicMessages(history) {
       content: [{
         type: "tool_result",
         tool_use_id: useId,
-        content: formatToolResult(h)
+        content: formatToolResult(h),
+        ...h.error ? { is_error: true } : {}
       }]
     });
   }
@@ -7932,7 +7962,8 @@ ${summary}` },
       content: [{
         type: "tool_result",
         tool_use_id: useId,
-        content: formatToolResult(h)
+        content: formatToolResult(h),
+        ...h.error ? { is_error: true } : {}
       }]
     });
   }
@@ -8058,6 +8089,13 @@ async function resolveProvider(modelOverride, preferTier) {
       if (p.envKey === "GOOGLE_API_KEY" && process.env.GEMINI_API_KEY) continue;
       if (p.modelPrefix && effectiveModel.includes(p.modelPrefix)) {
         return { key, model: modelOverride || process.env.CREW_EXECUTION_MODEL || p.model, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
+      }
+    }
+    for (const p of PROVIDER_ORDER) {
+      const key = process.env[p.envKey];
+      if (!key || key.length < 5) continue;
+      if (p.driver === "openai" || p.driver === "openrouter") {
+        return { key, model: modelOverride || effectiveModel, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
       }
     }
   }
@@ -8459,6 +8497,8 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
   if (stream && res.body) {
     let fullText = "";
     const toolCallAccumulator = /* @__PURE__ */ new Map();
+    const sseDebug = process.env.CREW_DEBUG_SSE === "1" || process.env.CREW_DEBUG_SSE === "true";
+    const sseLog = [];
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -8473,6 +8513,7 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
           if (!line.startsWith("data: ")) continue;
           const jsonStr = line.slice(6).trim();
           if (!jsonStr || jsonStr === "[DONE]") continue;
+          if (sseDebug) sseLog.push(jsonStr);
           try {
             const chunk = JSON.parse(jsonStr);
             const delta = chunk?.choices?.[0]?.delta;
@@ -8488,7 +8529,10 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
                   toolCallAccumulator.set(idx, { name: "", args: "" });
                 }
                 const acc = toolCallAccumulator.get(idx);
-                if (tc.function?.name) acc.name += tc.function.name;
+                if (tc.function?.name) {
+                  acc.name += tc.function.name;
+                  if (sseDebug) console.error(`[SSE-OAI] tool_call idx=${idx} name=${tc.function.name}`);
+                }
                 if (tc.function?.arguments) acc.args += tc.function.arguments;
               }
             }
@@ -8500,16 +8544,29 @@ async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model
       reader.releaseLock();
     }
     if (fullText) process.stdout.write("\n");
+    if (sseDebug && sseLog.length > 0) {
+      const logPath = `/tmp/crew-sse-openai-${Date.now()}.jsonl`;
+      try {
+        const { writeFileSync: writeFileSync3 } = await import("node:fs");
+        writeFileSync3(logPath, sseLog.join("\n") + "\n");
+        console.error(`[SSE-OAI] Raw log saved: ${logPath} (${sseLog.length} events)`);
+      } catch {
+      }
+    }
     const toolCalls = [];
-    for (const [, tc] of toolCallAccumulator) {
+    for (const [idx, tc] of toolCallAccumulator) {
       if (tc.name) {
         let params = {};
+        if (sseDebug) console.error(`[SSE-OAI] Parsing tool idx=${idx} name=${tc.name} argsLen=${tc.args.length} preview=${tc.args.slice(0, 100)}`);
         try {
           params = JSON.parse(tc.args);
+          if (sseDebug) console.error(`[SSE-OAI] Raw parse OK: keys=${Object.keys(params).join(",")}`);
         } catch {
           try {
             params = JSON.parse(repairJson(tc.args));
+            if (sseDebug) console.error(`[SSE-OAI] Repair parse OK: keys=${Object.keys(params).join(",")}`);
           } catch {
+            if (sseDebug) console.error(`[SSE-OAI] Both parses FAILED`);
           }
         }
         toolCalls.push({ tool: tc.name, params });
@@ -8741,6 +8798,8 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
     let fullText = "";
     const toolBlocks = /* @__PURE__ */ new Map();
     let totalCost = 0;
+    const sseDebug = process.env.CREW_DEBUG_SSE === "1" || process.env.CREW_DEBUG_SSE === "true";
+    const sseLog = [];
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -8755,9 +8814,11 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
           if (!line.startsWith("data: ")) continue;
           const jsonStr = line.slice(6).trim();
           if (!jsonStr) continue;
+          if (sseDebug) sseLog.push(jsonStr);
           try {
             const event = JSON.parse(jsonStr);
             if (event.type === "content_block_start") {
+              if (sseDebug) console.error(`[SSE] block_start idx=${event.index} type=${event.content_block?.type} name=${event.content_block?.name || ""}`);
               if (event.content_block?.type === "tool_use") {
                 toolBlocks.set(event.index, {
                   name: event.content_block.name || "",
@@ -8772,6 +8833,7 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
                 fullText += event.delta.text;
               }
               if (event.delta?.type === "input_json_delta") {
+                if (sseDebug) console.error(`[SSE] json_delta idx=${event.index} len=${(event.delta.partial_json || "").length}`);
                 if (event.delta.partial_json) {
                   const block = toolBlocks.get(event.index);
                   if (block) {
@@ -8791,16 +8853,30 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
       reader.releaseLock();
     }
     if (fullText) process.stdout.write("\n");
+    if (sseDebug && sseLog.length > 0) {
+      const logPath = `/tmp/crew-sse-log-${Date.now()}.jsonl`;
+      try {
+        const { writeFileSync: writeFileSync3 } = await import("node:fs");
+        writeFileSync3(logPath, sseLog.join("\n") + "\n");
+        console.error(`[SSE] Raw log saved: ${logPath} (${sseLog.length} events)`);
+      } catch {
+      }
+    }
     const toolCalls = [];
     for (const [idx, block] of toolBlocks) {
       if (block.name) {
         let params = {};
+        if (sseDebug) console.error(`[SSE] Parsing tool idx=${idx} name=${block.name} inputJsonLen=${block.inputJson.length} preview=${block.inputJson.slice(0, 100)}`);
         try {
           params = JSON.parse(block.inputJson);
+          if (sseDebug) console.error(`[SSE] Raw parse OK: keys=${Object.keys(params).join(",")}`);
         } catch (e1) {
+          if (sseDebug) console.error(`[SSE] Raw parse FAIL: ${e1.message?.slice(0, 80)}`);
           try {
             params = JSON.parse(repairJson(block.inputJson));
+            if (sseDebug) console.error(`[SSE] Repair parse OK: keys=${Object.keys(params).join(",")}`);
           } catch (e2) {
+            if (sseDebug) console.error(`[SSE] Repair parse FAIL: ${e2.message?.slice(0, 80)}`);
           }
         }
         toolCalls.push({ tool: block.name, params });
@@ -9040,7 +9116,8 @@ ${buildTaskModeGuidance(taskMode)}`;
       filesAffected: filePath ? [filePath] : [],
       readOnly: isReadOnly
     });
-    if (!result3.success && result3.error) {
+    const isRecoverableGuard = !result3.success && result3.error && (result3.error.includes("must read_file") || result3.error.includes("read_file before editing"));
+    if (!result3.success && result3.error && !isRecoverableGuard) {
       engine.state.recordFailure({
         turn: turnCount,
         tool: name,
@@ -9344,6 +9421,14 @@ Every turn, follow this exact pattern:
       { id: "mistral", envKey: "MISTRAL_API_KEY", model: "mistral-large-latest", driver: "openai", apiUrl: "https://api.mistral.ai/v1/chat/completions", modelPrefix: "mistral", tier: "standard" },
       { id: "cerebras", envKey: "CEREBRAS_API_KEY", model: "qwen-3-235b-a22b-instruct-2507", driver: "openai", apiUrl: "https://api.cerebras.ai/v1/chat/completions", modelPrefix: "qwen", tier: "fast" },
       { id: "nvidia", envKey: "NVIDIA_API_KEY", model: "meta/llama-3.3-70b-instruct", driver: "openai", apiUrl: "https://integrate.api.nvidia.com/v1/chat/completions", modelPrefix: "nvidia", tier: "standard" },
+      // OpenCode/Zen — 39 models, strong tool calling (Kimi K2.5, MiniMax, GLM-5, Nemotron, etc.)
+      { id: "opencode", envKey: "OPENCODE_API_KEY", model: "kimi-k2.5", driver: "openai", apiUrl: "https://opencode.ai/zen/v1/chat/completions", modelPrefix: "kimi", tier: "standard" },
+      { id: "opencode", envKey: "OPENCODE_API_KEY", model: "minimax-m2.5", driver: "openai", apiUrl: "https://opencode.ai/zen/v1/chat/completions", modelPrefix: "minimax", tier: "standard" },
+      { id: "opencode", envKey: "OPENCODE_API_KEY", model: "glm-5", driver: "openai", apiUrl: "https://opencode.ai/zen/v1/chat/completions", modelPrefix: "glm", tier: "standard" },
+      { id: "opencode", envKey: "OPENCODE_API_KEY", model: "nemotron-3-super-free", driver: "openai", apiUrl: "https://opencode.ai/zen/v1/chat/completions", modelPrefix: "nemotron", tier: "standard" },
+      { id: "opencode", envKey: "OPENCODE_API_KEY", model: "qwen3.6-plus-free", driver: "openai", apiUrl: "https://opencode.ai/zen/v1/chat/completions", modelPrefix: "qwen3.6", tier: "standard" },
+      { id: "opencode", envKey: "OPENCODE_API_KEY", model: "trinity-large-preview-free", driver: "openai", apiUrl: "https://opencode.ai/zen/v1/chat/completions", modelPrefix: "trinity", tier: "standard" },
+      { id: "opencode", envKey: "OPENCODE_API_KEY", model: "big-pickle", driver: "openai", apiUrl: "https://opencode.ai/zen/v1/chat/completions", modelPrefix: "big-pickle", tier: "standard" },
       // Fallback — free tier
       { id: "openrouter", envKey: "OPENROUTER_API_KEY", model: "google/gemini-2.0-flash-exp:free", driver: "openrouter", apiUrl: "https://openrouter.ai/api/v1/chat/completions", modelPrefix: "openrouter", tier: "standard" },
       // Additional providers (OpenAI-compatible, cheap workers)
@@ -13494,7 +13579,7 @@ var init_unified = __esm({
       getMaxTurnsForEffort(effort) {
         const explicit = Number(process.env.CREW_MAX_TURNS || 0);
         if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.floor(explicit));
-        if (effort === "low") return 3;
+        if (effort === "low") return 6;
         if (effort === "high") return 25;
         return 10;
       }
@@ -14820,16 +14905,19 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
               qaApproved = true;
               qaRounds = 0;
               executionPath.push("l3-qa-approved-deterministic");
-            } else if (this.qaLoopEnabled()) {
-              executionPath.push("l3-qa-gate");
-              const qaLoop = await this.runQaFixerLoop(response, traceId, executionResults, sessionId);
-              response = qaLoop.response;
-              totalCost += qaLoop.addedCost;
-              qaRounds = qaLoop.rounds;
-              qaApproved = qaLoop.approved;
-              executionPath.push(qaLoop.approved ? "l3-qa-approved" : "l3-qa-rejected");
-              if (!qaLoop.approved) {
-                throw new Error(`QA gate failed after ${qaLoop.rounds} rounds. ${qaLoop.lastSummary || ""}`.trim());
+            } else {
+              qaApproved = false;
+              if (this.qaLoopEnabled()) {
+                executionPath.push("l3-qa-gate");
+                const qaLoop = await this.runQaFixerLoop(response, traceId, executionResults, sessionId);
+                response = qaLoop.response;
+                totalCost += qaLoop.addedCost;
+                qaRounds = qaLoop.rounds;
+                qaApproved = qaLoop.approved;
+                executionPath.push(qaLoop.approved ? "l3-qa-approved" : "l3-qa-rejected");
+                if (!qaLoop.approved) {
+                  throw new Error(`QA gate failed after ${qaLoop.rounds} rounds. ${qaLoop.lastSummary || ""}`.trim());
+                }
               }
             }
           }
