@@ -9,6 +9,7 @@
 import type { ToolCall, TurnResult } from '../worker/autonomous-loop.js';
 import { streamOpenAIResponse, streamAnthropicResponse, writeToStdout, isStreamingDisabled } from './stream-helpers.js';
 import type { OpenAIChoice, OpenAIUsage, AnthropicUsage, AnthropicContentBlock } from '../types/common.js';
+import { computeVersionSuffix, buildBillingBlock, signBody } from '../auth/cch.js';
 
 /** Tool declaration in a provider-agnostic format */
 export interface ToolDeclaration {
@@ -225,23 +226,56 @@ export async function anthropicTurn(
     userContent = parts;
   }
 
+  const CLAUDE_OAUTH_BETA_HEADER = [
+    'claude-code-20250219', 'oauth-2025-04-20', 'adaptive-thinking-2026-01-28',
+    'research-preview-2026-02-01', 'interleaved-thinking-2025-05-14',
+    'redact-thinking-2026-02-12', 'context-management-2025-06-27',
+  ].join(',');
+
   const stream = !isStreamingDisabled();
-  const requestBody: Record<string, unknown> = {
-    model: config.model,
-    max_tokens: config.maxTokens ?? 16000,
-    system: config.systemPrompt,
-    messages: [{ role: 'user', content: userContent }],
-    temperature: config.temperature ?? 0.3,
-    tools: toAnthropicTools(tools),
-    ...(stream ? { stream: true } : {})
-  };
+  let bodyStr: string;
+  const authHeaders: Record<string, string> = {};
 
-  // OAuth tokens use Bearer auth; API keys use x-api-key
-  const authHeaders: Record<string, string> = config.isOAuth
-    ? { 'Authorization': `Bearer ${config.apiKey}`, 'x-app': 'cli' }
-    : { 'x-api-key': config.apiKey };
+  if (config.isOAuth) {
+    const suffix = computeVersionSuffix(typeof fullTask === 'string' ? fullTask : '');
+    const billingBlock = buildBillingBlock(suffix);
+    const supportsThinking = !config.model.includes('haiku');
+    const bodyObj: Record<string, unknown> = {
+      model: config.model,
+      max_tokens: config.maxTokens ?? 16000,
+      ...(supportsThinking ? { thinking: { type: 'adaptive' } } : {}),
+      metadata: { user_id: `user_crewswarm_mt_${Date.now()}` },
+      system: [
+        billingBlock,
+        { type: 'text', text: config.systemPrompt, cache_control: { type: 'ephemeral' } }
+      ],
+      messages: [{ role: 'user', content: userContent }],
+      temperature: config.temperature ?? 0.3,
+      tools: toAnthropicTools(tools),
+      ...(stream ? { stream: true } : {})
+    };
+    bodyStr = await signBody(bodyObj);
+    authHeaders['Authorization'] = `Bearer ${config.apiKey}`;
+    authHeaders['anthropic-beta'] = CLAUDE_OAUTH_BETA_HEADER;
+    authHeaders['anthropic-dangerous-direct-browser-access'] = 'true';
+    authHeaders['x-app'] = 'cli';
+    authHeaders['user-agent'] = 'claude-cli/2.1.87 (external, cli)';
+  } else {
+    const bodyObj: Record<string, unknown> = {
+      model: config.model,
+      max_tokens: config.maxTokens ?? 16000,
+      system: config.systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
+      temperature: config.temperature ?? 0.3,
+      tools: toAnthropicTools(tools),
+      ...(stream ? { stream: true } : {})
+    };
+    bodyStr = JSON.stringify(bodyObj);
+    authHeaders['x-api-key'] = config.apiKey;
+  }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const apiUrl = config.isOAuth ? 'https://api.anthropic.com/v1/messages?beta=true' : 'https://api.anthropic.com/v1/messages';
+  const response = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -249,7 +283,7 @@ export async function anthropicTurn(
       'anthropic-version': '2023-06-01'
     },
     signal: AbortSignal.timeout(config.timeoutMs ?? 120000),
-    body: JSON.stringify(requestBody)
+    body: bodyStr
   });
 
   if (!response.ok) {

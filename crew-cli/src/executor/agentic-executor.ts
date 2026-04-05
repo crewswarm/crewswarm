@@ -37,6 +37,7 @@ import { StructuredHistory } from '../engine/structured-history.js';
 import { getOAuthToken, forceRefreshOAuthToken } from '../auth/oauth-keychain.js';
 import { getOpenAIOAuthToken, forceRefreshOpenAIOAuth, OPENAI_CODEX_API_URL } from '../auth/openai-oauth.js';
 import { getGeminiOAuthToken, forceRefreshGeminiOAuth } from '../auth/gemini-oauth.js';
+import { computeVersionSuffix, buildBillingBlock, signBody } from '../auth/cch.js';
 import { createScratchpad, cleanupScratchpad, getScratchpadInstructions } from './scratchpad.js';
 import { TOOL_RESULT_CLEARING_PROMPT } from './tool-result-clearing.js';
 
@@ -1412,29 +1413,64 @@ async function executeStreamingAnthropicTurn(
     input_schema: t.parameters
   }));
 
-  const body: Record<string, unknown> = {
-    model,
-    max_tokens: 8192,
-    system: systemPrompt,
-    messages: [
-      { role: 'user', content: userContent },
-      // Insert structured history (assistant tool_use + user tool_result)
-      ...(historyMessages || [])
-    ],
-    temperature: 0.3,
-    tools: anthropicTools,
-    stream
-  };
+  const CLAUDE_OAUTH_BETA_HEADER = [
+    'claude-code-20250219',
+    'oauth-2025-04-20',
+    'adaptive-thinking-2026-01-28',
+    'research-preview-2026-02-01',
+    'interleaved-thinking-2025-05-14',
+    'redact-thinking-2026-02-12',
+    'context-management-2025-06-27',
+  ].join(',');
 
-  // OAuth tokens use Bearer auth + beta header; API keys use x-api-key
+  // Build body — OAuth uses CCH signing + billing block; API key uses plain JSON
+  let bodyStr: string;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'anthropic-version': '2023-06-01'
   };
+
   if (isOAuth) {
+    const suffix = computeVersionSuffix(typeof fullTask === 'string' ? fullTask : '');
+    const billingBlock = buildBillingBlock(suffix);
+    const supportsThinking = !model.includes('haiku');
+    const bodyObj: Record<string, unknown> = {
+      model,
+      max_tokens: 8192,
+      ...(supportsThinking ? { thinking: { type: 'adaptive' } } : {}),
+      metadata: { user_id: `user_crewswarm_l3_${Date.now()}` },
+      system: [
+        billingBlock,
+        { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
+      ],
+      messages: [
+        { role: 'user', content: userContent },
+        ...(historyMessages || [])
+      ],
+      temperature: 0.3,
+      tools: anthropicTools,
+      stream
+    };
+    bodyStr = await signBody(bodyObj);
     headers['Authorization'] = `Bearer ${apiKey}`;
-    headers['anthropic-beta'] = 'oauth-2025-04-20';
+    headers['anthropic-beta'] = CLAUDE_OAUTH_BETA_HEADER;
+    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+    headers['x-app'] = 'cli';
+    headers['user-agent'] = 'claude-cli/2.1.87 (external, cli)';
   } else {
+    const bodyObj: Record<string, unknown> = {
+      model,
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: userContent },
+        ...(historyMessages || [])
+      ],
+      temperature: 0.3,
+      tools: anthropicTools,
+      stream
+    };
+    bodyStr = JSON.stringify(bodyObj);
     headers['x-api-key'] = apiKey;
   }
 
@@ -1444,11 +1480,12 @@ async function executeStreamingAnthropicTurn(
     ? AbortSignal.any([abortSignal, anthropicTimeoutSignal])
     : anthropicTimeoutSignal;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const apiUrl = isOAuth ? 'https://api.anthropic.com/v1/messages?beta=true' : 'https://api.anthropic.com/v1/messages';
+  const res = await fetch(apiUrl, {
     method: 'POST',
     headers,
     signal: anthropicFetchSignal,
-    body: JSON.stringify(body)
+    body: bodyStr
   });
 
   if (!res.ok) {
