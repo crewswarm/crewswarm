@@ -372,7 +372,7 @@ export class RunEngine {
     const output = String(result || '');
 
     // Shell commands can prove verification goals
-    if (call.tool === 'run_shell_command' || call.tool === 'shell') {
+    if (call.tool === 'run_shell_command' || call.tool === 'shell' || call.tool === 'run_cmd') {
       const command = String(call.params.command || '');
       for (const goal of this.state.verificationGoals) {
         if (goal.status !== 'pending') continue;

@@ -252,7 +252,7 @@ function isReadTool(tool: string): boolean {
 }
 
 function isVerificationTool(tool: string): boolean {
-  return ['run_shell_command', 'shell', 'check_background_task'].includes(tool);
+  return ['run_shell_command', 'shell', 'run_cmd', 'check_background_task'].includes(tool);
 }
 
 function computeScore(findings: CriticFinding[]): number {
