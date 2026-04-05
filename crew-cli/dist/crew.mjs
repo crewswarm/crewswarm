@@ -4291,7 +4291,7 @@ Fix these before moving on.`;
       }
       async listTool(params) {
         const target = (params.path || params.dir_path || ".").trim();
-        const abs = resolve4(process.cwd(), target);
+        const abs = resolve4(this.sandbox.getBaseDir() || process.cwd(), target);
         const items = await readdir2(abs, { withFileTypes: true });
         const lines = items.map((i) => `${i.isDirectory() ? "d" : "f"} ${i.name}`);
         return { success: true, output: lines.join("\n") };
@@ -4300,7 +4300,7 @@ Fix these before moving on.`;
         const pattern = String(params.pattern || "").trim();
         if (!pattern) return { success: false, error: "glob requires pattern" };
         try {
-          const out = execSync3(`rg --files -g ${JSON.stringify(pattern)}`, { cwd: process.cwd(), stdio: "pipe", encoding: "utf8" });
+          const out = execSync3(`rg --files -g ${JSON.stringify(pattern)}`, { cwd: this.sandbox.getBaseDir() || process.cwd(), stdio: "pipe", encoding: "utf8" });
           return { success: true, output: out.trim() };
         } catch (err) {
           return { success: false, error: errShell(err) || errMsg(err) || "glob failed" };
@@ -4330,7 +4330,7 @@ Fix these before moving on.`;
         args.push(JSON.stringify(pattern), JSON.stringify(searchPath));
         try {
           const out = execSync3(args.join(" "), {
-            cwd: process.cwd(),
+            cwd: this.sandbox.getBaseDir() || process.cwd(),
             stdio: "pipe",
             encoding: "utf8"
           });
@@ -7921,9 +7921,10 @@ function stripSchemaMetadata(value) {
   }
   return out;
 }
-function compactToolDeclarations(tools, turn) {
+function compactToolDeclarations(tools, turn, model) {
   const enabled = String(process.env.CREW_TOOL_SCHEMA_COMPACTION || "true").trim().toLowerCase();
-  if (turn <= 1 || enabled === "false" || enabled === "0" || enabled === "off") return tools;
+  const isOpenAI = model && (model.includes("gpt") || model.includes("o3") || model.includes("o4"));
+  if (turn <= 1 || enabled === "false" || enabled === "0" || enabled === "off" || isOpenAI) return tools;
   return tools.map((tool) => ({
     name: tool.name,
     description: "",
@@ -8265,30 +8266,67 @@ ${fullTask}` }];
   return { response: fullText, status: "COMPLETE", cost };
 }
 async function executeStreamingOpenAITurn(fullTask, tools, apiUrl, apiKey, model, systemPrompt, stream, images, historyMessages, isOAuth, historyContext, abortSignal) {
-  const openaiTools = tools.map((t) => ({
+  const isCodexResponses = isOAuth && apiUrl === OPENAI_CODEX_API_URL;
+  const CODEX_CORE_TOOLS = /* @__PURE__ */ new Set([
+    "read_file",
+    "write_file",
+    "replace",
+    "run_shell_command",
+    "grep_search",
+    "list_directory",
+    "append_file",
+    "mkdir"
+  ]);
+  const effectiveTools = isCodexResponses ? tools.filter((t) => CODEX_CORE_TOOLS.has(t.name)) : tools;
+  const openaiTools = effectiveTools.map((t) => ({
     type: "function",
-    ...isOAuth && apiUrl === OPENAI_CODEX_API_URL ? { name: t.name, description: t.description, parameters: t.parameters } : { function: { name: t.name, description: t.description, parameters: t.parameters } }
+    ...isCodexResponses ? { name: t.name, description: t.description, parameters: t.parameters } : { function: { name: t.name, description: t.description, parameters: t.parameters } }
   }));
+  if (isCodexResponses && process.env.CREW_VERBOSE !== "false") {
+    console.error(`\x1B[2m[Codex Responses API] ${openaiTools.length} tools (filtered from ${tools.length})\x1B[0m`);
+  }
   const temp = model?.startsWith?.("gpt-5") || model?.startsWith?.("gpt-6") ? 1 : 0.3;
   const isCodexOAuth = isOAuth && apiUrl === OPENAI_CODEX_API_URL;
-  const body = isCodexOAuth ? {
+  const codexInput = [];
+  if (isCodexResponses && historyMessages && Array.isArray(historyMessages)) {
+    for (const msg2 of historyMessages) {
+      if (msg2.role === "assistant" && msg2.tool_calls) {
+        for (const tc of msg2.tool_calls) {
+          codexInput.push({
+            type: "function_call",
+            name: tc.function?.name || "",
+            arguments: tc.function?.arguments || "{}",
+            call_id: tc.id || `call_${Date.now()}`
+          });
+        }
+      } else if (msg2.role === "tool") {
+        codexInput.push({
+          type: "function_call_output",
+          call_id: msg2.tool_call_id || "",
+          output: typeof msg2.content === "string" ? msg2.content.slice(0, 4e3) : JSON.stringify(msg2.content).slice(0, 4e3)
+        });
+      }
+    }
+  }
+  const body = isCodexResponses ? {
     model,
     instructions: systemPrompt,
-    input: [{
-      role: "user",
-      content: [
-        {
-          type: "input_text",
-          text: historyContext ? `${fullTask}
-
-${historyContext}` : fullTask
-        },
-        ...images?.map((img) => ({
-          type: "input_image",
-          image_url: `data:${img.mimeType};base64,${img.data}`
-        })) || []
-      ]
-    }],
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: fullTask
+          },
+          ...images?.map((img) => ({
+            type: "input_image",
+            image_url: `data:${img.mimeType};base64,${img.data}`
+          })) || []
+        ]
+      },
+      ...codexInput
+    ],
     tools: openaiTools,
     store: false,
     stream: true
@@ -9023,7 +9061,7 @@ ${summary}`;
         }
       }
       const turnImages = turnCount === 1 ? options.images : void 0;
-      const turnTools = compactToolDeclarations(allTools, turnCount);
+      const turnTools = compactToolDeclarations(allTools, turnCount, model);
       const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages, abortSignal);
       totalCost += turnResult.cost || 0;
       return {

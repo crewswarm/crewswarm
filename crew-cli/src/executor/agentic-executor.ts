@@ -529,9 +529,11 @@ function stripSchemaMetadata(value: unknown): unknown {
   return out;
 }
 
-function compactToolDeclarations(tools: ToolDeclaration[], turn: number): ToolDeclaration[] {
+function compactToolDeclarations(tools: ToolDeclaration[], turn: number, model?: string): ToolDeclaration[] {
   const enabled = String(process.env.CREW_TOOL_SCHEMA_COMPACTION || 'true').trim().toLowerCase();
-  if (turn <= 1 || enabled === 'false' || enabled === '0' || enabled === 'off') return tools;
+  // OpenAI models need full tool descriptions every turn — they don't retain tool semantics across turns
+  const isOpenAI = model && (model.includes('gpt') || model.includes('o3') || model.includes('o4'));
+  if (turn <= 1 || enabled === 'false' || enabled === '0' || enabled === 'off' || isOpenAI) return tools;
   return tools.map((tool) => ({
     name: tool.name,
     description: '',
@@ -969,35 +971,76 @@ async function executeStreamingOpenAITurn(
   historyContext?: string,
   abortSignal?: AbortSignal
 ): Promise<LLMTurnResult> {
-  const openaiTools = tools.map(t => ({
+  // Responses API (Codex OAuth) degrades with 20+ tools — GPT-5.4 stops using write tools.
+  // Filter to core tools only for that path. Chat Completions path gets all tools.
+  const isCodexResponses = isOAuth && apiUrl === OPENAI_CODEX_API_URL;
+  // GPT-5.4 via Responses API degrades sharply above ~8 tools (tested: 5=perfect, 14=broken)
+  const CODEX_CORE_TOOLS = new Set([
+    'read_file', 'write_file', 'replace',
+    'run_shell_command', 'grep_search', 'list_directory',
+    'append_file', 'mkdir'
+  ]);
+  const effectiveTools = isCodexResponses
+    ? tools.filter(t => CODEX_CORE_TOOLS.has(t.name))
+    : tools;
+  const openaiTools = effectiveTools.map(t => ({
     type: 'function' as const,
-    ...(isOAuth && apiUrl === OPENAI_CODEX_API_URL
+    ...(isCodexResponses
       ? { name: t.name, description: t.description, parameters: t.parameters }
       : { function: { name: t.name, description: t.description, parameters: t.parameters } })
   }));
 
+  if (isCodexResponses && process.env.CREW_VERBOSE !== 'false') {
+    console.error(`\x1b[2m[Codex Responses API] ${openaiTools.length} tools (filtered from ${tools.length})\x1b[0m`);
+  }
+
   // GPT-5/6 only support temperature=1; other values cause 400
   const temp = (model?.startsWith?.('gpt-5') || model?.startsWith?.('gpt-6')) ? 1 : 0.3;
   const isCodexOAuth = isOAuth && apiUrl === OPENAI_CODEX_API_URL;
-  const body: Record<string, unknown> = isCodexOAuth
+  // Build Responses API input with proper function_call/function_call_output history
+  const codexInput: Array<Record<string, unknown>> = [];
+  if (isCodexResponses && historyMessages && Array.isArray(historyMessages)) {
+    // Convert OpenAI-format history to Responses API input items
+    for (const msg of historyMessages as ChatMessage[]) {
+      if (msg.role === 'assistant' && msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          codexInput.push({
+            type: 'function_call',
+            name: tc.function?.name || '',
+            arguments: tc.function?.arguments || '{}',
+            call_id: tc.id || `call_${Date.now()}`
+          });
+        }
+      } else if (msg.role === 'tool') {
+        codexInput.push({
+          type: 'function_call_output',
+          call_id: msg.tool_call_id || '',
+          output: typeof msg.content === 'string' ? msg.content.slice(0, 4000) : JSON.stringify(msg.content).slice(0, 4000)
+        });
+      }
+    }
+  }
+
+  const body: Record<string, unknown> = isCodexResponses
     ? {
         model,
         instructions: systemPrompt,
-        input: [{
-          role: 'user',
-          content: [
-            {
-              type: 'input_text',
-              text: historyContext
-                ? `${fullTask}\n\n${historyContext}`
-                : fullTask
-            },
-            ...(images?.map((img) => ({
-              type: 'input_image',
-              image_url: `data:${img.mimeType};base64,${img.data}`
-            })) || [])
-          ]
-        }],
+        input: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: fullTask
+              },
+              ...(images?.map((img: ImageAttachment) => ({
+                type: 'input_image',
+                image_url: `data:${img.mimeType};base64,${img.data}`
+              })) || [])
+            ]
+          },
+          ...codexInput
+        ],
         tools: openaiTools,
         store: false,
         stream: true
@@ -2187,7 +2230,7 @@ export async function runAgenticWorker(
 
       // Only inject images on the first turn to avoid context bloat
       const turnImages = turnCount === 1 ? options.images : undefined;
-      const turnTools = compactToolDeclarations(allTools, turnCount);
+      const turnTools = compactToolDeclarations(allTools, turnCount, model);
       const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages, abortSignal);
       totalCost += turnResult.cost || 0;
       return {
