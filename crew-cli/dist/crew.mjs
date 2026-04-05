@@ -6669,7 +6669,7 @@ ${turnGuidance}` : turnGuidance;
       }
       checkVerificationProof(call, result2) {
         const output = String(result2 || "");
-        if (call.tool === "run_shell_command" || call.tool === "shell") {
+        if (call.tool === "run_shell_command" || call.tool === "shell" || call.tool === "run_cmd") {
           const command = String(call.params.command || "");
           for (const goal of this.state.verificationGoals) {
             if (goal.status !== "pending") continue;
@@ -7071,7 +7071,7 @@ function isReadTool2(tool) {
   return ["read_file", "read_many_files", "grep_search", "glob", "list_directory"].includes(tool);
 }
 function isVerificationTool2(tool) {
-  return ["run_shell_command", "shell", "check_background_task"].includes(tool);
+  return ["run_shell_command", "shell", "run_cmd", "check_background_task"].includes(tool);
 }
 function computeScore(findings) {
   let score = 100;
