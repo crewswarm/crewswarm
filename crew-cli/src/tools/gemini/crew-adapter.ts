@@ -161,14 +161,14 @@ function levenshteinDistance(a: string, b: string): number {
 /** Map persona names to constraint levels */
 export function constraintLevelForPersona(persona: string): ConstraintLevel {
   const lower = persona.toLowerCase();
-  if (lower.includes('planner') || lower.includes('reviewer') || lower.includes('qa') || lower.includes('architect')) {
+  // In standalone crew-cli, all personas run locally and need file access.
+  // Read-only is only for pure analysis personas that should never write.
+  if (lower.includes('planner') || lower.includes('architect')) {
     return 'read-only';
   }
-  if (lower.includes('scaffold') || lower.includes('init') || lower.includes('setup')) {
-    return 'full';
-  }
-  // Default for coders: edit (no write_file to prevent overwrites)
-  return 'edit';
+  // All execution personas get full access — they need to create files,
+  // write tests, edit code, and run commands.
+  return 'full';
 }
 
 // Create config adapter for Gemini tools
