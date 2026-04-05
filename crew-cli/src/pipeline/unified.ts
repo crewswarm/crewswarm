@@ -661,35 +661,12 @@ export class UnifiedPipeline {
     const paths = scopedPaths && scopedPaths.length > 0 ? scopedPaths : this.extractRequestedPaths(request.userInput);
     if (paths.length === 0) return false;
 
-    if (executionResults?.results?.length) {
-      // Check for truly blocking escalations (scope violations, stuck loops)
-      // but NOT for failed shell commands (git, tsc, npm) which are common
-      // noise on simple tasks without full project setup.
-      const hasBlockingEscalation = executionResults.results.some(result => {
-        if (!result.escalationNeeded) return false;
-        const reason = String(result.escalationReason || '').toLowerCase();
-        return reason.includes('outside allowed scope')
-          || reason.includes('touched')
-          || reason.includes('repeated the same failing tool action');
-      });
-      if (hasBlockingEscalation) return false;
-      if (executionResults.results.some(result => result.verificationPassed)) return true;
-      // If files were created, don't block on failed tool calls or missing verification
-      const anyFilesChanged = executionResults.results.some(result =>
-        Array.isArray(result.filesChanged) && result.filesChanged.length > 0
-      );
-      if (anyFilesChanged) {
-        // Fall through to content verification below instead of blocking
-      } else {
-        // No files at all — check if escalation is about missing changes
-        const noFilesEscalation = executionResults.results.some(result =>
-          result.escalationNeeded && String(result.escalationReason || '').toLowerCase().includes('without producing any file changes')
-        );
-        if (noFilesEscalation) return false;
-      }
-    }
-
     const baseDir = this.sandbox?.getBaseDir() || process.cwd();
+
+    // FILESYSTEM FIRST: check if the expected files exist with correct content.
+    // This is the ground truth — regardless of what tool history says, if the
+    // files are on disk and correct, the task succeeded. This handles models
+    // that write via shell commands (run_cmd) which don't appear in filesChanged.
     const verbose = process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true';
     const contents = new Map();
     for (const relPath of paths) {
