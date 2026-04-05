@@ -259,11 +259,39 @@ export class GeminiToolAdapter {
   private _filesRead = new Set<string>(); // Track reads for read-before-edit guard
   private _constraintLevel: ConstraintLevel;
 
+  private _realWorkspaceRoot: string | null = null;
+
   constructor(private sandbox: Sandbox, constraintLevel: ConstraintLevel = 'full') {
     const workspaceRoot = sandbox.getBaseDir() || process.cwd();
     this.config = new CrewConfig(workspaceRoot);
     this.messageBus = new CrewMessageBus();
     this._constraintLevel = constraintLevel;
+  }
+
+  /** Resolve workspace root through symlinks (macOS /tmp → /private/tmp) */
+  private getRealWorkspaceRoot(): string {
+    if (this._realWorkspaceRoot) return this._realWorkspaceRoot;
+    const raw = this.config.getWorkspaceRoot();
+    try {
+      const { realpathSync } = require('node:fs');
+      this._realWorkspaceRoot = realpathSync(raw);
+    } catch {
+      this._realWorkspaceRoot = resolve(raw);
+    }
+    return this._realWorkspaceRoot;
+  }
+
+  /** Check if a resolved path is within workspace. Handles symlinks. */
+  private isInsideWorkspace(resolvedPath: string): boolean {
+    const root = this.getRealWorkspaceRoot();
+    let realPath: string;
+    try {
+      const { realpathSync } = require('node:fs');
+      realPath = realpathSync(resolvedPath);
+    } catch {
+      realPath = resolvedPath;
+    }
+    return realPath.startsWith(root + '/') || realPath === root;
   }
 
   get constraintLevel(): ConstraintLevel {
@@ -716,9 +744,8 @@ export class GeminiToolAdapter {
     }
 
     // Relative paths: stage in sandbox with path traversal guard
-    const fullPath = resolve(this.config.getWorkspaceRoot(), params.file_path);
-    const wsRoot = resolve(this.config.getWorkspaceRoot());
-    if (!fullPath.startsWith(wsRoot + '/') && fullPath !== wsRoot) {
+    const fullPath = resolve(this.getRealWorkspaceRoot(), params.file_path);
+    if (!this.isInsideWorkspace(fullPath)) {
       return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
     }
     await this.sandbox.addChange(params.file_path, params.content);
@@ -761,9 +788,8 @@ export class GeminiToolAdapter {
   private async readFile(params: { file_path: string; start_line?: number; end_line?: number }): Promise<ToolResult> {
     const filePath = resolve(this.config.getWorkspaceRoot(), params.file_path);
 
-    // Path traversal guard: ensure resolved path is within workspace
-    const wsRoot = resolve(this.config.getWorkspaceRoot());
-    if (!filePath.startsWith(wsRoot + '/') && filePath !== wsRoot) {
+    // Path traversal guard: ensure resolved path is within workspace (handles symlinks)
+    if (!this.isInsideWorkspace(filePath)) {
       return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
     }
 
@@ -788,11 +814,10 @@ export class GeminiToolAdapter {
   }
   
   private async editFile(params: { file_path: string; old_string: string; new_string: string; replace_all?: boolean }): Promise<ToolResult> {
-    const filePath = resolve(this.config.getWorkspaceRoot(), params.file_path);
+    const filePath = resolve(this.getRealWorkspaceRoot(), params.file_path);
 
-    // Path traversal guard
-    const wsRoot = resolve(this.config.getWorkspaceRoot());
-    if (!filePath.startsWith(wsRoot + '/') && filePath !== wsRoot) {
+    // Path traversal guard (handles symlinks)
+    if (!this.isInsideWorkspace(filePath)) {
       return { success: false, error: `Access denied: path "${params.file_path}" resolves outside workspace root.` };
     }
 

@@ -2191,7 +2191,11 @@ export async function runAgenticWorker(
     // Surface failures to RunEngine's failure memory so it can block repeated bad moves.
     // executeToolWithRetry swallows retries internally — this ensures the final failure
     // (after retries exhausted) reaches RunEngine.state.recordFailure().
-    if (!result.success && result.error) {
+    // EXCEPTION: read-before-edit rejections are recoverable guidance, not real failures.
+    // The model should read the file then retry — don't poison failure memory.
+    const isRecoverableGuard = !result.success && result.error &&
+      (result.error.includes('must read_file') || result.error.includes('read_file before editing'));
+    if (!result.success && result.error && !isRecoverableGuard) {
       engine.state.recordFailure({
         turn: turnCount,
         tool: name,
