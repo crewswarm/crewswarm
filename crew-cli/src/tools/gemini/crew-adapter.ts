@@ -584,6 +584,11 @@ export class GeminiToolAdapter {
         case 'shell':
         case 'run_cmd':
         case 'run_shell_command':
+          // Flush staged sandbox changes to disk before running shell commands
+          // so the command can see edits made by write_file/replace/edit
+          if (this.sandbox.getPendingPaths().length > 0) {
+            await this.sandbox.apply();
+          }
           return await this.shellTool({
             command: asString(params.command),
             run_in_background: asBoolean(params.run_in_background),
