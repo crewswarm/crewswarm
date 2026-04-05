@@ -6551,11 +6551,6 @@ var init_run_engine = __esm({
             break;
           }
           if (response.toolCalls && response.toolCalls.length > 0) {
-            if (process.env.CREW_DEBUG_SSE) {
-              for (const tc of response.toolCalls) {
-                console.log(`[RunEngine] toolCall received: ${tc.tool} paramsKeys=${Object.keys(tc.params || {}).join(",")} paramsLen=${JSON.stringify(tc.params).length}`);
-              }
-            }
             const batches = partitionToolCalls(response.toolCalls);
             for (const batch of batches) {
               if (abortSignal?.aborted) break;
@@ -6574,9 +6569,6 @@ var init_run_engine = __esm({
                   continue;
                 }
                 onProgress?.(turn + 1, `EXECUTING: ${call.tool}`);
-                if (process.env.CREW_DEBUG_SSE) {
-                  console.log(`[RunEngine] Calling executeTool: ${call.tool} paramsKeys=${Object.keys(call.params || {}).join(",")} paramsLen=${JSON.stringify(call.params).length}`);
-                }
                 try {
                   const result2 = await executeTool(call.tool, call.params, abortSignal);
                   history.push({ turn: turn + 1, tool: call.tool, params: call.params, result: result2 });
@@ -8412,8 +8404,12 @@ ${historyContext}` : fullTask
       if (tc.name) {
         let params = {};
         try {
-          params = JSON.parse(repairJson(tc.args));
+          params = JSON.parse(tc.args);
         } catch {
+          try {
+            params = JSON.parse(repairJson(tc.args));
+          } catch {
+          }
         }
         toolCalls.push({ tool: tc.name, params });
       }
@@ -8653,9 +8649,6 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
           try {
             const event = JSON.parse(jsonStr);
             if (event.type === "content_block_start") {
-              if (process.env.CREW_DEBUG_SSE) {
-                console.log(`[SSE] block_start idx=${event.index} type=${event.content_block?.type} name=${event.content_block?.name || ""} hasInput=${!!event.content_block?.input}`);
-              }
               if (event.content_block?.type === "tool_use") {
                 toolBlocks.set(event.index, {
                   name: event.content_block.name || "",
@@ -8670,9 +8663,6 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
                 fullText += event.delta.text;
               }
               if (event.delta?.type === "input_json_delta") {
-                if (process.env.CREW_DEBUG_SSE) {
-                  console.log(`[SSE] json_delta idx=${event.index} len=${(event.delta.partial_json || "").length} preview=${(event.delta.partial_json || "").slice(0, 60)}`);
-                }
                 if (event.delta.partial_json) {
                   const block = toolBlocks.get(event.index);
                   if (block) {
@@ -8696,30 +8686,16 @@ async function executeStreamingAnthropicTurn(fullTask, tools, apiKey, model, sys
     for (const [idx, block] of toolBlocks) {
       if (block.name) {
         let params = {};
-        if (process.env.CREW_DEBUG_SSE) {
-          console.log(`[SSE] Parsing tool idx=${idx} name=${block.name} inputJsonLen=${block.inputJson.length} preview=${block.inputJson.slice(0, 100)}`);
-        }
         try {
           params = JSON.parse(block.inputJson);
-          if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Raw parse OK: keys=${Object.keys(params).join(",")}`);
         } catch (e1) {
-          if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Raw parse FAILED: ${e1.message}`);
           try {
             params = JSON.parse(repairJson(block.inputJson));
-            if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Repair parse OK: keys=${Object.keys(params).join(",")}`);
           } catch (e2) {
-            if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Repair parse FAILED: ${e2.message}`);
           }
         }
         toolCalls.push({ tool: block.name, params });
-        if (process.env.CREW_DEBUG_SSE) {
-          const last = toolCalls[toolCalls.length - 1];
-          console.log(`[SSE] Pushed toolCall: tool=${last.tool} keys=${Object.keys(last.params).join(",")} same=${last.params === params}`);
-        }
       }
-    }
-    if (process.env.CREW_DEBUG_SSE && toolCalls.length > 0) {
-      console.log(`[SSE] Returning ${toolCalls.length} toolCalls, first keys=${Object.keys(toolCalls[0].params).join(",")}`);
     }
     if (toolCalls.length > 0) return { toolCalls, response: fullText, cost: totalCost };
     return { response: fullText, status: "COMPLETE", cost: totalCost };
@@ -9042,11 +9018,6 @@ ${summary}`;
       const turnTools = compactToolDeclarations(allTools, turnCount);
       const turnResult = await executeLLMTurn(taskWithJIT, turnTools, historyForTurn, model, systemPrompt, stream, turnImages, abortSignal);
       totalCost += turnResult.cost || 0;
-      if (process.env.CREW_DEBUG_SSE && turnResult.toolCalls) {
-        for (const tc of turnResult.toolCalls) {
-          console.log(`[LLM Return] tool=${tc.tool} paramsKeys=${Object.keys(tc.params || {}).join(",")} paramsLen=${JSON.stringify(tc.params).length}`);
-        }
-      }
       return {
         toolCalls: turnResult.toolCalls,
         response: turnResult.response,
@@ -9056,9 +9027,6 @@ ${summary}`;
       };
     },
     async (name, params) => {
-      if (process.env.CREW_DEBUG_SSE) {
-        console.log(`[Callback] executeTool name=${name} paramsKeys=${Object.keys(params || {}).join(",")} paramStr=${JSON.stringify(params).slice(0, 100)}`);
-      }
       const result3 = await executeTool(name, params);
       if (!result3.success && result3.error) {
         const err = new Error(result3.error);

@@ -1124,8 +1124,9 @@ async function executeStreamingOpenAITurn(
     const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
     for (const [, tc] of toolCallAccumulator) {
       if (tc.name) {
-        let params = {};
-        try { params = JSON.parse(repairJson(tc.args)); } catch {}
+        let params: Record<string, unknown> = {};
+        // Parse raw first — repairJson corrupts code strings containing `: type`
+        try { params = JSON.parse(tc.args); } catch { try { params = JSON.parse(repairJson(tc.args)); } catch {} }
         toolCalls.push({ tool: tc.name, params });
       }
     }
