@@ -159,6 +159,16 @@ export class DualL2Planner {
     ];
     if (broadSignals.some(signal => text.includes(signal))) return false;
 
+    // Multi-part tasks with numbered items or multiple deliverables need full planning
+    const numberedItems = text.match(/\d+\)/g) || text.match(/\d+\.\s/g) || [];
+    if (numberedItems.length >= 3) return false;
+
+    // Tasks mentioning tests + implementation + docs need decomposition
+    const hasTests = /\b(test|spec|assert)\b/.test(text);
+    const hasImpl = /\b(endpoint|api|function|class|module|component)\b/.test(text);
+    const hasDocs = /\b(readme|doc|documentation)\b/.test(text);
+    if ([hasTests, hasImpl, hasDocs].filter(Boolean).length >= 2) return false;
+
     const paths = this.extractAllowedPaths(task);
     const narrowIntent = /(create|write|update|modify|edit|add|fix|rename)\b/.test(text);
     return narrowIntent && paths.length > 0 && paths.length <= 3;
