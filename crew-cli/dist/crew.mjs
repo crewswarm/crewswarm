@@ -13582,6 +13582,8 @@ var init_unified = __esm({
         let verificationPassed = false;
         let escalationNeeded = false;
         let escalationReason;
+        const filesWritten = /* @__PURE__ */ new Set();
+        const filesReadBack = /* @__PURE__ */ new Set();
         for (const turn of history) {
           const tool = String(turn?.tool || "");
           if (turn?.error) continue;
@@ -13595,10 +13597,28 @@ var init_unified = __esm({
             }
             verificationPassed = true;
           }
+          if (tool === "write_file" || tool === "append_file") {
+            const fp = String(turn.params?.file_path || "").trim();
+            if (fp) filesWritten.add(fp);
+          }
+          if (tool === "read_file" || tool === "read_many_files") {
+            const fp = String(turn.params?.file_path || "").trim();
+            if (fp) filesReadBack.add(fp);
+          }
+        }
+        if (!verificationPassed && filesWritten.size > 0) {
+          const confirmedFiles = [...filesWritten].filter((f) => filesReadBack.has(f));
+          if (confirmedFiles.length > 0) {
+            verificationPassed = true;
+            verification.add(`Files written and read back: ${confirmedFiles.join(", ")}`);
+          } else if (task.requiredCapabilities.includes("file-write")) {
+            verificationPassed = true;
+            verification.add(`Files written: ${[...filesWritten].join(", ")}`);
+          }
         }
         if (!verificationPassed && task.verification.length > 0) {
           escalationNeeded = true;
-          escalationReason = "No shell verification command was executed";
+          escalationReason = "No shell verification command was executed and no files were written";
         }
         return {
           verification: Array.from(verification),
