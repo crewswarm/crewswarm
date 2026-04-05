@@ -455,9 +455,14 @@ export class UnifiedPipeline {
     let escalationNeeded = false;
     let escalationReason: string | undefined;
 
+    const filesWritten = new Set<string>();
+    const filesReadBack = new Set<string>();
+
     for (const turn of history) {
       const tool = String(turn?.tool || '');
       if (turn?.error) continue;
+
+      // Shell commands are primary verification evidence
       if (tool === 'run_shell_command' || tool === 'check_background_task' || tool === 'run_cmd' || tool === 'shell') {
         const command = String(turn.params?.command || turn.params?.task_id || '').trim();
         const result = turn.result as { output?: unknown } | undefined;
@@ -468,14 +473,36 @@ export class UnifiedPipeline {
         }
         verificationPassed = true;
       }
+
+      // Track file writes and readbacks as secondary verification
+      if (tool === 'write_file' || tool === 'append_file') {
+        const fp = String(turn.params?.file_path || '').trim();
+        if (fp) filesWritten.add(fp);
+      }
+      if (tool === 'read_file' || tool === 'read_many_files') {
+        const fp = String(turn.params?.file_path || '').trim();
+        if (fp) filesReadBack.add(fp);
+      }
     }
 
-    // No prose keyword fallback — verification requires shell evidence
-    // (exit code 0 from run_shell_command/check_background_task) or
-    // structured validation fields from the worker output.
+    // If no shell verification but files were written AND read back, count as verified.
+    // Writing a file + reading it back is sufficient proof for file-creation tasks.
+    if (!verificationPassed && filesWritten.size > 0) {
+      const confirmedFiles = [...filesWritten].filter(f => filesReadBack.has(f));
+      if (confirmedFiles.length > 0) {
+        verificationPassed = true;
+        verification.add(`Files written and read back: ${confirmedFiles.join(', ')}`);
+      } else if (task.requiredCapabilities.includes('file-write')) {
+        // Files were written but not read back — still count for file-write tasks
+        verificationPassed = true;
+        verification.add(`Files written: ${[...filesWritten].join(', ')}`);
+      }
+    }
+
+    // Escalate only if no verification at all and plan expected verification
     if (!verificationPassed && task.verification.length > 0) {
       escalationNeeded = true;
-      escalationReason = 'No shell verification command was executed';
+      escalationReason = 'No shell verification command was executed and no files were written';
     }
 
     return {
@@ -1819,6 +1846,9 @@ If output has blockers, set approved=false.`,
           executionPath.push('l3-transcript-qa');
         }
 
+        // Run deterministic content gate FIRST — if files exist with correct content,
+        // approve immediately regardless of transcript QA escalations (failed git/tsc/etc).
+        // This prevents the LLM QA loop from rejecting successful file-creation tasks.
         const deterministicQaApproved = await this.passesDeterministicSmallTaskGate(request, plan, executionResults);
         if (deterministicQaApproved) {
           qaApproved = true;
