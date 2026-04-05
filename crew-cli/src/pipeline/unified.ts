@@ -29,6 +29,7 @@ import { reviewWorkerExecution, type ReviewResult } from '../executor/reviewer.j
 import { enterWorktree, exitWorktree, mergeWorktree } from '../tools/worktree.js';
 import { Sandbox } from '../sandbox/index.js';
 import type { SessionManager } from '../session/manager.js';
+import { DelegationTuner, analyzeTask as analyzeDelegationTask } from '../engine/delegation.js';
 // Structure analyzer temporarily disabled - file missing
 // import { analyzeProjectStructure, formatStructureContext } from '../utils/structure-analyzer.js';
 
@@ -109,6 +110,7 @@ export class UnifiedPipeline {
   private contextPacks = new ContextPackManager();
   private sandbox: Sandbox | undefined;
   private session?: SessionManager;
+  private delegationTuner = new DelegationTuner();
 
   constructor(sandbox?: Sandbox, session?: SessionManager) {
     this.sandbox = sandbox;
@@ -712,6 +714,35 @@ export class UnifiedPipeline {
     };
   }
 
+  private extractVerificationCommands(task: WorkerTaskEnvelope): string[] {
+    return Array.from(new Set(
+      (task.verification || [])
+        .map(item => this.extractVerificationCommand(item))
+        .filter((value): value is string => Boolean(value))
+    ));
+  }
+
+  private extractVerificationCommand(value: string): string | null {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return null;
+
+    const explicit = trimmed.match(/^(?:run|execute)\s+(.+)$/i);
+    if (explicit?.[1] && this.looksLikeVerificationCommand(explicit[1].trim())) {
+      return explicit[1].trim();
+    }
+
+    const backticked = [...trimmed.matchAll(/`([^`]+)`/g)]
+      .map(match => match[1]?.trim())
+      .filter((command): command is string => Boolean(command) && this.looksLikeVerificationCommand(command));
+    if (backticked.length > 0) return backticked[0];
+
+    return this.looksLikeVerificationCommand(trimmed) ? trimmed : null;
+  }
+
+  private looksLikeVerificationCommand(value: string): boolean {
+    return /^(npm|pnpm|yarn|bun|node|pytest|jest|vitest|cargo|go|make|\.\/|bash|sh)\b/.test(value);
+  }
+
   private async reviewAndFixWorkerResult(
     task: WorkerTaskEnvelope,
     result: L3Result['results'][number],
@@ -781,7 +812,8 @@ export class UnifiedPipeline {
         maxTurns: this.getMaxTurnsForEffort(this.getExecutionEffort(task)),
         verbose: process.env.CREW_VERBOSE === 'true' || process.env.CREW_DEBUG === 'true',
         persona: task.persona,
-        constraintLevel: undefined
+        constraintLevel: undefined,
+        verificationCommands: this.extractVerificationCommands(task)
       });
       const parsed = this.parseWorkerOutput(String(fixResult.output || ''));
       current = this.buildWorkerExecutionResult(task, parsed, fixResult);
@@ -2182,11 +2214,13 @@ Return ONLY valid JSON:
     const composedPrompt = this.composer.compose('executor-code-v1', overlays, traceId);
 
     const effort = this.getExecutionEffort(task);
+    const verificationCommands = this.extractVerificationCommands(task);
     const result = await runAgenticWorker(composedPrompt.finalPrompt, this.requireSandbox(), {
       model: this.getModelForLayer('l3', effort) || '',
       maxTurns: this.getMaxTurnsForEffort(effort),
       tier: this.getTierForEffort(effort),
-      persona: task.persona
+      persona: task.persona,
+      verificationCommands
     });
 
     const parsed = this.parseWorkerOutput(String(result.output || ''));
@@ -2441,7 +2475,8 @@ Return ONLY valid JSON:
           projectDir: workerProjectDir,
           priorDiscoveredFiles: accumulatedDiscoveredFiles.length > 0 ? accumulatedDiscoveredFiles : undefined,
           persona: unit.persona,
-          constraintLevel: undefined
+          constraintLevel: undefined,
+          verificationCommands: this.extractVerificationCommands(unit)
         });
         const parsed = this.parseWorkerOutput(String(result.output || ''));
 
@@ -2480,6 +2515,7 @@ Return ONLY valid JSON:
         escalationNeeded: boolean;
         escalationReason?: string;
         toolsUsed?: string[];
+        turns?: number;
         shellResults?: Array<{ command: string; exitCode: number; output: string }>;
       }> = [];
       const queue = batch.slice();
@@ -2530,6 +2566,24 @@ Return ONLY valid JSON:
 
       results.push(...batchResults);
       totalCost += batchResults.reduce((sum, r) => sum + r.cost, 0);
+
+      // Record delegation performance for future persona ranking
+      for (const r of batchResults) {
+        const unitDef = batch.find(u => u.id === r.workUnitId);
+        if (unitDef) {
+          const taskChars = analyzeDelegationTask(unitDef.goal, unitDef.allowedPaths, unitDef.requiredCapabilities);
+          this.delegationTuner.recordPerformance({
+            persona: r.persona,
+            model: String(process.env.CREW_EXECUTION_MODEL || 'default'),
+            taskType: taskChars.taskType,
+            success: !r.escalationNeeded,
+            turns: r.turns || 0,
+            costUsd: r.cost,
+            verificationPassed: r.verificationPassed,
+            timestamp: Date.now()
+          });
+        }
+      }
 
       // HARD COST GATE - Check during execution
       if (totalCost > 0.50) {
@@ -2641,7 +2695,7 @@ Return ONLY valid JSON:
    * Run a worker unit — delegates to agentic executor by default.
    * Can be overridden in tests to use a mock executor.
    */
-  async runWorker(prompt: string, options: { model?: string; maxTurns?: number; verbose?: boolean; priorDiscoveredFiles?: string[]; persona?: string; constraintLevel?: import('../tools/gemini/crew-adapter.js').ConstraintLevel }): Promise<{ output: string; cost?: number; turns?: number; discoveredFiles?: string[] }> {
+  async runWorker(prompt: string, options: { model?: string; maxTurns?: number; verbose?: boolean; priorDiscoveredFiles?: string[]; persona?: string; constraintLevel?: import('../tools/gemini/crew-adapter.js').ConstraintLevel; verificationCommands?: string[] }): Promise<{ output: string; cost?: number; turns?: number; discoveredFiles?: string[] }> {
     // Always use the agentic executor with full tool suite (write_file, replace, etc.)
     // The LocalExecutor is a single-turn LLM call with no tools — workers need tools to write files.
     return runAgenticWorker(prompt, this.requireSandbox(), options);

@@ -32,6 +32,8 @@ import { CorrectionStore } from '../learning/corrections.js';
 import { estimateTokens, getContextWindow, adaptiveCompressionRatio, calculateTokenBudget, compactConversation, type CompactedMessage } from '../context/token-compaction.js';
 import { ExecutionTranscript } from '../execution/transcript.js';
 import { buildTaskModeGuidance, detectTaskMode } from '../execution/agentic-guidance.js';
+import { PatchCritic } from '../engine/patch-critic.js';
+import { StructuredHistory } from '../engine/structured-history.js';
 import { getOAuthToken, forceRefreshOAuthToken } from '../auth/oauth-keychain.js';
 import { getOpenAIOAuthToken, forceRefreshOpenAIOAuth, OPENAI_CODEX_API_URL } from '../auth/openai-oauth.js';
 import { getGeminiOAuthToken, forceRefreshGeminiOAuth } from '../auth/gemini-oauth.js';
@@ -1956,6 +1958,8 @@ export async function runAgenticWorker(
   const toolsUsed = new Set<string>();
   const transcript = new ExecutionTranscript();
   const verificationCommands = normalizeVerificationCommands(options.verificationCommands ?? extractVerificationCommands(task));
+  const patchCritic = new PatchCritic({ allowedPaths: [] }); // scope enforced by task envelope
+  const structuredHistory = new StructuredHistory();
 
   const executeTool = async (name: string, params: Record<string, unknown>) => {
     toolsUsed.add(name);
@@ -1984,6 +1988,26 @@ export async function runAgenticWorker(
       handled: result.handled,
       recovery: result.recovery
     });
+
+    // Record in structured history (rich state preservation)
+    const filePath = String(params.file_path || params.path || '');
+    const isReadOnly = ['read_file', 'read_many_files', 'grep_search', 'glob', 'list_directory', 'get_internal_docs'].includes(name);
+    structuredHistory.recordToolExecution({
+      turn: turnCount,
+      tool: name,
+      params,
+      result: result.success ? (result.output || '') : null,
+      error: result.error,
+      durationMs,
+      filesAffected: filePath ? [filePath] : [],
+      readOnly: isReadOnly
+    });
+
+    // Patch critic: evaluate change quality and inject guidance
+    const criticReport = patchCritic.evaluate(turnCount, name, params, result, result.error, structuredHistory);
+    if (criticReport.guidance && verbose) {
+      console.log(`  [Critic] Score: ${criticReport.score}/100 — ${criticReport.findings.filter(f => f.severity !== 'info').length} issues`);
+    }
 
     // Auto-pagination: if read_file result looks truncated, hint for narrower read
     if (name === 'read_file' && result.success && result.output) {
@@ -2014,6 +2038,7 @@ export async function runAgenticWorker(
     abortSignal: options.abortSignal,
     tools: allTools,
     model,
+    taskMode,
     verificationCommands,
     onProgress: verbose
       ? (turn, action) => {
@@ -2026,8 +2051,14 @@ export async function runAgenticWorker(
     async (prompt, tools, history, abortSignal) => {
       turnCount++;
 
-      // JIT: inject discovered context every 3 turns
+      // Inject structured history summary + patch critic guidance
       let taskWithJIT = enrichedTask;
+      const historySummary = structuredHistory.buildExecutionSummary();
+      if (historySummary && turnCount > 1) {
+        taskWithJIT = `${taskWithJIT}\n\n${historySummary}`;
+      }
+
+      // JIT: inject discovered context every 3 turns
       let historyForTurn = history;
       if (turnCount > 1 && turnCount % 3 === 0 && jit.fileCount > 0) {
         try {
