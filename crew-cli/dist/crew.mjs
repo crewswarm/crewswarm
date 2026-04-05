@@ -6933,6 +6933,23 @@ var init_token_compaction = __esm({
 });
 
 // src/execution/transcript.ts
+function extractShellWriteTargets(command) {
+  const text = String(command || "").trim();
+  if (!text) return [];
+  const targets = /* @__PURE__ */ new Set();
+  const redirectRe = /(?:^|[|&;]\s*|\s)(?:>>?|1>>?|2>>?)\s*(?:"([^"]+)"|'([^']+)'|([^\s|&;]+))/g;
+  let match;
+  while ((match = redirectRe.exec(text)) !== null) {
+    const target = String(match[1] || match[2] || match[3] || "").trim();
+    if (target) targets.add(target);
+  }
+  const teeRe = /\btee\s+(?:-a\s+)?(?:"([^"]+)"|'([^']+)'|([^\s|&;]+))/g;
+  while ((match = teeRe.exec(text)) !== null) {
+    const target = String(match[1] || match[2] || match[3] || "").trim();
+    if (target) targets.add(target);
+  }
+  return [...targets];
+}
 var ExecutionTranscript;
 var init_transcript = __esm({
   "src/execution/transcript.ts"() {
@@ -6993,6 +7010,9 @@ var init_transcript = __esm({
           if (editTools.has(e.toolName) && typeof e.params.file_path === "string") {
             files.add(e.params.file_path);
           }
+          if ((e.toolName === "run_shell_command" || e.toolName === "shell" || e.toolName === "run_cmd") && typeof e.params.command === "string") {
+            for (const target of extractShellWriteTargets(e.params.command)) files.add(target);
+          }
         }
         return files;
       }
@@ -7003,6 +7023,9 @@ var init_transcript = __esm({
           if (!e.success) continue;
           if (e.toolName === "write_file" && typeof e.params.file_path === "string") {
             files.add(e.params.file_path);
+          }
+          if ((e.toolName === "run_shell_command" || e.toolName === "shell" || e.toolName === "run_cmd") && typeof e.params.command === "string") {
+            for (const target of extractShellWriteTargets(e.params.command)) files.add(target);
           }
         }
         return files;
@@ -13438,20 +13461,52 @@ var init_unified = __esm({
         const changed = /* @__PURE__ */ new Set();
         for (const turn of history) {
           if (turn?.error) continue;
-          if (!["write_file", "replace"].includes(String(turn.tool || ""))) continue;
-          const filePath = String(turn.params?.file_path || "").trim();
-          if (filePath) changed.add(filePath);
+          const tool = String(turn.tool || "");
+          if (["write_file", "append_file", "replace", "edit", "edit_file", "notebook_edit"].includes(tool)) {
+            const filePath = String(turn.params?.file_path || turn.params?.path || "").trim();
+            if (filePath) changed.add(filePath);
+            continue;
+          }
+          if (tool === "run_shell_command" || tool === "check_background_task" || tool === "run_cmd" || tool === "shell") {
+            const command = String(turn.params?.command || "").trim();
+            for (const target of this.extractShellWriteTargets(command)) changed.add(target);
+          }
         }
         return Array.from(changed);
+      }
+      extractShellWriteTargets(command) {
+        const text = String(command || "").trim();
+        if (!text) return [];
+        const targets = /* @__PURE__ */ new Set();
+        const redirectRe = /(?:^|[|&;]\s*|\s)(?:>>?|1>>?|2>>?)\s*(?:"([^"]+)"|'([^']+)'|([^\s|&;]+))/g;
+        let match;
+        while ((match = redirectRe.exec(text)) !== null) {
+          const target = String(match[1] || match[2] || match[3] || "").trim();
+          if (target) targets.add(target);
+        }
+        const teeRe = /\btee\s+(?:-a\s+)?(?:"([^"]+)"|'([^']+)'|([^\s|&;]+))/g;
+        while ((match = teeRe.exec(text)) !== null) {
+          const target = String(match[1] || match[2] || match[3] || "").trim();
+          if (target) targets.add(target);
+        }
+        return [...targets];
+      }
+      stringifyShellResult(result2) {
+        if (typeof result2 === "string") return result2.trim();
+        if (!result2 || typeof result2 !== "object") return String(result2 || "").trim();
+        const candidate = result2;
+        return String(
+          candidate.output || candidate.stdout || candidate.stderr || candidate.llmContent || candidate.returnDisplay || candidate.return_display || ""
+        ).trim();
       }
       extractShellResults(history = []) {
         const results = [];
         for (const turn of history) {
           const tool = String(turn?.tool || "");
-          if (tool !== "run_shell_command" && tool !== "check_background_task") continue;
+          if (tool !== "run_shell_command" && tool !== "check_background_task" && tool !== "run_cmd" && tool !== "shell") continue;
           const command = String(turn.params?.command || turn.params?.task_id || "").trim();
           const result2 = turn.result;
-          const rawOutput = String(result2?.output || turn.result || "").trim();
+          const rawOutput = this.stringifyShellResult(result2 || turn.result);
           const exitCode = turn?.error ? 1 : typeof result2?.exitCode === "number" ? result2.exitCode : 0;
           results.push({
             command,
@@ -13469,10 +13524,10 @@ var init_unified = __esm({
         for (const turn of history) {
           const tool = String(turn?.tool || "");
           if (turn?.error) continue;
-          if (tool === "run_shell_command" || tool === "check_background_task") {
+          if (tool === "run_shell_command" || tool === "check_background_task" || tool === "run_cmd" || tool === "shell") {
             const command = String(turn.params?.command || turn.params?.task_id || "").trim();
             const result2 = turn.result;
-            const output = String(result2?.output || turn.result || "").trim();
+            const output = this.stringifyShellResult(result2 || turn.result);
             verification.add(command ? `Command succeeded: ${command}` : "Verification command succeeded.");
             if (output) {
               verification.add(`Verification output: ${output.slice(0, 200)}`);

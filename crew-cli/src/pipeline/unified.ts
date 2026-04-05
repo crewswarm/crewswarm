@@ -371,11 +371,58 @@ export class UnifiedPipeline {
     const changed = new Set<string>();
     for (const turn of history) {
       if (turn?.error) continue;
-      if (!['write_file', 'replace'].includes(String(turn.tool || ''))) continue;
-      const filePath = String(turn.params?.file_path || '').trim();
-      if (filePath) changed.add(filePath);
+      const tool = String(turn.tool || '');
+      if (['write_file', 'append_file', 'replace', 'edit', 'edit_file', 'notebook_edit'].includes(tool)) {
+        const filePath = String(turn.params?.file_path || turn.params?.path || '').trim();
+        if (filePath) changed.add(filePath);
+        continue;
+      }
+      if (tool === 'run_shell_command' || tool === 'check_background_task' || tool === 'run_cmd' || tool === 'shell') {
+        const command = String(turn.params?.command || '').trim();
+        for (const target of this.extractShellWriteTargets(command)) changed.add(target);
+      }
     }
     return Array.from(changed);
+  }
+
+  private extractShellWriteTargets(command: string): string[] {
+    const text = String(command || '').trim();
+    if (!text) return [];
+    const targets = new Set<string>();
+    const redirectRe = /(?:^|[|&;]\s*|\s)(?:>>?|1>>?|2>>?)\s*(?:"([^"]+)"|'([^']+)'|([^\s|&;]+))/g;
+    let match: RegExpExecArray | null;
+    while ((match = redirectRe.exec(text)) !== null) {
+      const target = String(match[1] || match[2] || match[3] || '').trim();
+      if (target) targets.add(target);
+    }
+    const teeRe = /\btee\s+(?:-a\s+)?(?:"([^"]+)"|'([^']+)'|([^\s|&;]+))/g;
+    while ((match = teeRe.exec(text)) !== null) {
+      const target = String(match[1] || match[2] || match[3] || '').trim();
+      if (target) targets.add(target);
+    }
+    return [...targets];
+  }
+
+  private stringifyShellResult(result: unknown): string {
+    if (typeof result === 'string') return result.trim();
+    if (!result || typeof result !== 'object') return String(result || '').trim();
+    const candidate = result as {
+      output?: unknown;
+      stdout?: unknown;
+      stderr?: unknown;
+      llmContent?: unknown;
+      returnDisplay?: unknown;
+      return_display?: unknown;
+    };
+    return String(
+      candidate.output
+      || candidate.stdout
+      || candidate.stderr
+      || candidate.llmContent
+      || candidate.returnDisplay
+      || candidate.return_display
+      || ''
+    ).trim();
   }
 
   private extractShellResults(
@@ -384,10 +431,10 @@ export class UnifiedPipeline {
     const results: Array<{ command: string; exitCode: number; output: string }> = [];
     for (const turn of history) {
       const tool = String(turn?.tool || '');
-      if (tool !== 'run_shell_command' && tool !== 'check_background_task') continue;
+      if (tool !== 'run_shell_command' && tool !== 'check_background_task' && tool !== 'run_cmd' && tool !== 'shell') continue;
       const command = String(turn.params?.command || turn.params?.task_id || '').trim();
       const result = turn.result as { output?: unknown; exitCode?: unknown } | undefined;
-      const rawOutput = String(result?.output || turn.result || '').trim();
+      const rawOutput = this.stringifyShellResult(result || turn.result);
       const exitCode = turn?.error ? 1 : (typeof result?.exitCode === 'number' ? result.exitCode : 0);
       results.push({
         command,
@@ -411,10 +458,10 @@ export class UnifiedPipeline {
     for (const turn of history) {
       const tool = String(turn?.tool || '');
       if (turn?.error) continue;
-      if (tool === 'run_shell_command' || tool === 'check_background_task') {
+      if (tool === 'run_shell_command' || tool === 'check_background_task' || tool === 'run_cmd' || tool === 'shell') {
         const command = String(turn.params?.command || turn.params?.task_id || '').trim();
         const result = turn.result as { output?: unknown } | undefined;
-        const output = String(result?.output || turn.result || '').trim();
+        const output = this.stringifyShellResult(result || turn.result);
         verification.add(command ? `Command succeeded: ${command}` : 'Verification command succeeded.');
         if (output) {
           verification.add(`Verification output: ${output.slice(0, 200)}`);

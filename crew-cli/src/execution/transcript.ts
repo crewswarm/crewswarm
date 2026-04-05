@@ -17,6 +17,24 @@ export interface TranscriptEntry {
   recovery?: string;
 }
 
+function extractShellWriteTargets(command: string): string[] {
+  const text = String(command || '').trim();
+  if (!text) return [];
+  const targets = new Set<string>();
+  const redirectRe = /(?:^|[|&;]\s*|\s)(?:>>?|1>>?|2>>?)\s*(?:"([^"]+)"|'([^']+)'|([^\s|&;]+))/g;
+  let match: RegExpExecArray | null;
+  while ((match = redirectRe.exec(text)) !== null) {
+    const target = String(match[1] || match[2] || match[3] || '').trim();
+    if (target) targets.add(target);
+  }
+  const teeRe = /\btee\s+(?:-a\s+)?(?:"([^"]+)"|'([^']+)'|([^\s|&;]+))/g;
+  while ((match = teeRe.exec(text)) !== null) {
+    const target = String(match[1] || match[2] || match[3] || '').trim();
+    if (target) targets.add(target);
+  }
+  return [...targets];
+}
+
 export class ExecutionTranscript {
   private _entries: TranscriptEntry[] = [];
   private _frozen = false;
@@ -80,6 +98,9 @@ export class ExecutionTranscript {
       if (editTools.has(e.toolName) && typeof e.params.file_path === 'string') {
         files.add(e.params.file_path);
       }
+      if ((e.toolName === 'run_shell_command' || e.toolName === 'shell' || e.toolName === 'run_cmd') && typeof e.params.command === 'string') {
+        for (const target of extractShellWriteTargets(e.params.command)) files.add(target);
+      }
     }
     return files;
   }
@@ -91,6 +112,9 @@ export class ExecutionTranscript {
       if (!e.success) continue;
       if (e.toolName === 'write_file' && typeof e.params.file_path === 'string') {
         files.add(e.params.file_path);
+      }
+      if ((e.toolName === 'run_shell_command' || e.toolName === 'shell' || e.toolName === 'run_cmd') && typeof e.params.command === 'string') {
+        for (const target of extractShellWriteTargets(e.params.command)) files.add(target);
       }
     }
     return files;
