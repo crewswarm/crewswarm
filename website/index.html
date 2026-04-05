@@ -733,6 +733,34 @@
         </div>
         <p class="rt-flow-caption">RT bus channels (<code>command</code>, <code>assign</code>, <code>done</code>, <code>status</code>, <code>events</code>) coordinate 22 agents across 6 coding engines.</p>
       </div>
+      <!-- Execution Quality Engine callout -->
+      <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 16px; padding: 2.5rem; margin-top: 2.5rem; color: #e0e0e0;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+          <span style="font-size: 1.5rem;">+</span>
+          <h2 style="font-size: 1.35rem; margin: 0; color: #fff;">crew-cli Execution Quality Engine</h2>
+        </div>
+        <p style="margin: 0 0 1.25rem 0; color: #b0b0b0; max-width: 48rem;">Every other AI CLI runs a blind loop: prompt, tool call, repeat. crew-cli wraps every task in 8 quality modules that prevent failures, force verification, and learn from past runs. The result: a free 70B open model produces the same code quality as GPT-5.4.</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+          <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
+            <strong style="color: #fff;">9 models at 100/100</strong><br>
+            <span style="font-size: 0.85rem; color: #999;">Claude, GPT-5.4, Gemini, DeepSeek, Grok, Groq llama — all perfect on quality benchmark</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
+            <strong style="color: #fff;">12 providers, 4/4 presets</strong><br>
+            <span style="font-size: 0.85rem; color: #999;">OAuth + API key + OpenRouter. Chinese models (GLM-5, Qwen3, Kimi) included.</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
+            <strong style="color: #fff;">Zero-cost quality layers</strong><br>
+            <span style="font-size: 0.85rem; color: #999;">Failure memory, action ranking, edit gate, patch critic — all in-process, no extra LLM calls</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
+            <strong style="color: #fff;">50x cost reduction</strong><br>
+            <span style="font-size: 0.85rem; color: #999;">Gemini Flash at $0.003 matches GPT-5.4 at $0.15 — same score, same tests passing</span>
+          </div>
+        </div>
+        <a href="cli.html#execution-quality-engine" style="color: #64b5f6; font-size: 0.9rem;">See the full engine breakdown and benchmark results &rarr;</a>
+      </div>
+
       <div class="section-header" style="margin-top: 2.5rem;">
         <h2 style="font-size: 1.35rem;">Three layers, one stack</h2>
         <p class="section-desc">The product stays simple because the runtime is layered cleanly underneath it.</p>
