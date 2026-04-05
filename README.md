@@ -26,7 +26,39 @@ crewswarm lets you switch engines without throwing away your working context. Or
 | **Gemini CLI** | Research, SEO, free fallback | Free: 60 req/min, Google Search built in |
 | **Codex CLI** | Backend, fast iteration | Full sandbox, no approval prompts |
 | **OpenCode** | Provider flexibility | Any model (Groq/DeepSeek/Ollama) |
-| **crew-cli** | Orchestration, quality workflows | 20+ agents, sandbox, 3x parallel speedup |
+| **crew-cli** | Execution engine, any model | 40+ models, 16 providers, sandbox, parallel workers |
+
+---
+
+## crew-cli: the execution engine
+
+crew-cli is the built-in execution engine. It runs standalone or as one of crewswarm's 6 engines. Unlike other AI coding CLIs that lock you to one provider, crew-cli works with any model:
+
+| Provider | Models | Driver |
+|---|---|---|
+| **OpenAI** | GPT-5.4, GPT-5.2, GPT-4.1, o3-mini, o4-mini | OpenAI API |
+| **Anthropic** | Claude Opus/Sonnet/Haiku (API + OAuth) | Anthropic API + CCH |
+| **Google** | Gemini 2.5 Flash, Gemini 3 Pro | Gemini API |
+| **xAI** | Grok 4.20, Grok 4-1, Grok 3, grok-code-fast | OpenAI-compatible |
+| **DeepSeek** | DeepSeek Chat, DeepSeek Reasoner | OpenAI-compatible |
+| **Groq** | Llama 4 Scout, Kimi K2, Qwen3-32B, GPT-OSS | OpenAI-compatible |
+| **Fireworks** | DeepSeek v3, GLM-5, Kimi K2.5, GPT-OSS | OpenAI-compatible |
+| **Mistral** | Mistral Large, Codestral, Devstral | OpenAI-compatible |
+| **Cerebras** | Qwen 3-235B, Llama 3.1 | OpenAI-compatible |
+| **NVIDIA** | Llama 3.3-70B | OpenAI-compatible |
+| **OpenCode/Zen** | 39 models (GPT-5.x, Claude, Gemini, GLM, Kimi, MiniMax, Qwen, Nemotron) | OpenAI-compatible |
+| **OpenRouter** | 100+ models | OpenAI-compatible |
+| **Ollama** | Any local model | OpenAI-compatible |
+
+Three API formats, one engine. Bring your own keys, use OAuth from Claude Code / Codex / Gemini CLI, or run free models via Groq / Ollama / OpenRouter.
+
+**What makes crew-cli different from other AI coding CLIs:**
+- **Failure memory** — blocks repeated bad moves, forces new approaches
+- **Verification-first** — won't declare success until proof is shown
+- **Patch critic** — evaluates every edit for quality in real time
+- **Parallel workers** — splits multi-file tasks into concurrent work units
+- **Sandbox preview** — all changes staged before writing to disk
+- **Smart delegation** — picks the right model tier for each subtask
 
 ---
 
@@ -110,7 +142,7 @@ Dashboard / Vibe IDE / crew-cli / Telegram / MCP
 
 - **Dashboard** — web control plane at `localhost:4319` (agents, engines, models, build, sessions)
 - **Vibe IDE** — browser-based editor + terminal + chat at `localhost:3333`
-- **crew-cli** — terminal-first with 34+ built-in tools
+- **crew-cli** — execution engine: 40+ models, 16 providers, 41 built-in tools
 - **Telegram** — chat with your crew from your phone
 - **MCP server** — plug crewswarm into any MCP-compatible editor
 
