@@ -455,29 +455,34 @@
       </div>
 
       <div style="background: var(--bg-secondary, #f8f9fa); border-radius: 12px; padding: 2rem; margin-top: 2rem;">
-        <h3 style="margin-top:0;">Verified across 10 providers</h3>
-        <p>The engine is tested against 4 quality presets (turbo, fast, balanced, quality) across 10 models from 7 providers. All pass.</p>
+        <h3 style="margin-top:0;">18 models at 100/100</h3>
+        <p>Every model below scores perfect on our quality benchmark: correct code, all tests passing, typecheck clean. The engine makes cheap models perform like expensive ones.</p>
         <div style="overflow-x:auto;">
           <table style="width:100%; border-collapse: collapse; font-size: 0.9rem;">
             <thead>
               <tr style="border-bottom: 2px solid var(--border, #ddd);">
-                <th style="text-align:left; padding: 0.5rem;">Provider</th>
-                <th style="text-align:center; padding: 0.5rem;">Auth</th>
-                <th style="text-align:center; padding: 0.5rem;">Presets</th>
-                <th style="text-align:center; padding: 0.5rem;">Avg Speed</th>
+                <th style="text-align:left; padding: 0.5rem;">Model</th>
+                <th style="text-align:center; padding: 0.5rem;">Provider</th>
+                <th style="text-align:center; padding: 0.5rem;">Score</th>
+                <th style="text-align:center; padding: 0.5rem;">Speed</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td style="padding:0.4rem;">Gemini 2.5 Flash</td><td style="text-align:center;">API / OAuth</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~12s</td></tr>
-              <tr><td style="padding:0.4rem;">Claude Sonnet 4.6</td><td style="text-align:center;">OAuth (CCH)</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~33s</td></tr>
-              <tr><td style="padding:0.4rem;">Claude Haiku 4.5</td><td style="text-align:center;">OAuth (CCH)</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~27s</td></tr>
-              <tr><td style="padding:0.4rem;">OpenAI GPT-5.4</td><td style="text-align:center;">OAuth (Codex)</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~25s</td></tr>
-              <tr><td style="padding:0.4rem;">DeepSeek Chat</td><td style="text-align:center;">API Key</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~59s</td></tr>
-              <tr><td style="padding:0.4rem;">Grok 4-1 Fast</td><td style="text-align:center;">API Key</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~37s</td></tr>
-              <tr><td style="padding:0.4rem;">Qwen3 Coder</td><td style="text-align:center;">OpenRouter</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~9s</td></tr>
-              <tr><td style="padding:0.4rem;">GLM-5</td><td style="text-align:center;">OpenRouter</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~10s</td></tr>
-              <tr><td style="padding:0.4rem;">Kimi K2.5</td><td style="text-align:center;">OpenRouter</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~24s</td></tr>
-              <tr><td style="padding:0.4rem;">MiniMax M2.7</td><td style="text-align:center;">OpenRouter</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~15s</td></tr>
+              <tr><td style="padding:0.4rem;">Gemini 2.5 Flash</td><td style="text-align:center;">Google</td><td style="text-align:center;">100/100</td><td style="text-align:center;">11s</td></tr>
+              <tr><td style="padding:0.4rem;">Gemini 2.5 Flash Lite</td><td style="text-align:center;">Google</td><td style="text-align:center;">100/100</td><td style="text-align:center;">11s</td></tr>
+              <tr><td style="padding:0.4rem;">GPT-5.4</td><td style="text-align:center;">OpenAI OAuth</td><td style="text-align:center;">100/100</td><td style="text-align:center;">14s</td></tr>
+              <tr><td style="padding:0.4rem;">Groq Llama 3.3 70B</td><td style="text-align:center;">Groq (free)</td><td style="text-align:center;">100/100</td><td style="text-align:center;">12s</td></tr>
+              <tr><td style="padding:0.4rem;">GLM-5</td><td style="text-align:center;">OpenCode</td><td style="text-align:center;">100/100</td><td style="text-align:center;">15s</td></tr>
+              <tr><td style="padding:0.4rem;">Kimi K2</td><td style="text-align:center;">Groq (free)</td><td style="text-align:center;">100/100</td><td style="text-align:center;">~12s</td></tr>
+              <tr><td style="padding:0.4rem;">Kimi K2.5</td><td style="text-align:center;">OpenCode</td><td style="text-align:center;">100/100</td><td style="text-align:center;">16s</td></tr>
+              <tr><td style="padding:0.4rem;">MiniMax M2.5</td><td style="text-align:center;">OpenCode</td><td style="text-align:center;">100/100</td><td style="text-align:center;">17s</td></tr>
+              <tr><td style="padding:0.4rem;">Claude Haiku 4.5</td><td style="text-align:center;">OAuth (free)</td><td style="text-align:center;">100/100</td><td style="text-align:center;">25s</td></tr>
+              <tr><td style="padding:0.4rem;">DeepSeek Chat</td><td style="text-align:center;">API Key</td><td style="text-align:center;">100/100</td><td style="text-align:center;">26s</td></tr>
+              <tr><td style="padding:0.4rem;">Claude Opus 4.6</td><td style="text-align:center;">OAuth (free)</td><td style="text-align:center;">100/100</td><td style="text-align:center;">29s</td></tr>
+              <tr><td style="padding:0.4rem;">DeepSeek Reasoner</td><td style="text-align:center;">API Key</td><td style="text-align:center;">100/100</td><td style="text-align:center;">35s</td></tr>
+              <tr><td style="padding:0.4rem;">Claude Sonnet 4.6</td><td style="text-align:center;">OAuth (free)</td><td style="text-align:center;">100/100</td><td style="text-align:center;">69s</td></tr>
+              <tr><td style="padding:0.4rem;">Grok 4-1 Fast</td><td style="text-align:center;">xAI API</td><td style="text-align:center;">100/100</td><td style="text-align:center;">75s</td></tr>
+              <tr><td style="padding:0.4rem;">Qwen3-32B</td><td style="text-align:center;">Groq (free)</td><td style="text-align:center;">100/100</td><td style="text-align:center;">75s</td></tr>
             </tbody>
           </table>
         </div>
