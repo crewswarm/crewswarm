@@ -307,8 +307,12 @@ async function runTask(task, model, envOverrides = {}) {
       qualityScore: 0
     };
   } finally {
-    // Cleanup
-    try { await rm(dir, { recursive: true, force: true }); } catch {}
+    // Cleanup — skip when verbose for debugging
+    if (!process.env.CREW_BENCH_VERBOSE) {
+      try { await rm(dir, { recursive: true, force: true }); } catch {}
+    } else {
+      console.log('  [debug] Preserved: ' + dir);
+    }
   }
 }
 
