@@ -1597,7 +1597,19 @@ async function executeStreamingAnthropicTurn(
         if (process.env.CREW_DEBUG_SSE) {
           console.log(`[SSE] Parsing tool idx=${idx} name=${block.name} inputJsonLen=${block.inputJson.length} preview=${block.inputJson.slice(0, 100)}`);
         }
-        try { params = JSON.parse(repairJson(block.inputJson)); } catch {}
+        // Parse raw first — repairJson corrupts code strings containing `: type`
+        try {
+          params = JSON.parse(block.inputJson);
+          if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Raw parse OK: keys=${Object.keys(params).join(',')}`);
+        } catch (e1) {
+          if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Raw parse FAILED: ${(e1 as Error).message}`);
+          try {
+            params = JSON.parse(repairJson(block.inputJson));
+            if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Repair parse OK: keys=${Object.keys(params).join(',')}`);
+          } catch (e2) {
+            if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Repair parse FAILED: ${(e2 as Error).message}`);
+          }
+        }
         toolCalls.push({ tool: block.name, params });
       }
     }
