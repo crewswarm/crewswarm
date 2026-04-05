@@ -13744,25 +13744,6 @@ ${this.buildExecutionAuditContext(executionResults)}`;
         const scopedPaths = plan.workGraph?.units?.flatMap((unit) => Array.isArray(unit.allowedPaths) ? unit.allowedPaths : []).filter(Boolean);
         const paths = scopedPaths && scopedPaths.length > 0 ? scopedPaths : this.extractRequestedPaths(request.userInput);
         if (paths.length === 0) return false;
-        if (executionResults?.results?.length) {
-          const hasBlockingEscalation = executionResults.results.some((result2) => {
-            if (!result2.escalationNeeded) return false;
-            const reason = String(result2.escalationReason || "").toLowerCase();
-            return reason.includes("outside allowed scope") || reason.includes("touched") || reason.includes("repeated the same failing tool action");
-          });
-          if (hasBlockingEscalation) return false;
-          if (executionResults.results.some((result2) => result2.verificationPassed)) return true;
-          const anyFilesChanged = executionResults.results.some(
-            (result2) => Array.isArray(result2.filesChanged) && result2.filesChanged.length > 0
-          );
-          if (anyFilesChanged) {
-          } else {
-            const noFilesEscalation = executionResults.results.some(
-              (result2) => result2.escalationNeeded && String(result2.escalationReason || "").toLowerCase().includes("without producing any file changes")
-            );
-            if (noFilesEscalation) return false;
-          }
-        }
         const baseDir = this.sandbox?.getBaseDir() || process.cwd();
         const verbose = process.env.CREW_VERBOSE === "true" || process.env.CREW_DEBUG === "true";
         const contents = /* @__PURE__ */ new Map();
