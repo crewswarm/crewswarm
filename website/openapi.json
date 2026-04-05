@@ -3,7 +3,7 @@
   "info": {
     "title": "crewswarm Complete API",
     "version": "2.0.0",
-    "description": "Complete API specification for crewswarm Dashboard (port 4319) and crew-lead (port 5010). Includes all agent orchestration, messaging integrations, memory management, and system control endpoints."
+    "description": "Complete API specification for crewswarm Dashboard (port 4319), crew-lead (port 5010), Vibe Studio (port 4320), and crew-cli (variable port). Includes all agent orchestration, messaging integrations, memory management, and system control endpoints."
   },
   "servers": [
     {
@@ -15,28 +15,12 @@
       "description": "crew-lead API (orchestration and chat)"
     },
     {
-      "url": "http://127.0.0.1:3333",
-      "description": "Vibe IDE (browser-native workspace)"
+      "url": "http://127.0.0.1:4320",
+      "description": "Vibe Studio API (editor and sessions)"
     },
     {
-      "url": "http://127.0.0.1:5020",
-      "description": "MCP & OpenAI-compatible API"
-    },
-    {
-      "url": "ws://127.0.0.1:18889",
-      "description": "Real-time WebSocket message bus"
-    },
-    {
-      "url": "ws://127.0.0.1:3334",
-      "description": "File Watcher (Vibe live reload)"
-    },
-    {
-      "url": "http://127.0.0.1:4096",
-      "description": "Code Engine (OpenCode / Claude Code / Cursor)"
-    },
-    {
-      "url": "http://127.0.0.1:18789",
-      "description": "OpenClaw Gateway (Optional legacy service)"
+      "url": "http://127.0.0.1:4321",
+      "description": "crew-cli API (agent router and tasks)"
     }
   ],
   "tags": [
@@ -107,6 +91,34 @@
     {
       "name": "Telemetry",
       "description": "Usage tracking and spending"
+    },
+    {
+      "name": "OAuth",
+      "description": "OAuth and subscription provider authentication"
+    },
+    {
+      "name": "Testing",
+      "description": "Test suite execution and results"
+    },
+    {
+      "name": "Workflows",
+      "description": "Scheduled pipeline workflow management"
+    },
+    {
+      "name": "Studio",
+      "description": "Vibe Studio editor and session management"
+    },
+    {
+      "name": "RAG",
+      "description": "Retrieval-augmented generation and indexing"
+    },
+    {
+      "name": "MCP",
+      "description": "Model Context Protocol endpoints"
+    },
+    {
+      "name": "V1",
+      "description": "crew-cli v1 API (tasks, sandbox, traces)"
     }
   ],
   "paths": {
@@ -188,6 +200,33 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "POST /api/agents",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
       }
     },
     "/api/agents-config": {
@@ -216,6 +255,7 @@
           "Agents"
         ],
         "summary": "POST /api/agents-config/create",
+        "description": " Validated with AgentConfigCreateSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -274,6 +314,7 @@
           "Agents"
         ],
         "summary": "POST /api/agents-config/delete",
+        "description": " Validated with AgentConfigDeleteSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -303,6 +344,7 @@
           "Agents"
         ],
         "summary": "POST /api/agents-config/reset-session",
+        "description": " Validated with AgentResetSessionSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -332,6 +374,7 @@
           "Agents"
         ],
         "summary": "POST /api/agents/reset-session",
+        "description": " Validated with AgentResetSessionSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -531,6 +574,26 @@
         }
       }
     },
+    "/api/crew-lead/project-messages": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "GET /api/crew-lead/project-messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/dispatch": {
       "post": {
         "tags": [
@@ -613,6 +676,7 @@
           "Projects"
         ],
         "summary": "POST /api/projects/update",
+        "description": " Validated with UpdateProjectSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -642,6 +706,7 @@
           "Projects"
         ],
         "summary": "POST /api/projects/delete",
+        "description": " Validated with DeleteProjectSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -671,6 +736,7 @@
           "PM Loop"
         ],
         "summary": "POST /api/pm-loop/start",
+        "description": " Validated with StartPMLoopSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -818,6 +884,7 @@
           "PM Loop"
         ],
         "summary": "POST /api/roadmap/write",
+        "description": " Validated with RoadmapWriteSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -847,6 +914,7 @@
           "PM Loop"
         ],
         "summary": "POST /api/roadmap/retry-failed",
+        "description": " Validated with RoadmapRetryFailedSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -876,6 +944,7 @@
           "Build"
         ],
         "summary": "POST /api/build",
+        "description": " Validated with StartBuildSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -934,6 +1003,7 @@
           "Build"
         ],
         "summary": "POST /api/continuous-build",
+        "description": " Validated with ContinuousBuildSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -1024,6 +1094,33 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Build"
+        ],
+        "summary": "POST /api/phased-progress",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
       }
     },
     "/api/providers": {
@@ -1101,6 +1198,7 @@
           "Providers"
         ],
         "summary": "POST /api/providers/builtin/test",
+        "description": " Validated with ProviderBuiltinTestSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -1130,6 +1228,7 @@
           "Providers"
         ],
         "summary": "POST /api/providers/add",
+        "description": " Validated with ProviderAddSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -1159,6 +1258,7 @@
           "Providers"
         ],
         "summary": "POST /api/providers/save",
+        "description": " Validated with ProviderSaveSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -1188,6 +1288,7 @@
           "Providers"
         ],
         "summary": "POST /api/providers/test",
+        "description": " Validated with ProviderTestSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -1240,12 +1341,33 @@
         }
       }
     },
+    "/api/models": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "GET /api/models",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/skills/import": {
       "post": {
         "tags": [
           "Skills"
         ],
         "summary": "POST /api/skills/import",
+        "description": " Validated with ImportSkillSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -1761,6 +1883,7 @@
           "Contacts"
         ],
         "summary": "POST /api/contacts/delete",
+        "description": " Validated with ContactDeleteSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -1790,6 +1913,7 @@
           "Contacts"
         ],
         "summary": "POST /api/contacts/send",
+        "description": " Validated with ContactSendSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -2538,6 +2662,194 @@
         }
       }
     },
+    "/api/settings/autonomous-mentions": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/autonomous-mentions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/autonomous-mentions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/cli-models": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/cli-models",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/cli-models",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/opencode": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/opencode",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/opencode",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/tmux-bridge": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/settings/tmux-bridge",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/settings/tmux-bridge",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/env": {
       "get": {
         "tags": [
@@ -2605,6 +2917,84 @@
         }
       }
     },
+    "/api/config/lock-status": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /api/config/lock-status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/lock": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/config/lock",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/unlock": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "POST /api/config/unlock",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/services/status": {
       "get": {
         "tags": [
@@ -2631,6 +3021,7 @@
           "Services"
         ],
         "summary": "POST /api/services/restart",
+        "description": " Validated with ServiceActionSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -2761,6 +3152,35 @@
         }
       }
     },
+    "/api/engines/toggle": {
+      "post": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "POST /api/engines/toggle",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/engine-passthrough": {
       "post": {
         "tags": [
@@ -2868,6 +3288,126 @@
         }
       }
     },
+    "/api/engine-runtimes": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/engine-runtimes",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engine-sessions": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/engine-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/codex-sessions": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/codex-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gemini-sessions": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/gemini-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-cli-sessions": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/crew-cli-sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/first-run-engines": {
+      "get": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "GET /api/first-run-engines",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analyze-image": {
       "post": {
         "tags": [
@@ -2946,6 +3486,398 @@
         }
       }
     },
+    "/api/oauth/status": {
+      "get": {
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "GET /api/oauth/status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/oauth/test": {
+      "post": {
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "POST /api/oauth/test",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/oauth/models": {
+      "get": {
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "GET /api/oauth/models",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/oauth/model": {
+      "get": {
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "GET /api/oauth/model",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "POST /api/oauth/model",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/summary": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/summary",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/history": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/history",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/run-detail": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/run-detail",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/run": {
+      "post": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "POST /api/tests/run",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/progress": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/progress",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/list": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "summary": "GET /api/workflows/list",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/item": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "summary": "GET /api/workflows/item",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/save": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "summary": "POST /api/workflows/save",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/delete": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "summary": "POST /api/workflows/delete",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/run": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "summary": "POST /api/workflows/run",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/log": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "summary": "GET /api/workflows/log",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/status": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "summary": "GET /api/workflows/status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/dlq": {
       "get": {
         "tags": [
@@ -2972,6 +3904,7 @@
           "Core"
         ],
         "summary": "POST /api/dlq/replay",
+        "description": " Validated with ReplayDLQSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -3247,6 +4180,7 @@
           "Core"
         ],
         "summary": "POST /api/enhance-prompt",
+        "description": " Validated with EnhancePromptSchema.",
         "responses": {
           "200": {
             "description": "Success",
@@ -3546,6 +4480,362 @@
         }
       }
     },
+    "/api/auth/token": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/auth/token",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/signup": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/signup",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/first-run-status": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/first-run-status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cli-processes": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/cli-processes",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ui/active-project": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/ui/active-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/ui/active-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-chat": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /api/agent-chat",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/unified": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /api/chat/unified",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cli/chat": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /api/cli/chat",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat-participants": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "GET /api/chat-participants",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat-agent": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /api/chat-agent",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/stale": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/stale",
+        "description": "Auto-discovered endpoint. Method: GET.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/stream": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/stream",
+        "description": "Auto-discovered endpoint. Method: GET.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/screenshot": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/screenshot",
+        "description": "Auto-discovered endpoint. Method: GET.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/coverage-map": {
+      "get": {
+        "tags": [
+          "Testing"
+        ],
+        "summary": "GET /api/tests/coverage-map",
+        "description": "Auto-discovered endpoint. Method: GET.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/status": {
       "get": {
         "tags": [
@@ -3566,12 +4856,61 @@
         }
       }
     },
+    "/api/background": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/background",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat": {
       "post": {
         "tags": [
           "Chat"
         ],
         "summary": "POST /chat",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/stream": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "POST /chat/stream",
         "responses": {
           "200": {
             "description": "Success",
@@ -3751,12 +5090,12 @@
         }
       }
     },
-    "/api/chat-agent": {
+    "/api/pipeline": {
       "post": {
         "tags": [
           "Dispatch"
         ],
-        "summary": "POST /api/chat-agent",
+        "summary": "POST /api/pipeline",
         "responses": {
           "200": {
             "description": "Success",
@@ -3882,6 +5221,164 @@
           "Skills"
         ],
         "summary": "POST /api/skills/reject",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/search-project-messages": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "GET /api/crew-lead/search-project-messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/export-project-messages": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "GET /api/crew-lead/export-project-messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/message-threads": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "GET /api/crew-lead/message-threads",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/search-messages-semantic": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "GET /api/crew-lead/search-messages-semantic",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/index-project-messages": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "POST /api/crew-lead/index-project-messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crew-lead/message-index-stats": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "GET /api/crew-lead/message-index-stats",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engine-passthrough/clear-session": {
+      "post": {
+        "tags": [
+          "Engines"
+        ],
+        "summary": "POST /api/engine-passthrough/clear-session",
         "responses": {
           "200": {
             "description": "Success",
@@ -4112,26 +5609,6 @@
         }
       }
     },
-    "/api/background": {
-      "get": {
-        "tags": [
-          "Core"
-        ],
-        "summary": "GET /api/background",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/allowlist-cmd": {
       "get": {
         "tags": [
@@ -4249,6 +5726,833 @@
             "application/json": {
               "schema": {
                 "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/version": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/version",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/sessions": {
+      "get": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "GET /api/studio/sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "DELETE /api/studio/sessions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/projects": {
+      "get": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "GET /api/studio/projects",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "POST /api/studio/projects",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/active-project": {
+      "get": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "GET /api/studio/active-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "POST /api/studio/active-project",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/files": {
+      "get": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "GET /api/studio/files",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/file-content": {
+      "get": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "GET /api/studio/file-content",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "POST /api/studio/file-content",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/project-messages": {
+      "get": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "GET /api/studio/project-messages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/engines": {
+      "get": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "GET /api/studio/engines",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/clear-cli-session": {
+      "post": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "POST /api/studio/clear-cli-session",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/git-diff": {
+      "get": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "GET /api/studio/git-diff",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/chat/unified": {
+      "post": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "POST /api/studio/chat/unified",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/terminal/start": {
+      "post": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "POST /api/studio/terminal/start",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/terminal": {
+      "delete": {
+        "tags": [
+          "Studio"
+        ],
+        "summary": "DELETE /api/studio/terminal",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat": {
+      "post": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "POST /v1/chat",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "POST /v1/chat/completions",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "GET /v1/models",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks": {
+      "post": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "POST /v1/tasks",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "GET /v1/agents",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "GET /v1/status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sandbox": {
+      "get": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "GET /v1/sandbox",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sandbox/apply": {
+      "post": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "POST /v1/sandbox/apply",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sandbox/rollback": {
+      "post": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "POST /v1/sandbox/rollback",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/index/rebuild": {
+      "post": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "POST /v1/index/rebuild",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/index/search": {
+      "get": {
+        "tags": [
+          "V1"
+        ],
+        "summary": "GET /v1/index/search",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tool-audit": {
+      "get": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "GET /api/tool-audit",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tool-audit/replay": {
+      "post": {
+        "tags": [
+          "Core"
+        ],
+        "summary": "POST /api/tool-audit/replay",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rag/search": {
+      "get": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "GET /api/rag/search",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rag/index": {
+      "post": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "POST /api/rag/index",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rag/stats": {
+      "get": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "GET /api/rag/stats",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "tags": [
+          "MCP"
+        ],
+        "summary": "POST /mcp",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp/health": {
+      "get": {
+        "tags": [
+          "MCP"
+        ],
+        "summary": "GET /mcp/health",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           }
