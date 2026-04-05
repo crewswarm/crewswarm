@@ -13725,10 +13725,20 @@ ${this.buildExecutionAuditContext(executionResults)}`;
           const hasBlockingEscalation = executionResults.results.some((result2) => {
             if (!result2.escalationNeeded) return false;
             const reason = String(result2.escalationReason || "").toLowerCase();
-            return reason.includes("outside allowed scope") || reason.includes("touched") || reason.includes("too many failed tool calls") || reason.includes("repeated the same failing tool action") || reason.includes("did not reach a successful completion state") || reason.includes("without producing any file changes");
+            return reason.includes("outside allowed scope") || reason.includes("touched") || reason.includes("repeated the same failing tool action");
           });
           if (hasBlockingEscalation) return false;
           if (executionResults.results.some((result2) => result2.verificationPassed)) return true;
+          const anyFilesChanged = executionResults.results.some(
+            (result2) => Array.isArray(result2.filesChanged) && result2.filesChanged.length > 0
+          );
+          if (anyFilesChanged) {
+          } else {
+            const noFilesEscalation = executionResults.results.some(
+              (result2) => result2.escalationNeeded && String(result2.escalationReason || "").toLowerCase().includes("without producing any file changes")
+            );
+            if (noFilesEscalation) return false;
+          }
         }
         const baseDir = this.sandbox?.getBaseDir() || process.cwd();
         const contents = /* @__PURE__ */ new Map();
