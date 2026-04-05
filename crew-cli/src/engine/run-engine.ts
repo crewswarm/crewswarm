@@ -22,7 +22,7 @@ import type { ToolCall, TurnResult, AutonomousConfig, AutonomousResult } from '.
 import { clearOldToolResults } from '../executor/tool-result-clearing.js';
 import { partitionToolCalls } from '../executor/tool-batching.js';
 import { buildTurnGuidance, type TaskMode } from '../execution/agentic-guidance.js';
-import { buildActionRankingPrompt } from '../execution/action-ranking.js';
+import { buildActionRankingPrompt, loadAdaptiveWeights, type TrajectoryFeedback } from '../execution/action-ranking.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,6 +90,14 @@ const DEFAULT_MAX_VERIFICATION_GATE_TURNS = 3;
 export class RunEngine {
   readonly state: RunState;
   private config: RunEngineConfig;
+
+  /**
+   * Load adaptive weights from autoharness trajectory data.
+   * Call once at startup to close the feedback loop.
+   */
+  static loadTrajectoryFeedback(feedback: TrajectoryFeedback[]): void {
+    loadAdaptiveWeights(feedback);
+  }
 
   constructor(config: RunEngineConfig) {
     this.config = config;

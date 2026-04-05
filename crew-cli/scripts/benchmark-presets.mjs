@@ -87,6 +87,46 @@ function pickModel(provider, preferred) {
   return '';
 }
 
+/**
+ * Seed fixture files into a benchmark run directory based on task requirements.
+ * Tasks that reference existing files (bugfix, refactor, test repair) need
+ * the files to exist before the worker starts.
+ */
+async function seedFixture(runDir, task) {
+  const lower = task.toLowerCase();
+
+  // All tasks get a package.json with test/build scripts
+  await writeFile(join(runDir, 'package.json'), JSON.stringify({
+    name: 'bench-fixture', version: '1.0.0', type: 'module',
+    scripts: {
+      test: 'node --experimental-strip-types test/*.test.ts',
+      build: 'node --experimental-strip-types --check src/*.ts'
+    }
+  }, null, 2));
+
+  // Tasks referencing src/math.ts need the fixture
+  if (lower.includes('src/math.ts') && (lower.includes('bug') || lower.includes('fix') || lower.includes('refactor') || lower.includes('import'))) {
+    await mkdir(join(runDir, 'src'), { recursive: true });
+    await writeFile(join(runDir, 'src', 'math.ts'), `export function add(a: number, b: number): number {\n  return a + b;\n}\n\nexport function subtract(a: number, b: number): number {\n  return a - b;\n}\n\nexport function multiply(a: number, b: number): number {\n  return a * b;\n}\n\n// BUG: division by zero not handled\nexport function divide(a: number, b: number): number {\n  return a / b;\n}\n`);
+    await mkdir(join(runDir, 'test'), { recursive: true });
+    await writeFile(join(runDir, 'test', 'math.test.ts'), `import { add, subtract, multiply, divide } from '../src/math.ts';\n\nconsole.log('add:', add(2, 3) === 5 ? 'PASS' : 'FAIL');\nconsole.log('subtract:', subtract(5, 3) === 2 ? 'PASS' : 'FAIL');\nconsole.log('multiply:', multiply(3, 4) === 12 ? 'PASS' : 'FAIL');\nconsole.log('divide-by-zero:', (() => {\n  try {\n    const result = divide(1, 0);\n    return result === Infinity ? 'FAIL — should throw' : 'PASS';\n  } catch {\n    return 'PASS';\n  }\n})());\n`);
+  }
+
+  // Tasks referencing src/utils.ts need the fixture
+  if (lower.includes('src/utils.ts') && (lower.includes('refactor') || lower.includes('fix') || lower.includes('test'))) {
+    await mkdir(join(runDir, 'src'), { recursive: true });
+    await writeFile(join(runDir, 'src', 'utils.ts'), `export function clamp(value: number, min: number, max: number): number {\n  if (value < min) return min;\n  if (value > max) return max;\n  return value;\n}\n\nexport function slugify(text: string): string {\n  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');\n}\n\nexport function truncate(str: string, length: number): string {\n  if (str.length <= length) return str;\n  return str.slice(0, length) + '...';\n}\n`);
+    await mkdir(join(runDir, 'test'), { recursive: true });
+    await writeFile(join(runDir, 'test', 'utils.test.ts'), `import { clamp, slugify, truncate } from '../src/utils.ts';\n\nconsole.log('clamp-low:', clamp(-5, 0, 10) === 0 ? 'PASS' : 'FAIL');\nconsole.log('clamp-high:', clamp(15, 0, 10) === 10 ? 'PASS' : 'FAIL');\nconsole.log('slugify:', slugify('Hello World!') === 'hello-world' ? 'PASS' : 'FAIL');\nconsole.log('truncate:', truncate('hello world', 5) === 'hello' ? 'PASS' : 'FAIL');\nconsole.log('truncate-short:', truncate('hi', 5) === 'hi' ? 'PASS' : 'FAIL');\n`);
+  }
+
+  // Init git so tools that check git status work
+  const { execSync } = await import('node:child_process');
+  try {
+    execSync('git init && git add -A && git commit -m init --allow-empty', { cwd: runDir, stdio: 'pipe' });
+  } catch {}
+}
+
 function resolvePresetEnv(provider, preset) {
   const plannerModel = pickModel(provider, [
     { provider: 'openai', model: 'gpt-5.4' },
@@ -237,6 +277,7 @@ async function main() {
   for (const preset of PRESETS) {
     for (const task of runTasks) {
       const runDir = await mkdtemp(join(scratchRoot, `bench-${preset}-`));
+      await seedFixture(runDir, task);
       const args = [crewCliEntry, 'run', '-t', task, '--json'];
       const env = resolvePresetEnv(preflight.provider, preset);
       const res = await runCommand('node', args, runDir, { env, timeoutMs: parsed.timeoutMs });

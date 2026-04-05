@@ -2005,6 +2005,21 @@ export async function runAgenticWorker(
   const projectDir = options.projectDir || sandbox.getBaseDir() || process.cwd();
   const verbose = options.verbose ?? Boolean(process.env.CREW_DEBUG);
 
+  // Adaptive weights: load trajectory feedback from autoharness (once per process)
+  if (!(globalThis as Record<string, unknown>).__crewAdaptiveWeightsLoaded) {
+    try {
+      const { extractTrajectoryFeedback } = await import('../../lib/autoharness/index.mjs');
+      const feedback = extractTrajectoryFeedback('default', 'global');
+      if (feedback.length > 0) {
+        RunEngine.loadTrajectoryFeedback(feedback);
+        if (verbose) console.log(`[AgenticExecutor] Loaded ${feedback.length} trajectory feedback entries for adaptive weights`);
+      }
+    } catch {
+      // Non-fatal — autoharness may not be available
+    }
+    (globalThis as Record<string, unknown>).__crewAdaptiveWeightsLoaded = true;
+  }
+
   // Feature: Per-session scratchpad — give each run an isolated temp directory
   const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const scratchDir = createScratchpad(sessionId);

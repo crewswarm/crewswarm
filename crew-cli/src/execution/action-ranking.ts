@@ -175,7 +175,7 @@ function analyzeHistory(history: TurnResult[]): ExecutionSnapshot {
 // ---------------------------------------------------------------------------
 
 /** Mode-specific base weights for action types. */
-const MODE_WEIGHTS: Record<TaskMode, Record<ActionType, number>> = {
+const DEFAULT_MODE_WEIGHTS: Record<TaskMode, Record<ActionType, number>> = {
   bugfix: {
     read: 0.3, search: 0.3, edit: 0.2, test: 0.8, build: 0.3, verify: 0.7, delegate: 0.1
   },
@@ -192,6 +192,83 @@ const MODE_WEIGHTS: Record<TaskMode, Record<ActionType, number>> = {
     read: 0.7, search: 0.6, edit: 0.1, test: 0.2, build: 0.1, verify: 0.2, delegate: 0.3
   }
 };
+
+// ---------------------------------------------------------------------------
+// Adaptive weights — learn from autoharness trajectory scores
+// ---------------------------------------------------------------------------
+
+/** Trajectory feedback from past runs, keyed by task mode */
+export interface TrajectoryFeedback {
+  mode: TaskMode;
+  score: number;           // 0–1 trajectory score
+  toolDistribution: Record<ActionType, number>;  // fraction of actions per type
+  success: boolean;
+}
+
+/**
+ * Compute adjusted weights from historical trajectory feedback.
+ * High-scoring runs boost the weights of their dominant action types.
+ * Low-scoring runs penalize theirs.
+ */
+export function computeAdaptiveWeights(
+  feedback: TrajectoryFeedback[],
+  baseWeights: Record<TaskMode, Record<ActionType, number>> = DEFAULT_MODE_WEIGHTS
+): Record<TaskMode, Record<ActionType, number>> {
+  if (feedback.length === 0) return baseWeights;
+
+  const result: Record<string, Record<string, number>> = {};
+  for (const [mode, weights] of Object.entries(baseWeights)) {
+    result[mode] = { ...weights };
+  }
+
+  // Group feedback by mode
+  const byMode = new Map<string, TrajectoryFeedback[]>();
+  for (const f of feedback) {
+    const arr = byMode.get(f.mode) || [];
+    arr.push(f);
+    byMode.set(f.mode, arr);
+  }
+
+  for (const [mode, runs] of byMode) {
+    if (!result[mode] || runs.length < 3) continue; // need enough signal
+
+    const weights = result[mode];
+    const LEARNING_RATE = 0.1;
+
+    for (const run of runs) {
+      // Score deviation from 0.5 midpoint — positive means good run, negative means bad
+      const signal = (run.score - 0.5) * (run.success ? 1 : -0.5);
+
+      for (const [action, fraction] of Object.entries(run.toolDistribution)) {
+        if (action in weights && fraction > 0.05) {
+          // Boost weights for actions that dominated high-scoring runs,
+          // penalize weights for actions that dominated low-scoring runs
+          weights[action] = Math.max(0.05, Math.min(0.95,
+            weights[action] + signal * fraction * LEARNING_RATE
+          ));
+        }
+      }
+    }
+  }
+
+  return result as Record<TaskMode, Record<ActionType, number>>;
+}
+
+// Active weights — starts as defaults, updated by loadAdaptiveWeights()
+let MODE_WEIGHTS: Record<TaskMode, Record<ActionType, number>> = { ...DEFAULT_MODE_WEIGHTS };
+
+/**
+ * Load adaptive weights from autoharness trajectory data.
+ * Call once at startup or periodically to refresh.
+ */
+export function loadAdaptiveWeights(feedback: TrajectoryFeedback[]): void {
+  MODE_WEIGHTS = computeAdaptiveWeights(feedback, DEFAULT_MODE_WEIGHTS);
+}
+
+/** Get the current active weights (default or adaptive) */
+export function getActiveWeights(): Record<TaskMode, Record<ActionType, number>> {
+  return MODE_WEIGHTS;
+}
 
 /**
  * Score all action types for the current turn.
