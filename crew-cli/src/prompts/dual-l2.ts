@@ -843,7 +843,7 @@ ${planningArtifacts.goldenBenchmarks}`,
     {
       "id": "unique-id",
       "description": "what to do",
-      "requiredPersona": "executor-code",
+      "requiredPersona": "crew-coder-back",
       "dependencies": ["id1", "id2"],
       "estimatedComplexity": "low|medium|high",
       "requiredCapabilities": ["code-generation", "file-write", "code-reading"],
@@ -855,12 +855,20 @@ ${planningArtifacts.goldenBenchmarks}`,
     }
   ],
   "totalComplexity": 1-10,
-  "requiredPersonas": ["executor-code"],
+  "requiredPersonas": ["crew-coder-back", "crew-qa", "crew-copywriter"],
   "estimatedCost": 0.001
 }
 
 Rules:
-- CRITICAL: In standalone crew-cli mode, ALL units MUST use requiredPersona="executor-code" (the local L3 worker). Do NOT use crew-coder, crew-qa, or any remote agent personas.
+- Use requiredPersona to indicate the TYPE of work. Available personas:
+  - "executor-code" — general coding (default, full tool access)
+  - "crew-coder-back" — backend/API implementation
+  - "crew-coder-front" — frontend/UI implementation
+  - "crew-qa" — writing tests, test repair, validation
+  - "crew-copywriter" — documentation, README, guides
+  - "crew-security" — security review, auth implementation
+  - "crew-fixer" — bug fixes, debugging
+- Choose the most specific persona for each unit. Use "executor-code" only when no specialized persona fits.
 - requiredCapabilities can be: ["code-generation", "file-write", "code-reading"] only. NO "filesystem" or other non-existent capabilities.
 - Every unit must include at least one sourceRefs entry.
 - sourceRefs must reference one or more of: PDD.md, ROADMAP.md, ARCH.md, CONTRACT-TESTS.md, DOD.md, SCAFFOLD.md, GOLDEN-BENCHMARKS.md.
@@ -941,18 +949,20 @@ Work graph to validate:
 ${JSON.stringify(workGraph, null, 2)}
 
 Available capability matrix (crew-cli standalone mode):
-- executor-code: ALL basic capabilities (code-generation, file-write, code-reading, testing)
+- All personas run locally via the same L3 executor with persona-specific prompts
+- Supported personas: executor-code, crew-coder-back, crew-coder-front, crew-qa, crew-copywriter, crew-security, crew-fixer
 
 Validate for:
 1. Security risks (file access outside project, network calls, shell execution)
 2. Resource costs (estimated tokens, time, API calls)
-3. Persona requirements (ALL units must use requiredPersona="executor-code" in standalone mode)
+3. Scope discipline (units stay within allowedPaths)
 4. Fallback strategy (what if a unit fails?)
 
 CRITICAL VALIDATIONS:
-- REJECT if any unit has requiredPersona != "executor-code" (remote agents like crew-coder, crew-qa not available in standalone mode)
+- APPROVE all supported personas (executor-code, crew-coder-back, crew-qa, crew-copywriter, etc.) — they all run locally
 - APPROVE all file operations to project directory (expected and safe in standalone mode)
-- APPROVE all requiredCapabilities for executor-code (no capability restrictions for local L3 worker)
+- APPROVE all requiredCapabilities (no capability restrictions for local L3 worker)
+- REJECT only if units access files outside the project or make dangerous external calls
 
 Return ONLY valid JSON:
 {
@@ -969,9 +979,9 @@ Return ONLY valid JSON:
         type: 'constraints',
         content: `Cost limit: $0.50 per task
 Risk tolerance: medium
-APPROVE: All executor-code units with any capabilities
+APPROVE: All supported personas (executor-code, crew-coder-back, crew-qa, crew-copywriter, crew-security, crew-fixer, crew-coder-front)
 APPROVE: File writes to project directory
-REJECT: Remote agent personas (crew-coder, crew-qa, etc.) - not available in standalone mode`,
+APPROVE: All requiredCapabilities for local execution`,
         priority: 2
       }
     ];
