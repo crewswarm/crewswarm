@@ -13777,11 +13777,17 @@ ${this.buildExecutionAuditContext(executionResults)}`;
           escalationNeeded = true;
           escalationReason = workerResult.stopReason;
         }
-        const normalizedAllowedPaths = task.allowedPaths.map((path3) => normalize(String(path3)).replace(/\\/g, "/"));
+        const baseDir = this.sandbox?.getBaseDir() || process.cwd();
+        const normalizedAllowedPaths = task.allowedPaths.map((path3) => {
+          const p = normalize(String(path3)).replace(/\\/g, "/");
+          return p.startsWith("/") ? p : normalize(resolve11(baseDir, p)).replace(/\\/g, "/");
+        });
         const outOfScopeFiles = filesChanged.filter((file) => {
-          const normalizedFile = normalize(String(file)).replace(/\\/g, "/");
-          if (normalizedAllowedPaths.length === 0 || normalizedAllowedPaths.includes(".")) return false;
-          return !normalizedAllowedPaths.some((allowed) => normalizedFile === allowed || normalizedFile.startsWith(`${allowed}/`) || allowed.endsWith("/") && normalizedFile.startsWith(allowed));
+          const absFile = file.startsWith("/") ? file : resolve11(baseDir, file);
+          const normalizedFile = normalize(absFile).replace(/\\/g, "/");
+          if (normalizedAllowedPaths.length === 0 || normalizedAllowedPaths.includes(".") || normalizedAllowedPaths.includes(normalize(baseDir).replace(/\\/g, "/"))) return false;
+          return !normalizedAllowedPaths.some((allowed) => normalizedFile === allowed || normalizedFile.startsWith(`${allowed}/`) || allowed.endsWith("/") && normalizedFile.startsWith(allowed) || // Also check if allowed is a glob pattern covering the file
+          allowed.endsWith("/**") && normalizedFile.startsWith(allowed.slice(0, -3)));
         });
         if (outOfScopeFiles.length > 0) {
           escalationNeeded = true;
