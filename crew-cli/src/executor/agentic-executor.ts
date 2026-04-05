@@ -1127,6 +1127,8 @@ async function executeStreamingOpenAITurn(
   if (stream && res.body) {
     let fullText = '';
     const toolCallAccumulator = new Map<number, { name: string; args: string }>();
+    const sseDebug = process.env.CREW_DEBUG_SSE === '1' || process.env.CREW_DEBUG_SSE === 'true';
+    const sseLog: string[] = [];
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -1145,6 +1147,7 @@ async function executeStreamingOpenAITurn(
           if (!line.startsWith('data: ')) continue;
           const jsonStr = line.slice(6).trim();
           if (!jsonStr || jsonStr === '[DONE]') continue;
+          if (sseDebug) sseLog.push(jsonStr);
 
           try {
             const chunk = JSON.parse(jsonStr);
@@ -1165,7 +1168,10 @@ async function executeStreamingOpenAITurn(
                   toolCallAccumulator.set(idx, { name: '', args: '' });
                 }
                 const acc = toolCallAccumulator.get(idx)!;
-                if (tc.function?.name) acc.name += tc.function.name;
+                if (tc.function?.name) {
+                  acc.name += tc.function.name;
+                  if (sseDebug) console.error(`[SSE-OAI] tool_call idx=${idx} name=${tc.function.name}`);
+                }
                 if (tc.function?.arguments) acc.args += tc.function.arguments;
               }
             }
@@ -1180,13 +1186,34 @@ async function executeStreamingOpenAITurn(
 
     if (fullText) process.stdout.write('\n');
 
+    // Dump raw SSE log for debugging
+    if (sseDebug && sseLog.length > 0) {
+      const logPath = `/tmp/crew-sse-openai-${Date.now()}.jsonl`;
+      try {
+        const { writeFileSync } = await import('node:fs');
+        writeFileSync(logPath, sseLog.join('\n') + '\n');
+        console.error(`[SSE-OAI] Raw log saved: ${logPath} (${sseLog.length} events)`);
+      } catch {}
+    }
+
     // Parse accumulated tool calls
     const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
-    for (const [, tc] of toolCallAccumulator) {
+    for (const [idx, tc] of toolCallAccumulator) {
       if (tc.name) {
         let params: Record<string, unknown> = {};
+        if (sseDebug) console.error(`[SSE-OAI] Parsing tool idx=${idx} name=${tc.name} argsLen=${tc.args.length} preview=${tc.args.slice(0, 100)}`);
         // Parse raw first — repairJson corrupts code strings containing `: type`
-        try { params = JSON.parse(tc.args); } catch { try { params = JSON.parse(repairJson(tc.args)); } catch {} }
+        try {
+          params = JSON.parse(tc.args);
+          if (sseDebug) console.error(`[SSE-OAI] Raw parse OK: keys=${Object.keys(params).join(',')}`);
+        } catch {
+          try {
+            params = JSON.parse(repairJson(tc.args));
+            if (sseDebug) console.error(`[SSE-OAI] Repair parse OK: keys=${Object.keys(params).join(',')}`);
+          } catch {
+            if (sseDebug) console.error(`[SSE-OAI] Both parses FAILED`);
+          }
+        }
         toolCalls.push({ tool: tc.name, params });
       }
     }
@@ -1578,6 +1605,8 @@ async function executeStreamingAnthropicTurn(
     let fullText = '';
     const toolBlocks = new Map<number, { name: string; inputJson: string }>();
     let totalCost = 0;
+    const sseDebug = process.env.CREW_DEBUG_SSE === '1' || process.env.CREW_DEBUG_SSE === 'true';
+    const sseLog: string[] = [];
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -1596,11 +1625,13 @@ async function executeStreamingAnthropicTurn(
           if (!line.startsWith('data: ')) continue;
           const jsonStr = line.slice(6).trim();
           if (!jsonStr) continue;
+          if (sseDebug) sseLog.push(jsonStr);
 
           try {
             const event = JSON.parse(jsonStr);
 
             if (event.type === 'content_block_start') {
+              if (sseDebug) console.error(`[SSE] block_start idx=${event.index} type=${event.content_block?.type} name=${event.content_block?.name || ''}`);
               if (event.content_block?.type === 'tool_use') {
                 toolBlocks.set(event.index, {
                   name: event.content_block.name || '',
@@ -1618,6 +1649,7 @@ async function executeStreamingAnthropicTurn(
                 fullText += event.delta.text;
               }
               if (event.delta?.type === 'input_json_delta') {
+                if (sseDebug) console.error(`[SSE] json_delta idx=${event.index} len=${(event.delta.partial_json || '').length}`);
                 if (event.delta.partial_json) {
                   const block = toolBlocks.get(event.index);
                   if (block) {
@@ -1642,22 +1674,33 @@ async function executeStreamingAnthropicTurn(
 
     if (fullText) process.stdout.write('\n');
 
+    // Dump raw SSE log for debugging
+    if (sseDebug && sseLog.length > 0) {
+      const logPath = `/tmp/crew-sse-log-${Date.now()}.jsonl`;
+      try {
+        const { writeFileSync } = await import('node:fs');
+        writeFileSync(logPath, sseLog.join('\n') + '\n');
+        console.error(`[SSE] Raw log saved: ${logPath} (${sseLog.length} events)`);
+      } catch {}
+    }
+
     // Parse accumulated tool calls
     const toolCalls: Array<{ tool: string; params: Record<string, unknown> }> = [];
     for (const [idx, block] of toolBlocks) {
       if (block.name) {
         let params: Record<string, unknown> = {};
+        if (sseDebug) console.error(`[SSE] Parsing tool idx=${idx} name=${block.name} inputJsonLen=${block.inputJson.length} preview=${block.inputJson.slice(0, 100)}`);
         // Parse raw first — repairJson corrupts code strings containing `: type`
         try {
           params = JSON.parse(block.inputJson);
-
+          if (sseDebug) console.error(`[SSE] Raw parse OK: keys=${Object.keys(params).join(',')}`);
         } catch (e1) {
-
+          if (sseDebug) console.error(`[SSE] Raw parse FAIL: ${(e1 as Error).message?.slice(0, 80)}`);
           try {
             params = JSON.parse(repairJson(block.inputJson));
-
+            if (sseDebug) console.error(`[SSE] Repair parse OK: keys=${Object.keys(params).join(',')}`);
           } catch (e2) {
-
+            if (sseDebug) console.error(`[SSE] Repair parse FAIL: ${(e2 as Error).message?.slice(0, 80)}`);
           }
         }
         toolCalls.push({ tool: block.name, params });
