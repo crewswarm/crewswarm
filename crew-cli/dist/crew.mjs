@@ -8077,7 +8077,15 @@ async function resolveProvider(modelOverride, preferTier) {
     }
   }
   if (effectiveModel) {
-    if (effectiveModel.includes("/") && !effectiveModel.startsWith("accounts/") && !effectiveModel.startsWith("meta/") && !effectiveModel.startsWith("models/")) {
+    if (effectiveModel.includes("/") && !effectiveModel.startsWith("accounts/") && !effectiveModel.startsWith("models/")) {
+      const forcedProvider = process.env.CREW_PROVIDER?.toLowerCase();
+      if (forcedProvider) {
+        const p = PROVIDER_ORDER.find((p2) => p2.id === forcedProvider);
+        const key = p ? process.env[p.envKey] : void 0;
+        if (p && key && key.length >= 5) {
+          return { key, model: modelOverride || effectiveModel, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
+        }
+      }
       const orKey = process.env.OPENROUTER_API_KEY;
       if (orKey && orKey.length >= 5) {
         return { key: orKey, model: modelOverride || effectiveModel, driver: "openrouter", apiUrl: "https://openrouter.ai/api/v1/chat/completions", id: "openrouter" };
