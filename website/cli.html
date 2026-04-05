@@ -411,33 +411,75 @@
       <div class="section-header">
         <div class="eyebrow">Under the Hood</div>
         <h2>Execution Quality Engine</h2>
-        <p class="section-desc">Most AI coding CLIs run a simple loop: prompt, tool call, repeat. crew-cli runs a quality-aware engine that learns from mistakes, proves its work, and picks the right specialist for each task.</p>
+        <p class="section-desc">Every other AI coding CLI runs a blind loop: prompt the model, execute its tool call, repeat until it says "done." There's no memory of what failed, no proof that it worked, no feedback for next time. crew-cli is different. It wraps every task in a quality-aware engine that prevents common failure modes, demands verification, and improves over time.</p>
+      </div>
+
+      <div style="background: var(--bg-secondary, #f8f9fa); border-radius: 12px; padding: 2rem; margin-bottom: 2rem;">
+        <h3 style="margin-top:0;">Why this matters</h3>
+        <p>Without execution quality controls, AI coding agents fail in predictable ways: they retry the same broken command in a loop, they declare "done" without running tests, they edit files they never read, they waste turns exploring instead of acting. These aren't model problems — they happen with GPT-5, Claude Opus, and Gemini alike. The engine fixes them at the runtime level so every model performs better.</p>
       </div>
 
       <div class="feature-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
         <div class="feature-card">
           <h3>Failure Memory</h3>
-          <p>When a tool call fails, the engine remembers. Same failing command? Blocked automatically. The model gets explicit "don't repeat this" context injected into every subsequent turn, forcing it to try a different approach instead of looping.</p>
+          <p>When a tool call fails, the engine remembers. Same command with same params? Blocked after one failure for shell commands, two for others. The model gets "don't repeat this" context every turn, forcing different approaches. In benchmarks this eliminated the #1 waste pattern: models retrying <code>npm install</code> 4x in a row.</p>
         </div>
         <div class="feature-card">
-          <h3>Verification-First</h3>
-          <p>The engine extracts verification goals from your task ("tests pass", "build succeeds", "lint clean") and tracks them as first-class state. It won't declare success until every goal is proven. If verification fails, it gets extra turns to fix — then re-verifies.</p>
-        </div>
-        <div class="feature-card">
-          <h3>Patch Critic</h3>
-          <p>Every file edit is evaluated in real time: was the file read before writing? Is the same file being churned repeatedly? Are edits staying in scope? The critic injects quality guidance into the next turn — no extra LLM call needed.</p>
-        </div>
-        <div class="feature-card">
-          <h3>Smart Delegation</h3>
-          <p>When work is split into parallel units, the engine scores each specialist persona against the task: language match, complexity, historical success rate, recent failures. Bug fixes route to the fixer. Docs route to the writer. Performance data improves rankings over time.</p>
-        </div>
-        <div class="feature-card">
-          <h3>Structured History</h3>
-          <p>Instead of flattening tool results into text (losing context on every turn), the engine preserves rich state: which files were read vs written, what goals are active, what failed and why. This survives compaction — the model always knows what matters.</p>
+          <h3>Verification Gate</h3>
+          <p>The engine extracts verification goals from your task — "tests pass", "build succeeds", "lint clean" — and tracks them as first-class state. When the model says "done" with unproven goals, it doesn't stop. It gets forced back with up to 3 extra turns demanding proof. No more "I think I fixed it" without evidence.</p>
         </div>
         <div class="feature-card">
           <h3>Action Ranking</h3>
-          <p>Each turn, the engine scores possible next actions (read, search, edit, test, verify) based on what's happened so far. Just edited without verifying? Verify ranks highest. Same search three times? It gets penalized. The model sees ranked suggestions, not just raw tools.</p>
+          <p>Each turn, the engine scores 7 action types (read, search, edit, test, build, verify, delegate) based on execution state. Edited without testing? Test scores highest. Three reads in a row? Penalized. Recent failure on shell commands? "DO NOT retry" warning injected. The model sees ranked priorities, not just a list of 40 tools.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Task Mode Strategies</h3>
+          <p>Not all tasks should be approached the same way. The engine auto-detects 5 modes — bugfix, feature, refactor, test repair, analysis — and applies mode-specific strategies. Bugfixes reproduce first then fix. Refactors run typecheck before declaring done. Analysis tasks don't make speculative edits.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Patch Critic</h3>
+          <p>Every file edit is evaluated in real time: was the file read before writing? Is the same file being churned? Are edits staying in scope? Is verification missing after changes? The critic injects quality guidance into the next turn — zero extra LLM calls, zero latency cost.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Adaptive Weights</h3>
+          <p>The action ranking system learns from past runs. High-scoring trajectories boost the weights of their dominant action patterns. Low-scoring runs penalize theirs. Over time, the engine calibrates to your codebase and the models you use. The feedback loop is automatic — every completed task improves the next one.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Structured History</h3>
+          <p>Instead of flattening tool results into text (losing context each turn), the engine preserves rich state: which files were read vs written, what goals are active, what failed and why. This survives context compaction — the model always knows what matters even when older turns are summarized.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Smart Delegation</h3>
+          <p>When work splits into parallel units, the engine scores each specialist against the task: language match, complexity, historical success rate, recent failures. Bug fixes route to the fixer. Docs route to the writer. Performance data improves routing over time.</p>
+        </div>
+      </div>
+
+      <div style="background: var(--bg-secondary, #f8f9fa); border-radius: 12px; padding: 2rem; margin-top: 2rem;">
+        <h3 style="margin-top:0;">Verified across 10 providers</h3>
+        <p>The engine is tested against 4 quality presets (turbo, fast, balanced, quality) across 10 models from 7 providers. All pass.</p>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse: collapse; font-size: 0.9rem;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--border, #ddd);">
+                <th style="text-align:left; padding: 0.5rem;">Provider</th>
+                <th style="text-align:center; padding: 0.5rem;">Auth</th>
+                <th style="text-align:center; padding: 0.5rem;">Presets</th>
+                <th style="text-align:center; padding: 0.5rem;">Avg Speed</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style="padding:0.4rem;">Gemini 2.5 Flash</td><td style="text-align:center;">API / OAuth</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~12s</td></tr>
+              <tr><td style="padding:0.4rem;">Claude Sonnet 4.6</td><td style="text-align:center;">OAuth (CCH)</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~33s</td></tr>
+              <tr><td style="padding:0.4rem;">Claude Haiku 4.5</td><td style="text-align:center;">OAuth (CCH)</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~27s</td></tr>
+              <tr><td style="padding:0.4rem;">OpenAI GPT-5.4</td><td style="text-align:center;">OAuth (Codex)</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~25s</td></tr>
+              <tr><td style="padding:0.4rem;">DeepSeek Chat</td><td style="text-align:center;">API Key</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~59s</td></tr>
+              <tr><td style="padding:0.4rem;">Grok 4-1 Fast</td><td style="text-align:center;">API Key</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~37s</td></tr>
+              <tr><td style="padding:0.4rem;">Qwen3 Coder</td><td style="text-align:center;">OpenRouter</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~9s</td></tr>
+              <tr><td style="padding:0.4rem;">GLM-5</td><td style="text-align:center;">OpenRouter</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~10s</td></tr>
+              <tr><td style="padding:0.4rem;">Kimi K2.5</td><td style="text-align:center;">OpenRouter</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~24s</td></tr>
+              <tr><td style="padding:0.4rem;">MiniMax M2.7</td><td style="text-align:center;">OpenRouter</td><td style="text-align:center;">4/4</td><td style="text-align:center;">~15s</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -464,6 +506,14 @@
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td>Execution Quality Engine</td>
+              <td class="check-val">✅ 8 Modules</td>
+              <td class="cross-val">❌ Simple Loop</td>
+              <td class="cross-val">❌ Simple Loop</td>
+              <td class="cross-val">❌ Simple Loop</td>
+              <td class="cross-val">❌ Simple Loop</td>
+            </tr>
             <tr>
               <td>Multi-model routing</td>
               <td class="check-val">✅ 10+ Providers</td>
