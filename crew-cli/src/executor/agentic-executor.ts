@@ -499,6 +499,14 @@ const PROVIDER_ORDER: ProviderEntry[] = [
   { id: 'mistral', envKey: 'MISTRAL_API_KEY', model: 'mistral-large-latest', driver: 'openai', apiUrl: 'https://api.mistral.ai/v1/chat/completions', modelPrefix: 'mistral', tier: 'standard' },
   { id: 'cerebras', envKey: 'CEREBRAS_API_KEY', model: 'qwen-3-235b-a22b-instruct-2507', driver: 'openai', apiUrl: 'https://api.cerebras.ai/v1/chat/completions', modelPrefix: 'qwen', tier: 'fast' },
   { id: 'nvidia', envKey: 'NVIDIA_API_KEY', model: 'meta/llama-3.3-70b-instruct', driver: 'openai', apiUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', modelPrefix: 'nvidia', tier: 'standard' },
+  // OpenCode/Zen — 39 models, strong tool calling (Kimi K2.5, MiniMax, GLM-5, Nemotron, etc.)
+  { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'kimi-k2.5', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'kimi', tier: 'standard' },
+  { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'minimax-m2.5', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'minimax', tier: 'standard' },
+  { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'glm-5', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'glm', tier: 'standard' },
+  { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'nemotron-3-super-free', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'nemotron', tier: 'standard' },
+  { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'qwen3.6-plus-free', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'qwen3.6', tier: 'standard' },
+  { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'trinity-large-preview-free', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'trinity', tier: 'standard' },
+  { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'big-pickle', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'big-pickle', tier: 'standard' },
   // Fallback — free tier
   { id: 'openrouter', envKey: 'OPENROUTER_API_KEY', model: 'google/gemini-2.0-flash-exp:free', driver: 'openrouter', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', modelPrefix: 'openrouter', tier: 'standard' },
   // Additional providers (OpenAI-compatible, cheap workers)
