@@ -399,7 +399,8 @@ function historyToAnthropicMessages(history: TurnResult[]): ChatMessage[] {
       content: [{
         type: 'tool_result',
         tool_use_id: useId,
-        content: formatToolResult(h)
+        content: formatToolResult(h),
+        ...(h.error ? { is_error: true } : {})
       }]
     });
   }
@@ -430,7 +431,8 @@ function historyToAnthropicMessages(history: TurnResult[]): ChatMessage[] {
       content: [{
         type: 'tool_result',
         tool_use_id: useId,
-        content: formatToolResult(h)
+        content: formatToolResult(h),
+        ...(h.error ? { is_error: true } : {})
       }]
     });
   }
