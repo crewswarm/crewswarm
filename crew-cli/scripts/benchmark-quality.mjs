@@ -332,8 +332,11 @@ function computeQualityScore(task, tests, typecheck, diff, noRegression) {
 // ---------------------------------------------------------------------------
 
 const args = process.argv.slice(2);
-const taskFilter = args.find(a => !a.startsWith('-'));
-const outFile = args.includes('--out') ? args[args.indexOf('--out') + 1] : null;
+const outIdx = args.indexOf('--out');
+const outFile = outIdx >= 0 ? args[outIdx + 1] : null;
+// Skip --out and its value when looking for task filter
+const filteredArgs = args.filter((a, i) => i !== outIdx && (outIdx < 0 || i !== outIdx + 1));
+const taskFilter = filteredArgs.find(a => !a.startsWith('-'));
 
 const tasksToRun = taskFilter
   ? TASKS.filter(t => t.id.includes(taskFilter))
