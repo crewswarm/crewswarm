@@ -1542,9 +1542,6 @@ async function executeStreamingAnthropicTurn(
             const event = JSON.parse(jsonStr);
 
             if (event.type === 'content_block_start') {
-              if (process.env.CREW_DEBUG_SSE) {
-                console.log(`[SSE] block_start idx=${event.index} type=${event.content_block?.type} name=${event.content_block?.name || ''} hasInput=${!!event.content_block?.input}`);
-              }
               if (event.content_block?.type === 'tool_use') {
                 toolBlocks.set(event.index, {
                   name: event.content_block.name || '',
@@ -1562,9 +1559,6 @@ async function executeStreamingAnthropicTurn(
                 fullText += event.delta.text;
               }
               if (event.delta?.type === 'input_json_delta') {
-                if (process.env.CREW_DEBUG_SSE) {
-                  console.log(`[SSE] json_delta idx=${event.index} len=${(event.delta.partial_json || '').length} preview=${(event.delta.partial_json || '').slice(0, 60)}`);
-                }
                 if (event.delta.partial_json) {
                   const block = toolBlocks.get(event.index);
                   if (block) {
@@ -1594,13 +1588,10 @@ async function executeStreamingAnthropicTurn(
     for (const [idx, block] of toolBlocks) {
       if (block.name) {
         let params: Record<string, unknown> = {};
-        if (process.env.CREW_DEBUG_SSE) {
-          console.log(`[SSE] Parsing tool idx=${idx} name=${block.name} inputJsonLen=${block.inputJson.length} preview=${block.inputJson.slice(0, 100)}`);
-        }
         // Parse raw first — repairJson corrupts code strings containing `: type`
         try {
           params = JSON.parse(block.inputJson);
-          if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Raw parse OK: keys=${Object.keys(params).join(',')}`);
+
         } catch (e1) {
           if (process.env.CREW_DEBUG_SSE) console.log(`[SSE] Raw parse FAILED: ${(e1 as Error).message}`);
           try {
