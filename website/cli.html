@@ -406,6 +406,43 @@
     </div>
   </section>
 
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Under the Hood</div>
+        <h2>Execution Quality Engine</h2>
+        <p class="section-desc">Most AI coding CLIs run a simple loop: prompt, tool call, repeat. crew-cli runs a quality-aware engine that learns from mistakes, proves its work, and picks the right specialist for each task.</p>
+      </div>
+
+      <div class="feature-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+        <div class="feature-card">
+          <h3>Failure Memory</h3>
+          <p>When a tool call fails, the engine remembers. Same failing command? Blocked automatically. The model gets explicit "don't repeat this" context injected into every subsequent turn, forcing it to try a different approach instead of looping.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Verification-First</h3>
+          <p>The engine extracts verification goals from your task ("tests pass", "build succeeds", "lint clean") and tracks them as first-class state. It won't declare success until every goal is proven. If verification fails, it gets extra turns to fix — then re-verifies.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Patch Critic</h3>
+          <p>Every file edit is evaluated in real time: was the file read before writing? Is the same file being churned repeatedly? Are edits staying in scope? The critic injects quality guidance into the next turn — no extra LLM call needed.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Smart Delegation</h3>
+          <p>When work is split into parallel units, the engine scores each specialist persona against the task: language match, complexity, historical success rate, recent failures. Bug fixes route to the fixer. Docs route to the writer. Performance data improves rankings over time.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Structured History</h3>
+          <p>Instead of flattening tool results into text (losing context on every turn), the engine preserves rich state: which files were read vs written, what goals are active, what failed and why. This survives compaction — the model always knows what matters.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Action Ranking</h3>
+          <p>Each turn, the engine scores possible next actions (read, search, edit, test, verify) based on what's happened so far. Just edited without verifying? Verify ranks highest. Same search three times? It gets penalized. The model sees ranked suggestions, not just raw tools.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="section parity-section">
     <div class="container">
       <div class="section-header">
