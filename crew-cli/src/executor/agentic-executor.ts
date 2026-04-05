@@ -1062,12 +1062,13 @@ async function executeStreamingOpenAITurn(
           { role: 'user', content: userContent },
           ...(historyMessages || [])
         ];
+        const isGpt5Plus = model?.startsWith?.('gpt-5') || model?.startsWith?.('gpt-6') || model?.startsWith?.('o3') || model?.startsWith?.('o4');
         return {
           model,
           messages,
           tools: openaiTools,
           temperature: temp,
-          max_tokens: 8192,
+          ...(isGpt5Plus ? { max_completion_tokens: 8192 } : { max_tokens: 8192 }),
           stream
         };
       })();

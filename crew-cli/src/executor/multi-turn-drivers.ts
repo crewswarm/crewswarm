@@ -115,11 +115,12 @@ export async function openAICompatibleTurn(
     ? 1
     : (config.temperature ?? 0.3);
   const stream = !isStreamingDisabled();
+  const isGpt5Plus = config.model?.startsWith?.('gpt-5') || config.model?.startsWith?.('gpt-6') || config.model?.startsWith?.('o3') || config.model?.startsWith?.('o4');
   const requestBody: Record<string, unknown> = {
     model: config.model,
     messages,
     temperature: temp,
-    max_tokens: config.maxTokens ?? 16000,
+    ...(isGpt5Plus ? { max_completion_tokens: config.maxTokens ?? 16000 } : { max_tokens: config.maxTokens ?? 16000 }),
     tools: toOpenAITools(tools),
     ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
   };
