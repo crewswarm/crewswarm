@@ -155,15 +155,17 @@ export function analyzeTask(description: string, files: string[], capabilities: 
 }
 
 function detectTaskType(desc: string): TaskType {
+  // Order matters: domain-specific patterns before generic action words.
+  // "write documentation" should be docs, not edit-existing.
+  // "add tests" should be add-test, not edit-existing.
+  if (/\btest|spec|assert|coverage|jest|mocha|vitest\b/.test(desc)) return 'add-test';
   if (/\b(fix|bug|broken|crash|error|fail|debug)\b/.test(desc)) return 'fix-bug';
-  if (/\b(test|spec|assert|coverage|jest|mocha|vitest)\b/.test(desc)) return 'add-test';
   if (/\b(refactor|restructure|reorganize|clean.?up|simplif)\b/.test(desc)) return 'refactor';
   if (/\b(review|audit|check|inspect|securit)\b/.test(desc)) return 'review';
-  if (/\b(doc|readme|comment|explain|guide|tutorial)\b/.test(desc)) return 'docs';
-  if (/\b(config|setup|install|deploy|docker|ci|cd|build)\b/.test(desc)) return 'config';
+  if (/\b(docs?|document(ation)?|readme|guide|tutorial)\b/.test(desc)) return 'docs';
+  if (/\b(config|setup|install|deploy|docker|ci|cd)\b/.test(desc)) return 'config';
   if (/\b(read|understand|explore|investigate|research|analyz)\b/.test(desc)) return 'research';
   if (/\b(create|add|new|implement|build|write)\b/.test(desc)) {
-    // Distinguish create-file from edit-existing
     if (/\b(new file|new component|from scratch|create)\b/.test(desc)) return 'create-file';
     return 'edit-existing';
   }

@@ -167,7 +167,7 @@ export class PatchCritic {
     // ── Check: scope creep ─────────────────────────────────────���────
     if (isWriteTool(tool) && filePath && this.config.allowedPaths.length > 0) {
       const inScope = this.config.allowedPaths.some(
-        allowed => filePath === allowed || filePath.startsWith(`${allowed}/`)
+        allowed => filePath === allowed || filePath.startsWith(allowed) || filePath.startsWith(`${allowed}/`)
       );
       if (!inScope) {
         findings.push({
