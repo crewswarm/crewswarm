@@ -190,7 +190,7 @@ export class UnifiedPipeline {
   private inferEffortFromInput(text: string): EffortLevel {
     const lower = String(text || '').toLowerCase();
     if (lower.length < 120 && /\b(typo|rename|small|one line|one-liner|quick|minor|simple)\b/.test(lower)) return 'low';
-    if (lower.length > 500 || /\b(api|refactor|architecture|pipeline|multi-file|parallel|worker|oauth|reviewer)\b/.test(lower)) return 'high';
+    if (lower.length > 500 || /\b(api|refactor|architecture|pipeline|multi-file|parallel|worker|oauth|reviewer|two files|both files|multiple files|create.*test|extract.*into|also create)\b/.test(lower)) return 'high';
     return 'medium';
   }
 
