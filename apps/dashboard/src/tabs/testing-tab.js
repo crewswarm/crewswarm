@@ -25,7 +25,7 @@ export function showTesting() {
   loadTestingSummary();
   loadTestingHistory();
   loadRunHistoryChart();
-  loadCoverageHeatmap();
+  // loadCoverageHeatmap(); // disabled — filename matching is not real coverage
   loadStaleFiles();
   // Check if tests are already running
   getJSON("/api/tests/progress").then(p => {
