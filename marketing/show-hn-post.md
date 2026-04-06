@@ -22,7 +22,7 @@ Open source, local-first, MIT.
 
 The mental model: you're the PM, agents are your engineers. You describe what needs to happen. The system plans it, dispatches to specialist agents, runs them in parallel, verifies output.
 
-- **crew-lead** routes your task: quick answer, single agent, or parallel execution
+- **crew-lead** (Stinki) routes your task: quick answer, single agent, or parallel execution
 - **Wave orchestrator** splits complex work across specialists running simultaneously in isolated git worktrees — backend, frontend, QA, security all moving at once
 - **20+ specialist agents** — each with its own system prompt, tools, and model assignment. Use Claude for your coder, Groq for your PM, a local Ollama model for security. Shared persistent memory per project, fresh context windows
 - **6 coding engines** — Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, crew-cli. Rate limited? Next task goes to a different engine. Sessions resume across all of them
