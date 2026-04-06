@@ -412,13 +412,13 @@ function renderProgressBar() {
             <span class="test-color-pass">${p.passed} pass</span>
             <span class="test-color-fail">${p.failed} fail</span>
             <span class="test-color-skip">${p.skipped} skip</span>
-            <span>${p.files_done} files</span>
+            <span>${p.files_done}${p.files_total ? '/' + p.files_total : ''} files</span>
             <span>${total} tests</span>
           </div>
           ${file ? `<div class="test-progress-live-file">${escHtml(file)}</div>` : ""}
           <div class="test-progress-bar" style="margin-top:6px">
-            <div class="test-progress-pass" style="width:${total > 0 ? (p.passed / total * 100) : 0}%;transition:width 0.3s"></div>
-            <div class="test-progress-fail" style="width:${total > 0 ? (p.failed / total * 100) : 0}%;transition:width 0.3s"></div>
+            <div class="test-progress-pass" style="width:${p.files_total > 0 ? (p.files_done / p.files_total * 100) : (total > 0 ? (p.passed / total * 100) : 0)}%;transition:width 0.3s;background:#22c55e"></div>
+            <div class="test-progress-fail" style="width:${p.files_total > 0 ? 0 : (total > 0 ? (p.failed / total * 100) : 0)}%;transition:width 0.3s"></div>
           </div>
         </div>`;
     } else {

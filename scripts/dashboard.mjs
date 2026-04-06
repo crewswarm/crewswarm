@@ -1901,8 +1901,25 @@ const server = http.createServer(async (req, res) => {
         const { spawn } = await import("node:child_process");
         const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
         const outputFile = path.join(CREWSWARM_DIR, "test-results", ".test-output.log");
+        // Count total files for this suite so progress can show X/Y
+        let files_total = 0;
+        try {
+          const testFileDir = path.join(CREWSWARM_DIR, "test");
+          const testsE2eDir = path.join(CREWSWARM_DIR, "tests", "e2e");
+          const crewCliTestDir = path.join(CREWSWARM_DIR, "crew-cli", "tests");
+          const crewCliTestDir2 = path.join(CREWSWARM_DIR, "crew-cli", "test");
+          const suiteKey = suite.replace("test:", "");
+          if (suiteKey === "unit") files_total = (await fs.promises.readdir(path.join(testFileDir, "unit"))).filter(f => f.endsWith(".test.mjs")).length;
+          else if (suiteKey === "integration") files_total = (await fs.promises.readdir(path.join(testFileDir, "integration"))).filter(f => f.endsWith(".test.mjs")).length;
+          else if (suiteKey === "e2e") files_total = (await fs.promises.readdir(path.join(testFileDir, "e2e"))).filter(f => f.endsWith(".test.mjs")).length;
+          else if (suiteKey === "playwright") files_total = (await fs.promises.readdir(testsE2eDir)).filter(f => f.endsWith(".spec.js")).length;
+          else if (suite === "test") { // crew-cli
+            const count = async (d) => { try { return (await fs.promises.readdir(d)).filter(f => f.match(/\.test\./)).length; } catch { return 0; } };
+            files_total = await count(path.join(crewCliTestDir, "unit")) + await count(crewCliTestDir) + await count(crewCliTestDir2);
+          }
+        } catch {}
         // Write initial progress
-        await fs.promises.writeFile(progressFile, JSON.stringify({ suite, running: true, pid: 0, started: Date.now(), passed: 0, failed: 0, skipped: 0, files_done: 0, current_file: singleFile || "" }));
+        await fs.promises.writeFile(progressFile, JSON.stringify({ suite, running: true, pid: 0, started: Date.now(), passed: 0, failed: 0, skipped: 0, files_done: 0, files_total, current_file: singleFile || "" }));
         // Clean up any stale progress from a previous interrupted run
         const staleProgress = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
         try {
@@ -1937,7 +1954,8 @@ const server = http.createServer(async (req, res) => {
                 current_file = line.trim();
               }
             }
-            fs.writeFileSync(progressFile, JSON.stringify({ suite, running: true, pid: child.pid, started: JSON.parse(fs.readFileSync(progressFile, "utf8")).started, passed, failed, skipped, files_done, current_file }));
+            const prev = JSON.parse(fs.readFileSync(progressFile, "utf8"));
+            fs.writeFileSync(progressFile, JSON.stringify({ suite, running: true, pid: child.pid, started: prev.started, passed, failed, skipped, files_done, files_total: prev.files_total || 0, current_file }));
           } catch { /* file may not exist yet */ }
         }, 2000);
         child.on("exit", (code) => {
