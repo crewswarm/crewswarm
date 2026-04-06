@@ -187,7 +187,7 @@ async function run() {
   section("CLI Tools");
   const [cursorCli, claudeCli, opencodeCli, nodeCli] = await Promise.all([
     Promise.resolve(cliCheck("cursor --version 2>/dev/null || cursor-cli --version 2>/dev/null", "cursor")),
-    Promise.resolve(cliCheck("echo '' | timeout 3 claude --version 2>/dev/null || echo 'not found'", "claude")),
+    Promise.resolve(cliCheck("which claude 2>/dev/null && claude --version 2>/dev/null || echo 'not found'", "claude")),
     Promise.resolve(cliCheck("opencode --version 2>/dev/null || echo 'not found'", "opencode")),
     Promise.resolve(cliCheck("node --version", "node")),
   ]);
