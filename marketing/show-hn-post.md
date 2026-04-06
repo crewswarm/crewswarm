@@ -34,7 +34,7 @@ This is the part that doesn't exist elsewhere. Grok has no coding CLI. DeepSeek 
 
 The engine: 8 deterministic modules — failure memory (blocks repeated mistakes), verification gates (no "done" without proof), patch critic (catches unread edits and scope creep), action ranking, task-mode strategies, adaptive weights, structured history, smart delegation. No extra LLM calls.
 
-29 models score 100/100 on our coding benchmark. Groq Llama 70B (free) outputs the same verified TypeScript as Claude Opus ($0.03/task). The engine prevents the failure modes that make cheap models worse — skipping verification, hallucinating edits, looping. Attach Ollama to your security agent, Groq to your PM, Claude only where it matters.
+29 models score 100/100 on our coding benchmark. Groq GPT-OSS 20B ($0.0003/task) outputs the same verified TypeScript as Claude Opus ($0.03/task) — 100x cheaper, same quality. The engine prevents the failure modes that make cheap models worse — skipping verification, hallucinating edits, looping. Attach Ollama to your security agent, Groq to your PM, Claude only where it matters.
 
 **Surfaces:** Vibe (browser IDE, Monaco, terminal, live file sync), Dashboard, crew-cli, crewchat, Telegram, WhatsApp, OpenClaw plugin, MCP server (64 tools).
 

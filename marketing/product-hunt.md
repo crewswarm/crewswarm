@@ -37,7 +37,7 @@ Hit your Claude limit mid-refactor? Switched to Codex, re-explained everything, 
 
 crewswarm sits between you and the tools. You describe the work, it plans, dispatches to 20+ specialist agents, runs them in parallel in git worktrees, verifies output.
 
-The part that doesn't exist elsewhere: crew-cli gives agentic coding to every model that doesn't have its own CLI — Grok, DeepSeek, Qwen, Groq, Ollama. The execution quality engine (8 deterministic modules) makes cheap models match expensive ones. 29 models at 100/100 on our coding benchmark. Groq Llama 70B (free) = same quality as Claude Opus ($0.03/task).
+The part that doesn't exist elsewhere: crew-cli gives agentic coding to every model that doesn't have its own CLI — Grok, DeepSeek, Qwen, Groq, Ollama. The execution quality engine (8 deterministic modules) makes cheap models match expensive ones. 29 models at 100/100 on our coding benchmark. Groq GPT-OSS 20B ($0.0003/task) = same quality as Claude Opus ($0.03/task). 100x cheaper.
 
 PM Loop reads your ROADMAP.md and ships autonomously. Has shipped features overnight.
 

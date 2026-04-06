@@ -52,7 +52,7 @@ crew-cli is the missing CLI for every model that doesn't have one. 45+ tools, 3-
 
 29 models score 100/100 on our coding benchmark.
 
-Groq Llama 70B (free) = same quality as Claude Opus ($0.03/task).
+Groq GPT-OSS 20B ($0.0003/task) = same quality as Claude Opus ($0.03/task). 100x cheaper.
 
 The engine prevents the failure modes that make cheap models seem worse: no repeated mistakes, no "done" without proof, no unread edits. 8 modules, all deterministic.
 

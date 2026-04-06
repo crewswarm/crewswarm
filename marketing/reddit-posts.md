@@ -21,7 +21,7 @@ I've been building crewswarm, a multi-agent AI coding platform. The part that mi
 - Action ranking steers toward highest-value next action
 - No extra LLM calls — all rule-based
 
-**Result:** 29 models score 100/100 on our coding benchmark. Groq Llama 3.3 70B (free) produces identical verified TypeScript to Claude Opus ($0.03/task).
+**Result:** 29 models score 100/100 on our coding benchmark. Groq GPT-OSS 20B ($0.0003/task) produces identical verified TypeScript to Claude Opus ($0.03/task) — 100x cheaper.
 
 crew-cli also gives agentic coding to models that don't have their own CLI — attach any Ollama model and it gets 45+ tools (file I/O, git, LSP, shell, web search, Docker sandbox). The 3-tier pipeline uses a cheap model for routing, expensive model only for planning, and your local model for execution.
 

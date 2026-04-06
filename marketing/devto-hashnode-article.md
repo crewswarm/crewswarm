@@ -82,7 +82,7 @@ crew-cli wraps every task in 8 quality modules:
 
 Plus 17 more at 100/100. Full list in the README.
 
-Groq Llama 70B (free) produces the same verified code as Claude Opus ($0.03/task). The engine is the equalizer. Cheap models fail without it because they skip verification, hallucinate edits, and loop. The engine prevents those failure modes.
+Groq GPT-OSS 20B ($0.0003/task) produces the same verified code as Claude Opus ($0.03/task) — 100x cheaper, same quality. The engine is the equalizer. Cheap models fail without it because they skip verification, hallucinate edits, and loop. The engine prevents those failure modes.
 
 ## 8 surfaces, one crew
 
