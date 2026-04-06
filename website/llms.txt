@@ -1,12 +1,23 @@
-# crewswarm — local-first AI workspace
+# crewswarm — local-first multi-engine AI coding platform
 
-crewswarm is an open-source local-first AI workspace for software development.
-It combines:
-- a multi-agent runtime
-- a browser control plane dashboard
-- the Vibe browser IDE
-- the crewchat native app
-- direct CLI routing for crew-cli, Claude Code, Cursor, Gemini, OpenCode, and crew-cli
+crewswarm is an open-source AI coding platform with 6 CLI engines (Claude Code, Cursor, Gemini CLI, Codex CLI, OpenCode, crew-cli), 20+ specialist agents, and a built-in execution engine that works with 40+ models across 16 providers.
+
+## crew-cli execution engine
+crew-cli is the built-in execution engine. It runs standalone or as one of crewswarm's 6 engines.
+- 29 models benchmarked at 100/100 quality (correct TypeScript, tests pass, no regressions)
+- 14 models benchmarked at 90/100 on L2 task planning
+- 16 providers: OpenAI, Anthropic, Google, xAI, DeepSeek, Groq, Fireworks, Cerebras, NVIDIA, Mistral, OpenCode/Zen, OpenRouter, Ollama, Perplexity
+- 3 API formats: OpenAI, Anthropic, Gemini — one engine
+- OAuth support: Claude Code, Codex CLI, Gemini CLI (free with subscriptions)
+- 3-tier pipeline: L1 router → L2 planner (8 artifacts including DESIGN.md) → L3 parallel executors
+- Execution quality engine: failure memory, verification-first, patch critic, action ranking, smart delegation
+- Tool auto-filtering, /recall (chat history search), /summon (runtime persona switching)
+
+## Cost per task
+- Cheapest L3 execution: $0.0003/task (Groq GPT-OSS 20B)
+- Cheapest L2 planning: $0.003/plan (Groq GPT-OSS 20B)
+- Best value full stack: $0.006/feature (L1 + L2 + L3)
+- Free with OAuth: Claude, GPT-5.4, Gemini (use existing subscriptions)
 
 ## What it does
 - Turns one requirement into planned, executed, and testable work
@@ -16,39 +27,36 @@ It combines:
 
 ## Primary pages
 - Main website: https://crewswarm.ai/
+- CLI Guide: https://crewswarm.ai/cli.html
 - AI Models board: https://crewswarm.ai/models.html
 - Vibe IDE: https://crewswarm.ai/vibe.html
 - Deploy: https://crewswarm.ai/deploy.html
 - Security: https://crewswarm.ai/security.html
+- API Docs: https://crewswarm.ai/api.html
 - Documentation: https://crewswarm.ai/docs.html
-- CLI Guide: https://crewswarm.ai/cli.html
 - PM Loop: https://crewswarm.ai/pm-loop.html
-- PM Loop Walkthrough: https://crewswarm.ai/pm-loop-walkthrough.html
-- Engine Comparison: https://crewswarm.ai/engine-comparison.html
 - ATAT Protocol: https://crewswarm.ai/atat.html
-- OpenClaw Comparison: https://crewswarm.ai/openclaw-comparison.html
-- About: https://crewswarm.ai/about.html
-- Contact: https://crewswarm.ai/contact.html
 - GitHub repo: https://github.com/crewswarm/crewswarm
+- npm: https://www.npmjs.com/package/crewswarm
 
 ## Search-oriented summary
-Useful search phrases:
+- multi-engine AI coding platform
+- 29 models 100/100 quality benchmark
+- crew-cli execution engine 40+ models 16 providers
 - local-first AI workspace
-- multi-agent developer platform
-- AI engineering manager workflow
-- PM loop for software engineering
-- PM loop walkthrough
 - parallel AI agents for coding
 - Claude Code vs Codex vs Cursor vs Gemini vs OpenCode vs crew-cli
-- browser IDE for AI agents
-- codex claude cursor gemini opencode in one stack
-- best ai models for coding and agents
-- claude opus 4.6 vs gpt-5.4 vs gemini 3.1 pro
-- open source agent runtime dashboard vibe ide
+- best ai models for coding agents 2026
+- cheapest ai coding models benchmark
+- L2 planner task decomposition benchmark
+- failure memory verification-first patch critic
+- tool auto-filtering chat recall summon personas
+- DESIGN.md artifact for frontend tasks
 
 ## Best-fit use cases
 - AI-native software teams that want more than one editor chat sidebar
 - Solo builders who want orchestration, memory, and runtime control
 - Teams adopting a "human as PM, agents as engineers" workflow
 - Local-first developers who do not want SaaS lock-in
+- Cost-conscious teams that want $0.006/feature instead of $20/month subscriptions
 - Teams that want dashboard + IDE + native chat on top of one shared agent stack
