@@ -1711,7 +1711,7 @@ const server = http.createServer(async (req, res) => {
           let count = 0;
           try {
             for (const ent of await fs.promises.readdir(dir, { withFileTypes: true })) {
-              if (ent.isDirectory()) { count += countTestCallsRecursive(path.join(dir, ent.name)); continue; }
+              if (ent.isDirectory()) { count += await countTestCallsRecursive(path.join(dir, ent.name)); continue; }
               if (!ent.name.match(/\.test\./)) continue;
               const src = await fs.promises.readFile(path.join(dir, ent.name), "utf8");
               const matches = src.match(/^\s*(test|it)\s*\(/gm);
@@ -1720,13 +1720,22 @@ const server = http.createServer(async (req, res) => {
           } catch {}
           return count;
         }
+        const [unitTests, intTests, e2eTests, pwTests, cliTests1, cliTests2, rootTests] = await Promise.all([
+          countTestCalls(path.join(testFileDir, "unit"), /\.test\.mjs$/),
+          countTestCalls(path.join(testFileDir, "integration"), /\.test\.mjs$/),
+          countTestCalls(path.join(testFileDir, "e2e"), /\.test\.mjs$/),
+          countTestCalls(testsE2eDir, /\.spec\.js$/),
+          countTestCallsRecursive(crewCliTestDir),
+          countTestCallsRecursive(crewCliTestDir2),
+          countTestCalls(testFileDir, /\.test\./),
+        ]);
         const testCounts = {
-          unit: countTestCalls(path.join(testFileDir, "unit"), /\.test\.mjs$/),
-          integration: countTestCalls(path.join(testFileDir, "integration"), /\.test\.mjs$/),
-          e2e: countTestCalls(path.join(testFileDir, "e2e"), /\.test\.mjs$/),
-          playwright: countTestCalls(testsE2eDir, /\.spec\.js$/),
-          "crew-cli": countTestCallsRecursive(crewCliTestDir) + countTestCallsRecursive(crewCliTestDir2),
-          root: countTestCalls(testFileDir, /\.test\./),
+          unit: unitTests,
+          integration: intTests,
+          e2e: e2eTests,
+          playwright: pwTests,
+          "crew-cli": cliTests1 + cliTests2,
+          root: rootTests,
         };
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({
