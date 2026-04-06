@@ -1944,6 +1944,30 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
+    if (url.pathname === "/api/tests/stop" && req.method === "POST") {
+      const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
+      try {
+        const data = JSON.parse(await fs.promises.readFile(progressFile, "utf8"));
+        if (data.running && data.pid) {
+          try { process.kill(data.pid, "SIGTERM"); } catch { /* already dead */ }
+          // Also kill child processes (node --test spawns sub-processes)
+          try { process.kill(-data.pid, "SIGTERM"); } catch { /* no process group */ }
+          data.running = false;
+          data.stopped = true;
+          data.finished = Date.now();
+          await fs.promises.writeFile(progressFile, JSON.stringify(data));
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ stopped: true, pid: data.pid }));
+        } else {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ stopped: false, reason: "no running test" }));
+        }
+      } catch {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ stopped: false, reason: "no progress file" }));
+      }
+      return;
+    }
     if (url.pathname === "/api/tests/progress" && req.method === "GET") {
       const progressFile = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
       try {

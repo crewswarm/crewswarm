@@ -406,6 +406,7 @@ function renderProgressBar() {
           <div class="test-progress-live-header">
             <span class="test-progress-live-status">⏳ Running ${escHtml(suiteLabel)}...</span>
             <span class="meta">${elapsedStr}</span>
+            <button class="test-stop-btn" data-action="stopTests" title="Stop running tests">■ Stop</button>
           </div>
           <div class="test-progress-live-stats">
             <span class="test-color-pass">${p.passed} pass</span>
@@ -460,6 +461,23 @@ export async function runTests(suite) {
     startStreamingOutput();
   } catch (e) {
     showNotification("Failed to start tests: " + e.message, true);
+  }
+}
+
+export async function stopTests() {
+  try {
+    const res = await postJSON("/api/tests/stop", {});
+    if (res.stopped) {
+      showNotification("Tests stopped.");
+      if (progressPollId) { clearInterval(progressPollId); progressPollId = null; }
+      stopStreamingOutput();
+      renderProgressBar();
+      setTimeout(() => refreshTestData(), 1000);
+    } else {
+      showNotification("No running tests to stop.");
+    }
+  } catch (e) {
+    showNotification("Failed to stop tests: " + e.message, true);
   }
 }
 

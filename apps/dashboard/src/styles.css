@@ -2128,6 +2128,21 @@ select {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.test-stop-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.test-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
 .test-launch-counts {
   display: flex;
   gap: 12px;
