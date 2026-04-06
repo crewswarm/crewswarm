@@ -638,6 +638,7 @@
               <th>Vibe</th>
               <th>VS Code</th>
               <th>Cursor IDE</th>
+              <th>Codex IDE / CLI</th>
               <th>Terminal CLIs</th>
             </tr>
           </thead>
@@ -647,6 +648,7 @@
               <td><span class="check">&#10003;</span> 6 engines</td>
               <td><span class="x">&#10007;</span> Extension only</td>
               <td><span class="check">&#10003;</span> Built-in</td>
+              <td><span class="check">&#10003;</span> OpenAI only</td>
               <td><span class="x">&#10007;</span> One at a time</td>
             </tr>
             <tr>
@@ -654,6 +656,7 @@
               <td><span class="check">&#10003;</span> localhost:3333</td>
               <td><span class="x">&#10007;</span> Electron</td>
               <td><span class="x">&#10007;</span> Electron</td>
+              <td><span class="check">&#10003;</span> Web + CLI</td>
               <td><span class="x">&#10007;</span> No UI</td>
             </tr>
             <tr>
@@ -661,6 +664,7 @@
               <td><span class="check">&#10003;</span> 500ms auto</td>
               <td><span class="x">&#10007;</span> Manual refresh</td>
               <td><span class="x">&#10007;</span> Manual refresh</td>
+              <td><span class="check">&#10003;</span> Yes</td>
               <td><span class="x">&#10007;</span> No visual</td>
             </tr>
             <tr>
@@ -668,6 +672,7 @@
               <td><span class="check">&#10003;</span> Universal</td>
               <td><span class="check">&#10003;</span> Yes</td>
               <td><span class="x">&#10007;</span> ARM only</td>
+              <td><span class="x">&#10007;</span> ARM only (IDE) / CLI yes</td>
               <td><span class="check">&#10003;</span> Yes</td>
             </tr>
             <tr>
@@ -675,6 +680,7 @@
               <td><span class="check">&#10003;</span> ~200MB</td>
               <td>500MB+</td>
               <td>800MB+</td>
+              <td>~50MB (CLI) / 500MB+ (IDE)</td>
               <td><span class="check">&#10003;</span> ~50MB</td>
             </tr>
             <tr>
@@ -682,6 +688,7 @@
               <td><span class="check">&#10003;</span> bash install.sh</td>
               <td>DMG / installer</td>
               <td>DMG / installer</td>
+              <td>DMG / npm</td>
               <td>npm / pip</td>
             </tr>
           </tbody>
@@ -728,12 +735,23 @@
         </div>
         <div class="rt-flow-arrow" aria-hidden="true">&#8595;</div>
         <div class="rt-flow-row">
+          <div class="rt-flow-node rt-flow-pm-node">
+            <span class="rt-flow-label">crew-lead (Stinki)</span>
+            <span class="rt-flow-detail">Router + orchestrator + PM loop</span>
+          </div>
+        </div>
+        <div class="rt-flow-arrow" aria-hidden="true">&#8595;</div>
+        <div class="rt-flow-row">
+          <div class="rt-flow-node">
+            <span class="rt-flow-label">20+ Specialist Agents</span>
+            <span class="rt-flow-ch">coder, QA, fixer, security, PM&hellip;</span>
+          </div>
           <div class="rt-flow-node rt-flow-synth-node">
             <span class="rt-flow-label">CLI Engine Bridges</span>
             <span class="rt-flow-detail">Claude Code, Cursor, OpenCode, crew-cli, Gemini, Codex CLI</span>
           </div>
         </div>
-        <p class="rt-flow-caption">Vibe is the live browser surface for the crewswarm runtime. It gives you visual feedback for file writes, chat activity, and agent work while crew-lead handles deeper orchestration and PM-loop execution.</p>
+        <p class="rt-flow-caption">Vibe connects to the full crewswarm runtime. Chat with crew-lead directly, dispatch to any specialist agent, or use CLI engines for coding tasks. All through the same WebSocket bus.</p>
       </div>
     </div>
   </section>
