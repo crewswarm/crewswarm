@@ -72,8 +72,8 @@ function passRate(passed, failed) {
   return ((passed / ran) * 100).toFixed(0) + "%";
 }
 
-const SUITE_LABELS = { unit: "Unit", integration: "Integration", e2e: "E2E", all: "All", unknown: "Other" };
-const SUITE_COLORS = { unit: "#818cf8", integration: "#34d399", e2e: "#fbbf24", all: "#60a5fa", unknown: "#94a3b8" };
+const SUITE_LABELS = { unit: "Unit", integration: "Integration", e2e: "E2E", playwright: "Playwright", "crew-cli": "crew-cli", all: "All", unknown: "Other" };
+const SUITE_COLORS = { unit: "#818cf8", integration: "#34d399", e2e: "#fbbf24", playwright: "#f472b6", "crew-cli": "#10b981", all: "#60a5fa", unknown: "#94a3b8" };
 
 // ── Stale files ───────────────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ async function loadTestingSummary() {
     // ── Per-suite cards with file-level breakdown and per-file run buttons ──
     html += '<div class="test-section-title">Latest Results by Suite</div>';
     html += '<div class="test-suite-grid">';
-    for (const suiteKey of ["unit", "integration", "e2e", "all"]) {
+    for (const suiteKey of ["unit", "integration", "e2e", "playwright", "crew-cli", "all"]) {
       const s = data.suites?.[suiteKey];
       if (!s || (!s.total && !s.passed && !s.failed)) continue;
       const ran = (s.passed || 0) + (s.failed || 0);

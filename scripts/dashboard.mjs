@@ -1784,22 +1784,38 @@ const server = http.createServer(async (req, res) => {
               const s = JSON.parse(await fs.promises.readFile(summaryFile, "utf8"));
               entry = { runId: d, timestamp: s.timestamp, status: s.status || (s.failed > 0 ? "failed" : "passed"), passed: s.passed || 0, failed: s.failed || 0, skipped: s.skipped || 0, total: s.total || 0, duration_ms: s.duration_ms || 0 };
             } else {
-              const runMeta = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8"));
+              let timestamp = null;
+              try { const runMeta = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8")); timestamp = runMeta.timestamp; } catch {}
+              if (!timestamp) { try { const stat = await fs.promises.stat(runDir); timestamp = stat.mtime.toISOString(); } catch {} }
               const ents = await fs.promises.readdir(runDir);
               const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
               let failed = 0;
               for (const td of testDirs) { if (await exists(path.join(runDir, td, "failure.json"))) failed++; }
-              entry = { runId: d, timestamp: runMeta.timestamp, status: failed > 0 ? "failed" : "passed", passed: testDirs.length - failed, failed, skipped: 0, total: testDirs.length, duration_ms: 0 };
+              entry = { runId: d, timestamp, status: failed > 0 ? "failed" : "passed", passed: testDirs.length - failed, failed, skipped: 0, total: testDirs.length, duration_ms: 0 };
             }
             // Detect suite from test_command
             try {
               const r = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8"));
               const cmd = r.test_command || "";
-              if (cmd.includes("test/e2e/")) entry.suite = "e2e";
+              if (cmd.includes("test:playwright") || cmd.includes("playwright test")) entry.suite = "playwright";
+              else if (cmd.includes("test/e2e/") || cmd.includes("test:e2e")) entry.suite = "e2e";
               else if (cmd.includes("test/integration/")) entry.suite = "integration";
+              else if (cmd.includes("test:all")) entry.suite = "all";
+              else if (cmd.includes("crew-cli") || cmd.includes("--prefix crew-cli")) entry.suite = "crew-cli";
               else if (cmd.includes("test/unit/") && !cmd.includes("test/integration/")) entry.suite = "unit";
               else { const fc = (cmd.match(/\.test\.mjs/g) || []).length; entry.suite = fc > 100 ? "all" : fc > 15 ? "unit" : "unknown"; }
-            } catch { entry.suite = "unknown"; }
+            } catch {
+              // No run.json — try to infer from directory contents
+              try {
+                const ents = await fs.promises.readdir(runDir);
+                const first = ents.find(e => !e.endsWith(".json") && !e.startsWith(".")) || "";
+                if (first.includes("test-e2e-")) entry.suite = "e2e";
+                else if (first.includes("test-integration-")) entry.suite = "integration";
+                else if (first.includes("test-unit-")) entry.suite = "unit";
+                else if (first.includes("spec-")) entry.suite = "playwright";
+                else entry.suite = "unknown";
+              } catch { entry.suite = "unknown"; }
+            }
             history.push(entry);
           } catch { /* skip */ }
         }
