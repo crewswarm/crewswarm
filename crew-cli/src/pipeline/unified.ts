@@ -2358,7 +2358,7 @@ Return ONLY valid JSON:
     const parsed = this.parseWorkerOutput(String(result.output || ''));
     const built = this.buildWorkerExecutionResult(task, parsed, result);
     if (process.env.CREW_DEBUG_PIPELINE) {
-      console.log(`[Pipeline] Built: filesChanged=${built.filesChanged.join(',')} shellResults=${built.shellResults.length} verificationPassed=${built.verificationPassed} escalation=${built.escalationNeeded} reason=${built.escalationReason || 'none'}`);
+      console.log(`[Pipeline] Built: filesChanged=${built.filesChanged.join(',')} shellResults=${(built.shellResults || []).length} verificationPassed=${built.verificationPassed} escalation=${built.escalationNeeded} reason=${built.escalationReason || 'none'}`);
     }
     return this.reviewAndFixWorkerResult(task, built, traceId, context, sessionId);
   }

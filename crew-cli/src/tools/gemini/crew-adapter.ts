@@ -278,7 +278,7 @@ export class GeminiToolAdapter {
     } catch {
       this._realWorkspaceRoot = resolve(raw);
     }
-    return this._realWorkspaceRoot;
+    return this._realWorkspaceRoot!;
   }
 
   /** Check if a resolved path is within workspace. Handles symlinks. */

@@ -2105,7 +2105,7 @@ export async function runAgenticWorker(
   // Adaptive weights: load trajectory feedback from autoharness (once per process)
   if (!(globalThis as Record<string, unknown>).__crewAdaptiveWeightsLoaded) {
     try {
-      const { extractTrajectoryFeedback } = await import('../../lib/autoharness/index.mjs');
+      const { extractTrajectoryFeedback } = await import('../../lib/autoharness/index.mjs' as string);
       const feedback = extractTrajectoryFeedback('default', 'global');
       if (feedback.length > 0) {
         RunEngine.loadTrajectoryFeedback(feedback);
