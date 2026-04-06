@@ -1,6 +1,6 @@
 # crewswarm
 
-**A multi-engine AI coding platform.** Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation. Parallel agents. Persistent sessions. No vendor lock-in.
+**A multi-engine AI coding platform.** Switch between Claude Code, Cursor, Gemini, Codex, OpenCode, and crew-cli mid-conversation. Parallel agents. Persistent sessions. No vendor lock-in.
 
 [![npm version](https://img.shields.io/npm/v/crewswarm)](https://www.npmjs.com/package/crewswarm)
 [![Release Check](https://img.shields.io/badge/release_check-required-blue)](https://github.com/crewswarm/crewswarm)
@@ -149,7 +149,7 @@ Use Docker when you want stronger isolation, easier restarts, or a shared server
 4. **Done. Files on disk.** — real files, real tests, real output
 
 ```
-Dashboard / Vibe IDE / crew-cli / Telegram / MCP
+Dashboard / Vibe IDE / crew-cli / crewchat / Telegram / WhatsApp / OpenClaw / MCP
                     |
                 crew-lead (router)
                     |
@@ -171,7 +171,10 @@ Dashboard / Vibe IDE / crew-cli / Telegram / MCP
 - **Dashboard** — web control plane at `localhost:4319` (agents, engines, models, build, sessions)
 - **Vibe IDE** — browser-based editor + terminal + chat at `localhost:3333`
 - **crew-cli** — execution engine: 40+ models, 16 providers, 41 built-in tools
+- **crewchat** — conversational interface for quick tasks
 - **Telegram** — chat with your crew from your phone
+- **WhatsApp** — mobile messaging bridge
+- **OpenClaw plugin** — use crewswarm as the engineering backend for OpenClaw desktop apps (`npm i crewswarm-openclaw-plugin`)
 - **MCP server** — plug crewswarm into any MCP-compatible editor
 
 ---
