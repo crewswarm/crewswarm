@@ -3000,6 +3000,31 @@
                     line-height: 2;
                   "
                 >
+                  +
+                </div>
+                <div style="text-align: center">
+                  <div style="font-size: 11px; color: var(--text-3)">
+                    crew-cli
+                  </div>
+                  <div
+                    style="
+                      font-size: 20px;
+                      font-weight: 700;
+                      color: var(--purple, #a78bfa);
+                    "
+                    id="gtCrewCliCost"
+                  >
+                    —
+                  </div>
+                </div>
+                <div
+                  style="
+                    text-align: center;
+                    font-size: 20px;
+                    color: var(--text-3);
+                    line-height: 2;
+                  "
+                >
                   =
                 </div>
                 <div style="text-align: center">
@@ -3053,7 +3078,7 @@
               <select
                 id="spendingDays"
                 style="font-size: 11px; padding: 3px 6px"
-                data-onchange="loadSpending"
+                data-onchange="loadAllUsage"
               >
                 <option value="1" selected>Today</option>
                 <option value="7">Last 7 days</option>
@@ -3178,8 +3203,9 @@
                 <select
                   id="ocStatsDays"
                   style="font-size: 11px; padding: 3px 6px"
-                  data-onchange="loadOcStats"
+                  data-onchange="loadAllUsage"
                 >
+                  <option value="1">Today</option>
                   <option value="7">Last 7 days</option>
                   <option value="14" selected>Last 14 days</option>
                   <option value="30">Last 30 days</option>
@@ -3194,6 +3220,56 @@
               </div>
             </div>
             <div id="ocStatsWidget">
+              <div style="color: var(--text-3); font-size: 12px">
+                Loading&#x2026;
+              </div>
+            </div>
+          </div>
+
+          <!-- crew-cli Usage -->
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 10px;
+              "
+            >
+              <div>
+                <span class="card-title" style="margin: 0"
+                  >&#x1F6E0;&#xFE0F; crew-cli Usage</span
+                >
+                <span
+                  style="
+                    font-size: 11px;
+                    font-weight: 400;
+                    color: var(--text-3);
+                  "
+                  >(Direct LLM calls from crew-cli sessions)</span
+                >
+              </div>
+              <div style="display: flex; gap: 6px; align-items: center">
+                <select
+                  id="crewCliDays"
+                  style="font-size: 11px; padding: 3px 6px"
+                  data-onchange="loadAllUsage"
+                >
+                  <option value="1">Today</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="14" selected>Last 14 days</option>
+                  <option value="30">Last 30 days</option>
+                </select>
+                <button
+                  data-action="loadCrewCliStats"
+                  class="btn-ghost"
+                  style="font-size: 11px"
+                >
+                  &#x21BB; Refresh
+                </button>
+              </div>
+            </div>
+            <div id="crewCliStatsWidget">
               <div style="color: var(--text-3); font-size: 12px">
                 Loading&#x2026;
               </div>

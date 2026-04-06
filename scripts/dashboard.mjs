@@ -7933,6 +7933,86 @@ ORDER BY day DESC, cost DESC;`;
       }
       return;
     }
+    // ── crew-cli cost stats ──────────────────────────────────────────────────
+    if (url.pathname === "/api/crew-cli-stats" && req.method === "GET") {
+      const days = Number(url.searchParams.get("days") || "14");
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      try {
+        // Scan known project directories for .crew/cost.json files
+        const searchDirs = new Set();
+        // 1. opencodeProject from config
+        try {
+          const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".crewswarm", "crewswarm.json"), "utf8"));
+          if (cfg.opencodeProject) searchDirs.add(cfg.opencodeProject.replace(/\/+$/, ""));
+        } catch {}
+        // 2. Registered projects
+        try {
+          const projFile = path.join(os.homedir(), ".crewswarm", "projects.json");
+          const projs = JSON.parse(fs.readFileSync(projFile, "utf8"));
+          for (const p of (projs.projects || projs || [])) {
+            if (p.outputDir) searchDirs.add(p.outputDir.replace(/\/+$/, ""));
+          }
+        } catch {}
+        // 3. Home .crew dir
+        searchDirs.add(os.homedir());
+
+        const allEntries = [];
+        for (const dir of searchDirs) {
+          const costFile = path.join(dir, ".crew", "cost.json");
+          try {
+            const raw = JSON.parse(fs.readFileSync(costFile, "utf8"));
+            for (const entry of (raw.entries || [])) {
+              if (!entry.timestamp) continue;
+              const day = entry.timestamp.slice(0, 10);
+              if (day >= cutoff) {
+                allEntries.push({ ...entry, day, project: dir });
+              }
+            }
+          } catch {}
+        }
+
+        // Roll up by day
+        const byDay = {};
+        let totalCost = 0;
+        let totalCalls = 0;
+        let totalPromptTokens = 0;
+        let totalCompletionTokens = 0;
+        for (const e of allEntries) {
+          if (!byDay[e.day]) byDay[e.day] = { cost: 0, calls: 0, prompt_tokens: 0, completion_tokens: 0, byModel: {} };
+          const d = byDay[e.day];
+          const usd = Number(e.usd || 0);
+          d.cost += usd;
+          d.calls += 1;
+          d.prompt_tokens += Number(e.promptTokens || 0);
+          d.completion_tokens += Number(e.completionTokens || 0);
+          const model = e.model || "unknown";
+          if (!d.byModel[model]) d.byModel[model] = { cost: 0, calls: 0, prompt_tokens: 0, completion_tokens: 0 };
+          d.byModel[model].cost += usd;
+          d.byModel[model].calls += 1;
+          d.byModel[model].prompt_tokens += Number(e.promptTokens || 0);
+          d.byModel[model].completion_tokens += Number(e.completionTokens || 0);
+          totalCost += usd;
+          totalCalls += 1;
+          totalPromptTokens += Number(e.promptTokens || 0);
+          totalCompletionTokens += Number(e.completionTokens || 0);
+        }
+
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          ok: true,
+          totalCost,
+          totalCalls,
+          totalPromptTokens,
+          totalCompletionTokens,
+          projects: [...searchDirs],
+          byDay,
+        }));
+      } catch (e) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message, byDay: {} }));
+      }
+      return;
+    }
     // ── OpenCode models API ──────────────────────────────────────────────────
     if (url.pathname === "/api/opencode-models" && req.method === "GET") {
       let models = [];

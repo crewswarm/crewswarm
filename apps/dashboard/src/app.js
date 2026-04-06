@@ -260,6 +260,7 @@ import {
 import {
   loadAllUsage,
   loadSpending,
+  loadCrewCliStats,
   resetSpending,
   saveGlobalCaps,
   reportOcCost,
@@ -2193,6 +2194,7 @@ const ACTION_REGISTRY = {
   toggleEmojiPicker: (id) => toggleEmojiPicker(id),
   bulkSetRoute: (route, model) => bulkSetRoute(route, model),
   loadSpending,
+  loadCrewCliStats,
   resetSpending,
   saveGlobalCaps,
   loadOcStats,
@@ -2764,6 +2766,7 @@ Object.assign(window, {
   compactMemory,
   loadBuildProjectPicker,
   loadFiles,
+  loadCrewCliStats,
   loadOcStats,
   loadRunSkills,
   loadServices,
