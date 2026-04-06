@@ -311,9 +311,9 @@
   <section id="comparison-table" class="section bg-dark">
     <div class="container">
       <span class="section-label">Feature comparison</span>
-      <h2>crewswarm vs. Cloud Platforms vs. Single-Tool CLIs</h2>
+      <h2>crewswarm vs. OpenClaw vs. Cloud Platforms vs. Single-Tool CLIs</h2>
       <p class="hero-sub" style="max-width:680px;margin:0 auto;">
-        A side-by-side look at the three approaches to AI-assisted development.
+        A side-by-side look at four approaches to AI-assisted development.
       </p>
 
       <div class="compare-table-wrap">
@@ -322,98 +322,135 @@
             <tr>
               <th scope="col">Capability</th>
               <th scope="col" class="col-crew">crewswarm</th>
+              <th scope="col">OpenClaw</th>
               <th scope="col">Cloud Platforms</th>
               <th scope="col">Single-Tool CLIs</th>
             </tr>
           </thead>
           <tbody>
             <tr>
+              <td><strong>Primary use case</strong></td>
+              <td class="cell-good">Multi-agent AI coding &amp; engineering</td>
+              <td class="cell-neutral">Personal AI assistant &amp; automation</td>
+              <td class="cell-neutral">AI-assisted IDE / editor</td>
+              <td class="cell-neutral">Single-model coding</td>
+            </tr>
+            <tr>
               <td><strong>Code privacy</strong></td>
               <td class="cell-good">Local-first &mdash; code never uploaded</td>
+              <td class="cell-good">Local-first</td>
               <td class="cell-weak">Code sent to third-party servers</td>
               <td class="cell-neutral">Varies by tool</td>
             </tr>
             <tr>
               <td><strong>API key storage</strong></td>
               <td class="cell-good">Local only &mdash; your machine, your keys</td>
+              <td class="cell-good">Local</td>
               <td class="cell-weak">Stored on provider servers</td>
               <td class="cell-good">Local</td>
             </tr>
             <tr>
               <td><strong>Subscription cost</strong></td>
               <td class="cell-good">Free &mdash; bring your own API keys</td>
+              <td class="cell-good">Free &mdash; bring your own keys</td>
               <td class="cell-weak">$20&ndash;$200+/mo per seat</td>
               <td class="cell-good">Free or pay-per-use</td>
             </tr>
             <tr>
               <td><strong>Vendor lock-in</strong></td>
               <td class="cell-good">None &mdash; swap providers any time</td>
+              <td class="cell-good">Multi-provider</td>
               <td class="cell-weak">Tied to one platform</td>
               <td class="cell-weak">Tied to one model vendor</td>
             </tr>
             <tr>
-              <td><strong>Multi-engine support</strong></td>
-              <td class="cell-good">Claude, Cursor, crew-cli, Codex, Gemini, OpenCode</td>
+              <td><strong>Multi-engine coding</strong></td>
+              <td class="cell-good">6 engines: Claude, Cursor, crew-cli, Codex, Gemini, OpenCode</td>
+              <td class="cell-weak">No coding engines</td>
               <td class="cell-weak">Usually one engine</td>
               <td class="cell-weak">Single engine only</td>
             </tr>
             <tr>
               <td><strong>Autonomous PM loop</strong></td>
               <td class="cell-good">ROADMAP.md &rarr; plan &rarr; delegate &rarr; ship &rarr; repeat</td>
+              <td class="cell-weak">No &mdash; manual task dispatch</td>
               <td class="cell-neutral">Manual task management</td>
               <td class="cell-weak">No orchestration</td>
             </tr>
             <tr>
-              <td><strong>Agent count</strong></td>
-              <td class="cell-good">20+ specialized agents</td>
+              <td><strong>Specialist agents</strong></td>
+              <td class="cell-good">20+ (coder, QA, fixer, security, PM, etc.)</td>
+              <td class="cell-weak">1 general assistant</td>
               <td class="cell-neutral">Varies</td>
               <td class="cell-weak">1 agent</td>
             </tr>
             <tr>
+              <td><strong>Parallel execution</strong></td>
+              <td class="cell-good">Wave orchestrator + git worktree isolation</td>
+              <td class="cell-weak">Sequential</td>
+              <td class="cell-weak">Sequential</td>
+              <td class="cell-weak">Sequential</td>
+            </tr>
+            <tr>
+              <td><strong>Execution quality engine</strong></td>
+              <td class="cell-good">8 modules &mdash; failure memory, verification gates, patch critic</td>
+              <td class="cell-weak">No</td>
+              <td class="cell-weak">No</td>
+              <td class="cell-weak">No</td>
+            </tr>
+            <tr>
               <td><strong>Persistent memory</strong></td>
               <td class="cell-good">brain.md + shared memory + JSONL history</td>
+              <td class="cell-neutral">Conversation history</td>
               <td class="cell-neutral">Cloud-managed context</td>
               <td class="cell-weak">Session-only</td>
             </tr>
             <tr>
-              <td><strong>Offline mode</strong></td>
-              <td class="cell-good">Yes &mdash; local models via Ollama / LM Studio</td>
-              <td class="cell-weak">No &mdash; requires internet</td>
-              <td class="cell-neutral">Some support local models</td>
+              <td><strong>Scheduled tasks / cron</strong></td>
+              <td class="cell-good">Yes &mdash; skills + cron</td>
+              <td class="cell-good">Yes &mdash; built-in scheduler</td>
+              <td class="cell-weak">No</td>
+              <td class="cell-weak">No</td>
             </tr>
             <tr>
-              <td><strong>Docker isolation</strong></td>
-              <td class="cell-good">Optional secure sandbox (AppArmor + firewall)</td>
-              <td class="cell-neutral">Server-side isolation</td>
-              <td class="cell-weak">No sandboxing</td>
-            </tr>
-            <tr>
-              <td><strong>Dashboard UI</strong></td>
-              <td class="cell-good">Full web dashboard + Vibe browser IDE</td>
-              <td class="cell-good">Web UI included</td>
+              <td><strong>Desktop / mobile apps</strong></td>
+              <td class="cell-neutral">Web-based (Dashboard + Vibe IDE)</td>
+              <td class="cell-good">Native macOS, Windows, iOS, Android</td>
+              <td class="cell-good">Web UI or native app</td>
               <td class="cell-weak">Terminal only</td>
-            </tr>
-            <tr>
-              <td><strong>LLM providers</strong></td>
-              <td class="cell-good">12+ (OpenAI, Anthropic, Groq, Fireworks, OpenRouter, Cerebras, DeepSeek, xAI, etc.)</td>
-              <td class="cell-weak">1&ndash;3 typically</td>
-              <td class="cell-weak">1</td>
-            </tr>
-            <tr>
-              <td><strong>MCP integration</strong></td>
-              <td class="cell-good">Cursor, Claude Code, OpenCode</td>
-              <td class="cell-neutral">Varies</td>
-              <td class="cell-neutral">Some support</td>
             </tr>
             <tr>
               <td><strong>Messaging bridges</strong></td>
               <td class="cell-good">Telegram + WhatsApp</td>
+              <td class="cell-good">Telegram, WhatsApp, Discord, iMessage, Slack, Signal</td>
               <td class="cell-neutral">Slack / Teams common</td>
               <td class="cell-weak">None</td>
             </tr>
             <tr>
+              <td><strong>Plugin ecosystem</strong></td>
+              <td class="cell-neutral">MCP server + OpenClaw plugin</td>
+              <td class="cell-good">ClawHub + npm plugins</td>
+              <td class="cell-neutral">Extensions / marketplace</td>
+              <td class="cell-weak">None</td>
+            </tr>
+            <tr>
+              <td><strong>Docker isolation</strong></td>
+              <td class="cell-good">5-layer security (AppArmor + firewall + allowlist)</td>
+              <td class="cell-weak">No &mdash; <a href="security.html" style="color:var(--accent);">ClawJacked vulnerability</a></td>
+              <td class="cell-neutral">Server-side isolation</td>
+              <td class="cell-weak">No sandboxing</td>
+            </tr>
+            <tr>
+              <td><strong>LLM providers</strong></td>
+              <td class="cell-good">12+ (OpenAI, Anthropic, Groq, DeepSeek, xAI, Cerebras, etc.)</td>
+              <td class="cell-good">Multi-provider</td>
+              <td class="cell-weak">1&ndash;3 typically</td>
+              <td class="cell-weak">1</td>
+            </tr>
+            <tr>
               <td><strong>License</strong></td>
               <td class="cell-good">MIT &mdash; fully open source</td>
+              <td class="cell-good">Open source</td>
               <td class="cell-weak">Proprietary</td>
               <td class="cell-neutral">Varies</td>
             </tr>
