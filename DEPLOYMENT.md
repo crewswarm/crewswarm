@@ -171,10 +171,6 @@ Access dashboard at `http://your-server-ip:4319`. For production, put nginx or C
 caddy reverse-proxy --from crewswarm.example.com --to localhost:4319
 ```
 
-### Fly.io (website only)
-
-The crewswarm.ai website is deployed on Fly.io as a static site. The `website/fly.toml` handles this. This is not the application deployment — it's just the marketing site.
-
 ### Kubernetes (roadmap)
 
 Helm charts and Terraform modules are planned but not yet available. Deploy via Docker on any VM today.
