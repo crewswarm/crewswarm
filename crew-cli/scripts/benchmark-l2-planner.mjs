@@ -186,7 +186,7 @@ async function runTask(task) {
           cwd: dir,
           stdio: 'pipe',
           encoding: 'utf8',
-          timeout: 180000,
+          timeout: 300000,
           env: {
             ...process.env,
             CREW_FORCE_L2: 'true',
